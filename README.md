@@ -15,7 +15,7 @@ AI tutor and learning assistant. Uses reinforcement learning and memory adaptive
 | Nov 12     | 2   | `input()`, `print()`, `if/else` | Agent name + age checker | Yes |
 | Nov 13     | 3   | `float()`, `if/elif`, f-strings | **Agent Score Calculator** + **Evolution Tracker** | Yes |
 | Nov 14     | 4   | `list`, `.append()`, `len()` | **3-Agent Squad Input System** | Yes |
-
+| Nov 15 | 5   | Functions, `def`, `return` | Reusable evolution function | Yes |
 ---
 
 ## Project Structure
