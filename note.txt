@@ -4,3 +4,6 @@
 
 Day3 question:
 “How can math.ceil() help EvolvAI round up agent rewards?”
+
+Day 7
+"What is the usefulness of dictionaries in creating AI agents?"
