@@ -42,13 +42,22 @@ class EvolvAIAgent:
         if self.old_grade != self.grade and self.accuracy > self.old_accuracy:
             print("  LEVEL UP!", end="")
         print()
+    def __str__(self):
+        return f"{self.name} | {self.accuracy:.1f}% | Grade: {self.grade}"
 
+    def __repr__(self):
+        return f"{self.__class__.__name__}('{self.name}', {self.accuracy:.1f})"
 
 class TutorAgent(EvolvAIAgent):
     def teach(self, subject):
         print(f"{self.name} is teaching {subject} at {self.accuracy:.1f}% mastery!")
-
+    
+    def __str__(self):
+        return f"[Tutor] {super().__str__()} — Ready to teach!"
 
 class FarmerAgent(EvolvAIAgent):
     def farm(self, crop):
         print(f"{self.name} is optimising {crop} farming — current accuracy {self.accuracy:.1f}%")
+
+    def __str__(self):
+        return f"[Farmer] {super().__str__()} — In the fields!"
