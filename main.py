@@ -1,12 +1,16 @@
 # main.py - Main program
 
 from agents import EvolvAIAgent, TutorAgent, FarmerAgent
+from memory import save_squad, load_squad
 
 print("╔" + "═" * 44 + "╗")
 print("║" + "     LUMIERE SQUAD v1               ".center(44) + "║")
 print("╚" + "═" * 44 + "╝\n")
 
-squad = []
+squad = load_squad()
+
+if not squad:
+    squad = []
 
 for i in range(1, 5):
     print(f"--- Agent {i} ---")
@@ -26,6 +30,7 @@ print("\n╔" + "═" * 44 + "╗")
 print("║" + "       FINAL EVOLUTION REPORT       ".center(44) + "║")
 print("╚" + "═" * 44 + "╝\n")
 
+
 for agent in squad:
     agent.report()
 
@@ -37,3 +42,5 @@ print("\nDebug View:")
 print(squad)  # uses __repr__
 
 print(f"\nTotal Agents: {len(squad)}")
+
+save_squad(squad)
