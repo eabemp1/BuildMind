@@ -1,0 +1,26 @@
+[
+    {
+        "class": "TutorAgent",
+        "name": "Luxa",
+        "accuracy": 93.98,
+        "grade": "A"
+    },
+    {
+        "class": "FarmerAgent",
+        "name": "Paux",
+        "accuracy": 70.0986,
+        "grade": "C"
+    },
+    {
+        "class": "TutorAgent",
+        "name": "Llama",
+        "accuracy": 84.676,
+        "grade": "B"
+    },
+    {
+        "class": "FarmerAgent",
+        "name": "86",
+        "accuracy": 62.956,
+        "grade": "D"
+    }
+]
