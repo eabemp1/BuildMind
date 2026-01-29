@@ -6,30 +6,31 @@ from groq import Groq
 import os
 import json
 from dotenv import load_dotenv
-from fastapi import FastAPI, Form
+from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
 import uvicorn
 
 load_dotenv()  # Load .env file (GROQ_API_KEY)
 
 app = FastAPI(title="Lumiere - Your AI Companion")
 
-# === User Profile (Name) ===
+# === User Profile (Name + Theme + Accent) ===
 USER_PROFILE_FILE = "user_profile.json"
 
-def load_user_name():
+def load_user_profile():
     if os.path.exists(USER_PROFILE_FILE):
         with open(USER_PROFILE_FILE, 'r') as f:
-            data = json.load(f)
-            return data.get("name")
-    return None
+            return json.load(f)
+    return {"name": None, "theme": "system", "accent": "#3b82f6"}
 
-def save_user_name(name):
+def save_user_profile(profile):
     with open(USER_PROFILE_FILE, 'w') as f:
-        json.dump({"name": name.strip()}, f)
+        json.dump(profile, f, indent=2)
 
-user_name = load_user_name()
+profile = load_user_profile()
+user_name = profile.get("name")
+theme = profile.get("theme", "system")
+accent_color = profile.get("accent", "#3b82f6")
 
 # === LLM Configuration ===
 MODELS = {
@@ -52,23 +53,31 @@ def ask_llm(question, model_key="groq-llama3.3"):
 
         client = Groq(api_key=api_key)
         try:
+            system_prompt = (
+                f"You are Lumiere, the personal, persistent AI companion of {user_name or 'friend'}. "
+                f"Always speak directly to {user_name or 'friend'} in a warm, casual, supportive tone. "
+                f"Start with 'Yh, {user_name or 'friend'}' or similar. Be helpful and encouraging. No Markdown."
+            )
+
             completion = client.chat.completions.create(
                 model=config["model"],
                 messages=[
-                    {"role": "system", "content": "You are a helpful classifier. Answer with one word or phrase only (e.g., farming, medicine, cooking, science)."},
-                    {"role": "user", "content": f"What specialty does this question need? {question}"}
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": question}
                 ],
-                temperature=0.3,
-                max_tokens=20,
+                temperature=0.75,
+                max_tokens=600,
             )
-            return completion.choices[0].message.content.strip().lower()
+            raw_answer = completion.choices[0].message.content
+            clean_answer = raw_answer.replace("**", "").replace("*", "").replace("__", "").replace("_", "")
+            return clean_answer.strip()
         except Exception as e:
-            return f"Error: {str(e)}"
+            return f"Groq error: {str(e)}"
 
-    return "Provider not implemented."
+    return "Model not implemented yet."
 
-# Global squad
-squad = load_squad()
+# Global squad (loaded on startup, but never shown in UI)
+squad = None
 
 @app.on_event("startup")
 async def startup_event():
@@ -76,14 +85,10 @@ async def startup_event():
     squad = load_squad()
     print("Squad loaded from squad_memory.json" if squad else "No previous squad found.")
 
-# Welcome / Name Input Page
 @app.get("/", response_class=HTMLResponse)
 async def home():
-    if user_name:
-        # User already has name → show main page
-        return await main_page()
-    else:
-        # Show name input page
+    if not user_name:
+        # Welcome page if no name
         return """
         <!DOCTYPE html>
         <html lang="en">
@@ -131,7 +136,6 @@ async def home():
                     border:none; 
                     border-radius:10px; 
                     cursor:pointer; 
-                    font-weight:bold; 
                 }
                 button:hover { background:#f0f0f0; }
             </style>
@@ -149,150 +153,178 @@ async def home():
         </html>
         """
 
-@app.post("/set-name")
-async def set_name(name: str = Form(...)):
-    global user_name
-    user_name = name.strip()
-    save_user_name(user_name)
-    return RedirectResponse(url="/", status_code=303)
-
-@app.get("/main", response_class=HTMLResponse)
-async def main_page():
-    global squad
-
-    agents_html = ""
-    if not squad:
-        agents_html = "<p style='color:#666; font-style:italic;'>No agents yet — ask questions to help Lumiere grow!</p>"
-    else:
-        for agent in squad:
-            agents_html += f"""
-            <div style="border:1px solid #e0e0e0; padding:16px; margin:12px 0; border-radius:10px; background:#ffffff; box-shadow:0 2px 8px rgba(0,0,0,0.06);">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <strong style="font-size:1.1em; color:#1a3c34;">{agent.name}</strong>
-                    <span style="font-size:0.9em; color:#555;">{agent.__class__.__name__}</span>
-                </div>
-                <div style="margin-top:8px; font-size:0.95em;">
-                    <span style="color:#2e7d32; font-weight:bold;">Accuracy: {agent.accuracy:.1f}%</span>  
-                    <span style="margin-left:12px; color:#c62828;">Grade: {agent.grade}</span>
-                </div>
-                <div style="margin-top:6px; font-size:0.85em; color:#555;">
-                    Specialty: {getattr(agent, 'specialty', 'General')}
-                </div>
-            </div>
-            """
-
+    # Main chat page (no agents panel)
     return f"""
     <!DOCTYPE html>
-    <html lang="en">
+    <html lang="en" class="{ 'theme-dark' if theme == 'dark' else '' }">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Lumiere — Your Companion</title>
         <style>
+            :root {{
+                --bg-primary: #0d1117;
+                --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+                --bg-secondary: #1e293b;
+                --text-primary: #e2e8f0;
+                --text-secondary: #94a3b8;
+                --accent: {accent_color};
+                --panel-bg: rgba(30, 41, 59, 0.6);
+                --panel-border: rgba(148, 163, 184, 0.2);
+                --shadow: rgba(0, 0, 0, 0.6);
+                --glow: rgba(59, 130, 246, 0.2);
+            }}
+            .theme-light {{
+                --bg-primary: #f8fafc;
+                --bg-gradient: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+                --bg-secondary: #ffffff;
+                --text-primary: #0f172a;
+                --text-secondary: #475569;
+                --panel-bg: rgba(255, 255, 255, 0.85);
+                --panel-border: rgba(203, 213, 225, 0.6);
+                --shadow: rgba(0, 0, 0, 0.1);
+                --glow: rgba(59, 130, 246, 0.15);
+            }}
             body {{ 
                 font-family: 'Segoe UI', system-ui, sans-serif; 
                 margin:0; 
                 padding:0; 
-                background: linear-gradient(135deg, #f5f7fa 0%, #e4e9fd 100%); 
+                background: var(--bg-gradient); 
                 min-height:100vh; 
-                color:#1a1a1a; 
+                color:var(--text-primary); 
+                transition: all 0.4s ease;
             }}
             .header {{ 
-                background: linear-gradient(90deg, #1e3a8a, #3b82f6); 
-                color:white; 
+                background: rgba(15, 23, 42, 0.7); 
+                backdrop-filter: blur(12px); 
+                color:var(--text-primary); 
                 text-align:center; 
-                padding:2.5rem 1rem; 
-                box-shadow:0 4px 12px rgba(0,0,0,0.15); 
+                padding:2rem 1rem; 
+                box-shadow:0 4px 20px var(--shadow); 
+                border-bottom:1px solid var(--panel-border); 
             }}
-            .header h1 {{ margin:0; font-size:2.4rem; }}
-            .header p {{ margin:8px 0 0; opacity:0.9; }}
+            .theme-light .header {{ background: rgba(255, 255, 255, 0.85); }}
+            .header h1 {{ margin:0; font-size:2.8rem; background: linear-gradient(90deg, var(--accent), #60a5fa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}
+            .header p {{ margin:8px 0 0; opacity:0.9; font-size:1.1rem; }}
             .container {{ 
-                max-width:1280px; 
+                max-width:1000px; 
                 margin:40px auto; 
                 padding:0 20px; 
-                display:flex; 
-                gap:32px; 
-                flex-wrap:wrap; 
             }}
-            .panel {{ 
-                flex:1; 
-                min-width:340px; 
-                background:white; 
-                border-radius:16px; 
-                box-shadow:0 8px 30px rgba(0,0,0,0.08); 
+            .chat-panel {{ 
+                background:var(--panel-bg); 
+                backdrop-filter:blur(12px); 
+                border-radius:20px; 
+                box-shadow:0 10px 40px var(--shadow); 
+                border:1px solid var(--panel-border); 
                 overflow:hidden; 
             }}
             .panel-header {{ 
-                background:#f8fafc; 
-                padding:18px 24px; 
-                border-bottom:1px solid #e5e7eb; 
+                background:rgba(30, 41, 59, 0.6); 
+                padding:1.2rem 2rem; 
+                border-bottom:1px solid var(--panel-border); 
                 font-weight:600; 
-                font-size:1.25rem; 
-                color:#1e40af; 
+                font-size:1.4rem; 
+                color:var(--accent); 
+                text-align:center; 
             }}
-            .panel-body {{ padding:24px; }}
+            .theme-light .panel-header {{ background:rgba(255, 255, 255, 0.6); }}
             .chat-messages {{ 
-                min-height:320px; 
-                max-height:600px; 
+                min-height:500px; 
+                max-height:80vh; 
                 overflow-y:auto; 
-                padding:16px; 
-                background:#f9fafb; 
-                border-radius:10px; 
-                margin-bottom:16px; 
+                padding:2rem; 
             }}
             .message {{ 
-                margin:12px 0; 
-                padding:14px 18px; 
-                border-radius:12px; 
-                line-height:1.5; 
+                margin:1.5rem 0; 
+                padding:1.2rem 1.5rem; 
+                border-radius:16px; 
+                line-height:1.6; 
+                max-width:85%; 
+                word-wrap:break-word; 
             }}
             .user {{ 
-                background:#dbeafe; 
-                align-self:flex-start; 
-                margin-right:20%; 
+                background:var(--accent); 
+                color:white; 
+                margin-left:auto; 
+                border-bottom-right-radius:4px; 
             }}
             .ai {{ 
-                background:#e0f2fe; 
-                align-self:flex-end; 
-                margin-left:20%; 
-                color:#0f172a; 
+                background:var(--bg-secondary); 
+                color:var(--text-primary); 
+                margin-right:auto; 
+                border-bottom-left-radius:4px; 
             }}
-            .input-area {{ display:flex; gap:12px; }}
+            .input-area {{ 
+                display:flex; 
+                gap:12px; 
+                padding:1.5rem 2rem; 
+                border-top:1px solid var(--panel-border); 
+                background:var(--panel-bg); 
+            }}
             input {{ 
                 flex:1; 
                 padding:14px 18px; 
-                border:1px solid #d1d5db; 
-                border-radius:10px; 
+                border:1px solid var(--panel-border); 
+                border-radius:12px; 
                 font-size:1rem; 
+                background:var(--bg-secondary); 
+                color:var(--text-primary); 
             }}
             button {{ 
                 padding:14px 28px; 
-                background:#3b82f6; 
+                background:var(--accent); 
                 color:white; 
                 border:none; 
-                border-radius:10px; 
+                border-radius:12px; 
                 font-weight:600; 
                 cursor:pointer; 
-                transition:0.2s; 
+                transition: all 0.2s; 
             }}
-            button:hover {{ background:#2563eb; }}
+            button:hover {{ background:#2563eb; transform:translateY(-1px); }}
+            .theme-switcher {{ 
+                position:fixed; 
+                top:1rem; 
+                right:1rem; 
+                display:flex; 
+                gap:8px; 
+                z-index:1000; 
+            }}
+            .theme-switcher button, .theme-switcher select {{ 
+                padding:8px 16px; 
+                background:rgba(255,255,255,0.15); 
+                border:1px solid rgba(255,255,255,0.2); 
+                border-radius:8px; 
+                color:white; 
+                cursor:pointer; 
+            }}
+            .theme-light .theme-switcher button, .theme-light .theme-switcher select {{ 
+                background:rgba(0,0,0,0.05); 
+                border:1px solid rgba(0,0,0,0.1); 
+                color:#1a1a1a; 
+            }}
         </style>
     </head>
     <body>
+        <div class="theme-switcher">
+            <button onclick="setTheme('light')">☀️ Light</button>
+            <button onclick="setTheme('dark')">🌙 Dark</button>
+            <button onclick="setTheme('system')">⚙️ System</button>
+            <select onchange="setAccent(this.value)">
+                <option value="#3b82f6">Blue</option>
+                <option value="#10b981">Green</option>
+                <option value="#a855f7">Purple</option>
+                <option value="#f59e0b">Gold</option>
+            </select>
+        </div>
+
         <div class="header">
             <h1>Lumiere</h1>
             <p>{user_name}'s personal, evolving AI companion</p>
         </div>
 
         <div class="container">
-            <div class="panel">
-                <div class="panel-header">Your Agents</div>
-                <div class="panel-body">
-                    {agents_html}
-                </div>
-            </div>
-
-            <div class="panel">
+            <div class="chat-panel">
                 <div class="panel-header">Talk to Lumiere</div>
                 <div class="panel-body">
                     <div id="chat-output" class="chat-messages"></div>
@@ -305,6 +337,34 @@ async def main_page():
         </div>
 
         <script>
+            function setTheme(theme) {{
+                localStorage.setItem('theme', theme);
+                if (theme === 'system') {{
+                    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                    document.documentElement.className = prefersDark ? 'theme-dark' : 'theme-light';
+                }} else {{
+                    document.documentElement.className = theme === 'dark' ? 'theme-dark' : 'theme-light';
+                }}
+                fetch('/set-theme', {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{theme: theme}})
+                }});
+            }}
+
+            function setAccent(color) {{
+                document.documentElement.style.setProperty('--accent', color);
+                fetch('/set-accent', {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{accent: color}})
+                }});
+            }}
+
+            // Load saved theme
+            const savedTheme = localStorage.getItem('theme') || 'system';
+            setTheme(savedTheme);
+
             async function ask() {{
                 const input = document.getElementById("question");
                 const q = input.value.trim();
@@ -338,38 +398,38 @@ async def main_page():
 async def ask(q: str):
     if not q:
         return "Please ask a question."
-
     try:
-        # Route to best agent
-        best_agent = None
-        question_lower = q.lower()
-        for agent in squad:
-            agent_type = agent.__class__.__name__.lower()
-            role = getattr(agent, 'role', '').lower()
-            if any(word in question_lower for word in ["farm", "crop", "plant", "soil", "maize", "yam"]):
-                if "farmer" in agent_type or "farm" in role:
-                    best_agent = agent
-                    break
-            elif any(word in question_lower for word in ["teach", "learn", "study", "exam", "math", "lesson"]):
-                if "tutor" in agent_type or "teach" in role:
-                    best_agent = agent
-                    break
-
-        # Fallback to highest accuracy agent
-        if not best_agent and squad:
-            best_agent = max(squad, key=lambda a: a.accuracy)
-
-        agent_name = best_agent.name if best_agent else "Lumiere"
-        agent_accuracy = best_agent.accuracy if best_agent else 50.0
-
-        # Build prompt with agent context
-        prompt = f"You are Lumiere's {agent_name} with {agent_accuracy:.1f}% mastery. Answer accurately and helpfully: {q}"
-
-        answer = ask_llm(prompt)
-
-        return f"[{agent_name}]: {answer}"
+        answer = ask_llm(q)
+        return answer
     except Exception as e:
         return f"Error: {str(e)}"
+
+@app.post("/set-theme")
+async def set_theme(data: dict):
+    global theme
+    theme = data.get("theme", "system")
+    profile = load_user_profile()
+    profile["theme"] = theme
+    save_user_profile(profile)
+    return {"status": "ok"}
+
+@app.post("/set-accent")
+async def set_accent(data: dict):
+    global accent_color
+    accent_color = data.get("accent", "#3b82f6")
+    profile = load_user_profile()
+    profile["accent"] = accent_color
+    save_user_profile(profile)
+    return {"status": "ok"}
+
+@app.post("/set-name")
+async def set_name(name: str = Form(...)):
+    global user_name
+    user_name = name.strip()
+    profile = load_user_profile()
+    profile["name"] = user_name
+    save_user_profile(profile)
+    return RedirectResponse(url="/", status_code=303)
 
 # Run the web server
 if __name__ == "__main__":
