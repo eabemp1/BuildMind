@@ -1,20 +1,22 @@
-# main.py - Lumiere: Persistent, Ownable AI Companion
+# main.py - Lumiere (static files version - events fixed)
 
-from agents import EvolvAIAgent
-from memory import save_squad, load_squad
 from groq import Groq
 import os
 import json
 from dotenv import load_dotenv
-from fastapi import FastAPI, Form, Request
+from fastapi import FastAPI, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 import uvicorn
 
-load_dotenv()  # Load .env file (GROQ_API_KEY)
+load_dotenv()
 
-app = FastAPI(title="Lumiere - Your AI Companion")
+app = FastAPI(title="Lumiere")
 
-# === User Profile (Name + Theme + Accent) ===
+# Mount static folder for CSS and JS
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# === Profile ===
 USER_PROFILE_FILE = "user_profile.json"
 
 def load_user_profile():
@@ -32,7 +34,7 @@ user_name = profile.get("name")
 theme = profile.get("theme", "system")
 accent_color = profile.get("accent", "#3b82f6")
 
-# === LLM Configuration ===
+# === LLM ===
 MODELS = {
     "groq-llama3.3": {
         "provider": "groq",
@@ -41,54 +43,46 @@ MODELS = {
     }
 }
 
-def ask_llm(question, model_key="groq-llama3.3"):
-    config = MODELS.get(model_key)
-    if not config:
-        return f"Error: Model key '{model_key}' not found."
+def ask_llm(question):
+    config = MODELS["groq-llama3.3"]
+    if not config["api_key"]:
+        return "Error: GROQ_API_KEY missing"
 
-    if config["provider"] == "groq":
-        api_key = config["api_key"]
-        if not api_key:
-            return "Error: GROQ_API_KEY not set."
+    client = Groq(api_key=config["api_key"])
+    try:
+        system_prompt = f"You are Lumiere, personal companion of {user_name or 'friend'}. Warm, casual tone. Start with 'Yh, {user_name or 'friend'}'. Helpful, encouraging. No Markdown."
+        completion = client.chat.completions.create(
+            model=config["model"],
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": question}
+            ],
+            temperature=0.75,
+            max_tokens=600,
+        )
+        answer = completion.choices[0].message.content.strip()
+        return answer
+    except Exception as e:
+        return f"Groq error: {str(e)}"
 
-        client = Groq(api_key=api_key)
-        try:
-            system_prompt = (
-                f"You are Lumiere, the personal, persistent AI companion of {user_name or 'friend'}. "
-                f"Always speak directly to {user_name or 'friend'} in a warm, casual, supportive tone. "
-                f"Start with 'Yh, {user_name or 'friend'}' or similar. Be helpful and encouraging. No Markdown."
-            )
+# === Agents ===
+class Agent:
+    def __init__(self, name, specialty, accuracy=50.0):
+        self.name = name
+        self.specialty = specialty
+        self.accuracy = accuracy
 
-            completion = client.chat.completions.create(
-                model=config["model"],
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": question}
-                ],
-                temperature=0.75,
-                max_tokens=600,
-            )
-            raw_answer = completion.choices[0].message.content
-            clean_answer = raw_answer.replace("**", "").replace("*", "").replace("__", "").replace("_", "")
-            return clean_answer.strip()
-        except Exception as e:
-            return f"Groq error: {str(e)}"
-
-    return "Model not implemented yet."
-
-# Global squad (loaded on startup, but never shown in UI)
-squad = None
-
-@app.on_event("startup")
-async def startup_event():
-    global squad
-    squad = load_squad()
-    print("Squad loaded from squad_memory.json" if squad else "No previous squad found.")
+squad = [
+    Agent("Math Expert", "math"),
+    Agent("Finance Guide", "finance"),
+    Agent("Cooking Buddy", "cooking"),
+    Agent("Reminder Manager", "reminders"),
+    Agent("General Companion", "general")
+]
 
 @app.get("/", response_class=HTMLResponse)
 async def home():
     if not user_name:
-        # Welcome page if no name
         return """
         <!DOCTYPE html>
         <html lang="en">
@@ -97,46 +91,12 @@ async def home():
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>Welcome to Lumiere</title>
             <style>
-                body { 
-                    margin:0; 
-                    height:100vh; 
-                    background: linear-gradient(135deg, #667eea, #764ba2); 
-                    display:flex; 
-                    justify-content:center; 
-                    align-items:center; 
-                    font-family: 'Segoe UI', sans-serif; 
-                    color:white; 
-                }
-                .card { 
-                    background:rgba(255,255,255,0.15); 
-                    backdrop-filter:blur(10px); 
-                    padding:3rem 2.5rem; 
-                    border-radius:20px; 
-                    text-align:center; 
-                    box-shadow:0 8px 32px rgba(0,0,0,0.37); 
-                    border:1px solid rgba(255,255,255,0.18); 
-                    max-width:450px; 
-                    width:90%; 
-                }
+                body { margin:0; height:100vh; background: linear-gradient(135deg, #667eea, #764ba2); display:flex; justify-content:center; align-items:center; font-family: 'Segoe UI', sans-serif; color:white; }
+                .card { background:rgba(255,255,255,0.15); backdrop-filter:blur(10px); padding:3rem 2.5rem; border-radius:20px; text-align:center; box-shadow:0 8px 32px rgba(0,0,0,0.37); border:1px solid rgba(255,255,255,0.18); max-width:450px; width:90%; }
                 h1 { font-size:2.8rem; margin-bottom:1.5rem; }
                 p { font-size:1.2rem; margin-bottom:2rem; opacity:0.9; }
-                input { 
-                    width:100%; 
-                    padding:14px; 
-                    font-size:1.1rem; 
-                    border:none; 
-                    border-radius:10px; 
-                    margin-bottom:1.5rem; 
-                }
-                button { 
-                    padding:14px 40px; 
-                    font-size:1.1rem; 
-                    background:#fff; 
-                    color:#4c1d95; 
-                    border:none; 
-                    border-radius:10px; 
-                    cursor:pointer; 
-                }
+                input { width:100%; padding:14px; font-size:1.1rem; border:none; border-radius:10px; margin-bottom:1.5rem; }
+                button { padding:14px 40px; font-size:1.1rem; background:#fff; color:#4c1d95; border:none; border-radius:10px; cursor:pointer; }
                 button:hover { background:#f0f0f0; }
             </style>
         </head>
@@ -153,157 +113,15 @@ async def home():
         </html>
         """
 
-    # Main chat page (no agents panel)
-    return f"""
+    html = """
     <!DOCTYPE html>
-    <html lang="en" class="{ 'theme-dark' if theme == 'dark' else '' }">
+    <html lang="en" class="THEME_CLASS">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Lumiere — Your Companion</title>
-        <style>
-            :root {{
-                --bg-primary: #0d1117;
-                --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-                --bg-secondary: #1e293b;
-                --text-primary: #e2e8f0;
-                --text-secondary: #94a3b8;
-                --accent: {accent_color};
-                --panel-bg: rgba(30, 41, 59, 0.6);
-                --panel-border: rgba(148, 163, 184, 0.2);
-                --shadow: rgba(0, 0, 0, 0.6);
-                --glow: rgba(59, 130, 246, 0.2);
-            }}
-            .theme-light {{
-                --bg-primary: #f8fafc;
-                --bg-gradient: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
-                --bg-secondary: #ffffff;
-                --text-primary: #0f172a;
-                --text-secondary: #475569;
-                --panel-bg: rgba(255, 255, 255, 0.85);
-                --panel-border: rgba(203, 213, 225, 0.6);
-                --shadow: rgba(0, 0, 0, 0.1);
-                --glow: rgba(59, 130, 246, 0.15);
-            }}
-            body {{ 
-                font-family: 'Segoe UI', system-ui, sans-serif; 
-                margin:0; 
-                padding:0; 
-                background: var(--bg-gradient); 
-                min-height:100vh; 
-                color:var(--text-primary); 
-                transition: all 0.4s ease;
-            }}
-            .header {{ 
-                background: rgba(15, 23, 42, 0.7); 
-                backdrop-filter: blur(12px); 
-                color:var(--text-primary); 
-                text-align:center; 
-                padding:2rem 1rem; 
-                box-shadow:0 4px 20px var(--shadow); 
-                border-bottom:1px solid var(--panel-border); 
-            }}
-            .theme-light .header {{ background: rgba(255, 255, 255, 0.85); }}
-            .header h1 {{ margin:0; font-size:2.8rem; background: linear-gradient(90deg, var(--accent), #60a5fa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}
-            .header p {{ margin:8px 0 0; opacity:0.9; font-size:1.1rem; }}
-            .container {{ 
-                max-width:1000px; 
-                margin:40px auto; 
-                padding:0 20px; 
-            }}
-            .chat-panel {{ 
-                background:var(--panel-bg); 
-                backdrop-filter:blur(12px); 
-                border-radius:20px; 
-                box-shadow:0 10px 40px var(--shadow); 
-                border:1px solid var(--panel-border); 
-                overflow:hidden; 
-            }}
-            .panel-header {{ 
-                background:rgba(30, 41, 59, 0.6); 
-                padding:1.2rem 2rem; 
-                border-bottom:1px solid var(--panel-border); 
-                font-weight:600; 
-                font-size:1.4rem; 
-                color:var(--accent); 
-                text-align:center; 
-            }}
-            .theme-light .panel-header {{ background:rgba(255, 255, 255, 0.6); }}
-            .chat-messages {{ 
-                min-height:500px; 
-                max-height:80vh; 
-                overflow-y:auto; 
-                padding:2rem; 
-            }}
-            .message {{ 
-                margin:1.5rem 0; 
-                padding:1.2rem 1.5rem; 
-                border-radius:16px; 
-                line-height:1.6; 
-                max-width:85%; 
-                word-wrap:break-word; 
-            }}
-            .user {{ 
-                background:var(--accent); 
-                color:white; 
-                margin-left:auto; 
-                border-bottom-right-radius:4px; 
-            }}
-            .ai {{ 
-                background:var(--bg-secondary); 
-                color:var(--text-primary); 
-                margin-right:auto; 
-                border-bottom-left-radius:4px; 
-            }}
-            .input-area {{ 
-                display:flex; 
-                gap:12px; 
-                padding:1.5rem 2rem; 
-                border-top:1px solid var(--panel-border); 
-                background:var(--panel-bg); 
-            }}
-            input {{ 
-                flex:1; 
-                padding:14px 18px; 
-                border:1px solid var(--panel-border); 
-                border-radius:12px; 
-                font-size:1rem; 
-                background:var(--bg-secondary); 
-                color:var(--text-primary); 
-            }}
-            button {{ 
-                padding:14px 28px; 
-                background:var(--accent); 
-                color:white; 
-                border:none; 
-                border-radius:12px; 
-                font-weight:600; 
-                cursor:pointer; 
-                transition: all 0.2s; 
-            }}
-            button:hover {{ background:#2563eb; transform:translateY(-1px); }}
-            .theme-switcher {{ 
-                position:fixed; 
-                top:1rem; 
-                right:1rem; 
-                display:flex; 
-                gap:8px; 
-                z-index:1000; 
-            }}
-            .theme-switcher button, .theme-switcher select {{ 
-                padding:8px 16px; 
-                background:rgba(255,255,255,0.15); 
-                border:1px solid rgba(255,255,255,0.2); 
-                border-radius:8px; 
-                color:white; 
-                cursor:pointer; 
-            }}
-            .theme-light .theme-switcher button, .theme-light .theme-switcher select {{ 
-                background:rgba(0,0,0,0.05); 
-                border:1px solid rgba(0,0,0,0.1); 
-                color:#1a1a1a; 
-            }}
-        </style>
+        <link rel="stylesheet" href="/static/app.css">
+        <script src="/static/app.js" defer></script>
     </head>
     <body>
         <div class="theme-switcher">
@@ -320,7 +138,7 @@ async def home():
 
         <div class="header">
             <h1>Lumiere</h1>
-            <p>{user_name}'s personal, evolving AI companion</p>
+            <p>USER_NAME's personal, evolving AI companion</p>
         </div>
 
         <div class="container">
@@ -328,81 +146,85 @@ async def home():
                 <div class="panel-header">Talk to Lumiere</div>
                 <div class="panel-body">
                     <div id="chat-output" class="chat-messages"></div>
+                    <div id="loading" class="loading">
+                        <div class="loading-text">Lumiere is thinking...</div>
+                        <div class="loading-dots">
+                            <div class="dot"></div>
+                            <div class="dot"></div>
+                            <div class="dot"></div>
+                        </div>
+                    </div>
                     <div class="input-area">
-                        <input id="question" type="text" placeholder="Ask me anything, {user_name}..." autocomplete="off">
-                        <button onclick="ask()">Send</button>
+                        <input id="question" type="text" placeholder="Ask me anything, USER_NAME..." autocomplete="off">
+                        <button id="send-btn">Send</button>
                     </div>
                 </div>
             </div>
         </div>
-
-        <script>
-            function setTheme(theme) {{
-                localStorage.setItem('theme', theme);
-                if (theme === 'system') {{
-                    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-                    document.documentElement.className = prefersDark ? 'theme-dark' : 'theme-light';
-                }} else {{
-                    document.documentElement.className = theme === 'dark' ? 'theme-dark' : 'theme-light';
-                }}
-                fetch('/set-theme', {{
-                    method: 'POST',
-                    headers: {{'Content-Type': 'application/json'}},
-                    body: JSON.stringify({{theme: theme}})
-                }});
-            }}
-
-            function setAccent(color) {{
-                document.documentElement.style.setProperty('--accent', color);
-                fetch('/set-accent', {{
-                    method: 'POST',
-                    headers: {{'Content-Type': 'application/json'}},
-                    body: JSON.stringify({{accent: color}})
-                }});
-            }}
-
-            // Load saved theme
-            const savedTheme = localStorage.getItem('theme') || 'system';
-            setTheme(savedTheme);
-
-            async function ask() {{
-                const input = document.getElementById("question");
-                const q = input.value.trim();
-                if (!q) return;
-
-                const output = document.getElementById("chat-output");
-                output.innerHTML += '<div class="message user"><strong>You:</strong> ' + q + '</div>';
-
-                try {{
-                    const res = await fetch("/ask?q=" + encodeURIComponent(q));
-                    const txt = await res.text();
-                    output.innerHTML += '<div class="message ai"><strong>Lumiere:</strong> ' + txt.replace(/\\n/g, '<br>') + '</div>';
-                }} catch (err) {{
-                    output.innerHTML += '<div class="message ai" style="color:#dc2626;">Error: ' + err.message + '</div>';
-                }}
-
-                output.scrollTop = output.scrollHeight;
-                input.value = "";
-                input.focus();
-            }}
-
-            document.getElementById("question").addEventListener("keypress", function(e) {{
-                if (e.key === "Enter") ask();
-            }});
-        </script>
     </body>
     </html>
     """
+
+    html = html.replace("THEME_CLASS", 'theme-dark' if theme == 'dark' else 'theme-light')
+    html = html.replace("ACCENT_PLACEHOLDER", accent_color)
+    html = html.replace("USER_NAME", user_name or "friend")
+
+    return html
 
 @app.get("/ask")
 async def ask(q: str):
     if not q:
         return "Please ask a question."
-    try:
-        answer = ask_llm(q)
-        return answer
-    except Exception as e:
-        return f"Error: {str(e)}"
+
+    q_lower = q.lower()
+    specialty = "general"
+
+    if any(w in q_lower for w in ["math", "equation", "calculus", "derivative", "algebra"]):
+        specialty = "math"
+    elif any(w in q_lower for w in ["finance", "stock", "trade", "invest", "money"]):
+        specialty = "finance"
+    elif any(w in q_lower for w in ["cook", "recipe", "food", "meal", "bake"]):
+        specialty = "cooking"
+    elif any(w in q_lower for w in ["remind", "reminder", "task", "schedule", "alert"]):
+        specialty = "reminders"
+
+    agent = next((a for a in squad if a.specialty == specialty), None)
+    if not agent:
+        if specialty == "math":
+            agent = Agent("Math Expert", "math")
+        elif specialty == "finance":
+            agent = Agent("Finance Guide", "finance")
+        elif specialty == "cooking":
+            agent = Agent("Cooking Buddy", "cooking")
+        elif specialty == "reminders":
+            agent = Agent("Reminder Manager", "reminders")
+        else:
+            agent = Agent("General Companion", "general")
+        squad.append(agent)
+
+    prompt = f"You are {agent.name} ({agent.specialty}), {agent.accuracy:.1f}% mastery. Answer: {q}"
+    answer = ask_llm(prompt)
+
+    answer = answer.replace("\n", "<br>")
+
+    message_id = str(hash(q))
+    answer += f"""
+    <div class="rating-buttons" style="margin-top:12px;">
+        Rate this answer: 
+        <button onclick="rate('{message_id}', 1)">👍</button>
+        <button onclick="rate('{message_id}', -1)">👎</button>
+    </div>
+    """
+
+    return answer
+
+@app.post("/rate")
+async def rate(message_id: str, value: int):
+    print(f"Rating received: {value} for message {message_id}")
+    for agent in squad:
+        agent.accuracy = min(100, max(0, agent.accuracy + value * 5))
+        print(f"Updated {agent.name} accuracy to {agent.accuracy:.1f}%")
+    return {"status": "ok"}
 
 @app.post("/set-theme")
 async def set_theme(data: dict):
@@ -431,8 +253,7 @@ async def set_name(name: str = Form(...)):
     save_user_profile(profile)
     return RedirectResponse(url="/", status_code=303)
 
-# Run the web server
 if __name__ == "__main__":
-    print("Starting Lumiere web interface...")
-    print("Open your browser to: http://127.0.0.1:8000")
+    print("Starting Lumiere...")
+    print("Open: http://127.0.0.1:8000")
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
