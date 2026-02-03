@@ -1,63 +1,101 @@
-# agents.py - All classes and helper functions
-
-def get_improvement(rounds):
-    if rounds < 5:
-        return 8.5
-    elif rounds < 10:
-        return 5.0
-    elif rounds < 20:
-        return 2.5
-    else:
-        return 0.5
-
-
-def get_grade(acc):
-    if acc >= 90:
-        return "A"
-    elif acc >= 80:
-        return "B"
-    elif acc >= 70:
-        return "C"
-    elif acc >= 60:
-        return "D"
-    else:
-        return "F"
-
+# agents.py - Specialized EvolvAIAgent subclasses for Lumiere
+# FIXED: Removed hardcoded user name, improved responses
 
 class EvolvAIAgent:
-    def __init__(self, name, accuracy):
+    """
+    Base agent class for Lumiere
+    All specialized agents inherit from this
+    """
+    def __init__(self, name, accuracy=50.0):
         self.name = name
-        self.old_accuracy = accuracy
         self.accuracy = accuracy
-        self.old_grade = get_grade(accuracy)
-        self.grade = get_grade(accuracy)
+        self.specialty = "general"
+        self.role = "General companion"
 
-    def evolve(self, rounds):
-        self.accuracy = min(self.accuracy + get_improvement(rounds), 100)
-        self.grade = get_grade(self.accuracy)
-
-    def report(self):
-        line = f"{self.name:<10} | {self.old_accuracy:>5.2f}% → {self.accuracy:>5.2f}% | {self.old_grade} → {self.grade}"
-        print(line, end="")
-        if self.old_grade != self.grade and self.accuracy > self.old_accuracy:
-            print("  LEVEL UP!", end="")
-        print()
-    def __str__(self):
-        return f"{self.name} | {self.accuracy:.1f}% | Grade: {self.grade}"
-
-    def __repr__(self):
-        return f"{self.__class__.__name__}('{self.name}', {self.accuracy:.1f})"
-
-class TutorAgent(EvolvAIAgent):
-    def teach(self, subject):
-        print(f"{self.name} is teaching {subject} at {self.accuracy:.1f}% mastery!")
+    def respond(self, question, user_name="friend"):
+        """
+        Generate a response to a question
+        
+        Args:
+            question: User's question
+            user_name: Name of the user (dynamic)
+        
+        Returns:
+            str: Agent's response prompt for LLM
+        """
+        return f"I'm {self.name} ({self.specialty}), {self.accuracy:.1f}% mastery. Answering for {user_name}: {question}"
     
-    def __str__(self):
-        return f"[Tutor] {super().__str__()} — Ready to teach!"
+    def __repr__(self):
+        return f"<{self.name} ({self.specialty}) - {self.accuracy:.1f}% accuracy>"
 
-class FarmerAgent(EvolvAIAgent):
-    def farm(self, crop):
-        print(f"{self.name} is optimising {crop} farming — current accuracy {self.accuracy:.1f}%")
 
-    def __str__(self):
-        return f"[Farmer] {super().__str__()} — In the fields!"
+class MathAgent(EvolvAIAgent):
+    """Specialized agent for mathematics and science questions"""
+    
+    def __init__(self):
+        super().__init__("Math Expert", 50.0)
+        self.specialty = "math"
+        self.role = "Math & science tutor"
+
+    def respond(self, question, user_name="friend"):
+        return f"Yh, {user_name}, as your Math Expert ({self.accuracy:.1f}% mastery), here's the step-by-step for {question}"
+
+
+class FinanceAgent(EvolvAIAgent):
+    """Specialized agent for finance, investing, and money management"""
+    
+    def __init__(self):
+        super().__init__("Finance Guide", 50.0)
+        self.specialty = "finance"
+        self.role = "Personal finance & trading assistant"
+
+    def respond(self, question, user_name="friend"):
+        return f"Got you, {user_name} — Finance Guide here ({self.accuracy:.1f}% mastery). On {question}:"
+
+
+class CookingAgent(EvolvAIAgent):
+    """Specialized agent for recipes, cooking tips, and food prep"""
+    
+    def __init__(self):
+        super().__init__("Cooking Buddy", 50.0)
+        self.specialty = "cooking"
+        self.role = "Personal chef & recipe helper"
+
+    def respond(self, question, user_name="friend"):
+        return f"Sure thing, {user_name} — Cooking Buddy ({self.accuracy:.1f}% mastery). For {question}:"
+
+
+class ReminderAgent(EvolvAIAgent):
+    """Specialized agent for reminders, tasks, and scheduling"""
+    
+    def __init__(self):
+        super().__init__("Reminder Manager", 50.0)
+        self.specialty = "reminders"
+        self.role = "Task & reminder helper"
+
+    def respond(self, question, user_name="friend"):
+        return f"Yh, {user_name} — Reminder Manager here ({self.accuracy:.1f}% mastery). Setting up {question}:"
+
+
+# Future agent ideas (commented out for now):
+# 
+# class CodeAgent(EvolvAIAgent):
+#     """Specialized agent for programming and debugging"""
+#     def __init__(self):
+#         super().__init__("Code Assistant", 50.0)
+#         self.specialty = "coding"
+#         self.role = "Programming & debugging helper"
+#
+# class FitnessAgent(EvolvAIAgent):
+#     """Specialized agent for fitness and health"""
+#     def __init__(self):
+#         super().__init__("Fitness Coach", 50.0)
+#         self.specialty = "fitness"
+#         self.role = "Workout & nutrition guide"
+#
+# class CreativeAgent(EvolvAIAgent):
+#     """Specialized agent for creative writing and brainstorming"""
+#     def __init__(self):
+#         super().__init__("Creative Muse", 50.0)
+#         self.specialty = "creative"
+#         self.role = "Writing & brainstorming partner"

@@ -1,31 +1,38 @@
-# main.py - Lumiere (static files version - events fixed)
+# main.py - Lumiere FIXED VERSION
+# Changes: Integrated specialized agents, connected memory system, fixed rating
 
 from groq import Groq
 import os
 import json
 from dotenv import load_dotenv
-from fastapi import FastAPI, Form
+from fastapi import FastAPI, Form, Body
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
+
+# Import our specialized agents and memory system
+from agents import EvolvAIAgent, MathAgent, FinanceAgent, CookingAgent, ReminderAgent
+from memory import save_squad, load_squad
 
 load_dotenv()
 
 app = FastAPI(title="Lumiere")
 
-# Mount static folder for CSS and JS
+# Mount static folder
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # === Profile ===
 USER_PROFILE_FILE = "user_profile.json"
 
 def load_user_profile():
+    """Load user profile from JSON file"""
     if os.path.exists(USER_PROFILE_FILE):
         with open(USER_PROFILE_FILE, 'r') as f:
             return json.load(f)
     return {"name": None, "theme": "system", "accent": "#3b82f6"}
 
 def save_user_profile(profile):
+    """Save user profile to JSON file"""
     with open(USER_PROFILE_FILE, 'w') as f:
         json.dump(profile, f, indent=2)
 
@@ -34,7 +41,7 @@ user_name = profile.get("name")
 theme = profile.get("theme", "system")
 accent_color = profile.get("accent", "#3b82f6")
 
-# === LLM ===
+# === LLM Configuration ===
 MODELS = {
     "groq-llama3.3": {
         "provider": "groq",
@@ -43,14 +50,34 @@ MODELS = {
     }
 }
 
-def ask_llm(question):
+def ask_llm(question, agent_name="Lumiere", specialty="general", accuracy=50.0):
+    """
+    Ask the LLM with agent-specific context
+    
+    Args:
+        question: User's question
+        agent_name: Which agent is responding
+        specialty: Agent's specialty area
+        accuracy: Agent's current mastery level
+    
+    Returns:
+        str: LLM response
+    """
     config = MODELS["groq-llama3.3"]
     if not config["api_key"]:
-        return "Error: GROQ_API_KEY missing"
+        return "Error: GROQ_API_KEY missing. Add it to your .env file"
 
     client = Groq(api_key=config["api_key"])
     try:
-        system_prompt = f"You are Lumiere, personal companion of {user_name or 'friend'}. Warm, casual tone. Start with 'Yh, {user_name or 'friend'}'. Helpful, encouraging. No Markdown."
+        # Build dynamic system prompt based on agent
+        system_prompt = f"""You are {agent_name}, a specialized AI agent ({specialty}) with {accuracy:.1f}% mastery.
+You're assisting {user_name or 'a friend'}.
+- Be warm, casual, and encouraging
+- Start responses with 'Yh, {user_name or 'friend'}'
+- For {specialty} questions, show your expertise
+- No Markdown formatting - use plain text with line breaks
+- Keep responses concise but helpful"""
+
         completion = client.chat.completions.create(
             model=config["model"],
             messages=[
@@ -63,25 +90,59 @@ def ask_llm(question):
         answer = completion.choices[0].message.content.strip()
         return answer
     except Exception as e:
-        return f"Groq error: {str(e)}"
+        return f"Groq API error: {str(e)}"
 
-# === Agents ===
-class Agent:
-    def __init__(self, name, specialty, accuracy=50.0):
-        self.name = name
-        self.specialty = specialty
-        self.accuracy = accuracy
+# === Agent Squad ===
+# Load squad from memory, or create fresh if none exists
+squad = load_squad()
+if not squad:
+    print("Creating fresh squad...")
+    squad = [
+        MathAgent(),
+        FinanceAgent(),
+        CookingAgent(),
+        ReminderAgent(),
+        EvolvAIAgent("General Companion", 50.0)
+    ]
+    save_squad(squad)
 
-squad = [
-    Agent("Math Expert", "math"),
-    Agent("Finance Guide", "finance"),
-    Agent("Cooking Buddy", "cooking"),
-    Agent("Reminder Manager", "reminders"),
-    Agent("General Companion", "general")
-]
+print(f"Squad loaded: {[agent.name for agent in squad]}")
+
+# Track which agent answered each message (for accurate rating)
+message_to_agent = {}
+
+def route_to_agent(question):
+    """
+    Route question to the most appropriate specialized agent
+    
+    Args:
+        question: User's question
+    
+    Returns:
+        EvolvAIAgent: The best agent for this question
+    """
+    q_lower = question.lower()
+    
+    # Match keywords to specialties
+    if any(word in q_lower for word in ["math", "equation", "calculus", "derivative", "algebra", "geometry", "trigonometry", "statistics"]):
+        return next((a for a in squad if a.specialty == "math"), squad[0])
+    
+    elif any(word in q_lower for word in ["finance", "stock", "trade", "invest", "money", "budget", "crypto", "portfolio"]):
+        return next((a for a in squad if a.specialty == "finance"), squad[0])
+    
+    elif any(word in q_lower for word in ["cook", "recipe", "food", "meal", "bake", "ingredient", "kitchen"]):
+        return next((a for a in squad if a.specialty == "cooking"), squad[0])
+    
+    elif any(word in q_lower for word in ["remind", "reminder", "task", "schedule", "alert", "todo", "calendar"]):
+        return next((a for a in squad if a.specialty == "reminders"), squad[0])
+    
+    else:
+        # Default to general companion
+        return next((a for a in squad if a.specialty == "general"), squad[0])
 
 @app.get("/", response_class=HTMLResponse)
 async def home():
+    """Main page - shows welcome screen or chat interface"""
     if not user_name:
         return """
         <!DOCTYPE html>
@@ -95,7 +156,7 @@ async def home():
                 .card { background:rgba(255,255,255,0.15); backdrop-filter:blur(10px); padding:3rem 2.5rem; border-radius:20px; text-align:center; box-shadow:0 8px 32px rgba(0,0,0,0.37); border:1px solid rgba(255,255,255,0.18); max-width:450px; width:90%; }
                 h1 { font-size:2.8rem; margin-bottom:1.5rem; }
                 p { font-size:1.2rem; margin-bottom:2rem; opacity:0.9; }
-                input { width:100%; padding:14px; font-size:1.1rem; border:none; border-radius:10px; margin-bottom:1.5rem; }
+                input { width:100%; padding:14px; font-size:1.1rem; border:none; border-radius:10px; margin-bottom:1.5rem; box-sizing:border-box; }
                 button { padding:14px 40px; font-size:1.1rem; background:#fff; color:#4c1d95; border:none; border-radius:10px; cursor:pointer; }
                 button:hover { background:#f0f0f0; }
             </style>
@@ -112,6 +173,11 @@ async def home():
         </body>
         </html>
         """
+
+    # Build agent stats for display
+    agent_stats = ""
+    for agent in squad:
+        agent_stats += f'<div class="agent-stat">{agent.name}: {agent.accuracy:.1f}% mastery</div>\n'
 
     html = """
     <!DOCTYPE html>
@@ -142,6 +208,13 @@ async def home():
         </div>
 
         <div class="container">
+            <div class="agent-panel">
+                <div class="panel-header">Agent Squad</div>
+                <div class="agent-stats">
+                    AGENT_STATS
+                </div>
+            </div>
+
             <div class="chat-panel">
                 <div class="panel-header">Talk to Lumiere</div>
                 <div class="panel-body">
@@ -166,94 +239,157 @@ async def home():
     """
 
     html = html.replace("THEME_CLASS", 'theme-dark' if theme == 'dark' else 'theme-light')
-    html = html.replace("ACCENT_PLACEHOLDER", accent_color)
     html = html.replace("USER_NAME", user_name or "friend")
+    html = html.replace("AGENT_STATS", agent_stats)
 
     return html
 
 @app.get("/ask")
 async def ask(q: str):
+    """
+    Main Q&A endpoint - routes to appropriate agent and tracks for rating
+    
+    Args:
+        q: User's question
+    
+    Returns:
+        str: HTML-formatted response with rating buttons
+    """
+    print(f"[/ask] Question: {q}")
     if not q:
         return "Please ask a question."
 
-    q_lower = q.lower()
-    specialty = "general"
+    try:
+        # Route to best agent
+        agent = route_to_agent(q)
+        print(f"[/ask] Routed to: {agent.name} ({agent.specialty})")
 
-    if any(w in q_lower for w in ["math", "equation", "calculus", "derivative", "algebra"]):
-        specialty = "math"
-    elif any(w in q_lower for w in ["finance", "stock", "trade", "invest", "money"]):
-        specialty = "finance"
-    elif any(w in q_lower for w in ["cook", "recipe", "food", "meal", "bake"]):
-        specialty = "cooking"
-    elif any(w in q_lower for w in ["remind", "reminder", "task", "schedule", "alert"]):
-        specialty = "reminders"
+        # Get LLM response with agent context
+        answer = ask_llm(q, agent.name, agent.specialty, agent.accuracy)
+        print(f"[/ask] Got response (length: {len(answer)})")
 
-    agent = next((a for a in squad if a.specialty == specialty), None)
-    if not agent:
-        if specialty == "math":
-            agent = Agent("Math Expert", "math")
-        elif specialty == "finance":
-            agent = Agent("Finance Guide", "finance")
-        elif specialty == "cooking":
-            agent = Agent("Cooking Buddy", "cooking")
-        elif specialty == "reminders":
-            agent = Agent("Reminder Manager", "reminders")
-        else:
-            agent = Agent("General Companion", "general")
-        squad.append(agent)
+        # Format with line breaks
+        answer = answer.replace("\n", "<br>")
 
-    prompt = f"You are {agent.name} ({agent.specialty}), {agent.accuracy:.1f}% mastery. Answer: {q}"
-    answer = ask_llm(prompt)
+        # Generate unique message ID and track which agent answered
+        message_id = str(hash(f"{q}{answer}"))
+        message_to_agent[message_id] = agent.name
+        
+        # Add rating buttons
+        answer += f"""
+        <div class="rating-buttons">
+            Rate this answer:
+            <button class="rate-btn" data-message-id="{message_id}" data-value="1">👍</button>
+            <button class="rate-btn" data-message-id="{message_id}" data-value="-1">👎</button>
+        </div>
+        <div class="agent-badge">Answered by: {agent.name} ({agent.accuracy:.1f}% mastery)</div>
+        """
 
-    answer = answer.replace("\n", "<br>")
-
-    message_id = str(hash(q))
-    answer += f"""
-    <div class="rating-buttons" style="margin-top:12px;">
-        Rate this answer: 
-        <button onclick="rate('{message_id}', 1)">👍</button>
-        <button onclick="rate('{message_id}', -1)">👎</button>
-    </div>
-    """
-
-    return answer
+        return answer
+        
+    except Exception as e:
+        print(f"[/ask] ERROR: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return f"Server error: {str(e)}"
 
 @app.post("/rate")
-async def rate(message_id: str, value: int):
-    print(f"Rating received: {value} for message {message_id}")
+async def rate(data: dict = Body(...)):
+    """
+    Handle rating feedback - updates ONLY the agent that answered
+    
+    Args:
+        data: {"message_id": str, "value": int (-1 or 1)}
+    
+    Returns:
+        dict: Status and updated agent info
+    """
+    message_id = data.get("message_id")
+    value = data.get("value")
+    
+    print(f"[/rate] Rating: {value} for message {message_id}")
+    
+    # Find which agent answered this message
+    agent_name = message_to_agent.get(message_id)
+    if not agent_name:
+        print("[/rate] Warning: No agent found for this message")
+        return {"status": "error", "message": "Agent not found"}
+    
+    # Update ONLY that agent's accuracy
     for agent in squad:
-        agent.accuracy = min(100, max(0, agent.accuracy + value * 5))
-        print(f"Updated {agent.name} accuracy to {agent.accuracy:.1f}%")
-    return {"status": "ok"}
+        if agent.name == agent_name:
+            old_accuracy = agent.accuracy
+            agent.accuracy = min(100, max(0, agent.accuracy + value * 5))
+            print(f"[/rate] Updated {agent.name}: {old_accuracy:.1f}% → {agent.accuracy:.1f}%")
+            
+            # Save to persistence
+            save_squad(squad)
+            
+            return {
+                "status": "ok",
+                "agent": agent.name,
+                "old_accuracy": old_accuracy,
+                "new_accuracy": agent.accuracy
+            }
+    
+    return {"status": "error", "message": "Agent not found in squad"}
 
 @app.post("/set-theme")
-async def set_theme(data: dict):
+async def set_theme(data: dict = Body(...)):
+    """Update user's theme preference"""
     global theme
     theme = data.get("theme", "system")
     profile = load_user_profile()
     profile["theme"] = theme
     save_user_profile(profile)
+    print(f"[/set-theme] Theme set to: {theme}")
     return {"status": "ok"}
 
 @app.post("/set-accent")
-async def set_accent(data: dict):
+async def set_accent(data: dict = Body(...)):
+    """Update user's accent color"""
     global accent_color
     accent_color = data.get("accent", "#3b82f6")
     profile = load_user_profile()
     profile["accent"] = accent_color
     save_user_profile(profile)
+    print(f"[/set-accent] Accent set to: {accent_color}")
     return {"status": "ok"}
 
 @app.post("/set-name")
 async def set_name(name: str = Form(...)):
+    """Set user's name on first visit"""
     global user_name
     user_name = name.strip()
     profile = load_user_profile()
     profile["name"] = user_name
     save_user_profile(profile)
+    print(f"[/set-name] User name set to: {user_name}")
     return RedirectResponse(url="/", status_code=303)
 
+@app.get("/agent-stats")
+async def agent_stats():
+    """API endpoint to get current agent stats (for live updates)"""
+    return {
+        "agents": [
+            {
+                "name": agent.name,
+                "specialty": agent.specialty,
+                "accuracy": agent.accuracy,
+                "role": agent.role
+            }
+            for agent in squad
+        ]
+    }
+
 if __name__ == "__main__":
-    print("Starting Lumiere...")
+    print("=" * 50)
+    print("Starting Lumiere - Your Evolving AI Companion")
+    print("=" * 50)
+    print(f"Squad loaded: {len(squad)} agents")
+    for agent in squad:
+        print(f"  - {agent.name} ({agent.specialty}): {agent.accuracy:.1f}%")
+    print("=" * 50)
     print("Open: http://127.0.0.1:8000")
+    print("=" * 50)
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)

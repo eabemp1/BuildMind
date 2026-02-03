@@ -1,0 +1,17 @@
+# Lumiere Dependencies
+# Install with: pip install -r requirements.txt
+
+# Core Framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-dotenv==1.0.0
+
+# LLM Integration
+groq==0.4.1
+
+# Optional: For future enhancements
+# openai==1.3.0              # If you want to add GPT support
+# anthropic==0.7.0           # If you want to add Claude support
+# python-multipart==0.0.6    # For file uploads (future feature)
+# jinja2==3.1.2              # For template rendering (if needed)
+# aiofiles==23.2.1           # For async file operations

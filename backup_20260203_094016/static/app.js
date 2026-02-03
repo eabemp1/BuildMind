@@ -1,4 +1,4 @@
-console.log("[app.js] Script loaded from static file");
+console.log("[app.js] Loaded from static/app.js - beautiful version");
 
 function setTheme(theme) {
     console.log("[app.js] setTheme:", theme);
@@ -13,7 +13,7 @@ function setTheme(theme) {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({theme})
-    }).then(() => console.log("Theme saved")).catch(err => console.error("Theme error:", err));
+    });
 }
 
 function setAccent(color) {
@@ -23,7 +23,7 @@ function setAccent(color) {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({accent: color})
-    }).then(() => console.log("Accent saved")).catch(err => console.error("Accent error:", err));
+    });
 }
 
 function ask() {
@@ -38,8 +38,15 @@ function ask() {
     output.innerHTML += '<div class="message user"><strong>You:</strong> ' + q + '</div>';
     loading.classList.add("active");
 
-    fetch("/ask?q=" + encodeURIComponent(q))
-        .then(res => res.text())
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+
+    fetch("/ask?q=" + encodeURIComponent(q), { signal: controller.signal })
+        .then(res => {
+            clearTimeout(timeoutId);
+            if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+            return res.text();
+        })
         .then(txt => {
             loading.classList.remove("active");
             let cleaned = txt.replace(/\\n/g, '<br>').replace(/\n/g, '<br>');
@@ -47,8 +54,11 @@ function ask() {
             output.scrollTop = output.scrollHeight;
         })
         .catch(err => {
+            clearTimeout(timeoutId);
             loading.classList.remove("active");
-            output.innerHTML += '<div class="message ai" style="color:#dc2626;">Error: ' + err.message + '</div>';
+            console.error("[app.js] Fetch error:", err);
+            let errorMsg = err.name === 'AbortError' ? 'Request timed out (30s)' : err.message;
+            output.innerHTML += '<div class="message ai" style="color:#dc2626;">Error: ' + errorMsg + '</div>';
             output.scrollTop = output.scrollHeight;
         });
 
@@ -57,22 +67,24 @@ function ask() {
 }
 
 function rate(messageId, value) {
-    console.log("[app.js] rate:", value, "for", messageId);
+    console.log("[app.js] rate:", value, "for message", messageId);
     fetch("/rate", {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({message_id: messageId, value: value})
     })
     .then(res => res.json())
-    .then(data => console.log("Rating saved:", data))
-    .catch(err => console.error("Rating error:", err));
+    .then(data => console.log("[app.js] Rating saved:", data))
+    .catch(err => console.error("[app.js] Rating error:", err));
 }
 
+// Main setup
 document.addEventListener('DOMContentLoaded', function() {
-    console.log("[app.js] DOMContentLoaded fired - attaching listeners");
+    console.log("[app.js] DOMContentLoaded - attaching listeners");
 
     const questionInput = document.getElementById("question");
     const sendBtn = document.getElementById("send-btn");
+    const chatOutput = document.getElementById("chat-output");
 
     if (questionInput) {
         questionInput.addEventListener("keypress", function(e) {
@@ -88,6 +100,23 @@ document.addEventListener('DOMContentLoaded', function() {
         sendBtn.addEventListener("click", function() {
             console.log("[app.js] Send clicked");
             ask();
+        });
+    }
+
+    // Event delegation for rating buttons
+    if (chatOutput) {
+        chatOutput.addEventListener("click", function(e) {
+            const button = e.target.closest(".rate-btn");
+            if (!button) return;
+
+            const messageId = button.dataset.messageId;
+            const value = parseInt(button.dataset.value);
+
+            // Visual feedback
+            button.style.transform = "scale(1.8)";
+            setTimeout(() => button.style.transform = "scale(1)", 250);
+
+            rate(messageId, value);
         });
     }
 
