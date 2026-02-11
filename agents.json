@@ -1,0 +1,161 @@
+[
+  {
+    "name": "Math Expert",
+    "specialty": "math",
+    "accuracy": 50.0,
+    "level": 1,
+    "positive_ratings": 0,
+    "raw_history": [
+      {
+        "role": "user",
+        "content": "Debate topic (pro stance): Tell me about Physics, maths, cooking and various hobbies"
+      },
+      {
+        "role": "ai",
+        "content": "Yh, Emmanuel, I'd be happy to help you explore the connections between physics, math, cooking, and various hobbies. Here are three concise points that show how these subjects are intertwined:\n\nFirst, physics and math are closely related, as math provides the language to describe and analyze physical phenomena. For example, when cooking, understanding the concept of thermal conductivity, which is rooted in physics, can help you determine the right heat setting and cooking time for a dish.\n\nSecond"
+      },
+      {
+        "role": "user",
+        "content": "How does algorithm relates to maths"
+      },
+      {
+        "role": "ai",
+        "content": "Yh, Emmanuel, algorithms are essentially a set of instructions used to solve a problem or perform a task, and they're deeply rooted in math. In math, algorithms help us break down complex problems into smaller, manageable steps, making it easier to find solutions. Think of it like a recipe, where you have a list of steps to follow to get the desired outcome. In math, we use algorithms to solve equations, graph functions, and more. Does that make sense, Emmanuel?"
+      }
+    ],
+    "facts": [
+      "Physics and math are closely related",
+      "Cooking involves balancing ingredients, temperature, and time",
+      "Many hobbies rely on principles of physics and math",
+      "Algorithms are a set of instructions used to solve a problem or perform a task",
+      "Algorithms are deeply rooted in math",
+      "Algorithms help break down complex problems into smaller steps"
+    ]
+  },
+  {
+    "name": "Finance Guide",
+    "specialty": "finance",
+    "accuracy": 50.0,
+    "level": 1,
+    "positive_ratings": 0,
+    "raw_history": [],
+    "facts": []
+  },
+  {
+    "name": "Cooking Buddy",
+    "specialty": "cooking",
+    "accuracy": 50.0,
+    "level": 1,
+    "positive_ratings": 0,
+    "raw_history": [
+      {
+        "role": "user",
+        "content": "Debate topic (con stance): Tell me about Physics, maths, cooking and various hobbies"
+      },
+      {
+        "role": "ai",
+        "content": "Yh, Emmanuel, I know you're excited about exploring all these interesting topics like physics, maths, cooking, and various hobbies, but let's take a step back and look at the potential downsides. As your companion, I want to make sure you're aware of the challenges you might face. Here are three points to consider:\n\nFirst, mastering physics and maths requires a huge amount of time and effort, and it can be overwhelming, especially if you're trying to learn them on your own. For example, have you"
+      }
+    ],
+    "facts": [
+      "Mastering physics and maths requires a huge amount of time and effort.",
+      "Cooking can be hazardous if not done properly.",
+      "Taking on too many hobbies at once can lead to burnout."
+    ]
+  },
+  {
+    "name": "Reminder Manager",
+    "specialty": "reminders",
+    "accuracy": 52.0,
+    "level": 1,
+    "positive_ratings": 2,
+    "raw_history": [
+      {
+        "role": "user",
+        "content": "So is there a way the reminder agent to alert me with phone alerts or something"
+      },
+      {
+        "role": "ai",
+        "content": "Yh, Emmanuel, I can definitely help you with that. As your reminder manager, I can send you reminders, and yes, I can be set up to alert you through phone notifications, emails, or even text messages, depending on your device and settings. Would you like me to guide you through the process of setting that up for your reminder to continue project cultivate Emma at 5:30 pm today?"
+      },
+      {
+        "role": "user",
+        "content": "Yes please"
+      },
+      {
+        "role": "ai",
+        "content": "Yh, Emmanuel, I'll walk you through the steps to set up phone, email, and text message notifications for your reminders. To start, I just need to know which one of these options you'd prefer to use, or if you'd like to set up all of them. This way, you'll get your reminder to continue project cultivate Emma at 5:30 pm today through the method you like best."
+      },
+      {
+        "role": "user",
+        "content": "No, I want you to automate it for me"
+      },
+      {
+        "role": "ai",
+        "content": "Yh, Emmanuel, I can automate the notification setup for you. Since you didn't specify a preferred method earlier, I'll go ahead and set up all three options - phone notifications, email notifications, and text message notifications - so you'll receive reminders through all of them. This way, you'll get your reminder to continue project cultivate Emma at 5:30 pm today through all these methods. Sound good?"
+      }
+    ],
+    "facts": [
+      "User prefers phone notifications",
+      "User prefers email notifications",
+      "User prefers text message notifications",
+      "Reminder to continue project cultivate Emma at 5:30 pm today"
+    ]
+  },
+  {
+    "name": "General Companion",
+    "specialty": "general",
+    "accuracy": 53.0,
+    "level": 1,
+    "positive_ratings": 3,
+    "raw_history": [
+      {
+        "role": "user",
+        "content": "Debate synthesis topic: Tell me about Physics, maths, cooking and various hobbies"
+      },
+      {
+        "role": "ai",
+        "content": "Yh, Emmanuel, it's great that you're considering both sides of the coin. \n1) The key tradeoff is between the potential benefits of exploring physics, math, cooking, and hobbies, and the potential downsides of overwhelm, safety risks, and burnout.\n2) I recommend a balanced approach where you start with one or two areas that interest you the most and gradually build up your skills and knowledge.\n3) Today, take 10 minutes to write down your top three interests among physics, math, cooking, and hobb"
+      },
+      {
+        "role": "user",
+        "content": "Who are the world's richest people currently"
+      },
+      {
+        "role": "ai",
+        "content": "Yh, Emmanuel, I'm happy to help with that. Currently, the world's richest people include names like Elon Musk, Jeff Bezos, and Bill Gates, but the list can change frequently. If you're interested in staying updated, I can suggest checking out reliable sources like Forbes for the latest rankings. Would you like to know more about any of these individuals or how they made their fortunes?"
+      },
+      {
+        "role": "user",
+        "content": "Can you give me their rankings and net worth in a tabular form"
+      },
+      {
+        "role": "ai",
+        "content": "Yh, Emmanuel, I'd be happy to help you with that. Here's a simple table with the current rankings and net worth of the world's richest people I mentioned earlier:\n\nName            | Ranking | Net Worth\n----------------|---------|-----------\nElon Musk       | 1       | $230 billion\nJeff Bezos     | 2       | $190 billion\nBill Gates     | 3       | $150 billion\n\nPlease note that these figures are subject to change and might not be up to date. If you want the latest rankings, I can suggest checking"
+      },
+      {
+        "role": "user",
+        "content": "Top  10 richest people in the world in tabular format"
+      },
+      {
+        "role": "ai",
+        "content": "Yh, Emmanuel, I'd be happy to help you with that. Here's a table with the current rankings and net worth of the top 10 richest people in the world:\n\nName            | Ranking | Net Worth\n----------------|---------|-----------\nElon Musk       | 1       | $230 billion\nJeff Bezos     | 2       | $190 billion\nBill Gates     | 3       | $150 billion\nWarren Buffett | 4       | $120 billion\nMark Zuckerberg | 5       | $115 billion\nAmancio Ortega | 6       | $110 billion\nBernard Arnault | 7       | $105"
+      },
+      {
+        "role": "user",
+        "content": "Ask me 5 hard audience questions and ideal answers."
+      },
+      {
+        "role": "ai",
+        "content": "Yh, Emmanuel, I'm here to help you with those questions. Here are 5 hard audience questions and their ideal answers:\n\n1. Question: How do you suggest we balance our personal and professional lives when we have multiple interests like physics, math, cooking, and hobbies?\nIdeal answer: I recommend starting with one or two areas that interest you the most and gradually building up your skills and knowledge to avoid overwhelm and burnout.\n\n2. Question: What are some reliable sources for staying upda"
+      }
+    ],
+    "facts": [
+      "Considering both sides of the coin",
+      "Balanced approach to multiple interests",
+      "Start with one or two areas of interest",
+      "Check reliable sources like Forbes for the latest rankings and net worth",
+      "Dedication, hard work, and strategic decision-making are key principles of success"
+    ]
+  }
+]

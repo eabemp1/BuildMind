@@ -1,0 +1,124 @@
+{
+  "network": "solana-devnet-mock",
+  "tokens": {
+    "math": {
+      "specialty": "math",
+      "agent_name": "Math Expert",
+      "mint_address": "saTj4WKs7Pzk1trBcjXqSaP8g6v7UNVD4GWYYvHnpQqB",
+      "owner": "Emmanuel",
+      "listed": false,
+      "list_price_sol": null,
+      "rent_price_sol_per_hour": 0.05,
+      "train_score": 0,
+      "usage_count": 1,
+      "value_score": 1.54,
+      "metadata_uri": "mock://lumiere/math",
+      "last_train_at": "2026-02-11T11:49:51.591595Z",
+      "created_at": "2026-02-11T11:42:02.218000Z"
+    },
+    "finance": {
+      "specialty": "finance",
+      "agent_name": "Finance Guide",
+      "mint_address": "3F1iaG7wtcZgwWjFKWWkTaNELguudaMEMqyAhhqtGYey",
+      "owner": "Lois",
+      "listed": false,
+      "list_price_sol": null,
+      "rent_price_sol_per_hour": 0.05,
+      "train_score": 0,
+      "usage_count": 0,
+      "value_score": 1.55,
+      "metadata_uri": "mock://lumiere/finance",
+      "last_train_at": null,
+      "created_at": "2026-02-11T11:42:02.219218Z",
+      "ownership_history": [
+        {
+          "owner": "Lois",
+          "at": "2026-02-11T12:07:47.960960Z",
+          "reason": "buy"
+        }
+      ]
+    },
+    "cooking": {
+      "specialty": "cooking",
+      "agent_name": "Cooking Buddy",
+      "mint_address": "ENuSUtgQ2UyUSQyh3gM1wSHqQXokb333UuUdHCiz32tx",
+      "owner": "Emmanuel",
+      "listed": false,
+      "list_price_sol": null,
+      "rent_price_sol_per_hour": 0.05,
+      "train_score": 0,
+      "usage_count": 0,
+      "value_score": 1.5,
+      "metadata_uri": "mock://lumiere/cooking",
+      "last_train_at": null,
+      "created_at": "2026-02-11T11:42:02.220558Z"
+    },
+    "reminders": {
+      "specialty": "reminders",
+      "agent_name": "Reminder Manager",
+      "mint_address": "wggUnjCTuu3XKprwS5yYMa4imCasAnd9fmaTLsNK7grw",
+      "owner": "Emmanuel",
+      "listed": false,
+      "list_price_sol": null,
+      "rent_price_sol_per_hour": 0.05,
+      "train_score": 0,
+      "usage_count": 0,
+      "value_score": 1.52,
+      "metadata_uri": "mock://lumiere/reminders",
+      "last_train_at": null,
+      "created_at": "2026-02-11T11:42:02.221611Z"
+    },
+    "general": {
+      "specialty": "general",
+      "agent_name": "General Companion",
+      "mint_address": "TshnA56RUSFAJMDetv3nrptEGD9AKwZqBmZ7kjBAgPog",
+      "owner": "Emmanuel",
+      "listed": false,
+      "list_price_sol": null,
+      "rent_price_sol_per_hour": 0.05,
+      "train_score": 1,
+      "usage_count": 1,
+      "value_score": 1.62,
+      "metadata_uri": "mock://lumiere/general",
+      "last_train_at": "2026-02-11T11:48:47.089434Z",
+      "created_at": "2026-02-11T11:42:02.222604Z"
+    }
+  },
+  "rentals": {
+    "math": {
+      "specialty": "math",
+      "owner": "Emmanuel",
+      "renter": "Lois",
+      "hours": 1,
+      "price_sol_per_hour": 0.05,
+      "started_at": "2026-02-11T11:49:08.570767Z",
+      "expires_at": "2026-02-11T12:49:08.570742"
+    }
+  },
+  "updated_at": "2026-02-11T12:07:47.961053Z",
+  "tx_log": [
+    {
+      "ts": "2026-02-11T12:07:35.187180Z",
+      "event": "list",
+      "specialty": "finance",
+      "payload": {
+        "seller": "Emmanuel",
+        "price_sol": 0.25
+      },
+      "prev_hash": "genesis",
+      "hash": "71639e1d0c7fa7ecd348f034874c489eeb03ca1876003ee4f388dcfa68967b94"
+    },
+    {
+      "ts": "2026-02-11T12:07:47.960980Z",
+      "event": "transfer",
+      "specialty": "finance",
+      "payload": {
+        "from": "Emmanuel",
+        "to": "Lois",
+        "method": "buy"
+      },
+      "prev_hash": "71639e1d0c7fa7ecd348f034874c489eeb03ca1876003ee4f388dcfa68967b94",
+      "hash": "5b85f1c861defdab992e23b84a5bd56b46e654962c75cf07993591e19e370e81"
+    }
+  ]
+}
