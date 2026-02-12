@@ -1,0 +1,32 @@
+{
+  "actors": {
+    "emmanuel": {
+      "ai_answers": 10,
+      "ratings_up": 4,
+      "ratings_down": 0,
+      "task_success": 6,
+      "task_fail": 0,
+      "reminder_total": 2,
+      "reminder_correct": 0,
+      "memory_edits": 0,
+      "memory_accept": 0,
+      "memory_reject": 0,
+      "hallucination_reports": 0,
+      "updated_at": "2026-02-12T16:30:36.505711Z"
+    },
+    "tester": {
+      "ai_answers": 0,
+      "ratings_up": 0,
+      "ratings_down": 0,
+      "task_success": 2,
+      "task_fail": 0,
+      "reminder_total": 2,
+      "reminder_correct": 0,
+      "memory_edits": 6,
+      "memory_accept": 6,
+      "memory_reject": 0,
+      "hallucination_reports": 0,
+      "updated_at": "2026-02-12T15:37:31.855215Z"
+    }
+  }
+}

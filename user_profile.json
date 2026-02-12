@@ -1,6 +1,7 @@
 {
   "name": "Emmanuel",
   "theme": "dark",
-  "accent": "#3b82f6",
-  "model": "groq-llama3.3"
+  "accent": "#ef4444",
+  "model": "ollama-llama3.2-latest",
+  "share_anonymized": true
 }

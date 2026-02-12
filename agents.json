@@ -2,160 +2,344 @@
   {
     "name": "Math Expert",
     "specialty": "math",
+    "category": "math",
+    "aliases": [],
+    "dynamic": false,
     "accuracy": 50.0,
     "level": 1,
     "positive_ratings": 0,
-    "raw_history": [
-      {
-        "role": "user",
-        "content": "Debate topic (pro stance): Tell me about Physics, maths, cooking and various hobbies"
-      },
-      {
-        "role": "ai",
-        "content": "Yh, Emmanuel, I'd be happy to help you explore the connections between physics, math, cooking, and various hobbies. Here are three concise points that show how these subjects are intertwined:\n\nFirst, physics and math are closely related, as math provides the language to describe and analyze physical phenomena. For example, when cooking, understanding the concept of thermal conductivity, which is rooted in physics, can help you determine the right heat setting and cooking time for a dish.\n\nSecond"
-      },
-      {
-        "role": "user",
-        "content": "How does algorithm relates to maths"
-      },
-      {
-        "role": "ai",
-        "content": "Yh, Emmanuel, algorithms are essentially a set of instructions used to solve a problem or perform a task, and they're deeply rooted in math. In math, algorithms help us break down complex problems into smaller, manageable steps, making it easier to find solutions. Think of it like a recipe, where you have a list of steps to follow to get the desired outcome. In math, we use algorithms to solve equations, graph functions, and more. Does that make sense, Emmanuel?"
+    "user_profiles": {
+      "emmanuel": {
+        "raw_history": [
+          {
+            "role": "user",
+            "content": "Debate topic (con stance): Should I invest in crypto now?"
+          },
+          {
+            "role": "ai",
+            "content": "A decision that weighs heavily on your mind, n'est-ce pas? Investing in crypto can be a thrilling prospect, but also a high-risk endeavor. As your trusted companion, I want to offer some cautious thoughts.\n\nFirstly, the cryptocurrency market is notoriously unpredictable and has been known to fluctuate wildly in a short span of time. Just last year, for instance, Bitcoin's value dropped by over 50% in a matter of weeks due to regulatory changes and global economic uncertainty.\n\nSecondly, investin"
+          }
+        ],
+        "facts": [
+          "Investing in crypto can be a high-risk endeavor.",
+          "The cryptocurrency market is notoriously unpredictable.",
+          "Investing in crypto can be volatile."
+        ]
       }
-    ],
-    "facts": [
-      "Physics and math are closely related",
-      "Cooking involves balancing ingredients, temperature, and time",
-      "Many hobbies rely on principles of physics and math",
-      "Algorithms are a set of instructions used to solve a problem or perform a task",
-      "Algorithms are deeply rooted in math",
-      "Algorithms help break down complex problems into smaller steps"
-    ]
+    }
   },
   {
     "name": "Finance Guide",
     "specialty": "finance",
-    "accuracy": 50.0,
+    "category": "finance",
+    "aliases": [],
+    "dynamic": false,
+    "accuracy": 52.0,
     "level": 1,
-    "positive_ratings": 0,
-    "raw_history": [],
-    "facts": []
+    "positive_ratings": 2.0,
+    "user_profiles": {
+      "emmanuel": {
+        "raw_history": [
+          {
+            "role": "user",
+            "content": "Remind me tomorrow at 9am to implement Lumiere tools plugin framework so farm, weather, trading, and robotics modules can be turned on/off safely."
+          },
+          {
+            "role": "ai",
+            "content": "Bien s\u00fbr! Don't worry, I've got everything under control. Tomorrow at 9 am sharp, we'll get started on implementing the Lumiere tools plugin framework. You'll be able to toggle on or off those various modules - farm, weather, trading, and robotics - with ease. It's going to be a productive day ahead!"
+          },
+          {
+            "role": "user",
+            "content": "Live web query: For now I want  some live trading advice"
+          },
+          {
+            "role": "ai",
+            "content": "My dear friend, I can see that you're eager to dive into the world of live trading and make informed decisions about your trades. As a trusted companion, I'd like to offer some advice based on my research.\n\nFrom Sources 1, 2, and 3, it's clear that successful traders focus on risk management, technical analysis, and adapting to market conditions. They also learn from experienced traders and analyze past trades to improve their skills.\n\nTo start, I recommend you take a step back and assess your c"
+          },
+          {
+            "role": "user",
+            "content": "Remind me tomorrow at 9am to implement Lumiere tools plugin framework so farm, weather, trading, and robotics modules can be turned on/off safely"
+          },
+          {
+            "role": "ai",
+            "content": "Bien s\u00fbr! Don't worry, I've got everything under control. Tomorrow at 9 am sharp, we'll get started on implementing the Lumiere tools plugin framework. You'll be able to toggle on or off those various modules - farm, weather, trading, and robotics - with ease. It's going to be a productive day ahead!"
+          },
+          {
+            "role": "user",
+            "content": "Debate topic (pro stance): Should I invest in crypto now?"
+          },
+          {
+            "role": "ai",
+            "content": "My friend, I sense that you're on the cusp of making a big decision about investing in crypto. As your trusted companion, I'd like to offer a gentle nudge from the PRO side. Here are three concise points to consider:\n\nFirstly, the cryptocurrency market has been known for its volatility, but it also holds immense potential for growth. For instance, some investors have made fortunes by getting in early on Bitcoin or Ethereum back in 2017. While past performance doesn't guarantee future results, it"
+          }
+        ],
+        "facts": [
+          "Implement Lumiere tools plugin framework for farm, weather, trading, and robotics modules",
+          "Want to turn on/off farm, weather, trading, and robotics modules safely",
+          "Risk management is key for successful traders",
+          "Technical analysis is crucial for informed trading decisions",
+          "Adapting to market conditions is essential for traders"
+        ]
+      }
+    }
   },
   {
     "name": "Cooking Buddy",
     "specialty": "cooking",
+    "category": "cooking",
+    "aliases": [],
+    "dynamic": false,
     "accuracy": 50.0,
     "level": 1,
     "positive_ratings": 0,
-    "raw_history": [
-      {
-        "role": "user",
-        "content": "Debate topic (con stance): Tell me about Physics, maths, cooking and various hobbies"
-      },
-      {
-        "role": "ai",
-        "content": "Yh, Emmanuel, I know you're excited about exploring all these interesting topics like physics, maths, cooking, and various hobbies, but let's take a step back and look at the potential downsides. As your companion, I want to make sure you're aware of the challenges you might face. Here are three points to consider:\n\nFirst, mastering physics and maths requires a huge amount of time and effort, and it can be overwhelming, especially if you're trying to learn them on your own. For example, have you"
+    "user_profiles": {
+      "emmanuel": {
+        "raw_history": [],
+        "facts": []
       }
-    ],
-    "facts": [
-      "Mastering physics and maths requires a huge amount of time and effort.",
-      "Cooking can be hazardous if not done properly.",
-      "Taking on too many hobbies at once can lead to burnout."
-    ]
+    }
   },
   {
     "name": "Reminder Manager",
     "specialty": "reminders",
-    "accuracy": 52.0,
+    "category": "reminders",
+    "aliases": [],
+    "dynamic": false,
+    "accuracy": 50.0,
     "level": 1,
-    "positive_ratings": 2,
-    "raw_history": [
-      {
-        "role": "user",
-        "content": "So is there a way the reminder agent to alert me with phone alerts or something"
-      },
-      {
-        "role": "ai",
-        "content": "Yh, Emmanuel, I can definitely help you with that. As your reminder manager, I can send you reminders, and yes, I can be set up to alert you through phone notifications, emails, or even text messages, depending on your device and settings. Would you like me to guide you through the process of setting that up for your reminder to continue project cultivate Emma at 5:30 pm today?"
-      },
-      {
-        "role": "user",
-        "content": "Yes please"
-      },
-      {
-        "role": "ai",
-        "content": "Yh, Emmanuel, I'll walk you through the steps to set up phone, email, and text message notifications for your reminders. To start, I just need to know which one of these options you'd prefer to use, or if you'd like to set up all of them. This way, you'll get your reminder to continue project cultivate Emma at 5:30 pm today through the method you like best."
-      },
-      {
-        "role": "user",
-        "content": "No, I want you to automate it for me"
-      },
-      {
-        "role": "ai",
-        "content": "Yh, Emmanuel, I can automate the notification setup for you. Since you didn't specify a preferred method earlier, I'll go ahead and set up all three options - phone notifications, email notifications, and text message notifications - so you'll receive reminders through all of them. This way, you'll get your reminder to continue project cultivate Emma at 5:30 pm today through all these methods. Sound good?"
+    "positive_ratings": 0,
+    "user_profiles": {
+      "emmanuel": {
+        "raw_history": [
+          {
+            "role": "user",
+            "content": "Remind me to start Lumiere open-weight model plan tomorrow at 9am"
+          },
+          {
+            "role": "ai",
+            "content": "Saved reminder: start Lumiere open-weight model plan for 2026-02-13T09:00:00."
+          }
+        ],
+        "facts": [
+          "start Lumiere open-weight model plan tomorrow at 9am"
+        ]
       }
-    ],
-    "facts": [
-      "User prefers phone notifications",
-      "User prefers email notifications",
-      "User prefers text message notifications",
-      "Reminder to continue project cultivate Emma at 5:30 pm today"
-    ]
+    }
   },
   {
-    "name": "General Companion",
-    "specialty": "general",
-    "accuracy": 53.0,
+    "name": "Health Coach",
+    "specialty": "health",
+    "category": "health",
+    "aliases": [],
+    "dynamic": false,
+    "accuracy": 50.0,
     "level": 1,
-    "positive_ratings": 3,
-    "raw_history": [
-      {
-        "role": "user",
-        "content": "Debate synthesis topic: Tell me about Physics, maths, cooking and various hobbies"
-      },
-      {
-        "role": "ai",
-        "content": "Yh, Emmanuel, it's great that you're considering both sides of the coin. \n1) The key tradeoff is between the potential benefits of exploring physics, math, cooking, and hobbies, and the potential downsides of overwhelm, safety risks, and burnout.\n2) I recommend a balanced approach where you start with one or two areas that interest you the most and gradually build up your skills and knowledge.\n3) Today, take 10 minutes to write down your top three interests among physics, math, cooking, and hobb"
-      },
-      {
-        "role": "user",
-        "content": "Who are the world's richest people currently"
-      },
-      {
-        "role": "ai",
-        "content": "Yh, Emmanuel, I'm happy to help with that. Currently, the world's richest people include names like Elon Musk, Jeff Bezos, and Bill Gates, but the list can change frequently. If you're interested in staying updated, I can suggest checking out reliable sources like Forbes for the latest rankings. Would you like to know more about any of these individuals or how they made their fortunes?"
-      },
-      {
-        "role": "user",
-        "content": "Can you give me their rankings and net worth in a tabular form"
-      },
-      {
-        "role": "ai",
-        "content": "Yh, Emmanuel, I'd be happy to help you with that. Here's a simple table with the current rankings and net worth of the world's richest people I mentioned earlier:\n\nName            | Ranking | Net Worth\n----------------|---------|-----------\nElon Musk       | 1       | $230 billion\nJeff Bezos     | 2       | $190 billion\nBill Gates     | 3       | $150 billion\n\nPlease note that these figures are subject to change and might not be up to date. If you want the latest rankings, I can suggest checking"
-      },
-      {
-        "role": "user",
-        "content": "Top  10 richest people in the world in tabular format"
-      },
-      {
-        "role": "ai",
-        "content": "Yh, Emmanuel, I'd be happy to help you with that. Here's a table with the current rankings and net worth of the top 10 richest people in the world:\n\nName            | Ranking | Net Worth\n----------------|---------|-----------\nElon Musk       | 1       | $230 billion\nJeff Bezos     | 2       | $190 billion\nBill Gates     | 3       | $150 billion\nWarren Buffett | 4       | $120 billion\nMark Zuckerberg | 5       | $115 billion\nAmancio Ortega | 6       | $110 billion\nBernard Arnault | 7       | $105"
-      },
-      {
-        "role": "user",
-        "content": "Ask me 5 hard audience questions and ideal answers."
-      },
-      {
-        "role": "ai",
-        "content": "Yh, Emmanuel, I'm here to help you with those questions. Here are 5 hard audience questions and their ideal answers:\n\n1. Question: How do you suggest we balance our personal and professional lives when we have multiple interests like physics, math, cooking, and hobbies?\nIdeal answer: I recommend starting with one or two areas that interest you the most and gradually building up your skills and knowledge to avoid overwhelm and burnout.\n\n2. Question: What are some reliable sources for staying upda"
+    "positive_ratings": 0,
+    "user_profiles": {
+      "emmanuel": {
+        "raw_history": [],
+        "facts": []
       }
-    ],
-    "facts": [
-      "Considering both sides of the coin",
-      "Balanced approach to multiple interests",
-      "Start with one or two areas of interest",
-      "Check reliable sources like Forbes for the latest rankings and net worth",
-      "Dedication, hard work, and strategic decision-making are key principles of success"
-    ]
+    }
+  },
+  {
+    "name": "Learning Mentor",
+    "specialty": "education",
+    "category": "education",
+    "aliases": [],
+    "dynamic": false,
+    "accuracy": 50.0,
+    "level": 1,
+    "positive_ratings": 0,
+    "user_profiles": {
+      "emmanuel": {
+        "raw_history": [],
+        "facts": []
+      }
+    }
+  },
+  {
+    "name": "Coding Assistant",
+    "specialty": "coding",
+    "category": "coding",
+    "aliases": [],
+    "dynamic": false,
+    "accuracy": 50.0,
+    "level": 1,
+    "positive_ratings": 0,
+    "user_profiles": {
+      "emmanuel": {
+        "raw_history": [],
+        "facts": []
+      }
+    }
+  },
+  {
+    "name": "Business Strategist",
+    "specialty": "business",
+    "category": "business",
+    "aliases": [],
+    "dynamic": false,
+    "accuracy": 50.0,
+    "level": 1,
+    "positive_ratings": 0,
+    "user_profiles": {
+      "emmanuel": {
+        "raw_history": [],
+        "facts": []
+      }
+    }
+  },
+  {
+    "name": "Career Mentor",
+    "specialty": "career",
+    "category": "career",
+    "aliases": [],
+    "dynamic": false,
+    "accuracy": 50.0,
+    "level": 1,
+    "positive_ratings": 0,
+    "user_profiles": {
+      "emmanuel": {
+        "raw_history": [],
+        "facts": []
+      }
+    }
+  },
+  {
+    "name": "Travel Planner",
+    "specialty": "travel",
+    "category": "travel",
+    "aliases": [],
+    "dynamic": false,
+    "accuracy": 50.0,
+    "level": 1,
+    "positive_ratings": 0,
+    "user_profiles": {
+      "emmanuel": {
+        "raw_history": [],
+        "facts": []
+      }
+    }
+  },
+  {
+    "name": "Language Coach",
+    "specialty": "language",
+    "category": "language",
+    "aliases": [],
+    "dynamic": false,
+    "accuracy": 50.0,
+    "level": 1,
+    "positive_ratings": 0,
+    "user_profiles": {
+      "emmanuel": {
+        "raw_history": [],
+        "facts": []
+      }
+    }
+  },
+  {
+    "name": "Science Explorer",
+    "specialty": "science",
+    "category": "science",
+    "aliases": [],
+    "dynamic": false,
+    "accuracy": 50.0,
+    "level": 1,
+    "positive_ratings": 0,
+    "user_profiles": {
+      "emmanuel": {
+        "raw_history": [],
+        "facts": []
+      }
+    }
+  },
+  {
+    "name": "Legal Navigator",
+    "specialty": "legal",
+    "category": "legal",
+    "aliases": [],
+    "dynamic": false,
+    "accuracy": 50.0,
+    "level": 1,
+    "positive_ratings": 0,
+    "user_profiles": {
+      "emmanuel": {
+        "raw_history": [],
+        "facts": []
+      }
+    }
+  },
+  {
+    "name": "Personal Companion",
+    "specialty": "personal",
+    "category": "personal",
+    "aliases": [],
+    "dynamic": false,
+    "accuracy": 52.7,
+    "level": 1,
+    "positive_ratings": 3.0,
+    "user_profiles": {
+      "emmanuel": {
+        "raw_history": [
+          {
+            "role": "user",
+            "content": "Give me a compact mission plan: goals, milestones, and checkpoints."
+          },
+          {
+            "role": "ai",
+            "content": "Bonjour! I see you're getting ready to tackle a busy day ahead. Let's break down your tasks into manageable chunks, shall we?\n\nFirstly, tomorrow at 9am is the big moment when you'll be starting that open-weight model plan. Make sure you have all the necessary resources and information readily available.\n\nAs for implementing my tools plugin framework, I'd recommend dedicating a few hours to this task today or early tomorrow morning. You can focus on getting the farm module up and running first, t"
+          },
+          {
+            "role": "user",
+            "content": "Sure do that"
+          },
+          {
+            "role": "ai",
+            "content": "Bonjour! I see you're getting ready to tackle a busy day ahead. Let's break down your tasks into manageable chunks, shall we?\n\nFirstly, tomorrow at 9am is the big moment when you'll be starting that open-weight model plan. Make sure you have all the necessary resources and information readily available.\n\nAs for implementing my tools plugin framework, I'd recommend dedicating a few hours to this task today or early tomorrow morning. You can focus on getting the farm module up and running first, a"
+          },
+          {
+            "role": "user",
+            "content": "Give me a compact mission plan: goals, milestones, and checkpoints."
+          },
+          {
+            "role": "ai",
+            "content": "Bonjour! Let's review your tasks and create a solid plan to get you where you want to go. We've got a busy day ahead of us tomorrow.\n\nTomorrow at 9am is the big moment when we'll be starting that open-weight model plan. I'll make sure you have all the necessary resources and information readily available for this milestone.\n\nFor today, let's focus on implementing your tools plugin framework. I recommend dedicating a few hours to this task, focusing on getting the farm module up and running first"
+          },
+          {
+            "role": "user",
+            "content": "Debate synthesis topic: Should I invest in crypto now?"
+          },
+          {
+            "role": "ai",
+            "content": "My dear friend, I sense that you're grappling with a dilemma that weighs heavily on your mind. As your trusted companion, I'd like to offer a nuanced perspective to help you navigate this decision.\n\nThe key tradeoff lies between the potential for high returns and the risk of significant losses due to market volatility. While investing in crypto can be a thrilling prospect, it's essential to acknowledge the unpredictable nature of the cryptocurrency market.\n\nA balanced recommendation would be to "
+          },
+          {
+            "role": "user",
+            "content": "Rate the overall project: https://github.com/eabemp1/evolvai-mvp"
+          },
+          {
+            "role": "ai",
+            "content": "I see you're still pondering that debate synthesis topic. Let's focus on your tasks at hand, shall we? Tomorrow's big moment is fast approaching - starting that open-weight model plan at 9am. I've got everything ready for a smooth start.\n\nAs for today, implementing the tools plugin framework seems like a great place to begin. Getting the farm module up and running will set the stage for the rest of your tasks. I recommend dedicating some time to this task, focusing on making it safe to turn thos"
+          },
+          {
+            "role": "user",
+            "content": "Live web query: Rate the overall project: https://github.com/eabemp1/evolvai-mvp"
+          },
+          {
+            "role": "ai",
+            "content": "Bonjour! Let's take a closer look at the open-weight model plan you're about to start tomorrow. According to GitHub, the project aims to create an AI tutor and learning assistant that uses reinforcement learning and memory adaptive skills to continuously adapt to human interactions [1]. While I don't have direct access to the specific details of your project, it seems like a fascinating endeavor.\n\nAs for your tools plugin framework, implementing it today or tomorrow might be a good idea. You can"
+          }
+        ],
+        "facts": [
+          "Starting open-weight model plan at 9am tomorrow",
+          "Implementing tools plugin framework today or tomorrow",
+          "Setting up robust system for module interactions",
+          "Want to control modules with on/off functionality",
+          "Goal: Get open-weight model plan up and running smoothly",
+          "Milestone 1: Start open-weight model plan tomorrow at 9am"
+        ]
+      }
+    }
   }
 ]

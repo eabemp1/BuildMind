@@ -1,0 +1,20 @@
+{
+  "actors": {
+    "test_actor_privacy": {
+      "share_anonymized": true,
+      "updated_at": "2026-02-12T15:37:31.809644Z"
+    },
+    "anon_off": {
+      "share_anonymized": false,
+      "updated_at": "2026-02-12T15:37:31.816319Z"
+    },
+    "anon_on": {
+      "share_anonymized": true,
+      "updated_at": "2026-02-12T15:37:31.817627Z"
+    },
+    "emmanuel": {
+      "share_anonymized": true,
+      "updated_at": "2026-02-12T13:11:51.973431Z"
+    }
+  }
+}

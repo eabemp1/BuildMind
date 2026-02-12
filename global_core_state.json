@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "total_interactions": 24,
+  "total_ratings_up": 4,
+  "total_ratings_down": 1,
+  "signals": {
+    "helpfulness": 0.52,
+    "memory_clarity": 0.514400000000001,
+    "routing_confidence": 0.5168000000000007,
+    "tone_warmth": 0.514
+  },
+  "updated_at": "2026-02-12T16:30:36.500507Z"
+}

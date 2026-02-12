@@ -1,0 +1,43 @@
+{
+  "zones": [
+    {
+      "id": "hub",
+      "label": "Central Hub",
+      "description": "Main social and routing space."
+    },
+    {
+      "id": "learning-lab",
+      "label": "Learning Lab",
+      "description": "Study and skill-building missions."
+    },
+    {
+      "id": "code-foundry",
+      "label": "Code Foundry",
+      "description": "Build, debug, and ship software."
+    },
+    {
+      "id": "finance-district",
+      "label": "Finance District",
+      "description": "Budgeting, investing, and strategy."
+    },
+    {
+      "id": "creator-studio",
+      "label": "Creator Studio",
+      "description": "Content, storytelling, and communication."
+    },
+    {
+      "id": "market-bazaar",
+      "label": "Market Bazaar",
+      "description": "Agent rentals, trading, and token actions."
+    }
+  ],
+  "presence": {
+    "emmanuel": {
+      "display_name": "Emmanuel",
+      "zone": "hub",
+      "status": "online",
+      "last_seen": "2026-02-11T17:08:22.650986Z"
+    }
+  },
+  "updated_at": "2026-02-11T17:08:22.650996Z"
+}

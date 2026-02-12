@@ -1,0 +1,141 @@
+{
+  "actors": {
+    "emmanuel": [
+      {
+        "id": "c5cf9e93-f",
+        "text": "start Lumiere open-weight model plan tomorrow at 9am",
+        "scope": "personal",
+        "confidence": 0.65,
+        "source": "auto_fact",
+        "created_at": "2026-02-12T14:54:22.465693Z",
+        "updated_at": "2026-02-12T14:54:22.465701Z"
+      },
+      {
+        "id": "1eda8f8e-4",
+        "text": "Implement Lumiere tools plugin framework for farm, weather, trading, and robotics modules",
+        "scope": "personal",
+        "confidence": 0.65,
+        "source": "auto_fact",
+        "created_at": "2026-02-12T15:02:08.085832Z",
+        "updated_at": "2026-02-12T15:02:08.085854Z"
+      },
+      {
+        "id": "1acb6b98-e",
+        "text": "Want to turn on/off farm, weather, trading, and robotics modules safely",
+        "scope": "personal",
+        "confidence": 0.65,
+        "source": "auto_fact",
+        "created_at": "2026-02-12T15:02:08.088370Z",
+        "updated_at": "2026-02-12T15:02:08.088385Z"
+      },
+      {
+        "id": "338de220-2",
+        "text": "Starting open-weight model plan at 9am tomorrow",
+        "scope": "personal",
+        "confidence": 0.65,
+        "source": "auto_fact",
+        "created_at": "2026-02-12T15:12:40.282816Z",
+        "updated_at": "2026-02-12T15:12:40.282840Z"
+      },
+      {
+        "id": "8eb0c2f2-3",
+        "text": "Implementing tools plugin framework today or tomorrow",
+        "scope": "personal",
+        "confidence": 0.65,
+        "source": "auto_fact",
+        "created_at": "2026-02-12T15:12:40.284079Z",
+        "updated_at": "2026-02-12T15:12:40.284099Z"
+      },
+      {
+        "id": "87d7a8c9-c",
+        "text": "Setting up robust system for module interactions",
+        "scope": "personal",
+        "confidence": 0.65,
+        "source": "auto_fact",
+        "created_at": "2026-02-12T15:12:40.284891Z",
+        "updated_at": "2026-02-12T15:12:40.284913Z"
+      },
+      {
+        "id": "7f29f69f-f",
+        "text": "Want to control modules with on/off functionality",
+        "scope": "personal",
+        "confidence": 0.65,
+        "source": "auto_fact",
+        "created_at": "2026-02-12T15:14:06.332979Z",
+        "updated_at": "2026-02-12T15:14:06.332988Z"
+      },
+      {
+        "id": "35dbb74e-e",
+        "text": "Goal: Get open-weight model plan up and running smoothly",
+        "scope": "personal",
+        "confidence": 0.65,
+        "source": "auto_fact",
+        "created_at": "2026-02-12T15:14:06.334995Z",
+        "updated_at": "2026-02-12T15:14:06.335023Z"
+      },
+      {
+        "id": "c44e9eb8-4",
+        "text": "Milestone 1: Start open-weight model plan tomorrow at 9am",
+        "scope": "personal",
+        "confidence": 0.65,
+        "source": "auto_fact",
+        "created_at": "2026-02-12T15:14:06.336924Z",
+        "updated_at": "2026-02-12T15:14:06.336935Z"
+      },
+      {
+        "id": "439f8959-d",
+        "text": "Risk management is key for successful traders",
+        "scope": "personal",
+        "confidence": 0.65,
+        "source": "auto_fact",
+        "created_at": "2026-02-12T15:16:16.160685Z",
+        "updated_at": "2026-02-12T15:16:16.160694Z"
+      },
+      {
+        "id": "194d22b5-8",
+        "text": "Technical analysis is crucial for informed trading decisions",
+        "scope": "personal",
+        "confidence": 0.65,
+        "source": "auto_fact",
+        "created_at": "2026-02-12T15:16:16.162093Z",
+        "updated_at": "2026-02-12T15:16:16.162118Z"
+      },
+      {
+        "id": "e806ed00-c",
+        "text": "Adapting to market conditions is essential for traders",
+        "scope": "personal",
+        "confidence": 0.65,
+        "source": "auto_fact",
+        "created_at": "2026-02-12T15:16:16.164543Z",
+        "updated_at": "2026-02-12T15:16:16.164574Z"
+      },
+      {
+        "id": "fe065319-a",
+        "text": "Investing in crypto can be a high-risk endeavor.",
+        "scope": "personal",
+        "confidence": 0.65,
+        "source": "auto_fact",
+        "created_at": "2026-02-12T16:22:36.768051Z",
+        "updated_at": "2026-02-12T16:22:36.768058Z"
+      },
+      {
+        "id": "4e755908-0",
+        "text": "The cryptocurrency market is notoriously unpredictable.",
+        "scope": "personal",
+        "confidence": 0.65,
+        "source": "auto_fact",
+        "created_at": "2026-02-12T16:22:36.769409Z",
+        "updated_at": "2026-02-12T16:22:36.769441Z"
+      },
+      {
+        "id": "255e947d-0",
+        "text": "Investing in crypto can be volatile.",
+        "scope": "personal",
+        "confidence": 0.65,
+        "source": "auto_fact",
+        "created_at": "2026-02-12T16:22:36.770896Z",
+        "updated_at": "2026-02-12T16:22:36.770917Z"
+      }
+    ]
+  }
+}

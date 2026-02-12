@@ -9,34 +9,53 @@
       "listed": false,
       "list_price_sol": null,
       "rent_price_sol_per_hour": 0.05,
-      "train_score": 0,
-      "usage_count": 1,
-      "value_score": 1.54,
+      "train_score": 2,
+      "usage_count": 6,
+      "value_score": 1.85,
       "metadata_uri": "mock://lumiere/math",
-      "last_train_at": "2026-02-11T11:49:51.591595Z",
-      "created_at": "2026-02-11T11:42:02.218000Z"
+      "last_train_at": "2026-02-12T16:22:37.820732Z",
+      "created_at": "2026-02-11T11:42:02.218000Z",
+      "ownership_history": [
+        {
+          "owner": "Lois",
+          "at": "2026-02-11T17:42:49.174977Z",
+          "reason": "buy"
+        },
+        {
+          "owner": "Emmanuel",
+          "at": "2026-02-12T09:47:00.179858Z",
+          "reason": "buy"
+        }
+      ],
+      "tenant_id": "default"
     },
     "finance": {
       "specialty": "finance",
       "agent_name": "Finance Guide",
       "mint_address": "3F1iaG7wtcZgwWjFKWWkTaNELguudaMEMqyAhhqtGYey",
-      "owner": "Lois",
+      "owner": "Emmanuel",
       "listed": false,
       "list_price_sol": null,
       "rent_price_sol_per_hour": 0.05,
-      "train_score": 0,
-      "usage_count": 0,
-      "value_score": 1.55,
+      "train_score": 2,
+      "usage_count": 10,
+      "value_score": 1.89,
       "metadata_uri": "mock://lumiere/finance",
-      "last_train_at": null,
+      "last_train_at": "2026-02-12T16:22:37.817579Z",
       "created_at": "2026-02-11T11:42:02.219218Z",
       "ownership_history": [
         {
           "owner": "Lois",
           "at": "2026-02-11T12:07:47.960960Z",
           "reason": "buy"
+        },
+        {
+          "owner": "Emmanuel",
+          "at": "2026-02-12T09:47:04.055328Z",
+          "reason": "buy"
         }
-      ]
+      ],
+      "tenant_id": "default"
     },
     "cooking": {
       "specialty": "cooking",
@@ -51,7 +70,8 @@
       "value_score": 1.5,
       "metadata_uri": "mock://lumiere/cooking",
       "last_train_at": null,
-      "created_at": "2026-02-11T11:42:02.220558Z"
+      "created_at": "2026-02-11T11:42:02.220558Z",
+      "tenant_id": "default"
     },
     "reminders": {
       "specialty": "reminders",
@@ -61,41 +81,558 @@
       "listed": false,
       "list_price_sol": null,
       "rent_price_sol_per_hour": 0.05,
+      "train_score": 2,
+      "usage_count": 9,
+      "value_score": 1.77,
+      "metadata_uri": "mock://lumiere/reminders",
+      "last_train_at": "2026-02-12T14:54:22.467488Z",
+      "created_at": "2026-02-11T11:42:02.221611Z",
+      "tenant_id": "default"
+    },
+    "topic-what-models": {
+      "specialty": "topic-what-models",
+      "agent_name": "What Models Specialist",
+      "mint_address": "UcVev96jzxW8TJDkGj6vGrprhyvfEhj6Df6iA5ZdD3RV",
+      "owner": "Emmanuel",
+      "ownership_history": [
+        {
+          "owner": "Emmanuel",
+          "at": "2026-02-11T13:36:44.616010Z",
+          "reason": "mint"
+        }
+      ],
+      "listed": false,
+      "list_price_sol": null,
+      "rent_price_sol_per_hour": 0.05,
+      "train_score": 1,
+      "usage_count": 1,
+      "value_score": 1.59,
+      "metadata_uri": "mock://lumiere/topic-what-models",
+      "last_train_at": "2026-02-11T13:37:12.323716Z",
+      "created_at": "2026-02-11T13:36:44.616033Z",
+      "tenant_id": "default"
+    },
+    "topic-what": {
+      "specialty": "topic-what",
+      "agent_name": "What Specialist",
+      "mint_address": "7kFkHmBKjabEaaHXAvDehZvUtEoqszc8WkLZYLghYRKQ",
+      "owner": "Emmanuel",
+      "ownership_history": [
+        {
+          "owner": "Emmanuel",
+          "at": "2026-02-11T14:00:35.816327Z",
+          "reason": "mint"
+        }
+      ],
+      "listed": false,
+      "list_price_sol": null,
+      "rent_price_sol_per_hour": 0.05,
+      "train_score": 1,
+      "usage_count": 2,
+      "value_score": 1.6,
+      "metadata_uri": "mock://lumiere/topic-what",
+      "last_train_at": "2026-02-11T14:08:00.243554Z",
+      "created_at": "2026-02-11T14:00:35.816384Z",
+      "tenant_id": "default"
+    },
+    "topic-don-understand": {
+      "specialty": "topic-don-understand",
+      "agent_name": "Don Understand Specialist",
+      "mint_address": "Ztp551Wru9VfRc8U3aq6byLcQtcBg3pJe6VPwQrmM7BK",
+      "owner": "Lois",
+      "ownership_history": [
+        {
+          "owner": "Lois",
+          "at": "2026-02-11T15:44:33.558626Z",
+          "reason": "mint"
+        }
+      ],
+      "listed": false,
+      "list_price_sol": null,
+      "rent_price_sol_per_hour": 0.05,
+      "train_score": 0,
+      "usage_count": 1,
+      "value_score": 1.51,
+      "metadata_uri": "mock://lumiere/topic-don-understand",
+      "last_train_at": "2026-02-11T15:44:39.038313Z",
+      "created_at": "2026-02-11T15:44:33.558647Z",
+      "tenant_id": "default"
+    },
+    "topic-map-problem": {
+      "specialty": "topic-map-problem",
+      "agent_name": "Map Problem Specialist",
+      "mint_address": "xNdh7jmVDytzGJTaq7PGxkea2bsNugMSPfybhGFeW8dE",
+      "owner": "Emmanuel",
+      "ownership_history": [
+        {
+          "owner": "Emmanuel",
+          "at": "2026-02-11T16:46:51.323113Z",
+          "reason": "mint"
+        }
+      ],
+      "listed": false,
+      "list_price_sol": null,
+      "rent_price_sol_per_hour": 0.05,
+      "train_score": 0,
+      "usage_count": 2,
+      "value_score": 1.52,
+      "metadata_uri": "mock://lumiere/topic-map-problem",
+      "last_train_at": "2026-02-11T17:25:35.401185Z",
+      "created_at": "2026-02-11T16:46:51.323148Z",
+      "tenant_id": "default"
+    },
+    "topic-tell-world": {
+      "specialty": "topic-tell-world",
+      "agent_name": "Tell World Specialist",
+      "mint_address": "p3Czm8ygbRcugPWnG1Uf1GzhPEUyXXo7BpLK1gzDBD8P",
+      "owner": "Emmanuel",
+      "ownership_history": [
+        {
+          "owner": "Emmanuel",
+          "at": "2026-02-11T17:22:02.954216Z",
+          "reason": "mint"
+        }
+      ],
+      "listed": false,
+      "list_price_sol": null,
+      "rent_price_sol_per_hour": 0.05,
+      "train_score": 0,
+      "usage_count": 1,
+      "value_score": 1.51,
+      "metadata_uri": "mock://lumiere/topic-tell-world",
+      "last_train_at": "2026-02-11T17:22:08.417818Z",
+      "created_at": "2026-02-11T17:22:02.954275Z",
+      "tenant_id": "default"
+    },
+    "topic-give-compact": {
+      "specialty": "topic-give-compact",
+      "agent_name": "Give Compact Specialist",
+      "mint_address": "vh7Pj5xLv52yvnf3LdP3Xt1TYKxzWTSdhW5ZKmZ168og",
+      "owner": "Emmanuel",
+      "ownership_history": [
+        {
+          "owner": "Emmanuel",
+          "at": "2026-02-11T17:43:18.994700Z",
+          "reason": "mint"
+        }
+      ],
+      "listed": false,
+      "list_price_sol": null,
+      "rent_price_sol_per_hour": 0.05,
+      "train_score": 1,
+      "usage_count": 4,
+      "value_score": 1.62,
+      "metadata_uri": "mock://lumiere/topic-give-compact",
+      "last_train_at": "2026-02-12T08:37:07.729050Z",
+      "created_at": "2026-02-11T17:43:18.994723Z",
+      "tenant_id": "default"
+    },
+    "topic-give-concise": {
+      "specialty": "topic-give-concise",
+      "agent_name": "Give Concise Specialist",
+      "mint_address": "VMsgBtVGXs1qDS8CCr3uTyVrgUjZ58YYEogpUsyRLJYA",
+      "owner": "Emmanuel",
+      "ownership_history": [
+        {
+          "owner": "Emmanuel",
+          "at": "2026-02-11T17:43:27.476673Z",
+          "reason": "mint"
+        }
+      ],
+      "listed": false,
+      "list_price_sol": null,
+      "rent_price_sol_per_hour": 0.05,
+      "train_score": 0,
+      "usage_count": 1,
+      "value_score": 1.51,
+      "metadata_uri": "mock://lumiere/topic-give-concise",
+      "last_train_at": "2026-02-11T17:43:30.689849Z",
+      "created_at": "2026-02-11T17:43:27.476708Z",
+      "tenant_id": "default"
+    },
+    "topic-hey": {
+      "specialty": "topic-hey",
+      "agent_name": "Hey Specialist",
+      "mint_address": "NWXzQXuuEkoQ8Xbu2Fbh3CKGAwrzsNYfLsaMFcE3fTFu",
+      "owner": "Emmanuel",
+      "ownership_history": [
+        {
+          "owner": "Emmanuel",
+          "at": "2026-02-11T17:53:03.027033Z",
+          "reason": "mint"
+        }
+      ],
+      "listed": false,
+      "list_price_sol": null,
+      "rent_price_sol_per_hour": 0.05,
+      "train_score": 0,
+      "usage_count": 2,
+      "value_score": 1.52,
+      "metadata_uri": "mock://lumiere/topic-hey",
+      "last_train_at": "2026-02-11T18:30:20.113902Z",
+      "created_at": "2026-02-11T17:53:03.027060Z",
+      "tenant_id": "default"
+    },
+    "topic-hey-what": {
+      "specialty": "topic-hey-what",
+      "agent_name": "Hey What Specialist",
+      "mint_address": "5SY1vALJDhB4dF6McabhGAgCWYEAt99wS5uicA2mSkwR",
+      "owner": "Emmanuel",
+      "ownership_history": [
+        {
+          "owner": "Emmanuel",
+          "at": "2026-02-12T08:34:12.891254Z",
+          "reason": "mint"
+        }
+      ],
+      "listed": false,
+      "list_price_sol": null,
+      "rent_price_sol_per_hour": 0.05,
+      "train_score": 1,
+      "usage_count": 2,
+      "value_score": 1.6,
+      "metadata_uri": "mock://lumiere/topic-hey-what",
+      "last_train_at": "2026-02-12T08:35:17.363431Z",
+      "created_at": "2026-02-12T08:34:12.891279Z",
+      "tenant_id": "default"
+    },
+    "topic-why-market": {
+      "specialty": "topic-why-market",
+      "agent_name": "Why Market Specialist",
+      "mint_address": "jBaqAPFaTUaZbATerv3cLMM5RNpRSKe2cUzgpUQw3YW9",
+      "owner": "Emmanuel",
+      "ownership_history": [
+        {
+          "owner": "Emmanuel",
+          "at": "2026-02-12T09:10:08.989421Z",
+          "reason": "mint"
+        }
+      ],
+      "listed": false,
+      "list_price_sol": null,
+      "rent_price_sol_per_hour": 0.05,
+      "train_score": 0,
+      "usage_count": 1,
+      "value_score": 1.51,
+      "metadata_uri": "mock://lumiere/topic-why-market",
+      "last_train_at": "2026-02-12T09:11:25.556832Z",
+      "created_at": "2026-02-12T09:10:08.989443Z",
+      "tenant_id": "default"
+    },
+    "topic-which-pandemic": {
+      "specialty": "topic-which-pandemic",
+      "agent_name": "Which Pandemic Specialist",
+      "mint_address": "rgjJtDYWhBFQbohmujAbJw6r5swk1NRaSRD8ZdVbp1Js",
+      "owner": "Emmanuel",
+      "ownership_history": [
+        {
+          "owner": "Emmanuel",
+          "at": "2026-02-12T09:12:10.717273Z",
+          "reason": "mint"
+        }
+      ],
+      "listed": false,
+      "list_price_sol": null,
+      "rent_price_sol_per_hour": 0.05,
+      "train_score": 0,
+      "usage_count": 1,
+      "value_score": 1.51,
+      "metadata_uri": "mock://lumiere/topic-which-pandemic",
+      "last_train_at": "2026-02-12T09:12:21.834985Z",
+      "created_at": "2026-02-12T09:12:10.717316Z",
+      "tenant_id": "default"
+    },
+    "personal": {
+      "specialty": "personal",
+      "agent_name": "Personal Companion",
+      "mint_address": "m45LESn7DCrrtZuUhxeWi9hj8yrGzY3ed4P4EcLoUwcq",
+      "owner": "Emmanuel",
+      "ownership_history": [
+        {
+          "owner": "Emmanuel",
+          "at": "2026-02-12T10:27:54.100894Z",
+          "reason": "mint"
+        }
+      ],
+      "listed": false,
+      "list_price_sol": null,
+      "rent_price_sol_per_hour": 0.05,
+      "train_score": 6,
+      "usage_count": 26,
+      "value_score": 2.574,
+      "metadata_uri": "mock://lumiere/personal",
+      "last_train_at": "2026-02-12T10:56:33.668410Z",
+      "created_at": "2026-02-12T10:27:54.100910Z",
+      "tenant_id": "default"
+    },
+    "health": {
+      "specialty": "health",
+      "agent_name": "Health Coach",
+      "mint_address": "QR7R7CMQPS8iVov7dfeB6JnhuJb27zz9TL1GgkNfEAuY",
+      "owner": "local_user",
+      "ownership_history": [
+        {
+          "owner": "local_user",
+          "at": "2026-02-12T11:12:38.612158Z",
+          "reason": "mint"
+        }
+      ],
+      "listed": false,
+      "list_price_sol": null,
+      "rent_price_sol_per_hour": 0.05,
       "train_score": 0,
       "usage_count": 0,
-      "value_score": 1.52,
-      "metadata_uri": "mock://lumiere/reminders",
+      "value_score": 1.5,
+      "metadata_uri": "mock://lumiere/health",
       "last_train_at": null,
-      "created_at": "2026-02-11T11:42:02.221611Z"
+      "created_at": "2026-02-12T11:12:38.612187Z",
+      "tenant_id": "default"
     },
-    "general": {
-      "specialty": "general",
-      "agent_name": "General Companion",
-      "mint_address": "TshnA56RUSFAJMDetv3nrptEGD9AKwZqBmZ7kjBAgPog",
+    "education": {
+      "specialty": "education",
+      "agent_name": "Learning Mentor",
+      "mint_address": "LrVsdhgSRWhbLqXH2UfazQzzqq2wMVwabtjELNvQnRiJ",
       "owner": "Emmanuel",
+      "ownership_history": [
+        {
+          "owner": "local_user",
+          "at": "2026-02-12T11:12:38.615752Z",
+          "reason": "mint"
+        },
+        {
+          "owner": "Emmanuel",
+          "at": "2026-02-12T12:40:56.576610Z",
+          "reason": "first_claim"
+        }
+      ],
+      "listed": false,
+      "list_price_sol": null,
+      "rent_price_sol_per_hour": 0.05,
+      "train_score": 0,
+      "usage_count": 0,
+      "value_score": 1.5,
+      "metadata_uri": "mock://lumiere/education",
+      "last_train_at": null,
+      "created_at": "2026-02-12T11:12:38.615836Z",
+      "tenant_id": "default"
+    },
+    "coding": {
+      "specialty": "coding",
+      "agent_name": "Coding Assistant",
+      "mint_address": "C7bhJ6QzFxaGh1yPtJZ6NvUiEFq6Hyukz5ExBhtGqh6e",
+      "owner": "local_user",
+      "ownership_history": [
+        {
+          "owner": "local_user",
+          "at": "2026-02-12T11:12:38.619199Z",
+          "reason": "mint"
+        }
+      ],
+      "listed": false,
+      "list_price_sol": null,
+      "rent_price_sol_per_hour": 0.05,
+      "train_score": 0,
+      "usage_count": 0,
+      "value_score": 1.5,
+      "metadata_uri": "mock://lumiere/coding",
+      "last_train_at": null,
+      "created_at": "2026-02-12T11:12:38.619231Z",
+      "tenant_id": "default"
+    },
+    "business": {
+      "specialty": "business",
+      "agent_name": "Business Strategist",
+      "mint_address": "57HqGge5oaXexngNLaxkAYeTrnPCAf4K3mCqszSuooGm",
+      "owner": "local_user",
+      "ownership_history": [
+        {
+          "owner": "local_user",
+          "at": "2026-02-12T11:12:38.623001Z",
+          "reason": "mint"
+        }
+      ],
+      "listed": false,
+      "list_price_sol": null,
+      "rent_price_sol_per_hour": 0.05,
+      "train_score": 0,
+      "usage_count": 0,
+      "value_score": 1.5,
+      "metadata_uri": "mock://lumiere/business",
+      "last_train_at": null,
+      "created_at": "2026-02-12T11:12:38.623051Z",
+      "tenant_id": "default"
+    },
+    "career": {
+      "specialty": "career",
+      "agent_name": "Career Mentor",
+      "mint_address": "67C7UCJwEEJHziJVAYW7uyDHdYdaaioE47PvpEQ8CBv8",
+      "owner": "local_user",
+      "ownership_history": [
+        {
+          "owner": "local_user",
+          "at": "2026-02-12T11:12:38.626726Z",
+          "reason": "mint"
+        }
+      ],
+      "listed": false,
+      "list_price_sol": null,
+      "rent_price_sol_per_hour": 0.05,
+      "train_score": 0,
+      "usage_count": 0,
+      "value_score": 1.5,
+      "metadata_uri": "mock://lumiere/career",
+      "last_train_at": null,
+      "created_at": "2026-02-12T11:12:38.626769Z",
+      "tenant_id": "default"
+    },
+    "travel": {
+      "specialty": "travel",
+      "agent_name": "Travel Planner",
+      "mint_address": "TRTms5qMB4z8WrCgY55cgt9V3A5Vz2sq4eKGARhiuAgp",
+      "owner": "local_user",
+      "ownership_history": [
+        {
+          "owner": "local_user",
+          "at": "2026-02-12T11:12:38.629279Z",
+          "reason": "mint"
+        }
+      ],
+      "listed": false,
+      "list_price_sol": null,
+      "rent_price_sol_per_hour": 0.05,
+      "train_score": 0,
+      "usage_count": 0,
+      "value_score": 1.5,
+      "metadata_uri": "mock://lumiere/travel",
+      "last_train_at": null,
+      "created_at": "2026-02-12T11:12:38.629327Z",
+      "tenant_id": "default"
+    },
+    "language": {
+      "specialty": "language",
+      "agent_name": "Language Coach",
+      "mint_address": "CQgxm7v1Q4aVcPrE6rJupchKHrttueYacEyrurLwMtb5",
+      "owner": "Emmanuel",
+      "ownership_history": [
+        {
+          "owner": "local_user",
+          "at": "2026-02-12T11:12:38.632955Z",
+          "reason": "mint"
+        },
+        {
+          "owner": "Emmanuel",
+          "at": "2026-02-12T12:38:52.392376Z",
+          "reason": "first_claim"
+        }
+      ],
       "listed": false,
       "list_price_sol": null,
       "rent_price_sol_per_hour": 0.05,
       "train_score": 1,
       "usage_count": 1,
       "value_score": 1.62,
-      "metadata_uri": "mock://lumiere/general",
-      "last_train_at": "2026-02-11T11:48:47.089434Z",
-      "created_at": "2026-02-11T11:42:02.222604Z"
-    }
-  },
-  "rentals": {
-    "math": {
-      "specialty": "math",
+      "metadata_uri": "mock://lumiere/language",
+      "last_train_at": "2026-02-12T12:38:52.395192Z",
+      "created_at": "2026-02-12T11:12:38.633009Z",
+      "tenant_id": "default"
+    },
+    "science": {
+      "specialty": "science",
+      "agent_name": "Science Explorer",
+      "mint_address": "jLyZgUYFxgT3yv4vKuGAgvh2rHZxeaJHVJP4x1wkCcHr",
       "owner": "Emmanuel",
-      "renter": "Lois",
-      "hours": 1,
-      "price_sol_per_hour": 0.05,
-      "started_at": "2026-02-11T11:49:08.570767Z",
-      "expires_at": "2026-02-11T12:49:08.570742"
+      "ownership_history": [
+        {
+          "owner": "local_user",
+          "at": "2026-02-12T11:12:38.636630Z",
+          "reason": "mint"
+        }
+      ],
+      "listed": true,
+      "list_price_sol": 0.25,
+      "rent_price_sol_per_hour": 0.05,
+      "train_score": 0,
+      "usage_count": 0,
+      "value_score": 1.5,
+      "metadata_uri": "mock://lumiere/science",
+      "last_train_at": null,
+      "created_at": "2026-02-12T11:12:38.636660Z",
+      "tenant_id": "default"
+    },
+    "legal": {
+      "specialty": "legal",
+      "agent_name": "Legal Navigator",
+      "mint_address": "3URV8DBt5MzUFbhMfYfkEsbSNUkmyVtPTw29bTJYU7cJ",
+      "owner": "local_user",
+      "ownership_history": [
+        {
+          "owner": "local_user",
+          "at": "2026-02-12T11:12:38.639969Z",
+          "reason": "mint"
+        }
+      ],
+      "listed": false,
+      "list_price_sol": null,
+      "rent_price_sol_per_hour": 0.05,
+      "train_score": 0,
+      "usage_count": 0,
+      "value_score": 1.5,
+      "metadata_uri": "mock://lumiere/legal",
+      "last_train_at": null,
+      "created_at": "2026-02-12T11:12:38.640041Z",
+      "tenant_id": "default"
+    },
+    "personal::emmanuel": {
+      "token_key": "personal::emmanuel",
+      "specialty": "personal",
+      "agent_name": "Personal Companion",
+      "mint_address": "EtU4MXUEWbAqZ7E4iFTPKQqhZ56Mx7uP1CBYFNhhSHpg",
+      "owner": "Emmanuel",
+      "ownership_history": [
+        {
+          "owner": "Emmanuel",
+          "at": "2026-02-12T11:41:35.811339Z",
+          "reason": "mint"
+        }
+      ],
+      "listed": false,
+      "list_price_sol": null,
+      "rent_price_sol_per_hour": 0.05,
+      "train_score": 4,
+      "usage_count": 19,
+      "value_score": 2.993,
+      "metadata_uri": "mock://lumiere/personal",
+      "last_train_at": "2026-02-12T16:30:36.496110Z",
+      "created_at": "2026-02-12T11:41:35.811357Z",
+      "tenant_id": "default"
+    },
+    "personal::local_user": {
+      "token_key": "personal::local_user",
+      "specialty": "personal",
+      "agent_name": "Personal Companion",
+      "mint_address": "E5LbGr3AxVvGWB4RMAa4FkmN3cJPg7HdMRNJuDub1YcE",
+      "owner": "local_user",
+      "ownership_history": [
+        {
+          "owner": "local_user",
+          "at": "2026-02-12T12:23:59.610247Z",
+          "reason": "mint"
+        }
+      ],
+      "listed": false,
+      "list_price_sol": null,
+      "rent_price_sol_per_hour": 0.05,
+      "train_score": 0,
+      "usage_count": 0,
+      "value_score": 2.554,
+      "metadata_uri": "mock://lumiere/personal",
+      "last_train_at": null,
+      "created_at": "2026-02-12T12:23:59.610263Z",
+      "tenant_id": "default"
     }
   },
-  "updated_at": "2026-02-11T12:07:47.961053Z",
+  "rentals": {},
+  "updated_at": "2026-02-12T16:30:36.496134Z",
   "tx_log": [
     {
       "ts": "2026-02-11T12:07:35.187180Z",
@@ -119,6 +656,428 @@
       },
       "prev_hash": "71639e1d0c7fa7ecd348f034874c489eeb03ca1876003ee4f388dcfa68967b94",
       "hash": "5b85f1c861defdab992e23b84a5bd56b46e654962c75cf07993591e19e370e81"
+    },
+    {
+      "ts": "2026-02-11T12:32:51.138496Z",
+      "event": "rent",
+      "specialty": "finance",
+      "payload": {
+        "owner": "Lois",
+        "renter": "Julius",
+        "hours": 1
+      },
+      "prev_hash": "5b85f1c861defdab992e23b84a5bd56b46e654962c75cf07993591e19e370e81",
+      "hash": "ea7dc5d4eff8691ff0802a8afd0daec13f13af2d045743051ac30083b9d7aeaa"
+    },
+    {
+      "ts": "2026-02-11T13:36:44.616042Z",
+      "event": "mint",
+      "specialty": "topic-what-models",
+      "payload": {
+        "owner": "Emmanuel",
+        "mint_address": "UcVev96jzxW8TJDkGj6vGrprhyvfEhj6Df6iA5ZdD3RV"
+      },
+      "prev_hash": "ea7dc5d4eff8691ff0802a8afd0daec13f13af2d045743051ac30083b9d7aeaa",
+      "hash": "cc75b6a91a768a2daf60a1c41be7d2f7a90ce17fff8e336925cef6d994a150dc"
+    },
+    {
+      "ts": "2026-02-11T13:47:18.448990Z",
+      "event": "train",
+      "specialty": "math",
+      "payload": {
+        "signal": 1,
+        "value_score": 1.64
+      },
+      "prev_hash": "cc75b6a91a768a2daf60a1c41be7d2f7a90ce17fff8e336925cef6d994a150dc",
+      "hash": "53e19eebd25da8ba64d50345c341b66500130c60b62820dc928698c96dfb78d2"
+    },
+    {
+      "ts": "2026-02-11T14:00:35.816406Z",
+      "event": "mint",
+      "specialty": "topic-what",
+      "payload": {
+        "owner": "Emmanuel",
+        "mint_address": "7kFkHmBKjabEaaHXAvDehZvUtEoqszc8WkLZYLghYRKQ"
+      },
+      "prev_hash": "53e19eebd25da8ba64d50345c341b66500130c60b62820dc928698c96dfb78d2",
+      "hash": "628aed2358455043aeb722e673b0f4dc3efba9ab0e1c13860e4fca8d691e2048"
+    },
+    {
+      "ts": "2026-02-11T14:08:00.244492Z",
+      "event": "train",
+      "specialty": "topic-what",
+      "payload": {
+        "signal": 1,
+        "value_score": 1.6
+      },
+      "prev_hash": "628aed2358455043aeb722e673b0f4dc3efba9ab0e1c13860e4fca8d691e2048",
+      "hash": "15c5a78388b9feb1f069d6e8699fa9624193b4407239ff50a6fbc042f34ed743"
+    },
+    {
+      "ts": "2026-02-11T15:44:33.558655Z",
+      "event": "mint",
+      "specialty": "topic-don-understand",
+      "payload": {
+        "owner": "Lois",
+        "mint_address": "Ztp551Wru9VfRc8U3aq6byLcQtcBg3pJe6VPwQrmM7BK"
+      },
+      "prev_hash": "15c5a78388b9feb1f069d6e8699fa9624193b4407239ff50a6fbc042f34ed743",
+      "hash": "ba0a1352f5cbf8fbaea687db719451ceec42e44b65d9ca542307cbdb88aa1f2a"
+    },
+    {
+      "ts": "2026-02-11T16:46:51.323163Z",
+      "event": "mint",
+      "specialty": "topic-map-problem",
+      "payload": {
+        "owner": "Emmanuel",
+        "mint_address": "xNdh7jmVDytzGJTaq7PGxkea2bsNugMSPfybhGFeW8dE"
+      },
+      "prev_hash": "ba0a1352f5cbf8fbaea687db719451ceec42e44b65d9ca542307cbdb88aa1f2a",
+      "hash": "7ecca2531e4f4a9ec09f7f8a2ece056fbfe0ce247c5baad934394482ef3bcea6"
+    },
+    {
+      "ts": "2026-02-11T17:11:06.000566Z",
+      "event": "train",
+      "specialty": "math",
+      "payload": {
+        "signal": 1,
+        "value_score": 1.73
+      },
+      "prev_hash": "7ecca2531e4f4a9ec09f7f8a2ece056fbfe0ce247c5baad934394482ef3bcea6",
+      "hash": "48345433507150324c01fdcdc9154c06e920bde9e56aca752786222ea2f9f95f"
+    },
+    {
+      "ts": "2026-02-11T17:22:02.954294Z",
+      "event": "mint",
+      "specialty": "topic-tell-world",
+      "payload": {
+        "owner": "Emmanuel",
+        "mint_address": "p3Czm8ygbRcugPWnG1Uf1GzhPEUyXXo7BpLK1gzDBD8P"
+      },
+      "prev_hash": "48345433507150324c01fdcdc9154c06e920bde9e56aca752786222ea2f9f95f",
+      "hash": "bb434ca651b31e43d7d6e6cbb8245e9c252c21fded384d47ca6a42717e072588"
+    },
+    {
+      "ts": "2026-02-11T17:42:38.710837Z",
+      "event": "list",
+      "specialty": "math",
+      "payload": {
+        "seller": "Emmanuel",
+        "price_sol": 1.0
+      },
+      "prev_hash": "bb434ca651b31e43d7d6e6cbb8245e9c252c21fded384d47ca6a42717e072588",
+      "hash": "dae6142566fc5fca9d02c71fa329981115ae85e094c4d450f2dfd27790fa5818"
+    },
+    {
+      "ts": "2026-02-11T17:42:49.174991Z",
+      "event": "transfer",
+      "specialty": "math",
+      "payload": {
+        "from": "Emmanuel",
+        "to": "Lois",
+        "method": "buy"
+      },
+      "prev_hash": "dae6142566fc5fca9d02c71fa329981115ae85e094c4d450f2dfd27790fa5818",
+      "hash": "59e3461a36f716dcfa27c8f807306f2d9bc53b9717671c05e8b40c6244012bb3"
+    },
+    {
+      "ts": "2026-02-11T17:43:18.994734Z",
+      "event": "mint",
+      "specialty": "topic-give-compact",
+      "payload": {
+        "owner": "Emmanuel",
+        "mint_address": "vh7Pj5xLv52yvnf3LdP3Xt1TYKxzWTSdhW5ZKmZ168og"
+      },
+      "prev_hash": "59e3461a36f716dcfa27c8f807306f2d9bc53b9717671c05e8b40c6244012bb3",
+      "hash": "b89afa8fd0317eba8e4a14514cd3a09ae70e4766e8dab9b40e9b597d7b68e1d4"
+    },
+    {
+      "ts": "2026-02-11T17:43:27.476719Z",
+      "event": "mint",
+      "specialty": "topic-give-concise",
+      "payload": {
+        "owner": "Emmanuel",
+        "mint_address": "VMsgBtVGXs1qDS8CCr3uTyVrgUjZ58YYEogpUsyRLJYA"
+      },
+      "prev_hash": "b89afa8fd0317eba8e4a14514cd3a09ae70e4766e8dab9b40e9b597d7b68e1d4",
+      "hash": "104d1b3721e51d4ec123a970b6f1cfbc1ef6753d18fb9338fb3798f1f69bb1e1"
+    },
+    {
+      "ts": "2026-02-11T17:53:03.027070Z",
+      "event": "mint",
+      "specialty": "topic-hey",
+      "payload": {
+        "owner": "Emmanuel",
+        "mint_address": "NWXzQXuuEkoQ8Xbu2Fbh3CKGAwrzsNYfLsaMFcE3fTFu"
+      },
+      "prev_hash": "104d1b3721e51d4ec123a970b6f1cfbc1ef6753d18fb9338fb3798f1f69bb1e1",
+      "hash": "bcb720486ec52c37aab1ddbcf2c2db3220cadb30eb9f75989011420ef28aa3d5"
+    },
+    {
+      "ts": "2026-02-12T08:34:12.891289Z",
+      "event": "mint",
+      "specialty": "topic-hey-what",
+      "payload": {
+        "owner": "Emmanuel",
+        "mint_address": "5SY1vALJDhB4dF6McabhGAgCWYEAt99wS5uicA2mSkwR"
+      },
+      "prev_hash": "bcb720486ec52c37aab1ddbcf2c2db3220cadb30eb9f75989011420ef28aa3d5",
+      "hash": "51ef8bba9bf912babfc1d8cb31607a673cd29af66f922b5fb03eaa73878a918c"
+    },
+    {
+      "ts": "2026-02-12T09:10:08.989451Z",
+      "event": "mint",
+      "specialty": "topic-why-market",
+      "payload": {
+        "owner": "Emmanuel",
+        "mint_address": "jBaqAPFaTUaZbATerv3cLMM5RNpRSKe2cUzgpUQw3YW9"
+      },
+      "prev_hash": "51ef8bba9bf912babfc1d8cb31607a673cd29af66f922b5fb03eaa73878a918c",
+      "hash": "bc7a5bf29d17bebbaa46dfcf187342ff53a247175d577a2b1bd5d9cbe378dd9c"
+    },
+    {
+      "ts": "2026-02-12T09:12:10.717326Z",
+      "event": "mint",
+      "specialty": "topic-which-pandemic",
+      "payload": {
+        "owner": "Emmanuel",
+        "mint_address": "rgjJtDYWhBFQbohmujAbJw6r5swk1NRaSRD8ZdVbp1Js"
+      },
+      "prev_hash": "bc7a5bf29d17bebbaa46dfcf187342ff53a247175d577a2b1bd5d9cbe378dd9c",
+      "hash": "32e694289315d13f5d5140fa4ba048e4493b93e60a283a64bc64c6481ffb2268"
+    },
+    {
+      "ts": "2026-02-12T09:46:39.607723Z",
+      "event": "list",
+      "specialty": "math",
+      "payload": {
+        "seller": "Lois",
+        "price_sol": 0.25
+      },
+      "prev_hash": "32e694289315d13f5d5140fa4ba048e4493b93e60a283a64bc64c6481ffb2268",
+      "hash": "e9a300c3f1839b52e9660e52e84746690047f94d45c2deeebbb96b0c60a8247e"
+    },
+    {
+      "ts": "2026-02-12T09:46:53.846432Z",
+      "event": "list",
+      "specialty": "finance",
+      "payload": {
+        "seller": "Lois",
+        "price_sol": 0.25
+      },
+      "prev_hash": "e9a300c3f1839b52e9660e52e84746690047f94d45c2deeebbb96b0c60a8247e",
+      "hash": "a2a5203cd3de65f4f9ab5ae0f7b6446132774d72415bb5d3c01bfe535df73b3a"
+    },
+    {
+      "ts": "2026-02-12T09:47:00.179874Z",
+      "event": "transfer",
+      "specialty": "math",
+      "payload": {
+        "from": "Lois",
+        "to": "Emmanuel",
+        "method": "buy"
+      },
+      "prev_hash": "a2a5203cd3de65f4f9ab5ae0f7b6446132774d72415bb5d3c01bfe535df73b3a",
+      "hash": "70e99b87a94bc53cf3771796898097f5d05e5eee6bff19422c3758395559ec89"
+    },
+    {
+      "ts": "2026-02-12T09:47:04.055344Z",
+      "event": "transfer",
+      "specialty": "finance",
+      "payload": {
+        "from": "Lois",
+        "to": "Emmanuel",
+        "method": "buy"
+      },
+      "prev_hash": "70e99b87a94bc53cf3771796898097f5d05e5eee6bff19422c3758395559ec89",
+      "hash": "15bb8473962d5cf2a74c1911f6553cc73f5e22ed1f2a4d758dadb42721611615"
+    },
+    {
+      "ts": "2026-02-12T10:27:54.100918Z",
+      "event": "mint",
+      "specialty": "personal",
+      "payload": {
+        "owner": "Emmanuel",
+        "mint_address": "m45LESn7DCrrtZuUhxeWi9hj8yrGzY3ed4P4EcLoUwcq"
+      },
+      "prev_hash": "15bb8473962d5cf2a74c1911f6553cc73f5e22ed1f2a4d758dadb42721611615",
+      "hash": "602fb73c1c11b7614505745b0d544a0b9c183c8f6ed9d9d45e6e94e4192f4c3a"
+    },
+    {
+      "ts": "2026-02-12T11:12:38.612196Z",
+      "event": "mint",
+      "specialty": "health",
+      "payload": {
+        "owner": "local_user",
+        "mint_address": "QR7R7CMQPS8iVov7dfeB6JnhuJb27zz9TL1GgkNfEAuY"
+      },
+      "prev_hash": "602fb73c1c11b7614505745b0d544a0b9c183c8f6ed9d9d45e6e94e4192f4c3a",
+      "hash": "7c914c732906f69f470da75d569a55d958fdf251180b2b9e6aa0fd7763356623"
+    },
+    {
+      "ts": "2026-02-12T11:12:38.615858Z",
+      "event": "mint",
+      "specialty": "education",
+      "payload": {
+        "owner": "local_user",
+        "mint_address": "LrVsdhgSRWhbLqXH2UfazQzzqq2wMVwabtjELNvQnRiJ"
+      },
+      "prev_hash": "7c914c732906f69f470da75d569a55d958fdf251180b2b9e6aa0fd7763356623",
+      "hash": "b644e7080df5db8457cddb3e0e7a08a668e05a369e21ff21b74b5ee6d5ee2482"
+    },
+    {
+      "ts": "2026-02-12T11:12:38.619241Z",
+      "event": "mint",
+      "specialty": "coding",
+      "payload": {
+        "owner": "local_user",
+        "mint_address": "C7bhJ6QzFxaGh1yPtJZ6NvUiEFq6Hyukz5ExBhtGqh6e"
+      },
+      "prev_hash": "b644e7080df5db8457cddb3e0e7a08a668e05a369e21ff21b74b5ee6d5ee2482",
+      "hash": "636188bb391e40dd9c3e787f08bc1221a580ddca5d1a3f7322c3bcf80c74f26b"
+    },
+    {
+      "ts": "2026-02-12T11:12:38.623062Z",
+      "event": "mint",
+      "specialty": "business",
+      "payload": {
+        "owner": "local_user",
+        "mint_address": "57HqGge5oaXexngNLaxkAYeTrnPCAf4K3mCqszSuooGm"
+      },
+      "prev_hash": "636188bb391e40dd9c3e787f08bc1221a580ddca5d1a3f7322c3bcf80c74f26b",
+      "hash": "10049ebf4b30270a5e45f26fd6156b341d66671cdcd55eb74cabc98d4506715c"
+    },
+    {
+      "ts": "2026-02-12T11:12:38.626824Z",
+      "event": "mint",
+      "specialty": "career",
+      "payload": {
+        "owner": "local_user",
+        "mint_address": "67C7UCJwEEJHziJVAYW7uyDHdYdaaioE47PvpEQ8CBv8"
+      },
+      "prev_hash": "10049ebf4b30270a5e45f26fd6156b341d66671cdcd55eb74cabc98d4506715c",
+      "hash": "acdc878191718d4723934d51ace4094ddcfa9c03db5f9de1c5e8ae23ed211514"
+    },
+    {
+      "ts": "2026-02-12T11:12:38.629343Z",
+      "event": "mint",
+      "specialty": "travel",
+      "payload": {
+        "owner": "local_user",
+        "mint_address": "TRTms5qMB4z8WrCgY55cgt9V3A5Vz2sq4eKGARhiuAgp"
+      },
+      "prev_hash": "acdc878191718d4723934d51ace4094ddcfa9c03db5f9de1c5e8ae23ed211514",
+      "hash": "336ee7b4e16773293d591bfa39e5e8e17072e485bad2d9f0b10dbc902382eb4d"
+    },
+    {
+      "ts": "2026-02-12T11:12:38.633025Z",
+      "event": "mint",
+      "specialty": "language",
+      "payload": {
+        "owner": "local_user",
+        "mint_address": "CQgxm7v1Q4aVcPrE6rJupchKHrttueYacEyrurLwMtb5"
+      },
+      "prev_hash": "336ee7b4e16773293d591bfa39e5e8e17072e485bad2d9f0b10dbc902382eb4d",
+      "hash": "20f5d5d87864cf87dc72af43f84e716f280963f33f978378f4aaf0a509c0e452"
+    },
+    {
+      "ts": "2026-02-12T11:12:38.636670Z",
+      "event": "mint",
+      "specialty": "science",
+      "payload": {
+        "owner": "local_user",
+        "mint_address": "jLyZgUYFxgT3yv4vKuGAgvh2rHZxeaJHVJP4x1wkCcHr"
+      },
+      "prev_hash": "20f5d5d87864cf87dc72af43f84e716f280963f33f978378f4aaf0a509c0e452",
+      "hash": "665ed1de6aedb7b35b4d20c327b35968a79d80e364b3255bfbfc1aecf58454f5"
+    },
+    {
+      "ts": "2026-02-12T11:12:38.640058Z",
+      "event": "mint",
+      "specialty": "legal",
+      "payload": {
+        "owner": "local_user",
+        "mint_address": "3URV8DBt5MzUFbhMfYfkEsbSNUkmyVtPTw29bTJYU7cJ"
+      },
+      "prev_hash": "665ed1de6aedb7b35b4d20c327b35968a79d80e364b3255bfbfc1aecf58454f5",
+      "hash": "c254aa86f9df755588959746f7d24fcc20f2c73fbd6bda0bc345742e927abbe7"
+    },
+    {
+      "ts": "2026-02-12T11:41:35.811366Z",
+      "event": "mint",
+      "specialty": "personal",
+      "payload": {
+        "owner": "Emmanuel",
+        "mint_address": "EtU4MXUEWbAqZ7E4iFTPKQqhZ56Mx7uP1CBYFNhhSHpg"
+      },
+      "prev_hash": "c254aa86f9df755588959746f7d24fcc20f2c73fbd6bda0bc345742e927abbe7",
+      "hash": "15f9d512eb5d4fbf4043534db757a702786e77cd5234f2c943156aefd02434b7"
+    },
+    {
+      "ts": "2026-02-12T12:23:59.610268Z",
+      "event": "mint",
+      "specialty": "personal",
+      "payload": {
+        "owner": "local_user",
+        "mint_address": "E5LbGr3AxVvGWB4RMAa4FkmN3cJPg7HdMRNJuDub1YcE"
+      },
+      "prev_hash": "15f9d512eb5d4fbf4043534db757a702786e77cd5234f2c943156aefd02434b7",
+      "hash": "e6a11f33fcee7442b9b61f13f5935b1734730eb0ba5ee3a553fe8dd4bf9912a9"
+    },
+    {
+      "ts": "2026-02-12T12:38:52.392388Z",
+      "event": "claim_owner",
+      "specialty": "language",
+      "payload": {
+        "owner": "Emmanuel"
+      },
+      "prev_hash": "e6a11f33fcee7442b9b61f13f5935b1734730eb0ba5ee3a553fe8dd4bf9912a9",
+      "hash": "1659f31082a3c5240daad4c8acbab09d719fdaae8a4d47615c43fa9637e675c4"
+    },
+    {
+      "ts": "2026-02-12T12:38:52.397889Z",
+      "event": "train",
+      "specialty": "language",
+      "payload": {
+        "signal": 1,
+        "value_score": 1.59
+      },
+      "prev_hash": "1659f31082a3c5240daad4c8acbab09d719fdaae8a4d47615c43fa9637e675c4",
+      "hash": "fabdfc1c5df798432b06ec2866f7484f9de6811a3444be0478a59fe4c6c4a2f2"
+    },
+    {
+      "ts": "2026-02-12T12:39:30.037943Z",
+      "event": "rent",
+      "specialty": "language",
+      "payload": {
+        "owner": "Emmanuel",
+        "renter": "Israel",
+        "hours": 1
+      },
+      "prev_hash": "fabdfc1c5df798432b06ec2866f7484f9de6811a3444be0478a59fe4c6c4a2f2",
+      "hash": "72befca3e091f02562864ff2d73eb28ec9764ae9f7c70b76975bbbfe93d0ed3d"
+    },
+    {
+      "ts": "2026-02-12T12:40:56.576623Z",
+      "event": "claim_owner",
+      "specialty": "education",
+      "payload": {
+        "owner": "Emmanuel"
+      },
+      "prev_hash": "72befca3e091f02562864ff2d73eb28ec9764ae9f7c70b76975bbbfe93d0ed3d",
+      "hash": "ba6426041cd22293e04a75bc02ee80d0069c83a1de921776034b475e60c97723"
+    },
+    {
+      "ts": "2026-02-12T16:10:01.736916Z",
+      "event": "list",
+      "specialty": "science",
+      "payload": {
+        "seller": "Emmanuel",
+        "price_sol": 0.25
+      },
+      "prev_hash": "ba6426041cd22293e04a75bc02ee80d0069c83a1de921776034b475e60c97723",
+      "hash": "87a3e255b2005088df002d1fb52fe171f2782560955abde94e8c31eb373a1a0c"
     }
-  ]
+  ],
+  "pending_training_reviews": {}
 }

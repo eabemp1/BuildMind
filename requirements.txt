@@ -2,12 +2,15 @@
 # Install with: pip install -r requirements.txt
 
 # Core Framework
-fastapi==0.104.1
+fastapi==0.128.0
 uvicorn[standard]==0.24.0
 python-dotenv==1.0.0
 
 # LLM Integration
-groq==0.4.1
+groq==1.0.0
+
+# Testing
+pytest==8.3.3
 
 # Optional: For future enhancements
 # openai==1.3.0              # If you want to add GPT support

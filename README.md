@@ -15,7 +15,7 @@ Lumiere is a personal AI companion powered by **specialized agents** that:
 - 💰 **Finance Guide** - Assists with investing, budgeting, and money management
 - 🍳 **Cooking Buddy** - Provides recipes and cooking tips
 - ⏰ **Reminder Manager** - Helps manage tasks and schedules
-- 🤝 **General Companion** - Your all-purpose assistant
+- 🤝 **Personal Companion** - Your evolving ownable AI identity
 
 ### ✨ Key Features
 
@@ -81,7 +81,7 @@ Just type your question! Lumiere automatically routes it to the best agent:
 - *"Should I invest in index funds?"* → **Finance Guide**  
 - *"How do I make pasta carbonara?"* → **Cooking Buddy**
 - *"Remind me to call mom tomorrow"* → **Reminder Manager**
-- *"Tell me a joke"* → **General Companion**
+- *"Tell me a joke"* → **Personal Companion**
 
 ### Rating Responses
 
@@ -102,14 +102,20 @@ The left panel shows each agent's current mastery level. Watch them evolve as yo
 ```
 evolvai-mvp/
 ├── main.py              # FastAPI server & routing logic
-├── agents.py            # Specialized agent classes
-├── memory.py            # Agent persistence system
 ├── .env                 # API keys (create this!)
 ├── static/
 │   ├── app.css          # Styling
 │   └── app.js           # Frontend logic
-├── squad_memory.json    # Agent data (auto-generated)
-└── user_profile.json    # User preferences (auto-generated)
+├── lumiere/
+│   ├── ui_home.py
+│   ├── web_content.py
+│   └── reminder_scheduler.py
+├── docs/                # MVP architecture/demo/roadmap docs
+├── agents.json          # Agent + memory state
+├── blockchain_state.json
+├── reminders.json
+├── global_events.jsonl
+└── user_profile.json
 ```
 
 ---
@@ -141,48 +147,20 @@ Agent Accuracy Updated & Saved
 - **Frontend**: Vanilla JavaScript + CSS
 - **Storage**: JSON files (lightweight persistence)
 
-### Agent Classes
+### Agent Routing
 
-Each agent inherits from `EvolvAIAgent`:
-
-```python
-class MathAgent(EvolvAIAgent):
-    def __init__(self):
-        super().__init__("Math Expert", 50.0)
-        self.specialty = "math"
-        self.role = "Math & science tutor"
-```
+Agent routing is keyword/category based in `main.py` via `AGENT_CATEGORY_KEYWORDS`
+and core catalog definitions in `CORE_AGENT_CATALOG`.
 
 ---
 
 ## 🔧 Customization
 
-### Adding New Agents
+### Adding New Agent Categories
 
-1. Create a new agent class in `agents.py`:
-   ```python
-   class FitnessAgent(EvolvAIAgent):
-       def __init__(self):
-           super().__init__("Fitness Coach", 50.0)
-           self.specialty = "fitness"
-           self.role = "Workout & nutrition guide"
-   ```
-
-2. Add it to the squad in `main.py`:
-   ```python
-   squad = [
-       MathAgent(),
-       FinanceAgent(),
-       FitnessAgent(),  # New!
-       # ...
-   ]
-   ```
-
-3. Update routing logic in `route_to_agent()`:
-   ```python
-   elif any(word in q_lower for word in ["workout", "exercise", "fitness"]):
-       return next((a for a in squad if a.specialty == "fitness"), squad[0])
-   ```
+1. Add category/keywords in `AGENT_CATEGORY_KEYWORDS` in `main.py`.
+2. Add default agent label in `CORE_AGENT_CATALOG` in `main.py`.
+3. Restart app so core-agent ensure/migration runs.
 
 ### Changing the LLM
 
@@ -234,6 +212,27 @@ MODELS = {
 1. **Reminders are conversational only** - No actual system notifications yet
 2. **Single user** - Multi-user support coming soon
 3. **No conversation persistence** - Chat history resets on refresh
+
+---
+
+## MVP Updates (Current)
+
+- Personal companion ownership is now scoped per user identity.
+- Specialist categories are promoted as visible core agents.
+- Optional anonymized global learning is supported via:
+  - `GET/POST /privacy/share-anonymized`
+  - `POST /datasets/build`
+  - `GET /datasets/list`
+- Reminder notifications support in-browser and local Windows scheduler flows.
+
+### Demo Preparation
+
+```bash
+python scripts/seed_demo_data.py
+python main.py
+```
+
+See `docs/HOD_DEMO_PACKAGE.md` and `docs/30_DAY_PLAN.md`.
 
 ---
 

@@ -1,0 +1,25 @@
+{
+  "agents": {
+    "personal": {
+      "messages": 17,
+      "ratings_up": 2,
+      "ratings_down": 1
+    },
+    "reminders": {
+      "messages": 2,
+      "ratings_up": 0,
+      "ratings_down": 0
+    },
+    "finance": {
+      "messages": 4,
+      "ratings_up": 2,
+      "ratings_down": 0
+    },
+    "math": {
+      "messages": 1,
+      "ratings_up": 0,
+      "ratings_down": 0
+    }
+  },
+  "updated_at": "2026-02-12T16:30:36.501940Z"
+}
