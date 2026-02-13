@@ -52,8 +52,8 @@ def render_home_page(
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Lumiere</title>
-        <link rel="stylesheet" href="/static/app.css?v=20260212-05">
-        <script src="/static/app.js?v=20260212-05" defer></script>
+        <link rel="stylesheet" href="/static/app.css?v=20260213-04">
+        <script src="/static/app.js?v=20260213-04" defer></script>
     </head>
     <body data-current-model="{current_model}" data-accent="{accent_color}" data-user-name="{safe_name}">
         <div class="ambient-layer" aria-hidden="true">
@@ -78,7 +78,7 @@ def render_home_page(
             <div class="brand-wrap">
                 <p class="eyebrow">Evolving AI Companion</p>
                 <h1>Lumiere</h1>
-                <p>{safe_name}'s personal command center</p>
+                <p>{safe_name}'s AI workspace</p>
             </div>
             <div class="hero-metrics">
                 <div class="metric-card">
@@ -97,11 +97,18 @@ def render_home_page(
         </div>
 
         <div class="page-nav" id="page-nav">
-            <button class="page-tab" data-view="chat">Chat</button>
-            <button class="page-tab" data-view="agents">Agents</button>
-            <button class="page-tab" data-view="history">History</button>
-            <button class="page-tab" data-view="reminders">Reminders</button>
-            <button class="page-tab" data-view="marketplace">Marketplace</button>
+            <label class="workspace-switch" for="workspace-select">
+                <span>Go To</span>
+                <select id="workspace-select" class="topbar-select" aria-label="Select page">
+                    <option value="chat">Chat</option>
+                    <option value="agents">Agents</option>
+                    <option value="memory">Memory</option>
+                    <option value="compare">Compare</option>
+                    <option value="history">History</option>
+                    <option value="reminders">Reminders</option>
+                    <option value="marketplace">Marketplace</option>
+                </select>
+            </label>
         </div>
 
         <div class="container single-panel" id="app-container">
@@ -111,25 +118,85 @@ def render_home_page(
                     <div class="agent-stats"></div>
                     <div class="agent-memory-wrap">
                         <details id="training-guide-panel" open>
-                            <summary>How To Train Me</summary>
+                            <summary>How To Improve Answers</summary>
                             <div class="train-guide">
-                                <p><strong>Thumbs matter:</strong> Use 👍 / 👎 under answers. Positive ratings boost mastery and levels.</p>
-                                <p><strong>Memory is per user:</strong> Preferences/history shift with <em>Use As</em> identity.</p>
-                                <p><strong>Levels:</strong> Higher levels improve precision and consistency over time.</p>
+                                <p><strong>Use thumbs:</strong> tap 👍 or 👎 after each answer.</p>
+                                <p><strong>Use identity:</strong> memory changes based on your <em>Use As</em> name.</p>
+                                <p><strong>Keep training:</strong> more feedback improves answer quality.</p>
                             </div>
-                        </details>
-                    </div>
-                    <div class="agent-memory-wrap">
-                        <details id="agent-memory-panel" open>
-                            <summary>Lumiere Memory</summary>
-                            <div id="agent-memory-meta" class="agent-memory-meta"></div>
-                            <div id="agent-memory-history" class="agent-memory-history"></div>
                         </details>
                     </div>
                     <div class="reminder-wrap">
                         <details id="usage-log-panel">
                             <summary>Usage Log</summary>
                             <div id="usage-log-list" class="usage-log-list"></div>
+                        </details>
+                    </div>
+                </div>
+                <div id="memory-view" class="tab-pane" style="display:none;">
+                    <div class="agent-memory-wrap">
+                        <div class="memory-guide">
+                            <h4>How memory works</h4>
+                            <p>1. Save notes you want Lumiere to remember.</p>
+                            <p>2. Use scope to control where each note applies.</p>
+                            <p>3. Edit or delete notes anytime.</p>
+                        </div>
+                    </div>
+                    <div class="agent-memory-wrap">
+                        <details id="agent-memory-panel" open>
+                            <summary>Agent Memory</summary>
+                            <div id="agent-memory-meta" class="agent-memory-meta"></div>
+                            <div id="agent-memory-history" class="agent-memory-history"></div>
+                        </details>
+                    </div>
+                    <div class="agent-memory-wrap">
+                        <details id="memory-management-panel" open>
+                            <summary>Manage Memory</summary>
+                            <div class="memory-controls">
+                                <div id="memory-scope-list" class="memory-scope-list"></div>
+                                <button id="memory-scopes-save-btn" type="button">Save</button>
+                                <button id="memory-refresh-btn" type="button">Refresh</button>
+                            </div>
+                            <div class="memory-add-row">
+                                <input id="memory-new-text" type="text" placeholder="Add a memory note..." autocomplete="off">
+                                <select id="memory-new-scope">
+                                    <option value="personal">Personal</option>
+                                    <option value="shared">Shared</option>
+                                    <option value="project">Project</option>
+                                </select>
+                                <button id="memory-add-btn" type="button">Add</button>
+                            </div>
+                            <div id="memory-items-list" class="memory-items-list"></div>
+                        </details>
+                    </div>
+                </div>
+                <div id="compare-view" class="tab-pane" style="display:none;">
+                    <div class="reminder-wrap">
+                        <details id="compare-panel" open>
+                            <summary>Compare Agents</summary>
+                            <div class="compare-toolbar">
+                                <label class="compare-select-wrap">
+                                    <span>Agent A</span>
+                                    <select id="compare-agent-a"></select>
+                                </label>
+                                <label class="compare-select-wrap">
+                                    <span>Agent B</span>
+                                    <select id="compare-agent-b"></select>
+                                </label>
+                                <div class="compare-toggle" id="compare-toggle">
+                                    <button type="button" class="compare-toggle-btn active" data-mode="radar">Radar</button>
+                                    <button type="button" class="compare-toggle-btn" data-mode="table">Table</button>
+                                </div>
+                                <button id="compare-refresh-btn" type="button">Refresh</button>
+                            </div>
+                            <div id="compare-hero" class="compare-hero"></div>
+                            <div id="compare-radar-wrap" class="compare-radar-wrap">
+                                <svg id="compare-radar" viewBox="0 0 520 420" role="img" aria-label="Agent radar comparison"></svg>
+                                <div id="compare-legend" class="compare-legend"></div>
+                                <div id="compare-insight" class="compare-insight"></div>
+                                <div id="compare-inline-tip" class="compare-inline-tip"></div>
+                            </div>
+                            <div id="agent-compare-list" class="agent-compare-list" style="display:none;"></div>
                         </details>
                     </div>
                 </div>
@@ -150,8 +217,11 @@ def render_home_page(
                         <details id="history-panel" open>
                             <summary>Chat History</summary>
                             <div class="reminder-input-row">
-                                <input id="history-title-input" type="text" placeholder="Session title..." autocomplete="off">
-                                <button id="history-save-btn" type="button">Save Current Chat</button>
+                                <input id="history-title-input" type="text" placeholder="Chat title..." autocomplete="off">
+                                <button id="history-save-btn" type="button">Save Chat</button>
+                            </div>
+                            <div class="reminder-input-row">
+                                <input id="history-search-input" type="text" placeholder="Search chats..." autocomplete="off">
                             </div>
                             <div id="history-list" class="history-list"></div>
                         </details>
@@ -188,9 +258,13 @@ def render_home_page(
                 <div class="panel-header">Talk to Lumiere <span class="pill success">Personal Mode</span></div>
                 <div class="panel-body">
                     <div id="onboarding-banner" class="onboarding-banner">
-                        I'm Lumiere, your personal companion. Ask anything, and rate answers with thumbs so I learn what helps you most.
-                        <button id="onboarding-close" type="button">Dismiss</button>
+                        Ask your question, then rate the answer with 👍 or 👎 so Lumiere can improve.
+                        <div class="onboarding-banner-actions">
+                            <button id="onboarding-tour-btn" type="button">Take Tour</button>
+                            <button id="onboarding-close" type="button">Dismiss</button>
+                        </div>
                     </div>
+                    <div id="error-ribbon" class="error-ribbon" aria-live="assertive"></div>
                     <div id="ai-avatar-block" class="ai-avatar-block" aria-live="polite">
                         <div class="ai-avatar-shell">
                             <div id="ai-avatar-core" class="ai-avatar-core"></div>
@@ -211,20 +285,34 @@ def render_home_page(
                             <button id="actor-apply-btn" type="button">Apply</button>
                         </div>
                         <div id="identity-hint" class="identity-hint"></div>
-                        <label class="upload-btn" for="file-upload-input">Attach</label>
+                        <label class="upload-btn" for="file-upload-input">Upload</label>
                         <input id="file-upload-input" type="file" accept=".txt,.md,.csv,.json,.pdf,image/*" hidden>
-                        <button id="clear-uploaded-btn" type="button">Clear Files</button>
-                        <button id="tts-toggle-btn" type="button">TTS Off</button>
+                        <button id="clear-uploaded-btn" type="button">Clear</button>
+                        <button id="tts-toggle-btn" type="button">Voice Off</button>
                         <button id="privacy-quick-btn" type="button" title="Privacy settings">Privacy</button>
                         <button id="export-txt-btn" type="button">Export TXT</button>
                         <button id="export-json-btn" type="button">Export JSON</button>
                     </div>
                     <div id="uploaded-context-list" class="uploaded-context-list"></div>
-                    <div class="upload-hint">Paste screenshots/files or drag files into this chat panel.</div>
+                    <div class="upload-hint">Drop files here or use Upload.</div>
+                    <div class="translate-controls">
+                        <label class="translate-toggle">
+                            <input id="auto-translate-toggle" type="checkbox">
+                            <span>Auto Translate (Language Coach)</span>
+                        </label>
+                        <label>
+                            <span>From</span>
+                            <input id="translate-source-lang" type="text" value="auto" placeholder="auto">
+                        </label>
+                        <label>
+                            <span>To</span>
+                            <input id="translate-target-lang" type="text" value="en" placeholder="en">
+                        </label>
+                    </div>
                     <div class="prompt-row">
-                        <button class="prompt-chip" data-prompt="Break this problem into 3 clear parts and give me an execution plan.">Execution Plan</button>
-                        <button class="prompt-chip" data-prompt="Give me a compact mission plan: goals, milestones, and checkpoints.">Mission Plan</button>
-                        <button class="prompt-chip" data-prompt="Run a fast readiness drill: ask me 5 hard questions and ideal responses.">Readiness Drill</button>
+                        <button class="prompt-chip" data-prompt="Break this problem into 3 clear parts and give me an execution plan.">Plan</button>
+                        <button class="prompt-chip" data-prompt="Give me a compact mission plan: goals, milestones, and checkpoints.">Goals</button>
+                        <button class="prompt-chip" data-prompt="Run a fast readiness drill: ask me 5 hard questions and ideal responses.">Practice</button>
                     </div>
                     <div id="chat-output" class="chat-messages"></div>
                     <div id="loading" class="loading">
@@ -236,13 +324,13 @@ def render_home_page(
                         </div>
                     </div>
                     <div class="input-area">
-                        <input id="question" type="text" placeholder="Message Lumiere... (paste text/files here)" autocomplete="off">
-                        <button id="voice-btn" type="button" class="voice-btn" title="Voice input">Mic</button>
+                        <textarea id="question" placeholder="Type your message..." rows="2"></textarea>
+                        <button id="voice-btn" type="button" class="voice-btn" title="Voice input">Voice</button>
                         <button id="web-btn" type="button" class="web-btn" title="Live web search">Web</button>
                         <button id="debate-btn" type="button" class="debate-btn" title="Debate mode">Debate</button>
                         <button id="send-btn">Send</button>
                     </div>
-                    <div id="remembers-footer" class="remembers-footer">Lumiere remembers: building context...</div>
+                    <div id="remembers-footer" class="remembers-footer">Lumiere remembers: loading...</div>
                 </div>
             </div>
 
@@ -284,6 +372,26 @@ def render_home_page(
                 </p>
             </div>
         </aside>
+        <div id="tour-overlay" class="tour-overlay" aria-hidden="true">
+            <div class="tour-card">
+                <div class="tour-kicker">Quick Tour</div>
+                <h3 id="tour-title">Welcome</h3>
+                <p id="tour-text">Get a fast walkthrough of the core loop.</p>
+                <div class="tour-actions">
+                    <button id="tour-skip-btn" type="button">Skip</button>
+                    <button id="tour-next-btn" type="button">Next</button>
+                </div>
+            </div>
+        </div>
+        <div id="reminder-alert-overlay" class="reminder-alert-overlay" aria-hidden="true">
+            <div class="reminder-alert-card">
+                <div class="reminder-alert-head">
+                    <strong>Reminder Due</strong>
+                    <button id="reminder-alert-close" type="button">Close</button>
+                </div>
+                <div id="reminder-alert-list" class="reminder-alert-list"></div>
+            </div>
+        </div>
         <div id="toast" class="toast" role="status" aria-live="polite"></div>
     </body>
     </html>

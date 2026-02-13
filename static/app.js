@@ -17,6 +17,19 @@ function toast(message) {
     el._timer = window.setTimeout(() => el.classList.remove("show"), 1800);
 }
 
+function setErrorRibbon(message) {
+    const el = document.getElementById("error-ribbon");
+    if (!el) return;
+    const text = String(message || "").trim();
+    if (!text) {
+        el.classList.remove("show");
+        el.textContent = "";
+        return;
+    }
+    el.textContent = text;
+    el.classList.add("show");
+}
+
 function applyTheme(theme) {
     if (theme === "system") {
         const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -85,7 +98,11 @@ const AVATAR_STORAGE_KEY = "lumiere_avatar_state_v2";
 let currentAgentSpecialty = "personal";
 let lastFailedRequest = null;
 const ONBOARDING_KEY = "lumiere_onboarding_dismissed_v1";
+const ONBOARDING_TOUR_KEY = "lumiere_onboarding_tour_done_v1";
 const TTS_KEY = "lumiere_tts_enabled_v1";
+const AUTO_TRANSLATE_KEY = "lumiere_auto_translate_v1";
+const TRANSLATE_SOURCE_KEY = "lumiere_translate_source_lang_v1";
+const TRANSLATE_TARGET_KEY = "lumiere_translate_target_lang_v1";
 const ACTOR_KEY = "lumiere_actor_v1";
 const VIEW_KEY = "lumiere_view_v1";
 const PROFILE_SEEN_KEY = "lumiere_profile_seen_v1";
@@ -102,6 +119,29 @@ let lastAskedQuestion = "";
 let reminderAudioCtx = null;
 let reminderAudioReady = false;
 let authModeRequired = false;
+let historySessionsCache = [];
+let tourStep = 0;
+let compareMode = "radar";
+let usageRowsBySpecialty = {};
+let reminderItemsCache = [];
+let memoryTickerFacts = [];
+let memoryTickerIndex = 0;
+let reminderAlertSeen = new Map();
+let reminderSpeechRepeatTimer = null;
+
+function openSettingsDrawer() {
+    const drawer = document.getElementById("settings-drawer");
+    const overlay = document.getElementById("settings-overlay");
+    if (drawer) drawer.classList.add("open");
+    if (overlay) overlay.classList.add("open");
+}
+
+function closeSettingsDrawer() {
+    const drawer = document.getElementById("settings-drawer");
+    const overlay = document.getElementById("settings-overlay");
+    if (drawer) drawer.classList.remove("open");
+    if (overlay) overlay.classList.remove("open");
+}
 
 function getAuthToken() {
     return (localStorage.getItem(AUTH_TOKEN_KEY) || "").trim();
@@ -243,8 +283,11 @@ function applyView(view) {
     const container = document.getElementById("app-container");
     const agentPanel = document.getElementById("agent-panel");
     const chatPanel = document.getElementById("chat-panel");
+    const workspaceSelect = document.getElementById("workspace-select");
     const agentPanelHeader = document.querySelector("#agent-panel .panel-header");
     const agentsView = document.getElementById("agents-view");
+    const memoryView = document.getElementById("memory-view");
+    const compareView = document.getElementById("compare-view");
     const historyView = document.getElementById("history-view");
     const remindersView = document.getElementById("reminders-view");
     const marketplaceView = document.getElementById("marketplace-view");
@@ -252,14 +295,17 @@ function applyView(view) {
     const tabs = document.querySelectorAll(".page-tab[data-view]");
     const training = document.getElementById("training-guide-panel");
     const memory = document.getElementById("agent-memory-panel");
+    const memoryMgmt = document.getElementById("memory-management-panel");
     const usage = document.getElementById("usage-log-panel");
     const history = document.getElementById("history-panel");
     const reminders = document.getElementById("reminder-panel");
     const market = document.getElementById("marketplace-panel");
 
     if (!container || !agentPanel || !chatPanel) return;
-    const mode = ["chat", "agents", "history", "reminders", "marketplace"].includes(view) ? view : "chat";
+    const compare = document.getElementById("compare-panel");
+    const mode = ["chat", "agents", "memory", "compare", "history", "reminders", "marketplace"].includes(view) ? view : "chat";
     localStorage.setItem(VIEW_KEY, mode);
+    if (workspaceSelect) workspaceSelect.value = mode;
 
     tabs.forEach((btn) => btn.classList.toggle("active", btn.dataset.view === mode));
 
@@ -269,38 +315,59 @@ function applyView(view) {
     if (metaverseView) metaverseView.style.display = "none";
     if (training) training.style.display = "none";
     if (memory) memory.style.display = "none";
+    if (memoryMgmt) memoryMgmt.style.display = "none";
     if (usage) usage.style.display = "none";
     if (history) history.style.display = "none";
     if (reminders) reminders.style.display = "none";
     if (market) market.style.display = "none";
+    if (compare) compare.style.display = "none";
     if (agentsView) agentsView.style.display = "none";
+    if (memoryView) memoryView.style.display = "none";
+    if (compareView) compareView.style.display = "none";
     if (historyView) historyView.style.display = "none";
     if (remindersView) remindersView.style.display = "none";
     if (marketplaceView) marketplaceView.style.display = "none";
 
     if (mode === "chat") {
         chatPanel.style.display = "flex";
+        chatPanel.classList.remove("view-enter");
+        void chatPanel.offsetWidth;
+        chatPanel.classList.add("view-enter");
         if (agentPanelHeader) agentPanelHeader.innerHTML = `Companion Profile <span class="pill">Core</span>`;
     } else {
         agentPanel.style.display = "block";
+        agentPanel.classList.remove("view-enter");
+        void agentPanel.offsetWidth;
+        agentPanel.classList.add("view-enter");
         if (mode === "agents") {
             if (agentsView) agentsView.style.display = "block";
-            if (agentPanelHeader) agentPanelHeader.innerHTML = `Agent Workspace <span class="pill">Core</span>`;
+            if (agentPanelHeader) agentPanelHeader.innerHTML = `Agents <span class="pill">Overview</span>`;
             if (training) training.style.display = "block";
-            if (memory) memory.style.display = "block";
             if (usage) usage.style.display = "block";
             if (training) training.open = true;
-            if (memory) memory.open = true;
             if (usage) usage.open = true;
+        } else if (mode === "memory") {
+            if (memoryView) memoryView.style.display = "block";
+            if (agentPanelHeader) agentPanelHeader.innerHTML = `Memory <span class="pill">Control</span>`;
+            if (memory) memory.style.display = "block";
+            if (memoryMgmt) memoryMgmt.style.display = "block";
+            if (memory) memory.open = true;
+            if (memoryMgmt) memoryMgmt.open = true;
+        } else if (mode === "compare") {
+            if (compareView) compareView.style.display = "block";
+            if (agentPanelHeader) agentPanelHeader.innerHTML = `Compare <span class="pill">Visual</span>`;
+            if (compare) compare.style.display = "block";
+            if (compare) compare.open = true;
+            renderAgentComparison();
         } else if (mode === "history") {
             if (historyView) historyView.style.display = "block";
-            if (agentPanelHeader) agentPanelHeader.innerHTML = `History <span class="pill">Sessions</span>`;
+            if (agentPanelHeader) agentPanelHeader.innerHTML = `History <span class="pill">Saved</span>`;
             if (history) history.style.display = "block";
             if (history) history.open = true;
             refreshHistoryList();
         } else if (mode === "reminders") {
             if (remindersView) remindersView.style.display = "block";
-            if (agentPanelHeader) agentPanelHeader.innerHTML = `Reminder Center <span class="pill">Tasks</span>`;
+            if (agentPanelHeader) agentPanelHeader.innerHTML = `Reminders <span class="pill">Tasks</span>`;
             if (reminders) reminders.style.display = "block";
             if (reminders) reminders.open = true;
         } else if (mode === "marketplace") {
@@ -421,6 +488,80 @@ function parseAgentMetaFromHtml(html) {
     };
 }
 
+function parseAnswerTextForTranslation(html) {
+    const tmp = document.createElement("div");
+    tmp.innerHTML = String(html || "");
+    tmp.querySelectorAll(".thumbs-rating, .answer-meta").forEach((el) => el.remove());
+    return (tmp.innerText || "").trim();
+}
+
+function isAutoTranslateEnabled() {
+    return localStorage.getItem(AUTO_TRANSLATE_KEY) === "1";
+}
+
+function setAutoTranslateEnabled(value) {
+    localStorage.setItem(AUTO_TRANSLATE_KEY, value ? "1" : "0");
+}
+
+function getTranslateSourceLang() {
+    return (localStorage.getItem(TRANSLATE_SOURCE_KEY) || "auto").trim() || "auto";
+}
+
+function setTranslateSourceLang(value) {
+    const clean = (value || "auto").trim().toLowerCase() || "auto";
+    localStorage.setItem(TRANSLATE_SOURCE_KEY, clean);
+}
+
+function getTranslateTargetLang() {
+    return (localStorage.getItem(TRANSLATE_TARGET_KEY) || "en").trim() || "en";
+}
+
+function setTranslateTargetLang(value) {
+    const clean = (value || "en").trim().toLowerCase() || "en";
+    localStorage.setItem(TRANSLATE_TARGET_KEY, clean);
+}
+
+function shouldAutoTranslateSpecialty(specialty) {
+    if (!isAutoTranslateEnabled()) return false;
+    return String(specialty || "").trim().toLowerCase() === "language";
+}
+
+async function appendAutoTranslation(wrapper, sourceText, specialty) {
+    if (!wrapper || !shouldAutoTranslateSpecialty(specialty)) return;
+    const text = String(sourceText || "").trim();
+    if (!text) return;
+    const requester = getActingAs();
+    const sourceLang = getTranslateSourceLang();
+    const targetLang = getTranslateTargetLang();
+    if (!targetLang) return;
+    try {
+        const res = await fetch("/translate/text", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                requester,
+                text,
+                source_lang: sourceLang,
+                target_lang: targetLang,
+                provider: "khaya_fallback"
+            })
+        });
+        const data = await res.json();
+        if (data.error || !data.translated_text) return;
+        const contentEl = wrapper.querySelector(".message-content");
+        if (!contentEl) return;
+        const block = document.createElement("div");
+        block.className = "message-translation";
+        const fromTag = escapeHtml(data.source_lang || sourceLang || "auto");
+        const toTag = escapeHtml(data.target_lang || targetLang);
+        block.innerHTML = `
+            <div class="message-translation-head">Translation (${fromTag} -> ${toTag})</div>
+            <div class="message-translation-body">${escapeHtml(String(data.translated_text || "")).replace(/\n/g, "<br>")}</div>
+        `;
+        contentEl.appendChild(block);
+    } catch (_) {}
+}
+
 function appendMessage(role, label, content, isTrustedHtml = false) {
     const output = document.getElementById("chat-output");
     if (!output) return;
@@ -449,6 +590,7 @@ function appendMessage(role, label, content, isTrustedHtml = false) {
     if (role === "ai" && isTtsEnabled()) {
         speakText(wrapper.querySelector(".message-content")?.innerText || "");
     }
+    return wrapper;
 }
 
 function isTtsEnabled() {
@@ -458,16 +600,44 @@ function isTtsEnabled() {
 function setTtsEnabled(value) {
     localStorage.setItem(TTS_KEY, value ? "1" : "0");
     const btn = document.getElementById("tts-toggle-btn");
-    if (btn) btn.textContent = value ? "TTS On" : "TTS Off";
+    if (btn) btn.textContent = value ? "Voice On" : "Voice Off";
 }
 
-function speakText(text) {
+function detectSpeechLang(text) {
+    const sample = String(text || "");
+    if (/[\u3040-\u30ff\u31f0-\u31ff]/.test(sample)) return "ja-JP";
+    if (/[\uac00-\ud7af]/.test(sample)) return "ko-KR";
+    if (/[\u0600-\u06ff]/.test(sample)) return "ar-SA";
+    if (/[\u0400-\u04ff]/.test(sample)) return "ru-RU";
+    if (/[\u4e00-\u9fff]/.test(sample)) return "zh-CN";
+    return "en-US";
+}
+
+function pickVoiceForLang(langTag) {
+    if (!("speechSynthesis" in window)) return null;
+    const target = String(langTag || "").toLowerCase();
+    if (!target) return null;
+    const voices = window.speechSynthesis.getVoices() || [];
+    let voice = voices.find((v) => String(v.lang || "").toLowerCase() === target);
+    if (!voice) {
+        const base = target.split("-")[0];
+        voice = voices.find((v) => String(v.lang || "").toLowerCase().startsWith(base));
+    }
+    return voice || null;
+}
+
+function speakText(text, options = {}) {
     if (!("speechSynthesis" in window)) return;
     const clean = (text || "").trim();
     if (!clean) return;
     const utter = new SpeechSynthesisUtterance(clean.slice(0, 1500));
-    utter.rate = 1;
-    utter.pitch = 1;
+    const targetLang = options.lang || detectSpeechLang(clean);
+    utter.lang = targetLang;
+    const voice = pickVoiceForLang(targetLang);
+    if (voice) utter.voice = voice;
+    utter.rate = Number(options.rate || 1);
+    utter.pitch = Number(options.pitch || 1);
+    if (typeof options.volume === "number") utter.volume = options.volume;
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utter);
 }
@@ -542,6 +712,36 @@ async function saveCurrentChatToHistory() {
     return null;
 }
 
+function renderHistoryList(sessions, filterQuery = "") {
+    const listEl = document.getElementById("history-list");
+    if (!listEl) return;
+    const q = String(filterQuery || "").trim().toLowerCase();
+    const filtered = !q
+        ? sessions
+        : sessions.filter((s) => {
+            const title = String(s.title || "").toLowerCase();
+            const id = String(s.id || "").toLowerCase();
+            return title.includes(q) || id.includes(q);
+        });
+    if (!filtered.length) {
+        listEl.innerHTML = `<div class="agent-memory-empty">${q ? "No sessions matched your search." : "No saved chats yet."}</div>`;
+        return;
+    }
+    listEl.innerHTML = filtered.map((s) => `
+        <div class="history-item">
+            <div class="history-main">
+                <strong>${escapeHtml(s.title || "Untitled chat")}</strong>
+                <span>${escapeHtml(String(s.message_count || 0))} msgs</span>
+            </div>
+            <div class="history-sub">Updated: ${escapeHtml(String(s.updated_at || "-"))}</div>
+            <div class="history-actions">
+                <button type="button" class="history-open-btn" data-id="${escapeHtml(s.id)}">Open</button>
+                <button type="button" class="history-delete-btn" data-id="${escapeHtml(s.id)}">Delete</button>
+            </div>
+        </div>
+    `).join("");
+}
+
 async function refreshHistoryList() {
     const listEl = document.getElementById("history-list");
     if (!listEl) return;
@@ -550,23 +750,9 @@ async function refreshHistoryList() {
         const res = await fetch(`/history/sessions?requester=${encodeURIComponent(requester)}&limit=80`);
         const data = await res.json();
         const sessions = Array.isArray(data.sessions) ? data.sessions : [];
-        if (!sessions.length) {
-            listEl.innerHTML = `<div class="agent-memory-empty">No saved chats yet.</div>`;
-            return;
-        }
-        listEl.innerHTML = sessions.map((s) => `
-            <div class="history-item">
-                <div class="history-main">
-                    <strong>${escapeHtml(s.title || "Untitled chat")}</strong>
-                    <span>${escapeHtml(String(s.message_count || 0))} msgs</span>
-                </div>
-                <div class="history-sub">Updated: ${escapeHtml(String(s.updated_at || "-"))}</div>
-                <div class="history-actions">
-                    <button type="button" class="history-open-btn" data-id="${escapeHtml(s.id)}">Open</button>
-                    <button type="button" class="history-delete-btn" data-id="${escapeHtml(s.id)}">Delete</button>
-                </div>
-            </div>
-        `).join("");
+        historySessionsCache = sessions;
+        const searchEl = document.getElementById("history-search-input");
+        renderHistoryList(sessions, searchEl?.value || "");
     } catch (_) {
         listEl.innerHTML = `<div class="agent-memory-empty">Failed to load history.</div>`;
     }
@@ -638,6 +824,15 @@ function shouldSuggestRecovery(content) {
         text.includes("no available") ||
         text.includes("failed")
     );
+}
+
+function reportRequestError(message, kind = "request") {
+    const text = `${kind.toUpperCase()}: ${message || "Request failed"}`;
+    setErrorRibbon(text);
+}
+
+function clearRequestError() {
+    setErrorRibbon("");
 }
 
 function recoveryActionsHtml() {
@@ -794,6 +989,16 @@ function handleMetaverseZoneAction(action, specialty, name) {
     })();
 }
 
+function buildConversationContext(limit = 6) {
+    const rows = chatLog.slice(-Math.max(1, limit));
+    const lines = rows
+        .filter((m) => m && m.content_text)
+        .map((m) => `${m.label || (m.role === "user" ? "You" : "Lumiere")}: ${String(m.content_text).trim()}`)
+        .filter(Boolean);
+    const text = lines.join("\n").slice(0, 2000);
+    return text;
+}
+
 async function ask(promptText) {
     if (!requireLoginIfNeeded()) return;
     const input = document.getElementById("question");
@@ -801,36 +1006,44 @@ async function ask(promptText) {
     if (!q) return;
 
     appendMessage("user", "You", q, false);
+    clearRequestError();
     growAvatarByInteraction();
     lastAskedQuestion = q;
+    if (input && !promptText) input.value = "";
     setBusy(true);
 
     try {
         const requester = getActingAs();
-        const res = await fetch("/ask?q=" + encodeURIComponent(q) + "&requester=" + encodeURIComponent(requester));
+        const ctx = buildConversationContext(8);
+        const res = await fetch("/ask?q=" + encodeURIComponent(q) + "&requester=" + encodeURIComponent(requester) + "&ctx=" + encodeURIComponent(ctx));
         const txt = await res.text();
+        const meta = parseAgentMetaFromHtml(txt);
+        const responseSpecialty = meta?.specialty || currentAgentSpecialty;
+        if (meta?.specialty) currentAgentSpecialty = meta.specialty;
+        const rawAnswerText = parseAnswerTextForTranslation(txt);
+        let aiWrapper = null;
         if (shouldSuggestRecovery(txt)) {
             markFailure(q, "ask");
-            appendMessage("ai", "Lumiere", txt + recoveryActionsHtml(), true);
+            reportRequestError("Model output looked unstable", "ask");
+            aiWrapper = appendMessage("ai", "Lumiere", txt + recoveryActionsHtml(), true);
         } else {
-            appendMessage("ai", "Lumiere", txt, true);
+            aiWrapper = appendMessage("ai", "Lumiere", txt, true);
         }
-
-        const meta = parseAgentMetaFromHtml(txt);
-        if (meta?.specialty) currentAgentSpecialty = meta.specialty;
+        await appendAutoTranslation(aiWrapper, rawAnswerText, responseSpecialty);
         await Promise.all([
             refreshAgentStats(),
             refreshAgentMemory(),
             refreshMemoryFact(),
+            refreshReminders(),
             refreshUsageLog()
         ]);
     } catch (err) {
         markFailure(q, "ask");
+        reportRequestError(err.message || "Request failed", "ask");
         appendMessage("ai", "System", `Error: ${escapeHtml(err.message || "Request failed")}${recoveryActionsHtml()}`, true);
     } finally {
         setBusy(false);
         if (input) {
-            input.value = "";
             input.focus();
         }
     }
@@ -843,36 +1056,44 @@ async function askDebate(promptText) {
     if (!q) return;
 
     appendMessage("user", "You", q, false);
+    clearRequestError();
     growAvatarByInteraction();
     lastAskedQuestion = q;
+    if (input && !promptText) input.value = "";
     setBusy(true);
 
     try {
         const requester = getActingAs();
-        const res = await fetch("/debate?q=" + encodeURIComponent(q) + "&requester=" + encodeURIComponent(requester));
+        const ctx = buildConversationContext(8);
+        const res = await fetch("/debate?q=" + encodeURIComponent(q) + "&requester=" + encodeURIComponent(requester) + "&ctx=" + encodeURIComponent(ctx));
         const txt = await res.text();
+        const meta = parseAgentMetaFromHtml(txt);
+        const responseSpecialty = meta?.specialty || currentAgentSpecialty;
+        if (meta?.specialty) currentAgentSpecialty = meta.specialty;
+        const rawAnswerText = parseAnswerTextForTranslation(txt);
+        let aiWrapper = null;
         if (shouldSuggestRecovery(txt)) {
             markFailure(q, "debate");
-            appendMessage("ai", "Lumiere Debate", txt + recoveryActionsHtml(), true);
+            reportRequestError("Debate output looked unstable", "debate");
+            aiWrapper = appendMessage("ai", "Lumiere Debate", txt + recoveryActionsHtml(), true);
         } else {
-            appendMessage("ai", "Lumiere Debate", txt, true);
+            aiWrapper = appendMessage("ai", "Lumiere Debate", txt, true);
         }
-
-        const meta = parseAgentMetaFromHtml(txt);
-        if (meta?.specialty) currentAgentSpecialty = meta.specialty;
+        await appendAutoTranslation(aiWrapper, rawAnswerText, responseSpecialty);
         await Promise.all([
             refreshAgentStats(),
             refreshAgentMemory(),
             refreshMemoryFact(),
+            refreshReminders(),
             refreshUsageLog()
         ]);
     } catch (err) {
         markFailure(q, "debate");
+        reportRequestError(err.message || "Request failed", "debate");
         appendMessage("ai", "System", `Debate error: ${escapeHtml(err.message || "Request failed")}${recoveryActionsHtml()}`, true);
     } finally {
         setBusy(false);
         if (input) {
-            input.value = "";
             input.focus();
         }
     }
@@ -885,36 +1106,44 @@ async function askLiveWeb(promptText) {
     if (!q) return;
 
     appendMessage("user", "You", q, false);
+    clearRequestError();
     growAvatarByInteraction();
     lastAskedQuestion = q;
+    if (input && !promptText) input.value = "";
     setBusy(true);
 
     try {
         const requester = getActingAs();
-        const res = await fetch("/ask-live?q=" + encodeURIComponent(q) + "&requester=" + encodeURIComponent(requester));
+        const ctx = buildConversationContext(8);
+        const res = await fetch("/ask-live?q=" + encodeURIComponent(q) + "&requester=" + encodeURIComponent(requester) + "&ctx=" + encodeURIComponent(ctx));
         const txt = await res.text();
+        const meta = parseAgentMetaFromHtml(txt);
+        const responseSpecialty = meta?.specialty || currentAgentSpecialty;
+        if (meta?.specialty) currentAgentSpecialty = meta.specialty;
+        const rawAnswerText = parseAnswerTextForTranslation(txt);
+        let aiWrapper = null;
         if (shouldSuggestRecovery(txt)) {
             markFailure(q, "web");
-            appendMessage("ai", "Lumiere Live Web", txt + recoveryActionsHtml(), true);
+            reportRequestError("Live web output looked unstable", "web");
+            aiWrapper = appendMessage("ai", "Lumiere Live Web", txt + recoveryActionsHtml(), true);
         } else {
-            appendMessage("ai", "Lumiere Live Web", txt, true);
+            aiWrapper = appendMessage("ai", "Lumiere Live Web", txt, true);
         }
-
-        const meta = parseAgentMetaFromHtml(txt);
-        if (meta?.specialty) currentAgentSpecialty = meta.specialty;
+        await appendAutoTranslation(aiWrapper, rawAnswerText, responseSpecialty);
         await Promise.all([
             refreshAgentStats(),
             refreshAgentMemory(),
             refreshMemoryFact(),
+            refreshReminders(),
             refreshUsageLog()
         ]);
     } catch (err) {
         markFailure(q, "web");
+        reportRequestError(err.message || "Request failed", "web");
         appendMessage("ai", "System", `Live web error: ${escapeHtml(err.message || "Request failed")}${recoveryActionsHtml()}`, true);
     } finally {
         setBusy(false);
         if (input) {
-            input.value = "";
             input.focus();
         }
     }
@@ -957,10 +1186,296 @@ async function refreshAgentStats() {
             `;
             container.appendChild(card);
         });
+        renderAgentComparison();
         renderMetaverseScene();
         renderMetaverseAgentPorts();
         renderAvatarStudioCard();
     } catch (_) {}
+}
+
+function clamp01(v) {
+    return Math.max(0, Math.min(1, Number(v || 0)));
+}
+
+function compareKey(agent) {
+    return String(agent?.specialty || "personal").trim().toLowerCase();
+}
+
+function colorFromText(text) {
+    let h = 0;
+    const raw = String(text || "agent");
+    for (let i = 0; i < raw.length; i += 1) h = ((h << 5) - h) + raw.charCodeAt(i);
+    const hue = Math.abs(h) % 360;
+    return `hsl(${hue} 76% 56%)`;
+}
+
+function initialsFromName(name) {
+    const parts = String(name || "A").trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return "A";
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+}
+
+function compareAgentHeroCard(agent, side = "a") {
+    const name = String(agent?.name || compareKey(agent) || "Agent");
+    const spec = String(agent?.specialty || "personal");
+    const level = Number(agent?.level || 1);
+    const acc = Math.max(0, Math.min(100, Number(agent?.accuracy || 0)));
+    const tone = colorFromText(spec);
+    return `
+        <article class="compare-hero-card ${side}" style="--hero-tone:${escapeHtml(tone)}">
+            <div class="compare-avatar-3d">${escapeHtml(initialsFromName(name))}</div>
+            <div class="compare-hero-main">
+                <strong>${escapeHtml(name)}</strong>
+                <span>${escapeHtml(spec)} · Lvl ${level}</span>
+            </div>
+            <div class="compare-hero-score">${acc.toFixed(1)}%</div>
+        </article>
+    `;
+}
+
+function ensureCompareSelectOptions() {
+    const aSel = document.getElementById("compare-agent-a");
+    const bSel = document.getElementById("compare-agent-b");
+    if (!aSel || !bSel) return;
+    const options = metaverseAgents.slice(0, 20).map((agent) => {
+        const key = compareKey(agent);
+        return `<option value="${escapeHtml(key)}">${escapeHtml(agent.name || key)}</option>`;
+    }).join("");
+    if (!options) {
+        aSel.innerHTML = "";
+        bSel.innerHTML = "";
+        return;
+    }
+    const prevA = aSel.value;
+    const prevB = bSel.value;
+    aSel.innerHTML = options;
+    bSel.innerHTML = options;
+    aSel.value = Array.from(aSel.options).some((o) => o.value === prevA) ? prevA : aSel.options[0].value;
+    if (Array.from(bSel.options).some((o) => o.value === prevB)) {
+        bSel.value = prevB;
+    } else {
+        bSel.value = bSel.options[Math.min(1, bSel.options.length - 1)].value;
+    }
+    if (aSel.value === bSel.value && bSel.options.length > 1) {
+        bSel.value = bSel.options[1].value;
+    }
+}
+
+function compareAgentByKey(key) {
+    const normalized = String(key || "").trim().toLowerCase();
+    return metaverseAgents.find((agent) => compareKey(agent) === normalized) || null;
+}
+
+function compareMetricsFor(agent) {
+    const key = compareKey(agent);
+    const usage = usageRowsBySpecialty[key] || {};
+    const up = Number(usage.ratings_up || 0);
+    const down = Number(usage.ratings_down || 0);
+    const messages = Number(usage.messages || agent.interactions || 0);
+    const level = Math.max(1, Number(agent.level || 1));
+    const accuracy = Math.max(0, Math.min(100, Number(agent.accuracy || 0)));
+    const consistency = up + down > 0 ? (up / (up + down)) * 100 : Math.max(35, accuracy * 0.72);
+    const responsePower = Math.max(25, Math.min(100, 40 + level * 9));
+    return [
+        { label: "Mastery", value: accuracy },
+        { label: "Level", value: clamp01(level / 10) * 100 },
+        { label: "Usage", value: clamp01(messages / 80) * 100 },
+        { label: "Upvotes", value: clamp01(up / 40) * 100 },
+        { label: "Consistency", value: Math.max(0, Math.min(100, consistency)) },
+        { label: "Response", value: responsePower },
+    ];
+}
+
+function compareInsight(metricLabel, aVal, bVal, aName, bName) {
+    const diff = Math.abs(aVal - bVal).toFixed(1);
+    if (aVal === bVal) return `${metricLabel}: both agents are equal here.`;
+    const better = aVal > bVal ? aName : bName;
+    const lower = aVal > bVal ? bName : aName;
+    const nuance = metricLabel === "Consistency"
+        ? "More stable answers across ratings."
+        : metricLabel === "Response"
+            ? "Faster and clearer response behavior."
+            : metricLabel === "Upvotes"
+                ? "Gets better user feedback."
+                : metricLabel === "Usage"
+                    ? "Used more often in sessions."
+                    : metricLabel === "Mastery"
+                        ? "Shows stronger problem quality."
+                        : "Shows stronger progression.";
+    return `${metricLabel}: ${better} leads ${lower} by ${diff} points. ${nuance}`;
+}
+
+function buildRadarPolygon(metrics, cx, cy, radius) {
+    const points = [];
+    const axis = metrics.length;
+    for (let i = 0; i < axis; i += 1) {
+        const angle = (-Math.PI / 2) + (Math.PI * 2 * i / axis);
+        const r = radius * clamp01(metrics[i].value / 100);
+        const x = cx + Math.cos(angle) * r;
+        const y = cy + Math.sin(angle) * r;
+        points.push(`${x.toFixed(2)},${y.toFixed(2)}`);
+    }
+    return points.join(" ");
+}
+
+function renderCompareRadar(agentA, agentB) {
+    const svg = document.getElementById("compare-radar");
+    const legend = document.getElementById("compare-legend");
+    const hero = document.getElementById("compare-hero");
+    const insight = document.getElementById("compare-insight");
+    if (!svg || !legend || !agentA || !agentB) return;
+    const metricsA = compareMetricsFor(agentA);
+    const metricsB = compareMetricsFor(agentB);
+    const labels = metricsA.map((m) => m.label);
+    const cx = 260;
+    const cy = 205;
+    const radius = 145;
+    const rings = [0.25, 0.5, 0.75, 1.0].map((r) => {
+        const rr = radius * r;
+        return `<circle cx="${cx}" cy="${cy}" r="${rr}" fill="none" stroke="rgba(173,196,226,0.15)" />`;
+    }).join("");
+    const axisLines = labels.map((label, i) => {
+        const angle = (-Math.PI / 2) + (Math.PI * 2 * i / labels.length);
+        const x = cx + Math.cos(angle) * radius;
+        const y = cy + Math.sin(angle) * radius;
+        const lx = cx + Math.cos(angle) * (radius + 26);
+        const ly = cy + Math.sin(angle) * (radius + 26);
+        const av = Number(metricsA[i].value || 0);
+        const bv = Number(metricsB[i].value || 0);
+        const info = compareInsight(label, av, bv, agentA.name || "Agent A", agentB.name || "Agent B");
+        return `
+            <line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="rgba(160,186,219,0.18)" />
+            <text x="${lx}" y="${ly}" class="radar-label" data-insight="${escapeHtml(info)}">${escapeHtml(label)} ${av.toFixed(0)}/${bv.toFixed(0)}</text>
+            <circle cx="${lx}" cy="${ly}" r="16" fill="rgba(0,0,0,0.001)" class="radar-hit" data-insight="${escapeHtml(info)}"></circle>
+        `;
+    }).join("");
+    const polyA = buildRadarPolygon(metricsA, cx, cy, radius);
+    const polyB = buildRadarPolygon(metricsB, cx, cy, radius);
+    svg.innerHTML = `
+        <g>
+            ${rings}
+            ${axisLines}
+            <polygon points="${polyA}" fill="rgba(59,130,246,0.24)" stroke="#3b82f6" stroke-width="2.5"></polygon>
+            <polygon points="${polyB}" fill="rgba(236,72,153,0.22)" stroke="#ec4899" stroke-width="2.5"></polygon>
+            <circle cx="${cx}" cy="${cy}" r="3" fill="#b8d8ff"></circle>
+        </g>
+    `;
+    legend.innerHTML = `
+        <div class="compare-legend-item"><span class="dot a"></span>${escapeHtml(agentA.name || compareKey(agentA))}</div>
+        <div class="compare-legend-item"><span class="dot b"></span>${escapeHtml(agentB.name || compareKey(agentB))}</div>
+    `;
+    if (hero) {
+        hero.innerHTML = `
+            ${compareAgentHeroCard(agentA, "a")}
+            ${compareAgentHeroCard(agentB, "b")}
+        `;
+    }
+    if (insight) {
+        insight.textContent = "Hover a radar label to see deeper agent analysis.";
+    }
+    const inlineTip = document.getElementById("compare-inline-tip");
+    const hideInlineTip = () => {
+        if (!inlineTip) return;
+        inlineTip.classList.remove("show");
+        inlineTip.textContent = "";
+    };
+    svg.querySelectorAll(".radar-hit, .radar-label[data-insight]").forEach((node) => {
+        node.addEventListener("mouseenter", (ev) => {
+            const msg = node.getAttribute("data-insight") || "";
+            if (insight) insight.textContent = node.getAttribute("data-insight") || "";
+            if (inlineTip) {
+                inlineTip.textContent = msg;
+                inlineTip.classList.add("show");
+                inlineTip.style.left = `${Math.min(window.innerWidth - 280, Math.max(12, ev.clientX + 14))}px`;
+                inlineTip.style.top = `${Math.min(window.innerHeight - 120, Math.max(12, ev.clientY + 12))}px`;
+            }
+        });
+        node.addEventListener("mousemove", (ev) => {
+            if (!inlineTip || !inlineTip.classList.contains("show")) return;
+            inlineTip.style.left = `${Math.min(window.innerWidth - 280, Math.max(12, ev.clientX + 14))}px`;
+            inlineTip.style.top = `${Math.min(window.innerHeight - 120, Math.max(12, ev.clientY + 12))}px`;
+        });
+        node.addEventListener("mouseleave", () => {
+            if (insight) insight.textContent = "Hover a radar label to see deeper agent analysis.";
+            hideInlineTip();
+        });
+    });
+}
+
+function renderCompareTable() {
+    const el = document.getElementById("agent-compare-list");
+    const hero = document.getElementById("compare-hero");
+    const insight = document.getElementById("compare-insight");
+    if (!el) return;
+    if (!metaverseAgents.length) {
+        el.innerHTML = `<div class="agent-memory-empty">No agent data yet.</div>`;
+        return;
+    }
+    const rows = metaverseAgents
+        .slice()
+        .sort((a, b) => Number(b.accuracy || 0) - Number(a.accuracy || 0))
+        .map((agent) => {
+            const usage = usageRowsBySpecialty[compareKey(agent)] || {};
+            const tone = colorFromText(agent.specialty || "personal");
+            const mastery = Math.max(0, Math.min(100, Number(agent.accuracy || 0)));
+            const usageVal = Number(usage.messages || agent.interactions || 0);
+            const usagePct = Math.max(0, Math.min(100, (usageVal / 90) * 100));
+            return `
+                <div class="compare-row">
+                    <div class="compare-agent-cell"><span class="compare-mini-avatar" style="--hero-tone:${escapeHtml(tone)}">${escapeHtml(initialsFromName(agent.name || agent.specialty || "A"))}</span><strong>${escapeHtml(agent.name || agent.specialty || "Agent")}</strong><span>${escapeHtml(agent.specialty || "personal")}</span></div>
+                    <div>Lvl ${escapeHtml(String(agent.level || 1))}</div>
+                    <div class="compare-metric"><span>${mastery.toFixed(1)}%</span><em style="width:${mastery.toFixed(1)}%"></em></div>
+                    <div class="compare-metric"><span>${escapeHtml(String(usageVal))}</span><em style="width:${usagePct.toFixed(1)}%"></em></div>
+                </div>
+            `;
+        });
+    el.innerHTML = `
+        <div class="compare-head compare-row">
+            <div>Agent</div>
+            <div>Level</div>
+            <div>Mastery</div>
+            <div>Usage</div>
+        </div>
+        ${rows.join("")}
+    `;
+    if (hero) hero.innerHTML = "";
+    if (insight) insight.textContent = "Table mode shows numeric score bars for quick comparison.";
+}
+
+function setCompareMode(mode) {
+    compareMode = mode === "table" ? "table" : "radar";
+    const radarWrap = document.getElementById("compare-radar-wrap");
+    const tableWrap = document.getElementById("agent-compare-list");
+    const inlineTip = document.getElementById("compare-inline-tip");
+    document.querySelectorAll(".compare-toggle-btn").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.mode === compareMode);
+    });
+    if (radarWrap) radarWrap.style.display = compareMode === "radar" ? "block" : "none";
+    if (tableWrap) tableWrap.style.display = compareMode === "table" ? "grid" : "none";
+    if (inlineTip) {
+        inlineTip.classList.remove("show");
+        inlineTip.textContent = "";
+    }
+}
+
+function renderAgentComparison() {
+    ensureCompareSelectOptions();
+    const aSel = document.getElementById("compare-agent-a");
+    const bSel = document.getElementById("compare-agent-b");
+    const insight = document.getElementById("compare-insight");
+    const agentA = compareAgentByKey(aSel?.value || "");
+    const agentB = compareAgentByKey(bSel?.value || "");
+    if (compareMode === "table") renderCompareTable();
+    if (agentA && agentB) {
+        renderCompareRadar(agentA, agentB);
+    } else {
+        const svg = document.getElementById("compare-radar");
+        if (svg) svg.innerHTML = "";
+        const legend = document.getElementById("compare-legend");
+        if (legend) legend.innerHTML = `<div class="agent-memory-empty">Pick two agents to compare.</div>`;
+        if (insight) insight.textContent = "Pick two agents to compare.";
+    }
 }
 
 async function chainAction(action, specialty) {
@@ -1037,14 +1552,14 @@ async function refreshMarketplace() {
             listEl.innerHTML = `<div class="agent-memory-empty">No listed agents right now.</div>`;
         } else {
             listEl.innerHTML = listed.map((item) => `
-                <div class="market-item">
+                <div class="market-item premium">
                     <div class="market-main">
                         <strong>${escapeHtml(item.agent_name || item.specialty)}</strong>
-                        <span>${escapeHtml(item.specialty)} · ${escapeHtml(String(item.price_sol || "-"))} SOL</span>
+                        <span class="market-price">${escapeHtml(String(item.price_sol || "-"))} SOL</span>
                     </div>
-                    <div class="market-sub">Owner: ${escapeHtml(item.owner || "-")} · Mint: ${escapeHtml((item.mint_address || "").slice(0, 8))}...</div>
+                    <div class="market-sub"><span class="market-tag">${escapeHtml(item.specialty)}</span> Owner: ${escapeHtml(item.owner || "-")} · Mint: ${escapeHtml((item.mint_address || "").slice(0, 8))}...</div>
                     <div class="chain-actions">
-                        <button class="chain-action" data-action="buy" data-specialty="${escapeHtml(item.specialty)}">Buy Listed</button>
+                        <button class="chain-action" data-action="buy" data-specialty="${escapeHtml(item.specialty)}">Buy</button>
                         <button class="chain-action" data-action="rent" data-specialty="${escapeHtml(item.specialty)}">Rent</button>
                     </div>
                 </div>
@@ -1055,12 +1570,12 @@ async function refreshMarketplace() {
             manageEl.innerHTML = `<div class="agent-memory-empty">No agents available yet.</div>`;
         } else {
             manageEl.innerHTML = myAgents.map((agent) => `
-                <div class="market-item">
+                <div class="market-item owner">
                     <div class="market-main">
                         <strong>${escapeHtml(agent.name || agent.specialty)}</strong>
-                        <span>${escapeHtml(agent.specialty)} · Level ${escapeHtml(String(agent.level || 1))}</span>
+                        <span class="market-level">Lvl ${escapeHtml(String(agent.level || 1))}</span>
                     </div>
-                    <div class="market-sub">Manage token actions for this agent</div>
+                    <div class="market-sub"><span class="market-tag">${escapeHtml(agent.specialty)}</span> Manage token actions for this agent</div>
                     <div class="chain-actions">
                         <button class="chain-action" data-action="mint" data-specialty="${escapeHtml(agent.specialty)}">Mint</button>
                         <button class="chain-action" data-action="list" data-specialty="${escapeHtml(agent.specialty)}">List</button>
@@ -1081,10 +1596,10 @@ async function refreshMarketplace() {
                 if (ev.event === "list") summary = `list ${payload.seller || "?"} @ ${payload.price_sol || "-"} SOL`;
                 if (ev.event === "rent") summary = `rent ${payload.renter || "?"} (${payload.hours || 0}h)`;
                 if (ev.event === "mint") summary = `mint ${payload.owner || "?"}`;
-                return `<div class="market-event"><span>${escapeHtml(ev.specialty || "-")}</span><span>${escapeHtml(summary)}</span></div>`;
+                return `<div class="market-event"><span class="market-event-spec">${escapeHtml(ev.specialty || "-")}</span><span>${escapeHtml(summary)}</span></div>`;
             }).join("");
             eventsEl.innerHTML = `
-                <div class="market-events-head">Recent Chain Events</div>
+                <div class="market-events-head">Recent Chain Activity</div>
                 ${rendered}
             `;
         }
@@ -1098,8 +1613,13 @@ async function refreshUsageLog() {
         const res = await fetch("/usage-log");
         const data = await res.json();
         const rows = data.agents || [];
+        usageRowsBySpecialty = {};
+        rows.forEach((r) => {
+            usageRowsBySpecialty[String(r.specialty || "").trim().toLowerCase()] = r;
+        });
         if (!rows.length) {
             listEl.innerHTML = `<div class="agent-memory-empty">No usage yet.</div>`;
+            renderAgentComparison();
             return;
         }
         listEl.innerHTML = rows.slice(0, 8).map((r) => `
@@ -1110,6 +1630,7 @@ async function refreshUsageLog() {
                 <span>👎 ${r.ratings_down}</span>
             </div>
         `).join("");
+        renderAgentComparison();
     } catch (_) {}
 }
 
@@ -1713,6 +2234,11 @@ async function refreshAgentMemory() {
         const data = await res.json();
 
         const factText = (data.facts || []).slice(-2).map((f) => `<li>${escapeHtml(f)}</li>`).join("");
+        const freshFacts = Array.isArray(data.facts) ? data.facts.map((f) => String(f || "").trim()).filter(Boolean) : [];
+        if (freshFacts.length) {
+            const merged = [...freshFacts, ...memoryTickerFacts].filter(Boolean);
+            memoryTickerFacts = Array.from(new Set(merged)).slice(0, 20);
+        }
         metaEl.innerHTML = `
             <div><strong>${escapeHtml(data.name || "Agent")}</strong> · Level ${Number(data.level || 1)}</div>
             ${factText ? `<ul class="memory-facts">${factText}</ul>` : ""}
@@ -1732,14 +2258,67 @@ async function refreshAgentMemory() {
     } catch (_) {}
 }
 
-async function refreshMemoryFact() {
+function reminderPriorityMessage(now = new Date()) {
+    const pending = reminderItemsCache
+        .filter((item) => !item?.done && item?.due_at)
+        .map((item) => {
+            const due = new Date(item.due_at);
+            return { item, due, mins: Math.round((due.getTime() - now.getTime()) / 60000) };
+        })
+        .filter((row) => Number.isFinite(row.due.getTime()))
+        .sort((a, b) => a.due.getTime() - b.due.getTime());
+    if (!pending.length) return "";
+    const next = pending[0];
+    if (next.mins <= 0) {
+        return `Lumiere remembers: Priority reminder now - ${next.item.text}`;
+    }
+    if (next.mins <= 30) {
+        return `Lumiere remembers: Priority reminder in ${next.mins} min - ${next.item.text}`;
+    }
+    return "";
+}
+
+function renderRemembersFooter() {
     const footer = document.getElementById("remembers-footer");
     if (!footer) return;
+    const urgent = reminderPriorityMessage();
+    if (urgent) {
+        footer.textContent = urgent;
+        footer.classList.add("urgent");
+        return;
+    }
+    footer.classList.remove("urgent");
+    if (memoryTickerFacts.length) {
+        const idx = Math.max(0, Math.min(memoryTickerFacts.length - 1, memoryTickerIndex));
+        footer.textContent = `Lumiere remembers: ${memoryTickerFacts[idx]}`;
+        return;
+    }
+    footer.textContent = "Lumiere remembers: still learning your preferences.";
+}
+
+function advanceMemoryTicker() {
+    if (reminderPriorityMessage()) {
+        renderRemembersFooter();
+        return;
+    }
+    if (memoryTickerFacts.length > 1) {
+        memoryTickerIndex = (memoryTickerIndex + 1) % memoryTickerFacts.length;
+    }
+    renderRemembersFooter();
+}
+
+async function refreshMemoryFact() {
     try {
         const requester = getActingAs();
         const res = await fetch(`/memory-fact?specialty=${encodeURIComponent(currentAgentSpecialty)}&requester=${encodeURIComponent(requester)}`);
         const data = await res.json();
-        footer.textContent = `Lumiere remembers: ${data.fact || "..."}`;
+        const fact = String(data?.fact || "").trim();
+        if (fact) {
+            const already = memoryTickerFacts.includes(fact);
+            memoryTickerFacts = Array.from(new Set([fact, ...memoryTickerFacts])).slice(0, 20);
+            if (!already) memoryTickerIndex = 0;
+        }
+        renderRemembersFooter();
     } catch (_) {}
 }
 
@@ -1779,7 +2358,9 @@ async function refreshReminders() {
     try {
         const res = await fetch("/reminders");
         const items = await res.json();
-        renderReminders(Array.isArray(items) ? items : []);
+        reminderItemsCache = Array.isArray(items) ? items : [];
+        renderReminders(reminderItemsCache);
+        renderRemembersFooter();
     } catch (_) {}
 }
 
@@ -1801,24 +2382,61 @@ function playReminderSound() {
         const Ctx = window.AudioContext || window.webkitAudioContext;
         if (!Ctx) return;
         reminderAudioCtx = reminderAudioCtx || new Ctx();
-        if (reminderAudioCtx.state === "suspended") return;
+        if (reminderAudioCtx.state === "suspended") {
+            reminderAudioCtx.resume().catch(() => {});
+        }
         const now = reminderAudioCtx.currentTime;
         const tone = (freq, start, duration) => {
             const osc = reminderAudioCtx.createOscillator();
             const gain = reminderAudioCtx.createGain();
-            osc.type = "sine";
+            osc.type = "triangle";
             osc.frequency.value = freq;
             gain.gain.setValueAtTime(0.0001, start);
-            gain.gain.exponentialRampToValueAtTime(0.12, start + 0.01);
+            gain.gain.exponentialRampToValueAtTime(0.22, start + 0.01);
             gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
             osc.connect(gain);
             gain.connect(reminderAudioCtx.destination);
             osc.start(start);
             osc.stop(start + duration + 0.02);
         };
-        tone(880, now, 0.12);
-        tone(988, now + 0.15, 0.14);
+        // Stronger attention pattern.
+        tone(880, now, 0.14);
+        tone(1040, now + 0.16, 0.14);
+        tone(740, now + 0.34, 0.18);
+        tone(880, now + 0.56, 0.16);
+        if ("vibrate" in navigator) {
+            navigator.vibrate([160, 80, 180, 90, 220]);
+        }
     } catch (_) {}
+}
+
+function speakReminderText(text) {
+    try {
+        const msg = String(text || "").trim();
+        if (!msg) return;
+        speakText(`Reminder due now. ${msg}`, { rate: 0.95, pitch: 1.07, volume: 1 });
+    } catch (_) {}
+}
+
+function showReminderAlert(items) {
+    const overlay = document.getElementById("reminder-alert-overlay");
+    const list = document.getElementById("reminder-alert-list");
+    if (!overlay || !list) return;
+    const rows = (items || []).slice(0, 4);
+    if (!rows.length) return;
+    const fmtDue = (raw) => {
+        const dt = new Date(raw);
+        if (Number.isNaN(dt.getTime())) return "";
+        return dt.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    };
+    list.innerHTML = rows.map((item) => `
+        <div class="reminder-alert-row">
+            <span>${escapeHtml(String(item.text || "Reminder"))}</span>
+            ${item?.due_at ? `<small>Due: ${escapeHtml(fmtDue(item.due_at) || String(item.due_at))}</small>` : ""}
+        </div>
+    `).join("");
+    overlay.classList.add("open");
+    overlay.setAttribute("aria-hidden", "false");
 }
 
 async function pollDueReminders() {
@@ -1828,11 +2446,40 @@ async function pollDueReminders() {
         const items = Array.isArray(data?.items) ? data.items : [];
         if (!items.length) return;
         playReminderSound();
+        const fresh = [];
         items.forEach((item) => {
+            const rid = String(item?.id || item?.text || "");
+            const last = Number(reminderAlertSeen.get(rid) || 0);
+            if (Date.now() - last > 90000) {
+                reminderAlertSeen.set(rid, Date.now());
+                fresh.push(item);
+            }
             const label = String(item?.text || "Reminder");
             toast(`Reminder due: ${label}`);
         });
+        if (fresh.length) {
+            const spoken = fresh.map((x) => x.text).filter(Boolean).join(". ");
+            showReminderAlert(fresh);
+            speakReminderText(spoken);
+            window.clearTimeout(reminderSpeechRepeatTimer);
+            reminderSpeechRepeatTimer = window.setTimeout(() => {
+                speakReminderText(spoken);
+                playReminderSound();
+            }, 7000);
+            if ("Notification" in window && document.visibilityState !== "visible") {
+                if (Notification.permission === "granted") {
+                    new Notification("Lumiere Reminder Due", { body: spoken || "You have a due reminder." });
+                } else if (Notification.permission !== "denied") {
+                    Notification.requestPermission().then((perm) => {
+                        if (perm === "granted") {
+                            new Notification("Lumiere Reminder Due", { body: spoken || "You have a due reminder." });
+                        }
+                    }).catch(() => {});
+                }
+            }
+        }
         refreshReminders();
+        renderRemembersFooter();
     } catch (_) {}
 }
 
@@ -1891,6 +2538,99 @@ function wireVoiceInput() {
     });
 }
 
+const TOUR_STEPS = [
+    { title: "Chat", text: "Ask a question here. Keep prompts short and clear.", view: "chat", target: "#question" },
+    { title: "Agents", text: "See your agent strengths and levels on this page.", view: "agents", target: ".agent-stats" },
+    { title: "Memory", text: "Edit memory notes and scopes in this page.", view: "memory", target: "#memory-management-panel" },
+    { title: "Compare", text: "Compare two agents with radar or table view.", view: "compare", target: "#compare-radar-wrap" },
+    { title: "History", text: "Save chats and reopen old sessions fast.", view: "history", target: "#history-panel" },
+    { title: "Settings", text: "Use Settings to change theme, accent, and model.", view: "chat", target: "#settings-open-btn" },
+];
+
+function clearTourTargetHighlight() {
+    document.querySelectorAll(".tour-target-focus").forEach((el) => el.classList.remove("tour-target-focus"));
+}
+
+function placeTourCardNear(targetEl) {
+    const card = document.querySelector("#tour-overlay .tour-card");
+    if (!card) return;
+    if (!targetEl || window.innerWidth < 900) {
+        card.style.removeProperty("--tour-top");
+        card.style.removeProperty("--tour-left");
+        card.classList.remove("point-left", "point-right");
+        return;
+    }
+    const rect = targetEl.getBoundingClientRect();
+    if (rect.width < 8 || rect.height < 8 || rect.bottom < 0 || rect.top > window.innerHeight) {
+        card.style.removeProperty("--tour-top");
+        card.style.removeProperty("--tour-left");
+        card.classList.remove("point-left", "point-right");
+        return;
+    }
+    const cardRect = card.getBoundingClientRect();
+    const cardW = Math.max(290, Math.min(430, cardRect.width || 340));
+    const cardH = Math.max(180, cardRect.height || 220);
+    const gap = 16;
+    const spaceRight = window.innerWidth - rect.right;
+    const spaceLeft = rect.left;
+    let left = 0;
+    let pointLeft = false;
+    let pointRight = false;
+    if (spaceRight >= cardW + gap) {
+        left = rect.right + gap;
+        pointLeft = true;
+    } else if (spaceLeft >= cardW + gap) {
+        left = rect.left - cardW - gap;
+        pointRight = true;
+    } else {
+        left = rect.left + (rect.width / 2) - (cardW / 2);
+    }
+    const clampedLeft = Math.max(12, Math.min(window.innerWidth - cardW - 12, left));
+    const top = Math.max(12, Math.min(window.innerHeight - cardH - 12, rect.top + (rect.height * 0.5) - (cardH * 0.5)));
+    card.style.setProperty("--tour-top", `${top}px`);
+    card.style.setProperty("--tour-left", `${clampedLeft}px`);
+    card.classList.toggle("point-left", pointLeft);
+    card.classList.toggle("point-right", pointRight);
+}
+
+function renderTourStep() {
+    const title = document.getElementById("tour-title");
+    const text = document.getElementById("tour-text");
+    const next = document.getElementById("tour-next-btn");
+    const step = TOUR_STEPS[tourStep] || TOUR_STEPS[0];
+    if (step?.view) {
+        applyView(step.view);
+    }
+    if (step?.target === "#settings-open-btn") {
+        closeSettingsDrawer();
+    }
+    if (title) title.textContent = step.title;
+    if (text) text.textContent = step.text;
+    if (next) next.textContent = tourStep >= TOUR_STEPS.length - 1 ? "Finish" : "Next";
+    clearTourTargetHighlight();
+    const target = step?.target ? document.querySelector(step.target) : null;
+    if (target) target.classList.add("tour-target-focus");
+    placeTourCardNear(target);
+}
+
+function openTour() {
+    const overlay = document.getElementById("tour-overlay");
+    if (!overlay) return;
+    tourStep = 0;
+    renderTourStep();
+    overlay.classList.add("open");
+    overlay.setAttribute("aria-hidden", "false");
+}
+
+function closeTour(done = false) {
+    const overlay = document.getElementById("tour-overlay");
+    if (!overlay) return;
+    overlay.classList.remove("open");
+    overlay.setAttribute("aria-hidden", "true");
+    clearTourTargetHighlight();
+    if (done) localStorage.setItem(ONBOARDING_TOUR_KEY, "1");
+}
+
 document.addEventListener("DOMContentLoaded", () => {
     const body = document.body;
     const savedTheme = localStorage.getItem("theme") || "system";
@@ -1925,6 +2665,7 @@ document.addEventListener("DOMContentLoaded", () => {
     setInterval(refreshAgentStats, 20000);
     setInterval(refreshMemoryFact, 24000);
     setInterval(pollDueReminders, 20000);
+    setInterval(advanceMemoryTicker, 120000);
 
     const input = document.getElementById("question");
     const sendBtn = document.getElementById("send-btn");
@@ -1933,11 +2674,15 @@ document.addEventListener("DOMContentLoaded", () => {
     const resetBtn = document.getElementById("avatar-reset-btn");
     const historySaveBtn = document.getElementById("history-save-btn");
     const historyTitleInput = document.getElementById("history-title-input");
+    const historySearchInput = document.getElementById("history-search-input");
     const historyList = document.getElementById("history-list");
     const reminderAddBtn = document.getElementById("reminder-add-btn");
     const reminderInput = document.getElementById("reminder-input");
     const onboardingBanner = document.getElementById("onboarding-banner");
     const onboardingClose = document.getElementById("onboarding-close");
+    const onboardingTourBtn = document.getElementById("onboarding-tour-btn");
+    const tourNextBtn = document.getElementById("tour-next-btn");
+    const tourSkipBtn = document.getElementById("tour-skip-btn");
     const exportTxtBtn = document.getElementById("export-txt-btn");
     const exportJsonBtn = document.getElementById("export-json-btn");
     const uploadInput = document.getElementById("file-upload-input");
@@ -1947,6 +2692,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const actorInput = document.getElementById("actor-input");
     const actorApplyBtn = document.getElementById("actor-apply-btn");
     const pageNav = document.getElementById("page-nav");
+    const workspaceSelect = document.getElementById("workspace-select");
     const newChatBtn = document.getElementById("new-chat-btn");
     const metaverseScene = document.getElementById("metaverse-scene");
     const metaversePorts = document.getElementById("metaverse-agent-ports");
@@ -1965,7 +2711,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const settingsOpenBtn = document.getElementById("settings-open-btn");
     const settingsCloseBtn = document.getElementById("settings-close-btn");
     const settingsDrawer = document.getElementById("settings-drawer");
-    const settingsOverlay = document.getElementById("settings-overlay");
     const privacyQuickBtn = document.getElementById("privacy-quick-btn");
     const privacyToggle = document.getElementById("privacy-toggle");
     const authLoginBtn = document.getElementById("auth-login-btn");
@@ -1976,11 +2721,41 @@ document.addEventListener("DOMContentLoaded", () => {
     const memoryScopesSaveBtn = document.getElementById("memory-scopes-save-btn");
     const memoryRefreshBtn = document.getElementById("memory-refresh-btn");
     const memoryAddBtn = document.getElementById("memory-add-btn");
+    const memoryNewText = document.getElementById("memory-new-text");
     const memoryItemsList = document.getElementById("memory-items-list");
     const evaluationRefreshBtn = document.getElementById("evaluation-refresh-btn");
     const regressionRunBtn = document.getElementById("regression-run-btn");
     const checkpointCreateBtn = document.getElementById("checkpoint-create-btn");
     const checkpointList = document.getElementById("checkpoint-list");
+    const compareRefreshBtn = document.getElementById("compare-refresh-btn");
+    const compareAgentA = document.getElementById("compare-agent-a");
+    const compareAgentB = document.getElementById("compare-agent-b");
+    const compareToggle = document.getElementById("compare-toggle");
+    const reminderAlertClose = document.getElementById("reminder-alert-close");
+    const reminderAlertOverlay = document.getElementById("reminder-alert-overlay");
+    const autoTranslateToggle = document.getElementById("auto-translate-toggle");
+    const translateSourceInput = document.getElementById("translate-source-lang");
+    const translateTargetInput = document.getElementById("translate-target-lang");
+
+    if (autoTranslateToggle) {
+        autoTranslateToggle.checked = isAutoTranslateEnabled();
+        autoTranslateToggle.addEventListener("change", () => {
+            setAutoTranslateEnabled(!!autoTranslateToggle.checked);
+            toast(`Auto translate ${autoTranslateToggle.checked ? "enabled" : "disabled"}`);
+        });
+    }
+    if (translateSourceInput) {
+        translateSourceInput.value = getTranslateSourceLang();
+        translateSourceInput.addEventListener("change", () => {
+            setTranslateSourceLang(translateSourceInput.value || "auto");
+        });
+    }
+    if (translateTargetInput) {
+        translateTargetInput.value = getTranslateTargetLang();
+        translateTargetInput.addEventListener("change", () => {
+            setTranslateTargetLang(translateTargetInput.value || "en");
+        });
+    }
 
     if (localStorage.getItem(ONBOARDING_KEY) === "1" && onboardingBanner) {
         onboardingBanner.style.display = "none";
@@ -1990,6 +2765,24 @@ document.addEventListener("DOMContentLoaded", () => {
             localStorage.setItem(ONBOARDING_KEY, "1");
             if (onboardingBanner) onboardingBanner.style.display = "none";
         });
+    }
+    if (onboardingTourBtn) onboardingTourBtn.addEventListener("click", openTour);
+    if (tourNextBtn) {
+        tourNextBtn.addEventListener("click", () => {
+            if (tourStep >= TOUR_STEPS.length - 1) {
+                closeTour(true);
+                toast("Tour complete");
+                return;
+            }
+            tourStep += 1;
+            renderTourStep();
+        });
+    }
+    if (tourSkipBtn) {
+        tourSkipBtn.addEventListener("click", () => closeTour(true));
+    }
+    if (localStorage.getItem(ONBOARDING_TOUR_KEY) !== "1" && localStorage.getItem(ONBOARDING_KEY) !== "1") {
+        window.setTimeout(() => openTour(), 650);
     }
 
     if (ttsToggleBtn) {
@@ -2029,21 +2822,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const openSettings = () => {
         if (!settingsDrawer) return;
-        settingsDrawer.classList.add("open");
-        if (settingsOverlay) settingsOverlay.classList.add("open");
+        openSettingsDrawer();
         refreshAuthState();
         refreshAuthMode();
         refreshMemoryControls();
         refreshEvaluationAndQuality();
     };
     const closeSettings = () => {
-        if (!settingsDrawer) return;
-        settingsDrawer.classList.remove("open");
-        if (settingsOverlay) settingsOverlay.classList.remove("open");
+        closeSettingsDrawer();
     };
     if (settingsOpenBtn) settingsOpenBtn.addEventListener("click", openSettings);
     if (privacyQuickBtn) privacyQuickBtn.addEventListener("click", openSettings);
     if (settingsCloseBtn) settingsCloseBtn.addEventListener("click", closeSettings);
+    const settingsOverlay = document.getElementById("settings-overlay");
     if (settingsOverlay) settingsOverlay.addEventListener("click", closeSettings);
     if (privacyToggle) {
         privacyToggle.addEventListener("change", () => savePrivacySetting(privacyToggle.checked));
@@ -2057,9 +2848,36 @@ document.addEventListener("DOMContentLoaded", () => {
     if (memoryScopesSaveBtn) memoryScopesSaveBtn.addEventListener("click", () => saveMemoryScopesFromUi());
     if (memoryRefreshBtn) memoryRefreshBtn.addEventListener("click", () => refreshMemoryControls());
     if (memoryAddBtn) memoryAddBtn.addEventListener("click", () => addMemoryItemFromUi());
+    if (memoryNewText) {
+        memoryNewText.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                addMemoryItemFromUi();
+            }
+        });
+    }
     if (evaluationRefreshBtn) evaluationRefreshBtn.addEventListener("click", () => refreshEvaluationAndQuality());
     if (regressionRunBtn) regressionRunBtn.addEventListener("click", () => runRegressionFromUi());
     if (checkpointCreateBtn) checkpointCreateBtn.addEventListener("click", () => createCheckpointFromUi());
+    if (compareRefreshBtn) compareRefreshBtn.addEventListener("click", () => refreshAgentStats());
+    if (compareAgentA) compareAgentA.addEventListener("change", () => renderAgentComparison());
+    if (compareAgentB) compareAgentB.addEventListener("change", () => renderAgentComparison());
+    if (compareToggle) {
+        compareToggle.addEventListener("click", (e) => {
+            const btn = e.target.closest(".compare-toggle-btn");
+            if (!btn) return;
+            setCompareMode(btn.dataset.mode || "radar");
+            renderAgentComparison();
+        });
+    }
+    if (reminderAlertClose) {
+        reminderAlertClose.addEventListener("click", () => {
+            if (reminderAlertOverlay) {
+                reminderAlertOverlay.classList.remove("open");
+                reminderAlertOverlay.setAttribute("aria-hidden", "true");
+            }
+        });
+    }
     if (memoryItemsList) {
         memoryItemsList.addEventListener("click", (e) => {
             const delBtn = e.target.closest(".memory-del-btn");
@@ -2080,7 +2898,10 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
     document.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") closeSettings();
+        if (e.key === "Escape") {
+            closeSettings();
+            closeTour(false);
+        }
     });
 
     if (chatPanel) {
@@ -2108,10 +2929,15 @@ document.addEventListener("DOMContentLoaded", () => {
             applyView(tab.dataset.view);
         });
     }
+    if (workspaceSelect) {
+        workspaceSelect.addEventListener("change", () => applyView(workspaceSelect.value));
+    }
     if (newChatBtn) {
         newChatBtn.addEventListener("click", () => startNewChat());
     }
     applyView(localStorage.getItem(VIEW_KEY) || "chat");
+    setCompareMode("radar");
+    renderRemembersFooter();
 
     if (input) {
         input.addEventListener("keydown", (e) => {
@@ -2149,6 +2975,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (webBtn) webBtn.addEventListener("click", () => askLiveWeb());
     if (resetBtn) resetBtn.addEventListener("click", resetAvatar);
     if (historySaveBtn) historySaveBtn.addEventListener("click", () => saveCurrentChatToHistory());
+    if (historySearchInput) {
+        historySearchInput.addEventListener("input", () => {
+            renderHistoryList(historySessionsCache, historySearchInput.value || "");
+        });
+    }
     if (historyTitleInput) {
         historyTitleInput.addEventListener("keydown", (e) => {
             if (e.key === "Enter") {
@@ -2433,6 +3264,12 @@ document.addEventListener("DOMContentLoaded", () => {
     window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
         if ((localStorage.getItem("theme") || "system") === "system") {
             applyTheme("system");
+        }
+    });
+    window.addEventListener("resize", () => {
+        const overlay = document.getElementById("tour-overlay");
+        if (overlay?.classList.contains("open")) {
+            renderTourStep();
         }
     });
 });

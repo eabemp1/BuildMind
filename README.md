@@ -17,6 +17,14 @@ Lumiere is a personal AI companion powered by **specialized agents** that:
 - ⏰ **Reminder Manager** - Helps manage tasks and schedules
 - 🤝 **Personal Companion** - Your evolving ownable AI identity
 
+### Ownership Model
+
+- **Developer**: Emmanuel Bempong
+- **AI Owner**: The end user
+
+Lumiere is designed so each user owns their personal AI companion.
+The assistant is persistent, learns from that user over time, and grows with their usage and feedback.
+
 ### ✨ Key Features
 
 - **Multi-Agent System**: Different AI specialists for different tasks
@@ -52,6 +60,10 @@ Lumiere is a personal AI companion powered by **specialized agents** that:
    Create a `.env` file in the project root:
    ```env
    GROQ_API_KEY=your_groq_api_key_here
+   # Optional: Khaya translation (Developer tier)
+   KHAYA_API_KEY=your_khaya_api_key_here
+   KHAYA_API_BASE_URL=https://translation.ghananlp.org
+   KHAYA_AUTH_MODE=apim
    ```
 
 4. **Run Lumiere**
@@ -264,7 +276,7 @@ MIT License - see [LICENSE](LICENSE) file for details
 
 ## 📬 Contact
 
-**Emmanuel** - [@eabemp1](https://github.com/eabemp1)
+**Emmanuel Bempong (Developer)** - [@eabemp1](https://github.com/eabemp1)
 
 Project Link: [https://github.com/eabemp1/evolvai-mvp](https://github.com/eabemp1/evolvai-mvp)
 
