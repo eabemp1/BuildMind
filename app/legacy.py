@@ -2858,6 +2858,19 @@ def specialty_prompt_block(specialty, query_text=""):
             base += "\nFor creation requests, answer directly with content and avoid clarification loops."
     return base
 
+def _looks_like_coding_request(query_text):
+    q = str(query_text or "").lower()
+    if not q.strip():
+        return False
+    coding_terms = [
+        "code", "coding", "program", "script", "function", "class", "method",
+        "bug", "debug", "error", "stack trace", "exception", "api", "endpoint",
+        "sql", "regex", "algorithm", "refactor", "unit test", "pytest",
+        "javascript", "typescript", "python", "java", "c++", "c#", "go", "rust",
+        "html", "css", "node", "fastapi", "flask", "react", "vue",
+    ]
+    return any(term in q for term in coding_terms)
+
 def _looks_like_followup_query(query_text):
     q = str(query_text or "").strip().lower()
     if not q:
@@ -3068,6 +3081,9 @@ async def ask(q: str, requester: Optional[str] = None, ctx: Optional[str] = None
     audit_log("ask", acting_as, metadata={"q_len": len(str(q or ""))}, tenant_id=(auth_ctx or {}).get("tenant_id", "default"))
     actor_key = normalize_actor_key(acting_as)
     category, specialty, existing = detect_category_and_specialty(q)
+    coding_intent = _looks_like_coding_request(q)
+    if coding_intent:
+        category, specialty, existing = "coding", "coding", None
     previous_specialty = last_specialty_by_user.get(actor_key)
     if category == "personal" and previous_specialty and _looks_like_followup_query(q):
         specialty = previous_specialty
@@ -3314,6 +3330,18 @@ Answer concisely and helpfully: {q}
         routed_model=routed_model_key,
     )
     answer_plain = ask_llm_with_model(prompt, routed_model_key)
+    if agent.specialty == "coding":
+        has_fenced_code = bool(re.search(r"```[a-zA-Z0-9_+-]*\n[\s\S]*?\n```", str(answer_plain or "")))
+        if not has_fenced_code:
+            code_repair_prompt = (
+                "Rewrite your previous answer so it starts with complete runnable code in a fenced block. "
+                "Use a language tag, include all imports, and keep explanation brief after the code.\n\n"
+                f"Original user request:\n{q}\n\n"
+                f"Your previous answer:\n{answer_plain}"
+            )
+            repaired = ask_llm_with_model(code_repair_prompt, routed_model_key)
+            if str(repaired or "").strip():
+                answer_plain = repaired
     answer_plain = sanitize_agent_output(answer_plain)
     answer_plain = normalize_legacy_vocabulary(answer_plain, q)
     answer = answer_plain
