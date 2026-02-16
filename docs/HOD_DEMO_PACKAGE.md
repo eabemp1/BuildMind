@@ -30,3 +30,16 @@ Open: `http://127.0.0.1:8000`
 - Personal AI is exclusive unless explicitly traded/rented.
 - Learning is local-first, with optional anonymized global contribution.
 - Dataset artifacts can evolve into Lumiere-native model training assets.
+
+## Open-Weight Plan (Current Sprint)
+- Milestone 1: Initial setup complete
+  - Open-weight routing through Ollama models is active.
+  - Tools plugin framework scaffold is active (`/tools/plugins`, `/tools/run`, `/tool ...` in chat).
+- Milestone 2: Framework testing
+  - Verify tool registry:
+    - `GET /tools/plugins`
+    - `POST /tools/run` with `{ "tool":"time_now", "args":{} }`
+    - `POST /tools/run` with `{ "tool":"math_eval", "args":{"expression":"(12+3)*4"} }`
+  - Verify concise behavior:
+    - Default style is `concise`.
+    - Override with `POST /set-response-style` using `balanced` or `detailed`.
