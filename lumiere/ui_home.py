@@ -295,20 +295,6 @@ def render_home_page(
                     </div>
                     <div id="uploaded-context-list" class="uploaded-context-list"></div>
                     <div class="upload-hint">Drop files here or use Upload.</div>
-                    <div class="translate-controls">
-                        <label class="translate-toggle">
-                            <input id="auto-translate-toggle" type="checkbox">
-                            <span>Auto Translate (Language Coach)</span>
-                        </label>
-                        <label>
-                            <span>From</span>
-                            <input id="translate-source-lang" type="text" value="auto" placeholder="auto">
-                        </label>
-                        <label>
-                            <span>To</span>
-                            <input id="translate-target-lang" type="text" value="en" placeholder="en">
-                        </label>
-                    </div>
                     <div class="prompt-row">
                         <button class="prompt-chip" data-prompt="Break this problem into 3 clear parts and give me an execution plan.">Plan</button>
                         <button class="prompt-chip" data-prompt="Give me a compact mission plan: goals, milestones, and checkpoints.">Goals</button>

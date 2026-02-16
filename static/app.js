@@ -100,9 +100,6 @@ let lastFailedRequest = null;
 const ONBOARDING_KEY = "lumiere_onboarding_dismissed_v1";
 const ONBOARDING_TOUR_KEY = "lumiere_onboarding_tour_done_v1";
 const TTS_KEY = "lumiere_tts_enabled_v1";
-const AUTO_TRANSLATE_KEY = "lumiere_auto_translate_v1";
-const TRANSLATE_SOURCE_KEY = "lumiere_translate_source_lang_v1";
-const TRANSLATE_TARGET_KEY = "lumiere_translate_target_lang_v1";
 const ACTOR_KEY = "lumiere_actor_v1";
 const VIEW_KEY = "lumiere_view_v1";
 const PROFILE_SEEN_KEY = "lumiere_profile_seen_v1";
@@ -486,80 +483,6 @@ function parseAgentMetaFromHtml(html) {
         specialty: meta.dataset.agent || "personal",
         level: Number(meta.dataset.level || 1)
     };
-}
-
-function parseAnswerTextForTranslation(html) {
-    const tmp = document.createElement("div");
-    tmp.innerHTML = String(html || "");
-    tmp.querySelectorAll(".thumbs-rating, .answer-meta").forEach((el) => el.remove());
-    return (tmp.innerText || "").trim();
-}
-
-function isAutoTranslateEnabled() {
-    return localStorage.getItem(AUTO_TRANSLATE_KEY) === "1";
-}
-
-function setAutoTranslateEnabled(value) {
-    localStorage.setItem(AUTO_TRANSLATE_KEY, value ? "1" : "0");
-}
-
-function getTranslateSourceLang() {
-    return (localStorage.getItem(TRANSLATE_SOURCE_KEY) || "auto").trim() || "auto";
-}
-
-function setTranslateSourceLang(value) {
-    const clean = (value || "auto").trim().toLowerCase() || "auto";
-    localStorage.setItem(TRANSLATE_SOURCE_KEY, clean);
-}
-
-function getTranslateTargetLang() {
-    return (localStorage.getItem(TRANSLATE_TARGET_KEY) || "en").trim() || "en";
-}
-
-function setTranslateTargetLang(value) {
-    const clean = (value || "en").trim().toLowerCase() || "en";
-    localStorage.setItem(TRANSLATE_TARGET_KEY, clean);
-}
-
-function shouldAutoTranslateSpecialty(specialty) {
-    if (!isAutoTranslateEnabled()) return false;
-    return String(specialty || "").trim().toLowerCase() === "language";
-}
-
-async function appendAutoTranslation(wrapper, sourceText, specialty) {
-    if (!wrapper || !shouldAutoTranslateSpecialty(specialty)) return;
-    const text = String(sourceText || "").trim();
-    if (!text) return;
-    const requester = getActingAs();
-    const sourceLang = getTranslateSourceLang();
-    const targetLang = getTranslateTargetLang();
-    if (!targetLang) return;
-    try {
-        const res = await fetch("/translate/text", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                requester,
-                text,
-                source_lang: sourceLang,
-                target_lang: targetLang,
-                provider: "khaya_fallback"
-            })
-        });
-        const data = await res.json();
-        if (data.error || !data.translated_text) return;
-        const contentEl = wrapper.querySelector(".message-content");
-        if (!contentEl) return;
-        const block = document.createElement("div");
-        block.className = "message-translation";
-        const fromTag = escapeHtml(data.source_lang || sourceLang || "auto");
-        const toTag = escapeHtml(data.target_lang || targetLang);
-        block.innerHTML = `
-            <div class="message-translation-head">Translation (${fromTag} -> ${toTag})</div>
-            <div class="message-translation-body">${escapeHtml(String(data.translated_text || "")).replace(/\n/g, "<br>")}</div>
-        `;
-        contentEl.appendChild(block);
-    } catch (_) {}
 }
 
 function appendMessage(role, label, content, isTrustedHtml = false) {
@@ -1018,18 +941,14 @@ async function ask(promptText) {
         const res = await fetch("/ask?q=" + encodeURIComponent(q) + "&requester=" + encodeURIComponent(requester) + "&ctx=" + encodeURIComponent(ctx));
         const txt = await res.text();
         const meta = parseAgentMetaFromHtml(txt);
-        const responseSpecialty = meta?.specialty || currentAgentSpecialty;
         if (meta?.specialty) currentAgentSpecialty = meta.specialty;
-        const rawAnswerText = parseAnswerTextForTranslation(txt);
-        let aiWrapper = null;
         if (shouldSuggestRecovery(txt)) {
             markFailure(q, "ask");
             reportRequestError("Model output looked unstable", "ask");
-            aiWrapper = appendMessage("ai", "Lumiere", txt + recoveryActionsHtml(), true);
+            appendMessage("ai", "Lumiere", txt + recoveryActionsHtml(), true);
         } else {
-            aiWrapper = appendMessage("ai", "Lumiere", txt, true);
+            appendMessage("ai", "Lumiere", txt, true);
         }
-        await appendAutoTranslation(aiWrapper, rawAnswerText, responseSpecialty);
         await Promise.all([
             refreshAgentStats(),
             refreshAgentMemory(),
@@ -1068,18 +987,14 @@ async function askDebate(promptText) {
         const res = await fetch("/debate?q=" + encodeURIComponent(q) + "&requester=" + encodeURIComponent(requester) + "&ctx=" + encodeURIComponent(ctx));
         const txt = await res.text();
         const meta = parseAgentMetaFromHtml(txt);
-        const responseSpecialty = meta?.specialty || currentAgentSpecialty;
         if (meta?.specialty) currentAgentSpecialty = meta.specialty;
-        const rawAnswerText = parseAnswerTextForTranslation(txt);
-        let aiWrapper = null;
         if (shouldSuggestRecovery(txt)) {
             markFailure(q, "debate");
             reportRequestError("Debate output looked unstable", "debate");
-            aiWrapper = appendMessage("ai", "Lumiere Debate", txt + recoveryActionsHtml(), true);
+            appendMessage("ai", "Lumiere Debate", txt + recoveryActionsHtml(), true);
         } else {
-            aiWrapper = appendMessage("ai", "Lumiere Debate", txt, true);
+            appendMessage("ai", "Lumiere Debate", txt, true);
         }
-        await appendAutoTranslation(aiWrapper, rawAnswerText, responseSpecialty);
         await Promise.all([
             refreshAgentStats(),
             refreshAgentMemory(),
@@ -1118,18 +1033,14 @@ async function askLiveWeb(promptText) {
         const res = await fetch("/ask-live?q=" + encodeURIComponent(q) + "&requester=" + encodeURIComponent(requester) + "&ctx=" + encodeURIComponent(ctx));
         const txt = await res.text();
         const meta = parseAgentMetaFromHtml(txt);
-        const responseSpecialty = meta?.specialty || currentAgentSpecialty;
         if (meta?.specialty) currentAgentSpecialty = meta.specialty;
-        const rawAnswerText = parseAnswerTextForTranslation(txt);
-        let aiWrapper = null;
         if (shouldSuggestRecovery(txt)) {
             markFailure(q, "web");
             reportRequestError("Live web output looked unstable", "web");
-            aiWrapper = appendMessage("ai", "Lumiere Live Web", txt + recoveryActionsHtml(), true);
+            appendMessage("ai", "Lumiere Live Web", txt + recoveryActionsHtml(), true);
         } else {
-            aiWrapper = appendMessage("ai", "Lumiere Live Web", txt, true);
+            appendMessage("ai", "Lumiere Live Web", txt, true);
         }
-        await appendAutoTranslation(aiWrapper, rawAnswerText, responseSpecialty);
         await Promise.all([
             refreshAgentStats(),
             refreshAgentMemory(),
@@ -2733,29 +2644,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const compareToggle = document.getElementById("compare-toggle");
     const reminderAlertClose = document.getElementById("reminder-alert-close");
     const reminderAlertOverlay = document.getElementById("reminder-alert-overlay");
-    const autoTranslateToggle = document.getElementById("auto-translate-toggle");
-    const translateSourceInput = document.getElementById("translate-source-lang");
-    const translateTargetInput = document.getElementById("translate-target-lang");
-
-    if (autoTranslateToggle) {
-        autoTranslateToggle.checked = isAutoTranslateEnabled();
-        autoTranslateToggle.addEventListener("change", () => {
-            setAutoTranslateEnabled(!!autoTranslateToggle.checked);
-            toast(`Auto translate ${autoTranslateToggle.checked ? "enabled" : "disabled"}`);
-        });
-    }
-    if (translateSourceInput) {
-        translateSourceInput.value = getTranslateSourceLang();
-        translateSourceInput.addEventListener("change", () => {
-            setTranslateSourceLang(translateSourceInput.value || "auto");
-        });
-    }
-    if (translateTargetInput) {
-        translateTargetInput.value = getTranslateTargetLang();
-        translateTargetInput.addEventListener("change", () => {
-            setTranslateTargetLang(translateTargetInput.value || "en");
-        });
-    }
 
     if (localStorage.getItem(ONBOARDING_KEY) === "1" && onboardingBanner) {
         onboardingBanner.style.display = "none";
