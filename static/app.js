@@ -481,18 +481,34 @@ function parseAgentMetaFromHtml(html) {
     if (!meta) return null;
     return {
         specialty: meta.dataset.agent || "personal",
-        level: Number(meta.dataset.level || 1)
+        level: Number(meta.dataset.level || 1),
+        usedMemory: String(meta.dataset.usedMemory || "0") === "1",
+        usedHistory: String(meta.dataset.usedHistory || "0") === "1",
+        usedReminders: String(meta.dataset.usedReminders || "0") === "1",
+        usedWeb: String(meta.dataset.usedWeb || "0") === "1",
     };
 }
 
-function appendMessage(role, label, content, isTrustedHtml = false) {
+function buildExplainBadges(meta) {
+    if (!meta) return "";
+    const badges = [];
+    if (meta.usedMemory) badges.push("Memory");
+    if (meta.usedHistory) badges.push("History");
+    if (meta.usedReminders) badges.push("Reminders");
+    if (meta.usedWeb) badges.push("Web");
+    if (!badges.length) return "";
+    return `<div class="explain-badges">${badges.map((b) => `<span class="explain-badge">${escapeHtml(b)}</span>`).join("")}</div>`;
+}
+
+function appendMessage(role, label, content, isTrustedHtml = false, agentMeta = null) {
     const output = document.getElementById("chat-output");
     if (!output) return;
     const wrapper = document.createElement("div");
     wrapper.className = `message ${role} entering`;
     const bodyHtml = isTrustedHtml ? content : escapeHtml(content).replace(/\n/g, "<br>");
+    const badgeHtml = role === "ai" ? buildExplainBadges(agentMeta) : "";
     const toolsHtml = role === "ai"
-        ? `<div class="message-tools"><button class="speak-btn" type="button">Speak</button><button class="copy-btn" type="button">Copy</button></div>`
+        ? `<div class="message-tools">${badgeHtml}<button class="speak-btn" type="button">Speak</button><button class="copy-btn" type="button">Copy</button></div>`
         : "";
     wrapper.innerHTML = `
         <div class="message-label">${escapeHtml(label)}</div>
@@ -945,9 +961,9 @@ async function ask(promptText) {
         if (shouldSuggestRecovery(txt)) {
             markFailure(q, "ask");
             reportRequestError("Model output looked unstable", "ask");
-            appendMessage("ai", "Lumiere", txt + recoveryActionsHtml(), true);
+            appendMessage("ai", "Lumiere", txt + recoveryActionsHtml(), true, meta);
         } else {
-            appendMessage("ai", "Lumiere", txt, true);
+            appendMessage("ai", "Lumiere", txt, true, meta);
         }
         await Promise.all([
             refreshAgentStats(),
@@ -991,9 +1007,9 @@ async function askDebate(promptText) {
         if (shouldSuggestRecovery(txt)) {
             markFailure(q, "debate");
             reportRequestError("Debate output looked unstable", "debate");
-            appendMessage("ai", "Lumiere Debate", txt + recoveryActionsHtml(), true);
+            appendMessage("ai", "Lumiere Debate", txt + recoveryActionsHtml(), true, meta);
         } else {
-            appendMessage("ai", "Lumiere Debate", txt, true);
+            appendMessage("ai", "Lumiere Debate", txt, true, meta);
         }
         await Promise.all([
             refreshAgentStats(),
@@ -1037,9 +1053,9 @@ async function askLiveWeb(promptText) {
         if (shouldSuggestRecovery(txt)) {
             markFailure(q, "web");
             reportRequestError("Live web output looked unstable", "web");
-            appendMessage("ai", "Lumiere Live Web", txt + recoveryActionsHtml(), true);
+            appendMessage("ai", "Lumiere Live Web", txt + recoveryActionsHtml(), true, meta);
         } else {
-            appendMessage("ai", "Lumiere Live Web", txt, true);
+            appendMessage("ai", "Lumiere Live Web", txt, true, meta);
         }
         await Promise.all([
             refreshAgentStats(),
@@ -2170,6 +2186,7 @@ async function refreshAgentMemory() {
 }
 
 function reminderPriorityMessage(now = new Date()) {
+    const actor = getActingAs() || "You";
     const pending = reminderItemsCache
         .filter((item) => !item?.done && item?.due_at)
         .map((item) => {
@@ -2181,12 +2198,23 @@ function reminderPriorityMessage(now = new Date()) {
     if (!pending.length) return "";
     const next = pending[0];
     if (next.mins <= 0) {
-        return `Lumiere remembers: Priority reminder now - ${next.item.text}`;
+        return `Lumiere remembers: ${actor}'s priority reminder now - ${next.item.text}`;
     }
     if (next.mins <= 30) {
-        return `Lumiere remembers: Priority reminder in ${next.mins} min - ${next.item.text}`;
+        return `Lumiere remembers: ${actor}'s priority reminder in ${next.mins} min - ${next.item.text}`;
     }
     return "";
+}
+
+function personalizeMemoryFactText(fact) {
+    const actor = getActingAs() || "You";
+    let text = String(fact || "").trim();
+    if (!text) return "";
+    text = text.replace(/^User\s*:\s*/i, `${actor}: `);
+    text = text.replace(/\bUser wants to\b/gi, `${actor} wants to`);
+    text = text.replace(/\bUser wants\b/gi, `${actor} wants`);
+    text = text.replace(/\bthe user\b/gi, actor);
+    return text;
 }
 
 function renderRemembersFooter() {
@@ -2201,7 +2229,7 @@ function renderRemembersFooter() {
     footer.classList.remove("urgent");
     if (memoryTickerFacts.length) {
         const idx = Math.max(0, Math.min(memoryTickerFacts.length - 1, memoryTickerIndex));
-        footer.textContent = `Lumiere remembers: ${memoryTickerFacts[idx]}`;
+        footer.textContent = `Lumiere remembers: ${personalizeMemoryFactText(memoryTickerFacts[idx])}`;
         return;
     }
     footer.textContent = "Lumiere remembers: still learning your preferences.";

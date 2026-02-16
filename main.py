@@ -1,6 +1,9 @@
 # main.py - Lumiere (thumbs rating, levels, fact extraction, chat history, full model selector - Gemini FIXED)
 
-from groq import Groq
+try:
+    from groq import Groq
+except Exception:
+    Groq = None
 import os
 import json
 import re
@@ -18,7 +21,11 @@ import time
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 from html import escape as html_escape, unescape as html_unescape
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except Exception:
+    def load_dotenv(*args, **kwargs):
+        return False
 from fastapi import FastAPI, Form, Body, UploadFile, File, Header
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -26,6 +33,13 @@ import uvicorn
 from pathlib import Path
 from typing import Optional
 from lumiere.ui_home import render_home_page, render_welcome_page
+from lumiere.json_store import atomic_json_save
+from lumiere.chat_helpers import (
+    answer_meta_attrs as shared_answer_meta_attrs,
+    build_current_reminder_context as shared_build_current_reminder_context,
+    sanitize_prompt_context_for_stale_plans as shared_sanitize_prompt_context_for_stale_plans,
+    personalize_fact_for_actor,
+)
 from lumiere.web_content import (
     duckduckgo_search as external_duckduckgo_search,
     http_get_text as external_http_get_text,
@@ -244,8 +258,7 @@ def _json_load(path: Path, default):
     return default
 
 def _json_save(path: Path, data):
-    with path.open("w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
+    atomic_json_save(path, data)
 
 def load_users():
     data = _json_load(USERS_FILE, {"users": []})
@@ -1380,6 +1393,10 @@ def parse_deterministic_intent(text):
         return None
     if re.search(r"\b(what can you do|your capabilities|help me with|capabilities)\b", lower):
         return {"type": "capabilities"}
+    if re.search(r"\b(who (is|are) (the )?(developer|creator)|who (built|made|created) (this|you)|developer|creator)\b", lower):
+        return {"type": "creator_info"}
+    if re.search(r"\b(who owns (the )?(ai|assistant|lumiere)|ai owner|owner of (the )?(ai|assistant|lumiere))\b", lower):
+        return {"type": "ownership_info"}
     if re.search(r"\b(show|list|what are)\b.*\breminders?\b", lower):
         return {"type": "list_reminders"}
     if re.search(r"\b(what do you remember|memory summary|what have you learned)\b", lower):
@@ -1400,14 +1417,22 @@ def deterministic_response(intent, acting_as):
             "I can help with planning, coding, finance, reminders, and live web research. "
             "I keep per-user memory, route by specialty, manage reminders, and support agent marketplace actions."
         )
+    if typ == "creator_info":
+        return "Lumiere was built by Emmanuel Bempong."
+    if typ == "ownership_info":
+        return "Each user owns their personal Lumiere AI profile and data context."
     if typ == "list_reminders":
         if not reminders:
             return "You have no reminders yet."
         lines = []
         for item in reminders[:15]:
+            if not _is_current_pending_reminder(item):
+                continue
             status = "done" if item.get("done") else "pending"
             due = f" | due: {item.get('due_at')}" if item.get("due_at") else ""
             lines.append(f"- [{status}] {item.get('text', 'task')}{due}")
+        if not lines:
+            return "You have no current reminders."
         return "Current reminders:\n" + "\n".join(lines)
     if typ == "memory_summary":
         mem = scoped_memory_context(acting_as, limit=8).strip()
@@ -1528,6 +1553,47 @@ def due_reminder_nudges(now=None, max_items=2):
         nudges.append(f"Reminder check: '{item.get('text', 'task')}' is {status}.")
     save_reminders()
     return nudges
+
+def _is_current_pending_reminder(item, now=None):
+    now_utc = _as_utc_aware(now or datetime.now(timezone.utc))
+    if item.get("done"):
+        return False
+    due_at = _parse_due_datetime_safe(item.get("due_at"))
+    due_at = _as_utc_aware(due_at) if due_at else None
+    if due_at and due_at < (now_utc - timedelta(days=7)):
+        return False
+    return True
+
+def _answer_meta_attrs(
+    agent,
+    used_memory=False,
+    used_history=False,
+    used_reminders=False,
+    used_web=False,
+):
+    return shared_answer_meta_attrs(
+        agent_specialty=html_escape(str(agent.specialty)),
+        agent_level=int(agent.level),
+        used_memory=used_memory,
+        used_history=used_history,
+        used_reminders=used_reminders,
+        used_web=used_web,
+    )
+
+def _build_current_reminder_context(limit=8):
+    return shared_build_current_reminder_context(
+        reminders=reminders,
+        is_current_pending_reminder=_is_current_pending_reminder,
+        limit=limit,
+    )
+
+def _sanitize_prompt_context_for_stale_plans(history_ctx, reminder_context):
+    cleaned_history, _ = shared_sanitize_prompt_context_for_stale_plans(
+        history_ctx=history_ctx,
+        inline_ctx="",
+        reminder_context=reminder_context,
+    )
+    return cleaned_history
 
 def _parse_due_datetime_safe(raw):
     if not raw:
@@ -1781,7 +1847,7 @@ class Agent:
         if recent:
             compact = []
             for item in recent:
-                prefix = "User" if item["role"] == "user" else "You"
+                prefix = effective_requester_name(user_id) if item["role"] == "user" else "You"
                 compact.append(f"{prefix}: {item['content']}")
             parts.append("Recent:\n" + "\n".join(compact))
         return "\n\n".join(parts) + "\n" if parts else ""
@@ -1914,8 +1980,7 @@ def save_agents():
         }
         for agent in squad
     ]
-    with AGENT_FILE.open('w', encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
+    _json_save(AGENT_FILE, data)
     print("[SERVER] Agents saved")
 
 def load_reminders():
@@ -1930,8 +1995,7 @@ def load_reminders():
     return []
 
 def save_reminders():
-    with REMINDER_FILE.open("w", encoding="utf-8") as f:
-        json.dump(reminders, f, indent=2)
+    _json_save(REMINDER_FILE, reminders)
     print("[SERVER] Reminders saved")
 
 def default_usage_log():
@@ -1955,8 +2019,7 @@ def load_usage_log():
 
 def save_usage_log():
     usage_log["updated_at"] = now_iso()
-    with USAGE_LOG_FILE.open("w", encoding="utf-8") as f:
-        json.dump(usage_log, f, indent=2)
+    _json_save(USAGE_LOG_FILE, usage_log)
 
 def load_chat_history():
     if CHAT_HISTORY_FILE.exists():
@@ -1970,8 +2033,7 @@ def load_chat_history():
     return []
 
 def save_chat_history():
-    with CHAT_HISTORY_FILE.open("w", encoding="utf-8") as f:
-        json.dump(chat_history, f, indent=2)
+    _json_save(CHAT_HISTORY_FILE, chat_history)
 
 def default_global_core():
     return {
@@ -2012,8 +2074,7 @@ def load_global_core():
 
 def save_global_core():
     global_core["updated_at"] = now_iso()
-    with GLOBAL_CORE_FILE.open("w", encoding="utf-8") as f:
-        json.dump(global_core, f, indent=2)
+    _json_save(GLOBAL_CORE_FILE, global_core)
 
 def _bounded(v):
     return max(0.0, min(1.0, float(v)))
@@ -2082,8 +2143,7 @@ def save_metaverse_state():
     if not ENABLE_METAVERSE:
         return
     metaverse_state["updated_at"] = now_iso()
-    with METAVERSE_STATE_FILE.open("w", encoding="utf-8") as f:
-        json.dump(metaverse_state, f, indent=2)
+    _json_save(METAVERSE_STATE_FILE, metaverse_state)
 
 def _zone_lookup():
     zones = metaverse_state.get("zones", [])
@@ -2223,8 +2283,7 @@ def load_chain_state():
 
 def save_chain_state():
     chain_state["updated_at"] = now_iso()
-    with BLOCKCHAIN_FILE.open("w", encoding="utf-8") as f:
-        json.dump(chain_state, f, indent=2)
+    _json_save(BLOCKCHAIN_FILE, chain_state)
 
 def record_chain_event(event_type, specialty, payload):
     prev_hash = chain_state["tx_log"][-1]["hash"] if chain_state.get("tx_log") else "genesis"
@@ -2838,7 +2897,7 @@ async def ask(q: str, requester: Optional[str] = None, x_auth_token: Optional[st
         blocked = f"""
 {html_escape(strict_block)}
 You are acting as {html_escape(acting_as)}.
-<small class="answer-meta" data-agent="{agent.specialty}" data-level="{agent.level}">
+<small class="answer-meta" {_answer_meta_attrs(agent)}>
 Strict access enabled.
 </small>
 """
@@ -2851,7 +2910,7 @@ Strict access enabled.
 This agent is currently rented by {html_escape(str(renter))} until {html_escape(str(expires_at))}.
 You are acting as {html_escape(acting_as)}.
 Try another topic/agent or wait for rental expiry.
-<small class="answer-meta" data-agent="{agent.specialty}" data-level="{agent.level}">
+<small class="answer-meta" {_answer_meta_attrs(agent)}>
 Rental lock active.
 </small>
 """
@@ -2874,7 +2933,7 @@ Rental lock active.
             </div>
             '''
             answered_by = f'''
-            <small class="answer-meta" data-agent="{agent.specialty}" data-level="{agent.level}">
+            <small class="answer-meta" {_answer_meta_attrs(agent)}>
                 Answered by: {agent.name} ({agent.specialty} · Level {agent.level}){" · Read-only session (global learning only)" if not has_control else ""}
             </small>
             '''
@@ -2919,7 +2978,7 @@ Rental lock active.
         elif pending_review:
             control_note = " · Rented session: memory/training update is pending your 👍 approval"
         answered_by = f'''
-        <small class="answer-meta" data-agent="{agent.specialty}" data-level="{agent.level}">
+        <small class="answer-meta" {_answer_meta_attrs(agent, used_reminders=True)}>
             Answered by: {agent.name} ({agent.specialty} · Level {agent.level}){control_note}
         </small>
         '''
@@ -2970,7 +3029,7 @@ Rental lock active.
         elif pending_review:
             control_note = " · Rented session: memory/training update is pending your 👍 approval"
         answered_by = f'''
-        <small class="answer-meta" data-agent="{agent.specialty}" data-level="{agent.level}">
+        <small class="answer-meta" {_answer_meta_attrs(agent, used_reminders=True)}>
             Answered by: {agent.name} ({agent.specialty} · Level {agent.level}){control_note}
         </small>
         '''
@@ -2983,13 +3042,11 @@ Rental lock active.
     resumed_session = active_resume_session_by_actor.get(actor_key)
     if resumed_session:
         history_ctx = history_ctx + history_session_context(acting_as, resumed_session, limit=8)
-    reminder_context = ""
-    if reminders:
-        reminder_lines = []
-        for item in reminders[-8:]:
-            status = "done" if item.get("done") else "pending"
-            reminder_lines.append(f"- [{status}] {item.get('text', '')}")
-        reminder_context = "Current reminder list:\n" + "\n".join(reminder_lines) + "\n"
+    reminder_context = _build_current_reminder_context(limit=8)
+    history_ctx = _sanitize_prompt_context_for_stale_plans(
+        history_ctx=history_ctx,
+        reminder_context=reminder_context,
+    )
 
     tone = level_tone(agent.level)
     upload_context = upload_context_block()
@@ -3015,6 +3072,18 @@ Answer concisely and helpfully: {q}
 """
     log_event(logging.INFO, "ask_llm_request", specialty=agent.specialty)
     answer_plain = ask_llm(prompt)
+    if agent.specialty == "coding":
+        has_fenced_code = bool(re.search(r"```[a-zA-Z0-9_+-]*\n[\s\S]*?\n```", str(answer_plain or "")))
+        if not has_fenced_code:
+            repair_prompt = (
+                "Rewrite your previous answer so it starts with complete runnable code in a fenced block. "
+                "Use a language tag and keep explanation brief after the code.\n\n"
+                f"Original user request:\n{q}\n\n"
+                f"Your previous answer:\n{answer_plain}"
+            )
+            repaired = ask_llm(repair_prompt)
+            if str(repaired or "").strip():
+                answer_plain = repaired
     answer_plain = sanitize_agent_output(answer_plain)
     answer_plain = normalize_legacy_vocabulary(answer_plain, q)
     answer = answer_plain
@@ -3064,7 +3133,7 @@ Answer concisely and helpfully: {q}
     elif pending_review:
         control_note = " · Rented session: memory/training update is pending your 👍 approval"
     answered_by = f'''
-    <small class="answer-meta" data-agent="{agent.specialty}" data-level="{agent.level}">
+    <small class="answer-meta" {_answer_meta_attrs(agent, used_memory=bool(scoped_mem.strip()), used_history=bool(history_ctx.strip()), used_reminders=bool(reminder_context.strip()))}>
         Answered by: {agent.name} ({agent.specialty} · Level {agent.level}){control_note}
     </small>
     '''
@@ -3610,7 +3679,7 @@ async def memory_fact(specialty: str = "personal", requester: Optional[str] = No
             deduped.append(fact)
     if not deduped:
         return {"fact": "No long-term facts yet. Keep chatting and I will learn your preferences."}
-    return {"fact": random.choice(deduped)}
+    return {"fact": personalize_fact_for_actor(random.choice(deduped), acting_as)}
 
 @app.get("/reminders")
 async def get_reminders():
@@ -4159,6 +4228,65 @@ async def get_usage_log():
 @app.get("/global-core")
 async def get_global_core():
     return global_core
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "time": now_iso()}
+
+@app.get("/health/deep")
+async def health_deep():
+    model_status = {}
+    for model_key in MODELS.keys():
+        provider = model_provider(model_key)
+        if provider == "groq":
+            model_status[model_key] = bool(os.getenv("GROQ_API_KEY"))
+        elif provider == "gemini":
+            model_status[model_key] = bool(os.getenv("GEMINI_API_KEY"))
+        elif provider == "ollama":
+            model_status[model_key] = True
+        else:
+            model_status[model_key] = False
+
+    state_files = {
+        "agents": AGENT_FILE,
+        "reminders": REMINDER_FILE,
+        "usage_log": USAGE_LOG_FILE,
+        "global_core": GLOBAL_CORE_FILE,
+        "chat_history": CHAT_HISTORY_FILE,
+        "chain_state": BLOCKCHAIN_FILE,
+    }
+    files = {}
+    for key, path in state_files.items():
+        readable = False
+        writable = False
+        if path.exists():
+            try:
+                _json_load(path, {})
+                readable = True
+            except Exception:
+                readable = False
+            writable = os.access(path, os.W_OK)
+        else:
+            readable = True
+            writable = os.access(path.parent, os.W_OK)
+        files[key] = {"exists": path.exists(), "readable": bool(readable), "writable": bool(writable)}
+
+    pid = _read_scheduler_pid()
+    scheduler = {
+        "pid": pid,
+        "running": _scheduler_running(pid),
+        "pid_file_exists": SCHEDULER_PID_FILE.exists(),
+    }
+    all_ok = all(bool(v) for v in model_status.values()) and all(
+        item["readable"] and item["writable"] for item in files.values()
+    )
+    return {
+        "status": "ok" if all_ok else "degraded",
+        "time": now_iso(),
+        "scheduler": scheduler,
+        "models": model_status,
+        "files": files,
+    }
 
 @app.get("/privacy/share-anonymized")
 async def get_privacy_setting(requester: Optional[str] = None, x_auth_token: Optional[str] = Header(default=None, alias="X-Auth-Token")):

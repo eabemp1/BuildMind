@@ -1950,6 +1950,25 @@ body {
     font-size: 0.77rem;
 }
 
+.explain-badges {
+    display: inline-flex;
+    gap: 6px;
+    margin-right: auto;
+}
+
+.explain-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 7px;
+    border-radius: 999px;
+    font-size: 0.66rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    border: 1px solid var(--border);
+    background: rgba(var(--accent-rgb), 0.12);
+    color: var(--text);
+}
+
 .debate-block {
     display: grid;
     gap: 10px;
