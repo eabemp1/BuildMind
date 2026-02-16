@@ -43,6 +43,8 @@ from lumiere.chat_helpers import (
 )
 from lumiere.routes_memory_reminders import register_memory_reminder_routes
 from lumiere.routes_auth import register_auth_routes
+from lumiere.response_style import build_response_style_instruction, enforce_concise_answer, wants_detailed_response
+from lumiere.tool_plugins import ToolRegistry, register_builtin_tools, parse_tool_command
 from lumiere.web_content import (
     duckduckgo_search as external_duckduckgo_search,
     http_get_text as external_http_get_text,
@@ -101,6 +103,7 @@ CORRECTION_ACCURACY_CORRECT_SCALE = float(os.getenv("LUMIERE_CORRECTION_ACCURACY
 CORRECTION_LEARNING_BASE = float(os.getenv("LUMIERE_CORRECTION_LEARNING_BASE", "0.25"))
 CORRECTION_LEARNING_EXTRA_MAX = float(os.getenv("LUMIERE_CORRECTION_LEARNING_EXTRA_MAX", "1.2"))
 CORRECTION_LEARNING_CONF_BASE = float(os.getenv("LUMIERE_CORRECTION_LEARNING_CONF_BASE", "0.4"))
+DEFAULT_CONCISE_MODE = str(os.getenv("LUMIERE_DEFAULT_CONCISE_MODE", "true")).strip().lower() in {"1", "true", "yes", "on"}
 
 def log_event(level, event, **fields):
     payload = {"event": event, **fields}
@@ -126,8 +129,16 @@ def load_user_profile():
             data = json.load(f)
             if isinstance(data, dict):
                 data.setdefault("share_anonymized", True)
+                data.setdefault("response_style", "concise")
                 return data
-    return {"name": None, "theme": "system", "accent": "#3b82f6", "model": "groq-llama3.3", "share_anonymized": True}
+    return {
+        "name": None,
+        "theme": "system",
+        "accent": "#3b82f6",
+        "model": "groq-llama3.3",
+        "share_anonymized": True,
+        "response_style": "concise",
+    }
 
 def save_user_profile(profile):
     with USER_PROFILE_FILE.open('w', encoding="utf-8") as f:
@@ -138,6 +149,7 @@ user_name = profile.get("name")
 theme = profile.get("theme", "system")
 accent_color = profile.get("accent", "#3b82f6")
 current_model = profile.get("model", "groq-llama3.3")
+response_style = str(profile.get("response_style", os.getenv("LUMIERE_RESPONSE_STYLE", "concise"))).strip().lower() or "concise"
 ANON_SALT = os.getenv("LUMIERE_ANON_SALT", "lumiere-local-salt")
 CORE_AGENT_CATALOG = {
     "math": "Math Expert",
@@ -792,6 +804,14 @@ current_model = canonical_model_key(current_model)
 if profile.get("model") != current_model:
     profile["model"] = current_model
     save_user_profile(profile)
+
+if response_style not in {"concise", "balanced", "detailed"}:
+    response_style = "concise"
+    profile["response_style"] = response_style
+    save_user_profile(profile)
+
+tools_registry = ToolRegistry()
+register_builtin_tools(tools_registry)
 
 SPECIALTY_MODEL_ROUTING_ENABLED = str(
     os.getenv("LUMIERE_SPECIALTY_MODEL_ROUTING", "true")
@@ -3202,6 +3222,15 @@ async def ask(q: str, requester: Optional[str] = None, ctx: Optional[str] = None
         audit_log("ask", requester or "unknown", status="denied", metadata={"reason": auth_err})
         return HTMLResponse(content=html_escape(auth_err), media_type="text/html", status_code=403)
     audit_log("ask", acting_as, metadata={"q_len": len(str(q or ""))}, tenant_id=(auth_ctx or {}).get("tenant_id", "default"))
+    tool_cmd = parse_tool_command(q)
+    if tool_cmd:
+        if tool_cmd.get("error"):
+            return HTMLResponse(content=format_ai_text_html(tool_cmd["error"]), media_type="text/html")
+        ran = tools_registry.run(tool_cmd.get("name"), tool_cmd.get("args"))
+        payload = json.dumps(ran, ensure_ascii=False, indent=2)
+        answer_plain = f"Tool result:\n```json\n{payload}\n```"
+        answer = format_ai_text_html(answer_plain)
+        return HTMLResponse(content=answer, media_type="text/html")
     actor_key = normalize_actor_key(acting_as)
     category, specialty, existing = detect_category_and_specialty(q)
     correction_intent = _looks_like_correction_feedback(q)
@@ -3517,6 +3546,7 @@ Rental lock active.
 {specialty_prompt_block(agent.specialty, q)}
 Companion level: {agent.level}. Consistency score: {agent.accuracy:.1f}%.
 {tone}
+{build_response_style_instruction(response_style, q, specialty=agent.specialty)}
 Maintain continuity from the recent conversation and user preferences.
 If the message is a follow-up, infer what it refers to from recent context before answering.
 Never claim pending reminders/plans unless they appear in the Current reminder list context above.
@@ -3547,6 +3577,8 @@ Answer concisely and helpfully: {q}
                 answer_plain = repaired
     answer_plain = sanitize_agent_output(answer_plain)
     answer_plain = normalize_legacy_vocabulary(answer_plain, q)
+    concise_on = bool(DEFAULT_CONCISE_MODE) and str(response_style).lower() == "concise" and not wants_detailed_response(q)
+    answer_plain = enforce_concise_answer(answer_plain, enabled=concise_on, is_coding=(agent.specialty == "coding"))
     answer = answer_plain
     log_event(logging.INFO, "ask_llm_response", specialty=agent.specialty, answer_len=len(answer))
 
@@ -3866,11 +3898,15 @@ Rental lock active.
             + lumiere_system_prompt()
             + "\n"
             + specialty_prompt_block(agent.specialty, q)
+            + "\n"
+            + build_response_style_instruction(response_style, q, specialty=agent.specialty)
         ).strip(),
         ask_llm_fn=lambda prompt: ask_llm_with_model(prompt, routed_model_key),
     )
     answer_plain = normalize_legacy_vocabulary(answer_plain, q)
     answer_plain = sanitize_agent_output(answer_plain)
+    concise_on = bool(DEFAULT_CONCISE_MODE) and str(response_style).lower() == "concise" and not wants_detailed_response(q)
+    answer_plain = enforce_concise_answer(answer_plain, enabled=concise_on, is_coding=(agent.specialty == "coding"))
     if not answer_plain:
         fallback = "I couldn't fetch reliable live web sources right now. Please try again in a moment."
         fallback += """
@@ -4470,6 +4506,18 @@ async def health_deep():
         "files": files,
     }
 
+@app.get("/tools/plugins")
+async def list_tools():
+    return {"items": tools_registry.list_tools()}
+
+@app.post("/tools/run")
+async def run_tool(data: dict = Body(...)):
+    name = str(data.get("tool", "")).strip().lower()
+    args = data.get("args", {})
+    if not name:
+        return {"error": "Missing tool"}
+    return tools_registry.run(name, args if isinstance(args, dict) else {})
+
 @app.get("/privacy/share-anonymized")
 async def get_privacy_setting(requester: Optional[str] = None, x_auth_token: Optional[str] = Header(default=None, alias="X-Auth-Token")):
     acting_as, auth_err, _ = resolve_requester_with_auth(requester, x_auth_token, allow_admin_impersonate=True)
@@ -4844,6 +4892,17 @@ async def set_model(data: dict):
         log_event(logging.INFO, "model_switched", model=model)
         return {"status": "ok", "model": model}
     return {"error": "Invalid model"}
+
+@app.post("/set-response-style")
+async def set_response_style(data: dict):
+    global response_style
+    style = str(data.get("response_style", "concise")).strip().lower()
+    if style not in {"concise", "balanced", "detailed"}:
+        return {"error": "Invalid response_style"}
+    response_style = style
+    profile["response_style"] = style
+    save_user_profile(profile)
+    return {"status": "ok", "response_style": style}
 
 @app.post("/set-name")
 async def set_name(name: str = Form(...)):
