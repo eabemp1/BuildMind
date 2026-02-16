@@ -1604,36 +1604,6 @@ body {
     color: var(--muted);
 }
 
-.translate-controls {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-    margin: 6px 0 2px;
-}
-
-.translate-controls label {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 0.76rem;
-    color: var(--muted);
-}
-
-.translate-controls input[type="text"] {
-    width: 84px;
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--text);
-    border-radius: 8px;
-    padding: 5px 7px;
-    font-size: 0.78rem;
-}
-
-.translate-toggle input {
-    width: 14px;
-    height: 14px;
-}
 
 .prompt-row::-webkit-scrollbar {
     display: none;
@@ -1753,27 +1723,6 @@ body {
     white-space: pre;
 }
 
-.message-translation {
-    margin-top: 10px;
-    border-top: 1px dashed var(--border);
-    padding-top: 8px;
-}
-
-.message-translation-head {
-    font-size: 0.68rem;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--muted);
-    margin-bottom: 4px;
-}
-
-.message-translation-body {
-    border-radius: 10px;
-    border: 1px solid var(--border);
-    background: color-mix(in srgb, var(--surface) 76%, rgba(var(--accent-rgb), 0.12) 24%);
-    padding: 8px 9px;
-    line-height: 1.42;
-}
 
 .message-tools {
     margin-top: 6px;

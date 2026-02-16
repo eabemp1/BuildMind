@@ -60,10 +60,6 @@ The assistant is persistent, learns from that user over time, and grows with the
    Create a `.env` file in the project root:
    ```env
    GROQ_API_KEY=your_groq_api_key_here
-   # Optional: Khaya translation (Developer tier)
-   KHAYA_API_KEY=your_khaya_api_key_here
-   KHAYA_API_BASE_URL=https://translation.ghananlp.org
-   KHAYA_AUTH_MODE=apim
    ```
 
 4. **Run Lumiere**
