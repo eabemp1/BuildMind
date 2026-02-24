@@ -131,6 +131,8 @@ async function maybeApplyLanguageCoachAutoTranslate(userText) {
     if (!prefs.enabled) return { text, provider: "", source: prefs.source, target: prefs.target };
     if (prefs.source.toLowerCase() === prefs.target.toLowerCase()) return { text, provider: "", source: prefs.source, target: prefs.target };
     try {
+        const ctrl = new AbortController();
+        const tm = window.setTimeout(() => ctrl.abort(), 4500);
         const res = await fetch("/translate", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -140,7 +142,9 @@ async function maybeApplyLanguageCoachAutoTranslate(userText) {
                 target_lang: prefs.target,
                 provider: "khaya",
             }),
+            signal: ctrl.signal,
         });
+        window.clearTimeout(tm);
         const data = await res.json();
         const translated = String(data?.translated_text || "").trim();
         const provider = String(data?.provider || "").trim().toLowerCase();
@@ -159,7 +163,7 @@ async function maybeApplyLanguageCoachAutoTranslate(userText) {
             target: prefs.target,
         };
     } catch (_) {
-        return { text, provider: "", source: prefs.source, target: prefs.target };
+        return { text, provider: "khaya_timeout", source: prefs.source, target: prefs.target };
     }
 }
 

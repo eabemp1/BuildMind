@@ -1127,7 +1127,7 @@ def _khaya_headers():
         "Authorization": f"Bearer {KHAYA_API_KEY}",
     }
 
-def _json_http_post(url, payload, headers=None, timeout=25):
+def _json_http_post(url, payload, headers=None, timeout=8):
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(url, data=body, headers=(headers or {}), method="POST")
     with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -1180,11 +1180,16 @@ def khaya_translate(text, source_lang, target_lang):
         {"sentence": text, "src": source_lang, "tgt": target_lang},
     ]
     last_error = ""
+    attempts = 0
+    max_attempts = 3
     for path in path_candidates:
         url = f"{base}{path}"
         for payload in payloads:
+            attempts += 1
+            if attempts > max_attempts:
+                break
             try:
-                data = _json_http_post(url, payload, headers=_khaya_headers())
+                data = _json_http_post(url, payload, headers=_khaya_headers(), timeout=4)
                 translated = _extract_text_from_obj(data)
                 if translated:
                     return {"translated_text": translated, "raw": data, "provider": "khaya", "url": url}
@@ -1199,6 +1204,8 @@ def khaya_translate(text, source_lang, target_lang):
                 last_error = f"Network error: {e.reason}"
             except Exception as e:
                 last_error = str(e)
+        if attempts > max_attempts:
+            break
     return {"error": f"Khaya translation failed. {last_error}".strip()}
 
 def khaya_tts(text, language, voice=None):
