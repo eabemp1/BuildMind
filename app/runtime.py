@@ -17,6 +17,7 @@ from contextlib import asynccontextmanager
 import urllib.parse
 import urllib.request
 from urllib.error import URLError, HTTPError
+import base64
 import socket
 import time
 from datetime import datetime, timedelta, timezone
@@ -104,6 +105,11 @@ CORRECTION_LEARNING_BASE = float(os.getenv("LUMIERE_CORRECTION_LEARNING_BASE", "
 CORRECTION_LEARNING_EXTRA_MAX = float(os.getenv("LUMIERE_CORRECTION_LEARNING_EXTRA_MAX", "1.2"))
 CORRECTION_LEARNING_CONF_BASE = float(os.getenv("LUMIERE_CORRECTION_LEARNING_CONF_BASE", "0.4"))
 DEFAULT_CONCISE_MODE = str(os.getenv("LUMIERE_DEFAULT_CONCISE_MODE", "true")).strip().lower() in {"1", "true", "yes", "on"}
+KHAYA_API_KEY = str(os.getenv("KHAYA_API_KEY", "")).strip()
+KHAYA_BASE_URL = str(os.getenv("KHAYA_BASE_URL", "https://translation.ghananlp.org")).strip().rstrip("/")
+KHAYA_TRANSLATE_PATH = str(os.getenv("KHAYA_TRANSLATE_PATH", "/v1/translate")).strip() or "/v1/translate"
+KHAYA_TTS_PATH = str(os.getenv("KHAYA_TTS_PATH", "/v1/tts")).strip() or "/v1/tts"
+KHAYA_ASR_PATH = str(os.getenv("KHAYA_ASR_PATH", "/v1/asr")).strip() or "/v1/asr"
 
 def log_event(level, event, **fields):
     payload = {"event": event, **fields}
@@ -1109,6 +1115,133 @@ def live_web_answer(question, max_sources=3, extra_context="", ask_llm_fn=None):
         max_sources=max_sources,
         extra_context=extra_context,
     )
+
+def _khaya_headers():
+    if not KHAYA_API_KEY:
+        return {}
+    return {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "Ocp-Apim-Subscription-Key": KHAYA_API_KEY,
+        "x-api-key": KHAYA_API_KEY,
+        "Authorization": f"Bearer {KHAYA_API_KEY}",
+    }
+
+def _json_http_post(url, payload, headers=None, timeout=25):
+    body = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(url, data=body, headers=(headers or {}), method="POST")
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        raw = resp.read().decode("utf-8", errors="replace")
+        if not raw.strip():
+            return {}
+        try:
+            return json.loads(raw)
+        except Exception:
+            return {"raw": raw}
+
+def _extract_text_from_obj(obj):
+    if isinstance(obj, str):
+        return obj.strip()
+    if isinstance(obj, list):
+        for item in obj:
+            text = _extract_text_from_obj(item)
+            if text:
+                return text
+        return ""
+    if isinstance(obj, dict):
+        for key in ["translation", "translated_text", "text", "output", "result", "message"]:
+            if key in obj:
+                text = _extract_text_from_obj(obj.get(key))
+                if text:
+                    return text
+        for val in obj.values():
+            text = _extract_text_from_obj(val)
+            if text:
+                return text
+    return ""
+
+def khaya_translate(text, source_lang, target_lang):
+    if not KHAYA_API_KEY:
+        return {"error": "Khaya API key not configured"}
+    base = KHAYA_BASE_URL
+    path_candidates = []
+    for p in [KHAYA_TRANSLATE_PATH, "/v1/translate", "/translate"]:
+        p = str(p or "").strip()
+        if not p:
+            continue
+        if not p.startswith("/"):
+            p = "/" + p
+        if p not in path_candidates:
+            path_candidates.append(p)
+    payloads = [
+        {"text": text, "source_language": source_lang, "target_language": target_lang},
+        {"text": text, "source": source_lang, "target": target_lang},
+        {"in": text, "lang": source_lang, "to": target_lang},
+        {"sentence": text, "src": source_lang, "tgt": target_lang},
+    ]
+    last_error = ""
+    for path in path_candidates:
+        url = f"{base}{path}"
+        for payload in payloads:
+            try:
+                data = _json_http_post(url, payload, headers=_khaya_headers())
+                translated = _extract_text_from_obj(data)
+                if translated:
+                    return {"translated_text": translated, "raw": data, "provider": "khaya", "url": url}
+            except HTTPError as e:
+                detail = ""
+                try:
+                    detail = e.read().decode("utf-8", errors="replace")
+                except Exception:
+                    detail = str(e)
+                last_error = f"HTTP {e.code}: {detail[:300]}"
+            except URLError as e:
+                last_error = f"Network error: {e.reason}"
+            except Exception as e:
+                last_error = str(e)
+    return {"error": f"Khaya translation failed. {last_error}".strip()}
+
+def khaya_tts(text, language, voice=None):
+    if not KHAYA_API_KEY:
+        return {"error": "Khaya API key not configured"}
+    path = KHAYA_TTS_PATH if str(KHAYA_TTS_PATH).startswith("/") else f"/{KHAYA_TTS_PATH}"
+    url = f"{KHAYA_BASE_URL}{path}"
+    payload = {
+        "text": str(text or ""),
+        "language": str(language or "en"),
+    }
+    if voice:
+        payload["voice"] = str(voice)
+    try:
+        data = _json_http_post(url, payload, headers=_khaya_headers())
+        audio = (
+            data.get("audio_base64")
+            or data.get("audio")
+            or data.get("speech")
+            or data.get("result")
+        ) if isinstance(data, dict) else None
+        if isinstance(audio, str) and audio.strip():
+            return {"audio_base64": audio.strip(), "provider": "khaya", "raw": data}
+        return {"error": "No audio in TTS response", "raw": data}
+    except Exception as e:
+        return {"error": f"Khaya TTS failed: {e}"}
+
+def khaya_asr(audio_base64, language=None):
+    if not KHAYA_API_KEY:
+        return {"error": "Khaya API key not configured"}
+    path = KHAYA_ASR_PATH if str(KHAYA_ASR_PATH).startswith("/") else f"/{KHAYA_ASR_PATH}"
+    url = f"{KHAYA_BASE_URL}{path}"
+    payload = {"audio_base64": str(audio_base64 or "").strip()}
+    if language:
+        payload["language"] = str(language)
+    try:
+        data = _json_http_post(url, payload, headers=_khaya_headers(), timeout=40)
+        text = _extract_text_from_obj(data)
+        if text:
+            return {"text": text, "provider": "khaya", "raw": data}
+        return {"error": "No transcript in ASR response", "raw": data}
+    except Exception as e:
+        return {"error": f"Khaya ASR failed: {e}"}
 
 def _split_md_row(line):
     row = (line or "").strip()
@@ -4517,6 +4650,64 @@ async def run_tool(data: dict = Body(...)):
     if not name:
         return {"error": "Missing tool"}
     return tools_registry.run(name, args if isinstance(args, dict) else {})
+
+@app.get("/khaya/status")
+async def khaya_status():
+    return {
+        "configured": bool(KHAYA_API_KEY),
+        "base_url": KHAYA_BASE_URL,
+        "translate_path": KHAYA_TRANSLATE_PATH,
+        "tts_path": KHAYA_TTS_PATH,
+        "asr_path": KHAYA_ASR_PATH,
+    }
+
+@app.post("/translate")
+async def translate_text(data: dict = Body(...)):
+    text = str(data.get("text", "")).strip()
+    source_lang = str(data.get("source_lang", "auto")).strip() or "auto"
+    target_lang = str(data.get("target_lang", "en")).strip() or "en"
+    provider = str(data.get("provider", "khaya")).strip().lower() or "khaya"
+    if not text:
+        return {"error": "Missing text"}
+    if source_lang.lower() == target_lang.lower():
+        return {"translated_text": text, "provider": provider, "source_lang": source_lang, "target_lang": target_lang}
+    if provider == "khaya":
+        out = khaya_translate(text, source_lang, target_lang)
+        if not out.get("error"):
+            out["source_lang"] = source_lang
+            out["target_lang"] = target_lang
+            return out
+    routed = resolve_model_key_for_specialty("language", current_model)
+    prompt = (
+        f"Translate this text from {source_lang} to {target_lang}. "
+        "Return only the translated text, no extra commentary.\n\n"
+        f"Text:\n{text}"
+    )
+    translated = ask_llm_with_model(prompt, routed)
+    translated = sanitize_agent_output(normalize_legacy_vocabulary(str(translated or "").strip(), text))
+    return {
+        "translated_text": translated,
+        "provider": "llm_fallback" if provider == "khaya" else provider,
+        "source_lang": source_lang,
+        "target_lang": target_lang,
+    }
+
+@app.post("/tts")
+async def tts_text(data: dict = Body(...)):
+    text = str(data.get("text", "")).strip()
+    language = str(data.get("language", "en")).strip() or "en"
+    voice = str(data.get("voice", "")).strip() or None
+    if not text:
+        return {"error": "Missing text"}
+    return khaya_tts(text, language, voice=voice)
+
+@app.post("/asr")
+async def asr_audio(data: dict = Body(...)):
+    audio_base64 = str(data.get("audio_base64", "")).strip()
+    language = str(data.get("language", "")).strip() or None
+    if not audio_base64:
+        return {"error": "Missing audio_base64"}
+    return khaya_asr(audio_base64, language=language)
 
 @app.get("/privacy/share-anonymized")
 async def get_privacy_setting(requester: Optional[str] = None, x_auth_token: Optional[str] = Header(default=None, alias="X-Auth-Token")):

@@ -350,6 +350,46 @@ def render_home_page(
             </div>
             <div class="settings-section">
                 <label class="privacy-toggle-row">
+                    <input id="lang-auto-translate-toggle" type="checkbox">
+                    <span>Language Coach auto-translate</span>
+                </label>
+                <div class="settings-row">
+                    <label for="lang-source-select">Source</label>
+                    <select id="lang-source-select" aria-label="Source language">
+                        <option value="auto">Auto</option>
+                        <option value="en">English</option>
+                        <option value="fr">French</option>
+                        <option value="es">Spanish</option>
+                        <option value="pt">Portuguese</option>
+                        <option value="sw">Swahili</option>
+                        <option value="tw">Twi</option>
+                        <option value="yo">Yoruba</option>
+                        <option value="ha">Hausa</option>
+                        <option value="ig">Igbo</option>
+                        <option value="ja">Japanese</option>
+                        <option value="zh">Chinese</option>
+                    </select>
+                </div>
+                <div class="settings-row">
+                    <label for="lang-target-select">Target</label>
+                    <select id="lang-target-select" aria-label="Target language">
+                        <option value="en">English</option>
+                        <option value="fr">French</option>
+                        <option value="es">Spanish</option>
+                        <option value="pt">Portuguese</option>
+                        <option value="sw">Swahili</option>
+                        <option value="tw">Twi</option>
+                        <option value="yo">Yoruba</option>
+                        <option value="ha">Hausa</option>
+                        <option value="ig">Igbo</option>
+                        <option value="ja">Japanese</option>
+                        <option value="zh">Chinese</option>
+                    </select>
+                </div>
+                <p id="khaya-status-text" class="settings-help">Khaya status: checking...</p>
+            </div>
+            <div class="settings-section">
+                <label class="privacy-toggle-row">
                     <input id="privacy-toggle" type="checkbox">
                     <span>Contribute anonymized usage data</span>
                 </label>

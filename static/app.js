@@ -85,6 +85,66 @@ function setModel(model) {
     .catch(() => toast("Model switch failed"));
 }
 
+function getLanguagePrefs() {
+    return {
+        enabled: localStorage.getItem(LANG_AUTO_TRANSLATE_KEY) === "1",
+        source: (localStorage.getItem(LANG_SOURCE_KEY) || "auto").trim() || "auto",
+        target: (localStorage.getItem(LANG_TARGET_KEY) || "en").trim() || "en",
+    };
+}
+
+function setLanguagePrefs({ enabled, source, target }) {
+    localStorage.setItem(LANG_AUTO_TRANSLATE_KEY, enabled ? "1" : "0");
+    localStorage.setItem(LANG_SOURCE_KEY, source || "auto");
+    localStorage.setItem(LANG_TARGET_KEY, target || "en");
+}
+
+async function refreshKhayaStatus() {
+    const el = document.getElementById("khaya-status-text");
+    if (!el) return;
+    try {
+        const res = await fetch("/khaya/status");
+        const data = await res.json();
+        el.textContent = data.configured ? "Khaya status: connected" : "Khaya status: API key not configured";
+    } catch (_) {
+        el.textContent = "Khaya status: unavailable";
+    }
+}
+
+async function maybeApplyLanguageCoachAutoTranslate(userText) {
+    const text = String(userText || "").trim();
+    if (!text) return text;
+    if (String(currentAgentSpecialty || "").toLowerCase() !== "language") return text;
+    const prefs = getLanguagePrefs();
+    if (!prefs.enabled) return text;
+    if (prefs.source.toLowerCase() === prefs.target.toLowerCase()) return text;
+    try {
+        const res = await fetch("/translate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                text,
+                source_lang: prefs.source,
+                target_lang: prefs.target,
+                provider: "khaya",
+            }),
+        });
+        const data = await res.json();
+        const translated = String(data?.translated_text || "").trim();
+        if (!translated) return text;
+        return [
+            "Language Coach Auto-Translate enabled.",
+            `Source language: ${prefs.source}`,
+            `Target language: ${prefs.target}`,
+            `Original user message: ${text}`,
+            `Translated message: ${translated}`,
+            `Respond in ${prefs.target} and include a short English gloss.`,
+        ].join("\n");
+    } catch (_) {
+        return text;
+    }
+}
+
 function escapeHtml(input) {
     return String(input)
         .replace(/&/g, "&amp;")
@@ -106,6 +166,9 @@ const PROFILE_SEEN_KEY = "lumiere_profile_seen_v1";
 const AGENT_AVATAR_PROFILE_KEY = "lumiere_agent_avatar_profiles_v1";
 const AUTH_TOKEN_KEY = "lumiere_auth_token_v1";
 const AUTH_USER_KEY = "lumiere_auth_user_v1";
+const LANG_AUTO_TRANSLATE_KEY = "lumiere_lang_auto_translate_v1";
+const LANG_SOURCE_KEY = "lumiere_lang_source_v1";
+const LANG_TARGET_KEY = "lumiere_lang_target_v1";
 const chatLog = [];
 let metaverseAgents = [];
 let metaverseFeatures = [];
@@ -954,7 +1017,8 @@ async function ask(promptText) {
     try {
         const requester = getActingAs();
         const ctx = buildConversationContext(8);
-        const res = await fetch("/ask?q=" + encodeURIComponent(q) + "&requester=" + encodeURIComponent(requester) + "&ctx=" + encodeURIComponent(ctx));
+        const effectiveQ = await maybeApplyLanguageCoachAutoTranslate(q);
+        const res = await fetch("/ask?q=" + encodeURIComponent(effectiveQ) + "&requester=" + encodeURIComponent(requester) + "&ctx=" + encodeURIComponent(ctx));
         const txt = await res.text();
         const meta = parseAgentMetaFromHtml(txt);
         if (meta?.specialty) currentAgentSpecialty = meta.specialty;
@@ -1046,7 +1110,8 @@ async function askLiveWeb(promptText) {
     try {
         const requester = getActingAs();
         const ctx = buildConversationContext(8);
-        const res = await fetch("/ask-live?q=" + encodeURIComponent(q) + "&requester=" + encodeURIComponent(requester) + "&ctx=" + encodeURIComponent(ctx));
+        const effectiveQ = await maybeApplyLanguageCoachAutoTranslate(q);
+        const res = await fetch("/ask-live?q=" + encodeURIComponent(effectiveQ) + "&requester=" + encodeURIComponent(requester) + "&ctx=" + encodeURIComponent(ctx));
         const txt = await res.text();
         const meta = parseAgentMetaFromHtml(txt);
         if (meta?.specialty) currentAgentSpecialty = meta.specialty;
@@ -2585,6 +2650,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const modelSelect = document.getElementById("model-select");
     if (modelSelect) modelSelect.value = currentModel;
+    const langPrefs = getLanguagePrefs();
+    const langAutoTranslateToggle = document.getElementById("lang-auto-translate-toggle");
+    const langSourceSelect = document.getElementById("lang-source-select");
+    const langTargetSelect = document.getElementById("lang-target-select");
+    if (langAutoTranslateToggle) langAutoTranslateToggle.checked = !!langPrefs.enabled;
+    if (langSourceSelect) langSourceSelect.value = langPrefs.source || "auto";
+    if (langTargetSelect) langTargetSelect.value = langPrefs.target || "en";
 
     renderAvatar(loadAvatarState(), false);
     setTtsEnabled(isTtsEnabled());
@@ -2601,6 +2673,7 @@ document.addEventListener("DOMContentLoaded", () => {
     refreshAuthMode();
     refreshMemoryControls();
     refreshEvaluationAndQuality();
+    refreshKhayaStatus();
     setInterval(refreshAgentStats, 20000);
     setInterval(refreshMemoryFact, 24000);
     setInterval(pollDueReminders, 20000);
@@ -2703,6 +2776,36 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (ttsToggleBtn) {
         ttsToggleBtn.addEventListener("click", () => setTtsEnabled(!isTtsEnabled()));
+    }
+    if (langAutoTranslateToggle) {
+        langAutoTranslateToggle.addEventListener("change", () => {
+            setLanguagePrefs({
+                enabled: !!langAutoTranslateToggle.checked,
+                source: langSourceSelect?.value || "auto",
+                target: langTargetSelect?.value || "en",
+            });
+            toast(`Language Coach auto-translate ${langAutoTranslateToggle.checked ? "enabled" : "disabled"}`);
+        });
+    }
+    if (langSourceSelect) {
+        langSourceSelect.addEventListener("change", () => {
+            const p = getLanguagePrefs();
+            setLanguagePrefs({
+                enabled: p.enabled,
+                source: langSourceSelect.value || "auto",
+                target: langTargetSelect?.value || p.target,
+            });
+        });
+    }
+    if (langTargetSelect) {
+        langTargetSelect.addEventListener("change", () => {
+            const p = getLanguagePrefs();
+            setLanguagePrefs({
+                enabled: p.enabled,
+                source: langSourceSelect?.value || p.source,
+                target: langTargetSelect.value || "en",
+            });
+        });
     }
     if (actorInput) actorInput.value = getActingAs();
     refreshIdentityHint();
