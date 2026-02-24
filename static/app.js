@@ -99,6 +99,18 @@ function setLanguagePrefs({ enabled, source, target }) {
     localStorage.setItem(LANG_TARGET_KEY, target || "en");
 }
 
+function getKhayaTtsPrefs() {
+    return {
+        enabled: localStorage.getItem(KHAYA_TTS_ENABLED_KEY) === "1",
+        voice: (localStorage.getItem(KHAYA_VOICE_KEY) || "").trim(),
+    };
+}
+
+function setKhayaTtsPrefs({ enabled, voice }) {
+    localStorage.setItem(KHAYA_TTS_ENABLED_KEY, enabled ? "1" : "0");
+    localStorage.setItem(KHAYA_VOICE_KEY, String(voice || "").trim());
+}
+
 async function refreshKhayaStatus() {
     const el = document.getElementById("khaya-status-text");
     if (!el) return;
@@ -175,6 +187,8 @@ const AUTH_USER_KEY = "lumiere_auth_user_v1";
 const LANG_AUTO_TRANSLATE_KEY = "lumiere_lang_auto_translate_v1";
 const LANG_SOURCE_KEY = "lumiere_lang_source_v1";
 const LANG_TARGET_KEY = "lumiere_lang_target_v1";
+const KHAYA_TTS_ENABLED_KEY = "lumiere_khaya_tts_enabled_v1";
+const KHAYA_VOICE_KEY = "lumiere_khaya_voice_v1";
 const chatLog = [];
 let metaverseAgents = [];
 let metaverseFeatures = [];
@@ -641,7 +655,7 @@ function pickVoiceForLang(langTag) {
     return voice || null;
 }
 
-function speakText(text, options = {}) {
+function speakTextBrowser(text, options = {}) {
     if (!("speechSynthesis" in window)) return;
     const clean = (text || "").trim();
     if (!clean) return;
@@ -655,6 +669,40 @@ function speakText(text, options = {}) {
     if (typeof options.volume === "number") utter.volume = options.volume;
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utter);
+}
+
+async function speakText(text, options = {}) {
+    const clean = (text || "").trim();
+    if (!clean) return;
+    const khayaPrefs = getKhayaTtsPrefs();
+    if (!khayaPrefs.enabled) {
+        speakTextBrowser(clean, options);
+        return;
+    }
+    const langPrefs = getLanguagePrefs();
+    const lang = String(options.lang || langPrefs.target || "en").split("-")[0];
+    try {
+        const res = await fetch("/tts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                text: clean.slice(0, 1500),
+                language: lang,
+                voice: khayaPrefs.voice || undefined,
+            }),
+        });
+        const data = await res.json();
+        const b64 = String(data?.audio_base64 || "").trim();
+        if (!b64) {
+            speakTextBrowser(clean, options);
+            return;
+        }
+        const src = b64.startsWith("data:audio") ? b64 : `data:audio/wav;base64,${b64}`;
+        const audio = new Audio(src);
+        await audio.play();
+    } catch (_) {
+        speakTextBrowser(clean, options);
+    }
 }
 
 function downloadBlob(filename, text, contentType) {
@@ -1033,6 +1081,9 @@ async function ask(promptText) {
         const auto = await maybeApplyLanguageCoachAutoTranslate(q);
         const effectiveQ = String(auto?.text || q);
         const providerBadge = auto?.provider ? [`Translate: ${auto.provider}`] : [];
+        if (auto?.source && auto?.target && auto.source.toLowerCase() !== auto.target.toLowerCase()) {
+            providerBadge.push(`${auto.source} -> ${auto.target}`);
+        }
         const res = await fetch("/ask?q=" + encodeURIComponent(effectiveQ) + "&requester=" + encodeURIComponent(requester) + "&ctx=" + encodeURIComponent(ctx));
         const txt = await res.text();
         const meta = parseAgentMetaFromHtml(txt);
@@ -1128,6 +1179,9 @@ async function askLiveWeb(promptText) {
         const auto = await maybeApplyLanguageCoachAutoTranslate(q);
         const effectiveQ = String(auto?.text || q);
         const providerBadge = auto?.provider ? [`Translate: ${auto.provider}`] : [];
+        if (auto?.source && auto?.target && auto.source.toLowerCase() !== auto.target.toLowerCase()) {
+            providerBadge.push(`${auto.source} -> ${auto.target}`);
+        }
         const res = await fetch("/ask-live?q=" + encodeURIComponent(effectiveQ) + "&requester=" + encodeURIComponent(requester) + "&ctx=" + encodeURIComponent(ctx));
         const txt = await res.text();
         const meta = parseAgentMetaFromHtml(txt);
@@ -2671,9 +2725,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const langAutoTranslateToggle = document.getElementById("lang-auto-translate-toggle");
     const langSourceSelect = document.getElementById("lang-source-select");
     const langTargetSelect = document.getElementById("lang-target-select");
+    const khayaTtsToggle = document.getElementById("khaya-tts-toggle");
+    const khayaVoiceInput = document.getElementById("khaya-voice-input");
     if (langAutoTranslateToggle) langAutoTranslateToggle.checked = !!langPrefs.enabled;
     if (langSourceSelect) langSourceSelect.value = langPrefs.source || "auto";
     if (langTargetSelect) langTargetSelect.value = langPrefs.target || "en";
+    const khayaTtsPrefs = getKhayaTtsPrefs();
+    if (khayaTtsToggle) khayaTtsToggle.checked = !!khayaTtsPrefs.enabled;
+    if (khayaVoiceInput) khayaVoiceInput.value = khayaTtsPrefs.voice || "";
 
     renderAvatar(loadAvatarState(), false);
     setTtsEnabled(isTtsEnabled());
@@ -2822,6 +2881,18 @@ document.addEventListener("DOMContentLoaded", () => {
                 source: langSourceSelect?.value || p.source,
                 target: langTargetSelect.value || "en",
             });
+        });
+    }
+    if (khayaTtsToggle) {
+        khayaTtsToggle.addEventListener("change", () => {
+            setKhayaTtsPrefs({ enabled: !!khayaTtsToggle.checked, voice: khayaVoiceInput?.value || "" });
+            toast(`Khaya voice ${khayaTtsToggle.checked ? "enabled" : "disabled"}`);
+        });
+    }
+    if (khayaVoiceInput) {
+        khayaVoiceInput.addEventListener("change", () => {
+            const p = getKhayaTtsPrefs();
+            setKhayaTtsPrefs({ enabled: p.enabled, voice: khayaVoiceInput.value || "" });
         });
     }
     if (actorInput) actorInput.value = getActingAs();
