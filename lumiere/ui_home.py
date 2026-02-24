@@ -386,6 +386,14 @@ def render_home_page(
                         <option value="zh">Chinese</option>
                     </select>
                 </div>
+                <label class="privacy-toggle-row">
+                    <input id="khaya-tts-toggle" type="checkbox">
+                    <span>Use Khaya voice for Speak</span>
+                </label>
+                <div class="settings-row">
+                    <label for="khaya-voice-input">Khaya voice id (optional)</label>
+                    <input id="khaya-voice-input" type="text" placeholder="e.g. tw_female_1">
+                </div>
                 <p id="khaya-status-text" class="settings-help">Khaya status: checking...</p>
             </div>
             <div class="settings-section">
