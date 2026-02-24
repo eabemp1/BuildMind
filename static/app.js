@@ -113,11 +113,11 @@ async function refreshKhayaStatus() {
 
 async function maybeApplyLanguageCoachAutoTranslate(userText) {
     const text = String(userText || "").trim();
-    if (!text) return text;
-    if (String(currentAgentSpecialty || "").toLowerCase() !== "language") return text;
+    if (!text) return { text, provider: "", source: "", target: "" };
+    if (String(currentAgentSpecialty || "").toLowerCase() !== "language") return { text, provider: "", source: "", target: "" };
     const prefs = getLanguagePrefs();
-    if (!prefs.enabled) return text;
-    if (prefs.source.toLowerCase() === prefs.target.toLowerCase()) return text;
+    if (!prefs.enabled) return { text, provider: "", source: prefs.source, target: prefs.target };
+    if (prefs.source.toLowerCase() === prefs.target.toLowerCase()) return { text, provider: "", source: prefs.source, target: prefs.target };
     try {
         const res = await fetch("/translate", {
             method: "POST",
@@ -131,17 +131,23 @@ async function maybeApplyLanguageCoachAutoTranslate(userText) {
         });
         const data = await res.json();
         const translated = String(data?.translated_text || "").trim();
-        if (!translated) return text;
-        return [
+        const provider = String(data?.provider || "").trim().toLowerCase();
+        if (!translated) return { text, provider, source: prefs.source, target: prefs.target };
+        return {
+            text: [
             "Language Coach Auto-Translate enabled.",
             `Source language: ${prefs.source}`,
             `Target language: ${prefs.target}`,
             `Original user message: ${text}`,
             `Translated message: ${translated}`,
             `Respond in ${prefs.target} and include a short English gloss.`,
-        ].join("\n");
+            ].join("\n"),
+            provider,
+            source: prefs.source,
+            target: prefs.target,
+        };
     } catch (_) {
-        return text;
+        return { text, provider: "", source: prefs.source, target: prefs.target };
     }
 }
 
@@ -563,15 +569,22 @@ function buildExplainBadges(meta) {
     return `<div class="explain-badges">${badges.map((b) => `<span class="explain-badge">${escapeHtml(b)}</span>`).join("")}</div>`;
 }
 
-function appendMessage(role, label, content, isTrustedHtml = false, agentMeta = null) {
+function buildRuntimeBadges(runtimeBadges = []) {
+    const rows = Array.isArray(runtimeBadges) ? runtimeBadges.filter(Boolean) : [];
+    if (!rows.length) return "";
+    return rows.map((b) => `<span class="explain-badge">${escapeHtml(String(b))}</span>`).join("");
+}
+
+function appendMessage(role, label, content, isTrustedHtml = false, agentMeta = null, runtimeBadges = []) {
     const output = document.getElementById("chat-output");
     if (!output) return;
     const wrapper = document.createElement("div");
     wrapper.className = `message ${role} entering`;
     const bodyHtml = isTrustedHtml ? content : escapeHtml(content).replace(/\n/g, "<br>");
     const badgeHtml = role === "ai" ? buildExplainBadges(agentMeta) : "";
+    const runtimeBadgeHtml = role === "ai" ? buildRuntimeBadges(runtimeBadges) : "";
     const toolsHtml = role === "ai"
-        ? `<div class="message-tools">${badgeHtml}<button class="speak-btn" type="button">Speak</button><button class="copy-btn" type="button">Copy</button></div>`
+        ? `<div class="message-tools">${badgeHtml}${runtimeBadgeHtml}<button class="speak-btn" type="button">Speak</button><button class="copy-btn" type="button">Copy</button></div>`
         : "";
     wrapper.innerHTML = `
         <div class="message-label">${escapeHtml(label)}</div>
@@ -1017,7 +1030,9 @@ async function ask(promptText) {
     try {
         const requester = getActingAs();
         const ctx = buildConversationContext(8);
-        const effectiveQ = await maybeApplyLanguageCoachAutoTranslate(q);
+        const auto = await maybeApplyLanguageCoachAutoTranslate(q);
+        const effectiveQ = String(auto?.text || q);
+        const providerBadge = auto?.provider ? [`Translate: ${auto.provider}`] : [];
         const res = await fetch("/ask?q=" + encodeURIComponent(effectiveQ) + "&requester=" + encodeURIComponent(requester) + "&ctx=" + encodeURIComponent(ctx));
         const txt = await res.text();
         const meta = parseAgentMetaFromHtml(txt);
@@ -1025,9 +1040,9 @@ async function ask(promptText) {
         if (shouldSuggestRecovery(txt)) {
             markFailure(q, "ask");
             reportRequestError("Model output looked unstable", "ask");
-            appendMessage("ai", "Lumiere", txt + recoveryActionsHtml(), true, meta);
+            appendMessage("ai", "Lumiere", txt + recoveryActionsHtml(), true, meta, providerBadge);
         } else {
-            appendMessage("ai", "Lumiere", txt, true, meta);
+            appendMessage("ai", "Lumiere", txt, true, meta, providerBadge);
         }
         await Promise.all([
             refreshAgentStats(),
@@ -1110,7 +1125,9 @@ async function askLiveWeb(promptText) {
     try {
         const requester = getActingAs();
         const ctx = buildConversationContext(8);
-        const effectiveQ = await maybeApplyLanguageCoachAutoTranslate(q);
+        const auto = await maybeApplyLanguageCoachAutoTranslate(q);
+        const effectiveQ = String(auto?.text || q);
+        const providerBadge = auto?.provider ? [`Translate: ${auto.provider}`] : [];
         const res = await fetch("/ask-live?q=" + encodeURIComponent(effectiveQ) + "&requester=" + encodeURIComponent(requester) + "&ctx=" + encodeURIComponent(ctx));
         const txt = await res.text();
         const meta = parseAgentMetaFromHtml(txt);
@@ -1118,9 +1135,9 @@ async function askLiveWeb(promptText) {
         if (shouldSuggestRecovery(txt)) {
             markFailure(q, "web");
             reportRequestError("Live web output looked unstable", "web");
-            appendMessage("ai", "Lumiere Live Web", txt + recoveryActionsHtml(), true, meta);
+            appendMessage("ai", "Lumiere Live Web", txt + recoveryActionsHtml(), true, meta, providerBadge);
         } else {
-            appendMessage("ai", "Lumiere Live Web", txt, true, meta);
+            appendMessage("ai", "Lumiere Live Web", txt, true, meta, providerBadge);
         }
         await Promise.all([
             refreshAgentStats(),
