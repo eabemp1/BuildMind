@@ -1,83 +1,93 @@
-# 🌟 Lumiere Forge — Founder Execution OS
+# EvolvAI OS
 
-> A utility-first app that helps founders in emerging markets move from ideas to measurable execution.
+EvolvAI OS is a unified FastAPI backend and Next.js frontend for founder execution support.
 
-![Python](https://img.shields.io/badge/python-3.8+-blue.svg)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green.svg)
-![Three.js](https://img.shields.io/badge/Three.js-Web3D-orange.svg)
-![Polygon](https://img.shields.io/badge/Blockchain-Polygon%20%26%20Base-purple.svg)
-![License](https://img.shields.io/badge/license-AGPLv3-blue.svg)
+## What This Is
 
-**Built in Ghana 🇬🇭 for practical founder execution.**
+- Not a generic chatbot.
+- A structured execution platform with:
+  - goal/project tracking
+  - roadmap and milestones
+  - task completion workflows
+  - execution scoring
+  - utility/agent support modules
 
-## 🎯 Product Identity
-Lumiere Forge is not a generic chatbot.  
-It is a **founder utility workspace** built around one core loop:
+## Current Architecture
 
-1. Define a clear goal
-2. Generate milestones
-3. Execute tasks consistently
-4. Track Execution Score trend
-5. Get next action guidance and local resource recommendations
+Single backend codebase:
 
-## ✨ Core Features
+```
+app/
+  main.py
+  database.py
+  core/
+  models/
+  schemas/
+  services/
+  routes/
+  execution/
+  agent/
+```
 
-### Core (Already Live in MVP)
-- Multi-agent routing (Math, Finance, Cooking, Reminders, Personal Companion)
-- Reinforcement Learning mastery (+5% / -5% per feedback)
-- Persistent JSON memory across sessions
-- Privacy-first & 100% local-first (data never leaves your device unless you choose)
-- Beautiful dark/light UI with accent colors
+Frontend dashboard:
 
-### Founder Utility Workspace
-- Onboarding profile (role, goal, market, stage, cohort)
-- Structured goals and milestone generation
-- Task manager with completion tracking
-- Execution Score and trend signals
-- Action-oriented weekly suggestions
-- Local resource guidance for Ghana/West Africa/emerging markets
+```
+frontend/
+  app/
+  components/
+  lib/
+```
 
-### Secondary AI Assistant
-- Chat is available as a support tool, not the primary workflow.
+## Backend Highlights
 
-### Cross-Cutting
-- Unified Founder Dashboard + Growth Charts
-- Local languages (Twi, Ga, Ewe + English/French)
-- Voice mode (Whisper + Groq TTS)
-- Plugin system for community agents
-- Enterprise/School mode for National AI Strategy pilots
+- `app/routes`: API endpoints only (thin handlers).
+- `app/services`: business logic.
+- `app/execution`: scoring + roadmap logic.
+- `app/agent`: memory/reflection + utility agent interfaces.
+- `app/models`: SQLAlchemy ORM models.
+- `app/schemas`: Pydantic request/response contracts.
+- `app/core`: shared auth/dependency/security helpers.
 
-## 🚀 Quick Start
+## Data Layer
 
-1. `git clone https://github.com/eabemp1/evolvai-mvp.git && cd evolvai-mvp`
-2. `pip install -r requirements.txt`
-3. Create `.env` with `GROQ_API_KEY=...`
-4. `python main.py`
-5. Open http://127.0.0.1:8000
+- Execution platform data uses SQLAlchemy ORM (`app/database.py`) with SQLite/PostgreSQL via `DATABASE_URL`.
+- Runtime artifacts/state files are generated locally and are no longer tracked in git.
 
-By default, the app opens in **Utility Workspace** (execution dashboard, goals, milestones, tasks, and resource guidance).
+## Quick Start (Backend)
 
-## 📖 How to Use (Utility-First)
-1. Open **Utility** workspace.
-2. Complete **Onboarding**: role, main goal, market, and stage.
-3. Create a **Goal** and generate structured **Milestones**.
-4. Add and complete **Tasks** to drive measurable progress.
-5. Monitor **Execution Score** and trend on the dashboard.
-6. Use **Local Resource Guide** for Ghana / West Africa / emerging market support.
+1. Create and activate virtual environment.
+2. Install dependencies:
+   - `pip install -r requirements.txt`
+3. Run API:
+   - `python main.py`
+4. Open:
+   - `http://127.0.0.1:8000`
 
-Chat remains available only as a secondary assistant tool, not the core product flow.
+## Quick Start (Frontend)
 
-## 🛠️ Tech Stack (Current + Planned)
+1. `cd frontend`
+2. `npm install`
+3. `npm run dev`
+4. Open:
+   - `http://localhost:3000/dashboard`
 
-**Current**  
-- Backend: FastAPI (Python)  
-- LLM: Groq (Llama 3.3-70B)  
-- Frontend: Vanilla JS + CSS  
-- Storage: JSON files (lightweight & local)  
+## Key Execution Endpoints
 
-**Adding in 2026**  
-- Metaverse: Three.js + WebXR  
-- Blockchain: viem.js / thirdweb + Polygon/Base (low fees)  
-- Future: React Native (mobile), Supabase (optional cloud sync), Solana (high-speed)
+- `POST /register`
+- `POST /login`
+- `POST /projects`
+- `POST /projects/{id}/generate-roadmap`
+- `GET /projects/{id}`
+- `POST /tasks/{id}/complete`
+- `GET /dashboard`
+- `POST /feedback`
 
-## 🏗️ Project Structure (Updated)
+## Test Commands
+
+- Core execution + utility flow:
+  - `venv\Scripts\python -m pytest -q tests/test_execution_v1_api.py tests/test_utility_workspace.py tests/test_mvp_flows.py`
+
+## Repository Hygiene
+
+- Removed duplicate backend trees and legacy tracked runtime artifacts.
+- `.gitignore` now excludes generated state/cache/db files so the repo stays clean.
