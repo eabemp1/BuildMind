@@ -5,3 +5,4 @@ frontend/.next/
 frontend/*.log
 __pycache__/
 *.pyc
+*.pid
