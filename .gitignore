@@ -1,2 +1,5 @@
 .env
 forge_state.json
+frontend/node_modules/
+frontend/.next/
+frontend/*.log
