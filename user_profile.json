@@ -1,7 +1,0 @@
-{
-  "name": "Emmanuel",
-  "theme": "dark",
-  "accent": "#ef4444",
-  "model": "ollama-llama3.2-latest",
-  "share_anonymized": true
-}
