@@ -13,6 +13,7 @@ import logging
 import subprocess
 import sys
 import inspect
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from contextlib import asynccontextmanager
 import urllib.parse
 import urllib.request
@@ -44,6 +45,7 @@ from lumiere.chat_helpers import (
 )
 from lumiere.routes_memory_reminders import register_memory_reminder_routes
 from lumiere.routes_auth import register_auth_routes
+from lumiere.routes_forge import register_forge_routes, apply_forge_event
 from lumiere.response_style import build_response_style_instruction, enforce_concise_answer, wants_detailed_response
 from lumiere.tool_plugins import ToolRegistry, register_builtin_tools, parse_tool_command
 from lumiere.web_content import (
@@ -72,7 +74,9 @@ AUDIT_LOG_FILE = BASE_DIR / "audit_log.jsonl"
 MEMORY_ITEMS_FILE = BASE_DIR / "memory_items.json"
 MEMORY_SCOPES_FILE = BASE_DIR / "memory_scopes.json"
 EVAL_METRICS_FILE = BASE_DIR / "evaluation_metrics.json"
+KHAYA_USAGE_FILE = BASE_DIR / "khaya_usage.json"
 CHECKPOINT_FILE = BASE_DIR / "checkpoints.json"
+FORGE_STATE_FILE = BASE_DIR / "forge_state.json"
 DATASET_DIR = BASE_DIR / "datasets"
 DATASET_DIR.mkdir(exist_ok=True)
 CHECKPOINT_DIR = DATASET_DIR / "checkpoints"
@@ -110,6 +114,13 @@ KHAYA_BASE_URL = str(os.getenv("KHAYA_BASE_URL", "https://translation.ghananlp.o
 KHAYA_TRANSLATE_PATH = str(os.getenv("KHAYA_TRANSLATE_PATH", "/v1/translate")).strip() or "/v1/translate"
 KHAYA_TTS_PATH = str(os.getenv("KHAYA_TTS_PATH", "/v1/tts")).strip() or "/v1/tts"
 KHAYA_ASR_PATH = str(os.getenv("KHAYA_ASR_PATH", "/v1/asr")).strip() or "/v1/asr"
+KHAYA_TRANSLATE_LLM_FALLBACK_ENABLED = str(
+    os.getenv("KHAYA_TRANSLATE_LLM_FALLBACK_ENABLED", "false")
+).strip().lower() in {"1", "true", "yes", "on"}
+KHAYA_RATE_LIMIT_DEFAULT_SEC = max(5, int(os.getenv("KHAYA_RATE_LIMIT_DEFAULT_SEC", "30")))
+_KHAYA_RATE_LIMIT_UNTIL = {"translate": 0.0, "tts": 0.0, "asr": 0.0}
+KHAYA_MONTHLY_SOFT_CAP = max(1, int(os.getenv("KHAYA_MONTHLY_SOFT_CAP", "90")))
+_KHAYA_OPS = ("translate", "tts", "asr")
 
 def log_event(level, event, **fields):
     payload = {"event": event, **fields}
@@ -128,6 +139,10 @@ async def app_lifespan(app):
 app = FastAPI(title="Lumiere", lifespan=app_lifespan)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.get("/favicon.ico")
+async def favicon_ico():
+    return RedirectResponse(url="/static/favicon.ico?v=20260225-02")
 
 def load_user_profile():
     if USER_PROFILE_FILE.exists():
@@ -672,6 +687,16 @@ def load_checkpoints():
 def save_checkpoints():
     _json_save(CHECKPOINT_FILE, checkpoints_state)
 
+def load_forge_state():
+    data = _json_load(FORGE_STATE_FILE, {"actors": {}})
+    if not isinstance(data, dict):
+        return {"actors": {}}
+    data.setdefault("actors", {})
+    return data
+
+def save_forge_state():
+    _json_save(FORGE_STATE_FILE, forge_state)
+
 def create_checkpoint(dataset_path: str, created_by: str, notes: str = ""):
     cp_id = f"cp_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{str(uuid4())[:6]}"
     src = Path(dataset_path)
@@ -819,6 +844,11 @@ if response_style not in {"concise", "balanced", "detailed"}:
 tools_registry = ToolRegistry()
 register_builtin_tools(tools_registry)
 
+LLM_REQUEST_TIMEOUT_SEC = max(15, int(os.getenv("LUMIERE_LLM_TIMEOUT_SEC", "40")))
+LLM_FALLBACK_TIMEOUT_SEC = max(10, int(os.getenv("LUMIERE_LLM_FALLBACK_TIMEOUT_SEC", "22")))
+LLM_EXECUTOR_WORKERS = max(2, int(os.getenv("LUMIERE_LLM_EXECUTOR_WORKERS", "6")))
+_LLM_EXECUTOR = ThreadPoolExecutor(max_workers=LLM_EXECUTOR_WORKERS)
+
 SPECIALTY_MODEL_ROUTING_ENABLED = str(
     os.getenv("LUMIERE_SPECIALTY_MODEL_ROUTING", "true")
 ).strip().lower() in {"1", "true", "yes", "on"}
@@ -863,6 +893,7 @@ SPECIALTY_MODEL_PREFERENCES = {
         "ollama-qwen25-14b",
     ],
     "language": [
+        "groq-llama3.1-8b",
         "groq-llama3.3",
         "ollama-qwen25-14b",
     ],
@@ -960,8 +991,8 @@ def _ask_ollama(model_name, question):
         },
     }
 
-    generate_timeout = max(30, int(os.getenv("OLLAMA_GENERATE_TIMEOUT", "180")))
-    max_retries = max(0, int(os.getenv("OLLAMA_MAX_RETRIES", "2")))
+    generate_timeout = max(12, int(os.getenv("OLLAMA_GENERATE_TIMEOUT", "35")))
+    max_retries = max(0, int(os.getenv("OLLAMA_MAX_RETRIES", "0")))
     req = urllib.request.Request(
         "http://127.0.0.1:11434/api/generate",
         data=json.dumps(payload).encode("utf-8"),
@@ -1056,6 +1087,35 @@ def _rank_ollama_models(models):
 
     return sorted(models, key=score, reverse=True)
 
+def _best_available_ollama_model_name():
+    installed = _ollama_list_models(timeout=2)
+    if not installed:
+        return None
+    normalized = [str(m or "").strip() for m in installed if str(m or "").strip()]
+    if not normalized:
+        return None
+
+    # Prefer fast general-purpose chat models for resilience fallback.
+    preferred_patterns = [
+        "llama3.2",
+        "qwen2.5:latest",
+        "mistral:latest",
+        "qwen2.5",
+    ]
+    for pattern in preferred_patterns:
+        match = next((m for m in normalized if pattern in m.lower()), None)
+        if match:
+            return match
+
+    # Avoid coder-specialized models unless nothing else is available.
+    non_coder = [m for m in normalized if "coder" not in m.lower()]
+    if non_coder:
+        ranked_non_coder = _rank_ollama_models(non_coder)
+        return ranked_non_coder[0] if ranked_non_coder else non_coder[0]
+
+    ranked = _rank_ollama_models(normalized)
+    return ranked[0] if ranked else normalized[0]
+
 def ask_llm(question, model_key_override=None):
     selected_model_key = canonical_model_key(model_key_override or current_model or "groq-llama3.3")
     config = MODELS.get(selected_model_key, MODELS["groq-llama3.3"])
@@ -1066,21 +1126,49 @@ def ask_llm(question, model_key_override=None):
     model_name = config["model"]
 
     if provider == "groq":
-        if Groq is None:
-            return "Groq SDK not installed. Install dependencies or switch to a local Ollama model."
-        client = Groq(api_key=config["api_key"])
+        groq_timeout_sec = max(8, int(os.getenv("GROQ_TIMEOUT_SEC", "40")))
+        payload = {
+            "model": model_name,
+            "messages": [
+                {"role": "system", "content": lumiere_system_prompt()},
+                {"role": "user", "content": question},
+            ],
+            "temperature": 0.75,
+            "max_tokens": 600,
+        }
+        req = urllib.request.Request(
+            "https://api.groq.com/openai/v1/chat/completions",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {config['api_key']}",
+            },
+            method="POST",
+        )
         try:
-            system_prompt = lumiere_system_prompt()
-            completion = client.chat.completions.create(
-                model=model_name,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": question}
-                ],
-                temperature=0.75,
-                max_tokens=600,
-            )
-            return completion.choices[0].message.content.strip()
+            with urllib.request.urlopen(req, timeout=groq_timeout_sec) as resp:
+                raw = resp.read().decode("utf-8", errors="replace")
+            data = json.loads(raw)
+            choices = data.get("choices", [])
+            if choices and isinstance(choices, list):
+                content = str(((choices[0] or {}).get("message") or {}).get("content", "")).strip()
+                if content:
+                    return content
+            return "Groq error: empty response."
+        except HTTPError as e:
+            detail = ""
+            try:
+                detail = e.read().decode("utf-8", errors="replace").strip()
+            except Exception:
+                detail = str(e)
+            if e.code in (401, 403, 429):
+                fallback_model = _best_available_ollama_model_name()
+                if fallback_model:
+                    fallback_text = _ask_ollama(fallback_model, question)
+                    return f"[Fallback: local Ollama ({fallback_model})]\n\n{fallback_text}"
+            return f"Groq error: HTTP {e.code}. Details: {detail}"
+        except (TimeoutError, socket.timeout, URLError) as e:
+            return f"Groq timeout: request exceeded {groq_timeout_sec}s. Details: {str(e)}"
         except Exception as e:
             return f"Groq error: {str(e)}"
 
@@ -1089,7 +1177,7 @@ def ask_llm(question, model_key_override=None):
 
     return f"Model '{selected_model_key}' not supported"
 
-def ask_llm_with_model(question, model_key):
+def _ask_llm_with_model_direct(question, model_key):
     try:
         sig = inspect.signature(ask_llm)
         params = sig.parameters
@@ -1100,6 +1188,54 @@ def ask_llm_with_model(question, model_key):
     except Exception:
         pass
     return ask_llm(question)
+
+def _run_model_call_with_timeout(question, model_key, timeout_sec):
+    future = _LLM_EXECUTOR.submit(_ask_llm_with_model_direct, question, model_key)
+    try:
+        return future.result(timeout=max(5, int(timeout_sec)))
+    except FuturesTimeoutError:
+        return (
+            "Model timeout: generation took too long. "
+            f"Timeout={max(5, int(timeout_sec))}s. "
+            "Try again, switch to a faster model, or reduce prompt size."
+        )
+    except Exception as e:
+        return f"Model error: {str(e)}"
+
+def _fallback_model_keys(primary_key):
+    primary = canonical_model_key(primary_key)
+    keys = []
+    preferred = [
+        "ollama-llama32-latest",
+        "ollama-qwen25-latest",
+        "ollama-mistral-latest",
+        "ollama-qwen25-14b",
+        "groq-llama3.1-8b",
+    ]
+    for k in preferred:
+        if k == primary or k not in MODELS:
+            continue
+        cfg = MODELS.get(k, {})
+        provider = str(cfg.get("provider", "")).strip().lower()
+        if provider == "ollama":
+            installed = _ollama_list_models(timeout=2)
+            if _local_ollama_has_model(cfg.get("model"), installed):
+                keys.append(k)
+        elif cfg.get("api_key"):
+            keys.append(k)
+    return keys
+
+def ask_llm_with_model(question, model_key):
+    primary_key = canonical_model_key(model_key or current_model)
+    primary = _run_model_call_with_timeout(question, primary_key, LLM_REQUEST_TIMEOUT_SEC)
+    if not _is_llm_failure_text(primary):
+        return primary
+
+    for fb_key in _fallback_model_keys(primary_key):
+        fb = _run_model_call_with_timeout(question, fb_key, LLM_FALLBACK_TIMEOUT_SEC)
+        if not _is_llm_failure_text(fb):
+            return f"[Auto-fallback: {fb_key}]\n\n{fb}"
+    return primary
 
 def _http_get_text(url, timeout=10):
     return external_http_get_text(url, timeout=timeout)
@@ -1139,6 +1275,118 @@ def _json_http_post(url, payload, headers=None, timeout=8):
         except Exception:
             return {"raw": raw}
 
+def _http_post_raw(url, payload, headers=None, timeout=8):
+    body = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(url, data=body, headers=(headers or {}), method="POST")
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        raw = resp.read()
+        ctype = str(resp.headers.get("Content-Type", "")).strip().lower()
+        return raw, ctype
+
+def _http_get_bytes(url, timeout=12):
+    req = urllib.request.Request(url, headers={"Accept": "audio/*,*/*"}, method="GET")
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        raw = resp.read()
+        ctype = str(resp.headers.get("Content-Type", "")).strip().lower()
+        return raw, ctype
+
+def _parse_retry_after_seconds(http_error):
+    try:
+        header = str((http_error.headers or {}).get("Retry-After", "")).strip()
+    except Exception:
+        header = ""
+    if not header:
+        return KHAYA_RATE_LIMIT_DEFAULT_SEC
+    try:
+        return max(1, int(float(header)))
+    except Exception:
+        return KHAYA_RATE_LIMIT_DEFAULT_SEC
+
+def _khaya_rate_limited(op_name):
+    now_ts = time.time()
+    until = float(_KHAYA_RATE_LIMIT_UNTIL.get(op_name, 0.0) or 0.0)
+    if until > now_ts:
+        return int(max(1, round(until - now_ts)))
+    return 0
+
+def _set_khaya_rate_limit(op_name, retry_after_sec):
+    wait_sec = max(1, int(retry_after_sec or KHAYA_RATE_LIMIT_DEFAULT_SEC))
+    _KHAYA_RATE_LIMIT_UNTIL[op_name] = time.time() + wait_sec
+    return wait_sec
+
+def _khaya_month_key():
+    return datetime.now(timezone.utc).strftime("%Y-%m")
+
+def _empty_khaya_usage(month_key):
+    return {
+        "month": month_key,
+        "counts": {
+            op: {"attempted": 0, "success": 0, "blocked": 0}
+            for op in _KHAYA_OPS
+        },
+        "updated_at": now_iso(),
+    }
+
+def _load_khaya_usage():
+    month_key = _khaya_month_key()
+    try:
+        if KHAYA_USAGE_FILE.exists():
+            with KHAYA_USAGE_FILE.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict) and data.get("month") == month_key and isinstance(data.get("counts"), dict):
+                for op in _KHAYA_OPS:
+                    row = data["counts"].get(op)
+                    if not isinstance(row, dict):
+                        data["counts"][op] = {"attempted": 0, "success": 0, "blocked": 0}
+                    else:
+                        row.setdefault("attempted", 0)
+                        row.setdefault("success", 0)
+                        row.setdefault("blocked", 0)
+                return data
+    except Exception:
+        pass
+    return _empty_khaya_usage(month_key)
+
+def _save_khaya_usage(data):
+    data["updated_at"] = now_iso()
+    atomic_json_save(KHAYA_USAGE_FILE, data)
+
+def _khaya_usage_totals(data):
+    counts = data.get("counts", {})
+    attempted = sum(int((counts.get(op) or {}).get("attempted", 0) or 0) for op in _KHAYA_OPS)
+    success = sum(int((counts.get(op) or {}).get("success", 0) or 0) for op in _KHAYA_OPS)
+    blocked = sum(int((counts.get(op) or {}).get("blocked", 0) or 0) for op in _KHAYA_OPS)
+    return attempted, success, blocked
+
+def _khaya_usage_start(op_name):
+    usage = _load_khaya_usage()
+    attempted, _, _ = _khaya_usage_totals(usage)
+    if attempted >= KHAYA_MONTHLY_SOFT_CAP:
+        usage["counts"][op_name]["blocked"] = int(usage["counts"][op_name].get("blocked", 0) or 0) + 1
+        _save_khaya_usage(usage)
+        return False, {
+            "error": (
+                f"Khaya monthly guard reached ({attempted}/{KHAYA_MONTHLY_SOFT_CAP}). "
+                "Khaya calls paused to avoid hard quota exhaustion."
+            ),
+            "code": "monthly_cap_guard",
+            "attempted": attempted,
+            "cap": KHAYA_MONTHLY_SOFT_CAP,
+        }
+    usage["counts"][op_name]["attempted"] = int(usage["counts"][op_name].get("attempted", 0) or 0) + 1
+    _save_khaya_usage(usage)
+    return True, None
+
+def _khaya_usage_mark_success(op_name):
+    usage = _load_khaya_usage()
+    usage["counts"][op_name]["success"] = int(usage["counts"][op_name].get("success", 0) or 0) + 1
+    _save_khaya_usage(usage)
+
+def _khaya_usage_mark_blocked(op_name):
+    usage = _load_khaya_usage()
+    usage["counts"][op_name]["blocked"] = int(usage["counts"][op_name].get("blocked", 0) or 0) + 1
+    _save_khaya_usage(usage)
+
 def _extract_text_from_obj(obj):
     if isinstance(obj, str):
         return obj.strip()
@@ -1160,9 +1408,92 @@ def _extract_text_from_obj(obj):
                 return text
     return ""
 
+def _is_base64_like_audio(value):
+    raw = str(value or "").strip()
+    if not raw:
+        return False
+    if raw.startswith("data:audio/"):
+        return True
+    if raw.startswith("http://") or raw.startswith("https://"):
+        return False
+    if len(raw) < 64:
+        return False
+    return bool(re.fullmatch(r"[A-Za-z0-9+/=\s]+", raw))
+
+def _normalize_audio_b64(value):
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    if raw.startswith("data:audio/"):
+        parts = raw.split(",", 1)
+        return parts[1].strip() if len(parts) == 2 else ""
+    return raw
+
+def _parse_decimal_byte_stream(raw_text):
+    raw = str(raw_text or "").strip()
+    if not raw:
+        return b""
+    # Some APIs return raw audio as space-separated decimal bytes.
+    if not re.fullmatch(r"(?:\d{1,3}\s+)+\d{1,3}", raw):
+        return b""
+    vals = []
+    for tok in raw.split():
+        try:
+            n = int(tok)
+        except Exception:
+            return b""
+        if n < 0 or n > 255:
+            return b""
+        vals.append(n)
+    if len(vals) < 16:
+        return b""
+    return bytes(vals)
+
+def _extract_audio_from_obj(obj):
+    if isinstance(obj, str):
+        raw = obj.strip()
+        if raw.startswith("http://") or raw.startswith("https://"):
+            return {"audio_url": raw}
+        if _is_base64_like_audio(raw):
+            return {"audio_base64": _normalize_audio_b64(raw)}
+        return {}
+    if isinstance(obj, list):
+        for item in obj:
+            found = _extract_audio_from_obj(item)
+            if found:
+                return found
+        return {}
+    if isinstance(obj, dict):
+        audio_keys = [
+            "audio_base64", "audio", "speech", "result", "audioContent",
+            "audio_url", "audioUrl", "url", "file", "output",
+        ]
+        for key in audio_keys:
+            if key not in obj:
+                continue
+            found = _extract_audio_from_obj(obj.get(key))
+            if found:
+                return found
+        for val in obj.values():
+            found = _extract_audio_from_obj(val)
+            if found:
+                return found
+    return {}
+
 def khaya_translate(text, source_lang, target_lang):
     if not KHAYA_API_KEY:
         return {"error": "Khaya API key not configured"}
+    allowed, guard = _khaya_usage_start("translate")
+    if not allowed:
+        return guard
+    wait_left = _khaya_rate_limited("translate")
+    if wait_left > 0:
+        _khaya_usage_mark_blocked("translate")
+        return {
+            "error": f"Khaya translation rate-limited. Retry in {wait_left}s.",
+            "code": "rate_limited",
+            "retry_after_sec": wait_left,
+        }
     base = KHAYA_BASE_URL
     path_candidates = []
     for p in [KHAYA_TRANSLATE_PATH, "/v1/translate", "/translate"]:
@@ -1173,82 +1504,202 @@ def khaya_translate(text, source_lang, target_lang):
             p = "/" + p
         if p not in path_candidates:
             path_candidates.append(p)
-    payloads = [
-        {"text": text, "source_language": source_lang, "target_language": target_lang},
-        {"text": text, "source": source_lang, "target": target_lang},
-        {"in": text, "lang": source_lang, "to": target_lang},
-        {"sentence": text, "src": source_lang, "tgt": target_lang},
-    ]
+    src_raw = str(source_lang or "").strip().lower() or "auto"
+    tgt_raw = str(target_lang or "").strip().lower() or "en"
+    source_candidates = [src_raw]
+    if src_raw in {"auto", "detect", "detected"}:
+        # Khaya commonly expects explicit pairs like en-tw rather than auto-tw.
+        source_candidates = ["en", "tw", "ga", "ee", "yo", "fr"]
+    # Preserve order, remove duplicates, and avoid same src/target.
+    source_candidates = [s for s in dict.fromkeys(source_candidates) if s and s != tgt_raw]
+    if not source_candidates:
+        source_candidates = ["en"]
+
     last_error = ""
-    attempts = 0
-    max_attempts = 3
     for path in path_candidates:
         url = f"{base}{path}"
+        for src in source_candidates:
+            payloads = [
+                {"text": text, "source_language": src, "target_language": tgt_raw},
+                {"text": text, "source": src, "target": tgt_raw},
+                {"in": text, "lang": f"{src}-{tgt_raw}"},
+                {"sentence": text, "src": src, "tgt": tgt_raw},
+            ]
+            for payload in payloads:
+                try:
+                    data = _json_http_post(url, payload, headers=_khaya_headers(), timeout=4)
+                    translated = _extract_text_from_obj(data)
+                    if translated:
+                        _khaya_usage_mark_success("translate")
+                        return {"translated_text": translated, "raw": data, "provider": "khaya", "url": url}
+                except HTTPError as e:
+                    if int(getattr(e, "code", 0) or 0) == 429:
+                        _khaya_usage_mark_blocked("translate")
+                        retry_after = _set_khaya_rate_limit("translate", _parse_retry_after_seconds(e))
+                        return {
+                            "error": f"Khaya translation rate-limited. Retry in {retry_after}s.",
+                            "code": "rate_limited",
+                            "retry_after_sec": retry_after,
+                        }
+                    detail = ""
+                    try:
+                        detail = e.read().decode("utf-8", errors="replace")
+                    except Exception:
+                        detail = str(e)
+                    last_error = f"HTTP {e.code}: {detail[:300]}"
+                except URLError as e:
+                    last_error = f"Network error: {e.reason}"
+                except Exception as e:
+                    last_error = str(e)
+    return {"error": f"Khaya translation failed. {last_error}".strip()}
+
+def khaya_tts(text, language, voice=None):
+    if not KHAYA_API_KEY:
+        return {"error": "Khaya API key not configured"}
+    allowed, guard = _khaya_usage_start("tts")
+    if not allowed:
+        return guard
+    wait_left = _khaya_rate_limited("tts")
+    if wait_left > 0:
+        _khaya_usage_mark_blocked("tts")
+        return {
+            "error": f"Khaya TTS rate-limited. Retry in {wait_left}s.",
+            "code": "rate_limited",
+            "retry_after_sec": wait_left,
+        }
+    path_candidates = []
+    for p in [KHAYA_TTS_PATH, "/v1/tts", "/tts"]:
+        p = str(p or "").strip()
+        if not p:
+            continue
+        if not p.startswith("/"):
+            p = "/" + p
+        if p not in path_candidates:
+            path_candidates.append(p)
+    last_error = ""
+    timeout_sec = max(3, int(os.getenv("KHAYA_TTS_TIMEOUT_SEC", "5")))
+    max_attempts = max(1, int(os.getenv("KHAYA_TTS_MAX_ATTEMPTS", "4")))
+    attempts = 0
+    for path in path_candidates:
+        url = f"{KHAYA_BASE_URL}{path}"
+        payloads = [
+            {"text": str(text or ""), "language": str(language or "en")},
+            {"text": str(text or ""), "lang": str(language or "en")},
+            {"in": str(text or ""), "lang": str(language or "en")},
+            {"input": str(text or ""), "lang": str(language or "en")},
+        ]
+        if voice:
+            payloads = [{**p, "voice": str(voice), "speaker": str(voice)} for p in payloads]
         for payload in payloads:
             attempts += 1
             if attempts > max_attempts:
                 break
             try:
-                data = _json_http_post(url, payload, headers=_khaya_headers(), timeout=4)
-                translated = _extract_text_from_obj(data)
-                if translated:
-                    return {"translated_text": translated, "raw": data, "provider": "khaya", "url": url}
+                raw_bytes, content_type = _http_post_raw(url, payload, headers=_khaya_headers(), timeout=timeout_sec)
+                # Some TTS endpoints return raw audio bytes directly.
+                if raw_bytes and (("audio/" in content_type) or ("octet-stream" in content_type)):
+                    _khaya_usage_mark_success("tts")
+                    return {
+                        "audio_base64": base64.b64encode(raw_bytes).decode("ascii"),
+                        "provider": "khaya",
+                        "raw_content_type": content_type,
+                    }
+
+                raw_text = raw_bytes.decode("utf-8", errors="replace").strip() if raw_bytes else ""
+                parsed = {}
+                if raw_text:
+                    byte_stream = _parse_decimal_byte_stream(raw_text)
+                    if byte_stream:
+                        _khaya_usage_mark_success("tts")
+                        return {
+                            "audio_base64": base64.b64encode(byte_stream).decode("ascii"),
+                            "provider": "khaya",
+                            "raw_content_type": (content_type or "text/plain"),
+                        }
+                    try:
+                        parsed = json.loads(raw_text)
+                    except Exception:
+                        parsed = {"raw": raw_text}
+                found = _extract_audio_from_obj(parsed)
+                audio_b64 = str(found.get("audio_base64", "")).strip()
+                if audio_b64:
+                    _khaya_usage_mark_success("tts")
+                    return {"audio_base64": _normalize_audio_b64(audio_b64), "provider": "khaya", "raw": parsed}
+                audio_url = str(found.get("audio_url", "")).strip()
+                if audio_url:
+                    data_bytes, data_type = _http_get_bytes(audio_url, timeout=15)
+                    if data_bytes:
+                        _khaya_usage_mark_success("tts")
+                        return {
+                            "audio_base64": base64.b64encode(data_bytes).decode("ascii"),
+                            "provider": "khaya",
+                            "raw": parsed,
+                            "fetched_from": audio_url,
+                            "raw_content_type": data_type,
+                        }
+                last_error = "No audio payload found in Khaya TTS response"
             except HTTPError as e:
+                if int(getattr(e, "code", 0) or 0) == 429:
+                    _khaya_usage_mark_blocked("tts")
+                    retry_after = _set_khaya_rate_limit("tts", _parse_retry_after_seconds(e))
+                    return {
+                        "error": f"Khaya TTS rate-limited. Retry in {retry_after}s.",
+                        "code": "rate_limited",
+                        "retry_after_sec": retry_after,
+                    }
                 detail = ""
                 try:
                     detail = e.read().decode("utf-8", errors="replace")
                 except Exception:
                     detail = str(e)
                 last_error = f"HTTP {e.code}: {detail[:300]}"
-            except URLError as e:
-                last_error = f"Network error: {e.reason}"
             except Exception as e:
                 last_error = str(e)
         if attempts > max_attempts:
             break
-    return {"error": f"Khaya translation failed. {last_error}".strip()}
-
-def khaya_tts(text, language, voice=None):
-    if not KHAYA_API_KEY:
-        return {"error": "Khaya API key not configured"}
-    path = KHAYA_TTS_PATH if str(KHAYA_TTS_PATH).startswith("/") else f"/{KHAYA_TTS_PATH}"
-    url = f"{KHAYA_BASE_URL}{path}"
-    payload = {
-        "text": str(text or ""),
-        "language": str(language or "en"),
-    }
-    if voice:
-        payload["voice"] = str(voice)
-    try:
-        data = _json_http_post(url, payload, headers=_khaya_headers())
-        audio = (
-            data.get("audio_base64")
-            or data.get("audio")
-            or data.get("speech")
-            or data.get("result")
-        ) if isinstance(data, dict) else None
-        if isinstance(audio, str) and audio.strip():
-            return {"audio_base64": audio.strip(), "provider": "khaya", "raw": data}
-        return {"error": "No audio in TTS response", "raw": data}
-    except Exception as e:
-        return {"error": f"Khaya TTS failed: {e}"}
+    return {"error": f"Khaya TTS failed: {last_error}"}
 
 def khaya_asr(audio_base64, language=None):
     if not KHAYA_API_KEY:
         return {"error": "Khaya API key not configured"}
-    path = KHAYA_ASR_PATH if str(KHAYA_ASR_PATH).startswith("/") else f"/{KHAYA_ASR_PATH}"
-    url = f"{KHAYA_BASE_URL}{path}"
+    allowed, guard = _khaya_usage_start("asr")
+    if not allowed:
+        return guard
+    path_candidates = []
+    for p in [KHAYA_ASR_PATH, "/v1/asr", "/asr"]:
+        p = str(p or "").strip()
+        if not p:
+            continue
+        if not p.startswith("/"):
+            p = "/" + p
+        if p not in path_candidates:
+            path_candidates.append(p)
     payload = {"audio_base64": str(audio_base64 or "").strip()}
     if language:
         payload["language"] = str(language)
-    try:
-        data = _json_http_post(url, payload, headers=_khaya_headers(), timeout=40)
-        text = _extract_text_from_obj(data)
-        if text:
-            return {"text": text, "provider": "khaya", "raw": data}
-        return {"error": "No transcript in ASR response", "raw": data}
-    except Exception as e:
-        return {"error": f"Khaya ASR failed: {e}"}
+    last_error = ""
+    for path in path_candidates:
+        url = f"{KHAYA_BASE_URL}{path}"
+        try:
+            data = _json_http_post(url, payload, headers=_khaya_headers(), timeout=40)
+            text = _extract_text_from_obj(data)
+            if text:
+                _khaya_usage_mark_success("asr")
+                return {"text": text, "provider": "khaya", "raw": data}
+            last_error = "No transcript in ASR response"
+        except HTTPError as e:
+            if int(getattr(e, "code", 0) or 0) == 429:
+                _khaya_usage_mark_blocked("asr")
+                retry_after = _set_khaya_rate_limit("asr", _parse_retry_after_seconds(e))
+                return {
+                    "error": f"Khaya ASR rate-limited. Retry in {retry_after}s.",
+                    "code": "rate_limited",
+                    "retry_after_sec": retry_after,
+                }
+            last_error = f"HTTP {e.code}"
+        except Exception as e:
+            last_error = str(e)
+    return {"error": f"Khaya ASR failed: {last_error}"}
 
 def _split_md_row(line):
     row = (line or "").strip()
@@ -2873,6 +3324,7 @@ memory_items_state = load_memory_items()
 memory_scopes_state = load_memory_scopes()
 eval_metrics_state = load_eval_metrics()
 checkpoints_state = load_checkpoints()
+forge_state = load_forge_state()
 user_privacy = load_user_privacy()
 global_core = load_global_core()
 metaverse_state = load_metaverse_state()
@@ -2952,6 +3404,7 @@ SPECIALTY_PROMPT_BLOCKS = {
         "You are the language specialist. Teach with short examples, pronunciation hints, and correction-first feedback.\n"
         "If user writes a sentence, fix it and explain why simply.\n"
         "When user asks for content in a target language (story, dialogue, paragraph), produce it immediately.\n"
+        "Do not output programming code or scripts unless user explicitly asks for code.\n"
         "Do not ask multiple follow-up questions. Assume a beginner-friendly level unless user sets another level.\n"
         "Default output format: target language text, then English translation, then 5 key vocabulary words."
     ),
@@ -2993,14 +3446,189 @@ def _looks_like_coding_request(query_text):
     q = str(query_text or "").lower()
     if not q.strip():
         return False
-    coding_terms = [
-        "code", "coding", "program", "script", "function", "class", "method",
-        "bug", "debug", "error", "stack trace", "exception", "api", "endpoint",
-        "sql", "regex", "algorithm", "refactor", "unit test", "pytest",
-        "javascript", "typescript", "python", "java", "c++", "c#", "go", "rust",
-        "html", "css", "node", "fastapi", "flask", "react", "vue",
+    phrase_terms = [
+        "stack trace",
+        "unit test",
+        "write code",
+        "code snippet",
+        "api endpoint",
     ]
-    return any(term in q for term in coding_terms)
+    if any(term in q for term in phrase_terms):
+        return True
+
+    word_terms = [
+        "code", "coding", "program", "script", "function", "class", "method",
+        "bug", "debug", "error", "exception", "api", "endpoint", "sql",
+        "regex", "algorithm", "refactor", "pytest", "javascript", "typescript",
+        "python", "java", "go", "rust", "html", "css", "node", "fastapi",
+        "flask", "react", "vue",
+    ]
+    for term in word_terms:
+        if re.search(rf"\b{re.escape(term)}\b", q):
+            return True
+
+    # Symbols don't compose well with \b boundaries.
+    if "c++" in q or "c#" in q:
+        return True
+    return False
+
+def _looks_like_language_request(query_text):
+    q = str(query_text or "").strip().lower()
+    if not q:
+        return False
+    explicit_terms = [
+        "translate",
+        "translation",
+        "pronunciation",
+        "grammar",
+        "vocabulary",
+        "english gloss",
+        "in twi",
+        "in japanese",
+        "in spanish",
+        "in french",
+        "in german",
+        "in arabic",
+        "in yoruba",
+        "in ga",
+        "in ewe",
+    ]
+    if any(term in q for term in explicit_terms):
+        return True
+    m = re.search(r"\b(answer|respond|reply|write|say)\s+(?:in|using)\s+([a-z][a-z\s-]{1,24})\b", q)
+    if m:
+        lang = re.sub(r"\s+", " ", m.group(2)).strip()
+        programming = {
+            "python", "javascript", "typescript", "java", "c", "c++", "c#",
+            "go", "rust", "sql", "html", "css", "bash", "shell", "powershell",
+        }
+        if lang and lang not in programming:
+            return True
+    return False
+
+def _language_name_to_code(name):
+    n = str(name or "").strip().lower()
+    mapping = {
+        "twi": "tw",
+        "akan": "tw",
+        "english": "en",
+        "french": "fr",
+        "spanish": "es",
+        "portuguese": "pt",
+        "swahili": "sw",
+        "yoruba": "yo",
+        "hausa": "ha",
+        "igbo": "ig",
+        "japanese": "ja",
+        "chinese": "zh",
+        "ga": "gaa",
+        "ewe": "ee",
+    }
+    if n in mapping:
+        return mapping[n]
+    if re.match(r"^[a-z]{2,3}$", n):
+        return n
+    return ""
+
+def _extract_direct_language_target_and_text(query_text):
+    q = str(query_text or "").strip()
+    if not q:
+        return None
+    patterns = [
+        r"(?is)^\s*(?:please\s+)?(?:answer|respond|reply|write)\s+in\s+([a-zA-Z ]{2,24})\s*[:\-]\s*(.+)$",
+        r"(?is)^\s*translate\s+(.+?)\s+to\s+([a-zA-Z ]{2,24})\s*$",
+        r"(?is)^\s*(.+?)\s*(?:[,.;]?\s*)(?:please\s+)?(?:answer|respond|reply|write|say)\s+in\s+([a-zA-Z ]{2,24})\s*(?:[.!?]\s*)?$",
+    ]
+    for idx, p in enumerate(patterns):
+        m = re.match(p, q)
+        if not m:
+            continue
+        if idx == 0:
+            lang_raw = m.group(1)
+            text = m.group(2)
+        elif idx == 1:
+            text = m.group(1)
+            lang_raw = m.group(2)
+        else:
+            text = m.group(1)
+            lang_raw = m.group(2)
+        lang_code = _language_name_to_code(lang_raw)
+        clean_text = str(text or "").strip()
+        if idx == 2:
+            probe = clean_text.lower()
+            if "?" in clean_text or re.match(r"^(what|why|how|who|where|when|which|can|could|would|should|is|are|do|does|did)\b", probe):
+                continue
+        if lang_code and clean_text:
+            return {"target_code": lang_code, "target_name": str(lang_raw).strip(), "text": clean_text}
+    return None
+
+def _explicitly_requests_programming_output(query_text):
+    q = str(query_text or "").lower()
+    if not q.strip():
+        return False
+    cues = [
+        "write code",
+        "python code",
+        "javascript code",
+        "typescript code",
+        "code snippet",
+        "script",
+        "in python",
+        "in javascript",
+        "in typescript",
+        "program",
+    ]
+    return any(c in q for c in cues)
+
+def _has_code_block_or_code_like_text(text):
+    raw = str(text or "")
+    if not raw.strip():
+        return False
+    if re.search(r"```[a-zA-Z0-9_+-]*\n[\s\S]*?\n```", raw):
+        return True
+    code_line_hits = 0
+    for line in raw.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if re.match(r"^(import\s+\w+|from\s+\w+\s+import|def\s+\w+\(|class\s+\w+|console\.log\(|print\(|function\s+\w+\()",
+                    stripped):
+            code_line_hits += 1
+    return code_line_hits >= 2
+
+def _repair_language_response_without_code(previous_answer, user_query, model_key):
+    rewrite_prompt = (
+        "Rewrite this response for a language-learning user.\n"
+        "Rules:\n"
+        "- Do NOT include any code block, script, import, function, or programming snippet.\n"
+        "- Give only natural-language learning content.\n"
+        "- If target language is requested, provide target text first, then English translation, then 5 vocabulary words.\n"
+        "- Keep it concise and directly answer the user.\n\n"
+        f"User request:\n{user_query}\n\n"
+        f"Previous response:\n{previous_answer}"
+    )
+    repaired = ask_llm_with_model(rewrite_prompt, model_key)
+    cleaned = str(repaired or "").strip()
+    if not cleaned:
+        return str(previous_answer or "")
+    if _has_code_block_or_code_like_text(cleaned):
+        return re.sub(r"```[\s\S]*?```", "", cleaned).strip() or str(previous_answer or "")
+    return cleaned
+
+def _is_llm_failure_text(text):
+    t = str(text or "").strip().lower()
+    if not t:
+        return False
+    failure_prefixes = (
+        "model timeout:",
+        "model error:",
+        "groq timeout:",
+        "groq error:",
+        "ollama timeout:",
+        "ollama error:",
+        "error: api key missing",
+    )
+    return any(t.startswith(prefix) for prefix in failure_prefixes)
 
 def _looks_like_correction_feedback(query_text):
     q = str(query_text or "").lower().strip()
@@ -3159,9 +3787,9 @@ def _looks_like_followup_query(query_text):
     if not q:
         return False
     toks = tokenize_text(q)
-    if len(toks) <= 4:
-        return True
-    return any(word in q.split() for word in FOLLOWUP_CUES)
+    if len(toks) <= 2:
+        return any(tok in FOLLOWUP_CUES for tok in toks)
+    return any(tok in FOLLOWUP_CUES for tok in toks)
 
 def _best_existing_agent_by_similarity(query_tokens):
     if not query_tokens:
@@ -3327,11 +3955,16 @@ async def home():
         ("#22d3ee", "Cyan"),
         ("#f97316", "Sunset"),
         ("#10b981", "Emerald"),
-        ("#ef4444", "Coral")
+        ("#ef4444", "Coral"),
     ]
+    preset_values = {value.lower() for value, _ in accent_choices}
+    current_accent = str(accent_color or "").strip().lower()
     accent_options = "".join(
-        f'<option value="{value}" {"selected" if accent_color == value else ""}>{label}</option>'
+        f'<option value="{value}" {"selected" if current_accent == value.lower() else ""}>{label}</option>'
         for value, label in accent_choices
+    )
+    accent_options += (
+        f'<option value="__custom__" {"selected" if current_accent not in preset_values else ""}>Custom...</option>'
     )
 
     model_labels = {model_key: cfg.get("label", model_key) for model_key, cfg in MODELS.items()}
@@ -3353,7 +3986,13 @@ async def home():
     )
 
 @app.get("/ask")
-async def ask(q: str, requester: Optional[str] = None, ctx: Optional[str] = None, x_auth_token: Optional[str] = Header(default=None, alias="X-Auth-Token")):
+async def ask(
+    q: str,
+    requester: Optional[str] = None,
+    ctx: Optional[str] = None,
+    force_specialty: Optional[str] = None,
+    x_auth_token: Optional[str] = Header(default=None, alias="X-Auth-Token"),
+):
     log_event(logging.INFO, "ask_called", requester=requester, q_len=len(str(q or "")))
     if not q:
         return "Please ask a question."
@@ -3372,17 +4011,24 @@ async def ask(q: str, requester: Optional[str] = None, ctx: Optional[str] = None
         answer = format_ai_text_html(answer_plain)
         return HTMLResponse(content=answer, media_type="text/html")
     actor_key = normalize_actor_key(acting_as)
+    forced = slugify_specialty(force_specialty or "")
     category, specialty, existing = detect_category_and_specialty(q)
     correction_intent = _looks_like_correction_feedback(q)
     coding_intent = _looks_like_coding_request(q)
-    if coding_intent:
+    language_intent = _looks_like_language_request(q)
+    explicit_programming = _explicitly_requests_programming_output(q)
+    if forced in AGENT_CATEGORY_KEYWORDS:
+        category, specialty, existing = forced, forced, None
+    if language_intent and not explicit_programming:
+        category, specialty, existing = "language", "language", None
+    elif coding_intent:
         category, specialty, existing = "coding", "coding", None
     previous_specialty = last_specialty_by_user.get(actor_key)
-    if correction_intent and previous_specialty:
+    if correction_intent and previous_specialty and not forced and not language_intent:
         specialty = previous_specialty
         category = previous_specialty
         existing = next((a for a in squad if a.specialty == previous_specialty), None)
-    if category == "personal" and previous_specialty and _looks_like_followup_query(q):
+    if category == "personal" and previous_specialty and _looks_like_followup_query(q) and not language_intent:
         specialty = previous_specialty
         category = previous_specialty
         existing = next((a for a in squad if a.specialty == previous_specialty), None)
@@ -3410,6 +4056,63 @@ Rental lock active.
 </small>
         """
         return HTMLResponse(content=blocked, media_type="text/html")
+
+    # Fast-path for direct language translation prompts using Khaya
+    # (for example: "Answer in Twi: ..."), so local-language generation
+    # stays responsive even when general LLM routes are degraded.
+    if agent.specialty == "language" and KHAYA_API_KEY:
+        direct_req = _extract_direct_language_target_and_text(q)
+        if direct_req:
+            direct_out = khaya_translate(direct_req["text"], "auto", direct_req["target_code"])
+            translated = str(direct_out.get("translated_text", "")).strip()
+            if translated:
+                answer_plain = (
+                    f"{translated}\n\n"
+                    f"English gloss: {direct_req['text']}"
+                )
+                answer_plain = sanitize_agent_output(normalize_legacy_vocabulary(answer_plain, q))
+                message_id = str(uuid4())
+                has_control = has_agent_control(agent.specialty, acting_as)
+                pending_review = False
+                if has_control:
+                    if is_current_renter(agent.specialty, acting_as):
+                        pending_review = queue_pending_training_review(message_id, agent.specialty, acting_as, q, answer_plain)
+                    else:
+                        agent.add_interaction(q, answer_plain, user_id=acting_as)
+                        save_agents()
+                        train_token_from_signal(agent.specialty, usage_inc=1, requester_name=acting_as)
+                update_global_core(interaction_inc=1)
+                log_agent_message(agent.specialty)
+                emit_global_event(
+                    "interaction",
+                    acting_as,
+                    agent.specialty,
+                    {
+                        "channel": "ask",
+                        "response_chars": len(answer_plain),
+                        "used_live_web": False,
+                        "has_control": bool(has_control),
+                        "translate_provider": "khaya",
+                    },
+                )
+                thumbs_html = f'''
+                <div class="thumbs-rating">
+                    Was this helpful?
+                    <span class="thumb-up" data-value="1" data-agent="{agent.specialty}" data-message-id="{message_id}" title="Helpful">👍</span>
+                    <span class="thumb-down" data-value="-1" data-agent="{agent.specialty}" data-message-id="{message_id}" title="Not helpful">👎</span>
+                </div>
+                '''
+                control_note = ""
+                if not has_control:
+                    control_note = " · Read-only session (global learning only)"
+                elif pending_review:
+                    control_note = " · Rented session: memory/training update is pending your 👍 approval"
+                answered_by = f'''
+                <small class="answer-meta" {_answer_meta_attrs(agent)} data-speech-lang="{html_escape(direct_req['target_code'])}">
+                    Answered by: {agent.name} ({agent.specialty} · Level {agent.level}){control_note}
+                </small>
+                '''
+                return HTMLResponse(content=format_ai_text_html(answer_plain) + thumbs_html + answered_by, media_type="text/html")
 
     if correction_intent:
         routed_model_key = resolve_model_key_for_specialty(agent.specialty, current_model)
@@ -3703,7 +4406,7 @@ Answer concisely and helpfully: {q}
         routed_model=routed_model_key,
     )
     answer_plain = ask_llm_with_model(prompt, routed_model_key)
-    if agent.specialty == "coding":
+    if not _is_llm_failure_text(answer_plain) and agent.specialty == "coding":
         has_fenced_code = bool(re.search(r"```[a-zA-Z0-9_+-]*\n[\s\S]*?\n```", str(answer_plain or "")))
         if not has_fenced_code:
             code_repair_prompt = (
@@ -3715,6 +4418,13 @@ Answer concisely and helpfully: {q}
             repaired = ask_llm_with_model(code_repair_prompt, routed_model_key)
             if str(repaired or "").strip():
                 answer_plain = repaired
+    elif not _is_llm_failure_text(answer_plain) and agent.specialty == "language" and not coding_intent:
+        if _has_code_block_or_code_like_text(answer_plain):
+            answer_plain = _repair_language_response_without_code(
+                previous_answer=answer_plain,
+                user_query=q,
+                model_key=routed_model_key,
+            )
     answer_plain = sanitize_agent_output(answer_plain)
     answer_plain = normalize_legacy_vocabulary(answer_plain, q)
     concise_on = bool(DEFAULT_CONCISE_MODE) and str(response_style).lower() == "concise" and not wants_detailed_response(q)
@@ -3765,8 +4475,13 @@ Answer concisely and helpfully: {q}
         control_note = " · Read-only session (global learning only)"
     elif pending_review:
         control_note = " · Rented session: memory/training update is pending your 👍 approval"
+    speech_attr = ""
+    if agent.specialty == "language":
+        req = _extract_direct_language_target_and_text(q)
+        if req and req.get("target_code"):
+            speech_attr = f' data-speech-lang="{html_escape(str(req["target_code"]))}"'
     answered_by = f'''
-    <small class="answer-meta" {_answer_meta_attrs(agent, used_memory=bool(scoped_mem.strip()), used_history=bool(history_ctx.strip()), used_reminders=bool(reminder_context.strip()))}>
+    <small class="answer-meta" {_answer_meta_attrs(agent, used_memory=bool(scoped_mem.strip()), used_history=bool(history_ctx.strip()), used_reminders=bool(reminder_context.strip()))}{speech_attr}>
         Answered by: {agent.name} ({agent.specialty} · Level {agent.level}){control_note}
     </small>
     '''
@@ -3968,7 +4683,13 @@ Keep it concise and practical.
     return HTMLResponse(content=full_response, media_type="text/html")
 
 @app.get("/ask-live")
-async def ask_live(q: str, requester: Optional[str] = None, ctx: Optional[str] = None, x_auth_token: Optional[str] = Header(default=None, alias="X-Auth-Token")):
+async def ask_live(
+    q: str,
+    requester: Optional[str] = None,
+    ctx: Optional[str] = None,
+    force_specialty: Optional[str] = None,
+    x_auth_token: Optional[str] = Header(default=None, alias="X-Auth-Token"),
+):
     log_event(logging.INFO, "ask_live_called", requester=requester, q_len=len(str(q or "")))
     if not q:
         return "Please ask a question."
@@ -3977,7 +4698,17 @@ async def ask_live(q: str, requester: Optional[str] = None, ctx: Optional[str] =
         audit_log("ask_live", requester or "unknown", status="denied", metadata={"reason": auth_err})
         return HTMLResponse(content=html_escape(auth_err), media_type="text/html", status_code=403)
     audit_log("ask_live", acting_as, metadata={"q_len": len(str(q or ""))}, tenant_id=(auth_ctx or {}).get("tenant_id", "default"))
+    forced = slugify_specialty(force_specialty or "")
     category, specialty, existing = detect_category_and_specialty(q)
+    live_coding_intent = _looks_like_coding_request(q)
+    live_language_intent = _looks_like_language_request(q)
+    live_explicit_programming = _explicitly_requests_programming_output(q)
+    if forced in AGENT_CATEGORY_KEYWORDS:
+        category, specialty, existing = forced, forced, None
+    if live_language_intent and not live_explicit_programming:
+        category, specialty, existing = "language", "language", None
+    elif live_coding_intent:
+        category, specialty, existing = "coding", "coding", None
     agent = existing or get_or_create_agent(specialty, category=category, owner_name=acting_as)
     last_specialty_by_user[normalize_actor_key(acting_as)] = agent.specialty
     strict_block = strict_access_block(agent.specialty, acting_as)
@@ -4003,6 +4734,62 @@ Rental lock active.
 </small>
 """
         return HTMLResponse(content=blocked, media_type="text/html")
+
+    # Fast-path for direct language translation prompts using Khaya.
+    # This avoids LLM timeout paths when users ask for direct "answer in X" translation.
+    if agent.specialty == "language" and KHAYA_API_KEY:
+        direct_req = _extract_direct_language_target_and_text(q)
+        if direct_req:
+            direct_out = khaya_translate(direct_req["text"], "auto", direct_req["target_code"])
+            translated = str(direct_out.get("translated_text", "")).strip()
+            if translated:
+                answer_plain = (
+                    f"{translated}\n\n"
+                    f"English gloss: {direct_req['text']}"
+                )
+                answer_plain = sanitize_agent_output(normalize_legacy_vocabulary(answer_plain, q))
+                message_id = str(uuid4())
+                has_control = has_agent_control(agent.specialty, acting_as)
+                pending_review = False
+                if has_control:
+                    if is_current_renter(agent.specialty, acting_as):
+                        pending_review = queue_pending_training_review(message_id, agent.specialty, acting_as, q, answer_plain)
+                    else:
+                        agent.add_interaction(q, answer_plain, user_id=acting_as)
+                        save_agents()
+                        train_token_from_signal(agent.specialty, usage_inc=1, requester_name=acting_as)
+                update_global_core(interaction_inc=1)
+                log_agent_message(agent.specialty)
+                emit_global_event(
+                    "interaction",
+                    acting_as,
+                    agent.specialty,
+                    {
+                        "channel": "ask_live",
+                        "response_chars": len(answer_plain),
+                        "used_live_web": False,
+                        "has_control": bool(has_control),
+                        "translate_provider": "khaya",
+                    },
+                )
+                thumbs_html = f'''
+                <div class="thumbs-rating">
+                    Was this helpful?
+                    <span class="thumb-up" data-value="1" data-agent="{agent.specialty}" data-message-id="{message_id}" title="Helpful">👍</span>
+                    <span class="thumb-down" data-value="-1" data-agent="{agent.specialty}" data-message-id="{message_id}" title="Not helpful">👎</span>
+                </div>
+                '''
+                control_note = ""
+                if not has_control:
+                    control_note = " · Read-only session (global learning only)"
+                elif pending_review:
+                    control_note = " · Rented session: memory/training update is pending your 👍 approval"
+                answered_by = f'''
+                <small class="answer-meta" {_answer_meta_attrs(agent)} data-speech-lang="{html_escape(direct_req['target_code'])}">
+                    Live web answer by: {agent.name} ({agent.specialty} · Level {agent.level}){control_note}
+                </small>
+                '''
+                return HTMLResponse(content=format_ai_text_html(answer_plain) + thumbs_html + answered_by, media_type="text/html")
 
     upload_context = upload_context_block()
     memory_summary = agent.get_memory_summary(acting_as)
@@ -4043,6 +4830,13 @@ Rental lock active.
         ).strip(),
         ask_llm_fn=lambda prompt: ask_llm_with_model(prompt, routed_model_key),
     )
+    if not _is_llm_failure_text(answer_plain) and agent.specialty == "language" and not live_coding_intent:
+        if _has_code_block_or_code_like_text(answer_plain):
+            answer_plain = _repair_language_response_without_code(
+                previous_answer=answer_plain,
+                user_query=q,
+                model_key=routed_model_key,
+            )
     answer_plain = normalize_legacy_vocabulary(answer_plain, q)
     answer_plain = sanitize_agent_output(answer_plain)
     concise_on = bool(DEFAULT_CONCISE_MODE) and str(response_style).lower() == "concise" and not wants_detailed_response(q)
@@ -4115,8 +4909,13 @@ Live web fetch unavailable.
         control_note = " · Read-only session (global learning only)"
     elif pending_review:
         control_note = " · Rented session: memory/training update is pending your 👍 approval"
+    speech_attr = ""
+    if agent.specialty == "language":
+        req = _extract_direct_language_target_and_text(q)
+        if req and req.get("target_code"):
+            speech_attr = f' data-speech-lang="{html_escape(str(req["target_code"]))}"'
     answered_by = f'''
-    <small class="answer-meta" data-agent="{agent.specialty}" data-level="{agent.level}">
+    <small class="answer-meta" data-agent="{agent.specialty}" data-level="{agent.level}"{speech_attr}>
         Live web answer by: {agent.name} ({agent.specialty} · Level {agent.level}){control_note}
     </small>
     '''
@@ -4222,11 +5021,39 @@ async def rate(data: dict = Body(...), x_auth_token: Optional[str] = Header(defa
         },
     )
 
+    forge_linked = False
+    forge_error = None
+    try:
+        forge_result = apply_forge_event(
+            forge_state,
+            normalize_actor_key,
+            now_iso,
+            acting_as,
+            event_type=("thumb_up" if value > 0 else "thumb_down"),
+            value=abs(float(value)),
+            agent_key=agent_specialty,
+            metadata={
+                "source": "rate_endpoint",
+                "message_id": str(message_id),
+                "review_status": str(review_status),
+            },
+        )
+        if forge_result.get("error"):
+            forge_error = str(forge_result.get("error"))
+        else:
+            save_forge_state()
+            forge_linked = True
+    except Exception as e:
+        forge_error = str(e)
+        log_event(logging.WARNING, "forge_rating_bridge_error", error=forge_error, requester=acting_as, specialty=agent_specialty)
+
     save_agents()
     return {
         "status": "ok",
         "mode": ("agent_and_global" if has_control else "global_only"),
-        "review_status": review_status
+        "review_status": review_status,
+        "forge_linked": forge_linked,
+        "forge_error": forge_error,
     }
 
 @app.post("/signal/suggestion")
@@ -4361,6 +5188,18 @@ register_auth_routes(
         "save_auth_sessions": save_auth_sessions,
         "save_auth_mode": save_auth_mode,
         "auth_context_from_token": auth_context_from_token,
+        "audit_log": audit_log,
+    },
+)
+
+register_forge_routes(
+    app,
+    {
+        "forge_state": forge_state,
+        "save_forge_state": save_forge_state,
+        "resolve_requester_with_auth": resolve_requester_with_auth,
+        "normalize_actor_key": normalize_actor_key,
+        "now_iso": now_iso,
         "audit_log": audit_log,
     },
 )
@@ -4660,13 +5499,82 @@ async def run_tool(data: dict = Body(...)):
 
 @app.get("/khaya/status")
 async def khaya_status():
+    usage = _load_khaya_usage()
+    attempted, success, blocked = _khaya_usage_totals(usage)
     return {
         "configured": bool(KHAYA_API_KEY),
         "base_url": KHAYA_BASE_URL,
         "translate_path": KHAYA_TRANSLATE_PATH,
         "tts_path": KHAYA_TTS_PATH,
         "asr_path": KHAYA_ASR_PATH,
+        "usage_month": usage.get("month"),
+        "usage_attempted": attempted,
+        "usage_success": success,
+        "usage_blocked": blocked,
+        "usage_soft_cap": KHAYA_MONTHLY_SOFT_CAP,
     }
+
+@app.get("/khaya/usage")
+async def khaya_usage():
+    usage = _load_khaya_usage()
+    attempted, success, blocked = _khaya_usage_totals(usage)
+    return {
+        "month": usage.get("month"),
+        "soft_cap": KHAYA_MONTHLY_SOFT_CAP,
+        "counts": usage.get("counts", {}),
+        "totals": {
+            "attempted": attempted,
+            "success": success,
+            "blocked": blocked,
+            "remaining_before_guard": max(0, KHAYA_MONTHLY_SOFT_CAP - attempted),
+        },
+        "updated_at": usage.get("updated_at"),
+    }
+
+@app.get("/khaya/diagnostics")
+async def khaya_diagnostics(include_tts: bool = False):
+    diag = {
+        "configured": bool(KHAYA_API_KEY),
+        "base_url": KHAYA_BASE_URL,
+        "translate_path": KHAYA_TRANSLATE_PATH,
+        "tts_path": KHAYA_TTS_PATH,
+        "asr_path": KHAYA_ASR_PATH,
+        "translate_llm_fallback_enabled": bool(KHAYA_TRANSLATE_LLM_FALLBACK_ENABLED),
+        "checks": {},
+        "issues": [],
+    }
+    if not KHAYA_API_KEY:
+        diag["issues"].append("KHAYA_API_KEY missing")
+        return diag
+    try:
+        smoke = khaya_translate("Hello", "en", "tw")
+        ok = bool(str(smoke.get("translated_text", "")).strip()) and not smoke.get("error")
+        diag["checks"]["translate_smoke"] = {
+            "ok": ok,
+            "provider": smoke.get("provider"),
+            "error": smoke.get("error"),
+        }
+        if not ok:
+            diag["issues"].append(f"translate_smoke_failed: {smoke.get('error', 'unknown')}")
+    except Exception as e:
+        diag["checks"]["translate_smoke"] = {"ok": False, "error": str(e)}
+        diag["issues"].append(f"translate_smoke_exception: {str(e)}")
+    if include_tts:
+        try:
+            tts_smoke = khaya_tts("Akwaaba", "tw")
+            tts_ok = bool(str(tts_smoke.get("audio_base64", "")).strip()) and not tts_smoke.get("error")
+            diag["checks"]["tts_smoke"] = {
+                "ok": tts_ok,
+                "provider": tts_smoke.get("provider"),
+                "error": tts_smoke.get("error"),
+                "fetched_from": tts_smoke.get("fetched_from"),
+            }
+            if not tts_ok:
+                diag["issues"].append(f"tts_smoke_failed: {tts_smoke.get('error', 'unknown')}")
+        except Exception as e:
+            diag["checks"]["tts_smoke"] = {"ok": False, "error": str(e)}
+            diag["issues"].append(f"tts_smoke_exception: {str(e)}")
+    return diag
 
 @app.post("/translate")
 async def translate_text(data: dict = Body(...)):
@@ -4684,6 +5592,22 @@ async def translate_text(data: dict = Body(...)):
             out["source_lang"] = source_lang
             out["target_lang"] = target_lang
             return out
+        if not KHAYA_TRANSLATE_LLM_FALLBACK_ENABLED:
+            # Isolate Khaya failures from the main chat model path.
+            return {
+                "translated_text": text,
+                "provider": "khaya_unavailable",
+                "source_lang": source_lang,
+                "target_lang": target_lang,
+                "error": out.get("error", "Khaya translate unavailable"),
+            }
+    if not KHAYA_TRANSLATE_LLM_FALLBACK_ENABLED:
+        return {
+            "translated_text": text,
+            "provider": "translate_disabled",
+            "source_lang": source_lang,
+            "target_lang": target_lang,
+        }
     routed = resolve_model_key_for_specialty("language", current_model)
     prompt = (
         f"Translate this text from {source_lang} to {target_lang}. "
@@ -5074,7 +5998,9 @@ async def set_theme(data: dict):
 @app.post("/set-accent")
 async def set_accent(data: dict):
     global accent_color
-    accent_color = data.get("accent", "#3b82f6")
+    incoming = str(data.get("accent", "#3b82f6")).strip()
+    if re.match(r"^#[0-9a-fA-F]{6}$", incoming):
+        accent_color = incoming.lower()
     profile["accent"] = accent_color
     save_user_profile(profile)
     return {"status": "ok"}

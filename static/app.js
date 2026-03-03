@@ -52,19 +52,85 @@ function setTheme(theme) {
     }).catch(() => {});
 }
 
-function setAccent(color) {
-    const rgb = hexToRgbString(color);
-    document.documentElement.style.setProperty("--accent", color);
-    document.documentElement.style.setProperty("--accent-rgb", rgb);
+function normalizeHexColor(value, fallback = "#22d3ee") {
+    const raw = String(value || "").trim();
+    if (/^#[0-9a-fA-F]{6}$/.test(raw)) return raw.toLowerCase();
+    return fallback.toLowerCase();
+}
+
+function hexToRgbTuple(hex) {
+    const clean = normalizeHexColor(hex).replace("#", "");
+    const int = parseInt(clean, 16);
+    return [(int >> 16) & 255, (int >> 8) & 255, int & 255];
+}
+
+function mixHex(colorA, colorB, t = 0.5) {
+    const a = hexToRgbTuple(colorA);
+    const b = hexToRgbTuple(colorB);
+    const k = Math.max(0, Math.min(1, Number(t) || 0));
+    const c = [
+        Math.round((a[0] * (1 - k)) + (b[0] * k)),
+        Math.round((a[1] * (1 - k)) + (b[1] * k)),
+        Math.round((a[2] * (1 - k)) + (b[2] * k)),
+    ];
+    return `#${c.map((n) => n.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function applyGlobalPaletteFromAccent(accentHex) {
+    const root = document.documentElement;
+    const [r, g, b] = hexToRgbTuple(accentHex);
+    const accentRgb = `${r}, ${g}, ${b}`;
+    root.style.setProperty("--accent", accentHex);
+    root.style.setProperty("--accent-rgb", accentRgb);
+    root.style.setProperty("--outer-grad-start", mixHex("#07121f", accentHex, 0.18));
+    root.style.setProperty("--outer-grad-end", mixHex("#0b1d30", accentHex, 0.34));
+    root.style.setProperty("--chat-grad-start", mixHex("#061b34", accentHex, 0.26));
+    root.style.setProperty("--chat-grad-end", mixHex("#12273a", accentHex, 0.40));
+    root.style.setProperty("--dialog-grad-start", mixHex("#17456b", accentHex, 0.55));
+    root.style.setProperty("--dialog-grad-end", mixHex("#10b981", accentHex, 0.25));
+    root.style.setProperty("--bg-elev", `rgba(${accentRgb}, 0.14)`);
+    root.style.setProperty("--bg-soft", `rgba(${accentRgb}, 0.11)`);
+    root.style.setProperty("--surface", `rgba(${accentRgb}, 0.08)`);
+    root.style.setProperty("--surface-strong", `rgba(${accentRgb}, 0.14)`);
+    root.style.setProperty("--border", `rgba(${accentRgb}, 0.28)`);
     if (document.body) {
-        document.body.style.setProperty("--accent", color);
-        document.body.style.setProperty("--accent-rgb", rgb);
+        document.body.style.setProperty("--accent", accentHex);
+        document.body.style.setProperty("--accent-rgb", accentRgb);
     }
-    localStorage.setItem("accent", color);
+}
+
+function openCustomAccentPicker() {
+    const picker = document.createElement("input");
+    picker.type = "color";
+    picker.value = normalizeHexColor(localStorage.getItem("accent") || "#22d3ee");
+    picker.style.position = "fixed";
+    picker.style.left = "-9999px";
+    picker.style.opacity = "0";
+    document.body.appendChild(picker);
+    const cleanup = () => picker.remove();
+    picker.addEventListener("input", () => setAccent(picker.value));
+    picker.addEventListener("change", cleanup, { once: true });
+    picker.addEventListener("blur", cleanup, { once: true });
+    picker.click();
+}
+
+function setAccent(color) {
+    if (String(color || "").trim() === "__custom__") {
+        openCustomAccentPicker();
+        return;
+    }
+    const normalized = normalizeHexColor(color, "#22d3ee");
+    applyGlobalPaletteFromAccent(normalized);
+    localStorage.setItem("accent", normalized);
+    const accentSelect = document.getElementById("accent-select");
+    if (accentSelect) {
+        const hasPreset = Array.from(accentSelect.options || []).some((opt) => opt.value.toLowerCase() === normalized);
+        accentSelect.value = hasPreset ? normalized : "__custom__";
+    }
     fetch("/set-accent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accent: color })
+        body: JSON.stringify({ accent: normalized })
     }).catch(() => {});
 }
 
@@ -123,10 +189,28 @@ async function refreshKhayaStatus() {
     }
 }
 
+function looksLikeLanguagePrompt(text) {
+    const q = String(text || "").trim().toLowerCase();
+    if (!q) return false;
+    const cues = [
+        "translate", "translation", "pronunciation", "grammar", "vocabulary",
+        "english gloss", "in twi", "in japanese", "in spanish", "in french",
+        "in german", "in arabic", "in yoruba", "in ga", "in ewe",
+    ];
+    if (cues.some((c) => q.includes(c))) return true;
+    return /\b(answer|respond|reply|write|say)\s+(?:in|using)\s+[a-z][a-z\s-]{1,24}\b/i.test(q);
+}
+
 async function maybeApplyLanguageCoachAutoTranslate(userText) {
     const text = String(userText || "").trim();
     if (!text) return { text, provider: "", source: "", target: "" };
-    if (String(currentAgentSpecialty || "").toLowerCase() !== "language") return { text, provider: "", source: "", target: "" };
+    const languageIntent = looksLikeLanguagePrompt(text);
+    // If user already requested a target language directly, skip pre-translate
+    // to avoid extra latency and let Language Coach answer immediately.
+    if (languageIntent) return { text, provider: "", source: "", target: "" };
+    if (String(currentAgentSpecialty || "").toLowerCase() !== "language" && !languageIntent) {
+        return { text, provider: "", source: "", target: "" };
+    }
     const prefs = getLanguagePrefs();
     if (!prefs.enabled) return { text, provider: "", source: prefs.source, target: prefs.target };
     if (prefs.source.toLowerCase() === prefs.target.toLowerCase()) return { text, provider: "", source: prefs.source, target: prefs.target };
@@ -193,6 +277,10 @@ const LANG_SOURCE_KEY = "lumiere_lang_source_v1";
 const LANG_TARGET_KEY = "lumiere_lang_target_v1";
 const KHAYA_TTS_ENABLED_KEY = "lumiere_khaya_tts_enabled_v1";
 const KHAYA_VOICE_KEY = "lumiere_khaya_voice_v1";
+let khayaTtsRateLimitedUntil = 0;
+const ASK_TIMEOUT_MS = 70000;
+const DEBATE_TIMEOUT_MS = 90000;
+const LIVE_WEB_TIMEOUT_MS = 70000;
 const chatLog = [];
 let metaverseAgents = [];
 let metaverseFeatures = [];
@@ -218,6 +306,21 @@ function openSettingsDrawer() {
     const overlay = document.getElementById("settings-overlay");
     if (drawer) drawer.classList.add("open");
     if (overlay) overlay.classList.add("open");
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 30000) {
+    const ctrl = new AbortController();
+    const timer = window.setTimeout(() => ctrl.abort(), Math.max(1000, Number(timeoutMs) || 30000));
+    try {
+        return await fetch(url, { ...options, signal: ctrl.signal });
+    } catch (err) {
+        if (err?.name === "AbortError") {
+            throw new Error(`Request timed out after ${Math.round(Math.max(1000, Number(timeoutMs) || 30000) / 1000)}s`);
+        }
+        throw err;
+    } finally {
+        window.clearTimeout(timer);
+    }
 }
 
 function closeSettingsDrawer() {
@@ -294,6 +397,7 @@ function setActingAs(name, options = {}) {
     refreshIdentityHint();
     refreshMetaverseState();
     refreshPrivacySetting();
+    refreshForgeSummary();
     if (!options.silent) {
         toast(`Acting as ${cleaned}`);
     }
@@ -573,6 +677,7 @@ function parseAgentMetaFromHtml(html) {
         usedHistory: String(meta.dataset.usedHistory || "0") === "1",
         usedReminders: String(meta.dataset.usedReminders || "0") === "1",
         usedWeb: String(meta.dataset.usedWeb || "0") === "1",
+        speechLang: String(meta.dataset.speechLang || "").trim().toLowerCase(),
     };
 }
 
@@ -621,7 +726,9 @@ function appendMessage(role, label, content, isTrustedHtml = false, agentMeta = 
     });
 
     if (role === "ai" && isTtsEnabled()) {
-        speakText(wrapper.querySelector(".message-content")?.innerText || "");
+        speakText(wrapper.querySelector(".message-content")?.innerText || "", {
+            lang: agentMeta?.speechLang || undefined,
+        });
     }
     return wrapper;
 }
@@ -644,6 +751,27 @@ function detectSpeechLang(text) {
     if (/[\u0400-\u04ff]/.test(sample)) return "ru-RU";
     if (/[\u4e00-\u9fff]/.test(sample)) return "zh-CN";
     return "en-US";
+}
+
+function languageToSpeechTag(langCode) {
+    const code = String(langCode || "").trim().toLowerCase();
+    if (!code) return "";
+    const map = {
+        tw: "tw",
+        yo: "yo",
+        ha: "ha",
+        ig: "ig",
+        gaa: "gaa",
+        ee: "ee",
+        en: "en-US",
+        fr: "fr-FR",
+        es: "es-ES",
+        pt: "pt-PT",
+        sw: "sw-KE",
+        ja: "ja-JP",
+        zh: "zh-CN",
+    };
+    return map[code] || code;
 }
 
 function pickVoiceForLang(langTag) {
@@ -679,12 +807,19 @@ async function speakText(text, options = {}) {
     const clean = (text || "").trim();
     if (!clean) return;
     const khayaPrefs = getKhayaTtsPrefs();
+    const langPrefs = getLanguagePrefs();
+    const preferred = String(options.lang || "").trim();
+    const normalizedLang = String(languageToSpeechTag(preferred || langPrefs.target || "en"));
     if (!khayaPrefs.enabled) {
-        speakTextBrowser(clean, options);
+        speakTextBrowser(clean, { ...options, lang: normalizedLang || options.lang });
         return;
     }
-    const langPrefs = getLanguagePrefs();
-    const lang = String(options.lang || langPrefs.target || "en").split("-")[0];
+    if (Date.now() < khayaTtsRateLimitedUntil) {
+        const sec = Math.max(1, Math.ceil((khayaTtsRateLimitedUntil - Date.now()) / 1000));
+        toast(`Khaya TTS is rate-limited. Retry in ${sec}s.`);
+        return;
+    }
+    const lang = String(normalizedLang || "en").split("-")[0];
     try {
         const res = await fetch("/tts", {
             method: "POST",
@@ -696,16 +831,25 @@ async function speakText(text, options = {}) {
             }),
         });
         const data = await res.json();
+        if (String(data?.code || "").toLowerCase() === "rate_limited") {
+            const retryAfter = Math.max(1, Number(data?.retry_after_sec || 30));
+            khayaTtsRateLimitedUntil = Date.now() + (retryAfter * 1000);
+            toast(`Khaya TTS rate-limited. Retry in ${retryAfter}s.`);
+            return;
+        }
+        if (data?.error) {
+            toast(`Khaya TTS unavailable (${String(data.error).slice(0, 80)}). Using browser voice.`);
+        }
         const b64 = String(data?.audio_base64 || "").trim();
         if (!b64) {
-            speakTextBrowser(clean, options);
+            speakTextBrowser(clean, { ...options, lang: normalizedLang || options.lang });
             return;
         }
         const src = b64.startsWith("data:audio") ? b64 : `data:audio/wav;base64,${b64}`;
         const audio = new Audio(src);
         await audio.play();
     } catch (_) {
-        speakTextBrowser(clean, options);
+        speakTextBrowser(clean, { ...options, lang: normalizedLang || options.lang });
     }
 }
 
@@ -1082,13 +1226,19 @@ async function ask(promptText) {
     try {
         const requester = getActingAs();
         const ctx = buildConversationContext(8);
+        const languageIntent = looksLikeLanguagePrompt(q);
+        const forcedSpecialty = languageIntent ? "&force_specialty=language" : "";
         const auto = await maybeApplyLanguageCoachAutoTranslate(q);
         const effectiveQ = String(auto?.text || q);
         const providerBadge = auto?.provider ? [`Translate: ${auto.provider}`] : [];
         if (auto?.source && auto?.target && auto.source.toLowerCase() !== auto.target.toLowerCase()) {
             providerBadge.push(`${auto.source} -> ${auto.target}`);
         }
-        const res = await fetch("/ask?q=" + encodeURIComponent(effectiveQ) + "&requester=" + encodeURIComponent(requester) + "&ctx=" + encodeURIComponent(ctx));
+        const res = await fetchWithTimeout(
+            "/ask?q=" + encodeURIComponent(effectiveQ) + "&requester=" + encodeURIComponent(requester) + "&ctx=" + encodeURIComponent(ctx) + forcedSpecialty,
+            {},
+            ASK_TIMEOUT_MS
+        );
         const txt = await res.text();
         const meta = parseAgentMetaFromHtml(txt);
         if (meta?.specialty) currentAgentSpecialty = meta.specialty;
@@ -1099,7 +1249,7 @@ async function ask(promptText) {
         } else {
             appendMessage("ai", "Lumiere", txt, true, meta, providerBadge);
         }
-        await Promise.all([
+        void Promise.allSettled([
             refreshAgentStats(),
             refreshAgentMemory(),
             refreshMemoryFact(),
@@ -1134,7 +1284,11 @@ async function askDebate(promptText) {
     try {
         const requester = getActingAs();
         const ctx = buildConversationContext(8);
-        const res = await fetch("/debate?q=" + encodeURIComponent(q) + "&requester=" + encodeURIComponent(requester) + "&ctx=" + encodeURIComponent(ctx));
+        const res = await fetchWithTimeout(
+            "/debate?q=" + encodeURIComponent(q) + "&requester=" + encodeURIComponent(requester) + "&ctx=" + encodeURIComponent(ctx),
+            {},
+            DEBATE_TIMEOUT_MS
+        );
         const txt = await res.text();
         const meta = parseAgentMetaFromHtml(txt);
         if (meta?.specialty) currentAgentSpecialty = meta.specialty;
@@ -1145,7 +1299,7 @@ async function askDebate(promptText) {
         } else {
             appendMessage("ai", "Lumiere Debate", txt, true, meta);
         }
-        await Promise.all([
+        void Promise.allSettled([
             refreshAgentStats(),
             refreshAgentMemory(),
             refreshMemoryFact(),
@@ -1180,13 +1334,19 @@ async function askLiveWeb(promptText) {
     try {
         const requester = getActingAs();
         const ctx = buildConversationContext(8);
+        const languageIntent = looksLikeLanguagePrompt(q);
+        const forcedSpecialty = languageIntent ? "&force_specialty=language" : "";
         const auto = await maybeApplyLanguageCoachAutoTranslate(q);
         const effectiveQ = String(auto?.text || q);
         const providerBadge = auto?.provider ? [`Translate: ${auto.provider}`] : [];
         if (auto?.source && auto?.target && auto.source.toLowerCase() !== auto.target.toLowerCase()) {
             providerBadge.push(`${auto.source} -> ${auto.target}`);
         }
-        const res = await fetch("/ask-live?q=" + encodeURIComponent(effectiveQ) + "&requester=" + encodeURIComponent(requester) + "&ctx=" + encodeURIComponent(ctx));
+        const res = await fetchWithTimeout(
+            "/ask-live?q=" + encodeURIComponent(effectiveQ) + "&requester=" + encodeURIComponent(requester) + "&ctx=" + encodeURIComponent(ctx) + forcedSpecialty,
+            {},
+            LIVE_WEB_TIMEOUT_MS
+        );
         const txt = await res.text();
         const meta = parseAgentMetaFromHtml(txt);
         if (meta?.specialty) currentAgentSpecialty = meta.specialty;
@@ -1197,7 +1357,7 @@ async function askLiveWeb(promptText) {
         } else {
             appendMessage("ai", "Lumiere Live Web", txt, true, meta, providerBadge);
         }
-        await Promise.all([
+        void Promise.allSettled([
             refreshAgentStats(),
             refreshAgentMemory(),
             refreshMemoryFact(),
@@ -1257,7 +1417,82 @@ async function refreshAgentStats() {
         renderMetaverseScene();
         renderMetaverseAgentPorts();
         renderAvatarStudioCard();
+        refreshForgeSummary();
     } catch (_) {}
+}
+
+function forgeAgentLabel(key) {
+    const labels = {
+        idea_validation: "Idea Validation",
+        execution_roadmap: "Execution Roadmap",
+        confidence_reinforcement: "Confidence Reinforcement",
+        local_resource: "Local Resource",
+        discernment: "Discernment",
+        impact_analytics: "Impact Analytics",
+    };
+    return labels[key] || String(key || "").replace(/_/g, " ");
+}
+
+function pctText(value) {
+    const n = Number(value || 0);
+    return `${(n * 100).toFixed(0)}%`;
+}
+
+async function refreshForgeSummary() {
+    const el = document.getElementById("forge-summary");
+    if (!el) return;
+    try {
+        const requester = getActingAs();
+        const [reportRes, agentsRes] = await Promise.all([
+            fetch(`/forge/impact/report?requester=${encodeURIComponent(requester)}&days=30`),
+            fetch(`/forge/agents?requester=${encodeURIComponent(requester)}`),
+        ]);
+        const report = await reportRes.json();
+        const agentsData = await agentsRes.json();
+        if (report.error) {
+            el.innerHTML = `<div class="agent-memory-empty">${escapeHtml(String(report.error || "Forge unavailable"))}</div>`;
+            return;
+        }
+        const impact = report.impact || {};
+        const components = report.components || {};
+        const agents = Array.isArray(agentsData.agents) ? agentsData.agents.slice() : [];
+        agents.sort((a, b) => Number(b.effective_weight || 0) - Number(a.effective_weight || 0));
+        const top = agents.slice(0, 3);
+        el.innerHTML = `
+            <div class="forge-kpi-grid">
+                <div class="forge-kpi">
+                    <span>Execution Score</span>
+                    <strong>${Number(report.execution_score || 0).toFixed(1)}</strong>
+                </div>
+                <div class="forge-kpi">
+                    <span>30d Confidence Delta</span>
+                    <strong>${Number(impact.confidence_delta_30d || 0).toFixed(1)}</strong>
+                </div>
+                <div class="forge-kpi">
+                    <span>30d Retention</span>
+                    <strong>${pctText(impact.retention_rate || 0)}</strong>
+                </div>
+            </div>
+            <div class="forge-components">
+                <div class="forge-line"><span>Task Completion</span><b>${pctText(components.task_completion_rate || 0)}</b></div>
+                <div class="forge-line"><span>Consistency</span><b>${pctText(components.consistency_index || 0)}</b></div>
+                <div class="forge-line"><span>Confidence Delta</span><b>${pctText(components.confidence_delta || 0)}</b></div>
+                <div class="forge-line"><span>Milestone Verification</span><b>${pctText(components.milestone_verification_score || 0)}</b></div>
+                <div class="forge-line"><span>Resource Engagement</span><b>${pctText(components.resource_engagement_score || 0)}</b></div>
+            </div>
+            <div class="forge-top-agents">
+                <div class="forge-subhead">Current Agent Emphasis</div>
+                ${top.map((row) => `
+                    <div class="forge-agent-row">
+                        <span>${escapeHtml(forgeAgentLabel(row.agent))}</span>
+                        <b>${pctText(row.effective_weight || 0)}</b>
+                    </div>
+                `).join("") || `<div class="agent-memory-empty">No forge agent data yet.</div>`}
+            </div>
+        `;
+    } catch (_) {
+        el.innerHTML = `<div class="agent-memory-empty">Forge summary unavailable right now.</div>`;
+    }
 }
 
 function clamp01(v) {
@@ -2721,7 +2956,10 @@ document.addEventListener("DOMContentLoaded", () => {
     syncActorWithProfileIfProfileChanged();
 
     const accentSelect = document.getElementById("accent-select");
-    if (accentSelect) accentSelect.value = savedAccent;
+    if (accentSelect) {
+        const presetMatch = Array.from(accentSelect.options || []).some((opt) => opt.value.toLowerCase() === String(savedAccent).toLowerCase());
+        accentSelect.value = presetMatch ? savedAccent : "__custom__";
+    }
 
     const modelSelect = document.getElementById("model-select");
     if (modelSelect) modelSelect.value = currentModel;
@@ -2741,6 +2979,7 @@ document.addEventListener("DOMContentLoaded", () => {
     renderAvatar(loadAvatarState(), false);
     setTtsEnabled(isTtsEnabled());
     refreshAgentStats();
+    refreshForgeSummary();
     refreshAgentMemory();
     refreshMemoryFact();
     refreshReminders();
@@ -3293,8 +3532,10 @@ document.addEventListener("DOMContentLoaded", () => {
         chatOutput.addEventListener("click", async (e) => {
             const speakBtn = e.target.closest(".speak-btn");
             if (speakBtn) {
-                const text = speakBtn.closest(".message")?.querySelector(".message-content")?.innerText || "";
-                speakText(text);
+                const messageEl = speakBtn.closest(".message");
+                const text = messageEl?.querySelector(".message-content")?.innerText || "";
+                const speechLang = messageEl?.querySelector(".answer-meta")?.dataset?.speechLang || "";
+                speakText(text, { lang: speechLang || undefined });
                 return;
             }
             const copyBtn = e.target.closest(".copy-btn");

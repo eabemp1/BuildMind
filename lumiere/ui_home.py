@@ -9,6 +9,8 @@ def render_welcome_page() -> str:
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Welcome to Lumiere</title>
+        <link rel="icon" type="image/x-icon" href="/static/favicon.ico?v=20260225-02">
+        <link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=20260225-01">
         <style>
             body { margin:0; height:100vh; background: linear-gradient(135deg, #0f172a, #0f766e 55%, #f97316); display:flex; justify-content:center; align-items:center; font-family: 'Segoe UI', sans-serif; color:white; }
             .card { background:rgba(255,255,255,0.15); backdrop-filter:blur(10px); padding:3rem 2.5rem; border-radius:20px; text-align:center; box-shadow:0 8px 32px rgba(0,0,0,0.37); border:1px solid rgba(255,255,255,0.18); max-width:450px; width:90%; }
@@ -52,8 +54,10 @@ def render_home_page(
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Lumiere</title>
-        <link rel="stylesheet" href="/static/app.css?v=20260213-04">
-        <script src="/static/app.js?v=20260213-04" defer></script>
+        <link rel="icon" type="image/x-icon" href="/static/favicon.ico?v=20260225-02">
+        <link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=20260225-01">
+        <link rel="stylesheet" href="/static/app.css?v=20260303-01">
+        <script src="/static/app.js?v=20260303-01" defer></script>
     </head>
     <body data-current-model="{current_model}" data-accent="{accent_color}" data-user-name="{safe_name}">
         <div class="ambient-layer" aria-hidden="true">
@@ -115,6 +119,12 @@ def render_home_page(
             <div class="agent-panel" id="agent-panel">
                 <div class="panel-header">Companion Profile <span class="pill">Core</span></div>
                 <div id="agents-view" class="tab-pane">
+                    <div class="reminder-wrap">
+                        <details id="forge-panel" open>
+                            <summary>Forge Execution Intelligence</summary>
+                            <div id="forge-summary" class="forge-summary"></div>
+                        </details>
+                    </div>
                     <div class="agent-stats"></div>
                     <div class="agent-memory-wrap">
                         <details id="training-guide-panel" open>
@@ -257,57 +267,25 @@ def render_home_page(
             <div class="chat-panel" id="chat-panel">
                 <div class="panel-header">Talk to Lumiere <span class="pill success">Personal Mode</span></div>
                 <div class="panel-body">
-                    <div id="onboarding-banner" class="onboarding-banner">
-                        Ask your question, then rate the answer with 👍 or 👎 so Lumiere can improve.
-                        <div class="onboarding-banner-actions">
-                            <button id="onboarding-tour-btn" type="button">Take Tour</button>
-                            <button id="onboarding-close" type="button">Dismiss</button>
-                        </div>
-                    </div>
                     <div id="error-ribbon" class="error-ribbon" aria-live="assertive"></div>
-                    <div id="ai-avatar-block" class="ai-avatar-block" aria-live="polite">
-                        <div class="ai-avatar-shell">
-                            <div id="ai-avatar-core" class="ai-avatar-core"></div>
-                        </div>
-                        <div class="ai-avatar-meta">
-                            <div class="ai-avatar-title">Lumiere Core</div>
-                            <div class="ai-avatar-stats">
-                                <span id="ai-avatar-stage">Stage 1</span>
-                                <span id="ai-avatar-interactions">0 interactions</span>
-                                <button id="avatar-reset-btn" type="button" class="avatar-reset-btn">Reset</button>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="utility-row">
+                    <div class="utility-row compact">
                         <div class="actor-switcher">
                             <span>Use As</span>
                             <input id="actor-input" type="text" value="{safe_name}" placeholder="Identity">
                             <button id="actor-apply-btn" type="button">Apply</button>
                         </div>
                         <div id="identity-hint" class="identity-hint"></div>
-                        <label class="upload-btn" for="file-upload-input">Upload</label>
-                        <input id="file-upload-input" type="file" accept=".txt,.md,.csv,.json,.pdf,image/*" hidden>
-                        <button id="clear-uploaded-btn" type="button">Clear</button>
                         <button id="tts-toggle-btn" type="button">Voice Off</button>
                         <button id="privacy-quick-btn" type="button" title="Privacy settings">Privacy</button>
-                        <button id="export-txt-btn" type="button">Export TXT</button>
-                        <button id="export-json-btn" type="button">Export JSON</button>
                     </div>
+                    <label class="upload-btn subtle-upload" for="file-upload-input">Upload</label>
+                    <input id="file-upload-input" type="file" accept=".txt,.md,.csv,.json,.pdf,image/*" hidden>
+                    <button id="clear-uploaded-btn" type="button" class="upload-btn subtle-upload">Clear Uploads</button>
                     <div id="uploaded-context-list" class="uploaded-context-list"></div>
-                    <div class="upload-hint">Drop files here or use Upload.</div>
-                    <div class="prompt-row">
-                        <button class="prompt-chip" data-prompt="Break this problem into 3 clear parts and give me an execution plan.">Plan</button>
-                        <button class="prompt-chip" data-prompt="Give me a compact mission plan: goals, milestones, and checkpoints.">Goals</button>
-                        <button class="prompt-chip" data-prompt="Run a fast readiness drill: ask me 5 hard questions and ideal responses.">Practice</button>
-                    </div>
                     <div id="chat-output" class="chat-messages"></div>
                     <div id="loading" class="loading">
+                        <div class="loading-orb" aria-hidden="true"></div>
                         <div class="loading-text">Lumiere is thinking...</div>
-                        <div class="loading-dots">
-                            <div class="dot"></div>
-                            <div class="dot"></div>
-                            <div class="dot"></div>
-                        </div>
                     </div>
                     <div class="input-area">
                         <textarea id="question" placeholder="Type your message..." rows="2"></textarea>
