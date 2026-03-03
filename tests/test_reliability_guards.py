@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 
 import main
 from app import legacy
-from backend.app.agent.chat_helpers import personalize_fact_for_actor
+from app.agent.chat_helpers import personalize_fact_for_actor
 
 
 def test_stale_reminder_context_is_sanitized_when_no_live_reminders():

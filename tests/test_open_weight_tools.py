@@ -1,5 +1,5 @@
-from backend.app.agent.response_style import build_response_style_instruction, enforce_concise_answer
-from backend.app.agent.tool_plugins import ToolRegistry, register_builtin_tools, parse_tool_command
+from app.agent.response_style import build_response_style_instruction, enforce_concise_answer
+from app.agent.tool_plugins import ToolRegistry, register_builtin_tools, parse_tool_command
 
 
 def test_tool_registry_builtin_math_eval():
