@@ -1,15 +1,24 @@
 """Entrypoint compatibility shim.
 
-The full backend implementation lives in `app.runtime`.
+The full backend implementation lives in `app.main`.
 This module keeps existing imports and startup commands working.
 """
 
-from app.runtime import *  # noqa: F401,F403
+try:
+    from app.main import *  # noqa: F401,F403
+except ModuleNotFoundError as e:
+    missing = str(getattr(e, "name", "") or "").strip()
+    if missing:
+        raise SystemExit(
+            f"Missing dependency: {missing}. "
+            "Activate the project venv and run again, or install requirements:\n"
+            "  venv\\Scripts\\activate\n"
+            "  pip install -r requirements.txt\n"
+            "  python main.py"
+        ) from e
+    raise
 
 
 if __name__ == "__main__":
-    from app.runtime import log_event, uvicorn
-
-    log_event(20, "server_starting")
-    log_event(20, "server_open", url="http://127.0.0.1:8000")
+    import uvicorn
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
