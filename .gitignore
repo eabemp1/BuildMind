@@ -3,3 +3,5 @@ forge_state.json
 frontend/node_modules/
 frontend/.next/
 frontend/*.log
+__pycache__/
+*.pyc
