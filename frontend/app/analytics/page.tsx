@@ -1,10 +1,22 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ScoringData, getScoring } from "@/lib/api";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Legend,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import { WeeklyReportData, getWeeklyReport } from "@/lib/api";
 
 export default function AnalyticsPage() {
-  const [data, setData] = useState<ScoringData | null>(null);
+  const [data, setData] = useState<WeeklyReportData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -13,7 +25,7 @@ export default function AnalyticsPage() {
       try {
         setIsLoading(true);
         setError("");
-        const response = await getScoring();
+        const response = await getWeeklyReport();
         setData(response);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load analytics");
@@ -24,9 +36,18 @@ export default function AnalyticsPage() {
     void load();
   }, []);
 
-  const scoreHistory = (data?.history || []).map((item, idx) => ({
-    week: `W${idx + 1}`,
+  const scoreTrend = (data?.execution_score_trend || []).map((item) => ({
+    day: item.date.slice(5),
     score: Math.round(item.score),
+  }));
+  const taskCompletion = (data?.weekly_task_completion || []).map((item) => ({
+    day: item.date.slice(5),
+    rate: Number((item.completion_rate * 100).toFixed(1)),
+    tasks: item.tasks_completed,
+  }));
+  const milestoneAchievements = (data?.milestone_achievement || []).map((item) => ({
+    day: item.date.slice(5),
+    count: item.count,
   }));
 
   return (
@@ -36,33 +57,58 @@ export default function AnalyticsPage() {
         <p className="mt-1 text-sm text-slate-600">Execution score history and consistency insights.</p>
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h3 className="text-lg font-semibold text-slate-900">Score Line Chart (Placeholder)</h3>
-        <div className="mt-4 h-72 rounded-lg border border-dashed border-slate-300 bg-slate-50" />
-      </div>
-
       {isLoading ? <p className="text-sm text-slate-500">Loading analytics...</p> : null}
       {error ? <p className="text-sm text-rose-600">{error}</p> : null}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <article className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h3 className="text-lg font-semibold text-slate-900">Score History</h3>
-          <ul className="mt-4 space-y-2">
-            {scoreHistory.map((row) => (
-              <li key={row.week} className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm">
-                <span className="text-slate-600">{row.week}</span>
-                <span className="font-semibold text-slate-900">{row.score}</span>
-              </li>
-            ))}
-          </ul>
+          <h3 className="text-lg font-semibold text-slate-900">Execution Score Trend</h3>
+          <div className="mt-4 h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={scoreTrend}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="day" />
+                <YAxis domain={[0, 100]} />
+                <Tooltip />
+                <Legend />
+                <Line type="monotone" dataKey="score" stroke="#2563eb" strokeWidth={2} dot />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
         </article>
 
         <article className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h3 className="text-lg font-semibold text-slate-900">Consistency Tracking</h3>
-          <div className="mt-4 h-48 rounded-lg border border-dashed border-slate-300 bg-slate-50" />
-          <p className="mt-3 text-sm text-slate-600">Weekly consistency trend area for future integrations.</p>
+          <h3 className="text-lg font-semibold text-slate-900">Weekly Task Completion Rate</h3>
+          <div className="mt-4 h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={taskCompletion}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="day" />
+                <YAxis domain={[0, 100]} />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="rate" fill="#0ea5e9" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </article>
       </div>
+
+      <article className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h3 className="text-lg font-semibold text-slate-900">Milestone Achievement Count</h3>
+        <div className="mt-4 h-72">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={milestoneAchievements}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="day" />
+              <YAxis allowDecimals={false} />
+              <Tooltip />
+              <Legend />
+              <Bar dataKey="count" fill="#16a34a" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </article>
     </section>
   );
 }

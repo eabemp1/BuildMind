@@ -31,6 +31,7 @@ class User(Base):
     projects: Mapped[list["Project"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     feedback: Mapped[list["Feedback"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     score_history: Mapped[list["ExecutionScoreHistory"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    reminder_preference: Mapped["ReminderPreference"] = relationship(back_populates="user", uselist=False, cascade="all, delete-orphan")
 
 
 class Project(Base):
@@ -102,5 +103,18 @@ class AppState(Base):
     key: Mapped[str] = mapped_column(String(255), primary_key=True)
     value_json: Mapped[str] = mapped_column(Text, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+
+
+class ReminderPreference(Base):
+    __tablename__ = "reminder_preferences"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, unique=True, nullable=False)
+    reminder_time: Mapped[str] = mapped_column(String(5), nullable=False)  # HH:MM 24-hour
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    last_triggered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    user: Mapped["User"] = relationship(back_populates="reminder_preference")
 
 

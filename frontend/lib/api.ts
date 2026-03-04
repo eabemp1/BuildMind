@@ -80,6 +80,24 @@ export type ScoringData = {
   history: DashboardScoreSnapshot[];
 };
 
+export type WeeklyReportData = {
+  start_date: string;
+  end_date: string;
+  execution_score_trend: Array<{ date: string; score: number }>;
+  weekly_task_completion: Array<{ date: string; completion_rate: number; tasks_completed: number }>;
+  milestone_achievement: Array<{ date: string; count: number }>;
+  tasks_completed_this_week: number;
+  feedback: { positive: number; negative: number; positive_ratio: number };
+};
+
+export type ReminderPreferenceData = {
+  user_id: number;
+  reminder_time: string;
+  enabled: boolean;
+  updated_at: string;
+  last_triggered_at: string | null;
+};
+
 const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 15000,
@@ -207,4 +225,16 @@ export async function getDashboard(): Promise<DashboardData> {
 
 export async function getScoring(): Promise<ScoringData> {
   return unwrap(api.get<ApiEnvelope<ScoringData>>("/scoring"));
+}
+
+export async function getWeeklyReport(): Promise<WeeklyReportData> {
+  return unwrap(api.get<ApiEnvelope<WeeklyReportData>>("/report/weekly"));
+}
+
+export async function getReminderPreference(): Promise<ReminderPreferenceData | null> {
+  return unwrap(api.get<ApiEnvelope<ReminderPreferenceData | null>>("/reminder/preferences"));
+}
+
+export async function saveReminderPreference(reminderTime: string, enabled: boolean): Promise<ReminderPreferenceData> {
+  return unwrap(api.post<ApiEnvelope<ReminderPreferenceData>>("/reminder/preferences", { reminder_time: reminderTime, enabled }));
 }
