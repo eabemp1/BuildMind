@@ -232,9 +232,9 @@ export async function getWeeklyReport(): Promise<WeeklyReportData> {
 }
 
 export async function getReminderPreference(): Promise<ReminderPreferenceData | null> {
-  return unwrap(api.get<ApiEnvelope<ReminderPreferenceData | null>>("/reminder/preferences"));
+  return unwrap(api.get<ApiEnvelope<ReminderPreferenceData | null>>("/reminders"));
 }
 
 export async function saveReminderPreference(reminderTime: string, enabled: boolean): Promise<ReminderPreferenceData> {
-  return unwrap(api.post<ApiEnvelope<ReminderPreferenceData>>("/reminder/preferences", { reminder_time: reminderTime, enabled }));
+  return unwrap(api.post<ApiEnvelope<ReminderPreferenceData>>("/reminders", { reminder_time: reminderTime, enabled }));
 }

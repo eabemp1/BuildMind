@@ -10,6 +10,7 @@ import os
 from fastapi import HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.routing import APIRoute
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -46,6 +47,42 @@ app.include_router(dashboard_router, prefix="/api/v1")
 app.include_router(scoring_router, prefix="/api/v1")
 app.include_router(report_router, prefix="/api/v1")
 app.include_router(reminder_router, prefix="/api/v1")
+
+
+def _install_v1_aliases() -> None:
+    """Expose /api/v1 aliases for legacy non-versioned routes (mainly agent/runtime routes)."""
+    skip_prefixes = {"/api/v1", "/docs", "/redoc", "/openapi.json", "/static"}
+    snapshot = list(app.routes)
+    existing = set()
+    for route in snapshot:
+        if not isinstance(route, APIRoute):
+            continue
+        methods = tuple(sorted(m for m in (route.methods or set()) if m not in {"HEAD", "OPTIONS"}))
+        existing.add((route.path, methods))
+
+    for route in snapshot:
+        if not isinstance(route, APIRoute):
+            continue
+        if any(route.path.startswith(prefix) for prefix in skip_prefixes):
+            continue
+        methods = sorted(m for m in (route.methods or set()) if m not in {"HEAD", "OPTIONS"})
+        if not methods:
+            continue
+        alias_path = "/api/v1" if route.path == "/" else f"/api/v1{route.path}"
+        key = (alias_path, tuple(sorted(methods)))
+        if key in existing:
+            continue
+        app.add_api_route(
+            path=alias_path,
+            endpoint=route.endpoint,
+            methods=methods,
+            include_in_schema=False,
+            name=f"{route.name}_v1",
+        )
+        existing.add(key)
+
+
+_install_v1_aliases()
 
 
 @app.get("/api/v1/health")

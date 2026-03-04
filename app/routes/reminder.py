@@ -50,3 +50,20 @@ def set_reminder_preferences_endpoint(
         last_triggered_at=row.last_triggered_at,
     )
     return {"success": True, "data": out.dict()}
+
+
+@router.get("/reminders")
+def get_reminders_endpoint(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return get_reminder_preferences_endpoint(db=db, current_user=current_user)
+
+
+@router.post("/reminders")
+def post_reminders_endpoint(
+    payload: ReminderPreferenceUpsertRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return set_reminder_preferences_endpoint(payload=payload, db=db, current_user=current_user)

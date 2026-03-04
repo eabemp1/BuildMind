@@ -60,6 +60,21 @@ export default function AnalyticsPage() {
       {isLoading ? <p className="text-sm text-slate-500">Loading analytics...</p> : null}
       {error ? <p className="text-sm text-rose-600">{error}</p> : null}
 
+      <div className="grid gap-4 sm:grid-cols-3">
+        <article className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <p className="text-sm text-slate-500">Tasks Completed (7d)</p>
+          <p className="mt-2 text-3xl font-semibold text-slate-900">{data?.tasks_completed_this_week ?? 0}</p>
+        </article>
+        <article className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <p className="text-sm text-slate-500">Positive Feedback</p>
+          <p className="mt-2 text-3xl font-semibold text-slate-900">{data?.feedback.positive ?? 0}</p>
+        </article>
+        <article className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <p className="text-sm text-slate-500">Feedback Positive Ratio</p>
+          <p className="mt-2 text-3xl font-semibold text-slate-900">{Math.round((data?.feedback.positive_ratio ?? 0) * 100)}%</p>
+        </article>
+      </div>
+
       <div className="grid gap-4 lg:grid-cols-2">
         <article className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <h3 className="text-lg font-semibold text-slate-900">Execution Score Trend</h3>

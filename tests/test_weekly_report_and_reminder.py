@@ -69,14 +69,14 @@ def test_reminder_preference_endpoint_and_scheduler_pickup(tmp_path: Path):
     token = _register_and_login(client)
 
     save = client.post(
-        "/api/v1/reminder/preferences",
+        "/api/v1/reminders",
         json={"reminder_time": "09:30", "enabled": True},
         headers=_auth_headers(token),
     )
     assert save.status_code == 200
     assert save.json()["data"]["reminder_time"] == "09:30"
 
-    get = client.get("/api/v1/reminder/preferences", headers=_auth_headers(token))
+    get = client.get("/api/v1/reminders", headers=_auth_headers(token))
     assert get.status_code == 200
     assert get.json()["data"]["enabled"] is True
 
@@ -110,3 +110,9 @@ def test_reminder_preference_endpoint_and_scheduler_pickup(tmp_path: Path):
         now_utc=datetime.now(timezone.utc).replace(hour=9, minute=30, second=30, microsecond=0),
     )
     assert due_again == []
+
+
+def test_versioned_agent_alias_available():
+    client = TestClient(app)
+    res = client.get("/api/v1/agent-stats")
+    assert res.status_code == 200
