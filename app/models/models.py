@@ -96,3 +96,11 @@ class ExecutionScoreHistory(Base):
     user: Mapped["User"] = relationship(back_populates="score_history")
 
 
+class AppState(Base):
+    __tablename__ = "app_state"
+
+    key: Mapped[str] = mapped_column(String(255), primary_key=True)
+    value_json: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+
+

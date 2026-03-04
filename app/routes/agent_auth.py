@@ -1,7 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import uuid4
-import json
 
 from fastapi import Body, Header
 
@@ -116,17 +115,6 @@ def register_auth_routes(app, ctx):
         auth_ctx = ctx["auth_context_from_token"](x_auth_token)
         if not auth_ctx or auth_ctx.get("role") != "admin":
             return {"error": "Admin token required"}
-        out = []
-        if ctx["AUDIT_LOG_FILE"].exists():
-            with ctx["AUDIT_LOG_FILE"].open("r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        out.append(json.loads(line))
-                    except Exception:
-                        continue
-        return {"items": out[-max(1, min(1000, int(limit or 100))):]}
+        return {"items": ctx["load_audit_logs"](limit)}
 
 

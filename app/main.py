@@ -15,6 +15,7 @@ from app.routes.projects import router as projects_router
 from app.routes.tasks import router as tasks_router
 from app.routes.feedback import router as feedback_router
 from app.routes.dashboard import router as dashboard_router
+from app.routes.scoring import router as scoring_router
 
 
 Base.metadata.create_all(bind=engine)
@@ -26,6 +27,7 @@ app.include_router(projects_router)
 app.include_router(tasks_router)
 app.include_router(feedback_router)
 app.include_router(dashboard_router)
+app.include_router(scoring_router)
 
 
 @app.get("/health")
