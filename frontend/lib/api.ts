@@ -5,6 +5,10 @@ import axios, { AxiosError } from "axios";
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000/api/v1";
 const TOKEN_KEY = "evolvai_jwt";
 const ACTIVE_PROJECT_ID_KEY = "evolvai_active_project_id";
+const HAS_LOGGED_IN_KEY = "evolvai_has_logged_in";
+const TOUR_SHOW_KEY = "evolvai_show_tour";
+const TOUR_SEEN_KEY = "evolvai_tour_seen";
+const ONBOARDED_KEY = "evolvai_onboarded";
 
 export type ApiEnvelope<T> = {
   success: boolean;
@@ -118,6 +122,27 @@ export function clearStoredToken(): void {
   window.localStorage.removeItem(TOKEN_KEY);
 }
 
+export function isOnboarded(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.localStorage.getItem(ONBOARDED_KEY) === "1";
+}
+
+export function setOnboarded(): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(ONBOARDED_KEY, "1");
+}
+
+export function shouldShowTour(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.localStorage.getItem(TOUR_SHOW_KEY) === "1";
+}
+
+export function markTourSeen(): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(TOUR_SEEN_KEY, "1");
+  window.localStorage.removeItem(TOUR_SHOW_KEY);
+}
+
 export function getActiveProjectId(): number | null {
   if (typeof window === "undefined") return null;
   const raw = window.localStorage.getItem(ACTIVE_PROJECT_ID_KEY);
@@ -132,15 +157,24 @@ export function setActiveProjectId(projectId: number): void {
 }
 
 export async function registerUser(email: string, password: string): Promise<UserData> {
-  return unwrap(api.post<ApiEnvelope<UserData>>("/register", { email, password }));
+  return unwrap(api.post<ApiEnvelope<UserData>>("/auth/register", { email, password }));
 }
 
 export async function loginUser(email: string, password: string): Promise<AuthData> {
-  const data = await unwrap(api.post<ApiEnvelope<AuthData>>("/login", { email, password }));
+  const data = await unwrap(api.post<ApiEnvelope<AuthData>>("/auth/login", { email, password }));
   if (typeof window !== "undefined") {
     window.localStorage.setItem(TOKEN_KEY, data.access_token);
+    const hasLoggedIn = window.localStorage.getItem(HAS_LOGGED_IN_KEY) === "1";
+    if (!hasLoggedIn && window.localStorage.getItem(TOUR_SEEN_KEY) !== "1") {
+      window.localStorage.setItem(TOUR_SHOW_KEY, "1");
+    }
+    window.localStorage.setItem(HAS_LOGGED_IN_KEY, "1");
   }
   return data;
+}
+
+export async function getProjects(): Promise<ProjectData[]> {
+  return unwrap(api.get<ApiEnvelope<ProjectData[]>>("/projects"));
 }
 
 export async function createProject(title: string, description: string): Promise<ProjectData> {

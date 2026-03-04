@@ -10,6 +10,7 @@ router = APIRouter(tags=["auth"])
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
+@router.post("/auth/register", status_code=status.HTTP_201_CREATED)
 def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     try:
         user = register_user(db, email=payload.email, password=payload.password)
@@ -29,6 +30,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/login")
+@router.post("/auth/login")
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
     user = authenticate_user(db, email=payload.email, password=payload.password)
     if not user:

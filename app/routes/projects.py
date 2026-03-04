@@ -11,7 +11,7 @@ from app.schemas.project import (
     MilestoneOut,
     TaskOut,
 )
-from app.services.project_service import create_project, get_project_for_user, generate_project_roadmap
+from app.services.project_service import create_project, get_project_for_user, generate_project_roadmap, list_projects_for_user
 
 
 router = APIRouter(tags=["projects"])
@@ -58,6 +58,15 @@ def create_project_endpoint(
     db.commit()
     full = get_project_for_user(db, current_user.id, row.id)
     return {"success": True, "data": _to_project_out(full).dict()}
+
+
+@router.get("/projects")
+def list_projects_endpoint(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    projects = list_projects_for_user(db, user_id=current_user.id)
+    return {"success": True, "data": [_to_project_out(project).dict() for project in projects]}
 
 
 @router.post("/projects/{project_id}/generate-roadmap")

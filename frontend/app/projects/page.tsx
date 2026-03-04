@@ -1,18 +1,23 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   ProjectData,
   createProject,
   generateRoadmap,
   getActiveProjectId,
+  getProjects,
   getProject,
+  getStoredToken,
+  isOnboarded,
   loginUser,
   registerUser,
   setActiveProjectId,
 } from "@/lib/api";
 
 export default function ProjectsPage() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [goal, setGoal] = useState("");
@@ -24,13 +29,19 @@ export default function ProjectsPage() {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    const projectId = getActiveProjectId();
-    if (!projectId) return;
     const load = async () => {
+      if (!getStoredToken()) return;
       try {
         setIsLoading(true);
-        const result = await getProject(projectId);
-        setProject(result);
+        const projects = await getProjects();
+        if (!projects.length) return;
+        const activeId = getActiveProjectId();
+        const selected = (activeId ? projects.find((p) => p.id === activeId) : undefined) || projects[0];
+        if (selected) {
+          const result = await getProject(selected.id);
+          setProject(result);
+          setActiveProjectId(result.id);
+        }
       } catch {
         // Ignore stale localStorage id.
       } finally {
@@ -62,6 +73,11 @@ export default function ProjectsPage() {
       setMessage("");
       await loginUser(email, password);
       setMessage("Login successful.");
+      if (isOnboarded()) {
+        router.push("/dashboard");
+      } else {
+        router.push("/onboarding");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
