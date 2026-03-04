@@ -11,7 +11,7 @@ from app.services.dashboard_service import build_dashboard
 router = APIRouter(tags=["dashboard"])
 
 
-@router.get("/dashboard", response_model=DashboardResponse)
+@router.get("/dashboard")
 def dashboard_endpoint(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -23,7 +23,7 @@ def dashboard_endpoint(
         ExecutionScoreSnapshotOut(id=item.id, score=item.score, calculated_at=item.calculated_at)
         for item in data["score_history"]
     ]
-    return DashboardResponse(
+    payload = DashboardResponse(
         user_id=data["user_id"],
         project_count=data["project_count"],
         milestone_count=data["milestone_count"],
@@ -35,6 +35,7 @@ def dashboard_endpoint(
         execution_score=data["execution_score"],
         score_history=history,
     )
+    return {"success": True, "data": payload.dict()}
 
 
 

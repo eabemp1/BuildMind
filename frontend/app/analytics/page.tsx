@@ -1,6 +1,34 @@
-import { scoreHistory } from "@/lib/mockData";
+"use client";
+
+import { useEffect, useState } from "react";
+import { ScoringData, getScoring } from "@/lib/api";
 
 export default function AnalyticsPage() {
+  const [data, setData] = useState<ScoringData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        setIsLoading(true);
+        setError("");
+        const response = await getScoring();
+        setData(response);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load analytics");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    void load();
+  }, []);
+
+  const scoreHistory = (data?.history || []).map((item, idx) => ({
+    week: `W${idx + 1}`,
+    score: Math.round(item.score),
+  }));
+
   return (
     <section className="space-y-8">
       <div>
@@ -12,6 +40,9 @@ export default function AnalyticsPage() {
         <h3 className="text-lg font-semibold text-slate-900">Score Line Chart (Placeholder)</h3>
         <div className="mt-4 h-72 rounded-lg border border-dashed border-slate-300 bg-slate-50" />
       </div>
+
+      {isLoading ? <p className="text-sm text-slate-500">Loading analytics...</p> : null}
+      {error ? <p className="text-sm text-rose-600">{error}</p> : null}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <article className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">

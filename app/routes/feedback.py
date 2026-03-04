@@ -11,7 +11,7 @@ from app.services.feedback_service import create_feedback
 router = APIRouter(tags=["feedback"])
 
 
-@router.post("/feedback", response_model=FeedbackResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/feedback", status_code=status.HTTP_201_CREATED)
 def feedback_endpoint(
     payload: FeedbackRequest,
     db: Session = Depends(get_db),
@@ -26,13 +26,14 @@ def feedback_endpoint(
         )
         db.commit()
         db.refresh(row)
-        return FeedbackResponse(
+        payload = FeedbackResponse(
             id=row.id,
             user_id=row.user_id,
             task_id=row.task_id,
             feedback_type=row.feedback_type,
             created_at=row.created_at,
         )
+        return {"success": True, "data": payload.dict()}
     except ValueError as exc:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))

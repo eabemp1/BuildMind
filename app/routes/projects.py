@@ -48,7 +48,7 @@ def _to_project_out(project) -> ProjectOut:
     )
 
 
-@router.post("/projects", response_model=ProjectOut, status_code=status.HTTP_201_CREATED)
+@router.post("/projects", status_code=status.HTTP_201_CREATED)
 def create_project_endpoint(
     payload: ProjectCreateRequest,
     db: Session = Depends(get_db),
@@ -57,10 +57,10 @@ def create_project_endpoint(
     row = create_project(db, user_id=current_user.id, title=payload.title, description=payload.description)
     db.commit()
     full = get_project_for_user(db, current_user.id, row.id)
-    return _to_project_out(full)
+    return {"success": True, "data": _to_project_out(full).dict()}
 
 
-@router.post("/projects/{project_id}/generate-roadmap", response_model=ProjectOut)
+@router.post("/projects/{project_id}/generate-roadmap")
 def generate_roadmap_endpoint(
     project_id: int,
     payload: RoadmapGenerateRequest,
@@ -75,13 +75,13 @@ def generate_roadmap_endpoint(
             goal_duration_weeks=payload.goal_duration_weeks,
         )
         db.commit()
-        return _to_project_out(project)
+        return {"success": True, "data": _to_project_out(project).dict()}
     except ValueError as exc:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
 
 
-@router.get("/projects/{project_id}", response_model=ProjectOut)
+@router.get("/projects/{project_id}")
 def get_project_endpoint(
     project_id: int,
     db: Session = Depends(get_db),
@@ -90,7 +90,7 @@ def get_project_endpoint(
     project = get_project_for_user(db, user_id=current_user.id, project_id=project_id)
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
-    return _to_project_out(project)
+    return {"success": True, "data": _to_project_out(project).dict()}
 
 
 
