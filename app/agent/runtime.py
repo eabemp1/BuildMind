@@ -36,17 +36,17 @@ import uvicorn
 from pathlib import Path
 from typing import Optional
 from app.agent.ui_home import render_home_page, render_welcome_page
-from app.agent.json_store import atomic_json_save
+from app.core.state_store import state_load_json, state_save_json
 from app.agent.chat_helpers import (
     answer_meta_attrs as shared_answer_meta_attrs,
     build_current_reminder_context as shared_build_current_reminder_context,
     sanitize_prompt_context_for_stale_plans as shared_sanitize_prompt_context_for_stale_plans,
     personalize_fact_for_actor,
 )
-from app.agent.routes_memory_reminders import register_memory_reminder_routes
-from app.agent.routes_auth import register_auth_routes
-from app.agent.routes_forge import register_forge_routes, apply_forge_event
-from app.agent.routes_utility import register_utility_routes
+from app.routes.agent_memory_reminders import register_memory_reminder_routes
+from app.routes.agent_auth import register_auth_routes
+from app.routes.agent_forge import register_forge_routes, apply_forge_event
+from app.routes.agent_utility import register_utility_routes
 from app.agent.response_style import build_response_style_instruction, enforce_concise_answer, wants_detailed_response
 from app.agent.tool_plugins import ToolRegistry, register_builtin_tools, parse_tool_command
 from app.agent.web_content import (
@@ -147,13 +147,11 @@ async def favicon_ico():
     return RedirectResponse(url="/static/favicon.ico?v=20260225-02")
 
 def load_user_profile():
-    if USER_PROFILE_FILE.exists():
-        with USER_PROFILE_FILE.open('r', encoding="utf-8") as f:
-            data = json.load(f)
-            if isinstance(data, dict):
-                data.setdefault("share_anonymized", True)
-                data.setdefault("response_style", "concise")
-                return data
+    data = state_load_json(f"json_state::{USER_PROFILE_FILE.name}", None)
+    if isinstance(data, dict):
+        data.setdefault("share_anonymized", True)
+        data.setdefault("response_style", "concise")
+        return data
     return {
         "name": None,
         "theme": "system",
@@ -164,8 +162,7 @@ def load_user_profile():
     }
 
 def save_user_profile(profile):
-    with USER_PROFILE_FILE.open('w', encoding="utf-8") as f:
-        json.dump(profile, f, indent=2)
+    state_save_json(f"json_state::{USER_PROFILE_FILE.name}", profile)
 
 profile = load_user_profile()
 user_name = profile.get("name")
@@ -193,19 +190,14 @@ CORE_AGENT_CATALOG = {
 VISIBLE_AGENT_SPECIALTIES = set(CORE_AGENT_CATALOG.keys())
 
 def load_user_privacy():
-    if USER_PRIVACY_FILE.exists():
-        try:
-            with USER_PRIVACY_FILE.open("r", encoding="utf-8") as f:
-                data = json.load(f)
-            if isinstance(data, dict):
-                return data
-        except Exception:
-            pass
+    data = state_load_json(f"json_state::{USER_PRIVACY_FILE.name}", {"actors": {}})
+    if isinstance(data, dict):
+        data.setdefault("actors", {})
+        return data
     return {"actors": {}}
 
 def save_user_privacy():
-    with USER_PRIVACY_FILE.open("w", encoding="utf-8") as f:
-        json.dump(user_privacy, f, indent=2)
+    state_save_json(f"json_state::{USER_PRIVACY_FILE.name}", user_privacy)
 
 def sharing_enabled_for_actor(actor_name):
     actor_key = normalize_actor_key(actor_name)
@@ -239,6 +231,14 @@ def emit_global_event(event_type, requester_name, specialty, metrics=None):
         "metrics": metrics if isinstance(metrics, dict) else {},
     }
     try:
+        rows = _json_load(GLOBAL_EVENTS_FILE, [])
+        if not isinstance(rows, list):
+            rows = []
+        rows.append(payload)
+        if len(rows) > 20000:
+            rows = rows[-20000:]
+        _json_save(GLOBAL_EVENTS_FILE, rows)
+        # Compatibility mirror for file-based integrations/tests.
         with GLOBAL_EVENTS_FILE.open("a", encoding="utf-8") as f:
             f.write(json.dumps(payload, ensure_ascii=True) + "\n")
         return True
@@ -247,20 +247,23 @@ def emit_global_event(event_type, requester_name, specialty, metrics=None):
 
 def load_global_events(limit=None):
     out = []
-    if not GLOBAL_EVENTS_FILE.exists():
-        return out
-    try:
-        with GLOBAL_EVENTS_FILE.open("r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    out.append(json.loads(line))
-                except Exception:
-                    continue
-    except Exception:
-        return []
+    if GLOBAL_EVENTS_FILE.exists():
+        try:
+            with GLOBAL_EVENTS_FILE.open("r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        out.append(json.loads(line))
+                    except Exception:
+                        continue
+        except Exception:
+            out = []
+    if not out:
+        out = _json_load(GLOBAL_EVENTS_FILE, [])
+        if not isinstance(out, list):
+            out = []
     if isinstance(limit, int) and limit > 0:
         return out[-limit:]
     return out
@@ -298,17 +301,12 @@ def build_dataset_snapshot():
     return snapshot, str(path)
 
 def _json_load(path: Path, default):
-    if path.exists():
-        try:
-            with path.open("r", encoding="utf-8") as f:
-                data = json.load(f)
-            return data
-        except Exception:
-            return default
-    return default
+    key = f"json_state::{path.name}"
+    return state_load_json(key, default)
 
 def _json_save(path: Path, data):
-    atomic_json_save(path, data)
+    key = f"json_state::{path.name}"
+    state_save_json(key, data)
 
 def load_users():
     data = _json_load(USERS_FILE, {"users": []})
@@ -448,11 +446,24 @@ def audit_log(event_type: str, actor: str, status: str = "ok", metadata=None, te
         "metadata": metadata if isinstance(metadata, dict) else {},
     }
     try:
-        with AUDIT_LOG_FILE.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(payload, ensure_ascii=True) + "\n")
+        rows = _json_load(AUDIT_LOG_FILE, [])
+        if not isinstance(rows, list):
+            rows = []
+        rows.append(payload)
+        if len(rows) > 10000:
+            rows = rows[-10000:]
+        _json_save(AUDIT_LOG_FILE, rows)
     except Exception:
         pass
     return payload
+
+
+def load_audit_logs(limit: int = 100):
+    rows = _json_load(AUDIT_LOG_FILE, [])
+    if not isinstance(rows, list):
+        rows = []
+    cap = max(1, min(1000, int(limit or 100)))
+    return rows[-cap:]
 
 def load_memory_items():
     data = _json_load(MEMORY_ITEMS_FILE, {"actors": {}})
@@ -1332,26 +1343,24 @@ def _empty_khaya_usage(month_key):
 def _load_khaya_usage():
     month_key = _khaya_month_key()
     try:
-        if KHAYA_USAGE_FILE.exists():
-            with KHAYA_USAGE_FILE.open("r", encoding="utf-8") as f:
-                data = json.load(f)
-            if isinstance(data, dict) and data.get("month") == month_key and isinstance(data.get("counts"), dict):
-                for op in _KHAYA_OPS:
-                    row = data["counts"].get(op)
-                    if not isinstance(row, dict):
-                        data["counts"][op] = {"attempted": 0, "success": 0, "blocked": 0}
-                    else:
-                        row.setdefault("attempted", 0)
-                        row.setdefault("success", 0)
-                        row.setdefault("blocked", 0)
-                return data
+        data = _json_load(KHAYA_USAGE_FILE, None)
+        if isinstance(data, dict) and data.get("month") == month_key and isinstance(data.get("counts"), dict):
+            for op in _KHAYA_OPS:
+                row = data["counts"].get(op)
+                if not isinstance(row, dict):
+                    data["counts"][op] = {"attempted": 0, "success": 0, "blocked": 0}
+                else:
+                    row.setdefault("attempted", 0)
+                    row.setdefault("success", 0)
+                    row.setdefault("blocked", 0)
+            return data
     except Exception:
         pass
     return _empty_khaya_usage(month_key)
 
 def _save_khaya_usage(data):
     data["updated_at"] = now_iso()
-    atomic_json_save(KHAYA_USAGE_FILE, data)
+    _json_save(KHAYA_USAGE_FILE, data)
 
 def _khaya_usage_totals(data):
     counts = data.get("counts", {})
@@ -5185,12 +5194,12 @@ register_auth_routes(
         "auth_sessions_state": auth_sessions_state,
         "auth_mode_state": auth_mode_state,
         "AUTH_SESSION_TTL_HOURS": AUTH_SESSION_TTL_HOURS,
-        "AUDIT_LOG_FILE": AUDIT_LOG_FILE,
         "save_users": save_users,
         "save_auth_sessions": save_auth_sessions,
         "save_auth_mode": save_auth_mode,
         "auth_context_from_token": auth_context_from_token,
         "audit_log": audit_log,
+        "load_audit_logs": load_audit_logs,
     },
 )
 
