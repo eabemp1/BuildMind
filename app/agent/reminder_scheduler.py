@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import sqlite3
 import subprocess
 import time
 from datetime import datetime, timedelta, timezone
@@ -162,6 +163,68 @@ def _collect_due(items, cooldown_minutes):
     return due, changed
 
 
+def _sqlite_path_from_database_url(database_url):
+    raw = str(database_url or "").strip()
+    if not raw.startswith("sqlite:///"):
+        return None
+    path = raw.replace("sqlite:///", "", 1)
+    return path or None
+
+
+def collect_due_daily_preferences(database_url, now_utc=None):
+    """Return due daily reminder preferences and update last_triggered_at."""
+    db_path = _sqlite_path_from_database_url(database_url)
+    if not db_path:
+        return []
+
+    now = _as_utc_aware(now_utc or datetime.now(timezone.utc))
+    if not now:
+        return []
+    hhmm = now.strftime("%H:%M")
+
+    con = None
+    try:
+        con = sqlite3.connect(db_path)
+        con.row_factory = sqlite3.Row
+        cur = con.cursor()
+        rows = cur.execute(
+            """
+            SELECT rp.id, rp.user_id, rp.reminder_time, rp.enabled, rp.last_triggered_at, u.email
+            FROM reminder_preferences rp
+            JOIN users u ON u.id = rp.user_id
+            WHERE rp.enabled = 1 AND rp.reminder_time = ?
+            """,
+            (hhmm,),
+        ).fetchall()
+
+        due = []
+        for row in rows:
+            last = _as_utc_aware(_parse_iso(row["last_triggered_at"]))
+            if last and last.date() == now.date():
+                continue
+            due.append(
+                {
+                    "preference_id": int(row["id"]),
+                    "user_id": int(row["user_id"]),
+                    "email": str(row["email"]),
+                    "reminder_time": str(row["reminder_time"]),
+                }
+            )
+            cur.execute(
+                "UPDATE reminder_preferences SET last_triggered_at = ?, updated_at = ? WHERE id = ?",
+                (now.isoformat(), now.isoformat(), int(row["id"])),
+            )
+            if len(due) >= MAX_ALERTS_PER_TICK:
+                break
+        con.commit()
+        return due
+    except Exception:
+        return []
+    finally:
+        if con:
+            con.close()
+
+
 def run_loop(reminder_file, poll_seconds, cooldown_minutes):
     reminder_path = Path(reminder_file)
     reminder_path.parent.mkdir(parents=True, exist_ok=True)
@@ -171,6 +234,7 @@ def run_loop(reminder_file, poll_seconds, cooldown_minutes):
         try:
             items = _read_reminders(reminder_path)
             due_items, changed = _collect_due(items, cooldown_minutes)
+            daily_due = collect_due_daily_preferences(os.getenv("DATABASE_URL", "sqlite:///./execution_v1.db"))
             if changed:
                 _write_reminders(reminder_path, items)
             for item in due_items:
@@ -178,6 +242,12 @@ def run_loop(reminder_file, poll_seconds, cooldown_minutes):
                 due_at = str(item.get("due_at", "")).strip()
                 _play_native_sound()
                 _show_native_notification("Lumiere Reminder", f"{task} ({due_at})" if due_at else task)
+            for pref in daily_due:
+                _play_native_sound()
+                _show_native_notification(
+                    "EvolvAI Daily Reminder",
+                    f"Execution check-in time for {pref.get('email', 'founder')}.",
+                )
         except Exception:
             pass
         time.sleep(max(5, int(poll_seconds)))
