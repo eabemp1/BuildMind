@@ -22,6 +22,16 @@ def get_project_for_user(db: Session, user_id: int, project_id: int) -> Project 
     )
 
 
+def list_projects_for_user(db: Session, user_id: int) -> list[Project]:
+    return (
+        db.query(Project)
+        .options(joinedload(Project.milestones).joinedload(Milestone.tasks))
+        .filter(Project.user_id == user_id)
+        .order_by(Project.created_at.desc())
+        .all()
+    )
+
+
 def generate_project_roadmap(db: Session, user_id: int, project_id: int, goal_duration_weeks: int) -> Project:
     project = get_project_for_user(db, user_id, project_id)
     if not project:

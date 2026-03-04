@@ -1,15 +1,23 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import MetricCard from "@/components/MetricCard";
-import { DashboardData, getDashboard } from "@/lib/api";
+import { DashboardData, getDashboard, getStoredToken, markTourSeen, shouldShowTour } from "@/lib/api";
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [data, setData] = useState<DashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [showTour, setShowTour] = useState(false);
 
   useEffect(() => {
+    if (!getStoredToken()) {
+      router.replace("/projects");
+      return;
+    }
+    setShowTour(shouldShowTour());
     const load = async () => {
       try {
         setIsLoading(true);
@@ -23,7 +31,12 @@ export default function DashboardPage() {
       }
     };
     void load();
-  }, []);
+  }, [router]);
+
+  const closeTour = () => {
+    markTourSeen();
+    setShowTour(false);
+  };
 
   const metrics = [
     { label: "Execution Score", value: String(Math.round(data?.execution_score ?? 0)), hint: "Current score" },
@@ -53,6 +66,22 @@ export default function DashboardPage() {
         <h3 className="text-lg font-semibold text-slate-900">Execution Trend (Placeholder)</h3>
         <div className="mt-4 h-72 rounded-lg border border-dashed border-slate-300 bg-slate-50" />
       </div>
+
+      {showTour ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-lg">
+            <h3 className="text-lg font-semibold text-slate-900">Welcome to your dashboard</h3>
+            <ul className="mt-4 list-disc space-y-2 pl-5 text-sm text-slate-700">
+              <li>Use the sidebar to navigate between dashboard, projects, execution, and analytics.</li>
+              <li>Execution Score shows your current weekly execution momentum.</li>
+              <li>Project board holds milestones and tasks generated from your startup goal.</li>
+            </ul>
+            <button onClick={closeTour} className="mt-6 rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
+              Start using EvolvAI
+            </button>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
