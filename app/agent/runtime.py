@@ -31,22 +31,24 @@ except Exception:
         return False
 from fastapi import FastAPI, Form, Body, UploadFile, File, Header
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
 import uvicorn
 from pathlib import Path
 from typing import Optional
-from app.agent.ui_home import render_home_page, render_welcome_page
-from app.core.state_store import state_load_json, state_save_json
+from sqlalchemy import text
+from app.database import engine
 from app.agent.chat_helpers import (
     answer_meta_attrs as shared_answer_meta_attrs,
     build_current_reminder_context as shared_build_current_reminder_context,
     sanitize_prompt_context_for_stale_plans as shared_sanitize_prompt_context_for_stale_plans,
     personalize_fact_for_actor,
 )
-from app.routes.agent_memory_reminders import register_memory_reminder_routes
-from app.routes.agent_auth import register_auth_routes
-from app.routes.agent_forge import register_forge_routes, apply_forge_event
-from app.routes.agent_utility import register_utility_routes
+from app.routes.agent import (
+    register_memory_reminder_routes,
+    register_auth_routes,
+    register_forge_routes,
+    register_utility_routes,
+    apply_forge_event,
+)
 from app.agent.response_style import build_response_style_instruction, enforce_concise_answer, wants_detailed_response
 from app.agent.tool_plugins import ToolRegistry, register_builtin_tools, parse_tool_command
 from app.agent.web_content import (
@@ -140,11 +142,42 @@ async def app_lifespan(app):
 
 app = FastAPI(title="Lumiere", lifespan=app_lifespan)
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
+def _state_ensure_table():
+    ddl = """
+    CREATE TABLE IF NOT EXISTS app_state (
+      key TEXT PRIMARY KEY,
+      value_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+    """
+    with engine.begin() as con:
+        con.execute(text(ddl))
 
-@app.get("/favicon.ico")
-async def favicon_ico():
-    return RedirectResponse(url="/static/favicon.ico?v=20260225-02")
+def state_load_json(key, default):
+    _state_ensure_table()
+    with engine.begin() as con:
+        row = con.execute(text("SELECT value_json FROM app_state WHERE key = :k"), {"k": str(key)}).fetchone()
+    if not row:
+        return default
+    try:
+        return json.loads(str(row[0]))
+    except Exception:
+        return default
+
+def state_save_json(key, data):
+    _state_ensure_table()
+    payload = json.dumps(data, ensure_ascii=False)
+    now = datetime.now(timezone.utc).isoformat()
+    with engine.begin() as con:
+        updated = con.execute(
+            text("UPDATE app_state SET value_json = :v, updated_at = :u WHERE key = :k"),
+            {"k": str(key), "v": payload, "u": now},
+        ).rowcount
+        if not updated:
+            con.execute(
+                text("INSERT INTO app_state (key, value_json, updated_at) VALUES (:k, :v, :u)"),
+                {"k": str(key), "v": payload, "u": now},
+            )
 
 def load_user_profile():
     data = state_load_json(f"json_state::{USER_PROFILE_FILE.name}", None)
@@ -3950,51 +3983,14 @@ def match_metaverse_videos(query_text="", specialty="personal", limit=8):
     videos = [item for _, item in scored[:top_n]]
     return videos, {"query": q, "specialty": spec, "matched": len(videos), "fallback": False}
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/")
 async def home():
-    if not user_name:
-        return render_welcome_page()
-
-    theme_class = 'theme-dark' if theme == 'dark' else 'theme-light'
-    safe_name = user_name or "friend"
-    accent_rgb = "34, 211, 238"
-    if isinstance(accent_color, str) and re.match(r"^#[0-9a-fA-F]{6}$", accent_color):
-        accent_rgb = ", ".join(str(int(accent_color[i:i+2], 16)) for i in (1, 3, 5))
-
-    accent_choices = [
-        ("#3b82f6", "Blue"),
-        ("#22d3ee", "Cyan"),
-        ("#f97316", "Sunset"),
-        ("#10b981", "Emerald"),
-        ("#ef4444", "Coral"),
-    ]
-    preset_values = {value.lower() for value, _ in accent_choices}
-    current_accent = str(accent_color or "").strip().lower()
-    accent_options = "".join(
-        f'<option value="{value}" {"selected" if current_accent == value.lower() else ""}>{label}</option>'
-        for value, label in accent_choices
-    )
-    accent_options += (
-        f'<option value="__custom__" {"selected" if current_accent not in preset_values else ""}>Custom...</option>'
-    )
-
-    model_labels = {model_key: cfg.get("label", model_key) for model_key, cfg in MODELS.items()}
-    model_options = "".join(
-        f'<option value="{model_key}" {"selected" if current_model == model_key else ""}>{label}</option>'
-        for model_key, label in model_labels.items()
-    )
-    specialist_count = len([a for a in squad if is_visible_agent(a)])
-    return render_home_page(
-        theme_class=theme_class,
-        accent_color=accent_color,
-        accent_rgb=accent_rgb,
-        current_model=current_model,
-        safe_name=safe_name,
-        accent_options=accent_options,
-        model_options=model_options,
-        active_model_label=model_labels.get(current_model, current_model),
-        specialist_count=specialist_count,
-    )
+    return {
+        "name": "EvolvAI OS Backend",
+        "status": "ok",
+        "version": "v1",
+        "docs": "/docs",
+    }
 
 @app.get("/ask")
 async def ask(

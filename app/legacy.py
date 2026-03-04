@@ -1,6 +1,7 @@
 """Compatibility shim for legacy imports."""
 
-from app.agent.runtime import *  # noqa: F401,F403
+from app.agent import runtime as _runtime
 
 
-
+def __getattr__(name):
+    return getattr(_runtime, name)
