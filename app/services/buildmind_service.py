@@ -277,12 +277,36 @@ def build_admin_platform_analytics(db: Session) -> dict:
     }
 
 
-def list_admin_users(db: Session, query: str | None = None) -> list[User]:
-    q = db.query(User)
+def list_admin_users(db: Session, query: str | None = None) -> list[dict]:
+    q = (
+        db.query(
+            User.id,
+            User.username,
+            User.email,
+            User.is_active,
+            User.is_admin,
+            User.created_at,
+            func.count(Project.id).label("project_count"),
+        )
+        .outerjoin(Project, Project.user_id == User.id)
+        .group_by(User.id)
+    )
     if query:
         like = f"%{query.strip()}%"
         q = q.filter((User.email.ilike(like)) | (User.username.ilike(like)))
-    return q.order_by(User.created_at.desc()).all()
+    rows = q.order_by(User.created_at.desc()).all()
+    return [
+        {
+            "id": row.id,
+            "username": row.username,
+            "email": row.email,
+            "is_active": row.is_active,
+            "is_admin": row.is_admin,
+            "created_at": row.created_at,
+            "project_count": int(row.project_count or 0),
+        }
+        for row in rows
+    ]
 
 
 def set_user_active_status(db: Session, user_id: int, is_active: bool) -> User:
@@ -290,6 +314,16 @@ def set_user_active_status(db: Session, user_id: int, is_active: bool) -> User:
     if not user:
         raise ValueError("User not found")
     user.is_active = is_active
+    db.add(user)
+    db.flush()
+    return user
+
+
+def set_user_admin_status(db: Session, user_id: int, is_admin: bool) -> User:
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise ValueError("User not found")
+    user.is_admin = is_admin
     db.add(user)
     db.flush()
     return user
@@ -304,21 +338,49 @@ def delete_user_account(db: Session, user_id: int) -> None:
 
 
 def list_admin_projects(db: Session, stage: str | None = None) -> list[dict]:
-    projects = db.query(Project).order_by(Project.created_at.desc()).all()
-    out = []
-    for project in projects:
-        inferred = _infer_project_stage(project)
+    rows = (
+        db.query(
+            Project.id,
+            Project.user_id,
+            Project.title,
+            Project.progress,
+            Project.is_archived,
+            Project.created_at,
+            User.email.label("owner_email"),
+            func.count(Milestone.id).label("milestones_count"),
+        )
+        .join(User, User.id == Project.user_id)
+        .outerjoin(Milestone, Milestone.project_id == Project.id)
+        .group_by(Project.id, User.email)
+        .order_by(Project.created_at.desc())
+        .all()
+    )
+    out: list[dict] = []
+    for row in rows:
+        inferred = "Idea"
+        if row.progress >= 80:
+            inferred = "Revenue"
+        elif row.progress >= 60:
+            inferred = "First Users"
+        elif row.progress >= 40:
+            inferred = "MVP"
+        elif row.progress >= 20:
+            inferred = "Prototype"
+        elif row.progress > 0:
+            inferred = "Validation"
         if stage and inferred.lower() != stage.lower():
             continue
         out.append(
             {
-                "id": project.id,
-                "user_id": project.user_id,
-                "title": project.title,
-                "progress": project.progress,
+                "id": row.id,
+                "user_id": row.user_id,
+                "title": row.title,
+                "progress": row.progress,
                 "stage": inferred,
-                "is_archived": project.is_archived,
-                "created_at": project.created_at,
+                "is_archived": row.is_archived,
+                "created_at": row.created_at,
+                "owner_email": row.owner_email,
+                "milestones_count": int(row.milestones_count or 0),
             }
         )
     return out
@@ -330,3 +392,42 @@ def list_all_feedback(db: Session) -> list[Feedback]:
 
 def list_newsletter_subscribers(db: Session) -> list[NewsletterSubscriber]:
     return db.query(NewsletterSubscriber).order_by(NewsletterSubscriber.created_at.desc()).all()
+
+
+def list_admin_ai_usage(db: Session) -> list[dict]:
+    rows = (
+        db.query(
+            ActivityLog.user_id,
+            User.email.label("user_email"),
+            func.count(ActivityLog.id).label("request_count"),
+            func.max(ActivityLog.created_at).label("last_activity"),
+        )
+        .join(User, User.id == ActivityLog.user_id)
+        .filter(
+            func.lower(ActivityLog.activity_type).like("%ai%")
+            | func.lower(ActivityLog.activity_type).like("%roadmap%")
+            | func.lower(ActivityLog.activity_type).like("%coach%")
+            | func.lower(ActivityLog.activity_type).like("%assistant%")
+        )
+        .group_by(ActivityLog.user_id, User.email)
+        .order_by(func.max(ActivityLog.created_at).desc())
+        .all()
+    )
+
+    return [
+        {
+            "user_id": row.user_id,
+            "user_email": row.user_email,
+            "requests": int(row.request_count or 0),
+            "tokens_used": int((row.request_count or 0) * 750),
+            "last_activity": row.last_activity,
+        }
+        for row in rows
+    ]
+
+
+def broadcast_platform_notification(db: Session, message: str, notification_type: str = "platform_announcement") -> int:
+    users = db.query(User).filter(User.is_active.is_(True)).all()
+    for user in users:
+        create_notification(db, user_id=user.id, notification_type=notification_type, message=message)
+    return len(users)

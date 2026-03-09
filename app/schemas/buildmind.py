@@ -64,6 +64,7 @@ class AdminUserOut(BaseModel):
     is_active: bool
     is_admin: bool
     created_at: datetime
+    project_count: int
 
 
 class AdminProjectOut(BaseModel):
@@ -74,6 +75,21 @@ class AdminProjectOut(BaseModel):
     stage: str
     is_archived: bool
     created_at: datetime
+    owner_email: str
+    milestones_count: int
+
+
+class AdminAiUsageOut(BaseModel):
+    user_id: int
+    user_email: str
+    requests: int
+    tokens_used: int
+    last_activity: datetime | None
+
+
+class AdminNotificationRequest(BaseModel):
+    message: str = Field(min_length=3, max_length=5000)
+    type: str = Field(default="platform_announcement", max_length=64)
 
 
 class AccountDeleteRequest(BaseModel):

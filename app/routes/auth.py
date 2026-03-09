@@ -35,6 +35,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
                 "bio": user.bio,
                 "avatar_url": user.avatar_url,
                 "onboarding_completed": user.onboarding_completed,
+                "role": "admin" if user.is_admin else "user",
                 "created_at": user.created_at,
             },
         }
@@ -81,6 +82,7 @@ def get_me(current_user: User = Depends(get_current_user)):
             "bio": current_user.bio,
             "avatar_url": current_user.avatar_url,
             "onboarding_completed": current_user.onboarding_completed,
+            "role": "admin" if current_user.is_admin else "user",
             "created_at": current_user.created_at,
         },
     }
@@ -111,6 +113,7 @@ def patch_me(
                 "bio": user.bio,
                 "avatar_url": user.avatar_url,
                 "onboarding_completed": user.onboarding_completed,
+                "role": "admin" if user.is_admin else "user",
                 "created_at": user.created_at,
             },
         }

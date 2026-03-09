@@ -27,6 +27,7 @@ export type UserData = {
   bio?: string | null;
   avatar_url?: string | null;
   onboarding_completed?: boolean;
+  role?: "admin" | "user";
   created_at: string;
 };
 
@@ -189,6 +190,7 @@ export type AdminUserData = {
   is_active: boolean;
   is_admin: boolean;
   created_at: string;
+  project_count: number;
 };
 
 export type AdminProjectData = {
@@ -199,6 +201,16 @@ export type AdminProjectData = {
   stage: string;
   is_archived: boolean;
   created_at: string;
+  owner_email: string;
+  milestones_count: number;
+};
+
+export type AdminAiUsageData = {
+  user_id: number;
+  user_email: string;
+  requests: number;
+  tokens_used: number;
+  last_activity: string | null;
 };
 
 export type NewsletterSubscriberData = {
@@ -515,6 +527,10 @@ export async function suspendAdminUser(userId: number): Promise<{ id: number; is
   return unwrap(api.patch<ApiEnvelope<{ id: number; is_active: boolean }>>(`/admin/users/${userId}/suspend`));
 }
 
+export async function promoteAdminUser(userId: number): Promise<{ id: number; is_admin: boolean }> {
+  return unwrap(api.patch<ApiEnvelope<{ id: number; is_admin: boolean }>>(`/admin/users/${userId}/promote`));
+}
+
 export async function deleteAdminUser(userId: number): Promise<{ message: string }> {
   return unwrap(api.delete<ApiEnvelope<{ message: string }>>(`/admin/users/${userId}`));
 }
@@ -543,10 +559,21 @@ export async function getAdminActivity(): Promise<ActivityData[]> {
   return unwrap(api.get<ApiEnvelope<ActivityData[]>>("/admin/activity"));
 }
 
+export async function getAdminAiUsage(): Promise<AdminAiUsageData[]> {
+  return unwrap(api.get<ApiEnvelope<AdminAiUsageData[]>>("/admin/ai-usage"));
+}
+
 export async function getAdminSystemSettings(): Promise<Array<{ key: string; value_json: string }>> {
   return unwrap(api.get<ApiEnvelope<Array<{ key: string; value_json: string }>>>("/admin/system-settings"));
 }
 
 export async function saveAdminSystemSetting(key: string, valueJson: string): Promise<{ key: string; value_json: string }> {
   return unwrap(api.post<ApiEnvelope<{ key: string; value_json: string }>>("/admin/system-settings", { key, value_json: valueJson }));
+}
+
+export async function sendAdminNotification(
+  message: string,
+  type = "platform_announcement",
+): Promise<{ sent_count: number; message: string; type: string }> {
+  return unwrap(api.post<ApiEnvelope<{ sent_count: number; message: string; type: string }>>("/admin/notifications", { message, type }));
 }

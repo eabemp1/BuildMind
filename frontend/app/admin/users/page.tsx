@@ -1,17 +1,32 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AdminUserData, deleteAdminUser, getAdminUsers, suspendAdminUser } from "@/lib/api";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { AdminUserRow, getAdminUsers, promoteUserToAdmin, suspendUser } from "@/lib/admin";
+
+function fmtDate(value: string): string {
+  return new Date(value).toLocaleDateString();
+}
 
 export default function AdminUsersPage() {
-  const [q, setQ] = useState("");
-  const [items, setItems] = useState<AdminUserData[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [query, setQuery] = useState("");
+  const [users, setUsers] = useState<AdminUserRow[]>([]);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
-  const load = async (query?: string) => {
+  const load = async (search?: string) => {
     try {
-      setItems(await getAdminUsers(query));
-    } catch {
-      setItems([]);
+      setLoading(true);
+      setError("");
+      setUsers(await getAdminUsers(search));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load users");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -19,24 +34,110 @@ export default function AdminUsersPage() {
     void load();
   }, []);
 
+  const onPromote = async (userId: string) => {
+    try {
+      setBusyId(userId);
+      await promoteUserToAdmin(userId);
+      await load(query.trim() || undefined);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to promote user");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const onSuspend = async (userId: string) => {
+    try {
+      setBusyId(userId);
+      await suspendUser(userId);
+      await load(query.trim() || undefined);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to suspend account");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   return (
-    <section className="space-y-4">
-      <h2 className="text-2xl font-semibold text-slate-900">Admin Users</h2>
-      <div className="flex gap-2">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search users" className="rounded-md border border-slate-300 px-3 py-2" />
-        <button type="button" onClick={() => void load(q)} className="rounded-md border border-slate-300 px-3 py-2 text-sm">Search</button>
+    <section className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-900">Users</h1>
+          <p className="mt-1 text-sm text-slate-600">Manage accounts, permissions, and account status.</p>
+        </div>
+        <div className="flex w-full max-w-md gap-2">
+          <Input
+            placeholder="Search by email or username"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          <Button variant="outline" onClick={() => void load(query.trim() || undefined)}>
+            Search
+          </Button>
+        </div>
       </div>
-      <div className="space-y-2">
-        {items.map((user) => (
-          <div key={user.id} className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm">
-            <div>{user.email} {user.is_active ? "" : "(Suspended)"}</div>
-            <div className="flex gap-2">
-              <button type="button" onClick={async () => { await suspendAdminUser(user.id); await load(q); }} className="rounded-md border border-slate-300 px-3 py-1">Suspend</button>
-              <button type="button" onClick={async () => { await deleteAdminUser(user.id); await load(q); }} className="rounded-md border border-rose-300 px-3 py-1 text-rose-700">Delete</button>
-            </div>
-          </div>
-        ))}
-      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>All Users</CardTitle>
+        </CardHeader>
+        <CardContent className="overflow-x-auto">
+          {loading ? <p className="text-sm text-slate-500">Loading users...</p> : null}
+          {error ? <p className="text-sm text-rose-600">{error}</p> : null}
+          {!loading ? (
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
+                  <th className="py-2 pr-4">Email</th>
+                  <th className="py-2 pr-4">Signup Date</th>
+                  <th className="py-2 pr-4">Role</th>
+                  <th className="py-2 pr-4">Projects</th>
+                  <th className="py-2">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {users.map((user) => (
+                  <tr key={user.id}>
+                    <td className="py-3 pr-4 font-medium text-slate-900">{user.email}</td>
+                    <td className="py-3 pr-4 text-slate-600">{fmtDate(user.createdAt)}</td>
+                    <td className="py-3 pr-4">
+                      <Badge className={user.role === "admin" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : ""}>
+                        {user.role}
+                      </Badge>
+                    </td>
+                    <td className="py-3 pr-4 text-slate-700">{user.projectCount}</td>
+                    <td className="py-3">
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          disabled={busyId === user.id || user.role === "admin"}
+                          onClick={() => void onPromote(user.id)}
+                        >
+                          Promote
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          disabled={busyId === user.id || !user.isActive}
+                          onClick={() => void onSuspend(user.id)}
+                        >
+                          Suspend
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {!users.length ? (
+                  <tr>
+                    <td className="py-4 text-slate-500" colSpan={5}>
+                      No users found.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          ) : null}
+        </CardContent>
+      </Card>
     </section>
   );
 }

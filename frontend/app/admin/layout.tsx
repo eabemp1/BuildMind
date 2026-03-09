@@ -1,12 +1,5 @@
-"use client";
+import AdminLayout from "@/layouts/admin-layout";
 
-import AdminSidebar from "@/components/AdminSidebar";
-
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex gap-6">
-      <AdminSidebar />
-      <div className="min-w-0 flex-1">{children}</div>
-    </div>
-  );
+export default function AppAdminLayout({ children }: { children: React.ReactNode }) {
+  return <AdminLayout>{children}</AdminLayout>;
 }

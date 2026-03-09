@@ -4,15 +4,24 @@ from sqlalchemy.orm import Session
 from app.core.deps import get_current_admin
 from app.database import get_db
 from app.models import ActivityLog, AppState, Feedback, User
-from app.schemas.buildmind import AdminPlatformAnalyticsOut, AdminProjectOut, AdminUserOut
+from app.schemas.buildmind import (
+    AdminAiUsageOut,
+    AdminNotificationRequest,
+    AdminPlatformAnalyticsOut,
+    AdminProjectOut,
+    AdminUserOut,
+)
 from app.services.buildmind_service import (
+    broadcast_platform_notification,
     build_admin_platform_analytics,
     delete_user_account,
+    list_admin_ai_usage,
     list_admin_projects,
     list_admin_users,
     list_all_feedback,
     list_activities_for_user,
     list_newsletter_subscribers,
+    set_user_admin_status,
     set_user_active_status,
 )
 
@@ -40,12 +49,13 @@ def admin_users(
         "success": True,
         "data": [
             AdminUserOut(
-                id=row.id,
-                username=row.username,
-                email=row.email,
-                is_active=row.is_active,
-                is_admin=row.is_admin,
-                created_at=row.created_at,
+                id=row["id"],
+                username=row["username"],
+                email=row["email"],
+                is_active=row["is_active"],
+                is_admin=row["is_admin"],
+                created_at=row["created_at"],
+                project_count=row["project_count"],
             ).dict()
             for row in rows
         ],
@@ -62,6 +72,21 @@ def admin_suspend_user(
         user = set_user_active_status(db, user_id=user_id, is_active=False)
         db.commit()
         return {"success": True, "data": {"id": user.id, "is_active": user.is_active}}
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+
+
+@router.patch("/users/{user_id}/promote")
+def admin_promote_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(get_current_admin),
+):
+    try:
+        user = set_user_admin_status(db, user_id=user_id, is_admin=True)
+        db.commit()
+        return {"success": True, "data": {"id": user.id, "is_admin": user.is_admin}}
     except ValueError as exc:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
@@ -243,3 +268,23 @@ def admin_set_system_setting(
     db.add(row)
     db.commit()
     return {"success": True, "data": {"key": row.key, "value_json": row.value_json}}
+
+
+@router.get("/ai-usage")
+def admin_ai_usage(
+    db: Session = Depends(get_db),
+    _admin: User = Depends(get_current_admin),
+):
+    rows = list_admin_ai_usage(db)
+    return {"success": True, "data": [AdminAiUsageOut(**row).dict() for row in rows]}
+
+
+@router.post("/notifications")
+def admin_send_notification(
+    payload: AdminNotificationRequest,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(get_current_admin),
+):
+    sent = broadcast_platform_notification(db, message=payload.message, notification_type=payload.type)
+    db.commit()
+    return {"success": True, "data": {"sent_count": sent, "message": payload.message, "type": payload.type}}

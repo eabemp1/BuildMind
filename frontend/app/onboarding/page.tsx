@@ -1,171 +1,121 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createProject, generateRoadmap, getStoredToken, setActiveProjectId, setOnboarded, updateCurrentUser } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { createProjectWithRoadmap, getCurrentUser, getOnboardingStatus } from "@/lib/buildmind";
 
-type OnboardingState = {
-  startupName: string;
-  industry: string;
-  stage: string;
-  primaryGoal: string;
-  weeklyHours: string;
-};
+type Step = 1 | 2 | 3;
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const [step, setStep] = useState(1);
-  const [isLoading, setIsLoading] = useState(false);
+  const [step, setStep] = useState<Step>(1);
+  const [idea, setIdea] = useState("");
+  const [targetUsers, setTargetUsers] = useState("");
+  const [problem, setProblem] = useState("");
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [checkedAuth, setCheckedAuth] = useState(false);
-  const [form, setForm] = useState<OnboardingState>({
-    startupName: "",
-    industry: "",
-    stage: "",
-    primaryGoal: "",
-    weeklyHours: "",
-  });
 
   useEffect(() => {
-    if (!getStoredToken()) {
-      router.replace("/projects");
-      return;
-    }
-    setCheckedAuth(true);
+    const check = async () => {
+      try {
+        const user = await getCurrentUser();
+        if (!user) {
+          router.replace("/auth/login");
+          return;
+        }
+        const done = await getOnboardingStatus(user.id);
+        if (done) {
+          router.replace("/dashboard");
+        }
+      } catch {
+        router.replace("/auth/login");
+      }
+    };
+    void check();
   }, [router]);
 
-  if (!checkedAuth) return null;
+  const title = useMemo(() => {
+    if (step === 1) return "Step 1: Startup Idea";
+    if (step === 2) return "Step 2: Target Users";
+    return "Step 3: Problem";
+  }, [step]);
 
   const onNext = () => {
-    setError("");
-    if (step === 1 && (!form.startupName.trim() || !form.industry.trim() || !form.stage.trim())) {
-      setError("Please complete all fields in step 1.");
-      return;
-    }
-    if (step === 2 && !form.primaryGoal.trim()) {
-      setError("Please enter your primary goal.");
-      return;
-    }
-    if (step === 3 && !form.weeklyHours.trim()) {
-      setError("Please enter your weekly commitment.");
-      return;
-    }
-    setStep((s) => Math.min(3, s + 1));
+    if (step === 1 && !idea.trim()) return;
+    if (step === 2 && !targetUsers.trim()) return;
+    if (step === 3 && !problem.trim()) return;
+    setStep((prev) => (prev === 3 ? prev : ((prev + 1) as Step)));
   };
 
-  const onBack = () => setStep((s) => Math.max(1, s - 1));
-
   const onComplete = async () => {
+    if (!idea.trim() || !targetUsers.trim() || !problem.trim()) return;
     try {
-      setIsLoading(true);
+      setLoading(true);
       setError("");
-      const project = await createProject(
-        form.primaryGoal,
-        `${form.startupName} | ${form.industry} | ${form.stage} | ${form.weeklyHours} hrs/week`,
-      );
-      await generateRoadmap(project.id, 4);
-      setActiveProjectId(project.id);
-      setOnboarded();
-      await updateCurrentUser({ onboarding_completed: true });
-      router.push("/dashboard");
+      await createProjectWithRoadmap({
+        project_name: idea.trim(),
+        idea_description: idea.trim(),
+        target_users: targetUsers.trim(),
+        problem: problem.trim(),
+      });
+      router.replace("/dashboard");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Onboarding failed");
+      setError(err instanceof Error ? err.message : "Failed to complete onboarding");
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
   return (
-    <section className="space-y-8">
-      <div>
-        <h2 className="text-2xl font-semibold text-slate-900">Onboarding</h2>
-        <p className="mt-1 text-sm text-slate-600">Set your baseline so EvolvAI can structure your first execution plan.</p>
-      </div>
+    <div className="grid min-h-screen place-items-center bg-gray-50 p-6">
+      <Card className="w-full max-w-2xl">
+        <CardHeader>
+          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Onboarding</p>
+          <CardTitle className="mt-2 text-2xl">{title}</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          {step === 1 ? (
+            <Input
+              value={idea}
+              onChange={(e) => setIdea(e.target.value)}
+              placeholder="Example: AI-first startup app generator"
+            />
+          ) : null}
+          {step === 2 ? (
+            <Input
+              value={targetUsers}
+              onChange={(e) => setTargetUsers(e.target.value)}
+              placeholder="Example: University entrepreneurs"
+            />
+          ) : null}
+          {step === 3 ? (
+            <Input
+              value={problem}
+              onChange={(e) => setProblem(e.target.value)}
+              placeholder="Example: Founders struggle to turn ideas into executable plans."
+            />
+          ) : null}
 
-      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <p className="text-sm font-medium text-slate-500">Step {step} of 3</p>
+          {error ? <p className="text-sm text-rose-600">{error}</p> : null}
 
-        {step === 1 ? (
-          <div className="mt-4 grid gap-4">
-            <input
-              placeholder="Startup name"
-              value={form.startupName}
-              onChange={(e) => setForm({ ...form, startupName: e.target.value })}
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
-            />
-            <input
-              placeholder="Industry"
-              value={form.industry}
-              onChange={(e) => setForm({ ...form, industry: e.target.value })}
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
-            />
-            <input
-              placeholder="Stage (idea, MVP, early traction)"
-              value={form.stage}
-              onChange={(e) => setForm({ ...form, stage: e.target.value })}
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
-            />
+          <div className="flex justify-between">
+            <Button variant="outline" disabled={step === 1 || loading} onClick={() => setStep((s) => ((s - 1) as Step))}>
+              Back
+            </Button>
+            {step < 3 ? (
+              <Button onClick={onNext}>Next</Button>
+            ) : (
+              <Button disabled={loading} onClick={() => void onComplete()}>
+                {loading ? "Generating roadmap..." : "Generate roadmap"}
+              </Button>
+            )}
           </div>
-        ) : null}
-
-        {step === 2 ? (
-          <div className="mt-4 grid gap-4">
-            <textarea
-              rows={4}
-              placeholder="Primary goal (e.g., Launch MVP in 60 days)"
-              value={form.primaryGoal}
-              onChange={(e) => setForm({ ...form, primaryGoal: e.target.value })}
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
-            />
-          </div>
-        ) : null}
-
-        {step === 3 ? (
-          <div className="mt-4 grid gap-4">
-            <input
-              type="number"
-              min={1}
-              max={80}
-              placeholder="Weekly time commitment (hours)"
-              value={form.weeklyHours}
-              onChange={(e) => setForm({ ...form, weeklyHours: e.target.value })}
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
-            />
-          </div>
-        ) : null}
-
-        {error ? <p className="mt-4 text-sm text-rose-600">{error}</p> : null}
-
-        <div className="mt-6 flex gap-3">
-          <button
-            type="button"
-            onClick={onBack}
-            disabled={step === 1 || isLoading}
-            className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-60"
-          >
-            Back
-          </button>
-          {step < 3 ? (
-            <button
-              type="button"
-              onClick={onNext}
-              disabled={isLoading}
-              className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60"
-            >
-              Next
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={onComplete}
-              disabled={isLoading}
-              className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60"
-            >
-              {isLoading ? "Setting up..." : "Finish"}
-            </button>
-          )}
-        </div>
-      </div>
-    </section>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
+

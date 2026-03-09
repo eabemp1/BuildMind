@@ -1,52 +1,51 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
+import { ensureUserProfile, getOnboardingStatus } from "@/lib/buildmind";
 
 export default function HomePage() {
-  return (
-    <section className="max-app space-y-20 py-16">
-      <div className="grid items-center gap-10 lg:grid-cols-2">
-        <div className="space-y-6">
-          <p className="text-sm font-semibold uppercase tracking-wider text-brand-700">BuildMind</p>
-          <h1 className="text-4xl font-bold leading-tight text-slate-900 sm:text-5xl">
-            Startup operating system for early-stage founders.
-          </h1>
-          <p className="text-lg text-slate-600">
-            Turn startup ideas into milestones, track execution weekly, and improve with measurable scoring.
-          </p>
-          <div className="flex flex-wrap gap-3">
-            <Link href="/projects" className="rounded-md bg-brand-600 px-5 py-3 text-sm font-medium text-white hover:bg-brand-700">
-              Login
-            </Link>
-            <Link href="/projects" className="rounded-md border border-slate-300 bg-white px-5 py-3 text-sm font-medium text-slate-700 hover:bg-slate-100">
-              Get Started
-            </Link>
-          </div>
-        </div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-          <h2 className="text-xl font-semibold text-slate-900">BuildMind</h2>
-          <p className="mt-3 text-sm text-slate-600">Plan. Execute. Measure. Improve.</p>
-        </div>
-      </div>
+  const router = useRouter();
 
-      <div className="space-y-6">
-        <h2 className="text-2xl font-semibold text-slate-900">How It Works</h2>
-        <div className="grid gap-4 md:grid-cols-3">
-          <article className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-sm font-semibold text-brand-700">Step 1</p>
-            <h3 className="mt-2 text-lg font-semibold text-slate-900">Define Your Goal</h3>
-            <p className="mt-2 text-sm text-slate-600">Create a project with a clear target such as launching an MVP in 60 days.</p>
-          </article>
-          <article className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-sm font-semibold text-brand-700">Step 2</p>
-            <h3 className="mt-2 text-lg font-semibold text-slate-900">Execute Weekly</h3>
-            <p className="mt-2 text-sm text-slate-600">Auto-generated milestones and tasks guide focused execution each week.</p>
-          </article>
-          <article className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-sm font-semibold text-brand-700">Step 3</p>
-            <h3 className="mt-2 text-lg font-semibold text-slate-900">Track Progress</h3>
-            <p className="mt-2 text-sm text-slate-600">Execution Score and analytics quantify consistency and delivery momentum.</p>
-          </article>
+  useEffect(() => {
+    const check = async () => {
+      const supabase = createClient();
+      try {
+        const { data } = await supabase.auth.getUser();
+        if (!data.user) return;
+        await ensureUserProfile(data.user);
+        const onboarded = await getOnboardingStatus(data.user.id);
+        if (!onboarded) {
+          router.replace("/onboarding");
+          return;
+        }
+        router.replace("/dashboard");
+      } catch {
+        // keep landing page for anonymous users
+      }
+    };
+    void check();
+  }, [router]);
+
+  return (
+    <main className="grid min-h-screen place-items-center bg-gray-50 p-6">
+      <section className="w-full max-w-5xl rounded-3xl border border-slate-200 bg-white p-8 shadow-xl md:p-12">
+        <p className="text-xs uppercase tracking-[0.25em] text-slate-400">EvolvAI OS</p>
+        <h1 className="mt-4 text-4xl font-semibold tracking-tight text-slate-900 md:text-5xl">BuildMind</h1>
+        <p className="mt-4 max-w-2xl text-base text-slate-600">
+          Startup operating system for founders. Move from idea to roadmap, milestones, and execution in a single SaaS workflow.
+        </p>
+        <div className="mt-8 flex flex-wrap gap-3">
+          <Link href="/auth/signup" className="inline-flex h-11 items-center rounded-lg bg-slate-900 px-5 text-sm font-medium text-white hover:bg-slate-800">
+            Start Free
+          </Link>
+          <Link href="/auth/login" className="inline-flex h-11 items-center rounded-lg border border-slate-300 bg-white px-5 text-sm font-medium text-slate-700 hover:bg-slate-50">
+            Login
+          </Link>
         </div>
-      </div>
-    </section>
+      </section>
+    </main>
   );
 }
