@@ -5450,7 +5450,7 @@ async def get_global_core():
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "time": now_iso()}
+    return {"status": "ok", "service": "evolvai-backend"}
 
 @app.get("/health/deep")
 async def health_deep():

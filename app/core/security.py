@@ -8,10 +8,14 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from jose import jwt, JWTError
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "change-this-in-production")
-JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
-JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "60"))
-PWD_ITERATIONS = int(os.getenv("PWD_ITERATIONS", "310000"))
+
+from app.core.config import get_settings
+
+settings = get_settings()
+JWT_SECRET_KEY = settings.JWT_SECRET or settings.SECRET_KEY
+JWT_ALGORITHM = settings.JWT_ALGORITHM
+JWT_EXPIRE_MINUTES = settings.JWT_EXPIRE_MINUTES
+PWD_ITERATIONS = settings.PWD_ITERATIONS
 
 
 def hash_password(password: str) -> str:

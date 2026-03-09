@@ -6,9 +6,11 @@ import { usePathname } from "next/navigation";
 const navItems = [
   { label: "Dashboard", href: "/dashboard" },
   { label: "Projects", href: "/projects" },
-  { label: "Execution", href: "/execution" },
-  { label: "Analytics", href: "/analytics" },
-  { label: "Weekly Summary", href: "/weekly-summary" },
+  { label: "Roadmaps", href: "/execution" },
+  { label: "Feedback", href: "/feedback" },
+  { label: "Activity", href: "/activity" },
+  { label: "Notifications", href: "/notifications" },
+  { label: "Profile", href: "/profile" },
   { label: "Settings", href: "/settings" }
 ];
 
@@ -37,8 +39,8 @@ export default function Sidebar() {
       </div>
       <aside className="sticky top-0 hidden h-screen w-64 flex-none border-r border-slate-200 bg-white px-4 py-6 lg:block">
         <div className="mb-8 px-2">
-          <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">Founder Execution OS</p>
-          <h1 className="mt-2 text-xl font-semibold text-slate-900">Lumiere Forge</h1>
+          <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">BuildMind</p>
+          <h1 className="mt-2 text-xl font-semibold text-slate-900">Startup Operating System</h1>
         </div>
         <nav className="space-y-1">
           {navItems.map((item) => {

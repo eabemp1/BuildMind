@@ -3,8 +3,10 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  archiveProject,
   ProjectData,
   createProject,
+  deleteProject,
   generateRoadmap,
   getActiveProjectId,
   getProjects,
@@ -13,6 +15,7 @@ import {
   isOnboarded,
   loginUser,
   registerUser,
+  updateProject,
   setActiveProjectId,
 } from "@/lib/api";
 
@@ -22,6 +25,8 @@ export default function ProjectsPage() {
   const [password, setPassword] = useState("");
   const [goal, setGoal] = useState("");
   const [description, setDescription] = useState("");
+  const [problem, setProblem] = useState("");
+  const [targetUsers, setTargetUsers] = useState("");
   const [weeks, setWeeks] = useState(4);
   const [project, setProject] = useState<ProjectData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -91,6 +96,9 @@ export default function ProjectsPage() {
       setError("");
       setMessage("");
       const result = await createProject(goal, description);
+      if (problem || targetUsers) {
+        await updateProject(result.id, { problem, target_users: targetUsers });
+      }
       setProject(result);
       setActiveProjectId(result.id);
       setMessage(`Project created (#${result.id}).`);
@@ -98,6 +106,28 @@ export default function ProjectsPage() {
       setError(err instanceof Error ? err.message : "Project creation failed");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const onArchiveProject = async () => {
+    if (!project) return;
+    try {
+      await archiveProject(project.id);
+      setProject(null);
+      setMessage("Project archived.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Archive failed");
+    }
+  };
+
+  const onDeleteProject = async () => {
+    if (!project) return;
+    try {
+      await deleteProject(project.id);
+      setProject(null);
+      setMessage("Project deleted.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Delete failed");
     }
   };
 
@@ -197,6 +227,32 @@ export default function ProjectsPage() {
             />
           </div>
           <div className="grid gap-2">
+            <label htmlFor="problem" className="text-sm font-medium text-slate-700">
+              Problem
+            </label>
+            <textarea
+              id="problem"
+              rows={2}
+              value={problem}
+              onChange={(e) => setProblem(e.target.value)}
+              placeholder="What user problem are you solving?"
+              className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
+            />
+          </div>
+          <div className="grid gap-2">
+            <label htmlFor="target-users" className="text-sm font-medium text-slate-700">
+              Target Users
+            </label>
+            <textarea
+              id="target-users"
+              rows={2}
+              value={targetUsers}
+              onChange={(e) => setTargetUsers(e.target.value)}
+              placeholder="Who are your ideal users?"
+              className="rounded-md border border-slate-300 px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
+            />
+          </div>
+          <div className="grid gap-2">
             <label htmlFor="weeks" className="text-sm font-medium text-slate-700">
               Goal Duration (Weeks)
             </label>
@@ -221,6 +277,22 @@ export default function ProjectsPage() {
               className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-60"
             >
               Generate Roadmap
+            </button>
+            <button
+              type="button"
+              onClick={onArchiveProject}
+              disabled={isLoading || !project}
+              className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+            >
+              Archive Project
+            </button>
+            <button
+              type="button"
+              onClick={onDeleteProject}
+              disabled={isLoading || !project}
+              className="rounded-md border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700 hover:bg-rose-100 disabled:opacity-60"
+            >
+              Delete Project
             </button>
           </div>
         </form>

@@ -24,6 +24,10 @@ from app.routes.projects import router as projects_router
 from app.routes.tasks import router as tasks_router
 from app.routes.feedback import router as feedback_router
 from app.routes.dashboard import router as dashboard_router
+from app.routes.activity import router as activity_router
+from app.routes.notifications import router as notifications_router
+from app.routes.newsletter import router as newsletter_router
+from app.routes.admin import router as admin_router
 from app.routes.scoring import router as scoring_router
 from app.routes.report import router as report_router
 from app.routes.reminder import router as reminder_router
@@ -37,13 +41,55 @@ Base.metadata.create_all(bind=engine)
 
 def _ensure_runtime_schema() -> None:
     inspector = sa_inspect(engine)
-    try:
-        project_columns = {col["name"] for col in inspector.get_columns("projects")}
-    except Exception:
-        project_columns = set()
-    if "roadmap_json" not in project_columns:
-        with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE projects ADD COLUMN roadmap_json TEXT"))
+    table_columns = {}
+    for table_name in ["users", "projects", "milestones", "tasks", "feedback"]:
+        try:
+            table_columns[table_name] = {col["name"] for col in inspector.get_columns(table_name)}
+        except Exception:
+            table_columns[table_name] = set()
+
+    alter_map = {
+        "users": [
+            ("username", "ALTER TABLE users ADD COLUMN username VARCHAR(100)"),
+            ("password_hash", "ALTER TABLE users ADD COLUMN password_hash VARCHAR(255)"),
+            ("bio", "ALTER TABLE users ADD COLUMN bio TEXT"),
+            ("avatar_url", "ALTER TABLE users ADD COLUMN avatar_url VARCHAR(500)"),
+            ("onboarding_completed", "ALTER TABLE users ADD COLUMN onboarding_completed BOOLEAN DEFAULT 0"),
+            ("is_active", "ALTER TABLE users ADD COLUMN is_active BOOLEAN DEFAULT 1"),
+            ("is_admin", "ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT 0"),
+        ],
+        "projects": [
+            ("roadmap_json", "ALTER TABLE projects ADD COLUMN roadmap_json TEXT"),
+            ("problem", "ALTER TABLE projects ADD COLUMN problem TEXT"),
+            ("target_users", "ALTER TABLE projects ADD COLUMN target_users TEXT"),
+            ("progress", "ALTER TABLE projects ADD COLUMN progress FLOAT DEFAULT 0"),
+            ("is_archived", "ALTER TABLE projects ADD COLUMN is_archived BOOLEAN DEFAULT 0"),
+            ("archived_at", "ALTER TABLE projects ADD COLUMN archived_at TIMESTAMP"),
+        ],
+        "milestones": [
+            ("status", "ALTER TABLE milestones ADD COLUMN status VARCHAR(32) DEFAULT 'pending'"),
+            ("order_index", "ALTER TABLE milestones ADD COLUMN order_index INTEGER DEFAULT 0"),
+            ("completed_at", "ALTER TABLE milestones ADD COLUMN completed_at TIMESTAMP"),
+        ],
+        "tasks": [
+            ("title", "ALTER TABLE tasks ADD COLUMN title VARCHAR(255)"),
+            ("status", "ALTER TABLE tasks ADD COLUMN status VARCHAR(32) DEFAULT 'todo'"),
+            ("priority", "ALTER TABLE tasks ADD COLUMN priority VARCHAR(16) DEFAULT 'medium'"),
+            ("due_date", "ALTER TABLE tasks ADD COLUMN due_date TIMESTAMP"),
+        ],
+        "feedback": [
+            ("project_id", "ALTER TABLE feedback ADD COLUMN project_id INTEGER"),
+            ("rating", "ALTER TABLE feedback ADD COLUMN rating INTEGER"),
+            ("category", "ALTER TABLE feedback ADD COLUMN category VARCHAR(32)"),
+            ("comment", "ALTER TABLE feedback ADD COLUMN comment TEXT"),
+        ],
+    }
+    with engine.begin() as conn:
+        for table_name, alters in alter_map.items():
+            existing = table_columns.get(table_name, set())
+            for column_name, alter_sql in alters:
+                if column_name not in existing:
+                    conn.execute(text(alter_sql))
 
 
 _ensure_runtime_schema()
@@ -67,6 +113,10 @@ app.include_router(projects_router, prefix="/api/v1")
 app.include_router(tasks_router, prefix="/api/v1")
 app.include_router(feedback_router, prefix="/api/v1")
 app.include_router(dashboard_router, prefix="/api/v1")
+app.include_router(activity_router, prefix="/api/v1")
+app.include_router(notifications_router, prefix="/api/v1")
+app.include_router(newsletter_router, prefix="/api/v1")
+app.include_router(admin_router, prefix="/api/v1")
 app.include_router(scoring_router, prefix="/api/v1")
 app.include_router(report_router, prefix="/api/v1")
 app.include_router(reminder_router, prefix="/api/v1")
