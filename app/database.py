@@ -6,14 +6,15 @@ Design:
 - Defaults to local SQLite for quick local development.
 """
 
-import os
 from typing import Generator
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 
+from app.core.config import get_settings
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./execution_v1.db")
+settings = get_settings()
+DATABASE_URL = settings.DATABASE_URL
 
 engine = create_engine(
     DATABASE_URL,

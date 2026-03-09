@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { clearStoredToken, getActiveProjectId, getStoredToken } from "@/lib/api";
+import NotificationBell from "@/components/NotificationBell";
 
 export default function Topbar() {
   const [isAuthed, setIsAuthed] = useState(false);
@@ -36,6 +37,7 @@ export default function Topbar() {
         <button onClick={logout} className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">
           {isAuthed ? "Logout" : "Not logged in"}
         </button>
+        <NotificationBell />
       </div>
     </header>
   );

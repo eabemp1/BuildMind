@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createProject, generateRoadmap, getStoredToken, setActiveProjectId, setOnboarded } from "@/lib/api";
+import { createProject, generateRoadmap, getStoredToken, setActiveProjectId, setOnboarded, updateCurrentUser } from "@/lib/api";
 
 type OnboardingState = {
   startupName: string;
@@ -66,6 +66,7 @@ export default function OnboardingPage() {
       await generateRoadmap(project.id, 4);
       setActiveProjectId(project.id);
       setOnboarded();
+      await updateCurrentUser({ onboarding_completed: true });
       router.push("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Onboarding failed");

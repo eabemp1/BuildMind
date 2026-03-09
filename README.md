@@ -1,93 +1,132 @@
 # EvolvAI OS
 
-EvolvAI OS is a unified FastAPI backend and Next.js frontend for founder execution support.
+EvolvAI OS is a founder execution platform with a FastAPI backend and Next.js frontend.
 
-## What This Is
+## Stack
 
-- Not a generic chatbot.
-- A structured execution platform with:
-  - goal/project tracking
-  - roadmap and milestones
-  - task completion workflows
-  - execution scoring
-  - utility/agent support modules
+- Backend: FastAPI + SQLAlchemy
+- Frontend: Next.js (App Router)
+- Database: PostgreSQL (production), SQLite (local fallback)
+- Migrations: Alembic
+- Production server: Gunicorn + Uvicorn workers
 
-## Current Architecture
+## Environment Configuration
 
-Single backend codebase:
+Copy `.env.example` to `.env` and fill values:
 
-```
-app/
-  main.py
-  database.py
-  core/
-  models/
-  schemas/
-  services/
-  routes/
-  execution/
-  agent/
+```bash
+cp .env.example .env
 ```
 
-Frontend dashboard:
+Required keys:
 
+- `DATABASE_URL`
+- `SECRET_KEY`
+- `OPENAI_API_KEY`
+- `GROQ_API_KEY`
+- `JWT_SECRET`
+
+Optional:
+
+- `FRONTEND_ORIGINS` (comma-separated)
+- `LOG_LEVEL`
+
+## Local Development
+
+### Backend
+
+```bash
+python -m venv venv
+# Windows
+venv\Scripts\activate
+# Linux/macOS
+source venv/bin/activate
+
+pip install -r requirements.txt
 ```
-frontend/
-  app/
-  components/
-  lib/
+
+Run migrations:
+
+```bash
+alembic upgrade head
 ```
 
-## Backend Highlights
+Run API:
 
-- `app/routes`: API endpoints only (thin handlers).
-- `app/services`: business logic.
-- `app/execution`: scoring + roadmap logic.
-- `app/agent`: memory/reflection + utility agent interfaces.
-- `app/models`: SQLAlchemy ORM models.
-- `app/schemas`: Pydantic request/response contracts.
-- `app/core`: shared auth/dependency/security helpers.
+```bash
+uvicorn app.main:app --reload
+```
 
-## Data Layer
+Health check:
 
-- Execution platform data uses SQLAlchemy ORM (`app/database.py`) with SQLite/PostgreSQL via `DATABASE_URL`.
-- Runtime artifacts/state files are generated locally and are no longer tracked in git.
+- `GET /health`
+- `GET /api/v1/health`
 
-## Quick Start (Backend)
+### Frontend
 
-1. Create and activate virtual environment.
-2. Install dependencies:
-   - `pip install -r requirements.txt`
-3. Run API:
-   - `python main.py`
-4. Open:
-   - `http://127.0.0.1:8000`
+```bash
+cd frontend
+npm install
+```
 
-## Quick Start (Frontend)
+Create `frontend/.env.local`:
 
-1. `cd frontend`
-2. `npm install`
-3. `npm run dev`
-4. Open:
-   - `http://localhost:3000/dashboard`
+```env
+NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000/api/v1
+```
 
-## Key Execution Endpoints
+Run:
 
-- `POST /register`
-- `POST /login`
-- `POST /projects`
-- `POST /projects/{id}/generate-roadmap`
-- `GET /projects/{id}`
-- `POST /tasks/{id}/complete`
-- `GET /dashboard`
-- `POST /feedback`
+```bash
+npm run dev
+```
 
-## Test Commands
+## Docker
 
-- Core execution + utility flow:
-  - `venv\Scripts\python -m pytest -q tests/test_execution_v1_api.py tests/test_utility_workspace.py tests/test_mvp_flows.py`
+Run backend + postgres + redis:
 
-## Repository Hygiene
+```bash
+docker compose up --build
+```
 
-- Removed duplicate backend trees and legacy tracked runtime artifacts.
-- `.gitignore` now excludes generated state/cache/db files so the repo stays clean.
+Backend: `http://localhost:8000`  
+Postgres: `localhost:5432`  
+Redis: `localhost:6379`
+
+## Migrations
+
+Generate migration:
+
+```bash
+alembic revision --autogenerate -m "describe change"
+```
+
+Apply migration:
+
+```bash
+alembic upgrade head
+```
+
+Migration files are in:
+
+`app/db/migrations/`
+
+## Deployment (Production)
+
+1. Set production environment variables (`DATABASE_URL`, `JWT_SECRET`, etc.).
+2. Run migrations:
+   - `alembic upgrade head`
+3. Start backend with Gunicorn:
+
+```bash
+gunicorn app.main:app -k uvicorn.workers.UvicornWorker -w 2 -b 0.0.0.0:8000
+```
+
+4. Deploy frontend separately (e.g., Vercel) with:
+   - `NEXT_PUBLIC_API_BASE_URL=https://<backend-domain>/api/v1`
+
+## API Notes
+
+- Core APIs are exposed under `/api/v1/...`
+- Legacy runtime routes are also available via `/api/v1` aliases
+

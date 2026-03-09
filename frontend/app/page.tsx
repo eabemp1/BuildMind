@@ -5,12 +5,12 @@ export default function HomePage() {
     <section className="max-app space-y-20 py-16">
       <div className="grid items-center gap-10 lg:grid-cols-2">
         <div className="space-y-6">
-          <p className="text-sm font-semibold uppercase tracking-wider text-brand-700">EvolvAI OS</p>
+          <p className="text-sm font-semibold uppercase tracking-wider text-brand-700">BuildMind</p>
           <h1 className="text-4xl font-bold leading-tight text-slate-900 sm:text-5xl">
-            Execution infrastructure for early-stage founders.
+            Startup operating system for early-stage founders.
           </h1>
           <p className="text-lg text-slate-600">
-            Turn your startup goal into milestones, track execution weekly, and improve with measurable scoring.
+            Turn startup ideas into milestones, track execution weekly, and improve with measurable scoring.
           </p>
           <div className="flex flex-wrap gap-3">
             <Link href="/projects" className="rounded-md bg-brand-600 px-5 py-3 text-sm font-medium text-white hover:bg-brand-700">
@@ -22,7 +22,7 @@ export default function HomePage() {
           </div>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-          <h2 className="text-xl font-semibold text-slate-900">Founder Execution OS</h2>
+          <h2 className="text-xl font-semibold text-slate-900">BuildMind</h2>
           <p className="mt-3 text-sm text-slate-600">Plan. Execute. Measure. Improve.</p>
         </div>
       </div>

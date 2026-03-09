@@ -22,7 +22,11 @@ export type AuthData = {
 
 export type UserData = {
   id: number;
+  username?: string | null;
   email: string;
+  bio?: string | null;
+  avatar_url?: string | null;
+  onboarding_completed?: boolean;
   created_at: string;
 };
 
@@ -80,6 +84,19 @@ export type ScoringData = {
   history: DashboardScoreSnapshot[];
 };
 
+export type ExecutionScoreAnalyticsData = {
+  score: number;
+  completion_rate: number;
+  weekly_consistency: number;
+  velocity: number;
+  focus_score: number;
+  chart_data: {
+    execution_score_trend: Array<{ date: string; score: number }>;
+    weekly_task_completion: Array<{ date: string; tasks_completed: number }>;
+    milestone_progress: Array<{ date: string; milestones_completed: number }>;
+  };
+};
+
 export type WeeklyReportData = {
   start_date: string;
   end_date: string;
@@ -96,6 +113,99 @@ export type ReminderPreferenceData = {
   enabled: boolean;
   updated_at: string;
   last_triggered_at: string | null;
+};
+
+export type ActivityData = {
+  id: number;
+  user_id: number;
+  activity_type: string;
+  reference_id: number | null;
+  created_at: string;
+};
+
+export type NotificationData = {
+  id: number;
+  user_id: number;
+  type: string;
+  message: string;
+  reference_id: number | null;
+  is_read: boolean;
+  created_at: string;
+};
+
+export type NotificationPreferenceData = {
+  user_id: number;
+  feedback_received: boolean;
+  milestone_completed: boolean;
+  task_assigned: boolean;
+  updated_at: string;
+};
+
+export type BuildmindDashboardData = {
+  execution_score: number;
+  execution_streak: number;
+  journey_progress: number;
+  active_projects: Array<{ id: number; title: string; progress: number; stage: string }>;
+  recent_activity: ActivityData[];
+  notifications: NotificationData[];
+  next_actions: Array<{ task_id: number; title: string; priority: string; due_date: string | null }>;
+  weekly_progress: { tasks_completed: number; milestones_completed: number };
+};
+
+export type ProjectFeedbackData = {
+  id: number;
+  user_id: number;
+  project_id: number | null;
+  task_id: number | null;
+  feedback_type: string | null;
+  rating: number | null;
+  category: string | null;
+  comment: string | null;
+  created_at: string;
+};
+
+export type FeedbackGateStatusData = {
+  feedback_given: number;
+  required: number;
+  unlocked: boolean;
+  message: string;
+};
+
+export type AdminAnalyticsData = {
+  total_users: number;
+  total_projects: number;
+  total_milestones: number;
+  total_tasks: number;
+  daily_active_users: number;
+  user_growth: Array<{ date: string; count: number }>;
+  project_creation_trends: Array<{ date: string; count: number }>;
+  task_completion_rates: Array<{ label: string; rate: number }>;
+};
+
+export type AdminUserData = {
+  id: number;
+  username: string | null;
+  email: string;
+  is_active: boolean;
+  is_admin: boolean;
+  created_at: string;
+};
+
+export type AdminProjectData = {
+  id: number;
+  user_id: number;
+  title: string;
+  progress: number;
+  stage: string;
+  is_archived: boolean;
+  created_at: string;
+};
+
+export type NewsletterSubscriberData = {
+  id: number;
+  email: string;
+  subscribed: boolean;
+  created_at: string;
 };
 
 const api = axios.create({
@@ -199,6 +309,27 @@ export async function createProject(title: string, description: string): Promise
   return unwrap(api.post<ApiEnvelope<ProjectData>>("/projects", { title, description }));
 }
 
+export async function updateProject(
+  projectId: number,
+  payload: {
+    title?: string;
+    description?: string;
+    problem?: string;
+    target_users?: string;
+    progress?: number;
+  },
+): Promise<ProjectData> {
+  return unwrap(api.patch<ApiEnvelope<ProjectData>>(`/projects/${projectId}`, payload));
+}
+
+export async function deleteProject(projectId: number): Promise<{ message: string }> {
+  return unwrap(api.delete<ApiEnvelope<{ message: string }>>(`/projects/${projectId}`));
+}
+
+export async function archiveProject(projectId: number): Promise<{ id: number; is_archived: boolean; archived_at: string | null }> {
+  return unwrap(api.post<ApiEnvelope<{ id: number; is_archived: boolean; archived_at: string | null }>>(`/projects/${projectId}/archive`));
+}
+
 export async function generateRoadmap(projectId: number, goalDurationWeeks: number): Promise<ProjectData> {
   return unwrap(
     api.post<ApiEnvelope<ProjectData>>(`/projects/${projectId}/generate-roadmap`, {
@@ -219,12 +350,41 @@ export async function createFeedback(taskId: number, feedbackType: "positive" | 
   await unwrap(api.post<ApiEnvelope<{ id: number }>>("/feedback", { task_id: taskId, feedback_type: feedbackType }));
 }
 
+export async function createProjectFeedback(projectId: number, rating: number, category: "product" | "UX" | "growth" | "monetization", comment: string): Promise<ProjectFeedbackData> {
+  return unwrap(api.post<ApiEnvelope<ProjectFeedbackData>>("/feedback", { project_id: projectId, rating, category, comment }));
+}
+
+export async function getProjectFeedback(projectId: number): Promise<ProjectFeedbackData[]> {
+  return unwrap(api.get<ApiEnvelope<ProjectFeedbackData[]>>(`/projects/${projectId}/feedback`));
+}
+
+export async function getFeedbackGateStatus(): Promise<FeedbackGateStatusData> {
+  return unwrap(api.get<ApiEnvelope<FeedbackGateStatusData>>("/feedback/unlock-status"));
+}
+
+export async function requestProjectFeedback(projectId: number): Promise<{ project_id: number; requested: boolean; message: string }> {
+  return unwrap(api.post<ApiEnvelope<{ project_id: number; requested: boolean; message: string }>>(`/projects/${projectId}/request-feedback`));
+}
+
 export async function getDashboard(): Promise<DashboardData> {
   return unwrap(api.get<ApiEnvelope<DashboardData>>("/dashboard"));
 }
 
 export async function getScoring(): Promise<ScoringData> {
   return unwrap(api.get<ApiEnvelope<ScoringData>>("/scoring"));
+}
+
+export async function getExecutionScoreAnalytics(): Promise<ExecutionScoreAnalyticsData> {
+  try {
+    const response = await api.get<ExecutionScoreAnalyticsData | ApiEnvelope<ExecutionScoreAnalyticsData>>("/analytics/execution-score");
+    const body = response.data as ExecutionScoreAnalyticsData | ApiEnvelope<ExecutionScoreAnalyticsData>;
+    if (typeof body === "object" && body !== null && "success" in body) {
+      return (body as ApiEnvelope<ExecutionScoreAnalyticsData>).data;
+    }
+    return body as ExecutionScoreAnalyticsData;
+  } catch (err) {
+    throw new Error(normalizeError(err));
+  }
 }
 
 export async function getWeeklyReport(): Promise<WeeklyReportData> {
@@ -237,4 +397,156 @@ export async function getReminderPreference(): Promise<ReminderPreferenceData | 
 
 export async function saveReminderPreference(reminderTime: string, enabled: boolean): Promise<ReminderPreferenceData> {
   return unwrap(api.post<ApiEnvelope<ReminderPreferenceData>>("/reminders", { reminder_time: reminderTime, enabled }));
+}
+
+export async function getBuildmindDashboard(): Promise<BuildmindDashboardData> {
+  return unwrap(api.get<ApiEnvelope<BuildmindDashboardData>>("/dashboard/buildmind"));
+}
+
+export async function getActivity(): Promise<ActivityData[]> {
+  return unwrap(api.get<ApiEnvelope<ActivityData[]>>("/activity"));
+}
+
+export async function getNotifications(): Promise<NotificationData[]> {
+  return unwrap(api.get<ApiEnvelope<NotificationData[]>>("/notifications"));
+}
+
+export async function markNotificationRead(notificationId: number): Promise<NotificationData> {
+  return unwrap(api.patch<ApiEnvelope<NotificationData>>(`/notifications/${notificationId}/read`));
+}
+
+export async function getNotificationPreferences(): Promise<NotificationPreferenceData> {
+  return unwrap(api.get<ApiEnvelope<NotificationPreferenceData>>("/notifications/preferences"));
+}
+
+export async function saveNotificationPreferences(
+  feedbackReceived: boolean,
+  milestoneCompleted: boolean,
+  taskAssigned: boolean,
+): Promise<NotificationPreferenceData> {
+  return unwrap(
+    api.post<ApiEnvelope<NotificationPreferenceData>>("/notifications/preferences", {
+      feedback_received: feedbackReceived,
+      milestone_completed: milestoneCompleted,
+      task_assigned: taskAssigned,
+    }),
+  );
+}
+
+export async function subscribeNewsletter(email: string): Promise<NewsletterSubscriberData> {
+  return unwrap(api.post<ApiEnvelope<NewsletterSubscriberData>>("/newsletter/subscribe", { email }));
+}
+
+export async function unsubscribeNewsletter(email: string): Promise<NewsletterSubscriberData> {
+  return unwrap(api.post<ApiEnvelope<NewsletterSubscriberData>>("/newsletter/unsubscribe", { email }));
+}
+
+export async function getCurrentUser(): Promise<UserData> {
+  return unwrap(api.get<ApiEnvelope<UserData>>("/auth/me"));
+}
+
+export async function updateCurrentUser(payload: {
+  username?: string;
+  bio?: string;
+  avatar_url?: string;
+  onboarding_completed?: boolean;
+}): Promise<UserData> {
+  return unwrap(api.patch<ApiEnvelope<UserData>>("/auth/me", payload));
+}
+
+export async function changePassword(currentPassword: string, newPassword: string): Promise<{ message: string }> {
+  return unwrap(
+    api.post<ApiEnvelope<{ message: string }>>("/auth/change-password", {
+      current_password: currentPassword,
+      new_password: newPassword,
+    }),
+  );
+}
+
+export async function deleteCurrentAccount(): Promise<{ message: string }> {
+  return unwrap(api.delete<ApiEnvelope<{ message: string }>>("/auth/me"));
+}
+
+export async function createTask(
+  milestoneId: number,
+  payload: { title: string; description: string; status?: string; priority?: string; due_date?: string | null },
+): Promise<TaskData> {
+  return unwrap(api.post<ApiEnvelope<TaskData>>(`/milestones/${milestoneId}/tasks`, payload));
+}
+
+export async function updateTask(
+  taskId: number,
+  payload: { title?: string; description?: string; status?: string; priority?: string; due_date?: string | null },
+): Promise<TaskData> {
+  return unwrap(api.patch<ApiEnvelope<TaskData>>(`/tasks/${taskId}`, payload));
+}
+
+export async function deleteTask(taskId: number): Promise<{ message: string }> {
+  return unwrap(api.delete<ApiEnvelope<{ message: string }>>(`/tasks/${taskId}`));
+}
+
+export async function updateMilestone(
+  milestoneId: number,
+  payload: { title?: string; status?: string; order_index?: number },
+): Promise<{ id: number; title: string; status: string; order_index: number; completed_at: string | null; is_completed: boolean }> {
+  return unwrap(
+    api.patch<
+      ApiEnvelope<{ id: number; title: string; status: string; order_index: number; completed_at: string | null; is_completed: boolean }>
+    >(`/milestones/${milestoneId}`, payload),
+  );
+}
+
+export async function reorderMilestones(
+  projectId: number,
+  items: Array<{ milestone_id: number; order_index: number }>,
+): Promise<Array<{ id: number; title: string; order_index: number; status: string }>> {
+  return unwrap(api.post<ApiEnvelope<Array<{ id: number; title: string; order_index: number; status: string }>>>(`/projects/${projectId}/milestones/reorder`, { items }));
+}
+
+export async function getAdminAnalytics(): Promise<AdminAnalyticsData> {
+  return unwrap(api.get<ApiEnvelope<AdminAnalyticsData>>("/admin/dashboard"));
+}
+
+export async function getAdminUsers(search?: string): Promise<AdminUserData[]> {
+  return unwrap(api.get<ApiEnvelope<AdminUserData[]>>("/admin/users", { params: search ? { q: search } : undefined }));
+}
+
+export async function suspendAdminUser(userId: number): Promise<{ id: number; is_active: boolean }> {
+  return unwrap(api.patch<ApiEnvelope<{ id: number; is_active: boolean }>>(`/admin/users/${userId}/suspend`));
+}
+
+export async function deleteAdminUser(userId: number): Promise<{ message: string }> {
+  return unwrap(api.delete<ApiEnvelope<{ message: string }>>(`/admin/users/${userId}`));
+}
+
+export async function getAdminProjects(stage?: string): Promise<AdminProjectData[]> {
+  return unwrap(api.get<ApiEnvelope<AdminProjectData[]>>("/admin/projects", { params: stage ? { stage } : undefined }));
+}
+
+export async function getAdminFeedback(sort: "created_at" | "rating" = "created_at"): Promise<ProjectFeedbackData[]> {
+  return unwrap(api.get<ApiEnvelope<ProjectFeedbackData[]>>("/admin/feedback", { params: { sort } }));
+}
+
+export async function deleteAdminFeedback(feedbackId: number): Promise<{ message: string }> {
+  return unwrap(api.delete<ApiEnvelope<{ message: string }>>(`/admin/feedback/${feedbackId}`));
+}
+
+export async function getAdminNewsletter(): Promise<NewsletterSubscriberData[]> {
+  return unwrap(api.get<ApiEnvelope<NewsletterSubscriberData[]>>("/admin/newsletter"));
+}
+
+export async function getAdminNewsletterExport(): Promise<{ emails: string[]; count: number }> {
+  return unwrap(api.get<ApiEnvelope<{ emails: string[]; count: number }>>("/admin/newsletter/export"));
+}
+
+export async function getAdminActivity(): Promise<ActivityData[]> {
+  return unwrap(api.get<ApiEnvelope<ActivityData[]>>("/admin/activity"));
+}
+
+export async function getAdminSystemSettings(): Promise<Array<{ key: string; value_json: string }>> {
+  return unwrap(api.get<ApiEnvelope<Array<{ key: string; value_json: string }>>>("/admin/system-settings"));
+}
+
+export async function saveAdminSystemSetting(key: string, valueJson: string): Promise<{ key: string; value_json: string }> {
+  return unwrap(api.post<ApiEnvelope<{ key: string; value_json: string }>>("/admin/system-settings", { key, value_json: valueJson }));
 }

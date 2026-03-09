@@ -1,9 +1,13 @@
 from app.models.models import (
+    ActivityLog,
     User,
     Project,
     Milestone,
     Task,
     Feedback,
+    Notification,
+    NotificationPreference,
+    NewsletterSubscriber,
     ExecutionScoreHistory,
     AppState,
     ReminderPreference,
@@ -11,11 +15,15 @@ from app.models.models import (
 )
 
 __all__ = [
+    "ActivityLog",
     "User",
     "Project",
     "Milestone",
     "Task",
     "Feedback",
+    "Notification",
+    "NotificationPreference",
+    "NewsletterSubscriber",
     "ExecutionScoreHistory",
     "AppState",
     "ReminderPreference",

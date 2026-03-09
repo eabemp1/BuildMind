@@ -6,6 +6,7 @@ from app.database import get_db
 from app.models import User
 from app.schemas.dashboard import DashboardResponse, ExecutionScoreSnapshotOut
 from app.services.dashboard_service import build_dashboard
+from app.services.buildmind_service import build_buildmind_dashboard
 
 
 router = APIRouter(tags=["dashboard"])
@@ -36,6 +37,45 @@ def dashboard_endpoint(
         score_history=history,
     )
     return {"success": True, "data": payload.dict()}
+
+
+@router.get("/dashboard/buildmind")
+def buildmind_dashboard_endpoint(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    data = build_buildmind_dashboard(db, user_id=current_user.id)
+    return {
+        "success": True,
+        "data": {
+            "execution_score": data["execution_score"],
+            "execution_streak": data["execution_streak"],
+            "journey_progress": data["journey_progress"],
+            "active_projects": data["active_projects"],
+            "recent_activity": [
+                {
+                    "id": row.id,
+                    "activity_type": row.activity_type,
+                    "reference_id": row.reference_id,
+                    "created_at": row.created_at,
+                }
+                for row in data["recent_activity"]
+            ],
+            "notifications": [
+                {
+                    "id": row.id,
+                    "type": row.type,
+                    "message": row.message,
+                    "reference_id": row.reference_id,
+                    "is_read": row.is_read,
+                    "created_at": row.created_at,
+                }
+                for row in data["notifications"]
+            ],
+            "next_actions": data["next_actions"],
+            "weekly_progress": data["weekly_progress"],
+        },
+    }
 
 
 
