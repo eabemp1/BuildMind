@@ -26,6 +26,7 @@ class UserResponse(BaseModel):
     bio: str | None = None
     avatar_url: str | None = None
     onboarding_completed: bool = False
+    role: str = "user"
     created_at: datetime
 
 

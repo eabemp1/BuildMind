@@ -157,6 +157,8 @@ def live_web_answer(question: str, ask_llm_fn, max_sources: int = 3, extra_conte
             f"[Source {i}] {s['title']}\nURL: {s['url']}\nSnippet: {s['snippet']}\nContent: {s['content']}"
         )
 
+    extra_context_block = f"Extra context:\n{extra_context}" if extra_context else ""
+
     prompt = f"""
 You are Lumiere. Use the web sources below to answer the user.
 Rules:
@@ -166,7 +168,7 @@ Rules:
 - Keep it concise and practical.
 
 User question: {question}
-{f"Extra context:\\n{extra_context}" if extra_context else ""}
+{extra_context_block}
 
 {chr(10).join(source_blocks)}
 """
