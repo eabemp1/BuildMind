@@ -1,0 +1,66 @@
+[
+  {
+    "name": "MEST Africa Startup Program",
+    "type": "accelerator",
+    "region": "Ghana",
+    "eligibility": "Early-stage founders in technology sectors including fintech, healthtech, edtech and commerce. MVP to early traction stages.",
+    "deadline": "2026-06-30",
+    "link": "https://meltwater.org/mest/"
+  },
+  {
+    "name": "Google for Startups Accelerator: Africa",
+    "type": "accelerator",
+    "region": "Africa",
+    "eligibility": "Seed to Series A African startups using AI/ML and software innovation across industries.",
+    "deadline": "2026-07-15",
+    "link": "https://startup.google.com/programs/accelerator/africa/"
+  },
+  {
+    "name": "Tony Elumelu Foundation Entrepreneurship Programme",
+    "type": "grant",
+    "region": "Africa",
+    "eligibility": "African entrepreneurs at idea, MVP, and early traction stages across all industries.",
+    "deadline": "2026-03-31",
+    "link": "https://www.tonyelumelufoundation.org/"
+  },
+  {
+    "name": "Seedstars World Competition",
+    "type": "competition",
+    "region": "Global",
+    "eligibility": "High-growth startups at early stage to growth stage with scalable technology products.",
+    "deadline": "2026-08-10",
+    "link": "https://seedstars.com/"
+  },
+  {
+    "name": "African Development Foundation Grants",
+    "type": "grant",
+    "region": "Africa",
+    "eligibility": "Innovative African startups and SMEs with strong local economic impact and job creation potential.",
+    "deadline": "2026-09-01",
+    "link": "https://www.usadf.gov/"
+  },
+  {
+    "name": "Ghana Innovation Hub Challenge",
+    "type": "competition",
+    "region": "Ghana",
+    "eligibility": "Ghana-based founders at validation, MVP, and growth stages in digital and innovation-focused industries.",
+    "deadline": "2026-05-20",
+    "link": "https://www.ghihub.org/"
+  },
+  {
+    "name": "Village Capital Future of Work Africa",
+    "type": "accelerator",
+    "region": "Africa",
+    "eligibility": "Africa startups with MVP or early traction in future of work, productivity, and fintech verticals.",
+    "deadline": "2026-10-05",
+    "link": "https://vilcap.com/"
+  },
+  {
+    "name": "MIT Solve Global Challenges",
+    "type": "competition",
+    "region": "Global",
+    "eligibility": "Startups across stages building technology solutions for social and economic development challenges.",
+    "deadline": "2026-06-12",
+    "link": "https://solve.mit.edu/"
+  }
+]
