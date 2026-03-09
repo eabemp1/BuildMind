@@ -7,6 +7,7 @@ from app.models.models import (
     ExecutionScoreHistory,
     AppState,
     ReminderPreference,
+    UserProfile,
 )
 
 __all__ = [
@@ -18,6 +19,7 @@ __all__ = [
     "ExecutionScoreHistory",
     "AppState",
     "ReminderPreference",
+    "UserProfile",
 ]
 
 
