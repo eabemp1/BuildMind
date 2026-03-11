@@ -48,7 +48,7 @@ export default function SettingsPage() {
           .select("count")
           .eq("user_id", user.id)
           .eq("month", month)
-          .single();
+          .maybeSingle();
         setAiUsage(usage?.count ?? 0);
       } catch {
         setMessage("Failed to load settings.");

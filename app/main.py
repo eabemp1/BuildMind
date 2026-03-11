@@ -74,10 +74,10 @@ def _ensure_runtime_schema() -> None:
             ("problem", "ALTER TABLE projects ADD COLUMN problem TEXT"),
             ("target_users", "ALTER TABLE projects ADD COLUMN target_users TEXT"),
             ("progress", "ALTER TABLE projects ADD COLUMN progress FLOAT DEFAULT 0"),
-            ("is_public", "ALTER TABLE projects ADD COLUMN is_public BOOLEAN DEFAULT 0"),
+            ("is_public", "ALTER TABLE projects ADD COLUMN is_public BOOLEAN DEFAULT FALSE"),
             ("likes", "ALTER TABLE projects ADD COLUMN likes INTEGER DEFAULT 0"),
             ("followers", "ALTER TABLE projects ADD COLUMN followers INTEGER DEFAULT 0"),
-            ("is_archived", "ALTER TABLE projects ADD COLUMN is_archived BOOLEAN DEFAULT 0"),
+            ("is_archived", "ALTER TABLE projects ADD COLUMN is_archived BOOLEAN DEFAULT FALSE"),
             ("archived_at", "ALTER TABLE projects ADD COLUMN archived_at TIMESTAMP"),
         ],
         "milestones": [
@@ -98,12 +98,16 @@ def _ensure_runtime_schema() -> None:
             ("comment", "ALTER TABLE feedback ADD COLUMN comment TEXT"),
         ],
     }
+    use_if_not_exists = engine.dialect.name != "sqlite"
     with engine.begin() as conn:
         for table_name, alters in alter_map.items():
             existing = table_columns.get(table_name, set())
             for column_name, alter_sql in alters:
                 if column_name not in existing:
-                    conn.execute(text(alter_sql))
+                    statement = alter_sql
+                    if use_if_not_exists and "ADD COLUMN" in alter_sql:
+                        statement = alter_sql.replace("ADD COLUMN", "ADD COLUMN IF NOT EXISTS")
+                    conn.execute(text(statement))
 
         conn.execute(
             text(
