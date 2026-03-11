@@ -7,7 +7,9 @@ function hasAdminEnv(): boolean {
 }
 
 export async function enforceAndTrackAIUsage(userId: string) {
-  if (!hasAdminEnv()) return;
+  if (!hasAdminEnv()) {
+    throw new Error("AI usage tracking requires SUPABASE_SERVICE_ROLE_KEY.");
+  }
   const supabase = createAdminClient();
   const d = new Date();
   const month = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
