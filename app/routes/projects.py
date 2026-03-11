@@ -121,6 +121,95 @@ def list_projects_endpoint(
     return {"success": True, "data": [_to_project_out(project).dict() for project in projects]}
 
 
+@router.get("/projects/public")
+def list_public_projects_endpoint(db: Session = Depends(get_db)):
+    payload = [PublicProjectOut(**item).dict() for item in list_public_projects(db)]
+    return {"success": True, "data": payload}
+
+
+@router.get("/projects/{project_id}/public")
+def get_public_project_endpoint(project_id: int, db: Session = Depends(get_db)):
+    item = get_public_project(db, project_id=project_id)
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Public project not found")
+    payload = PublicProjectDetailOut(**item).dict()
+    return {"success": True, "data": payload}
+
+
+@router.post("/projects/{project_id}/like")
+def like_project_endpoint(project_id: int, db: Session = Depends(get_db)):
+    try:
+        project = like_project(db, project_id=project_id)
+        db.commit()
+        return {"success": True, "data": {"id": project.id, "likes": project.likes}}
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+
+
+@router.post("/projects/{project_id}/follow")
+def follow_project_endpoint(project_id: int, db: Session = Depends(get_db)):
+    try:
+        project = follow_project(db, project_id=project_id)
+        db.commit()
+        return {"success": True, "data": {"id": project.id, "followers": project.followers}}
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+
+
+@router.post("/projects/{project_id}/update")
+def create_project_update_endpoint(
+    project_id: int,
+    payload: PublicProjectUpdateCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        update = add_project_update(db, user_id=current_user.id, project_id=project_id, content=payload.content)
+        db.commit()
+        out = PublicProjectUpdateOut(
+            id=update.id,
+            project_id=update.project_id,
+            user_id=update.user_id,
+            content=update.content,
+            created_at=update.created_at,
+        )
+        return {"success": True, "data": out.dict()}
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+
+
+@router.post("/projects/{project_id}/comment")
+def create_project_comment_endpoint(
+    project_id: int,
+    payload: PublicProjectCommentCreateRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        comment = add_project_comment(
+            db,
+            project_id=project_id,
+            author_name=payload.author_name,
+            content=payload.content,
+        )
+        db.commit()
+        return {
+            "success": True,
+            "data": {
+                "id": comment.id,
+                "project_id": comment.project_id,
+                "author_name": comment.author_name,
+                "content": comment.content,
+                "created_at": comment.created_at,
+            },
+        }
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+
+
 @router.post("/projects/{project_id}/generate-roadmap")
 def generate_roadmap_endpoint(
     project_id: int,
@@ -221,95 +310,6 @@ def delete_project_endpoint(
         delete_project_for_user(db, user_id=current_user.id, project_id=project_id)
         db.commit()
         return {"success": True, "data": {"message": "Project deleted"}}
-    except ValueError as exc:
-        db.rollback()
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
-
-
-@router.get("/projects/public")
-def list_public_projects_endpoint(db: Session = Depends(get_db)):
-    payload = [PublicProjectOut(**item).dict() for item in list_public_projects(db)]
-    return {"success": True, "data": payload}
-
-
-@router.get("/projects/{project_id}/public")
-def get_public_project_endpoint(project_id: int, db: Session = Depends(get_db)):
-    item = get_public_project(db, project_id=project_id)
-    if not item:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Public project not found")
-    payload = PublicProjectDetailOut(**item).dict()
-    return {"success": True, "data": payload}
-
-
-@router.post("/projects/{project_id}/like")
-def like_project_endpoint(project_id: int, db: Session = Depends(get_db)):
-    try:
-        project = like_project(db, project_id=project_id)
-        db.commit()
-        return {"success": True, "data": {"id": project.id, "likes": project.likes}}
-    except ValueError as exc:
-        db.rollback()
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
-
-
-@router.post("/projects/{project_id}/follow")
-def follow_project_endpoint(project_id: int, db: Session = Depends(get_db)):
-    try:
-        project = follow_project(db, project_id=project_id)
-        db.commit()
-        return {"success": True, "data": {"id": project.id, "followers": project.followers}}
-    except ValueError as exc:
-        db.rollback()
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
-
-
-@router.post("/projects/{project_id}/update")
-def create_project_update_endpoint(
-    project_id: int,
-    payload: PublicProjectUpdateCreateRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    try:
-        update = add_project_update(db, user_id=current_user.id, project_id=project_id, content=payload.content)
-        db.commit()
-        out = PublicProjectUpdateOut(
-            id=update.id,
-            project_id=update.project_id,
-            user_id=update.user_id,
-            content=update.content,
-            created_at=update.created_at,
-        )
-        return {"success": True, "data": out.dict()}
-    except ValueError as exc:
-        db.rollback()
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
-
-
-@router.post("/projects/{project_id}/comment")
-def create_project_comment_endpoint(
-    project_id: int,
-    payload: PublicProjectCommentCreateRequest,
-    db: Session = Depends(get_db),
-):
-    try:
-        comment = add_project_comment(
-            db,
-            project_id=project_id,
-            author_name=payload.author_name,
-            content=payload.content,
-        )
-        db.commit()
-        return {
-            "success": True,
-            "data": {
-                "id": comment.id,
-                "project_id": comment.project_id,
-                "author_name": comment.author_name,
-                "content": comment.content,
-                "created_at": comment.created_at,
-            },
-        }
     except ValueError as exc:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
