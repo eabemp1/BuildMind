@@ -9,10 +9,10 @@ export default function AdminTopbar() {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div>
-        <p className="text-xs uppercase tracking-[0.2em] text-slate-400">BuildMind SaaS</p>
-        <h2 className="text-sm font-semibold text-slate-900">Platform Administration</h2>
+        <p className="text-xs uppercase tracking-[0.2em] text-zinc-400">BuildMind SaaS</p>
+        <h2 className="text-sm font-semibold text-zinc-100">Platform Administration</h2>
       </div>
-      <Button className="w-full sm:w-auto" variant="outline" onClick={() => router.push("/dashboard")}>
+      <Button className="w-full sm:w-auto border-white/10 bg-white/5 text-zinc-200 hover:bg-white/10" variant="outline" onClick={() => router.push("/dashboard")}>
         Back to User Dashboard
       </Button>
     </div>

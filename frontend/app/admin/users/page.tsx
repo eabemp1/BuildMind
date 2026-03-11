@@ -62,8 +62,8 @@ export default function AdminUsersPage() {
     <section className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Users</h1>
-          <p className="mt-1 text-sm text-slate-600">Manage accounts, permissions, and account status.</p>
+          <h1 className="text-2xl font-semibold text-zinc-100">Users</h1>
+          <p className="text-body mt-1">Manage accounts, permissions, and account status.</p>
         </div>
         <div className="flex w-full max-w-md gap-2">
           <Input
@@ -71,23 +71,23 @@ export default function AdminUsersPage() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
-          <Button variant="outline" onClick={() => void load(query.trim() || undefined)}>
+          <Button variant="outline" className="border-white/10 bg-white/5 text-zinc-200 hover:bg-white/10" onClick={() => void load(query.trim() || undefined)}>
             Search
           </Button>
         </div>
       </div>
 
-      <Card>
+      <Card className="glass-panel panel-glow">
         <CardHeader>
-          <CardTitle>All Users</CardTitle>
+          <CardTitle className="text-zinc-100">All Users</CardTitle>
         </CardHeader>
         <CardContent className="overflow-x-auto">
-          {loading ? <p className="text-sm text-slate-500">Loading users...</p> : null}
-          {error ? <p className="text-sm text-rose-600">{error}</p> : null}
+          {loading ? <p className="text-sm text-zinc-400">Loading users...</p> : null}
+          {error ? <p className="text-sm text-rose-400">{error}</p> : null}
           {!loading ? (
-            <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <table className="min-w-full divide-y divide-white/10 text-sm">
               <thead>
-                <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
+                <tr className="text-left text-xs uppercase tracking-wide text-zinc-500">
                   <th className="py-2 pr-4">Email</th>
                   <th className="py-2 pr-4">Signup Date</th>
                   <th className="py-2 pr-4">Role</th>
@@ -95,17 +95,17 @@ export default function AdminUsersPage() {
                   <th className="py-2">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-white/10">
                 {users.map((user) => (
                   <tr key={user.id}>
-                    <td className="py-3 pr-4 font-medium text-slate-900">{user.email}</td>
-                    <td className="py-3 pr-4 text-slate-600">{fmtDate(user.createdAt)}</td>
+                    <td className="py-3 pr-4 font-medium text-zinc-100">{user.email}</td>
+                    <td className="py-3 pr-4 text-zinc-400">{fmtDate(user.createdAt)}</td>
                     <td className="py-3 pr-4">
-                      <Badge className={user.role === "admin" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : ""}>
+                      <Badge className={user.role === "admin" ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-200" : ""}>
                         {user.role}
                       </Badge>
                     </td>
-                    <td className="py-3 pr-4 text-slate-700">{user.projectCount}</td>
+                    <td className="py-3 pr-4 text-zinc-300">{user.projectCount}</td>
                     <td className="py-3">
                       <div className="flex gap-2">
                         <Button
@@ -128,7 +128,7 @@ export default function AdminUsersPage() {
                 ))}
                 {!users.length ? (
                   <tr>
-                    <td className="py-4 text-slate-500" colSpan={5}>
+                    <td className="py-4 text-zinc-500" colSpan={5}>
                       No users found.
                     </td>
                   </tr>

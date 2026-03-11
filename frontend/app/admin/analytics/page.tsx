@@ -67,8 +67,8 @@ export default function AdminAnalyticsPage() {
   return (
     <section className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900">Analytics</h1>
-        <p className="mt-1 text-sm text-slate-600">Growth and execution trends across the entire platform.</p>
+        <h1 className="text-2xl font-semibold text-zinc-100">Analytics</h1>
+        <p className="text-body mt-1">Growth and execution trends across the entire platform.</p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -78,22 +78,22 @@ export default function AdminAnalyticsPage() {
         <AdminMetricCard title="Total Tasks" value={String(state.totalTasks)} />
       </div>
 
-      {loading ? <p className="text-sm text-slate-500">Loading analytics...</p> : null}
-      {error ? <p className="text-sm text-rose-600">{error}</p> : null}
+      {loading ? <p className="text-sm text-zinc-400">Loading analytics...</p> : null}
+      {error ? <p className="text-sm text-rose-400">{error}</p> : null}
 
       {!loading && !error ? (
         <div className="grid gap-6 xl:grid-cols-2">
-          <Card>
+          <Card className="glass-panel panel-glow">
             <CardHeader>
-              <CardTitle>User Growth</CardTitle>
+              <CardTitle className="text-zinc-100">User Growth</CardTitle>
             </CardHeader>
             <CardContent>
               <AdminLineChart data={state.userGrowth} />
             </CardContent>
           </Card>
-          <Card>
+          <Card className="glass-panel panel-glow">
             <CardHeader>
-              <CardTitle>Project Creation Trend</CardTitle>
+              <CardTitle className="text-zinc-100">Project Creation Trend</CardTitle>
             </CardHeader>
             <CardContent>
               <AdminLineChart data={state.projectTrends} stroke="#059669" />

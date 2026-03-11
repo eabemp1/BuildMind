@@ -15,6 +15,18 @@ export type BuildMindProject = {
   created_at: string;
 };
 
+export type ProjectSummary = {
+  id: string;
+  title: string;
+  description: string | null;
+  created_at: string;
+  validation_strengths: string[];
+  tasksCompleted: number;
+  tasksTotal: number;
+  progress: number;
+  lastActivity: string;
+};
+
 export type BuildMindMilestone = {
   id: string;
   project_id: string;
@@ -35,6 +47,7 @@ export type BuildMindTask = {
 
 export type DashboardOverview = {
   activeProjects: number;
+  completedTasks: number;
   milestonesCompleted: number;
   aiUsage: number;
   recentActivity: string[];
@@ -138,6 +151,69 @@ export async function getProjectsForCurrentUser(): Promise<BuildMindProject[]> {
     validation_weaknesses: normalizeTextArray(row.validation_weaknesses),
     validation_suggestions: normalizeTextArray(row.validation_suggestions),
   })) as BuildMindProject[];
+}
+
+export async function getProjectSummaries(): Promise<ProjectSummary[]> {
+  const user = await getCurrentUser();
+  if (!user) return [];
+
+  const supabase = createClient();
+  const projects = await getProjectsForCurrentUser();
+  if (!projects.length) return [];
+
+  const projectIds = projects.map((project) => project.id);
+  const { data: milestones, error: milestoneError } = await supabase
+    .from("milestones")
+    .select("id, project_id, created_at")
+    .in("project_id", projectIds);
+  if (milestoneError) throw milestoneError;
+
+  const milestoneList = milestones ?? [];
+  const milestoneIds = milestoneList.map((milestone) => milestone.id);
+  const { data: tasks, error: taskError } = milestoneIds.length
+    ? await supabase.from("tasks").select("id, milestone_id, is_completed, created_at").in("milestone_id", milestoneIds)
+    : { data: [], error: null };
+  if (taskError) throw taskError;
+
+  const milestoneToProject = new Map<string, string>();
+  milestoneList.forEach((milestone) => {
+    milestoneToProject.set(milestone.id, milestone.project_id);
+  });
+
+  const stats = new Map<
+    string,
+    { tasksCompleted: number; tasksTotal: number; lastActivity: string }
+  >();
+  projects.forEach((project) => {
+    stats.set(project.id, { tasksCompleted: 0, tasksTotal: 0, lastActivity: project.created_at });
+  });
+
+  (tasks ?? []).forEach((task) => {
+    const projectId = milestoneToProject.get(task.milestone_id);
+    if (!projectId) return;
+    const current = stats.get(projectId);
+    if (!current) return;
+    const tasksTotal = current.tasksTotal + 1;
+    const tasksCompleted = current.tasksCompleted + (task.is_completed ? 1 : 0);
+    const lastActivity = task.created_at && task.created_at > current.lastActivity ? task.created_at : current.lastActivity;
+    stats.set(projectId, { tasksCompleted, tasksTotal, lastActivity });
+  });
+
+  return projects.map((project) => {
+    const current = stats.get(project.id) ?? { tasksCompleted: 0, tasksTotal: 0, lastActivity: project.created_at };
+    const progress = current.tasksTotal ? Math.round((current.tasksCompleted / current.tasksTotal) * 100) : 0;
+    return {
+      id: project.id,
+      title: project.title,
+      description: project.description,
+      created_at: project.created_at,
+      validation_strengths: project.validation_strengths,
+      tasksCompleted: current.tasksCompleted,
+      tasksTotal: current.tasksTotal,
+      progress,
+      lastActivity: current.lastActivity,
+    };
+  });
 }
 
 export async function getProjectDetail(projectId: string): Promise<{
@@ -267,6 +343,18 @@ export async function createProjectBasic(payload: { title: string; description: 
   });
 }
 
+export async function deleteProjectForCurrentUser(projectId: string): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Not authenticated");
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("projects")
+    .delete()
+    .eq("id", projectId)
+    .eq("user_id", user.id);
+  if (error) throw error;
+}
+
 export async function updateTaskStatus(taskId: string, isCompleted: boolean, notes?: string) {
   const supabase = createClient();
   const { error } = await supabase
@@ -279,7 +367,7 @@ export async function updateTaskStatus(taskId: string, isCompleted: boolean, not
 export async function getDashboardOverview(): Promise<DashboardOverview> {
   const user = await getCurrentUser();
   if (!user) {
-    return { activeProjects: 0, milestonesCompleted: 0, aiUsage: 0, recentActivity: [] };
+    return { activeProjects: 0, completedTasks: 0, milestonesCompleted: 0, aiUsage: 0, recentActivity: [] };
   }
   const supabase = createClient();
   const projects = await getProjectsForCurrentUser();
@@ -289,6 +377,12 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
     ? await supabase.from("milestones").select("id, stage, project_id").in("project_id", projectIds)
     : { data: [] };
   const completedMilestones = (milestones ?? []).length;
+
+  const milestoneIds = (milestones ?? []).map((m) => m.id);
+  const { data: tasks } = milestoneIds.length
+    ? await supabase.from("tasks").select("id,is_completed").in("milestone_id", milestoneIds)
+    : { data: [] };
+  const completedTasks = (tasks ?? []).filter((t) => t.is_completed).length;
 
   const { data: usage } = await supabase
     .from("ai_usage")
@@ -306,6 +400,7 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
 
   return {
     activeProjects: projects.length,
+    completedTasks,
     milestonesCompleted: completedMilestones,
     aiUsage: usage?.count ?? 0,
     recentActivity: (notifications ?? []).map((n) => n.message),

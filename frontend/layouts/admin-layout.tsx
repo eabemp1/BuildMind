@@ -28,19 +28,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }, [router]);
 
   if (!checked) {
-    return <div className="grid min-h-screen place-items-center text-sm text-slate-500">Checking admin access...</div>;
+    return <div className="grid min-h-screen place-items-center text-sm text-zinc-400">Checking admin access...</div>;
   }
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      <aside className="w-64 shrink-0 border-r border-slate-200 bg-white">
+    <div className="flex h-screen bg-gradient-to-br from-zinc-950 via-slate-950 to-black">
+      <aside className="w-64 shrink-0 p-3">
         <AdminSidebar />
       </aside>
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="border-b border-slate-200 bg-white px-6 py-4">
+      <div className="flex min-w-0 flex-1 flex-col p-3 pl-0">
+        <header className="glass-panel panel-glow p-4">
           <AdminTopbar />
         </header>
-        <main className="flex-1 overflow-y-auto p-6">{children}</main>
+        <main className="flex-1 overflow-y-auto pt-6">{children}</main>
       </div>
     </div>
   );

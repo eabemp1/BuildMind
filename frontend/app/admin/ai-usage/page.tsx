@@ -32,39 +32,39 @@ export default function AdminAiUsagePage() {
   return (
     <section className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900">AI Usage</h1>
-        <p className="mt-1 text-sm text-slate-600">Monitor AI activity, usage volume, and latest interactions.</p>
+        <h1 className="text-2xl font-semibold text-zinc-100">AI Usage</h1>
+        <p className="text-body mt-1">Monitor AI activity, usage volume, and latest interactions.</p>
       </div>
 
-      <Card>
+      <Card className="glass-panel panel-glow">
         <CardHeader>
-          <CardTitle>Usage by User</CardTitle>
+          <CardTitle className="text-zinc-100">Usage by User</CardTitle>
         </CardHeader>
         <CardContent className="overflow-x-auto">
-          {loading ? <p className="text-sm text-slate-500">Loading AI usage...</p> : null}
-          {error ? <p className="text-sm text-rose-600">{error}</p> : null}
+          {loading ? <p className="text-sm text-zinc-400">Loading AI usage...</p> : null}
+          {error ? <p className="text-sm text-rose-400">{error}</p> : null}
           {!loading ? (
-            <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <table className="min-w-full divide-y divide-white/10 text-sm">
               <thead>
-                <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
+                <tr className="text-left text-xs uppercase tracking-wide text-zinc-500">
                   <th className="py-2 pr-4">User</th>
                   <th className="py-2 pr-4">AI Requests</th>
                   <th className="py-2 pr-4">Tokens Used</th>
                   <th className="py-2">Last Activity</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-white/10">
                 {rows.map((row) => (
                   <tr key={row.userId}>
-                    <td className="py-3 pr-4 font-medium text-slate-900">{row.userEmail}</td>
-                    <td className="py-3 pr-4 text-slate-700">{row.requests}</td>
-                    <td className="py-3 pr-4 text-slate-700">{row.tokensUsed.toLocaleString()}</td>
-                    <td className="py-3 text-slate-600">{fmtDate(row.lastActivity)}</td>
+                    <td className="py-3 pr-4 font-medium text-zinc-100">{row.userEmail}</td>
+                    <td className="py-3 pr-4 text-zinc-300">{row.requests}</td>
+                    <td className="py-3 pr-4 text-zinc-300">{row.tokensUsed.toLocaleString()}</td>
+                    <td className="py-3 text-zinc-400">{fmtDate(row.lastActivity)}</td>
                   </tr>
                 ))}
                 {!rows.length ? (
                   <tr>
-                    <td className="py-4 text-slate-500" colSpan={4}>
+                    <td className="py-4 text-zinc-500" colSpan={4}>
                       No AI usage records found.
                     </td>
                   </tr>

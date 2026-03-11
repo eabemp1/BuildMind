@@ -7,22 +7,37 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
     const userId = String(body?.userId ?? "");
     const projectId = String(body?.projectId ?? "");
+    const message = String(body?.message ?? "").trim();
+    const messages = Array.isArray(body?.messages)
+      ? body.messages
+          .map((item: { role?: string; content?: string }) => ({
+            role: item?.role === "assistant" ? "assistant" : "user",
+            content: String(item?.content ?? ""),
+          }))
+          .filter((item: { content: string }) => item.content)
+      : [];
     if (!userId || !projectId) {
       return NextResponse.json({ success: false, error: "userId and projectId are required" }, { status: 400 });
     }
 
     await enforceAndTrackAIUsage(userId);
+    const isChatRequest = Boolean(message);
     if (!process.env.SUPABASE_SERVICE_ROLE_KEY || !process.env.NEXT_PUBLIC_SUPABASE_URL) {
       return NextResponse.json({
         success: true,
-        data: {
-          advice: [
-            "Interview at least 5 target users this week.",
-            "Prioritize one measurable activation metric.",
-            "Ship one milestone task before adding new scope.",
-            "Collect and summarize user feedback after each release.",
-          ],
-        },
+        data: isChatRequest
+          ? {
+              reply:
+                "Focus this week on validating demand: interview 5 target users, capture the top 3 pain points, and update your roadmap accordingly.",
+            }
+          : {
+              advice: [
+                "Interview at least 5 target users this week.",
+                "Prioritize one measurable activation metric.",
+                "Ship one milestone task before adding new scope.",
+                "Collect and summarize user feedback after each release.",
+              ],
+            },
       });
     }
 
@@ -49,6 +64,32 @@ export async function POST(request: Request) {
 
     const completed = (tasks ?? []).filter((t) => t.is_completed).length;
     const total = (tasks ?? []).length;
+
+    if (isChatRequest) {
+      const formattedHistory = messages
+        .slice(-8)
+        .map((entry: { role: string; content: string }) => `${entry.role === "assistant" ? "Assistant" : "User"}: ${entry.content}`)
+        .join("\n");
+
+      const result = await groqJSON<{ reply: string }>(
+        "You are a pragmatic startup execution coach. Return JSON with a single reply string.",
+        `Project title: ${project.title}
+Description: ${project.description ?? ""}
+Target users: ${project.target_users ?? ""}
+Problem: ${project.problem ?? ""}
+Milestones: ${(milestones ?? []).map((m) => m.title).join(", ")}
+Task completion: ${completed}/${Math.max(1, total)}
+Recent conversation:
+${formattedHistory || "No previous messages."}
+
+User message: ${message}
+
+Respond with a concise, actionable coaching reply.`,
+      );
+      const reply = typeof result?.reply === "string" ? result.reply : "Focus on the next milestone task and validate with users.";
+      await createUserNotification(userId, "New AI coach reply available.", "ai_recommendation");
+      return NextResponse.json({ success: true, data: { reply } });
+    }
 
     const result = await groqJSON<{ advice: string[] }>(
       "You are a pragmatic startup execution coach. Return JSON with advice array only.",

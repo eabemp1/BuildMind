@@ -9,22 +9,21 @@ type MilestoneChartProps = {
 
 export default function MilestoneChart({ data }: MilestoneChartProps) {
   return (
-    <Card className="border-slate-200/80 bg-white/90">
+    <Card className="glass-panel panel-glow">
       <CardHeader>
-        <CardTitle className="text-base">Milestone Completion</CardTitle>
+        <CardTitle className="text-base text-zinc-100">Milestone Completion</CardTitle>
       </CardHeader>
       <CardContent className="h-64">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-            <XAxis dataKey="milestone" stroke="#64748b" tickLine={false} axisLine={false} />
-            <YAxis stroke="#64748b" tickLine={false} axisLine={false} unit="%" />
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#27272a" />
+            <XAxis dataKey="milestone" stroke="#71717a" tickLine={false} axisLine={false} />
+            <YAxis stroke="#71717a" tickLine={false} axisLine={false} unit="%" />
             <Tooltip />
-            <Bar dataKey="completion" fill="#0f766e" radius={[6, 6, 0, 0]} />
+            <Bar dataKey="completion" fill="#818cf8" radius={[6, 6, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </CardContent>
     </Card>
   );
 }
-

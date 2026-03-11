@@ -15,6 +15,8 @@ export default function SettingsPage() {
   const [tab, setTab] = useState<TabKey>("profile");
   const [email, setEmail] = useState("");
   const [fullName, setFullName] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState("");
+  const [avatarUploading, setAvatarUploading] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [notifyMilestone, setNotifyMilestone] = useState(true);
@@ -28,6 +30,7 @@ export default function SettingsPage() {
         const user = await getCurrentUser();
         if (!user) return;
         setEmail(user.email ?? "");
+        setAvatarUrl((user.user_metadata?.avatar_url as string | undefined) ?? "");
         const { data: profile } = await supabase.from("users").select("full_name").eq("id", user.id).single();
         setFullName(profile?.full_name ?? "");
         const { data: settings } = await supabase
@@ -58,7 +61,47 @@ export default function SettingsPage() {
     if (!user) return;
     const { error } = await supabase.from("users").update({ full_name: fullName }).eq("id", user.id);
     if (error) throw error;
+    const { error: authError } = await supabase.auth.updateUser({
+      data: { avatar_url: avatarUrl || null },
+    });
+    if (authError) throw authError;
     setMessage("Profile updated.");
+  };
+
+  const uploadAvatar = async (file: File) => {
+    const user = await getCurrentUser();
+    if (!user) return;
+    setAvatarUploading(true);
+    setMessage("");
+    try {
+      if (!file.type.startsWith("image/")) {
+        throw new Error("Please upload an image file.");
+      }
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "");
+      const path = `${user.id}/${Date.now()}-${safeName}`;
+      const { error: uploadError } = await supabase.storage
+        .from("avatars")
+        .upload(path, file, { upsert: true, contentType: file.type });
+      if (uploadError) throw uploadError;
+      const { data } = supabase.storage.from("avatars").getPublicUrl(path);
+      const publicUrl = data?.publicUrl ?? "";
+      setAvatarUrl(publicUrl);
+      const { error: authError } = await supabase.auth.updateUser({
+        data: { avatar_url: publicUrl || null },
+      });
+      if (authError) throw authError;
+      setMessage("Avatar updated.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to upload avatar.";
+      setMessage(message);
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
+
+  const onAvatarFile = (file?: File | null) => {
+    if (!file) return;
+    void uploadAvatar(file);
   };
 
   const saveNotificationPrefs = async () => {
@@ -86,8 +129,8 @@ export default function SettingsPage() {
   return (
     <section className="space-y-6">
       <div>
-        <h2 className="text-2xl font-semibold text-slate-900">Settings</h2>
-        <p className="mt-1 text-sm text-slate-600">Profile, account, notifications, and AI usage.</p>
+        <h2 className="text-2xl font-semibold text-zinc-100">Settings</h2>
+        <p className="text-body mt-1">Profile, account, notifications, and AI usage.</p>
       </div>
 
       <Tabs>
@@ -99,60 +142,94 @@ export default function SettingsPage() {
         </TabsList>
 
         <TabsContent className={tab === "profile" ? "" : "hidden"}>
-          <Card>
-            <CardHeader><CardTitle>Profile</CardTitle></CardHeader>
+          <Card className="glass-panel panel-glow">
+            <CardHeader><CardTitle className="text-zinc-100">Profile</CardTitle></CardHeader>
             <CardContent className="space-y-3">
-              <Input placeholder="Full name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
-              <Button onClick={() => void saveProfile()}>Save Profile</Button>
+              <div className="flex items-center gap-4">
+                <div className="h-16 w-16 overflow-hidden rounded-full border border-white/10 bg-white/5">
+                  {avatarUrl ? <img src={avatarUrl} alt="Avatar" className="h-full w-full object-cover" /> : null}
+                </div>
+                <div className="space-y-2">
+                  <Input
+                    placeholder="Avatar URL"
+                    value={avatarUrl}
+                    onChange={(e) => setAvatarUrl(e.target.value)}
+                    className="border-white/10 bg-black/20 text-zinc-100 placeholder:text-zinc-500"
+                  />
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="text-sm text-zinc-400"
+                    onChange={(e) => onAvatarFile(e.target.files?.[0])}
+                    disabled={avatarUploading}
+                  />
+                  {avatarUploading ? <p className="text-xs text-zinc-400">Uploading...</p> : null}
+                </div>
+              </div>
+              <Input
+                placeholder="Full name"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                className="border-white/10 bg-black/20 text-zinc-100 placeholder:text-zinc-500"
+              />
+              <Button className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white" onClick={() => void saveProfile()}>
+                Save Profile
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>
 
         <TabsContent className={tab === "account" ? "" : "hidden"}>
-          <Card>
-            <CardHeader><CardTitle>Account</CardTitle></CardHeader>
+          <Card className="glass-panel panel-glow">
+            <CardHeader><CardTitle className="text-zinc-100">Account</CardTitle></CardHeader>
             <CardContent>
               <form className="space-y-3" onSubmit={(e) => void updatePass(e)}>
-                <Input value={email} disabled />
+                <Input value={email} disabled className="border-white/10 bg-black/20 text-zinc-100 placeholder:text-zinc-500" />
                 <Input
                   type="password"
                   placeholder="Current password"
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
+                  className="border-white/10 bg-black/20 text-zinc-100 placeholder:text-zinc-500"
                 />
                 <Input
                   type="password"
                   placeholder="New password"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
+                  className="border-white/10 bg-black/20 text-zinc-100 placeholder:text-zinc-500"
                 />
-                <Button type="submit">Change Password</Button>
+                <Button type="submit" className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white">
+                  Change Password
+                </Button>
               </form>
             </CardContent>
           </Card>
         </TabsContent>
 
         <TabsContent className={tab === "notifications" ? "" : "hidden"}>
-          <Card>
-            <CardHeader><CardTitle>Notifications</CardTitle></CardHeader>
-            <CardContent className="space-y-3 text-sm text-slate-700">
-              <label className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2">
+          <Card className="glass-panel panel-glow">
+            <CardHeader><CardTitle className="text-zinc-100">Notifications</CardTitle></CardHeader>
+            <CardContent className="space-y-3 text-sm text-zinc-300">
+              <label className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2">
                 <span>Milestone completed</span>
                 <input type="checkbox" checked={notifyMilestone} onChange={(e) => setNotifyMilestone(e.target.checked)} />
               </label>
-              <label className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2">
+              <label className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2">
                 <span>Task completed</span>
                 <input type="checkbox" checked={notifyTask} onChange={(e) => setNotifyTask(e.target.checked)} />
               </label>
-              <Button onClick={() => void saveNotificationPrefs()}>Save Notification Settings</Button>
+              <Button className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white" onClick={() => void saveNotificationPrefs()}>
+                Save Notification Settings
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>
 
         <TabsContent className={tab === "ai" ? "" : "hidden"}>
-          <Card>
-            <CardHeader><CardTitle>AI Usage</CardTitle></CardHeader>
-            <CardContent className="space-y-2 text-sm text-slate-700">
+          <Card className="glass-panel panel-glow">
+            <CardHeader><CardTitle className="text-zinc-100">AI Usage</CardTitle></CardHeader>
+            <CardContent className="space-y-2 text-sm text-zinc-300">
               <p>Monthly usage limit: 20 generations</p>
               <p>Current usage: {aiUsage}/20</p>
             </CardContent>
@@ -160,7 +237,7 @@ export default function SettingsPage() {
         </TabsContent>
       </Tabs>
 
-      {message ? <p className="text-sm text-emerald-700">{message}</p> : null}
+      {message ? <p className="text-sm text-emerald-300">{message}</p> : null}
     </section>
   );
 }

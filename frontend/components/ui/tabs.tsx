@@ -8,7 +8,7 @@ export function Tabs({ className, ...props }: React.HTMLAttributes<HTMLDivElemen
 }
 
 export function TabsList({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("inline-flex rounded-lg border border-slate-200 bg-white p-1", className)} {...props} />;
+  return <div className={cn("inline-flex rounded-lg border border-white/10 bg-white/5 p-1", className)} {...props} />;
 }
 
 export type TabsTriggerProps = React.ButtonHTMLAttributes<HTMLButtonElement> & { active?: boolean };
@@ -18,7 +18,7 @@ export function TabsTrigger({ className, active, ...props }: TabsTriggerProps) {
     <button
       className={cn(
         "rounded-md px-3 py-1.5 text-sm font-medium transition",
-        active ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100",
+        active ? "bg-white/10 text-white" : "text-zinc-400 hover:bg-white/5 hover:text-zinc-200",
         className
       )}
       {...props}

@@ -1,17 +1,25 @@
-FROM node:20-alpine
+FROM node:20-bullseye-slim
 
 WORKDIR /app
+
+ENV NPM_CONFIG_REGISTRY=https://registry.npmmirror.com
 
 COPY package*.json ./
 RUN npm ci
 
 COPY . .
 
+ARG NEXT_PUBLIC_SUPABASE_URL
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
+
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
+ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
 
 EXPOSE 3000
 
-CMD ["npm", "run", "dev", "--", "-H", "0.0.0.0", "-p", "3000"]
+RUN npm run build
 
+CMD ["npm", "run", "start", "--", "-H", "0.0.0.0", "-p", "3000"]

@@ -39,8 +39,8 @@ export default function AdminOverviewPage() {
   return (
     <section className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900">Admin Overview</h1>
-        <p className="mt-1 text-sm text-slate-600">Global BuildMind metrics and platform health snapshot.</p>
+        <h1 className="text-2xl font-semibold text-zinc-100">Admin Overview</h1>
+        <p className="text-body mt-1">Global BuildMind metrics and platform health snapshot.</p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -50,14 +50,14 @@ export default function AdminOverviewPage() {
         <AdminMetricCard title="AI Usage Requests" value={String(metrics.aiRequests)} />
       </div>
 
-      <Card>
+      <Card className="glass-panel panel-glow">
         <CardHeader>
-          <CardTitle>Status</CardTitle>
+          <CardTitle className="text-zinc-100">Status</CardTitle>
         </CardHeader>
         <CardContent>
-          {loading ? <p className="text-sm text-slate-500">Loading admin metrics...</p> : null}
-          {error ? <p className="text-sm text-rose-600">{error}</p> : null}
-          {!loading && !error ? <p className="text-sm text-emerald-700">Admin dashboard is online and synced with platform data.</p> : null}
+          {loading ? <p className="text-sm text-zinc-400">Loading admin metrics...</p> : null}
+          {error ? <p className="text-sm text-rose-400">{error}</p> : null}
+          {!loading && !error ? <p className="text-sm text-emerald-300">Admin dashboard is online and synced with platform data.</p> : null}
         </CardContent>
       </Card>
     </section>

@@ -1,66 +1,58 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { BuildMindNotification, getNotificationsForCurrentUser, markNotificationAsRead } from "@/lib/buildmind";
+import { useMarkNotificationMutation, useNotificationsQuery } from "@/lib/queries";
 
 export default function NotificationsPage() {
-  const [items, setItems] = useState<BuildMindNotification[]>([]);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    const load = async () => {
-      try {
-        setItems(await getNotificationsForCurrentUser());
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load notifications");
-        setItems([]);
-      }
-    };
-    void load();
-  }, []);
-
-  const markRead = async (id: string) => {
-    await markNotificationAsRead(id);
-    setItems((prev) => prev.map((x) => (x.id === id ? { ...x, is_read: true } : x)));
-  };
+  const { data: items = [], isLoading, error } = useNotificationsQuery();
+  const markReadMutation = useMarkNotificationMutation();
 
   return (
-    <section className="space-y-6">
+    <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
       <div>
-        <h2 className="text-2xl font-semibold text-slate-900">Notifications</h2>
-        <p className="mt-1 text-sm text-slate-600">System notifications and milestone reminders.</p>
+        <h2 className="text-2xl font-semibold text-zinc-100">Notifications</h2>
+        <p className="text-body mt-1">Milestone updates, task completions, and AI recommendations.</p>
       </div>
-      <Card>
+
+      <Card className="glass-panel panel-glow">
         <CardHeader>
-          <CardTitle>Inbox</CardTitle>
+          <CardTitle className="text-zinc-100">Inbox</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
-          {error ? <p className="text-sm text-rose-600">{error}</p> : null}
+          {isLoading ? <p className="text-sm text-zinc-400">Loading notifications...</p> : null}
+          {error ? <p className="text-sm text-rose-400">{(error as Error).message}</p> : null}
+
           {items.map((item) => (
-            <div key={item.id} className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2">
+            <div key={item.id} className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2">
               <div>
-                <p className="text-sm font-medium text-slate-900">{item.message}</p>
-                <p className="text-xs text-slate-500">{new Date(item.created_at).toLocaleString()}</p>
+                <p className="text-sm font-medium text-zinc-100">{item.message}</p>
+                <p className="text-xs text-zinc-500">{new Date(item.created_at).toLocaleString()}</p>
               </div>
               {!item.is_read ? (
-                <Button variant="outline" onClick={() => void markRead(item.id)}>
+                <Button
+                  variant="outline"
+                  className="border-white/10 bg-white/5 text-zinc-200 hover:bg-white/10"
+                  onClick={() => void markReadMutation.mutateAsync(item.id)}
+                >
                   Mark read
                 </Button>
               ) : (
-                <span className="text-xs text-slate-400">Read</span>
+                <span className="text-xs text-zinc-500">Read</span>
               )}
             </div>
           ))}
-          {!items.length ? (
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-              <p className="text-sm font-medium text-slate-800">No notifications yet.</p>
-              <p className="text-sm text-slate-600">Milestone reminders and product updates will appear here.</p>
+
+          {!isLoading && !items.length ? (
+            <div className="rounded-lg border border-white/10 bg-white/5 p-4">
+              <p className="text-sm font-medium text-zinc-100">No notifications yet.</p>
+              <p className="text-sm text-zinc-400">You will see milestone, task, and AI updates here.</p>
             </div>
           ) : null}
         </CardContent>
       </Card>
-    </section>
+    </motion.section>
   );
 }
+

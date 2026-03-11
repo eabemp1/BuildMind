@@ -3,14 +3,7 @@
 @tailwind utilities;
 
 :root {
-  --bg: 246 248 252;
-  --panel: 255 255 255;
-  --ink: 15 23 42;
-  --muted: 100 116 139;
-  --border: 226 232 240;
-  --brand: 15 23 42;
-  --accent: 13 148 136;
-  --accent-2: 59 130 246;
+  color-scheme: dark;
 }
 
 html,
@@ -20,40 +13,71 @@ body {
 
 body {
   @apply antialiased;
-  background:
-    radial-gradient(1200px 500px at -10% -5%, rgba(13, 148, 136, 0.08), transparent 55%),
-    radial-gradient(900px 400px at 110% 0%, rgba(59, 130, 246, 0.1), transparent 55%),
-    linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
-  color: rgb(var(--ink));
+  background: radial-gradient(900px 400px at 10% -5%, rgba(99, 102, 241, 0.2), transparent 55%),
+    radial-gradient(800px 360px at 90% 0%, rgba(168, 85, 247, 0.16), transparent 50%),
+    linear-gradient(135deg, #09090b 0%, #020617 45%, #000000 100%);
+}
+
+html.theme-light {
+  color-scheme: light;
+}
+
+html.theme-light body {
+  color: #0f172a;
+  background: radial-gradient(900px 400px at 10% -5%, rgba(99, 102, 241, 0.12), transparent 55%),
+    radial-gradient(800px 360px at 90% 0%, rgba(14, 165, 233, 0.16), transparent 50%),
+    linear-gradient(135deg, #f8fafc 0%, #eef2ff 45%, #ffffff 100%);
+}
+
+html.theme-light .glass-panel {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(15, 23, 42, 0.08);
+}
+
+html.theme-light .panel-glow {
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.04), 0 18px 45px rgba(15, 23, 42, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+html.theme-light .text-body {
+  color: #475569;
+}
+
+html.theme-light .text-zinc-100 {
+  color: #0f172a !important;
+}
+
+html.theme-light .text-zinc-200 {
+  color: #1f2937 !important;
+}
+
+html.theme-light .text-zinc-300,
+html.theme-light .text-zinc-400,
+html.theme-light .text-zinc-500 {
+  color: #475569 !important;
+}
+
+html.theme-light .bg-white\/5 {
+  background-color: rgba(148, 163, 184, 0.12) !important;
+}
+
+html.theme-light .border-white\/10 {
+  border-color: rgba(15, 23, 42, 0.12) !important;
 }
 
 *::selection {
-  background: rgba(13, 148, 136, 0.2);
+  background: rgba(129, 140, 248, 0.35);
 }
 
-.shell-grid {
-  @apply mx-auto grid w-full max-w-[1600px] gap-6 px-4 py-4 md:px-6;
+.glass-panel {
+  @apply rounded-xl border border-white/10 bg-white/5 backdrop-blur-lg;
 }
 
-.card {
-  @apply rounded-2xl border border-slate-200 bg-white shadow-sm;
+.panel-glow {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.03), 0 18px 45px rgba(15, 23, 42, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
-.glass {
-  @apply border border-white/60 bg-white/70 backdrop-blur-md;
-}
-
-.fade-up {
-  animation: fadeUp 420ms ease-out both;
-}
-
-@keyframes fadeUp {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+.text-body {
+  @apply text-sm text-zinc-400;
 }
