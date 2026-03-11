@@ -23,6 +23,7 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=True)
     bio: Mapped[str] = mapped_column(Text, nullable=True)
     avatar_url: Mapped[str] = mapped_column(String(500), nullable=True)
+    followers: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     onboarding_completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -38,6 +39,8 @@ class User(Base):
     notification_preference: Mapped["NotificationPreference"] = relationship(
         back_populates="user", uselist=False, cascade="all, delete-orphan"
     )
+    public_updates: Mapped[list["ProjectUpdate"]] = relationship(back_populates="author", cascade="all, delete-orphan")
+    weekly_reports: Mapped[list["WeeklyReport"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 
 class Project(Base):
@@ -51,6 +54,9 @@ class Project(Base):
     target_users: Mapped[str] = mapped_column(Text, nullable=True)
     progress: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     roadmap_json: Mapped[str] = mapped_column(Text, nullable=True)
+    is_public: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    likes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    followers: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     archived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
@@ -58,6 +64,8 @@ class Project(Base):
     user: Mapped["User"] = relationship(back_populates="projects")
     milestones: Mapped[list["Milestone"]] = relationship(back_populates="project", cascade="all, delete-orphan")
     feedback_entries: Mapped[list["Feedback"]] = relationship(back_populates="project", cascade="all, delete-orphan")
+    updates: Mapped[list["ProjectUpdate"]] = relationship(back_populates="project", cascade="all, delete-orphan")
+    comments: Mapped[list["ProjectComment"]] = relationship(back_populates="project", cascade="all, delete-orphan")
 
 
 class Milestone(Base):
@@ -111,6 +119,31 @@ class Feedback(Base):
     user: Mapped["User"] = relationship(back_populates="feedback")
     project: Mapped["Project"] = relationship(back_populates="feedback_entries")
     task: Mapped["Task"] = relationship(back_populates="feedback")
+
+
+class ProjectUpdate(Base):
+    __tablename__ = "project_updates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+
+    project: Mapped["Project"] = relationship(back_populates="updates")
+    author: Mapped["User"] = relationship(back_populates="public_updates")
+
+
+class ProjectComment(Base):
+    __tablename__ = "project_comments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True, nullable=False)
+    author_name: Mapped[str] = mapped_column(String(120), nullable=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+
+    project: Mapped["Project"] = relationship(back_populates="comments")
 
 
 class ActivityLog(Base):
@@ -204,5 +237,22 @@ class UserProfile(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
     user: Mapped["User"] = relationship(back_populates="profile")
+
+
+class WeeklyReport(Base):
+    __tablename__ = "weekly_reports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    week_start_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    projects_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    milestones_completed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    tasks_completed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    ai_summary: Mapped[str] = mapped_column(Text, nullable=True)
+    ai_risks: Mapped[str] = mapped_column(Text, nullable=True)
+    ai_suggestions: Mapped[str] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+
+    user: Mapped["User"] = relationship(back_populates="weekly_reports")
 
 

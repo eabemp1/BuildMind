@@ -3,14 +3,16 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
-import { Bell, Bot, FolderKanban, Gauge, Settings } from "lucide-react";
+import { Bell, Bot, Compass, FileText, FolderKanban, Gauge, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: Gauge },
   { href: "/projects", label: "Projects", icon: FolderKanban },
-  { href: "/ai-coach", label: "AI Coach", icon: Bot },
+  { href: "/ai-coach", label: "BuildMini", icon: Bot },
   { href: "/notifications", label: "Notifications", icon: Bell },
+  { href: "/explore", label: "Explore", icon: Compass },
+  { href: "/reports", label: "Reports", icon: FileText },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 

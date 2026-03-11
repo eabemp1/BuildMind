@@ -1,13 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { motion } from "framer-motion";
 import { Bot, Send } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useProjectsQuery } from "@/lib/queries";
-import { createClient } from "@/lib/supabase/client";
+import { getAICoachResponse } from "@/lib/api";
 
 type ChatMessage = { id: string; role: "user" | "assistant"; content: string };
 
@@ -22,18 +22,9 @@ export default function AICoachPage() {
     {
       id: "welcome",
       role: "assistant",
-      content: "Hi! I’m your BuildMind AI Coach. Ask me about your project execution or next steps.",
+      content: "Hi! I’m BuildMini, your BuildMind AI coach. Ask me about your project execution or next steps.",
     },
   ]);
-
-  const historyPayload = useMemo(
-    () =>
-      messages
-        .filter((message) => message.id !== "welcome")
-        .slice(-8)
-        .map((message) => ({ role: message.role, content: message.content })),
-    [messages],
-  );
 
   const send = async () => {
     if (!input.trim() || !activeProjectId || isSending) return;
@@ -45,22 +36,8 @@ export default function AICoachPage() {
     setMessages((prev) => [...prev, { id: userId, role: "user", content: message }]);
     setIsSending(true);
     try {
-      const supabase = createClient();
-      const { data } = await supabase.auth.getUser();
-      const authUserId = data.user?.id;
-      if (!authUserId) {
-        throw new Error("Not authenticated.");
-      }
-      const res = await fetch("/api/ai/coach", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId: activeProjectId, userId: authUserId, message, messages: historyPayload }),
-      });
-      if (!res.ok) {
-        throw new Error("Failed to generate AI response.");
-      }
-      const body = await res.json();
-      const reply = String(body?.data?.reply ?? body?.data?.advice?.[0] ?? "I can help with your next steps.");
+      const response = await getAICoachResponse(activeProjectId, message);
+      const reply = response.message || "I can help with your next steps.";
       setMessages((prev) => [...prev, { id: aiId, role: "assistant", content: reply }]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to send message.");
@@ -72,18 +49,18 @@ export default function AICoachPage() {
   return (
     <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
       <div>
-        <h2 className="text-2xl font-semibold text-zinc-100">AI Coach</h2>
-        <p className="text-body mt-1">Chat with the AI coach about your project execution and next steps.</p>
+        <h2 className="text-2xl font-semibold text-zinc-100">BuildMini</h2>
+        <p className="text-body mt-1">Chat with BuildMini about your project execution and next steps.</p>
       </div>
 
       <Card className="glass-panel panel-glow overflow-hidden">
         <div className="bg-gradient-to-r from-indigo-500/25 to-purple-500/25 px-6 py-4">
-          <p className="text-xs uppercase tracking-[0.2em] text-indigo-200">AI Chat</p>
+          <p className="text-xs uppercase tracking-[0.2em] text-indigo-200">BuildMini Chat</p>
           <h3 className="mt-1 text-lg font-semibold text-zinc-100">Project-focused coaching</h3>
         </div>
         <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <CardTitle className="text-zinc-100">Coach Chat</CardTitle>
+            <CardTitle className="text-zinc-100">BuildMini Chat</CardTitle>
             <p className="text-body">Select a project and ask for guidance.</p>
           </div>
           <select

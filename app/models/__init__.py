@@ -12,6 +12,9 @@ from app.models.models import (
     AppState,
     ReminderPreference,
     UserProfile,
+    ProjectUpdate,
+    ProjectComment,
+    WeeklyReport,
 )
 
 __all__ = [
@@ -28,6 +31,9 @@ __all__ = [
     "AppState",
     "ReminderPreference",
     "UserProfile",
+    "ProjectUpdate",
+    "ProjectComment",
+    "WeeklyReport",
 ]
 
 

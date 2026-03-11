@@ -67,7 +67,7 @@ export default function DashboardPreview() {
           </div>
           <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
             <div className="flex items-center justify-between text-xs text-zinc-400">
-              <span>AI Coach</span>
+              <span>BuildMini</span>
               <Sparkles className="h-4 w-4 text-purple-300" />
             </div>
             <p className="mt-3 text-sm text-zinc-200">
@@ -89,4 +89,3 @@ export default function DashboardPreview() {
     </motion.div>
   );
 }
-

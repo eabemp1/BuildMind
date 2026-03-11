@@ -53,6 +53,9 @@ export type ProjectData = {
   description: string;
   created_at: string;
   milestones: MilestoneData[];
+  is_public?: boolean;
+  likes?: number;
+  followers?: number;
 };
 
 export type DashboardScoreSnapshot = {
@@ -218,6 +221,88 @@ export type NewsletterSubscriberData = {
   email: string;
   subscribed: boolean;
   created_at: string;
+};
+
+export type PublicProjectUpdateData = {
+  id: number;
+  project_id: number;
+  user_id: number;
+  content: string;
+  created_at: string;
+};
+
+export type PublicProjectCommentData = {
+  id: number;
+  project_id: number;
+  author_name?: string | null;
+  content: string;
+  created_at: string;
+};
+
+export type PublicProjectData = {
+  id: number;
+  title: string;
+  description: string | null;
+  progress: number;
+  milestones_completed: number;
+  milestones_total: number;
+  likes: number;
+  followers: number;
+  is_public: boolean;
+  founder_name: string;
+  founder_username?: string | null;
+  created_at: string;
+};
+
+export type PublicProjectDetailData = {
+  id: number;
+  title: string;
+  description: string | null;
+  problem?: string | null;
+  target_users?: string | null;
+  progress: number;
+  likes: number;
+  followers: number;
+  is_public: boolean;
+  founder_name: string;
+  founder_username?: string | null;
+  created_at: string;
+  milestones: Array<{
+    id: number;
+    title: string;
+    status: string;
+    is_completed: boolean;
+    tasks: Array<{ id: number; title: string; is_completed: boolean }>;
+  }>;
+  updates: PublicProjectUpdateData[];
+  comments?: PublicProjectCommentData[];
+};
+
+export type FounderProfileData = {
+  id: number;
+  username?: string | null;
+  email: string;
+  bio?: string | null;
+  avatar_url?: string | null;
+  followers: number;
+  projects: PublicProjectData[];
+  recent_updates: PublicProjectUpdateData[];
+};
+
+export type SearchResultsData = {
+  projects: Array<{ id: number; title: string }>;
+  milestones: Array<{ id: number; title: string; project_id: number }>;
+  tasks: Array<{ id: number; title: string; project_id: number }>;
+};
+
+export type FounderWeeklyReportData = {
+  week_start_date: string;
+  projects_count: number;
+  milestones_completed: number;
+  tasks_completed: number;
+  ai_summary?: string | null;
+  ai_risks?: string | null;
+  ai_suggestions?: string | null;
 };
 
 const api = axios.create({
@@ -576,4 +661,51 @@ export async function sendAdminNotification(
   type = "platform_announcement",
 ): Promise<{ sent_count: number; message: string; type: string }> {
   return unwrap(api.post<ApiEnvelope<{ sent_count: number; message: string; type: string }>>("/admin/notifications", { message, type }));
+}
+
+export async function getPublicProjects(): Promise<PublicProjectData[]> {
+  return unwrap(api.get<ApiEnvelope<PublicProjectData[]>>("/projects/public"));
+}
+
+export async function getPublicProject(projectId: number): Promise<PublicProjectDetailData> {
+  return unwrap(api.get<ApiEnvelope<PublicProjectDetailData>>(`/projects/${projectId}/public`));
+}
+
+export async function likePublicProject(projectId: number): Promise<{ id: number; likes: number }> {
+  return unwrap(api.post<ApiEnvelope<{ id: number; likes: number }>>(`/projects/${projectId}/like`));
+}
+
+export async function followPublicProject(projectId: number): Promise<{ id: number; followers: number }> {
+  return unwrap(api.post<ApiEnvelope<{ id: number; followers: number }>>(`/projects/${projectId}/follow`));
+}
+
+export async function addProjectUpdate(projectId: number, content: string): Promise<PublicProjectUpdateData> {
+  return unwrap(api.post<ApiEnvelope<PublicProjectUpdateData>>(`/projects/${projectId}/update`, { content }));
+}
+
+export async function addProjectComment(
+  projectId: number,
+  payload: { author_name?: string; content: string },
+): Promise<PublicProjectCommentData> {
+  return unwrap(api.post<ApiEnvelope<PublicProjectCommentData>>(`/projects/${projectId}/comment`, payload));
+}
+
+export async function getFounderProfile(username: string): Promise<FounderProfileData> {
+  return unwrap(api.get<ApiEnvelope<FounderProfileData>>(`/founder/${username}`));
+}
+
+export async function searchGlobal(query: string): Promise<SearchResultsData> {
+  return unwrap(api.get<ApiEnvelope<SearchResultsData>>("/search", { params: { q: query } }));
+}
+
+export async function getFounderWeeklyReport(): Promise<FounderWeeklyReportData> {
+  return unwrap(api.get<ApiEnvelope<FounderWeeklyReportData>>("/reports/weekly"));
+}
+
+export async function getAICoachResponse(projectId: number, question: string): Promise<{ message: string }> {
+  return unwrap(api.post<ApiEnvelope<{ message: string }>>("/ai/coach", { projectId, question }));
+}
+
+export async function generateMilestonesAI(idea: string): Promise<{ message: string; milestones: string[] }> {
+  return unwrap(api.post<ApiEnvelope<{ message: string; milestones: string[] }>>("/ai/milestones", { idea }));
 }

@@ -26,7 +26,9 @@ export async function middleware(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname;
   const isAuthRoute = pathname.startsWith("/auth");
-  const isPublicRoute = pathname === "/" || isAuthRoute;
+  const isExploreRoute = pathname === "/explore" || pathname.startsWith("/explore/");
+  const isFounderRoute = pathname.startsWith("/founder/");
+  const isPublicRoute = pathname === "/" || isAuthRoute || isExploreRoute || isFounderRoute;
   const isApiRoute = pathname.startsWith("/api");
 
   if (!user && !isPublicRoute && !isApiRoute) {
