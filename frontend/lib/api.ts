@@ -690,6 +690,18 @@ export async function addProjectComment(
   return unwrap(api.post<ApiEnvelope<PublicProjectCommentData>>(`/projects/${projectId}/comment`, payload));
 }
 
+export async function importPublicProject(payload: {
+  user_email: string;
+  username?: string;
+  bio?: string;
+  avatar_url?: string;
+  title: string;
+  description?: string;
+  progress?: number;
+}): Promise<{ id: number }> {
+  return unwrap(api.post<ApiEnvelope<{ id: number }>>("/projects/public/import", payload));
+}
+
 export async function getFounderProfile(username: string): Promise<FounderProfileData> {
   return unwrap(api.get<ApiEnvelope<FounderProfileData>>(`/founder/${username}`));
 }

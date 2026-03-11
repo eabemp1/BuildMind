@@ -250,3 +250,58 @@ def search_global(db: Session, query: str) -> dict:
         "milestones": [{"id": row.id, "title": row.title, "project_id": row.project_id} for row in milestones],
         "tasks": [{"id": row.id, "title": row.title, "project_id": row.project_id} for row in tasks],
     }
+
+
+def upsert_public_project(
+    db: Session,
+    user_email: str,
+    username: str | None,
+    bio: str | None,
+    avatar_url: str | None,
+    title: str,
+    description: str | None,
+    progress: float | None,
+) -> Project:
+    email = (user_email or "").strip().lower()
+    if not email:
+        raise ValueError("User email is required")
+
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        user = User(email=email, username=username)
+        user.bio = bio
+        user.avatar_url = avatar_url
+        db.add(user)
+        db.flush()
+    else:
+        if username and not user.username:
+            user.username = username
+        if bio:
+            user.bio = bio
+        if avatar_url:
+            user.avatar_url = avatar_url
+        db.add(user)
+
+    project = (
+        db.query(Project)
+        .filter(Project.user_id == user.id, Project.title == title)
+        .first()
+    )
+    if not project:
+        project = Project(
+            user_id=user.id,
+            title=title,
+            description=description,
+            progress=progress or 0,
+            is_public=True,
+        )
+        db.add(project)
+        db.flush()
+        return project
+
+    project.description = description or project.description
+    project.progress = float(progress or project.progress or 0)
+    project.is_public = True
+    db.add(project)
+    db.flush()
+    return project

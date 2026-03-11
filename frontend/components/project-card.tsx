@@ -17,6 +17,8 @@ type ProjectCardProps = {
   stage: string;
   onDelete?: (id: string) => void;
   deleting?: boolean;
+  onPublish?: (id: string) => void;
+  publishing?: boolean;
 };
 
 function formatDate(value: string): string {
@@ -38,6 +40,8 @@ export default function ProjectCard({
   stage,
   onDelete,
   deleting,
+  onPublish,
+  publishing,
 }: ProjectCardProps) {
   const router = useRouter();
 
@@ -92,6 +96,16 @@ export default function ProjectCard({
           >
             <Trash2 className="h-4 w-4" />
             {deleting ? "Deleting..." : "Delete Project"}
+          </button>
+        ) : null}
+        {onPublish ? (
+          <button
+            type="button"
+            onClick={() => onPublish(id)}
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm text-zinc-200 transition hover:bg-white/10"
+            disabled={publishing}
+          >
+            {publishing ? "Publishing..." : "Publish to Explore"}
           </button>
         ) : null}
       </div>

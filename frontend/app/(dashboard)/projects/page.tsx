@@ -8,6 +8,8 @@ import ProjectCard from "@/components/project-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { getCurrentUser } from "@/lib/buildmind";
+import { importPublicProject } from "@/lib/api";
 import { useCreateProjectMutation, useDeleteProjectMutation, useProjectSummariesQuery } from "@/lib/queries";
 import { projectCreateSchema } from "@/lib/validation";
 
@@ -22,6 +24,7 @@ export default function ProjectsPage() {
   const { data: summaries = [], isLoading, error: summariesError } = useProjectSummariesQuery();
   const createMutation = useCreateProjectMutation();
   const deleteMutation = useDeleteProjectMutation();
+  const [publishingId, setPublishingId] = useState<string | null>(null);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [projectName, setProjectName] = useState("");
@@ -90,6 +93,27 @@ export default function ProjectsPage() {
               lastActivity={summary.lastActivity}
               stage={stageFromStrengthCount(summary.validation_strengths.length)}
               deleting={deleteMutation.isPending}
+              publishing={publishingId === summary.id}
+              onPublish={async () => {
+                try {
+                  setError("");
+                  setPublishingId(summary.id);
+                  const user = await getCurrentUser();
+                  if (!user?.email) throw new Error("No user profile");
+                  await importPublicProject({
+                    user_email: user.email,
+                    username: (user.user_metadata?.username as string | undefined) ?? undefined,
+                    avatar_url: (user.user_metadata?.avatar_url as string | undefined) ?? undefined,
+                    title: summary.title,
+                    description: summary.description ?? undefined,
+                    progress: summary.progress,
+                  });
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : "Failed to publish");
+                } finally {
+                  setPublishingId(null);
+                }
+              }}
               onDelete={(id) => {
                 const confirmed = window.confirm("Delete this project and all associated milestones and tasks?");
                 if (!confirmed) return;

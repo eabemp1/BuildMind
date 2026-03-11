@@ -53,6 +53,16 @@ class PublicProjectCommentCreateRequest(BaseModel):
     content: str = Field(min_length=3, max_length=2000)
 
 
+class PublicProjectImportRequest(BaseModel):
+    user_email: str = Field(min_length=3, max_length=255)
+    username: str | None = Field(default=None, max_length=120)
+    bio: str | None = Field(default=None, max_length=1000)
+    avatar_url: str | None = Field(default=None, max_length=500)
+    title: str = Field(min_length=2, max_length=255)
+    description: str | None = Field(default=None, max_length=2000)
+    progress: float | None = Field(default=0, ge=0, le=100)
+
+
 class FounderProfileOut(BaseModel):
     id: int
     username: str | None

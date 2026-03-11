@@ -20,6 +20,7 @@ from app.schemas.public import (
     PublicProjectUpdateOut,
     PublicProjectUpdateCreateRequest,
     PublicProjectCommentCreateRequest,
+    PublicProjectImportRequest,
 )
 from app.services.project_service import (
     archive_project_for_user,
@@ -39,6 +40,7 @@ from app.services.public_project_service import (
     like_project,
     follow_project,
     add_project_comment,
+    upsert_public_project,
 )
 
 
@@ -208,6 +210,29 @@ def create_project_comment_endpoint(
     except ValueError as exc:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+
+
+@router.post("/projects/public/import")
+def import_public_project_endpoint(
+    payload: PublicProjectImportRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        project = upsert_public_project(
+            db,
+            user_email=payload.user_email,
+            username=payload.username,
+            bio=payload.bio,
+            avatar_url=payload.avatar_url,
+            title=payload.title,
+            description=payload.description,
+            progress=payload.progress,
+        )
+        db.commit()
+        return {"success": True, "data": {"id": project.id}}
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
 
 @router.post("/projects/{project_id}/generate-roadmap")
