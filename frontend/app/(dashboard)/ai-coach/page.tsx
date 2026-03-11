@@ -11,6 +11,33 @@ import { getAICoachResponse } from "@/lib/api";
 
 type ChatMessage = { id: string; role: "user" | "assistant"; content: string };
 
+type CoachSection = { title: string; body: string };
+
+function parseCoachSections(input: string): CoachSection[] | null {
+  if (!input) return null;
+  const cleaned = input.replace(/^\s*#+\s*/gm, "").trim();
+  const normalized = cleaned.replace(/\r\n/g, "\n");
+  const matches = normalized.split(/\n(?=Insight:|Advice:|Next Steps:)/i).filter(Boolean);
+  const sections: CoachSection[] = [];
+  for (const block of matches) {
+    const [rawTitle, ...rest] = block.split("\n");
+    const title = rawTitle.replace(":", "").trim();
+    if (!title) continue;
+    const body = rest.join("\n").trim();
+    sections.push({ title, body });
+  }
+  if (sections.length >= 2) return sections;
+  return null;
+}
+
+function formatList(text: string): string[] {
+  if (!text) return [];
+  return text
+    .split("\n")
+    .map((line) => line.replace(/^[\-\*\d\.\)\s]+/, "").trim())
+    .filter(Boolean);
+}
+
 export default function AICoachPage() {
   const { data: projects = [], isLoading: loadingProjects } = useProjectsQuery();
   const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(undefined);
@@ -99,7 +126,39 @@ export default function AICoachPage() {
                 >
                   <div className="flex items-center gap-2">
                     {message.role === "assistant" ? <Bot className="h-4 w-4 text-indigo-300" /> : null}
-                    <span>{message.content}</span>
+                    <div className="space-y-3">
+                      {message.role === "assistant" ? (
+                        (() => {
+                          const sections = parseCoachSections(message.content);
+                          if (!sections) {
+                            return <p className="whitespace-pre-wrap">{message.content}</p>;
+                          }
+                          return (
+                            <div className="space-y-3">
+                              {sections.map((section) => {
+                                const items = formatList(section.body);
+                                return (
+                                  <div key={section.title} className="space-y-1">
+                                    <p className="text-xs uppercase tracking-[0.2em] text-indigo-200">{section.title}</p>
+                                    {items.length > 1 ? (
+                                      <ul className="list-disc space-y-1 pl-4 text-sm text-zinc-200">
+                                        {items.map((item) => (
+                                          <li key={item}>{item}</li>
+                                        ))}
+                                      </ul>
+                                    ) : (
+                                      <p className="text-sm text-zinc-200">{section.body}</p>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()
+                      ) : (
+                        <p className="whitespace-pre-wrap">{message.content}</p>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>

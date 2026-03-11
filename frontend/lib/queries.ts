@@ -6,6 +6,7 @@ import {
   deleteProjectForCurrentUser,
   getAICoachAdvice,
   getDashboardOverview,
+  clearNotificationsForCurrentUser,
   getNotificationsForCurrentUser,
   getProjectDetail,
   getProjectsForCurrentUser,
@@ -105,6 +106,17 @@ export function useMarkNotificationMutation() {
     },
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: queryKeys.notifications });
+    },
+  });
+}
+
+export function useClearNotificationsMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: clearNotificationsForCurrentUser,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.notifications });
+      void qc.invalidateQueries({ queryKey: queryKeys.overview });
     },
   });
 }

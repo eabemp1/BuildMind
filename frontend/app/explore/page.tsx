@@ -7,11 +7,37 @@ import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { followPublicProject, getPublicProjects, likePublicProject, type PublicProjectData } from "@/lib/api";
+import { createNotificationForCurrentUser } from "@/lib/buildmind";
+
+const LIKES_KEY = "bm_liked_projects";
+const FOLLOWS_KEY = "bm_followed_projects";
 
 export default function ExplorePage() {
   const [projects, setProjects] = useState<PublicProjectData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [likedIds, setLikedIds] = useState<Set<number>>(new Set());
+  const [followedIds, setFollowedIds] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const likedRaw = window.localStorage.getItem(LIKES_KEY);
+      const followedRaw = window.localStorage.getItem(FOLLOWS_KEY);
+      const liked = likedRaw ? (JSON.parse(likedRaw) as number[]) : [];
+      const followed = followedRaw ? (JSON.parse(followedRaw) as number[]) : [];
+      setLikedIds(new Set(liked));
+      setFollowedIds(new Set(followed));
+    } catch {
+      setLikedIds(new Set());
+      setFollowedIds(new Set());
+    }
+  }, []);
+
+  const persistIds = (key: string, ids: Set<number>) => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(key, JSON.stringify(Array.from(ids)));
+  };
 
   useEffect(() => {
     const load = async () => {
@@ -28,13 +54,35 @@ export default function ExplorePage() {
   }, []);
 
   const like = async (projectId: number) => {
-    const result = await likePublicProject(projectId);
-    setProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, likes: result.likes } : p)));
+    if (likedIds.has(projectId)) return;
+    try {
+      setError("");
+      const result = await likePublicProject(projectId);
+      setProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, likes: result.likes } : p)));
+      const next = new Set(likedIds);
+      next.add(projectId);
+      setLikedIds(next);
+      persistIds(LIKES_KEY, next);
+      await createNotificationForCurrentUser("project_liked", "You liked a public founder project.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to like project.");
+    }
   };
 
   const follow = async (projectId: number) => {
-    const result = await followPublicProject(projectId);
-    setProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, followers: result.followers } : p)));
+    if (followedIds.has(projectId)) return;
+    try {
+      setError("");
+      const result = await followPublicProject(projectId);
+      setProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, followers: result.followers } : p)));
+      const next = new Set(followedIds);
+      next.add(projectId);
+      setFollowedIds(next);
+      persistIds(FOLLOWS_KEY, next);
+      await createNotificationForCurrentUser("project_followed", "You followed a public founder project.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to follow project.");
+    }
   };
 
   return (
@@ -75,15 +123,17 @@ export default function ExplorePage() {
                   variant="outline"
                   className="border-white/10 bg-white/5 text-zinc-200 hover:bg-white/10"
                   onClick={() => void like(project.id)}
+                  disabled={likedIds.has(project.id)}
                 >
-                  <Heart className="mr-2 h-4 w-4" /> {project.likes}
+                  <Heart className="mr-2 h-4 w-4" /> {likedIds.has(project.id) ? "Liked" : project.likes}
                 </Button>
                 <Button
                   variant="outline"
                   className="border-white/10 bg-white/5 text-zinc-200 hover:bg-white/10"
                   onClick={() => void follow(project.id)}
+                  disabled={followedIds.has(project.id)}
                 >
-                  <Users className="mr-2 h-4 w-4" /> Follow
+                  <Users className="mr-2 h-4 w-4" /> {followedIds.has(project.id) ? `Following (${project.followers})` : `Follow (${project.followers})`}
                 </Button>
                 <Link
                   href={`/explore/${project.id}`}

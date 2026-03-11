@@ -8,6 +8,15 @@ from app.services.ai_service import generate_ai_response, generate_milestones_fr
 
 router = APIRouter(tags=["ai"])
 
+SYSTEM_PROMPT = (
+    "You are an experienced startup advisor helping founders with product-market fit, MVP building, growth strategy, "
+    "customer discovery, and fundraising preparation. Respond with clear, actionable guidance. "
+    "Always structure your response with the following headings:\n"
+    "Insight:\n"
+    "Advice:\n"
+    "Next Steps:\n"
+)
+
 
 @router.post("/ai/coach")
 def ai_coach_endpoint(
@@ -44,14 +53,20 @@ def ai_coach_endpoint(
                 )
 
     context = context + "Provide concise, actionable coaching."
-    response = generate_ai_response(
-        messages=[
-            {"role": "system", "content": "You are a pragmatic startup coach."},
-            {"role": "user", "content": context},
-            {"role": "user", "content": question},
-        ],
-        temperature=0.7,
-    )
+    user_content = f"{context}\nFounder question: {question}"
+    try:
+        response = generate_ai_response(
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_content},
+            ],
+            temperature=0.7,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"AI provider error: {exc}",
+        ) from exc
     return {"success": True, "data": {"message": response}}
 
 

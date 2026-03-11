@@ -112,7 +112,7 @@ export default function HomePage() {
         </motion.div>
       </section>
 
-      <section className="mx-auto w-full max-w-6xl px-6 pb-24">
+      <section id="features" className="mx-auto w-full max-w-6xl px-6 pb-24">
         <motion.div initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="grid gap-6 md:grid-cols-2">
           <div className="glass-panel panel-glow p-6">
             <h2 className="text-2xl font-semibold">Most Startup Ideas Never Get Executed.</h2>
@@ -184,7 +184,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="mx-auto w-full max-w-6xl px-6 pb-24">
+      <section id="product" className="mx-auto w-full max-w-6xl px-6 pb-24">
         <div className="mb-8">
           <h2 className="text-3xl font-semibold text-white">Feature Highlights</h2>
           <p className="text-body mt-2 max-w-2xl">Everything you need to go from idea to execution without losing momentum.</p>
@@ -211,7 +211,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="mx-auto w-full max-w-6xl px-6 pb-24">
+      <section id="pricing" className="mx-auto w-full max-w-6xl px-6 pb-24">
         <div className="glass-panel panel-glow relative overflow-hidden p-10">
           <div className="pointer-events-none absolute -right-20 top-10 h-56 w-56 rounded-full bg-indigo-500/20 blur-[120px]" />
           <div className="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
@@ -274,14 +274,14 @@ export default function HomePage() {
         </div>
       </section>
 
-      <footer className="border-t border-white/5 pb-10 pt-6">
+      <footer id="privacy" className="border-t border-white/5 pb-10 pt-6">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-6 text-sm text-zinc-400 md:flex-row md:items-center md:justify-between">
           <span>© 2026 BuildMind</span>
           <div className="flex flex-wrap gap-4">
-            <span>Product</span>
-            <span>Features</span>
-            <span>Pricing</span>
-            <span>Privacy</span>
+            <Link href="#product" className="hover:text-white">Product</Link>
+            <Link href="#features" className="hover:text-white">Features</Link>
+            <Link href="#pricing" className="hover:text-white">Pricing</Link>
+            <Link href="#privacy" className="hover:text-white">Privacy</Link>
           </div>
         </div>
       </footer>

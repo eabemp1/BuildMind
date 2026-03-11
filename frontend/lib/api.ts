@@ -290,9 +290,9 @@ export type FounderProfileData = {
 };
 
 export type SearchResultsData = {
-  projects: Array<{ id: number; title: string }>;
-  milestones: Array<{ id: number; title: string; project_id: number }>;
-  tasks: Array<{ id: number; title: string; project_id: number }>;
+  projects: Array<{ id: string | number; title: string }>;
+  milestones: Array<{ id: string | number; title: string; project_id: string | number }>;
+  tasks: Array<{ id: string | number; title: string; project_id: string | number }>;
 };
 
 export type FounderWeeklyReportData = {

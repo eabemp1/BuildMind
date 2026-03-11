@@ -357,11 +357,40 @@ export async function deleteProjectForCurrentUser(projectId: string): Promise<vo
 
 export async function updateTaskStatus(taskId: string, isCompleted: boolean, notes?: string) {
   const supabase = createClient();
+  const { data: taskRow, error: taskError } = await supabase
+    .from("tasks")
+    .select("id, milestone_id, is_completed")
+    .eq("id", taskId)
+    .single();
+  if (taskError) throw taskError;
+
+  const { data: milestoneTasks, error: milestoneError } = await supabase
+    .from("tasks")
+    .select("id, is_completed")
+    .eq("milestone_id", taskRow.milestone_id);
+  if (milestoneError) throw milestoneError;
+
+  const wasMilestoneComplete =
+    (milestoneTasks ?? []).length > 0 && (milestoneTasks ?? []).every((t) => t.is_completed);
+
   const { error } = await supabase
     .from("tasks")
     .update({ is_completed: isCompleted, notes: notes ?? null })
     .eq("id", taskId);
   if (error) throw error;
+
+  const nowTasks = (milestoneTasks ?? []).map((t) =>
+    t.id === taskRow.id ? { ...t, is_completed: isCompleted } : t,
+  );
+  const isMilestoneComplete = nowTasks.length > 0 && nowTasks.every((t) => t.is_completed);
+
+  if (isCompleted && !taskRow.is_completed) {
+    await createNotificationForCurrentUser("task_completed", "Task marked as completed.");
+  }
+
+  if (isMilestoneComplete && !wasMilestoneComplete) {
+    await createNotificationForCurrentUser("milestone_completed", "Milestone completed. Great momentum!");
+  }
 }
 
 export async function getDashboardOverview(): Promise<DashboardOverview> {
@@ -376,12 +405,25 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
   const { data: milestones } = projectIds.length
     ? await supabase.from("milestones").select("id, stage, project_id").in("project_id", projectIds)
     : { data: [] };
-  const completedMilestones = (milestones ?? []).length;
-
   const milestoneIds = (milestones ?? []).map((m) => m.id);
   const { data: tasks } = milestoneIds.length
-    ? await supabase.from("tasks").select("id,is_completed").in("milestone_id", milestoneIds)
+    ? await supabase.from("tasks").select("id,is_completed,milestone_id").in("milestone_id", milestoneIds)
     : { data: [] };
+
+  const milestoneTaskMap = new Map<string, { total: number; completed: number }>();
+  (tasks ?? []).forEach((task) => {
+    const current = milestoneTaskMap.get(task.milestone_id) ?? { total: 0, completed: 0 };
+    milestoneTaskMap.set(task.milestone_id, {
+      total: current.total + 1,
+      completed: current.completed + (task.is_completed ? 1 : 0),
+    });
+  });
+
+  const completedMilestones = (milestones ?? []).filter((m) => {
+    const stats = milestoneTaskMap.get(m.id);
+    return stats ? stats.total > 0 && stats.completed === stats.total : false;
+  }).length;
+
   const completedTasks = (tasks ?? []).filter((t) => t.is_completed).length;
 
   const { data: usage } = await supabase
@@ -435,6 +477,27 @@ export async function markNotificationAsRead(notificationId: string) {
   const supabase = createClient();
   const { error } = await supabase.from("notifications").update({ is_read: true }).eq("id", notificationId);
   if (error) throw error;
+}
+
+export async function clearNotificationsForCurrentUser(): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+  const supabase = createClient();
+  const { error } = await supabase.from("notifications").delete().eq("user_id", user.id);
+  if (error) throw error;
+}
+
+export async function getUnreadNotificationCount(): Promise<number> {
+  const user = await getCurrentUser();
+  if (!user) return 0;
+  const supabase = createClient();
+  const { count, error } = await supabase
+    .from("notifications")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", user.id)
+    .eq("is_read", false);
+  if (error) return 0;
+  return count ?? 0;
 }
 
 export async function getAICoachAdvice(projectId: string): Promise<string[]> {
@@ -520,4 +583,10 @@ async function generateRoadmap(payload: { title: string; idea: string; targetUse
 async function createNotification(userId: string, type: string, message: string): Promise<void> {
   const supabase = createClient();
   await supabase.from("notifications").insert({ user_id: userId, type, message, is_read: false });
+}
+
+export async function createNotificationForCurrentUser(type: string, message: string): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+  await createNotification(user.id, type, message);
 }

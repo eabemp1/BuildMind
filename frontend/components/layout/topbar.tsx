@@ -7,6 +7,7 @@ import { motion } from "framer-motion";
 import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
 import { searchGlobal, type SearchResultsData } from "@/lib/api";
+import { getUnreadNotificationCount } from "@/lib/buildmind";
 
 export default function Topbar() {
   const router = useRouter();
@@ -18,6 +19,7 @@ export default function Topbar() {
   const [searchResults, setSearchResults] = useState<SearchResultsData | null>(null);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
     const load = async () => {
@@ -27,6 +29,24 @@ export default function Topbar() {
       setAvatarUrl((data.user?.user_metadata?.avatar_url as string | undefined) ?? null);
     };
     void load();
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    const fetchCount = async () => {
+      try {
+        const count = await getUnreadNotificationCount();
+        if (mounted) setUnreadCount(count);
+      } catch {
+        if (mounted) setUnreadCount(0);
+      }
+    };
+    void fetchCount();
+    const timer = window.setInterval(fetchCount, 30000);
+    return () => {
+      mounted = false;
+      window.clearInterval(timer);
+    };
   }, []);
 
   const initials = useMemo(() => (email ? email.slice(0, 1).toUpperCase() : "BM"), [email]);
@@ -79,7 +99,7 @@ export default function Topbar() {
     return () => window.clearTimeout(handle);
   }, [searchQuery]);
 
-  const goToProject = (projectId: number) => {
+  const goToProject = (projectId: string | number) => {
     setSearchOpen(false);
     setSearchQuery("");
     router.push(`/projects/${projectId}`);
@@ -163,10 +183,15 @@ export default function Topbar() {
 
         <button
           onClick={() => router.push("/notifications")}
-          className="grid h-10 w-10 place-items-center rounded-lg border border-white/10 bg-white/5 text-zinc-200 transition hover:bg-white/10"
+          className="relative grid h-10 w-10 place-items-center rounded-lg border border-white/10 bg-white/5 text-zinc-200 transition hover:bg-white/10"
           type="button"
         >
           <Bell size={16} />
+          {unreadCount > 0 ? (
+            <span className="absolute -right-1 -top-1 grid h-5 min-w-[20px] place-items-center rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 px-1 text-[11px] font-semibold text-white">
+              {unreadCount > 9 ? "9+" : unreadCount}
+            </span>
+          ) : null}
         </button>
 
         <div className="relative">

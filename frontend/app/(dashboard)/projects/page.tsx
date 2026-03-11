@@ -8,7 +8,7 @@ import ProjectCard from "@/components/project-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { getCurrentUser } from "@/lib/buildmind";
+import { createNotificationForCurrentUser, getCurrentUser } from "@/lib/buildmind";
 import { importPublicProject } from "@/lib/api";
 import { useCreateProjectMutation, useDeleteProjectMutation, useProjectSummariesQuery } from "@/lib/queries";
 import { projectCreateSchema } from "@/lib/validation";
@@ -108,6 +108,7 @@ export default function ProjectsPage() {
                     description: summary.description ?? undefined,
                     progress: summary.progress,
                   });
+                  await createNotificationForCurrentUser("project_published", "Project published to Explore.");
                 } catch (err) {
                   setError(err instanceof Error ? err.message : "Failed to publish");
                 } finally {

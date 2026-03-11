@@ -7,7 +7,7 @@ import httpx
 
 
 GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
-DEFAULT_MODEL = "llama3-70b-8192"
+DEFAULT_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
 
 def generate_ai_response(messages: list[dict[str, str]], temperature: float = 0.7) -> str:
@@ -26,7 +26,8 @@ def generate_ai_response(messages: list[dict[str, str]], temperature: float = 0.
     }
     with httpx.Client(timeout=20.0) as client:
         response = client.post(GROQ_ENDPOINT, json=payload, headers=headers)
-        response.raise_for_status()
+        if response.status_code >= 400:
+            raise ValueError(f"Groq error {response.status_code}: {response.text}")
         body = response.json()
 
     content = body.get("choices", [{}])[0].get("message", {}).get("content")

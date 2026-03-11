@@ -8,13 +8,14 @@ import DashboardVisuals from "@/components/dashboard-visuals";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { calculateDashboardStats } from "@/lib/buildmind";
-import { useDashboardOverviewQuery, useProjectsQuery } from "@/lib/queries";
+import { useClearNotificationsMutation, useDashboardOverviewQuery, useProjectsQuery } from "@/lib/queries";
 import { Activity, BarChart2, Bot, CheckCircle2 } from "lucide-react";
 
 export default function DashboardPage() {
   const router = useRouter();
   const { data: projects = [], isLoading: projectsLoading } = useProjectsQuery();
   const { data: overview, isLoading: overviewLoading } = useDashboardOverviewQuery();
+  const clearFeedMutation = useClearNotificationsMutation();
 
   const stats = useMemo(() => calculateDashboardStats(projects), [projects]);
 
@@ -119,6 +120,14 @@ export default function DashboardPage() {
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base text-zinc-100">Activity Feed</CardTitle>
           <div className="flex gap-2">
+            <Button
+              variant="outline"
+              className="border-white/15 bg-white/5 text-zinc-200 hover:bg-white/10"
+              onClick={() => void clearFeedMutation.mutateAsync()}
+              disabled={clearFeedMutation.isPending || (overview?.recentActivity?.length ?? 0) === 0}
+            >
+              {clearFeedMutation.isPending ? "Clearing..." : "Clear feed"}
+            </Button>
             <Button variant="outline" className="border-white/15 bg-white/5 text-zinc-200 hover:bg-white/10" onClick={() => router.push("/projects")}>
               Create Project
             </Button>

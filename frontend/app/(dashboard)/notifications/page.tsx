@@ -3,11 +3,12 @@
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useMarkNotificationMutation, useNotificationsQuery } from "@/lib/queries";
+import { useClearNotificationsMutation, useMarkNotificationMutation, useNotificationsQuery } from "@/lib/queries";
 
 export default function NotificationsPage() {
   const { data: items = [], isLoading, error } = useNotificationsQuery();
   const markReadMutation = useMarkNotificationMutation();
+  const clearMutation = useClearNotificationsMutation();
 
   return (
     <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
@@ -17,8 +18,16 @@ export default function NotificationsPage() {
       </div>
 
       <Card className="glass-panel panel-glow">
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-zinc-100">Inbox</CardTitle>
+          <Button
+            variant="outline"
+            className="border-white/10 bg-white/5 text-zinc-200 hover:bg-white/10"
+            onClick={() => void clearMutation.mutateAsync()}
+            disabled={clearMutation.isPending || items.length === 0}
+          >
+            {clearMutation.isPending ? "Clearing..." : "Clear all"}
+          </Button>
         </CardHeader>
         <CardContent className="space-y-2">
           {isLoading ? <p className="text-sm text-zinc-400">Loading notifications...</p> : null}
@@ -55,4 +64,3 @@ export default function NotificationsPage() {
     </motion.section>
   );
 }
-

@@ -5,7 +5,7 @@ import { z } from "zod";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Eye, EyeOff, Github } from "lucide-react";
+import { Github } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
@@ -27,7 +27,6 @@ export default function SignupPage() {
   const supabase = createClient();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
@@ -116,23 +115,13 @@ export default function SignupPage() {
 
         <form className="mt-4 space-y-4" onSubmit={onSubmit}>
           <Input className="border-white/10 bg-black/20 text-zinc-100 placeholder:text-zinc-500" type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-          <div className="relative">
-            <Input
-              className="border-white/10 bg-black/20 pr-10 text-zinc-100 placeholder:text-zinc-500"
-              type={showPassword ? "text" : "password"}
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-            <button
-              type="button"
-              aria-label={showPassword ? "Hide password" : "Show password"}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-200"
-              onClick={() => setShowPassword((prev) => !prev)}
-            >
-              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            </button>
-          </div>
+          <Input
+            className="border-white/10 bg-black/20 text-zinc-100 placeholder:text-zinc-500"
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
           <Button className="w-full bg-gradient-to-r from-indigo-500 to-purple-500 text-white" disabled={loading}>
             {loading ? "Creating account..." : "Continue with Email"}
           </Button>
