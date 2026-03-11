@@ -65,6 +65,29 @@ html.theme-light .border-white\/10 {
   border-color: rgba(15, 23, 42, 0.12) !important;
 }
 
+html.theme-light .bg-black\/20 {
+  background-color: rgba(255, 255, 255, 0.7) !important;
+}
+
+html.theme-light .bg-black\/30 {
+  background-color: rgba(255, 255, 255, 0.6) !important;
+}
+
+html.theme-light .bg-black\/40 {
+  background-color: rgba(255, 255, 255, 0.55) !important;
+}
+
+html.theme-light .bg-white\/10 {
+  background-color: rgba(148, 163, 184, 0.16) !important;
+}
+
+html.theme-light .text-indigo-200,
+html.theme-light .text-indigo-300,
+html.theme-light .text-purple-200,
+html.theme-light .text-emerald-200 {
+  color: #4f46e5 !important;
+}
+
 *::selection {
   background: rgba(129, 140, 248, 0.35);
 }

@@ -33,3 +33,13 @@ class WeeklyReportOut(BaseModel):
     milestone_achievement: list[DailyMilestoneAchievementOut]
     tasks_completed_this_week: int
     feedback: WeeklyFeedbackOut
+
+
+class FounderWeeklyReportOut(BaseModel):
+    week_start_date: date
+    projects_count: int
+    milestones_completed: int
+    tasks_completed: int
+    ai_summary: str | None
+    ai_risks: str | None
+    ai_suggestions: str | None

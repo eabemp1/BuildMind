@@ -6,11 +6,11 @@ import Topbar from "@/components/layout/topbar";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-screen overflow-hidden bg-gradient-to-br from-zinc-950 via-slate-950 to-black">
+    <div className="flex h-screen overflow-hidden bg-transparent">
       <aside className="w-64 shrink-0 p-3">
         <Sidebar />
       </aside>
-      <div className="flex min-w-0 flex-1 flex-col p-3 pl-0">
+      <div className="flex min-w-0 flex-1 flex-col p-3">
         <Topbar />
         <motion.main
           key="page"
@@ -25,4 +25,3 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
-

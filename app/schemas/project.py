@@ -8,6 +8,7 @@ class ProjectCreateRequest(BaseModel):
     description: str = Field(default="", max_length=2000)
     problem: str | None = Field(default=None, max_length=5000)
     target_users: str | None = Field(default=None, max_length=5000)
+    is_public: bool | None = None
 
 
 class RoadmapGenerateRequest(BaseModel):
@@ -60,6 +61,9 @@ class ProjectOut(BaseModel):
     problem: str | None = None
     target_users: str | None = None
     progress: float = 0
+    is_public: bool = False
+    likes: int = 0
+    followers: int = 0
     is_archived: bool = False
     archived_at: datetime | None = None
     created_at: datetime
@@ -72,6 +76,7 @@ class ProjectUpdateRequest(BaseModel):
     problem: str | None = Field(default=None, max_length=5000)
     target_users: str | None = Field(default=None, max_length=5000)
     progress: float | None = Field(default=None, ge=0.0, le=100.0)
+    is_public: bool | None = None
 
 
 class MilestoneUpdateRequest(BaseModel):

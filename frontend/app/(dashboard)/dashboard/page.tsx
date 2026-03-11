@@ -99,13 +99,31 @@ export default function DashboardPage() {
 
       <Card className="glass-panel panel-glow">
         <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="text-base text-zinc-100">Weekly Founder Report</CardTitle>
+          <Button
+            variant="outline"
+            className="border-white/15 bg-white/5 text-zinc-200 hover:bg-white/10"
+            onClick={() => router.push("/reports")}
+          >
+            View Report
+          </Button>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-zinc-300">
+            Get a weekly AI summary of your progress, risks, and next-step recommendations.
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card className="glass-panel panel-glow">
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base text-zinc-100">Activity Feed</CardTitle>
           <div className="flex gap-2">
             <Button variant="outline" className="border-white/15 bg-white/5 text-zinc-200 hover:bg-white/10" onClick={() => router.push("/projects")}>
               Create Project
             </Button>
             <Button className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white" onClick={() => router.push("/ai-coach")}>
-              Open AI Coach
+              Open BuildMini
             </Button>
           </div>
         </CardHeader>

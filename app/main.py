@@ -6,6 +6,7 @@ Single FastAPI app that combines:
 """
 
 import logging
+import os
 import time
 
 from fastapi import HTTPException
@@ -32,8 +33,17 @@ from app.routes.scoring import router as scoring_router
 from app.routes.report import router as report_router
 from app.routes.reminder import router as reminder_router
 from app.routes.opportunities import router as opportunities_router
+from app.routes.founders import router as founders_router
+from app.routes.search import router as search_router
+from app.routes.ai import router as ai_router
+from app.routes.weekly_reports import router as weekly_reports_router
 from app.core.config import get_settings
 from app.core.logging_config import configure_logging, request_log_line
+from app.database import SessionLocal
+from app.services.weekly_report_service import generate_weekly_reports_for_all_users
+
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 
 Base.metadata.create_all(bind=engine)
@@ -54,6 +64,7 @@ def _ensure_runtime_schema() -> None:
             ("password_hash", "ALTER TABLE users ADD COLUMN password_hash VARCHAR(255)"),
             ("bio", "ALTER TABLE users ADD COLUMN bio TEXT"),
             ("avatar_url", "ALTER TABLE users ADD COLUMN avatar_url VARCHAR(500)"),
+            ("followers", "ALTER TABLE users ADD COLUMN followers INTEGER DEFAULT 0"),
             ("onboarding_completed", "ALTER TABLE users ADD COLUMN onboarding_completed BOOLEAN DEFAULT 0"),
             ("is_active", "ALTER TABLE users ADD COLUMN is_active BOOLEAN DEFAULT 1"),
             ("is_admin", "ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT 0"),
@@ -63,6 +74,9 @@ def _ensure_runtime_schema() -> None:
             ("problem", "ALTER TABLE projects ADD COLUMN problem TEXT"),
             ("target_users", "ALTER TABLE projects ADD COLUMN target_users TEXT"),
             ("progress", "ALTER TABLE projects ADD COLUMN progress FLOAT DEFAULT 0"),
+            ("is_public", "ALTER TABLE projects ADD COLUMN is_public BOOLEAN DEFAULT 0"),
+            ("likes", "ALTER TABLE projects ADD COLUMN likes INTEGER DEFAULT 0"),
+            ("followers", "ALTER TABLE projects ADD COLUMN followers INTEGER DEFAULT 0"),
             ("is_archived", "ALTER TABLE projects ADD COLUMN is_archived BOOLEAN DEFAULT 0"),
             ("archived_at", "ALTER TABLE projects ADD COLUMN archived_at TIMESTAMP"),
         ],
@@ -91,6 +105,51 @@ def _ensure_runtime_schema() -> None:
                 if column_name not in existing:
                     conn.execute(text(alter_sql))
 
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS project_updates (
+                    id INTEGER PRIMARY KEY,
+                    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    content TEXT NOT NULL,
+                    created_at TIMESTAMP
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS weekly_reports (
+                    id INTEGER PRIMARY KEY,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    week_start_date TIMESTAMP NOT NULL,
+                    projects_count INTEGER DEFAULT 0,
+                    milestones_completed INTEGER DEFAULT 0,
+                    tasks_completed INTEGER DEFAULT 0,
+                    ai_summary TEXT,
+                    ai_risks TEXT,
+                    ai_suggestions TEXT,
+                    created_at TIMESTAMP
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS project_comments (
+                    id INTEGER PRIMARY KEY,
+                    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    author_name VARCHAR(120),
+                    content TEXT NOT NULL,
+                    created_at TIMESTAMP
+                )
+                """
+            )
+        )
+
 
 _ensure_runtime_schema()
 
@@ -98,6 +157,7 @@ app.title = "EvolvAI OS"
 configure_logging()
 logger = logging.getLogger("evolvai")
 settings = get_settings()
+_scheduler: BackgroundScheduler | None = None
 
 frontend_origins = [o.strip() for o in settings.FRONTEND_ORIGINS.split(",") if o.strip()]
 app.add_middleware(
@@ -121,6 +181,10 @@ app.include_router(scoring_router, prefix="/api/v1")
 app.include_router(report_router, prefix="/api/v1")
 app.include_router(reminder_router, prefix="/api/v1")
 app.include_router(opportunities_router, prefix="/api/v1")
+app.include_router(founders_router, prefix="/api/v1")
+app.include_router(search_router, prefix="/api/v1")
+app.include_router(ai_router, prefix="/api/v1")
+app.include_router(weekly_reports_router, prefix="/api/v1")
 
 
 def _install_v1_aliases() -> None:
@@ -157,6 +221,34 @@ def _install_v1_aliases() -> None:
 
 
 _install_v1_aliases()
+
+
+def _run_weekly_reports() -> None:
+    db = SessionLocal()
+    try:
+        generate_weekly_reports_for_all_users(db)
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("event=weekly_report_job_failed")
+    finally:
+        db.close()
+
+
+@app.on_event("startup")
+def _start_scheduler() -> None:
+    global _scheduler
+    if os.getenv("ENABLE_WEEKLY_REPORT_CRON", "0") != "1":
+        return
+    _scheduler = BackgroundScheduler(timezone="UTC")
+    _scheduler.add_job(_run_weekly_reports, CronTrigger(day_of_week="sun", hour=2, minute=0))
+    _scheduler.start()
+
+
+@app.on_event("shutdown")
+def _stop_scheduler() -> None:
+    if _scheduler:
+        _scheduler.shutdown()
 
 
 @app.middleware("http")
