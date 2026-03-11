@@ -14,24 +14,36 @@ def ai_coach_endpoint(
     payload: dict,
     db: Session = Depends(get_db),
 ):
-    project_id = int(payload.get("projectId") or 0)
     question = str(payload.get("question") or payload.get("message") or "").strip()
-    if not project_id or not question:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="projectId and question are required")
+    if not question:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="question is required")
 
-    project = (
-        db.query(Project).filter(Project.id == project_id).first()
-    )
-    if not project:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    context = ""
+    if payload.get("project"):
+        proj = payload.get("project") or {}
+        context = (
+            f"Project title: {proj.get('title','')}\n"
+            f"Description: {proj.get('description','')}\n"
+            f"Problem: {proj.get('problem','')}\n"
+            f"Target users: {proj.get('target_users','')}\n"
+        )
+    else:
+        raw_id = payload.get("projectId")
+        try:
+            project_id = int(raw_id)
+        except Exception:
+            project_id = 0
+        if project_id:
+            project = db.query(Project).filter(Project.id == project_id).first()
+            if project:
+                context = (
+                    f"Project title: {project.title}\n"
+                    f"Description: {project.description or ''}\n"
+                    f"Problem: {project.problem or ''}\n"
+                    f"Target users: {project.target_users or ''}\n"
+                )
 
-    context = (
-        f"Project title: {project.title}\n"
-        f"Description: {project.description or ''}\n"
-        f"Problem: {project.problem or ''}\n"
-        f"Target users: {project.target_users or ''}\n"
-        "Provide concise, actionable coaching."
-    )
+    context = context + "Provide concise, actionable coaching."
     response = generate_ai_response(
         messages=[
             {"role": "system", "content": "You are a pragmatic startup coach."},

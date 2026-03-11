@@ -87,7 +87,7 @@ export default function Topbar() {
 
   return (
     <div className="glass-panel panel-glow relative z-50 flex w-full items-center p-3">
-      <div className="ml-auto flex w-full max-w-[760px] items-center gap-3">
+      <div className="ml-auto flex w-full items-center justify-end gap-3">
         <div className="relative w-full max-w-[420px]">
           <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
           <Input

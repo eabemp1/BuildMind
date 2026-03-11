@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.deps import get_current_user
+from app.core.deps import get_optional_user
 from app.database import get_db
-from app.models import User
 from app.schemas.report import FounderWeeklyReportOut
+from datetime import date
 from app.services.weekly_report_service import generate_founder_report, get_latest_weekly_report
 
 
@@ -14,8 +14,20 @@ router = APIRouter(tags=["reports"])
 @router.get("/reports/weekly")
 def get_weekly_report_endpoint(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user = Depends(get_optional_user),
 ):
+    if not current_user:
+        payload = FounderWeeklyReportOut(
+            week_start_date=date.today(),
+            projects_count=0,
+            milestones_completed=0,
+            tasks_completed=0,
+            ai_summary="Connect your account to generate personalized weekly insights.",
+            ai_risks="No risks available yet.",
+            ai_suggestions="Complete onboarding and track your tasks to unlock insights.",
+        )
+        return {"success": True, "data": payload.dict()}
+
     report = get_latest_weekly_report(db, user_id=current_user.id)
     if not report:
         report = generate_founder_report(db, user_id=current_user.id)

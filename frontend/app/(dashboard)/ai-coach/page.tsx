@@ -36,7 +36,13 @@ export default function AICoachPage() {
     setMessages((prev) => [...prev, { id: userId, role: "user", content: message }]);
     setIsSending(true);
     try {
-      const response = await getAICoachResponse(activeProjectId, message);
+      const project = projects.find((p) => p.id === activeProjectId);
+      const response = await getAICoachResponse(0, message, {
+        title: project?.title ?? "",
+        description: project?.description ?? "",
+        target_users: project?.target_users ?? "",
+        problem: project?.problem ?? "",
+      });
       const reply = response.message || "I can help with your next steps.";
       setMessages((prev) => [...prev, { id: aiId, role: "assistant", content: reply }]);
     } catch (err) {

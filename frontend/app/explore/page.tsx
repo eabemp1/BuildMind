@@ -85,13 +85,19 @@ export default function ExplorePage() {
                 >
                   <Users className="mr-2 h-4 w-4" /> Follow
                 </Button>
-                <Button className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white" asChild>
-                  <Link href={`/explore/${project.id}`}>Open</Link>
-                </Button>
+                <Link
+                  href={`/explore/${project.id}`}
+                  className="inline-flex items-center rounded-md bg-gradient-to-r from-indigo-500 to-purple-500 px-4 py-2 text-sm font-medium text-white"
+                >
+                  Open
+                </Link>
                 {project.founder_username ? (
-                  <Button variant="ghost" className="text-zinc-300" asChild>
-                    <Link href={`/founder/${project.founder_username}`}>Founder</Link>
-                  </Button>
+                  <Link
+                    href={`/founder/${project.founder_username}`}
+                    className="inline-flex items-center rounded-md px-3 py-2 text-sm text-zinc-300 hover:bg-white/5"
+                  >
+                    Founder
+                  </Link>
                 ) : null}
               </div>
             </CardContent>

@@ -702,8 +702,12 @@ export async function getFounderWeeklyReport(): Promise<FounderWeeklyReportData>
   return unwrap(api.get<ApiEnvelope<FounderWeeklyReportData>>("/reports/weekly"));
 }
 
-export async function getAICoachResponse(projectId: number, question: string): Promise<{ message: string }> {
-  return unwrap(api.post<ApiEnvelope<{ message: string }>>("/ai/coach", { projectId, question }));
+export async function getAICoachResponse(
+  projectId: number,
+  question: string,
+  project?: { title?: string; description?: string; target_users?: string; problem?: string },
+): Promise<{ message: string }> {
+  return unwrap(api.post<ApiEnvelope<{ message: string }>>("/ai/coach", { projectId, question, project }));
 }
 
 export async function generateMilestonesAI(idea: string): Promise<{ message: string; milestones: string[] }> {

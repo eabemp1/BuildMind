@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { createClient } from "@/lib/supabase/client";
-import { getCurrentUser } from "@/lib/buildmind";
+import { ensureUserProfile, getCurrentUser } from "@/lib/buildmind";
 
 type TabKey = "profile" | "account" | "notifications" | "ai";
 
@@ -29,6 +29,7 @@ export default function SettingsPage() {
       try {
         const user = await getCurrentUser();
         if (!user) return;
+        await ensureUserProfile(user);
         setEmail(user.email ?? "");
         setAvatarUrl((user.user_metadata?.avatar_url as string | undefined) ?? "");
         const { data: profile } = await supabase.from("users").select("full_name").eq("id", user.id).single();
@@ -59,13 +60,20 @@ export default function SettingsPage() {
   const saveProfile = async () => {
     const user = await getCurrentUser();
     if (!user) return;
-    const { error } = await supabase.from("users").update({ full_name: fullName }).eq("id", user.id);
-    if (error) throw error;
-    const { error: authError } = await supabase.auth.updateUser({
-      data: { avatar_url: avatarUrl || null },
-    });
-    if (authError) throw authError;
-    setMessage("Profile updated.");
+    setMessage("");
+    try {
+      await ensureUserProfile(user);
+      const { error } = await supabase.from("users").update({ full_name: fullName }).eq("id", user.id);
+      if (error) throw error;
+      const { error: authError } = await supabase.auth.updateUser({
+        data: { avatar_url: avatarUrl || null },
+      });
+      if (authError) throw authError;
+      setMessage("Profile updated.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to update profile.";
+      setMessage(message);
+    }
   };
 
   const uploadAvatar = async (file: File) => {
