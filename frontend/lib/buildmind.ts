@@ -528,14 +528,21 @@ async function generateValidation(payload: { idea: string; targetUsers: string; 
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...payload, userId: user.id }),
     });
-    if (!res.ok) throw new Error("Failed to validate startup idea");
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const message = String(body?.error || "Failed to validate startup idea");
+      throw new Error(message);
+    }
     const body = await res.json();
     return {
       strengths: normalizeTextArray(body?.data?.strengths),
       weaknesses: normalizeTextArray(body?.data?.weaknesses),
       suggestions: normalizeTextArray(body?.data?.suggestions),
     };
-  } catch {
+  } catch (err) {
+    if (err instanceof Error && err.message.toLowerCase().includes("limit")) {
+      throw err;
+    }
     return {
       strengths: ["Problem statement is clear and specific."],
       weaknesses: ["Target segment assumptions need interviews."],
@@ -565,7 +572,11 @@ async function generateRoadmap(payload: { title: string; idea: string; targetUse
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...payload, userId: user.id }),
     });
-    if (!res.ok) throw new Error("Failed to generate roadmap");
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const message = String(body?.error || "Failed to generate roadmap");
+      throw new Error(message);
+    }
     const body = await res.json();
     if (!Array.isArray(body?.data?.roadmap)) {
       return fallbackRoadmap;
@@ -575,7 +586,10 @@ async function generateRoadmap(payload: { title: string; idea: string; targetUse
       tasks: normalizeTextArray(item?.tasks),
     }));
     return parsed.length ? parsed : fallbackRoadmap;
-  } catch {
+  } catch (err) {
+    if (err instanceof Error && err.message.toLowerCase().includes("limit")) {
+      throw err;
+    }
     return fallbackRoadmap;
   }
 }

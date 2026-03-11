@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useProjectsQuery } from "@/lib/queries";
-import { getAICoachResponse } from "@/lib/api";
+import { createClient } from "@/lib/supabase/client";
 
 type ChatMessage = { id: string; role: "user" | "assistant"; content: string };
 
@@ -63,14 +63,32 @@ export default function AICoachPage() {
     setMessages((prev) => [...prev, { id: userId, role: "user", content: message }]);
     setIsSending(true);
     try {
+      const supabase = createClient();
+      const { data } = await supabase.auth.getUser();
+      const user = data.user;
+      if (!user) throw new Error("Not authenticated");
       const project = projects.find((p) => p.id === activeProjectId);
-      const response = await getAICoachResponse(0, message, {
-        title: project?.title ?? "",
-        description: project?.description ?? "",
-        target_users: project?.target_users ?? "",
-        problem: project?.problem ?? "",
+      const res = await fetch("/api/ai/coach", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: user.id,
+          projectId: activeProjectId,
+          message,
+          messages: messages.map((m) => ({ role: m.role, content: m.content })),
+          project: {
+            title: project?.title ?? "",
+            description: project?.description ?? "",
+            target_users: project?.target_users ?? "",
+            problem: project?.problem ?? "",
+          },
+        }),
       });
-      const reply = response.message || "I can help with your next steps.";
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(String(body?.error || "Failed to send message."));
+      }
+      const reply = body?.data?.reply || "I can help with your next steps.";
       setMessages((prev) => [...prev, { id: aiId, role: "assistant", content: reply }]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to send message.");

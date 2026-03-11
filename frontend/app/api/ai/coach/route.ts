@@ -106,9 +106,8 @@ Give 4 actionable coaching bullets.`,
     await createUserNotification(userId, "New AI coach recommendation available.", "ai_recommendation");
     return NextResponse.json({ success: true, data: { advice } });
   } catch (error) {
-    return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Coach generation failed" },
-      { status: 500 },
-    );
+    const message = error instanceof Error ? error.message : "Coach generation failed";
+    const status = message.toLowerCase().includes("limit") ? 429 : 500;
+    return NextResponse.json({ success: false, error: message }, { status });
   }
 }

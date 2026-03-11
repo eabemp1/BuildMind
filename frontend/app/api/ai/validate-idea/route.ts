@@ -35,9 +35,8 @@ Provide concise validation feedback.`,
       },
     });
   } catch (error) {
-    return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Validation failed" },
-      { status: 500 },
-    );
+    const message = error instanceof Error ? error.message : "Validation failed";
+    const status = message.toLowerCase().includes("limit") ? 429 : 500;
+    return NextResponse.json({ success: false, error: message }, { status });
   }
 }

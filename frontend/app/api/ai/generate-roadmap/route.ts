@@ -42,9 +42,8 @@ Each milestone must contain 3-5 concrete tasks.`;
 
     return NextResponse.json({ success: true, data: { roadmap } });
   } catch (error) {
-    return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Roadmap generation failed" },
-      { status: 500 },
-    );
+    const message = error instanceof Error ? error.message : "Roadmap generation failed";
+    const status = message.toLowerCase().includes("limit") ? 429 : 500;
+    return NextResponse.json({ success: false, error: message }, { status });
   }
 }
