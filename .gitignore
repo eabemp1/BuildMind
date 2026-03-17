@@ -1,8 +1,13 @@
 .env
+frontend/.env.local
 forge_state.json
 frontend/node_modules/
 frontend/.next/
 frontend/*.log
+frontend/swc-cache/
+frontend/tsconfig.tsbuildinfo
+backend.log
+backend.err.log
 __pycache__/
 *.pyc
 *.pid

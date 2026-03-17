@@ -164,6 +164,7 @@ def update_milestone_for_user(
     user_id: int,
     milestone_id: int,
     title: str | None = None,
+    description: str | None = None,
     status: str | None = None,
     order_index: int | None = None,
 ) -> Milestone:
@@ -177,6 +178,8 @@ def update_milestone_for_user(
         raise ValueError("Milestone not found")
     if title is not None:
         milestone.title = title
+    if description is not None:
+        milestone.description = description
     if order_index is not None:
         milestone.order_index = order_index
         milestone.week_number = order_index + 1

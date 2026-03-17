@@ -3,15 +3,16 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { FEATURES } from "@/lib/features";
 
 const items = [
-  { href: "/dashboard", label: "Dashboard", icon: "grid" },
-  { href: "/projects", label: "Projects", icon: "folder" },
-  { href: "/ai-coach", label: "BuildMini", icon: "spark" },
-  { href: "/notifications", label: "Notifications", icon: "bell" },
-  { href: "/explore", label: "Explore", icon: "compass" },
-  { href: "/reports", label: "Reports", icon: "report" },
-  { href: "/settings", label: "Settings", icon: "gear" }
+  { href: "/dashboard", label: "Dashboard", icon: "grid", enabled: true },
+  { href: "/projects", label: "Projects", icon: "folder", enabled: true },
+  { href: "/ai-coach", label: "BuildMini", icon: "spark", enabled: FEATURES.aiCoach },
+  { href: "/notifications", label: "Notifications", icon: "bell", enabled: FEATURES.notifications },
+  { href: "/explore", label: "Explore", icon: "compass", enabled: FEATURES.publicProjects },
+  { href: "/reports", label: "Reports", icon: "report", enabled: FEATURES.analytics },
+  { href: "/settings", label: "Settings", icon: "gear", enabled: true }
 ];
 
 function ItemIcon({ kind }: { kind: string }) {
@@ -48,7 +49,7 @@ export default function Sidebar() {
       </div>
 
       <nav className="space-y-1.5">
-        {items.map((item) => {
+        {items.filter((item) => item.enabled).map((item) => {
           const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
           return (
             <Link

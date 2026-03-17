@@ -18,6 +18,14 @@ def create_project(
     description: str,
     problem: str | None = None,
     target_users: str | None = None,
+    industry: str | None = None,
+    target_market: str | None = None,
+    problem_type: str | None = None,
+    revenue_model: str | None = None,
+    startup_stage: str | None = None,
+    validation_score: float | None = None,
+    execution_score: float | None = None,
+    momentum_score: float | None = None,
 ) -> Project:
     row = Project(
         user_id=user_id,
@@ -25,6 +33,14 @@ def create_project(
         description=description,
         problem=problem,
         target_users=target_users,
+        industry=industry,
+        target_market=target_market,
+        problem_type=problem_type,
+        revenue_model=revenue_model,
+        startup_stage=startup_stage,
+        validation_score=validation_score if validation_score is not None else 0.0,
+        execution_score=execution_score if execution_score is not None else 0.0,
+        momentum_score=momentum_score if momentum_score is not None else 0.0,
     )
     db.add(row)
     db.flush()
@@ -59,6 +75,14 @@ def update_project_for_user(
     description: str | None = None,
     problem: str | None = None,
     target_users: str | None = None,
+    industry: str | None = None,
+    target_market: str | None = None,
+    problem_type: str | None = None,
+    revenue_model: str | None = None,
+    startup_stage: str | None = None,
+    validation_score: float | None = None,
+    execution_score: float | None = None,
+    momentum_score: float | None = None,
     progress: float | None = None,
 ) -> Project:
     project = (
@@ -76,6 +100,22 @@ def update_project_for_user(
         project.problem = problem
     if target_users is not None:
         project.target_users = target_users
+    if industry is not None:
+        project.industry = industry
+    if target_market is not None:
+        project.target_market = target_market
+    if problem_type is not None:
+        project.problem_type = problem_type
+    if revenue_model is not None:
+        project.revenue_model = revenue_model
+    if startup_stage is not None:
+        project.startup_stage = startup_stage
+    if validation_score is not None:
+        project.validation_score = validation_score
+    if execution_score is not None:
+        project.execution_score = execution_score
+    if momentum_score is not None:
+        project.momentum_score = momentum_score
     if progress is not None:
         project.progress = progress
     db.add(project)
@@ -268,6 +308,8 @@ def generate_agent_startup_roadmap(
         user_id=user_id,
         title=title[:255],
         description=clean_idea[:2000],
+        industry=clean_industry or None,
+        startup_stage=clean_stage or None,
         roadmap_json=json.dumps(roadmap, ensure_ascii=False),
     )
     db.add(project)

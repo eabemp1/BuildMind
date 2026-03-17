@@ -150,6 +150,7 @@ def update_milestone_endpoint(
             user_id=current_user.id,
             milestone_id=milestone_id,
             title=payload.title,
+            description=payload.description,
             status=payload.status,
             order_index=payload.order_index,
         )
@@ -159,6 +160,7 @@ def update_milestone_endpoint(
             "data": {
                 "id": milestone.id,
                 "title": milestone.title,
+                "description": milestone.description,
                 "status": milestone.status,
                 "order_index": milestone.order_index,
                 "completed_at": milestone.completed_at,

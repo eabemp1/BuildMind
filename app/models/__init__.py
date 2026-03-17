@@ -15,6 +15,8 @@ from app.models.models import (
     ProjectUpdate,
     ProjectComment,
     WeeklyReport,
+    ValidationData,
+    StartupMetrics,
 )
 
 __all__ = [
@@ -34,6 +36,8 @@ __all__ = [
     "ProjectUpdate",
     "ProjectComment",
     "WeeklyReport",
+    "ValidationData",
+    "StartupMetrics",
 ]
 
 

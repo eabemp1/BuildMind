@@ -1,24 +1,25 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
 import { ArrowUpRight, Target, Trash2 } from "lucide-react";
 import ProgressBar from "@/components/progress-bar";
 import { Button } from "@/components/ui/button";
+import { setActiveProjectId } from "@/lib/api";
+import GlowCard from "@/components/ui/glow-card";
 
 type ProjectCardProps = {
   id: string;
   title: string;
   description?: string | null;
   progress: number;
+  industry?: string | null;
+  startupScore?: number;
   tasksCompleted: number;
   tasksTotal: number;
   lastActivity: string;
   stage: string;
   onDelete?: (id: string) => void;
   deleting?: boolean;
-  onPublish?: (id: string) => void;
-  publishing?: boolean;
 };
 
 function formatDate(value: string): string {
@@ -34,23 +35,19 @@ export default function ProjectCard({
   title,
   description,
   progress,
+  industry,
+  startupScore,
   tasksCompleted,
   tasksTotal,
   lastActivity,
   stage,
   onDelete,
   deleting,
-  onPublish,
-  publishing,
 }: ProjectCardProps) {
   const router = useRouter();
 
   return (
-    <motion.div
-      whileHover={{ y: -4 }}
-      transition={{ type: "spring", stiffness: 200, damping: 20 }}
-      className="group glass-panel panel-glow flex h-full flex-col gap-4 p-5"
-    >
+    <GlowCard className="group flex h-full flex-col gap-4 p-6" interactive>
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-indigo-200/80">Project</p>
@@ -64,6 +61,7 @@ export default function ProjectCard({
 
       <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-400">
         <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">{stage}</span>
+        {industry ? <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">{industry}</span> : null}
         <span>Last activity · {formatDate(lastActivity)}</span>
       </div>
 
@@ -73,6 +71,9 @@ export default function ProjectCard({
           <span className="text-zinc-200">{progress}%</span>
         </div>
         <ProgressBar value={progress} />
+        {typeof startupScore === "number" ? (
+          <p className="text-xs text-zinc-400">Startup score · {startupScore}/100</p>
+        ) : null}
         <p className="text-xs text-zinc-400">
           {tasksCompleted} of {tasksTotal} tasks completed
         </p>
@@ -81,34 +82,30 @@ export default function ProjectCard({
       <div className="mt-auto space-y-2">
         <Button
           type="button"
-          onClick={() => router.push(`/projects/${id}`)}
+          onClick={() => {
+            const numericId = Number(id);
+            if (Number.isFinite(numericId)) {
+              setActiveProjectId(numericId);
+            }
+            router.push(`/projects/${id}`);
+          }}
           className="w-full bg-gradient-to-r from-indigo-500 to-purple-500 text-white"
         >
           Open Project
           <ArrowUpRight className="ml-2 h-4 w-4" />
         </Button>
-        {onDelete ? (
+      {onDelete ? (
           <button
             type="button"
             onClick={() => onDelete(id)}
-            className="flex w-full items-center justify-center gap-2 rounded-lg border border-rose-400/30 bg-rose-500/10 px-4 py-2 text-sm text-rose-200 transition hover:bg-rose-500/20"
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-rose-400/30 bg-rose-500/10 px-4 py-2 text-sm text-rose-200 transition duration-200 hover:scale-105 hover:bg-rose-500/20 hover:shadow-lg"
             disabled={deleting}
           >
             <Trash2 className="h-4 w-4" />
             {deleting ? "Deleting..." : "Delete Project"}
           </button>
         ) : null}
-        {onPublish ? (
-          <button
-            type="button"
-            onClick={() => onPublish(id)}
-            className="flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm text-zinc-200 transition hover:bg-white/10"
-            disabled={publishing}
-          >
-            {publishing ? "Publishing..." : "Publish to Explore"}
-          </button>
-        ) : null}
       </div>
-    </motion.div>
+    </GlowCard>
   );
 }

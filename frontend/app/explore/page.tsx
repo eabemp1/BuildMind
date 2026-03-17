@@ -2,17 +2,20 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Heart, Users } from "lucide-react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { followPublicProject, getPublicProjects, likePublicProject, type PublicProjectData } from "@/lib/api";
 import { createNotificationForCurrentUser } from "@/lib/buildmind";
+import { FEATURES } from "@/lib/features";
 
 const LIKES_KEY = "bm_liked_projects";
 const FOLLOWS_KEY = "bm_followed_projects";
 
 export default function ExplorePage() {
+  const router = useRouter();
   const [projects, setProjects] = useState<PublicProjectData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -40,6 +43,10 @@ export default function ExplorePage() {
   };
 
   useEffect(() => {
+    if (!FEATURES.publicProjects) {
+      router.replace("/dashboard");
+      return;
+    }
     const load = async () => {
       try {
         const data = await getPublicProjects();
@@ -51,7 +58,7 @@ export default function ExplorePage() {
       }
     };
     void load();
-  }, []);
+  }, [router]);
 
   const like = async (projectId: number) => {
     if (likedIds.has(projectId)) return;

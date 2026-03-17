@@ -1,11 +1,21 @@
 "use client";
 
+import { useEffect } from "react";
 import { motion } from "framer-motion";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useClearNotificationsMutation, useMarkNotificationMutation, useNotificationsQuery } from "@/lib/queries";
+import { FEATURES } from "@/lib/features";
 
 export default function NotificationsPage() {
+  const router = useRouter();
+  useEffect(() => {
+    if (!FEATURES.notifications) {
+      router.replace("/dashboard");
+    }
+  }, [router]);
+  if (!FEATURES.notifications) return null;
   const { data: items = [], isLoading, error } = useNotificationsQuery();
   const markReadMutation = useMarkNotificationMutation();
   const clearMutation = useClearNotificationsMutation();

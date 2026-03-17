@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { motion } from "framer-motion";
 import {
   ArrowRight,
@@ -58,8 +59,7 @@ export default function HomePage() {
       <header className="sticky top-0 z-40 border-b border-white/5 bg-black/30 backdrop-blur">
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 font-semibold">BM</div>
-            <span className="text-sm font-semibold">BuildMind</span>
+            <Image src="/brand/buildmind-logo-mascot.jpeg" width={140} height={40} alt="BuildMind" />
           </div>
           <nav className="flex items-center gap-3 text-sm">
             <Link href="/auth/login" className="text-zinc-300 transition hover:text-white">
@@ -78,26 +78,26 @@ export default function HomePage() {
 
       <section className="mx-auto flex w-full max-w-6xl flex-col gap-12 px-6 pb-28 pt-20 lg:flex-row lg:items-center lg:gap-16">
         <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }} className="flex-1">
-          <p className="text-xs uppercase tracking-[0.3em] text-indigo-200">BuildMind SaaS</p>
+          <Image src="/brand/buildmind-logo-landing-page.jpeg" width={180} height={48} alt="BuildMind" />
           <h1 className="mt-4 text-4xl font-semibold leading-tight text-white md:text-5xl lg:text-6xl">
-            Turn Startup Ideas Into Execution Plans.
+            Build Your Startup Step-by-Step With AI Guidance
           </h1>
           <p className="text-body mt-6 max-w-xl text-base md:text-lg">
-            BuildMind uses AI to analyze your startup idea, generate a roadmap, and guide you step-by-step to launch.
+            Plan your idea, validate it, generate an execution roadmap, and track milestones — all in one workspace.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Link
               href="/auth/signup"
               className="inline-flex items-center rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 px-6 py-3 text-sm font-semibold text-white"
             >
-              Get Started
+              Start Building Your Startup
               <ArrowRight className="ml-2 h-4 w-4" />
             </Link>
             <Link
               href="#demo"
               className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-6 py-3 text-sm font-semibold text-zinc-200"
             >
-              View Demo
+              See How It Works
             </Link>
           </div>
         </motion.div>
@@ -108,14 +108,17 @@ export default function HomePage() {
           transition={{ duration: 0.6, delay: 0.1 }}
           className="flex-1"
         >
-          <DashboardPreview />
+          <DashboardPreview variant="dashboard" />
         </motion.div>
       </section>
 
       <section id="features" className="mx-auto w-full max-w-6xl px-6 pb-24">
         <motion.div initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="grid gap-6 md:grid-cols-2">
           <div className="glass-panel panel-glow p-6">
-            <h2 className="text-2xl font-semibold">Most Startup Ideas Never Get Executed.</h2>
+            <p className="text-xs uppercase tracking-[0.2em] text-indigo-200">
+              90% of startups fail because founders build without validation or clear execution plans.
+            </p>
+            <h2 className="mt-3 text-2xl font-semibold">Most Startup Ideas Never Get Executed.</h2>
             <p className="text-body mt-3">
               Founders stall when validation is unclear, roadmaps are missing, and the first steps are hard to prioritize.
             </p>
@@ -138,9 +141,9 @@ export default function HomePage() {
             <p className="text-body mt-3">AI validation, roadmap generation, and execution tracking in one product.</p>
             <div className="mt-5 grid gap-3">
               {[
-                { title: "Idea Analysis", description: "Understand strengths and risks before you build.", icon: Lightbulb },
-                { title: "AI Roadmap Generation", description: "Milestones and tasks tailored to your startup.", icon: Sparkles },
-                { title: "Execution Tracking", description: "Keep momentum with progress insights.", icon: ClipboardCheck },
+                { title: "AI Startup Analysis", description: "Analyze your startup idea and identify strengths, risks, and validation gaps.", icon: Lightbulb },
+                { title: "Execution Roadmap", description: "Generate structured milestones and tasks tailored to your startup.", icon: Sparkles },
+                { title: "Milestone Tracking", description: "Track progress from idea → validation → MVP → launch.", icon: ClipboardCheck },
               ].map((item) => (
                 <div key={item.title} className="rounded-xl border border-white/10 bg-white/5 p-4">
                   <div className="flex items-center gap-3 text-sm font-semibold text-zinc-100">
@@ -187,16 +190,13 @@ export default function HomePage() {
       <section id="product" className="mx-auto w-full max-w-6xl px-6 pb-24">
         <div className="mb-8">
           <h2 className="text-3xl font-semibold text-white">Feature Highlights</h2>
-          <p className="text-body mt-2 max-w-2xl">Everything you need to go from idea to execution without losing momentum.</p>
+          <p className="text-body mt-2 max-w-2xl">Three core capabilities that keep founders focused on execution.</p>
         </div>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {[
-            { title: "AI Idea Validation", desc: "Get structured feedback instantly.", icon: Lightbulb },
-            { title: "Startup Roadmap Generator", desc: "Milestones and tasks mapped for you.", icon: Rocket },
-            { title: "Execution Task Tracker", desc: "Track every task and milestone.", icon: ClipboardCheck },
-            { title: "AI Startup Coach", desc: "Actionable guidance at every stage.", icon: Sparkles },
-            { title: "Progress Tracking", desc: "Visualize momentum across stages.", icon: BarChart3 },
-            { title: "Founder Insights", desc: "Know the next best move fast.", icon: Radar },
+            { title: "AI Startup Analysis", desc: "Analyze your startup idea and identify strengths, risks, and validation gaps.", icon: Lightbulb },
+            { title: "Execution Roadmap", desc: "Generate structured milestones and tasks tailored to your startup.", icon: Rocket },
+            { title: "Milestone Tracking", desc: "Track progress from idea → validation → MVP → launch.", icon: ClipboardCheck },
           ].map((feature) => (
             <motion.div
               key={feature.title}
@@ -212,44 +212,41 @@ export default function HomePage() {
       </section>
 
       <section id="pricing" className="mx-auto w-full max-w-6xl px-6 pb-24">
-        <div className="glass-panel panel-glow relative overflow-hidden p-10">
-          <div className="pointer-events-none absolute -right-20 top-10 h-56 w-56 rounded-full bg-indigo-500/20 blur-[120px]" />
-          <div className="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-indigo-200">Product Screenshot</p>
-              <h3 className="mt-2 text-3xl font-semibold text-white">Your startup execution command center.</h3>
-              <p className="text-body mt-2 max-w-2xl">
-                Use BuildMind as the core workspace to track validation, milestones, and execution with clarity.
-              </p>
+        <div className="mb-8">
+          <h2 className="text-3xl font-semibold text-white">See BuildMind in Action</h2>
+          <p className="text-body mt-2 max-w-2xl">A quick look at the workspace founders use to execute with clarity.</p>
+        </div>
+        <div className="grid gap-4 md:grid-cols-3">
+          {[
+            { title: "Projects Dashboard", body: "Track active projects and execution progress.", component: <DashboardPreview variant="dashboard" /> },
+            { title: "BuildMini Chat", body: "Get guidance from BuildMini in context.", component: <DashboardPreview variant="coach" /> },
+            { title: "Milestone Tracker", body: "Visualize each stage of your roadmap.", component: <DashboardPreview variant="milestones" /> },
+          ].map((item) => (
+            <div key={item.title} className="glass-panel panel-glow overflow-hidden p-4">
+              <div className="mb-3 text-sm font-semibold text-zinc-100">{item.title}</div>
+              <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+                {item.component}
+              </div>
+              <p className="text-body mt-3 text-sm">{item.body}</p>
             </div>
-            <Link
-              href="/auth/signup"
-              className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-zinc-200"
-            >
-              See it live
-              <ArrowRight className="ml-2 h-4 w-4" />
-            </Link>
-          </div>
-          <div className="mt-8">
-            <DashboardPreview />
-          </div>
+          ))}
         </div>
       </section>
 
       <section className="mx-auto w-full max-w-6xl px-6 pb-24">
         <div className="mb-8">
-          <h2 className="text-3xl font-semibold text-white">Founders Love BuildMind</h2>
-          <p className="text-body mt-2 max-w-2xl">Placeholder testimonials to establish trust and momentum.</p>
+          <h2 className="text-3xl font-semibold text-white">Built for founders and indie builders</h2>
+          <p className="text-body mt-2 max-w-2xl">Early founders are using BuildMind to turn ideas into execution plans.</p>
         </div>
         <div className="grid gap-4 md:grid-cols-3">
           {[
-            "BuildMind helped me turn my startup idea into a clear roadmap.",
-            "The AI roadmap saved me weeks of planning.",
-            "I finally have a single place to track validation and execution.",
+            "BuildMind helped me finally structure my startup roadmap.",
+            "This feels like having a startup mentor built into my workspace.",
+            "BuildMind gave me a clear execution path in days, not weeks.",
           ].map((quote) => (
             <div key={quote} className="glass-panel panel-glow p-6">
               <p className="text-sm text-zinc-300">“{quote}”</p>
-              <p className="mt-4 text-xs uppercase tracking-[0.2em] text-zinc-500">Founder, stealth startup</p>
+              <p className="mt-4 text-xs uppercase tracking-[0.2em] text-zinc-500">Early Founder</p>
             </div>
           ))}
         </div>
@@ -260,14 +257,14 @@ export default function HomePage() {
           <div className="pointer-events-none absolute -left-20 top-10 h-56 w-56 rounded-full bg-purple-500/20 blur-[120px]" />
           <div className="flex flex-col items-start gap-4 md:flex-row md:items-center md:justify-between">
             <div>
-              <h3 className="text-3xl font-semibold text-white">Start Building Your Startup Today.</h3>
-              <p className="text-body mt-2">Join founders who want execution clarity from day one.</p>
+              <h3 className="text-3xl font-semibold text-white">Start Building Your Startup Today</h3>
+              <p className="text-body mt-2">Create your first startup roadmap in under 2 minutes.</p>
             </div>
             <Link
               href="/auth/signup"
               className="inline-flex items-center rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 px-6 py-3 text-sm font-semibold text-white"
             >
-              Create Your First Startup Plan
+              Start Free
               <ArrowRight className="ml-2 h-4 w-4" />
             </Link>
           </div>

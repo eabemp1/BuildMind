@@ -1,8 +1,10 @@
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Project
+from app.models import Project, StartupMetrics, ValidationData
 from app.services.ai_service import generate_ai_response, generate_milestones_from_idea
 
 
@@ -28,6 +30,7 @@ def ai_coach_endpoint(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="question is required")
 
     context = ""
+    structured_context: dict[str, object] = {}
     if payload.get("project"):
         proj = payload.get("project") or {}
         context = (
@@ -36,6 +39,14 @@ def ai_coach_endpoint(
             f"Problem: {proj.get('problem','')}\n"
             f"Target users: {proj.get('target_users','')}\n"
         )
+        structured_context = {
+            "industry": proj.get("industry"),
+            "target_market": proj.get("target_market"),
+            "revenue_model": proj.get("revenue_model"),
+            "startup_stage": proj.get("startup_stage"),
+            "validation_data": proj.get("validation_data") or {},
+            "startup_metrics": proj.get("startup_metrics") or {},
+        }
     else:
         raw_id = payload.get("projectId")
         try:
@@ -51,9 +62,39 @@ def ai_coach_endpoint(
                     f"Problem: {project.problem or ''}\n"
                     f"Target users: {project.target_users or ''}\n"
                 )
+                validation_data = (
+                    db.query(ValidationData).filter(ValidationData.project_id == project.id).first()
+                )
+                startup_metrics = (
+                    db.query(StartupMetrics).filter(StartupMetrics.project_id == project.id).first()
+                )
+                structured_context = {
+                    "industry": project.industry,
+                    "target_market": project.target_market,
+                    "revenue_model": project.revenue_model,
+                    "startup_stage": project.startup_stage,
+                    "validation_data": {
+                        "users_interviewed": validation_data.users_interviewed,
+                        "interested_users": validation_data.interested_users,
+                        "preorders": validation_data.preorders,
+                        "feedback_sentiment": validation_data.feedback_sentiment,
+                    }
+                    if validation_data
+                    else {},
+                    "startup_metrics": {
+                        "milestones_completed": startup_metrics.milestones_completed,
+                        "tasks_completed": startup_metrics.tasks_completed,
+                        "early_users": startup_metrics.early_users,
+                        "active_users": startup_metrics.active_users,
+                        "execution_streak": startup_metrics.execution_streak,
+                    }
+                    if startup_metrics
+                    else {},
+                }
 
     context = context + "Provide concise, actionable coaching."
-    user_content = f"{context}\nFounder question: {question}"
+    structured_block = json.dumps(structured_context, ensure_ascii=False)
+    user_content = f"{context}\nStructured context: {structured_block}\nFounder question: {question}"
     try:
         response = generate_ai_response(
             messages=[

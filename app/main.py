@@ -37,6 +37,7 @@ from app.routes.founders import router as founders_router
 from app.routes.search import router as search_router
 from app.routes.ai import router as ai_router
 from app.routes.weekly_reports import router as weekly_reports_router
+from app.routes.startup_data import router as startup_data_router
 from app.core.config import get_settings
 from app.core.logging_config import configure_logging, request_log_line
 from app.database import SessionLocal
@@ -73,6 +74,14 @@ def _ensure_runtime_schema() -> None:
             ("roadmap_json", "ALTER TABLE projects ADD COLUMN roadmap_json TEXT"),
             ("problem", "ALTER TABLE projects ADD COLUMN problem TEXT"),
             ("target_users", "ALTER TABLE projects ADD COLUMN target_users TEXT"),
+            ("industry", "ALTER TABLE projects ADD COLUMN industry VARCHAR(120)"),
+            ("target_market", "ALTER TABLE projects ADD COLUMN target_market VARCHAR(255)"),
+            ("problem_type", "ALTER TABLE projects ADD COLUMN problem_type VARCHAR(120)"),
+            ("revenue_model", "ALTER TABLE projects ADD COLUMN revenue_model VARCHAR(120)"),
+            ("startup_stage", "ALTER TABLE projects ADD COLUMN startup_stage VARCHAR(32)"),
+            ("validation_score", "ALTER TABLE projects ADD COLUMN validation_score FLOAT DEFAULT 0"),
+            ("execution_score", "ALTER TABLE projects ADD COLUMN execution_score FLOAT DEFAULT 0"),
+            ("momentum_score", "ALTER TABLE projects ADD COLUMN momentum_score FLOAT DEFAULT 0"),
             ("progress", "ALTER TABLE projects ADD COLUMN progress FLOAT DEFAULT 0"),
             ("is_public", "ALTER TABLE projects ADD COLUMN is_public BOOLEAN DEFAULT FALSE"),
             ("likes", "ALTER TABLE projects ADD COLUMN likes INTEGER DEFAULT 0"),
@@ -81,6 +90,7 @@ def _ensure_runtime_schema() -> None:
             ("archived_at", "ALTER TABLE projects ADD COLUMN archived_at TIMESTAMP"),
         ],
         "milestones": [
+            ("description", "ALTER TABLE milestones ADD COLUMN description TEXT"),
             ("status", "ALTER TABLE milestones ADD COLUMN status VARCHAR(32) DEFAULT 'pending'"),
             ("order_index", "ALTER TABLE milestones ADD COLUMN order_index INTEGER DEFAULT 0"),
             ("completed_at", "ALTER TABLE milestones ADD COLUMN completed_at TIMESTAMP"),
@@ -153,6 +163,39 @@ def _ensure_runtime_schema() -> None:
                 """
             )
         )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS validation_data (
+                    id INTEGER PRIMARY KEY,
+                    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    users_interviewed INTEGER DEFAULT 0,
+                    interested_users INTEGER DEFAULT 0,
+                    preorders INTEGER DEFAULT 0,
+                    feedback_sentiment VARCHAR(16) DEFAULT 'neutral',
+                    created_at TIMESTAMP,
+                    UNIQUE (project_id)
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS startup_metrics (
+                    id INTEGER PRIMARY KEY,
+                    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    milestones_completed INTEGER DEFAULT 0,
+                    tasks_completed INTEGER DEFAULT 0,
+                    early_users INTEGER DEFAULT 0,
+                    active_users INTEGER DEFAULT 0,
+                    execution_streak INTEGER DEFAULT 0,
+                    updated_at TIMESTAMP,
+                    UNIQUE (project_id)
+                )
+                """
+            )
+        )
 
 
 _ensure_runtime_schema()
@@ -190,6 +233,7 @@ app.include_router(founders_router, prefix="/api/v1")
 app.include_router(search_router, prefix="/api/v1")
 app.include_router(ai_router, prefix="/api/v1")
 app.include_router(weekly_reports_router, prefix="/api/v1")
+app.include_router(startup_data_router, prefix="/api/v1")
 
 
 def _install_v1_aliases() -> None:

@@ -1,13 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Bot, Send } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import GlowCard from "@/components/ui/glow-card";
+import { CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useProjectsQuery } from "@/lib/queries";
 import { createClient } from "@/lib/supabase/client";
+import { trackEvent } from "@/lib/analytics";
+import { FEATURES } from "@/lib/features";
+import { useRouter } from "next/navigation";
+import PageHero from "@/components/layout/page-hero";
 
 type ChatMessage = { id: string; role: "user" | "assistant"; content: string };
 
@@ -39,6 +44,13 @@ function formatList(text: string): string[] {
 }
 
 export default function AICoachPage() {
+  const router = useRouter();
+  useEffect(() => {
+    if (!FEATURES.aiCoach) {
+      router.replace("/dashboard");
+    }
+  }, [router]);
+  if (!FEATURES.aiCoach) return null;
   const { data: projects = [], isLoading: loadingProjects } = useProjectsQuery();
   const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(undefined);
   const activeProjectId = selectedProjectId ?? projects[0]?.id;
@@ -49,7 +61,7 @@ export default function AICoachPage() {
     {
       id: "welcome",
       role: "assistant",
-      content: "Hi! I’m BuildMini, your BuildMind AI coach. Ask me about your project execution or next steps.",
+      content: "Hi! I’m BuildMini, your BuildMind coach. Ask me about your project execution or next steps.",
     },
   ]);
 
@@ -90,6 +102,7 @@ export default function AICoachPage() {
       }
       const reply = body?.data?.reply || "I can help with your next steps.";
       setMessages((prev) => [...prev, { id: aiId, role: "assistant", content: reply }]);
+      trackEvent("ai_coach_used");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to send message.");
     } finally {
@@ -98,18 +111,23 @@ export default function AICoachPage() {
   };
 
   return (
-    <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-semibold text-zinc-100">BuildMini</h2>
-        <p className="text-body mt-1">Chat with BuildMini about your project execution and next steps.</p>
-      </div>
+    <motion.section
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="mx-auto max-w-7xl space-y-8 px-6"
+    >
+      <PageHero
+        kicker="BuildMini"
+        title="BuildMini Chat"
+        subtitle="Chat with BuildMini about your project execution and next steps."
+      />
 
-      <Card className="glass-panel panel-glow overflow-hidden">
+      <GlowCard className="flex h-[70vh] flex-col overflow-hidden p-0">
         <div className="bg-gradient-to-r from-indigo-500/25 to-purple-500/25 px-6 py-4">
-          <p className="text-xs uppercase tracking-[0.2em] text-indigo-200">BuildMini Chat</p>
+          <p className="text-xs uppercase tracking-[0.2em] text-indigo-200">BuildMini</p>
           <h3 className="mt-1 text-lg font-semibold text-zinc-100">Project-focused coaching</h3>
         </div>
-        <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <CardHeader className="mb-6 flex flex-col gap-3 px-6 pt-6 md:flex-row md:items-center md:justify-between">
           <div>
             <CardTitle className="text-zinc-100">BuildMini Chat</CardTitle>
             <p className="text-body">Select a project and ask for guidance.</p>
@@ -128,8 +146,8 @@ export default function AICoachPage() {
             ))}
           </select>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-3">
+        <CardContent className="flex flex-1 flex-col overflow-hidden px-6 pb-6">
+          <div className="flex-1 space-y-3 overflow-y-auto pb-4">
             {messages.map((message) => (
               <div
                 key={message.id}
@@ -183,14 +201,14 @@ export default function AICoachPage() {
             ))}
             {isSending ? <p className="text-sm text-zinc-400">Generating response...</p> : null}
             {!loadingProjects && projects.length === 0 ? (
-              <p className="text-sm text-rose-400">Create a project to chat with the AI coach.</p>
+              <p className="text-sm text-rose-400">Create a project to chat with BuildMini.</p>
             ) : null}
             {error ? <p className="text-sm text-rose-400">{error}</p> : null}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="mt-auto flex flex-wrap items-center gap-4 border-t border-white/10 pt-4">
             <Input
-              placeholder="Ask the AI coach about your roadmap..."
+              placeholder="Ask BuildMini about your roadmap..."
               value={input}
               onChange={(e) => setInput(e.target.value)}
               className="min-w-[220px] flex-1 border-white/10 bg-black/20 text-zinc-100 placeholder:text-zinc-500"
@@ -205,7 +223,7 @@ export default function AICoachPage() {
             </Button>
           </div>
         </CardContent>
-      </Card>
+      </GlowCard>
     </motion.section>
   );
 }

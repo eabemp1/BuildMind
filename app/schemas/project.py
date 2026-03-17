@@ -6,6 +6,14 @@ from pydantic import BaseModel, Field
 class ProjectCreateRequest(BaseModel):
     title: str = Field(min_length=3, max_length=255)
     description: str = Field(default="", max_length=2000)
+    industry: str | None = Field(default=None, max_length=120)
+    target_market: str | None = Field(default=None, max_length=255)
+    problem_type: str | None = Field(default=None, max_length=120)
+    revenue_model: str | None = Field(default=None, max_length=120)
+    startup_stage: str | None = Field(default=None, max_length=32)
+    validation_score: float | None = Field(default=None, ge=0.0, le=100.0)
+    execution_score: float | None = Field(default=None, ge=0.0, le=100.0)
+    momentum_score: float | None = Field(default=None, ge=0.0, le=100.0)
     problem: str | None = Field(default=None, max_length=5000)
     target_users: str | None = Field(default=None, max_length=5000)
     is_public: bool | None = None
@@ -45,6 +53,7 @@ class TaskOut(BaseModel):
 class MilestoneOut(BaseModel):
     id: int
     title: str
+    description: str | None = None
     status: str = "pending"
     order_index: int = 0
     completed_at: datetime | None = None
@@ -58,6 +67,14 @@ class ProjectOut(BaseModel):
     user_id: int
     title: str
     description: str | None
+    industry: str | None = None
+    target_market: str | None = None
+    problem_type: str | None = None
+    revenue_model: str | None = None
+    startup_stage: str | None = None
+    validation_score: float = 0
+    execution_score: float = 0
+    momentum_score: float = 0
     problem: str | None = None
     target_users: str | None = None
     progress: float = 0
@@ -73,6 +90,14 @@ class ProjectOut(BaseModel):
 class ProjectUpdateRequest(BaseModel):
     title: str | None = Field(default=None, min_length=3, max_length=255)
     description: str | None = Field(default=None, max_length=2000)
+    industry: str | None = Field(default=None, max_length=120)
+    target_market: str | None = Field(default=None, max_length=255)
+    problem_type: str | None = Field(default=None, max_length=120)
+    revenue_model: str | None = Field(default=None, max_length=120)
+    startup_stage: str | None = Field(default=None, max_length=32)
+    validation_score: float | None = Field(default=None, ge=0.0, le=100.0)
+    execution_score: float | None = Field(default=None, ge=0.0, le=100.0)
+    momentum_score: float | None = Field(default=None, ge=0.0, le=100.0)
     problem: str | None = Field(default=None, max_length=5000)
     target_users: str | None = Field(default=None, max_length=5000)
     progress: float | None = Field(default=None, ge=0.0, le=100.0)
@@ -81,6 +106,7 @@ class ProjectUpdateRequest(BaseModel):
 
 class MilestoneUpdateRequest(BaseModel):
     title: str | None = Field(default=None, min_length=2, max_length=255)
+    description: str | None = Field(default=None, max_length=2000)
     status: str | None = Field(default=None, min_length=2, max_length=32)
     order_index: int | None = Field(default=None, ge=0)
 

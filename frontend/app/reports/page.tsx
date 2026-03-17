@@ -2,15 +2,23 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getFounderWeeklyReport, type FounderWeeklyReportData } from "@/lib/api";
+import { FEATURES } from "@/lib/features";
+import PageHero from "@/components/layout/page-hero";
 
 export default function ReportsPage() {
+  const router = useRouter();
   const [report, setReport] = useState<FounderWeeklyReportData | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!FEATURES.analytics) {
+      router.replace("/dashboard");
+      return;
+    }
     const load = async () => {
       try {
         const data = await getFounderWeeklyReport();
@@ -22,14 +30,15 @@ export default function ReportsPage() {
       }
     };
     void load();
-  }, []);
+  }, [router]);
 
   return (
     <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-semibold text-zinc-100">Weekly Founder Report</h2>
-        <p className="text-body mt-1">Your AI-generated progress summary for the week.</p>
-      </div>
+      <PageHero
+        kicker="Progress"
+        title="Weekly Founder Report"
+        subtitle="Your AI-generated progress summary for the week."
+      />
 
       {loading ? <p className="text-sm text-zinc-400">Loading report...</p> : null}
       {error ? <p className="text-sm text-rose-400">{error}</p> : null}

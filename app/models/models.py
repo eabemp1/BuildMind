@@ -50,6 +50,14 @@ class Project(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=True)
+    industry: Mapped[str] = mapped_column(String(120), nullable=True)
+    target_market: Mapped[str] = mapped_column(String(255), nullable=True)
+    problem_type: Mapped[str] = mapped_column(String(120), nullable=True)
+    revenue_model: Mapped[str] = mapped_column(String(120), nullable=True)
+    startup_stage: Mapped[str] = mapped_column(String(32), nullable=True)
+    validation_score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    execution_score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    momentum_score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     problem: Mapped[str] = mapped_column(Text, nullable=True)
     target_users: Mapped[str] = mapped_column(Text, nullable=True)
     progress: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
@@ -66,6 +74,16 @@ class Project(Base):
     feedback_entries: Mapped[list["Feedback"]] = relationship(back_populates="project", cascade="all, delete-orphan")
     updates: Mapped[list["ProjectUpdate"]] = relationship(back_populates="project", cascade="all, delete-orphan")
     comments: Mapped[list["ProjectComment"]] = relationship(back_populates="project", cascade="all, delete-orphan")
+    validation_data: Mapped["ValidationData"] = relationship(
+        back_populates="project",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+    startup_metrics: Mapped["StartupMetrics"] = relationship(
+        back_populates="project",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
 
 
 class Milestone(Base):
@@ -74,6 +92,7 @@ class Milestone(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True, nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
     order_index: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -83,6 +102,35 @@ class Milestone(Base):
 
     project: Mapped["Project"] = relationship(back_populates="milestones")
     tasks: Mapped[list["Task"]] = relationship(back_populates="milestone", cascade="all, delete-orphan")
+
+
+class ValidationData(Base):
+    __tablename__ = "validation_data"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), unique=True, index=True, nullable=False)
+    users_interviewed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    interested_users: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    preorders: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    feedback_sentiment: Mapped[str] = mapped_column(String(16), default="neutral", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+
+    project: Mapped["Project"] = relationship(back_populates="validation_data")
+
+
+class StartupMetrics(Base):
+    __tablename__ = "startup_metrics"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), unique=True, index=True, nullable=False)
+    milestones_completed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    tasks_completed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    early_users: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    active_users: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    execution_streak: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+
+    project: Mapped["Project"] = relationship(back_populates="startup_metrics")
 
 
 class Task(Base):

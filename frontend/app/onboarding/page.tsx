@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { createProjectWithRoadmap, getCurrentUser, getOnboardingStatus } from "@/lib/buildmind";
 import { onboardingSchema } from "@/lib/validation";
+import { identifyUser } from "@/lib/analytics";
 
 type Step = 1 | 2 | 3;
 
@@ -26,6 +27,7 @@ export default function OnboardingPage() {
       try {
         const user = await getCurrentUser();
         if (!user) return router.replace("/auth/login");
+        identifyUser(user.id, user.email);
         const done = await getOnboardingStatus(user.id);
         if (done) router.replace("/dashboard");
       } catch {
@@ -116,4 +118,3 @@ export default function OnboardingPage() {
     </div>
   );
 }
-

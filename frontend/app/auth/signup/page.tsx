@@ -5,12 +5,14 @@ import { z } from "zod";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { Github } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
 import { ensureUserProfile } from "@/lib/buildmind";
 import { authSchema } from "@/lib/validation";
+import { identifyUser, trackEvent } from "@/lib/analytics";
 
 function formatAuthError(err: unknown): string {
   if (err instanceof Error && err.message.toLowerCase().includes("email not confirmed")) {
@@ -34,7 +36,10 @@ export default function SignupPage() {
   useEffect(() => {
     const check = async () => {
       const { data } = await supabase.auth.getUser();
-      if (data.user) router.replace("/dashboard");
+      if (data.user) {
+        identifyUser(data.user.id, data.user.email);
+        router.replace("/dashboard");
+      }
     };
     void check();
   }, [router, supabase.auth]);
@@ -56,6 +61,8 @@ export default function SignupPage() {
       const { error: loginError } = await supabase.auth.signInWithPassword(values);
       if (loginError) throw loginError;
       await ensureUserProfile({ id: signupData.user.id, email: signupData.user.email });
+      identifyUser(signupData.user.id, signupData.user.email);
+      trackEvent("user_signed_up");
       router.replace("/onboarding");
     } catch (err) {
       if (err instanceof z.ZodError) {
@@ -81,7 +88,7 @@ export default function SignupPage() {
   return (
     <div className="grid min-h-screen place-items-center p-6">
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="glass-panel panel-glow w-full max-w-md p-8">
-        <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">BuildMind</p>
+        <Image src="/brand/buildmind-logo-mascot.jpeg" width={160} height={44} alt="BuildMind" />
         <h1 className="mt-2 text-2xl font-semibold text-zinc-100">Create your account</h1>
         <p className="text-body mt-1">Start building your startup execution plan with AI guidance.</p>
 

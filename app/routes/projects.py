@@ -67,6 +67,7 @@ def _to_project_out(project) -> ProjectOut:
             MilestoneOut(
                 id=ms.id,
                 title=ms.title,
+                description=ms.description,
                 status=ms.status,
                 order_index=ms.order_index,
                 completed_at=ms.completed_at,
@@ -80,6 +81,14 @@ def _to_project_out(project) -> ProjectOut:
         user_id=project.user_id,
         title=project.title,
         description=project.description,
+        industry=project.industry,
+        target_market=project.target_market,
+        problem_type=project.problem_type,
+        revenue_model=project.revenue_model,
+        startup_stage=project.startup_stage,
+        validation_score=project.validation_score,
+        execution_score=project.execution_score,
+        momentum_score=project.momentum_score,
         problem=project.problem,
         target_users=project.target_users,
         progress=project.progress,
@@ -106,6 +115,14 @@ def create_project_endpoint(
         description=payload.description,
         problem=payload.problem,
         target_users=payload.target_users,
+        industry=payload.industry,
+        target_market=payload.target_market,
+        problem_type=payload.problem_type,
+        revenue_model=payload.revenue_model,
+        startup_stage=payload.startup_stage,
+        validation_score=payload.validation_score,
+        execution_score=payload.execution_score,
+        momentum_score=payload.momentum_score,
     )
     if payload.is_public is not None:
         row.is_public = bool(payload.is_public)
@@ -291,6 +308,14 @@ def update_project_endpoint(
             description=payload.description,
             problem=payload.problem,
             target_users=payload.target_users,
+            industry=payload.industry,
+            target_market=payload.target_market,
+            problem_type=payload.problem_type,
+            revenue_model=payload.revenue_model,
+            startup_stage=payload.startup_stage,
+            validation_score=payload.validation_score,
+            execution_score=payload.execution_score,
+            momentum_score=payload.momentum_score,
             progress=payload.progress,
         )
         if payload.is_public is not None:

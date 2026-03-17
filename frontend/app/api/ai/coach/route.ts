@@ -28,7 +28,7 @@ export async function POST(request: Request) {
         data: isChatRequest
           ? {
               reply:
-                "Focus this week on validating demand: interview 5 target users, capture the top 3 pain points, and update your roadmap accordingly.",
+                "BuildMini recommends: interview 5 target users, capture their top 3 pain points, and update your roadmap accordingly.",
             }
           : {
               advice: [
@@ -65,15 +65,43 @@ export async function POST(request: Request) {
     const completed = (tasks ?? []).filter((t) => t.is_completed).length;
     const total = (tasks ?? []).length;
 
+    const callBackendCoach = async () => {
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000/api/v1";
+      const response = await fetch(`${baseUrl}/ai/coach`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          message,
+          question: message,
+          project: {
+            title: project?.title ?? "",
+            description: project?.description ?? "",
+            target_users: project?.target_users ?? "",
+            problem: project?.problem ?? "",
+          },
+        }),
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || "Backend AI provider failed");
+      }
+      const payload = await response.json().catch(() => ({}));
+      const reply = payload?.data?.message;
+      return typeof reply === "string" ? reply : null;
+    };
+
     if (isChatRequest) {
       const formattedHistory = messages
         .slice(-8)
         .map((entry: { role: string; content: string }) => `${entry.role === "assistant" ? "Assistant" : "User"}: ${entry.content}`)
         .join("\n");
 
-      const result = await groqJSON<{ reply: string }>(
-        "You are a pragmatic startup execution coach. Return JSON with a single reply string.",
-        `Project title: ${project.title}
+      let reply = "BuildMini suggests focusing on your next milestone task and validating with users.";
+      try {
+        const result = await groqJSON<{ reply: string }>(
+          "You are a pragmatic startup execution coach. Return JSON with a single reply string.",
+          `Project title: ${project.title}
 Description: ${project.description ?? ""}
 Target users: ${project.target_users ?? ""}
 Problem: ${project.problem ?? ""}
@@ -85,25 +113,48 @@ ${formattedHistory || "No previous messages."}
 User message: ${message}
 
 Respond with a concise, actionable coaching reply.`,
-      );
-      const reply = typeof result?.reply === "string" ? result.reply : "Focus on the next milestone task and validate with users.";
-      await createUserNotification(userId, "New AI coach reply available.", "ai_recommendation");
+        );
+        if (typeof result?.reply === "string") reply = result.reply;
+      } catch {
+        const backendReply = await callBackendCoach().catch(() => null);
+        if (backendReply) reply = backendReply;
+      }
+      await createUserNotification(userId, "New BuildMini reply available.", "ai_recommendation");
       return NextResponse.json({ success: true, data: { reply } });
     }
 
-    const result = await groqJSON<{ advice: string[] }>(
-      "You are a pragmatic startup execution coach. Return JSON with advice array only.",
-      `Project title: ${project.title}
+    let advice: string[] = [
+      "Interview at least 5 target users this week.",
+      "Prioritize a single activation metric for your MVP.",
+      "Ship one milestone task before expanding scope.",
+      "Summarize user feedback into a weekly action list.",
+    ];
+    try {
+      const result = await groqJSON<{ advice: string[] }>(
+        "You are a pragmatic startup execution coach. Return JSON with advice array only.",
+        `Project title: ${project.title}
 Description: ${project.description ?? ""}
 Target users: ${project.target_users ?? ""}
 Problem: ${project.problem ?? ""}
 Milestones: ${(milestones ?? []).map((m) => m.title).join(", ")}
 Task completion: ${completed}/${Math.max(1, total)}
 Give 4 actionable coaching bullets.`,
-    );
+      );
 
-    const advice = Array.isArray(result?.advice) ? result.advice.map(String) : [];
-    await createUserNotification(userId, "New AI coach recommendation available.", "ai_recommendation");
+      if (Array.isArray(result?.advice)) {
+        advice = result.advice.map(String);
+      }
+    } catch {
+      const backendReply = await callBackendCoach().catch(() => null);
+      if (backendReply) {
+        advice = backendReply
+          .split("\n")
+          .map((line) => line.replace(/^[\-\*\d\.\)\s]+/, "").trim())
+          .filter(Boolean)
+          .slice(0, 4);
+      }
+    }
+    await createUserNotification(userId, "New BuildMini recommendation available.", "ai_recommendation");
     return NextResponse.json({ success: true, data: { advice } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Coach generation failed";

@@ -1,15 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { z } from "zod";
 import { useRouter } from "next/navigation";
 import ProjectCard from "@/components/project-card";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import GlowCard from "@/components/ui/glow-card";
+import { CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { createNotificationForCurrentUser, getCurrentUser } from "@/lib/buildmind";
-import { importPublicProject } from "@/lib/api";
+import PageHero from "@/components/layout/page-hero";
+import { computeStartupScore } from "@/lib/buildmind";
+import { getActiveProjectId, setActiveProjectId } from "@/lib/api";
 import { useCreateProjectMutation, useDeleteProjectMutation, useProjectSummariesQuery } from "@/lib/queries";
 import { projectCreateSchema } from "@/lib/validation";
 
@@ -24,13 +26,21 @@ export default function ProjectsPage() {
   const { data: summaries = [], isLoading, error: summariesError } = useProjectSummariesQuery();
   const createMutation = useCreateProjectMutation();
   const deleteMutation = useDeleteProjectMutation();
-  const [publishingId, setPublishingId] = useState<string | null>(null);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [projectName, setProjectName] = useState("");
   const [ideaDescription, setIdeaDescription] = useState("");
   const [targetUsers, setTargetUsers] = useState("");
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!summaries.length) return;
+    const active = getActiveProjectId();
+    if (!active) {
+      const firstId = Number(summaries[0]?.id);
+      if (Number.isFinite(firstId)) setActiveProjectId(firstId);
+    }
+  }, [summaries]);
 
   const onCreate = async () => {
     try {
@@ -54,33 +64,38 @@ export default function ProjectsPage() {
   };
 
   return (
-    <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-2xl font-semibold text-zinc-100">Projects</h2>
-          <p className="text-body mt-1">Create and manage startup ideas, milestones, and execution tasks.</p>
-        </div>
-        <Button className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white" onClick={() => setModalOpen(true)}>
-          Create Project
-        </Button>
-      </div>
+    <motion.section
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="mx-auto max-w-7xl space-y-8 px-6"
+    >
+      <PageHero
+        kicker="Projects"
+        title="Build Your Startup Workspace"
+        subtitle="Create and manage startup ideas, milestones, and execution tasks."
+        actions={
+          <Button className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white" onClick={() => setModalOpen(true)}>
+            + Create Project
+          </Button>
+        }
+      />
 
       {isLoading ? (
         <div className="text-sm text-zinc-400">Loading projects...</div>
       ) : summariesError ? (
         <div className="text-sm text-rose-400">{summariesError instanceof Error ? summariesError.message : "Failed to load projects"}</div>
       ) : summaries.length === 0 ? (
-        <Card className="glass-panel panel-glow overflow-hidden">
+        <GlowCard className="overflow-hidden p-0">
           <div className="bg-gradient-to-r from-indigo-500/30 to-purple-500/30 px-6 py-5">
             <p className="text-xs uppercase tracking-[0.2em] text-indigo-200">No Projects Yet</p>
             <h3 className="mt-1 text-xl font-semibold text-zinc-100">Create your first startup idea</h3>
           </div>
-          <CardContent className="p-6">
+          <CardContent className="px-6 pb-6">
             <p className="text-body">Start with a clear problem and target audience. BuildMind will generate validation and roadmap automatically.</p>
           </CardContent>
-        </Card>
+        </GlowCard>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
           {summaries.map((summary) => (
             <ProjectCard
               key={summary.id}
@@ -88,33 +103,13 @@ export default function ProjectsPage() {
               title={summary.title}
               description={summary.description}
               progress={summary.progress}
+              industry={summary.industry ?? "General"}
+              startupScore={computeStartupScore(summary)}
               tasksCompleted={summary.tasksCompleted}
               tasksTotal={summary.tasksTotal}
               lastActivity={summary.lastActivity}
-              stage={stageFromStrengthCount(summary.validation_strengths.length)}
+              stage={summary.startup_stage ?? stageFromStrengthCount(summary.validation_strengths.length)}
               deleting={deleteMutation.isPending}
-              publishing={publishingId === summary.id}
-              onPublish={async () => {
-                try {
-                  setError("");
-                  setPublishingId(summary.id);
-                  const user = await getCurrentUser();
-                  if (!user?.email) throw new Error("No user profile");
-                  await importPublicProject({
-                    user_email: user.email,
-                    username: (user.user_metadata?.username as string | undefined) ?? undefined,
-                    avatar_url: (user.user_metadata?.avatar_url as string | undefined) ?? undefined,
-                    title: summary.title,
-                    description: summary.description ?? undefined,
-                    progress: summary.progress,
-                  });
-                  await createNotificationForCurrentUser("project_published", "Project published to Explore.");
-                } catch (err) {
-                  setError(err instanceof Error ? err.message : "Failed to publish");
-                } finally {
-                  setPublishingId(null);
-                }
-              }}
               onDelete={(id) => {
                 const confirmed = window.confirm("Delete this project and all associated milestones and tasks?");
                 if (!confirmed) return;
@@ -127,12 +122,12 @@ export default function ProjectsPage() {
 
       {modalOpen ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4 backdrop-blur-sm">
-          <Card className="glass-panel panel-glow w-full max-w-xl">
-            <CardHeader>
+          <GlowCard className="w-full max-w-xl p-0">
+            <CardHeader className="mb-6 px-6 pt-6">
               <CardTitle className="text-zinc-100">Create Project</CardTitle>
               <p className="text-body">We will validate your idea and generate a milestone roadmap.</p>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="space-y-3 px-6 pb-6">
               <Input
                 placeholder="Project name"
                 className="border-white/10 bg-black/20 text-zinc-100 placeholder:text-zinc-500"
@@ -161,7 +156,7 @@ export default function ProjectsPage() {
                 </Button>
               </div>
             </CardContent>
-          </Card>
+          </GlowCard>
         </div>
       ) : null}
     </motion.section>

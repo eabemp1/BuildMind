@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
+import { FEATURES } from "@/lib/features";
 
 function BellIcon() {
   return (
@@ -54,10 +55,12 @@ export default function Topbar() {
           <path d="m21 21-4.3-4.3" />
         </svg>
       </div>
-      <Button variant="outline" className="ml-auto h-10 gap-2 border-slate-300 text-slate-700 hover:bg-slate-100" onClick={() => router.push("/notifications")}>
-        <BellIcon />
-        <span className="hidden sm:inline">Notifications</span>
-      </Button>
+      {FEATURES.notifications ? (
+        <Button variant="outline" className="ml-auto h-10 gap-2 border-slate-300 text-slate-700 hover:bg-slate-100" onClick={() => router.push("/notifications")}>
+          <BellIcon />
+          <span className="hidden sm:inline">Notifications</span>
+        </Button>
+      ) : null}
       <div className="relative">
         <button
           type="button"
@@ -75,13 +78,15 @@ export default function Topbar() {
             >
               Profile
             </button>
-            <button
-              type="button"
-              onClick={() => router.push("/admin")}
-              className="block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-slate-100"
-            >
-              Admin Portal
-            </button>
+            {FEATURES.adminPortal ? (
+              <button
+                type="button"
+                onClick={() => router.push("/admin")}
+                className="block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-slate-100"
+              >
+                Admin Portal
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => void onLogout()}

@@ -1,7 +1,8 @@
 "use client";
 
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import GlowCard from "@/components/ui/glow-card";
+import { CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 type MilestoneChartProps = {
   data: Array<{ milestone: string; completion: number }>;
@@ -9,11 +10,11 @@ type MilestoneChartProps = {
 
 export default function MilestoneChart({ data }: MilestoneChartProps) {
   return (
-    <Card className="glass-panel panel-glow">
-      <CardHeader>
+    <GlowCard className="p-0">
+      <CardHeader className="mb-6 px-6 pt-6">
         <CardTitle className="text-base text-zinc-100">Milestone Completion</CardTitle>
       </CardHeader>
-      <CardContent className="h-64">
+      <CardContent className="h-64 px-6 pb-6">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#27272a" />
@@ -24,6 +25,6 @@ export default function MilestoneChart({ data }: MilestoneChartProps) {
           </BarChart>
         </ResponsiveContainer>
       </CardContent>
-    </Card>
+    </GlowCard>
   );
 }

@@ -1,12 +1,21 @@
 "use client";
 
 import { createClient } from "@/lib/supabase/client";
+import { trackEvent } from "@/lib/analytics";
 
 export type BuildMindProject = {
   id: string;
   user_id: string;
   title: string;
   description: string | null;
+  industry: string | null;
+  target_market: string | null;
+  problem_type: string | null;
+  revenue_model: string | null;
+  startup_stage: string | null;
+  validation_score: number | null;
+  execution_score: number | null;
+  momentum_score: number | null;
   target_users: string | null;
   problem: string | null;
   validation_strengths: string[];
@@ -20,6 +29,11 @@ export type ProjectSummary = {
   title: string;
   description: string | null;
   created_at: string;
+  industry?: string | null;
+  startup_stage?: string | null;
+  validation_score?: number | null;
+  execution_score?: number | null;
+  momentum_score?: number | null;
   validation_strengths: string[];
   tasksCompleted: number;
   tasksTotal: number;
@@ -34,6 +48,8 @@ export type BuildMindMilestone = {
   stage: string;
   order_index: number;
   created_at: string;
+  status?: string | null;
+  is_completed?: boolean | null;
 };
 
 export type BuildMindTask = {
@@ -51,6 +67,7 @@ export type DashboardOverview = {
   milestonesCompleted: number;
   aiUsage: number;
   recentActivity: string[];
+  founderStreakDays: number;
 };
 
 export type BuildMindNotification = {
@@ -207,6 +224,11 @@ export async function getProjectSummaries(): Promise<ProjectSummary[]> {
       title: project.title,
       description: project.description,
       created_at: project.created_at,
+      industry: project.industry ?? null,
+      startup_stage: project.startup_stage ?? null,
+      validation_score: project.validation_score ?? null,
+      execution_score: project.execution_score ?? null,
+      momentum_score: project.momentum_score ?? null,
       validation_strengths: project.validation_strengths,
       tasksCompleted: current.tasksCompleted,
       tasksTotal: current.tasksTotal,
@@ -330,6 +352,7 @@ export async function createProjectWithRoadmap(params: {
 
   await createNotification(user.id, "project_created", `Project "${params.project_name}" created successfully.`);
   await setOnboardingCompleted(user.id);
+  trackEvent("project_created", { project_name: params.project_name });
 
   return createdProject as BuildMindProject;
 }
@@ -386,17 +409,34 @@ export async function updateTaskStatus(taskId: string, isCompleted: boolean, not
 
   if (isCompleted && !taskRow.is_completed) {
     await createNotificationForCurrentUser("task_completed", "Task marked as completed.");
+    trackEvent("task_completed");
   }
 
   if (isMilestoneComplete && !wasMilestoneComplete) {
     await createNotificationForCurrentUser("milestone_completed", "Milestone completed. Great momentum!");
+    trackEvent("milestone_completed");
   }
+}
+
+export async function updateMilestoneForCurrentUser(
+  milestoneId: string,
+  payload: { title?: string; stage?: string; order_index?: number },
+): Promise<BuildMindMilestone> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("milestones")
+    .update(payload)
+    .eq("id", milestoneId)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data as BuildMindMilestone;
 }
 
 export async function getDashboardOverview(): Promise<DashboardOverview> {
   const user = await getCurrentUser();
   if (!user) {
-    return { activeProjects: 0, completedTasks: 0, milestonesCompleted: 0, aiUsage: 0, recentActivity: [] };
+    return { activeProjects: 0, completedTasks: 0, milestonesCompleted: 0, aiUsage: 0, recentActivity: [], founderStreakDays: 0 };
   }
   const supabase = createClient();
   const projects = await getProjectsForCurrentUser();
@@ -435,17 +475,36 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
 
   const { data: notifications } = await supabase
     .from("notifications")
-    .select("message")
+    .select("message,type,created_at")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false })
-    .limit(5);
+    .limit(200);
+
+  const completionDays = new Set<string>();
+  (notifications ?? []).forEach((n) => {
+    if (n.type !== "task_completed") return;
+    const date = new Date(n.created_at);
+    if (Number.isNaN(date.valueOf())) return;
+    completionDays.add(date.toISOString().slice(0, 10));
+  });
+  const today = new Date();
+  const todayKey = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+  let streak = 0;
+  for (let i = 0; i < 60; i += 1) {
+    const day = new Date(todayKey);
+    day.setUTCDate(todayKey.getUTCDate() - i);
+    const key = day.toISOString().slice(0, 10);
+    if (!completionDays.has(key)) break;
+    streak += 1;
+  }
 
   return {
     activeProjects: projects.length,
     completedTasks,
     milestonesCompleted: completedMilestones,
     aiUsage: usage?.count ?? 0,
-    recentActivity: (notifications ?? []).map((n) => n.message),
+    recentActivity: (notifications ?? []).slice(0, 5).map((n) => n.message),
+    founderStreakDays: streak,
   };
 }
 
@@ -453,11 +512,22 @@ export function calculateDashboardStats(projects: BuildMindProject[]) {
   const activeProjects = projects.length;
   return {
     activeProjects,
-    milestoneProgress: activeProjects
-      ? Math.round(projects.reduce((sum, p) => sum + (p.validation_strengths.length ? 70 : 40), 0) / activeProjects)
+    startupScoreAvg: activeProjects
+      ? Math.round(projects.reduce((sum, p) => sum + computeStartupScore(p), 0) / activeProjects)
       : 0,
     aiUsage: activeProjects ? "Active" : "Getting started",
   };
+}
+
+export function computeStartupScore(summary: {
+  progress?: number | null;
+  validation_strengths?: string[] | null;
+  execution_score?: number | null;
+}): number {
+  const base = summary.execution_score ?? 0;
+  const strengthBoost = (summary.validation_strengths ?? []).length * 8;
+  const progress = summary.progress ?? 0;
+  return Math.min(100, Math.round(Math.max(base, progress + strengthBoost)));
 }
 
 export async function getNotificationsForCurrentUser(): Promise<BuildMindNotification[]> {
@@ -508,7 +578,7 @@ export async function getAICoachAdvice(projectId: string): Promise<string[]> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ projectId, userId: user.id }),
   });
-  if (!res.ok) throw new Error("Failed to generate AI coaching advice");
+  if (!res.ok) throw new Error("Failed to generate BuildMini advice");
   const body = await res.json();
   return normalizeTextArray(body?.data?.advice);
 }

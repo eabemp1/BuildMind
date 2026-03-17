@@ -4,7 +4,10 @@ import Providers from "@/components/providers";
 
 export const metadata: Metadata = {
   title: "BuildMind",
-  description: "BuildMind - Startup operating system in the EvolvAI ecosystem"
+  description: "BuildMind - Startup operating system in the EvolvAI ecosystem",
+  icons: {
+    icon: "/brand/buildmind-logo-favicon-light.jpeg",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -2,14 +2,12 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 const MONTHLY_LIMIT = 20;
 
-function hasAdminEnv(): boolean {
+export function hasAdminEnv(): boolean {
   return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
 }
 
 export async function enforceAndTrackAIUsage(userId: string) {
-  if (!hasAdminEnv()) {
-    throw new Error("AI usage tracking requires SUPABASE_SERVICE_ROLE_KEY.");
-  }
+  if (!hasAdminEnv()) return;
   const supabase = createAdminClient();
   const d = new Date();
   const month = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;

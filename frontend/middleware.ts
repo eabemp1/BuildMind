@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { FEATURES } from "@/lib/features";
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -30,6 +31,24 @@ export async function middleware(request: NextRequest) {
   const isFounderRoute = pathname.startsWith("/founder/");
   const isPublicRoute = pathname === "/" || isAuthRoute || isExploreRoute || isFounderRoute;
   const isApiRoute = pathname.startsWith("/api");
+
+  const featureBlocks = [
+    { enabled: FEATURES.aiCoach, match: (path: string) => path.startsWith("/ai-coach") },
+    { enabled: FEATURES.notifications, match: (path: string) => path.startsWith("/notifications") },
+    { enabled: FEATURES.publicProjects, match: (path: string) => path === "/explore" || path.startsWith("/explore/") },
+    { enabled: FEATURES.publicProjects, match: (path: string) => path.startsWith("/founder/") },
+    { enabled: FEATURES.analytics, match: (path: string) => path.startsWith("/reports") },
+    { enabled: FEATURES.adminPortal, match: (path: string) => path.startsWith("/admin") },
+  ];
+
+  if (!isApiRoute) {
+    const blocked = featureBlocks.some((item) => !item.enabled && item.match(pathname));
+    if (blocked) {
+      const redirectUrl = request.nextUrl.clone();
+      redirectUrl.pathname = "/dashboard";
+      return NextResponse.redirect(redirectUrl);
+    }
+  }
 
   if (!user && !isPublicRoute && !isApiRoute) {
     const redirectUrl = request.nextUrl.clone();

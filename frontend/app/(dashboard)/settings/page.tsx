@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { createClient } from "@/lib/supabase/client";
 import { ensureUserProfile, getCurrentUser } from "@/lib/buildmind";
+import { FEATURES } from "@/lib/features";
+import PageHero from "@/components/layout/page-hero";
 
 type TabKey = "profile" | "account" | "notifications" | "ai";
 
@@ -25,6 +27,9 @@ export default function SettingsPage() {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
+    if (!FEATURES.notifications && tab === "notifications") {
+      setTab("profile");
+    }
     const load = async () => {
       try {
         const user = await getCurrentUser();
@@ -136,16 +141,19 @@ export default function SettingsPage() {
 
   return (
     <section className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-semibold text-zinc-100">Settings</h2>
-        <p className="text-body mt-1">Profile, account, notifications, and AI usage.</p>
-      </div>
+      <PageHero
+        kicker="Settings"
+        title="Account & Preferences"
+        subtitle="Profile, account, notifications, and AI usage."
+      />
 
       <Tabs>
         <TabsList>
           <TabsTrigger active={tab === "profile"} onClick={() => setTab("profile")}>Profile</TabsTrigger>
           <TabsTrigger active={tab === "account"} onClick={() => setTab("account")}>Account</TabsTrigger>
-          <TabsTrigger active={tab === "notifications"} onClick={() => setTab("notifications")}>Notifications</TabsTrigger>
+          {FEATURES.notifications ? (
+            <TabsTrigger active={tab === "notifications"} onClick={() => setTab("notifications")}>Notifications</TabsTrigger>
+          ) : null}
           <TabsTrigger active={tab === "ai"} onClick={() => setTab("ai")}>AI Usage</TabsTrigger>
         </TabsList>
 
@@ -215,7 +223,8 @@ export default function SettingsPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent className={tab === "notifications" ? "" : "hidden"}>
+        {FEATURES.notifications ? (
+          <TabsContent className={tab === "notifications" ? "" : "hidden"}>
           <Card className="glass-panel panel-glow">
             <CardHeader><CardTitle className="text-zinc-100">Notifications</CardTitle></CardHeader>
             <CardContent className="space-y-3 text-sm text-zinc-300">
@@ -233,6 +242,7 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
         </TabsContent>
+        ) : null}
 
         <TabsContent className={tab === "ai" ? "" : "hidden"}>
           <Card className="glass-panel panel-glow">

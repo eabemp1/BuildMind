@@ -5,12 +5,14 @@ import { z } from "zod";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { Github } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
 import { ensureUserProfile, getOnboardingStatus } from "@/lib/buildmind";
 import { authSchema } from "@/lib/validation";
+import { identifyUser } from "@/lib/analytics";
 
 function formatAuthError(err: unknown): string {
   if (err instanceof TypeError && err.message.toLowerCase().includes("fetch")) {
@@ -32,6 +34,7 @@ export default function LoginPage() {
       const { data } = await supabase.auth.getUser();
       if (!data.user) return;
       await ensureUserProfile(data.user);
+      identifyUser(data.user.id, data.user.email);
       const onboarded = await getOnboardingStatus(data.user.id);
       router.replace(onboarded ? "/dashboard" : "/onboarding");
     };
@@ -48,6 +51,7 @@ export default function LoginPage() {
       if (loginError) throw loginError;
       if (!data.user) throw new Error("Login failed");
       await ensureUserProfile(data.user);
+      identifyUser(data.user.id, data.user.email);
       const onboarded = await getOnboardingStatus(data.user.id);
       router.replace(onboarded ? "/dashboard" : "/onboarding");
     } catch (err) {
@@ -73,7 +77,7 @@ export default function LoginPage() {
   return (
     <div className="grid min-h-screen place-items-center p-6">
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="glass-panel panel-glow w-full max-w-md p-8">
-        <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">BuildMind</p>
+        <Image src="/brand/buildmind-logo-mascot.jpeg" width={160} height={44} alt="BuildMind" />
         <h1 className="mt-2 text-2xl font-semibold text-zinc-100">Welcome back</h1>
         <p className="text-body mt-1">Sign in to continue building your execution roadmap.</p>
 
