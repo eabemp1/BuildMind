@@ -1,32 +1,31 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { z } from "zod";
 import { useRouter } from "next/navigation";
-import ProjectCard from "@/components/project-card";
-import { Button } from "@/components/ui/button";
-import GlowCard from "@/components/ui/glow-card";
-import { CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import PageHero from "@/components/layout/page-hero";
 import { computeStartupScore } from "@/lib/buildmind";
 import { getActiveProjectId, setActiveProjectId } from "@/lib/api";
 import { useCreateProjectMutation, useDeleteProjectMutation, useProjectSummariesQuery } from "@/lib/queries";
 import { projectCreateSchema } from "@/lib/validation";
 
-function stageFromStrengthCount(strengthCount: number): string {
-  if (strengthCount >= 3) return "Validation";
-  if (strengthCount > 0) return "Discovery";
+function stageFromStrengthCount(n: number): string {
+  if (n >= 3) return "Validation";
+  if (n > 0) return "Discovery";
   return "Idea";
 }
+
+const inputStyle = {
+  background: "#0a0a0a", border: "1px solid #222", borderRadius: 6,
+  padding: "9px 12px", fontSize: 13, color: "#d4d4d4", outline: "none",
+  fontFamily: "inherit", width: "100%", boxSizing: "border-box" as const,
+};
 
 export default function ProjectsPage() {
   const router = useRouter();
   const { data: summaries = [], isLoading, error: summariesError } = useProjectSummariesQuery();
   const createMutation = useCreateProjectMutation();
   const deleteMutation = useDeleteProjectMutation();
-
   const [modalOpen, setModalOpen] = useState(false);
   const [projectName, setProjectName] = useState("");
   const [ideaDescription, setIdeaDescription] = useState("");
@@ -47,118 +46,130 @@ export default function ProjectsPage() {
       setError("");
       const values = projectCreateSchema.parse({ projectName, ideaDescription, targetUsers });
       const created = await createMutation.mutateAsync({
-        project_name: values.projectName,
-        idea_description: values.ideaDescription,
-        target_users: values.targetUsers,
-        problem: values.ideaDescription,
+        project_name: values.projectName, idea_description: values.ideaDescription,
+        target_users: values.targetUsers, problem: values.ideaDescription,
       });
-      setModalOpen(false);
+      setModalOpen(false); setProjectName(""); setIdeaDescription(""); setTargetUsers("");
       router.push(`/projects/${created.id}`);
     } catch (err) {
-      if (err instanceof z.ZodError) {
-        setError(err.issues[0]?.message ?? "Please fill all required fields.");
-        return;
-      }
+      if (err instanceof z.ZodError) { setError(err.issues[0]?.message ?? "Fill all fields."); return; }
       setError(err instanceof Error ? err.message : "Failed to create project");
     }
   };
 
   return (
-    <motion.section
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="mx-auto max-w-7xl space-y-8 px-6"
-    >
-      <PageHero
-        kicker="Projects"
-        title="Build Your Startup Workspace"
-        subtitle="Create and manage startup ideas, milestones, and execution tasks."
-        actions={
-          <Button className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white" onClick={() => setModalOpen(true)}>
-            + Create Project
-          </Button>
-        }
-      />
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+      style={{ maxWidth: 1100, margin: "0 auto", fontFamily: "system-ui,sans-serif", color: "#e5e5e5" }}>
 
-      {isLoading ? (
-        <div className="text-sm text-zinc-400">Loading projects...</div>
-      ) : summariesError ? (
-        <div className="text-sm text-rose-400">{summariesError instanceof Error ? summariesError.message : "Failed to load projects"}</div>
-      ) : summaries.length === 0 ? (
-        <GlowCard className="overflow-hidden p-0">
-          <div className="bg-gradient-to-r from-indigo-500/30 to-purple-500/30 px-6 py-5">
-            <p className="text-xs uppercase tracking-[0.2em] text-indigo-200">No Projects Yet</p>
-            <h3 className="mt-1 text-xl font-semibold text-zinc-100">Create your first startup idea</h3>
-          </div>
-          <CardContent className="px-6 pb-6">
-            <p className="text-body">Start with a clear problem and target audience. BuildMind will generate validation and roadmap automatically.</p>
-          </CardContent>
-        </GlowCard>
-      ) : (
-        <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-          {summaries.map((summary) => (
-            <ProjectCard
-              key={summary.id}
-              id={summary.id}
-              title={summary.title}
-              description={summary.description}
-              progress={summary.progress}
-              industry={summary.industry ?? "General"}
-              startupScore={computeStartupScore(summary)}
-              tasksCompleted={summary.tasksCompleted}
-              tasksTotal={summary.tasksTotal}
-              lastActivity={summary.lastActivity}
-              stage={summary.startup_stage ?? stageFromStrengthCount(summary.validation_strengths.length)}
-              deleting={deleteMutation.isPending}
-              onDelete={(id) => {
-                const confirmed = window.confirm("Delete this project and all associated milestones and tasks?");
-                if (!confirmed) return;
-                deleteMutation.mutate(id);
-              }}
-            />
-          ))}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24, paddingBottom: 18, borderBottom: "1px solid #1c1c1c" }}>
+        <div>
+          <div style={{ fontSize: 20, fontWeight: 500, color: "#fff", letterSpacing: "-0.02em" }}>Projects</div>
+          <div style={{ fontSize: 12, color: "#888", marginTop: 3 }}>{summaries.length} project{summaries.length !== 1 ? "s" : ""}</div>
+        </div>
+        <button onClick={() => setModalOpen(true)}
+          style={{ background: "#fff", color: "#000", fontWeight: 500, fontSize: 13, padding: "7px 14px", borderRadius: 6, border: "none", cursor: "pointer", fontFamily: "inherit" }}>
+          New project
+        </button>
+      </div>
+
+      {isLoading && <div style={{ fontSize: 12, color: "#666", padding: "40px 0", textAlign: "center" }}>Loading...</div>}
+      {summariesError && <div style={{ fontSize: 12, color: "#f87171" }}>{summariesError instanceof Error ? summariesError.message : "Failed to load"}</div>}
+
+      {!isLoading && summaries.length === 0 && (
+        <div style={{ border: "1px solid #1c1c1c", borderRadius: 8, padding: "52px 32px", textAlign: "center", background: "#080808" }}>
+          <div style={{ fontSize: 14, fontWeight: 500, color: "#fff", marginBottom: 8 }}>No projects yet</div>
+          <div style={{ fontSize: 13, color: "#888", marginBottom: 22, lineHeight: 1.6 }}>Create your first startup project. BuildMind generates the roadmap automatically.</div>
+          <button onClick={() => setModalOpen(true)}
+            style={{ background: "#fff", color: "#000", fontWeight: 500, fontSize: 13, padding: "8px 16px", borderRadius: 6, border: "none", cursor: "pointer", fontFamily: "inherit" }}>
+            New project
+          </button>
         </div>
       )}
 
-      {modalOpen ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4 backdrop-blur-sm">
-          <GlowCard className="w-full max-w-xl p-0">
-            <CardHeader className="mb-6 px-6 pt-6">
-              <CardTitle className="text-zinc-100">Create Project</CardTitle>
-              <p className="text-body">We will validate your idea and generate a milestone roadmap.</p>
-            </CardHeader>
-            <CardContent className="space-y-3 px-6 pb-6">
-              <Input
-                placeholder="Project name"
-                className="border-white/10 bg-black/20 text-zinc-100 placeholder:text-zinc-500"
-                value={projectName}
-                onChange={(e) => setProjectName(e.target.value)}
-              />
-              <textarea
-                className="min-h-24 w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-zinc-100 outline-none transition focus:border-indigo-400/60"
-                placeholder="Idea description"
-                value={ideaDescription}
-                onChange={(e) => setIdeaDescription(e.target.value)}
-              />
-              <Input
-                placeholder="Target users"
-                className="border-white/10 bg-black/20 text-zinc-100 placeholder:text-zinc-500"
-                value={targetUsers}
-                onChange={(e) => setTargetUsers(e.target.value)}
-              />
-              {error ? <p className="text-sm text-rose-400">{error}</p> : null}
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" className="border-white/10 bg-white/5 text-zinc-200 hover:bg-white/10" onClick={() => setModalOpen(false)}>
-                  Cancel
-                </Button>
-                <Button className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white" onClick={() => void onCreate()} disabled={createMutation.isPending}>
-                  {createMutation.isPending ? "Generating workspace..." : "Create Project"}
-                </Button>
-              </div>
-            </CardContent>
-          </GlowCard>
+      {summaries.length > 0 && (
+        <div style={{ border: "1px solid #1c1c1c", borderRadius: 8, overflow: "hidden" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                {["Project", "Stage", "Progress", "Score", "Last activity", ""].map((h) => (
+                  <th key={h} style={{ padding: "10px 18px", textAlign: "left", fontSize: 10, color: "#555", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.08em", borderBottom: "1px solid #1c1c1c", background: "#080808" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {summaries.map((s, i) => {
+                const stage = s.startup_stage ?? stageFromStrengthCount(s.validation_strengths.length);
+                const score = computeStartupScore(s);
+                const progress = s.progress ?? 0;
+                const sc = score >= 60 ? "#4ade80" : score >= 30 ? "#fbbf24" : "#888";
+                const lastActivity = s.lastActivity ? new Date(s.lastActivity).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "—";
+                return (
+                  <tr key={s.id}
+                    style={{ cursor: "pointer", borderBottom: i < summaries.length - 1 ? "1px solid #111" : "none" }}
+                    onClick={() => router.push(`/projects/${s.id}`)}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "#0d0d0d"; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "transparent"; }}>
+                    <td style={{ padding: "14px 18px" }}>
+                      <div style={{ fontSize: 13, color: "#d4d4d4", fontWeight: 500 }}>{s.title}</div>
+                      <div style={{ fontSize: 11, color: "#666", marginTop: 2, maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.description}</div>
+                    </td>
+                    <td style={{ padding: "14px 18px" }}>
+                      <span style={{ fontSize: 11, color: "#999", background: "#111", border: "1px solid #1c1c1c", borderRadius: 4, padding: "2px 8px" }}>{stage}</span>
+                    </td>
+                    <td style={{ padding: "14px 18px", minWidth: 120 }}>
+                      <div style={{ height: 2, background: "#1c1c1c", borderRadius: 9999, overflow: "hidden", marginBottom: 4, width: 80 }}>
+                        <div style={{ height: "100%", width: `${progress}%`, background: "#555", borderRadius: 9999 }} />
+                      </div>
+                      <div style={{ fontSize: 11, color: "#666" }}>{progress}%</div>
+                    </td>
+                    <td style={{ padding: "14px 18px", fontSize: 13, color: sc, fontVariantNumeric: "tabular-nums" }}>{score}</td>
+                    <td style={{ padding: "14px 18px", fontSize: 12, color: "#666" }}>{lastActivity}</td>
+                    <td style={{ padding: "14px 18px", textAlign: "right" }}>
+                      <button onClick={(e) => { e.stopPropagation(); if (window.confirm(`Delete "${s.title}"?`)) deleteMutation.mutate(s.id); }}
+                        style={{ background: "none", border: "none", color: "#333", fontSize: 16, cursor: "pointer", padding: "2px 6px", borderRadius: 4, lineHeight: 1, fontFamily: "inherit" }}
+                        onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "#f87171"; }}
+                        onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "#333"; }}>
+                        ×
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-      ) : null}
-    </motion.section>
+      )}
+
+      <AnimatePresence>
+        {modalOpen && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, background: "rgba(0,0,0,0.85)" }}
+            onClick={(e) => { if (e.target === e.currentTarget) setModalOpen(false); }}>
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+              style={{ background: "#0a0a0a", border: "1px solid #222", borderRadius: 10, padding: "24px 26px", width: "100%", maxWidth: 440, fontFamily: "inherit", color: "#e5e5e5" }}>
+              <div style={{ fontSize: 15, fontWeight: 500, color: "#fff", marginBottom: 4, letterSpacing: "-0.01em" }}>New project</div>
+              <div style={{ fontSize: 12, color: "#888", marginBottom: 20, lineHeight: 1.6 }}>BuildMind generates validation and a milestone roadmap automatically.</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+                <input value={projectName} onChange={(e) => setProjectName(e.target.value)} placeholder="Project name" style={inputStyle} />
+                <textarea value={ideaDescription} onChange={(e) => setIdeaDescription(e.target.value)} placeholder="Idea description — what are you building?" rows={3}
+                  style={{ ...inputStyle, resize: "none" }} />
+                <input value={targetUsers} onChange={(e) => setTargetUsers(e.target.value)} placeholder="Target users — who is this for?" style={inputStyle} />
+              </div>
+              {error && <div style={{ fontSize: 12, color: "#f87171", marginBottom: 12 }}>{error}</div>}
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <button onClick={() => setModalOpen(false)}
+                  style={{ background: "transparent", border: "1px solid #222", color: "#888", fontSize: 13, padding: "7px 14px", borderRadius: 6, cursor: "pointer", fontFamily: "inherit" }}>
+                  Cancel
+                </button>
+                <button onClick={() => void onCreate()} disabled={createMutation.isPending}
+                  style={{ background: createMutation.isPending ? "#333" : "#fff", color: createMutation.isPending ? "#777" : "#000", fontSize: 13, fontWeight: 500, padding: "7px 14px", borderRadius: 6, border: "none", cursor: createMutation.isPending ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                  {createMutation.isPending ? "Generating..." : "Create project"}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 }

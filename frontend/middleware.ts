@@ -27,9 +27,20 @@ export async function middleware(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname;
   const isAuthRoute = pathname.startsWith("/auth");
+  const isConversionRoute =
+    pathname === "/landing" ||
+    pathname === "/try" ||
+    pathname.startsWith("/try/") ||
+    pathname === "/upgrade" ||
+    pathname === "/welcome";
   const isExploreRoute = pathname === "/explore" || pathname.startsWith("/explore/");
   const isFounderRoute = pathname.startsWith("/founder/");
-  const isPublicRoute = pathname === "/" || isAuthRoute || isExploreRoute || isFounderRoute;
+  const isPublicRoute =
+    pathname === "/" ||
+    isAuthRoute ||
+    isExploreRoute ||
+    isFounderRoute ||
+    isConversionRoute;
   const isApiRoute = pathname.startsWith("/api");
 
   const featureBlocks = [

@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   title: "BuildMind",
   description: "BuildMind - Startup operating system in the EvolvAI ecosystem",
   icons: {
-    icon: "/brand/buildmind-logo-favicon-light.jpeg",
+    icon: "/brand/bui.svg",
   },
 };
 

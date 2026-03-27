@@ -63,7 +63,12 @@ export default function SignupPage() {
       await ensureUserProfile({ id: signupData.user.id, email: signupData.user.email });
       identifyUser(signupData.user.id, signupData.user.email);
       trackEvent("user_signed_up");
-      router.replace("/onboarding");
+      const fromStage = new URLSearchParams(window.location.search).get("stage");
+      const fromProblem = new URLSearchParams(window.location.search).get("problem");
+      const onboardingUrl = fromStage
+        ? `/onboarding?stage=${fromStage}&problem=${encodeURIComponent(fromProblem ?? "")}`
+        : "/onboarding";
+      router.replace(onboardingUrl);
     } catch (err) {
       if (err instanceof z.ZodError) {
         setError(err.issues[0]?.message ?? "Invalid credentials.");
@@ -88,7 +93,7 @@ export default function SignupPage() {
   return (
     <div className="grid min-h-screen place-items-center p-6">
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="glass-panel panel-glow w-full max-w-md p-8">
-        <Image src="/brand/buildmind-logo-mascot.jpeg" width={160} height={44} alt="BuildMind" />
+        <Image src="/brand/bui.svg" width={160} height={44} alt="BuildMind" />
         <h1 className="mt-2 text-2xl font-semibold text-zinc-100">Create your account</h1>
         <p className="text-body mt-1">Start building your startup execution plan with AI guidance.</p>
 

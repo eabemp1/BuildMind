@@ -1,20 +1,22 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { motion } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import { ensureUserProfile, getCurrentUser } from "@/lib/buildmind";
 import { FEATURES } from "@/lib/features";
-import PageHero from "@/components/layout/page-hero";
 
-type TabKey = "profile" | "account" | "notifications" | "ai";
+type Tab = "profile" | "account" | "notifications" | "ai";
+
+const inputStyle = {
+  background: "#0a0a0a", border: "1px solid #222", borderRadius: 6,
+  padding: "9px 12px", fontSize: 13, color: "#d4d4d4", outline: "none",
+  fontFamily: "inherit", width: "100%", boxSizing: "border-box" as const,
+};
 
 export default function SettingsPage() {
   const supabase = createClient();
-  const [tab, setTab] = useState<TabKey>("profile");
+  const [tab, setTab] = useState<Tab>("profile");
   const [email, setEmail] = useState("");
   const [fullName, setFullName] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
@@ -25,11 +27,15 @@ export default function SettingsPage() {
   const [notifyTask, setNotifyTask] = useState(true);
   const [aiUsage, setAiUsage] = useState(0);
   const [message, setMessage] = useState("");
+  const [messageType, setMessageType] = useState<"ok" | "err">("ok");
+
+  const msg = (text: string, type: "ok" | "err" = "ok") => {
+    setMessage(text); setMessageType(type);
+    setTimeout(() => setMessage(""), 3000);
+  };
 
   useEffect(() => {
-    if (!FEATURES.notifications && tab === "notifications") {
-      setTab("profile");
-    }
+    if (!FEATURES.notifications && tab === "notifications") setTab("profile");
     const load = async () => {
       try {
         const user = await getCurrentUser();
@@ -38,224 +44,186 @@ export default function SettingsPage() {
         setEmail(user.email ?? "");
         setAvatarUrl((user.user_metadata?.avatar_url as string | undefined) ?? "");
         const { data: profile } = await supabase.from("users").select("full_name").eq("id", user.id).single();
-        setFullName(profile?.full_name ?? "");
-        const { data: settings } = await supabase
-          .from("users")
-          .select("notify_milestone,notify_task")
-          .eq("id", user.id)
-          .single();
-        setNotifyMilestone(Boolean(settings?.notify_milestone ?? true));
-        setNotifyTask(Boolean(settings?.notify_task ?? true));
+        setFullName((profile as { full_name?: string } | null)?.full_name ?? "");
+        const { data: settings } = await supabase.from("users").select("notify_milestone,notify_task").eq("id", user.id).single();
+        const s = settings as { notify_milestone?: boolean; notify_task?: boolean } | null;
+        setNotifyMilestone(Boolean(s?.notify_milestone ?? true));
+        setNotifyTask(Boolean(s?.notify_task ?? true));
         const d = new Date();
         const month = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-        const { data: usage } = await supabase
-          .from("ai_usage")
-          .select("count")
-          .eq("user_id", user.id)
-          .eq("month", month)
-          .maybeSingle();
-        setAiUsage(usage?.count ?? 0);
-      } catch {
-        setMessage("Failed to load settings.");
-      }
+        const { data: usage } = await supabase.from("ai_usage").select("count").eq("user_id", user.id).eq("month", month).maybeSingle();
+        setAiUsage((usage as { count?: number } | null)?.count ?? 0);
+      } catch { msg("Failed to load settings.", "err"); }
     };
     void load();
-  }, [supabase]);
+  }, [supabase, tab]);
 
   const saveProfile = async () => {
     const user = await getCurrentUser();
     if (!user) return;
-    setMessage("");
     try {
       await ensureUserProfile(user);
       const { error } = await supabase.from("users").update({ full_name: fullName }).eq("id", user.id);
       if (error) throw error;
-      const { error: authError } = await supabase.auth.updateUser({
-        data: { avatar_url: avatarUrl || null },
-      });
+      const { error: authError } = await supabase.auth.updateUser({ data: { avatar_url: avatarUrl || null } });
       if (authError) throw authError;
-      setMessage("Profile updated.");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to update profile.";
-      setMessage(message);
-    }
+      msg("Profile updated.");
+    } catch (e) { msg(e instanceof Error ? e.message : "Failed to update.", "err"); }
   };
 
   const uploadAvatar = async (file: File) => {
     const user = await getCurrentUser();
     if (!user) return;
     setAvatarUploading(true);
-    setMessage("");
     try {
-      if (!file.type.startsWith("image/")) {
-        throw new Error("Please upload an image file.");
-      }
+      if (!file.type.startsWith("image/")) throw new Error("Please upload an image file.");
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "");
       const path = `${user.id}/${Date.now()}-${safeName}`;
-      const { error: uploadError } = await supabase.storage
-        .from("avatars")
-        .upload(path, file, { upsert: true, contentType: file.type });
+      const { error: uploadError } = await supabase.storage.from("avatars").upload(path, file, { upsert: true, contentType: file.type });
       if (uploadError) throw uploadError;
       const { data } = supabase.storage.from("avatars").getPublicUrl(path);
       const publicUrl = data?.publicUrl ?? "";
       setAvatarUrl(publicUrl);
-      const { error: authError } = await supabase.auth.updateUser({
-        data: { avatar_url: publicUrl || null },
-      });
-      if (authError) throw authError;
-      setMessage("Avatar updated.");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to upload avatar.";
-      setMessage(message);
-    } finally {
-      setAvatarUploading(false);
-    }
+      await supabase.auth.updateUser({ data: { avatar_url: publicUrl || null } });
+      msg("Avatar updated.");
+    } catch (e) { msg(e instanceof Error ? e.message : "Failed to upload.", "err"); }
+    finally { setAvatarUploading(false); }
   };
 
-  const onAvatarFile = (file?: File | null) => {
-    if (!file) return;
-    void uploadAvatar(file);
-  };
-
-  const saveNotificationPrefs = async () => {
+  const saveNotifications = async () => {
     const user = await getCurrentUser();
     if (!user) return;
-    const { error } = await supabase
-      .from("users")
-      .update({ notify_milestone: notifyMilestone, notify_task: notifyTask })
-      .eq("id", user.id);
-    if (error) throw error;
-    setMessage("Notification preferences updated.");
+    const { error } = await supabase.from("users").update({ notify_milestone: notifyMilestone, notify_task: notifyTask }).eq("id", user.id);
+    if (error) { msg("Failed to save.", "err"); return; }
+    msg("Saved.");
   };
 
   const updatePass = async (e: FormEvent) => {
     e.preventDefault();
-    if (!newPassword) return;
-    if (!currentPassword.trim()) return;
+    if (!newPassword || !currentPassword.trim()) return;
     const { error } = await supabase.auth.updateUser({ password: newPassword });
-    if (error) throw error;
-    setCurrentPassword("");
-    setNewPassword("");
-    setMessage("Password updated.");
+    if (error) { msg(error.message, "err"); return; }
+    setCurrentPassword(""); setNewPassword("");
+    msg("Password updated.");
   };
 
+  const TABS: { key: Tab; label: string; show: boolean }[] = [
+    { key: "profile", label: "Profile", show: true },
+    { key: "account", label: "Account", show: true },
+    { key: "notifications", label: "Notifications", show: FEATURES.notifications },
+    { key: "ai", label: "AI usage", show: true },
+  ];
+
   return (
-    <section className="space-y-6">
-      <PageHero
-        kicker="Settings"
-        title="Account & Preferences"
-        subtitle="Profile, account, notifications, and AI usage."
-      />
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+      style={{ maxWidth: 680, margin: "0 auto", fontFamily: "system-ui,sans-serif", color: "#e5e5e5" }}>
 
-      <Tabs>
-        <TabsList>
-          <TabsTrigger active={tab === "profile"} onClick={() => setTab("profile")}>Profile</TabsTrigger>
-          <TabsTrigger active={tab === "account"} onClick={() => setTab("account")}>Account</TabsTrigger>
-          {FEATURES.notifications ? (
-            <TabsTrigger active={tab === "notifications"} onClick={() => setTab("notifications")}>Notifications</TabsTrigger>
-          ) : null}
-          <TabsTrigger active={tab === "ai"} onClick={() => setTab("ai")}>AI Usage</TabsTrigger>
-        </TabsList>
+      <div style={{ marginBottom: 24, paddingBottom: 18, borderBottom: "1px solid #1c1c1c" }}>
+        <div style={{ fontSize: 20, fontWeight: 500, color: "#fff", letterSpacing: "-0.02em" }}>Settings</div>
+        <div style={{ fontSize: 12, color: "#888", marginTop: 3 }}>Profile, account, and preferences</div>
+      </div>
 
-        <TabsContent className={tab === "profile" ? "" : "hidden"}>
-          <Card className="glass-panel panel-glow">
-            <CardHeader><CardTitle className="text-zinc-100">Profile</CardTitle></CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex items-center gap-4">
-                <div className="h-16 w-16 overflow-hidden rounded-full border border-white/10 bg-white/5">
-                  {avatarUrl ? <img src={avatarUrl} alt="Avatar" className="h-full w-full object-cover" /> : null}
-                </div>
-                <div className="space-y-2">
-                  <Input
-                    placeholder="Avatar URL"
-                    value={avatarUrl}
-                    onChange={(e) => setAvatarUrl(e.target.value)}
-                    className="border-white/10 bg-black/20 text-zinc-100 placeholder:text-zinc-500"
-                  />
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="text-sm text-zinc-400"
-                    onChange={(e) => onAvatarFile(e.target.files?.[0])}
-                    disabled={avatarUploading}
-                  />
-                  {avatarUploading ? <p className="text-xs text-zinc-400">Uploading...</p> : null}
-                </div>
+      {/* Tab bar */}
+      <div style={{ display: "flex", borderBottom: "1px solid #1c1c1c", marginBottom: 24 }}>
+        {TABS.filter((t) => t.show).map((t) => (
+          <button key={t.key} onClick={() => setTab(t.key)}
+            style={{ background: "none", border: "none", borderBottom: tab === t.key ? "1px solid #fff" : "1px solid transparent", color: tab === t.key ? "#fff" : "#666", fontSize: 13, padding: "8px 16px", cursor: "pointer", fontFamily: "inherit", marginBottom: -1 }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Profile */}
+      {tab === "profile" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "16px 18px", border: "1px solid #1c1c1c", borderRadius: 8, background: "#080808" }}>
+            <div style={{ width: 48, height: 48, borderRadius: "50%", background: "#1c1c1c", border: "1px solid #222", overflow: "hidden", flexShrink: 0 }}>
+              {avatarUrl && <img src={avatarUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, color: "#d4d4d4", marginBottom: 6 }}>{email}</div>
+              <input type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadAvatar(f); }} disabled={avatarUploading}
+                style={{ fontSize: 12, color: "#666", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", padding: 0 }} />
+              {avatarUploading && <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>Uploading...</div>}
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: "#555", textTransform: "uppercase", letterSpacing: "0.09em", marginBottom: 6 }}>Full name</div>
+            <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Your name" style={inputStyle} />
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: "#555", textTransform: "uppercase", letterSpacing: "0.09em", marginBottom: 6 }}>Avatar URL</div>
+            <input value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} placeholder="https://..." style={inputStyle} />
+          </div>
+          <button onClick={() => void saveProfile()}
+            style={{ background: "#fff", color: "#000", fontSize: 13, fontWeight: 500, padding: "8px 16px", borderRadius: 6, border: "none", cursor: "pointer", fontFamily: "inherit", alignSelf: "flex-start" }}>
+            Save changes
+          </button>
+        </div>
+      )}
+
+      {/* Account */}
+      {tab === "account" && (
+        <form onSubmit={(e) => void updatePass(e)} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div>
+            <div style={{ fontSize: 11, color: "#555", textTransform: "uppercase", letterSpacing: "0.09em", marginBottom: 6 }}>Email</div>
+            <input value={email} disabled style={{ ...inputStyle, color: "#444", cursor: "not-allowed" }} />
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: "#555", textTransform: "uppercase", letterSpacing: "0.09em", marginBottom: 6 }}>Current password</div>
+            <input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} placeholder="••••••••" style={inputStyle} />
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: "#555", textTransform: "uppercase", letterSpacing: "0.09em", marginBottom: 6 }}>New password</div>
+            <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="••••••••" style={inputStyle} />
+          </div>
+          <button type="submit"
+            style={{ background: "#fff", color: "#000", fontSize: 13, fontWeight: 500, padding: "8px 16px", borderRadius: 6, border: "none", cursor: "pointer", fontFamily: "inherit", alignSelf: "flex-start" }}>
+            Update password
+          </button>
+        </form>
+      )}
+
+      {/* Notifications */}
+      {tab === "notifications" && FEATURES.notifications && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {[
+            { label: "Milestone completed", value: notifyMilestone, set: setNotifyMilestone },
+            { label: "Task completed", value: notifyTask, set: setNotifyTask },
+          ].map((n) => (
+            <div key={n.label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", border: "1px solid #1c1c1c", borderRadius: 8, background: "#080808" }}>
+              <span style={{ fontSize: 13, color: "#aaa" }}>{n.label}</span>
+              <div onClick={() => n.set(!n.value)}
+                style={{ width: 36, height: 20, borderRadius: 10, background: n.value ? "#fff" : "#222", position: "relative", cursor: "pointer", transition: "background 0.2s" }}>
+                <div style={{ position: "absolute", top: 2, left: n.value ? 18 : 2, width: 16, height: 16, borderRadius: "50%", background: n.value ? "#000" : "#555", transition: "left 0.2s" }} />
               </div>
-              <Input
-                placeholder="Full name"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                className="border-white/10 bg-black/20 text-zinc-100 placeholder:text-zinc-500"
-              />
-              <Button className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white" onClick={() => void saveProfile()}>
-                Save Profile
-              </Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
+            </div>
+          ))}
+          <button onClick={() => void saveNotifications()}
+            style={{ background: "#fff", color: "#000", fontSize: 13, fontWeight: 500, padding: "8px 16px", borderRadius: 6, border: "none", cursor: "pointer", fontFamily: "inherit", alignSelf: "flex-start", marginTop: 4 }}>
+            Save
+          </button>
+        </div>
+      )}
 
-        <TabsContent className={tab === "account" ? "" : "hidden"}>
-          <Card className="glass-panel panel-glow">
-            <CardHeader><CardTitle className="text-zinc-100">Account</CardTitle></CardHeader>
-            <CardContent>
-              <form className="space-y-3" onSubmit={(e) => void updatePass(e)}>
-                <Input value={email} disabled className="border-white/10 bg-black/20 text-zinc-100 placeholder:text-zinc-500" />
-                <Input
-                  type="password"
-                  placeholder="Current password"
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  className="border-white/10 bg-black/20 text-zinc-100 placeholder:text-zinc-500"
-                />
-                <Input
-                  type="password"
-                  placeholder="New password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  className="border-white/10 bg-black/20 text-zinc-100 placeholder:text-zinc-500"
-                />
-                <Button type="submit" className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white">
-                  Change Password
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-        </TabsContent>
+      {/* AI usage */}
+      {tab === "ai" && (
+        <div style={{ border: "1px solid #1c1c1c", borderRadius: 8, overflow: "hidden" }}>
+          <div style={{ padding: "11px 18px", borderBottom: "1px solid #1c1c1c", background: "#080808", fontSize: 12, color: "#888" }}>Monthly usage</div>
+          <div style={{ padding: "20px 18px" }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 12 }}>
+              <div style={{ fontSize: 30, fontWeight: 500, color: "#fff", letterSpacing: "-0.03em" }}>{aiUsage}</div>
+              <div style={{ fontSize: 14, color: "#666" }}>/ 20 generations</div>
+            </div>
+            <div style={{ height: 4, background: "#1c1c1c", borderRadius: 9999, overflow: "hidden", marginBottom: 8, maxWidth: 280 }}>
+              <div style={{ height: "100%", width: `${Math.min((aiUsage / 20) * 100, 100)}%`, background: aiUsage >= 18 ? "#f87171" : aiUsage >= 14 ? "#fbbf24" : "#fff", borderRadius: 9999, transition: "width 0.6s" }} />
+            </div>
+            <div style={{ fontSize: 12, color: "#666" }}>{20 - aiUsage} remaining this month</div>
+          </div>
+        </div>
+      )}
 
-        {FEATURES.notifications ? (
-          <TabsContent className={tab === "notifications" ? "" : "hidden"}>
-          <Card className="glass-panel panel-glow">
-            <CardHeader><CardTitle className="text-zinc-100">Notifications</CardTitle></CardHeader>
-            <CardContent className="space-y-3 text-sm text-zinc-300">
-              <label className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2">
-                <span>Milestone completed</span>
-                <input type="checkbox" checked={notifyMilestone} onChange={(e) => setNotifyMilestone(e.target.checked)} />
-              </label>
-              <label className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2">
-                <span>Task completed</span>
-                <input type="checkbox" checked={notifyTask} onChange={(e) => setNotifyTask(e.target.checked)} />
-              </label>
-              <Button className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white" onClick={() => void saveNotificationPrefs()}>
-                Save Notification Settings
-              </Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
-        ) : null}
-
-        <TabsContent className={tab === "ai" ? "" : "hidden"}>
-          <Card className="glass-panel panel-glow">
-            <CardHeader><CardTitle className="text-zinc-100">AI Usage</CardTitle></CardHeader>
-            <CardContent className="space-y-2 text-sm text-zinc-300">
-              <p>Monthly usage limit: 20 generations</p>
-              <p>Current usage: {aiUsage}/20</p>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-
-      {message ? <p className="text-sm text-emerald-300">{message}</p> : null}
-    </section>
+      {message && <div style={{ marginTop: 16, fontSize: 12, color: messageType === "ok" ? "#4ade80" : "#f87171" }}>{message}</div>}
+    </motion.div>
   );
 }

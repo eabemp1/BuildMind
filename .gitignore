@@ -1,4 +1,11 @@
 .env
+.env.*
+!.env.example
+!.env.docker.example
+.tmp_*
+venv*/
+__pycache__/
+.pytest_cache/
 frontend/.env.local
 forge_state.json
 frontend/node_modules/

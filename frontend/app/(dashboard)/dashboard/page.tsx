@@ -1,29 +1,87 @@
 "use client";
 
-import { useMemo } from "react";
-import { motion } from "framer-motion";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import DashboardCard from "@/components/dashboard-card";
-import ProgressBar from "@/components/progress-bar";
-import { Button } from "@/components/ui/button";
-import GlowCard from "@/components/ui/glow-card";
-import { CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import PageHero from "@/components/layout/page-hero";
+import { motion } from "framer-motion";
 import { calculateDashboardStats, computeStartupScore, type ProjectSummary } from "@/lib/buildmind";
-import { getActiveProjectId } from "@/lib/api";
-import { useClearNotificationsMutation, useDashboardOverviewQuery, useProjectsQuery, useProjectSummariesQuery } from "@/lib/queries";
-import { BarChart2, CheckCircle2, Flame, Rocket, Zap } from "lucide-react";
-import { FEATURES } from "@/lib/features";
+import { useDashboardOverviewQuery, useProjectsQuery, useProjectSummariesQuery } from "@/lib/queries";
+import { checkUpgradeTrigger, getTasksDone } from "@/lib/upgrade";
+
+const STAGE_STEPS = ["Idea", "Validation", "Prototype", "MVP", "Launch", "Revenue"];
+
+const STAGE_ACTIONS: Record<string, Array<{ action: string; message: string; why: string }>> = {
+  validation: [
+    { action: "Talk to 5 potential users to validate your idea.", message: "Hey — I'm building something for people who struggle with [problem]. What do you currently do when [problem] happens?", why: "User feedback invalidates assumptions faster than any other activity." },
+    { action: "Draft 3 test questions and run 2 discovery calls today.", message: "Could I ask 3 quick questions about how you handle [problem]? I'm validating a solution idea.", why: "You need insight depth before you build anything." },
+  ],
+  mvp: [
+    { action: "Send your working link to one warm contact before end of day.", message: "Hey — I've been building [product] to solve [problem]. Would you try it for 10 minutes and tell me what breaks?", why: "What they see today teaches you more than 3 more days of polishing." },
+    { action: "Ship one tiny feature you can demo in 60 seconds.", message: "Here's a 60‑sec demo of [product]. What would make this 10x more useful for you?", why: "Small shipped demos create real feedback loops." },
+  ],
+  launch: [
+    { action: "Acquire your first 10 users through a focused channel.", message: "We just launched [product]. Would love your support and brutal feedback: [link]", why: "Launch momentum needs a measurable acquisition experiment." },
+    { action: "Post one focused launch update and ask for feedback.", message: "We just shipped [product] for [target users]. What’s the #1 thing you’d want next?", why: "Public feedback gives you real market signals." },
+  ],
+  revenue: [
+    { action: "Call one churned user today — not to win them back, to understand why.", message: "Hey — I noticed you stopped using [product]. I just want to understand what didn't work. 10 minutes?", why: "Churn analysis is the highest‑leverage activity at revenue stage." },
+    { action: "Ask 2 active users what they'd pay for next.", message: "Quick question: what would make this worth $X/month for you?", why: "Revenue grows fastest when pricing signals are explicit." },
+  ],
+  default: [
+    { action: "Run quick market research to validate the opportunity.", message: "Hey, quick question — what's your biggest challenge with [your problem area]?", why: "Clarify your target users and validate the problem urgency." },
+    { action: "Write a one‑sentence problem statement and test it.", message: "I’m exploring this problem: [problem]. Does that feel accurate to your world?", why: "A sharp problem statement guides every next step." },
+  ],
+};
+
+function dayOfYear(date: Date) {
+  const start = Date.UTC(date.getUTCFullYear(), 0, 0);
+  const now = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+  return Math.floor((now - start) / 86400000);
+}
+
+function pickDailyIndex(seed: string, length: number): number {
+  const d = new Date();
+  const key = `${seed}-${d.getUTCFullYear()}-${dayOfYear(d)}`;
+  let hash = 0;
+  for (let i = 0; i < key.length; i += 1) {
+    hash = (hash * 31 + key.charCodeAt(i)) % 2147483647;
+  }
+  return length ? hash % length : 0;
+}
+
+function getAction(stage: string) {
+  const s = stage.toLowerCase();
+  if (s.includes("valid") || s.includes("discover")) {
+    const items = STAGE_ACTIONS.validation;
+    return items[pickDailyIndex("validation", items.length)];
+  }
+  if (s.includes("mvp") || s.includes("proto")) {
+    const items = STAGE_ACTIONS.mvp;
+    return items[pickDailyIndex("mvp", items.length)];
+  }
+  if (s.includes("launch")) {
+    const items = STAGE_ACTIONS.launch;
+    return items[pickDailyIndex("launch", items.length)];
+  }
+  if (s.includes("revenue") || s.includes("growth")) {
+    const items = STAGE_ACTIONS.revenue;
+    return items[pickDailyIndex("revenue", items.length)];
+  }
+  const items = STAGE_ACTIONS.default;
+  return items[pickDailyIndex("default", items.length)];
+}
+
+// Resend-style section header
+function SectionHeader({ children }: { children: string }) {
+  return <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>{children}</div>;
+}
 
 export default function DashboardPage() {
   const router = useRouter();
   const { data: projects = [], isLoading: projectsLoading } = useProjectsQuery();
   const { data: summaries = [], isLoading: summariesLoading } = useProjectSummariesQuery();
   const { data: overview, isLoading: overviewLoading } = useDashboardOverviewQuery();
-  const clearFeedMutation = useClearNotificationsMutation();
-
   const stats = useMemo(() => calculateDashboardStats(projects), [projects]);
+
   const activeProjectSummary = useMemo<ProjectSummary | null>(() => {
     if (!summaries.length) return null;
     return summaries.reduce((latest, current) =>
@@ -35,260 +93,240 @@ export default function DashboardPage() {
     if (!summaries.length) return 0;
     return computeStartupScore(activeProjectSummary ?? summaries[0]);
   }, [summaries, activeProjectSummary]);
-  const activeProjectName = useMemo(() => {
-    if (!summaries.length) return "No projects yet";
-    return (activeProjectSummary ?? summaries[0]).title ?? "Active project";
-  }, [summaries, activeProjectSummary]);
-  const activeProjectHint = useMemo(() => {
-    if (!summaries.length) return "";
-    if (summaries.length === 1) return `Active project · ${activeProjectName}`;
-    return `Most recent activity · ${activeProjectName} · ${summaries.length} active`;
-  }, [summaries, activeProjectName]);
+
   const activeStage = useMemo(() => {
     if (!activeProjectSummary) return "Idea";
     const stage = (activeProjectSummary.startup_stage ?? "").trim();
     if (stage) return stage;
-    const strengthCount = activeProjectSummary.validation_strengths?.length ?? 0;
-    if (strengthCount >= 3) return "Validation";
-    if (strengthCount > 0) return "Discovery";
+    const sc = activeProjectSummary.validation_strengths?.length ?? 0;
+    if (sc >= 3) return "Validation";
+    if (sc > 0) return "Discovery";
     return "Idea";
   }, [activeProjectSummary]);
 
-  const nextAction = useMemo(() => {
-    const stage = activeStage.toLowerCase();
-    if (stage.includes("validation")) {
-      return {
-        action: "Talk to 5 potential users to validate your idea.",
-        reason: "Your project is currently in the Validation stage and user feedback is missing.",
-      };
-    }
-    if (stage.includes("discovery")) {
-      return {
-        action: "Run quick customer discovery calls this week.",
-        reason: "Early discovery will sharpen your target market and problem definition.",
-      };
-    }
-    if (stage.includes("mvp")) {
-      return {
-        action: "Build a focused prototype that solves one core problem.",
-        reason: "Move from planning to a tangible MVP to learn faster.",
-      };
-    }
-    if (stage.includes("launch")) {
-      return {
-        action: "Acquire your first 10 users through a focused channel.",
-        reason: "Launch momentum needs a measurable acquisition experiment.",
-      };
-    }
-    if (stage.includes("growth")) {
-      return {
-        action: "Scale the best-performing marketing channel.",
-        reason: "Focus on the channel that consistently drives activation.",
-      };
-    }
-    return {
-      action: "Run quick market research to validate the opportunity.",
-      reason: "Clarify your target users and validate the problem urgency.",
-    };
+  const stageIndex = useMemo(() => {
+    const s = activeStage.toLowerCase();
+    if (s.includes("idea")) return 0;
+    if (s.includes("valid") || s.includes("discover")) return 1;
+    if (s.includes("proto")) return 2;
+    if (s.includes("mvp")) return 3;
+    if (s.includes("launch")) return 4;
+    return 5;
   }, [activeStage]);
 
-  const executionScore = activeProjectSummary?.execution_score ?? 0;
-  const validationScore = activeProjectSummary?.validation_score ?? 0;
-  const progressScore = activeProjectSummary?.progress ?? 0;
+  const nextAction = useMemo(() => getAction(activeStage), [activeStage]);
+  const streak = overview?.founderStreakDays ?? 0;
+  const computedScore = useMemo(() => {
+    if (!summaries.length) return 0;
+    return computeStartupScore(activeProjectSummary ?? summaries[0]);
+  }, [activeProjectSummary, summaries]);
+  const rawExecutionScore = activeProjectSummary?.execution_score ?? 0;
+  const executionScore = Math.max(rawExecutionScore, computedScore);
+  const accountabilityRate = activeProjectSummary?.progress ?? 0;
+  const [copied, setCopied] = useState(false);
 
-  const milestoneProgress = useMemo(() => {
-    const total = overview?.milestonesCompleted ?? 0;
-    const active = stats.activeProjects || 1;
-    return Math.min(100, Math.round((total / (active * 4)) * 100));
-  }, [overview?.milestonesCompleted, stats.activeProjects]);
+  useEffect(() => {
+    if (overview?.founderStreakDays) localStorage.setItem("bm_streak", String(overview.founderStreakDays));
+  }, [overview?.founderStreakDays]);
 
   if (projectsLoading || summariesLoading || overviewLoading) {
-    return <div className="text-sm text-zinc-400">Loading dashboard...</div>;
+    return <div style={{ fontSize: 12, color: "#666", padding: "60px 0", textAlign: "center", fontFamily: "system-ui,sans-serif" }}>Loading...</div>;
   }
 
   if (!projects.length) {
     return (
-      <motion.section
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="mx-auto max-w-7xl space-y-8 px-6"
-      >
-        <GlowCard className="overflow-hidden p-0">
-          <div className="bg-gradient-to-r from-indigo-500/30 to-purple-500/30 px-6 py-5">
-            <p className="text-xs uppercase tracking-[0.2em] text-indigo-200">Welcome</p>
-            <h3 className="mt-1 text-xl font-semibold text-zinc-100">Create your first startup idea</h3>
-          </div>
-          <CardContent className="space-y-4 px-6 pb-6">
-            <p className="text-body">Turn your idea into an execution roadmap with milestones, tasks, and AI guidance.</p>
-            <Button className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white" onClick={() => router.push("/projects")}>
-              Create Project
-            </Button>
-          </CardContent>
-        </GlowCard>
-      </motion.section>
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+        style={{ maxWidth: 440, margin: "80px auto", fontFamily: "system-ui,sans-serif" }}>
+        <div style={{ border: "1px solid #1c1c1c", borderRadius: 8, padding: "32px 28px" }}>
+          <div style={{ fontSize: 15, fontWeight: 500, color: "#fff", marginBottom: 8 }}>Create your first project</div>
+          <div style={{ fontSize: 13, color: "#888", lineHeight: 1.65, marginBottom: 24 }}>Turn your idea into an execution roadmap with daily actions and AI accountability.</div>
+          <button onClick={() => router.push("/projects")}
+            style={{ background: "#fff", color: "#000", fontWeight: 500, fontSize: 13, padding: "8px 16px", borderRadius: 6, border: "none", cursor: "pointer", fontFamily: "inherit" }}>
+            New project
+          </button>
+        </div>
+      </motion.div>
     );
   }
 
+  const scoreColor = executionScore >= 60 ? "#4ade80" : executionScore >= 30 ? "#fbbf24" : "#f87171";
+  const acctColor = accountabilityRate >= 60 ? "#4ade80" : "#fbbf24";
+  const streakColor = streak >= 3 ? "#fbbf24" : "#e5e5e5";
+
   return (
-    <motion.section
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="mx-auto max-w-7xl space-y-8 px-6"
-    >
-      <PageHero
-        kicker="Dashboard"
-        title="Execution Dashboard"
-        subtitle="Track momentum, execution quality, and AI guidance across your projects."
-      />
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}
+      style={{ maxWidth: 1100, margin: "0 auto", fontFamily: "system-ui,sans-serif", color: "#e5e5e5" }}>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <GlowCard className="p-6">
-          <div className="flex items-center gap-2">
-            <Zap className="h-4 w-4 text-indigo-300" />
-            <p className="text-xs uppercase tracking-[0.2em] text-zinc-400">Next Best Action</p>
-          </div>
-          <p className="mt-4 text-lg font-semibold text-zinc-100">{nextAction.action}</p>
-          <p className="mt-3 text-sm text-zinc-400">{nextAction.reason}</p>
-        </GlowCard>
-
-        <GlowCard className="p-6">
-          <div className="flex items-center gap-2">
-            <Rocket className="h-4 w-4 text-indigo-300" />
-            <p className="text-xs uppercase tracking-[0.2em] text-zinc-400">Startup Score</p>
-          </div>
-          <p className="mt-4 text-4xl font-bold text-zinc-100">{activeProjectScore} / 100</p>
-          <div className="mt-4 space-y-3 text-xs text-zinc-400">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span>Execution Score</span>
-                <span className="text-zinc-200">{executionScore}</span>
-              </div>
-              <ProgressBar value={executionScore} />
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span>Validation Score</span>
-                <span className="text-zinc-200">{validationScore}</span>
-              </div>
-              <ProgressBar value={validationScore} />
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span>Progress Score</span>
-                <span className="text-zinc-200">{progressScore}</span>
-              </div>
-              <ProgressBar value={progressScore} />
-            </div>
-          </div>
-        </GlowCard>
-
-        <GlowCard className="p-6">
-          <div className="flex items-center gap-2">
-            <Flame className="h-4 w-4 text-orange-300" />
-            <p className="text-xs uppercase tracking-[0.2em] text-zinc-400">Founder Execution Streak</p>
-          </div>
-          <p className="mt-4 text-3xl font-bold text-orange-400">{overview?.founderStreakDays ?? 0} days</p>
-          <p className="mt-3 text-sm text-zinc-400">
-            You have completed tasks for {overview?.founderStreakDays ?? 0} days in a row.
-          </p>
-        </GlowCard>
+      {/* Page header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24, paddingBottom: 18, borderBottom: "1px solid #1c1c1c" }}>
+        <div>
+          <div style={{ fontSize: 20, fontWeight: 500, color: "#fff", letterSpacing: "-0.02em" }}>Overview</div>
+          <div style={{ fontSize: 12, color: "#888", marginTop: 3 }}>{activeProjectSummary?.title ?? "BuildMind"} · {activeStage} stage</div>
+        </div>
+        <button onClick={() => router.push("/projects")}
+          style={{ background: "transparent", border: "1px solid #222", color: "#888", fontSize: 12, padding: "6px 12px", borderRadius: 6, cursor: "pointer", fontFamily: "inherit" }}>
+          View projects
+        </button>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <DashboardCard
-          title="Startup Score"
-          value={`${activeProjectScore}/100`}
-          trend={activeProjectHint}
-          icon={<BarChart2 size={16} />}
-        />
-        <DashboardCard
-          title="Projects Summary"
-          value={`${stats.activeProjects} active`}
-          trend={`${overview?.completedTasks ?? 0} tasks completed`}
-          icon={<CheckCircle2 size={16} />}
-        />
-
-        <GlowCard className="p-0">
-          <CardHeader className="mb-6 px-6 pt-6">
-            <CardTitle className="text-base text-zinc-100">Milestones Progress</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 px-6 pb-6">
-            <div className="flex items-center justify-between text-xs text-zinc-400">
-              <span>Completed milestones</span>
-              <span className="text-zinc-200">{overview?.milestonesCompleted ?? 0}</span>
+      {/* Metric tiles */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", border: "1px solid #1c1c1c", borderRadius: 8, overflow: "hidden", marginBottom: 16 }}>
+        {[
+          { label: "Execution score", value: String(executionScore), suffix: "/100", color: scoreColor },
+          { label: "Accountability", value: String(accountabilityRate), suffix: "%", color: acctColor },
+          { label: "Streak", value: String(streak), suffix: " days", color: streakColor },
+          { label: "Tasks completed", value: String(overview?.completedTasks ?? 0), suffix: "", color: "#e5e5e5" },
+        ].map((s, i) => (
+          <div key={s.label} style={{ padding: "18px 20px", background: "#080808", borderRight: i < 3 ? "1px solid #1c1c1c" : "none" }}>
+            <div style={{ fontSize: 11, color: "#666", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.09em" }}>{s.label}</div>
+            <div style={{ fontSize: 26, fontWeight: 500, color: s.color, letterSpacing: "-0.03em", lineHeight: 1 }}>
+              {s.value}<span style={{ fontSize: 13, color: "#555", fontWeight: 400 }}>{s.suffix}</span>
             </div>
-            <ProgressBar value={milestoneProgress} />
-            <p className="text-xs text-zinc-400">{milestoneProgress}% of milestone targets completed</p>
-          </CardContent>
-        </GlowCard>
-
-        <GlowCard className="p-0">
-          <CardHeader className="mb-6 px-6 pt-6">
-            <CardTitle className="text-base text-zinc-100">Quick BuildMini</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 px-6 pb-6">
-            <Input
-              placeholder="Ask BuildMini about your next steps..."
-              className="h-10 border-white/10 bg-black/20 text-zinc-100 placeholder:text-zinc-500"
-            />
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                className="border-white/15 bg-white/5 text-zinc-200 hover:bg-white/10"
-                onClick={() => router.push("/projects")}
-              >
-                Create Project
-              </Button>
-              <Button className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white" onClick={() => router.push("/ai-coach")}>
-                Open BuildMini
-              </Button>
-            </div>
-          </CardContent>
-        </GlowCard>
+          </div>
+        ))}
       </div>
 
-      {FEATURES.analytics ? (
-        <GlowCard className="p-0">
-          <CardHeader className="mb-6 flex flex-row items-center justify-between px-6 pt-6">
-            <CardTitle className="text-base text-zinc-100">Weekly Founder Report</CardTitle>
-            <Button
-              variant="outline"
-              className="border-white/15 bg-white/5 text-zinc-200 hover:bg-white/10"
-              onClick={() => router.push("/reports")}
-            >
-              View Report
-            </Button>
-          </CardHeader>
-          <CardContent className="px-6 pb-6">
-            <p className="text-sm text-zinc-300">
-              Get a weekly AI summary of your progress, risks, and next-step recommendations.
-            </p>
-          </CardContent>
-        </GlowCard>
-      ) : null}
+      {/* Stage journey */}
+      <div style={{ border: "1px solid #1c1c1c", borderRadius: 8, padding: "14px 20px", marginBottom: 16, background: "#080808" }}>
+        <SectionHeader>Startup journey</SectionHeader>
+        <div style={{ display: "flex", alignItems: "center" }}>
+          {STAGE_STEPS.map((s, i) => (
+            <div key={s} style={{ display: "flex", alignItems: "center", flex: i < STAGE_STEPS.length - 1 ? 1 : "none" }}>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5 }}>
+                <div style={{
+                  width: 20, height: 20, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 9, fontWeight: 600,
+                  background: i < stageIndex ? "#fff" : "transparent",
+                  border: i === stageIndex ? "1px solid #fff" : i < stageIndex ? "1px solid #fff" : "1px solid #2a2a2a",
+                  color: i < stageIndex ? "#000" : i === stageIndex ? "#fff" : "#444",
+                }}>
+                  {i < stageIndex ? "✓" : i + 1}
+                </div>
+                <div style={{ fontSize: 10, color: i === stageIndex ? "#e5e5e5" : i < stageIndex ? "#666" : "#333", whiteSpace: "nowrap" }}>{s}</div>
+              </div>
+              {i < STAGE_STEPS.length - 1 && (
+                <div style={{ flex: 1, height: 1, background: i < stageIndex ? "#333" : "#1c1c1c", margin: "0 5px", marginBottom: 16 }} />
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
 
-      <GlowCard className="p-0">
-        <CardHeader className="mb-6 flex flex-row items-center justify-between px-6 pt-6">
-          <CardTitle className="text-base text-zinc-100">Recent Activity</CardTitle>
-          <Button
-            variant="outline"
-            className="border-white/15 bg-white/5 text-zinc-200 hover:bg-white/10"
-            onClick={() => void clearFeedMutation.mutateAsync()}
-            disabled={clearFeedMutation.isPending || (overview?.recentActivity?.length ?? 0) === 0}
-          >
-            {clearFeedMutation.isPending ? "Clearing..." : "Clear feed"}
-          </Button>
-        </CardHeader>
-        <CardContent className="px-6 pb-6">
-          <ul className="space-y-2">
-            {(overview?.recentActivity ?? []).map((item, idx) => (
-              <li key={idx} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-zinc-300">
-                {item}
-              </li>
-            ))}
-          </ul>
-        </CardContent>
-      </GlowCard>
-    </motion.section>
+      {/* Main 2-col */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 12, marginBottom: 12 }}>
+
+        {/* Today's action card — light background for contrast */}
+        <div style={{ border: "1px solid #1c1c1c", borderRadius: 8, overflow: "hidden" }}>
+          <div style={{ padding: "11px 16px", borderBottom: "1px solid #1c1c1c", background: "#080808", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 12, color: "#888" }}>Today&apos;s action</span>
+            <span style={{ fontSize: 10, color: "#555", background: "#111", border: "1px solid #1c1c1c", borderRadius: 4, padding: "2px 7px" }}>Stage: {activeStage}</span>
+          </div>
+          <div style={{ padding: "20px", background: "#f5f5f4" }}>
+            <div style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.09em", marginBottom: 8 }}>Do this now</div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "#111", marginBottom: 14, lineHeight: 1.4, letterSpacing: "-0.01em" }}>{nextAction.action}</div>
+            <div style={{ background: "#eaeae8", borderRadius: 6, padding: "11px 13px", marginBottom: 14, position: "relative" }}>
+              <div style={{ fontFamily: "monospace", fontSize: 12, color: "#333", lineHeight: 1.65, fontStyle: "italic", paddingRight: 56 }}>
+                &ldquo;{nextAction.message}&rdquo;
+              </div>
+              <button onClick={() => { navigator.clipboard.writeText(nextAction.message).catch(() => {}); setCopied(true); setTimeout(() => setCopied(false), 1800); }}
+                style={{ position: "absolute", top: 8, right: 8, background: "#fff", border: "1px solid #ccc", borderRadius: 4, padding: "3px 8px", fontSize: 11, color: "#555", cursor: "pointer", fontFamily: "inherit" }}>
+                {copied ? "✓" : "Copy"}
+              </button>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => router.push("/projects")}
+                style={{ flex: 1, background: "#111", color: "#fff", fontWeight: 500, fontSize: 12, padding: "9px", borderRadius: 6, border: "none", cursor: "pointer", fontFamily: "inherit" }}>
+                Mark done
+              </button>
+              <button onClick={() => router.push("/ai-coach")}
+                style={{ background: "transparent", border: "1px solid #ccc", color: "#555", fontSize: 12, padding: "9px 14px", borderRadius: 6, cursor: "pointer", fontFamily: "inherit" }}>
+                Ask BuildMini
+              </button>
+            </div>
+            <div style={{ fontSize: 11, color: "#777", marginTop: 10, lineHeight: 1.5 }}>WHY: {nextAction.why}</div>
+          </div>
+        </div>
+
+        {/* Right column */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ border: "1px solid #1c1c1c", borderRadius: 8, padding: "14px 16px", background: "#080808" }}>
+            <SectionHeader>{`Proven next steps · ${activeStage}`}</SectionHeader>
+            <div style={{ fontSize: 12, color: "#888", lineHeight: 1.7, marginBottom: 12 }}>
+              {stageIndex === 0 && "Talk to potential users before writing any code. Every assumption is probably wrong."}
+              {stageIndex === 1 && "Send 10 personal DMs to potential users before building anything else."}
+              {stageIndex === 2 && "Record a 3-minute Loom walkthrough. Ship something visible."}
+              {stageIndex === 3 && "Get your link in front of one warm contact today. Polish later."}
+              {stageIndex === 4 && "Post on Product Hunt. Imperfect listing beats no listing."}
+              {stageIndex >= 5 && "Call one churned user. Every answer beats 10 feature ideas."}
+            </div>
+            <button onClick={() => router.push("/ai-coach")}
+              style={{ fontSize: 12, color: "#777", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", padding: 0 }}>
+              Ask BuildMini for more →
+            </button>
+          </div>
+
+          <div style={{ border: "1px solid #1c1c1c", borderRadius: 8, padding: "14px 16px", background: "#080808", flex: 1 }}>
+            <SectionHeader>Recent activity</SectionHeader>
+            {(overview?.recentActivity ?? []).length === 0 ? (
+              <div style={{ fontSize: 12, color: "#444" }}>No activity yet.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                {(overview?.recentActivity ?? []).slice(0, 5).map((item, i) => (
+                  <div key={i} style={{ display: "flex", gap: 8, fontSize: 12, color: "#888", lineHeight: 1.5 }}>
+                    <div style={{ width: 3, height: 3, borderRadius: "50%", background: "#444", flexShrink: 0, marginTop: 6 }} />
+                    {item}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Projects table */}
+      {summaries.length > 0 && (
+        <div style={{ border: "1px solid #1c1c1c", borderRadius: 8, overflow: "hidden" }}>
+          <div style={{ padding: "11px 18px", borderBottom: "1px solid #1c1c1c", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#080808" }}>
+            <span style={{ fontSize: 12, color: "#888" }}>Active projects</span>
+            <button onClick={() => router.push("/projects")} style={{ fontSize: 12, color: "#666", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>View all</button>
+          </div>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                {["Project", "Stage", "Progress", "Score", ""].map((h) => (
+                  <th key={h} style={{ padding: "9px 18px", textAlign: "left", fontSize: 10, color: "#555", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.08em", borderBottom: "1px solid #111", background: "#080808" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {summaries.slice(0, 5).map((s, i) => {
+                const score = computeStartupScore(s);
+                const progress = s.progress ?? 0;
+                const sc = score >= 60 ? "#4ade80" : score >= 30 ? "#fbbf24" : "#888";
+                return (
+                  <tr key={s.id} onClick={() => router.push(`/projects/${s.id}`)}
+                    style={{ cursor: "pointer", borderBottom: i < Math.min(summaries.length, 5) - 1 ? "1px solid #111" : "none" }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "#0d0d0d"; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "transparent"; }}>
+                    <td style={{ padding: "12px 18px", fontSize: 13, color: "#d4d4d4", fontWeight: 500 }}>{s.title}</td>
+                    <td style={{ padding: "12px 18px" }}>
+                      <span style={{ fontSize: 11, color: "#888", background: "#111", border: "1px solid #1c1c1c", borderRadius: 4, padding: "2px 8px" }}>{s.startup_stage ?? "Idea"}</span>
+                    </td>
+                    <td style={{ padding: "12px 18px", minWidth: 120 }}>
+                      <div style={{ height: 2, background: "#1c1c1c", borderRadius: 9999, overflow: "hidden", marginBottom: 4, width: 80 }}>
+                        <div style={{ height: "100%", width: `${progress}%`, background: "#444", borderRadius: 9999 }} />
+                      </div>
+                      <div style={{ fontSize: 11, color: "#666" }}>{progress}%</div>
+                    </td>
+                    <td style={{ padding: "12px 18px", fontSize: 13, color: sc, fontVariantNumeric: "tabular-nums" }}>{score}</td>
+                    <td style={{ padding: "12px 18px", fontSize: 12, color: "#555", textAlign: "right" }}>→</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </motion.div>
   );
 }

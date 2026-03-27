@@ -18,6 +18,8 @@ from app.services.task_service import (
     update_milestone_for_user,
     update_task_for_user,
 )
+from app.services.analytics import capture_event
+from app.models import Milestone, Project
 
 
 router = APIRouter(tags=["tasks"])
@@ -31,7 +33,19 @@ def complete_task_endpoint(
 ):
     try:
         task = complete_task_for_user(db, user_id=current_user.id, task_id=task_id)
+        milestone = db.query(Milestone).filter(Milestone.id == task.milestone_id).first()
+        project = db.query(Project).filter(Project.id == milestone.project_id).first() if milestone else None
         db.commit()
+        if milestone:
+            capture_event(
+                "task_completed",
+                {
+                    "user_id": current_user.id,
+                    "project_id": milestone.project_id,
+                    "current_stage": (project.startup_stage if project else None) or milestone.status or "unknown",
+                    "source": "server",
+                },
+            )
         return {
             "success": True,
             "data": {
@@ -155,6 +169,16 @@ def update_milestone_endpoint(
             order_index=payload.order_index,
         )
         db.commit()
+        project = db.query(Project).filter(Project.id == milestone.project_id).first()
+        capture_event(
+            "milestone_updated",
+            {
+                "user_id": current_user.id,
+                "project_id": milestone.project_id,
+                "current_stage": (project.startup_stage if project else None) or milestone.status or "unknown",
+                "source": "server",
+            },
+        )
         return {
             "success": True,
             "data": {

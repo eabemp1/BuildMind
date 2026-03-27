@@ -3,20 +3,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, ClipboardList, Lightbulb, Sparkles } from "lucide-react";
-import MilestoneChart from "@/components/milestone-chart";
-import StartupTimeline from "@/components/startup-timeline";
-import { Button } from "@/components/ui/button";
-import GlowCard from "@/components/ui/glow-card";
-import { CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import ProgressBar from "@/components/progress-bar";
-import PageHero from "@/components/layout/page-hero";
 import { type BuildMindMilestone, type BuildMindTask, updateMilestoneForCurrentUser, updateTaskStatus } from "@/lib/buildmind";
 import { useDeleteProjectMutation, useProjectDetailQuery } from "@/lib/queries";
-import { FEATURES } from "@/lib/features";
 import { setActiveProjectId } from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { recordTaskCompletion, checkUpgradeTrigger, getTasksDone } from "@/lib/upgrade";
+
+type Tab = "milestones" | "tasks" | "validation";
+
+const inputStyle = {
+  background: "#0a0a0a", border: "1px solid #222", borderRadius: 5,
+  padding: "7px 10px", fontSize: 12, color: "#d4d4d4", outline: "none",
+  fontFamily: "inherit", boxSizing: "border-box" as const,
+};
 
 export default function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
@@ -25,8 +23,7 @@ export default function ProjectDetailPage() {
   const [notesDraft, setNotesDraft] = useState<Record<string, string>>({});
   const [editingMilestoneId, setEditingMilestoneId] = useState<string | null>(null);
   const [milestoneDrafts, setMilestoneDrafts] = useState<Record<string, { title: string; stage: string }>>({});
-  const [expandedMilestoneNotes, setExpandedMilestoneNotes] = useState<Record<string, boolean>>({});
-  const [showValidation, setShowValidation] = useState(false);
+  const [activeTab, setActiveTab] = useState<Tab>("milestones");
   const qc = useQueryClient();
   const { data, isLoading, error } = useProjectDetailQuery(projectId);
   const deleteMutation = useDeleteProjectMutation();
@@ -34,16 +31,15 @@ export default function ProjectDetailPage() {
   const project = data?.project ?? null;
   const milestones = data?.milestones ?? [];
   const tasks = data?.tasks ?? [];
-  const validationTotal =
-    (project?.validation_strengths?.length ?? 0) +
-    (project?.validation_weaknesses?.length ?? 0) +
-    (project?.validation_suggestions?.length ?? 0);
+  const validationTotal = (project?.validation_strengths?.length ?? 0) + (project?.validation_weaknesses?.length ?? 0) + (project?.validation_suggestions?.length ?? 0);
   const validationPending = isLoading || (project && validationTotal === 0);
 
   const progress = useMemo(() => {
     if (!tasks.length) return 0;
     return Math.round((tasks.filter((t) => t.is_completed).length / tasks.length) * 100);
   }, [tasks]);
+
+  const completedCount = useMemo(() => tasks.filter((t) => t.is_completed).length, [tasks]);
 
   const updateMutation = useMutation({
     mutationFn: (payload: { taskId: string; isCompleted: boolean; notes?: string }) =>
@@ -53,16 +49,15 @@ export default function ProjectDetailPage() {
         ["project", projectId],
         (current) => {
           if (!current) return current;
-          return {
-            ...current,
-            tasks: current.tasks.map((task) =>
-              task.id === variables.taskId
-                ? { ...task, is_completed: variables.isCompleted, notes: variables.notes ?? task.notes }
-                : task,
-            ),
-          };
+          return { ...current, tasks: current.tasks.map((task) => task.id === variables.taskId ? { ...task, is_completed: variables.isCompleted, notes: variables.notes ?? task.notes } : task) };
         },
       );
+      if (variables.isCompleted) {
+        recordTaskCompletion();
+        const streak = Number(localStorage.getItem("bm_streak") ?? "1");
+        const { shouldUpgrade } = checkUpgradeTrigger(streak);
+        if (shouldUpgrade) router.push(`/upgrade?tasks=${getTasksDone()}&streak=${streak}`);
+      }
     },
   });
 
@@ -74,10 +69,7 @@ export default function ProjectDetailPage() {
         ["project", projectId],
         (current) => {
           if (!current) return current;
-          return {
-            ...current,
-            milestones: current.milestones.map((m) => (m.id === updated.id ? { ...m, ...updated } : m)),
-          };
+          return { ...current, milestones: current.milestones.map((m) => (m.id === updated.id ? { ...m, ...updated } : m)) };
         },
       );
       setEditingMilestoneId(null);
@@ -85,11 +77,7 @@ export default function ProjectDetailPage() {
   });
 
   const toggleTask = (task: BuildMindTask) => {
-    updateMutation.mutate({
-      taskId: task.id,
-      isCompleted: !task.is_completed,
-      notes: notesDraft[task.id] ?? task.notes ?? "",
-    });
+    updateMutation.mutate({ taskId: task.id, isCompleted: !task.is_completed, notes: notesDraft[task.id] ?? task.notes ?? "" });
   };
 
   const tasksByMilestone = useMemo(() => {
@@ -102,432 +90,256 @@ export default function ProjectDetailPage() {
     return grouped;
   }, [tasks]);
 
-  const milestoneChartData = useMemo(
-    () =>
-      milestones.map((milestone) => {
-        const milestoneTasks = tasksByMilestone.get(milestone.id) ?? [];
-        const completion = milestoneTasks.length
-          ? Math.round((milestoneTasks.filter((t) => t.is_completed).length / milestoneTasks.length) * 100)
-          : 0;
-        return { milestone: milestone.title, completion };
-      }),
-    [milestones, tasksByMilestone],
-  );
-
   const isMilestoneComplete = (milestone: BuildMindMilestone) => {
     if (milestone.is_completed) return true;
     const status = (milestone.status ?? "").toLowerCase();
     if (status === "completed" || status === "done") return true;
-    const milestoneTasks = tasksByMilestone.get(milestone.id) ?? [];
-    return milestoneTasks.length > 0 && milestoneTasks.every((t) => t.is_completed);
+    const mt = tasksByMilestone.get(milestone.id) ?? [];
+    return mt.length > 0 && mt.every((t) => t.is_completed);
   };
+
+  const splitNotes = (value: string | null | undefined) =>
+    (value ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
 
   const appendNote = (current: string | null | undefined, next: string) => {
     const trimmed = next.trim();
     if (!trimmed) return current ?? "";
     const existing = (current ?? "").trim();
-    if (!existing) return trimmed;
-    return `${existing}\n${trimmed}`;
-  };
-
-  const splitNotes = (value: string | null | undefined) =>
-    (value ?? "")
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean);
-
-  const deleteProject = () => {
-    if (!project) return;
-    const ok = window.confirm(`Delete "${project.title}"? This cannot be undone.`);
-    if (!ok) return;
-    deleteMutation.mutate(project.id, {
-      onSuccess: () => {
-        router.push("/projects");
-      },
-    });
+    return existing ? `${existing}\n${trimmed}` : trimmed;
   };
 
   useEffect(() => {
     const numericId = Number(projectId);
-    if (Number.isFinite(numericId)) {
-      setActiveProjectId(numericId);
-    }
+    if (Number.isFinite(numericId)) setActiveProjectId(numericId);
   }, [projectId]);
 
-  useEffect(() => {
-    if (!isLoading) {
-      setShowValidation(true);
-    }
-  }, [isLoading]);
+  if (isLoading) return <div style={{ fontSize: 12, color: "#666", padding: "40px 0", textAlign: "center", fontFamily: "system-ui,sans-serif" }}>Loading...</div>;
+  if (error) return <div style={{ fontSize: 12, color: "#f87171", fontFamily: "system-ui,sans-serif" }}>{error instanceof Error ? error.message : "Failed to load"}</div>;
 
-  useEffect(() => {
-    setShowValidation(false);
-  }, [projectId]);
+  const completedMilestones = milestones.filter(isMilestoneComplete).length;
 
   return (
-    <section className="mx-auto max-w-7xl space-y-8 px-6">
-      <PageHero
-        kicker="Project"
-        title={project?.title ?? "Project"}
-        subtitle="Idea overview, validation feedback, milestones, and task execution tracking."
-        actions={
-          <Button
-            variant="outline"
-            className="border-rose-500/40 text-rose-200 hover:bg-rose-500/10"
-            onClick={deleteProject}
-            disabled={!project || deleteMutation.isPending}
-          >
-            {deleteMutation.isPending ? "Deleting..." : "Delete Project"}
-          </Button>
-        }
-      />
+    <div style={{ maxWidth: 1100, margin: "0 auto", fontFamily: "system-ui,sans-serif", color: "#e5e5e5" }}>
 
-      {isLoading ? <p className="text-sm text-zinc-400">Loading project...</p> : null}
-      {error ? <p className="text-sm text-rose-400">{error instanceof Error ? error.message : "Failed to load project"}</p> : null}
-      {updateMutation.error ? (
-        <p className="text-sm text-rose-400">
-          {updateMutation.error instanceof Error ? updateMutation.error.message : "Failed to update task"}
-        </p>
-      ) : null}
-      {deleteMutation.error ? (
-        <p className="text-sm text-rose-400">
-          {deleteMutation.error instanceof Error ? deleteMutation.error.message : "Failed to delete project"}
-        </p>
-      ) : null}
-
-      <div className="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
-        <GlowCard className="p-0">
-          <CardHeader className="mb-6 flex flex-row items-center gap-3 px-6 pt-6">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-indigo-200">
-              <Lightbulb size={18} />
-            </div>
-            <div>
-              <CardTitle className="text-zinc-100">Idea Overview</CardTitle>
-              <p className="text-body">What you are building and for whom.</p>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4 px-6 pb-6 text-sm text-zinc-300">
-            <p>{project?.description || "No description yet."}</p>
-            <p><strong className="text-zinc-100">Target users:</strong> {project?.target_users || "Not set"}</p>
-            <p><strong className="text-zinc-100">Problem:</strong> {project?.problem || "Not set"}</p>
-          </CardContent>
-        </GlowCard>
-
-        <GlowCard className="p-0">
-          <CardHeader className="mb-6 flex flex-row items-center gap-3 px-6 pt-6">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-emerald-200">
-              <ClipboardList size={18} />
-            </div>
-            <div>
-              <CardTitle className="text-zinc-100">Progress</CardTitle>
-              <p className="text-body">Completion across milestones and tasks.</p>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4 px-6 pb-6">
-            <ProgressBar value={progress} label="Overall project progress" />
-            <div className="grid gap-3 text-sm text-zinc-300">
-              <div className="flex items-center justify-between">
-                <span>Total tasks</span>
-                <span className="text-zinc-100">{tasks.length}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Completed tasks</span>
-                <span className="text-zinc-100">{tasks.filter((t) => t.is_completed).length}</span>
-              </div>
-            </div>
-          </CardContent>
-        </GlowCard>
+      {/* Breadcrumb + header */}
+      <div style={{ marginBottom: 20, paddingBottom: 18, borderBottom: "1px solid #1c1c1c" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+          <button onClick={() => router.push("/projects")}
+            style={{ background: "none", border: "none", color: "#666", fontSize: 12, cursor: "pointer", fontFamily: "inherit", padding: 0 }}>
+            Projects
+          </button>
+          <span style={{ color: "#333", fontSize: 12 }}>/</span>
+          <span style={{ fontSize: 12, color: "#888" }}>{project?.title ?? "Project"}</span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div>
+            <div style={{ fontSize: 20, fontWeight: 500, color: "#fff", letterSpacing: "-0.02em" }}>{project?.title ?? "Project"}</div>
+            <div style={{ fontSize: 12, color: "#888", marginTop: 3 }}>{project?.startup_stage ?? "Idea"} · {completedCount}/{tasks.length} tasks · {completedMilestones}/{milestones.length} milestones</div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => router.push("/ai-coach")}
+              style={{ background: "transparent", border: "1px solid #222", color: "#888", fontSize: 12, padding: "6px 12px", borderRadius: 5, cursor: "pointer", fontFamily: "inherit" }}>
+              Ask BuildMini
+            </button>
+            <button onClick={() => { if (!project) return; if (!window.confirm(`Delete "${project.title}"?`)) return; deleteMutation.mutate(project.id, { onSuccess: () => router.push("/projects") }); }}
+              style={{ background: "transparent", border: "1px solid #1c1c1c", color: "#555", fontSize: 12, padding: "6px 12px", borderRadius: 5, cursor: "pointer", fontFamily: "inherit" }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "#f87171"; (e.currentTarget as HTMLButtonElement).style.borderColor = "#f87171"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "#555"; (e.currentTarget as HTMLButtonElement).style.borderColor = "#1c1c1c"; }}>
+              Delete
+            </button>
+          </div>
+        </div>
       </div>
 
-      {FEATURES.milestones ? <MilestoneChart data={milestoneChartData} /> : null}
-
-      {FEATURES.startupTimeline ? (
-        <StartupTimeline project={project} milestones={milestones} tasks={tasks} />
-      ) : null}
-
-      <GlowCard className="p-0">
-        <CardHeader className="mb-6 flex flex-row items-center gap-3 px-6 pt-6">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-purple-200">
-            <Sparkles size={18} />
+      {/* Stats */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", border: "1px solid #1c1c1c", borderRadius: 8, overflow: "hidden", marginBottom: 16 }}>
+        {[
+          { label: "Progress", value: `${progress}%`, color: progress >= 60 ? "#4ade80" : progress >= 30 ? "#fbbf24" : "#e5e5e5" },
+          { label: "Tasks done", value: `${completedCount}/${tasks.length}`, color: "#e5e5e5" },
+          { label: "Milestones", value: `${completedMilestones}/${milestones.length}`, color: "#e5e5e5" },
+          { label: "Stage", value: project?.startup_stage ?? "Idea", color: "#999" },
+        ].map((s, i) => (
+          <div key={s.label} style={{ padding: "16px 18px", background: "#080808", borderRight: i < 3 ? "1px solid #1c1c1c" : "none" }}>
+            <div style={{ fontSize: 10, color: "#555", textTransform: "uppercase", letterSpacing: "0.09em", marginBottom: 7 }}>{s.label}</div>
+            <div style={{ fontSize: 20, fontWeight: 500, color: s.color, letterSpacing: "-0.02em", lineHeight: 1 }}>{s.value}</div>
           </div>
-          <div>
-            <CardTitle className="text-zinc-100">AI Validation</CardTitle>
-            <p className="text-body">Structured feedback from BuildMind AI.</p>
-          </div>
-        </CardHeader>
-        <CardContent className="px-6 pb-6">
+        ))}
+      </div>
+
+      {/* Progress bar */}
+      <div style={{ height: 2, background: "#1c1c1c", borderRadius: 9999, overflow: "hidden", marginBottom: 20 }}>
+        <div style={{ height: "100%", width: `${progress}%`, background: progress >= 60 ? "#4ade80" : "#444", borderRadius: 9999, transition: "width 0.6s ease" }} />
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: "flex", borderBottom: "1px solid #1c1c1c", marginBottom: 18 }}>
+        {(["milestones", "tasks", "validation"] as Tab[]).map((t) => (
+          <button key={t} onClick={() => setActiveTab(t)}
+            style={{ background: "none", border: "none", borderBottom: activeTab === t ? "1px solid #fff" : "1px solid transparent", color: activeTab === t ? "#fff" : "#666", fontSize: 13, padding: "8px 16px", cursor: "pointer", fontFamily: "inherit", marginBottom: -1, textTransform: "capitalize" }}>
+            {t}
+          </button>
+        ))}
+      </div>
+
+      {/* MILESTONES */}
+      {activeTab === "milestones" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {milestones.length === 0 && <div style={{ fontSize: 12, color: "#555", padding: "20px 0" }}>No milestones yet.</div>}
+          {milestones.map((milestone) => {
+            const mt = tasksByMilestone.get(milestone.id) ?? [];
+            const mp = mt.length ? Math.round((mt.filter((t) => t.is_completed).length / mt.length) * 100) : 0;
+            const mc = isMilestoneComplete(milestone);
+            const isEditing = editingMilestoneId === milestone.id;
+            const draft = milestoneDrafts[milestone.id] ?? { title: milestone.title, stage: milestone.stage };
+            return (
+              <div key={milestone.id} style={{ border: "1px solid #1c1c1c", borderRadius: 8, overflow: "hidden" }}>
+                <div style={{ padding: "11px 16px", background: "#080808", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: mt.length ? "1px solid #111" : "none" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ width: 16, height: 16, borderRadius: "50%", border: mc ? "none" : "1px solid #333", background: mc ? "#fff" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 9, color: "#000" }}>
+                      {mc ? "✓" : ""}
+                    </div>
+                    {isEditing ? (
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <input value={draft.stage} onChange={(e) => setMilestoneDrafts((prev) => ({ ...prev, [milestone.id]: { ...draft, stage: e.target.value } }))} placeholder="Stage" style={{ ...inputStyle, width: 100 }} />
+                        <input value={draft.title} onChange={(e) => setMilestoneDrafts((prev) => ({ ...prev, [milestone.id]: { ...draft, title: e.target.value } }))} placeholder="Title" style={{ ...inputStyle, width: 200 }} />
+                      </div>
+                    ) : (
+                      <div>
+                        <div style={{ fontSize: 10, color: "#555", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>{milestone.stage}</div>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: mc ? "#555" : "#d4d4d4" }}>{milestone.title}</div>
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ fontSize: 11, color: "#666" }}>{mp}%</div>
+                    {isEditing ? (
+                      <>
+                        <button onClick={() => updateMilestoneMutation.mutate({ id: milestone.id, title: draft.title, stage: draft.stage })} style={{ background: "#fff", color: "#000", fontSize: 11, padding: "4px 10px", borderRadius: 4, border: "none", cursor: "pointer", fontFamily: "inherit" }}>Save</button>
+                        <button onClick={() => setEditingMilestoneId(null)} style={{ background: "transparent", border: "1px solid #222", color: "#888", fontSize: 11, padding: "4px 10px", borderRadius: 4, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+                      </>
+                    ) : (
+                      <button onClick={() => { setEditingMilestoneId(milestone.id); setMilestoneDrafts((prev) => ({ ...prev, [milestone.id]: { title: milestone.title, stage: milestone.stage } })); }}
+                        style={{ background: "transparent", border: "none", color: "#555", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Edit</button>
+                    )}
+                  </div>
+                </div>
+                {mt.map((task, ti) => (
+                  <div key={task.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", borderBottom: ti < mt.length - 1 ? "1px solid #111" : "none", background: task.is_completed ? "rgba(74,222,128,0.02)" : "transparent" }}>
+                    <input type="checkbox" checked={task.is_completed} onChange={() => toggleTask(task)} style={{ width: 14, height: 14, flexShrink: 0, cursor: "pointer", accentColor: "#fff" }} />
+                    <div style={{ flex: 1, fontSize: 13, color: task.is_completed ? "#444" : "#aaa", textDecoration: task.is_completed ? "line-through" : "none" }}>{task.title}</div>
+                    {task.is_completed && <div style={{ fontSize: 10, color: "#4ade80" }}>Done</div>}
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* TASKS */}
+      {activeTab === "tasks" && (
+        <div style={{ border: "1px solid #1c1c1c", borderRadius: 8, overflow: "hidden" }}>
+          {tasks.length === 0 && <div style={{ padding: "32px", fontSize: 13, color: "#555", textAlign: "center" }}>No tasks yet.</div>}
+          {tasks.length > 0 && (
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  {["", "Task", "Note", "Status"].map((h) => (
+                    <th key={h} style={{ padding: "9px 16px", textAlign: "left", fontSize: 10, color: "#555", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.08em", borderBottom: "1px solid #1c1c1c", background: "#080808" }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {tasks.map((task, i) => (
+                  <tr key={task.id} style={{ borderBottom: i < tasks.length - 1 ? "1px solid #111" : "none", background: task.is_completed ? "rgba(74,222,128,0.02)" : "transparent" }}>
+                    <td style={{ padding: "11px 16px", width: 40 }}>
+                      <input type="checkbox" checked={task.is_completed} onChange={() => toggleTask(task)} style={{ width: 14, height: 14, cursor: "pointer", accentColor: "#fff" }} />
+                    </td>
+                    <td style={{ padding: "11px 16px", fontSize: 13, color: task.is_completed ? "#444" : "#aaa", textDecoration: task.is_completed ? "line-through" : "none" }}>{task.title}</td>
+                    <td style={{ padding: "11px 16px" }}>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <input value={notesDraft[task.id] ?? ""} onChange={(e) => setNotesDraft((prev) => ({ ...prev, [task.id]: e.target.value }))}
+                          placeholder="Add note..." style={{ ...inputStyle, width: 180 }} />
+                        <button onClick={() => { const next = notesDraft[task.id] ?? ""; updateMutation.mutate({ taskId: task.id, isCompleted: task.is_completed, notes: appendNote(task.notes, next) }); setNotesDraft((prev) => ({ ...prev, [task.id]: "" })); }}
+                          style={{ background: "transparent", border: "1px solid #222", color: "#888", fontSize: 11, padding: "4px 10px", borderRadius: 4, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+                          Save
+                        </button>
+                      </div>
+                      {splitNotes(task.notes).map((note, ni) => (
+                        <div key={ni} style={{ fontSize: 11, color: "#555", marginTop: 4 }}>· {note}</div>
+                      ))}
+                    </td>
+                    <td style={{ padding: "11px 16px" }}>
+                      <span style={{ fontSize: 11, color: task.is_completed ? "#4ade80" : "#888", background: task.is_completed ? "rgba(74,222,128,0.06)" : "#111", border: `1px solid ${task.is_completed ? "rgba(74,222,128,0.2)" : "#1c1c1c"}`, borderRadius: 4, padding: "2px 8px" }}>
+                        {task.is_completed ? "Done" : "Todo"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {/* VALIDATION */}
+      {activeTab === "validation" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {validationPending ? (
-            <div className="flex items-center gap-2 text-sm text-zinc-400">
-              <span>BuildMind AI analyzing your startup</span>
-              <span className="animate-pulse">...</span>
+            <div style={{ border: "1px solid #1c1c1c", borderRadius: 8, padding: "32px", textAlign: "center", background: "#080808" }}>
+              <div style={{ fontSize: 12, color: "#666" }}>BuildMind AI is analyzing your startup...</div>
             </div>
           ) : (
-            <div
-              className={cn(
-                "grid gap-4 text-sm text-zinc-300 transition-opacity duration-500 md:grid-cols-3",
-                showValidation ? "opacity-100" : "opacity-0",
-              )}
-            >
-              <GlowCard className="p-6">
-                <p className="font-medium text-zinc-100">Strengths</p>
-                <ul className="mt-3 space-y-2">
-                  {(project?.validation_strengths ?? []).map((line, idx) => <li key={`s-${idx}`}>• {line}</li>)}
-                </ul>
-              </GlowCard>
-              <GlowCard className="p-6">
-                <p className="font-medium text-zinc-100">Weaknesses</p>
-                <ul className="mt-3 space-y-2">
-                  {(project?.validation_weaknesses ?? []).map((line, idx) => <li key={`w-${idx}`}>• {line}</li>)}
-                </ul>
-              </GlowCard>
-              <GlowCard className="p-6">
-                <p className="font-medium text-zinc-100">Suggestions</p>
-                <ul className="mt-3 space-y-2">
-                  {(project?.validation_suggestions ?? []).map((line, idx) => <li key={`i-${idx}`}>• {line}</li>)}
-                </ul>
-              </GlowCard>
-            </div>
-          )}
-        </CardContent>
-      </GlowCard>
-
-      {FEATURES.milestones ? (
-        <GlowCard className="p-0">
-          <CardHeader className="mb-6 px-6 pt-6">
-            <CardTitle className="text-zinc-100">Milestone Timeline</CardTitle>
-            <p className="text-body">Track each stage and its execution tasks.</p>
-          </CardHeader>
-          <CardContent className="px-6 pb-6">
-            <div className="relative space-y-6">
-              <div className="absolute left-4 top-0 h-full w-px bg-white/10" />
-              {milestones.map((milestone) => {
-                const milestoneTasks = tasksByMilestone.get(milestone.id) ?? [];
-                const milestoneProgress = milestoneTasks.length
-                  ? Math.round((milestoneTasks.filter((t) => t.is_completed).length / milestoneTasks.length) * 100)
-                  : 0;
-                const milestoneComplete = isMilestoneComplete(milestone);
-                const isEditing = editingMilestoneId === milestone.id;
-                const draft = milestoneDrafts[milestone.id] ?? {
-                  title: milestone.title,
-                  stage: milestone.stage,
-                };
-                return (
-                  <div key={milestone.id} className="relative pl-12">
-                    <div
-                      className={`absolute left-1 top-1 flex h-6 w-6 items-center justify-center rounded-full border ${
-                        milestoneComplete
-                          ? "border-indigo-300/80 bg-indigo-500/20 shadow-[0_0_14px_rgba(99,102,241,0.65)]"
-                          : "border-white/20 bg-white/5"
-                      }`}
-                    >
-                      {milestoneComplete ? (
-                        <CheckCircle2 className="h-4 w-4 text-indigo-200" />
-                      ) : (
-                        <div className="h-2 w-2 rounded-full bg-white/30" />
-                      )}
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
+                {[
+                  { label: "Strengths", items: project?.validation_strengths ?? [], color: "#4ade80" },
+                  { label: "Weaknesses", items: project?.validation_weaknesses ?? [], color: "#f87171" },
+                  { label: "Suggestions", items: project?.validation_suggestions ?? [], color: "#a78bfa" },
+                ].map((section) => (
+                  <div key={section.label} style={{ border: "1px solid #1c1c1c", borderRadius: 8, overflow: "hidden" }}>
+                    <div style={{ padding: "10px 15px", borderBottom: "1px solid #1c1c1c", background: "#080808", fontSize: 11, color: section.color, textTransform: "uppercase", letterSpacing: "0.09em" }}>
+                      {section.label}
                     </div>
-                    <GlowCard className="p-6">
-                      <div className="flex flex-wrap items-center justify-between gap-4">
-                        <div>
-                          {isEditing ? (
-                            <div className="grid gap-2">
-                              <Input
-                                value={draft.stage}
-                                onChange={(e) =>
-                                  setMilestoneDrafts((prev) => ({
-                                    ...prev,
-                                    [milestone.id]: { ...draft, stage: e.target.value },
-                                  }))
-                                }
-                                className="border-white/10 bg-black/20 text-zinc-100 placeholder:text-zinc-500"
-                                placeholder="Stage"
-                              />
-                              <Input
-                                value={draft.title}
-                                onChange={(e) =>
-                                  setMilestoneDrafts((prev) => ({
-                                    ...prev,
-                                    [milestone.id]: { ...draft, title: e.target.value },
-                                  }))
-                                }
-                                className="border-white/10 bg-black/20 text-zinc-100 placeholder:text-zinc-500"
-                                placeholder="Milestone title"
-                              />
-                            </div>
-                          ) : (
-                            <>
-                              <p className="text-sm uppercase tracking-[0.2em] text-indigo-200/80">{milestone.stage}</p>
-                              <h4 className="mt-1 text-lg font-semibold text-zinc-100">{milestone.title}</h4>
-                            </>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-zinc-300">
-                            {milestoneProgress}%
-                          </span>
-                          {isEditing ? (
-                            <>
-                              <Button
-                                variant="outline"
-                                className="border-white/10 bg-white/5 text-zinc-200 hover:bg-white/10"
-                                onClick={() =>
-                                  updateMilestoneMutation.mutate({
-                                    id: milestone.id,
-                                    title: draft.title,
-                                    stage: draft.stage,
-                                  })
-                                }
-                                disabled={updateMilestoneMutation.isPending}
-                              >
-                                Save
-                              </Button>
-                              <Button
-                                variant="outline"
-                                className="border-white/10 bg-white/5 text-zinc-200 hover:bg-white/10"
-                                onClick={() => setEditingMilestoneId(null)}
-                              >
-                                Cancel
-                              </Button>
-                            </>
-                          ) : (
-                            <Button
-                              variant="outline"
-                              className="border-white/10 bg-white/5 text-zinc-200 hover:bg-white/10"
-                              onClick={() => {
-                                setEditingMilestoneId(milestone.id);
-                                setMilestoneDrafts((prev) => ({
-                                  ...prev,
-                                  [milestone.id]: { title: milestone.title, stage: milestone.stage },
-                                }));
-                              }}
-                            >
-                              Edit
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                      <div className="mt-4 space-y-4">
-                        {milestoneTasks.map((task) => (
-                          <label
-                            key={task.id}
-                            className={cn(
-                              "flex items-center gap-4 rounded-lg border border-white/10 bg-black/20 px-4 py-3 text-sm text-zinc-300 transition-all duration-300",
-                              task.is_completed ? "bg-green-500/10 scale-[1.02] text-zinc-400" : "",
-                            )}
-                          >
-                            <input
-                              type="checkbox"
-                              className="h-4 w-4 rounded border-white/20 bg-black/30 text-indigo-500 transition-all duration-300 checked:border-emerald-400 checked:bg-emerald-500/60"
-                              checked={task.is_completed}
-                              onChange={() => toggleTask(task)}
-                            />
-                            <span className={task.is_completed ? "text-zinc-400 line-through" : ""}>{task.title}</span>
-                          </label>
-                        ))}
-                      </div>
-                      {milestoneTasks.some((task) => splitNotes(task.notes).length) ? (
-                        <div className="mt-4 space-y-2">
-                          <div className="flex items-center justify-between">
-                            <p className="text-xs uppercase tracking-[0.2em] text-indigo-200/80">Milestone Notes</p>
-                            <Button
-                              variant="outline"
-                              className="border-white/10 bg-white/5 text-zinc-200 hover:bg-white/10"
-                              onClick={() =>
-                                setExpandedMilestoneNotes((prev) => ({
-                                  ...prev,
-                                  [milestone.id]: !(prev[milestone.id] ?? true),
-                                }))
-                              }
-                            >
-                              {(expandedMilestoneNotes[milestone.id] ?? true) ? "Hide" : "Show"}
-                            </Button>
+                    <div style={{ padding: "14px 15px" }}>
+                      {section.items.length === 0
+                        ? <div style={{ fontSize: 12, color: "#444" }}>None identified yet.</div>
+                        : section.items.map((item, i) => (
+                          <div key={i} style={{ display: "flex", gap: 7, fontSize: 12, color: "#999", lineHeight: 1.55, marginBottom: 8 }}>
+                            <span style={{ color: "#333", flexShrink: 0 }}>·</span>{item}
                           </div>
-                          {(expandedMilestoneNotes[milestone.id] ?? true) ? (
-                            <ul className="space-y-2 text-sm text-zinc-300">
-                              {milestoneTasks.flatMap((task) =>
-                                splitNotes(task.notes).map((note, idx) => (
-                                  <li key={`${task.id}-milestone-note-${idx}`} className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
-                                    <span className="text-zinc-200">{task.title}</span>
-                                    <span className="text-zinc-400"> — </span>
-                                    <span>{note}</span>
-                                  </li>
-                                )),
-                              )}
-                            </ul>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </GlowCard>
+                        ))}
+                    </div>
                   </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </GlowCard>
-      ) : null}
-
-      <GlowCard className="p-0">
-        <CardHeader className="mb-6 px-6 pt-6">
-          <CardTitle className="text-zinc-100">Tasks List</CardTitle>
-          <p className="text-body">Update execution notes and mark tasks complete.</p>
-        </CardHeader>
-        <CardContent className="space-y-4 px-6 pb-6">
-          {tasks.map((task) => (
-            <div
-              key={`actions-${task.id}`}
-              className={cn(
-                "rounded-lg border border-white/10 bg-white/5 p-6 transition-all duration-300",
-                task.is_completed ? "bg-green-500/10 scale-[1.02]" : "",
-              )}
-            >
-              <p className={cn("text-sm font-medium text-zinc-100", task.is_completed ? "text-zinc-300" : "")}>
-                {task.title}
-              </p>
-              <div className="mt-3 flex flex-wrap items-center gap-4">
-                <Button
-                  variant="outline"
-                  className="border-white/10 bg-white/5 text-zinc-200 hover:bg-white/10"
-                  onClick={() => toggleTask(task)}
-                  disabled={updateMutation.isPending}
-                >
-                  {task.is_completed ? "Mark Incomplete" : "Mark Complete"}
-                </Button>
-                <Input
-                  value={notesDraft[task.id] ?? ""}
-                  onChange={(e) => setNotesDraft((prev) => ({ ...prev, [task.id]: e.target.value }))}
-                  placeholder="Add execution note"
-                  className="min-w-[220px] flex-1 border-white/10 bg-black/20 text-zinc-100 placeholder:text-zinc-500"
-                />
-                <Button
-                  className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white"
-                  onClick={() => {
-                    const next = notesDraft[task.id] ?? "";
-                    const updatedNotes = appendNote(task.notes, next);
-                    updateMutation.mutate({
-                      taskId: task.id,
-                      isCompleted: task.is_completed,
-                      notes: updatedNotes,
-                    });
-                    setNotesDraft((prev) => ({ ...prev, [task.id]: "" }));
-                  }}
-                  disabled={updateMutation.isPending}
-                >
-                  Save Note
-                </Button>
+                ))}
               </div>
-              {splitNotes(task.notes).length ? (
-                <ul className="mt-4 space-y-2 text-sm text-zinc-300">
-                  {splitNotes(task.notes).map((note, idx) => (
-                    <li key={`${task.id}-note-${idx}`} className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
-                      {note}
-                    </li>
+              <div style={{ border: "1px solid #1c1c1c", borderRadius: 8, overflow: "hidden" }}>
+                <div style={{ padding: "10px 16px", borderBottom: "1px solid #1c1c1c", background: "#080808", fontSize: 11, color: "#555", textTransform: "uppercase", letterSpacing: "0.09em" }}>
+                  Project overview
+                </div>
+                <div style={{ padding: "16px" }}>
+                  {[
+                    { label: "Description", value: project?.description },
+                    { label: "Target users", value: project?.target_users },
+                    { label: "Problem", value: project?.problem },
+                  ].map((row, i, arr) => (
+                    <div key={row.label} style={{ display: "flex", gap: 20, padding: "10px 0", borderBottom: i < arr.length - 1 ? "1px solid #111" : "none" }}>
+                      <div style={{ fontSize: 11, color: "#555", width: 110, flexShrink: 0, textTransform: "uppercase", letterSpacing: "0.06em", paddingTop: 1 }}>{row.label}</div>
+                      <div style={{ fontSize: 13, color: "#999", lineHeight: 1.6 }}>{row.value || "—"}</div>
+                    </div>
                   ))}
-                </ul>
-              ) : null}
-            </div>
-          ))}
-        </CardContent>
-      </GlowCard>
-    </section>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {(updateMutation.error || deleteMutation.error) && (
+        <div style={{ marginTop: 12, fontSize: 12, color: "#f87171" }}>
+          {updateMutation.error instanceof Error ? updateMutation.error.message : deleteMutation.error instanceof Error ? deleteMutation.error.message : "An error occurred"}
+        </div>
+      )}
+    </div>
   );
 }

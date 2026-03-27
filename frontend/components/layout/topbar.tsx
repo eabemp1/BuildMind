@@ -74,8 +74,10 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
     };
     const features = [
       { label: "Dashboard", href: "/dashboard", keywords: ["overview", "stats", "execution", "startup score", "next best action"] },
+      { label: "Today's Action", href: "/action", keywords: ["action", "next step", "today", "commitment"] },
       { label: "Projects", href: "/projects", keywords: ["workspace", "roadmap", "milestones", "tasks"] },
       { label: "BuildMini", href: "/ai-coach", keywords: ["ai coach", "chat", "advice"] },
+      { label: "Break My Startup", href: "/break-startup", keywords: ["break", "analysis", "competitors", "risk"] },
       { label: "Progress", href: "/reports", keywords: ["reports", "weekly report", "analytics"] },
       { label: "Settings", href: "/settings", keywords: ["profile", "preferences"] },
     ];
@@ -108,6 +110,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
 
     const recommendations = [
       { label: "Create Project", href: "/projects", keywords: ["new project", "start", "workspace"] },
+      { label: "Open Today's Action", href: "/action", keywords: ["action", "commit"] },
       { label: "Open BuildMini", href: "/ai-coach", keywords: ["ask coach", "advice"] },
       { label: "View Weekly Report", href: "/reports", keywords: ["weekly", "report", "summary"] },
     ];
