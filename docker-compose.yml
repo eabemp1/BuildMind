@@ -1,61 +1,51 @@
 services:
   backend:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: evolvai-backend
-    environment:
-      DATABASE_URL: postgresql+psycopg2://evolvai:evolvai@postgres:5432/evolvai
-      SECRET_KEY: ${SECRET_KEY:-change-this-in-production}
-      JWT_SECRET: ${JWT_SECRET:-change-this-in-production}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      GROQ_API_KEY: ${GROQ_API_KEY:-}
-      FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    build: .
     ports:
       - "8000:8000"
+    env_file:
+      - .env.docker
+    environment:
+      - DATABASE_URL=postgresql://buildmind:buildmind@db:5432/buildmind
+      - FRONTEND_ORIGINS=http://localhost:3000
+      - ENVIRONMENT=development
     depends_on:
-      - postgres
-      - redis
+      - db
+    volumes:
+      - .:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile
       args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
         NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
         NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
-    container_name: evolvai-frontend
-    env_file:
-      - ./frontend/.env.local
-    environment:
-      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000/api/v1}
-      NPM_CONFIG_REGISTRY: https://registry.npmmirror.com
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
+        NEXT_PUBLIC_POSTHOG_KEY: ${NEXT_PUBLIC_POSTHOG_KEY}
+        NEXT_PUBLIC_POSTHOG_HOST: ${NEXT_PUBLIC_POSTHOG_HOST}
     ports:
       - "3000:3000"
+    env_file:
+      - .env.docker
     depends_on:
       - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    command: npm run dev
 
-  postgres:
-    image: postgres:16
-    container_name: evolvai-postgres
+  db:
+    image: postgres:15-alpine
     environment:
-      POSTGRES_DB: evolvai
-      POSTGRES_USER: evolvai
-      POSTGRES_PASSWORD: evolvai
+      POSTGRES_DB: buildmind
+      POSTGRES_USER: buildmind
+      POSTGRES_PASSWORD: buildmind
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-
-  redis:
-    image: redis:7-alpine
-    container_name: evolvai-redis
-    ports:
-      - "6379:6379"
 
 volumes:
   postgres_data:

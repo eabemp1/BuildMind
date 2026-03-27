@@ -16,6 +16,7 @@ body {
   background: radial-gradient(900px 400px at 10% -5%, rgba(99, 102, 241, 0.2), transparent 55%),
     radial-gradient(800px 360px at 90% 0%, rgba(168, 85, 247, 0.16), transparent 50%),
     linear-gradient(135deg, #09090b 0%, #020617 45%, #000000 100%);
+  color: #e5e7eb;
 }
 
 html.theme-light {
@@ -102,5 +103,5 @@ html.theme-light .text-emerald-200 {
 }
 
 .text-body {
-  @apply text-sm text-zinc-400;
+  @apply text-sm text-zinc-300;
 }

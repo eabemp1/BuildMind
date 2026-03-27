@@ -1,6 +1,6 @@
-.next
 node_modules
-dev-frontend.log
-tsconfig.tsbuildinfo
+.next
 .env.local
-
+npm-debug.log
+yarn-error.log
+*.log

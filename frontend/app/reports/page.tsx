@@ -3,10 +3,8 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getFounderWeeklyReport, type FounderWeeklyReportData } from "@/lib/api";
 import { FEATURES } from "@/lib/features";
-import PageHero from "@/components/layout/page-hero";
 
 export default function ReportsPage() {
   const router = useRouter();
@@ -15,66 +13,83 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!FEATURES.analytics) {
-      router.replace("/dashboard");
-      return;
-    }
+    if (!FEATURES.analytics) { router.replace("/dashboard"); return; }
     const load = async () => {
-      try {
-        const data = await getFounderWeeklyReport();
-        setReport(data);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load report.");
-      } finally {
-        setLoading(false);
-      }
+      try { setReport(await getFounderWeeklyReport()); }
+      catch (err) { setError(err instanceof Error ? err.message : "Failed to load report."); }
+      finally { setLoading(false); }
     };
     void load();
   }, [router]);
 
   return (
-    <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-      <PageHero
-        kicker="Progress"
-        title="Weekly Founder Report"
-        subtitle="Your AI-generated progress summary for the week."
-      />
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+      style={{ maxWidth: 860, margin: "0 auto", fontFamily: "system-ui,sans-serif", color: "#e5e5e5" }}>
 
-      {loading ? <p className="text-sm text-zinc-400">Loading report...</p> : null}
-      {error ? <p className="text-sm text-rose-400">{error}</p> : null}
+      <div style={{ marginBottom: 24, paddingBottom: 18, borderBottom: "1px solid #1c1c1c" }}>
+        <div style={{ fontSize: 20, fontWeight: 500, color: "#fff", letterSpacing: "-0.02em" }}>Progress</div>
+        <div style={{ fontSize: 12, color: "#888", marginTop: 3 }}>Weekly honest mirror — intention vs action</div>
+      </div>
 
-      {report ? (
-        <Card className="glass-panel panel-glow">
-          <CardHeader>
-            <CardTitle className="text-zinc-100">Your Weekly Founder Report</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4 text-sm text-zinc-300">
-            <div className="grid gap-2 md:grid-cols-3">
-              <div className="rounded-lg border border-white/10 bg-white/5 p-3">
-                <p className="text-xs uppercase tracking-[0.2em] text-zinc-400">Projects</p>
-                <p className="text-lg text-zinc-100">{report.projects_count}</p>
+      {loading && <div style={{ fontSize: 12, color: "#666", textAlign: "center", padding: "40px 0" }}>Generating report...</div>}
+      {error && <div style={{ fontSize: 12, color: "#f87171" }}>{error}</div>}
+
+      {report && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+
+          {/* Metrics */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", border: "1px solid #1c1c1c", borderRadius: 8, overflow: "hidden" }}>
+            {[
+              { label: "Projects", value: String(report.projects_count) },
+              { label: "Milestones completed", value: String(report.milestones_completed) },
+              { label: "Tasks this week", value: String(report.tasks_completed) },
+            ].map((m, i) => (
+              <div key={m.label} style={{ padding: "18px 20px", background: "#080808", borderRight: i < 2 ? "1px solid #1c1c1c" : "none" }}>
+                <div style={{ fontSize: 10, color: "#555", textTransform: "uppercase", letterSpacing: "0.09em", marginBottom: 9 }}>{m.label}</div>
+                <div style={{ fontSize: 26, fontWeight: 500, color: "#fff", letterSpacing: "-0.03em", lineHeight: 1 }}>{m.value}</div>
               </div>
-              <div className="rounded-lg border border-white/10 bg-white/5 p-3">
-                <p className="text-xs uppercase tracking-[0.2em] text-zinc-400">Milestones</p>
-                <p className="text-lg text-zinc-100">{report.milestones_completed}</p>
+            ))}
+          </div>
+
+          {/* AI summary */}
+          {report.ai_summary && (
+            <div style={{ border: "1px solid #1c1c1c", borderRadius: 8, overflow: "hidden" }}>
+              <div style={{ padding: "10px 18px", borderBottom: "1px solid #1c1c1c", background: "#080808", fontSize: 11, color: "#555", textTransform: "uppercase", letterSpacing: "0.09em" }}>
+                BuildMind assessment
               </div>
-              <div className="rounded-lg border border-white/10 bg-white/5 p-3">
-                <p className="text-xs uppercase tracking-[0.2em] text-zinc-400">Tasks</p>
-                <p className="text-lg text-zinc-100">{report.tasks_completed}</p>
-              </div>
+              <div style={{ padding: "18px 20px", fontSize: 13, color: "#aaa", lineHeight: 1.7 }}>{report.ai_summary}</div>
             </div>
+          )}
 
-            <div className="space-y-2">
-              <p className="text-sm font-semibold text-zinc-100">Strength</p>
-              <p>{report.ai_summary || "No summary generated yet."}</p>
-              <p className="text-sm font-semibold text-zinc-100">Risk</p>
-              <p>{report.ai_risks || "No risks identified yet."}</p>
-              <p className="text-sm font-semibold text-zinc-100">Suggested Next Step</p>
-              <p>{report.ai_suggestions || "No suggestions yet."}</p>
+          {/* Risk + suggestions */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div style={{ border: "1px solid #1c1c1c", borderRadius: 8, overflow: "hidden" }}>
+              <div style={{ padding: "10px 16px", borderBottom: "1px solid #1c1c1c", background: "#080808", fontSize: 11, color: "#f87171", textTransform: "uppercase", letterSpacing: "0.09em" }}>Risk</div>
+              <div style={{ padding: "16px", fontSize: 13, color: "#999", lineHeight: 1.7 }}>{report.ai_risks || "No risks identified yet."}</div>
             </div>
-          </CardContent>
-        </Card>
-      ) : null}
-    </motion.section>
+            <div style={{ border: "1px solid #1c1c1c", borderRadius: 8, overflow: "hidden" }}>
+              <div style={{ padding: "10px 16px", borderBottom: "1px solid #1c1c1c", background: "#080808", fontSize: 11, color: "#4ade80", textTransform: "uppercase", letterSpacing: "0.09em" }}>Next step</div>
+              <div style={{ padding: "16px", fontSize: 13, color: "#999", lineHeight: 1.7 }}>{report.ai_suggestions || "No suggestions yet."}</div>
+            </div>
+          </div>
+
+          {/* Mirror */}
+          <div style={{ border: "1px solid #1c1c1c", borderRadius: 8, padding: "16px 20px", background: "#080808", display: "flex", gap: 14 }}>
+            <div style={{ fontSize: 16, flexShrink: 0 }}>🪞</div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 500, color: "#aaa", marginBottom: 5 }}>The weekly honest mirror</div>
+              <div style={{ fontSize: 12, color: "#666", lineHeight: 1.65 }}>Every Friday BuildMind compares what you said you would do with what you actually did. The gap is where your growth lives.</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!loading && !report && !error && (
+        <div style={{ border: "1px solid #1c1c1c", borderRadius: 8, padding: "52px 32px", textAlign: "center", background: "#080808" }}>
+          <div style={{ fontSize: 14, fontWeight: 500, color: "#fff", marginBottom: 8 }}>No report yet</div>
+          <div style={{ fontSize: 13, color: "#888", lineHeight: 1.6 }}>Complete tasks this week. Your first report generates on Friday.</div>
+        </div>
+      )}
+    </motion.div>
   );
 }

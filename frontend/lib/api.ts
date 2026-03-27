@@ -56,6 +56,9 @@ export type ProjectData = {
   is_public?: boolean;
   likes?: number;
   followers?: number;
+  startup_stage?: string | null;
+  problem?: string | null;
+  target_users?: string | null;
 };
 
 export type DashboardScoreSnapshot = {
@@ -154,6 +157,39 @@ export type BuildmindDashboardData = {
   notifications: NotificationData[];
   next_actions: Array<{ task_id: number; title: string; priority: string; due_date: string | null }>;
   weekly_progress: { tasks_completed: number; milestones_completed: number };
+};
+
+export type BreakMyStartupAnalysis = {
+  failureReasons: { num: number; title: string; body: string; evidence: string }[];
+  competitors: Array<{
+    name: string;
+    description: string;
+    betterAt: string[];
+    successRate: number;
+    yourSuccessRate: number;
+    source: string;
+  }>;
+  yourMoat?: string;
+  closingStatement: string;
+};
+
+export type BreakMyStartupResult = {
+  analysis: BreakMyStartupAnalysis;
+  webSearchUsed: boolean;
+  searchResultCount: number;
+  projectContext: {
+    founder?: string;
+    project?: {
+      title?: string;
+      description?: string;
+      problem?: string;
+      target_users?: string;
+      stage?: string;
+      days_in_stage?: number;
+    };
+    execution?: { score?: number; total_tasks?: number; completed_tasks?: number };
+    validation?: { users_interviewed?: number };
+  };
 };
 
 export type ProjectFeedbackData = {
@@ -720,6 +756,10 @@ export async function getAICoachResponse(
   project?: { title?: string; description?: string; target_users?: string; problem?: string },
 ): Promise<{ message: string }> {
   return unwrap(api.post<ApiEnvelope<{ message: string }>>("/ai/coach", { projectId, question, project }));
+}
+
+export async function breakMyStartup(projectId?: number): Promise<BreakMyStartupResult> {
+  return unwrap(api.post<ApiEnvelope<BreakMyStartupResult>>("/ai/break-my-startup", { projectId }));
 }
 
 export async function generateMilestonesAI(idea: string): Promise<{ message: string; milestones: string[] }> {

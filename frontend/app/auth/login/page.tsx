@@ -27,6 +27,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -45,6 +46,7 @@ export default function LoginPage() {
     e.preventDefault();
     try {
       setError("");
+      setNotice("");
       const values = authSchema.parse({ email, password });
       setLoading(true);
       const { data, error: loginError } = await supabase.auth.signInWithPassword(values);
@@ -65,6 +67,23 @@ export default function LoginPage() {
     }
   };
 
+  const sendReset = async () => {
+    setError("");
+    setNotice("");
+    if (!email.trim()) {
+      setError("Enter your email to reset your password.");
+      return;
+    }
+    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: `${window.location.origin}/auth/reset-password`,
+    });
+    if (resetError) {
+      setError(formatAuthError(resetError));
+      return;
+    }
+    setNotice("Password reset email sent. Check your inbox.");
+  };
+
   const oauth = async (provider: "google" | "github") => {
     setError("");
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
@@ -77,7 +96,7 @@ export default function LoginPage() {
   return (
     <div className="grid min-h-screen place-items-center p-6">
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="glass-panel panel-glow w-full max-w-md p-8">
-        <Image src="/brand/buildmind-logo-mascot.jpeg" width={160} height={44} alt="BuildMind" />
+        <Image src="/brand/bui.svg" width={160} height={44} alt="BuildMind" />
         <h1 className="mt-2 text-2xl font-semibold text-zinc-100">Welcome back</h1>
         <p className="text-body mt-1">Sign in to continue building your execution roadmap.</p>
 
@@ -118,10 +137,18 @@ export default function LoginPage() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
+          <button
+            type="button"
+            className="text-left text-xs text-zinc-400 underline"
+            onClick={() => void sendReset()}
+          >
+            Forgot password?
+          </button>
           <Button className="w-full bg-gradient-to-r from-indigo-500 to-purple-500 text-white" disabled={loading}>
             {loading ? "Signing in..." : "Continue with Email"}
           </Button>
           {error ? <p className="text-sm text-rose-400">{error}</p> : null}
+          {notice ? <p className="text-sm text-emerald-300">{notice}</p> : null}
         </form>
 
         <p className="mt-5 text-sm text-zinc-400">

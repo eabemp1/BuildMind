@@ -33,6 +33,7 @@ from app.services.project_service import (
     list_projects_for_user,
     generate_agent_startup_roadmap,
 )
+from app.services.analytics import capture_event
 from app.services.public_project_service import (
     list_public_projects,
     get_public_project,
@@ -128,6 +129,15 @@ def create_project_endpoint(
         row.is_public = bool(payload.is_public)
     db.commit()
     full = get_project_for_user(db, current_user.id, row.id)
+    capture_event(
+        "project_created",
+        {
+            "user_id": current_user.id,
+            "project_id": row.id,
+            "current_stage": row.startup_stage or "Idea",
+            "source": "server",
+        },
+    )
     return {"success": True, "data": _to_project_out(full).dict()}
 
 

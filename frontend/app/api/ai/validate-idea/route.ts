@@ -12,27 +12,44 @@ export async function POST(request: Request) {
 
     await enforceAndTrackAIUsage(userId);
 
-    const result = await groqJSON<{
-      strengths: string[];
-      weaknesses: string[];
-      suggestions: string[];
-    }>(
-      "You are a startup validation coach. Return JSON with strengths, weaknesses, suggestions arrays.",
-      `Startup idea: ${idea}
+    let strengths: string[] = [
+      "Clear problem framing.",
+      "Target audience is definable.",
+      "Solution direction is understandable.",
+    ];
+    let weaknesses: string[] = [
+      "Validation data is still limited.",
+      "Primary user pain intensity is not confirmed.",
+    ];
+    let suggestions: string[] = [
+      "Interview at least 5 target users this week.",
+      "Test willingness to pay with a simple landing page.",
+      "Define one primary success metric before building.",
+    ];
+    try {
+      const result = await groqJSON<{
+        strengths: string[];
+        weaknesses: string[];
+        suggestions: string[];
+      }>(
+        "You are a startup validation coach. Return JSON with strengths, weaknesses, suggestions arrays.",
+        `Startup idea: ${idea}
 Target users: ${targetUsers}
 Problem: ${problem}
 Provide concise validation feedback.`,
-    );
+      );
+      strengths = Array.isArray(result?.strengths) ? result.strengths.map(String) : strengths;
+      weaknesses = Array.isArray(result?.weaknesses) ? result.weaknesses.map(String) : weaknesses;
+      suggestions = Array.isArray(result?.suggestions) ? result.suggestions.map(String) : suggestions;
+    } catch {
+      // keep fallback
+    }
 
     await createUserNotification(userId, "AI validation feedback generated.", "ai_recommendation");
 
     return NextResponse.json({
       success: true,
-      data: {
-        strengths: result?.strengths ?? [],
-        weaknesses: result?.weaknesses ?? [],
-        suggestions: result?.suggestions ?? [],
-      },
+      data: { strengths, weaknesses, suggestions },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Validation failed";
