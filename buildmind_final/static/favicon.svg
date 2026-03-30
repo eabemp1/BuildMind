@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Lumiere favicon">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0b1730"/>
+      <stop offset="55%" stop-color="#0f766e"/>
+      <stop offset="100%" stop-color="#f97316"/>
+    </linearGradient>
+    <radialGradient id="orb" cx="34%" cy="30%" r="75%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#22d3ee"/>
+    </radialGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#bg)"/>
+  <circle cx="32" cy="30" r="16" fill="url(#orb)" opacity="0.95"/>
+  <path d="M32 13l2.7 5.8 6.3.9-4.5 4.4 1.1 6.3-5.6-3-5.6 3 1.1-6.3-4.5-4.4 6.3-.9z" fill="#ffffff" opacity="0.92"/>
+  <rect x="21" y="41" width="22" height="4.8" rx="2.4" fill="#ffffff" opacity="0.9"/>
+</svg>

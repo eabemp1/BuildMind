@@ -1,0 +1,31 @@
+# Lumiere Dependencies
+# Install with: pip install -r requirements.txt
+
+# Core Framework
+fastapi==0.128.0
+uvicorn[standard]==0.24.0
+python-dotenv==1.0.0
+gunicorn==23.0.0
+
+# LLM Integration
+groq==1.0.0
+
+# Testing
+pytest==8.3.3
+sqlalchemy==2.0.36
+pydantic-settings==2.7.1
+alembic==1.14.1
+psycopg2-binary==2.9.10
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+email-validator==2.2.0
+python-multipart==0.0.9
+httpx==0.27.0
+apscheduler==3.10.4
+
+# Optional: For future enhancements
+# openai==1.3.0              # If you want to add GPT support
+# anthropic==0.7.0           # If you want to add Claude support
+# python-multipart==0.0.6    # For file uploads (future feature)
+# jinja2==3.1.2              # For template rendering (if needed)
+# aiofiles==23.2.1           # For async file operations

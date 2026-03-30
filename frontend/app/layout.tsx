@@ -1,26 +1,71 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import Providers from "@/components/providers";
+import PostHogPageView from "@/components/posthog-pageview";
 
 export const metadata: Metadata = {
-  title: "BuildMind",
-  description: "BuildMind - Startup operating system in the EvolvAI ecosystem",
-  icons: {
-    icon: "/brand/bui.svg",
+  metadataBase: new URL("https://buildmind.app"),
+  title: {
+    default: "BuildMind — Your Daily Action Engine for Founders",
+    template: "%s | BuildMind",
   },
+  description:
+    "BuildMind gives you one clear action every day based on your startup stage. No dashboards, no complexity — just the single most important thing to do right now.",
+  keywords: [
+    "startup founder tools", "founder productivity", "daily action for founders",
+    "indie hacker tools", "startup accountability", "founder os",
+    "validate startup idea", "startup execution", "solofounder app",
+  ],
+  authors: [{ name: "BuildMind" }],
+  creator: "BuildMind",
+  publisher: "BuildMind",
+  robots: { index: true, follow: true, googleBot: { index: true, follow: true, "max-image-preview": "large" } },
+  icons: {
+    icon: "/logo/buildmind-favicon.svg",
+    shortcut: "/logo/buildmind-favicon.svg",
+    apple: "/logo/buildmind-favicon.svg",
+  },
+  openGraph: {
+    type: "website", locale: "en_US", url: "https://buildmind.app", siteName: "BuildMind",
+    title: "BuildMind — Your Daily Action Engine for Founders",
+    description: "One clear action every day. Already decided for you. No willpower required.",
+    images: [{ url: "/logo/buildmind-og-image.svg", width: 1200, height: 630, alt: "BuildMind" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "BuildMind — Your Daily Action Engine for Founders",
+    description: "One clear action every day. Already decided for you.",
+    images: ["/logo/buildmind-og-image.svg"],
+    creator: "@buildmindapp",
+  },
+  alternates: { canonical: "https://buildmind.app" },
+};
+
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "BuildMind",
+  applicationCategory: "BusinessApplication",
+  operatingSystem: "Web",
+  url: "https://buildmind.app",
+  description: "BuildMind is a daily action engine for startup founders. One obvious task per day based on your startup stage.",
+  offers: { "@type": "Offer", price: "10", priceCurrency: "USD" },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-gradient-to-br from-zinc-950 via-slate-950 to-black text-zinc-100">
+      <head>
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <meta name="theme-color" content="#09090B" />
+        <meta name="color-scheme" content="dark" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+      </head>
+      <body>
         <Providers>
-          <div className="relative min-h-screen">
-            <div className="pointer-events-none absolute -left-32 top-20 h-72 w-72 rounded-full bg-indigo-500/10 blur-[140px]" />
-            <div className="pointer-events-none absolute right-0 top-0 h-80 w-80 rounded-full bg-purple-500/10 blur-[160px]" />
-            <div className="pointer-events-none absolute bottom-0 left-1/3 h-72 w-72 rounded-full bg-sky-500/10 blur-[160px]" />
-            {children}
-          </div>
+          <PostHogPageView />
+          {children}
         </Providers>
       </body>
     </html>

@@ -1,0 +1,4061 @@
+function hexToRgbString(hex) {
+    const clean = (hex || "").replace("#", "");
+    if (!/^[0-9a-fA-F]{6}$/.test(clean)) return "34, 211, 238";
+    const int = parseInt(clean, 16);
+    const r = (int >> 16) & 255;
+    const g = (int >> 8) & 255;
+    const b = int & 255;
+    return `${r}, ${g}, ${b}`;
+}
+
+function toast(message) {
+    const el = document.getElementById("toast");
+    if (!el) return;
+    el.textContent = message;
+    el.classList.add("show");
+    window.clearTimeout(el._timer);
+    el._timer = window.setTimeout(() => el.classList.remove("show"), 1800);
+}
+
+function setErrorRibbon(message) {
+    const el = document.getElementById("error-ribbon");
+    if (!el) return;
+    const text = String(message || "").trim();
+    if (!text) {
+        el.classList.remove("show");
+        el.textContent = "";
+        return;
+    }
+    el.textContent = text;
+    el.classList.add("show");
+}
+
+function applyTheme(theme) {
+    if (theme === "system") {
+        const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        document.documentElement.className = isDark ? "theme-dark" : "theme-light";
+    } else {
+        document.documentElement.className = theme === "dark" ? "theme-dark" : "theme-light";
+    }
+    document.querySelectorAll(".theme-actions button[data-theme]").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.theme === theme);
+    });
+}
+
+function setTheme(theme) {
+    localStorage.setItem("theme", theme);
+    applyTheme(theme);
+    fetch("/set-theme", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ theme })
+    }).catch(() => {});
+}
+
+function normalizeHexColor(value, fallback = "#22d3ee") {
+    const raw = String(value || "").trim();
+    if (/^#[0-9a-fA-F]{6}$/.test(raw)) return raw.toLowerCase();
+    return fallback.toLowerCase();
+}
+
+function hexToRgbTuple(hex) {
+    const clean = normalizeHexColor(hex).replace("#", "");
+    const int = parseInt(clean, 16);
+    return [(int >> 16) & 255, (int >> 8) & 255, int & 255];
+}
+
+function mixHex(colorA, colorB, t = 0.5) {
+    const a = hexToRgbTuple(colorA);
+    const b = hexToRgbTuple(colorB);
+    const k = Math.max(0, Math.min(1, Number(t) || 0));
+    const c = [
+        Math.round((a[0] * (1 - k)) + (b[0] * k)),
+        Math.round((a[1] * (1 - k)) + (b[1] * k)),
+        Math.round((a[2] * (1 - k)) + (b[2] * k)),
+    ];
+    return `#${c.map((n) => n.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function applyGlobalPaletteFromAccent(accentHex) {
+    const root = document.documentElement;
+    const [r, g, b] = hexToRgbTuple(accentHex);
+    const accentRgb = `${r}, ${g}, ${b}`;
+    root.style.setProperty("--accent", accentHex);
+    root.style.setProperty("--accent-rgb", accentRgb);
+    root.style.setProperty("--outer-grad-start", mixHex("#07121f", accentHex, 0.18));
+    root.style.setProperty("--outer-grad-end", mixHex("#0b1d30", accentHex, 0.34));
+    root.style.setProperty("--chat-grad-start", mixHex("#061b34", accentHex, 0.26));
+    root.style.setProperty("--chat-grad-end", mixHex("#12273a", accentHex, 0.40));
+    root.style.setProperty("--dialog-grad-start", mixHex("#17456b", accentHex, 0.55));
+    root.style.setProperty("--dialog-grad-end", mixHex("#10b981", accentHex, 0.25));
+    root.style.setProperty("--bg-elev", `rgba(${accentRgb}, 0.14)`);
+    root.style.setProperty("--bg-soft", `rgba(${accentRgb}, 0.11)`);
+    root.style.setProperty("--surface", `rgba(${accentRgb}, 0.08)`);
+    root.style.setProperty("--surface-strong", `rgba(${accentRgb}, 0.14)`);
+    root.style.setProperty("--border", `rgba(${accentRgb}, 0.28)`);
+    if (document.body) {
+        document.body.style.setProperty("--accent", accentHex);
+        document.body.style.setProperty("--accent-rgb", accentRgb);
+    }
+}
+
+function openCustomAccentPicker() {
+    const picker = document.createElement("input");
+    picker.type = "color";
+    picker.value = normalizeHexColor(localStorage.getItem("accent") || "#22d3ee");
+    picker.style.position = "fixed";
+    picker.style.left = "-9999px";
+    picker.style.opacity = "0";
+    document.body.appendChild(picker);
+    const cleanup = () => picker.remove();
+    picker.addEventListener("input", () => setAccent(picker.value));
+    picker.addEventListener("change", cleanup, { once: true });
+    picker.addEventListener("blur", cleanup, { once: true });
+    picker.click();
+}
+
+function setAccent(color) {
+    if (String(color || "").trim() === "__custom__") {
+        openCustomAccentPicker();
+        return;
+    }
+    const normalized = normalizeHexColor(color, "#22d3ee");
+    applyGlobalPaletteFromAccent(normalized);
+    localStorage.setItem("accent", normalized);
+    const accentSelect = document.getElementById("accent-select");
+    if (accentSelect) {
+        const hasPreset = Array.from(accentSelect.options || []).some((opt) => opt.value.toLowerCase() === normalized);
+        accentSelect.value = hasPreset ? normalized : "__custom__";
+    }
+    fetch("/set-accent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accent: normalized })
+    }).catch(() => {});
+}
+
+function setModel(model) {
+    fetch("/set-model", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model })
+    })
+    .then((res) => res.json())
+    .then((data) => {
+        if (data.status === "ok") {
+            toast(`Model switched to ${model}`);
+        } else {
+            toast("Model switch failed");
+        }
+    })
+    .catch(() => toast("Model switch failed"));
+}
+
+function getLanguagePrefs() {
+    return {
+        enabled: localStorage.getItem(LANG_AUTO_TRANSLATE_KEY) === "1",
+        source: (localStorage.getItem(LANG_SOURCE_KEY) || "auto").trim() || "auto",
+        target: (localStorage.getItem(LANG_TARGET_KEY) || "en").trim() || "en",
+    };
+}
+
+function setLanguagePrefs({ enabled, source, target }) {
+    localStorage.setItem(LANG_AUTO_TRANSLATE_KEY, enabled ? "1" : "0");
+    localStorage.setItem(LANG_SOURCE_KEY, source || "auto");
+    localStorage.setItem(LANG_TARGET_KEY, target || "en");
+}
+
+function getKhayaTtsPrefs() {
+    return {
+        enabled: localStorage.getItem(KHAYA_TTS_ENABLED_KEY) === "1",
+        voice: (localStorage.getItem(KHAYA_VOICE_KEY) || "").trim(),
+    };
+}
+
+function setKhayaTtsPrefs({ enabled, voice }) {
+    localStorage.setItem(KHAYA_TTS_ENABLED_KEY, enabled ? "1" : "0");
+    localStorage.setItem(KHAYA_VOICE_KEY, String(voice || "").trim());
+}
+
+async function refreshKhayaStatus() {
+    const el = document.getElementById("khaya-status-text");
+    if (!el) return;
+    try {
+        const res = await fetch("/khaya/status");
+        const data = await res.json();
+        el.textContent = data.configured ? "Khaya status: connected" : "Khaya status: API key not configured";
+    } catch (_) {
+        el.textContent = "Khaya status: unavailable";
+    }
+}
+
+function looksLikeLanguagePrompt(text) {
+    const q = String(text || "").trim().toLowerCase();
+    if (!q) return false;
+    const cues = [
+        "translate", "translation", "pronunciation", "grammar", "vocabulary",
+        "english gloss", "in twi", "in japanese", "in spanish", "in french",
+        "in german", "in arabic", "in yoruba", "in ga", "in ewe",
+    ];
+    if (cues.some((c) => q.includes(c))) return true;
+    return /\b(answer|respond|reply|write|say)\s+(?:in|using)\s+[a-z][a-z\s-]{1,24}\b/i.test(q);
+}
+
+async function maybeApplyLanguageCoachAutoTranslate(userText) {
+    const text = String(userText || "").trim();
+    if (!text) return { text, provider: "", source: "", target: "" };
+    const languageIntent = looksLikeLanguagePrompt(text);
+    // If user already requested a target language directly, skip pre-translate
+    // to avoid extra latency and let Language Coach answer immediately.
+    if (languageIntent) return { text, provider: "", source: "", target: "" };
+    if (String(currentAgentSpecialty || "").toLowerCase() !== "language" && !languageIntent) {
+        return { text, provider: "", source: "", target: "" };
+    }
+    const prefs = getLanguagePrefs();
+    if (!prefs.enabled) return { text, provider: "", source: prefs.source, target: prefs.target };
+    if (prefs.source.toLowerCase() === prefs.target.toLowerCase()) return { text, provider: "", source: prefs.source, target: prefs.target };
+    try {
+        const ctrl = new AbortController();
+        const tm = window.setTimeout(() => ctrl.abort(), 4500);
+        const res = await fetch("/translate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                text,
+                source_lang: prefs.source,
+                target_lang: prefs.target,
+                provider: "khaya",
+            }),
+            signal: ctrl.signal,
+        });
+        window.clearTimeout(tm);
+        const data = await res.json();
+        const translated = String(data?.translated_text || "").trim();
+        const provider = String(data?.provider || "").trim().toLowerCase();
+        if (!translated) return { text, provider, source: prefs.source, target: prefs.target };
+        return {
+            text: [
+            "Language Coach Auto-Translate enabled.",
+            `Source language: ${prefs.source}`,
+            `Target language: ${prefs.target}`,
+            `Original user message: ${text}`,
+            `Translated message: ${translated}`,
+            `Respond in ${prefs.target} and include a short English gloss.`,
+            ].join("\n"),
+            provider,
+            source: prefs.source,
+            target: prefs.target,
+        };
+    } catch (_) {
+        return { text, provider: "khaya_timeout", source: prefs.source, target: prefs.target };
+    }
+}
+
+function escapeHtml(input) {
+    return String(input)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+const AVATAR_STORAGE_KEY = "lumiere_avatar_state_v2";
+let currentAgentSpecialty = "personal";
+let lastFailedRequest = null;
+const ONBOARDING_KEY = "lumiere_onboarding_dismissed_v1";
+const ONBOARDING_TOUR_KEY = "lumiere_onboarding_tour_done_v1";
+const TTS_KEY = "lumiere_tts_enabled_v1";
+const ACTOR_KEY = "lumiere_actor_v1";
+const VIEW_KEY = "lumiere_view_v1";
+const PROFILE_SEEN_KEY = "lumiere_profile_seen_v1";
+const AGENT_AVATAR_PROFILE_KEY = "lumiere_agent_avatar_profiles_v1";
+const AUTH_TOKEN_KEY = "lumiere_auth_token_v1";
+const AUTH_USER_KEY = "lumiere_auth_user_v1";
+const LANG_AUTO_TRANSLATE_KEY = "lumiere_lang_auto_translate_v1";
+const LANG_SOURCE_KEY = "lumiere_lang_source_v1";
+const LANG_TARGET_KEY = "lumiere_lang_target_v1";
+const KHAYA_TTS_ENABLED_KEY = "lumiere_khaya_tts_enabled_v1";
+const KHAYA_VOICE_KEY = "lumiere_khaya_voice_v1";
+let khayaTtsRateLimitedUntil = 0;
+const ASK_TIMEOUT_MS = 70000;
+const DEBATE_TIMEOUT_MS = 90000;
+const LIVE_WEB_TIMEOUT_MS = 70000;
+const chatLog = [];
+let metaverseAgents = [];
+let metaverseFeatures = [];
+let metaverseVideos = [];
+let metaverseState = { zones: [], me: null, online: [] };
+let selectedMetaverseVideo = null;
+let lastAskedQuestion = "";
+let reminderAudioCtx = null;
+let reminderAudioReady = false;
+let authModeRequired = false;
+let historySessionsCache = [];
+let tourStep = 0;
+let compareMode = "radar";
+let usageRowsBySpecialty = {};
+let reminderItemsCache = [];
+let memoryTickerFacts = [];
+let memoryTickerIndex = 0;
+let reminderAlertSeen = new Map();
+let reminderSpeechRepeatTimer = null;
+
+function openSettingsDrawer() {
+    const drawer = document.getElementById("settings-drawer");
+    const overlay = document.getElementById("settings-overlay");
+    if (drawer) drawer.classList.add("open");
+    if (overlay) overlay.classList.add("open");
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 30000) {
+    const ctrl = new AbortController();
+    const timer = window.setTimeout(() => ctrl.abort(), Math.max(1000, Number(timeoutMs) || 30000));
+    try {
+        return await fetch(url, { ...options, signal: ctrl.signal });
+    } catch (err) {
+        if (err?.name === "AbortError") {
+            throw new Error(`Request timed out after ${Math.round(Math.max(1000, Number(timeoutMs) || 30000) / 1000)}s`);
+        }
+        throw err;
+    } finally {
+        window.clearTimeout(timer);
+    }
+}
+
+function closeSettingsDrawer() {
+    const drawer = document.getElementById("settings-drawer");
+    const overlay = document.getElementById("settings-overlay");
+    if (drawer) drawer.classList.remove("open");
+    if (overlay) overlay.classList.remove("open");
+}
+
+function getAuthToken() {
+    return (localStorage.getItem(AUTH_TOKEN_KEY) || "").trim();
+}
+
+function setAuthToken(token) {
+    const clean = (token || "").trim();
+    if (clean) {
+        localStorage.setItem(AUTH_TOKEN_KEY, clean);
+    } else {
+        localStorage.removeItem(AUTH_TOKEN_KEY);
+    }
+}
+
+function setAuthUser(user) {
+    if (user && typeof user === "object") {
+        localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+    } else {
+        localStorage.removeItem(AUTH_USER_KEY);
+    }
+}
+
+function setAuthModeDescription(enabled) {
+    const el = document.getElementById("auth-mode-description");
+    if (!el) return;
+    el.textContent = enabled
+        ? "On: users must login for protected actions."
+        : "Off: demo mode. On: users must login for protected actions.";
+}
+
+function getAuthUser() {
+    try {
+        return JSON.parse(localStorage.getItem(AUTH_USER_KEY) || "null");
+    } catch (_) {
+        return null;
+    }
+}
+
+const _nativeFetch = window.fetch.bind(window);
+window.fetch = async function(input, init = {}) {
+    try {
+        const token = getAuthToken();
+        if (!token) return _nativeFetch(input, init);
+        const reqUrl = typeof input === "string" ? input : (input?.url || "");
+        const url = new URL(reqUrl, window.location.origin);
+        if (url.origin !== window.location.origin) return _nativeFetch(input, init);
+        const headers = new Headers((init && init.headers) || (input instanceof Request ? input.headers : undefined) || {});
+        if (!headers.has("X-Auth-Token")) {
+            headers.set("X-Auth-Token", token);
+        }
+        return _nativeFetch(input, { ...init, headers });
+    } catch (_) {
+        return _nativeFetch(input, init);
+    }
+};
+
+function getActingAs() {
+    return (localStorage.getItem(ACTOR_KEY) || document.body?.dataset.userName || "local_user").trim();
+}
+
+function setActingAs(name, options = {}) {
+    const cleaned = (name || "").trim() || (document.body?.dataset.userName || "local_user");
+    localStorage.setItem(ACTOR_KEY, cleaned);
+    const input = document.getElementById("actor-input");
+    if (input) input.value = cleaned;
+    refreshIdentityHint();
+    refreshMetaverseState();
+    refreshPrivacySetting();
+    refreshForgeSummary();
+    refreshUtilityWorkspace();
+    if (!options.silent) {
+        toast(`Acting as ${cleaned}`);
+    }
+}
+
+function syncActorWithProfileIfProfileChanged() {
+    const profileName = (document.body?.dataset.userName || "local_user").trim();
+    const seen = (localStorage.getItem(PROFILE_SEEN_KEY) || "").trim();
+    if (!seen) {
+        localStorage.setItem(PROFILE_SEEN_KEY, profileName);
+        if (!localStorage.getItem(ACTOR_KEY)) {
+            localStorage.setItem(ACTOR_KEY, profileName);
+        }
+        return;
+    }
+    if (seen !== profileName) {
+        localStorage.setItem(PROFILE_SEEN_KEY, profileName);
+        localStorage.setItem(ACTOR_KEY, profileName);
+    }
+}
+
+function refreshIdentityHint() {
+    const el = document.getElementById("identity-hint");
+    if (!el) return;
+    const profileName = (document.body?.dataset.userName || "local_user").trim();
+    const actor = getActingAs();
+    el.textContent = `Profile: ${profileName} | Use As: ${actor}`;
+}
+
+function setPrivacyDescription(enabled) {
+    const el = document.getElementById("privacy-description");
+    if (!el) return;
+    if (enabled) {
+        el.textContent = "Enabled: only anonymized training signals are shared. Raw chats/files stay local.";
+    } else {
+        el.textContent = "Disabled: your usage data does not contribute to global anonymized learning.";
+    }
+}
+
+async function refreshPrivacySetting() {
+    const toggle = document.getElementById("privacy-toggle");
+    if (!toggle) return;
+    try {
+        const requester = getActingAs();
+        const res = await fetch(`/privacy/share-anonymized?requester=${encodeURIComponent(requester)}`);
+        const data = await res.json();
+        const enabled = !!data.share_anonymized;
+        toggle.checked = enabled;
+        setPrivacyDescription(enabled);
+    } catch (_) {}
+}
+
+async function savePrivacySetting(enabled) {
+    const requester = getActingAs();
+    try {
+        const res = await fetch("/privacy/share-anonymized", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ requester, enabled: !!enabled })
+        });
+        const data = await res.json();
+        const val = !!data.share_anonymized;
+        setPrivacyDescription(val);
+        toast(`Anonymized sharing ${val ? "enabled" : "disabled"}`);
+    } catch (_) {
+        toast("Failed to update privacy setting");
+    }
+}
+
+function applyView(view) {
+    const container = document.getElementById("app-container");
+    const agentPanel = document.getElementById("agent-panel");
+    const chatPanel = document.getElementById("chat-panel");
+    const workspaceSelect = document.getElementById("workspace-select");
+    const agentPanelHeader = document.querySelector("#agent-panel .panel-header");
+    const agentsView = document.getElementById("agents-view");
+    const utilityView = document.getElementById("utility-view");
+    const memoryView = document.getElementById("memory-view");
+    const compareView = document.getElementById("compare-view");
+    const historyView = document.getElementById("history-view");
+    const remindersView = document.getElementById("reminders-view");
+    const marketplaceView = document.getElementById("marketplace-view");
+    const metaverseView = document.getElementById("metaverse-view");
+    const tabs = document.querySelectorAll(".page-tab[data-view]");
+    const training = document.getElementById("training-guide-panel");
+    const memory = document.getElementById("agent-memory-panel");
+    const memoryMgmt = document.getElementById("memory-management-panel");
+    const usage = document.getElementById("usage-log-panel");
+    const history = document.getElementById("history-panel");
+    const reminders = document.getElementById("reminder-panel");
+    const market = document.getElementById("marketplace-panel");
+
+    if (!container || !agentPanel || !chatPanel) return;
+    const compare = document.getElementById("compare-panel");
+    const allowedModes = ["utility", "agents", "memory", "compare", "history", "reminders", "marketplace"];
+    const mode = allowedModes.includes(view) ? view : "utility";
+    localStorage.setItem(VIEW_KEY, mode);
+    if (workspaceSelect) workspaceSelect.value = mode;
+
+    tabs.forEach((btn) => btn.classList.toggle("active", btn.dataset.view === mode));
+
+    container.classList.add("single-panel");
+    agentPanel.style.display = "none";
+    chatPanel.style.display = "none";
+    if (metaverseView) metaverseView.style.display = "none";
+    if (training) training.style.display = "none";
+    if (memory) memory.style.display = "none";
+    if (memoryMgmt) memoryMgmt.style.display = "none";
+    if (usage) usage.style.display = "none";
+    if (history) history.style.display = "none";
+    if (reminders) reminders.style.display = "none";
+    if (market) market.style.display = "none";
+    if (compare) compare.style.display = "none";
+    if (agentsView) agentsView.style.display = "none";
+    if (utilityView) utilityView.style.display = "none";
+    if (memoryView) memoryView.style.display = "none";
+    if (compareView) compareView.style.display = "none";
+    if (historyView) historyView.style.display = "none";
+    if (remindersView) remindersView.style.display = "none";
+    if (marketplaceView) marketplaceView.style.display = "none";
+
+    agentPanel.style.display = "block";
+    agentPanel.classList.remove("view-enter");
+    void agentPanel.offsetWidth;
+    agentPanel.classList.add("view-enter");
+    if (mode === "utility") {
+        if (utilityView) utilityView.style.display = "block";
+        if (agentPanelHeader) agentPanelHeader.innerHTML = `Utility Workspace <span class="pill">Execution</span>`;
+        refreshUtilityWorkspace();
+    } else if (mode === "agents") {
+        if (agentsView) agentsView.style.display = "block";
+        if (agentPanelHeader) agentPanelHeader.innerHTML = `Agents <span class="pill">Overview</span>`;
+        if (training) training.style.display = "block";
+        if (usage) usage.style.display = "block";
+        if (training) training.open = true;
+        if (usage) usage.open = true;
+    } else if (mode === "memory") {
+        if (memoryView) memoryView.style.display = "block";
+        if (agentPanelHeader) agentPanelHeader.innerHTML = `Memory <span class="pill">Control</span>`;
+        if (memory) memory.style.display = "block";
+        if (memoryMgmt) memoryMgmt.style.display = "block";
+        if (memory) memory.open = true;
+        if (memoryMgmt) memoryMgmt.open = true;
+    } else if (mode === "compare") {
+        if (compareView) compareView.style.display = "block";
+        if (agentPanelHeader) agentPanelHeader.innerHTML = `Compare <span class="pill">Visual</span>`;
+        if (compare) compare.style.display = "block";
+        if (compare) compare.open = true;
+        renderAgentComparison();
+    } else if (mode === "history") {
+        if (historyView) historyView.style.display = "block";
+        if (agentPanelHeader) agentPanelHeader.innerHTML = `History <span class="pill">Saved</span>`;
+        if (history) history.style.display = "block";
+        if (history) history.open = true;
+        refreshHistoryList();
+    } else if (mode === "reminders") {
+        if (remindersView) remindersView.style.display = "block";
+        if (agentPanelHeader) agentPanelHeader.innerHTML = `Reminders <span class="pill">Tasks</span>`;
+        if (reminders) reminders.style.display = "block";
+        if (reminders) reminders.open = true;
+    } else if (mode === "marketplace") {
+        if (marketplaceView) marketplaceView.style.display = "block";
+        if (agentPanelHeader) agentPanelHeader.innerHTML = `Marketplace <span class="pill">Chain</span>`;
+        if (market) market.style.display = "block";
+        if (market) market.open = true;
+    }
+}
+
+function utilityActiveGoalId() {
+    return localStorage.getItem("utility_active_goal_id") || "";
+}
+
+function setUtilityActiveGoalId(goalId) {
+    if (goalId) localStorage.setItem("utility_active_goal_id", goalId);
+}
+
+async function refreshUtilityDashboard() {
+    const el = document.getElementById("utility-dashboard");
+    if (!el) return;
+    try {
+        const requester = getActingAs();
+        const res = await fetch(`/utility/dashboard?requester=${encodeURIComponent(requester)}`);
+        const data = await res.json();
+        if (data.error) {
+            el.innerHTML = `<div class="agent-memory-empty">${escapeHtml(data.error)}</div>`;
+            return;
+        }
+        const score = Number(data.execution_score || 0).toFixed(1);
+        const comp = data.components || {};
+        const goals = Array.isArray(data.goals) ? data.goals : [];
+        const milestones = Array.isArray(data.milestones) ? data.milestones : [];
+        const tasks = Array.isArray(data.tasks) ? data.tasks : [];
+        const openMilestones = milestones.filter((m) => String(m.status || "pending") !== "done").length;
+        const openTasks = tasks.filter((t) => String(t.status || "todo") !== "done").length;
+        const suggestions = (data.suggestions || []).slice(0, 3).map((s) => `<li>${escapeHtml(s)}</li>`).join("");
+        el.innerHTML = `
+            <div class="utility-identity">
+                <h4>Core Loop</h4>
+                <p>Set goal -> generate milestones -> execute tasks -> improve execution score weekly.</p>
+            </div>
+            <div class="forge-kpi-grid">
+                <div class="forge-kpi"><span>Execution Score</span><strong>${score}</strong></div>
+                <div class="forge-kpi"><span>Task Completion</span><strong>${Math.round((Number(comp.task_completion_rate || 0) * 100))}%</strong></div>
+                <div class="forge-kpi"><span>Trend</span><strong>${escapeHtml(String(data.trend || "stable"))}</strong></div>
+            </div>
+            <div class="forge-kpi-grid">
+                <div class="forge-kpi"><span>Active Goals</span><strong>${goals.length}</strong></div>
+                <div class="forge-kpi"><span>Open Milestones</span><strong>${openMilestones}</strong></div>
+                <div class="forge-kpi"><span>Open Tasks</span><strong>${openTasks}</strong></div>
+            </div>
+            <div class="utility-suggestions">
+                <strong>Next Actions</strong>
+                <ul>${suggestions || "<li>No suggestions yet.</li>"}</ul>
+            </div>
+        `;
+    } catch (_) {
+        el.innerHTML = `<div class="agent-memory-empty">Utility dashboard unavailable.</div>`;
+    }
+}
+
+async function refreshUtilityOnboarding() {
+    try {
+        const requester = getActingAs();
+        const res = await fetch(`/utility/onboarding?requester=${encodeURIComponent(requester)}`);
+        const data = await res.json();
+        const p = data.profile || {};
+        const role = document.getElementById("utility-role");
+        const goal = document.getElementById("utility-main-goal");
+        const market = document.getElementById("utility-market");
+        const stage = document.getElementById("utility-stage");
+        const cohort = document.getElementById("utility-cohort");
+        if (role) role.value = String(p.role || "founder");
+        if (goal) goal.value = String(p.main_goal || "");
+        if (market) market.value = String(p.market || "");
+        if (stage) stage.value = String(p.stage || "");
+        if (cohort) cohort.value = String(p.cohort || "");
+    } catch (_) {}
+}
+
+async function saveUtilityOnboarding() {
+    try {
+        const requester = getActingAs();
+        const payload = {
+            requester,
+            role: document.getElementById("utility-role")?.value || "founder",
+            main_goal: document.getElementById("utility-main-goal")?.value || "",
+            market: document.getElementById("utility-market")?.value || "",
+            stage: document.getElementById("utility-stage")?.value || "",
+            cohort: document.getElementById("utility-cohort")?.value || "",
+        };
+        const res = await fetch("/utility/onboarding", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (data.status === "ok") {
+            toast("Onboarding saved");
+            refreshUtilityWorkspace();
+        } else {
+            toast(data.error || "Failed to save onboarding");
+        }
+    } catch (_) {
+        toast("Failed to save onboarding");
+    }
+}
+
+async function refreshUtilityGoals() {
+    const list = document.getElementById("utility-goals-list");
+    if (!list) return;
+    try {
+        const requester = getActingAs();
+        const res = await fetch(`/utility/goals?requester=${encodeURIComponent(requester)}`);
+        const data = await res.json();
+        const goals = data.goals || [];
+        if (!goals.length) {
+            list.innerHTML = `<div class="agent-memory-empty">No goals yet.</div>`;
+            return;
+        }
+        if (!utilityActiveGoalId()) setUtilityActiveGoalId(String(goals[0].id || ""));
+        list.innerHTML = goals.map((g) => {
+            const active = String(g.id) === utilityActiveGoalId();
+            return `
+                <div class="utility-row ${active ? "active" : ""}">
+                    <div><strong>${escapeHtml(g.title)}</strong><small>${escapeHtml(String(g.target_days))} days</small></div>
+                    <div class="utility-actions">
+                        <button class="utility-goal-open-btn" data-id="${escapeHtml(g.id)}">Open</button>
+                        <button class="utility-goal-generate-btn" data-id="${escapeHtml(g.id)}">Generate Milestones</button>
+                    </div>
+                </div>
+            `;
+        }).join("");
+    } catch (_) {
+        list.innerHTML = `<div class="agent-memory-empty">Goals unavailable.</div>`;
+    }
+}
+
+async function createUtilityGoal() {
+    const title = (document.getElementById("utility-goal-title")?.value || "").trim();
+    const days = Number(document.getElementById("utility-goal-days")?.value || 60);
+    if (!title) return;
+    try {
+        const requester = getActingAs();
+        const res = await fetch("/utility/goals", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ requester, title, target_days: days }),
+        });
+        const data = await res.json();
+        if (data.status === "ok" && data.goal?.id) {
+            setUtilityActiveGoalId(String(data.goal.id));
+            const goalInput = document.getElementById("utility-goal-title");
+            if (goalInput) goalInput.value = "";
+            toast("Goal created");
+            refreshUtilityWorkspace();
+        } else {
+            toast(data.error || "Goal create failed");
+        }
+    } catch (_) {
+        toast("Goal create failed");
+    }
+}
+
+async function generateUtilityMilestones(goalId) {
+    try {
+        const requester = getActingAs();
+        const res = await fetch(`/utility/goals/${encodeURIComponent(goalId)}/milestones/generate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ requester }),
+        });
+        const data = await res.json();
+        if (data.status === "ok") {
+            setUtilityActiveGoalId(goalId);
+            toast("Milestones generated");
+            refreshUtilityWorkspace();
+        } else {
+            toast(data.error || "Milestone generation failed");
+        }
+    } catch (_) {
+        toast("Milestone generation failed");
+    }
+}
+
+async function refreshUtilityMilestones() {
+    const list = document.getElementById("utility-milestones-list");
+    if (!list) return;
+    const goalId = utilityActiveGoalId();
+    if (!goalId) {
+        list.innerHTML = `<div class="agent-memory-empty">Select a goal.</div>`;
+        return;
+    }
+    try {
+        const requester = getActingAs();
+        const res = await fetch(`/utility/milestones?requester=${encodeURIComponent(requester)}&goal_id=${encodeURIComponent(goalId)}`);
+        const data = await res.json();
+        const items = data.milestones || [];
+        if (!items.length) {
+            list.innerHTML = `<div class="agent-memory-empty">No milestones yet.</div>`;
+            return;
+        }
+        list.innerHTML = items.map((m) => `
+            <div class="utility-row">
+                <div><strong>${escapeHtml(m.title)}</strong><small>${escapeHtml(String(m.due_at || ""))}</small></div>
+                <div class="utility-actions">
+                    <span class="utility-tag">${escapeHtml(String(m.status || "pending"))}</span>
+                    <button class="utility-milestone-done-btn" data-id="${escapeHtml(m.id)}">Verify</button>
+                </div>
+            </div>
+        `).join("");
+    } catch (_) {
+        list.innerHTML = `<div class="agent-memory-empty">Milestones unavailable.</div>`;
+    }
+}
+
+async function patchUtilityMilestoneDone(milestoneId) {
+    try {
+        const requester = getActingAs();
+        const res = await fetch(`/utility/milestones/${encodeURIComponent(milestoneId)}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ requester, status: "done", verified: true }),
+        });
+        const data = await res.json();
+        if (data.status === "ok") {
+            toast("Milestone verified");
+            refreshUtilityWorkspace();
+        } else {
+            toast(data.error || "Milestone update failed");
+        }
+    } catch (_) {
+        toast("Milestone update failed");
+    }
+}
+
+async function refreshUtilityTasks() {
+    const list = document.getElementById("utility-tasks-list");
+    if (!list) return;
+    try {
+        const requester = getActingAs();
+        const goalId = utilityActiveGoalId();
+        const suffix = goalId ? `&goal_id=${encodeURIComponent(goalId)}` : "";
+        const res = await fetch(`/utility/tasks?requester=${encodeURIComponent(requester)}${suffix}`);
+        const data = await res.json();
+        const tasks = data.tasks || [];
+        if (!tasks.length) {
+            list.innerHTML = `<div class="agent-memory-empty">No tasks yet.</div>`;
+            return;
+        }
+        list.innerHTML = tasks.map((t) => `
+            <div class="utility-row">
+                <div><strong>${escapeHtml(t.title)}</strong><small>${escapeHtml(String(t.due_at || ""))}</small></div>
+                <div class="utility-actions">
+                    <span class="utility-tag">${escapeHtml(String(t.status || "todo"))}</span>
+                    ${String(t.status) === "done" ? "" : `<button class="utility-task-done-btn" data-id="${escapeHtml(t.id)}">Complete</button>`}
+                </div>
+            </div>
+        `).join("");
+    } catch (_) {
+        list.innerHTML = `<div class="agent-memory-empty">Tasks unavailable.</div>`;
+    }
+}
+
+async function createUtilityTask() {
+    const title = (document.getElementById("utility-task-title")?.value || "").trim();
+    if (!title) return;
+    try {
+        const requester = getActingAs();
+        const goalId = utilityActiveGoalId();
+        const res = await fetch("/utility/tasks", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ requester, title, goal_id: goalId || null }),
+        });
+        const data = await res.json();
+        if (data.status === "ok") {
+            const input = document.getElementById("utility-task-title");
+            if (input) input.value = "";
+            toast("Task added");
+            refreshUtilityWorkspace();
+        } else {
+            toast(data.error || "Task create failed");
+        }
+    } catch (_) {
+        toast("Task create failed");
+    }
+}
+
+async function completeUtilityTask(taskId) {
+    try {
+        const requester = getActingAs();
+        const res = await fetch(`/utility/tasks/${encodeURIComponent(taskId)}/complete`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ requester }),
+        });
+        const data = await res.json();
+        if (data.status === "ok") {
+            toast("Task completed");
+            refreshUtilityWorkspace();
+        } else {
+            toast(data.error || "Task completion failed");
+        }
+    } catch (_) {
+        toast("Task completion failed");
+    }
+}
+
+async function refreshUtilityResources() {
+    const list = document.getElementById("utility-resources-list");
+    if (!list) return;
+    try {
+        const requester = getActingAs();
+        const market = document.getElementById("utility-market")?.value || "";
+        const res = await fetch(`/utility/resources/recommendations?requester=${encodeURIComponent(requester)}&region=${encodeURIComponent(market)}`);
+        const data = await res.json();
+        const rows = data.resources || [];
+        if (!rows.length) {
+            list.innerHTML = `<div class="agent-memory-empty">No resources found.</div>`;
+            return;
+        }
+        list.innerHTML = rows.map((r) => `
+            <div class="utility-row">
+                <div><strong>${escapeHtml(r.name)}</strong><small>${escapeHtml(String(r.region || ""))} · ${escapeHtml(String(r.category || ""))}</small></div>
+                <div class="utility-actions">
+                    ${r.url ? `<a class="utility-link" href="${escapeHtml(r.url)}" target="_blank" rel="noopener noreferrer">Open</a>` : ""}
+                </div>
+            </div>
+        `).join("");
+    } catch (_) {
+        list.innerHTML = `<div class="agent-memory-empty">Resources unavailable.</div>`;
+    }
+}
+
+async function refreshUtilityWorkspace() {
+    await Promise.allSettled([
+        refreshUtilityDashboard(),
+        refreshUtilityOnboarding(),
+        refreshUtilityGoals(),
+        refreshUtilityMilestones(),
+        refreshUtilityTasks(),
+        refreshUtilityResources(),
+    ]);
+}
+
+async function utilityQuickGenerateMilestones() {
+    try {
+        const requester = getActingAs();
+        const goalsRes = await fetch(`/utility/goals?requester=${encodeURIComponent(requester)}`);
+        const goalsData = await goalsRes.json();
+        const goals = goalsData.goals || [];
+        if (!goals.length) {
+            toast("Create a goal first");
+            return;
+        }
+        const goalId = utilityActiveGoalId() || String(goals[0].id || "");
+        if (!goalId) {
+            toast("Create a goal first");
+            return;
+        }
+        await generateUtilityMilestones(goalId);
+    } catch (_) {
+        toast("Milestone generation failed");
+    }
+}
+
+async function utilityQuickLogWin() {
+    try {
+        const requester = getActingAs();
+        const goalsRes = await fetch(`/utility/goals?requester=${encodeURIComponent(requester)}`);
+        const goalsData = await goalsRes.json();
+        const goalId = utilityActiveGoalId() || String((goalsData.goals || [])[0]?.id || "");
+        const createRes = await fetch("/utility/tasks", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                requester,
+                title: `Quick win logged - ${new Date().toLocaleDateString()}`,
+                goal_id: goalId || null,
+            }),
+        });
+        const created = await createRes.json();
+        const tid = created?.task?.id;
+        if (!tid) {
+            toast("Could not log win");
+            return;
+        }
+        await completeUtilityTask(tid);
+    } catch (_) {
+        toast("Could not log win");
+    }
+}
+
+async function startNewChat() {
+    if (chatLog.length) {
+        await saveCurrentChatToHistory();
+    }
+    const requester = getActingAs();
+    try {
+        await fetch("/session/new", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ requester })
+        });
+    } catch (_) {}
+    const output = document.getElementById("chat-output");
+    if (output) output.innerHTML = "";
+    chatLog.length = 0;
+    lastFailedRequest = null;
+    applyView("utility");
+    refreshUtilityWorkspace();
+    toast("Started a new sprint");
+}
+
+function loadAvatarState() {
+    try {
+        const parsed = JSON.parse(localStorage.getItem(AVATAR_STORAGE_KEY) || "{}");
+        const interactions = Number(parsed.interactions || 0);
+        return {
+            interactions: Number.isFinite(interactions) && interactions > 0 ? interactions : 0
+        };
+    } catch (_) {
+        return { interactions: 0 };
+    }
+}
+
+function saveAvatarState(state) {
+    try {
+        localStorage.setItem(AVATAR_STORAGE_KEY, JSON.stringify(state));
+    } catch (_) {}
+}
+
+function interactionToScale(interactions) {
+    return Math.min(1 + Math.log1p(interactions) / Math.log(6), 2.35);
+}
+
+function renderAvatar(state, pulse) {
+    const core = document.getElementById("ai-avatar-core");
+    const stageEl = document.getElementById("ai-avatar-stage");
+    const interactionsEl = document.getElementById("ai-avatar-interactions");
+    if (!core || !stageEl || !interactionsEl) return;
+
+    const interactions = Number(state.interactions || 0);
+    const stage = Math.floor(Math.sqrt(interactions) / 2) + 1;
+    const scale = interactionToScale(interactions);
+
+    core.style.setProperty("--avatar-scale", scale.toFixed(3));
+    stageEl.textContent = `Stage ${stage}`;
+    interactionsEl.textContent = `${interactions} interactions`;
+
+    if (pulse) {
+        core.classList.remove("pulse");
+        void core.offsetWidth;
+        core.classList.add("pulse");
+    }
+}
+
+function growAvatarByInteraction() {
+    const state = loadAvatarState();
+    state.interactions += 1;
+    saveAvatarState(state);
+    renderAvatar(state, true);
+}
+
+function resetAvatar() {
+    const fresh = { interactions: 0 };
+    saveAvatarState(fresh);
+    renderAvatar(fresh, false);
+    fetch("/memory/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requester: getActingAs(), clear_reminders: true })
+    }).catch(() => {});
+    const output = document.getElementById("chat-output");
+    if (output) output.innerHTML = "";
+    chatLog.length = 0;
+    toast("Memory reset and avatar growth cleared");
+}
+
+function setBusy(isBusy) {
+    const loading = document.getElementById("loading");
+    const sendBtn = document.getElementById("send-btn");
+    const debateBtn = document.getElementById("debate-btn");
+    const webBtn = document.getElementById("web-btn");
+    const voiceBtn = document.getElementById("voice-btn");
+    if (loading) loading.classList.toggle("active", isBusy);
+    if (sendBtn) sendBtn.disabled = isBusy;
+    if (debateBtn) debateBtn.disabled = isBusy;
+    if (webBtn) webBtn.disabled = isBusy;
+    if (voiceBtn) voiceBtn.disabled = isBusy;
+}
+
+function parseAgentMetaFromHtml(html) {
+    const tmp = document.createElement("div");
+    tmp.innerHTML = html;
+    const meta = tmp.querySelector(".answer-meta");
+    if (!meta) return null;
+    return {
+        specialty: meta.dataset.agent || "personal",
+        level: Number(meta.dataset.level || 1),
+        usedMemory: String(meta.dataset.usedMemory || "0") === "1",
+        usedHistory: String(meta.dataset.usedHistory || "0") === "1",
+        usedReminders: String(meta.dataset.usedReminders || "0") === "1",
+        usedWeb: String(meta.dataset.usedWeb || "0") === "1",
+        speechLang: String(meta.dataset.speechLang || "").trim().toLowerCase(),
+    };
+}
+
+function buildExplainBadges(meta) {
+    if (!meta) return "";
+    const badges = [];
+    if (meta.usedMemory) badges.push("Memory");
+    if (meta.usedHistory) badges.push("History");
+    if (meta.usedReminders) badges.push("Reminders");
+    if (meta.usedWeb) badges.push("Web");
+    if (!badges.length) return "";
+    return `<div class="explain-badges">${badges.map((b) => `<span class="explain-badge">${escapeHtml(b)}</span>`).join("")}</div>`;
+}
+
+function buildRuntimeBadges(runtimeBadges = []) {
+    const rows = Array.isArray(runtimeBadges) ? runtimeBadges.filter(Boolean) : [];
+    if (!rows.length) return "";
+    return rows.map((b) => `<span class="explain-badge">${escapeHtml(String(b))}</span>`).join("");
+}
+
+function appendMessage(role, label, content, isTrustedHtml = false, agentMeta = null, runtimeBadges = []) {
+    const output = document.getElementById("chat-output");
+    if (!output) return;
+    const wrapper = document.createElement("div");
+    wrapper.className = `message ${role} entering`;
+    const bodyHtml = isTrustedHtml ? content : escapeHtml(content).replace(/\n/g, "<br>");
+    const badgeHtml = role === "ai" ? buildExplainBadges(agentMeta) : "";
+    const runtimeBadgeHtml = role === "ai" ? buildRuntimeBadges(runtimeBadges) : "";
+    const toolsHtml = role === "ai"
+        ? `<div class="message-tools">${badgeHtml}${runtimeBadgeHtml}<button class="speak-btn" type="button">Speak</button><button class="copy-btn" type="button">Copy</button></div>`
+        : "";
+    wrapper.innerHTML = `
+        <div class="message-label">${escapeHtml(label)}</div>
+        <div class="message-content">${bodyHtml}</div>
+        ${toolsHtml}
+    `;
+    output.appendChild(wrapper);
+    requestAnimationFrame(() => wrapper.classList.remove("entering"));
+    output.scrollTop = output.scrollHeight;
+    chatLog.push({
+        role,
+        label,
+        content_text: wrapper.querySelector(".message-content")?.innerText || "",
+        content_html: isTrustedHtml ? content : null,
+        ts: new Date().toISOString()
+    });
+
+    if (role === "ai" && isTtsEnabled()) {
+        speakText(wrapper.querySelector(".message-content")?.innerText || "", {
+            lang: agentMeta?.speechLang || undefined,
+        });
+    }
+    return wrapper;
+}
+
+function isTtsEnabled() {
+    return localStorage.getItem(TTS_KEY) === "1";
+}
+
+function setTtsEnabled(value) {
+    localStorage.setItem(TTS_KEY, value ? "1" : "0");
+    const btn = document.getElementById("tts-toggle-btn");
+    if (btn) btn.textContent = value ? "Voice On" : "Voice Off";
+}
+
+function detectSpeechLang(text) {
+    const sample = String(text || "");
+    if (/[\u3040-\u30ff\u31f0-\u31ff]/.test(sample)) return "ja-JP";
+    if (/[\uac00-\ud7af]/.test(sample)) return "ko-KR";
+    if (/[\u0600-\u06ff]/.test(sample)) return "ar-SA";
+    if (/[\u0400-\u04ff]/.test(sample)) return "ru-RU";
+    if (/[\u4e00-\u9fff]/.test(sample)) return "zh-CN";
+    return "en-US";
+}
+
+function languageToSpeechTag(langCode) {
+    const code = String(langCode || "").trim().toLowerCase();
+    if (!code) return "";
+    const map = {
+        tw: "tw",
+        yo: "yo",
+        ha: "ha",
+        ig: "ig",
+        gaa: "gaa",
+        ee: "ee",
+        en: "en-US",
+        fr: "fr-FR",
+        es: "es-ES",
+        pt: "pt-PT",
+        sw: "sw-KE",
+        ja: "ja-JP",
+        zh: "zh-CN",
+    };
+    return map[code] || code;
+}
+
+function pickVoiceForLang(langTag) {
+    if (!("speechSynthesis" in window)) return null;
+    const target = String(langTag || "").toLowerCase();
+    if (!target) return null;
+    const voices = window.speechSynthesis.getVoices() || [];
+    let voice = voices.find((v) => String(v.lang || "").toLowerCase() === target);
+    if (!voice) {
+        const base = target.split("-")[0];
+        voice = voices.find((v) => String(v.lang || "").toLowerCase().startsWith(base));
+    }
+    return voice || null;
+}
+
+function speakTextBrowser(text, options = {}) {
+    if (!("speechSynthesis" in window)) return;
+    const clean = (text || "").trim();
+    if (!clean) return;
+    const utter = new SpeechSynthesisUtterance(clean.slice(0, 1500));
+    const targetLang = options.lang || detectSpeechLang(clean);
+    utter.lang = targetLang;
+    const voice = pickVoiceForLang(targetLang);
+    if (voice) utter.voice = voice;
+    utter.rate = Number(options.rate || 1);
+    utter.pitch = Number(options.pitch || 1);
+    if (typeof options.volume === "number") utter.volume = options.volume;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utter);
+}
+
+async function speakText(text, options = {}) {
+    const clean = (text || "").trim();
+    if (!clean) return;
+    const khayaPrefs = getKhayaTtsPrefs();
+    const langPrefs = getLanguagePrefs();
+    const preferred = String(options.lang || "").trim();
+    const normalizedLang = String(languageToSpeechTag(preferred || langPrefs.target || "en"));
+    if (!khayaPrefs.enabled) {
+        speakTextBrowser(clean, { ...options, lang: normalizedLang || options.lang });
+        return;
+    }
+    if (Date.now() < khayaTtsRateLimitedUntil) {
+        const sec = Math.max(1, Math.ceil((khayaTtsRateLimitedUntil - Date.now()) / 1000));
+        toast(`Khaya TTS is rate-limited. Retry in ${sec}s.`);
+        return;
+    }
+    const lang = String(normalizedLang || "en").split("-")[0];
+    try {
+        const res = await fetch("/tts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                text: clean.slice(0, 1500),
+                language: lang,
+                voice: khayaPrefs.voice || undefined,
+            }),
+        });
+        const data = await res.json();
+        if (String(data?.code || "").toLowerCase() === "rate_limited") {
+            const retryAfter = Math.max(1, Number(data?.retry_after_sec || 30));
+            khayaTtsRateLimitedUntil = Date.now() + (retryAfter * 1000);
+            toast(`Khaya TTS rate-limited. Retry in ${retryAfter}s.`);
+            return;
+        }
+        if (data?.error) {
+            toast(`Khaya TTS unavailable (${String(data.error).slice(0, 80)}). Using browser voice.`);
+        }
+        const b64 = String(data?.audio_base64 || "").trim();
+        if (!b64) {
+            speakTextBrowser(clean, { ...options, lang: normalizedLang || options.lang });
+            return;
+        }
+        const src = b64.startsWith("data:audio") ? b64 : `data:audio/wav;base64,${b64}`;
+        const audio = new Audio(src);
+        await audio.play();
+    } catch (_) {
+        speakTextBrowser(clean, { ...options, lang: normalizedLang || options.lang });
+    }
+}
+
+function downloadBlob(filename, text, contentType) {
+    const blob = new Blob([text], { type: contentType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+}
+
+function exportChatAsText() {
+    const lines = chatLog.map((m) => `[${m.ts}] ${m.label}: ${m.content_text}`);
+    downloadBlob(`lumiere-chat-${Date.now()}.txt`, lines.join("\n\n"), "text/plain;charset=utf-8");
+}
+
+function exportChatAsJson() {
+    downloadBlob(`lumiere-chat-${Date.now()}.json`, JSON.stringify(chatLog, null, 2), "application/json;charset=utf-8");
+}
+
+function hydrateChatFromHistory(messages) {
+    const output = document.getElementById("chat-output");
+    if (!output) return;
+    output.innerHTML = "";
+    chatLog.length = 0;
+    const rows = Array.isArray(messages) ? messages : [];
+    rows.forEach((m) => {
+        const label = String(m.label || "Lumiere");
+        const role = label.toLowerCase().includes("you") ? "user" : "ai";
+        appendMessage(role, label, String(m.content_text || ""), false);
+    });
+}
+
+async function saveCurrentChatToHistory() {
+    if (!chatLog.length) {
+        toast("No chat messages to save");
+        return null;
+    }
+    const requester = getActingAs();
+    const titleInput = document.getElementById("history-title-input");
+    const title = (titleInput?.value || "").trim() || `Chat ${new Date().toLocaleString()}`;
+    const payload = {
+        requester,
+        title,
+        messages: chatLog.map((m) => ({
+            ts: m.ts,
+            label: m.label,
+            content_text: m.content_text
+        }))
+    };
+    try {
+        const res = await fetch("/history/sessions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.status === "ok") {
+            toast("Chat saved to history");
+            refreshHistoryList();
+            return data.id;
+        }
+        toast(data.error || "Failed to save history");
+    } catch (_) {
+        toast("Failed to save history");
+    }
+    return null;
+}
+
+function renderHistoryList(sessions, filterQuery = "") {
+    const listEl = document.getElementById("history-list");
+    if (!listEl) return;
+    const q = String(filterQuery || "").trim().toLowerCase();
+    const filtered = !q
+        ? sessions
+        : sessions.filter((s) => {
+            const title = String(s.title || "").toLowerCase();
+            const id = String(s.id || "").toLowerCase();
+            return title.includes(q) || id.includes(q);
+        });
+    if (!filtered.length) {
+        listEl.innerHTML = `<div class="agent-memory-empty">${q ? "No sessions matched your search." : "No saved chats yet."}</div>`;
+        return;
+    }
+    listEl.innerHTML = filtered.map((s) => `
+        <div class="history-item">
+            <div class="history-main">
+                <strong>${escapeHtml(s.title || "Untitled chat")}</strong>
+                <span>${escapeHtml(String(s.message_count || 0))} msgs</span>
+            </div>
+            <div class="history-sub">Updated: ${escapeHtml(String(s.updated_at || "-"))}</div>
+            <div class="history-actions">
+                <button type="button" class="history-open-btn" data-id="${escapeHtml(s.id)}">Open</button>
+                <button type="button" class="history-delete-btn" data-id="${escapeHtml(s.id)}">Delete</button>
+            </div>
+        </div>
+    `).join("");
+}
+
+async function refreshHistoryList() {
+    const listEl = document.getElementById("history-list");
+    if (!listEl) return;
+    try {
+        const requester = getActingAs();
+        const res = await fetch(`/history/sessions?requester=${encodeURIComponent(requester)}&limit=80`);
+        const data = await res.json();
+        const sessions = Array.isArray(data.sessions) ? data.sessions : [];
+        historySessionsCache = sessions;
+        const searchEl = document.getElementById("history-search-input");
+        renderHistoryList(sessions, searchEl?.value || "");
+    } catch (_) {
+        listEl.innerHTML = `<div class="agent-memory-empty">Failed to load history.</div>`;
+    }
+}
+
+function formatFileSize(size) {
+    const bytes = Number(size || 0);
+    if (!Number.isFinite(bytes) || bytes <= 0) return "";
+    if (bytes < 1024) return `${bytes}B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+}
+
+function renderUploadedContext(items) {
+    const el = document.getElementById("uploaded-context-list");
+    if (!el) return;
+    if (!items.length) {
+        el.innerHTML = "";
+        return;
+    }
+    el.innerHTML = items.map((it) => `
+        <div class="upload-chip" title="${escapeHtml(it.summary || "")}">
+            <span>${escapeHtml(it.name || "file")}</span>
+            <small>${escapeHtml(formatFileSize(it.size))}</small>
+        </div>
+    `).join("");
+}
+
+async function refreshUploadedContext() {
+    try {
+        const res = await fetch("/uploaded-context");
+        const items = await res.json();
+        renderUploadedContext(Array.isArray(items) ? items : []);
+    } catch (_) {}
+}
+
+async function uploadContextFile(file) {
+    const fd = new FormData();
+    fd.append("file", file);
+    const res = await fetch("/upload-context", {
+        method: "POST",
+        body: fd
+    });
+    const data = await res.json();
+    if (data.status === "ok") {
+        toast(`Uploaded: ${file.name}`);
+        refreshUploadedContext();
+    } else {
+        toast(data.error || "Upload failed");
+    }
+}
+
+async function uploadFilesBatch(files) {
+    const list = Array.from(files || []).filter(Boolean);
+    if (!list.length) return;
+    for (const f of list) {
+        await uploadContextFile(f);
+    }
+}
+
+function shouldSuggestRecovery(content) {
+    const text = String(content || "").toLowerCase();
+    return (
+        !text.trim() ||
+        text.includes("error:") ||
+        text.includes("request failed") ||
+        text.includes("unavailable") ||
+        text.includes("couldn't fetch") ||
+        text.includes("no available") ||
+        text.includes("failed")
+    );
+}
+
+function reportRequestError(message, kind = "request") {
+    const text = `${kind.toUpperCase()}: ${message || "Request failed"}`;
+    setErrorRibbon(text);
+}
+
+function clearRequestError() {
+    setErrorRibbon("");
+}
+
+function recoveryActionsHtml() {
+    return `
+        <div class="recovery-actions">
+            <button class="recovery-btn" data-action="retry" type="button">Retry</button>
+            <button class="recovery-btn" data-action="simplify" type="button">Simplify</button>
+            <button class="recovery-btn" data-action="edit" type="button">Edit</button>
+        </div>
+    `;
+}
+
+function markFailure(question, mode) {
+    lastFailedRequest = { question, mode };
+}
+
+async function retryLastFailed(modeOverride = null, simplified = false) {
+    if (!lastFailedRequest?.question) return;
+    const mode = modeOverride || lastFailedRequest.mode || "ask";
+    const q = lastFailedRequest.question;
+    if (simplified) {
+        if (mode === "web") return askLiveWeb(`Give a concise, simpler answer with clear bullet points: ${q}`);
+        if (mode === "debate") return askDebate(`Debate this simply with concise points: ${q}`);
+        return ask(`Give a concise, simpler answer with clear bullet points: ${q}`);
+    }
+    if (mode === "web") return askLiveWeb(q);
+    if (mode === "debate") return askDebate(q);
+    return ask(q);
+}
+
+function isConfusionFollowup(text) {
+    const t = String(text || "").toLowerCase().trim();
+    if (!t) return false;
+    const confusionPhrases = [
+        "i don't get it",
+        "i dont get it",
+        "still don't understand",
+        "still dont understand",
+        "not clear",
+        "confusing",
+        "i am confused",
+        "can you explain better",
+        "explain simpler",
+        "didn't get",
+        "didnt get"
+    ];
+    return confusionPhrases.some((p) => t.includes(p));
+}
+
+function resolveVideoTopicSeed(inputText) {
+    const raw = String(inputText || "").trim();
+    if (!raw) return currentAgentSpecialty || "personal";
+    if (isConfusionFollowup(raw)) {
+        const fallback = String(lastAskedQuestion || "").trim();
+        if (fallback && !isConfusionFollowup(fallback)) return fallback;
+        return currentAgentSpecialty || "personal";
+    }
+    return raw;
+}
+
+function renderMetaverseVideoHero(video) {
+    const heroEl = document.getElementById("metaverse-video-hero");
+    if (!heroEl) return;
+    if (!video) {
+        heroEl.innerHTML = `<div class="agent-memory-empty">Select a video to preview it here.</div>`;
+        return;
+    }
+    heroEl.innerHTML = `
+        <div class="metaverse-video-frame-wrap">
+            <iframe class="metaverse-video-frame" src="${escapeHtml(video.embed_url || "")}" title="${escapeHtml(video.title || "Video")}" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="metaverse-video-meta">
+            <strong>${escapeHtml(video.title || "Video")}</strong>
+            <span>${escapeHtml(video.provider || "Video")} · ${escapeHtml(video.duration || "-")} · ${escapeHtml(video.difficulty || "all levels")}</span>
+            <p>${escapeHtml(video.description || "")}</p>
+        </div>
+    `;
+}
+
+function renderMetaverseVideoList() {
+    const listEl = document.getElementById("metaverse-video-list");
+    if (!listEl) return;
+    if (!metaverseVideos.length) {
+        listEl.innerHTML = `<div class="agent-memory-empty">No videos matched this topic yet.</div>`;
+        return;
+    }
+    listEl.innerHTML = metaverseVideos.map((video) => `
+        <article class="metaverse-video-card ${selectedMetaverseVideo?.id === video.id ? "selected" : ""}">
+            <div class="metaverse-video-head">
+                <strong>${escapeHtml(video.title || "Video")}</strong>
+                <span>${escapeHtml(video.duration || "-")}</span>
+            </div>
+            <div class="metaverse-video-tags">${escapeHtml((video.tags || []).slice(0, 4).join(" · "))}</div>
+            <div class="metaverse-video-actions">
+                <button type="button" class="meta-zone-btn" data-video-action="preview" data-video-id="${escapeHtml(video.id)}">Preview</button>
+                <button type="button" class="meta-zone-btn alt" data-video-action="select" data-video-id="${escapeHtml(video.id)}">Use Context</button>
+            </div>
+        </article>
+    `).join("");
+}
+
+async function refreshMetaverseVideos(topicSeed = "", autoRouted = false) {
+    const inputEl = document.getElementById("metaverse-video-topic-input");
+    const topic = resolveVideoTopicSeed(topicSeed || inputEl?.value || "");
+    if (inputEl && topic) inputEl.value = topic;
+    try {
+        const res = await fetch("/metaverse/videos?q=" + encodeURIComponent(topic) + "&specialty=" + encodeURIComponent(currentAgentSpecialty) + "&limit=8");
+        const data = await res.json();
+        metaverseVideos = Array.isArray(data.videos) ? data.videos : [];
+        if (!selectedMetaverseVideo || !metaverseVideos.some((v) => v.id === selectedMetaverseVideo.id)) {
+            selectedMetaverseVideo = metaverseVideos[0] || null;
+        }
+        renderMetaverseVideoHero(selectedMetaverseVideo);
+        renderMetaverseVideoList();
+        if (autoRouted) {
+            toast(`Metaverse Video Portal opened for: ${topic}`);
+        }
+    } catch (_) {}
+}
+
+async function autoRouteToMetaverseVideoPortal(triggerText) {
+    const topic = resolveVideoTopicSeed(triggerText);
+    applyView("metaverse");
+    await refreshMetaverseVideos(topic, true);
+    appendMessage(
+        "ai",
+        "Lumiere",
+        `I routed this to the Metaverse Video Portal for "${topic}". Pick a video, then use "Ask With Video" for a guided follow-up.`,
+        false
+    );
+}
+
+function handleMetaverseZoneAction(action, specialty, name) {
+    const safeSpecialty = (specialty || "personal").trim() || "personal";
+    const safeName = (name || safeSpecialty).trim() || safeSpecialty;
+    if (action === "train") {
+        chainAction("train", safeSpecialty);
+        return;
+    }
+    (async () => {
+        try {
+            const requester = getActingAs();
+            await fetch("/metaverse/travel", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ requester, zone: safeSpecialty, status: "online" })
+            });
+            await refreshMetaverseState();
+        } catch (_) {}
+        applyView("chat");
+        lastAskedQuestion = `Need help with ${safeSpecialty}`;
+        const prompt = `Metaverse port sync: connect me with ${safeName} (${safeSpecialty}) and give a concise action plan for this specialty.`;
+        ask(prompt);
+    })();
+}
+
+function buildConversationContext(limit = 6) {
+    const rows = chatLog.slice(-Math.max(1, limit));
+    const lines = rows
+        .filter((m) => m && m.content_text)
+        .map((m) => `${m.label || (m.role === "user" ? "You" : "Lumiere")}: ${String(m.content_text).trim()}`)
+        .filter(Boolean);
+    const text = lines.join("\n").slice(0, 2000);
+    return text;
+}
+
+async function ask(promptText) {
+    if (!requireLoginIfNeeded()) return;
+    const input = document.getElementById("question");
+    const q = (promptText || input?.value || "").trim();
+    if (!q) return;
+
+    appendMessage("user", "You", q, false);
+    clearRequestError();
+    growAvatarByInteraction();
+    lastAskedQuestion = q;
+    if (input && !promptText) input.value = "";
+    setBusy(true);
+
+    try {
+        const requester = getActingAs();
+        const ctx = buildConversationContext(8);
+        const languageIntent = looksLikeLanguagePrompt(q);
+        const forcedSpecialty = languageIntent ? "&force_specialty=language" : "";
+        const auto = await maybeApplyLanguageCoachAutoTranslate(q);
+        const effectiveQ = String(auto?.text || q);
+        const providerBadge = auto?.provider ? [`Translate: ${auto.provider}`] : [];
+        if (auto?.source && auto?.target && auto.source.toLowerCase() !== auto.target.toLowerCase()) {
+            providerBadge.push(`${auto.source} -> ${auto.target}`);
+        }
+        const res = await fetchWithTimeout(
+            "/ask?q=" + encodeURIComponent(effectiveQ) + "&requester=" + encodeURIComponent(requester) + "&ctx=" + encodeURIComponent(ctx) + forcedSpecialty,
+            {},
+            ASK_TIMEOUT_MS
+        );
+        const txt = await res.text();
+        const meta = parseAgentMetaFromHtml(txt);
+        if (meta?.specialty) currentAgentSpecialty = meta.specialty;
+        if (shouldSuggestRecovery(txt)) {
+            markFailure(q, "ask");
+            reportRequestError("Model output looked unstable", "ask");
+            appendMessage("ai", "Lumiere", txt + recoveryActionsHtml(), true, meta, providerBadge);
+        } else {
+            appendMessage("ai", "Lumiere", txt, true, meta, providerBadge);
+        }
+        void Promise.allSettled([
+            refreshAgentStats(),
+            refreshAgentMemory(),
+            refreshMemoryFact(),
+            refreshReminders(),
+            refreshUsageLog()
+        ]);
+    } catch (err) {
+        markFailure(q, "ask");
+        reportRequestError(err.message || "Request failed", "ask");
+        appendMessage("ai", "System", `Error: ${escapeHtml(err.message || "Request failed")}${recoveryActionsHtml()}`, true);
+    } finally {
+        setBusy(false);
+        if (input) {
+            input.focus();
+        }
+    }
+}
+
+async function askDebate(promptText) {
+    if (!requireLoginIfNeeded()) return;
+    const input = document.getElementById("question");
+    const q = (promptText || input?.value || "").trim();
+    if (!q) return;
+
+    appendMessage("user", "You", q, false);
+    clearRequestError();
+    growAvatarByInteraction();
+    lastAskedQuestion = q;
+    if (input && !promptText) input.value = "";
+    setBusy(true);
+
+    try {
+        const requester = getActingAs();
+        const ctx = buildConversationContext(8);
+        const res = await fetchWithTimeout(
+            "/debate?q=" + encodeURIComponent(q) + "&requester=" + encodeURIComponent(requester) + "&ctx=" + encodeURIComponent(ctx),
+            {},
+            DEBATE_TIMEOUT_MS
+        );
+        const txt = await res.text();
+        const meta = parseAgentMetaFromHtml(txt);
+        if (meta?.specialty) currentAgentSpecialty = meta.specialty;
+        if (shouldSuggestRecovery(txt)) {
+            markFailure(q, "debate");
+            reportRequestError("Debate output looked unstable", "debate");
+            appendMessage("ai", "Lumiere Debate", txt + recoveryActionsHtml(), true, meta);
+        } else {
+            appendMessage("ai", "Lumiere Debate", txt, true, meta);
+        }
+        void Promise.allSettled([
+            refreshAgentStats(),
+            refreshAgentMemory(),
+            refreshMemoryFact(),
+            refreshReminders(),
+            refreshUsageLog()
+        ]);
+    } catch (err) {
+        markFailure(q, "debate");
+        reportRequestError(err.message || "Request failed", "debate");
+        appendMessage("ai", "System", `Debate error: ${escapeHtml(err.message || "Request failed")}${recoveryActionsHtml()}`, true);
+    } finally {
+        setBusy(false);
+        if (input) {
+            input.focus();
+        }
+    }
+}
+
+async function askLiveWeb(promptText) {
+    if (!requireLoginIfNeeded()) return;
+    const input = document.getElementById("question");
+    const q = (promptText || input?.value || "").trim();
+    if (!q) return;
+
+    appendMessage("user", "You", q, false);
+    clearRequestError();
+    growAvatarByInteraction();
+    lastAskedQuestion = q;
+    if (input && !promptText) input.value = "";
+    setBusy(true);
+
+    try {
+        const requester = getActingAs();
+        const ctx = buildConversationContext(8);
+        const languageIntent = looksLikeLanguagePrompt(q);
+        const forcedSpecialty = languageIntent ? "&force_specialty=language" : "";
+        const auto = await maybeApplyLanguageCoachAutoTranslate(q);
+        const effectiveQ = String(auto?.text || q);
+        const providerBadge = auto?.provider ? [`Translate: ${auto.provider}`] : [];
+        if (auto?.source && auto?.target && auto.source.toLowerCase() !== auto.target.toLowerCase()) {
+            providerBadge.push(`${auto.source} -> ${auto.target}`);
+        }
+        const res = await fetchWithTimeout(
+            "/ask-live?q=" + encodeURIComponent(effectiveQ) + "&requester=" + encodeURIComponent(requester) + "&ctx=" + encodeURIComponent(ctx) + forcedSpecialty,
+            {},
+            LIVE_WEB_TIMEOUT_MS
+        );
+        const txt = await res.text();
+        const meta = parseAgentMetaFromHtml(txt);
+        if (meta?.specialty) currentAgentSpecialty = meta.specialty;
+        if (shouldSuggestRecovery(txt)) {
+            markFailure(q, "web");
+            reportRequestError("Live web output looked unstable", "web");
+            appendMessage("ai", "Lumiere Live Web", txt + recoveryActionsHtml(), true, meta, providerBadge);
+        } else {
+            appendMessage("ai", "Lumiere Live Web", txt, true, meta, providerBadge);
+        }
+        void Promise.allSettled([
+            refreshAgentStats(),
+            refreshAgentMemory(),
+            refreshMemoryFact(),
+            refreshReminders(),
+            refreshUsageLog()
+        ]);
+    } catch (err) {
+        markFailure(q, "web");
+        reportRequestError(err.message || "Request failed", "web");
+        appendMessage("ai", "System", `Live web error: ${escapeHtml(err.message || "Request failed")}${recoveryActionsHtml()}`, true);
+    } finally {
+        setBusy(false);
+        if (input) {
+            input.focus();
+        }
+    }
+}
+
+function levelBadgeClass(level) {
+    if (level >= 5) return "badge-gold";
+    if (level >= 3) return "badge-silver";
+    return "badge-bronze";
+}
+
+function fmtMaybe(value, fallback = "-") {
+    if (value === null || value === undefined || value === "") return fallback;
+    return String(value);
+}
+
+async function refreshAgentStats() {
+    const container = document.querySelector(".agent-stats");
+    if (!container) return;
+    try {
+        const requester = getActingAs();
+        const res = await fetch("/agent-stats?requester=" + encodeURIComponent(requester));
+        const agents = await res.json();
+        metaverseAgents = Array.isArray(agents) ? agents : [];
+        container.innerHTML = "";
+        metaverseAgents.forEach((agent) => {
+            const accuracy = Math.max(0, Math.min(100, Number(agent.accuracy || 0)));
+            const level = Number(agent.level || 1);
+            const category = (agent.category || "personal").toString();
+            const card = document.createElement("div");
+            card.className = "agent-stat";
+            card.innerHTML = `
+                <div class="agent-head">
+                    <div class="agent-name">${escapeHtml(agent.name)}</div>
+                    <div class="agent-level ${levelBadgeClass(level)}">Lvl ${level}</div>
+                </div>
+                <div class="agent-bar"><span style="width:${accuracy.toFixed(1)}%"></span></div>
+                <div class="agent-foot">${escapeHtml(agent.specialty)} · ${accuracy.toFixed(1)}% mastery</div>
+                <div class="agent-category">Category: ${escapeHtml(category)}</div>
+            `;
+            container.appendChild(card);
+        });
+        renderAgentComparison();
+        renderMetaverseScene();
+        renderMetaverseAgentPorts();
+        renderAvatarStudioCard();
+        refreshForgeSummary();
+    } catch (_) {}
+}
+
+function forgeAgentLabel(key) {
+    const labels = {
+        idea_validation: "Idea Validation",
+        execution_roadmap: "Execution Roadmap",
+        confidence_reinforcement: "Confidence Reinforcement",
+        local_resource: "Local Resource",
+        discernment: "Discernment",
+        impact_analytics: "Impact Analytics",
+    };
+    return labels[key] || String(key || "").replace(/_/g, " ");
+}
+
+function pctText(value) {
+    const n = Number(value || 0);
+    return `${(n * 100).toFixed(0)}%`;
+}
+
+async function refreshForgeSummary() {
+    const el = document.getElementById("forge-summary");
+    if (!el) return;
+    try {
+        const requester = getActingAs();
+        const [reportRes, agentsRes] = await Promise.all([
+            fetch(`/forge/impact/report?requester=${encodeURIComponent(requester)}&days=30`),
+            fetch(`/forge/agents?requester=${encodeURIComponent(requester)}`),
+        ]);
+        const report = await reportRes.json();
+        const agentsData = await agentsRes.json();
+        if (report.error) {
+            el.innerHTML = `<div class="agent-memory-empty">${escapeHtml(String(report.error || "Forge unavailable"))}</div>`;
+            return;
+        }
+        const impact = report.impact || {};
+        const components = report.components || {};
+        const agents = Array.isArray(agentsData.agents) ? agentsData.agents.slice() : [];
+        agents.sort((a, b) => Number(b.effective_weight || 0) - Number(a.effective_weight || 0));
+        const top = agents.slice(0, 3);
+        el.innerHTML = `
+            <div class="forge-kpi-grid">
+                <div class="forge-kpi">
+                    <span>Execution Score</span>
+                    <strong>${Number(report.execution_score || 0).toFixed(1)}</strong>
+                </div>
+                <div class="forge-kpi">
+                    <span>30d Confidence Delta</span>
+                    <strong>${Number(impact.confidence_delta_30d || 0).toFixed(1)}</strong>
+                </div>
+                <div class="forge-kpi">
+                    <span>30d Retention</span>
+                    <strong>${pctText(impact.retention_rate || 0)}</strong>
+                </div>
+            </div>
+            <div class="forge-components">
+                <div class="forge-line"><span>Task Completion</span><b>${pctText(components.task_completion_rate || 0)}</b></div>
+                <div class="forge-line"><span>Consistency</span><b>${pctText(components.consistency_index || 0)}</b></div>
+                <div class="forge-line"><span>Confidence Delta</span><b>${pctText(components.confidence_delta || 0)}</b></div>
+                <div class="forge-line"><span>Milestone Verification</span><b>${pctText(components.milestone_verification_score || 0)}</b></div>
+                <div class="forge-line"><span>Resource Engagement</span><b>${pctText(components.resource_engagement_score || 0)}</b></div>
+            </div>
+            <div class="forge-top-agents">
+                <div class="forge-subhead">Current Agent Emphasis</div>
+                ${top.map((row) => `
+                    <div class="forge-agent-row">
+                        <span>${escapeHtml(forgeAgentLabel(row.agent))}</span>
+                        <b>${pctText(row.effective_weight || 0)}</b>
+                    </div>
+                `).join("") || `<div class="agent-memory-empty">No forge agent data yet.</div>`}
+            </div>
+        `;
+    } catch (_) {
+        el.innerHTML = `<div class="agent-memory-empty">Forge summary unavailable right now.</div>`;
+    }
+}
+
+function clamp01(v) {
+    return Math.max(0, Math.min(1, Number(v || 0)));
+}
+
+function compareKey(agent) {
+    return String(agent?.specialty || "personal").trim().toLowerCase();
+}
+
+function colorFromText(text) {
+    let h = 0;
+    const raw = String(text || "agent");
+    for (let i = 0; i < raw.length; i += 1) h = ((h << 5) - h) + raw.charCodeAt(i);
+    const hue = Math.abs(h) % 360;
+    return `hsl(${hue} 76% 56%)`;
+}
+
+function initialsFromName(name) {
+    const parts = String(name || "A").trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return "A";
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+}
+
+function compareAgentHeroCard(agent, side = "a") {
+    const name = String(agent?.name || compareKey(agent) || "Agent");
+    const spec = String(agent?.specialty || "personal");
+    const level = Number(agent?.level || 1);
+    const acc = Math.max(0, Math.min(100, Number(agent?.accuracy || 0)));
+    const tone = colorFromText(spec);
+    return `
+        <article class="compare-hero-card ${side}" style="--hero-tone:${escapeHtml(tone)}">
+            <div class="compare-avatar-3d">${escapeHtml(initialsFromName(name))}</div>
+            <div class="compare-hero-main">
+                <strong>${escapeHtml(name)}</strong>
+                <span>${escapeHtml(spec)} · Lvl ${level}</span>
+            </div>
+            <div class="compare-hero-score">${acc.toFixed(1)}%</div>
+        </article>
+    `;
+}
+
+function ensureCompareSelectOptions() {
+    const aSel = document.getElementById("compare-agent-a");
+    const bSel = document.getElementById("compare-agent-b");
+    if (!aSel || !bSel) return;
+    const options = metaverseAgents.slice(0, 20).map((agent) => {
+        const key = compareKey(agent);
+        return `<option value="${escapeHtml(key)}">${escapeHtml(agent.name || key)}</option>`;
+    }).join("");
+    if (!options) {
+        aSel.innerHTML = "";
+        bSel.innerHTML = "";
+        return;
+    }
+    const prevA = aSel.value;
+    const prevB = bSel.value;
+    aSel.innerHTML = options;
+    bSel.innerHTML = options;
+    aSel.value = Array.from(aSel.options).some((o) => o.value === prevA) ? prevA : aSel.options[0].value;
+    if (Array.from(bSel.options).some((o) => o.value === prevB)) {
+        bSel.value = prevB;
+    } else {
+        bSel.value = bSel.options[Math.min(1, bSel.options.length - 1)].value;
+    }
+    if (aSel.value === bSel.value && bSel.options.length > 1) {
+        bSel.value = bSel.options[1].value;
+    }
+}
+
+function compareAgentByKey(key) {
+    const normalized = String(key || "").trim().toLowerCase();
+    return metaverseAgents.find((agent) => compareKey(agent) === normalized) || null;
+}
+
+function compareMetricsFor(agent) {
+    const key = compareKey(agent);
+    const usage = usageRowsBySpecialty[key] || {};
+    const up = Number(usage.ratings_up || 0);
+    const down = Number(usage.ratings_down || 0);
+    const messages = Number(usage.messages || agent.interactions || 0);
+    const level = Math.max(1, Number(agent.level || 1));
+    const accuracy = Math.max(0, Math.min(100, Number(agent.accuracy || 0)));
+    const consistency = up + down > 0 ? (up / (up + down)) * 100 : Math.max(35, accuracy * 0.72);
+    const responsePower = Math.max(25, Math.min(100, 40 + level * 9));
+    return [
+        { label: "Mastery", value: accuracy },
+        { label: "Level", value: clamp01(level / 10) * 100 },
+        { label: "Usage", value: clamp01(messages / 80) * 100 },
+        { label: "Upvotes", value: clamp01(up / 40) * 100 },
+        { label: "Consistency", value: Math.max(0, Math.min(100, consistency)) },
+        { label: "Response", value: responsePower },
+    ];
+}
+
+function compareInsight(metricLabel, aVal, bVal, aName, bName) {
+    const diff = Math.abs(aVal - bVal).toFixed(1);
+    if (aVal === bVal) return `${metricLabel}: both agents are equal here.`;
+    const better = aVal > bVal ? aName : bName;
+    const lower = aVal > bVal ? bName : aName;
+    const nuance = metricLabel === "Consistency"
+        ? "More stable answers across ratings."
+        : metricLabel === "Response"
+            ? "Faster and clearer response behavior."
+            : metricLabel === "Upvotes"
+                ? "Gets better user feedback."
+                : metricLabel === "Usage"
+                    ? "Used more often in sessions."
+                    : metricLabel === "Mastery"
+                        ? "Shows stronger problem quality."
+                        : "Shows stronger progression.";
+    return `${metricLabel}: ${better} leads ${lower} by ${diff} points. ${nuance}`;
+}
+
+function buildRadarPolygon(metrics, cx, cy, radius) {
+    const points = [];
+    const axis = metrics.length;
+    for (let i = 0; i < axis; i += 1) {
+        const angle = (-Math.PI / 2) + (Math.PI * 2 * i / axis);
+        const r = radius * clamp01(metrics[i].value / 100);
+        const x = cx + Math.cos(angle) * r;
+        const y = cy + Math.sin(angle) * r;
+        points.push(`${x.toFixed(2)},${y.toFixed(2)}`);
+    }
+    return points.join(" ");
+}
+
+function renderCompareRadar(agentA, agentB) {
+    const svg = document.getElementById("compare-radar");
+    const legend = document.getElementById("compare-legend");
+    const hero = document.getElementById("compare-hero");
+    const insight = document.getElementById("compare-insight");
+    if (!svg || !legend || !agentA || !agentB) return;
+    const metricsA = compareMetricsFor(agentA);
+    const metricsB = compareMetricsFor(agentB);
+    const labels = metricsA.map((m) => m.label);
+    const cx = 260;
+    const cy = 205;
+    const radius = 145;
+    const rings = [0.25, 0.5, 0.75, 1.0].map((r) => {
+        const rr = radius * r;
+        return `<circle cx="${cx}" cy="${cy}" r="${rr}" fill="none" stroke="rgba(173,196,226,0.15)" />`;
+    }).join("");
+    const axisLines = labels.map((label, i) => {
+        const angle = (-Math.PI / 2) + (Math.PI * 2 * i / labels.length);
+        const x = cx + Math.cos(angle) * radius;
+        const y = cy + Math.sin(angle) * radius;
+        const lx = cx + Math.cos(angle) * (radius + 26);
+        const ly = cy + Math.sin(angle) * (radius + 26);
+        const av = Number(metricsA[i].value || 0);
+        const bv = Number(metricsB[i].value || 0);
+        const info = compareInsight(label, av, bv, agentA.name || "Agent A", agentB.name || "Agent B");
+        return `
+            <line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="rgba(160,186,219,0.18)" />
+            <text x="${lx}" y="${ly}" class="radar-label" data-insight="${escapeHtml(info)}">${escapeHtml(label)} ${av.toFixed(0)}/${bv.toFixed(0)}</text>
+            <circle cx="${lx}" cy="${ly}" r="16" fill="rgba(0,0,0,0.001)" class="radar-hit" data-insight="${escapeHtml(info)}"></circle>
+        `;
+    }).join("");
+    const polyA = buildRadarPolygon(metricsA, cx, cy, radius);
+    const polyB = buildRadarPolygon(metricsB, cx, cy, radius);
+    svg.innerHTML = `
+        <g>
+            ${rings}
+            ${axisLines}
+            <polygon points="${polyA}" fill="rgba(59,130,246,0.24)" stroke="#3b82f6" stroke-width="2.5"></polygon>
+            <polygon points="${polyB}" fill="rgba(236,72,153,0.22)" stroke="#ec4899" stroke-width="2.5"></polygon>
+            <circle cx="${cx}" cy="${cy}" r="3" fill="#b8d8ff"></circle>
+        </g>
+    `;
+    legend.innerHTML = `
+        <div class="compare-legend-item"><span class="dot a"></span>${escapeHtml(agentA.name || compareKey(agentA))}</div>
+        <div class="compare-legend-item"><span class="dot b"></span>${escapeHtml(agentB.name || compareKey(agentB))}</div>
+    `;
+    if (hero) {
+        hero.innerHTML = `
+            ${compareAgentHeroCard(agentA, "a")}
+            ${compareAgentHeroCard(agentB, "b")}
+        `;
+    }
+    if (insight) {
+        insight.textContent = "Hover a radar label to see deeper agent analysis.";
+    }
+    const inlineTip = document.getElementById("compare-inline-tip");
+    const hideInlineTip = () => {
+        if (!inlineTip) return;
+        inlineTip.classList.remove("show");
+        inlineTip.textContent = "";
+    };
+    svg.querySelectorAll(".radar-hit, .radar-label[data-insight]").forEach((node) => {
+        node.addEventListener("mouseenter", (ev) => {
+            const msg = node.getAttribute("data-insight") || "";
+            if (insight) insight.textContent = node.getAttribute("data-insight") || "";
+            if (inlineTip) {
+                inlineTip.textContent = msg;
+                inlineTip.classList.add("show");
+                inlineTip.style.left = `${Math.min(window.innerWidth - 280, Math.max(12, ev.clientX + 14))}px`;
+                inlineTip.style.top = `${Math.min(window.innerHeight - 120, Math.max(12, ev.clientY + 12))}px`;
+            }
+        });
+        node.addEventListener("mousemove", (ev) => {
+            if (!inlineTip || !inlineTip.classList.contains("show")) return;
+            inlineTip.style.left = `${Math.min(window.innerWidth - 280, Math.max(12, ev.clientX + 14))}px`;
+            inlineTip.style.top = `${Math.min(window.innerHeight - 120, Math.max(12, ev.clientY + 12))}px`;
+        });
+        node.addEventListener("mouseleave", () => {
+            if (insight) insight.textContent = "Hover a radar label to see deeper agent analysis.";
+            hideInlineTip();
+        });
+    });
+}
+
+function renderCompareTable() {
+    const el = document.getElementById("agent-compare-list");
+    const hero = document.getElementById("compare-hero");
+    const insight = document.getElementById("compare-insight");
+    if (!el) return;
+    if (!metaverseAgents.length) {
+        el.innerHTML = `<div class="agent-memory-empty">No agent data yet.</div>`;
+        return;
+    }
+    const rows = metaverseAgents
+        .slice()
+        .sort((a, b) => Number(b.accuracy || 0) - Number(a.accuracy || 0))
+        .map((agent) => {
+            const usage = usageRowsBySpecialty[compareKey(agent)] || {};
+            const tone = colorFromText(agent.specialty || "personal");
+            const mastery = Math.max(0, Math.min(100, Number(agent.accuracy || 0)));
+            const usageVal = Number(usage.messages || agent.interactions || 0);
+            const usagePct = Math.max(0, Math.min(100, (usageVal / 90) * 100));
+            return `
+                <div class="compare-row">
+                    <div class="compare-agent-cell"><span class="compare-mini-avatar" style="--hero-tone:${escapeHtml(tone)}">${escapeHtml(initialsFromName(agent.name || agent.specialty || "A"))}</span><strong>${escapeHtml(agent.name || agent.specialty || "Agent")}</strong><span>${escapeHtml(agent.specialty || "personal")}</span></div>
+                    <div>Lvl ${escapeHtml(String(agent.level || 1))}</div>
+                    <div class="compare-metric"><span>${mastery.toFixed(1)}%</span><em style="width:${mastery.toFixed(1)}%"></em></div>
+                    <div class="compare-metric"><span>${escapeHtml(String(usageVal))}</span><em style="width:${usagePct.toFixed(1)}%"></em></div>
+                </div>
+            `;
+        });
+    el.innerHTML = `
+        <div class="compare-head compare-row">
+            <div>Agent</div>
+            <div>Level</div>
+            <div>Mastery</div>
+            <div>Usage</div>
+        </div>
+        ${rows.join("")}
+    `;
+    if (hero) hero.innerHTML = "";
+    if (insight) insight.textContent = "Table mode shows numeric score bars for quick comparison.";
+}
+
+function setCompareMode(mode) {
+    compareMode = mode === "table" ? "table" : "radar";
+    const radarWrap = document.getElementById("compare-radar-wrap");
+    const tableWrap = document.getElementById("agent-compare-list");
+    const inlineTip = document.getElementById("compare-inline-tip");
+    document.querySelectorAll(".compare-toggle-btn").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.mode === compareMode);
+    });
+    if (radarWrap) radarWrap.style.display = compareMode === "radar" ? "block" : "none";
+    if (tableWrap) tableWrap.style.display = compareMode === "table" ? "grid" : "none";
+    if (inlineTip) {
+        inlineTip.classList.remove("show");
+        inlineTip.textContent = "";
+    }
+}
+
+function renderAgentComparison() {
+    ensureCompareSelectOptions();
+    const aSel = document.getElementById("compare-agent-a");
+    const bSel = document.getElementById("compare-agent-b");
+    const insight = document.getElementById("compare-insight");
+    const agentA = compareAgentByKey(aSel?.value || "");
+    const agentB = compareAgentByKey(bSel?.value || "");
+    if (compareMode === "table") renderCompareTable();
+    if (agentA && agentB) {
+        renderCompareRadar(agentA, agentB);
+    } else {
+        const svg = document.getElementById("compare-radar");
+        if (svg) svg.innerHTML = "";
+        const legend = document.getElementById("compare-legend");
+        if (legend) legend.innerHTML = `<div class="agent-memory-empty">Pick two agents to compare.</div>`;
+        if (insight) insight.textContent = "Pick two agents to compare.";
+    }
+}
+
+async function chainAction(action, specialty) {
+    if (!requireLoginIfNeeded()) return;
+    try {
+        let endpoint = "";
+        let payload = { specialty };
+        const defaultUser = getActingAs();
+
+        if (action === "mint") {
+            endpoint = "/chain/mint-agent";
+            const owner = window.prompt("Owner name", defaultUser) || defaultUser;
+            payload.owner = owner;
+        } else if (action === "list") {
+            endpoint = "/chain/list-agent";
+            const seller = window.prompt("Seller name", defaultUser) || defaultUser;
+            const price = window.prompt("List price in SOL", "0.25");
+            payload.seller = seller;
+            payload.price_sol = price;
+        } else if (action === "buy") {
+            endpoint = "/chain/buy-agent";
+            const buyer = window.prompt("Buyer name", defaultUser);
+            if (!buyer) return;
+            payload.buyer = buyer;
+        } else if (action === "rent") {
+            endpoint = "/chain/rent-agent";
+            const renter = window.prompt("Renter name", defaultUser);
+            if (!renter) return;
+            const hours = window.prompt("Rental hours", "4");
+            payload.renter = renter;
+            payload.hours = hours;
+        } else if (action === "train") {
+            endpoint = "/chain/train-agent";
+            payload.signal = 1;
+            payload.requester = defaultUser;
+        } else {
+            return;
+        }
+
+        const res = await fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.status === "ok") {
+            toast(`Chain ${action} success`);
+            refreshAgentStats();
+            refreshMarketplace();
+            refreshUsageLog();
+        } else {
+            toast(data.error || `Chain ${action} failed`);
+        }
+    } catch (_) {
+        toast(`Chain ${action} failed`);
+    }
+}
+
+async function refreshMarketplace() {
+    const listEl = document.getElementById("marketplace-list");
+    const eventsEl = document.getElementById("marketplace-events");
+    const manageEl = document.getElementById("marketplace-manage-list");
+    if (!listEl || !eventsEl || !manageEl) return;
+    try {
+        const requester = getActingAs();
+        const res = await fetch("/chain/marketplace?requester=" + encodeURIComponent(requester));
+        const data = await res.json();
+        const statsRes = await fetch("/agent-stats?requester=" + encodeURIComponent(requester));
+        const myAgents = await statsRes.json();
+        const listed = data.listed || [];
+        const events = data.recent_events || [];
+
+        if (!listed.length) {
+            listEl.innerHTML = `<div class="agent-memory-empty">No listed agents right now.</div>`;
+        } else {
+            listEl.innerHTML = listed.map((item) => `
+                <div class="market-item premium">
+                    <div class="market-main">
+                        <strong>${escapeHtml(item.agent_name || item.specialty)}</strong>
+                        <span class="market-price">${escapeHtml(String(item.price_sol || "-"))} SOL</span>
+                    </div>
+                    <div class="market-sub"><span class="market-tag">${escapeHtml(item.specialty)}</span> Owner: ${escapeHtml(item.owner || "-")} · Mint: ${escapeHtml((item.mint_address || "").slice(0, 8))}...</div>
+                    <div class="chain-actions">
+                        <button class="chain-action" data-action="buy" data-specialty="${escapeHtml(item.specialty)}">Buy</button>
+                        <button class="chain-action" data-action="rent" data-specialty="${escapeHtml(item.specialty)}">Rent</button>
+                    </div>
+                </div>
+            `).join("");
+        }
+
+        if (!Array.isArray(myAgents) || !myAgents.length) {
+            manageEl.innerHTML = `<div class="agent-memory-empty">No agents available yet.</div>`;
+        } else {
+            manageEl.innerHTML = myAgents.map((agent) => `
+                <div class="market-item owner">
+                    <div class="market-main">
+                        <strong>${escapeHtml(agent.name || agent.specialty)}</strong>
+                        <span class="market-level">Lvl ${escapeHtml(String(agent.level || 1))}</span>
+                    </div>
+                    <div class="market-sub"><span class="market-tag">${escapeHtml(agent.specialty)}</span> Manage token actions for this agent</div>
+                    <div class="chain-actions">
+                        <button class="chain-action" data-action="mint" data-specialty="${escapeHtml(agent.specialty)}">Mint</button>
+                        <button class="chain-action" data-action="list" data-specialty="${escapeHtml(agent.specialty)}">List</button>
+                        <button class="chain-action" data-action="rent" data-specialty="${escapeHtml(agent.specialty)}">Rent</button>
+                        <button class="chain-action" data-action="train" data-specialty="${escapeHtml(agent.specialty)}">Train</button>
+                    </div>
+                </div>
+            `).join("");
+        }
+
+        if (!events.length) {
+            eventsEl.innerHTML = "";
+        } else {
+            const rendered = events.slice().reverse().map((ev) => {
+                const payload = ev.payload || {};
+                let summary = `${ev.event}`;
+                if (ev.event === "transfer") summary = `transfer ${payload.from || "?"} -> ${payload.to || "?"}`;
+                if (ev.event === "list") summary = `list ${payload.seller || "?"} @ ${payload.price_sol || "-"} SOL`;
+                if (ev.event === "rent") summary = `rent ${payload.renter || "?"} (${payload.hours || 0}h)`;
+                if (ev.event === "mint") summary = `mint ${payload.owner || "?"}`;
+                return `<div class="market-event"><span class="market-event-spec">${escapeHtml(ev.specialty || "-")}</span><span>${escapeHtml(summary)}</span></div>`;
+            }).join("");
+            eventsEl.innerHTML = `
+                <div class="market-events-head">Recent Chain Activity</div>
+                ${rendered}
+            `;
+        }
+    } catch (_) {}
+}
+
+async function refreshUsageLog() {
+    const listEl = document.getElementById("usage-log-list");
+    if (!listEl) return;
+    try {
+        const res = await fetch("/usage-log");
+        const data = await res.json();
+        const rows = data.agents || [];
+        usageRowsBySpecialty = {};
+        rows.forEach((r) => {
+            usageRowsBySpecialty[String(r.specialty || "").trim().toLowerCase()] = r;
+        });
+        if (!rows.length) {
+            listEl.innerHTML = `<div class="agent-memory-empty">No usage yet.</div>`;
+            renderAgentComparison();
+            return;
+        }
+        listEl.innerHTML = rows.slice(0, 8).map((r) => `
+            <div class="usage-row">
+                <span>${escapeHtml(r.specialty)}</span>
+                <span>msg ${r.messages}</span>
+                <span>👍 ${r.ratings_up}</span>
+                <span>👎 ${r.ratings_down}</span>
+            </div>
+        `).join("");
+        renderAgentComparison();
+    } catch (_) {}
+}
+
+function renderAuthStatus(state) {
+    const el = document.getElementById("auth-status");
+    if (!el) return;
+    if (!state?.authenticated) {
+        el.textContent = "Not signed in";
+        return;
+    }
+    const user = state.user || {};
+    el.textContent = `Signed in as ${user.username} (${user.role}, tenant=${user.tenant_id})`;
+}
+
+async function refreshAuthState() {
+    try {
+        const res = await fetch("/auth/me");
+        const data = await res.json();
+        if (data?.authenticated) {
+            setAuthUser(data.user || null);
+            renderAuthStatus(data);
+            const username = String((data.user || {}).username || "").trim();
+            if (username) {
+                setActingAs(username, { silent: true });
+            }
+            return data;
+        }
+        setAuthToken("");
+        setAuthUser(null);
+        renderAuthStatus({ authenticated: false });
+        return { authenticated: false };
+    } catch (_) {
+        renderAuthStatus({ authenticated: false });
+        return { authenticated: false };
+    }
+}
+
+async function refreshAuthMode() {
+    try {
+        const res = await fetch("/auth/mode");
+        const data = await res.json();
+        authModeRequired = !!data?.auth_required;
+        const toggle = document.getElementById("auth-required-toggle");
+        if (toggle) toggle.checked = authModeRequired;
+        setAuthModeDescription(authModeRequired);
+        return authModeRequired;
+    } catch (_) {
+        return false;
+    }
+}
+
+async function saveAuthMode(enabled) {
+    const res = await fetch("/auth/mode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ auth_required: !!enabled })
+    });
+    const data = await res.json();
+    if (data.status === "ok") {
+        authModeRequired = !!data.auth_required;
+        setAuthModeDescription(authModeRequired);
+        toast(`Auth required ${authModeRequired ? "enabled" : "disabled"}`);
+        return;
+    }
+    const toggle = document.getElementById("auth-required-toggle");
+    if (toggle) toggle.checked = authModeRequired;
+    toast(data.error || "Failed to change auth mode");
+}
+
+function requireLoginIfNeeded() {
+    if (!authModeRequired) return true;
+    if (getAuthToken()) return true;
+    toast("Login required in this mode");
+    return false;
+}
+
+async function authLogin() {
+    const username = (document.getElementById("auth-username")?.value || "").trim();
+    const password = (document.getElementById("auth-password")?.value || "").trim();
+    if (!username || !password) {
+        toast("Username and password required");
+        return;
+    }
+    const res = await fetch("/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password })
+    });
+    const data = await res.json();
+    if (data.status === "ok" && data.token) {
+        setAuthToken(data.token);
+        setAuthUser(data.user || null);
+        renderAuthStatus({ authenticated: true, user: data.user || {} });
+        setActingAs((data.user || {}).username || username);
+        toast("Logged in");
+        return;
+    }
+    toast(data.error || "Login failed");
+}
+
+async function authRegister() {
+    const username = (document.getElementById("auth-username")?.value || "").trim();
+    const password = (document.getElementById("auth-password")?.value || "").trim();
+    const tenant = (document.getElementById("auth-tenant")?.value || "default").trim() || "default";
+    const role = (document.getElementById("auth-role")?.value || "user").trim();
+    if (!username || !password) {
+        toast("Username and password required");
+        return;
+    }
+    const res = await fetch("/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password, tenant_id: tenant, role })
+    });
+    const data = await res.json();
+    if (data.status === "ok") {
+        toast("Registered. You can now login.");
+        return;
+    }
+    toast(data.error || "Register failed");
+}
+
+async function authLogout() {
+    if (!window.confirm("Logout from this session?")) return;
+    try {
+        await fetch("/auth/logout", { method: "POST" });
+    } catch (_) {}
+    setAuthToken("");
+    setAuthUser(null);
+    renderAuthStatus({ authenticated: false });
+    toast("Logged out");
+}
+
+function renderMemoryScopes(data) {
+    const wrap = document.getElementById("memory-scope-list");
+    if (!wrap) return;
+    const active = new Set((data?.active_scopes || []).map((x) => String(x)));
+    const available = Array.isArray(data?.available_scopes) ? data.available_scopes : [];
+    wrap.innerHTML = available.map((scope) => `
+        <label class="settings-chip">
+            <input type="checkbox" class="memory-scope-box" value="${escapeHtml(String(scope))}" ${active.has(String(scope)) ? "checked" : ""}>
+            <span>${escapeHtml(String(scope))}</span>
+        </label>
+    `).join("");
+}
+
+function renderMemoryItems(items) {
+    const list = document.getElementById("memory-items-list");
+    if (!list) return;
+    if (!Array.isArray(items) || !items.length) {
+        list.innerHTML = `<div class="agent-memory-empty">No memory items yet.</div>`;
+        return;
+    }
+    list.innerHTML = items.slice().reverse().slice(0, 60).map((item) => `
+        <div class="settings-list-item">
+            <div>${escapeHtml(String(item.text || ""))}</div>
+            <div class="meta">scope=${escapeHtml(String(item.scope || "personal"))} · confidence=${escapeHtml(String(item.confidence ?? "-"))}</div>
+            <div class="settings-actions">
+                <button type="button" class="memory-edit-btn" data-id="${escapeHtml(String(item.id || ""))}">Edit</button>
+                <button type="button" class="memory-del-btn" data-id="${escapeHtml(String(item.id || ""))}">Delete</button>
+            </div>
+        </div>
+    `).join("");
+}
+
+async function refreshMemoryControls() {
+    const requester = getActingAs();
+    try {
+        const scopesRes = await fetch(`/memory/scopes?requester=${encodeURIComponent(requester)}`);
+        const scopesData = await scopesRes.json();
+        if (!scopesData.error) renderMemoryScopes(scopesData);
+        const itemsRes = await fetch(`/memory/items?requester=${encodeURIComponent(requester)}`);
+        const itemsData = await itemsRes.json();
+        if (!itemsData.error) renderMemoryItems(itemsData.items || []);
+    } catch (_) {}
+}
+
+async function saveMemoryScopesFromUi() {
+    const requester = getActingAs();
+    const boxes = Array.from(document.querySelectorAll(".memory-scope-box:checked"));
+    const active_scopes = boxes.map((b) => b.value);
+    const res = await fetch("/memory/scopes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requester, active_scopes })
+    });
+    const data = await res.json();
+    if (data.status === "ok") {
+        toast("Memory scopes saved");
+        return;
+    }
+    toast(data.error || "Failed to save scopes");
+}
+
+async function addMemoryItemFromUi() {
+    const requester = getActingAs();
+    const textInput = document.getElementById("memory-new-text");
+    const scopeInput = document.getElementById("memory-new-scope");
+    const text = (textInput?.value || "").trim();
+    const scope = (scopeInput?.value || "personal").trim();
+    if (!text) {
+        toast("Memory text is required");
+        return;
+    }
+    const res = await fetch("/memory/items", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requester, text, scope })
+    });
+    const data = await res.json();
+    if (data.status === "ok") {
+        if (textInput) textInput.value = "";
+        toast("Memory item added");
+        refreshMemoryControls();
+        return;
+    }
+    toast(data.error || "Failed to add memory");
+}
+
+async function updateMemoryItemFromUi(memoryId) {
+    const requester = getActingAs();
+    const nextText = window.prompt("Update memory text");
+    if (nextText === null) return;
+    const trimmed = String(nextText || "").trim();
+    if (!trimmed) {
+        toast("Memory text cannot be empty");
+        return;
+    }
+    const res = await fetch(`/memory/items/${encodeURIComponent(memoryId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requester, text: trimmed })
+    });
+    const data = await res.json();
+    if (data.status === "ok") {
+        toast("Memory updated");
+        refreshMemoryControls();
+        return;
+    }
+    toast(data.error || "Failed to update memory");
+}
+
+async function deleteMemoryItemFromUi(memoryId) {
+    if (!window.confirm("Delete this memory item?")) return;
+    const requester = getActingAs();
+    const res = await fetch(`/memory/items/${encodeURIComponent(memoryId)}?requester=${encodeURIComponent(requester)}`, {
+        method: "DELETE"
+    });
+    const data = await res.json();
+    if (data.status === "ok") {
+        toast("Memory removed");
+        refreshMemoryControls();
+        return;
+    }
+    toast(data.error || "Failed to remove memory");
+}
+
+function renderEvaluationReport(data) {
+    const el = document.getElementById("evaluation-report");
+    if (!el) return;
+    if (!data || data.error) {
+        el.innerHTML = `<div class="agent-memory-empty">${escapeHtml(data?.error || "No evaluation data")}</div>`;
+        return;
+    }
+    const kpis = data.kpis || {};
+    const raw = data.raw || {};
+    el.innerHTML = `
+        <div class="settings-list-item"><div>Task Success: ${escapeHtml(String(kpis.task_success_rate ?? "-"))}</div></div>
+        <div class="settings-list-item"><div>Reminder Correctness: ${escapeHtml(String(kpis.reminder_correctness_rate ?? "-"))}</div></div>
+        <div class="settings-list-item"><div>Memory Precision: ${escapeHtml(String(kpis.memory_precision_rate ?? "-"))}</div></div>
+        <div class="settings-list-item"><div>Hallucination Rate: ${escapeHtml(String(kpis.hallucination_rate ?? "-"))}</div></div>
+        <div class="settings-list-item"><div class="meta">Interactions: ${escapeHtml(String(raw.total_interactions ?? 0))}</div></div>
+    `;
+}
+
+function renderCheckpointList(data) {
+    const el = document.getElementById("checkpoint-list");
+    if (!el) return;
+    const checkpoints = Array.isArray(data?.checkpoints) ? data.checkpoints : [];
+    if (!checkpoints.length) {
+        el.innerHTML = `<div class="agent-memory-empty">No checkpoints yet.</div>`;
+        return;
+    }
+    const activeId = String(data?.active_checkpoint_id || "");
+    el.innerHTML = checkpoints.slice().reverse().map((cp) => `
+        <div class="settings-list-item">
+            <div>${escapeHtml(String(cp.id || "checkpoint"))}</div>
+            <div class="meta">${escapeHtml(String(cp.status || "candidate"))} · ${escapeHtml(String(cp.dataset_path || ""))}</div>
+            <div class="settings-actions">
+                <button type="button" class="checkpoint-promote-btn" data-id="${escapeHtml(String(cp.id || ""))}" ${String(cp.id) === activeId ? "disabled" : ""}>Promote</button>
+            </div>
+        </div>
+    `).join("");
+}
+
+async function refreshEvaluationAndQuality() {
+    const requester = getActingAs();
+    try {
+        const evalRes = await fetch(`/evaluation/report?requester=${encodeURIComponent(requester)}`);
+        const evalData = await evalRes.json();
+        renderEvaluationReport(evalData);
+        const cpRes = await fetch(`/checkpoints/list?requester=${encodeURIComponent(requester)}`);
+        const cpData = await cpRes.json();
+        renderCheckpointList(cpData);
+    } catch (_) {}
+}
+
+async function runRegressionFromUi() {
+    const requester = getActingAs();
+    const res = await fetch(`/quality/regression/run?requester=${encodeURIComponent(requester)}`);
+    const data = await res.json();
+    if (data?.passed) {
+        toast(`Regression passed (${data.summary?.pass_count || 0}/${data.summary?.total || 0})`);
+    } else {
+        toast("Regression has failing checks");
+    }
+}
+
+async function createCheckpointFromUi() {
+    const requester = getActingAs();
+    const notes = (document.getElementById("checkpoint-notes")?.value || "").trim();
+    const res = await fetch("/checkpoints/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requester, notes })
+    });
+    const data = await res.json();
+    if (data.status === "ok") {
+        toast("Checkpoint created");
+        refreshEvaluationAndQuality();
+        return;
+    }
+    toast(data.error || "Checkpoint create failed");
+}
+
+async function promoteCheckpointFromUi(checkpointId) {
+    const requester = getActingAs();
+    const res = await fetch(`/checkpoints/${encodeURIComponent(checkpointId)}/promote`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requester })
+    });
+    const data = await res.json();
+    if (data.status === "ok") {
+        toast("Checkpoint promoted");
+        refreshEvaluationAndQuality();
+        return;
+    }
+    toast(data.error || "Checkpoint promote failed");
+}
+
+function loadAgentAvatarProfiles() {
+    try {
+        const parsed = JSON.parse(localStorage.getItem(AGENT_AVATAR_PROFILE_KEY) || "{}");
+        return parsed && typeof parsed === "object" ? parsed : {};
+    } catch (_) {
+        return {};
+    }
+}
+
+function saveAgentAvatarProfiles(profiles) {
+    try {
+        localStorage.setItem(AGENT_AVATAR_PROFILE_KEY, JSON.stringify(profiles || {}));
+    } catch (_) {}
+}
+
+function getAvatarProfile(specialty) {
+    const key = String(specialty || "personal").trim().toLowerCase() || "personal";
+    const profiles = loadAgentAvatarProfiles();
+    return profiles[key] || { shape: "orb", color: "#22d3ee" };
+}
+
+function avatarClassName(shape) {
+    const s = String(shape || "orb").toLowerCase();
+    if (s === "square") return "square";
+    if (s === "diamond") return "diamond";
+    return "orb";
+}
+
+function avatarBadgeHtml(specialty) {
+    const profile = getAvatarProfile(specialty);
+    const shape = avatarClassName(profile.shape);
+    const color = String(profile.color || "#22d3ee");
+    return `<span class="meta-agent-avatar ${shape}" style="--agent-avatar-color:${escapeHtml(color)}"></span>`;
+}
+
+function renderMetaverseScene() {
+    const sceneEl = document.getElementById("metaverse-scene");
+    if (!sceneEl) return;
+    if (!metaverseAgents.length) {
+        sceneEl.innerHTML = `<div class="agent-memory-empty">No agents available for the scene yet.</div>`;
+        return;
+    }
+
+    const items = metaverseAgents.slice(0, 12).map((agent, idx) => {
+        const col = idx % 4;
+        const row = Math.floor(idx / 4);
+        const left = 12 + col * 24 + ((row % 2) * 5);
+        const top = 12 + row * 30;
+        const level = Number(agent.level || 1);
+        return `
+            <article class="meta-zone" style="left:${left}%; top:${top}%;">
+                <div class="meta-zone-avatar">${avatarBadgeHtml(agent.specialty)}</div>
+                <div class="meta-zone-name">${escapeHtml(agent.name || agent.specialty)}</div>
+                <div class="meta-zone-tag">${escapeHtml(agent.specialty || "personal")} · L${level}</div>
+                <div class="meta-zone-actions">
+                    <button type="button" class="meta-zone-btn" data-zone-action="talk" data-specialty="${escapeHtml(agent.specialty)}" data-name="${escapeHtml(agent.name || agent.specialty)}">Talk</button>
+                    <button type="button" class="meta-zone-btn alt" data-zone-action="train" data-specialty="${escapeHtml(agent.specialty)}" data-name="${escapeHtml(agent.name || agent.specialty)}">Train</button>
+                </div>
+            </article>
+        `;
+    }).join("");
+
+    sceneEl.innerHTML = `
+        <div class="meta-orbit orbit-one"></div>
+        <div class="meta-orbit orbit-two"></div>
+        ${items}
+    `;
+}
+
+function renderMetaverseAgentPorts() {
+    const portsEl = document.getElementById("metaverse-agent-ports");
+    if (!portsEl) return;
+    if (!metaverseAgents.length) {
+        portsEl.innerHTML = `<div class="agent-memory-empty">Agent ports will appear after stats load.</div>`;
+        return;
+    }
+    portsEl.innerHTML = metaverseAgents.slice(0, 10).map((agent) => `
+        <div class="meta-port">
+            <div class="meta-port-main">
+                <strong>${avatarBadgeHtml(agent.specialty)} ${escapeHtml(agent.name || agent.specialty)}</strong>
+                <span>${escapeHtml(agent.specialty || "personal")} · ${escapeHtml(agent.category || "personal")}</span>
+            </div>
+            <div class="meta-port-actions">
+                <button type="button" class="meta-zone-btn" data-zone-action="talk" data-specialty="${escapeHtml(agent.specialty)}" data-name="${escapeHtml(agent.name || agent.specialty)}">Open Chat</button>
+                <button type="button" class="meta-zone-btn alt" data-zone-action="train" data-specialty="${escapeHtml(agent.specialty)}" data-name="${escapeHtml(agent.name || agent.specialty)}">Boost</button>
+            </div>
+        </div>
+    `).join("");
+}
+
+async function refreshMetaverseFeatures() {
+    renderAvatarStudioCard();
+    refreshMetaverseMarket();
+}
+
+function renderAvatarStudioCard(useControlValues = false) {
+    const cardEl = document.getElementById("metaverse-avatar-card");
+    const agentSelect = document.getElementById("avatar-agent-select");
+    const shapeSelect = document.getElementById("avatar-shape-select");
+    const colorInput = document.getElementById("avatar-color-input");
+    if (!cardEl || !agentSelect || !shapeSelect || !colorInput) return;
+
+    const specialty = (agentSelect.value || currentAgentSpecialty || "personal").trim().toLowerCase();
+    const profile = getAvatarProfile(specialty);
+    if (!useControlValues) {
+        shapeSelect.value = avatarClassName(profile.shape);
+        colorInput.value = String(profile.color || "#22d3ee");
+    }
+    const liveShape = avatarClassName(shapeSelect.value || profile.shape);
+    const liveColor = String(colorInput.value || profile.color || "#22d3ee");
+
+    const agent = metaverseAgents.find((a) => String(a.specialty || "").toLowerCase() === specialty) || {};
+    const level = Number(agent.level || 1);
+    const accuracy = Math.max(0, Math.min(100, Number(agent.accuracy || 0)));
+    cardEl.innerHTML = `
+        <div class="meta-avatar-preview">
+            <span class="meta-agent-avatar ${escapeHtml(liveShape)}" style="--agent-avatar-color:${escapeHtml(liveColor)}"></span>
+            <div class="meta-avatar-meta">
+                <strong>${escapeHtml(agent.name || specialty)}</strong>
+                <span>${escapeHtml(specialty)} · L${level}</span>
+                <span>${accuracy.toFixed(1)}% mastery</span>
+            </div>
+        </div>
+        <p class="meta-avatar-note">2D avatar/status card. Customize shape and color per agent.</p>
+        <button type="button" class="meta-zone-btn" data-avatar-action="train-chat" data-specialty="${escapeHtml(specialty)}">Open Training Chat</button>
+    `;
+}
+
+function saveAvatarStudioProfile() {
+    const agentSelect = document.getElementById("avatar-agent-select");
+    const shapeSelect = document.getElementById("avatar-shape-select");
+    const colorInput = document.getElementById("avatar-color-input");
+    if (!agentSelect || !shapeSelect || !colorInput) return;
+    const specialty = (agentSelect.value || "").trim().toLowerCase();
+    if (!specialty) return;
+    const profiles = loadAgentAvatarProfiles();
+    profiles[specialty] = {
+        shape: avatarClassName(shapeSelect.value),
+        color: String(colorInput.value || "#22d3ee"),
+    };
+    saveAgentAvatarProfiles(profiles);
+    renderAvatarStudioCard();
+    renderMetaverseScene();
+    renderMetaverseAgentPorts();
+    toast(`Avatar saved for ${specialty}`);
+}
+
+async function refreshMetaverseMarket() {
+    const listEl = document.getElementById("metaverse-market-list");
+    if (!listEl) return;
+    try {
+        const res = await fetch("/chain/marketplace");
+        const data = await res.json();
+        const listed = Array.isArray(data.listed) ? data.listed : [];
+        if (!listed.length) {
+            listEl.innerHTML = `<div class="agent-memory-empty">No listed agents right now.</div>`;
+            return;
+        }
+        listEl.innerHTML = listed.slice(0, 8).map((item) => `
+            <div class="market-item">
+                <div class="market-main">
+                    <strong>${escapeHtml(item.agent_name || item.specialty)}</strong>
+                    <span>${escapeHtml(item.specialty || "-")} · ${escapeHtml(String(item.price_sol || "-"))} SOL</span>
+                </div>
+                <div class="market-sub">Owner: ${escapeHtml(item.owner || "-")}</div>
+                <div class="meta-market-actions">
+                    <button class="chain-action" data-action="buy" data-specialty="${escapeHtml(item.specialty)}">Buy</button>
+                    <button class="chain-action" data-action="rent" data-specialty="${escapeHtml(item.specialty)}">Rent</button>
+                </div>
+            </div>
+        `).join("");
+    } catch (_) {}
+}
+
+function renderMetaversePresence() {
+    const root = document.getElementById("metaverse-presence");
+    const zoneSelect = document.getElementById("metaverse-zone-select");
+    const statusSelect = document.getElementById("metaverse-status-select");
+    if (!root) return;
+    const me = metaverseState?.me || null;
+    const online = Array.isArray(metaverseState?.online) ? metaverseState.online : [];
+
+    if (zoneSelect && me?.zone) zoneSelect.value = me.zone;
+    if (statusSelect && me?.status) statusSelect.value = me.status;
+
+    if (!me) {
+        root.innerHTML = `<div class="agent-memory-empty">Join the world to start presence sync.</div>`;
+        return;
+    }
+
+    const peers = online.slice(0, 8).map((row) => `
+        <div class="meta-presence-peer">
+            <strong>${escapeHtml(row.display_name || "user")}</strong>
+            <span>${escapeHtml(row.zone_label || row.zone || "zone")} · ${escapeHtml(row.status || "online")}</span>
+        </div>
+    `).join("");
+
+    root.innerHTML = `
+        <div class="meta-presence-self">
+            <strong>${escapeHtml(me.display_name || "You")}</strong>
+            <span>${escapeHtml(me.zone_label || me.zone || "Central Hub")} · ${escapeHtml(me.status || "online")}</span>
+            ${me.mission ? `<p>${escapeHtml(me.mission)}</p>` : `<p>No active mission set.</p>`}
+        </div>
+        <div class="meta-presence-list">
+            ${peers || `<div class="agent-memory-empty">No other presences yet.</div>`}
+        </div>
+    `;
+}
+
+async function refreshMetaverseState() {
+    try {
+        const requester = getActingAs();
+        const res = await fetch("/metaverse/state?requester=" + encodeURIComponent(requester));
+        const data = await res.json();
+        metaverseState = {
+            zones: Array.isArray(data.zones) ? data.zones : [],
+            me: data.me || null,
+            online: Array.isArray(data.online) ? data.online : []
+        };
+        renderMetaversePresence();
+    } catch (_) {}
+}
+
+async function syncMetaversePresence() {
+    const zoneSelect = document.getElementById("metaverse-zone-select");
+    const statusSelect = document.getElementById("metaverse-status-select");
+    const requester = getActingAs();
+    const zone = (zoneSelect?.value || "").trim() || "hub";
+    const status = (statusSelect?.value || "").trim() || "online";
+    try {
+        await fetch("/metaverse/travel", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ requester, zone, status })
+        });
+        await refreshMetaverseState();
+        toast(`Metaverse synced: ${zone}`);
+    } catch (_) {
+        toast("Metaverse sync failed");
+    }
+}
+
+async function refreshAgentMemory() {
+    const historyEl = document.getElementById("agent-memory-history");
+    const metaEl = document.getElementById("agent-memory-meta");
+    if (!historyEl || !metaEl) return;
+    try {
+        const requester = getActingAs();
+        const res = await fetch(`/agent-memory?specialty=${encodeURIComponent(currentAgentSpecialty)}&limit=10&requester=${encodeURIComponent(requester)}`);
+        const data = await res.json();
+
+        const factText = (data.facts || []).slice(-2).map((f) => `<li>${escapeHtml(f)}</li>`).join("");
+        const freshFacts = Array.isArray(data.facts) ? data.facts.map((f) => String(f || "").trim()).filter(Boolean) : [];
+        if (freshFacts.length) {
+            const merged = [...freshFacts, ...memoryTickerFacts].filter(Boolean);
+            memoryTickerFacts = Array.from(new Set(merged)).slice(0, 20);
+        }
+        metaEl.innerHTML = `
+            <div><strong>${escapeHtml(data.name || "Agent")}</strong> · Level ${Number(data.level || 1)}</div>
+            ${factText ? `<ul class="memory-facts">${factText}</ul>` : ""}
+        `;
+
+        const history = data.history || [];
+        if (!history.length) {
+            historyEl.innerHTML = `<div class="agent-memory-empty">No recent messages yet.</div>`;
+            return;
+        }
+        historyEl.innerHTML = history.map((item) => `
+            <div class="memory-item ${item.role === "user" ? "user" : "ai"}">
+                <span class="role">${item.role === "user" ? "You" : "Agent"}</span>
+                <span class="text">${escapeHtml(item.content)}</span>
+            </div>
+        `).join("");
+    } catch (_) {}
+}
+
+function reminderPriorityMessage(now = new Date()) {
+    const actor = getActingAs() || "You";
+    const pending = reminderItemsCache
+        .filter((item) => !item?.done && item?.due_at)
+        .map((item) => {
+            const due = new Date(item.due_at);
+            return { item, due, mins: Math.round((due.getTime() - now.getTime()) / 60000) };
+        })
+        .filter((row) => Number.isFinite(row.due.getTime()))
+        .sort((a, b) => a.due.getTime() - b.due.getTime());
+    if (!pending.length) return "";
+    const next = pending[0];
+    if (next.mins <= 0) {
+        return `Lumiere remembers: ${actor}'s priority reminder now - ${next.item.text}`;
+    }
+    if (next.mins <= 30) {
+        return `Lumiere remembers: ${actor}'s priority reminder in ${next.mins} min - ${next.item.text}`;
+    }
+    return "";
+}
+
+function personalizeMemoryFactText(fact) {
+    const actor = getActingAs() || "You";
+    let text = String(fact || "").trim();
+    if (!text) return "";
+    text = text.replace(/^User\s*:\s*/i, `${actor}: `);
+    text = text.replace(/\bUser wants to\b/gi, `${actor} wants to`);
+    text = text.replace(/\bUser wants\b/gi, `${actor} wants`);
+    text = text.replace(/\bthe user\b/gi, actor);
+    return text;
+}
+
+function renderRemembersFooter() {
+    const footer = document.getElementById("remembers-footer");
+    if (!footer) return;
+    const urgent = reminderPriorityMessage();
+    if (urgent) {
+        footer.textContent = urgent;
+        footer.classList.add("urgent");
+        return;
+    }
+    footer.classList.remove("urgent");
+    if (memoryTickerFacts.length) {
+        const idx = Math.max(0, Math.min(memoryTickerFacts.length - 1, memoryTickerIndex));
+        footer.textContent = `Lumiere remembers: ${personalizeMemoryFactText(memoryTickerFacts[idx])}`;
+        return;
+    }
+    footer.textContent = "Lumiere remembers: still learning your preferences.";
+}
+
+function advanceMemoryTicker() {
+    if (reminderPriorityMessage()) {
+        renderRemembersFooter();
+        return;
+    }
+    if (memoryTickerFacts.length > 1) {
+        memoryTickerIndex = (memoryTickerIndex + 1) % memoryTickerFacts.length;
+    }
+    renderRemembersFooter();
+}
+
+async function refreshMemoryFact() {
+    try {
+        const requester = getActingAs();
+        const res = await fetch(`/memory-fact?specialty=${encodeURIComponent(currentAgentSpecialty)}&requester=${encodeURIComponent(requester)}`);
+        const data = await res.json();
+        const fact = String(data?.fact || "").trim();
+        if (fact) {
+            const already = memoryTickerFacts.includes(fact);
+            memoryTickerFacts = Array.from(new Set([fact, ...memoryTickerFacts])).slice(0, 20);
+            if (!already) memoryTickerIndex = 0;
+        }
+        renderRemembersFooter();
+    } catch (_) {}
+}
+
+function renderReminders(items) {
+    const list = document.getElementById("reminder-list");
+    if (!list) return;
+    if (!items.length) {
+        list.innerHTML = `<div class="agent-memory-empty">No reminders yet.</div>`;
+        return;
+    }
+    const fmtDue = (raw) => {
+        if (!raw) return "";
+        const dt = new Date(raw);
+        if (Number.isNaN(dt.getTime())) return "";
+        return dt.toLocaleString([], {
+            month: "short",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit"
+        });
+    };
+    list.innerHTML = items.map((item) => `
+        <div class="reminder-item ${item.done ? "done" : ""}">
+            <button class="reminder-toggle" data-id="${item.id}" title="Toggle">
+                ${item.done ? "Done" : "Todo"}
+            </button>
+            <div class="reminder-text">
+                <div>${escapeHtml(item.text)}</div>
+                ${item.due_at ? `<small class="reminder-due">Due: ${escapeHtml(fmtDue(item.due_at) || item.due_at)}</small>` : ""}
+            </div>
+            <button class="reminder-delete" data-id="${item.id}" title="Delete">X</button>
+        </div>
+    `).join("");
+}
+
+async function refreshReminders() {
+    try {
+        const res = await fetch("/reminders");
+        const items = await res.json();
+        reminderItemsCache = Array.isArray(items) ? items : [];
+        renderReminders(reminderItemsCache);
+        renderRemembersFooter();
+    } catch (_) {}
+}
+
+function unlockReminderAudio() {
+    if (reminderAudioReady) return;
+    try {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return;
+        reminderAudioCtx = reminderAudioCtx || new Ctx();
+        if (reminderAudioCtx.state === "suspended") {
+            reminderAudioCtx.resume().catch(() => {});
+        }
+        reminderAudioReady = true;
+    } catch (_) {}
+}
+
+function playReminderSound() {
+    try {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return;
+        reminderAudioCtx = reminderAudioCtx || new Ctx();
+        if (reminderAudioCtx.state === "suspended") {
+            reminderAudioCtx.resume().catch(() => {});
+        }
+        const now = reminderAudioCtx.currentTime;
+        const tone = (freq, start, duration) => {
+            const osc = reminderAudioCtx.createOscillator();
+            const gain = reminderAudioCtx.createGain();
+            osc.type = "triangle";
+            osc.frequency.value = freq;
+            gain.gain.setValueAtTime(0.0001, start);
+            gain.gain.exponentialRampToValueAtTime(0.22, start + 0.01);
+            gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+            osc.connect(gain);
+            gain.connect(reminderAudioCtx.destination);
+            osc.start(start);
+            osc.stop(start + duration + 0.02);
+        };
+        // Stronger attention pattern.
+        tone(880, now, 0.14);
+        tone(1040, now + 0.16, 0.14);
+        tone(740, now + 0.34, 0.18);
+        tone(880, now + 0.56, 0.16);
+        if ("vibrate" in navigator) {
+            navigator.vibrate([160, 80, 180, 90, 220]);
+        }
+    } catch (_) {}
+}
+
+function speakReminderText(text) {
+    try {
+        const msg = String(text || "").trim();
+        if (!msg) return;
+        speakText(`Reminder due now. ${msg}`, { rate: 0.95, pitch: 1.07, volume: 1 });
+    } catch (_) {}
+}
+
+function showReminderAlert(items) {
+    const overlay = document.getElementById("reminder-alert-overlay");
+    const list = document.getElementById("reminder-alert-list");
+    if (!overlay || !list) return;
+    const rows = (items || []).slice(0, 4);
+    if (!rows.length) return;
+    const fmtDue = (raw) => {
+        const dt = new Date(raw);
+        if (Number.isNaN(dt.getTime())) return "";
+        return dt.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    };
+    list.innerHTML = rows.map((item) => `
+        <div class="reminder-alert-row">
+            <span>${escapeHtml(String(item.text || "Reminder"))}</span>
+            ${item?.due_at ? `<small>Due: ${escapeHtml(fmtDue(item.due_at) || String(item.due_at))}</small>` : ""}
+        </div>
+    `).join("");
+    overlay.classList.add("open");
+    overlay.setAttribute("aria-hidden", "false");
+}
+
+async function pollDueReminders() {
+    try {
+        const res = await fetch("/reminders/due?channel=browser&max_items=3");
+        const data = await res.json();
+        const items = Array.isArray(data?.items) ? data.items : [];
+        if (!items.length) return;
+        playReminderSound();
+        const fresh = [];
+        items.forEach((item) => {
+            const rid = String(item?.id || item?.text || "");
+            const last = Number(reminderAlertSeen.get(rid) || 0);
+            if (Date.now() - last > 90000) {
+                reminderAlertSeen.set(rid, Date.now());
+                fresh.push(item);
+            }
+            const label = String(item?.text || "Reminder");
+            toast(`Reminder due: ${label}`);
+        });
+        if (fresh.length) {
+            const spoken = fresh.map((x) => x.text).filter(Boolean).join(". ");
+            showReminderAlert(fresh);
+            speakReminderText(spoken);
+            window.clearTimeout(reminderSpeechRepeatTimer);
+            reminderSpeechRepeatTimer = window.setTimeout(() => {
+                speakReminderText(spoken);
+                playReminderSound();
+            }, 7000);
+            if ("Notification" in window && document.visibilityState !== "visible") {
+                if (Notification.permission === "granted") {
+                    new Notification("Lumiere Reminder Due", { body: spoken || "You have a due reminder." });
+                } else if (Notification.permission !== "denied") {
+                    Notification.requestPermission().then((perm) => {
+                        if (perm === "granted") {
+                            new Notification("Lumiere Reminder Due", { body: spoken || "You have a due reminder." });
+                        }
+                    }).catch(() => {});
+                }
+            }
+        }
+        refreshReminders();
+        renderRemembersFooter();
+    } catch (_) {}
+}
+
+async function addReminder() {
+    const input = document.getElementById("reminder-input");
+    const text = (input?.value || "").trim();
+    if (!text) return;
+    try {
+        const res = await fetch("/reminders", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text })
+        });
+        const data = await res.json();
+        if (data.status === "ok") {
+            if (input) input.value = "";
+            toast("Reminder added");
+            refreshReminders();
+        } else {
+            toast("Failed to add reminder");
+        }
+    } catch (_) {
+        toast("Failed to add reminder");
+    }
+}
+
+function wireVoiceInput() {
+    const btn = document.getElementById("voice-btn");
+    const input = document.getElementById("question");
+    if (!btn || !input) return;
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+        btn.disabled = true;
+        btn.title = "Voice input not supported in this browser";
+        return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = "en-US";
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.addEventListener("result", (event) => {
+        const transcript = event.results?.[0]?.[0]?.transcript || "";
+        input.value = transcript;
+        input.focus();
+    });
+    recognition.addEventListener("start", () => btn.classList.add("active"));
+    recognition.addEventListener("end", () => btn.classList.remove("active"));
+    recognition.addEventListener("error", () => btn.classList.remove("active"));
+
+    btn.addEventListener("click", () => {
+        try {
+            recognition.start();
+        } catch (_) {}
+    });
+}
+
+const TOUR_STEPS = [
+    { title: "Utility Dashboard", text: "Track execution score, trend, and weekly action focus here.", view: "utility", target: "#utility-dashboard" },
+    { title: "Onboarding", text: "Set role, market, stage, and your main founder goal.", view: "utility", target: "#utility-main-goal" },
+    { title: "Goals and Tasks", text: "Create goals, generate milestones, and complete tasks.", view: "utility", target: "#utility-goal-title" },
+    { title: "Resources", text: "Use local resource recommendations for Ghana, West Africa, and emerging markets.", view: "utility", target: "#utility-resources-list" },
+    { title: "Agents", text: "Agent diagnostics are available as secondary support.", view: "agents", target: ".agent-stats" },
+    { title: "Settings", text: "Use Settings to change theme, accent, and model.", view: "utility", target: "#settings-open-btn" },
+];
+
+function clearTourTargetHighlight() {
+    document.querySelectorAll(".tour-target-focus").forEach((el) => el.classList.remove("tour-target-focus"));
+}
+
+function placeTourCardNear(targetEl) {
+    const card = document.querySelector("#tour-overlay .tour-card");
+    if (!card) return;
+    if (!targetEl || window.innerWidth < 900) {
+        card.style.removeProperty("--tour-top");
+        card.style.removeProperty("--tour-left");
+        card.classList.remove("point-left", "point-right");
+        return;
+    }
+    const rect = targetEl.getBoundingClientRect();
+    if (rect.width < 8 || rect.height < 8 || rect.bottom < 0 || rect.top > window.innerHeight) {
+        card.style.removeProperty("--tour-top");
+        card.style.removeProperty("--tour-left");
+        card.classList.remove("point-left", "point-right");
+        return;
+    }
+    const cardRect = card.getBoundingClientRect();
+    const cardW = Math.max(290, Math.min(430, cardRect.width || 340));
+    const cardH = Math.max(180, cardRect.height || 220);
+    const gap = 16;
+    const spaceRight = window.innerWidth - rect.right;
+    const spaceLeft = rect.left;
+    let left = 0;
+    let pointLeft = false;
+    let pointRight = false;
+    if (spaceRight >= cardW + gap) {
+        left = rect.right + gap;
+        pointLeft = true;
+    } else if (spaceLeft >= cardW + gap) {
+        left = rect.left - cardW - gap;
+        pointRight = true;
+    } else {
+        left = rect.left + (rect.width / 2) - (cardW / 2);
+    }
+    const clampedLeft = Math.max(12, Math.min(window.innerWidth - cardW - 12, left));
+    const top = Math.max(12, Math.min(window.innerHeight - cardH - 12, rect.top + (rect.height * 0.5) - (cardH * 0.5)));
+    card.style.setProperty("--tour-top", `${top}px`);
+    card.style.setProperty("--tour-left", `${clampedLeft}px`);
+    card.classList.toggle("point-left", pointLeft);
+    card.classList.toggle("point-right", pointRight);
+}
+
+function renderTourStep() {
+    const title = document.getElementById("tour-title");
+    const text = document.getElementById("tour-text");
+    const next = document.getElementById("tour-next-btn");
+    const step = TOUR_STEPS[tourStep] || TOUR_STEPS[0];
+    if (step?.view) {
+        applyView(step.view);
+    }
+    if (step?.target === "#settings-open-btn") {
+        closeSettingsDrawer();
+    }
+    if (title) title.textContent = step.title;
+    if (text) text.textContent = step.text;
+    if (next) next.textContent = tourStep >= TOUR_STEPS.length - 1 ? "Finish" : "Next";
+    clearTourTargetHighlight();
+    const target = step?.target ? document.querySelector(step.target) : null;
+    if (target) target.classList.add("tour-target-focus");
+    placeTourCardNear(target);
+}
+
+function openTour() {
+    const overlay = document.getElementById("tour-overlay");
+    if (!overlay) return;
+    tourStep = 0;
+    renderTourStep();
+    overlay.classList.add("open");
+    overlay.setAttribute("aria-hidden", "false");
+}
+
+function closeTour(done = false) {
+    const overlay = document.getElementById("tour-overlay");
+    if (!overlay) return;
+    overlay.classList.remove("open");
+    overlay.setAttribute("aria-hidden", "true");
+    clearTourTargetHighlight();
+    if (done) localStorage.setItem(ONBOARDING_TOUR_KEY, "1");
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    const body = document.body;
+    const savedTheme = localStorage.getItem("theme") || "system";
+    const savedAccent = localStorage.getItem("accent") || body.dataset.accent || "#22d3ee";
+    const currentModel = body.dataset.currentModel || "groq-llama3.3";
+
+    applyTheme(savedTheme);
+    setAccent(savedAccent);
+    syncActorWithProfileIfProfileChanged();
+
+    const accentSelect = document.getElementById("accent-select");
+    if (accentSelect) {
+        const presetMatch = Array.from(accentSelect.options || []).some((opt) => opt.value.toLowerCase() === String(savedAccent).toLowerCase());
+        accentSelect.value = presetMatch ? savedAccent : "__custom__";
+    }
+
+    const modelSelect = document.getElementById("model-select");
+    if (modelSelect) modelSelect.value = currentModel;
+    const langPrefs = getLanguagePrefs();
+    const langAutoTranslateToggle = document.getElementById("lang-auto-translate-toggle");
+    const langSourceSelect = document.getElementById("lang-source-select");
+    const langTargetSelect = document.getElementById("lang-target-select");
+    const khayaTtsToggle = document.getElementById("khaya-tts-toggle");
+    const khayaVoiceInput = document.getElementById("khaya-voice-input");
+    if (langAutoTranslateToggle) langAutoTranslateToggle.checked = !!langPrefs.enabled;
+    if (langSourceSelect) langSourceSelect.value = langPrefs.source || "auto";
+    if (langTargetSelect) langTargetSelect.value = langPrefs.target || "en";
+    const khayaTtsPrefs = getKhayaTtsPrefs();
+    if (khayaTtsToggle) khayaTtsToggle.checked = !!khayaTtsPrefs.enabled;
+    if (khayaVoiceInput) khayaVoiceInput.value = khayaTtsPrefs.voice || "";
+
+    renderAvatar(loadAvatarState(), false);
+    setTtsEnabled(isTtsEnabled());
+    refreshAgentStats();
+    refreshForgeSummary();
+    refreshAgentMemory();
+    refreshMemoryFact();
+    refreshReminders();
+    pollDueReminders();
+    refreshUploadedContext();
+    refreshMarketplace();
+    refreshUsageLog();
+    refreshHistoryList();
+    refreshAuthState();
+    refreshAuthMode();
+    refreshMemoryControls();
+    refreshEvaluationAndQuality();
+    refreshKhayaStatus();
+    setInterval(refreshAgentStats, 20000);
+    setInterval(refreshMemoryFact, 24000);
+    setInterval(pollDueReminders, 20000);
+    setInterval(advanceMemoryTicker, 120000);
+
+    const input = document.getElementById("question");
+    const sendBtn = document.getElementById("send-btn");
+    const debateBtn = document.getElementById("debate-btn");
+    const webBtn = document.getElementById("web-btn");
+    const resetBtn = document.getElementById("avatar-reset-btn");
+    const historySaveBtn = document.getElementById("history-save-btn");
+    const historyTitleInput = document.getElementById("history-title-input");
+    const historySearchInput = document.getElementById("history-search-input");
+    const historyList = document.getElementById("history-list");
+    const reminderAddBtn = document.getElementById("reminder-add-btn");
+    const reminderInput = document.getElementById("reminder-input");
+    const onboardingBanner = document.getElementById("onboarding-banner");
+    const onboardingClose = document.getElementById("onboarding-close");
+    const onboardingTourBtn = document.getElementById("onboarding-tour-btn");
+    const tourNextBtn = document.getElementById("tour-next-btn");
+    const tourSkipBtn = document.getElementById("tour-skip-btn");
+    const exportTxtBtn = document.getElementById("export-txt-btn");
+    const exportJsonBtn = document.getElementById("export-json-btn");
+    const uploadInput = document.getElementById("file-upload-input");
+    const clearUploadedBtn = document.getElementById("clear-uploaded-btn");
+    const chatPanel = document.getElementById("chat-panel");
+    const ttsToggleBtn = document.getElementById("tts-toggle-btn");
+    const actorInput = document.getElementById("actor-input");
+    const actorApplyBtn = document.getElementById("actor-apply-btn");
+    const pageNav = document.getElementById("page-nav");
+    const workspaceSelect = document.getElementById("workspace-select");
+    const newChatBtn = document.getElementById("new-chat-btn");
+    const metaverseScene = document.getElementById("metaverse-scene");
+    const metaversePorts = document.getElementById("metaverse-agent-ports");
+    const metaverseVideoList = document.getElementById("metaverse-video-list");
+    const metaverseVideoTopicInput = document.getElementById("metaverse-video-topic-input");
+    const metaverseVideoSearchBtn = document.getElementById("metaverse-video-search-btn");
+    const metaverseVideoQuestion = document.getElementById("metaverse-video-question");
+    const metaverseVideoAskBtn = document.getElementById("metaverse-video-ask-btn");
+    const metaversePresenceApplyBtn = document.getElementById("metaverse-presence-apply-btn");
+    const metaverseAvatarCard = document.getElementById("metaverse-avatar-card");
+    const avatarAgentSelect = document.getElementById("avatar-agent-select");
+    const avatarShapeSelect = document.getElementById("avatar-shape-select");
+    const avatarColorInput = document.getElementById("avatar-color-input");
+    const avatarSaveBtn = document.getElementById("avatar-save-btn");
+    const metaverseMarketList = document.getElementById("metaverse-market-list");
+    const settingsOpenBtn = document.getElementById("settings-open-btn");
+    const settingsCloseBtn = document.getElementById("settings-close-btn");
+    const settingsDrawer = document.getElementById("settings-drawer");
+    const privacyQuickBtn = document.getElementById("privacy-quick-btn");
+    const privacyToggle = document.getElementById("privacy-toggle");
+    const authLoginBtn = document.getElementById("auth-login-btn");
+    const authRegisterBtn = document.getElementById("auth-register-btn");
+    const authLogoutBtn = document.getElementById("auth-logout-btn");
+    const authModeToggle = document.getElementById("auth-required-toggle");
+    const authModeSaveBtn = document.getElementById("auth-mode-save-btn");
+    const memoryScopesSaveBtn = document.getElementById("memory-scopes-save-btn");
+    const memoryRefreshBtn = document.getElementById("memory-refresh-btn");
+    const memoryAddBtn = document.getElementById("memory-add-btn");
+    const memoryNewText = document.getElementById("memory-new-text");
+    const memoryItemsList = document.getElementById("memory-items-list");
+    const utilityOnboardingSaveBtn = document.getElementById("utility-onboarding-save-btn");
+    const utilityGoalCreateBtn = document.getElementById("utility-goal-create-btn");
+    const utilityTaskCreateBtn = document.getElementById("utility-task-create-btn");
+    const utilityQuickGenerateBtn = document.getElementById("utility-quick-generate-btn");
+    const utilityQuickWinBtn = document.getElementById("utility-quick-win-btn");
+    const utilityQuickTaskBtn = document.getElementById("utility-quick-task-btn");
+    const utilityQuickResourceBtn = document.getElementById("utility-quick-resource-btn");
+    const utilityGoalsList = document.getElementById("utility-goals-list");
+    const utilityMilestonesList = document.getElementById("utility-milestones-list");
+    const utilityTasksList = document.getElementById("utility-tasks-list");
+    const evaluationRefreshBtn = document.getElementById("evaluation-refresh-btn");
+    const regressionRunBtn = document.getElementById("regression-run-btn");
+    const checkpointCreateBtn = document.getElementById("checkpoint-create-btn");
+    const checkpointList = document.getElementById("checkpoint-list");
+    const compareRefreshBtn = document.getElementById("compare-refresh-btn");
+    const compareAgentA = document.getElementById("compare-agent-a");
+    const compareAgentB = document.getElementById("compare-agent-b");
+    const compareToggle = document.getElementById("compare-toggle");
+    const reminderAlertClose = document.getElementById("reminder-alert-close");
+    const reminderAlertOverlay = document.getElementById("reminder-alert-overlay");
+
+    if (localStorage.getItem(ONBOARDING_KEY) === "1" && onboardingBanner) {
+        onboardingBanner.style.display = "none";
+    }
+    if (onboardingClose) {
+        onboardingClose.addEventListener("click", () => {
+            localStorage.setItem(ONBOARDING_KEY, "1");
+            if (onboardingBanner) onboardingBanner.style.display = "none";
+        });
+    }
+    if (onboardingTourBtn) onboardingTourBtn.addEventListener("click", openTour);
+    if (tourNextBtn) {
+        tourNextBtn.addEventListener("click", () => {
+            if (tourStep >= TOUR_STEPS.length - 1) {
+                closeTour(true);
+                toast("Tour complete");
+                return;
+            }
+            tourStep += 1;
+            renderTourStep();
+        });
+    }
+    if (tourSkipBtn) {
+        tourSkipBtn.addEventListener("click", () => closeTour(true));
+    }
+    if (localStorage.getItem(ONBOARDING_TOUR_KEY) !== "1" && localStorage.getItem(ONBOARDING_KEY) !== "1") {
+        window.setTimeout(() => openTour(), 650);
+    }
+
+    if (ttsToggleBtn) {
+        ttsToggleBtn.addEventListener("click", () => setTtsEnabled(!isTtsEnabled()));
+    }
+    if (langAutoTranslateToggle) {
+        langAutoTranslateToggle.addEventListener("change", () => {
+            setLanguagePrefs({
+                enabled: !!langAutoTranslateToggle.checked,
+                source: langSourceSelect?.value || "auto",
+                target: langTargetSelect?.value || "en",
+            });
+            toast(`Language Coach auto-translate ${langAutoTranslateToggle.checked ? "enabled" : "disabled"}`);
+        });
+    }
+    if (langSourceSelect) {
+        langSourceSelect.addEventListener("change", () => {
+            const p = getLanguagePrefs();
+            setLanguagePrefs({
+                enabled: p.enabled,
+                source: langSourceSelect.value || "auto",
+                target: langTargetSelect?.value || p.target,
+            });
+        });
+    }
+    if (langTargetSelect) {
+        langTargetSelect.addEventListener("change", () => {
+            const p = getLanguagePrefs();
+            setLanguagePrefs({
+                enabled: p.enabled,
+                source: langSourceSelect?.value || p.source,
+                target: langTargetSelect.value || "en",
+            });
+        });
+    }
+    if (khayaTtsToggle) {
+        khayaTtsToggle.addEventListener("change", () => {
+            setKhayaTtsPrefs({ enabled: !!khayaTtsToggle.checked, voice: khayaVoiceInput?.value || "" });
+            toast(`Khaya voice ${khayaTtsToggle.checked ? "enabled" : "disabled"}`);
+        });
+    }
+    if (khayaVoiceInput) {
+        khayaVoiceInput.addEventListener("change", () => {
+            const p = getKhayaTtsPrefs();
+            setKhayaTtsPrefs({ enabled: p.enabled, voice: khayaVoiceInput.value || "" });
+        });
+    }
+    if (actorInput) actorInput.value = getActingAs();
+    refreshIdentityHint();
+    refreshPrivacySetting();
+    if (actorApplyBtn) {
+        actorApplyBtn.addEventListener("click", () => setActingAs(actorInput?.value || ""));
+    }
+    if (actorInput) {
+        actorInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                setActingAs(actorInput.value || "");
+            }
+        });
+    }
+    if (exportTxtBtn) exportTxtBtn.addEventListener("click", exportChatAsText);
+    if (exportJsonBtn) exportJsonBtn.addEventListener("click", exportChatAsJson);
+    if (uploadInput) {
+        uploadInput.addEventListener("change", async (e) => {
+            await uploadFilesBatch(e.target.files || []);
+            uploadInput.value = "";
+        });
+    }
+    if (clearUploadedBtn) {
+        clearUploadedBtn.addEventListener("click", async () => {
+            try {
+                await fetch("/uploaded-context", { method: "DELETE" });
+                refreshUploadedContext();
+                toast("Uploaded context cleared");
+            } catch (_) {}
+        });
+    }
+
+    const openSettings = () => {
+        if (!settingsDrawer) return;
+        openSettingsDrawer();
+        refreshAuthState();
+        refreshAuthMode();
+        refreshMemoryControls();
+        refreshEvaluationAndQuality();
+    };
+    const closeSettings = () => {
+        closeSettingsDrawer();
+    };
+    if (settingsOpenBtn) settingsOpenBtn.addEventListener("click", openSettings);
+    if (privacyQuickBtn) privacyQuickBtn.addEventListener("click", openSettings);
+    if (settingsCloseBtn) settingsCloseBtn.addEventListener("click", closeSettings);
+    const settingsOverlay = document.getElementById("settings-overlay");
+    if (settingsOverlay) settingsOverlay.addEventListener("click", closeSettings);
+    if (privacyToggle) {
+        privacyToggle.addEventListener("change", () => savePrivacySetting(privacyToggle.checked));
+    }
+    if (authLoginBtn) authLoginBtn.addEventListener("click", () => authLogin());
+    if (authRegisterBtn) authRegisterBtn.addEventListener("click", () => authRegister());
+    if (authLogoutBtn) authLogoutBtn.addEventListener("click", () => authLogout());
+    if (authModeSaveBtn) {
+        authModeSaveBtn.addEventListener("click", () => saveAuthMode(!!authModeToggle?.checked));
+    }
+    if (memoryScopesSaveBtn) memoryScopesSaveBtn.addEventListener("click", () => saveMemoryScopesFromUi());
+    if (memoryRefreshBtn) memoryRefreshBtn.addEventListener("click", () => refreshMemoryControls());
+    if (memoryAddBtn) memoryAddBtn.addEventListener("click", () => addMemoryItemFromUi());
+    if (memoryNewText) {
+        memoryNewText.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                addMemoryItemFromUi();
+            }
+        });
+    }
+    if (evaluationRefreshBtn) evaluationRefreshBtn.addEventListener("click", () => refreshEvaluationAndQuality());
+    if (regressionRunBtn) regressionRunBtn.addEventListener("click", () => runRegressionFromUi());
+    if (checkpointCreateBtn) checkpointCreateBtn.addEventListener("click", () => createCheckpointFromUi());
+    if (compareRefreshBtn) compareRefreshBtn.addEventListener("click", () => refreshAgentStats());
+    if (compareAgentA) compareAgentA.addEventListener("change", () => renderAgentComparison());
+    if (compareAgentB) compareAgentB.addEventListener("change", () => renderAgentComparison());
+    if (compareToggle) {
+        compareToggle.addEventListener("click", (e) => {
+            const btn = e.target.closest(".compare-toggle-btn");
+            if (!btn) return;
+            setCompareMode(btn.dataset.mode || "radar");
+            renderAgentComparison();
+        });
+    }
+    if (reminderAlertClose) {
+        reminderAlertClose.addEventListener("click", () => {
+            if (reminderAlertOverlay) {
+                reminderAlertOverlay.classList.remove("open");
+                reminderAlertOverlay.setAttribute("aria-hidden", "true");
+            }
+        });
+    }
+    if (memoryItemsList) {
+        memoryItemsList.addEventListener("click", (e) => {
+            const delBtn = e.target.closest(".memory-del-btn");
+            const editBtn = e.target.closest(".memory-edit-btn");
+            if (delBtn?.dataset.id) {
+                deleteMemoryItemFromUi(delBtn.dataset.id);
+            } else if (editBtn?.dataset.id) {
+                updateMemoryItemFromUi(editBtn.dataset.id);
+            }
+        });
+    }
+    if (utilityOnboardingSaveBtn) utilityOnboardingSaveBtn.addEventListener("click", () => saveUtilityOnboarding());
+    if (utilityGoalCreateBtn) utilityGoalCreateBtn.addEventListener("click", () => createUtilityGoal());
+    if (utilityTaskCreateBtn) utilityTaskCreateBtn.addEventListener("click", () => createUtilityTask());
+    if (utilityQuickGenerateBtn) utilityQuickGenerateBtn.addEventListener("click", () => utilityQuickGenerateMilestones());
+    if (utilityQuickWinBtn) utilityQuickWinBtn.addEventListener("click", () => utilityQuickLogWin());
+    if (utilityQuickTaskBtn) utilityQuickTaskBtn.addEventListener("click", () => {
+        const input = document.getElementById("utility-task-title");
+        if (input) input.focus();
+    });
+    if (utilityQuickResourceBtn) utilityQuickResourceBtn.addEventListener("click", () => {
+        const pane = document.getElementById("utility-resources-list");
+        if (pane) pane.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    if (utilityGoalsList) {
+        utilityGoalsList.addEventListener("click", (e) => {
+            const openBtn = e.target.closest(".utility-goal-open-btn");
+            const genBtn = e.target.closest(".utility-goal-generate-btn");
+            if (openBtn?.dataset.id) {
+                setUtilityActiveGoalId(openBtn.dataset.id);
+                refreshUtilityWorkspace();
+            } else if (genBtn?.dataset.id) {
+                generateUtilityMilestones(genBtn.dataset.id);
+            }
+        });
+    }
+    if (utilityMilestonesList) {
+        utilityMilestonesList.addEventListener("click", (e) => {
+            const doneBtn = e.target.closest(".utility-milestone-done-btn");
+            if (doneBtn?.dataset.id) patchUtilityMilestoneDone(doneBtn.dataset.id);
+        });
+    }
+    if (utilityTasksList) {
+        utilityTasksList.addEventListener("click", (e) => {
+            const doneBtn = e.target.closest(".utility-task-done-btn");
+            if (doneBtn?.dataset.id) completeUtilityTask(doneBtn.dataset.id);
+        });
+    }
+    if (checkpointList) {
+        checkpointList.addEventListener("click", (e) => {
+            const promoteBtn = e.target.closest(".checkpoint-promote-btn");
+            if (promoteBtn?.dataset.id) {
+                promoteCheckpointFromUi(promoteBtn.dataset.id);
+            }
+        });
+    }
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+            closeSettings();
+            closeTour(false);
+        }
+    });
+
+    if (chatPanel) {
+        chatPanel.addEventListener("dragover", (e) => {
+            e.preventDefault();
+            chatPanel.classList.add("drag-upload-active");
+        });
+        chatPanel.addEventListener("dragleave", () => {
+            chatPanel.classList.remove("drag-upload-active");
+        });
+        chatPanel.addEventListener("drop", async (e) => {
+            e.preventDefault();
+            chatPanel.classList.remove("drag-upload-active");
+            const files = Array.from(e.dataTransfer?.files || []);
+            if (!files.length) return;
+            await uploadFilesBatch(files);
+            toast(`Uploaded ${files.length} file${files.length > 1 ? "s" : ""}`);
+        });
+    }
+
+    if (pageNav) {
+        pageNav.addEventListener("click", (e) => {
+            const tab = e.target.closest(".page-tab[data-view]");
+            if (!tab) return;
+            applyView(tab.dataset.view);
+        });
+    }
+    if (workspaceSelect) {
+        workspaceSelect.addEventListener("change", () => applyView(workspaceSelect.value));
+    }
+    if (newChatBtn) {
+        newChatBtn.addEventListener("click", () => startNewChat());
+    }
+    applyView(localStorage.getItem(VIEW_KEY) || "utility");
+    setCompareMode("radar");
+    renderRemembersFooter();
+
+    if (input) {
+        input.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                ask();
+            }
+        });
+    }
+    document.addEventListener("paste", async (e) => {
+        const items = Array.from(e.clipboardData?.items || []);
+        const files = items
+            .filter((it) => it.kind === "file")
+            .map((it) => it.getAsFile())
+            .filter(Boolean);
+        if (files.length) {
+            e.preventDefault();
+            await uploadFilesBatch(files);
+            toast(`Pasted ${files.length} file${files.length > 1 ? "s" : ""}`);
+            return;
+        }
+        if (!input) return;
+        const text = e.clipboardData?.getData("text/plain") || "";
+        if (!text.trim()) return;
+        const active = document.activeElement;
+        if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) return;
+        e.preventDefault();
+        input.value = [input.value, text].filter(Boolean).join(input.value ? "\n" : "");
+        input.focus();
+        toast("Pasted text into prompt");
+    });
+
+    if (sendBtn) sendBtn.addEventListener("click", () => ask());
+    if (debateBtn) debateBtn.addEventListener("click", () => askDebate());
+    if (webBtn) webBtn.addEventListener("click", () => askLiveWeb());
+    if (resetBtn) resetBtn.addEventListener("click", resetAvatar);
+    if (historySaveBtn) historySaveBtn.addEventListener("click", () => saveCurrentChatToHistory());
+    if (historySearchInput) {
+        historySearchInput.addEventListener("input", () => {
+            renderHistoryList(historySessionsCache, historySearchInput.value || "");
+        });
+    }
+    if (historyTitleInput) {
+        historyTitleInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                saveCurrentChatToHistory();
+            }
+        });
+    }
+    if (reminderAddBtn) reminderAddBtn.addEventListener("click", addReminder);
+    if (reminderInput) {
+        reminderInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                addReminder();
+            }
+        });
+    }
+
+    document.querySelectorAll(".prompt-chip").forEach((chip) => {
+        chip.addEventListener("click", async () => {
+            const prompt = chip.dataset.prompt || "";
+            try {
+                await fetch("/signal/suggestion", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        prompt,
+                        requester: getActingAs(),
+                        specialty: currentAgentSpecialty || "personal"
+                    })
+                });
+            } catch (_) {}
+            ask(prompt);
+        });
+    });
+
+    const agentStats = document.querySelector(".agent-stats");
+    if (agentStats) {
+        agentStats.addEventListener("click", (e) => {
+            const btn = e.target.closest(".chain-action");
+            if (!btn) return;
+            chainAction(btn.dataset.action, btn.dataset.specialty);
+        });
+    }
+
+    const marketList = document.getElementById("marketplace-list");
+    if (marketList) {
+        marketList.addEventListener("click", (e) => {
+            const btn = e.target.closest(".chain-action");
+            if (!btn) return;
+            chainAction(btn.dataset.action, btn.dataset.specialty);
+        });
+    }
+    const marketManageList = document.getElementById("marketplace-manage-list");
+    if (marketManageList) {
+        marketManageList.addEventListener("click", (e) => {
+            const btn = e.target.closest(".chain-action");
+            if (!btn) return;
+            chainAction(btn.dataset.action, btn.dataset.specialty);
+        });
+    }
+    if (metaverseMarketList) {
+        metaverseMarketList.addEventListener("click", (e) => {
+            const btn = e.target.closest(".chain-action");
+            if (!btn) return;
+            chainAction(btn.dataset.action, btn.dataset.specialty);
+        });
+    }
+
+    const bindMetaverseActions = (rootEl) => {
+        if (!rootEl) return;
+        rootEl.addEventListener("click", (e) => {
+            const btn = e.target.closest("[data-zone-action]");
+            if (!btn) return;
+            handleMetaverseZoneAction(btn.dataset.zoneAction, btn.dataset.specialty, btn.dataset.name);
+        });
+    };
+    bindMetaverseActions(metaverseScene);
+    bindMetaverseActions(metaversePorts);
+    if (metaversePresenceApplyBtn) {
+        metaversePresenceApplyBtn.addEventListener("click", () => syncMetaversePresence());
+    }
+    if (avatarAgentSelect) {
+        avatarAgentSelect.addEventListener("change", () => renderAvatarStudioCard());
+    }
+    if (avatarShapeSelect) {
+        avatarShapeSelect.addEventListener("change", () => renderAvatarStudioCard(true));
+    }
+    if (avatarColorInput) {
+        avatarColorInput.addEventListener("input", () => renderAvatarStudioCard(true));
+    }
+    if (avatarSaveBtn) {
+        avatarSaveBtn.addEventListener("click", () => saveAvatarStudioProfile());
+    }
+    if (metaverseAvatarCard) {
+        metaverseAvatarCard.addEventListener("click", (e) => {
+            const btn = e.target.closest("[data-avatar-action]");
+            if (!btn) return;
+            const specialty = String(btn.dataset.specialty || "personal").trim();
+            applyView("chat");
+            ask(`Training session for ${specialty}: give me 3 focused exercises, then I will answer and you evaluate.`);
+        });
+    }
+
+    if (metaverseVideoSearchBtn) {
+        metaverseVideoSearchBtn.addEventListener("click", () => refreshMetaverseVideos(metaverseVideoTopicInput?.value || ""));
+    }
+    if (metaverseVideoTopicInput) {
+        metaverseVideoTopicInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                refreshMetaverseVideos(metaverseVideoTopicInput.value || "");
+            }
+        });
+    }
+    if (metaverseVideoList) {
+        metaverseVideoList.addEventListener("click", (e) => {
+            const btn = e.target.closest("[data-video-action]");
+            if (!btn) return;
+            const video = metaverseVideos.find((v) => String(v.id) === String(btn.dataset.videoId));
+            if (!video) return;
+            if (btn.dataset.videoAction === "preview") {
+                renderMetaverseVideoHero(video);
+                return;
+            }
+            selectedMetaverseVideo = video;
+            renderMetaverseVideoHero(video);
+            renderMetaverseVideoList();
+            toast(`Selected video: ${video.title}`);
+        });
+    }
+    if (metaverseVideoAskBtn) {
+        metaverseVideoAskBtn.addEventListener("click", () => {
+            const question = (metaverseVideoQuestion?.value || "").trim();
+            if (!selectedMetaverseVideo) {
+                toast("Select a video first");
+                return;
+            }
+            if (!question) {
+                toast("Enter a follow-up question");
+                return;
+            }
+            const contextPrompt = `Use this video context:\nTitle: ${selectedMetaverseVideo.title}\nDescription: ${selectedMetaverseVideo.description}\nTags: ${(selectedMetaverseVideo.tags || []).join(", ")}\n\nQuestion: ${question}`;
+            applyView("chat");
+            ask(contextPrompt);
+            if (metaverseVideoQuestion) metaverseVideoQuestion.value = "";
+        });
+    }
+
+    const reminderList = document.getElementById("reminder-list");
+    if (reminderList) {
+        reminderList.addEventListener("click", async (e) => {
+            const toggle = e.target.closest(".reminder-toggle");
+            const del = e.target.closest(".reminder-delete");
+            if (!toggle && !del) return;
+            const id = toggle?.dataset.id || del?.dataset.id;
+            if (!id) return;
+            try {
+                if (toggle) {
+                    await fetch(`/reminders/${encodeURIComponent(id)}/toggle`, { method: "POST" });
+                } else {
+                    await fetch(`/reminders/${encodeURIComponent(id)}`, { method: "DELETE" });
+                }
+                refreshReminders();
+            } catch (_) {}
+        });
+    }
+    if (historyList) {
+        historyList.addEventListener("click", async (e) => {
+            const openBtn = e.target.closest(".history-open-btn");
+            const delBtn = e.target.closest(".history-delete-btn");
+            if (!openBtn && !delBtn) return;
+            const id = openBtn?.dataset.id || delBtn?.dataset.id;
+            if (!id) return;
+            const requester = getActingAs();
+            try {
+                if (openBtn) {
+                    const res = await fetch(`/history/sessions/${encodeURIComponent(id)}?requester=${encodeURIComponent(requester)}`);
+                    const data = await res.json();
+                    if (data.error) {
+                        toast(data.error || "Failed to open history");
+                        return;
+                    }
+                    hydrateChatFromHistory(data.messages || []);
+                    applyView("chat");
+                    toast("Loaded history session");
+                    return;
+                }
+                await fetch(`/history/sessions/${encodeURIComponent(id)}?requester=${encodeURIComponent(requester)}`, { method: "DELETE" });
+                refreshHistoryList();
+                toast("History session deleted");
+            } catch (_) {
+                toast("History action failed");
+            }
+        });
+    }
+
+    const chatOutput = document.getElementById("chat-output");
+    if (chatOutput) {
+        chatOutput.addEventListener("click", async (e) => {
+            const speakBtn = e.target.closest(".speak-btn");
+            if (speakBtn) {
+                const messageEl = speakBtn.closest(".message");
+                const text = messageEl?.querySelector(".message-content")?.innerText || "";
+                const speechLang = messageEl?.querySelector(".answer-meta")?.dataset?.speechLang || "";
+                speakText(text, { lang: speechLang || undefined });
+                return;
+            }
+            const copyBtn = e.target.closest(".copy-btn");
+            if (copyBtn) {
+                const text = copyBtn.closest(".message")?.querySelector(".message-content")?.innerText || "";
+                if (!text) return;
+                try {
+                    await navigator.clipboard.writeText(text);
+                    toast("Copied");
+                } catch (_) {
+                    toast("Copy failed");
+                }
+                return;
+            }
+
+            const recoveryBtn = e.target.closest(".recovery-btn");
+            if (recoveryBtn) {
+                const action = recoveryBtn.dataset.action;
+                const input = document.getElementById("question");
+                if (action === "retry") {
+                    retryLastFailed();
+                } else if (action === "simplify") {
+                    retryLastFailed(null, true);
+                } else if (action === "edit") {
+                    if (input && lastFailedRequest?.question) {
+                        input.value = lastFailedRequest.question;
+                        input.focus();
+                    }
+                }
+                return;
+            }
+
+            const thumb = e.target.closest(".thumb-up, .thumb-down");
+            if (!thumb) return;
+
+            const messageId = thumb.dataset.messageId;
+            const agent = thumb.dataset.agent || "personal";
+            const value = thumb.classList.contains("thumb-up") ? 1 : -1;
+            const ratingBox = thumb.closest(".thumbs-rating");
+            if (ratingBox?.classList.contains("rated")) return;
+
+            try {
+                const res = await fetch("/rate", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        message_id: messageId,
+                        value,
+                        agent,
+                        requester: getActingAs()
+                    })
+                });
+                const data = await res.json();
+                if (data.status === "ok") {
+                    ratingBox?.classList.add("rated");
+                    thumb.classList.add("selected");
+                    let msg = data.mode === "global_only" ? "Feedback captured (global core only)" : "Feedback captured";
+                    if (data.review_status === "accepted_saved") msg = "Feedback captured. Rented training data approved and saved.";
+                    if (data.review_status === "rejected_discarded") msg = "Feedback captured. Rented training data rejected.";
+                    toast(msg);
+                    refreshAgentStats();
+                    refreshUsageLog();
+                } else {
+                    toast("Feedback failed");
+                }
+            } catch (_) {
+                toast("Feedback failed");
+            }
+        });
+    }
+
+    wireVoiceInput();
+
+    ["click", "keydown", "touchstart"].forEach((evt) => {
+        document.addEventListener(evt, unlockReminderAudio, { passive: true, once: true });
+    });
+
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+        if ((localStorage.getItem("theme") || "system") === "system") {
+            applyTheme("system");
+        }
+    });
+    window.addEventListener("resize", () => {
+        const overlay = document.getElementById("tour-overlay");
+        if (overlay?.classList.contains("open")) {
+            renderTourStep();
+        }
+    });
+});
+
