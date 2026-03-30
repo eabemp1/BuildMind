@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: evoltrain-backend
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: evoltrain-db
+          property: connectionString
+      - key: JWT_SECRET
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: FRONTEND_ORIGINS
+        value: https://YOUR_VERCEL_DOMAIN
+
+databases:
+  - name: evoltrain-db
+    plan: free
+    databaseName: evoltrain
+    user: evoltrain

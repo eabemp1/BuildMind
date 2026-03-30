@@ -1,52 +1,65 @@
 "use client";
 
-import { motion } from "framer-motion";
-import { useState } from "react";
-import Sidebar from "@/components/layout/sidebar";
-import Topbar from "@/components/layout/topbar";
+import { usePathname } from "next/navigation";
+import { AnimatePresence, motion } from "framer-motion";
+import Sidebar from "./sidebar";
+import BottomNav from "./bottom-nav";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const pathname = usePathname();
 
   return (
-    <div className="relative flex h-screen overflow-hidden">
-      <div
-        className="pointer-events-none absolute inset-0 opacity-[0.05] mix-blend-soft-light"
-        style={{
-          backgroundImage:
-            "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E\")",
-        }}
-      />
-      <div className="pointer-events-none absolute -left-40 top-20 h-80 w-80 rounded-full bg-indigo-500/15 blur-[140px]" />
-      <div className="pointer-events-none absolute right-0 top-10 h-96 w-96 rounded-full bg-purple-500/15 blur-[180px]" />
-      <div className="pointer-events-none absolute bottom-0 left-1/2 h-96 w-96 -translate-x-1/2 rounded-full bg-sky-500/10 blur-[200px]" />
-      <aside className="sticky top-0 hidden h-screen w-[240px] shrink-0 border-r border-white/10 md:flex">
+    <div style={{ display: "flex", minHeight: "100vh", background: "#000" }}>
+      {/* Desktop sidebar — hidden on mobile */}
+      <div style={{
+        width: 200,
+        flexShrink: 0,
+        display: "none",
+        height: "100vh",
+        position: "sticky",
+        top: 0,
+      }} className="bm-sidebar">
         <Sidebar />
-      </aside>
-
-      {mobileOpen ? (
-        <div className="fixed inset-0 z-40 flex md:hidden">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setMobileOpen(false)} />
-          <div className="relative h-full w-[240px] border-r border-white/10 bg-black">
-            <Sidebar />
-          </div>
-        </div>
-      ) : null}
-
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 h-[60px] border-b border-white/10 bg-black/30 backdrop-blur">
-          <Topbar onToggleSidebar={() => setMobileOpen((prev) => !prev)} />
-        </header>
-        <motion.main
-          key="page"
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.25 }}
-          className="flex-1 overflow-y-auto px-6 py-6"
-        >
-          <div className="mx-auto w-full max-w-[1440px] space-y-6">{children}</div>
-        </motion.main>
       </div>
+
+      {/* Main content */}
+      <main style={{
+        flex: 1,
+        minWidth: 0,
+        paddingBottom: 64,  // space for bottom nav on mobile
+        overflowX: "hidden",
+      }} className="bm-main">
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={pathname}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.15, ease: "easeOut" }}
+          >
+            {children}
+          </motion.div>
+        </AnimatePresence>
+      </main>
+
+      {/* Mobile bottom nav — hidden on desktop */}
+      <div className="bm-bottom-nav" style={{
+        position: "fixed",
+        bottom: 0,
+        left: 0,
+        right: 0,
+        zIndex: 50,
+      }}>
+        <BottomNav />
+      </div>
+
+      <style>{`
+        @media (min-width: 768px) {
+          .bm-sidebar { display: flex !important; flex-direction: column; }
+          .bm-bottom-nav { display: none !important; }
+          .bm-main { padding-bottom: 0 !important; }
+        }
+      `}</style>
     </div>
   );
 }
