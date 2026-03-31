@@ -113,15 +113,24 @@ export default function SettingsPage() {
     try {
       const user = await getCurrentUser();
       if (!user) return;
-      const ext = file.name.split(".").pop();
+      const nameExt = file.name.split(".").pop();
+      const typeExt = file.type?.split("/").pop();
+      const ext = (nameExt && nameExt !== file.name ? nameExt : typeExt || "png").toLowerCase();
       const path = `${user.id}/avatar.${ext}`;
-      const { error: upErr } = await supabase.storage.from("avatars").upload(path, file, { upsert: true });
+      const { error: upErr } = await supabase.storage.from("avatars").upload(path, file, {
+        upsert: true,
+        cacheControl: "3600",
+        contentType: file.type || "image/png",
+      });
       if (upErr) throw upErr;
       const { data: { publicUrl } } = supabase.storage.from("avatars").getPublicUrl(path);
-      await supabase.auth.updateUser({ data: { avatar_url: publicUrl } });
-      setAvatarUrl(publicUrl);
+      const busted = `${publicUrl}?v=${Date.now()}`;
+      await supabase.auth.updateUser({ data: { avatar_url: busted } });
+      setAvatarUrl(busted);
       msg("Avatar updated.");
-    } catch { msg("Upload failed.", "err"); } finally { setAvatarUploading(false); }
+    } catch (err) {
+      msg(err instanceof Error ? err.message : "Upload failed.", "err");
+    } finally { setAvatarUploading(false); }
   };
 
   const card = { background: "#0d0d0d", border: "1px solid #1c1c1c", borderRadius: 10, padding: "22px 24px" };

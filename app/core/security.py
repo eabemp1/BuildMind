@@ -1,4 +1,4 @@
-"""JWT and password security helpers — supports both internal JWT and Supabase JWT."""
+"""JWT and password security helpers."""
 
 import os
 import base64
@@ -17,9 +17,6 @@ JWT_ALGORITHM = settings.JWT_ALGORITHM
 JWT_EXPIRE_MINUTES = settings.JWT_EXPIRE_MINUTES
 PWD_ITERATIONS = settings.PWD_ITERATIONS
 
-# Supabase JWT secret (set SUPABASE_JWT_SECRET in backend .env to verify Supabase tokens)
-SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
-
 
 def hash_password(password: str) -> str:
     salt = os.urandom(16)
@@ -27,9 +24,9 @@ def hash_password(password: str) -> str:
     return f"pbkdf2_sha256${PWD_ITERATIONS}${base64.b64encode(salt).decode()}${base64.b64encode(digest).decode()}"
 
 
-def verify_password(plain_password: str, stored_hash: str) -> bool:
+def verify_password(plain_password: str, hashed_password: str) -> bool:
     try:
-        algo, iter_s, salt_b64, digest_b64 = stored_hash.split("$", 3)
+        algo, iter_s, salt_b64, digest_b64 = hashed_password.split("$", 3)
         if algo != "pbkdf2_sha256":
             return False
         iters = int(iter_s)
@@ -53,28 +50,11 @@ def create_access_token(subject: str, expires_minutes: Optional[int] = None) -> 
 
 
 def decode_access_token(token: str) -> Optional[str]:
-    """Decode token — tries internal JWT first, then Supabase JWT if configured."""
-    # 1. Try internal JWT
     try:
         payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
-        sub = payload.get("sub")
-        return str(sub) if sub else None
     except JWTError:
-        pass
+        return None
+    sub = payload.get("sub")
+    return str(sub) if sub else None
 
-    # 2. Try Supabase JWT (only if SUPABASE_JWT_SECRET is configured)
-    if SUPABASE_JWT_SECRET:
-        try:
-            payload = jwt.decode(
-                token,
-                SUPABASE_JWT_SECRET,
-                algorithms=["HS256"],
-                options={"verify_aud": False},
-            )
-            # Supabase puts user UUID in "sub"
-            sub = payload.get("sub")
-            return str(sub) if sub else None
-        except JWTError:
-            pass
 
-    return None

@@ -5,10 +5,10 @@ import { z } from "zod";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
 import { Github } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { BrandMark } from "@/components/layout/logo";
 import { createClient } from "@/lib/supabase/client";
 import { ensureUserProfile } from "@/lib/buildmind";
 import { authSchema } from "@/lib/validation";
@@ -91,17 +91,26 @@ export default function SignupPage() {
   };
 
   return (
-    <div className="grid min-h-screen place-items-center p-6">
-      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="glass-panel panel-glow w-full max-w-md p-8">
-        <Image src="/brand/bui.svg" width={160} height={44} alt="BuildMind" />
-        <h1 className="mt-2 text-2xl font-semibold text-zinc-100">Create your account</h1>
-        <p className="text-body mt-1">Start building your startup execution plan with AI guidance.</p>
+    <div className="grid min-h-screen place-items-center px-6 py-10">
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-md rounded-2xl border border-[#1c1c1c] bg-[#0d0d0d] p-8 shadow-2xl"
+      >
+        <div className="flex items-center gap-3">
+          <BrandMark size={36} href="/" />
+          <div>
+            <p className="text-sm uppercase tracking-[0.3em] text-zinc-500">BuildMind</p>
+            <h1 className="text-2xl font-semibold text-zinc-100">Create your account</h1>
+          </div>
+        </div>
+        <p className="mt-2 text-sm text-zinc-400">Start building your startup execution plan with AI guidance.</p>
 
         <div className="mt-5 grid gap-2">
           <Button
             type="button"
             variant="outline"
-            className="border-white/10 bg-white/5 text-zinc-200 hover:bg-white/10"
+            className="border-[#1c1c1c] bg-[#0d0d0d] text-zinc-200 hover:bg-white/5"
             onClick={() => void oauth("google")}
           >
             <span className="mr-2 h-4 w-4" aria-hidden>
@@ -117,7 +126,7 @@ export default function SignupPage() {
           <Button
             type="button"
             variant="outline"
-            className="border-white/10 bg-white/5 text-zinc-200 hover:bg-white/10"
+            className="border-[#1c1c1c] bg-[#0d0d0d] text-zinc-200 hover:bg-white/5"
             onClick={() => void oauth("github")}
           >
             <Github className="mr-2 h-4 w-4" />
@@ -126,15 +135,15 @@ export default function SignupPage() {
         </div>
 
         <form className="mt-4 space-y-4" onSubmit={onSubmit}>
-          <Input className="border-white/10 bg-black/20 text-zinc-100 placeholder:text-zinc-500" type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <Input className="border-[#1c1c1c] bg-[#0d0d0d] text-zinc-100 placeholder:text-zinc-500" type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
           <Input
-            className="border-white/10 bg-black/20 text-zinc-100 placeholder:text-zinc-500"
+            className="border-[#1c1c1c] bg-[#0d0d0d] text-zinc-100 placeholder:text-zinc-500"
             type="password"
             placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
-          <Button className="w-full bg-gradient-to-r from-indigo-500 to-purple-500 text-white" disabled={loading}>
+          <Button className="w-full bg-white text-black hover:bg-zinc-200" disabled={loading}>
             {loading ? "Creating account..." : "Continue with Email"}
           </Button>
           {error ? <p className="text-sm text-rose-400">{error}</p> : null}
