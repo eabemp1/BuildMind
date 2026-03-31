@@ -14,14 +14,14 @@
  */
 
 import Link from "next/link";
-import Image from "next/image";
+import { BrandMark } from "@/components/layout/logo";
 
 export default function WelcomePage() {
   return (
     <div style={{ minHeight: "100vh", background: "#0f1117", fontFamily: "'DM Sans',system-ui,sans-serif", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 24px" }}>
 
       <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 32 }}>
-        <Image src="/brand/bui.svg" alt="BuildMind" width={36} height={36} style={{ objectFit: "contain", borderRadius: 7 }} />
+        <BrandMark size={36} href="/" />
         <div style={{ fontWeight: 900, fontSize: 18, background: "linear-gradient(135deg,#cc44ff,#7755ff,#44aaff)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", letterSpacing: "-0.02em" }}>BuildMind</div>
       </div>
 

@@ -7,25 +7,8 @@ import { createClient } from "@/lib/supabase/client";
 import { ensureUserProfile } from "@/lib/buildmind";
 import { identifyUser, trackEvent } from "@/lib/analytics";
 import { motion } from "framer-motion";
-
-const BrandMark = ({ size = 26 }: { size?: number }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width={size} height={size} style={{ flexShrink: 0 }}>
-    <defs>
-      <linearGradient id="lg-node" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0%" stopColor="#C4B5FD" /><stop offset="100%" stopColor="#7C3AED" />
-      </linearGradient>
-      <filter id="lg-glow">
-        <feGaussianBlur stdDeviation="0.8" result="b" />
-        <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
-      </filter>
-    </defs>
-    <rect width="32" height="32" rx="7" fill="#09090B" />
-    <rect width="32" height="32" rx="7" fill="none" stroke="rgba(139,92,246,0.4)" strokeWidth="0.8" />
-    <circle cx="6"  cy="16" r="2.2" fill="url(#lg-node)" filter="url(#lg-glow)" />
-    <circle cx="16" cy="14" r="2.4" fill="#A78BFA" filter="url(#lg-glow)" />
-    <circle cx="26" cy="16" r="2.2" fill="#C4B5FD" filter="url(#lg-glow)" />
-  </svg>
-);
+import { BrandMark } from "@/components/layout/logo";
+import { Input } from "@/components/ui/input";
 
 function formatAuthError(err: unknown): string {
   if (err instanceof Error && err.message.toLowerCase().includes("email not confirmed"))
@@ -83,7 +66,7 @@ export default function LoginPage() {
 
       {/* Logo */}
       <div className="flex items-center gap-2 mb-8">
-        <BrandMark size={24} />
+        <BrandMark size={24} href="/" />
         <span className="text-[14px] font-medium text-[#fafafa]">BuildMind</span>
       </div>
 
@@ -133,20 +116,29 @@ export default function LoginPage() {
           <form onSubmit={(e) => void onSubmit(e)} className="space-y-3">
             <div>
               <div className="text-[10px] text-[#555] uppercase tracking-wider mb-1.5">Email</div>
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-                placeholder="you@example.com" required autoFocus
-                className="w-full bg-[#0a0a0a] border border-[#222] rounded-md px-3 py-2.5 text-[13px] text-[#d4d4d4] outline-none focus:border-[#444] transition-colors"
-                style={{ fontFamily: "inherit" }} />
+              <Input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                required
+                autoFocus
+                className="border-[#222] bg-[#0a0a0a] text-[#d4d4d4] placeholder:text-[#666]"
+              />
             </div>
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <div className="text-[10px] text-[#555] uppercase tracking-wider">Password</div>
                 <Link href="/auth/reset-password" className="text-[10px] text-[#555] no-underline hover:text-[#888] transition-colors">Forgot?</Link>
               </div>
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)}
-                placeholder="••••••••" required
-                className="w-full bg-[#0a0a0a] border border-[#222] rounded-md px-3 py-2.5 text-[13px] text-[#d4d4d4] outline-none focus:border-[#444] transition-colors"
-                style={{ fontFamily: "inherit" }} />
+              <Input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                required
+                className="border-[#222] bg-[#0a0a0a] text-[#d4d4d4] placeholder:text-[#666]"
+              />
             </div>
 
             {error && (

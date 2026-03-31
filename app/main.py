@@ -61,7 +61,6 @@ def _ensure_runtime_schema() -> None:
 
     alter_map = {
         "users": [
-            ("supabase_id", "ALTER TABLE users ADD COLUMN supabase_id VARCHAR(64)"),
             ("username", "ALTER TABLE users ADD COLUMN username VARCHAR(100)"),
             ("password_hash", "ALTER TABLE users ADD COLUMN password_hash VARCHAR(255)"),
             ("bio", "ALTER TABLE users ADD COLUMN bio TEXT"),
@@ -208,14 +207,11 @@ settings = get_settings()
 _scheduler: BackgroundScheduler | None = None
 
 frontend_origins = [o.strip() for o in settings.FRONTEND_ORIGINS.split(",") if o.strip()]
-# Never use wildcard CORS in production. Set FRONTEND_ORIGINS to your Vercel URL.
-# Example: FRONTEND_ORIGINS=https://buildmind.vercel.app
-if "*" in frontend_origins:
-    logger.warning("event=cors_wildcard msg='CORS is open to all origins — safe for dev only, set FRONTEND_ORIGINS in production'")
+allow_all = "*" in frontend_origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=frontend_origins,
-    allow_credentials="*" not in frontend_origins,
+    allow_origins=["*"] if allow_all else frontend_origins,
+    allow_credentials=False if allow_all else True,
     allow_methods=["*"],
     allow_headers=["*"],
 )

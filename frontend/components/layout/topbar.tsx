@@ -20,6 +20,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
   const pathname = usePathname();
   const [email, setEmail] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [avatarBroken, setAvatarBroken] = useState(false);
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResultsData | null>(null);
@@ -35,7 +36,10 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
       const supabase = createClient();
       const { data } = await supabase.auth.getUser();
       setEmail(data.user?.email ?? "");
-      setAvatarUrl((data.user?.user_metadata?.avatar_url as string | undefined) ?? null);
+      const rawAvatar = (data.user?.user_metadata?.avatar_url as string | undefined) ?? null;
+      const normalized = rawAvatar && rawAvatar.trim().length > 0 ? rawAvatar : null;
+      setAvatarUrl(normalized);
+      setAvatarBroken(false);
       if (data.user?.id) {
         identifyUser(data.user.id, data.user?.email ?? null);
       }
@@ -194,7 +198,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
     <div className="relative z-50 flex h-full w-full items-center gap-3 px-4">
       <button
         onClick={onToggleSidebar}
-        className="grid h-9 w-9 place-items-center rounded-lg border border-white/10 bg-white/5 text-zinc-200 transition hover:bg-white/10 md:hidden"
+        className="grid h-9 w-9 place-items-center rounded-lg border border-[#1c1c1c] bg-[#0d0d0d] text-zinc-200 transition hover:bg-white/5 md:hidden"
         type="button"
         aria-label="Toggle navigation"
       >
@@ -218,10 +222,10 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
                 setSearchError(null);
               }
             }}
-            className="h-10 border-white/10 bg-black/20 pl-9 text-zinc-100 placeholder:text-zinc-500"
+            className="h-10 border-[#1c1c1c] bg-[#0d0d0d] pl-9 text-zinc-100 placeholder:text-zinc-500"
           />
         {searchOpen ? (
-          <div className="glass-panel absolute left-0 right-0 top-[calc(100%+8px)] z-50 max-h-80 overflow-auto p-2 text-sm">
+          <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 max-h-80 overflow-auto rounded-xl border border-[#1c1c1c] bg-[#0d0d0d] p-2 text-sm shadow-2xl">
             {searchLoading ? <p className="px-2 py-2 text-zinc-400">Searching...</p> : null}
             {searchError ? <p className="px-2 py-2 text-rose-400">{searchError}</p> : null}
             {searchResults &&
@@ -243,7 +247,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
                     key={`p-${item.id}`}
                     type="button"
                     onClick={() => goToProject(item.id)}
-                    className="w-full rounded-md px-2 py-2 text-left text-zinc-200 hover:bg-white/10"
+                    className="w-full rounded-md px-2 py-2 text-left text-zinc-200 hover:bg-white/5"
                   >
                     {item.title}
                   </button>
@@ -258,7 +262,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
                     key={`m-${item.id}`}
                     type="button"
                     onClick={() => goToProject(item.project_id)}
-                    className="w-full rounded-md px-2 py-2 text-left text-zinc-200 hover:bg-white/10"
+                    className="w-full rounded-md px-2 py-2 text-left text-zinc-200 hover:bg-white/5"
                   >
                     {item.title}
                   </button>
@@ -273,7 +277,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
                     key={`t-${item.id}`}
                     type="button"
                     onClick={() => goToProject(item.project_id)}
-                    className="w-full rounded-md px-2 py-2 text-left text-zinc-200 hover:bg-white/10"
+                    className="w-full rounded-md px-2 py-2 text-left text-zinc-200 hover:bg-white/5"
                   >
                     {item.title}
                   </button>
@@ -288,7 +292,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
                     key={`f-${item.href}`}
                     type="button"
                     onClick={() => goToFeature(item.href)}
-                    className="w-full rounded-md px-2 py-2 text-left text-zinc-200 hover:bg-white/10"
+                    className="w-full rounded-md px-2 py-2 text-left text-zinc-200 hover:bg-white/5"
                   >
                     {item.label}
                   </button>
@@ -316,7 +320,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
                     key={`r-${item.label}`}
                     type="button"
                     onClick={() => goToFeature(item.href)}
-                    className="w-full rounded-md px-2 py-2 text-left text-zinc-200 hover:bg-white/10"
+                    className="w-full rounded-md px-2 py-2 text-left text-zinc-200 hover:bg-white/5"
                   >
                     {item.label}
                   </button>
@@ -331,7 +335,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
       <div className="ml-auto flex items-center gap-3">
         <button
           onClick={() => router.push("/notifications")}
-          className="relative grid h-10 w-10 place-items-center rounded-lg border border-white/10 bg-white/5 text-zinc-200 transition hover:bg-white/10"
+          className="relative grid h-10 w-10 place-items-center rounded-lg border border-[#1c1c1c] bg-[#0d0d0d] text-zinc-200 transition hover:bg-white/5"
           type="button"
         >
           <Bell size={16} />
@@ -345,11 +349,16 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
         <div className="relative" ref={menuRef}>
           <button
             onClick={() => setOpen((s) => !s)}
-            className="grid h-10 w-10 place-items-center rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 font-semibold text-white"
+            className="grid h-10 w-10 place-items-center rounded-full border border-[#1c1c1c] bg-[#0d0d0d] font-semibold text-zinc-100"
             type="button"
           >
-            {avatarUrl ? (
-              <img src={avatarUrl} alt="Profile" className="h-10 w-10 rounded-full object-cover" />
+            {avatarUrl && !avatarBroken ? (
+              <img
+                src={avatarUrl}
+                alt="Profile"
+                className="h-10 w-10 rounded-full object-cover"
+                onError={() => setAvatarBroken(true)}
+              />
             ) : (
               initials
             )}
@@ -359,7 +368,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
             <motion.div
               initial={{ opacity: 0, y: -4 }}
               animate={{ opacity: 1, y: 0 }}
-              className="glass-panel absolute right-0 z-[70] mt-2 w-52 p-1"
+              className="absolute right-0 z-[70] mt-2 w-52 rounded-xl border border-[#1c1c1c] bg-[#0d0d0d] p-1 shadow-2xl"
             >
               <button
                 type="button"
@@ -367,22 +376,10 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
                   setOpen(false);
                   router.push("/settings");
                 }}
-                className="block w-full rounded-md px-3 py-2 text-left text-sm text-zinc-200 hover:bg-white/10"
+                className="block w-full rounded-md px-3 py-2 text-left text-sm text-zinc-200 hover:bg-white/5"
               >
                 Profile
               </button>
-              {FEATURES.adminPortal ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOpen(false);
-                    router.push("/admin");
-                  }}
-                  className="block w-full rounded-md px-3 py-2 text-left text-sm text-zinc-200 hover:bg-white/10"
-                >
-                  Admin Portal
-                </button>
-              ) : null}
               <button
                 type="button"
                 onClick={() => void signOut()}
