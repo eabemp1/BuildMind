@@ -333,7 +333,7 @@ export default function TodayPage() {
 
                 <div className="bg-[#0d0d0d] border border-[#1c1c1c] rounded-2xl p-5 text-white">
                   {/* FIX: "DO THIS NOW" — bold, all caps, white */}
-                  <motion.div initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.15 }}
+                  <motion.div data-tour="today-action" initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.15 }}
                     className="text-[11px] font-bold text-white uppercase tracking-[0.2em] mb-2.5">
                     DO THIS NOW
                   </motion.div>
@@ -343,7 +343,7 @@ export default function TodayPage() {
                     {action.action}
                   </motion.div>
 
-                  <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.28 }}
+                  <motion.div data-tour="today-copy" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.28 }}
                     className="bg-indigo-500/[0.08] border border-indigo-500/[0.18] rounded-xl p-3.5 mb-2.5 relative">
                     <div className="font-mono text-[11px] text-[#94a3b8] leading-relaxed italic pr-16 break-words">
                       &ldquo;{action.message}&rdquo;
@@ -392,7 +392,7 @@ export default function TodayPage() {
                     )}
                   </AnimatePresence>
 
-                  <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.42 }}
+                  <motion.div data-tour="today-done" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.42 }}
                     className="flex gap-2">
                     <motion.button onClick={handleDone}
                       whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.96 }}
@@ -497,7 +497,7 @@ export default function TodayPage() {
           </AnimatePresence>
 
           {/* Score / Streak / Stage row */}
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }}
+          <motion.div data-tour="today-score" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }}
             className="flex items-center justify-center gap-6 mt-5 py-3">
             <div className="text-center">
               <div className="text-base font-semibold">
