@@ -83,10 +83,7 @@ export default function ProjectCard({
         <Button
           type="button"
           onClick={() => {
-            const numericId = Number(id);
-            if (Number.isFinite(numericId)) {
-              setActiveProjectId(numericId);
-            }
+            setActiveProjectId(id);
             router.push(`/projects/${id}`);
           }}
           className="w-full bg-gradient-to-r from-indigo-500 to-purple-500 text-white"

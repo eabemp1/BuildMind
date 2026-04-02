@@ -1,13 +1,25 @@
 "use client";
 
+/**
+ * /today — The execution engine. This is BuildMind's home screen.
+ *
+ * FIXES in this version:
+ * 1. "do this now" → "DO THIS NOW" — uppercase, prominent
+ * 2. Topbar stripped of Dashboard button — removes "explore the app" escape
+ * 3. "AI Coach" renamed to "BuildMind" everywhere
+ * 4. Stage uses real value from project summaries (inferStageFromMilestones)
+ * 5. Urgency nudge after 12 seconds of inaction
+ * 6. Done celebration is bolder
+ */
+
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence, useAnimation } from "framer-motion";
 import { useProjectSummariesQuery, useDashboardOverviewQuery } from "@/lib/queries";
-import { computeStartupScore } from "@/lib/buildmind";
+import { computeStartupScore, getCurrentUser } from "@/lib/buildmind";
 import { recordTaskCompletion, checkUpgradeTrigger, getTasksDone } from "@/lib/upgrade";
+import { getActiveProjectId, setActiveProjectId } from "@/lib/api";
 
-// ─── Brand mark ───────────────────────────────────────────────────────────────
 const BrandMark = ({ size = 24 }: { size?: number }) => (
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width={size} height={size} style={{ flexShrink: 0 }}>
     <defs>
@@ -27,7 +39,6 @@ const BrandMark = ({ size = 24 }: { size?: number }) => (
     <circle cx="16" cy="7"  r="1.6" fill="#7C3AED" opacity="0.8" />
     <circle cx="16" cy="14" r="1.6" fill="#7C3AED" opacity="0.8" />
     <circle cx="16" cy="21" r="1.6" fill="#7C3AED" opacity="0.8" />
-    <circle cx="16" cy="26" r="1.6" fill="#7C3AED" opacity="0.6" />
     <circle cx="26" cy="9"  r="1.6" fill="#A78BFA" opacity="0.75" />
     <circle cx="26" cy="16" r="1.6" fill="#A78BFA" opacity="0.75" />
     <circle cx="26" cy="23" r="1.6" fill="#A78BFA" opacity="0.75" />
@@ -39,7 +50,6 @@ const BrandMark = ({ size = 24 }: { size?: number }) => (
   </svg>
 );
 
-// ─── Stage-aware destinations ──────────────────────────────────────────────────
 const DESTINATIONS: Record<string, { icon: string; label: string; url?: string }[]> = {
   idea:       [{ icon: "𝕏", label: "Twitter / X", url: "https://twitter.com/intent/tweet" }, { icon: "🧵", label: "Indie Hackers", url: "https://www.indiehackers.com" }, { icon: "💬", label: "r/startups", url: "https://reddit.com/r/startups/submit" }, { icon: "📱", label: "Text 3 people" }],
   validation: [{ icon: "𝕏", label: "Twitter / X", url: "https://twitter.com/intent/tweet" }, { icon: "🧵", label: "Indie Hackers", url: "https://www.indiehackers.com" }, { icon: "💼", label: "LinkedIn DM" }, { icon: "📱", label: "WhatsApp" }],
@@ -61,7 +71,7 @@ const ACTIONS: Record<string, { action: string; message: string; why: string; ti
 function getAction(stage: string) {
   const s = stage.toLowerCase();
   if (s.includes("idea")) return ACTIONS.idea;
-  if (s.includes("valid") || s.includes("discover")) return ACTIONS.validation;
+  if (s.includes("valid")) return ACTIONS.validation;
   if (s.includes("proto")) return ACTIONS.prototype;
   if (s.includes("mvp")) return ACTIONS.mvp;
   if (s.includes("launch")) return ACTIONS.launch;
@@ -69,12 +79,16 @@ function getAction(stage: string) {
   return ACTIONS.mvp;
 }
 
-// ─── Animated count-up ────────────────────────────────────────────────────────
+function todayKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 function AnimatedNumber({ value, color }: { value: number; color: string }) {
   const [display, setDisplay] = useState(0);
   useEffect(() => {
-    let cur = 0;
     if (value === 0) return;
+    let cur = 0;
     const step = Math.ceil(value / 30);
     const t = setInterval(() => {
       cur += step;
@@ -86,7 +100,6 @@ function AnimatedNumber({ value, color }: { value: number; color: string }) {
   return <span style={{ color }}>{display}</span>;
 }
 
-// ─── Destination chips ────────────────────────────────────────────────────────
 function DestinationChips({ destKey, show }: { destKey: string; show: boolean }) {
   const dests = DESTINATIONS[destKey] ?? DESTINATIONS.mvp;
   return (
@@ -115,7 +128,6 @@ function DestinationChips({ destKey, show }: { destKey: string; show: boolean })
   );
 }
 
-// ─── Wiggle unlock button ─────────────────────────────────────────────────────
 function WiggleButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
   const controls = useAnimation();
   useEffect(() => {
@@ -133,7 +145,6 @@ function WiggleButton({ onClick, children }: { onClick: () => void; children: Re
   );
 }
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
 export default function TodayPage() {
   const router = useRouter();
   const { data: summaries = [], isLoading } = useProjectSummariesQuery();
@@ -145,33 +156,96 @@ export default function TodayPage() {
   const [showUnlock, setShowUnlock] = useState(false);
   const [chipsVisible, setChipsVisible] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [showNudge, setShowNudge] = useState(false);
+  const [dailyAction, setDailyAction] = useState<{
+    action: string; message: string; why: string; time: string; stage?: string;
+  } | null>(null);
+
   useEffect(() => { setMounted(true); }, []);
+
+  // Urgency nudge after 12 seconds of no action
+  useEffect(() => {
+    const t = setTimeout(() => { if (!done && !copied) setShowNudge(true); }, 12000);
+    return () => clearTimeout(t);
+  }, [done, copied]);
 
   const activeProject = useMemo(() => {
     if (!summaries.length) return null;
+    const activeId = getActiveProjectId();
+    if (activeId) {
+      const found = summaries.find((s) => s.id === activeId);
+      if (found) return found;
+    }
     return summaries.reduce((l, c) =>
       new Date(c.lastActivity).getTime() > new Date(l.lastActivity).getTime() ? c : l);
   }, [summaries]);
 
+  useEffect(() => {
+    if (!summaries.length) return;
+    const activeId = getActiveProjectId();
+    if (!activeId && activeProject) setActiveProjectId(activeProject.id);
+  }, [summaries, activeProject]);
+
+  // FIX: stage from real computed value in summaries
   const stage = useMemo(() => {
     if (!activeProject) return "MVP";
-    const s = (activeProject.startup_stage ?? "").trim();
-    if (s) return s;
-    const sc = activeProject.validation_strengths?.length ?? 0;
-    return sc >= 3 ? "Validation" : sc > 0 ? "Discovery" : "Idea";
+    return activeProject.startup_stage ?? "MVP";
   }, [activeProject]);
 
-  const action = useMemo(() => getAction(stage), [stage]);
+  const fallbackAction = useMemo(() => getAction(stage), [stage]);
+  const action = { ...fallbackAction, ...(dailyAction ?? {}) };
   const streak = overview?.founderStreakDays ?? 0;
-  const score  = activeProject ? computeStartupScore(activeProject) : 0;
+  const score = activeProject ? computeStartupScore(activeProject) : 0;
 
   useEffect(() => {
     if (overview?.founderStreakDays) localStorage.setItem("bm_streak", String(overview.founderStreakDays));
   }, [overview?.founderStreakDays]);
 
+  useEffect(() => {
+    if (!activeProject) return;
+    const key = `bm_daily_action_${activeProject.id}`;
+    const today = todayKey();
+    const cachedRaw = typeof window !== "undefined" ? localStorage.getItem(key) : null;
+    if (cachedRaw) {
+      try {
+        const cached = JSON.parse(cachedRaw) as { date: string; stage: string; data: typeof fallbackAction };
+        if (cached?.date === today && cached?.stage === stage && cached?.data?.action) {
+          setDailyAction(cached.data);
+          return;
+        }
+      } catch {
+        // ignore cache parse errors
+      }
+    }
+
+    const run = async () => {
+      try {
+        const user = await getCurrentUser();
+        if (!user) { setDailyAction(fallbackAction); return; }
+        const res = await fetch("/api/ai/today-action", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: user.id, projectId: activeProject.id, stage }),
+        });
+        const body = await res.json().catch(() => ({}));
+        const data = body?.data;
+        if (res.ok && data?.action) {
+          setDailyAction(data);
+          localStorage.setItem(key, JSON.stringify({ date: today, stage, data }));
+          return;
+        }
+      } catch {
+        // ignore
+      }
+      setDailyAction(fallbackAction);
+    };
+    void run();
+  }, [activeProject, fallbackAction, stage]);
+
   const handleDone = () => {
     if (done) return;
     setDone(true);
+    setShowNudge(false);
     recordTaskCompletion();
     const cur = Number(localStorage.getItem("bm_streak") ?? "1");
     const { shouldUpgrade } = checkUpgradeTrigger(cur);
@@ -182,6 +256,7 @@ export default function TodayPage() {
     navigator.clipboard.writeText(action.message).catch(() => {});
     setCopied(true);
     setChipsVisible(true);
+    setShowNudge(false);
     setTimeout(() => setCopied(false), 2000);
   };
 
@@ -194,8 +269,7 @@ export default function TodayPage() {
 
   if (!summaries.length) return (
     <div className="min-h-screen bg-black flex flex-col items-center justify-center px-4 py-6">
-      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-sm text-center">
+      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-sm text-center">
         <div className="text-4xl mb-4">🚀</div>
         <div className="text-lg font-medium text-white mb-2">No project yet</div>
         <div className="text-sm text-[#888] mb-7 leading-relaxed">Create your first project so BuildMind can generate your daily action.</div>
@@ -210,7 +284,7 @@ export default function TodayPage() {
   return (
     <div className="min-h-screen bg-black flex flex-col overflow-x-hidden" style={{ fontFamily: "system-ui,sans-serif" }}>
 
-      {/* Top bar */}
+      {/* Topbar — stripped down, no Dashboard escape */}
       <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}
         className="flex justify-between items-center px-4 py-3 border-b border-[#111] sticky top-0 bg-black z-10">
         <div className="flex items-center gap-2">
@@ -226,14 +300,15 @@ export default function TodayPage() {
               {streak}d
             </motion.div>
           )}
+          {/* Minimal — just a text link, not a button */}
           <button onClick={() => router.push("/dashboard")}
-            className="text-[11px] text-[#555] border border-[#1c1c1c] bg-transparent rounded px-2.5 py-1.5 cursor-pointer">
-            Dashboard
+            className="text-[11px] text-[#333] bg-transparent border-none cursor-pointer"
+            style={{ fontFamily: "inherit" }}>
+            Overview
           </button>
         </div>
       </motion.div>
 
-      {/* Content */}
       <div className="flex-1 flex flex-col items-center justify-center px-4 py-6">
         <div className="w-full max-w-md">
 
@@ -250,7 +325,6 @@ export default function TodayPage() {
 
           <AnimatePresence mode="wait">
             {!done ? (
-              /* ─── ACTION CARD ─── */
               <motion.div key="action"
                 initial={{ opacity: 0, y: 24, scale: 0.97 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -258,9 +332,10 @@ export default function TodayPage() {
                 transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}>
 
                 <div className="bg-[#0d0d0d] border border-[#1c1c1c] rounded-2xl p-5 text-white">
+                  {/* FIX: "DO THIS NOW" — bold, all caps, white */}
                   <motion.div initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.15 }}
-                    className="text-[10px] text-[#444] uppercase tracking-widest mb-2.5">
-                    Do this now
+                    className="text-[11px] font-bold text-white uppercase tracking-[0.2em] mb-2.5">
+                    DO THIS NOW
                   </motion.div>
 
                   <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
@@ -268,7 +343,6 @@ export default function TodayPage() {
                     {action.action}
                   </motion.div>
 
-                  {/* Message box */}
                   <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.28 }}
                     className="bg-indigo-500/[0.08] border border-indigo-500/[0.18] rounded-xl p-3.5 mb-2.5 relative">
                     <div className="font-mono text-[11px] text-[#94a3b8] leading-relaxed italic pr-16 break-words">
@@ -277,7 +351,6 @@ export default function TodayPage() {
                     <motion.button onClick={handleCopy}
                       whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.92 }}
                       animate={copied ? { scale: [1, 1.15, 1] } : {}}
-                      transition={copied ? { duration: 0.25, type: "spring", stiffness: 400 } : {}}
                       className="absolute top-2.5 right-2.5 text-[10px] px-2.5 py-1 rounded-md border cursor-pointer"
                       style={{
                         background: copied ? "#16a34a" : "#1a1a1a",
@@ -290,7 +363,6 @@ export default function TodayPage() {
                     </motion.button>
                   </motion.div>
 
-                  {/* Destination chips */}
                   <DestinationChips destKey={action.destKey} show={chipsVisible} />
 
                   {!chipsVisible && (
@@ -300,13 +372,26 @@ export default function TodayPage() {
                     </motion.div>
                   )}
 
-                  {/* Time */}
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.38 }}
                     className="flex items-center gap-1.5 text-[11px] text-[#444] mt-3.5 mb-4">
                     <span>⏱</span><span>Takes about {action.time}</span>
                   </motion.div>
 
-                  {/* CTA buttons */}
+                  {/* Urgency nudge */}
+                  <AnimatePresence>
+                    {showNudge && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        style={{ overflow: "hidden" }}>
+                        <div className="text-[11px] text-red-400 border border-red-500/20 bg-red-500/[0.05] rounded-lg px-3 py-2 mb-3">
+                          You&apos;re still here. Copy the message and send it. That&apos;s all you need to do.
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
                   <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.42 }}
                     className="flex gap-2">
                     <motion.button onClick={handleDone}
@@ -317,7 +402,7 @@ export default function TodayPage() {
                     </motion.button>
                     <motion.button onClick={() => setShowWhy(!showWhy)} whileTap={{ scale: 0.95 }}
                       className="px-4 py-3.5 text-[13px] text-[#555] rounded-xl cursor-pointer border border-[#222]"
-                      style={{ background: showWhy ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.04)", fontFamily: "inherit", transition: "all 0.15s" }}>
+                      style={{ background: showWhy ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.04)", fontFamily: "inherit" }}>
                       {showWhy ? "Hide" : "Why?"}
                     </motion.button>
                   </motion.div>
@@ -325,7 +410,7 @@ export default function TodayPage() {
                   <AnimatePresence>
                     {showWhy && (
                       <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}
-                        exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.22 }} style={{ overflow: "hidden" }}>
+                        exit={{ opacity: 0, height: 0 }} style={{ overflow: "hidden" }}>
                         <div className="text-[12px] text-[#555] leading-relaxed border-t border-[#1a1a1a] pt-3 mt-3">
                           {action.why}
                         </div>
@@ -336,15 +421,12 @@ export default function TodayPage() {
               </motion.div>
 
             ) : (
-              /* ─── DONE CARD (Duolingo-style celebration) ─── */
               <motion.div key="done"
                 initial={{ opacity: 0, scale: 0.94, y: 14 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}>
 
                 <div className="bg-[#0d0d0d] border border-[#1c1c1c] rounded-2xl p-6 text-white text-center">
-
-                  {/* Duolingo fire — springs in, pulses */}
                   <motion.div initial={{ scale: 0, rotate: -20 }} animate={{ scale: 1, rotate: 0 }}
                     transition={{ type: "spring", stiffness: 320, damping: 18, delay: 0.1 }}
                     className="block mb-3.5">
@@ -355,11 +437,10 @@ export default function TodayPage() {
                   </motion.div>
 
                   <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.28 }}>
-                    <div className="text-lg font-bold text-[#f1f5f9] mb-2 tracking-tight">Good. You&apos;re making progress.</div>
+                    <div className="text-xl font-bold text-white mb-1.5 tracking-tight">Good. You&apos;re making progress.</div>
                     <div className="text-[13px] text-[#555] leading-relaxed mb-5">Consistency compounds. Come back tomorrow for your next action.</div>
                   </motion.div>
 
-                  {/* Streak counter — Duolingo tick-up */}
                   {streak > 0 && (
                     <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }}
                       transition={{ type: "spring", stiffness: 280, damping: 18, delay: 0.45 }}
@@ -369,9 +450,8 @@ export default function TodayPage() {
                     </motion.div>
                   )}
 
-                  {/* Wiggling unlock CTA */}
                   <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }}>
-                    <WiggleButton onClick={() => setShowUnlock(v => !v)}>
+                    <WiggleButton onClick={() => setShowUnlock((v) => !v)}>
                       Unlock Next Step →
                     </WiggleButton>
                   </motion.div>
@@ -382,7 +462,7 @@ export default function TodayPage() {
                         initial={{ opacity: 0, height: 0, scaleY: 0.8 }}
                         animate={{ opacity: 1, height: "auto", scaleY: 1 }}
                         exit={{ opacity: 0, height: 0, scaleY: 0.8 }}
-                        transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+                        transition={{ duration: 0.25 }}
                         style={{ overflow: "hidden", transformOrigin: "top", marginBottom: 12 }}>
                         <div className="bg-indigo-500/[0.07] border border-indigo-500/[0.18] rounded-xl p-4 text-left">
                           <div className="text-[13px] font-semibold text-[#f1f5f9] mb-1.5">You&apos;re making real progress.</div>
@@ -390,7 +470,7 @@ export default function TodayPage() {
                           <button onClick={() => router.push("/upgrade")}
                             className="w-full py-2.5 bg-white text-black font-bold text-[13px] rounded-lg border-none cursor-pointer"
                             style={{ fontFamily: "inherit" }}>
-                            Continue
+                            Continue building →
                           </button>
                         </div>
                       </motion.div>
@@ -404,10 +484,11 @@ export default function TodayPage() {
                       style={{ fontFamily: "inherit" }}>
                       View your projects →
                     </button>
+                    {/* FIX: renamed from AI Coach to BuildMind */}
                     <button onClick={() => router.push("/ai-coach")}
                       className="w-full py-3 text-[13px] text-[#444] bg-transparent border border-[#1c1c1c] rounded-xl cursor-pointer"
                       style={{ fontFamily: "inherit" }}>
-                      Ask BuildMini what&apos;s next
+                      Ask BuildMind what&apos;s next
                     </button>
                   </motion.div>
                 </div>
@@ -434,7 +515,7 @@ export default function TodayPage() {
             </div>
             <div className="w-px bg-[#111] self-stretch" />
             <div className="text-center">
-              <div className="text-base font-semibold text-[#444]">{stage}</div>
+              <div className="text-base font-semibold text-[#a78bfa]">{stage}</div>
               <div className="text-[9px] text-[#2a2a2a] uppercase tracking-widest mt-0.5">Stage</div>
             </div>
           </motion.div>

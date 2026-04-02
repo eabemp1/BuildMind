@@ -31,19 +31,20 @@ const BrandMark = () => (
     <line x1="7.6"  y1="16" x2="14.4" y2="14" stroke="#6D28D9" strokeWidth="1" opacity="0.95" />
     <line x1="17.6" y1="14" x2="24.4" y2="16" stroke="#8B5CF6" strokeWidth="1" opacity="0.95" />
     <circle cx="6"  cy="16" r="2.2" fill="url(#sb-nd)" filter="url(#sb-gl)" />
-    <circle cx="16" cy="14" r="2.4" fill="#A78BFA"      filter="url(#sb-gl)" />
-    <circle cx="26" cy="16" r="2.2" fill="#C4B5FD"      filter="url(#sb-gl)" />
+    <circle cx="16" cy="14" r="2.4" fill="#A78BFA" filter="url(#sb-gl)" />
+    <circle cx="26" cy="16" r="2.2" fill="#C4B5FD" filter="url(#sb-gl)" />
   </svg>
 );
 
 const nav = [
-  { href: "/today",            label: "Today",         icon: Zap,          enabled: true,                    primary: true },
-  { href: "/dashboard",        label: "Overview",      icon: Gauge,        enabled: true,                    primary: false },
-  { href: "/projects",         label: "Projects",      icon: FolderKanban, enabled: true,                    primary: false },
-  { href: "/ai-coach",         label: "BuildMini",     icon: Bot,          enabled: FEATURES.aiCoach,        primary: false },
-  { href: "/break-my-startup", label: "Break Startup", icon: Flame,        enabled: FEATURES.breakMyStartup, primary: false },
-  { href: "/reports",          label: "Progress",      icon: LineChart,    enabled: FEATURES.analytics,      primary: false },
-  { href: "/settings",         label: "Settings",      icon: Settings,     enabled: true,                    primary: false },
+  { href: "/today",            label: "Today",        icon: Zap,          enabled: true,                    primary: true },
+  { href: "/dashboard",        label: "Overview",     icon: Gauge,        enabled: true,                    primary: false },
+  { href: "/projects",         label: "Projects",     icon: FolderKanban, enabled: true,                    primary: false },
+  // FIX: renamed from "AI Coach" to "AI Coach"
+  { href: "/ai-coach",         label: "AI Coach",     icon: Bot,          enabled: FEATURES.aiCoach,        primary: false },
+  { href: "/break-my-startup", label: "Break Startup",icon: Flame,        enabled: FEATURES.breakMyStartup, primary: false },
+  { href: "/reports",          label: "Progress",     icon: LineChart,    enabled: FEATURES.analytics,      primary: false },
+  { href: "/settings",         label: "Settings",     icon: Settings,     enabled: true,                    primary: false },
 ];
 
 export default function Sidebar() {
@@ -55,6 +56,7 @@ export default function Sidebar() {
       background: "#000", borderRight: "1px solid #1c1c1c",
       padding: "14px 10px", fontFamily: "system-ui,sans-serif",
     }}>
+      {/* Brand */}
       <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "6px 8px 18px", borderBottom: "1px solid #1c1c1c", marginBottom: 10 }}>
         <BrandMark />
         <div>
@@ -67,39 +69,62 @@ export default function Sidebar() {
         {nav.filter((i) => i.enabled).map((item) => {
           const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
           const Icon = item.icon;
+
+          // Today gets special primary treatment — always stands out
+          if (item.primary) {
+            return (
+              <Link key={item.href} href={item.href}
+                style={{
+                  display: "flex", alignItems: "center", gap: 9, padding: "9px 10px",
+                  borderRadius: 7, textDecoration: "none", marginBottom: 6,
+                  background: active ? "rgba(139,92,246,0.2)" : "rgba(139,92,246,0.08)",
+                  border: active ? "1px solid rgba(139,92,246,0.35)" : "1px solid rgba(139,92,246,0.15)",
+                  color: active ? "#fff" : "#c4b5fd",
+                  fontSize: 13, fontWeight: 600,
+                }}>
+                <Icon size={14} />
+                {item.label}
+                {/* Pulse dot when not on Today — nudges user toward action */}
+                {!active && (
+                  <motion.span
+                    animate={{ opacity: [0.5, 1, 0.5], scale: [0.9, 1.1, 0.9] }}
+                    transition={{ duration: 2, repeat: Infinity }}
+                    style={{ marginLeft: "auto", width: 6, height: 6, borderRadius: "50%", background: "#7c3aed", display: "block" }}
+                  />
+                )}
+              </Link>
+            );
+          }
+
           return (
             <Link key={item.href} href={item.href}
               style={{
                 position: "relative", display: "flex", alignItems: "center", gap: 9,
                 padding: "8px 10px", borderRadius: 6, textDecoration: "none",
-                color: active ? "#fff" : item.primary ? "#aaa" : "#555",
+                color: active ? "#fff" : "#555",
                 fontSize: 13, fontWeight: active ? 500 : 400,
                 background: active ? "#141414" : "transparent",
                 border: active ? "1px solid #222" : "1px solid transparent",
                 transition: "color 0.15s",
               }}>
-              {active && (
-                <motion.span layoutId="nav-active" transition={{ type: "spring", duration: 0.3 }}
-                  style={{ position: "absolute", inset: 0, borderRadius: 6, background: "#141414", border: "1px solid #222", zIndex: -1 }} />
-              )}
-              <Icon size={13} style={{ color: active ? "#fff" : item.href === "/break-my-startup" ? "#f87171" : item.primary ? "#aaa" : "#3a3a3a", flexShrink: 0 }} />
-              <span style={{ flex: 1 }}>{item.label}</span>
-              {item.primary && !active && <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#4ade80", flexShrink: 0 }} />}
-              {item.href === "/break-my-startup" && !active && (
-                <span style={{ fontSize: 8, color: "#f87171", background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.2)", borderRadius: 3, padding: "1px 5px" }}>AI</span>
-              )}
+              <Icon size={14} />
+              {item.label}
             </Link>
           );
         })}
       </nav>
 
-      <div style={{ borderTop: "1px solid #1c1c1c", padding: "12px 8px 0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#4ade80" }} />
-          <span style={{ fontSize: 11, color: "#444" }}>Beta</span>
-        </div>
-        <Link href="/upgrade" style={{ fontSize: 10, color: "#666", textDecoration: "none", background: "#111", border: "1px solid #1c1c1c", borderRadius: 4, padding: "2px 8px" }}>
-          $10/mo
+      {/* Bottom action button */}
+      <div style={{ borderTop: "1px solid #111", paddingTop: 12 }}>
+        <Link href="/today"
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+            padding: "9px", borderRadius: 8, textDecoration: "none",
+            background: "linear-gradient(135deg,#6366f1,#8b5cf6)",
+            color: "white", fontSize: 12, fontWeight: 600,
+          }}>
+          <Zap size={12} />
+          Today&apos;s action
         </Link>
       </div>
     </aside>

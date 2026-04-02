@@ -10,6 +10,19 @@ import { identifyUser } from "@/lib/analytics";
 import { Suspense } from "react";
 
 type Step = 1 | 2 | 3;
+type StartupStage = "Idea" | "Validation" | "MVP" | "Launch" | "Growth" | "Revenue";
+
+const STAGE_OPTIONS: StartupStage[] = ["Idea", "Validation", "MVP", "Launch", "Growth", "Revenue"];
+
+function normalizeStage(input: string | null): StartupStage {
+  const value = String(input ?? "").trim().toLowerCase();
+  if (value.includes("valid")) return "Validation";
+  if (value.includes("mvp") || value.includes("proto")) return "MVP";
+  if (value.includes("launch")) return "Launch";
+  if (value.includes("growth")) return "Growth";
+  if (value.includes("revenue")) return "Revenue";
+  return "Idea";
+}
 
 const BrandMark = ({ size = 24 }: { size?: number }) => (
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width={size} height={size} style={{ flexShrink: 0 }}>
@@ -37,6 +50,7 @@ function OnboardingContent() {
   const [idea, setIdea] = useState("");
   const [targetUsers, setTargetUsers] = useState("");
   const [problem, setProblem] = useState(searchParams.get("problem") ?? "");
+  const [startupStage, setStartupStage] = useState<StartupStage>(normalizeStage(searchParams.get("stage")));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -65,7 +79,13 @@ function OnboardingContent() {
     try {
       setError(""); setLoading(true);
       const values = onboardingSchema.parse({ idea, targetUsers, problem });
-      await createProjectWithRoadmap({ project_name: values.idea.trim(), idea_description: values.idea.trim(), target_users: values.targetUsers.trim(), problem: values.problem.trim() });
+      await createProjectWithRoadmap({
+        project_name: values.idea.trim(),
+        idea_description: values.idea.trim(),
+        target_users: values.targetUsers.trim(),
+        problem: values.problem.trim(),
+        startup_stage: startupStage,
+      });
       router.replace("/today");
     } catch (err) {
       if (err instanceof z.ZodError) setError(err.issues[0]?.message ?? "Invalid data.");
@@ -142,6 +162,22 @@ function OnboardingContent() {
                   placeholder={cur.ph} autoFocus
                   className="w-full bg-[#0a0a0a] border border-[#222] rounded-lg px-3 py-2.5 text-[13px] text-[#d4d4d4] outline-none focus:border-[#444] mb-4 transition-colors"
                   style={{ fontFamily: "inherit" }} />
+              )}
+
+              {step === 3 && (
+                <div className="mb-4">
+                  <div className="text-[11px] text-[#555] mb-2">What stage are you currently in?</div>
+                  <select
+                    value={startupStage}
+                    onChange={(e) => setStartupStage(normalizeStage(e.target.value))}
+                    className="w-full bg-[#0a0a0a] border border-[#222] rounded-lg px-3 py-2.5 text-[13px] text-[#d4d4d4] outline-none focus:border-[#444] transition-colors"
+                    style={{ fontFamily: "inherit" }}
+                  >
+                    {STAGE_OPTIONS.map((s) => (
+                      <option key={s} value={s} style={{ background: "#0a0a0a", color: "#d4d4d4" }}>{s}</option>
+                    ))}
+                  </select>
+                </div>
               )}
 
               {error && (
