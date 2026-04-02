@@ -71,9 +71,19 @@ export default function Sidebar() {
           const Icon = item.icon;
 
           // Today gets special primary treatment — always stands out
+          const dataTour =
+            item.href === "/today"
+              ? "nav-today"
+              : item.href === "/ai-coach"
+              ? "nav-ai-coach"
+              : item.href === "/break-my-startup"
+              ? "nav-break-startup"
+              : undefined;
+
           if (item.primary) {
             return (
               <Link key={item.href} href={item.href}
+                data-tour={dataTour}
                 style={{
                   display: "flex", alignItems: "center", gap: 9, padding: "9px 10px",
                   borderRadius: 7, textDecoration: "none", marginBottom: 6,
@@ -98,6 +108,7 @@ export default function Sidebar() {
 
           return (
             <Link key={item.href} href={item.href}
+              data-tour={dataTour}
               style={{
                 position: "relative", display: "flex", alignItems: "center", gap: 9,
                 padding: "8px 10px", borderRadius: 6, textDecoration: "none",
