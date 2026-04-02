@@ -1,14 +1,4 @@
 "use client";
-/**
- * frontend/app/page.tsx — Root page
- *
- * Logged-in users → redirect to /dashboard (existing behaviour)
- * Anonymous users → render the conversion-first LandingPage
- *
- * This replaces the old page.tsx which sent anonymous users straight
- * to a features-heavy marketing page with a "Sign up" CTA.
- * Now anonymous users land on the conversion flow immediately.
- */
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -24,21 +14,15 @@ export default function HomePage() {
       const supabase = createClient();
       try {
         const { data } = await supabase.auth.getUser();
-        if (!data.user) return; // anonymous → show landing page below
+        if (!data.user) return; // anonymous → show landing
         await ensureUserProfile(data.user);
         const onboarded = await getOnboardingStatus(data.user.id);
-        if (!onboarded) {
-          router.replace("/onboarding");
-          return;
-        }
-        router.replace("/dashboard");
-      } catch {
-        // network error or missing env vars → keep landing page
-      }
+        if (!onboarded) { router.replace("/onboarding"); return; }
+        router.replace("/today"); // ← execution engine is home
+      } catch { /* network error → keep landing */ }
     };
     void check();
   }, [router]);
 
-  // Render the new conversion landing page for anonymous visitors
   return <LandingPage />;
 }

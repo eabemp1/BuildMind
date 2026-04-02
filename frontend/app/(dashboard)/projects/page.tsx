@@ -16,16 +16,29 @@ const inputStyle = {
   transition: "border-color 0.15s",
 };
 
-function stageFromStrengthCount(n: number): string {
-  if (n >= 3) return "Validation";
-  if (n > 0) return "Discovery";
+// FIX: stage colors now cover all real stages
+const STAGE_COLORS: Record<string, string> = {
+  Idea: "#555",
+  Validation: "#818cf8",
+  Prototype: "#fbbf24",
+  MVP: "#4ade80",
+  Launch: "#22d3ee",
+  Growth: "#a78bfa",
+  Revenue: "#4ade80",
+};
+
+const STAGE_OPTIONS = ["Idea", "Validation", "MVP", "Launch", "Growth", "Revenue"] as const;
+type StartupStage = typeof STAGE_OPTIONS[number];
+
+function normalizeStage(input: string): StartupStage {
+  const value = String(input || "").trim().toLowerCase();
+  if (value.includes("valid")) return "Validation";
+  if (value.includes("mvp") || value.includes("proto")) return "MVP";
+  if (value.includes("launch")) return "Launch";
+  if (value.includes("growth")) return "Growth";
+  if (value.includes("revenue")) return "Revenue";
   return "Idea";
 }
-
-const STAGE_COLORS: Record<string, string> = {
-  Idea: "#555", Discovery: "#818cf8", Validation: "#a78bfa",
-  Prototype: "#fbbf24", MVP: "#4ade80", Launch: "#22d3ee", Revenue: "#4ade80",
-};
 
 export default function ProjectsPage() {
   const router = useRouter();
@@ -36,14 +49,15 @@ export default function ProjectsPage() {
   const [projectName, setProjectName] = useState("");
   const [ideaDescription, setIdeaDescription] = useState("");
   const [targetUsers, setTargetUsers] = useState("");
+  const [startupStage, setStartupStage] = useState<StartupStage>("Idea");
   const [error, setError] = useState("");
 
   useEffect(() => {
     if (!summaries.length) return;
     const active = getActiveProjectId();
     if (!active) {
-      const firstId = Number(summaries[0]?.id);
-      if (Number.isFinite(firstId)) setActiveProjectId(firstId);
+      const firstId = summaries[0]?.id;
+      if (firstId) setActiveProjectId(firstId);
     }
   }, [summaries]);
 
@@ -52,10 +66,14 @@ export default function ProjectsPage() {
       setError("");
       const values = projectCreateSchema.parse({ projectName, ideaDescription, targetUsers });
       const created = await createMutation.mutateAsync({
-        project_name: values.projectName, idea_description: values.ideaDescription,
-        target_users: values.targetUsers, problem: values.ideaDescription,
+        project_name: values.projectName,
+        idea_description: values.ideaDescription,
+        target_users: values.targetUsers,
+        problem: values.ideaDescription,
+        startup_stage: startupStage,
       });
-      setModalOpen(false); setProjectName(""); setIdeaDescription(""); setTargetUsers("");
+      setModalOpen(false);
+      setProjectName(""); setIdeaDescription(""); setTargetUsers(""); setStartupStage("Idea");
       router.push(`/projects/${created.id}`);
     } catch (err) {
       if (err instanceof z.ZodError) { setError(err.issues[0]?.message ?? "Fill all fields."); return; }
@@ -95,7 +113,7 @@ export default function ProjectsPage() {
           <div style={{ fontSize: 32, marginBottom: 14 }}>🚀</div>
           <div style={{ fontSize: 14, fontWeight: 500, color: "#fff", marginBottom: 8 }}>No projects yet</div>
           <div style={{ fontSize: 13, color: "#555", marginBottom: 22, lineHeight: 1.6 }}>
-            Create your first startup project. BuildMind generates the roadmap, milestones, and validation automatically.
+            Create your first startup project. BuildMind generates milestones and a roadmap automatically.
           </div>
           <button onClick={() => setModalOpen(true)}
             style={{ background: "#fff", color: "#000", fontWeight: 500, fontSize: 13, padding: "9px 18px", borderRadius: 7, border: "none", cursor: "pointer", fontFamily: "inherit" }}>
@@ -116,19 +134,23 @@ export default function ProjectsPage() {
             </thead>
             <tbody>
               {summaries.map((s, i) => {
-                const stage = s.startup_stage ?? stageFromStrengthCount(s.validation_strengths.length);
+                // FIX: stage comes from summaries which now uses inferStageFromMilestones
+                const stage = s.startup_stage ?? "Idea";
                 const score = computeStartupScore(s);
                 const progress = s.progress ?? 0;
                 const sc = score >= 60 ? "#4ade80" : score >= 30 ? "#fbbf24" : "#555";
                 const stageColor = STAGE_COLORS[stage] ?? "#555";
-                const lastActivity = s.lastActivity ? new Date(s.lastActivity).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "—";
+                const lastActivity = s.lastActivity
+                  ? new Date(s.lastActivity).toLocaleDateString("en-GB", { day: "numeric", month: "short" })
+                  : "—";
+
                 return (
                   <motion.tr key={s.id}
                     initial={{ opacity: 0, y: 4 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: i * 0.05 }}
                     style={{ cursor: "pointer", borderBottom: i < summaries.length - 1 ? "1px solid #111" : "none" }}
-                    onClick={() => router.push(`/projects/${s.id}`)}
+                    onClick={() => { setActiveProjectId(s.id); router.push(`/projects/${s.id}`); }}
                     onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "#111"; }}
                     onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "transparent"; }}>
                     <td style={{ padding: "14px 18px" }}>
@@ -136,7 +158,7 @@ export default function ProjectsPage() {
                       <div style={{ fontSize: 11, color: "#444", marginTop: 2, maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.description}</div>
                     </td>
                     <td style={{ padding: "14px 18px" }}>
-                      <span style={{ fontSize: 11, color: stageColor, background: "rgba(255,255,255,0.03)", border: `1px solid ${stageColor}22`, borderRadius: 4, padding: "2px 8px" }}>
+                      <span style={{ fontSize: 11, color: stageColor, background: "rgba(255,255,255,0.03)", border: `1px solid ${stageColor}30`, borderRadius: 4, padding: "2px 8px", whiteSpace: "nowrap" }}>
                         {stage}
                       </span>
                     </td>
@@ -146,7 +168,7 @@ export default function ProjectsPage() {
                           initial={{ width: 0 }}
                           animate={{ width: `${progress}%` }}
                           transition={{ duration: 0.8, ease: "easeOut", delay: 0.3 + i * 0.05 }}
-                          style={{ height: "100%", background: progress >= 60 ? "#4ade80" : "#333", borderRadius: 9999 }} />
+                          style={{ height: "100%", background: progress >= 60 ? "#4ade80" : "#6366f1", borderRadius: 9999 }} />
                       </div>
                       <div style={{ fontSize: 11, color: "#444" }}>{progress}%</div>
                     </td>
@@ -171,7 +193,7 @@ export default function ProjectsPage() {
         </div>
       )}
 
-      {/* Create project modal */}
+      {/* Create modal */}
       <AnimatePresence>
         {modalOpen && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -181,18 +203,32 @@ export default function ProjectsPage() {
               transition={{ type: "spring", stiffness: 300, damping: 25 }}
               style={{ background: "#0a0a0a", border: "1px solid #1c1c1c", borderRadius: 12, padding: "26px 28px", width: "100%", maxWidth: 460, fontFamily: "inherit", color: "#e5e5e5" }}>
               <div style={{ fontSize: 16, fontWeight: 500, color: "#fff", marginBottom: 4, letterSpacing: "-0.01em" }}>New project</div>
-              <div style={{ fontSize: 12, color: "#444", marginBottom: 20, lineHeight: 1.6 }}>BuildMind generates validation and a milestone roadmap automatically.</div>
+              <div style={{ fontSize: 12, color: "#444", marginBottom: 20, lineHeight: 1.6 }}>
+                BuildMind generates a stage-aware roadmap and milestone plan automatically.
+              </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
-                <input value={projectName} onChange={(e) => setProjectName(e.target.value)} placeholder="Project name" style={inputStyle}
+                <input value={projectName} onChange={(e) => setProjectName(e.target.value)}
+                  placeholder="Project name" style={inputStyle}
                   onFocus={(e) => { (e.target as HTMLInputElement).style.borderColor = "#333"; }}
                   onBlur={(e) => { (e.target as HTMLInputElement).style.borderColor = "#1c1c1c"; }} />
-                <textarea value={ideaDescription} onChange={(e) => setIdeaDescription(e.target.value)} placeholder="Idea description — what are you building?" rows={3}
+                <textarea value={ideaDescription} onChange={(e) => setIdeaDescription(e.target.value)}
+                  placeholder="What are you building? Be specific." rows={3}
                   style={{ ...inputStyle, resize: "none" }}
                   onFocus={(e) => { (e.target as HTMLTextAreaElement).style.borderColor = "#333"; }}
                   onBlur={(e) => { (e.target as HTMLTextAreaElement).style.borderColor = "#1c1c1c"; }} />
-                <input value={targetUsers} onChange={(e) => setTargetUsers(e.target.value)} placeholder="Target users — who is this for?" style={inputStyle}
+                <input value={targetUsers} onChange={(e) => setTargetUsers(e.target.value)}
+                  placeholder="Who is this for?" style={inputStyle}
                   onFocus={(e) => { (e.target as HTMLInputElement).style.borderColor = "#333"; }}
                   onBlur={(e) => { (e.target as HTMLInputElement).style.borderColor = "#1c1c1c"; }} />
+                <div>
+                  <div style={{ fontSize: 11, color: "#555", marginBottom: 6 }}>Current stage</div>
+                  <select value={startupStage} onChange={(e) => setStartupStage(normalizeStage(e.target.value))}
+                    style={{ ...inputStyle, background: "#0a0a0a" }}>
+                    {STAGE_OPTIONS.map((s) => (
+                      <option key={s} value={s} style={{ background: "#0a0a0a", color: "#d4d4d4" }}>{s}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
               {error && <div style={{ fontSize: 12, color: "#f87171", marginBottom: 12 }}>{error}</div>}
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
@@ -203,7 +239,7 @@ export default function ProjectsPage() {
                 <motion.button whileTap={{ scale: 0.97 }}
                   onClick={() => void onCreate()} disabled={createMutation.isPending}
                   style={{ background: createMutation.isPending ? "#1a1a1a" : "#fff", color: createMutation.isPending ? "#444" : "#000", fontSize: 13, fontWeight: 600, padding: "8px 16px", borderRadius: 7, border: "none", cursor: createMutation.isPending ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
-                  {createMutation.isPending ? "Generating..." : "Create project"}
+                  {createMutation.isPending ? "Generating roadmap..." : "Create project →"}
                 </motion.button>
               </div>
             </motion.div>

@@ -12,6 +12,7 @@ import {
   getProjectsForCurrentUser,
   getProjectSummaries,
   markNotificationAsRead,
+  updateTaskStatus,
   type BuildMindNotification,
 } from "@/lib/buildmind";
 
@@ -25,10 +26,7 @@ export const queryKeys = {
 };
 
 export function useProjectsQuery() {
-  return useQuery({
-    queryKey: queryKeys.projects,
-    queryFn: getProjectsForCurrentUser,
-  });
+  return useQuery({ queryKey: queryKeys.projects, queryFn: getProjectsForCurrentUser });
 }
 
 export function useProjectDetailQuery(projectId: string) {
@@ -40,24 +38,15 @@ export function useProjectDetailQuery(projectId: string) {
 }
 
 export function useProjectSummariesQuery() {
-  return useQuery({
-    queryKey: queryKeys.projectSummaries,
-    queryFn: getProjectSummaries,
-  });
+  return useQuery({ queryKey: queryKeys.projectSummaries, queryFn: getProjectSummaries });
 }
 
 export function useDashboardOverviewQuery() {
-  return useQuery({
-    queryKey: queryKeys.overview,
-    queryFn: getDashboardOverview,
-  });
+  return useQuery({ queryKey: queryKeys.overview, queryFn: getDashboardOverview });
 }
 
 export function useNotificationsQuery() {
-  return useQuery({
-    queryKey: queryKeys.notifications,
-    queryFn: getNotificationsForCurrentUser,
-  });
+  return useQuery({ queryKey: queryKeys.notifications, queryFn: getNotificationsForCurrentUser });
 }
 
 export function useCreateProjectMutation() {
@@ -81,7 +70,6 @@ export function useDeleteProjectMutation() {
       void qc.invalidateQueries({ queryKey: queryKeys.projects });
       void qc.invalidateQueries({ queryKey: queryKeys.projectSummaries });
       void qc.invalidateQueries({ queryKey: queryKeys.overview });
-      void qc.invalidateQueries({ queryKey: queryKeys.notifications });
     },
   });
 }
@@ -99,14 +87,10 @@ export function useMarkNotificationMutation() {
       );
       return { previous };
     },
-    onError: (_err, _id, context) => {
-      if (context?.previous) {
-        qc.setQueryData(queryKeys.notifications, context.previous);
-      }
+    onError: (_err, _id, ctx) => {
+      if (ctx?.previous) qc.setQueryData(queryKeys.notifications, ctx.previous);
     },
-    onSettled: () => {
-      void qc.invalidateQueries({ queryKey: queryKeys.notifications });
-    },
+    onSettled: () => void qc.invalidateQueries({ queryKey: queryKeys.notifications }),
   });
 }
 
@@ -114,17 +98,52 @@ export function useClearNotificationsMutation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: clearNotificationsForCurrentUser,
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: queryKeys.notifications });
+    onSuccess: () => void qc.invalidateQueries({ queryKey: queryKeys.notifications }),
+  });
+}
+
+/**
+ * useUpdateTaskMutation — marks a task complete/incomplete.
+ * On success, invalidates project detail AND project summaries
+ * so the stage updates everywhere immediately.
+ */
+export function useUpdateTaskMutation(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { taskId: string; isCompleted: boolean; notes?: string }) =>
+      updateTaskStatus(payload.taskId, payload.isCompleted, payload.notes),
+    onMutate: async (variables) => {
+      // Optimistic update: flip the task in cache immediately
+      await qc.cancelQueries({ queryKey: queryKeys.project(projectId) });
+      const prev = qc.getQueryData(queryKeys.project(projectId));
+      qc.setQueryData(queryKeys.project(projectId), (old: ReturnType<typeof getProjectDetail> extends Promise<infer T> ? T : never) => {
+        if (!old) return old;
+        return {
+          ...old,
+          tasks: old.tasks.map((t) =>
+            t.id === variables.taskId ? { ...t, is_completed: variables.isCompleted, notes: variables.notes ?? t.notes } : t
+          ),
+        };
+      });
+      return { prev };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) qc.setQueryData(queryKeys.project(projectId), ctx.prev);
+    },
+    onSettled: () => {
+      // Invalidate everything so stage recomputes everywhere
+      void qc.invalidateQueries({ queryKey: queryKeys.project(projectId) });
+      void qc.invalidateQueries({ queryKey: queryKeys.projectSummaries });
       void qc.invalidateQueries({ queryKey: queryKeys.overview });
     },
   });
 }
 
-export function useCoachAdviceQuery(projectId?: string) {
+export function useAICoachQuery(projectId: string) {
   return useQuery({
-    queryKey: queryKeys.coach(projectId ?? ""),
-    queryFn: () => getAICoachAdvice(projectId ?? ""),
+    queryKey: queryKeys.coach(projectId),
+    queryFn: () => getAICoachAdvice(projectId),
     enabled: Boolean(projectId),
+    staleTime: 5 * 60 * 1000, // 5 min
   });
 }

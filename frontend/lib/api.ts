@@ -404,17 +404,16 @@ export function markTourSeen(): void {
   window.localStorage.removeItem(TOUR_SHOW_KEY);
 }
 
-export function getActiveProjectId(): number | null {
+export function getActiveProjectId(): string | null {
   if (typeof window === "undefined") return null;
   const raw = window.localStorage.getItem(ACTIVE_PROJECT_ID_KEY);
   if (!raw) return null;
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) ? parsed : null;
+  return raw;
 }
 
-export function setActiveProjectId(projectId: number): void {
+export function setActiveProjectId(projectId: string): void {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(ACTIVE_PROJECT_ID_KEY, String(projectId));
+  window.localStorage.setItem(ACTIVE_PROJECT_ID_KEY, projectId);
 }
 
 export async function registerUser(email: string, password: string): Promise<UserData> {

@@ -26,7 +26,8 @@ export default function BreakMyStartupPage() {
 
   const activeProject = useMemo(() => {
     const activeId = getActiveProjectId();
-    return projects.find((p) => p.id === activeId) ?? projects[0] ?? null;
+    if (!activeId) return projects[0] ?? null;
+    return projects.find((p) => String(p.id) === activeId) ?? projects[0] ?? null;
   }, [projects]);
 
   const runAnalysis = async () => {

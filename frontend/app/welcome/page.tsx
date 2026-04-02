@@ -18,7 +18,7 @@ import { BrandMark } from "@/components/layout/logo";
 
 export default function WelcomePage() {
   return (
-    <div style={{ minHeight: "100vh", background: "#0f1117", fontFamily: "'DM Sans',system-ui,sans-serif", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 24px" }}>
+    <div style={{ minHeight: "100vh", fontFamily: "'DM Sans',system-ui,sans-serif", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 24px" }}>
 
       <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 32 }}>
         <BrandMark size={36} href="/" />
