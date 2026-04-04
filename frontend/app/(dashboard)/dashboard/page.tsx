@@ -9,7 +9,6 @@ import { getActiveProjectId, setActiveProjectId } from "@/lib/api";
 
 const STAGE_STEPS = ["Idea", "Validation", "MVP", "Launch", "Growth", "Revenue"];
 
-// Proven actions per stage — what to show in the action card
 const STAGE_ROADMAP: Record<string, string> = {
   Idea: "Talk to 5 people who have this problem before writing any code.",
   Validation: "Send 10 personal outreach DMs to potential users — no pitch, just questions.",
@@ -24,11 +23,153 @@ function todayKey(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function AnimatedNumber({ value, color }: { value: number; color: string }) {
+function MetricRing({
+  value, max = 100, size = 80, label, suffix = "", color,
+}: {
+  value: number; max?: number; size?: number; label: string; suffix?: string; color: string;
+}) {
+  const r = (size - 10) / 2;
+  const circ = 2 * Math.PI * r;
+  const pct = Math.min(value / max, 1);
   return (
-    <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ color }}>
-      {value}
-    </motion.span>
+    <div className="flex flex-col items-center gap-1.5">
+      <div className="relative" style={{ width: size, height: size }}>
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90">
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="5" />
+          <motion.circle
+            cx={size / 2} cy={size / 2} r={r} fill="none"
+            stroke={color} strokeWidth="5" strokeLinecap="round"
+            strokeDasharray={circ}
+            initial={{ strokeDashoffset: circ }}
+            animate={{ strokeDashoffset: circ - pct * circ }}
+            transition={{ duration: 1.2, ease: [0.22, 1, 0.36, 1], delay: 0.2 }}
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.7 }}
+            className="font-bold leading-none tracking-tight"
+            style={{ fontSize: Math.round(size * 0.24), color }}
+          >
+            {value}
+          </motion.div>
+          {suffix && (
+            <div className="text-[10px] text-[#444] mt-0.5">{suffix}</div>
+          )}
+        </div>
+      </div>
+      <div className="text-[10px] text-[#555] uppercase tracking-widest text-center">{label}</div>
+    </div>
+  );
+}
+
+function StreakBar({ streak }: { streak: number }) {
+  const days = Math.min(streak, 14);
+  const color = streak >= 7 ? "#f97316" : streak >= 3 ? "#fbbf24" : "#555";
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <motion.span animate={{ scale: streak >= 3 ? [1, 1.2, 1] : 1 }} transition={{ duration: 0.6, delay: 0.8 }} className="text-xl">🔥</motion.span>
+        <div>
+          <div className="text-[22px] font-bold tracking-tight leading-none" style={{ color }}>{streak}d</div>
+          <div className="text-[10px] text-[#444] uppercase tracking-widest">Streak</div>
+        </div>
+      </div>
+      <div className="flex gap-1">
+        {Array.from({ length: 14 }).map((_, i) => (
+          <motion.div
+            key={i}
+            initial={{ scaleY: 0 }}
+            animate={{ scaleY: 1 }}
+            transition={{ delay: 0.05 * i, duration: 0.25, ease: "easeOut" }}
+            className="flex-1 h-5 rounded-sm border"
+            style={{
+              background: i < days ? color : "rgba(255,255,255,0.04)",
+              borderColor: i < days ? "transparent" : "#1a1a1a",
+              transformOrigin: "bottom",
+            }}
+          />
+        ))}
+      </div>
+      <div className="text-[9px] text-[#2a2a2a]">Last 14 days</div>
+    </div>
+  );
+}
+
+function StageJourney({ stageIndex }: { stageIndex: number }) {
+  return (
+    <div className="flex items-center w-full">
+      {STAGE_STEPS.map((s, i) => {
+        const done = i < stageIndex;
+        const active = i === stageIndex;
+        return (
+          <div key={s} className="flex items-center" style={{ flex: i < STAGE_STEPS.length - 1 ? 1 : "none" }}>
+            <div className="flex flex-col items-center gap-1">
+              <motion.div
+                initial={{ scale: 0.4, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ delay: 0.08 * i, type: "spring", stiffness: 400, damping: 22 }}
+                className="rounded-full flex items-center justify-center font-bold relative"
+                style={{
+                  width: active ? 26 : 20,
+                  height: active ? 26 : 20,
+                  background: done ? "#fff" : "transparent",
+                  border: active ? "2px solid #a78bfa" : done ? "none" : "1px solid #2a2a2a",
+                  fontSize: active ? 10 : 8,
+                  color: done ? "#000" : active ? "#a78bfa" : "#333",
+                  boxShadow: active ? "0 0 16px rgba(167,139,250,0.5)" : "none",
+                  flexShrink: 0,
+                }}
+              >
+                {done ? "✓" : i + 1}
+                {active && (
+                  <motion.div
+                    animate={{ scale: [1, 1.8, 1], opacity: [0.4, 0, 0.4] }}
+                    transition={{ duration: 2.2, repeat: Infinity }}
+                    className="absolute inset-[-6px] rounded-full border"
+                    style={{ borderColor: "rgba(167,139,250,0.35)" }}
+                  />
+                )}
+              </motion.div>
+              <div className="text-[8px] whitespace-nowrap"
+                style={{ color: active ? "#e5e5e5" : done ? "#555" : "#2a2a2a", fontWeight: active ? 600 : 400 }}>
+                {s}
+              </div>
+            </div>
+            {i < STAGE_STEPS.length - 1 && (
+              <div className="flex-1 h-px mx-0.5 mb-4 relative overflow-hidden" style={{ background: "#1c1c1c" }}>
+                {done && (
+                  <motion.div
+                    initial={{ width: "0%" }} animate={{ width: "100%" }}
+                    transition={{ delay: 0.15 + i * 0.08, duration: 0.4 }}
+                    className="absolute inset-0"
+                    style={{ background: "#555" }}
+                  />
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ScoreBar({ score }: { score: number }) {
+  const color = score >= 60 ? "#4ade80" : score >= 30 ? "#fbbf24" : "#f87171";
+  return (
+    <div className="flex items-center gap-2 min-w-[80px]">
+      <div className="flex-1 h-1 bg-white/5 rounded overflow-hidden">
+        <motion.div
+          initial={{ width: 0 }}
+          animate={{ width: `${score}%` }}
+          transition={{ duration: 0.8, ease: "easeOut", delay: 0.3 }}
+          className="h-full rounded"
+          style={{ background: color }}
+        />
+      </div>
+      <span className="text-xs font-semibold text-right min-w-[24px]" style={{ color }}>{score}</span>
+    </div>
   );
 }
 
@@ -63,8 +204,6 @@ export default function DashboardPage() {
     }
   }, [summaries, activeProjectSummary]);
 
-  // FIX: stage now comes from the computed value in getProjectSummaries,
-  // which uses inferStageFromMilestones — never returns stale null value
   const activeStage = useMemo(() => {
     if (!activeProjectSummary) return "Idea";
     return activeProjectSummary.startup_stage ?? "Idea";
@@ -91,6 +230,8 @@ export default function DashboardPage() {
     if (!totals.total) return 0;
     return Math.round((totals.completed / totals.total) * 100);
   }, [summaries]);
+
+  const tasksCompleted = overview?.completedTasks ?? 0;
 
   useEffect(() => {
     if (overview?.founderStreakDays) localStorage.setItem("bm_streak", String(overview.founderStreakDays));
@@ -148,7 +289,7 @@ export default function DashboardPage() {
       <div className="border border-[#1c1c1c] rounded-xl p-8 bg-[#080808]">
         <div className="text-[15px] font-medium text-white mb-2">No projects yet</div>
         <div className="text-[13px] text-[#888] leading-relaxed mb-5">
-          Create your first project to unlock daily actions, your execution score, and AI coaching.
+          Create your first project to unlock daily actions, milestones, and AI coaching.
         </div>
         <button onClick={() => router.push("/projects")}
           className="w-full py-3 bg-white text-black font-medium text-[13px] rounded-lg border-none cursor-pointer">
@@ -158,19 +299,18 @@ export default function DashboardPage() {
     </motion.div>
   );
 
-  const sc = execScore >= 60 ? "#4ade80" : execScore >= 30 ? "#fbbf24" : "#f87171";
-  const ac = acctRate >= 60 ? "#4ade80" : "#fbbf24";
+  const scoreColor = execScore >= 60 ? "#4ade80" : execScore >= 30 ? "#fbbf24" : "#f87171";
+  const acctColor = acctRate >= 60 ? "#4ade80" : "#fbbf24";
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}
-      className="space-y-3 pb-4">
+      className="flex flex-col gap-3 pb-6">
 
-      {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3 pb-4 border-b border-[#1c1c1c]">
         <div>
           <div className="text-lg font-medium text-white tracking-tight">Overview</div>
-          <div className="text-xs text-[#888] mt-0.5 truncate">
-            {activeProjectSummary?.title ?? "BuildMind"} · <span style={{ color: "#a78bfa" }}>{activeStage}</span>
+          <div className="text-xs text-[#888] mt-0.5">
+            {activeProjectSummary?.title ?? "BuildMind"} · {activeStage}
           </div>
           {summaries.length > 1 && (
             <div className="mt-2">
@@ -209,115 +349,81 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Metric tiles */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 border border-[#1c1c1c] rounded-xl overflow-hidden">
-        {[
-          {
-            label: "Execution score",
-            value: execScore,
-            suffix: "/100",
-            color: sc,
-            tooltip: "Average execution score across all active projects. Computed from each project's progress and validation strengths, then averaged.",
-          },
-          {
-            label: "Accountability",
-            value: acctRate,
-            suffix: "%",
-            color: ac,
-            tooltip: "Overall task completion rate across all projects (completed tasks ÷ total tasks).",
-          },
-          { label: "Streak", value: streak, suffix: " days", color: streak >= 3 ? "#fbbf24" : "#e5e5e5" },
-          { label: "Tasks done", value: overview?.completedTasks ?? 0, suffix: "", color: "#e5e5e5" },
-        ].map((s, i) => (
-          <motion.div key={s.label}
-            initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}
-            className="p-4 bg-[#080808]"
-            style={{ borderRight: i < 3 ? "1px solid #1c1c1c" : "none", borderBottom: i < 2 ? "1px solid #1c1c1c" : "none" }}>
-            <div className="text-[10px] text-[#555] uppercase tracking-wider mb-2" title={s.tooltip ?? ""}>
-              {s.label}
-            </div>
-            <div className="text-2xl font-medium leading-none tracking-tight">
-              <AnimatedNumber value={s.value} color={s.color} />
-              <span className="text-[12px] text-[#333] font-normal">{s.suffix}</span>
+      <motion.div
+        initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
+        className="bg-[#0d0d0d] border border-[#1c1c1c] rounded-xl px-4 py-5"
+      >
+        <div className="text-[10px] text-[#444] uppercase tracking-widest mb-5">Performance at a glance</div>
+        <div className="flex items-center justify-around gap-3 flex-wrap">
+          <MetricRing value={execScore} label="Execution" suffix="/100" color={scoreColor} size={82} />
+          <div className="w-px h-16 bg-[#1a1a1a] flex-shrink-0" />
+          <MetricRing value={acctRate} label="Accountability" suffix="%" color={acctColor} size={82} />
+          <div className="w-px h-16 bg-[#1a1a1a] flex-shrink-0" />
+          <MetricRing value={tasksCompleted} max={Math.max(tasksCompleted, 20)} label="Tasks done" color="#818cf8" size={82} />
+        </div>
+
+        {acctRate < 30 && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}
+            className="flex items-start gap-2.5 mt-4 p-3 bg-yellow-400/[0.05] border border-yellow-400/20 rounded-lg">
+            <span className="text-base flex-shrink-0">⚠️</span>
+            <div>
+              <div className="text-[12px] font-medium text-[#fbbf24] mb-0.5">Accountability gap detected</div>
+              <div className="text-[11px] text-[#555] leading-relaxed">You&apos;re marking tasks incomplete. Complete one task today to rebuild momentum.</div>
             </div>
           </motion.div>
-        ))}
-      </div>
+        )}
+      </motion.div>
 
-      {/* Accountability warning */}
-      {acctRate < 30 && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}
-          className="border border-yellow-400/20 rounded-xl p-3.5 bg-yellow-400/[0.04] flex items-start gap-3">
-          <span className="text-xl flex-shrink-0">⚠️</span>
-          <div>
-            <div className="text-[13px] font-medium text-[#fbbf24] mb-0.5">Accountability gap detected</div>
-            <div className="text-[11px] text-[#555] leading-relaxed">
-              Only {acctRate}% of tasks are complete. Complete one task today to rebuild momentum.
-            </div>
-          </div>
-        </motion.div>
-      )}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+        className="bg-[#0d0d0d] border border-[#1c1c1c] rounded-xl px-4 py-4"
+      >
+        <StreakBar streak={streak} />
+      </motion.div>
 
-      {/* Stage journey — FIX: shows real current stage */}
-      <div className="border border-[#1c1c1c] rounded-xl p-4 bg-[#080808]">
-        <div className="text-[10px] text-[#555] uppercase tracking-wider mb-3">Startup journey</div>
-        <div className="flex items-center overflow-x-auto pb-1 -mx-1 px-1" style={{ scrollbarWidth: "none" }}>
-          {STAGE_STEPS.map((s, i) => (
-            <div key={s} className="flex items-center flex-shrink-0">
-              <div className="flex flex-col items-center gap-1.5">
-                <div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-semibold flex-shrink-0"
-                  style={{
-                    background: i < stageIndex ? "#fff" : "transparent",
-                    border: i === stageIndex ? "1.5px solid #a78bfa" : i < stageIndex ? "1px solid #fff" : "1px solid #2a2a2a",
-                    color: i < stageIndex ? "#000" : i === stageIndex ? "#a78bfa" : "#333",
-                  }}>
-                  {i < stageIndex ? "✓" : i + 1}
-                </div>
-                <div className="text-[9px] whitespace-nowrap"
-                  style={{ color: i === stageIndex ? "#a78bfa" : i < stageIndex ? "#555" : "#2a2a2a", fontWeight: i === stageIndex ? 600 : 400 }}>
-                  {s}{i === stageIndex ? " ←" : ""}
-                </div>
-              </div>
-              {i < STAGE_STEPS.length - 1 && (
-                <div className="w-6 sm:w-8 h-px mx-1 mb-3 flex-shrink-0"
-                  style={{ background: i < stageIndex ? "#333" : "#1c1c1c" }} />
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
+      <motion.div
+        initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
+        className="bg-[#0d0d0d] border border-[#1c1c1c] rounded-xl px-4 py-4"
+      >
+        <div className="text-[10px] text-[#444] uppercase tracking-widest mb-3">Startup journey</div>
+        <StageJourney stageIndex={stageIndex} />
+      </motion.div>
 
-      {/* Today's action — shows action for REAL current stage */}
-      <div className="border border-[#1c1c1c] rounded-xl overflow-hidden">
+      <motion.div
+        initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+        className="border border-[#1c1c1c] rounded-xl overflow-hidden"
+      >
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-[#111] bg-[#080808]">
-          <span className="text-[11px] text-[#666]">Today&apos;s action</span>
-          <span className="text-[10px] text-[#444] bg-[#111] border border-[#1c1c1c] rounded px-1.5 py-0.5">{activeStage}</span>
+          <span className="text-[10px] text-[#555] uppercase tracking-widest">Today&apos;s action</span>
+          <span className="text-[10px] text-[#a78bfa] bg-[#111] border border-[#1c1c1c] rounded px-1.5 py-0.5">{activeStage}</span>
         </div>
-        <div className="p-4 bg-[#f5f5f4]">
-          <div className="text-[10px] text-[#999] uppercase tracking-wider mb-2">Do this now</div>
-          <div className="text-[14px] font-semibold text-[#0a0a0a] mb-4 leading-snug break-words">
+        <div className="p-4 bg-[#0d0d0d]">
+          <div className="text-[10px] text-[#444] uppercase tracking-widest mb-2">Do this now</div>
+          <div className="text-[14px] font-semibold text-[#f1f5f9] mb-4 leading-snug break-words">
             {dailyAction ?? STAGE_ROADMAP[activeStage] ?? STAGE_ROADMAP["MVP"]}
           </div>
-          <div className="flex flex-col sm:flex-row gap-2">
+          <div className="flex flex-col gap-2">
             <button onClick={() => router.push("/today")}
-              className="flex-1 py-3 bg-[#0a0a0a] text-white font-medium text-[12px] rounded-lg border-none cursor-pointer"
+              className="w-full py-3 bg-white text-black font-semibold text-[13px] rounded-lg border-none cursor-pointer"
               style={{ fontFamily: "inherit" }}>
               See full action card →
             </button>
             <button onClick={() => router.push("/ai-coach")}
-              className="sm:w-auto py-3 px-4 text-[12px] text-[#555] border border-[#ccc] bg-transparent rounded-lg cursor-pointer"
+              className="w-full py-2.5 text-[12px] text-[#555] border border-[#222] bg-transparent rounded-lg cursor-pointer"
               style={{ fontFamily: "inherit" }}>
               Ask BuildMind
             </button>
           </div>
         </div>
-      </div>
+      </motion.div>
 
-      {/* Projects table */}
       {summaries.length > 0 && (
-        <div className="border border-[#1c1c1c] rounded-xl overflow-hidden">
+        <motion.div
+          initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}
+          className="border border-[#1c1c1c] rounded-xl overflow-hidden"
+        >
           <div className="flex items-center justify-between px-4 py-2.5 border-b border-[#111] bg-[#080808]">
-            <span className="text-[11px] text-[#666]">Active projects</span>
+            <span className="text-[10px] text-[#555] uppercase tracking-widest">Active projects</span>
             <button onClick={() => router.push("/projects")}
               className="text-[11px] text-[#444] bg-transparent border-none cursor-pointer"
               style={{ fontFamily: "inherit" }}>
@@ -325,49 +431,47 @@ export default function DashboardPage() {
             </button>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse" style={{ minWidth: 360 }}>
+            <table className="w-full border-collapse" style={{ minWidth: 340 }}>
               <thead>
                 <tr>
-                  {["Project", "Stage", "Progress", "Score"].map((h) => (
-                    <th key={h} className="px-4 py-2.5 text-left text-[10px] text-[#444] font-medium uppercase tracking-wider border-b border-[#111] bg-[#080808]">{h}</th>
+                  {["Project", "Stage", "Score"].map((h) => (
+                    <th key={h} className="px-4 py-2 text-left text-[9px] text-[#333] font-medium uppercase tracking-widest border-b border-[#111] bg-[#080808]">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {summaries.slice(0, 5).map((s, i) => {
                   const score = computeStartupScore(s);
-                  const cc = score >= 60 ? "#4ade80" : score >= 30 ? "#fbbf24" : "#888";
                   return (
-                    <tr key={s.id} onClick={() => router.push(`/projects/${s.id}`)}
-                      className="cursor-pointer hover:bg-[#0d0d0d] transition-colors"
-                      style={{ borderBottom: i < Math.min(summaries.length, 5) - 1 ? "1px solid #111" : "none" }}>
+                    <motion.tr key={s.id}
+                      initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.08 * i }}
+                      onClick={() => router.push(`/projects/${s.id}`)}
+                      className="cursor-pointer"
+                      style={{ borderBottom: i < Math.min(summaries.length, 5) - 1 ? "1px solid #111" : "none" }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = "#0d0d0d")}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                    >
                       <td className="px-4 py-3">
-                        <div className="text-[13px] text-[#d4d4d4] font-medium truncate max-w-[140px]">{s.title}</div>
-                        <div className="text-[10px] text-[#555] mt-0.5 truncate max-w-[140px]">{s.description}</div>
+                        <div className="text-[13px] text-[#d4d4d4] font-medium max-w-[140px] truncate">{s.title}</div>
+                        <div className="text-[10px] text-[#444] mt-0.5 max-w-[140px] truncate">{s.description}</div>
                       </td>
                       <td className="px-4 py-3">
-                        {/* FIX: stage now shows real computed value */}
-                        <span className="text-[10px] text-[#a78bfa] bg-[#111] border border-[#1c1c1c] rounded px-1.5 py-0.5 whitespace-nowrap">
+                        <span className="text-[10px] text-[#888] bg-[#111] border border-[#1c1c1c] rounded px-1.5 py-0.5 whitespace-nowrap">
                           {s.startup_stage ?? "Idea"}
                         </span>
                       </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <div className="w-16 h-1 bg-[#1c1c1c] rounded-full overflow-hidden">
-                            <div style={{ width: `${s.progress}%`, background: "#6366f1", height: "100%", borderRadius: 9999 }} />
-                          </div>
-                          <span className="text-[10px] text-[#555]">{s.progress}%</span>
-                        </div>
+                      <td className="px-4 py-3 min-w-[100px]">
+                        <ScoreBar score={score} />
                       </td>
-                      <td className="px-4 py-3 text-[13px] font-medium" style={{ color: cc }}>{score}</td>
-                    </tr>
+                    </motion.tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
-        </div>
+        </motion.div>
       )}
+
     </motion.div>
   );
 }
