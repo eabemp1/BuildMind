@@ -12,7 +12,7 @@ type DashboardPreviewProps = {
 
 export default function DashboardPreview({ variant = "dashboard" }: DashboardPreviewProps) {
   const headerTitle =
-    variant === "coach" ? "BuildMini Chat" : variant === "milestones" ? "Milestone Tracker" : "Execution Dashboard";
+    variant === "coach" ? "AI Coach Chat" : variant === "milestones" ? "Milestone Tracker" : "Execution Dashboard";
 
   return (
     <motion.div
@@ -21,27 +21,27 @@ export default function DashboardPreview({ variant = "dashboard" }: DashboardPre
       className="relative"
     >
       <div className="pointer-events-none absolute -inset-6 rounded-[32px] bg-gradient-to-r from-indigo-500/30 via-purple-500/20 to-sky-500/20 blur-3xl" />
-      <div className="glass-panel panel-glow relative rounded-[28px] border border-white/10 p-6">
+      <div className="glass-panel panel-glow relative rounded-[28px] border border-[var(--bm-border2)] p-6">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-xs uppercase tracking-[0.35em] text-zinc-500">BuildMind</p>
-            <h3 className="mt-2 text-lg font-semibold text-white">{headerTitle}</h3>
+            <p className="text-xs uppercase tracking-[0.35em] bm-text3">BuildMind</p>
+            <h3 className="mt-2 text-lg font-semibold bm-text">{headerTitle}</h3>
           </div>
-          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-zinc-300">Live</span>
+          <span className="rounded-full border border-[var(--bm-border2)] bg-white/5 px-3 py-1 text-xs bm-text2">Live</span>
         </div>
 
         {variant === "coach" ? (
           <div className="mt-5 grid gap-3">
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div className="flex items-center justify-between text-xs text-zinc-400">
-                <span>BuildMini Chat</span>
+            <div className="rounded-2xl border border-[var(--bm-border2)] bg-white/5 p-4">
+              <div className="flex items-center justify-between text-xs bm-text2">
+                <span>AI Coach Chat</span>
                 <MessageCircle className="h-4 w-4 text-indigo-300" />
               </div>
-              <div className="mt-3 space-y-2 text-sm text-zinc-200">
-                <div className="rounded-lg border border-white/10 bg-black/30 px-3 py-2">
+              <div className="mt-3 space-y-2 text-sm bm-text">
+                <div className="rounded-lg border border-[var(--bm-border2)] bg-black/30 px-3 py-2">
                   User: How do we validate demand quickly?
                 </div>
-                <div className="rounded-lg border border-white/10 bg-indigo-500/10 px-3 py-2">
+                <div className="rounded-lg border border-[var(--bm-border2)] bg-indigo-500/10 px-3 py-2">
                   Coach: Interview 5 target users and measure willingness to pay.
                 </div>
               </div>
@@ -53,12 +53,12 @@ export default function DashboardPreview({ variant = "dashboard" }: DashboardPre
               ].map((card) => {
                 const Icon = card.icon;
                 return (
-                  <div key={card.label} className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                    <div className="flex items-center justify-between text-xs text-zinc-400">
+                  <div key={card.label} className="rounded-2xl border border-[var(--bm-border2)] bg-white/5 p-4">
+                    <div className="flex items-center justify-between text-xs bm-text2">
                       <span>{card.label}</span>
                       <Icon className="h-4 w-4 text-indigo-300" />
                     </div>
-                    <p className="mt-3 text-lg font-semibold text-white">{card.value}</p>
+                    <p className="mt-3 text-lg font-semibold bm-text">{card.value}</p>
                   </div>
                 );
               })}
@@ -66,18 +66,18 @@ export default function DashboardPreview({ variant = "dashboard" }: DashboardPre
           </div>
         ) : variant === "milestones" ? (
           <div className="mt-5 grid gap-3">
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div className="flex items-center justify-between text-xs text-zinc-400">
+            <div className="rounded-2xl border border-[var(--bm-border2)] bg-white/5 p-4">
+              <div className="flex items-center justify-between text-xs bm-text2">
                 <span>Roadmap Progress</span>
                 <span className="text-emerald-300">58%</span>
               </div>
               <div className="mt-3 space-y-3">
                 <ProgressBar value={58} />
-                <div className="grid gap-2 text-xs text-zinc-400">
+                <div className="grid gap-2 text-xs bm-text2">
                   {[
-                    { label: "Validation", status: "Complete", tone: "text-zinc-200" },
+                    { label: "Validation", status: "Complete", tone: "bm-text" },
                     { label: "MVP Build", status: "In Progress", tone: "text-indigo-200" },
-                    { label: "Launch", status: "Upcoming", tone: "text-zinc-500" },
+                    { label: "Launch", status: "Upcoming", tone: "bm-text3" },
                   ].map((item) => (
                     <div key={item.label} className="flex items-center justify-between">
                       <span>{item.label}</span>
@@ -94,12 +94,12 @@ export default function DashboardPreview({ variant = "dashboard" }: DashboardPre
               ].map((card) => {
                 const Icon = card.icon;
                 return (
-                  <div key={card.label} className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                    <div className="flex items-center justify-between text-xs text-zinc-400">
+                  <div key={card.label} className="rounded-2xl border border-[var(--bm-border2)] bg-white/5 p-4">
+                    <div className="flex items-center justify-between text-xs bm-text2">
                       <span>{card.label}</span>
                       <Icon className="h-4 w-4 text-indigo-300" />
                     </div>
-                    <p className="mt-3 text-lg font-semibold text-white">{card.value}</p>
+                    <p className="mt-3 text-lg font-semibold bm-text">{card.value}</p>
                   </div>
                 );
               })}
@@ -116,55 +116,55 @@ export default function DashboardPreview({ variant = "dashboard" }: DashboardPre
               ].map((card) => {
                 const Icon = card.icon;
                 return (
-                  <div key={card.label} className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                    <div className="flex items-center justify-between text-xs text-zinc-400">
+                  <div key={card.label} className="rounded-2xl border border-[var(--bm-border2)] bg-white/5 p-4">
+                    <div className="flex items-center justify-between text-xs bm-text2">
                       <span>{card.label}</span>
                       <Icon className="h-4 w-4 text-indigo-300" />
                     </div>
-                    <p className="mt-3 text-xl font-semibold text-white">{card.value}</p>
+                    <p className="mt-3 text-xl font-semibold bm-text">{card.value}</p>
                   </div>
                 );
               })}
             </div>
 
             <div className="mt-5 grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <div className="flex items-center justify-between text-xs text-zinc-400">
+              <div className="rounded-2xl border border-[var(--bm-border2)] bg-white/5 p-4">
+                <div className="flex items-center justify-between text-xs bm-text2">
                   <span>Roadmap Progress</span>
                   <span className="text-emerald-300">72%</span>
                 </div>
                 <div className="mt-3 space-y-3">
                   <ProgressBar value={72} />
-                  <div className="grid gap-2 text-xs text-zinc-400">
+                  <div className="grid gap-2 text-xs bm-text2">
                     <div className="flex items-center justify-between">
                       <span>Validation</span>
-                      <span className="text-zinc-200">Complete</span>
+                      <span className="bm-text">Complete</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span>MVP Build</span>
-                      <span className="text-zinc-200">In Progress</span>
+                      <span className="bm-text">In Progress</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span>Launch</span>
-                      <span className="text-zinc-500">Upcoming</span>
+                      <span className="bm-text3">Upcoming</span>
                     </div>
                   </div>
                 </div>
               </div>
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <div className="flex items-center justify-between text-xs text-zinc-400">
-                  <span>BuildMini</span>
+              <div className="rounded-2xl border border-[var(--bm-border2)] bg-white/5 p-4">
+                <div className="flex items-center justify-between text-xs bm-text2">
+                  <span>AI Coach</span>
                   <Sparkles className="h-4 w-4 text-purple-300" />
                 </div>
-                <p className="mt-3 text-sm text-zinc-200">
+                <p className="mt-3 text-sm bm-text">
                   “Interview 5 potential users before expanding feature scope.”
                 </p>
-                <div className="mt-4 space-y-2 text-xs text-zinc-400">
-                  <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/30 px-2 py-1">
+                <div className="mt-4 space-y-2 text-xs bm-text2">
+                  <div className="flex items-center gap-2 rounded-lg border border-[var(--bm-border2)] bg-black/30 px-2 py-1">
                     <span className="h-2 w-2 rounded-full bg-emerald-400" />
                     Validation complete
                   </div>
-                  <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/30 px-2 py-1">
+                  <div className="flex items-center gap-2 rounded-lg border border-[var(--bm-border2)] bg-black/30 px-2 py-1">
                     <span className="h-2 w-2 rounded-full bg-indigo-400" />
                     Next up: MVP sprint
                   </div>

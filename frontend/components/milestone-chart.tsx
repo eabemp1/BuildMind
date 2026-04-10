@@ -12,7 +12,7 @@ export default function MilestoneChart({ data }: MilestoneChartProps) {
   return (
     <GlowCard className="p-0">
       <CardHeader className="mb-6 px-6 pt-6">
-        <CardTitle className="text-base text-zinc-100">Milestone Completion</CardTitle>
+        <CardTitle className="text-base bm-text">Milestone Completion</CardTitle>
       </CardHeader>
       <CardContent className="h-64 px-6 pb-6">
         <ResponsiveContainer width="100%" height="100%">

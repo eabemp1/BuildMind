@@ -32,19 +32,34 @@ export async function middleware(request: NextRequest) {
     pathname === "/try" ||
     pathname.startsWith("/try/") ||
     pathname === "/upgrade" ||
-    pathname === "/welcome";
+    pathname === "/welcome" ||
+    pathname === "/ventures" ||
+    pathname.startsWith("/ventures/");
   const isExploreRoute = pathname === "/explore" || pathname.startsWith("/explore/");
   const isFounderRoute = pathname.startsWith("/founder/");
+  const isStudentRoute = pathname === "/students";
   const isPublicRoute =
     pathname === "/" ||
     isAuthRoute ||
     isExploreRoute ||
     isFounderRoute ||
-    isConversionRoute;
+    isConversionRoute ||
+    isStudentRoute;
   const isApiRoute = pathname.startsWith("/api");
+
+  // Private admin-only route — /my-ventures
+  if (pathname === "/my-ventures" || pathname.startsWith("/my-ventures/")) {
+    const adminId = process.env.NEXT_PUBLIC_ADMIN_USER_ID;
+    if (!user || (adminId && user.id !== adminId)) {
+      const redirectUrl = request.nextUrl.clone();
+      redirectUrl.pathname = "/dashboard";
+      return NextResponse.redirect(redirectUrl);
+    }
+  }
 
   const featureBlocks = [
     { enabled: FEATURES.aiCoach, match: (path: string) => path.startsWith("/ai-coach") },
+    { enabled: FEATURES.ventures, match: (path: string) => path === "/ventures" || path.startsWith("/ventures/") },
     { enabled: FEATURES.notifications, match: (path: string) => path.startsWith("/notifications") },
     { enabled: FEATURES.publicProjects, match: (path: string) => path === "/explore" || path.startsWith("/explore/") },
     { enabled: FEATURES.publicProjects, match: (path: string) => path.startsWith("/founder/") },

@@ -2,35 +2,200 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─── BUILDMIND DESIGN TOKENS ───────────────────────────────────────────── */
+/* DARK mode (default) */
 :root {
   color-scheme: light dark;
+  /* ── Backgrounds: slightly warmer dark for readability ── */
+  --bm-bg:        #0a0a0f;
+  --bm-bg2:       #0f0f16;
+  --bm-bg3:       #14141c;
+  --bm-bg4:       #1c1c27;
+  --bm-bg5:       #252533;
+  /* ── Borders: more visible in dark ── */
+  --bm-border:    #22222e;
+  --bm-border2:   #2e2e3e;
+  --bm-border3:   #3e3e52;
+  /* ── Text: IMPROVED — text4 raised from #3f4758 to #5a6480 ── */
+  --bm-text:      #f0f2f8;
+  --bm-text2:     #a0aec0;
+  --bm-text3:     #6b7a99;
+  --bm-text4:     #4e5c7a;   /* was #3f4758 — 25% brighter */
+  --bm-text-inv:  #0a0a0f;
+  /* ── Brand ── */
+  --bm-purple:    #8b83e8;
+  --bm-purple2:   #6258cc;
+  --bm-pdim:      rgba(139,131,232,.13);
+  --bm-pbd:       rgba(139,131,232,.30);
+  --bm-indigo:    #6366f1;
+  --bm-violet:    #8b5cf6;
+  --bm-green:     #4ade80;
+  --bm-amber:     #fbbf24;
+  --bm-red:       #f87171;
+  --bm-teal:      #5dd4c8;
+  /* ── Gradients for content patches (dark mode) ── */
+  --bm-grad-card: linear-gradient(135deg, #14141c 0%, #1a1a28 100%);
+  --bm-grad-hero: linear-gradient(135deg, rgba(99,102,241,0.08) 0%, rgba(139,92,246,0.05) 100%);
+  --bm-grad-green: linear-gradient(135deg, rgba(74,222,128,0.08) 0%, rgba(16,185,129,0.05) 100%);
+  --bm-grad-amber: linear-gradient(135deg, rgba(251,191,36,0.08) 0%, rgba(245,158,11,0.05) 100%);
 }
 
-html,
-body {
-  height: 100%;
+/* LIGHT mode overrides */
+.light-mode {
+  color-scheme: light;
+  /* ── Backgrounds ── */
+  --bm-bg:        #f2f3f9;
+  --bm-bg2:       #ffffff;
+  --bm-bg3:       #eaedf6;
+  --bm-bg4:       #dde1ef;
+  --bm-bg5:       #cfd4e6;
+  /* ── Borders: stronger for light readability ── */
+  --bm-border:    #c8cede;
+  --bm-border2:   #adb5cc;
+  --bm-border3:   #909ab8;
+  /* ── Text: deep navy for contrast, not pure black ── */
+  --bm-text:      #0d1026;
+  --bm-text2:     #2d3a5c;
+  --bm-text3:     #4e5e84;
+  --bm-text4:     #7a87a8;  /* improved: more readable in light */
+  --bm-text-inv:  #f2f3f9;
+  /* ── Brand: slightly richer in light ── */
+  --bm-purple:    #4a42b0;
+  --bm-purple2:   #3730a3;
+  --bm-pdim:      rgba(74,66,176,.08);
+  --bm-pbd:       rgba(74,66,176,.24);
+  --bm-indigo:    #4338ca;
+  --bm-violet:    #7c3aed;
+  --bm-green:     #15803d;
+  --bm-amber:     #92400e;
+  --bm-red:       #b91c1c;
+  --bm-teal:      #0f766e;
+  /* ── Gradients for content patches (light mode) ── */
+  --bm-grad-card: linear-gradient(135deg, #ffffff 0%, #f0f2fb 100%);
+  --bm-grad-hero: linear-gradient(135deg, rgba(74,66,176,0.06) 0%, rgba(124,58,237,0.04) 100%);
+  --bm-grad-green: linear-gradient(135deg, rgba(21,128,61,0.07) 0%, rgba(16,185,129,0.04) 100%);
+  --bm-grad-amber: linear-gradient(135deg, rgba(146,64,14,0.06) 0%, rgba(217,119,6,0.04) 100%);
 }
 
+/* ── Light mode card readability patches ── */
+.light-mode .bm-bg2  { box-shadow: 0 1px 3px rgba(13,16,38,0.06); }
+.light-mode .bm-bg3  { box-shadow: inset 0 1px 2px rgba(13,16,38,0.04); }
+
+/* ─── BASE ───────────────────────────────────────────────────────────────── */
+html, body { height: 100%; }
 body {
   @apply antialiased;
-  background: #000000;
-  color: #e5e7eb;
+  background: var(--bm-bg);
+  color: var(--bm-text);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+*::selection { background: rgba(99,102,241,0.25); }
+
+/* ─── TAILWIND ZINC → TOKEN MAPPING (covers every hardcoded zinc class) ─── */
+.text-zinc-100, .text-zinc-200                     { color: var(--bm-text)  !important; }
+.text-zinc-300, .text-zinc-400                     { color: var(--bm-text2) !important; }
+.text-zinc-500, .text-zinc-600                     { color: var(--bm-text3) !important; }
+.text-zinc-700, .text-zinc-800, .text-zinc-900     { color: var(--bm-text4) !important; }
+.bg-zinc-900, .bg-zinc-950                         { background: var(--bm-bg)  !important; }
+.bg-zinc-800                                       { background: var(--bm-bg2) !important; }
+.bg-zinc-700                                       { background: var(--bm-bg3) !important; }
+.border-zinc-800, .border-zinc-700                 { border-color: var(--bm-border) !important; }
+
+/* ─── HARDCODED HEX TAILWIND → TOKEN MAPPING ────────────────────────────── */
+/* Dark backgrounds */
+.bg-black, .bg-\[#09090b\], .bg-\[#09090B\], .bg-\[#07080c\]  { background: var(--bm-bg)  !important; }
+.bg-\[#0d0d0d\], .bg-\[#0c0d12\], .bg-\[#0a0a0a\]             { background: var(--bm-bg2) !important; }
+.bg-\[#080808\], .bg-\[#0f0f11\], .bg-\[#111\], .bg-\[#111113\]{ background: var(--bm-bg3) !important; }
+.bg-\[#141414\], .bg-\[#161618\], .bg-\[#1a1a1a\], .bg-\[#1c1c1c\] { background: var(--bm-bg4) !important; }
+
+/* White/opacity backgrounds → tokens */
+.bg-white\/5, .bg-white\/\[0\.04\], .bg-white\/\[0\.05\]  { background: var(--bm-bg3) !important; }
+.bg-white\/\[0\.07\], .bg-white\/\[0\.08\], .bg-white\/10  { background: var(--bm-bg4) !important; }
+.bg-\[#07080c\]\/90                                         { background: color-mix(in srgb, var(--bm-bg) 90%, transparent) !important; }
+.bg-\[#080808\]\/95, .bg-\[#0d0d0d\]\/95                   { background: color-mix(in srgb, var(--bm-bg3) 95%, transparent) !important; }
+
+/* Text: white/light hardcodes → token */
+.text-white, .text-\[#f1f5f9\], .text-\[#e5e5e5\], .text-\[#fafafa\] { color: var(--bm-text)  !important; }
+.text-\[#d4d4d4\], .text-\[#cbd5e1\], .text-\[#94a3b8\]     { color: var(--bm-text2) !important; }
+.text-\[#9ca3af\], .text-\[#71717a\]                         { color: var(--bm-text2) !important; }
+
+/* Text: mid-dark hardcodes → token */
+.text-\[#888\], .text-\[#777\], .text-\[#666\]               { color: var(--bm-text2) !important; }
+.text-\[#555\], .text-\[#64748b\]                             { color: var(--bm-text3) !important; }
+.text-\[#444\], .text-\[#3f3f46\]                             { color: var(--bm-text4) !important; }
+.text-\[#333\], .text-\[#2a2a2a\]                             { color: var(--bm-text4) !important; }
+
+/* Borders */
+.border-\[#1c1c1c\], .border-\[#111\], .border-white\/5, .border-white\/8   { border-color: var(--bm-border)  !important; }
+.border-\[#222\], .border-\[#2a2a2a\], .border-white\/10, .border-white\/\[0\.08\] { border-color: var(--bm-border2) !important; }
+.border-\[#333\], .border-\[#3a3a3a\], .border-white\/20     { border-color: var(--bm-border3) !important; }
+
+/* Ring dividers */
+.divide-\[#1c1c1c\], .divide-white\/5 { border-color: var(--bm-border) !important; }
+
+/* ─── FORM ELEMENT RESET (ensures light mode readability) ────────────────── */
+input, select, textarea, button {
+  font-family: inherit;
+}
+input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]),
+select, textarea {
+  background: var(--bm-bg3);
+  border: 1px solid var(--bm-border2);
+  color: var(--bm-text);
+  border-radius: 8px;
+  transition: border-color 0.15s;
+}
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--bm-pbd);
+}
+input::placeholder, textarea::placeholder { color: var(--bm-text4); }
+
+/* Tailwind dark input overrides → token */
+.bg-\[#0a0a0a\] input, input.bg-\[#0a0a0a\]  { background: var(--bm-bg3) !important; color: var(--bm-text) !important; }
+.focus\:border-\[#444\]:focus  { border-color: var(--bm-border3) !important; }
+
+/* ─── SCROLLBAR ──────────────────────────────────────────────────────────── */
+::-webkit-scrollbar       { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: var(--bm-bg3); }
+::-webkit-scrollbar-thumb { background: var(--bm-border3); border-radius: 2px; }
+
+/* ─── LEGACY GLASS PANEL ─────────────────────────────────────────────────── */
+.glass-panel { background: var(--bm-bg2); border: 1px solid var(--bm-border); border-radius: 12px; }
+.text-body   { color: var(--bm-text2); font-size: 0.875rem; }
+
+/* ─── STICKY HEADERS (common pattern throughout app) ─────────────────────── */
+[class*="sticky"][class*="bg-black"],
+[class*="sticky"][class*="bg-\[#"] {
+  background: color-mix(in srgb, var(--bm-bg) 96%, transparent) !important;
+  backdrop-filter: blur(8px);
+  border-color: var(--bm-border) !important;
 }
 
+/* ─── GRADIENT CARD UTILITY ─────────────────────────────────────────────────── */
+.bm-card-grad  { background: var(--bm-grad-card); }
+.bm-hero-grad  { background: var(--bm-grad-hero); }
 
-*::selection {
-  background: rgba(129, 140, 248, 0.35);
-}
+/* ─── IMPROVED LIGHT MODE OVERRIDES FOR TEXT-ON-BACKGROUND ─────────────────── */
+/* In light mode, some inline dark hex styles need flipping */
+.light-mode [style*="color: #888"],
+.light-mode [style*="color:#888"]  { color: var(--bm-text3) !important; }
+.light-mode [style*="color: #555"],
+.light-mode [style*="color:#555"]  { color: var(--bm-text3) !important; }
+.light-mode [style*="color: #333"],
+.light-mode [style*="color:#333"]  { color: var(--bm-text2) !important; }
+/* Dark backgrounds used as accent patches — keep in light mode */
+.light-mode .bg-indigo-500\/\[0\.08\] { background: rgba(74,66,176,0.07) !important; }
+.light-mode .bg-indigo-500\/\[0\.07\] { background: rgba(74,66,176,0.05) !important; }
+/* Monospace message boxes in light mode */
+.light-mode .font-mono { color: var(--bm-text3) !important; }
+/* Ensure card borders are visible in light mode */
+.light-mode .border-\[var\(--bm-border\)\] { border-color: var(--bm-border) !important; }
 
-.glass-panel {
-  @apply rounded-xl border border-white/10 bg-white/5 backdrop-blur-lg;
-}
-
-.panel-glow {
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.03), 0 18px 45px rgba(15, 23, 42, 0.45),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
-}
-
-.text-body {
-  @apply text-sm text-zinc-300;
+/* ─── FOCUS RING IMPROVEMENT ─────────────────────────────────────────────── */
+.light-mode input:focus,
+.light-mode textarea:focus,
+.light-mode select:focus {
+  border-color: var(--bm-purple) !important;
+  box-shadow: 0 0 0 3px rgba(74,66,176,0.12);
 }

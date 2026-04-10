@@ -10,3 +10,4 @@ for table in doc.tables:
         parts.append(" | ".join(cell.text.strip() for cell in row.cells))
 text = "\n".join(parts)
 print(text[12000:16000])
+2

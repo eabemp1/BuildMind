@@ -8,7 +8,7 @@ import { FEATURES } from "@/lib/features";
 const items = [
   { href: "/dashboard", label: "Dashboard", icon: "grid", enabled: true },
   { href: "/projects", label: "Projects", icon: "folder", enabled: true },
-  { href: "/ai-coach", label: "BuildMini", icon: "spark", enabled: FEATURES.aiCoach },
+  { href: "/ai-coach", label: "AI Coach", icon: "spark", enabled: FEATURES.aiCoach },
   { href: "/notifications", label: "Notifications", icon: "bell", enabled: FEATURES.notifications },
   { href: "/explore", label: "Explore", icon: "compass", enabled: FEATURES.publicProjects },
   { href: "/reports", label: "Reports", icon: "report", enabled: FEATURES.analytics },
@@ -42,7 +42,7 @@ export default function Sidebar() {
 
   return (
     <div className="flex h-full w-full flex-col bg-white p-4">
-      <div className="mb-8 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-700 px-4 py-5 text-white shadow">
+      <div className="mb-8 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-700 px-4 py-5 bm-text shadow">
         <p className="text-xs uppercase tracking-[0.25em] text-slate-300">EvolvAI</p>
         <h1 className="mt-2 text-2xl font-semibold">BuildMind</h1>
         <p className="mt-1 text-xs text-slate-300">Founder operating system</p>
@@ -57,7 +57,7 @@ export default function Sidebar() {
               href={item.href}
               className={cn(
                 "flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition",
-                active ? "bg-slate-900 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100",
+                active ? "bg-slate-900 bm-text shadow-sm" : "text-slate-600 hover:bg-slate-100",
               )}
             >
               <ItemIcon kind={item.icon} />

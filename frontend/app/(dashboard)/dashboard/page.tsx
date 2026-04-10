@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { computeStartupScore, getCurrentUser, type ProjectSummary } from "@/lib/buildmind";
 import { useDashboardOverviewQuery, useProjectsQuery, useProjectSummariesQuery } from "@/lib/queries";
 import { getActiveProjectId, setActiveProjectId } from "@/lib/api";
+import ConsentLedgerCTA from "@/components/ConsentLedgerCTA";
+import UpgradeCelebration from "@/components/UpgradeCelebration";
 
 const STAGE_STEPS = ["Idea", "Validation", "MVP", "Launch", "Growth", "Revenue"];
 
@@ -21,6 +23,31 @@ const STAGE_ROADMAP: Record<string, string> = {
 function todayKey(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// ─── Tooltip component ────────────────────────────────────────────────────
+function Tooltip({ text, children }: { text: string; children: React.ReactNode }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div style={{ position: "relative", display: "inline-flex" }}
+      onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
+      {children}
+      {show && (
+        <div style={{
+          position: "absolute", bottom: "calc(100% + 8px)", left: "50%",
+          transform: "translateX(-50%)",
+          background: "#1c1c27", border: "1px solid #2e2e3e",
+          borderRadius: 8, padding: "8px 12px", width: 220,
+          fontSize: 11, color: "#a0aec0", lineHeight: 1.5,
+          zIndex: 100, pointerEvents: "none",
+          boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+        }}>
+          {text}
+          <div style={{ position: "absolute", bottom: -5, left: "50%", transform: "translateX(-50%)", width: 8, height: 8, background: "#1c1c27", border: "1px solid #2e2e3e", borderRight: "none", borderTop: "none", rotate: "-45deg" }} />
+        </div>
+      )}
+    </div>
+  );
 }
 
 function MetricRing({
@@ -54,11 +81,11 @@ function MetricRing({
             {value}
           </motion.div>
           {suffix && (
-            <div className="text-[10px] text-[#444] mt-0.5">{suffix}</div>
+            <div className="text-[10px] bm-text4 mt-0.5">{suffix}</div>
           )}
         </div>
       </div>
-      <div className="text-[10px] text-[#555] uppercase tracking-widest text-center">{label}</div>
+      <div className="text-[10px] bm-text3 uppercase tracking-widest text-center">{label}</div>
     </div>
   );
 }
@@ -72,7 +99,7 @@ function StreakBar({ streak }: { streak: number }) {
         <motion.span animate={{ scale: streak >= 3 ? [1, 1.2, 1] : 1 }} transition={{ duration: 0.6, delay: 0.8 }} className="text-xl">🔥</motion.span>
         <div>
           <div className="text-[22px] font-bold tracking-tight leading-none" style={{ color }}>{streak}d</div>
-          <div className="text-[10px] text-[#444] uppercase tracking-widest">Streak</div>
+          <div className="text-[10px] bm-text4 uppercase tracking-widest">Streak</div>
         </div>
       </div>
       <div className="flex gap-1">
@@ -137,7 +164,7 @@ function StageJourney({ stageIndex }: { stageIndex: number }) {
               </div>
             </div>
             {i < STAGE_STEPS.length - 1 && (
-              <div className="flex-1 h-px mx-0.5 mb-4 relative overflow-hidden" style={{ background: "#1c1c1c" }}>
+              <div className="flex-1 h-px mx-0.5 mb-4 relative overflow-hidden" style={{ background:"var(--bm-bg4)" }}>
                 {done && (
                   <motion.div
                     initial={{ width: "0%" }} animate={{ width: "100%" }}
@@ -173,13 +200,25 @@ function ScoreBar({ score }: { score: number }) {
   );
 }
 
-export default function DashboardPage() {
+function DashboardPage() {
   const router = useRouter();
+  const params = useSearchParams();
   const { data: projects = [], isLoading: pL } = useProjectsQuery();
   const { data: summaries = [], isLoading: sL } = useProjectSummariesQuery();
   const { data: overview, isLoading: oL } = useDashboardOverviewQuery();
   const [dailyAction, setDailyAction] = useState<string | null>(null);
   const [activeProjectId, setActiveProjectIdState] = useState<string | null>(null);
+  const [celebrationPlan, setCelebrationPlan] = useState<string | null>(null);
+
+  // Show celebration when returning from Paystack/Paddle with ?upgraded=
+  useEffect(() => {
+    const upgraded = params.get("upgraded");
+    if (upgraded && ["builder", "venture"].includes(upgraded)) {
+      setCelebrationPlan(upgraded);
+      // Clean the URL without reload
+      window.history.replaceState({}, "", "/dashboard");
+    }
+  }, [params]);
 
   useEffect(() => {
     const stored = getActiveProjectId();
@@ -279,16 +318,16 @@ export default function DashboardPage() {
   if (pL || sL || oL) return (
     <div className="flex items-center justify-center h-60">
       <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1.5, repeat: Infinity }}
-        className="text-xs text-[#444]">Loading...</motion.div>
+        className="text-xs bm-text4">Loading...</motion.div>
     </div>
   );
 
   if (!projects.length) return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
       className="max-w-sm mx-auto mt-16 text-center">
-      <div className="border border-[#1c1c1c] rounded-xl p-8 bg-[#080808]">
-        <div className="text-[15px] font-medium text-white mb-2">No projects yet</div>
-        <div className="text-[13px] text-[#888] leading-relaxed mb-5">
+      <div className="border border-[var(--bm-border)] rounded-xl p-8 bm-bg3">
+        <div className="text-[15px] font-medium bm-text mb-2">No projects yet</div>
+        <div className="text-[13px] bm-text2 leading-relaxed mb-5">
           Create your first project to unlock daily actions, milestones, and AI coaching.
         </div>
         <button onClick={() => router.push("/projects")}
@@ -306,10 +345,18 @@ export default function DashboardPage() {
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}
       className="flex flex-col gap-3 pb-6">
 
-      <div className="flex flex-wrap items-start justify-between gap-3 pb-4 border-b border-[#1c1c1c]">
+      {/* Upgrade celebration — fires once after successful payment */}
+      {celebrationPlan && (
+        <UpgradeCelebration
+          plan={celebrationPlan}
+          onDismiss={() => setCelebrationPlan(null)}
+        />
+      )}
+
+      <div className="flex flex-wrap items-start justify-between gap-3 pb-4 border-b border-[var(--bm-border)]">
         <div>
-          <div className="text-lg font-medium text-white tracking-tight">Overview</div>
-          <div className="text-xs text-[#888] mt-0.5">
+          <div className="text-lg font-medium bm-text tracking-tight">Overview</div>
+          <div className="text-xs bm-text2 mt-0.5">
             {activeProjectSummary?.title ?? "BuildMind"} · {activeStage}
           </div>
           {summaries.length > 1 && (
@@ -323,11 +370,11 @@ export default function DashboardPage() {
                     setActiveProjectIdState(id);
                   }
                 }}
-                className="text-[11px] text-[#d4d4d4] bg-[#0a0a0a] border border-[#1c1c1c] rounded-md px-2 py-1"
+                className="text-[11px] bm-text2 bm-bg2 border border-[var(--bm-border)] rounded-md px-2 py-1"
                 style={{ fontFamily: "inherit" }}
               >
                 {summaries.map((s) => (
-                  <option key={s.id} value={s.id} style={{ background: "#0a0a0a", color: "#d4d4d4" }}>
+                  <option key={s.id} value={s.id} style={{ background:"var(--bm-bg2)", color:"var(--bm-text2)" }}>
                     {s.title}
                   </option>
                 ))}
@@ -351,15 +398,21 @@ export default function DashboardPage() {
 
       <motion.div
         initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
-        className="bg-[#0d0d0d] border border-[#1c1c1c] rounded-xl px-4 py-5"
+        className="bm-bg2 border border-[var(--bm-border)] rounded-xl px-4 py-5"
       >
-        <div className="text-[10px] text-[#444] uppercase tracking-widest mb-5">Performance at a glance</div>
+        <div className="text-[10px] bm-text4 uppercase tracking-widest mb-5">Performance at a glance</div>
         <div className="flex items-center justify-around gap-3 flex-wrap">
-          <MetricRing value={execScore} label="Execution" suffix="/100" color={scoreColor} size={82} />
-          <div className="w-px h-16 bg-[#1a1a1a] flex-shrink-0" />
-          <MetricRing value={acctRate} label="Accountability" suffix="%" color={acctColor} size={82} />
-          <div className="w-px h-16 bg-[#1a1a1a] flex-shrink-0" />
-          <MetricRing value={tasksCompleted} max={Math.max(tasksCompleted, 20)} label="Tasks done" color="#818cf8" size={82} />
+          <Tooltip text="Execution Score = tasks completed ÷ total tasks × 100. Measures how consistently you're completing what you set out to do. Below 40 means stalled. Above 70 means you're shipping.">
+            <MetricRing value={execScore} label="Execution" suffix="/100" color={scoreColor} size={82} />
+          </Tooltip>
+          <div className="w-px h-16 bm-bg4 flex-shrink-0" />
+          <Tooltip text="Accountability Rate = days you completed your action ÷ total active days. Did you show up every day this week? Below 30% means the streak is breaking.">
+            <MetricRing value={acctRate} label="Accountability" suffix="%" color={acctColor} size={82} />
+          </Tooltip>
+          <div className="w-px h-16 bm-bg4 flex-shrink-0" />
+          <Tooltip text="Total tasks completed across all your projects, ever. This number only goes up. It's your permanent record of execution.">
+            <MetricRing value={tasksCompleted} max={Math.max(tasksCompleted, 20)} label="Tasks done" color="#818cf8" size={82} />
+          </Tooltip>
         </div>
 
         {acctRate < 30 && (
@@ -368,7 +421,7 @@ export default function DashboardPage() {
             <span className="text-base flex-shrink-0">⚠️</span>
             <div>
               <div className="text-[12px] font-medium text-[#fbbf24] mb-0.5">Accountability gap detected</div>
-              <div className="text-[11px] text-[#555] leading-relaxed">You&apos;re marking tasks incomplete. Complete one task today to rebuild momentum.</div>
+              <div className="text-[11px] bm-text3 leading-relaxed">You&apos;re marking tasks incomplete. Complete one task today to rebuild momentum.</div>
             </div>
           </motion.div>
         )}
@@ -376,30 +429,30 @@ export default function DashboardPage() {
 
       <motion.div
         initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-        className="bg-[#0d0d0d] border border-[#1c1c1c] rounded-xl px-4 py-4"
+        className="bm-bg2 border border-[var(--bm-border)] rounded-xl px-4 py-4"
       >
         <StreakBar streak={streak} />
       </motion.div>
 
       <motion.div
         initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
-        className="bg-[#0d0d0d] border border-[#1c1c1c] rounded-xl px-4 py-4"
+        className="bm-bg2 border border-[var(--bm-border)] rounded-xl px-4 py-4"
       >
-        <div className="text-[10px] text-[#444] uppercase tracking-widest mb-3">Startup journey</div>
+        <div className="text-[10px] bm-text4 uppercase tracking-widest mb-3">Startup journey</div>
         <StageJourney stageIndex={stageIndex} />
       </motion.div>
 
       <motion.div
         initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-        className="border border-[#1c1c1c] rounded-xl overflow-hidden"
+        className="border border-[var(--bm-border)] rounded-xl overflow-hidden"
       >
-        <div className="flex items-center justify-between px-4 py-2.5 border-b border-[#111] bg-[#080808]">
-          <span className="text-[10px] text-[#555] uppercase tracking-widest">Today&apos;s action</span>
-          <span className="text-[10px] text-[#a78bfa] bg-[#111] border border-[#1c1c1c] rounded px-1.5 py-0.5">{activeStage}</span>
+        <div className="flex items-center justify-between px-4 py-2.5 border-b border-[#111] bm-bg3">
+          <span className="text-[10px] bm-text3 uppercase tracking-widest">Today&apos;s action</span>
+          <span className="text-[10px] text-[#a78bfa] bm-bg3 border border-[var(--bm-border)] rounded px-1.5 py-0.5">{activeStage}</span>
         </div>
-        <div className="p-4 bg-[#0d0d0d]">
-          <div className="text-[10px] text-[#444] uppercase tracking-widest mb-2">Do this now</div>
-          <div className="text-[14px] font-semibold text-[#f1f5f9] mb-4 leading-snug break-words">
+        <div className="p-4 bm-bg2">
+          <div className="text-[10px] bm-text4 uppercase tracking-widest mb-2">Do this now</div>
+          <div className="text-[14px] font-semibold bm-text mb-4 leading-snug break-words">
             {dailyAction ?? STAGE_ROADMAP[activeStage] ?? STAGE_ROADMAP["MVP"]}
           </div>
           <div className="flex flex-col gap-2">
@@ -409,7 +462,7 @@ export default function DashboardPage() {
               See full action card →
             </button>
             <button onClick={() => router.push("/ai-coach")}
-              className="w-full py-2.5 text-[12px] text-[#555] border border-[#222] bg-transparent rounded-lg cursor-pointer"
+              className="w-full py-2.5 text-[12px] bm-text3 border border-[var(--bm-border2)] bg-transparent rounded-lg cursor-pointer"
               style={{ fontFamily: "inherit" }}>
               Ask BuildMind
             </button>
@@ -420,12 +473,12 @@ export default function DashboardPage() {
       {summaries.length > 0 && (
         <motion.div
           initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}
-          className="border border-[#1c1c1c] rounded-xl overflow-hidden"
+          className="border border-[var(--bm-border)] rounded-xl overflow-hidden"
         >
-          <div className="flex items-center justify-between px-4 py-2.5 border-b border-[#111] bg-[#080808]">
-            <span className="text-[10px] text-[#555] uppercase tracking-widest">Active projects</span>
+          <div className="flex items-center justify-between px-4 py-2.5 border-b border-[#111] bm-bg3">
+            <span className="text-[10px] bm-text3 uppercase tracking-widest">Active projects</span>
             <button onClick={() => router.push("/projects")}
-              className="text-[11px] text-[#444] bg-transparent border-none cursor-pointer"
+              className="text-[11px] bm-text4 bg-transparent border-none cursor-pointer"
               style={{ fontFamily: "inherit" }}>
               View all
             </button>
@@ -435,7 +488,7 @@ export default function DashboardPage() {
               <thead>
                 <tr>
                   {["Project", "Stage", "Score"].map((h) => (
-                    <th key={h} className="px-4 py-2 text-left text-[9px] text-[#333] font-medium uppercase tracking-widest border-b border-[#111] bg-[#080808]">{h}</th>
+                    <th key={h} className="px-4 py-2 text-left text-[9px] bm-text4 font-medium uppercase tracking-widest border-b border-[#111] bm-bg3">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -452,11 +505,11 @@ export default function DashboardPage() {
                       onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                     >
                       <td className="px-4 py-3">
-                        <div className="text-[13px] text-[#d4d4d4] font-medium max-w-[140px] truncate">{s.title}</div>
-                        <div className="text-[10px] text-[#444] mt-0.5 max-w-[140px] truncate">{s.description}</div>
+                        <div className="text-[13px] bm-text2 font-medium max-w-[140px] truncate">{s.title}</div>
+                        <div className="text-[10px] bm-text4 mt-0.5 max-w-[140px] truncate">{s.description}</div>
                       </td>
                       <td className="px-4 py-3">
-                        <span className="text-[10px] text-[#888] bg-[#111] border border-[#1c1c1c] rounded px-1.5 py-0.5 whitespace-nowrap">
+                        <span className="text-[10px] bm-text2 bm-bg3 border border-[var(--bm-border)] rounded px-1.5 py-0.5 whitespace-nowrap">
                           {s.startup_stage ?? "Idea"}
                         </span>
                       </td>
@@ -472,6 +525,19 @@ export default function DashboardPage() {
         </motion.div>
       )}
 
+      {/* ConsentLedger cross-promotion — compact only (full card lives in sidebar) */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}
+        className="mt-2"
+      >
+        <ConsentLedgerCTA variant="compact" context="GDPR compliance tool — being built with BuildMind" />
+      </motion.div>
+
     </motion.div>
   );
+}
+
+import { Suspense } from "react";
+export default function DashboardPageWrapper() {
+  return <Suspense fallback={null}><DashboardPage /></Suspense>;
 }

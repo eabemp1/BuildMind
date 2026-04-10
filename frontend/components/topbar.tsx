@@ -65,7 +65,7 @@ export default function Topbar() {
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="grid h-10 w-10 place-items-center rounded-full border border-slate-300 bg-gradient-to-br from-slate-900 to-slate-700 text-sm font-semibold text-white shadow"
+          className="grid h-10 w-10 place-items-center rounded-full border border-slate-300 bg-gradient-to-br from-slate-900 to-slate-700 text-sm font-semibold bm-text shadow"
         >
           {initials}
         </button>

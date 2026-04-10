@@ -17,11 +17,90 @@ import { queryKeys } from "@/lib/queries";
 
 type Tab = "milestones" | "tasks" | "validation" | "roadmap";
 
+// ─── Milestone type system ──────────────────────────────────────────────────
+
+type MilestoneType = "action" | "research" | "legal" | "money" | "security";
+
+const TYPE_COLORS: Record<MilestoneType, string> = {
+  action: "#6366f1",
+  research: "#8b5cf6",
+  legal: "#f59e0b",
+  money: "#10b981",
+  security: "#ef4444",
+};
+
+const TYPE_LABELS: Record<MilestoneType, string> = {
+  action: "⚡ Action",
+  research: "📚 Research",
+  legal: "⚖️ Legal",
+  money: "💰 Revenue",
+  security: "🔒 Security",
+};
+
+function inferMilestoneType(title: string): MilestoneType {
+  const t = title.toLowerCase();
+  if (t.includes("legal") || t.includes("privacy") || t.includes("gdpr") || t.includes("compli") || t.includes("terms") || t.includes("contract") || t.includes("regulat")) return "legal";
+  if (t.includes("revenue") || t.includes("monetiz") || t.includes("pricing") || t.includes("payment") || t.includes("charg") || t.includes("subscription") || t.includes("sales") || t.includes("mrr") || t.includes("arr")) return "money";
+  if (t.includes("security") || t.includes("auth") || t.includes("encrypt") || t.includes("vulnerab") || t.includes("pentest") || t.includes("backup")) return "security";
+  if (t.includes("research") || t.includes("interview") || t.includes("survey") || t.includes("validat") || t.includes("analy") || t.includes("study") || t.includes("learn") || t.includes("discover")) return "research";
+  return "action";
+}
+
+const WEEK_LABELS = ["Week 1", "Week 2–3", "Week 3–4", "Month 2", "Month 2–3", "Month 3+"];
+function getMilestoneWeek(orderIndex: number): string {
+  return WEEK_LABELS[orderIndex] ?? `Week ${orderIndex + 1}`;
+}
+
+// ─── Milestone detail generator ─────────────────────────────────────────────
+
+const STAGE_DETAIL_TEMPLATES: Record<string, { detail: string; enforcement: string }> = {
+  Idea: {
+    detail: "Your job at this stage is to get out of your own head. Talk to 5–10 real people who have this problem. Don't pitch — just ask about their life, their current workarounds, and how much it costs them today. Write down exact quotes. Every assumption you have right now is probably wrong, and that's fine — finding out now costs nothing.",
+    enforcement: "Before marking this milestone complete: write down 3 quotes from real people who described this problem in their own words. No paraphrasing — exact words. Paste them into your project notes.",
+  },
+  Validation: {
+    detail: "Validation is not asking people if they'd use your thing. It's finding someone who already has the problem and getting them to take a real action — pre-pay, give you their email, or use a fake version. Talk is cheap. Behavior is signal. Run 5 user interviews and map everything to a specific problem, not a feature request.",
+    enforcement: "Before moving forward: document evidence of demand — at least 3 people who took a concrete action (paid, signed up, or committed time). 'They said they liked it' doesn't count.",
+  },
+  MVP: {
+    detail: "Scope brutally. Your MVP is not a smaller version of your full vision — it's the smallest thing that lets one type of user solve one specific problem. Strip everything that isn't essential. Get it into one warm contact's hands before end of day. The version they see today teaches you more than 3 more days of polishing.",
+    enforcement: "Before marking complete: share a working link with at least 3 real users (not friends or family who won't give honest feedback). Record what they do — not what they say.",
+  },
+  Launch: {
+    detail: "Launch is not a single event — it's the start of a feedback loop. Post on Product Hunt, post your story on Indie Hackers, and email every person who said they wanted this. Then watch what happens for 7 days. Set up a day 1 / day 3 / day 7 retention email sequence before you launch. Acquisition is expensive. Retention compounds.",
+    enforcement: "Before marking complete: you must have at least 10 real signups or users who aren't people you directly know. Share your launch post link as proof.",
+  },
+  Growth: {
+    detail: "Growth is not running ads — it's understanding why users stay and why they leave. Call one churned user. Not to win them back — to understand what failed. Find your top 3 retention levers and run one experiment. A 5% improvement in retention can double revenue over time. Set a revenue goal for this quarter and work backwards to weekly actions.",
+    enforcement: "Before marking complete: document the results of one growth experiment — what you tested, how many users it affected, and what the outcome was. Hypothesis → test → result.",
+  },
+  Revenue: {
+    detail: "Revenue stage is about making the business predictable. Map your full acquisition-to-revenue funnel and find the biggest leak. Know your current MRR. Build a simple financial model — 12 months of projections with realistic assumptions. Know your CAC, LTV, and payback period.",
+    enforcement: "Before marking complete: write down your current MRR, your target for next quarter, and the 3 specific actions that will get you there. Vague plans don't count.",
+  },
+};
+
+function getMilestoneDetail(milestone: BuildMindMilestone): { detail: string; enforcement: string } {
+  const stage = milestone.stage ?? milestone.title;
+  const stageKey = Object.keys(STAGE_DETAIL_TEMPLATES).find((k) =>
+    stage.toLowerCase().includes(k.toLowerCase())
+  );
+  if (stageKey) return STAGE_DETAIL_TEMPLATES[stageKey];
+  return {
+    detail: "Complete all tasks in this milestone before moving forward. Each task is a specific action — not a checkbox exercise. Do the work, not the appearance of the work.",
+    enforcement: "Before marking complete: all tasks in this milestone must be done and you should have something tangible to show — a link, a document, a screenshot, or a real user interaction.",
+  };
+}
+
+// ─── Input style ────────────────────────────────────────────────────────────
+
 const inp = {
   background: "#080808", border: "1px solid #1c1c1c", borderRadius: 6,
   padding: "8px 12px", fontSize: 13, color: "#d4d4d4", outline: "none",
   fontFamily: "inherit", boxSizing: "border-box" as const, transition: "border-color 0.15s",
 };
+
+// ─── Stage roadmaps ─────────────────────────────────────────────────────────
 
 const STAGE_ROADMAPS: Record<string, { step: string; detail: string; time: string }[]> = {
   Idea: [
@@ -40,7 +119,7 @@ const STAGE_ROADMAPS: Record<string, { step: string; detail: string; time: strin
     { step: "Run 3 usability sessions — watch someone use it without helping them.", detail: "You'll find problems in 20 minutes you'd never find on your own.", time: "1 hr each" },
   ],
   Launch: [
-    { step: "Post on Product Hunt — imperfect listing beats no listing.", detail: "Notion launched imperfect and got 10K users in 24h. Visibility > polish.", time: "3 hrs" },
+    { step: "Post on Product Hunt — imperfect listing beats no listing.", detail: "Visibility > polish.", time: "3 hrs" },
     { step: "Post your story on Indie Hackers with your launch numbers.", detail: "Transparency builds trust. The community rewards honesty.", time: "1 hr" },
     { step: "Set up a day 1 / day 3 / day 7 retention email sequence.", detail: "Acquisition is expensive. Retention compounds.", time: "2 hrs" },
   ],
@@ -51,6 +130,8 @@ const STAGE_ROADMAPS: Record<string, { step: string; detail: string; time: strin
   ],
 };
 
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
 function appendNote(existing: string | null | undefined, next: string): string {
   if (!next.trim()) return existing ?? "";
   return existing ? `${existing}||${next.trim()}` : next.trim();
@@ -59,6 +140,8 @@ function splitNotes(notes?: string | null): string[] {
   if (!notes) return [];
   return notes.split("||").map((n) => n.trim()).filter(Boolean);
 }
+
+// ─── Score ring ─────────────────────────────────────────────────────────────
 
 function ScoreRing({ score }: { score: number }) {
   const r = 28;
@@ -84,6 +167,8 @@ function ScoreRing({ score }: { score: number }) {
   );
 }
 
+// ─── Task checkbox ───────────────────────────────────────────────────────────
+
 function TaskCheckbox({ checked, onChange, size = 16 }: { checked: boolean; onChange: () => void; size?: number }) {
   const controls = useAnimation();
   const handleClick = async () => {
@@ -100,14 +185,179 @@ function TaskCheckbox({ checked, onChange, size = 16 }: { checked: boolean; onCh
   );
 }
 
+// ─── Rich Milestone Card ─────────────────────────────────────────────────────
+
+function RichMilestoneCard({
+  milestone,
+  tasks,
+  index,
+  onToggleTask,
+}: {
+  milestone: BuildMindMilestone;
+  tasks: BuildMindTask[];
+  index: number;
+  onToggleTask: (task: BuildMindTask) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const milestoneType = inferMilestoneType(milestone.title);
+  const typeColor = TYPE_COLORS[milestoneType];
+  const typeLabel = TYPE_LABELS[milestoneType];
+  const week = getMilestoneWeek(milestone.order_index ?? index);
+  const { detail, enforcement } = getMilestoneDetail(milestone);
+
+  const completedTasks = tasks.filter((t) => t.is_completed).length;
+  const totalTasks = tasks.length;
+  const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+  const isComplete = totalTasks > 0 && completedTasks === totalTasks;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.06 }}
+      style={{
+        background: isComplete ? "rgba(74,222,128,0.03)" : "#0d0d0d",
+        border: isComplete ? "1px solid rgba(74,222,128,0.2)" : "1px solid #1c1c1c",
+        borderRadius: 12,
+        overflow: "hidden",
+        transition: "border-color 0.3s",
+      }}
+    >
+      {/* Header — always visible */}
+      <div
+        style={{ padding: "14px 16px", cursor: "pointer" }}
+        onClick={() => setExpanded(!expanded)}
+      >
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+          {/* Completion circle */}
+          <div style={{
+            width: 20, height: 20, borderRadius: "50%", flexShrink: 0, marginTop: 1,
+            background: isComplete ? "#4ade80" : "transparent",
+            border: isComplete ? "none" : "1.5px solid #2a2a2a",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            {isComplete && <span style={{ fontSize: 10, color: "#000", lineHeight: 1 }}>✓</span>}
+          </div>
+
+          {/* Content */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {/* Type badge + week */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 5 }}>
+              <span style={{
+                fontSize: 10, padding: "2px 8px", borderRadius: 9999, fontFamily: "monospace",
+                background: `${typeColor}20`, color: typeColor, fontWeight: 500,
+              }}>{typeLabel}</span>
+              <span style={{ fontSize: 10, color: "#444", fontFamily: "monospace" }}>{week}</span>
+            </div>
+
+            {/* Title */}
+            <div style={{
+              fontSize: 13, fontWeight: 500, lineHeight: 1.4,
+              color: isComplete ? "#4ade80" : "#d4d4d4",
+              textDecoration: isComplete ? "line-through" : "none",
+            }}>{milestone.title}</div>
+
+            {/* Progress */}
+            {totalTasks > 0 && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+                <div style={{ flex: 1, maxWidth: 80, height: 2, background: "#111", borderRadius: 9999, overflow: "hidden" }}>
+                  <motion.div
+                    initial={{ width: 0 }}
+                    animate={{ width: `${progress}%` }}
+                    transition={{ duration: 0.6, ease: "easeOut" }}
+                    style={{ height: "100%", background: isComplete ? "#4ade80" : "#6366f1", borderRadius: 9999 }}
+                  />
+                </div>
+                <span style={{ fontSize: 10, color: "#444", fontFamily: "monospace" }}>
+                  {completedTasks}/{totalTasks} tasks · {progress}%
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Expand arrow */}
+          <motion.span
+            animate={{ rotate: expanded ? 180 : 0 }}
+            transition={{ duration: 0.2 }}
+            style={{ fontSize: 10, color: "#333", flexShrink: 0, marginTop: 4, display: "block" }}
+          >▼</motion.span>
+        </div>
+      </div>
+
+      {/* Expandable detail */}
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.22 }}
+            style={{ overflow: "hidden" }}
+          >
+            <div style={{ borderTop: "1px solid #111", padding: "14px 16px 16px", display: "flex", flexDirection: "column", gap: 12 }}>
+
+              {/* What to do */}
+              <div>
+                <div style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.1em", color: "#444", marginBottom: 6, fontFamily: "monospace" }}>What to do</div>
+                <p style={{ fontSize: 12, color: "#888", lineHeight: 1.65, margin: 0, fontFamily: "monospace" }}>{detail}</p>
+              </div>
+
+              {/* Enforcement checkpoint */}
+              <div style={{
+                background: "rgba(245,158,11,0.06)",
+                border: "1px solid rgba(245,158,11,0.2)",
+                borderRadius: 8, padding: "10px 12px",
+              }}>
+                <div style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.1em", color: "#f59e0b", marginBottom: 5, fontFamily: "monospace" }}>🔒 Completion checkpoint</div>
+                <p style={{ fontSize: 11, color: "#888", lineHeight: 1.6, margin: 0, fontFamily: "monospace" }}>{enforcement}</p>
+              </div>
+
+              {/* Tasks */}
+              {tasks.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.1em", color: "#444", marginBottom: 8, fontFamily: "monospace" }}>Tasks</div>
+                  <div style={{ display: "flex", flexDirection: "column" }}>
+                    {tasks.map((task) => (
+                      <div key={task.id} style={{
+                        display: "flex", alignItems: "flex-start", gap: 10,
+                        padding: "8px 0", borderBottom: "1px solid #0f0f0f",
+                      }}>
+                        <div style={{ paddingTop: 1 }}>
+                          <TaskCheckbox
+                            checked={task.is_completed}
+                            onChange={() => onToggleTask(task)}
+                            size={14}
+                          />
+                        </div>
+                        <div style={{
+                          fontSize: 12, lineHeight: 1.45, fontFamily: "monospace",
+                          color: task.is_completed ? "#333" : "#94a3b8",
+                          textDecoration: task.is_completed ? "line-through" : "none",
+                          transition: "all 0.25s",
+                        }}>
+                          {task.title}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
+// ─── Main page ───────────────────────────────────────────────────────────────
+
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const qc = useQueryClient();
   const { data, isLoading, error } = useProjectDetailQuery(id);
   const deleteMutation = useDeleteProjectMutation();
-
-  // FIX: use useUpdateTaskMutation which invalidates summaries → stage recomputes
   const updateMutation = useUpdateTaskMutation(id);
 
   useEffect(() => {
@@ -146,12 +396,6 @@ export default function ProjectDetailPage() {
       const { shouldUpgrade } = checkUpgradeTrigger(streak);
       if (shouldUpgrade) setShowUpgrade(true);
     }
-  };
-
-  const milestoneProgress = (m: BuildMindMilestone) => {
-    const mt = tasks.filter((t) => t.milestone_id === m.id);
-    if (!mt.length) return 0;
-    return Math.round((mt.filter((t) => t.is_completed).length / mt.length) * 100);
   };
 
   if (isLoading) return (
@@ -247,7 +491,7 @@ export default function ProjectDetailPage() {
         ))}
       </div>
 
-      {/* MILESTONES TAB */}
+      {/* ── MILESTONES TAB ─────────────────────────────────────────────────── */}
       {tab === "milestones" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {milestones.length === 0 && (
@@ -255,48 +499,47 @@ export default function ProjectDetailPage() {
               No milestones yet. BuildMind generates them from your project idea.
             </div>
           )}
+
+          {/* Progress strip */}
+          {milestones.length > 0 && (
+            <div style={{ display: "flex", gap: 3, marginBottom: 4 }}>
+              {milestones.map((m) => {
+                const mt = tasks.filter((t) => t.milestone_id === m.id);
+                const done = mt.length > 0 && mt.every((t) => t.is_completed);
+                const partial = !done && mt.some((t) => t.is_completed);
+                return (
+                  <motion.div
+                    key={m.id}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    title={m.title}
+                    style={{
+                      height: 4, flex: 1, borderRadius: 9999, minWidth: 20,
+                      background: done ? "#4ade80" : partial ? "#6366f1" : "#1c1c1c",
+                      transition: "background 0.4s",
+                    }}
+                  />
+                );
+              })}
+            </div>
+          )}
+
           {milestones.map((m, mi) => {
-            const mp = milestoneProgress(m);
             const mt = tasks.filter((t) => t.milestone_id === m.id);
-            const isComplete = mt.length > 0 && mt.every((t) => t.is_completed);
             return (
-              <motion.div key={m.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: mi * 0.06 }}
-                style={{ background: "#0d0d0d", border: isComplete ? "1px solid rgba(74,222,128,0.2)" : "1px solid #1c1c1c", borderRadius: 10, overflow: "hidden" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderBottom: "1px solid #111" }}>
-                  <div style={{ width: 20, height: 20, borderRadius: "50%", background: isComplete ? "#4ade80" : "transparent", border: isComplete ? "none" : "1.5px solid #2a2a2a", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                    {isComplete && <span style={{ fontSize: 11, color: "#000", lineHeight: 1 }}>✓</span>}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 500, color: isComplete ? "#4ade80" : "#d4d4d4" }}>{m.title}</div>
-                    <div style={{ fontSize: 10, color: "#444", marginTop: 1 }}>{mt.filter((t) => t.is_completed).length}/{mt.length} tasks · {mp}%</div>
-                  </div>
-                  <div style={{ width: 40, height: 2, background: "#111", borderRadius: 9999, overflow: "hidden", flexShrink: 0 }}>
-                    <div style={{ height: "100%", width: `${mp}%`, background: "#6366f1", borderRadius: 9999 }} />
-                  </div>
-                </div>
-                {mt.length > 0 && (
-                  <div style={{ padding: "8px 16px 12px" }}>
-                    {mt.map((task) => (
-                      <div key={task.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "7px 0", borderBottom: "1px solid #0f0f0f" }}>
-                        <div style={{ paddingTop: 1 }}>
-                          <TaskCheckbox checked={task.is_completed} onChange={() => toggleTask(task)} />
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: 13, color: task.is_completed ? "#2a2a2a" : "#94a3b8", textDecoration: task.is_completed ? "line-through" : "none", lineHeight: 1.45, transition: "all 0.25s" }}>
-                            {task.title}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </motion.div>
+              <RichMilestoneCard
+                key={m.id}
+                milestone={m}
+                tasks={mt}
+                index={mi}
+                onToggleTask={toggleTask}
+              />
             );
           })}
         </div>
       )}
 
-      {/* TASKS TAB */}
+      {/* ── TASKS TAB ─────────────────────────────────────────────────────── */}
       {tab === "tasks" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {tasks.length === 0 && <div style={{ fontSize: 13, color: "#444", textAlign: "center", padding: 40 }}>No tasks yet.</div>}
@@ -315,7 +558,10 @@ export default function ProjectDetailPage() {
                       {task.title}
                     </div>
                     {milestone && (
-                      <div style={{ fontSize: 10, color: "#444" }}>{milestone.title}</div>
+                      <div style={{ fontSize: 10, color: "#444", fontFamily: "monospace" }}>
+                        <span style={{ color: TYPE_COLORS[inferMilestoneType(milestone.title)], marginRight: 4 }}>●</span>
+                        {milestone.title}
+                      </div>
                     )}
                     {notes.map((n, ni) => (
                       <div key={ni} style={{ fontSize: 11, color: "#555", marginTop: 5, background: "#111", borderRadius: 4, padding: "4px 8px" }}>📝 {n}</div>
@@ -343,7 +589,7 @@ export default function ProjectDetailPage() {
         </div>
       )}
 
-      {/* ROADMAP TAB */}
+      {/* ── ROADMAP TAB ───────────────────────────────────────────────────── */}
       {tab === "roadmap" && (
         <div>
           <div style={{ fontSize: 12, color: "#555", marginBottom: 16 }}>
@@ -369,7 +615,7 @@ export default function ProjectDetailPage() {
         </div>
       )}
 
-      {/* VALIDATION TAB */}
+      {/* ── VALIDATION TAB ────────────────────────────────────────────────── */}
       {tab === "validation" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           {[

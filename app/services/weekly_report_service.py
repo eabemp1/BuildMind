@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.models import Milestone, Project, Task, User, WeeklyReport
@@ -26,9 +26,10 @@ def generate_founder_report(db: Session, user_id: int) -> WeeklyReport:
         .filter(
             Project.user_id == user_id,
             Milestone.is_completed.is_(True),
-            Milestone.completed_at.is_not(None),
-            Milestone.completed_at >= week_start,
-            Milestone.completed_at < week_end,
+            or_(
+                Milestone.completed_at.is_(None),
+                (Milestone.completed_at >= week_start) & (Milestone.completed_at < week_end),
+            ),
         )
         .scalar()
         or 0
@@ -41,9 +42,10 @@ def generate_founder_report(db: Session, user_id: int) -> WeeklyReport:
         .filter(
             Project.user_id == user_id,
             Task.is_completed.is_(True),
-            Task.completed_at.is_not(None),
-            Task.completed_at >= week_start,
-            Task.completed_at < week_end,
+            or_(
+                Task.completed_at.is_(None),
+                (Task.completed_at >= week_start) & (Task.completed_at < week_end),
+            ),
         )
         .scalar()
         or 0

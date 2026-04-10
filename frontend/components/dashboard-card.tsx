@@ -12,21 +12,21 @@ type DashboardCardProps = {
 
 export default function DashboardCard({ title, value, helper, trend, icon, tone = "neutral" }: DashboardCardProps) {
   const toneClass = {
-    neutral: "text-zinc-400",
+    neutral: "bm-text2",
     positive: "text-emerald-300",
     warning: "text-amber-300"
   }[tone];
 
   return (
     <GlowCard className="p-6">
-      <p className="text-xs uppercase tracking-wide text-zinc-400">{title}</p>
+      <p className="text-xs uppercase tracking-wide bm-text2">{title}</p>
       <div className="mt-4 flex items-end justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <p className="text-3xl font-semibold text-zinc-100">{value}</p>
+            <p className="text-3xl font-semibold bm-text">{value}</p>
             {icon ? <span className="text-indigo-300">{icon}</span> : null}
           </div>
-          {trend ? <p className="mt-2 text-xs text-zinc-500">{trend}</p> : null}
+          {trend ? <p className="mt-2 text-xs bm-text3">{trend}</p> : null}
         </div>
         <span
           className={cn(

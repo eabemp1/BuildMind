@@ -10,8 +10,8 @@ import { useCreateProjectMutation, useDeleteProjectMutation, useProjectSummaries
 import { projectCreateSchema } from "@/lib/validation";
 
 const inputStyle = {
-  background: "#080808", border: "1px solid #1c1c1c", borderRadius: 7,
-  padding: "10px 13px", fontSize: 13, color: "#d4d4d4", outline: "none",
+  background:"var(--bm-bg3)", border:"1px solid var(--bm-border)", borderRadius: 7,
+  padding: "10px 13px", fontSize: 13, color:"var(--bm-text2)", outline: "none",
   fontFamily: "inherit", width: "100%", boxSizing: "border-box" as const,
   transition: "border-color 0.15s",
 };
@@ -83,13 +83,13 @@ export default function ProjectsPage() {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-      style={{ maxWidth: 1000, margin: "0 auto", fontFamily: "system-ui,sans-serif", color: "#e5e5e5", paddingBottom: 40 }}>
+      style={{ maxWidth: 1000, margin: "0 auto", fontFamily: "system-ui,sans-serif", color:"var(--bm-text)", paddingBottom: 40 }}>
 
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, paddingBottom: 16, borderBottom: "1px solid #1c1c1c" }}>
         <div>
           <div style={{ fontSize: 19, fontWeight: 500, color: "#fff", letterSpacing: "-0.02em" }}>Projects</div>
-          <div style={{ fontSize: 12, color: "#555", marginTop: 2 }}>{summaries.length} project{summaries.length !== 1 ? "s" : ""}</div>
+          <div style={{ fontSize: 12, color:"var(--bm-text3)", marginTop: 2 }}>{summaries.length} project{summaries.length !== 1 ? "s" : ""}</div>
         </div>
         <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
           onClick={() => setModalOpen(true)}
@@ -100,7 +100,7 @@ export default function ProjectsPage() {
 
       {isLoading && (
         <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1.5, repeat: Infinity }}
-          style={{ fontSize: 12, color: "#333", textAlign: "center", padding: "40px 0" }}>Loading...</motion.div>
+          style={{ fontSize: 12, color:"var(--bm-text4)", textAlign: "center", padding: "40px 0" }}>Loading...</motion.div>
       )}
 
       {summariesError && (
@@ -109,10 +109,10 @@ export default function ProjectsPage() {
 
       {!isLoading && summaries.length === 0 && (
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-          style={{ background: "#0d0d0d", border: "1px solid #1c1c1c", borderRadius: 10, padding: "52px 32px", textAlign: "center" }}>
+          style={{ background:"var(--bm-bg2)", border:"1px solid var(--bm-border)", borderRadius: 10, padding: "52px 32px", textAlign: "center" }}>
           <div style={{ fontSize: 32, marginBottom: 14 }}>🚀</div>
           <div style={{ fontSize: 14, fontWeight: 500, color: "#fff", marginBottom: 8 }}>No projects yet</div>
-          <div style={{ fontSize: 13, color: "#555", marginBottom: 22, lineHeight: 1.6 }}>
+          <div style={{ fontSize: 13, color:"var(--bm-text3)", marginBottom: 22, lineHeight: 1.6 }}>
             Create your first startup project. BuildMind generates milestones and a roadmap automatically.
           </div>
           <button onClick={() => setModalOpen(true)}
@@ -123,12 +123,12 @@ export default function ProjectsPage() {
       )}
 
       {summaries.length > 0 && (
-        <div style={{ background: "#0d0d0d", border: "1px solid #1c1c1c", borderRadius: 10, overflow: "hidden" }}>
+        <div style={{ background:"var(--bm-bg2)", border:"1px solid var(--bm-border)", borderRadius: 10, overflow: "hidden" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
                 {["Project", "Stage", "Progress", "Score", "Last activity", ""].map((h) => (
-                  <th key={h} style={{ padding: "10px 18px", textAlign: "left", fontSize: 10, color: "#333", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.08em", borderBottom: "1px solid #111", background: "#080808" }}>{h}</th>
+                  <th key={h} style={{ padding: "10px 18px", textAlign: "left", fontSize: 10, color:"var(--bm-text4)", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.08em", borderBottom: "1px solid #111", background:"var(--bm-bg3)" }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -154,8 +154,8 @@ export default function ProjectsPage() {
                     onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "#111"; }}
                     onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "transparent"; }}>
                     <td style={{ padding: "14px 18px" }}>
-                      <div style={{ fontSize: 13, color: "#d4d4d4", fontWeight: 500 }}>{s.title}</div>
-                      <div style={{ fontSize: 11, color: "#444", marginTop: 2, maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.description}</div>
+                      <div style={{ fontSize: 13, color:"var(--bm-text2)", fontWeight: 500 }}>{s.title}</div>
+                      <div style={{ fontSize: 11, color:"var(--bm-text4)", marginTop: 2, maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.description}</div>
                     </td>
                     <td style={{ padding: "14px 18px" }}>
                       <span style={{ fontSize: 11, color: stageColor, background: "rgba(255,255,255,0.03)", border: `1px solid ${stageColor}30`, borderRadius: 4, padding: "2px 8px", whiteSpace: "nowrap" }}>
@@ -163,23 +163,23 @@ export default function ProjectsPage() {
                       </span>
                     </td>
                     <td style={{ padding: "14px 18px", minWidth: 120 }}>
-                      <div style={{ height: 2, background: "#111", borderRadius: 9999, overflow: "hidden", marginBottom: 4, width: 80 }}>
+                      <div style={{ height: 2, background:"var(--bm-bg3)", borderRadius: 9999, overflow: "hidden", marginBottom: 4, width: 80 }}>
                         <motion.div
                           initial={{ width: 0 }}
                           animate={{ width: `${progress}%` }}
                           transition={{ duration: 0.8, ease: "easeOut", delay: 0.3 + i * 0.05 }}
                           style={{ height: "100%", background: progress >= 60 ? "#4ade80" : "#6366f1", borderRadius: 9999 }} />
                       </div>
-                      <div style={{ fontSize: 11, color: "#444" }}>{progress}%</div>
+                      <div style={{ fontSize: 11, color:"var(--bm-text4)" }}>{progress}%</div>
                     </td>
                     <td style={{ padding: "14px 18px", fontSize: 13, color: sc, fontVariantNumeric: "tabular-nums" }}>{score}</td>
-                    <td style={{ padding: "14px 18px", fontSize: 12, color: "#444" }}>{lastActivity}</td>
+                    <td style={{ padding: "14px 18px", fontSize: 12, color:"var(--bm-text4)" }}>{lastActivity}</td>
                     <td style={{ padding: "14px 18px", textAlign: "right" }}>
                       <button onClick={(e) => {
                         e.stopPropagation();
                         if (window.confirm(`Delete "${s.title}"?`)) deleteMutation.mutate(s.id);
                       }}
-                        style={{ background: "none", border: "none", color: "#2a2a2a", fontSize: 18, cursor: "pointer", padding: "2px 6px", borderRadius: 4, lineHeight: 1, fontFamily: "inherit", transition: "color 0.15s" }}
+                        style={{ background: "none", border: "none", color:"var(--bm-text4)", fontSize: 18, cursor: "pointer", padding: "2px 6px", borderRadius: 4, lineHeight: 1, fontFamily: "inherit", transition: "color 0.15s" }}
                         onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "#f87171"; }}
                         onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "#2a2a2a"; }}>
                         ×
@@ -201,9 +201,9 @@ export default function ProjectsPage() {
             onClick={(e) => { if (e.target === e.currentTarget) setModalOpen(false); }}>
             <motion.div initial={{ opacity: 0, y: 12, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 8 }}
               transition={{ type: "spring", stiffness: 300, damping: 25 }}
-              style={{ background: "#0a0a0a", border: "1px solid #1c1c1c", borderRadius: 12, padding: "26px 28px", width: "100%", maxWidth: 460, fontFamily: "inherit", color: "#e5e5e5" }}>
+              style={{ background:"var(--bm-bg2)", border:"1px solid var(--bm-border)", borderRadius: 12, padding: "26px 28px", width: "100%", maxWidth: 460, fontFamily: "inherit", color:"var(--bm-text)" }}>
               <div style={{ fontSize: 16, fontWeight: 500, color: "#fff", marginBottom: 4, letterSpacing: "-0.01em" }}>New project</div>
-              <div style={{ fontSize: 12, color: "#444", marginBottom: 20, lineHeight: 1.6 }}>
+              <div style={{ fontSize: 12, color:"var(--bm-text4)", marginBottom: 20, lineHeight: 1.6 }}>
                 BuildMind generates a stage-aware roadmap and milestone plan automatically.
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
@@ -221,11 +221,11 @@ export default function ProjectsPage() {
                   onFocus={(e) => { (e.target as HTMLInputElement).style.borderColor = "#333"; }}
                   onBlur={(e) => { (e.target as HTMLInputElement).style.borderColor = "#1c1c1c"; }} />
                 <div>
-                  <div style={{ fontSize: 11, color: "#555", marginBottom: 6 }}>Current stage</div>
+                  <div style={{ fontSize: 11, color:"var(--bm-text3)", marginBottom: 6 }}>Current stage</div>
                   <select value={startupStage} onChange={(e) => setStartupStage(normalizeStage(e.target.value))}
-                    style={{ ...inputStyle, background: "#0a0a0a" }}>
+                    style={{ ...inputStyle, background:"var(--bm-bg2)" }}>
                     {STAGE_OPTIONS.map((s) => (
-                      <option key={s} value={s} style={{ background: "#0a0a0a", color: "#d4d4d4" }}>{s}</option>
+                      <option key={s} value={s} style={{ background:"var(--bm-bg2)", color:"var(--bm-text2)" }}>{s}</option>
                     ))}
                   </select>
                 </div>
@@ -233,7 +233,7 @@ export default function ProjectsPage() {
               {error && <div style={{ fontSize: 12, color: "#f87171", marginBottom: 12 }}>{error}</div>}
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                 <button onClick={() => setModalOpen(false)}
-                  style={{ background: "transparent", border: "1px solid #1c1c1c", color: "#555", fontSize: 13, padding: "8px 16px", borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>
+                  style={{ background: "transparent", border:"1px solid var(--bm-border)", color:"var(--bm-text3)", fontSize: 13, padding: "8px 16px", borderRadius: 7, cursor: "pointer", fontFamily: "inherit" }}>
                   Cancel
                 </button>
                 <motion.button whileTap={{ scale: 0.97 }}

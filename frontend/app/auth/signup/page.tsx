@@ -95,22 +95,22 @@ export default function SignupPage() {
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md rounded-2xl border border-[#1c1c1c] bg-[#0d0d0d] p-8 shadow-2xl"
+        className="w-full max-w-md rounded-2xl border border-[var(--bm-border)] bm-bg2 p-8 shadow-2xl"
       >
         <div className="flex items-center gap-3">
           <BrandMark size={36} href="/" />
           <div>
-            <p className="text-sm uppercase tracking-[0.3em] text-zinc-500">BuildMind</p>
-            <h1 className="text-2xl font-semibold text-zinc-100">Create your account</h1>
+            <p className="text-sm uppercase tracking-[0.3em] bm-text3">BuildMind</p>
+            <h1 className="text-2xl font-semibold bm-text">Create your account</h1>
           </div>
         </div>
-        <p className="mt-2 text-sm text-zinc-400">Start building your startup execution plan with AI guidance.</p>
+        <p className="mt-2 text-sm bm-text2">Start building your startup execution plan with AI guidance.</p>
 
         <div className="mt-5 grid gap-2">
           <Button
             type="button"
             variant="outline"
-            className="border-[#1c1c1c] bg-[#0d0d0d] text-zinc-200 hover:bg-white/5"
+            className="border-[var(--bm-border)] bm-bg2 bm-text hover:bg-white/5"
             onClick={() => void oauth("google")}
           >
             <span className="mr-2 h-4 w-4" aria-hidden>
@@ -126,7 +126,7 @@ export default function SignupPage() {
           <Button
             type="button"
             variant="outline"
-            className="border-[#1c1c1c] bg-[#0d0d0d] text-zinc-200 hover:bg-white/5"
+            className="border-[var(--bm-border)] bm-bg2 bm-text hover:bg-white/5"
             onClick={() => void oauth("github")}
           >
             <Github className="mr-2 h-4 w-4" />
@@ -135,9 +135,9 @@ export default function SignupPage() {
         </div>
 
         <form className="mt-4 space-y-4" onSubmit={onSubmit}>
-          <Input className="border-[#1c1c1c] bg-[#0d0d0d] text-zinc-100 placeholder:text-zinc-500" type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <Input className="border-[var(--bm-border)] bm-bg2 bm-text placeholder:text-zinc-500" type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
           <Input
-            className="border-[#1c1c1c] bg-[#0d0d0d] text-zinc-100 placeholder:text-zinc-500"
+            className="border-[var(--bm-border)] bm-bg2 bm-text placeholder:text-zinc-500"
             type="password"
             placeholder="Password"
             value={password}
@@ -150,9 +150,9 @@ export default function SignupPage() {
           {notice ? <p className="text-sm text-emerald-300">{notice}</p> : null}
         </form>
 
-        <p className="mt-5 text-sm text-zinc-400">
+        <p className="mt-5 text-sm bm-text2">
           Already have an account?{" "}
-          <Link href="/auth/login" className="font-medium text-zinc-100 underline">
+          <Link href="/auth/login" className="font-medium bm-text underline">
             Login
           </Link>
         </p>

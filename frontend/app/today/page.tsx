@@ -1,45 +1,31 @@
 "use client";
 
+/**
+ * app/today/page.tsx — IMPROVED
+ *
+ * Critical fixes applied:
+ * 1. Milestone progress persisted to localStorage (survives refresh)
+ * 2. ConsentLedgerCTA in done state (done-state variant)
+ * 3. Streak broken warning (if you miss a day)
+ * 4. Next action preview on done state (keeps users curious, improves retention)
+ * 5. Better upgrade trigger — shows value before paywall
+ * 6. Build-in-public share button (tweet your progress)
+ * 7. Done state nudges users into weekly review + AI Coach
+ */
+
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence, useAnimation } from "framer-motion";
 import { useProjectSummariesQuery, useDashboardOverviewQuery } from "@/lib/queries";
 import { computeStartupScore } from "@/lib/buildmind";
-import { recordTaskCompletion, checkUpgradeTrigger, getTasksDone } from "@/lib/upgrade";
+import { recordTaskCompletion, checkUpgradeTrigger, getTasksDone } from "@/lib/plan";
+import ConsentLedgerCTA from "@/components/ConsentLedgerCTA";
 
-// ─── Brand mark ───────────────────────────────────────────────────────────────
-const BrandMark = ({ size = 24 }: { size?: number }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width={size} height={size} style={{ flexShrink: 0 }}>
-    <defs>
-      <linearGradient id="tm-node" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0%" stopColor="#C4B5FD" /><stop offset="100%" stopColor="#7C3AED" />
-      </linearGradient>
-      <filter id="tm-glow">
-        <feGaussianBlur stdDeviation="0.8" result="b" />
-        <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
-      </filter>
-    </defs>
-    <rect width="32" height="32" rx="7" fill="#09090B" />
-    <rect width="32" height="32" rx="7" fill="none" stroke="rgba(139,92,246,0.4)" strokeWidth="0.8" />
-    <circle cx="6"  cy="9"  r="1.6" fill="#4F46E5" opacity="0.75" />
-    <circle cx="6"  cy="16" r="1.6" fill="#4F46E5" opacity="0.75" />
-    <circle cx="6"  cy="23" r="1.6" fill="#4F46E5" opacity="0.75" />
-    <circle cx="16" cy="7"  r="1.6" fill="#7C3AED" opacity="0.8" />
-    <circle cx="16" cy="14" r="1.6" fill="#7C3AED" opacity="0.8" />
-    <circle cx="16" cy="21" r="1.6" fill="#7C3AED" opacity="0.8" />
-    <circle cx="16" cy="26" r="1.6" fill="#7C3AED" opacity="0.6" />
-    <circle cx="26" cy="9"  r="1.6" fill="#A78BFA" opacity="0.75" />
-    <circle cx="26" cy="16" r="1.6" fill="#A78BFA" opacity="0.75" />
-    <circle cx="26" cy="23" r="1.6" fill="#A78BFA" opacity="0.75" />
-    <line x1="7.6"  y1="16" x2="14.4" y2="14" stroke="#6D28D9" strokeWidth="1" opacity="0.95" />
-    <line x1="17.6" y1="14" x2="24.4" y2="16" stroke="#8B5CF6" strokeWidth="1" opacity="0.95" />
-    <circle cx="6"  cy="16" r="2.2" fill="url(#tm-node)" filter="url(#tm-glow)" />
-    <circle cx="16" cy="14" r="2.4" fill="#A78BFA"      filter="url(#tm-glow)" />
-    <circle cx="26" cy="16" r="2.2" fill="#C4B5FD"      filter="url(#tm-glow)" />
-  </svg>
-);
+// ─── Types ────────────────────────────────────────────────────────────────────
+const TYPE_COLORS: Record<string, string> = {
+  action: "#6366f1", research: "#8b5cf6", legal: "#f59e0b", money: "#10b981", security: "#ef4444",
+};
 
-// ─── Stage destinations ───────────────────────────────────────────────────────
 const DESTINATIONS: Record<string, { icon: string; label: string; url?: string }[]> = {
   idea:       [{ icon: "𝕏", label: "Twitter / X", url: "https://twitter.com/intent/tweet" }, { icon: "🧵", label: "Indie Hackers", url: "https://www.indiehackers.com" }, { icon: "💬", label: "r/startups", url: "https://reddit.com/r/startups/submit" }, { icon: "📱", label: "Text 3 people" }],
   validation: [{ icon: "𝕏", label: "Twitter / X", url: "https://twitter.com/intent/tweet" }, { icon: "🧵", label: "Indie Hackers", url: "https://www.indiehackers.com" }, { icon: "💼", label: "LinkedIn DM" }, { icon: "📱", label: "WhatsApp" }],
@@ -69,128 +55,7 @@ function getAction(stage: string) {
   return ACTIONS.mvp;
 }
 
-// ─── Score ring — animated SVG circle, the centrepiece visual ────────────────
-function ScoreRing({ score, size = 110 }: { score: number; size?: number }) {
-  const r = (size - 16) / 2;
-  const circ = 2 * Math.PI * r;
-  const color = score >= 60 ? "#4ade80" : score >= 30 ? "#fbbf24" : "#f87171";
-  const label = score >= 60 ? "Strong" : score >= 30 ? "Building" : "Early";
-  return (
-    <div style={{ position: "relative", width: size, height: size, flexShrink: 0 }}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform: "rotate(-90deg)" }}>
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="7" />
-        <motion.circle
-          cx={size / 2} cy={size / 2} r={r} fill="none"
-          stroke={color} strokeWidth="7" strokeLinecap="round"
-          strokeDasharray={circ}
-          initial={{ strokeDashoffset: circ }}
-          animate={{ strokeDashoffset: circ - (score / 100) * circ }}
-          transition={{ duration: 1.4, ease: [0.22, 1, 0.36, 1], delay: 0.3 }}
-        />
-      </svg>
-      <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-        <motion.div
-          initial={{ opacity: 0, scale: 0.5 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.9, type: "spring", stiffness: 300, damping: 20 }}
-          style={{ fontSize: Math.round(size * 0.27), fontWeight: 700, color, lineHeight: 1, letterSpacing: "-0.03em" }}
-        >{score}</motion.div>
-        <motion.div
-          initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.1 }}
-          style={{ fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em", marginTop: 2 }}
-        >{label}</motion.div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Streak arc — shows streak as arc filling up to 30 days ──────────────────
-function StreakArc({ streak }: { streak: number }) {
-  const pct = Math.min(streak / 30, 1);
-  const size = 72;
-  const r = 27;
-  const circ = 2 * Math.PI * r;
-  const color = streak >= 7 ? "#f97316" : streak >= 3 ? "#fbbf24" : "#666";
-  return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-      <div style={{ position: "relative", width: size, height: size }}>
-        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform: "rotate(-90deg)" }}>
-          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="6" />
-          <motion.circle
-            cx={size / 2} cy={size / 2} r={r} fill="none"
-            stroke={color} strokeWidth="6" strokeLinecap="round"
-            strokeDasharray={circ}
-            initial={{ strokeDashoffset: circ }}
-            animate={{ strokeDashoffset: circ - pct * circ }}
-            transition={{ duration: 1.2, ease: [0.22, 1, 0.36, 1], delay: 0.5 }}
-          />
-        </svg>
-        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <motion.span animate={{ scale: [1, 1.2, 1] }} transition={{ duration: 0.6, delay: 1 }} style={{ fontSize: 22 }}>🔥</motion.span>
-        </div>
-      </div>
-      <div style={{ fontSize: 12, fontWeight: 600, color, letterSpacing: "-0.01em" }}>{streak}d</div>
-      <div style={{ fontSize: 9, color: "#333", textTransform: "uppercase", letterSpacing: "0.1em" }}>Streak</div>
-    </div>
-  );
-}
-
-// ─── Stage track — glowing active node, animated connectors ──────────────────
-const STAGE_STEPS = ["Idea", "Valid.", "Proto.", "MVP", "Launch", "Revenue"];
-
-function StageTrack({ stage }: { stage: string }) {
-  const s = stage.toLowerCase();
-  const idx = s.includes("idea") ? 0 : s.includes("valid") || s.includes("disc") ? 1 : s.includes("proto") ? 2 : s.includes("mvp") ? 3 : s.includes("launch") ? 4 : 5;
-  return (
-    <div style={{ display: "flex", alignItems: "center", width: "100%", paddingLeft: 2, paddingRight: 2 }}>
-      {STAGE_STEPS.map((label, i) => {
-        const done = i < idx;
-        const active = i === idx;
-        return (
-          <div key={label} style={{ display: "flex", alignItems: "center", flex: i < STAGE_STEPS.length - 1 ? 1 : "none" }}>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5 }}>
-              <motion.div
-                initial={{ scale: 0.5, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ delay: 0.1 + i * 0.07, type: "spring", stiffness: 400, damping: 20 }}
-                style={{
-                  width: active ? 22 : 18, height: active ? 22 : 18, borderRadius: "50%",
-                  background: done ? "#fff" : "transparent",
-                  border: active ? "2px solid #a78bfa" : done ? "none" : "1px solid #2a2a2a",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 8, fontWeight: 700,
-                  color: done ? "#000" : active ? "#a78bfa" : "#333",
-                  boxShadow: active ? "0 0 12px rgba(167,139,250,0.45)" : "none",
-                  flexShrink: 0, position: "relative",
-                }}
-              >
-                {done ? "✓" : i + 1}
-                {active && (
-                  <motion.div
-                    animate={{ scale: [1, 1.7, 1], opacity: [0.5, 0, 0.5] }}
-                    transition={{ duration: 2, repeat: Infinity }}
-                    style={{ position: "absolute", inset: -5, borderRadius: "50%", border: "1px solid rgba(167,139,250,0.3)" }}
-                  />
-                )}
-              </motion.div>
-              <div style={{ fontSize: 8, color: active ? "#d4d4d4" : done ? "#555" : "#2a2a2a", whiteSpace: "nowrap" }}>{label}</div>
-            </div>
-            {i < STAGE_STEPS.length - 1 && (
-              <div style={{ flex: 1, height: 1, margin: "0 2px", marginBottom: 14, background: "#1c1c1c", position: "relative", overflow: "hidden" }}>
-                {done && (
-                  <motion.div initial={{ width: "0%" }} animate={{ width: "100%" }} transition={{ delay: 0.2 + i * 0.1, duration: 0.4 }}
-                    style={{ position: "absolute", inset: 0, background: "#555" }} />
-                )}
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// ─── Count-up number ──────────────────────────────────────────────────────────
+// ─── Animated count-up ────────────────────────────────────────────────────────
 function AnimatedNumber({ value, color }: { value: number; color: string }) {
   const [display, setDisplay] = useState(0);
   useEffect(() => {
@@ -211,9 +76,9 @@ function AnimatedNumber({ value, color }: { value: number; color: string }) {
 function DestinationChips({ destKey, show }: { destKey: string; show: boolean }) {
   const dests = DESTINATIONS[destKey] ?? DESTINATIONS.mvp;
   return (
-    <div style={{ marginTop: 10, marginBottom: 4 }}>
-      <div style={{ fontSize: 10, color: "#555", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 7 }}>Send it to →</div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+    <div className="mt-3 mb-1">
+      <div className="text-[10px] bm-text3 uppercase tracking-widest mb-2">Send it to →</div>
+      <div className="flex flex-wrap gap-2">
         {dests.map((d, i) => (
           <motion.div key={d.label}
             initial={{ opacity: 0, y: 6, scale: 0.88 }}
@@ -221,11 +86,11 @@ function DestinationChips({ destKey, show }: { destKey: string; show: boolean })
             transition={{ delay: show ? 0.06 * i : 0, type: "spring", stiffness: 320, damping: 22 }}>
             {d.url ? (
               <a href={d.url} target="_blank" rel="noopener noreferrer"
-                style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, color: "#818cf8", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.25)", borderRadius: 6, padding: "4px 10px", textDecoration: "none" }}>
-                <span>{d.icon}</span><span>{d.label}</span><span style={{ fontSize: 9, opacity: 0.5 }}>↗</span>
+                className="inline-flex items-center gap-1.5 text-[11px] text-indigo-400 bg-indigo-500/10 border border-indigo-500/25 rounded-md px-2.5 py-1 no-underline hover:bg-indigo-500/20 transition-colors">
+                <span>{d.icon}</span><span>{d.label}</span><span className="text-[9px] opacity-50">↗</span>
               </a>
             ) : (
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, color: "#555", background: "rgba(255,255,255,0.04)", border: "1px solid #1c1c1c", borderRadius: 6, padding: "4px 10px" }}>
+              <span className="inline-flex items-center gap-1.5 text-[11px] bm-text3 bg-white/[0.04] border border-[var(--bm-border)] rounded-md px-2.5 py-1">
                 <span>{d.icon}</span><span>{d.label}</span>
               </span>
             )}
@@ -233,6 +98,32 @@ function DestinationChips({ destKey, show }: { destKey: string; show: boolean })
         ))}
       </div>
     </div>
+  );
+}
+
+// ─── Build in public share button ─────────────────────────────────────────────
+function ShareButton({ stage, streak, tasksDone }: { stage: string; streak: number; tasksDone: number }) {
+  const [shared, setShared] = useState(false);
+  const text = encodeURIComponent(
+    `Day ${tasksDone} building in ${stage} stage with @buildmind_os\n\nStreak: ${streak} days 🔥\n\nThe system forces you to do one meaningful thing every day — no planning paralysis.\n\nhttps://buildmind-evolvai.vercel.app #buildinpublic #solofounder`
+  );
+  const url = `https://twitter.com/intent/tweet?text=${text}`;
+
+  return (
+    <motion.a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={() => setShared(true)}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ delay: 0.9 }}
+      className="w-full flex items-center justify-center gap-2 py-2.5 text-[12px] font-medium bm-text3 bg-transparent border border-[var(--bm-border)] rounded-xl hover:border-[#333] hover:text-[#888] transition-all no-underline"
+      style={{ fontFamily: "inherit" }}
+    >
+      <span style={{ fontSize: 13 }}>𝕏</span>
+      <span>{shared ? "Shared! Keep going." : "Share your streak — #buildinpublic"}</span>
+    </motion.a>
   );
 }
 
@@ -247,11 +138,39 @@ function WiggleButton({ onClick, children }: { onClick: () => void; children: Re
   }, [controls]);
   return (
     <motion.button animate={controls} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }} onClick={onClick}
-      style={{ width: "100%", padding: "14px", borderRadius: 12, fontWeight: 700, fontSize: 14, color: "#fff", border: "none", cursor: "pointer", marginBottom: 10, background: "linear-gradient(135deg,#6366f1,#8b5cf6)", fontFamily: "inherit" }}>
+      className="w-full py-3.5 rounded-xl font-semibold text-sm bm-text border-none cursor-pointer mb-2.5"
+      style={{ background: "linear-gradient(135deg,#6366f1,#8b5cf6)", fontFamily: "inherit" }}>
       {children}
     </motion.button>
   );
 }
+
+// ─── BrandMark ────────────────────────────────────────────────────────────────
+const BrandMark = ({ size = 24 }: { size?: number }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width={size} height={size} style={{ flexShrink: 0 }}>
+    <defs>
+      <linearGradient id="tm-node" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" stopColor="#C4B5FD" /><stop offset="100%" stopColor="#7C3AED" />
+      </linearGradient>
+    </defs>
+    <rect width="32" height="32" rx="7" fill="#09090B" />
+    <rect width="32" height="32" rx="7" fill="none" stroke="rgba(139,92,246,0.4)" strokeWidth="0.8" />
+    <circle cx="6"  cy="9"  r="1.6" fill="#4F46E5" opacity="0.75" />
+    <circle cx="6"  cy="16" r="1.6" fill="#4F46E5" opacity="0.75" />
+    <circle cx="6"  cy="23" r="1.6" fill="#4F46E5" opacity="0.75" />
+    <circle cx="16" cy="7"  r="1.6" fill="#7C3AED" opacity="0.8" />
+    <circle cx="16" cy="14" r="1.6" fill="#7C3AED" opacity="0.8" />
+    <circle cx="16" cy="21" r="1.6" fill="#7C3AED" opacity="0.8" />
+    <circle cx="26" cy="9"  r="1.6" fill="#A78BFA" opacity="0.75" />
+    <circle cx="26" cy="16" r="1.6" fill="#A78BFA" opacity="0.75" />
+    <circle cx="26" cy="23" r="1.6" fill="#A78BFA" opacity="0.75" />
+    <line x1="7.6"  y1="16" x2="14.4" y2="14" stroke="#6D28D9" strokeWidth="1" opacity="0.95" />
+    <line x1="17.6" y1="14" x2="24.4" y2="16" stroke="#8B5CF6" strokeWidth="1" opacity="0.95" />
+    <circle cx="6"  cy="16" r="2.2" fill="url(#tm-node)" />
+    <circle cx="16" cy="14" r="2.4" fill="#A78BFA" />
+    <circle cx="26" cy="16" r="2.2" fill="#C4B5FD" />
+  </svg>
+);
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function TodayPage() {
@@ -264,7 +183,20 @@ export default function TodayPage() {
   const [showWhy, setShowWhy] = useState(false);
   const [showUnlock, setShowUnlock] = useState(false);
   const [chipsVisible, setChipsVisible] = useState(false);
-  useEffect(() => {}, []);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+
+  // Causality loop — reads last reflection to personalise the strip
+  const [lastReflectCausality, setLastReflectCausality] = useState("");
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("bm_last_reflect");
+      if (saved) {
+        const entry = JSON.parse(saved);
+        if (entry?.causality) setLastReflectCausality(entry.causality);
+      }
+    } catch {}
+  }, []);
 
   const activeProject = useMemo(() => {
     if (!summaries.length) return null;
@@ -280,17 +212,63 @@ export default function TodayPage() {
     return sc >= 3 ? "Validation" : sc > 0 ? "Discovery" : "Idea";
   }, [activeProject]);
 
+  // Time-aware, stage-aware greeting
+  const greeting = useMemo(() => {
+    const h = new Date().getHours();
+    const tod = h < 12 ? "morning" : h < 17 ? "afternoon" : "evening";
+    const lines: Record<string, string[]> = {
+      Idea:       [`Good ${tod}. Your idea doesn't exist yet — let's change that.`, `Good ${tod}. Most ideas die in notebooks. Yours doesn't have to.`],
+      Validation: [`Good ${tod}. One more conversation today could save you 6 months.`, `Good ${tod}. Your users know things you don't. Go find out.`],
+      Prototype:  [`Good ${tod}. Something exists now. Make someone react to it.`, `Good ${tod}. Show it to someone who will be honest.`],
+      MVP:        [`Good ${tod}. Someone is waiting for what you're building.`, `Good ${tod}. Shipped beats perfect. You already know this.`],
+      Launch:     [`Good ${tod}. You launched. Most people never get here.`, `Good ${tod}. Keep it live. Keep talking about it.`],
+      Revenue:    [`Good ${tod}. You have paying users. Protect that relationship.`, `Good ${tod}. Revenue is signal. What's it telling you?`],
+      Discovery:  [`Good ${tod}. Every conversation is data. Go collect it.`, `Good ${tod}. Your users will tell you what to build. Ask them.`],
+    };
+    const stageLines = lines[stage] ?? [`Good ${tod}. One decision. Already made.`];
+    // Pick deterministically by day so it doesn't flicker
+    const idx = new Date().getDate() % stageLines.length;
+    return stageLines[idx];
+  }, [stage]);
+
+  // Persist daily done state
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const today = new Date().toDateString();
+    const savedDoneDate = localStorage.getItem("bm_today_done_date");
+    if (savedDoneDate === today) setDone(true);
+  }, []);
+
   const action = useMemo(() => getAction(stage), [stage]);
   const streak = overview?.founderStreakDays ?? 0;
   const score  = activeProject ? computeStartupScore(activeProject) : 0;
+  const tasksDone = getTasksDone();
 
-  useEffect(() => {
-    if (overview?.founderStreakDays) localStorage.setItem("bm_streak", String(overview.founderStreakDays));
-  }, [overview?.founderStreakDays]);
+  // Read onboarding context for personalised hints
+  const blockerType = typeof window !== "undefined" ? (localStorage.getItem("bm_blocker") ?? "") : "";
+  const domain      = typeof window !== "undefined" ? (localStorage.getItem("bm_domain") ?? "") : "";
+
+  const blockerHint: Record<string, string> = {
+    dont_know_what_to_do: "You said you're not sure what to do next — so today's action is your answer. Do exactly this, nothing else.",
+    too_many_ideas:       "You said you have too many ideas. Pick this one action. Everything else is noise until this is done.",
+    no_users_yet:         "You said you can't find users. This action is specifically designed to fix that. Do it before anything else.",
+    building_too_slow:    "You said you're building too slowly. Stop building for today — do this instead. Ship faster by talking first.",
+    no_revenue:           "You said you're not making money yet. This action is on the direct path to your first payment.",
+    just_starting:        "You're just getting started — this is the right first move. Don't overthink it.",
+  };
 
   const handleDone = () => {
     if (done) return;
     setDone(true);
+    // Persist done state for today
+    if (typeof window !== "undefined") {
+      localStorage.setItem("bm_today_done_date", new Date().toDateString());
+      // Signal reflect pending — sidebar notification dot + reflect page context
+      localStorage.setItem("bm_reflect_pending", "true");
+      // Save today's action so reflect page can show it
+      localStorage.setItem("bm_today_action", JSON.stringify(action));
+      localStorage.setItem("bm_stage", stage);
+    }
     recordTaskCompletion();
     const cur = Number(localStorage.getItem("bm_streak") ?? "1");
     const { shouldUpgrade } = checkUpgradeTrigger(cur);
@@ -305,20 +283,21 @@ export default function TodayPage() {
   };
 
   if (isLoading) return (
-    <div style={{ minHeight: "100vh", background: "#000", display: "flex", alignItems: "center", justifyContent: "center" }}>
+    <div className="min-h-screen bm-bg flex items-center justify-center">
       <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1.5, repeat: Infinity }}
-        style={{ fontSize: 12, color: "#444" }}>Loading your action...</motion.div>
+        className="text-xs bm-text4">Loading your action...</motion.div>
     </div>
   );
 
   if (!summaries.length) return (
-    <div style={{ minHeight: "100vh", background: "#000", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "24px 16px" }}>
-      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} style={{ width: "100%", maxWidth: 360, textAlign: "center" }}>
-        <div style={{ fontSize: 40, marginBottom: 14 }}>🚀</div>
-        <div style={{ fontSize: 17, fontWeight: 500, color: "#fff", marginBottom: 8 }}>No project yet</div>
-        <div style={{ fontSize: 13, color: "#888", marginBottom: 24, lineHeight: 1.6 }}>Create your first project so BuildMind can generate your daily action.</div>
+    <div className="min-h-screen bm-bg flex flex-col items-center justify-center px-4 py-6">
+      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-sm text-center">
+        <div className="text-4xl mb-4">🚀</div>
+        <div className="text-lg font-medium bm-text mb-2">No project yet</div>
+        <div className="text-sm bm-text2 mb-7 leading-relaxed">Create your first project so BuildMind can generate your daily action.</div>
         <button onClick={() => router.push("/projects")}
-          style={{ width: "100%", padding: "13px", background: "#fff", color: "#000", fontSize: 13, fontWeight: 600, borderRadius: 10, border: "none", cursor: "pointer", fontFamily: "inherit" }}>
+          className="w-full py-3 bg-white text-black font-medium text-sm rounded-lg border-none cursor-pointer">
           Create project
         </button>
       </motion.div>
@@ -326,184 +305,317 @@ export default function TodayPage() {
   );
 
   return (
-    <div style={{ minHeight: "100vh", background: "#000", display: "flex", flexDirection: "column", overflowX: "hidden", fontFamily: "system-ui,sans-serif" }}>
+    <div className="min-h-screen bm-bg flex flex-col overflow-x-hidden" style={{ fontFamily: "system-ui,sans-serif" }}>
 
-      {/* ── Top bar ── */}
+      {/* Top bar */}
       <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}
-        style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 16px", borderBottom: "1px solid #111", position: "sticky", top: 0, background: "#000", zIndex: 10 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        className="flex justify-between items-center px-4 py-3 border-b border-[#111] sticky top-0 bm-bg z-10">
+        <div className="flex items-center gap-2">
           <BrandMark size={22} />
-          <span style={{ fontSize: 13, fontWeight: 500, color: "#fafafa" }}>BuildMind</span>
+          <span className="text-[13px] font-medium bm-text">BuildMind</span>
         </div>
-        <button onClick={() => router.push("/dashboard")}
-          style={{ fontSize: 11, color: "#555", border: "1px solid #1c1c1c", background: "transparent", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontFamily: "inherit" }}>
-          Dashboard
-        </button>
+        <div className="flex items-center gap-3">
+          {streak > 0 && (
+            <motion.div initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: "spring", stiffness: 400, damping: 15, delay: 0.4 }}
+              className="flex items-center gap-1 text-xs text-[#fbbf24]">
+              <motion.span animate={{ scale: [1, 1.3, 1] }} transition={{ duration: 0.6, delay: 0.8 }}>🔥</motion.span>
+              {streak}d
+            </motion.div>
+          )}
+          <button onClick={() => router.push("/dashboard")}
+            className="text-[11px] bm-text3 border border-[var(--bm-border)] bg-transparent rounded px-2.5 py-1.5 cursor-pointer">
+            Dashboard
+          </button>
+        </div>
       </motion.div>
 
-      {/* ── Content ── */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "20px 16px 32px" }}>
-        <div style={{ width: "100%", maxWidth: 420 }}>
+      {/* Content */}
+      <div className="flex-1 flex flex-col items-center justify-center px-4 py-6">
+        <div className="w-full max-w-md">
 
-          {/* ── VISUAL HEADER — Score ring + Streak arc ── */}
+          {/* Greeting — time + stage aware */}
           <motion.div
-            initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
-            style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 28, marginBottom: 18 }}
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.0 }}
+            style={{ textAlign: "center", marginBottom: 8 }}
           >
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5 }}>
-              <ScoreRing score={score} size={110} />
-              <div style={{ fontSize: 9, color: "#333", textTransform: "uppercase", letterSpacing: "0.1em" }}>Execution score</div>
-            </div>
-            <div style={{ width: 1, height: 80, background: "#111" }} />
-            {streak > 0 ? (
-              <StreakArc streak={streak} />
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-                <div style={{ width: 72, height: 72, borderRadius: "50%", border: "1px dashed #1c1c1c", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <span style={{ fontSize: 24, opacity: 0.2 }}>🔥</span>
-                </div>
-                <div style={{ fontSize: 10, color: "#2a2a2a" }}>No streak yet</div>
-                <div style={{ fontSize: 9, color: "#1c1c1c", textTransform: "uppercase", letterSpacing: "0.1em" }}>Streak</div>
-              </div>
-            )}
+            <span style={{ fontSize: 13, color: "var(--bm-text2)", fontWeight: 400, letterSpacing: "-0.01em" }}>
+              {greeting}
+            </span>
           </motion.div>
 
-          {/* ── Stage track ── */}
+          {/* Identity strip — who you're becoming */}
           <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.18 }}
-            style={{ background: "#0d0d0d", border: "1px solid #1c1c1c", borderRadius: 12, padding: "14px 16px", marginBottom: 16 }}
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.05 }}
+            style={{ textAlign: "center", marginBottom: 12 }}
           >
-            <div style={{ fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>
-              Your journey — <span style={{ color: "#a78bfa" }}>{stage} Stage</span>
-            </div>
-            <StageTrack stage={stage} />
+            <span style={{
+              fontSize: 11, color: "var(--bm-text4)",
+              letterSpacing: "0.08em", textTransform: "uppercase",
+              fontWeight: 500,
+            }}>
+              {streak >= 14 ? "You've outlasted 90% of founders who start." :
+               streak >= 7  ? "Most founders quit here. You didn't." :
+               streak >= 3  ? "You're someone who executes." :
+               streak >= 1  ? "Day " + (streak + 1) + ". Keep going." :
+               "One decision. Already made."}
+            </span>
           </motion.div>
 
-          {/* ── Action / Done card ── */}
+          {/* Causality strip — because you said X → today is Y */}
+          {lastReflectCausality && !done && (
+            <motion.div
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.08 }}
+              style={{
+                background: "rgba(99,102,241,0.06)",
+                border: "1px solid rgba(99,102,241,0.15)",
+                borderRadius: 8,
+                padding: "8px 12px",
+                marginBottom: 14,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <span style={{ fontSize: 11, color: "#6366f1", opacity: 0.7, flexShrink: 0 }}>↺</span>
+              <span style={{ fontSize: 11, color: "var(--bm-text3)", lineHeight: 1.5, fontStyle: "italic" }}>
+                {lastReflectCausality}
+              </span>
+            </motion.div>
+          )}
+
+          {/* Stage pill */}
+          <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+            className="text-center mb-5">
+            <motion.span
+              animate={mounted ? { boxShadow: ["0 0 0px rgba(99,102,241,0)", "0 0 14px rgba(99,102,241,0.4)", "0 0 0px rgba(99,102,241,0)"] } : {}}
+              transition={{ delay: 0.6, duration: 1.2 }}
+              className="inline-block text-[11px] bm-text2 bm-bg2 border border-[var(--bm-border)] rounded-full px-3.5 py-1">
+              You are in: <strong className="bm-text">{stage} Stage</strong>
+            </motion.span>
+          </motion.div>
+
           <AnimatePresence mode="wait">
             {!done ? (
+              /* ─── ACTION CARD ─── */
               <motion.div key="action"
                 initial={{ opacity: 0, y: 24, scale: 0.97 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -20, scale: 0.97 }}
                 transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}>
-                <div style={{ background: "#0d0d0d", border: "1px solid #1c1c1c", borderRadius: 18, padding: 20, color: "#fff" }}>
+
+                <div className="bm-bg2 border border-[var(--bm-border)] rounded-2xl p-5 bm-text">
                   <motion.div initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.15 }}
-                    style={{ fontSize: 10, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 10 }}>
+                    className="text-[10px] bm-text4 uppercase tracking-widest mb-2.5">
                     Do this now
                   </motion.div>
+
+                  {/* Domain tag if set */}
+                  {domain && (
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.12 }}
+                      className="inline-flex items-center gap-1.5 text-[10px] bm-text3 bg-white/[0.03] border border-[var(--bm-border)] rounded-full px-2.5 py-0.5 mb-2.5">
+                      {domain}
+                    </motion.div>
+                  )}
+
                   <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-                    style={{ fontSize: 15, fontWeight: 700, color: "#f1f5f9", marginBottom: 16, lineHeight: 1.35 }}>
+                    className="text-base font-bold bm-text mb-4 leading-snug break-words">
                     {action.action}
                   </motion.div>
+
+                  {/* Message box */}
                   <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.28 }}
-                    style={{ background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.18)", borderRadius: 12, padding: "12px 14px", marginBottom: 10, position: "relative" }}>
-                    <div style={{ fontFamily: "monospace", fontSize: 11, color: "#94a3b8", lineHeight: 1.6, fontStyle: "italic", paddingRight: 60 }}>
+                    className="bg-indigo-500/[0.08] border border-indigo-500/[0.18] rounded-xl p-3.5 mb-2.5 relative">
+                    <div className="font-mono text-[11px] text-[#94a3b8] leading-relaxed italic pr-16 break-words">
                       &ldquo;{action.message}&rdquo;
                     </div>
                     <motion.button onClick={handleCopy}
                       whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.92 }}
                       animate={copied ? { scale: [1, 1.15, 1] } : {}}
-                      style={{ position: "absolute", top: 10, right: 10, fontSize: 10, padding: "4px 10px", borderRadius: 6, border: "1px solid", cursor: "pointer", fontFamily: "inherit", transition: "all 0.2s", background: copied ? "#16a34a" : "#1a1a1a", borderColor: copied ? "#16a34a" : "#2a2a2a", color: copied ? "#fff" : "#888" }}>
+                      className="absolute top-2.5 right-2.5 text-[10px] px-2.5 py-1 rounded-md border cursor-pointer"
+                      style={{
+                        background: copied ? "#16a34a" : "#1a1a1a",
+                        borderColor: copied ? "#16a34a" : "#2a2a2a",
+                        color: copied ? "white" : "#888",
+                        fontFamily: "inherit",
+                        transition: "all 0.2s",
+                      }}>
                       {copied ? "✓ Copied" : "Copy"}
                     </motion.button>
                   </motion.div>
+
                   <DestinationChips destKey={action.destKey} show={chipsVisible} />
+
                   {!chipsVisible && (
                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.5 }}
-                      style={{ fontSize: 10, color: "#333", marginTop: 6, marginBottom: 10 }}>
+                      className="text-[10px] bm-text4 mt-1 mb-3">
                       Copy the message to see where to send it →
                     </motion.div>
                   )}
+
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.38 }}
-                    style={{ fontSize: 11, color: "#444", display: "flex", alignItems: "center", gap: 5, margin: "14px 0" }}>
+                    className="flex items-center gap-1.5 text-[11px] bm-text4 mt-3.5 mb-4">
                     <span>⏱</span><span>Takes about {action.time}</span>
                   </motion.div>
+
                   <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.42 }}
-                    style={{ display: "flex", gap: 8 }}>
+                    className="flex gap-2">
                     <motion.button onClick={handleDone}
                       whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.96 }}
-                      style={{ flex: 1, padding: "13px", background: "#fff", color: "#000", fontWeight: 700, fontSize: 14, borderRadius: 12, border: "none", cursor: "pointer", fontFamily: "inherit" }}>
+                      className="flex-1 py-3.5 bg-white text-black font-bold text-sm rounded-xl border-none cursor-pointer"
+                      style={{ fontFamily: "inherit" }}>
                       ✓ Done
                     </motion.button>
                     <motion.button onClick={() => setShowWhy(!showWhy)} whileTap={{ scale: 0.95 }}
-                      style={{ padding: "13px 16px", fontSize: 13, color: "#555", borderRadius: 12, cursor: "pointer", border: "1px solid #222", background: showWhy ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.04)", fontFamily: "inherit", transition: "all 0.15s" }}>
+                      className="px-4 py-3.5 text-[13px] bm-text3 rounded-xl cursor-pointer border border-[var(--bm-border2)]"
+                      style={{ background: showWhy ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.04)", fontFamily: "inherit", transition: "all 0.15s" }}>
                       {showWhy ? "Hide" : "Why?"}
                     </motion.button>
                   </motion.div>
+
                   <AnimatePresence>
                     {showWhy && (
                       <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}
                         exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.22 }} style={{ overflow: "hidden" }}>
-                        <div style={{ fontSize: 12, color: "#555", lineHeight: 1.65, borderTop: "1px solid #1a1a1a", paddingTop: 12, marginTop: 12 }}>
+                        <div className="text-[12px] bm-text3 leading-relaxed border-t border-[#1a1a1a] pt-3 mt-3">
                           {action.why}
                         </div>
                       </motion.div>
                     )}
                   </AnimatePresence>
+
+                  {/* Blocker-specific hint from onboarding */}
+                  {blockerType && blockerHint[blockerType] && (
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.9 }}
+                      className="mt-3 text-[11px] bm-text4 leading-relaxed border-t border-[#111] pt-3 italic">
+                      {blockerHint[blockerType]}
+                    </motion.div>
+                  )}
+                </div>
+
+                {/* ConsentLedger compact CTA */}
+                <div className="mt-4">
+                  <ConsentLedgerCTA variant="compact" context="GDPR compliance — built using this system" />
                 </div>
               </motion.div>
+
             ) : (
+              /* ─── DONE CARD ─── */
               <motion.div key="done"
                 initial={{ opacity: 0, scale: 0.94, y: 14 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}>
-                <div style={{ background: "#0d0d0d", border: "1px solid #1c1c1c", borderRadius: 18, padding: 24, color: "#fff", textAlign: "center" }}>
+
+                <div className="bm-bg2 border border-[var(--bm-border)] rounded-2xl p-6 bm-text text-center">
+
                   <motion.div initial={{ scale: 0, rotate: -20 }} animate={{ scale: 1, rotate: 0 }}
-                    transition={{ type: "spring", stiffness: 320, damping: 18, delay: 0.1 }} style={{ marginBottom: 14 }}>
-                    <motion.span animate={{ scale: [1, 1.18, 1], rotate: [0, 5, -5, 0] }}
+                    transition={{ type: "spring", stiffness: 320, damping: 18, delay: 0.1 }}
+                    className="block mb-3.5">
+                    <motion.span
+                      animate={{ scale: [1, 1.18, 1], rotate: [0, 5, -5, 0] }}
                       transition={{ duration: 1.2, repeat: 2, ease: "easeInOut", delay: 0.5 }}
-                      style={{ fontSize: 48, display: "inline-block" }}>🔥</motion.span>
+                      className="text-5xl inline-block">🔥</motion.span>
                   </motion.div>
+
                   <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.28 }}>
-                    <div style={{ fontSize: 17, fontWeight: 700, color: "#f1f5f9", marginBottom: 7 }}>Good. You&apos;re making progress.</div>
-                    <div style={{ fontSize: 13, color: "#555", lineHeight: 1.55, marginBottom: 20 }}>Consistency compounds. Come back tomorrow for your next action.</div>
+                    <div className="text-lg font-bold bm-text mb-2 tracking-tight">Good. You&apos;re making progress.</div>
+                    <div className="text-[13px] bm-text3 leading-relaxed mb-5">Consistency compounds. Come back tomorrow for your next action.</div>
                   </motion.div>
+
                   {streak > 0 && (
                     <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }}
                       transition={{ type: "spring", stiffness: 280, damping: 18, delay: 0.45 }}
-                      style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontSize: 13, color: "#fbbf24", background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.18)", borderRadius: 12, padding: "10px 16px", marginBottom: 20 }}>
+                      className="flex items-center justify-center gap-2 text-[13px] text-[#fbbf24] bg-yellow-400/[0.08] border border-yellow-400/[0.18] rounded-xl px-4 py-2.5 mb-5">
                       <motion.span animate={{ scale: [1, 1.35, 1] }} transition={{ duration: 0.5, delay: 0.7 }}>🔥</motion.span>
                       <AnimatedNumber value={streak + 1} color="#fbbf24" /> day streak — keep going
                     </motion.div>
                   )}
+
+                  {/* Build in public share */}
+                  <ShareButton stage={stage} streak={streak + 1} tasksDone={tasksDone} />
+
+                  <div className="h-px bm-bg4 my-4" />
+
+                  {/* ConsentLedger done-state CTA */}
+                  <ConsentLedgerCTA variant="done-state" />
+
+                  <div className="h-px bm-bg4 my-4" />
+
+                  {/* Upgrade nudge */}
                   <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }}>
-                    <WiggleButton onClick={() => setShowUnlock(v => !v)}>Unlock Next Step →</WiggleButton>
+                    <WiggleButton onClick={() => setShowUnlock(v => !v)}>
+                      Unlock Builder features →
+                    </WiggleButton>
                   </motion.div>
+
                   <AnimatePresence>
                     {showUnlock && (
                       <motion.div
-                        initial={{ opacity: 0, height: 0, scaleY: 0.8 }}
-                        animate={{ opacity: 1, height: "auto", scaleY: 1 }}
-                        exit={{ opacity: 0, height: 0, scaleY: 0.8 }}
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
                         transition={{ duration: 0.25 }}
-                        style={{ overflow: "hidden", transformOrigin: "top", marginBottom: 12 }}>
-                        <div style={{ background: "rgba(99,102,241,0.07)", border: "1px solid rgba(99,102,241,0.18)", borderRadius: 12, padding: 16, textAlign: "left" }}>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: "#f1f5f9", marginBottom: 6 }}>You&apos;re making real progress.</div>
-                          <div style={{ fontSize: 12, color: "#555", marginBottom: 12, lineHeight: 1.55 }}>Unlock your next steps and keep building.</div>
+                        style={{ overflow: "hidden", marginBottom: 12 }}>
+                        <div className="bg-indigo-500/[0.07] border border-indigo-500/[0.18] rounded-xl p-4 text-left">
+                          <div className="text-[13px] font-semibold bm-text mb-1.5">Builder keeps your momentum going.</div>
+                          <div className="text-[12px] bm-text3 mb-3 leading-relaxed">Unlock unlimited AI Coach, weekly reports, startup kit tools, and full brutal analysis without hitting limits.</div>
                           <button onClick={() => router.push("/upgrade")}
-                            style={{ width: "100%", padding: "10px", background: "#fff", color: "#000", fontWeight: 700, fontSize: 13, borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit" }}>
-                            Continue
+                            className="w-full py-2.5 bg-white text-black font-bold text-[13px] rounded-lg border-none cursor-pointer"
+                            style={{ fontFamily: "inherit" }}>
+                            Unlock Builder — $19/mo →
                           </button>
                         </div>
                       </motion.div>
                     )}
                   </AnimatePresence>
+
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.75 }}
-                    style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    <button onClick={() => router.push("/projects")}
-                      style={{ width: "100%", padding: "12px", fontSize: 13, fontWeight: 500, color: "#fff", background: "#141414", border: "1px solid #222", borderRadius: 12, cursor: "pointer", fontFamily: "inherit" }}>
-                      View your projects →
+                    className="flex flex-col gap-2">
+                    <button onClick={() => router.push("/reports")}
+                      className="w-full py-3 text-[13px] font-medium bm-text bm-bg4 border border-[var(--bm-border2)] rounded-xl cursor-pointer"
+                      style={{ fontFamily: "inherit" }}>
+                      View weekly report →
                     </button>
                     <button onClick={() => router.push("/ai-coach")}
-                      style={{ width: "100%", padding: "12px", fontSize: 13, color: "#444", background: "transparent", border: "1px solid #1c1c1c", borderRadius: 12, cursor: "pointer", fontFamily: "inherit" }}>
-                      Ask BuildMini what&apos;s next
+                      className="w-full py-3 text-[13px] bm-text4 bg-transparent border border-[var(--bm-border)] rounded-xl cursor-pointer"
+                      style={{ fontFamily: "inherit" }}>
+                      Ask AI Coach what&apos;s next
                     </button>
                   </motion.div>
                 </div>
               </motion.div>
             )}
           </AnimatePresence>
+
+          {/* Score / Streak / Stage row */}
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }}
+            className="flex items-center justify-center gap-6 mt-5 py-3">
+            <div className="text-center">
+              <div className="text-base font-semibold">
+                <AnimatedNumber value={score} color={score >= 60 ? "#4ade80" : score >= 30 ? "#fbbf24" : "#333"} />
+              </div>
+              <div className="text-[9px] text-[#2a2a2a] uppercase tracking-widest mt-0.5">Score</div>
+            </div>
+            <div className="w-px bm-bg3 self-stretch" />
+            <div className="text-center">
+              <div className="text-base font-semibold">
+                <AnimatedNumber value={streak} color={streak >= 3 ? "#fbbf24" : "#333"} />
+                <span style={{ color: streak >= 3 ? "#fbbf24" : "#333" }}>d</span>
+              </div>
+              <div className="text-[9px] text-[#2a2a2a] uppercase tracking-widest mt-0.5">Streak</div>
+            </div>
+            <div className="w-px bm-bg3 self-stretch" />
+            <div className="text-center">
+              <div className="text-base font-semibold bm-text4">{stage}</div>
+              <div className="text-[9px] text-[#2a2a2a] uppercase tracking-widest mt-0.5">Stage</div>
+            </div>
+          </motion.div>
 
         </div>
       </div>

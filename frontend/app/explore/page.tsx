@@ -95,32 +95,32 @@ export default function ExplorePage() {
   return (
     <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
       <div>
-        <h2 className="text-2xl font-semibold text-zinc-100">Explore Founders</h2>
+        <h2 className="text-2xl font-semibold bm-text">Explore Founders</h2>
         <p className="text-body mt-1">Discover public startup projects and follow their progress.</p>
       </div>
 
-      {loading ? <p className="text-sm text-zinc-400">Loading public projects...</p> : null}
+      {loading ? <p className="text-sm bm-text2">Loading public projects...</p> : null}
       {error ? <p className="text-sm text-rose-400">{error}</p> : null}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {projects.map((project) => (
           <Card key={project.id} className="glass-panel panel-glow">
             <CardHeader className="space-y-1">
-              <CardTitle className="text-zinc-100">{project.title}</CardTitle>
-              <p className="text-xs uppercase tracking-[0.2em] text-zinc-400">
+              <CardTitle className="bm-text">{project.title}</CardTitle>
+              <p className="text-xs uppercase tracking-[0.2em] bm-text2">
                 {project.founder_name}
               </p>
             </CardHeader>
-            <CardContent className="space-y-4 text-sm text-zinc-300">
+            <CardContent className="space-y-4 text-sm bm-text2">
               <p>{project.description || "Public founder build in progress."}</p>
-              <div className="grid gap-2 text-xs text-zinc-400">
+              <div className="grid gap-2 text-xs bm-text2">
                 <div className="flex items-center justify-between">
                   <span>Progress</span>
-                  <span className="text-zinc-200">{project.progress}%</span>
+                  <span className="bm-text">{project.progress}%</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span>Milestones</span>
-                  <span className="text-zinc-200">
+                  <span className="bm-text">
                     {project.milestones_completed}/{project.milestones_total}
                   </span>
                 </div>
@@ -128,7 +128,7 @@ export default function ExplorePage() {
               <div className="flex flex-wrap items-center gap-2">
                 <Button
                   variant="outline"
-                  className="border-white/10 bg-white/5 text-zinc-200 hover:bg-white/10"
+                  className="border-[var(--bm-border2)] bg-white/5 bm-text hover:bg-white/10"
                   onClick={() => void like(project.id)}
                   disabled={likedIds.has(project.id)}
                 >
@@ -136,7 +136,7 @@ export default function ExplorePage() {
                 </Button>
                 <Button
                   variant="outline"
-                  className="border-white/10 bg-white/5 text-zinc-200 hover:bg-white/10"
+                  className="border-[var(--bm-border2)] bg-white/5 bm-text hover:bg-white/10"
                   onClick={() => void follow(project.id)}
                   disabled={followedIds.has(project.id)}
                 >
@@ -144,14 +144,14 @@ export default function ExplorePage() {
                 </Button>
                 <Link
                   href={`/explore/${project.id}`}
-                  className="inline-flex items-center rounded-md bg-gradient-to-r from-indigo-500 to-purple-500 px-4 py-2 text-sm font-medium text-white"
+                  className="inline-flex items-center rounded-md bg-gradient-to-r from-indigo-500 to-purple-500 px-4 py-2 text-sm font-medium bm-text"
                 >
                   Open
                 </Link>
                 {project.founder_username ? (
                   <Link
                     href={`/founder/${project.founder_username}`}
-                    className="inline-flex items-center rounded-md px-3 py-2 text-sm text-zinc-300 hover:bg-white/5"
+                    className="inline-flex items-center rounded-md px-3 py-2 text-sm bm-text2 hover:bg-white/5"
                   >
                     Founder
                   </Link>

@@ -315,7 +315,7 @@ export function TourOverlay({ forceShow = false, onDone }: TourOverlayProps) {
           transition={{ type: "spring", stiffness: 340, damping: 26 }}
           style={{
             ...tooltipStyle,
-            background: "#0d0d0d",
+            background:"var(--bm-bg2)",
             border: "1px solid rgba(139,92,246,0.35)",
             borderRadius: 14,
             padding: "18px 20px",
@@ -389,7 +389,7 @@ export function TourOverlay({ forceShow = false, onDone }: TourOverlayProps) {
               style={{
                 fontSize: 14,
                 fontWeight: 700,
-                color: "#f1f5f9",
+                color:"var(--bm-text)",
                 letterSpacing: "-0.01em",
               }}
             >
@@ -401,7 +401,7 @@ export function TourOverlay({ forceShow = false, onDone }: TourOverlayProps) {
           <p
             style={{
               fontSize: 13,
-              color: "#94a3b8",
+              color:"var(--bm-text2)",
               lineHeight: 1.65,
               margin: "0 0 18px",
             }}

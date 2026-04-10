@@ -1,0 +1,150 @@
+import { NextResponse } from "next/server";
+import { groqJSON, hasAdminEnv } from "@/app/api/ai/_utils";
+import { createAdminClient } from "@/lib/supabase/admin";
+
+type AIWeeklyReport = {
+  summary: string;
+  intention_vs_action: string;
+  biggest_gap: string;
+  next_week_focus: string;
+  honest_assessment: string;
+  momentum_score: number;
+};
+
+function clamp(n: number, min: number, max: number) { return Math.max(min, Math.min(max, n)); }
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const userId = String(body?.userId ?? "").trim();
+    const projectId = String(body?.projectId ?? "").trim();
+
+    if (!userId) return NextResponse.json({ success: false, error: "userId required" }, { status: 400 });
+
+    // Get data from Supabase directly — no Python backend needed
+    let tasks = 0, milestones = 0, projects = 0;
+    let projectTitle = "", projectProblem = "", projectStage = "", projectDescription = "";
+    let strengths: string[] = [], weaknesses: string[] = [];
+
+    if (hasAdminEnv()) {
+      const supabase = createAdminClient();
+
+      // Count user's projects
+      const { data: userProjects } = await supabase
+        .from("projects")
+        .select("id, title, problem, startup_stage, description, validation_strengths, validation_weaknesses")
+        .eq("user_id", userId);
+
+      projects = userProjects?.length ?? 0;
+
+      // Use the specified project or first one
+      const activeProject = userProjects?.find(p => p.id === projectId) ?? userProjects?.[0];
+      if (activeProject) {
+        projectTitle = activeProject.title ?? "";
+        projectProblem = activeProject.problem ?? "";
+        projectStage = activeProject.startup_stage ?? "";
+        projectDescription = activeProject.description ?? "";
+        strengths = activeProject.validation_strengths ?? [];
+        weaknesses = activeProject.validation_weaknesses ?? [];
+      }
+
+      // Get milestones and tasks for all user projects
+      const allProjectIds = (userProjects ?? []).map(p => p.id);
+      if (allProjectIds.length > 0) {
+        const { data: userMilestones } = await supabase
+          .from("milestones")
+          .select("id, is_completed")
+          .in("project_id", allProjectIds);
+
+        milestones = (userMilestones ?? []).filter(m => m.is_completed).length;
+
+        const milestoneIds = (userMilestones ?? []).map(m => m.id);
+        if (milestoneIds.length > 0) {
+          const { data: userTasks } = await supabase
+            .from("tasks")
+            .select("is_completed")
+            .in("milestone_id", milestoneIds);
+
+          tasks = (userTasks ?? []).filter(t => t.is_completed).length;
+        }
+      }
+    }
+
+    const momentumScore = clamp(15 + tasks * 7 + milestones * 10, 10, 95);
+
+    const systemPrompt = `You are a brutally honest startup coach. Return ONLY valid JSON with exactly these keys:
+{
+  "summary": "2-sentence momentum assessment",
+  "intention_vs_action": "what they committed vs what they actually did this week",
+  "biggest_gap": "the single biggest execution gap right now",
+  "next_week_focus": "one specific thing to prioritize next week",
+  "honest_assessment": "a direct, uncomfortable truth about where this founder is headed",
+  "momentum_score": <number 0-100>
+}
+No preamble. No markdown. Only JSON.`;
+
+    const userPrompt = `Weekly data for this founder:
+Projects: ${projects}
+Milestones completed total: ${milestones}
+Tasks completed total: ${tasks}
+Momentum score (pre-computed): ${momentumScore}
+${projectTitle ? `\nActive project: ${projectTitle}` : ""}
+${projectStage ? `Stage: ${projectStage}` : ""}
+${projectProblem ? `Problem being solved: ${projectProblem}` : ""}
+${projectDescription ? `Description: ${projectDescription}` : ""}
+${strengths.length ? `Strengths: ${strengths.join(", ")}` : ""}
+${weaknesses.length ? `Weaknesses: ${weaknesses.join(", ")}` : ""}
+
+Be specific. No generic startup advice. Reference what you actually see in the data.`;
+
+    let result: AIWeeklyReport = {
+      summary: tasks === 0
+        ? "No tasks completed this week. The work isn't happening."
+        : `${tasks} task${tasks !== 1 ? "s" : ""} closed this week. ${milestones > 0 ? `${milestones} milestone${milestones !== 1 ? "s" : ""} complete.` : "No milestones closed yet."}`,
+      intention_vs_action: tasks === 0
+        ? "You likely planned to make progress. You didn't complete any recorded tasks."
+        : `You completed ${tasks} task${tasks !== 1 ? "s" : ""}. Closing milestones consistently is the next level.`,
+      biggest_gap: milestones === 0
+        ? "No milestones closed. You're doing tasks but not finishing anything."
+        : weaknesses.length > 0
+          ? weaknesses[0]
+          : "Keep pushing — the gap between where you are and launch is still significant.",
+      next_week_focus: `Close at least ${Math.max(1, Math.ceil(tasks * 0.5) + 1)} tasks and finish one complete milestone.`,
+      honest_assessment: tasks === 0
+        ? "You are not building. You're planning to build. Those are different things."
+        : "Progress is real but pace is slow. You need to double the weekly output to hit your goals.",
+      momentum_score: momentumScore,
+    };
+
+    try {
+      const ai = await groqJSON<AIWeeklyReport>(systemPrompt, userPrompt);
+      if (ai?.summary && typeof ai.momentum_score === "number") {
+        result = {
+          ...ai,
+          momentum_score: clamp(Math.round(ai.momentum_score), 10, 95),
+        };
+      }
+    } catch {
+      // use fallback — still better than crashing
+    }
+
+    // Also store summary back to report data for the static report section
+    const reportData = {
+      week_start_date: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+      projects_count: projects,
+      milestones_completed: milestones,
+      tasks_completed: tasks,
+      ai_summary: result.summary,
+      ai_risks: result.biggest_gap,
+      ai_suggestions: result.next_week_focus,
+    };
+
+    return NextResponse.json({
+      success: true,
+      data: { ...result, reportData },
+    });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : "Report failed";
+    return NextResponse.json({ success: false, error: msg }, { status: 500 });
+  }
+}

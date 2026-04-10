@@ -51,7 +51,7 @@ export default function BreakMyStartupPage() {
         title="Break My Startup"
         subtitle="Unfiltered analysis based on your project data and live web search."
         actions={
-          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-zinc-300">
+          <span className="rounded-full border border-[var(--bm-border2)] bg-white/5 px-3 py-1 text-xs bm-text2">
             {searchMeta?.webSearchUsed ? `Web search: ${searchMeta.searchResultCount} sources` : "Web search enabled"}
           </span>
         }
@@ -81,7 +81,7 @@ export default function BreakMyStartupPage() {
           <CardHeader>
             <CardTitle>BuildMind is working</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2 text-sm text-zinc-300">
+          <CardContent className="space-y-2 text-sm bm-text2">
             {[
               "Searching for similar products and competitors",
               "Comparing success rates and product positioning",
@@ -103,14 +103,14 @@ export default function BreakMyStartupPage() {
             <CardHeader>
               <CardTitle>Your 3 most likely failure modes</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4 text-sm text-zinc-300">
+            <CardContent className="space-y-4 text-sm bm-text2">
               {analysis.failureReasons.map((reason) => (
                 <div key={reason.num} className="rounded-xl border border-rose-400/20 bg-rose-500/5 p-4">
                   <div className="flex items-start gap-3">
                     <span className="text-xl font-bold text-rose-400">{reason.num}</span>
                     <div>
                       <p className="text-sm font-semibold text-rose-200">{reason.title}</p>
-                      <p className="mt-1 text-sm text-zinc-300">{reason.body}</p>
+                      <p className="mt-1 text-sm bm-text2">{reason.body}</p>
                       <p className="mt-3 rounded-lg border border-emerald-400/20 bg-emerald-500/10 p-2 text-xs text-emerald-200">
                         {reason.evidence}
                       </p>
@@ -125,15 +125,15 @@ export default function BreakMyStartupPage() {
             <CardHeader>
               <CardTitle>Similar products found</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4 text-sm text-zinc-300">
+            <CardContent className="space-y-4 text-sm bm-text2">
               {analysis.competitors.map((competitor) => (
-                <div key={competitor.name} className="rounded-xl border border-white/10 bg-white/5 p-4">
+                <div key={competitor.name} className="rounded-xl border border-[var(--bm-border2)] bg-white/5 p-4">
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div>
-                      <p className="text-base font-semibold text-zinc-100">{competitor.name}</p>
-                      <p className="text-sm text-zinc-400">{competitor.description}</p>
+                      <p className="text-base font-semibold bm-text">{competitor.name}</p>
+                      <p className="text-sm bm-text2">{competitor.description}</p>
                     </div>
-                    <div className="text-right text-xs text-zinc-400">
+                    <div className="text-right text-xs bm-text2">
                       <p>Success rate vs yours</p>
                       <p className="text-sm font-semibold text-rose-300">{competitor.successRate}% vs {competitor.yourSuccessRate}%</p>
                     </div>
@@ -156,7 +156,7 @@ export default function BreakMyStartupPage() {
               <CardHeader>
                 <CardTitle>Your moat</CardTitle>
               </CardHeader>
-              <CardContent className="text-sm text-zinc-300">{analysis.yourMoat}</CardContent>
+              <CardContent className="text-sm bm-text2">{analysis.yourMoat}</CardContent>
             </Card>
           ) : null}
 
@@ -175,7 +175,7 @@ export default function BreakMyStartupPage() {
                 setAnalysis(null);
                 setSearchMeta(null);
               }}
-              className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm text-zinc-300 transition hover:bg-white/10"
+              className="rounded-lg border border-[var(--bm-border2)] bg-white/5 px-4 py-2 text-sm bm-text2 transition hover:bg-white/10"
             >
               Run again
             </button>

@@ -80,7 +80,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
       { label: "Dashboard", href: "/dashboard", keywords: ["overview", "stats", "execution", "startup score", "next best action"] },
       { label: "Today's Action", href: "/action", keywords: ["action", "next step", "today", "commitment"] },
       { label: "Projects", href: "/projects", keywords: ["workspace", "roadmap", "milestones", "tasks"] },
-      { label: "BuildMini", href: "/ai-coach", keywords: ["ai coach", "chat", "advice"] },
+      { label: "AI Coach", href: "/ai-coach", keywords: ["ai coach", "chat", "advice"] },
       { label: "Break My Startup", href: "/break-startup", keywords: ["break", "analysis", "competitors", "risk"] },
       { label: "Progress", href: "/reports", keywords: ["reports", "weekly report", "analytics"] },
       { label: "Settings", href: "/settings", keywords: ["profile", "preferences"] },
@@ -106,7 +106,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
       { label: "Weaknesses", keywords: ["validation weaknesses"] },
       { label: "Suggestions", keywords: ["validation suggestions"] },
       { label: "Task List", keywords: ["tasks", "execution", "notes"] },
-      { label: "Quick BuildMini", keywords: ["ask buildmini", "coach"] },
+      { label: "Quick AI Coach", keywords: ["ask buildmini", "coach"] },
       { label: "Recent Activity", keywords: ["activity", "feed"] },
       { label: "Weekly Founder Report", keywords: ["weekly report", "summary"] },
       { label: "Startup Timeline", keywords: ["idea", "validation", "mvp", "launch", "growth"] },
@@ -115,7 +115,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
     const recommendations = [
       { label: "Create Project", href: "/projects", keywords: ["new project", "start", "workspace"] },
       { label: "Open Today's Action", href: "/action", keywords: ["action", "commit"] },
-      { label: "Open BuildMini", href: "/ai-coach", keywords: ["ask coach", "advice"] },
+      { label: "Open AI Coach", href: "/ai-coach", keywords: ["ask coach", "advice"] },
       { label: "View Weekly Report", href: "/reports", keywords: ["weekly", "report", "summary"] },
     ];
 
@@ -198,7 +198,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
     <div className="relative z-50 flex h-full w-full items-center gap-3 px-4">
       <button
         onClick={onToggleSidebar}
-        className="grid h-9 w-9 place-items-center rounded-lg border border-[#1c1c1c] bg-[#0d0d0d] text-zinc-200 transition hover:bg-white/5 md:hidden"
+        className="grid h-9 w-9 place-items-center rounded-lg border border-[var(--bm-border)] bm-bg2 bm-text transition hover:bg-white/5 md:hidden"
         type="button"
         aria-label="Toggle navigation"
       >
@@ -207,7 +207,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
 
       <div className="relative flex-1" ref={searchRef}>
         <div className="relative w-full max-w-[560px]">
-          <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+          <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 bm-text3" />
           <Input
             placeholder="Search projects, milestones, tasks..."
             value={searchQuery}
@@ -222,11 +222,11 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
                 setSearchError(null);
               }
             }}
-            className="h-10 border-[#1c1c1c] bg-[#0d0d0d] pl-9 text-zinc-100 placeholder:text-zinc-500"
+            className="h-10 border-[var(--bm-border)] bm-bg2 pl-9 bm-text placeholder:text-zinc-500"
           />
         {searchOpen ? (
-          <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 max-h-80 overflow-auto rounded-xl border border-[#1c1c1c] bg-[#0d0d0d] p-2 text-sm shadow-2xl">
-            {searchLoading ? <p className="px-2 py-2 text-zinc-400">Searching...</p> : null}
+          <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 max-h-80 overflow-auto rounded-xl border border-[var(--bm-border)] bm-bg2 p-2 text-sm shadow-2xl">
+            {searchLoading ? <p className="px-2 py-2 bm-text2">Searching...</p> : null}
             {searchError ? <p className="px-2 py-2 text-rose-400">{searchError}</p> : null}
             {searchResults &&
             searchResults.projects.length === 0 &&
@@ -237,17 +237,17 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
             keywordResults.recommendations.length === 0 &&
             !searchLoading &&
             !searchError ? (
-              <p className="px-2 py-2 text-zinc-400">No results found.</p>
+              <p className="px-2 py-2 bm-text2">No results found.</p>
             ) : null}
             {searchResults && searchResults.projects.length > 0 ? (
               <div className="space-y-1">
-                <p className="px-2 pt-2 text-xs uppercase tracking-[0.2em] text-zinc-400">Projects</p>
+                <p className="px-2 pt-2 text-xs uppercase tracking-[0.2em] bm-text2">Projects</p>
                 {searchResults.projects.map((item) => (
                   <button
                     key={`p-${item.id}`}
                     type="button"
                     onClick={() => goToProject(item.id)}
-                    className="w-full rounded-md px-2 py-2 text-left text-zinc-200 hover:bg-white/5"
+                    className="w-full rounded-md px-2 py-2 text-left bm-text hover:bg-white/5"
                   >
                     {item.title}
                   </button>
@@ -256,13 +256,13 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
             ) : null}
             {searchResults && searchResults.milestones.length > 0 ? (
               <div className="space-y-1 pt-2">
-                <p className="px-2 pt-2 text-xs uppercase tracking-[0.2em] text-zinc-400">Milestones</p>
+                <p className="px-2 pt-2 text-xs uppercase tracking-[0.2em] bm-text2">Milestones</p>
                 {searchResults.milestones.map((item) => (
                   <button
                     key={`m-${item.id}`}
                     type="button"
                     onClick={() => goToProject(item.project_id)}
-                    className="w-full rounded-md px-2 py-2 text-left text-zinc-200 hover:bg-white/5"
+                    className="w-full rounded-md px-2 py-2 text-left bm-text hover:bg-white/5"
                   >
                     {item.title}
                   </button>
@@ -271,13 +271,13 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
             ) : null}
             {searchResults && searchResults.tasks.length > 0 ? (
               <div className="space-y-1 pt-2">
-                <p className="px-2 pt-2 text-xs uppercase tracking-[0.2em] text-zinc-400">Tasks</p>
+                <p className="px-2 pt-2 text-xs uppercase tracking-[0.2em] bm-text2">Tasks</p>
                 {searchResults.tasks.map((item) => (
                   <button
                     key={`t-${item.id}`}
                     type="button"
                     onClick={() => goToProject(item.project_id)}
-                    className="w-full rounded-md px-2 py-2 text-left text-zinc-200 hover:bg-white/5"
+                    className="w-full rounded-md px-2 py-2 text-left bm-text hover:bg-white/5"
                   >
                     {item.title}
                   </button>
@@ -286,13 +286,13 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
             ) : null}
             {keywordResults.features.length > 0 ? (
               <div className="space-y-1 pt-2">
-                <p className="px-2 pt-2 text-xs uppercase tracking-[0.2em] text-zinc-400">Features</p>
+                <p className="px-2 pt-2 text-xs uppercase tracking-[0.2em] bm-text2">Features</p>
                 {keywordResults.features.map((item) => (
                   <button
                     key={`f-${item.href}`}
                     type="button"
                     onClick={() => goToFeature(item.href)}
-                    className="w-full rounded-md px-2 py-2 text-left text-zinc-200 hover:bg-white/5"
+                    className="w-full rounded-md px-2 py-2 text-left bm-text hover:bg-white/5"
                   >
                     {item.label}
                   </button>
@@ -301,11 +301,11 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
             ) : null}
             {keywordResults.widgets.length > 0 ? (
               <div className="space-y-1 pt-2">
-                <p className="px-2 pt-2 text-xs uppercase tracking-[0.2em] text-zinc-400">Widgets</p>
+                <p className="px-2 pt-2 text-xs uppercase tracking-[0.2em] bm-text2">Widgets</p>
                 {keywordResults.widgets.map((item) => (
                   <div
                     key={`w-${item.label}`}
-                    className="w-full rounded-md px-2 py-2 text-left text-zinc-200"
+                    className="w-full rounded-md px-2 py-2 text-left bm-text"
                   >
                     {item.label}
                   </div>
@@ -314,13 +314,13 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
             ) : null}
             {keywordResults.recommendations.length > 0 ? (
               <div className="space-y-1 pt-2">
-                <p className="px-2 pt-2 text-xs uppercase tracking-[0.2em] text-zinc-400">Recommended</p>
+                <p className="px-2 pt-2 text-xs uppercase tracking-[0.2em] bm-text2">Recommended</p>
                 {keywordResults.recommendations.map((item) => (
                   <button
                     key={`r-${item.label}`}
                     type="button"
                     onClick={() => goToFeature(item.href)}
-                    className="w-full rounded-md px-2 py-2 text-left text-zinc-200 hover:bg-white/5"
+                    className="w-full rounded-md px-2 py-2 text-left bm-text hover:bg-white/5"
                   >
                     {item.label}
                   </button>
@@ -335,12 +335,12 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
       <div className="ml-auto flex items-center gap-3">
         <button
           onClick={() => router.push("/notifications")}
-          className="relative grid h-10 w-10 place-items-center rounded-lg border border-[#1c1c1c] bg-[#0d0d0d] text-zinc-200 transition hover:bg-white/5"
+          className="relative grid h-10 w-10 place-items-center rounded-lg border border-[var(--bm-border)] bm-bg2 bm-text transition hover:bg-white/5"
           type="button"
         >
           <Bell size={16} />
           {unreadCount > 0 ? (
-            <span className="absolute -right-1 -top-1 grid h-5 min-w-[20px] place-items-center rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 px-1 text-[11px] font-semibold text-white">
+            <span className="absolute -right-1 -top-1 grid h-5 min-w-[20px] place-items-center rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 px-1 text-[11px] font-semibold bm-text">
               {unreadCount > 9 ? "9+" : unreadCount}
             </span>
           ) : null}
@@ -349,7 +349,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
         <div className="relative" ref={menuRef}>
           <button
             onClick={() => setOpen((s) => !s)}
-            className="grid h-10 w-10 place-items-center rounded-full border border-[#1c1c1c] bg-[#0d0d0d] font-semibold text-zinc-100"
+            className="grid h-10 w-10 place-items-center rounded-full border border-[var(--bm-border)] bm-bg2 font-semibold bm-text"
             type="button"
           >
             {avatarUrl && !avatarBroken ? (
@@ -368,7 +368,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
             <motion.div
               initial={{ opacity: 0, y: -4 }}
               animate={{ opacity: 1, y: 0 }}
-              className="absolute right-0 z-[70] mt-2 w-52 rounded-xl border border-[#1c1c1c] bg-[#0d0d0d] p-1 shadow-2xl"
+              className="absolute right-0 z-[70] mt-2 w-52 rounded-xl border border-[var(--bm-border)] bm-bg2 p-1 shadow-2xl"
             >
               <button
                 type="button"
@@ -376,7 +376,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
                   setOpen(false);
                   router.push("/settings");
                 }}
-                className="block w-full rounded-md px-3 py-2 text-left text-sm text-zinc-200 hover:bg-white/5"
+                className="block w-full rounded-md px-3 py-2 text-left text-sm bm-text hover:bg-white/5"
               >
                 Profile
               </button>

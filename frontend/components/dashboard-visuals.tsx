@@ -11,9 +11,9 @@ type DashboardVisualsProps = {
 export default function DashboardVisuals({ execution, aiUsage }: DashboardVisualsProps) {
   return (
     <div className="grid gap-4 xl:grid-cols-2">
-      <Card className="glass-panel panel-glow border-white/10 bg-white/5">
+      <Card className="glass-panel panel-glow border-[var(--bm-border2)] bg-white/5">
         <CardHeader>
-          <CardTitle className="text-base text-zinc-100">Execution Progress</CardTitle>
+          <CardTitle className="text-base bm-text">Execution Progress</CardTitle>
         </CardHeader>
         <CardContent className="h-64">
           <ResponsiveContainer width="100%" height="100%">
@@ -34,9 +34,9 @@ export default function DashboardVisuals({ execution, aiUsage }: DashboardVisual
         </CardContent>
       </Card>
 
-      <Card className="glass-panel panel-glow border-white/10 bg-white/5">
+      <Card className="glass-panel panel-glow border-[var(--bm-border2)] bg-white/5">
         <CardHeader>
-          <CardTitle className="text-base text-zinc-100">AI Usage Trend</CardTitle>
+          <CardTitle className="text-base bm-text">AI Usage Trend</CardTitle>
         </CardHeader>
         <CardContent className="h-64">
           <ResponsiveContainer width="100%" height="100%">

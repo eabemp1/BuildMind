@@ -23,21 +23,21 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <div className="pointer-events-none absolute -left-40 top-20 h-80 w-80 rounded-full bg-indigo-500/15 blur-[140px]" />
       <div className="pointer-events-none absolute right-0 top-10 h-96 w-96 rounded-full bg-purple-500/15 blur-[180px]" />
       <div className="pointer-events-none absolute bottom-0 left-1/2 h-96 w-96 -translate-x-1/2 rounded-full bg-sky-500/10 blur-[200px]" />
-      <aside className="sticky top-0 hidden h-screen w-[240px] shrink-0 border-r border-white/10 md:flex">
+      <aside className="sticky top-0 hidden h-screen w-[240px] shrink-0 border-r border-[var(--bm-border2)] md:flex">
         <Sidebar />
       </aside>
 
       {mobileOpen ? (
         <div className="fixed inset-0 z-40 flex md:hidden">
           <div className="absolute inset-0 bg-black/60" onClick={() => setMobileOpen(false)} />
-          <div className="relative h-full w-[240px] border-r border-white/10 bg-black">
+          <div className="relative h-full w-[240px] border-r border-[var(--bm-border2)] bm-bg">
             <Sidebar />
           </div>
         </div>
       ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 h-[60px] border-b border-white/10 bg-[#0a0a0a]/90 backdrop-blur">
+        <header className="sticky top-0 z-30 h-[60px] border-b border-[var(--bm-border2)] bg-[#0a0a0a]/90 backdrop-blur">
           <Topbar onToggleSidebar={() => setMobileOpen((prev) => !prev)} />
         </header>
         <AnimatePresence mode="wait">

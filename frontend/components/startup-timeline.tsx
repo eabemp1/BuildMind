@@ -44,7 +44,7 @@ export default function StartupTimeline({ project, milestones, tasks }: Timeline
   return (
     <GlowCard className="p-6">
       <div className="mb-6">
-        <h3 className="text-lg font-semibold text-zinc-100">Startup Timeline</h3>
+        <h3 className="text-lg font-semibold bm-text">Startup Timeline</h3>
         <p className="text-body">Track your journey from idea to first revenue.</p>
       </div>
       <div className="flex flex-wrap items-center gap-4">
@@ -63,7 +63,7 @@ export default function StartupTimeline({ project, milestones, tasks }: Timeline
                 >
                   {complete ? <div className="h-2 w-2 rounded-full bg-white" /> : null}
                 </div>
-                <span className="mt-2 text-xs text-zinc-300">{stage.label}</span>
+                <span className="mt-2 text-xs bm-text2">{stage.label}</span>
               </div>
               {!isLast ? (
                 <div

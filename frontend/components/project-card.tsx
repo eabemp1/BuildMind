@@ -51,30 +51,30 @@ export default function ProjectCard({
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-indigo-200/80">Project</p>
-          <h3 className="mt-2 text-lg font-semibold text-zinc-100">{title}</h3>
+          <h3 className="mt-2 text-lg font-semibold bm-text">{title}</h3>
           <p className="text-body mt-2">{description || "No description yet."}</p>
         </div>
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-zinc-200">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--bm-border2)] bg-white/5 bm-text">
           <Target size={18} />
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-400">
-        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">{stage}</span>
-        {industry ? <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">{industry}</span> : null}
+      <div className="flex flex-wrap items-center gap-2 text-xs bm-text2">
+        <span className="rounded-full border border-[var(--bm-border2)] bg-white/5 px-3 py-1">{stage}</span>
+        {industry ? <span className="rounded-full border border-[var(--bm-border2)] bg-white/5 px-3 py-1">{industry}</span> : null}
         <span>Last activity · {formatDate(lastActivity)}</span>
       </div>
 
       <div className="space-y-2">
-        <div className="flex items-center justify-between text-xs text-zinc-400">
+        <div className="flex items-center justify-between text-xs bm-text2">
           <span>Progress</span>
-          <span className="text-zinc-200">{progress}%</span>
+          <span className="bm-text">{progress}%</span>
         </div>
         <ProgressBar value={progress} />
         {typeof startupScore === "number" ? (
-          <p className="text-xs text-zinc-400">Startup score · {startupScore}/100</p>
+          <p className="text-xs bm-text2">Startup score · {startupScore}/100</p>
         ) : null}
-        <p className="text-xs text-zinc-400">
+        <p className="text-xs bm-text2">
           {tasksCompleted} of {tasksTotal} tasks completed
         </p>
       </div>
@@ -86,7 +86,7 @@ export default function ProjectCard({
             setActiveProjectId(id);
             router.push(`/projects/${id}`);
           }}
-          className="w-full bg-gradient-to-r from-indigo-500 to-purple-500 text-white"
+          className="w-full bg-gradient-to-r from-indigo-500 to-purple-500 bm-text"
         >
           Open Project
           <ArrowUpRight className="ml-2 h-4 w-4" />

@@ -116,7 +116,7 @@ export function BuildMindLogo({
           <div
             style={{
               fontSize: size * 0.16,
-              color: "#64748b",
+              color:"var(--bm-text3)",
               letterSpacing: "0.18em",
               textTransform: "uppercase",
               fontFamily: "system-ui, sans-serif",

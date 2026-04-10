@@ -29,12 +29,12 @@ export default function WelcomePage() {
         {/* Quick confirmation */}
         <div style={{ background: "rgba(34,197,94,0.06)", border: "1px solid rgba(34,197,94,0.2)", borderRadius: 12, padding: "14px 18px", marginBottom: 20, display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ fontSize: 18 }}>✓</span>
-          <div style={{ fontSize: 13, color: "#f1f5f9" }}>You're in. BuildMind will hold you accountable from today.</div>
+          <div style={{ fontSize: 13, color:"var(--bm-text)" }}>You're in. BuildMind will hold you accountable from today.</div>
         </div>
 
         {/* NEXT TASK — not dashboard, not welcome screen */}
         <div style={{ background: "#f8f7f4", borderRadius: 20, padding: 28, color: "#1a1a2e", marginBottom: 16 }}>
-          <div style={{ fontSize: 11, color: "#64748b", textAlign: "center", marginBottom: 16, paddingBottom: 14, borderBottom: "1px solid rgba(0,0,0,0.08)" }}>
+          <div style={{ fontSize: 11, color:"var(--bm-text3)", textAlign: "center", marginBottom: 16, paddingBottom: 14, borderBottom: "1px solid rgba(0,0,0,0.08)" }}>
             Keep the momentum going. Your next action:
           </div>
           <div style={{ fontSize: 18, fontWeight: 900, color: "#0f172a", marginBottom: 7, letterSpacing: "-0.02em" }}>DO THIS NOW:</div>
@@ -50,7 +50,7 @@ export default function WelcomePage() {
           >
             See today's action →
           </Link>
-          <div style={{ fontSize: 11, color: "#94a3b8", textAlign: "center", marginTop: 10 }}>
+          <div style={{ fontSize: 11, color:"var(--bm-text2)", textAlign: "center", marginTop: 10 }}>
             WHY: Momentum compounds. Don't break it now.
           </div>
         </div>
