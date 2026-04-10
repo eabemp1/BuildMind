@@ -2,6 +2,19 @@ import { NextResponse } from "next/server";
 import { enforceAndTrackAIUsage, groqJSON, hasAdminEnv } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
 
+function clamp(value: number, min = 0, max = 100) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function parseProbability(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return clamp(Math.round(value));
+  if (typeof value === "string") {
+    const parsed = Number(value.replace("%", "").trim());
+    if (Number.isFinite(parsed)) return clamp(Math.round(parsed));
+  }
+  return null;
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
@@ -52,6 +65,19 @@ export async function POST(request: Request) {
     const completedTasks = (tasks ?? []).filter((t) => t.is_completed).length;
     const totalTasks = (tasks ?? []).length;
     const completedMilestones = (milestones ?? []).filter((m) => m.is_completed).length;
+    const totalMilestones = (milestones ?? []).length;
+    const strengthsCount = Array.isArray(project.validation_strengths) ? project.validation_strengths.length : 0;
+    const weaknessesCount = Array.isArray(project.validation_weaknesses) ? project.validation_weaknesses.length : 0;
+
+    // Data-driven baseline to avoid flat or stale percentages.
+    const taskScore = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 25;
+    const milestoneScore = totalMilestones > 0 ? (completedMilestones / totalMilestones) * 100 : 25;
+    const validationDelta = clamp((strengthsCount - weaknessesCount) * 6, -20, 20);
+    const baselineProbability = clamp(
+      Math.round(25 + taskScore * 0.45 + milestoneScore * 0.35 + validationDelta),
+      8,
+      92,
+    );
 
     const systemPrompt = `You are a brutally honest startup advisor running a failure analysis.
 Your job is to find every reason this startup could fail.
@@ -102,6 +128,11 @@ Be specific, harsh, and honest. No sugar-coating.`;
         }
       } catch { /* use default */ }
     }
+
+    const aiProbability = parseProbability(result.survival_probability);
+    result.survival_probability = aiProbability === null
+      ? baselineProbability
+      : clamp(Math.round(aiProbability * 0.65 + baselineProbability * 0.35), 5, 95);
 
     return NextResponse.json({ success: true, data: result });
   } catch (error) {
