@@ -81,7 +81,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
       { label: "Today's Action", href: "/action", keywords: ["action", "next step", "today", "commitment"] },
       { label: "Projects", href: "/projects", keywords: ["workspace", "roadmap", "milestones", "tasks"] },
       { label: "AI Coach", href: "/ai-coach", keywords: ["ai coach", "chat", "advice"] },
-      { label: "Break My Startup", href: "/break-startup", keywords: ["break", "analysis", "competitors", "risk"] },
+      { label: "Break My Startup", href: "/break-my-startup", keywords: ["break", "analysis", "competitors", "risk"] },
       { label: "Progress", href: "/reports", keywords: ["reports", "weekly report", "analytics"] },
       { label: "Settings", href: "/settings", keywords: ["profile", "preferences"] },
     ];
