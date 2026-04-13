@@ -7,10 +7,18 @@ function clamp(value: number, min = 0, max = 100) {
 }
 
 function parseProbability(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return clamp(Math.round(value));
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const normalized = value >= 0 && value <= 1 ? value * 100 : value;
+    return clamp(Math.round(normalized));
+  }
   if (typeof value === "string") {
-    const parsed = Number(value.replace("%", "").trim());
-    if (Number.isFinite(parsed)) return clamp(Math.round(parsed));
+    const cleaned = value.replace("%", "").trim();
+    const parsed = Number(cleaned);
+    if (!Number.isFinite(parsed)) return null;
+    const normalized = parsed >= 0 && parsed <= 1 && cleaned.includes(".")
+      ? parsed * 100
+      : parsed;
+    return clamp(Math.round(normalized));
   }
   return null;
 }
