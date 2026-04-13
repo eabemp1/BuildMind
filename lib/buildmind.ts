@@ -1,0 +1,171 @@
+"use client";
+
+/**
+ * lib/buildmind.ts — re-export shim (v13)
+ *
+ * This file is intentionally thin. All logic has been split into focused modules:
+ *
+ *   lib/buildmind.types.ts   — domain types (no client dependency)
+ *   lib/stages/index.ts      — stage inference from milestone/task data
+ *   lib/scoring/index.ts     — startup score computation
+ *   lib/data/projects.ts     — Supabase data access (projects, milestones, tasks)
+ *   lib/notifications.ts     — notification helpers (unchanged)
+ *   lib/achievements.ts      — achievement helpers (unchanged)
+ *
+ * All existing import paths (e.g. `import { getCurrentUser } from "@/lib/buildmind"`)
+ * continue to work with zero changes to call-sites.
+ */
+
+// ── Types ──────────────────────────────────────────────────────────────────────
+export type {
+  BuildMindProject,
+  ProjectSummary,
+  BuildMindMilestone,
+  BuildMindTask,
+  DashboardOverview,
+  BuildMindNotification,
+} from "@/lib/buildmind.types";
+
+// ── Stage logic ────────────────────────────────────────────────────────────────
+export {
+  STAGE_ORDER,
+  normalizeStage,
+  inferStageFromMilestones,
+  stageRank,
+} from "@/lib/stages";
+
+// ── Scoring ────────────────────────────────────────────────────────────────────
+export { computeStartupScore, computeScoreDelta, applyScoreDelta } from "@/lib/scoring";
+
+// ── Data access ────────────────────────────────────────────────────────────────
+export {
+  getCurrentUser,
+  ensureUserProfile,
+  getOnboardingStatus,
+  markOnboardingComplete,
+  getProjectsForCurrentUser,
+  getProjectSummaries,
+  updateProjectStage,
+  getProjectDetail,
+  createProjectWithRoadmap,
+  getDashboardOverview,
+  calculateDashboardStats,
+} from "@/lib/data/projects";
+
+// ── Notifications ──────────────────────────────────────────────────────────────
+export {
+  createNotificationForCurrentUser,
+  getNotificationsForCurrentUser,
+  markNotificationAsRead,
+  clearNotificationsForCurrentUser,
+  getUnreadNotificationCount,
+} from "@/lib/notifications";
+
+// ── AI Coach helper ─────────────────────────────────────────────────────────
+import { getCurrentUser } from "@/lib/data/projects";
+
+export async function getAICoachAdvice(projectId: string): Promise<string[]> {
+  const user = await getCurrentUser();
+  if (!user) return [];
+  const res = await fetch("/api/ai/coach", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ projectId, userId: user.id }),
+  });
+  if (!res.ok) return [];
+  const body = await res.json().catch(() => ({}));
+  const advice = body?.data?.advice;
+  return Array.isArray(advice) ? advice.map(String) : [];
+}
+
+// ── Task / Milestone mutations (touch multiple tables) ──────────────────────
+import { createClient } from "@/lib/supabase/client";
+import { trackEvent } from "@/lib/analytics";
+import { getProjectSummaries, updateProjectStage } from "@/lib/data/projects";
+
+export async function completeTask(taskId: string): Promise<{ newStage: string | null }> {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Not authenticated");
+  const supabase = createClient();
+
+  await supabase.from("tasks").update({ is_completed: true }).eq("id", taskId);
+
+  const { data: task } = await supabase
+    .from("tasks").select("milestone_id").eq("id", taskId).single();
+  if (!task) return { newStage: null };
+
+  const { data: sibling } = await supabase
+    .from("tasks").select("is_completed").eq("milestone_id", task.milestone_id);
+  const allDone = (sibling ?? []).every((t) => t.is_completed);
+
+  if (allDone) {
+    await supabase.from("milestones").update({ is_completed: true }).eq("id", task.milestone_id);
+    const { data: milestone } = await supabase
+      .from("milestones").select("project_id").eq("id", task.milestone_id).single();
+    if (milestone) {
+      const summaries = await getProjectSummaries();
+      const updated = summaries.find((s) => s.id === milestone.project_id);
+      if (updated?.startup_stage) {
+        await updateProjectStage(milestone.project_id, updated.startup_stage);
+        return { newStage: updated.startup_stage };
+      }
+    }
+  }
+  return { newStage: null };
+}
+
+export async function updateTaskStatus(taskId: string, isCompleted: boolean, notes?: string) {
+  const supabase = createClient();
+  const { data: taskRow, error: taskError } = await supabase
+    .from("tasks").select("id, milestone_id, is_completed").eq("id", taskId).single();
+  if (taskError) throw taskError;
+
+  const { data: milestoneTasks, error: milestoneError } = await supabase
+    .from("tasks").select("id, is_completed").eq("milestone_id", taskRow.milestone_id);
+  if (milestoneError) throw milestoneError;
+
+  const wasMilestoneComplete =
+    (milestoneTasks ?? []).length > 0 && (milestoneTasks ?? []).every((t) => t.is_completed);
+
+  const { error } = await supabase
+    .from("tasks").update({ is_completed: isCompleted, notes: notes ?? null }).eq("id", taskId);
+  if (error) throw error;
+
+  const nowTasks = (milestoneTasks ?? []).map((t) =>
+    t.id === taskRow.id ? { ...t, is_completed: isCompleted } : t
+  );
+  const isMilestoneComplete = nowTasks.length > 0 && nowTasks.every((t) => t.is_completed);
+
+  if (isCompleted && !taskRow.is_completed) trackEvent("task_completed");
+
+  if (isMilestoneComplete && !wasMilestoneComplete) {
+    trackEvent("milestone_completed");
+    const { data: milestone } = await supabase
+      .from("milestones").select("project_id").eq("id", taskRow.milestone_id).single();
+    if (milestone?.project_id) {
+      const summaries = await getProjectSummaries();
+      const updated = summaries.find((s) => s.id === milestone.project_id);
+      if (updated?.startup_stage) await updateProjectStage(milestone.project_id, updated.startup_stage);
+    }
+  }
+}
+
+export async function updateMilestoneForCurrentUser(
+  milestoneId: string,
+  payload: { title?: string; stage?: string; order_index?: number }
+) {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("milestones").update(payload).eq("id", milestoneId).select("*").single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteProjectForCurrentUser(projectId: string): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Not authenticated");
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("projects").delete().eq("id", projectId).eq("user_id", user.id);
+  if (error) throw error;
+}

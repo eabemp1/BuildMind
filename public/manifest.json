@@ -1,0 +1,55 @@
+{
+  "name": "BuildMind — Founder OS",
+  "short_name": "BuildMind",
+  "description": "Your daily execution engine. One action. Already decided.",
+  "start_url": "/today",
+  "display": "standalone",
+  "background_color": "#0a0a0f",
+  "theme_color": "#0a0a0f",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/logo/buildmind-mark.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/logo/buildmind-og-image.svg",
+      "sizes": "1200x630",
+      "type": "image/svg+xml",
+      "form_factor": "wide"
+    }
+  ],
+  "categories": ["productivity", "business"],
+  "shortcuts": [
+    {
+      "name": "Today's Action",
+      "short_name": "Today",
+      "description": "See your one action for today",
+      "url": "/today",
+      "icons": [{ "src": "/logo/buildmind-favicon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Reflect",
+      "short_name": "Reflect",
+      "description": "Log what happened today",
+      "url": "/reflect",
+      "icons": [{ "src": "/logo/buildmind-favicon.svg", "sizes": "any" }]
+    }
+  ]
+}

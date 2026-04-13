@@ -45,6 +45,14 @@ export default function LoginPage() {
       await ensureUserProfile(data.user);
       identifyUser(data.user.id, data.user.email);
       trackEvent("user_signed_in");
+
+      // Refresh geo metadata for existing users who haven't had it set.
+      // Only fires if flag is missing — cheap no-op otherwise.
+      const meta = (data.user.user_metadata ?? {}) as Record<string, unknown>;
+      if (!meta.flag) {
+        fetch("/api/user/geo", { method: "POST" }).catch(() => {});
+      }
+
       router.replace("/today");
     } catch (err) {
       setError(formatAuthError(err));

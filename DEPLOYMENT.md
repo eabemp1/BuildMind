@@ -1,191 +1,227 @@
-# BuildMind v2 — Deployment Guide
+# BuildMind v13 — Deployment Guide
 **Last updated: April 2026**
 
 ---
 
 ## What's in this package
 
-This is the complete, production-ready BuildMind frontend. It includes every file changed or added across all build sessions. Drop it on top of your existing repo and deploy.
+This is the complete, production-ready BuildMind frontend (v13). Drop it on top of your existing repo and deploy.
 
 ---
 
-## Files changed from the original
+## What changed in v13
 
-| File | What changed |
-|------|-------------|
-| `lib/plan.ts` | **NEW** — Full plan gating (Free/Builder/Venture), weekly action tracking, daily AI limits, smart upgrade triggers. Single source of truth for all monetization logic. |
-| `lib/upgrade.ts` | Now a clean re-export shim from `plan.ts`. All old imports (`recordTaskCompletion`, `checkUpgradeTrigger`, etc.) keep working with zero changes. |
-| `lib/ventures.ts` | **NEW** — ConsentLedger added as active venture (Month 1–3) with 12 milestones across 3 phases. SafeRemit moved to Month 4–6. Full revenue models, research papers, enforcement requirements for both. |
-| `components/ConsentLedgerCTA.tsx` | **NEW** — 4-variant cross-promotion component. Drop anywhere in the app. |
-| `components/layout/sidebar.tsx` | Ventures always visible to all users (free users see cards, gate is on detail view). NEW badge. ConsentLedger cross-link. Dynamic plan chip. |
-| `app/today/page.tsx` | 7 retention fixes: localStorage persistence for done state, streak broken warning, next action preview, build-in-public share button, venture track progress widget, ConsentLedgerCTA in done state, better upgrade trigger timing. |
-| `app/ventures/page.tsx` | **NEW PAGE** — Venture roadmap viewer. Free users see all cards (value visible). Upgrade gate on milestone detail view only. localStorage persistence for milestone completion. |
-| `app/(dashboard)/dashboard/page.tsx` | ConsentLedgerCTA (`variant="full"`) added at bottom. |
-| `app/(dashboard)/settings/page.tsx` | **Billing tab added** — 4-step cancellation prevention flow: streak/progress display → 30-day pause offer → cancellation reason collection → confirmed state with context-aware recovery message. |
-| `app/landing/page.tsx` | Improved landing page with ConsentLedger mention. |
-| `app/upgrade/page.tsx` | Improved upgrade page with plan comparison. |
-| `app/reports/page.tsx` | Improved reports page. |
-| `middleware.ts` | Ventures route added to public routes (so unauthenticated users can preview venture cards). |
+| Area | Change |
+|------|--------|
+| `lib/buildmind.ts` | **Split into focused modules** — now a thin re-export shim. All existing import paths unchanged. |
+| `lib/buildmind.types.ts` | **NEW** — All domain types, importable server-side without pulling in the Supabase client. |
+| `lib/stages/index.ts` | **NEW** — Stage inference logic (`inferStageFromMilestones`, `normalizeStage`, `stageRank`). |
+| `lib/scoring/index.ts` | **NEW** — Score computation (`computeStartupScore`, `computeScoreDelta`, `applyScoreDelta`). One source of truth — used by both `today/page.tsx` and tests. |
+| `lib/data/projects.ts` | **NEW** — All Supabase data access extracted. Bug fix: `getDashboardOverview` referenced an undefined `today` variable — now fixed. |
+| `app/today/page.tsx` | Updated to v13 — `computeScoreAfter` now delegates to `lib/scoring` instead of duplicating logic. |
+| `app/explore/page.tsx` | **Live data** — fetches from `feed_events` Supabase table on mount with graceful seed fallback. Shows `● live` indicator when real data loads. See SQL schema below. |
+| `app/(dashboard)/dashboard/page.tsx` | Removed stale `ConsentLedgerCTA` import. |
+| `__tests__/` | **NEW** — 57 passing tests covering scoring, stage inference, Paystack webhook, and Paddle verify. Zero test coverage → critical paths covered. |
+| `vitest.config.ts` | **NEW** — Vitest config with path aliases and coverage. |
+| `package.json` | Added `test`, `test:watch`, `test:coverage` scripts. Added `vitest` and `@vitest/coverage-v8` dev deps. |
 
 ---
 
 ## Vercel environment variables checklist
 
-Set these in: Vercel Dashboard → Your Project → Settings → Environment Variables
+Set these in: **Vercel Dashboard → Your Project → Settings → Environment Variables**
 
 ### Required (app won't start without these)
 ```
 NEXT_PUBLIC_SUPABASE_URL          = https://xxxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY     = eyJ...
-SUPABASE_SERVICE_ROLE_KEY         = eyJ...   (server-side only, never NEXT_PUBLIC_)
+SUPABASE_SERVICE_ROLE_KEY         = eyJ...   (server-side only — never NEXT_PUBLIC_)
 ```
 
 ### Required for payments
 ```
-NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY = pk_live_...
-STRIPE_SECRET_KEY                  = sk_live_...
-STRIPE_WEBHOOK_SECRET              = whsec_...
+NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY   = pk_live_...
+PAYSTACK_SECRET_KEY               = sk_live_...       (webhook signature validation)
+
+NEXT_PUBLIC_PADDLE_CLIENT_TOKEN   = pdl_live_...
+PADDLE_API_KEY                    = pdl_live_...      (transaction verification)
+NEXT_PUBLIC_PADDLE_PRICE_BUILDER  = pri_...
 ```
 
-When a user pays via Stripe, your webhook must set their Supabase user metadata:
-```json
-{ "plan": "builder" }   // or "venture"
+### Optional
 ```
-Then `getPlan()` in `lib/plan.ts` reads `NEXT_PUBLIC_USER_PLAN` from the user session.
-
-### Optional but recommended
-```
-NEXT_PUBLIC_USER_PLAN             = free   (default if unset; overridden by Stripe webhook)
+GROQ_API_KEY                      = gsk_...           (AI routes — fallback logic works without it)
+NEXT_PUBLIC_POSTHOG_KEY           = phc_...           (analytics)
+NEXT_PUBLIC_USER_PLAN             = free              (default; overridden by billing webhooks)
 NEXT_PUBLIC_API_URL               = https://your-backend.onrender.com
 ```
 
-### Dev-only overrides (never commit to production)
-```
-# In your browser console only:
-window.setPlan('builder')   # test Builder features
-window.setPlan('venture')   # test Venture features  
-window.clearPlan()          # reset to free
-```
-
 ---
 
-## How to apply to your repo
+## Supabase: Founder Feed table (new in v13)
 
-```bash
-# 1. Copy all changed files (safe — won't touch your backend)
-cp -r frontend/lib/* your-repo/frontend/lib/
-cp -r frontend/components/* your-repo/frontend/components/
-cp -r frontend/app/* your-repo/frontend/app/
-cp frontend/middleware.ts your-repo/frontend/middleware.ts
-
-# 2. Install no new dependencies — everything uses what's already in package.json
-
-# 3. Deploy
-git add -A
-git commit -m "feat: BuildMind v2 — plan gating, ventures, anti-churn, ConsentLedger cross-promo"
-git push
-```
-
-Vercel auto-deploys on push. Build time is ~45 seconds.
-
----
-
-## Stripe webhook setup (5 minutes)
-
-1. Go to Stripe Dashboard → Developers → Webhooks → Add endpoint
-2. Endpoint URL: `https://your-domain.com/api/webhooks/stripe`
-3. Events to listen for:
-   - `checkout.session.completed`
-   - `customer.subscription.deleted`
-   - `customer.subscription.updated`
-4. Copy the webhook secret → paste as `STRIPE_WEBHOOK_SECRET` in Vercel
-
-In your webhook handler, on `checkout.session.completed`:
-```typescript
-// Set user plan in Supabase
-await supabase.auth.admin.updateUserById(userId, {
-  user_metadata: { plan: "builder" }  // or "venture"
-});
-```
-
-On `customer.subscription.deleted`:
-```typescript
-await supabase.auth.admin.updateUserById(userId, {
-  user_metadata: { plan: "free" }
-});
-```
-
----
-
-## ConsentLedger integration
-
-The `ConsentLedgerCTA` component is already placed in:
-- `app/(dashboard)/dashboard/page.tsx` — `variant="full"` (bottom of dashboard)
-- `app/today/page.tsx` — `variant="compact"` (below action card) and `variant="done-state"` (after completion)
-- `app/ventures/page.tsx` — `variant="compact"` (after venture card list)
-
-To update the CTA URL, edit one line in `components/ConsentLedgerCTA.tsx`:
-```typescript
-const CL_URL = "https://consentledger.io";  // ← update this
-```
-
----
-
-## Supabase tables required
-
-These tables must exist (created by your existing migrations):
+The Explore page now reads from a `feed_events` table. Run this SQL in your Supabase SQL editor:
 
 ```sql
-users          (id, full_name, notify_milestone, notify_task)
-projects       (id, user_id, title, description, startup_stage, ...)
-ai_usage       (user_id, month, count)
-milestones     (id, project_id, title, completed, ...)
+create table feed_events (
+  id          uuid primary key default gen_random_uuid(),
+  flag        text not null,
+  location    text not null,
+  stage       text not null check (stage in ('Idea','Validation','MVP','Launch','Growth','Revenue')),
+  stage_color text not null default '#6366f1',
+  action      text not null,
+  outcome     text,
+  streak      int  not null default 0,
+  type        text not null check (type in ('done','reflect','launched','streak','report')),
+  created_at  timestamptz not null default now()
+);
+
+-- Enable RLS
+alter table feed_events enable row level security;
+
+-- Anon users can read (public feed)
+create policy "public read"
+  on feed_events for select
+  using (true);
+
+-- Only service role can insert (rows are written by API routes, not clients)
+-- No INSERT policy needed for anon — use service role from server routes.
 ```
 
-No new migrations needed for this release.
+To seed the table with the curated examples, copy the `SEED` array from
+`app/explore/page.tsx` and insert via the Supabase table editor.
 
----
+**Feed events are written from the reflect-action API route.**
+Add this to `app/api/ai/reflect-action/route.ts` after persisting the reflect entry:
 
-## Cancellation prevention — how it works
-
-When a paid user clicks "Cancel plan" in Settings → Billing:
-
-1. **Confirm step** — Shows their streak count and tasks completed. Visual loss framing. Two options: "Continue cancelling" or "Keep my plan".
-
-2. **Pause offer** — Offers 30-day pause (no charge, streak preserved, free once/year). Side-by-side comparison: pause vs cancel. Most users stop here.
-
-3. **Reason collection** — 6-option multiple choice. Required before confirming. Every reason goes to your analytics.
-
-4. **Final state** — Context-aware message. "Too expensive" → tells them about upcoming lower tier. "Missing feature" → tells them replies go to the founder.
-
-The pause is currently UI-only — wire it to Stripe's subscription pause API when ready:
 ```typescript
-// Stripe pause subscription
-await stripe.subscriptions.update(subscriptionId, {
-  pause_collection: { behavior: "void" },
+// Publish anonymised event to community feed
+const supabaseAdmin = createAdminClient();
+await supabaseAdmin.from("feed_events").insert({
+  flag:        userFlag,        // from user profile (e.g. "🇬🇭")
+  location:    userCity,        // from user profile (e.g. "Kumasi")
+  stage:       stage,           // from project
+  stage_color: stageColor,      // hex matching stage
+  action:      todayAction,     // what they were asked to do today
+  outcome:     note || null,    // their reflection note (optional)
+  streak:      streak,          // current streak
+  type:        outcomeToType(outcome), // "done" | "reflect" | etc.
 });
 ```
 
 ---
 
-## What to do next (in order)
+## Running tests
 
-1. **Deploy this** — push to Vercel, confirm it builds clean
-2. **Wire Stripe webhook** — set `STRIPE_WEBHOOK_SECRET`, test with Stripe CLI: `stripe listen --forward-to localhost:3000/api/webhooks/stripe`
-3. **Set ConsentLedger URL** — update `CL_URL` in `ConsentLedgerCTA.tsx` to your live URL
-4. **Wire Stripe pause API** — connect the pause button in Settings → Billing to `stripe.subscriptions.update`
-5. **Add ventures route to sidebar** for authenticated users (currently accessible at `/ventures` directly)
-6. **ConsentLedger → BuildMind funnel** — add a "Built using BuildMind" link/badge on the ConsentLedger site
+```bash
+npm test                  # run all tests once
+npm run test:watch        # watch mode
+npm run test:coverage     # with coverage report
+```
 
----
-
-## Known issues / watch out for
-
-- `lib/upgrade.ts` re-exports `recordAIMessage` as `recordAIUse` for backward compat — if you add new AI tracking, add it to `plan.ts` only
-- The pause flow in Settings is UI-only until you connect the Stripe API
-- `NEXT_PUBLIC_USER_PLAN` is read client-side — for production, always set it via Stripe webhook + Supabase metadata, not as a static env var
-- Venture milestone completion is stored in localStorage (per device) — for cross-device sync, wire it to a Supabase `venture_progress` table
+Test files:
+- `__tests__/lib/scoring.test.ts`    — 21 tests, pure functions, no mocking
+- `__tests__/lib/stages.test.ts`     — 29 tests, pure functions, no mocking  
+- `__tests__/billing/paystack-webhook.test.ts` — 14 tests, mocked Supabase
+- `__tests__/billing/paddle-verify.test.ts`    — 14 tests, mocked Supabase + fetch
 
 ---
 
-*BuildMind v2 — built for execution, not inspiration.*
+## lib/ module map (v13)
+
+```
+lib/
+├── buildmind.ts          ← thin re-export shim (all imports still work)
+├── buildmind.types.ts    ← domain types (NEW — no "use client" dependency)
+├── stages/
+│   └── index.ts          ← inferStageFromMilestones, normalizeStage, stageRank
+├── scoring/
+│   └── index.ts          ← computeStartupScore, computeScoreDelta, applyScoreDelta
+├── data/
+│   └── projects.ts       ← all Supabase project/milestone/task queries
+├── billing/
+│   └── server.ts         ← persistUserPlan, resolveUserIdByEmail (unchanged)
+├── plan.ts               ← plan tier gating (unchanged)
+├── api.ts                ← API helpers (unchanged)
+├── notifications.ts      ← notification helpers (unchanged)
+├── achievements.ts       ← achievement helpers (unchanged)
+├── analytics.ts          ← PostHog wrapper (unchanged)
+└── supabase/
+    ├── client.ts
+    ├── server.ts
+    └── admin.ts
+```
+
+---
+
+## Deployment steps
+
+1. **Copy** all files from this package into your repo (overwrite existing)
+2. **Set** environment variables in Vercel (see checklist above)
+3. **Run** the `feed_events` SQL in Supabase
+4. **Run** `npm test` locally to confirm all 57 tests pass
+5. **Deploy** — `git push` to trigger Vercel build
+
+---
+
+## E2E tests (Playwright)
+
+E2E tests live in `e2e/` and cover the flows that unit tests cannot reach: real browser redirects, session persistence, the Today core loop in a real DOM, and the billing verify sequence.
+
+### Setup
+
+```bash
+npx playwright install chromium   # one-time browser download
+```
+
+Create a `.env.test` file (git-ignored) with a dedicated Supabase test account:
+
+```
+E2E_TEST_EMAIL=e2e@buildmind.test
+E2E_TEST_PASSWORD=TestPass123!
+PLAYWRIGHT_BASE_URL=http://localhost:3000
+```
+
+The test account must:
+- Exist in your Supabase project
+- Have `onboarding_completed = true` in the `users` table
+- Have at least one project in the MVP stage
+
+### Running
+
+```bash
+npm run test:e2e          # run all E2E tests (headless)
+npm run test:e2e:ui       # interactive Playwright UI mode
+npm run test:all          # unit tests + E2E in sequence
+```
+
+### Test files
+
+| File | What's covered |
+|------|----------------|
+| `e2e/auth.spec.ts` | Login, redirect, session persistence, route protection |
+| `e2e/today.spec.ts` | Action card, outcome chips, score delta, causality strip |
+| `e2e/billing-paystack.spec.ts` | Paystack verify, Paddle verify, cancel flow |
+| `e2e/explore.spec.ts` | Live/seed data loading, filters, outcome expand, live indicator |
+
+The billing tests mock the verify API endpoints so they run without real payment credentials. Remove the mocks and set `PAYSTACK_TEST_PUBLIC_KEY` to run against the real Paystack test environment.
+
+---
+
+## Founder Feed: wiring the reflect-action insert
+
+The `feed_events` insert is now live in `app/api/ai/reflect-action/route.ts`. It reads `flag` and `location` from `user_metadata` on the Supabase auth user. To populate these fields when a user signs up, add them during onboarding or via a geo-IP lookup:
+
+```typescript
+// In your onboarding completion handler:
+const supabase = createAdminClient();
+await supabase.auth.admin.updateUserById(userId, {
+  user_metadata: {
+    flag: "🇬🇭",      // user's country flag emoji
+    city: "Accra",    // user's city
+    country: "Ghana", // user's country name
+  },
+});
+```
+
+If `flag` / `city` are not set, the feed event falls back to `"🌍"` / `"Somewhere"` — the row still gets written, so the feed works from day one.

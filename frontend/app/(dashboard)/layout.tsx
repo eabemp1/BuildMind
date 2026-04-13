@@ -1,5 +1,5 @@
 import AppShell from "@/components/layout/app-shell";
-import TourOverlay from "@/components/tour/TourOverlay";
+import { TourOverlay } from "@/components/tour/TourOverlay";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (

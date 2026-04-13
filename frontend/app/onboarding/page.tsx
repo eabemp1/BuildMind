@@ -8,6 +8,8 @@ import { createProjectWithRoadmap, getCurrentUser, getOnboardingStatus } from "@
 import { onboardingSchema } from "@/lib/validation";
 import { identifyUser } from "@/lib/analytics";
 import { Suspense } from "react";
+import { trackFunnelStep } from "@/lib/onboarding-analytics";
+import BuildMindLoader from "@/components/BuildMindLoader";
 
 type Step = 1 | 2 | 3 | 4 | 5;
 type StartupStage = "Idea" | "Validation" | "MVP" | "Launch" | "Growth" | "Revenue";
@@ -79,10 +81,17 @@ function OnboardingContent() {
         identifyUser(user.id, user.email);
         const done = await getOnboardingStatus(user.id);
         if (done) router.replace("/today");
+        else trackFunnelStep("onboarding_start");
       } catch { router.replace("/auth/login"); }
     };
     void check();
   }, [router]);
+
+  // Track step progression
+  useEffect(() => {
+    if (step === 1) trackFunnelStep("onboarding_idea");
+    if (step === 3) trackFunnelStep("onboarding_stage");
+  }, [step]);
 
   const validate = (): boolean => {
     setError("");
@@ -123,6 +132,12 @@ function OnboardingContent() {
         localStorage.setItem("bm_domain", domain);
         localStorage.setItem("bm_stage", startupStage);
       }
+      trackFunnelStep("onboarding_complete");
+
+      // Write geo metadata (flag + city) so the Founder Feed shows real
+      // location data. Fire-and-forget — never blocks the redirect.
+      fetch("/api/user/geo", { method: "POST" }).catch(() => {});
+
       router.replace("/today");
     } catch (err) {
       if (err instanceof z.ZodError) setError(err.issues[0]?.message ?? "Invalid data.");
@@ -134,6 +149,15 @@ function OnboardingContent() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   const stepLabels = ["Idea", "Users", "Problem", "Blocker", "Domain"];
+
+  // Show branded full-screen loader while generating workspace
+  if (loading) return (
+    <BuildMindLoader
+      variant="page"
+      label="Building your workspace…"
+      sublabel="Generating your first action, milestones &amp; 90-day roadmap"
+    />
+  );
 
   return (
     <div className="min-h-screen bm-bg flex flex-col items-center justify-center px-4 py-10 overflow-x-hidden"
@@ -344,7 +368,7 @@ function OnboardingContent() {
 
 export default function OnboardingPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bm-bg" />}>
+    <Suspense fallback={<BuildMindLoader variant="page" label="Getting ready…" />}>
       <OnboardingContent />
     </Suspense>
   );
