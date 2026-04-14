@@ -22,6 +22,40 @@ type ChatMessage = {
   error?: boolean;
 };
 
+// ─── Adaptive placeholder reasoning ─────────────────────────────────────────
+// Generates contextual thinking steps shown while the API is in-flight,
+// based on what the founder actually asked and their project state.
+function buildPlaceholderReasoning(message: string, projectTitle?: string, score?: number): string[] {
+  const msg = message.toLowerCase();
+  const steps: string[] = [];
+
+  if (projectTitle) steps.push(`Pulling live data for "${projectTitle}"...`);
+  else steps.push("Reading your project state...");
+
+  if (msg.includes("stuck") || msg.includes("block") || msg.includes("can't") || msg.includes("cannot")) {
+    steps.push("Identifying the specific blocker vs. avoidance pattern...");
+    steps.push("Checking execution history for context...");
+  } else if (msg.includes("user") || msg.includes("customer") || msg.includes("audience")) {
+    steps.push("Evaluating user acquisition approach vs. stage...");
+    steps.push("Cross-referencing validation data...");
+  } else if (msg.includes("launch") || msg.includes("ship") || msg.includes("ready")) {
+    steps.push("Assessing launch readiness against milestones...");
+    steps.push("Identifying the highest-risk gap before go-live...");
+  } else if (msg.includes("today") || msg.includes("do next") || msg.includes("priority")) {
+    steps.push("Scanning open tasks for highest-leverage action...");
+    steps.push(score !== undefined ? `Score is ${score}/100 — weighing effort vs. impact...` : "Weighing effort vs. impact...");
+  } else if (msg.includes("risk") || msg.includes("wrong") || msg.includes("mistake")) {
+    steps.push("Stress-testing assumptions in your project...");
+    steps.push("Mapping known weaknesses to failure modes...");
+  } else {
+    steps.push("Reading between the lines of your question...");
+    steps.push(score !== undefined ? `Execution score ${score}/100 — calibrating directness level...` : "Calibrating response to your situation...");
+  }
+
+  steps.push("Drafting the most useful response...");
+  return steps;
+}
+
 const QUICK_PROMPTS = [
   "What should I do today?",
   "Why am I stuck?",
@@ -227,7 +261,16 @@ export default function AICoachPage() {
     ? `I've read your project.\n\n**"${activeSummary.title}"** · Stage: ${stage} · Score: ${score}/100 · Streak: ${streak}d\n\n${score<40?"Your execution score is low. Before we do anything else — what specific task have you been avoiding?":score<70?"You're making progress but there's a gap to close. What's the one thing you committed to last week that didn't happen?":"Strong execution. The question now is whether you're working on the right things. What's your north star metric this week?"}`
     : "I'm BuildMind. I read your actual project data before every response — not guessing.\n\nCreate a project first so I have something real to work with.";
 
-  const [messages, setMessages] = useState<ChatMessage[]>([{ id:"welcome", role:"assistant", content:openingContent, reasoning:["Reading your project state...","Assessing execution score and streak...","Choosing the most important question to ask..."], phase:"done" }]);
+  const welcomeReasoning = activeSummary
+    ? [
+        `Loaded "${activeSummary.title}" — stage: ${stage}`,
+        `Execution score is ${score}/100 — ${score < 40 ? "critically low, need to surface blockers" : score < 70 ? "moderate, looking for the gap" : "strong, checking strategic focus"}`,
+        streak > 0 ? `${streak}-day streak active — momentum matters` : "No active streak — consistency is the priority",
+        "Choosing the sharpest question to open with...",
+      ]
+    : ["No project found yet", "Will prompt founder to create one", "Ready to coach once project data exists"];
+
+  const [messages, setMessages] = useState<ChatMessage[]>([{ id:"welcome", role:"assistant", content:openingContent, reasoning:welcomeReasoning, phase:"done" }]);
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string|null>(null);
@@ -235,7 +278,13 @@ export default function AICoachPage() {
   useEffect(()=>{
     if (activeSummary&&messages.length===1&&messages[0].id==="welcome") {
       const nc=`I've read your project.\n\n**"${activeSummary.title}"** · Stage: ${stage} · Score: ${score}/100 · Streak: ${streak}d\n\n${score<40?"Your execution score is low. Before we do anything else — what specific task have you been avoiding?":score<70?"You're making progress but there's a gap to close. What's the one thing you committed to last week that didn't happen?":"Strong execution. The question now is whether you're working on the right things. What's your north star metric?"}`;
-      setMessages([{ id:"welcome",role:"assistant",content:nc,reasoning:["Reading your project state...","Assessing execution score and streak...","Choosing the most important question to ask..."],phase:"done" }]);
+      const updatedReasoning = [
+        `Loaded "${activeSummary.title}" — stage: ${stage}`,
+        `Execution score is ${score}/100 — ${score < 40 ? "critically low, need to surface blockers" : score < 70 ? "moderate, looking for the gap" : "strong, checking strategic focus"}`,
+        streak > 0 ? `${streak}-day streak active — momentum matters` : "No active streak — consistency is the priority",
+        "Choosing the sharpest question to open with...",
+      ];
+      setMessages([{ id:"welcome",role:"assistant",content:nc,reasoning:updatedReasoning,phase:"done" }]);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[activeSummary?.id]);
@@ -251,7 +300,7 @@ export default function AICoachPage() {
     const userId_tmp=`${Date.now()}-user`; const aiId_tmp=`${Date.now()}-ai`;
     const userMsg:ChatMessage={ id:userId_tmp,role:"user",content:message };
     setMessages(prev=>[...prev,userMsg]); setIsSending(true);
-    const placeholderMsg:ChatMessage={ id:aiId_tmp,role:"assistant",content:"",reasoning:["Reading your project data...","Identifying what matters right now...","Deciding how to be most useful..."],phase:"thinking" };
+    const placeholderMsg:ChatMessage={ id:aiId_tmp,role:"assistant",content:"",reasoning:buildPlaceholderReasoning(message, activeSummary?.title, score),phase:"thinking" };
     setMessages(prev=>[...prev,placeholderMsg]);
     try {
       const supabase=createClient();
@@ -259,7 +308,7 @@ export default function AICoachPage() {
       if (!data.user) throw new Error("Not authenticated");
       const res=await fetch("/api/ai/coach",{ method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ userId:data.user.id,projectId:activeProjectId,message,messages:messages.map(m=>({ role:m.role,content:m.content })),blockerType:typeof window!=="undefined"?(localStorage.getItem("bm_blocker")??""):"",domain:typeof window!=="undefined"?(localStorage.getItem("bm_domain")??""):"" }) });
       const body=await res.json().catch(()=>({}));
-      const reasoning:string[]=body?.data?.reasoning??["Analyzing your situation...","Determining the key insight..."];
+      const reasoning:string[]=body?.data?.reasoning??buildPlaceholderReasoning(message, activeSummary?.title, score);
       const answer=body?.data?.answer??"BuildMind couldn't respond right now.";
       const isError=!res.ok||body?.success===false;
       setMessages(prev=>prev.map(m=>m.id===aiId_tmp?{ ...m,reasoning,content:answer,phase:"thinking" as const,error:isError }:m));
@@ -273,7 +322,7 @@ export default function AICoachPage() {
       }
     } catch(err) {
       const errMsg=err instanceof Error?err.message:"Failed to send";
-      setMessages(prev=>prev.map(m=>m.id===aiId_tmp?{ ...m,content:`Error: ${errMsg}`,phase:"done" as const,error:true,reasoning:["An error occurred..."] }:m));
+      setMessages(prev=>prev.map(m=>m.id===aiId_tmp?{ ...m,content:`Error: ${errMsg}`,phase:"done" as const,error:true,reasoning:[`Request failed: ${errMsg.slice(0,60)}...`,"Falling back — check connection or try again."] }:m));
     } finally { setIsSending(false); }
   },[input,activeProjectId,isSending,hitDailyLimit,messages,router]);
 
@@ -324,7 +373,7 @@ export default function AICoachPage() {
         </div>
       </div>
 
-      {!isUnlimited&&<AILimitBanner used={aiUsedToday} limit={limits.aiMessagesPerDay} onUpgrade={()=>showLimit("ai_coach")} />}
+      {!isUnlimited && limits.aiMessagesPerDay > 0 && <AILimitBanner used={aiUsedToday} limit={limits.aiMessagesPerDay} onUpgrade={()=>showLimit("ai_coach")} />}
 
       {/* Message thread */}
       <div ref={scrollRef} style={{ flex:1,overflowY:"auto",display:"flex",flexDirection:"column",gap:8,paddingRight:2,paddingBottom:8,scrollbarWidth:"none" }}>

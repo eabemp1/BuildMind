@@ -1,7 +1,7 @@
 export const FEATURES = {
   aiCoach:           true,
   aiUsageLimits:     true,
-  ventures:          false,
+  ventures:          true,
   milestones:        true,
   founderScore:      true,
   startupTimeline:   true,

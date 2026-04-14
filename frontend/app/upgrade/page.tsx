@@ -7,18 +7,15 @@ import { motion, AnimatePresence } from "framer-motion";
 import { BrandMark } from "@/components/layout/logo";
 
 const PAYSTACK_KEY = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY ?? "";
-const PAYSTACK_PLANS: Record<string, string> = {
+const PAYSTACK_PLANS: Record<"builder", string> = {
   builder: process.env.NEXT_PUBLIC_PAYSTACK_PLAN_BUILDER ?? "",
-  venture: process.env.NEXT_PUBLIC_PAYSTACK_PLAN_VENTURE ?? "",
 };
-const PAYSTACK_AMOUNTS: Record<string, number> = {
+const PAYSTACK_AMOUNTS: Record<"builder", number> = {
   builder: Number(process.env.NEXT_PUBLIC_PAYSTACK_AMOUNT_BUILDER ?? "29000"),
-  venture: 75000,
 };
 const PADDLE_TOKEN = process.env.NEXT_PUBLIC_PADDLE_CLIENT_TOKEN ?? "";
-const PADDLE_PRICES: Record<string, string> = {
+const PADDLE_PRICES: Record<"builder", string> = {
   builder: process.env.NEXT_PUBLIC_PADDLE_PRICE_BUILDER ?? "",
-  venture: process.env.NEXT_PUBLIC_PADDLE_PRICE_VENTURE ?? "",
 };
 const AFRICA_COUNTRIES = new Set([
   "GH","NG","KE","ZA","EG","TZ","UG","RW","CI","SN","CM","ET","TN","MA",
@@ -26,7 +23,7 @@ const AFRICA_COUNTRIES = new Set([
 ]);
 
 type PaymentMethod = "paystack" | "paddle" | "auto";
-type Plan = "builder" | "venture";
+type Plan = "builder";
 
 const BUILDER_FEATURE_GROUPS = [
   {
@@ -72,13 +69,6 @@ const BUILDER_FEATURE_GROUPS = [
       { emoji: "📤", title: "#buildinpublic share cards + full data export", desc: "Weekly shareable progress card for Twitter/X. Full JSON export of your entire history — tasks, reflections, milestones. Your data, always." },
     ],
   },
-];
-
-const VENTURE_EXTRAS = [
-  { icon: "🏗️", text: "Multi-project portfolio dashboard" },
-  { icon: "📣", text: "Investor pitch deck generator" },
-  { icon: "⚖️", text: "Regulatory compliance checklist" },
-  { icon: "🎯", text: "Priority support — 4 hour response" },
 ];
 
 const VS_FREE = [
@@ -141,46 +131,140 @@ function PayButton({ plan, method, onSuccess, onError }: { plan: Plan; method: P
 
   const effectiveMethod = method === "auto" ? detectedMethod : method;
   const isPaystack = effectiveMethod === "paystack";
-  const priceLabel = isPaystack ? (plan === "builder" ? "GHS 290/mo" : "GHS 750/mo") : (plan === "builder" ? "$19/mo" : "$49/mo");
+  const priceLabel = isPaystack ? "GHS 290/mo" : "$19/mo";
 
   const pay = async () => {
-    setLoading(true); setLoadingMsg("Opening payment...");
-    const paystackReady = PAYSTACK_KEY.startsWith("pk_");
-    const paddleReady = PADDLE_TOKEN.startsWith("live_");
-    if (!paystackReady && !paddleReady) {
-      setLoadingMsg("Dev mode — simulating upgrade...");
-      localStorage.setItem("bm_plan", plan);
-      setTimeout(() => { onSuccess(plan); setLoading(false); }, 800);
-      return;
-    }
-    const supabase = await import("@/lib/supabase/client").then(m => m.createClient());
-    const { data: authData } = await supabase.auth.getUser();
-    const email = authData?.user?.email ?? "user@buildmind.app";
-    const userId = authData?.user?.id ?? "";
-    if (isPaystack && paystackReady) {
-      if (!document.getElementById("paystack-script")) {
-        await new Promise<void>((res, rej) => { const s = document.createElement("script"); s.id = "paystack-script"; s.src = "https://js.paystack.co/v2/inline.js"; s.onload = () => res(); s.onerror = () => rej(); document.head.appendChild(s); });
+    setLoading(true);
+    setLoadingMsg("Opening payment...");
+    try {
+      const paystackReady = PAYSTACK_KEY.startsWith("pk_");
+      const paddleReady = PADDLE_TOKEN.startsWith("live_");
+      if (!paystackReady && !paddleReady) {
+        setLoadingMsg("Dev mode — simulating upgrade...");
+        localStorage.setItem("bm_plan", plan);
+        setTimeout(() => {
+          onSuccess(plan);
+          setLoading(false);
+        }, 800);
+        return;
       }
-      const PaystackPop = (window as any).PaystackPop;
-      if (!PaystackPop) { onError("Paystack failed to load. Please refresh."); setLoading(false); return; }
-      PaystackPop.newTransaction({ key: PAYSTACK_KEY, email, amount: PAYSTACK_AMOUNTS[plan], currency: "GHS", ...(PAYSTACK_PLANS[plan] ? { plan: PAYSTACK_PLANS[plan] } : {}), metadata: { plan, user_id: userId, source: "buildmind" }, onSuccess: async (tx: { reference: string }) => { setLoadingMsg("Verifying payment..."); const result = await verifyPaystackAndPersist(tx.reference); if (result.ok) { localStorage.setItem("bm_plan", plan); onSuccess(plan); } else { onError(result.error ?? "Payment verification failed."); } setLoading(false); }, onCancel: () => setLoading(false) }).openIframe();
-    } else if (!isPaystack && paddleReady) {
-      if (!document.getElementById("paddle-script")) {
-        await new Promise<void>((res, rej) => { const s = document.createElement("script"); s.id = "paddle-script"; s.src = "https://cdn.paddle.com/paddle/v2/paddle.js"; s.onload = () => res(); s.onerror = () => rej(); document.head.appendChild(s); });
+
+      let gateway: "paystack" | "paddle" = isPaystack ? "paystack" : "paddle";
+      if (gateway === "paystack" && !paystackReady) gateway = "paddle";
+      if (gateway === "paddle" && !paddleReady) gateway = "paystack";
+
+      const supabase = await import("@/lib/supabase/client").then(m => m.createClient());
+      const { data: authData } = await supabase.auth.getUser();
+      const email = authData?.user?.email ?? "user@buildmind.app";
+      const userId = authData?.user?.id ?? "";
+
+      let finished = false;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        setLoading(false);
+      };
+      const watchdog = window.setTimeout(() => {
+        if (finished) return;
+        onError("Checkout did not open. Please allow popups and try again.");
+        finish();
+      }, 15000);
+      const complete = () => {
+        window.clearTimeout(watchdog);
+        finish();
+      };
+
+      if (gateway === "paystack") {
+        if (!document.getElementById("paystack-script")) {
+          await new Promise<void>((res, rej) => {
+            const s = document.createElement("script");
+            s.id = "paystack-script";
+            s.src = "https://js.paystack.co/v2/inline.js";
+            s.onload = () => res();
+            s.onerror = () => rej(new Error("Failed to load Paystack script"));
+            document.head.appendChild(s);
+          });
+        }
+        const PaystackPop = (window as any).PaystackPop;
+        if (!PaystackPop) {
+          onError("Paystack failed to load. Please refresh.");
+          complete();
+          return;
+        }
+        PaystackPop.newTransaction({
+          key: PAYSTACK_KEY,
+          email,
+          amount: PAYSTACK_AMOUNTS[plan],
+          currency: "GHS",
+          callback_url: `${window.location.origin}/upgrade?provider=paystack`,
+          metadata: { plan, user_id: userId, source: "buildmind" },
+          onSuccess: async (tx: { reference: string }) => {
+            setLoadingMsg("Verifying payment...");
+            const result = await verifyPaystackAndPersist(tx.reference);
+            if (result.ok) {
+              localStorage.setItem("bm_plan", plan);
+              onSuccess(plan);
+            } else {
+              onError(result.error ?? "Payment verification failed.");
+            }
+            complete();
+          },
+          onCancel: () => complete(),
+        }).openIframe();
+      } else {
+        if (!document.getElementById("paddle-script")) {
+          await new Promise<void>((res, rej) => {
+            const s = document.createElement("script");
+            s.id = "paddle-script";
+            s.src = "https://cdn.paddle.com/paddle/v2/paddle.js";
+            s.onload = () => res();
+            s.onerror = () => rej(new Error("Failed to load Paddle script"));
+            document.head.appendChild(s);
+          });
+        }
+        const Paddle = (window as any).Paddle;
+        if (!Paddle) {
+          onError("Paddle failed to load. Please refresh.");
+          complete();
+          return;
+        }
+        Paddle.Initialize({ token: PADDLE_TOKEN });
+        const priceId = PADDLE_PRICES[plan];
+        if (!priceId) {
+          localStorage.setItem("bm_plan", plan);
+          onSuccess(plan);
+          complete();
+          return;
+        }
+        Paddle.Checkout.open({
+          items: [{ priceId, quantity: 1 }],
+          customer: { email },
+          settings: { theme: "dark", displayMode: "overlay" },
+          successCallback: async (data: { transaction?: { id?: string } }) => {
+            setLoadingMsg("Verifying payment...");
+            const txId = data?.transaction?.id ?? "";
+            const result = txId ? await verifyPaddleAndPersist(txId) : { ok: true };
+            if (result.ok) {
+              localStorage.setItem("bm_plan", plan);
+              onSuccess(plan);
+            } else {
+              onError(result.error ?? "Paddle verification failed.");
+            }
+            complete();
+          },
+          closeCallback: () => complete(),
+        });
       }
-      const Paddle = (window as any).Paddle;
-      if (!Paddle) { onError("Paddle failed to load. Please refresh."); setLoading(false); return; }
-      Paddle.Initialize({ token: PADDLE_TOKEN });
-      const priceId = PADDLE_PRICES[plan];
-      if (!priceId) { localStorage.setItem("bm_plan", plan); onSuccess(plan); setLoading(false); return; }
-      Paddle.Checkout.open({ items: [{ priceId, quantity: 1 }], customer: { email }, settings: { theme: "dark", displayMode: "overlay" }, successCallback: async (data: { transaction?: { id?: string } }) => { setLoadingMsg("Verifying payment..."); const txId = data?.transaction?.id ?? ""; const result = txId ? await verifyPaddleAndPersist(txId) : { ok: true }; if (result.ok) { localStorage.setItem("bm_plan", plan); onSuccess(plan); } else { onError(result.error ?? "Paddle verification failed."); } setLoading(false); }, closeCallback: () => setLoading(false) });
+    } catch {
+      onError("Payment setup failed. Please retry.");
+      setLoading(false);
     }
   };
 
   return (
     <motion.button onClick={() => void pay()} disabled={loading} whileHover={{ scale: loading ? 1 : 1.02 }} whileTap={{ scale: loading ? 1 : 0.98 }}
       style={{ width: "100%", padding: "16px 0", background: "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "#fff", fontWeight: 700, fontSize: 15, borderRadius: 14, border: "none", cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: loading ? 0.75 : 1, boxShadow: "0 0 32px rgba(99,102,241,0.4)", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-      {loading ? (<><motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }} style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "white" }} />{loadingMsg}</>) : `Upgrade to ${plan === "builder" ? "Builder" : "Venture"} — ${priceLabel} →`}
+      {loading ? (<><motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }} style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "white" }} />{loadingMsg}</>) : `Upgrade to Builder — ${priceLabel} →`}
     </motion.button>
   );
 }
@@ -190,8 +274,7 @@ function UpgradeContent() {
   const router = useRouter();
   const tasksCompleted = Number(params.get("tasks") ?? "2");
   const streak = Number(params.get("streak") ?? "1");
-  const initialPlan = params.get("plan") === "venture" ? "venture" : "builder";
-  const [selectedPlan, setSelectedPlan] = useState<Plan>(initialPlan);
+  const selectedPlan: Plan = "builder";
   const [payMethod, setPayMethod] = useState<PaymentMethod>("auto");
   const [upgraded, setUpgraded] = useState(false);
   const [payError, setPayError] = useState("");
@@ -237,30 +320,19 @@ function UpgradeContent() {
           </div>
         </motion.div>
 
-        {/* Plan toggle */}
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}
-          style={{ display: "flex", gap: 6, padding: 4, borderRadius: 12, border: "1px solid var(--bm-border2)", background: "var(--bm-bg2)", marginBottom: 14 }}>
-          {(["builder", "venture"] as Plan[]).map((plan) => (
-            <button key={plan} onClick={() => setSelectedPlan(plan)}
-              style={{ flex: 1, padding: "8px 4px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 600, background: selectedPlan === plan ? "linear-gradient(135deg,#6366f1,#8b5cf6)" : "transparent", color: selectedPlan === plan ? "#fff" : "#555", transition: "all 0.15s" }}>
-              {plan === "builder" ? "⚡ Builder" : "🚀 Venture"}
-            </button>
-          ))}
-        </motion.div>
-
         {/* Main feature card */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}
           style={{ borderRadius: 16, padding: "20px 20px", background: "linear-gradient(135deg,rgba(99,102,241,0.08),rgba(139,92,246,0.04))", border: "1px solid rgba(129,140,248,0.25)", marginBottom: 10 }}>
           <AnimatePresence mode="wait">
             <motion.div key={selectedPlan} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
               <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 4, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 34, fontWeight: 600, color: "var(--bm-text)", letterSpacing: "-0.03em" }}>{selectedPlan === "builder" ? "GHS 290" : "GHS 750"}</span>
+                <span style={{ fontSize: 34, fontWeight: 600, color: "var(--bm-text)", letterSpacing: "-0.03em" }}>GHS 290</span>
                 <span style={{ fontSize: 13, color: "var(--bm-text3)" }}>/month</span>
-                <span style={{ fontSize: 11, color: "#555" }}>(~{selectedPlan === "builder" ? "$19" : "$49"} USD)</span>
-                {selectedPlan === "builder" && <span style={{ padding: "2px 8px", borderRadius: 99, background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.3)", fontSize: 10, color: "#a78bfa" }}>Popular</span>}
+                <span style={{ fontSize: 11, color: "#555" }}>(~$19 USD)</span>
+                <span style={{ padding: "2px 8px", borderRadius: 99, background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.3)", fontSize: 10, color: "#a78bfa" }}>Popular</span>
               </div>
               <p style={{ fontSize: 12, color: "var(--bm-text3)", marginBottom: 20 }}>
-                {selectedPlan === "builder" ? "Everything a solo founder needs — personalized to your actual startup" : "Full portfolio execution across all your ventures"}
+                Everything a solo founder needs — personalized to your actual startup
               </p>
             </motion.div>
           </AnimatePresence>
@@ -286,17 +358,6 @@ function UpgradeContent() {
               </motion.div>
             ))}
 
-            {selectedPlan === "venture" && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }}
-                style={{ borderRadius: 10, border: "1px solid rgba(167,139,250,0.2)", background: "rgba(167,139,250,0.05)", padding: "10px 12px" }}>
-                <div style={{ fontSize: 10, color: "#a78bfa", fontWeight: 600, marginBottom: 8, fontFamily: "monospace", textTransform: "uppercase", letterSpacing: "0.06em" }}>✦ Venture extras</div>
-                {VENTURE_EXTRAS.map(f => (
-                  <div key={f.text} style={{ display: "flex", gap: 8, fontSize: 11, color: "var(--bm-text2)", padding: "4px 0", fontFamily: "monospace" }}>
-                    <span>{f.icon}</span>{f.text}
-                  </div>
-                ))}
-              </motion.div>
-            )}
           </div>
         </motion.div>
 
@@ -354,7 +415,7 @@ function UpgradeContent() {
           <span style={{ fontSize: 18, flexShrink: 0 }}>📅</span>
           <div>
             <div style={{ fontSize: 12, fontWeight: 600, color: "#fbbf24" }}>Annual plans coming — save 40%</div>
-            <div style={{ fontSize: 11, color: "var(--bm-text3)", marginTop: 3, fontFamily: "monospace" }}>Builder GHS 2,088/yr · Venture GHS 5,400/yr.</div>
+            <div style={{ fontSize: 11, color: "var(--bm-text3)", marginTop: 3, fontFamily: "monospace" }}>Builder GHS 2,088/yr.</div>
           </div>
         </motion.div>
 

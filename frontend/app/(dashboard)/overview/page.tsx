@@ -1,12 +1,11 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { computeStartupScore } from "@/lib/buildmind";
 import { useProjectSummariesQuery, useDashboardOverviewQuery } from "@/lib/queries";
 import BuildMindLoader from "@/components/BuildMindLoader";
-import { AIVisualWidget } from "@/components/ui/AIVisualWidget";
 
 const STAGES = ["Idea", "Validation", "MVP", "Launch", "Growth", "Revenue"];
 
@@ -34,10 +33,19 @@ function ScoreRing({ val, color, size = 64 }: { val: number; color: string; size
 export default function OverviewPage() {
   const router = useRouter();
   const { data: summaries = [], isLoading } = useProjectSummariesQuery();
-  const { data: overview } = useDashboardOverviewQuery();
+  const { data: overview, isLoading: overviewLoading } = useDashboardOverviewQuery();
 
-  const streak = overview?.founderStreakDays ??
-    Number(typeof window !== "undefined" ? localStorage.getItem("bm_streak") ?? "0" : "0");
+  const [localStreak, setLocalStreak] = useState(0);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const refresh = () => setLocalStreak(Number(localStorage.getItem("bm_streak") ?? "0"));
+    refresh();
+    window.addEventListener("storage", refresh);
+    return () => window.removeEventListener("storage", refresh);
+  }, []);
+
+  const streak = Math.max(overview?.founderStreakDays ?? 0, localStreak);
 
   const activeProject = useMemo(() => {
     if (!summaries.length) return null;
@@ -65,7 +73,7 @@ export default function OverviewPage() {
   };
   const nudge = NUDGE[stage] ?? NUDGE.Idea;
 
-  if (isLoading) return <BuildMindLoader variant="card" label="Loading overview…" />;
+  if (isLoading || overviewLoading) return <BuildMindLoader variant="card" label="Loading overview…" />;
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
@@ -77,25 +85,6 @@ export default function OverviewPage() {
           {summaries.length} project{summaries.length !== 1 ? "s" : ""} · {streak}d streak · {completionRate}% complete
         </div>
       </div>
-
-      {/* AI Visual Widget — portfolio-level insight */}
-      <AIVisualWidget
-        page="overview"
-        intent="Generate a founder portfolio snapshot: show a visual grid of all projects with their stages and scores, a momentum trend summary, and one sharp recommendation for what to focus on this week"
-        context={{ streak, completionRate, totalProjects: summaries.length }}
-        data={{
-          projects: summaries.map(s => ({
-            title: s.title,
-            stage: s.startup_stage ?? "Idea",
-            progress: s.progress ?? 0,
-            tasksCompleted: s.tasksCompleted ?? 0,
-            tasksTotal: s.tasksTotal ?? 1,
-          })),
-          score,
-        }}
-        label="Analyze my portfolio"
-        className="mb-4"
-      />
 
       {/* Metrics row */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 14 }}>

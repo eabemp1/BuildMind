@@ -489,6 +489,13 @@ export default function TodayPage() {
     return now.toLocaleDateString("en-CA");
   };
 
+  const diffDaysBetween = (fromKey: string, toKey: string) => {
+    const from = new Date(`${fromKey}T00:00:00`);
+    const to = new Date(`${toKey}T00:00:00`);
+    const msPerDay = 24 * 60 * 60 * 1000;
+    return Math.floor((to.getTime() - from.getTime()) / msPerDay);
+  };
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     const todayKey = getTodayKey();
@@ -514,7 +521,13 @@ export default function TodayPage() {
   }, [done]);
 
   const action = useMemo(() => getAction(stage), [stage]);
-  const streak = overview?.founderStreakDays ?? Number(typeof window !== "undefined" ? localStorage.getItem("bm_streak") ?? "0" : "0");
+  const streak =
+    typeof window === "undefined"
+      ? overview?.founderStreakDays ?? 0
+      : Math.max(
+          overview?.founderStreakDays ?? 0,
+          Number(localStorage.getItem("bm_streak") ?? "0"),
+        );
   const score  = activeProject ? computeStartupScore(activeProject) : 0;
   const tasksDone = getTasksDone();
 
@@ -534,7 +547,22 @@ export default function TodayPage() {
     if (done) return;
     setDone(true);
     if (typeof window !== "undefined") {
-      localStorage.setItem("bm_today_done_date", getTodayKey());
+      const todayKey = getTodayKey();
+      const previousDoneDate = localStorage.getItem("bm_today_done_date");
+      const currentStoredStreak = Number(localStorage.getItem("bm_streak") ?? String(overview?.founderStreakDays ?? 0));
+
+      let nextStreak = currentStoredStreak;
+      if (previousDoneDate !== todayKey) {
+        if (!previousDoneDate) {
+          nextStreak = Math.max(currentStoredStreak, 0) + 1;
+        } else {
+          const dayGap = diffDaysBetween(previousDoneDate, todayKey);
+          nextStreak = dayGap === 1 ? Math.max(currentStoredStreak, 0) + 1 : 1;
+        }
+        localStorage.setItem("bm_streak", String(nextStreak));
+      }
+
+      localStorage.setItem("bm_today_done_date", todayKey);
       localStorage.setItem("bm_reflect_pending", "true");
       localStorage.setItem("bm_today_action", JSON.stringify(action));
       localStorage.setItem("bm_stage", stage);

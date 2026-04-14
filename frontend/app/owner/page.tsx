@@ -69,7 +69,14 @@ export default function OwnerPanel() {
           setTimeout(() => router.replace("/today"), 2000);
         } else {
           setAuthorized(true);
-          setPlan(getPlan());
+          // Admin always operates at builder tier so all features are accessible
+          const currentPlan = getPlan();
+          if (currentPlan === "free") {
+            setStoredPlan("builder");
+            setPlan("builder");
+          } else {
+            setPlan(currentPlan);
+          }
           loadEnvStatus();
           loadDbStats(sb);
         }

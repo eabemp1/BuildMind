@@ -52,9 +52,15 @@ export async function middleware(request: NextRequest) {
     const adminId = process.env.NEXT_PUBLIC_ADMIN_USER_ID;
     if (!user || (adminId && user.id !== adminId)) {
       const redirectUrl = request.nextUrl.clone();
-      redirectUrl.pathname = "/dashboard";
+      redirectUrl.pathname = "/overview";
       return NextResponse.redirect(redirectUrl);
     }
+  }
+
+  if (pathname === "/dashboard" || pathname.startsWith("/dashboard/")) {
+    const redirectUrl = request.nextUrl.clone();
+    redirectUrl.pathname = "/overview";
+    return NextResponse.redirect(redirectUrl);
   }
 
   const featureBlocks = [
@@ -71,7 +77,7 @@ export async function middleware(request: NextRequest) {
     const blocked = featureBlocks.some((item) => !item.enabled && item.match(pathname));
     if (blocked) {
       const redirectUrl = request.nextUrl.clone();
-      redirectUrl.pathname = "/dashboard";
+      redirectUrl.pathname = "/overview";
       return NextResponse.redirect(redirectUrl);
     }
   }
@@ -84,7 +90,7 @@ export async function middleware(request: NextRequest) {
 
   if (user && (pathname === "/" || isAuthRoute)) {
     const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = "/dashboard";
+    redirectUrl.pathname = "/overview";
     return NextResponse.redirect(redirectUrl);
   }
 

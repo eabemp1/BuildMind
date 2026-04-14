@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import { FEATURES } from "@/lib/features";
+import { Menu } from "lucide-react";
 
 function BellIcon() {
   return (
@@ -16,7 +17,7 @@ function BellIcon() {
   );
 }
 
-export default function Topbar() {
+export default function Topbar({ onToggleSidebar }: { onToggleSidebar?: () => void }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState("");
@@ -47,7 +48,16 @@ export default function Topbar() {
   };
 
   return (
-    <header className="flex items-center gap-3">
+    <div className="flex h-full w-full items-center justify-between px-6 gap-4">
+      {/* Mobile menu button */}
+      <button
+        onClick={onToggleSidebar}
+        className="md:hidden flex items-center justify-center h-10 w-10 rounded border border-slate-300 hover:bg-slate-100"
+      >
+        <Menu size={18} className="text-slate-700" />
+      </button>
+
+      {/* Search */}
       <div className="relative max-w-xl flex-1">
         <Input placeholder="Search projects, milestones, tasks..." className="h-10 border-slate-300 bg-white pl-10" />
         <svg viewBox="0 0 24 24" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -55,49 +65,55 @@ export default function Topbar() {
           <path d="m21 21-4.3-4.3" />
         </svg>
       </div>
-      {FEATURES.notifications ? (
-        <Button variant="outline" className="ml-auto h-10 gap-2 border-slate-300 text-slate-700 hover:bg-slate-100" onClick={() => router.push("/notifications")}>
-          <BellIcon />
-          <span className="hidden sm:inline">Notifications</span>
-        </Button>
-      ) : null}
-      <div className="relative">
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          className="grid h-10 w-10 place-items-center rounded-full border border-slate-300 bg-gradient-to-br from-slate-900 to-slate-700 text-sm font-semibold bm-text shadow"
-        >
-          {initials}
-        </button>
-        {open ? (
-          <div className="absolute right-0 z-50 mt-2 w-52 rounded-lg border border-slate-200 bg-white p-1 shadow-lg">
-            <button
-              type="button"
-              onClick={() => router.push("/settings")}
-              className="block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-slate-100"
-            >
-              Profile
-            </button>
-            {FEATURES.adminPortal ? (
+
+      {/* Right side: notifications + profile */}
+      <div className="flex items-center gap-3 ml-auto">
+        {FEATURES.notifications ? (
+          <Button variant="outline" className="h-10 gap-2 border-slate-300 text-slate-700 hover:bg-slate-100" onClick={() => router.push("/notifications")}>
+            <BellIcon />
+            <span className="hidden sm:inline">Notifications</span>
+          </Button>
+        ) : null}
+
+        {/* Profile dropdown */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            className="grid h-10 w-10 place-items-center rounded-full border border-slate-300 bg-gradient-to-br from-slate-900 to-slate-700 text-sm font-semibold text-white shadow"
+          >
+            {initials}
+          </button>
+          {open ? (
+            <div className="absolute right-0 z-50 mt-2 w-52 rounded-lg border border-slate-200 bg-white p-1 shadow-lg">
               <button
                 type="button"
-                onClick={() => router.push("/admin")}
+                onClick={() => { setOpen(false); router.push("/settings"); }}
                 className="block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-slate-100"
               >
-                Admin Portal
+                Profile
               </button>
-            ) : null}
-            <button
-              type="button"
-              onClick={() => void onLogout()}
-              className="block w-full rounded-md px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50"
-            >
-              Logout
-            </button>
-          </div>
-        ) : null}
-        {email ? <p className="sr-only">{email}</p> : null}
+              {FEATURES.adminPortal ? (
+                <button
+                  type="button"
+                  onClick={() => { setOpen(false); router.push("/admin"); }}
+                  className="block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-slate-100"
+                >
+                  Admin Portal
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => void onLogout()}
+                className="block w-full rounded-md px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50"
+              >
+                Logout
+              </button>
+            </div>
+          ) : null}
+          {email ? <p className="sr-only">{email}</p> : null}
+        </div>
       </div>
-    </header>
+    </div>
   );
 }

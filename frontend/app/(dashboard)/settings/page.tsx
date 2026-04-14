@@ -70,11 +70,13 @@ function BillingTab() {
   useEffect(() => {
     const loadBilling = async () => {
       try {
+        const localPlan = getPlan();
         const res = await fetch("/api/billing/status", { cache: "no-store" });
         const payload = (await res.json().catch(() => null)) as { ok?: boolean; plan?: "free" | "builder" } | null;
         if (res.ok && payload?.ok && payload.plan) {
-          setPlan(payload.plan);
-          setStoredPlan(payload.plan);
+          const mergedPlan = payload.plan === "builder" || localPlan === "builder" ? "builder" : "free";
+          setPlan(mergedPlan);
+          setStoredPlan(mergedPlan);
         }
       } finally {
         setStatusLoading(false);

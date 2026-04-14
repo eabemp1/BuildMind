@@ -5,8 +5,8 @@
  * Free    → $0
  * Builder → $19
  *
- * Older "venture" values are normalized to Builder so existing local state
- * does not break while the public product stays free + builder only.
+ * Older "venture" values are normalized to Builder so legacy local state
+ * does not break while the public paywall stays free + builder only.
  */
 
 export type Plan = "free" | "builder" | "venture";
@@ -51,7 +51,7 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
   builder: {
     actionsPerWeek: -1, aiMessagesPerDay: -1, historyDays: -1,
     maxProjects: -1,
-    ventureTracks: 0, weeklyReport: true, outcomeLearning: true,
+    ventureTracks: -1, weeklyReport: true, outcomeLearning: true,
     investorMetrics: true, breakMyStartup: true,
     pitchDeckGenerator: false, multiProject: false, exportData: true,
     ideaValidator: true,
@@ -65,7 +65,7 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
   venture: {
     actionsPerWeek: -1, aiMessagesPerDay: -1, historyDays: -1,
     maxProjects: -1,
-    ventureTracks: 0, weeklyReport: true, outcomeLearning: true,
+    ventureTracks: -1, weeklyReport: true, outcomeLearning: true,
     investorMetrics: true, breakMyStartup: true,
     pitchDeckGenerator: true, multiProject: true, exportData: true,
     ideaValidator: true,
@@ -78,11 +78,12 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
   },
 };
 
-export const PLAN_PRICES: Record<Plan, string> = { free: "$0", builder: "$19", venture: "$19" };
-export const PLAN_NAMES:  Record<Plan, string> = { free: "Starter", builder: "Builder", venture: "Builder" };
+export const PLAN_PRICES: Record<Plan, string> = { free: "$0", builder: "$49", venture: "$49" };
+export const PLAN_NAMES:  Record<Plan, string> = { free: "Free", builder: "Builder", venture: "Builder" };
 
 export const FEATURE_GATES: Record<string, Plan> = {
-  ventures:         "builder",
+  // Venture-only feature (coming later). Keep gated even while core paywall is free+builder.
+  ventures:         "venture",
   weeklyReport:     "builder",
   outcomeLearning:  "builder",
   investorMetrics:  "builder",

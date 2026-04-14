@@ -1,5 +1,4 @@
 "use client";
-import type { BuildMindNotification } from "@/lib/buildmind.types";
 
 /**
  * lib/buildmind.ts — re-export shim (v13)
@@ -53,58 +52,14 @@ export {
   calculateDashboardStats,
 } from "@/lib/data/projects";
 
-// ── Notifications (legacy-compatible wrappers) ───────────────────────────────
-import {
-  addNotification,
-  getAllNotifications,
-  getUnreadCount,
-  markAllRead,
-  markRead,
-  type AppNotification,
+// ── Notifications ──────────────────────────────────────────────────────────────
+export {
+  addNotification as createNotificationForCurrentUser,
+  getAllNotifications as getNotificationsForCurrentUser,
+  markRead as markNotificationAsRead,
+  clearNotificationsForCurrentUser,
+  getUnreadCount as getUnreadNotificationCount,
 } from "@/lib/notifications";
-
-function toLegacyNotification(n: AppNotification): BuildMindNotification {
-  return {
-    id: n.id,
-    user_id: "local-user",
-    type: n.type,
-    message: `${n.title} — ${n.body}`,
-    is_read: Boolean(n.readAt),
-    created_at: new Date(n.createdAt).toISOString(),
-  };
-}
-
-export async function createNotificationForCurrentUser(input: {
-  type: string;
-  message: string;
-  title?: string;
-  emoji?: string;
-}): Promise<BuildMindNotification> {
-  const created = addNotification({
-    type: (input.type as AppNotification["type"]) || "welcome",
-    title: input.title ?? "BuildMind",
-    body: input.message,
-    emoji: input.emoji ?? "🔔",
-    priority: "medium",
-  });
-  return toLegacyNotification(created);
-}
-
-export async function getNotificationsForCurrentUser(): Promise<BuildMindNotification[]> {
-  return getAllNotifications().map(toLegacyNotification);
-}
-
-export async function markNotificationAsRead(id: string): Promise<void> {
-  markRead(id);
-}
-
-export async function clearNotificationsForCurrentUser(): Promise<void> {
-  markAllRead();
-}
-
-export async function getUnreadNotificationCount(): Promise<number> {
-  return getUnreadCount();
-}
 
 // ── AI Coach helper ─────────────────────────────────────────────────────────
 import { getCurrentUser } from "@/lib/data/projects";

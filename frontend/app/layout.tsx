@@ -212,6 +212,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="canonical" href="https://buildmind.live" />
         {/* Performance */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&amp;family=DM+Serif+Display:ital@0;1&amp;display=swap" />
         <link rel="dns-prefetch" href="https://api.anthropic.com" />
         {/* Icons */}
         <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=3" />
@@ -219,7 +221,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="apple-touch-icon" href="/favicon.svg?v=3" />
         {/* Theme */}
         <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f2f3f9" />
-        <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a0a0f" />
+        <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0C0D0F" />
         <meta name="color-scheme" content="light dark" />
         {/* Mobile */}
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />

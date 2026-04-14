@@ -13,6 +13,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
+import PaywallGate from "@/components/PaywallGate";
 
 const MESSAGES = [
   "Hey — I've been using BuildMind to stay accountable on my startup. It gives me one specific action every morning and tracks my streak. Thought you'd find it useful: {link}",
@@ -66,6 +67,7 @@ export default function InvitePage() {
   ];
 
   return (
+    <PaywallGate feature="inviteFounder" featureLabel="Invite a Founder" requiredPlan="builder" variant="block">
     <div style={{ maxWidth: 600, margin: "0 auto", fontFamily: "system-ui, sans-serif", padding: "0 0 48px" }}>
       {/* Hero */}
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
@@ -165,5 +167,6 @@ export default function InvitePage() {
         </div>
       )}
     </div>
+    </PaywallGate>
   );
 }

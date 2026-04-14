@@ -108,6 +108,11 @@ export function deleteNotification(id: string): void {
   saveNotifications(getAllNotifications().filter(n => n.id !== id));
 }
 
+export function clearNotificationsForCurrentUser(): void {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(STORAGE_KEY);
+}
+
 // ── Smart notification generators (call these from the right places) ──────────
 
 export function notifyStreakBroken(lastStreak: number): void {

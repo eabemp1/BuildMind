@@ -77,7 +77,7 @@ export function useDeleteProjectMutation() {
 export function useMarkNotificationMutation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => markNotificationAsRead(id),
+    mutationFn: (id: string) => Promise.resolve(markNotificationAsRead(id)),
     onMutate: async (id) => {
       await qc.cancelQueries({ queryKey: queryKeys.notifications });
       const previous = qc.getQueryData<BuildMindNotification[]>(queryKeys.notifications) ?? [];
@@ -97,7 +97,7 @@ export function useMarkNotificationMutation() {
 export function useClearNotificationsMutation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: clearNotificationsForCurrentUser,
+    mutationFn: () => Promise.resolve(clearNotificationsForCurrentUser()),
     onSuccess: () => void qc.invalidateQueries({ queryKey: queryKeys.notifications }),
   });
 }

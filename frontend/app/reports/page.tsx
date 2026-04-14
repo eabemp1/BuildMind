@@ -8,6 +8,7 @@ import { useProjectSummariesQuery } from "@/lib/queries";
 import BuildMindLoader from "@/components/BuildMindLoader";
 import { useLimitModal } from "@/components/LimitModal";
 import { updateAchievementStats, checkAndUnlockAchievements } from "@/lib/achievements";
+import PaywallGate from "@/components/PaywallGate";
 
 // ─── Viz design tokens ────────────────────────────────────────────────────────
 const VIZ = {
@@ -191,6 +192,7 @@ export default function ReportPage() {
   };
 
   return (
+    <PaywallGate feature="weeklyReport" featureLabel="Weekly Report" requiredPlan="builder" variant="block">
     <div style={{ maxWidth:900, margin:"0 auto", fontFamily:"system-ui,sans-serif", color:VIZ.text1, paddingBottom:60 }}>
 
       {/* Header */}
@@ -308,5 +310,6 @@ export default function ReportPage() {
         </motion.div>
       )}
     </div>
+    </PaywallGate>
   );
 }

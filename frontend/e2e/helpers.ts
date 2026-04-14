@@ -30,7 +30,8 @@ export async function signIn(page: Page) {
 /** Sign out via Supabase client (works without a sign-out button in view) */
 export async function signOut(page: Page) {
   await page.evaluate(async () => {
-    const { createClient } = await import("/lib/supabase/client");
+    const modulePath = "/lib/supabase/client";
+    const { createClient } = await import(modulePath);
     await createClient().auth.signOut();
   }).catch(() => {/* ignore if already signed out */});
 }

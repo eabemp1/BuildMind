@@ -35,13 +35,15 @@ import { NextRequest, NextResponse } from "next/server";
 import webpush from "web-push";
 import { createClient } from "@supabase/supabase-js";
 
-function getRequiredEnv() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-  const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY;
-  const vapidSubject = process.env.VAPID_SUBJECT || "mailto:hello@buildmind.live";
-  return { supabaseUrl, serviceRoleKey, vapidPublicKey, vapidPrivateKey, vapidSubject };
+// Configure VAPID only when keys are available (prevents build-time crashes).
+const VAPID_PUBLIC = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || "";
+const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY || "";
+if (VAPID_PUBLIC && VAPID_PRIVATE) {
+  webpush.setVapidDetails(
+    process.env.VAPID_SUBJECT || "mailto:hello@buildmind.live",
+    VAPID_PUBLIC,
+    VAPID_PRIVATE,
+  );
 }
 
 // Notification templates — rotated daily to avoid fatigue
@@ -86,18 +88,12 @@ function getDailyMessage() {
 }
 
 export async function POST(req: NextRequest) {
-  const env = getRequiredEnv();
-  if (!env.supabaseUrl || !env.serviceRoleKey || !env.vapidPublicKey || !env.vapidPrivateKey) {
+  if (!VAPID_PUBLIC || !VAPID_PRIVATE) {
     return NextResponse.json(
-      {
-        error:
-          "Missing required env vars for push: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, NEXT_PUBLIC_VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY",
-      },
-      { status: 500 }
+      { error: "VAPID keys are not configured" },
+      { status: 503 },
     );
   }
-
-  webpush.setVapidDetails(env.vapidSubject, env.vapidPublicKey, env.vapidPrivateKey);
 
   // Verify this is called by cron or Supabase edge function
   const secret = req.headers.get("x-cron-secret");
@@ -106,7 +102,10 @@ export async function POST(req: NextRequest) {
   }
 
   // Admin Supabase client (bypasses RLS)
-  const supabase = createClient(env.supabaseUrl, env.serviceRoleKey);
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
 
   // Fetch all push subscriptions
   const { data: subs, error } = await supabase

@@ -7,14 +7,49 @@ type PageHeroProps = {
 
 export default function PageHero({ title, subtitle, kicker, actions }: PageHeroProps) {
   return (
-    <div className="glass-panel panel-glow overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-4 bg-gradient-to-r from-indigo-500/30 to-purple-500/30 px-6 py-5">
+    <div style={{
+      background: "var(--bm-bg2)",
+      border: "1px solid var(--bm-border)",
+      borderRadius: 14,
+      overflow: "hidden",
+      marginBottom: 24,
+    }}>
+      <div style={{
+        display: "flex", flexWrap: "wrap",
+        alignItems: "center", justifyContent: "space-between",
+        gap: 16, padding: "20px 24px",
+        background: "var(--bm-grad-hero)",
+        borderBottom: "1px solid var(--bm-border)",
+      }}>
         <div>
-          {kicker ? <p className="text-xs uppercase tracking-[0.2em] text-indigo-200">{kicker}</p> : null}
-          <h2 className="mt-1 text-2xl font-semibold bm-text">{title}</h2>
-          <p className="text-body mt-1 max-w-2xl">{subtitle}</p>
+          {kicker && (
+            <p style={{
+              fontSize: 10, textTransform: "uppercase",
+              letterSpacing: "0.1em", color: "var(--bm-accent)",
+              fontWeight: 600, marginBottom: 5,
+            }}>
+              {kicker}
+            </p>
+          )}
+          <h2 style={{
+            fontSize: 20, fontWeight: 600,
+            color: "var(--bm-text)", letterSpacing: "-0.02em",
+            margin: 0,
+          }}>
+            {title}
+          </h2>
+          <p style={{
+            fontSize: 13, color: "var(--bm-text3)",
+            marginTop: 5, maxWidth: 560, lineHeight: 1.6,
+          }}>
+            {subtitle}
+          </p>
         </div>
-        {actions ? <div className="flex items-center gap-3">{actions}</div> : null}
+        {actions && (
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {actions}
+          </div>
+        )}
       </div>
     </div>
   );

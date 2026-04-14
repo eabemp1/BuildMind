@@ -390,14 +390,44 @@ function VenturesContent() {
   };
 
   const handleNew = () => {
-    if (isFree && tracks.length >= 1) {
-      router.push("/upgrade?feature=multiTrack");
-      return;
-    }
     setShowNew(true);
   };
 
   const active = tracks.find(t => t.id === activeId);
+
+  if (isFree) {
+    return (
+      <div style={{ maxWidth: 680, margin: "0 auto" }}>
+        <div style={{
+          borderRadius: 14,
+          border: "1px solid rgba(99,102,241,0.35)",
+          background: "rgba(99,102,241,0.07)",
+          padding: "18px 20px",
+        }}>
+          <div style={{ fontSize: 18, fontWeight: 700, color: "var(--bm-text)", marginBottom: 6 }}>Roadmap Tracks is a Venture feature</div>
+          <div style={{ fontSize: 13, color: "var(--bm-text3)", lineHeight: 1.6, marginBottom: 14 }}>
+            This feature is gated for Venture and will be enabled later. It remains locked on Free and Builder for now.
+          </div>
+          <button
+            onClick={() => router.push("/upgrade?plan=venture&feature=roadmapTracks")}
+            style={{
+              padding: "10px 16px",
+              borderRadius: 10,
+              border: "none",
+              background: "linear-gradient(135deg,#6366f1,#8b5cf6)",
+              color: "#fff",
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            Venture (Coming soon) →
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // Detail view
   if (active && !showNew) {
@@ -439,15 +469,7 @@ function VenturesContent() {
           </motion.button>
         </div>
 
-        {isFree && tracks.length >= 1 && (
-          <div style={{ background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 10, padding: "10px 14px", marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-            <div style={{ fontSize: 12, color: "#888" }}>Free plan: 1 track. <span style={{ color: "#a78bfa" }}>Builder</span> unlocks unlimited tracks.</div>
-            <button onClick={() => router.push("/upgrade?feature=multiTrack")}
-              style={{ padding: "6px 12px", borderRadius: 7, border: "none", background: "rgba(139,92,246,0.2)", color: "#a78bfa", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>
-              Upgrade →
-            </button>
-          </div>
-        )}
+
       </motion.div>
 
       {tracks.length === 0 ? (

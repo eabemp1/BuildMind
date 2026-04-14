@@ -9,8 +9,8 @@ export default function GlowCard({ className, interactive, ...props }: GlowCardP
   return (
     <div
       className={cn(
-        "rounded-xl border border-[var(--bm-border2)] bg-[#0f172a] shadow-[0_0_20px_rgba(99,102,241,0.15)] transition duration-300 ease-out hover:-translate-y-1 hover:shadow-xl hover:shadow-[0_0_30px_rgba(99,102,241,0.25)]",
-        interactive ? "cursor-pointer" : "",
+        "rounded-xl border border-[var(--bm-border2)] bg-[var(--bm-bg2)] transition-all duration-200 ease-out",
+        interactive && "cursor-pointer hover:-translate-y-0.5 hover:border-[var(--bm-accent-bd)] hover:shadow-[var(--shadow-accent)]",
         className,
       )}
       {...props}

@@ -317,6 +317,13 @@ export default function LandingPage() {
               Start free — takes 2 minutes →
             </Link>
           </div>
+          <div className="mt-5 flex items-center justify-center gap-4 text-xs bm-text3">
+            <Link href="/privacy" className="hover:text-zinc-300">Privacy</Link>
+            <span>·</span>
+            <Link href="/terms" className="hover:text-zinc-300">Terms</Link>
+            <span>·</span>
+            <Link href="/refund" className="hover:text-zinc-300">Refunds</Link>
+          </div>
         </div>
 
       </main>
