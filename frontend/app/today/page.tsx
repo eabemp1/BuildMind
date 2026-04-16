@@ -568,6 +568,9 @@ export default function TodayPage() {
       localStorage.setItem("bm_stage", stage);
     }
     recordTaskCompletion();
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("bm_task_completed"));
+    }
 
     const curStats = getAchievementStats();
     const newTasksDone = curStats.tasksDone + 1;

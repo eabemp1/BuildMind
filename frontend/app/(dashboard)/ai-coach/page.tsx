@@ -8,7 +8,8 @@ import { trackEvent } from "@/lib/analytics";
 import { FEATURES } from "@/lib/features";
 import { useRouter } from "next/navigation";
 import { recordAIUse, checkUpgradeTrigger, getTasksDone } from "@/lib/upgrade";
-import { getPlan, getLimits, getAIMessagesToday } from "@/lib/plan";
+import { getAIMessagesToday, getLimits } from "@/lib/plan";
+import { usePlan } from "@/lib/usePlan";
 import { useLimitModal } from "@/components/LimitModal";
 import { updateAchievementStats, checkAndUnlockAchievements, getAchievementStats } from "@/lib/achievements";
 import { AIVisualWidget } from "@/components/ui/AIVisualWidget";
@@ -245,10 +246,15 @@ export default function AICoachPage() {
   const { data:summaries=[] } = useProjectSummariesQuery();
   const { data:overview } = useDashboardOverviewQuery();
 
-  const plan=getPlan(); const limits=getLimits();
+  const { plan, refreshPlan } = usePlan();
+  const limits=getLimits(plan);
   const isUnlimited=plan!=="free"||!FEATURES.aiUsageLimits;
   const [aiUsedToday, setAiUsedToday] = useState(()=>getAIMessagesToday());
   const hitDailyLimit=!isUnlimited&&aiUsedToday>=limits.aiMessagesPerDay;
+
+  useEffect(() => {
+    void refreshPlan();
+  }, [refreshPlan]);
 
   const [selectedProjectId, setSelectedProjectId] = useState<string|undefined>();
   const activeProjectId=selectedProjectId??projects[0]?.id;
@@ -295,7 +301,19 @@ export default function AICoachPage() {
   const send = useCallback(async(overrideMessage?:string)=>{
     const message=(overrideMessage??input).trim();
     if (!message||!activeProjectId||isSending) return;
-    if (hitDailyLimit) { showLimit("ai_coach"); return; }
+
+    if (hitDailyLimit) {
+      // Re-check billing once before blocking, to avoid stale local free-plan gates.
+      const refreshedPlan = (await refreshPlan()) ?? plan;
+      const refreshedLimits = getLimits(refreshedPlan);
+      const refreshedUnlimited = refreshedPlan !== "free" || !FEATURES.aiUsageLimits;
+      const refreshedHitLimit = !refreshedUnlimited && aiUsedToday >= refreshedLimits.aiMessagesPerDay;
+      if (refreshedHitLimit) {
+        showLimit("ai_coach");
+        return;
+      }
+    }
+
     setInput(""); setError(null);
     const userId_tmp=`${Date.now()}-user`; const aiId_tmp=`${Date.now()}-ai`;
     const userMsg:ChatMessage={ id:userId_tmp,role:"user",content:message };
@@ -324,7 +342,7 @@ export default function AICoachPage() {
       const errMsg=err instanceof Error?err.message:"Failed to send";
       setMessages(prev=>prev.map(m=>m.id===aiId_tmp?{ ...m,content:`Error: ${errMsg}`,phase:"done" as const,error:true,reasoning:[`Request failed: ${errMsg.slice(0,60)}...`,"Falling back — check connection or try again."] }:m));
     } finally { setIsSending(false); }
-  },[input,activeProjectId,isSending,hitDailyLimit,messages,router]);
+  },[input,activeProjectId,isSending,hitDailyLimit,messages,router,aiUsedToday,showLimit]);
 
   const handleKeyDown=(e:React.KeyboardEvent<HTMLTextAreaElement>)=>{ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); void send(); } };
 

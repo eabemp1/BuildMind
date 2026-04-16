@@ -5,7 +5,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { useProjectsQuery } from "@/lib/queries";
 import { createClient } from "@/lib/supabase/client";
-import { getPlan, canAccess } from "@/lib/plan";
+import { canAccess } from "@/lib/plan";
+import { usePlan } from "@/lib/usePlan";
 import { useLimitModal } from "@/components/LimitModal";
 import { updateAchievementStats, checkAndUnlockAchievements } from "@/lib/achievements";
 import BuildMindLoader from "@/components/BuildMindLoader";
@@ -203,7 +204,7 @@ export default function BreakMyStartupPage() {
   const [confirmed, setConfirmed] = useState(false);
   const [showTeaser, setShowTeaser] = useState(false);
 
-  const plan = getPlan();
+  const { plan } = usePlan();
   const hasFullAccess = canAccess("breakMyStartup", plan)&&plan!=="free";
   const isFree = plan==="free";
   const activeId = selectedId||projects[0]?.id||"";

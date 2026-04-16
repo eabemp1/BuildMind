@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import Providers from "@/components/providers";
 import PwaProvider from "@/components/PwaProvider";
@@ -55,7 +55,6 @@ export const metadata: Metadata = {
     apple: "/favicon.svg",
   },
   manifest: "/manifest.json",
-  themeColor: "#0a0a0f",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
@@ -93,6 +92,10 @@ export const metadata: Metadata = {
     // Add your Google Search Console verification token here
     // google: "YOUR_GOOGLE_VERIFICATION_TOKEN",
   },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0a0a0f",
 };
 
 // ─── STRUCTURED DATA (JSON-LD) ─────────────────────────────────────────────

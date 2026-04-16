@@ -8,7 +8,8 @@ import { computeStartupScore } from "@/lib/buildmind";
 import { getActiveProjectId, setActiveProjectId } from "@/lib/api";
 import { useCreateProjectMutation, useDeleteProjectMutation, useProjectSummariesQuery } from "@/lib/queries";
 import { projectCreateSchema } from "@/lib/validation";
-import { getPlan, getLimits } from "@/lib/plan";
+import { getLimits } from "@/lib/plan";
+import { usePlan } from "@/lib/usePlan";
 import { useLimitModal } from "@/components/LimitModal";
 import BuildMindLoader from "@/components/BuildMindLoader";
 
@@ -85,7 +86,8 @@ const inputStyle = {
 export default function ProjectsPage() {
   const router = useRouter();
   const { showLimit } = useLimitModal();
-  const limits = getLimits(getPlan());
+  const { plan } = usePlan();
+  const limits = getLimits(plan);
   const maxProjects = limits.maxProjects;
 
   const { data:summaries=[], isLoading, error:summariesError } = useProjectSummariesQuery();

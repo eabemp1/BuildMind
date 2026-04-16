@@ -18,7 +18,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
-import { getPlan, setStoredPlan, type Plan, PLAN_LIMITS } from "@/lib/plan";
+import { setStoredPlan, type Plan, PLAN_LIMITS } from "@/lib/plan";
 import { getAchievementStats, updateAchievementStats, getTotalXP, checkAndUnlockAchievements, getUnlocked } from "@/lib/achievements";
 import { getFunnelSummary, getDropOffStep, getPageViews, getRecentEvents } from "@/lib/onboarding-analytics";
 
@@ -70,13 +70,8 @@ export default function OwnerPanel() {
         } else {
           setAuthorized(true);
           // Admin always operates at builder tier so all features are accessible
-          const currentPlan = getPlan();
-          if (currentPlan === "free") {
-            setStoredPlan("builder");
-            setPlan("builder");
-          } else {
-            setPlan(currentPlan);
-          }
+          setStoredPlan("builder");
+          setPlan("builder");
           loadEnvStatus();
           loadDbStats(sb);
         }

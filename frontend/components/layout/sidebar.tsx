@@ -11,7 +11,8 @@ import {
 import { getUnseenCount } from "@/lib/achievements";
 import { getUnreadCount } from "@/lib/notifications";
 import { FEATURES } from "@/lib/features";
-import { getPlan, type Plan } from "@/lib/plan";
+import { type Plan } from "@/lib/plan";
+import { usePlan } from "@/lib/usePlan";
 import { useTheme } from "@/components/layout/theme-provider";
 
 /* ── Notification badge ── */
@@ -107,7 +108,7 @@ const SectionLabel = ({ label }: { label: string }) => (
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const plan = getPlan();
+  const { plan } = usePlan();
   const { theme, toggle } = useTheme();
   const [isAdmin, setIsAdmin] = useState(false);
   const [reflectPending, setReflectPending] = useState(false);

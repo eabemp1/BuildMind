@@ -7,7 +7,8 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { getPlan, canAccess } from "@/lib/plan";
+import { canAccess } from "@/lib/plan";
+import { usePlan } from "@/lib/usePlan";
 
 const SAMPLE_RESULT = {
   names: ["BuildHQ", "GetBuild", "BuildOS"],
@@ -230,9 +231,7 @@ function StartupKitContent() {
 
 export default function StartupKitPage() {
   const router = useRouter();
-  const [hasAccess, setHasAccess] = useState<boolean | null>(null);
-  useEffect(() => { setHasAccess(canAccess("startupKit", getPlan())); }, []);
-  if (hasAccess === null) return null;
-  if (!hasAccess) return <FreeTeaserView onUpgrade={() => router.push("/upgrade?feature=startupKit")} />;
+  const { plan } = usePlan();
+  if (!canAccess("startupKit", plan)) return <FreeTeaserView onUpgrade={() => router.push("/upgrade?feature=startupKit")} />;
   return <StartupKitContent />;
 }

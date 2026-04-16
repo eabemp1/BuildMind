@@ -58,7 +58,18 @@ export async function POST(request: Request) {
   const userIdFromMetadata = pickUserIdFromMetadata(event);
   const userId = userIdFromMetadata ?? (await resolveUserIdByEmail(email));
 
+  console.info("[Billing][Paystack Webhook] Received", {
+    eventName,
+    email,
+    userIdFromMetadata,
+    resolvedUserId: userId,
+  });
+
   if (!userId) {
+    console.warn("[Billing][Paystack Webhook] No matching user", {
+      eventName,
+      email,
+    });
     return NextResponse.json({ ok: true, ignored: "No matching user." });
   }
 
@@ -78,6 +89,7 @@ export async function POST(request: Request) {
       subscriptionId,
       customerEmail: email,
     });
+    console.info("[Billing][Paystack Webhook] Builder activated", { userId, reference });
     return NextResponse.json({ ok: true });
   }
 
@@ -90,6 +102,7 @@ export async function POST(request: Request) {
       subscriptionId,
       customerEmail: email,
     });
+    console.info("[Billing][Paystack Webhook] Downgraded to free", { userId, reference, eventName });
     return NextResponse.json({ ok: true });
   }
 

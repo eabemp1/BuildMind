@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { BrandMark } from "@/components/layout/logo";
+import { setStoredPlan } from "@/lib/plan";
 
 const PAYSTACK_KEY = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY ?? "";
 const PAYSTACK_PLANS: Record<"builder", string> = {
@@ -24,6 +25,21 @@ const AFRICA_COUNTRIES = new Set([
 
 type PaymentMethod = "paystack" | "paddle" | "auto";
 type Plan = "builder";
+
+function isPaystackPublicKeyReady(key: string): boolean {
+  return /^pk_(live|test)_/i.test(key.trim());
+}
+
+function isPaddleClientTokenReady(token: string): boolean {
+  // Paddle tokens are environment-scoped and may be test/live prefixed.
+  return /^(pdl_)?(live|test)_/i.test(token.trim());
+}
+
+function maskSecret(value: string): string {
+  if (!value) return "missing";
+  if (value.length <= 10) return `${value.slice(0, 4)}...`;
+  return `${value.slice(0, 8)}...${value.slice(-4)}`;
+}
 
 const BUILDER_FEATURE_GROUPS = [
   {
@@ -123,6 +139,34 @@ function PayButton({ plan, method, onSuccess, onError }: { plan: Plan; method: P
   const [loading, setLoading] = useState(false);
   const [loadingMsg, setLoadingMsg] = useState("Opening payment...");
   const [detectedMethod, setDetectedMethod] = useState<"paystack" | "paddle">("paystack");
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const [lastError, setLastError] = useState("");
+  const [paystackScriptLoaded, setPaystackScriptLoaded] = useState(false);
+  const [paddleScriptLoaded, setPaddleScriptLoaded] = useState(false);
+  const [paystackGlobalReady, setPaystackGlobalReady] = useState(false);
+  const [paddleGlobalReady, setPaddleGlobalReady] = useState(false);
+  const [paystackApiMode, setPaystackApiMode] = useState<"newTransaction" | "setup" | "unknown">("unknown");
+
+  const paystackReady = isPaystackPublicKeyReady(PAYSTACK_KEY);
+  const paddleReady = isPaddleClientTokenReady(PADDLE_TOKEN);
+
+  const refreshDiagnostics = () => {
+    if (typeof window === "undefined") return;
+    const pScript = Boolean(document.getElementById("paystack-script"));
+    const pdScript = Boolean(document.getElementById("paddle-script"));
+    setPaystackScriptLoaded(pScript);
+    setPaddleScriptLoaded(pdScript);
+    const paystackGlobal = (window as any).PaystackPop;
+    setPaystackGlobalReady(Boolean(paystackGlobal));
+    if (paystackGlobal?.newTransaction) setPaystackApiMode("newTransaction");
+    else if (paystackGlobal?.setup) setPaystackApiMode("setup");
+    else setPaystackApiMode("unknown");
+    setPaddleGlobalReady(Boolean((window as any).Paddle));
+  };
+
+  useEffect(() => {
+    refreshDiagnostics();
+  }, []);
 
   useEffect(() => {
     if (method !== "auto") { setDetectedMethod(method as "paystack" | "paddle"); return; }
@@ -133,15 +177,20 @@ function PayButton({ plan, method, onSuccess, onError }: { plan: Plan; method: P
   const isPaystack = effectiveMethod === "paystack";
   const priceLabel = isPaystack ? "GHS 290/mo" : "$19/mo";
 
+  const emitError = (msg: string) => {
+    setLastError(msg);
+    onError(msg);
+  };
+
   const pay = async () => {
     setLoading(true);
     setLoadingMsg("Opening payment...");
+    setLastError("");
+    onError("");
     try {
-      const paystackReady = PAYSTACK_KEY.startsWith("pk_");
-      const paddleReady = PADDLE_TOKEN.startsWith("live_");
       if (!paystackReady && !paddleReady) {
         setLoadingMsg("Dev mode — simulating upgrade...");
-        localStorage.setItem("bm_plan", plan);
+        setStoredPlan(plan);
         setTimeout(() => {
           onSuccess(plan);
           setLoading(false);
@@ -166,9 +215,13 @@ function PayButton({ plan, method, onSuccess, onError }: { plan: Plan; method: P
       };
       const watchdog = window.setTimeout(() => {
         if (finished) return;
-        onError("Checkout did not open. Please allow popups and try again.");
+        const hasGatewayFrame = Boolean(
+          document.querySelector('iframe[src*="paystack"], iframe[name*="paystack"], iframe[src*="paddle"]'),
+        );
+        if (hasGatewayFrame) return;
+        emitError("Checkout did not open. Disable ad blocker/pop-up blocking and retry.");
         finish();
-      }, 15000);
+      }, 30000);
       const complete = () => {
         window.clearTimeout(watchdog);
         finish();
@@ -184,33 +237,62 @@ function PayButton({ plan, method, onSuccess, onError }: { plan: Plan; method: P
             s.onerror = () => rej(new Error("Failed to load Paystack script"));
             document.head.appendChild(s);
           });
+          setPaystackScriptLoaded(true);
         }
         const PaystackPop = (window as any).PaystackPop;
+        setPaystackGlobalReady(Boolean(PaystackPop));
+        if (PaystackPop?.newTransaction) setPaystackApiMode("newTransaction");
+        else if (PaystackPop?.setup) setPaystackApiMode("setup");
+        else setPaystackApiMode("unknown");
         if (!PaystackPop) {
-          onError("Paystack failed to load. Please refresh.");
+          emitError("Paystack failed to load. Check network/ad blocker and refresh.");
           complete();
           return;
         }
-        PaystackPop.newTransaction({
+        const onPaystackSuccess = async (tx: { reference?: string }) => {
+          const reference = tx?.reference ?? "";
+          if (!reference) {
+            emitError("Paystack returned no reference. Please retry.");
+            complete();
+            return;
+          }
+          setLoadingMsg("Verifying payment...");
+          const result = await verifyPaystackAndPersist(reference);
+          if (result.ok) {
+            setStoredPlan(plan);
+            onSuccess(plan);
+          } else {
+            emitError(result.error ?? "Payment verification failed.");
+          }
+          complete();
+        };
+
+        const paystackBaseConfig = {
           key: PAYSTACK_KEY,
           email,
           amount: PAYSTACK_AMOUNTS[plan],
           currency: "GHS",
           callback_url: `${window.location.origin}/upgrade?provider=paystack`,
           metadata: { plan, user_id: userId, source: "buildmind" },
-          onSuccess: async (tx: { reference: string }) => {
-            setLoadingMsg("Verifying payment...");
-            const result = await verifyPaystackAndPersist(tx.reference);
-            if (result.ok) {
-              localStorage.setItem("bm_plan", plan);
-              onSuccess(plan);
-            } else {
-              onError(result.error ?? "Payment verification failed.");
-            }
-            complete();
-          },
-          onCancel: () => complete(),
-        }).openIframe();
+        };
+
+        if (typeof PaystackPop.newTransaction === "function") {
+          PaystackPop.newTransaction({
+            ...paystackBaseConfig,
+            onSuccess: onPaystackSuccess,
+            onCancel: () => complete(),
+          }).openIframe();
+        } else if (typeof PaystackPop.setup === "function") {
+          const handler = PaystackPop.setup({
+            ...paystackBaseConfig,
+            callback: onPaystackSuccess,
+            onClose: () => complete(),
+          });
+          handler.openIframe();
+        } else {
+          emitError("Paystack loaded, but checkout API is unavailable. Please refresh.");
+          complete();
+        }
       } else {
         if (!document.getElementById("paddle-script")) {
           await new Promise<void>((res, rej) => {
@@ -221,17 +303,19 @@ function PayButton({ plan, method, onSuccess, onError }: { plan: Plan; method: P
             s.onerror = () => rej(new Error("Failed to load Paddle script"));
             document.head.appendChild(s);
           });
+          setPaddleScriptLoaded(true);
         }
         const Paddle = (window as any).Paddle;
+        setPaddleGlobalReady(Boolean(Paddle));
         if (!Paddle) {
-          onError("Paddle failed to load. Please refresh.");
+          emitError("Paddle failed to load. Check network/ad blocker and refresh.");
           complete();
           return;
         }
         Paddle.Initialize({ token: PADDLE_TOKEN });
         const priceId = PADDLE_PRICES[plan];
         if (!priceId) {
-          localStorage.setItem("bm_plan", plan);
+          setStoredPlan(plan);
           onSuccess(plan);
           complete();
           return;
@@ -245,27 +329,55 @@ function PayButton({ plan, method, onSuccess, onError }: { plan: Plan; method: P
             const txId = data?.transaction?.id ?? "";
             const result = txId ? await verifyPaddleAndPersist(txId) : { ok: true };
             if (result.ok) {
-              localStorage.setItem("bm_plan", plan);
+              setStoredPlan(plan);
               onSuccess(plan);
             } else {
-              onError(result.error ?? "Paddle verification failed.");
+              emitError(result.error ?? "Paddle verification failed.");
             }
             complete();
           },
           closeCallback: () => complete(),
         });
       }
-    } catch {
-      onError("Payment setup failed. Please retry.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Payment setup failed. Please retry.";
+      emitError(message);
       setLoading(false);
+      refreshDiagnostics();
     }
   };
 
   return (
-    <motion.button onClick={() => void pay()} disabled={loading} whileHover={{ scale: loading ? 1 : 1.02 }} whileTap={{ scale: loading ? 1 : 0.98 }}
-      style={{ width: "100%", padding: "16px 0", background: "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "#fff", fontWeight: 700, fontSize: 15, borderRadius: 14, border: "none", cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: loading ? 0.75 : 1, boxShadow: "0 0 32px rgba(99,102,241,0.4)", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-      {loading ? (<><motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }} style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "white" }} />{loadingMsg}</>) : `Upgrade to Builder — ${priceLabel} →`}
-    </motion.button>
+    <div>
+      <motion.button onClick={() => void pay()} disabled={loading} whileHover={{ scale: loading ? 1 : 1.02 }} whileTap={{ scale: loading ? 1 : 0.98 }}
+        style={{ width: "100%", padding: "16px 0", background: "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "#fff", fontWeight: 700, fontSize: 15, borderRadius: 14, border: "none", cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: loading ? 0.75 : 1, boxShadow: "0 0 32px rgba(99,102,241,0.4)", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+        {loading ? (<><motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }} style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "white" }} />{loadingMsg}</>) : `Upgrade to Builder — ${priceLabel} →`}
+      </motion.button>
+
+      <div style={{ marginTop: 10 }}>
+        <button
+          onClick={() => { setDiagnosticsOpen(!diagnosticsOpen); refreshDiagnostics(); }}
+          style={{ width: "100%", background: "transparent", border: "1px solid var(--bm-border2)", color: "var(--bm-text3)", borderRadius: 8, padding: "8px 10px", fontSize: 11, fontFamily: "inherit", cursor: "pointer" }}
+        >
+          {diagnosticsOpen ? "Hide" : "Show"} payment diagnostics
+        </button>
+      </div>
+
+      {diagnosticsOpen && (
+        <div style={{ marginTop: 8, borderRadius: 8, border: "1px solid var(--bm-border2)", background: "rgba(255,255,255,0.03)", padding: "10px 12px", fontSize: 11, color: "var(--bm-text3)", fontFamily: "monospace", lineHeight: 1.7 }}>
+          <div>effective_method: {effectiveMethod}</div>
+          <div>paystack_key: {paystackReady ? "ready" : "missing/invalid"} ({maskSecret(PAYSTACK_KEY)})</div>
+          <div>paddle_token: {paddleReady ? "ready" : "missing/invalid"} ({maskSecret(PADDLE_TOKEN)})</div>
+          <div>paystack_script_tag: {paystackScriptLoaded ? "present" : "missing"}</div>
+          <div>paystack_global: {paystackGlobalReady ? "ready" : "missing"}</div>
+          <div>paystack_api_mode: {paystackApiMode}</div>
+          <div>paddle_script_tag: {paddleScriptLoaded ? "present" : "missing"}</div>
+          <div>paddle_global: {paddleGlobalReady ? "ready" : "missing"}</div>
+          <div>last_error: {lastError || "none"}</div>
+          <div>tip: disable ad blockers/pop-up blocking for this site if scripts fail.</div>
+        </div>
+      )}
+    </div>
   );
 }
 

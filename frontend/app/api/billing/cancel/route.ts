@@ -26,6 +26,12 @@ export async function POST(request: Request) {
   const mode = body.mode === "pause" ? "pause" : "cancel";
   const reason = typeof body.reason === "string" ? body.reason.trim().slice(0, 240) : "";
 
+  console.info("[Billing][Cancel] Request", {
+    userId: user.id,
+    mode,
+    hasReason: Boolean(reason),
+  });
+
   if (mode === "pause") {
     const pauseUntil = new Date(Date.now() + 30 * 86400000).toISOString();
     await persistUserPlan(user.id, "builder", {
@@ -39,6 +45,7 @@ export async function POST(request: Request) {
         billing_pause_reason: reason || null,
       },
     });
+    console.info("[Billing][Cancel] Plan paused", { userId: user.id, pauseUntil });
     return NextResponse.json({ ok: true, mode, pauseUntil });
   }
 
@@ -50,6 +57,8 @@ export async function POST(request: Request) {
       billing_cancel_reason: reason || null,
     },
   });
+
+  console.info("[Billing][Cancel] Plan canceled", { userId: user.id });
 
   return NextResponse.json({ ok: true, mode });
 }

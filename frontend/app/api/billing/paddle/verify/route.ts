@@ -48,6 +48,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "Missing Paddle transaction id." }, { status: 400 });
   }
 
+  console.info("[Billing][Paddle Verify] Start", {
+    userId: user.id,
+    transactionId,
+  });
+
   const response = await fetch(`https://api.paddle.com/transactions/${encodeURIComponent(transactionId)}`, {
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -58,6 +63,12 @@ export async function POST(request: Request) {
 
   const payload = (await response.json().catch(() => null)) as PaddleTransactionResponse | null;
   if (!response.ok || !payload?.data) {
+    console.warn("[Billing][Paddle Verify] Provider verify failed", {
+      userId: user.id,
+      transactionId,
+      responseOk: response.ok,
+      detail: payload?.error?.[0]?.detail ?? null,
+    });
     return NextResponse.json(
       { ok: false, error: payload?.error?.[0]?.detail ?? "Paddle verification failed." },
       { status: 400 },
@@ -66,6 +77,11 @@ export async function POST(request: Request) {
 
   const status = payload.data.status?.toLowerCase() ?? "";
   if (!["completed", "paid"].includes(status)) {
+    console.warn("[Billing][Paddle Verify] Transaction not completed", {
+      userId: user.id,
+      transactionId,
+      status,
+    });
     return NextResponse.json({ ok: false, error: "Transaction is not completed yet." }, { status: 409 });
   }
 
@@ -75,6 +91,11 @@ export async function POST(request: Request) {
     transactionId: payload.data.id ?? transactionId,
     reference: payload.data.id ?? transactionId,
     customerEmail: user.email?.toLowerCase() ?? null,
+  });
+
+  console.info("[Billing][Paddle Verify] Builder activated", {
+    userId: user.id,
+    transactionId: payload.data.id ?? transactionId,
   });
 
   return NextResponse.json({ ok: true, plan: "builder" });

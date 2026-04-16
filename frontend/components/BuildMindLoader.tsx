@@ -105,7 +105,7 @@ function AnimatedMark({ size = 72 }: { size?: number }) {
           transition={{ duration: 1.6, repeat: Infinity, delay: 0.4 }} />
 
         {/* Traveling signal dot */}
-        <motion.circle r="2" fill="#fff" opacity="0.9" filter="url(#bml-glow)"
+        <motion.circle cx="14" cy="32" r="2" fill="#fff" opacity="0.9" filter="url(#bml-glow)"
           animate={{ cx: [14,32,50,32,14], cy: [32,27,32,27,32], opacity: [0,1,1,1,0], r: [1.5,2.2,2.2,2.2,1.5] }}
           transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut", times: [0,0.3,0.5,0.7,1] }}
         />

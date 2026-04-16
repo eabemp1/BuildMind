@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState, ReactNode } from "react";
+import { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { canAccess, getPlan, Plan } from "@/lib/plan";
+import { canAccess, Plan } from "@/lib/plan";
+import { usePlan } from "@/lib/usePlan";
 
 interface PaywallGateProps {
   feature: string;
@@ -73,14 +74,13 @@ function GateCard({ featureLabel, requiredPlan, onUpgrade }: { featureLabel: str
 
 export default function PaywallGate({ feature, featureLabel, requiredPlan = "builder", children, variant = "overlay" }: PaywallGateProps) {
   const router = useRouter();
-  const [hasAccess, setHasAccess] = useState<boolean | null>(null);
-  useEffect(() => { setHasAccess(canAccess(feature, getPlan())); }, [feature]);
+  const { plan } = usePlan();
+  const hasAccess = canAccess(feature, plan);
 
   const displayPlan = normalizePlan(requiredPlan);
   const onUpgrade = () => router.push(`/upgrade?plan=${displayPlan}`);
   const label = featureLabel ?? feature;
 
-  if (hasAccess === null) return null;
   if (hasAccess) return <>{children}</>;
 
   if (variant === "block") return <GateCard featureLabel={label} requiredPlan={requiredPlan} onUpgrade={onUpgrade} />;
@@ -113,10 +113,9 @@ export default function PaywallGate({ feature, featureLabel, requiredPlan = "bui
 
 export function usePaywall(feature: string) {
   const router = useRouter();
-  const [hasAccess, setHasAccess] = useState<boolean | null>(null);
-  useEffect(() => { setHasAccess(canAccess(feature, getPlan())); }, [feature]);
+  const { plan } = usePlan();
   return {
-    hasAccess,
+    hasAccess: canAccess(feature, plan),
     onUpgrade: (plan: Plan = "builder") => router.push(`/upgrade?plan=${normalizePlan(plan)}`),
   };
 }

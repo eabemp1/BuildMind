@@ -18,7 +18,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Suspense } from "react";
-import { getPlan } from "@/lib/plan";
+import { usePlan } from "@/lib/usePlan";
 import { updateAchievementStats, checkAndUnlockAchievements } from "@/lib/achievements";
 import BuildMindLoader from "@/components/BuildMindLoader";
 
@@ -361,7 +361,7 @@ function NewTrackWizard({ onSave, onCancel }: { onSave: (t: UserTrack) => void; 
 // ── Main content ───────────────────────────────────────────────────────────────
 function VenturesContent() {
   const router = useRouter();
-  const plan = getPlan();
+  const { plan } = usePlan();
   const isFree = plan === "free";
 
   const [tracks, setTracks] = useState<UserTrack[]>([]);

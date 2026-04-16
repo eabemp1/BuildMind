@@ -31,6 +31,43 @@ This is the complete, production-ready BuildMind frontend (v13). Drop it on top 
 
 Set these in: **Vercel Dashboard → Your Project → Settings → Environment Variables**
 
+### Production split for your stack
+
+If the frontend is on Vercel and the backend is on Render, use this split:
+
+Frontend on Vercel:
+```
+NEXT_PUBLIC_SUPABASE_URL          = https://xxxx.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY     = eyJ...
+NEXT_PUBLIC_API_BASE_URL          = https://your-backend.onrender.com/api/v1
+NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY   = pk_live_...
+NEXT_PUBLIC_PAYSTACK_PLAN_BUILDER = PLN_...
+NEXT_PUBLIC_PAYSTACK_AMOUNT_BUILDER = 29000
+NEXT_PUBLIC_PADDLE_CLIENT_TOKEN   = pdl_live_...   (if Paddle is enabled)
+NEXT_PUBLIC_PADDLE_PRICE_BUILDER  = pri_...       (if Paddle is enabled)
+NEXT_PUBLIC_POSTHOG_KEY           = phc_...       (optional)
+NEXT_PUBLIC_POSTHOG_HOST          = https://app.posthog.com
+NEXT_PUBLIC_ADMIN_USER_ID         = <optional admin UUID, only if you use admin views>
+```
+
+Backend on Render:
+```
+PAYSTACK_SECRET_KEY               = sk_live_...
+PAYSTACK_AMOUNT_BUILDER           = 29000
+SUPABASE_SERVICE_ROLE_KEY         = eyJ...
+GROQ_API_KEY                      = gsk_...      (if AI routes use it)
+PADDLE_API_KEY                    = pdl_live_... (if Paddle is enabled)
+PADDLE_WEBHOOK_SECRET             = whsec_...    (if Paddle is enabled)
+JWT_SECRET                        = <your-secret>
+SECRET_KEY                        = <your-secret>
+```
+
+Paystack dashboard URLs:
+```
+Callback URL = https://your-vercel-domain/upgrade?provider=paystack
+Webhook URL  = https://your-backend.onrender.com/api/billing/paystack/webhook
+```
+
 ### Required (app won't start without these)
 ```
 NEXT_PUBLIC_SUPABASE_URL          = https://xxxx.supabase.co

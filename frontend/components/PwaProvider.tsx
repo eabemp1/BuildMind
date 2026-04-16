@@ -16,17 +16,78 @@
 
 import { useEffect, useState } from "react";
 import { registerServiceWorker, getPushStatus, requestPushPermission, subscribeToPush } from "@/lib/push";
+import { createClient } from "@/lib/supabase/client";
 
 const PROMPT_KEY = "bm_push_prompted";
 
 export default function PwaProvider({
-  userId,
+  userId: userIdProp,
   children,
 }: {
   userId?: string;
   children: React.ReactNode;
 }) {
+  const [userId, setUserId] = useState<string | undefined>(userIdProp);
   const [showPrompt, setShowPrompt] = useState(false);
+  const [showForceEnable, setShowForceEnable] = useState(false);
+
+  const getCompletedTaskCount = () => {
+    if (typeof window === "undefined") return 0;
+    return Number(localStorage.getItem("bm_tasks_done") ?? "0");
+  };
+
+  const openBrowserNotificationSettings = () => {
+    if (typeof window === "undefined") return;
+    const ua = window.navigator.userAgent.toLowerCase();
+    if (ua.includes("edg/")) {
+      window.open("edge://settings/content/notifications", "_blank");
+      return;
+    }
+    if (ua.includes("chrome") || ua.includes("chromium")) {
+      window.open("chrome://settings/content/notifications", "_blank");
+      return;
+    }
+    if (ua.includes("firefox")) {
+      window.open("about:preferences#privacy", "_blank");
+    }
+  };
+
+  const evaluatePromptState = async () => {
+    if (typeof window === "undefined") return;
+    const taskCount = getCompletedTaskCount();
+    if (taskCount < 1) return;
+
+    const status = await getPushStatus();
+    if (status === "unsupported" || status === "subscribed") {
+      setShowPrompt(false);
+      setShowForceEnable(false);
+      return;
+    }
+
+    if (status === "denied") {
+      setShowPrompt(false);
+      setShowForceEnable(true);
+      return;
+    }
+
+    const alreadyPrompted = localStorage.getItem(PROMPT_KEY);
+    if (!alreadyPrompted) setShowPrompt(true);
+  };
+
+  useEffect(() => {
+    if (userIdProp) {
+      setUserId(userIdProp);
+      return;
+    }
+    const hydrateUser = async () => {
+      try {
+        const sb = createClient();
+        const { data } = await sb.auth.getUser();
+        if (data.user?.id) setUserId(data.user.id);
+      } catch {}
+    };
+    void hydrateUser();
+  }, [userIdProp]);
 
   useEffect(() => {
     // Always register the SW so offline + manifest work even without push
@@ -36,20 +97,25 @@ export default function PwaProvider({
   useEffect(() => {
     if (!userId) return;
 
-    // Listen for the first task completion event
-    const handleTaskDone = async () => {
-      const alreadyPrompted = localStorage.getItem(PROMPT_KEY);
-      if (alreadyPrompted) return;
-
-      const status = await getPushStatus();
-      if (status === "subscribed" || status === "denied" || status === "unsupported") return;
-
-      // Show our gentle in-app prompt (not the browser native dialog yet)
-      setShowPrompt(true);
+    // Handle first-task event and also delayed checks (reload/tab-switch).
+    const handleTaskDone = () => {
+      void evaluatePromptState();
     };
 
+    void evaluatePromptState();
+
     window.addEventListener("bm_task_completed", handleTaskDone);
-    return () => window.removeEventListener("bm_task_completed", handleTaskDone);
+    const visibilityHandler = () => {
+      if (document.visibilityState === "visible") {
+        void evaluatePromptState();
+      }
+    };
+    document.addEventListener("visibilitychange", visibilityHandler);
+
+    return () => {
+      window.removeEventListener("bm_task_completed", handleTaskDone);
+      document.removeEventListener("visibilitychange", visibilityHandler);
+    };
   }, [userId]);
 
   async function handleAccept() {
@@ -59,12 +125,29 @@ export default function PwaProvider({
     const permission = await requestPushPermission();
     if (permission === "granted") {
       await subscribeToPush(userId);
+      setShowForceEnable(false);
+      return;
+    }
+
+    if (permission === "denied") {
+      setShowForceEnable(true);
     }
   }
 
   function handleDecline() {
     localStorage.setItem(PROMPT_KEY, "1");
     setShowPrompt(false);
+  }
+
+  async function handleRecheckPermission() {
+    if (!userId) return;
+    const permission = await requestPushPermission();
+    if (permission === "granted") {
+      const ok = await subscribeToPush(userId);
+      if (ok) {
+        setShowForceEnable(false);
+      }
+    }
   }
 
   return (
@@ -114,6 +197,79 @@ export default function PwaProvider({
                   Not now
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showForceEnable && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 10000,
+            background: "rgba(0,0,0,0.65)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+          }}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: 460,
+              borderRadius: 16,
+              border: "1px solid var(--bm-border2)",
+              background: "var(--bm-bg3)",
+              padding: "18px 18px 16px",
+              boxShadow: "0 12px 40px rgba(0,0,0,0.45)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+              <span style={{ fontSize: 22 }}>🔒</span>
+              <div style={{ fontSize: 14, fontWeight: 600, color: "var(--bm-text)" }}>
+                Enable notifications to continue streak mode
+              </div>
+            </div>
+            <div style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.6, marginBottom: 12 }}>
+              Notifications are currently blocked in your browser. BuildMind requires notifications after your first completed task so you do not miss tomorrow's action and break your momentum.
+            </div>
+            <div style={{ fontSize: 11, color: "var(--bm-text4)", lineHeight: 1.5, marginBottom: 14 }}>
+              Open your browser notification settings, allow notifications for this site, then click "I've enabled notifications".
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                onClick={openBrowserNotificationSettings}
+                style={{
+                  flex: 1,
+                  padding: "9px 10px",
+                  borderRadius: 8,
+                  border: "1px solid var(--bm-border2)",
+                  background: "transparent",
+                  color: "var(--bm-text2)",
+                  fontSize: 12,
+                  cursor: "pointer",
+                }}
+              >
+                Open browser settings
+              </button>
+              <button
+                onClick={() => void handleRecheckPermission()}
+                style={{
+                  flex: 1,
+                  padding: "9px 10px",
+                  borderRadius: 8,
+                  border: "none",
+                  background: "rgba(139,131,232,.22)",
+                  color: "var(--bm-purple)",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                I've enabled notifications
+              </button>
             </div>
           </div>
         </div>

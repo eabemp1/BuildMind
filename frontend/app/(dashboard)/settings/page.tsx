@@ -5,7 +5,9 @@ import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import { ensureUserProfile, getCurrentUser } from "@/lib/buildmind";
 import { FEATURES } from "@/lib/features";
-import { getPlan, PLAN_NAMES, PLAN_PRICES, setStoredPlan } from "@/lib/plan";
+import { PLAN_NAMES, PLAN_PRICES, setStoredPlan, fetchAndSyncStoredPlanFromBillingStatus } from "@/lib/plan";
+import { usePlan } from "@/lib/usePlan";
+import PushNotificationToggle from "@/components/PushNotificationToggle";
 
 type Tab = "profile" | "account" | "notifications" | "ai" | "billing";
 
@@ -50,7 +52,7 @@ const CANCEL_REASONS = [
 ];
 
 function BillingTab() {
-  const [plan, setPlan] = useState(getPlan());
+  const { plan } = usePlan();
   const isPaid = plan !== "free";
   const [statusLoading, setStatusLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<"" | "pause" | "cancel">("");
@@ -70,14 +72,7 @@ function BillingTab() {
   useEffect(() => {
     const loadBilling = async () => {
       try {
-        const localPlan = getPlan();
-        const res = await fetch("/api/billing/status", { cache: "no-store" });
-        const payload = (await res.json().catch(() => null)) as { ok?: boolean; plan?: "free" | "builder" } | null;
-        if (res.ok && payload?.ok && payload.plan) {
-          const mergedPlan = payload.plan === "builder" || localPlan === "builder" ? "builder" : "free";
-          setPlan(mergedPlan);
-          setStoredPlan(mergedPlan);
-        }
+        await fetchAndSyncStoredPlanFromBillingStatus();
       } finally {
         setStatusLoading(false);
       }
@@ -101,7 +96,6 @@ function BillingTab() {
 
       if (mode === "cancel") {
         setStoredPlan("free");
-        setPlan("free");
       }
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Billing update failed.");
@@ -347,6 +341,7 @@ export default function SettingsPage() {
   const supabase = createClient();
   const [tab, setTab] = useState<Tab>("profile");
   const [email, setEmail] = useState("");
+  const [userId, setUserId] = useState("");
   const [fullName, setFullName] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
   const [avatarUploading, setAvatarUploading] = useState(false);
@@ -368,6 +363,7 @@ export default function SettingsPage() {
       try {
         const user = await getCurrentUser();
         if (!user) return;
+        setUserId(user.id);
         await ensureUserProfile(user);
         setEmail(user.email ?? "");
         setAvatarUrl((user.user_metadata?.avatar_url as string | undefined) ?? "");
@@ -521,6 +517,7 @@ export default function SettingsPage() {
       {tab === "notifications" && FEATURES.notifications && (
         <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
           <div style={{ ...card, display: "flex", flexDirection: "column", gap: 16 }}>
+            {userId && <PushNotificationToggle userId={userId} />}
             {[
               { label: "Milestone notifications", sub: "Get notified when you complete a milestone", val: notifyMilestone, set: setNotifyMilestone },
               { label: "Task reminders", sub: "Daily reminder to complete your action", val: notifyTask, set: setNotifyTask },

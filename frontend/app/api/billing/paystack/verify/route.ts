@@ -56,6 +56,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "Missing Paystack reference." }, { status: 400 });
   }
 
+  console.info("[Billing][Paystack Verify] Start", {
+    userId: user.id,
+    reference,
+  });
+
   const response = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {
     headers: {
       Authorization: `Bearer ${secretKey}`,
@@ -66,6 +71,12 @@ export async function POST(request: Request) {
 
   const payload = (await response.json().catch(() => null)) as PaystackVerifyResponse | null;
   if (!response.ok || !payload?.status) {
+    console.warn("[Billing][Paystack Verify] Provider verify failed", {
+      userId: user.id,
+      reference,
+      responseOk: response.ok,
+      message: payload?.message ?? null,
+    });
     return NextResponse.json(
       { ok: false, error: payload?.message ?? "Paystack verification failed." },
       { status: 400 },
@@ -75,17 +86,34 @@ export async function POST(request: Request) {
   const transaction = payload.data;
   const transactionStatus = transaction?.status?.toLowerCase();
   if (transactionStatus !== "success") {
+    console.warn("[Billing][Paystack Verify] Transaction not successful", {
+      userId: user.id,
+      reference,
+      transactionStatus,
+    });
     return NextResponse.json({ ok: false, error: "Payment is not successful yet." }, { status: 409 });
   }
 
   const paidAmount = Number(transaction?.amount ?? 0);
   if (paidAmount < expectedAmount()) {
+    console.warn("[Billing][Paystack Verify] Amount mismatch", {
+      userId: user.id,
+      reference,
+      paidAmount,
+      expectedAmount: expectedAmount(),
+    });
     return NextResponse.json({ ok: false, error: "Paid amount does not match the Builder plan." }, { status: 409 });
   }
 
   const paidEmail = transaction?.customer?.email?.trim().toLowerCase() ?? null;
   const userEmail = user.email?.trim().toLowerCase() ?? null;
   if (paidEmail && userEmail && paidEmail !== userEmail) {
+    console.warn("[Billing][Paystack Verify] Email mismatch", {
+      userId: user.id,
+      reference,
+      paidEmail,
+      userEmail,
+    });
     return NextResponse.json({ ok: false, error: "This payment belongs to a different account." }, { status: 409 });
   }
 
@@ -96,6 +124,12 @@ export async function POST(request: Request) {
     transactionId: transaction?.id != null ? String(transaction.id) : null,
     subscriptionId: transaction?.subscription != null ? String(transaction.subscription) : null,
     customerEmail: paidEmail ?? userEmail,
+  });
+
+  console.info("[Billing][Paystack Verify] Builder activated", {
+    userId: user.id,
+    reference,
+    transactionId: transaction?.id != null ? String(transaction.id) : null,
   });
 
   return NextResponse.json({ ok: true, plan: "builder" });

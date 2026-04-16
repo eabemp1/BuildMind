@@ -9,6 +9,7 @@ import BuildMindLoader from "@/components/BuildMindLoader";
 import { useLimitModal } from "@/components/LimitModal";
 import { updateAchievementStats, checkAndUnlockAchievements } from "@/lib/achievements";
 import PaywallGate from "@/components/PaywallGate";
+import { usePlan } from "@/lib/usePlan";
 
 // ─── Viz design tokens ────────────────────────────────────────────────────────
 const VIZ = {
@@ -141,7 +142,7 @@ export default function ReportPage() {
   const router = useRouter();
   const { showLimit } = useLimitModal();
   const { data: summaries = [], isLoading: summariesLoading } = useProjectSummariesQuery();
-  const [plan, setPlan] = useState<"free"|"builder"|"venture">("free");
+  const { plan } = usePlan();
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [generating, setGenerating] = useState(false);
   const [reasoning] = useState<string[]>([
@@ -161,12 +162,6 @@ export default function ReportPage() {
   }|null>(null);
 
   useEffect(() => { updateAchievementStats({ reportViewed:true }); setTimeout(()=>checkAndUnlockAchievements(),1000); },[]);
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const local = localStorage.getItem("bm_plan") as "free"|"builder"|"venture"|null;
-      setPlan(local&&["free","builder","venture"].includes(local)?local:"free");
-    }
-  },[]);
 
   const hasWeeklyReport = plan==="builder"||plan==="venture";
   const activeProjectId = selectedProjectId||summaries[0]?.id||"";

@@ -81,6 +81,31 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
 export const PLAN_PRICES: Record<Plan, string> = { free: "$0", builder: "$49", venture: "$49" };
 export const PLAN_NAMES:  Record<Plan, string> = { free: "Free", builder: "Builder", venture: "Builder" };
 
+let cachedPlan: Plan | null = null;
+
+function readStoredPlan(): Plan {
+  if (typeof window === "undefined") return "free";
+  const local = localStorage.getItem("bm_plan");
+  if (local) return normalizePlan(local);
+  const env = process.env.NEXT_PUBLIC_USER_PLAN;
+  return normalizePlan(env);
+}
+
+function emitPlanChange(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event("bm_plan_changed"));
+}
+
+export function subscribePlanChanges(listener: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener("bm_plan_changed", listener);
+  window.addEventListener("storage", listener);
+  return () => {
+    window.removeEventListener("bm_plan_changed", listener);
+    window.removeEventListener("storage", listener);
+  };
+}
+
 export const FEATURE_GATES: Record<string, Plan> = {
   // Venture-only feature (coming later). Keep gated even while core paywall is free+builder.
   ventures:         "venture",
@@ -104,12 +129,16 @@ export function normalizePlan(value: string | null | undefined): Plan {
 
 export function setStoredPlan(plan: Plan): void {
   if (typeof window === "undefined") return;
-  localStorage.setItem("bm_plan", normalizePlan(plan));
+  cachedPlan = normalizePlan(plan);
+  localStorage.setItem("bm_plan", cachedPlan);
+  emitPlanChange();
 }
 
 export function clearStoredPlan(): void {
   if (typeof window === "undefined") return;
+  cachedPlan = null;
   localStorage.removeItem("bm_plan");
+  emitPlanChange();
 }
 
 export function planFromUserMetadata(
@@ -138,10 +167,31 @@ export function syncStoredPlanFromUser(
 
 export function getPlan(): Plan {
   if (typeof window === "undefined") return "free";
-  const local = localStorage.getItem("bm_plan");
-  if (local) return normalizePlan(local);
-  const env = process.env.NEXT_PUBLIC_USER_PLAN;
-  return normalizePlan(env);
+  if (!cachedPlan) cachedPlan = readStoredPlan();
+  return cachedPlan;
+}
+
+type BillingStatusResponse = {
+  ok?: boolean;
+  plan?: string;
+};
+
+export async function fetchAndSyncStoredPlanFromBillingStatus(): Promise<Plan | null> {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const res = await fetch("/api/billing/status", { cache: "no-store" });
+    const payload = (await res.json().catch(() => null)) as BillingStatusResponse | null;
+    if (!res.ok || !payload?.ok || !payload.plan) return null;
+
+    const remote = normalizePlan(payload.plan);
+    const local = getPlan();
+    const merged = remote === "builder" || local === "builder" ? "builder" : "free";
+    setStoredPlan(merged);
+    return merged;
+  } catch {
+    return null;
+  }
 }
 
 export function canAccess(feature: string, plan?: Plan): boolean {
