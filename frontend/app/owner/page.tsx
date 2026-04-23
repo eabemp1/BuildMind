@@ -18,6 +18,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
+import { FEATURES } from "@/lib/features";
 import { setStoredPlan, type Plan, PLAN_LIMITS } from "@/lib/plan";
 import { getAchievementStats, updateAchievementStats, getTotalXP, checkAndUnlockAchievements, getUnlocked } from "@/lib/achievements";
 import { getFunnelSummary, getDropOffStep, getPageViews, getRecentEvents } from "@/lib/onboarding-analytics";
@@ -376,13 +377,13 @@ export default function OwnerPanel() {
                 { href: "/reflect", label: "🧠 Reflect" },
                 { href: "/overview", label: "🗺️ Overview" },
                 { href: "/projects", label: "📁 Projects" },
-                { href: "/ventures", label: "🏛️ Ventures" },
+                ...(FEATURES.ventures ? [{ href: "/ventures", label: "🏛️ Ventures" }] : []),
                 { href: "/ai-coach", label: "🤖 AI Coach" },
                 { href: "/break-my-startup", label: "💀 Break Startup" },
                 { href: "/reports", label: "📊 Reports" },
                 { href: "/startup-kit", label: "💡 Startup Kit" },
                 { href: "/achievements", label: "🏆 Achievements" },
-                { href: "/explore", label: "🔭 Explore" },
+                ...(FEATURES.publicProjects ? [{ href: "/explore", label: "🔭 Explore" }] : []),
                 { href: "/upgrade", label: "💳 Upgrade" },
                 { href: "/settings", label: "⚙️ Settings" },
                 { href: "/onboarding", label: "🚪 Onboarding" },

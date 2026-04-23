@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { FEATURES } from "@/lib/features";
 
 export const metadata: Metadata = {
   title: "Pricing | BuildMind",
@@ -39,7 +40,7 @@ const plans = [
       "Weekly AI strategy report",
       "Startup score and investor metrics",
       "Startup kit + landing generator",
-      "90-day roadmap tracks",
+      ...(FEATURES.ventures ? ["90-day roadmap tracks"] : []),
       "Full history and data export",
     ],
   },

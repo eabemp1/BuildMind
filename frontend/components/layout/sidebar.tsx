@@ -78,7 +78,7 @@ const NAV = [
   { href: "/overview",        label: "Overview",        icon: LayoutDashboard,enabled: true,                     primary: false, badge: null,       showDot: false },
   { href: "/reflect",         label: "Reflect",         icon: RefreshCw,      enabled: true,                     primary: true,  badge: null,       showDot: true  },
   { href: "/projects",        label: "Projects",        icon: FolderKanban,   enabled: true,                     primary: false, badge: null,       showDot: false },
-  { href: "/ventures",        label: "Roadmap Tracks",  icon: Map,            enabled: true,                     primary: false, badge: "New",      showDot: false },
+  { href: "/ventures",        label: "Roadmap Tracks",  icon: Map,            enabled: FEATURES.ventures,        primary: false, badge: "New",      showDot: false },
   { href: "/explore",         label: "Founder Feed",    icon: Globe,          enabled: FEATURES.publicProjects,  primary: false, badge: null,       showDot: false },
   { href: "/ai-coach",        label: "AI Coach",        icon: Bot,            enabled: FEATURES.aiCoach,         primary: false, badge: null,       showDot: false },
   { href: "/break-my-startup",label: "Break Startup",   icon: Flame,          enabled: FEATURES.breakMyStartup,  primary: false, badge: null,       showDot: false },
