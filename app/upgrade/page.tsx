@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { BrandMark } from "@/components/layout/logo";
+import { FEATURES } from "@/lib/features";
 
 const PAYSTACK_KEY = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY ?? "";
 const PAYSTACK_PLANS: Record<string, string> = {
@@ -190,13 +191,22 @@ function UpgradeContent() {
   const router = useRouter();
   const tasksCompleted = Number(params.get("tasks") ?? "2");
   const streak = Number(params.get("streak") ?? "1");
-  const initialPlan = params.get("plan") === "venture" ? "venture" : "builder";
+  const enabledPlans: Plan[] = FEATURES.ventures ? ["builder", "venture"] : ["builder"];
+  const planParam = params.get("plan");
+  const initialPlan: Plan = planParam === "venture" && FEATURES.ventures ? "venture" : "builder";
   const [selectedPlan, setSelectedPlan] = useState<Plan>(initialPlan);
   const [payMethod, setPayMethod] = useState<PaymentMethod>("auto");
   const [upgraded, setUpgraded] = useState(false);
   const [payError, setPayError] = useState("");
   const [showComparison, setShowComparison] = useState(false);
   const xp = Math.min(tasksCompleted * 15, 100);
+  const builderFeatureGroups = FEATURES.ventures
+    ? BUILDER_FEATURE_GROUPS
+    : BUILDER_FEATURE_GROUPS.map((group) => {
+        if (group.label !== "Project Intelligence") return group;
+        return { ...group, features: group.features.filter((f) => !f.title.toLowerCase().includes("roadmap")) };
+      });
+  const comparisonRows = FEATURES.ventures ? VS_FREE : VS_FREE.filter((row) => row.feature !== "Roadmap tracks");
 
   const handleSuccess = (plan: string) => { setUpgraded(true); setTimeout(() => router.push(`/dashboard?upgraded=${plan}`), 1000); };
 
@@ -240,7 +250,7 @@ function UpgradeContent() {
         {/* Plan toggle */}
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}
           style={{ display: "flex", gap: 6, padding: 4, borderRadius: 12, border: "1px solid var(--bm-border2)", background: "var(--bm-bg2)", marginBottom: 14 }}>
-          {(["builder", "venture"] as Plan[]).map((plan) => (
+          {enabledPlans.map((plan) => (
             <button key={plan} onClick={() => setSelectedPlan(plan)}
               style={{ flex: 1, padding: "8px 4px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 600, background: selectedPlan === plan ? "linear-gradient(135deg,#6366f1,#8b5cf6)" : "transparent", color: selectedPlan === plan ? "#fff" : "#555", transition: "all 0.15s" }}>
               {plan === "builder" ? "⚡ Builder" : "🚀 Venture"}
@@ -260,13 +270,15 @@ function UpgradeContent() {
                 {selectedPlan === "builder" && <span style={{ padding: "2px 8px", borderRadius: 99, background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.3)", fontSize: 10, color: "#a78bfa" }}>Popular</span>}
               </div>
               <p style={{ fontSize: 12, color: "var(--bm-text3)", marginBottom: 20 }}>
-                {selectedPlan === "builder" ? "Everything a solo founder needs — personalized to your actual startup" : "Full portfolio execution across all your ventures"}
+                {selectedPlan === "venture"
+                  ? "Full portfolio execution across all your ventures"
+                  : "Everything a solo founder needs — personalized to your actual startup"}
               </p>
             </motion.div>
           </AnimatePresence>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
-            {BUILDER_FEATURE_GROUPS.map((group, gi) => (
+            {builderFeatureGroups.map((group, gi) => (
               <motion.div key={group.label} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.15 + gi * 0.06 }}>
                 <div style={{ fontSize: 10, fontWeight: 700, color: group.color, fontFamily: "monospace", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
                   <div style={{ width: 5, height: 5, borderRadius: "50%", background: group.color, flexShrink: 0 }} />
@@ -286,7 +298,7 @@ function UpgradeContent() {
               </motion.div>
             ))}
 
-            {selectedPlan === "venture" && (
+            {FEATURES.ventures && selectedPlan === "venture" && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }}
                 style={{ borderRadius: 10, border: "1px solid rgba(167,139,250,0.2)", background: "rgba(167,139,250,0.05)", padding: "10px 12px" }}>
                 <div style={{ fontSize: 10, color: "#a78bfa", fontWeight: 600, marginBottom: 8, fontFamily: "monospace", textTransform: "uppercase", letterSpacing: "0.06em" }}>✦ Venture extras</div>
@@ -315,8 +327,8 @@ function UpgradeContent() {
                   <div style={{ fontSize: 10, color: "#444", fontWeight: 600 }}>Free</div>
                   <div style={{ fontSize: 10, color: "#818cf8", fontWeight: 600 }}>Builder</div>
                 </div>
-                {VS_FREE.map((row, i) => (
-                  <div key={row.feature} style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1.3fr", gap: 6, padding: "9px 12px", borderBottom: i < VS_FREE.length - 1 ? "1px solid rgba(255,255,255,0.03)" : "none", alignItems: "start" }}>
+                {comparisonRows.map((row, i) => (
+                  <div key={row.feature} style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1.3fr", gap: 6, padding: "9px 12px", borderBottom: i < comparisonRows.length - 1 ? "1px solid rgba(255,255,255,0.03)" : "none", alignItems: "start" }}>
                     <div style={{ fontSize: 11, color: "var(--bm-text2)", fontWeight: 500 }}>{row.feature}</div>
                     <div style={{ fontSize: 10, color: "#555", fontFamily: "monospace" }}>{row.free}</div>
                     <div style={{ fontSize: 10, color: "#818cf8", fontFamily: "monospace", fontWeight: 600 }}>{row.builder}</div>
@@ -367,5 +379,5 @@ function UpgradeContent() {
 }
 
 export default function UpgradePage() {
-  return <Suspense fallback={<div style={{ minHeight: "100vh" }} />>}<UpgradeContent /></Suspense>;
+  return <Suspense fallback={<div style={{ minHeight: "100vh" }} />}><UpgradeContent /></Suspense>;
 }

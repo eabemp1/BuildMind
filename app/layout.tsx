@@ -1,7 +1,8 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import Providers from "@/components/providers";
 import PwaProvider from "@/components/PwaProvider";
+import { FEATURES } from "@/lib/features";
 
 // ─── SEO METADATA ──────────────────────────────────────────────────────────
 // Domain: buildmind.live (GitHub Student Developer Pack)
@@ -55,7 +56,6 @@ export const metadata: Metadata = {
     apple: "/favicon.svg",
   },
   manifest: "/manifest.json",
-  themeColor: "#0a0a0f",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
@@ -86,13 +86,15 @@ export const metadata: Metadata = {
     images: ["/logo/buildmind-og-image.svg"],
     creator: "@buildmind_os",
   },
-  alternates: {
-    canonical: "https://buildmind.live",
-  },
+  // canonical is set per-page via metadata.alternates in each page file
   verification: {
     // Add your Google Search Console verification token here
     // google: "YOUR_GOOGLE_VERIFICATION_TOKEN",
   },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0C0D0F",
 };
 
 // ─── STRUCTURED DATA (JSON-LD) ─────────────────────────────────────────────
@@ -148,14 +150,18 @@ const jsonLd = [
     url: "https://buildmind.live",
     name: "BuildMind",
     description: "Daily action engine for founders",
-    potentialAction: {
-      "@type": "SearchAction",
-      target: {
-        "@type": "EntryPoint",
-        urlTemplate: "https://buildmind.live/explore?q={search_term_string}",
-      },
-      "query-input": "required name=search_term_string",
-    },
+    ...(FEATURES.publicProjects
+      ? {
+          potentialAction: {
+            "@type": "SearchAction",
+            target: {
+              "@type": "EntryPoint",
+              urlTemplate: "https://buildmind.live/explore?q={search_term_string}",
+            },
+            "query-input": "required name=search_term_string",
+          },
+        }
+      : {}),
   },
   {
     "@context": "https://schema.org",
@@ -208,10 +214,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
           />
         ))}
-        {/* Canonical domain */}
-        <link rel="canonical" href="https://buildmind.live" />
+        {/* Per-page canonical tags are set via metadata.alternates.canonical in each page */}
         {/* Performance */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=DM+Serif+Display:ital@0;1&display=swap" />
         <link rel="dns-prefetch" href="https://api.anthropic.com" />
         {/* Icons */}
         <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=3" />
@@ -219,7 +226,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="apple-touch-icon" href="/favicon.svg?v=3" />
         {/* Theme */}
         <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f2f3f9" />
-        <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a0a0f" />
+        <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0C0D0F" />
         <meta name="color-scheme" content="light dark" />
         {/* Mobile */}
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />

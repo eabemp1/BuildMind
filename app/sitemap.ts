@@ -1,57 +1,67 @@
 import { MetadataRoute } from "next";
+import { FEATURES } from "@/lib/features";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const base = "https://buildmind.live";
   const now = new Date();
 
-  return [
+  const items: MetadataRoute.Sitemap = [
+    // Homepage — highest priority
     {
       url: base,
       lastModified: now,
-      changeFrequency: "weekly",
+      changeFrequency: "daily",
       priority: 1.0,
     },
+    // Public content pages — indexable
     {
-      url: `${base}/students`,
-      lastModified: now,
-      changeFrequency: "monthly",
-      priority: 0.85,
-    },
-    {
-      url: `${base}/landing`,
+      url: `${base}/try`,
       lastModified: now,
       changeFrequency: "weekly",
-      priority: 0.9,
-    },
-    {
-      url: `${base}/auth/signup`,
-      lastModified: now,
-      changeFrequency: "monthly",
-      priority: 0.8,
-    },
-    {
-      url: `${base}/auth/login`,
-      lastModified: now,
-      changeFrequency: "monthly",
-      priority: 0.7,
+      priority: 0.85,
     },
     {
       url: `${base}/upgrade`,
       lastModified: now,
       changeFrequency: "weekly",
-      priority: 0.7,
+      priority: 0.8,
     },
     {
-      url: `${base}/explore`,
+      url: `${base}/students`,
       lastModified: now,
-      changeFrequency: "daily",
-      priority: 0.6,
+      changeFrequency: "monthly",
+      priority: 0.75,
     },
+    // Auth — included for discoverability but low priority
     {
-      url: `${base}/try`,
+      url: `${base}/auth/signup`,
       lastModified: now,
       changeFrequency: "monthly",
       priority: 0.6,
     },
+    // Legal
+    {
+      url: `${base}/legal/terms`,
+      lastModified: now,
+      changeFrequency: "monthly",
+      priority: 0.3,
+    },
+    {
+      url: `${base}/legal/privacy`,
+      lastModified: now,
+      changeFrequency: "monthly",
+      priority: 0.3,
+    },
   ];
+
+  if (FEATURES.publicProjects) {
+    items.splice(1, 0, {
+      url: `${base}/explore`,
+      lastModified: now,
+      changeFrequency: "daily",
+      priority: 0.9,
+    });
+  }
+
+  return items;
 }
