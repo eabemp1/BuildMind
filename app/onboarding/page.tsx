@@ -135,7 +135,7 @@ function OnboardingContent() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   // Reflexion Strike — fires in background after step 1 to prove value immediately
-  const [strikeResult, setStrikeResult] = useState<{ market_gap: string; first_task: string } | null>(null);
+  const [strikeResult, setStrikeResult] = useState<{ marketGap: string; firstTask: string } | null>(null);
   const [strikeLoading, setStrikeLoading] = useState(false);
 
   function fireReflexionStrike(ideaText: string) {
@@ -143,7 +143,7 @@ function OnboardingContent() {
     fetch("/api/ai/reflexion-strike", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ idea: ideaText }),
+      body: JSON.stringify({ startupDescription: ideaText, stage: startupStage, domain }),
     })
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(json => { if (json?.data) setStrikeResult(json.data); })
@@ -251,9 +251,9 @@ function OnboardingContent() {
                       <div style={{ fontSize: 12, color: "var(--bm-text3)" }}>Analysing market gap…</div>
                     ) : strikeResult ? (
                       <>
-                        <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: "0 0 8px", lineHeight: 1.55 }}>{strikeResult.market_gap}</p>
-                        {strikeResult.first_task && (
-                          <div style={{ fontSize: 12, color: "#a78bfa", fontWeight: 600 }}>→ First validated task: {strikeResult.first_task}</div>
+                        <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: "0 0 8px", lineHeight: 1.55 }}>{strikeResult.marketGap}</p>
+                        {strikeResult.firstTask && (
+                          <div style={{ fontSize: 12, color: "#a78bfa", fontWeight: 600 }}>→ First validated task: {strikeResult.firstTask}</div>
                         )}
                       </>
                     ) : null}

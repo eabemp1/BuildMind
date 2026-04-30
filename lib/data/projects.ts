@@ -351,9 +351,8 @@ export async function createProjectWithRoadmap(params: {
   await ensureUserProfile(user);
   const supabase = createClient();
 
-  let { data: createdProject, error: projectError } = await supabase
-    .from("projects")
-    .insert({
+  const projectPayloads = [
+    {
       user_id: user.id,
       title: params.project_name,
       description: params.idea_description,
@@ -363,28 +362,56 @@ export async function createProjectWithRoadmap(params: {
       validation_strengths: [],
       validation_weaknesses: [],
       validation_suggestions: [],
-    })
-    .select("*")
-    .single();
+    },
+    {
+      user_id: user.id,
+      title: params.project_name,
+      description: params.idea_description,
+      target_users: params.target_users,
+      problem: params.problem,
+      startup_stage: params.startup_stage ?? "Idea",
+    },
+    {
+      user_id: user.id,
+      title: params.project_name,
+      description: params.idea_description,
+    },
+    {
+      user_id: user.id,
+      name: params.project_name,
+      description: params.idea_description,
+    },
+  ];
 
-  if (projectError && projectError.message?.includes("validation_")) {
-    const fallback = await supabase
+  let createdProject: Record<string, unknown> | null = null;
+  let projectError: unknown = null;
+
+  for (const payload of projectPayloads) {
+    const result = await supabase
       .from("projects")
-      .insert({
-        user_id: user.id,
-        title: params.project_name,
-        description: params.idea_description,
-        target_users: params.target_users,
-        problem: params.problem,
-        startup_stage: params.startup_stage ?? "Idea",
-      })
+      .insert(payload)
       .select("*")
       .single();
-    createdProject = fallback.data;
-    projectError = fallback.error;
+
+    if (!result.error && result.data) {
+      createdProject = result.data as Record<string, unknown>;
+      projectError = null;
+      break;
+    }
+
+    projectError = result.error;
+    const message = result.error?.message?.toLowerCase() ?? "";
+    if (
+      !message.includes("schema cache") &&
+      !message.includes("could not find") &&
+      !message.includes("column") &&
+      !message.includes("null value")
+    ) {
+      break;
+    }
   }
 
-  if (projectError) throw projectError;
+  if (!createdProject) throw projectError;
 
   try {
     await fetch("/api/ai/generate-roadmap", {

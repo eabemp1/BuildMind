@@ -11,7 +11,8 @@ import { runReflexionStrike } from "@/lib/reflexion";
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
-    const { startupDescription, stage = "Idea", domain = "" } = body;
+    const startupDescription = body.startupDescription ?? body.idea ?? "";
+    const { stage = "Idea", domain = "" } = body;
 
     if (!startupDescription?.trim()) {
       return NextResponse.json({ ok: false, error: "startupDescription required" }, { status: 400 });
