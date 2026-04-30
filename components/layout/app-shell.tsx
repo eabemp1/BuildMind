@@ -112,8 +112,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             animate={{ opacity: 1, y: 0 }}
             exit={reduceMotion ? { opacity: 1 } : { opacity: 0, y: -4 }}
             transition={reduceMotion ? { duration: 0 } : { duration: 0.18, ease: [0.4, 0, 0.2, 1] }}
-            className="flex-1 overflow-y-auto"
-            style={{ padding: "28px 32px" }}
+            className="flex-1 overflow-y-auto px-4 py-5 sm:px-8 sm:py-7"
           >
             <div style={{ maxWidth: 1440, margin: "0 auto" }}>{children}</div>
           </motion.main>

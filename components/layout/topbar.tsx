@@ -108,7 +108,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
   };
 
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12, height: "100%", padding: "0 20px" }}>
+    <div className="flex h-full items-center gap-2 px-3 sm:gap-3 sm:px-5">
 
       {/* Mobile menu toggle */}
       <button
@@ -128,7 +128,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
       </button>
 
       {/* Search */}
-      <div style={{ position: "relative", flex: 1 }} ref={searchRef}>
+      <div className="relative hidden min-[440px]:block min-w-0 flex-1" ref={searchRef}>
         <div style={{ position: "relative", maxWidth: 520 }}>
           <Search
             size={13}
@@ -218,7 +218,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
       </div>
 
       {/* Right controls */}
-      <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
         <NotificationBell />
 
         {/* Avatar menu */}

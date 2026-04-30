@@ -17,21 +17,21 @@ import { Card } from "@/components/ui/card";
 function DashboardMockup() {
   return (
     <div
-      className="relative rounded-2xl overflow-hidden border border-[var(--bm-border2)] shadow-[0_32px_80px_rgba(0,0,0,0.6)]"
+      className="relative overflow-hidden rounded-xl border border-[var(--bm-border2)] shadow-[0_18px_48px_rgba(0,0,0,0.45)] sm:rounded-2xl sm:shadow-[0_32px_80px_rgba(0,0,0,0.6)]"
       style={{ background: "var(--bm-bg2)" }}
     >
       {/* Topbar */}
       <div
-        className="flex items-center gap-2 px-4 py-3 border-b border-[var(--bm-border)]"
+        className="flex items-center gap-2 border-b border-[var(--bm-border)] px-3 py-3 sm:px-4"
         style={{ background: "var(--bm-bg)" }}
       >
-        <div className="flex gap-1.5">
-          <span className="w-3 h-3 rounded-full bg-[#FF5F57] opacity-80" />
-          <span className="w-3 h-3 rounded-full bg-[#FFBD2E] opacity-80" />
-          <span className="w-3 h-3 rounded-full bg-[#28C840] opacity-80" />
+        <div className="hidden gap-1.5 min-[380px]:flex">
+          <span className="h-3 w-3 rounded-full bg-[#FF5F57] opacity-80" />
+          <span className="h-3 w-3 rounded-full bg-[#FFBD2E] opacity-80" />
+          <span className="h-3 w-3 rounded-full bg-[#28C840] opacity-80" />
         </div>
         <div
-          className="flex-1 mx-4 h-5 rounded-md text-[9px] flex items-center px-2"
+          className="flex h-7 min-w-0 flex-1 items-center rounded-md px-3 text-[11px] sm:mx-4 sm:h-5 sm:text-[9px]"
           style={{ background: "var(--bm-bg3)", color: "var(--bm-text3)" }}
         >
           buildmind.live/overview
@@ -39,15 +39,15 @@ function DashboardMockup() {
       </div>
 
       {/* Content */}
-      <div className="p-5 flex flex-col gap-4">
+      <div className="flex flex-col gap-4 p-4 sm:p-5">
         {/* Header */}
         <div>
-          <p className="text-[10px] text-[var(--bm-text3)] uppercase tracking-widest">Good morning</p>
-          <h4 className="text-sm font-semibold text-[var(--bm-text)]">BuildMind Dashboard</h4>
+          <p className="text-[10px] uppercase tracking-widest text-[var(--bm-text3)]">Good morning</p>
+          <h4 className="text-base font-semibold text-[var(--bm-text)] sm:text-sm">BuildMind Dashboard</h4>
         </div>
 
         {/* Metric row */}
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-1 gap-2 min-[430px]:grid-cols-3">
           {[
             { label: "Score", val: "82" },
             { label: "Projects", val: "3" },
@@ -55,18 +55,18 @@ function DashboardMockup() {
           ].map((m) => (
             <div
               key={m.label}
-              className="rounded-lg p-2.5 flex flex-col gap-1"
+              className="flex flex-row items-center justify-between gap-3 rounded-lg p-3 min-[430px]:flex-col min-[430px]:items-start min-[430px]:justify-start min-[430px]:gap-1 min-[430px]:p-2.5"
               style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)" }}
             >
-              <span className="text-[9px] text-[var(--bm-text3)] uppercase tracking-widest">{m.label}</span>
-              <span className="text-base font-bold text-[var(--bm-text)]">{m.val}</span>
+              <span className="text-[10px] uppercase tracking-widest text-[var(--bm-text3)] min-[430px]:text-[9px]">{m.label}</span>
+              <span className="text-lg font-bold text-[var(--bm-text)] min-[430px]:text-base">{m.val}</span>
             </div>
           ))}
         </div>
 
         {/* Project card */}
         <div
-          className="rounded-xl p-3 flex items-center gap-3"
+          className="flex items-center gap-3 rounded-xl p-3.5 sm:p-3"
           style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)" }}
         >
           {/* Score ring */}
@@ -90,7 +90,7 @@ function DashboardMockup() {
           </div>
 
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-medium text-[var(--bm-text)] truncate">AI onboarding assistant</p>
+            <p className="truncate text-sm font-medium text-[var(--bm-text)] sm:text-xs">AI onboarding assistant</p>
             <div className="flex items-center gap-1.5 mt-1.5">
               <div className="flex-1 h-1.5 rounded-full" style={{ background: "var(--bm-bg4)" }}>
                 <motion.div
@@ -101,14 +101,14 @@ function DashboardMockup() {
                   transition={{ duration: 0.9, delay: 0.7, ease: "easeOut" }}
                 />
               </div>
-              <span className="text-[9px] text-[var(--bm-text3)]">82%</span>
+              <span className="text-[10px] text-[var(--bm-text3)] sm:text-[9px]">82%</span>
             </div>
           </div>
         </div>
 
         {/* AI nudge */}
         <div
-          className="rounded-lg p-3 text-[10px] leading-relaxed"
+          className="rounded-lg p-3 text-xs leading-relaxed sm:text-[10px]"
           style={{
             background: "rgba(92,200,138,0.05)",
             border: "1px solid var(--bm-accent-bd)",
@@ -273,7 +273,7 @@ function BreakMyStartupSection() {
 
   return (
     <section
-      className="py-24 px-4"
+      className="px-5 py-16 sm:px-6 sm:py-24"
       style={{ background: "var(--bm-bg2)", borderTop: "1px solid var(--bm-border)" }}
     >
       <div className="max-w-3xl mx-auto">
@@ -286,10 +286,10 @@ function BreakMyStartupSection() {
         >
           <div>
             <Badge variant="danger" dot className="mb-4">Stress-Test Your Idea</Badge>
-            <h2 className="text-4xl font-bold text-[var(--bm-text)] tracking-tight mb-3">
+            <h2 className="mb-3 text-3xl font-bold tracking-tight text-[var(--bm-text)] sm:text-4xl">
               What's the biggest risk threatening your startup right now?
             </h2>
-            <p className="text-[var(--bm-text2)] text-lg leading-relaxed">
+            <p className="text-base leading-relaxed text-[var(--bm-text2)] sm:text-lg">
               Paste your idea, product, or business model. Our AI will identify your top
               vulnerabilities — brutally, honestly, constructively.
             </p>
@@ -300,7 +300,7 @@ function BreakMyStartupSection() {
               value={idea}
               onChange={(e) => setIdea(e.target.value)}
               placeholder="Describe your startup idea or current model — what you're building, who it's for, how you make money..."
-              className="w-full h-36 rounded-xl p-4 text-sm resize-none outline-none transition-all duration-150 focus:ring-1"
+              className="h-44 w-full resize-none rounded-xl p-4 text-base outline-none transition-all duration-150 focus:ring-1 sm:h-36 sm:text-sm"
               style={{
                 background: "var(--bm-bg3)",
                 border: "1px solid var(--bm-border2)",
@@ -321,7 +321,7 @@ function BreakMyStartupSection() {
               loading={loading}
               disabled={!idea.trim()}
               size="lg"
-              className="self-start"
+              className="w-full self-start sm:w-auto"
             >
               {!loading && <AlertTriangle size={16} />}
               Break My Startup →
@@ -443,7 +443,7 @@ export default function LandingPage() {
     >
       {/* Navbar */}
       <nav
-        className="sticky top-0 z-50 flex items-center justify-between px-6 h-16"
+        className="sticky top-0 z-50 flex h-16 items-center justify-between gap-3 px-4 sm:px-6"
         style={{
           background: "rgba(15,15,16,0.85)",
           backdropFilter: "blur(12px)",
@@ -464,54 +464,57 @@ export default function LandingPage() {
           <a href="#break" className="hover:text-[var(--bm-text)] transition-colors">Stress-Test</a>
         </div>
 
-        <div className="flex items-center gap-3">
-          <Link href="/auth/login">
+        <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+          <Link href="/auth/login" className="hidden sm:block">
             <Button variant="ghost" size="sm">Log in</Button>
           </Link>
           <Link href="/auth/login">
-            <Button size="sm">Get Started →</Button>
+            <Button size="sm">
+              <span className="sm:hidden">Start</span>
+              <span className="hidden sm:inline">Get Started →</span>
+            </Button>
           </Link>
         </div>
       </nav>
 
       {/* Hero */}
-      <section className="flex-1 px-4 pt-24 pb-32">
-        <div className="max-w-7xl mx-auto grid md:grid-cols-2 gap-16 items-center">
+      <section className="flex-1 px-5 pb-16 pt-14 sm:px-6 sm:pb-24 sm:pt-20 lg:pb-32">
+        <div className="mx-auto grid max-w-7xl items-center gap-10 md:grid-cols-2 lg:gap-16">
           {/* Left */}
           <motion.div
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
-            className="flex flex-col gap-6"
+            className="flex flex-col gap-5 sm:gap-6"
           >
             <Badge variant="gradient" size="md">AI Founder Operating System</Badge>
 
-            <h1 className="text-5xl font-bold tracking-tight leading-[1.1]">
+            <h1 className="text-4xl font-bold leading-[1.08] tracking-tight sm:text-5xl lg:text-6xl">
               Stop planning.
               <br />
               <span className="gradient-text">Start building.</span>
             </h1>
 
-            <p className="text-lg text-[var(--bm-text2)] leading-relaxed max-w-lg">
+            <p className="max-w-xl text-base leading-relaxed text-[var(--bm-text2)] sm:text-lg">
               BuildMind turns your ideas into executable systems — with milestones, scores,
               AI coaching, and accountability built in.
             </p>
 
-            <div className="flex flex-wrap gap-3">
-              <Link href="/auth/login">
-                <Button size="lg">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+              <Link href="/auth/login" className="w-full sm:w-auto">
+                <Button size="lg" className="w-full sm:w-auto">
                   Start Building Free
                   <ArrowRight size={16} />
                 </Button>
               </Link>
-              <Button size="lg" variant="secondary" onClick={() => setDemoOpen(true)}>
+              <Button size="lg" variant="secondary" onClick={() => setDemoOpen(true)} className="w-full sm:w-auto">
                 <Play size={14} />
                 Watch 2-min Demo
               </Button>
             </div>
 
             {/* Social proof pills */}
-            <div className="flex flex-wrap gap-2 pt-2">
+            <div className="grid grid-cols-1 gap-2 pt-1 min-[430px]:grid-cols-3 sm:flex sm:flex-wrap sm:pt-2">
               {[
                 { label: "Founders building", val: stats.founders },
                 { label: "Projects launched", val: stats.projects },
@@ -519,7 +522,7 @@ export default function LandingPage() {
               ].map((s) => (
                 <div
                   key={s.label}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs"
+                  className="flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-xs sm:justify-start sm:rounded-full sm:py-1.5"
                   style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)" }}
                 >
                   <span className="font-semibold text-[var(--bm-text)]">{s.val.toLocaleString()}</span>
@@ -534,7 +537,7 @@ export default function LandingPage() {
             initial={{ opacity: 0, scale: 0.97 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.7, delay: 0.15 }}
-            className="relative"
+            className="relative mt-2 md:mt-0"
           >
             {/* Ambient glow */}
             <div
@@ -552,18 +555,18 @@ export default function LandingPage() {
       </section>
 
       {/* Feature Grid */}
-      <section id="features" className="py-24 px-4" style={{ borderTop: "1px solid var(--bm-border)" }}>
+      <section id="features" className="px-5 py-16 sm:px-6 sm:py-24" style={{ borderTop: "1px solid var(--bm-border)" }}>
         <div className="max-w-6xl mx-auto">
           <motion.div
             initial={{ opacity: 0, y: 12 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            className="text-center mb-14"
+            className="mb-10 text-left sm:mb-14 sm:text-center"
           >
-            <h2 className="text-3xl font-bold tracking-tight mb-3">
+            <h2 className="mb-3 text-3xl font-bold tracking-tight sm:text-3xl">
               Everything a founder needs. Nothing they don't.
             </h2>
-            <p className="text-[var(--bm-text2)]">
+            <p className="text-base leading-relaxed text-[var(--bm-text2)]">
               Built for first-time and repeat founders who execute, not just plan.
             </p>
           </motion.div>
@@ -599,7 +602,7 @@ export default function LandingPage() {
       {/* How It Works */}
       <section
         id="how-it-works"
-        className="py-24 px-4"
+        className="px-5 py-16 sm:px-6 sm:py-24"
         style={{ background: "var(--bm-bg2)", borderTop: "1px solid var(--bm-border)" }}
       >
         <div className="max-w-4xl mx-auto">
@@ -607,12 +610,12 @@ export default function LandingPage() {
             initial={{ opacity: 0, y: 12 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            className="text-center mb-14"
+            className="mb-10 text-left sm:mb-14 sm:text-center"
           >
-            <h2 className="text-3xl font-bold tracking-tight mb-3">From idea to execution in minutes</h2>
+            <h2 className="mb-3 text-3xl font-bold tracking-tight">From idea to execution in minutes</h2>
           </motion.div>
 
-          <div className="relative flex flex-col md:flex-row items-start gap-0 md:gap-0">
+          <div className="relative flex flex-col items-stretch gap-4 md:flex-row md:items-start md:gap-0">
             {/* Connecting line */}
             <div
               className="hidden md:block absolute top-10 left-0 right-0 h-px"
@@ -642,16 +645,16 @@ export default function LandingPage() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: i * 0.12 }}
-                className="flex-1 flex flex-col items-center text-center gap-3 px-6 py-4"
+                className="flex-1 rounded-xl px-0 py-2 text-left sm:px-6 sm:py-4 sm:text-center"
               >
                 <div
-                  className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white relative z-10"
+                  className="relative z-10 mb-3 flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold text-white sm:mx-auto"
                   style={{ background: "var(--grad-primary)" }}
                 >
                   {s.step}
                 </div>
                 <h3 className="font-semibold text-[var(--bm-text)]">{s.title}</h3>
-                <p className="text-sm text-[var(--bm-text3)] leading-relaxed max-w-xs">{s.desc}</p>
+                <p className="mt-1 max-w-none text-sm leading-relaxed text-[var(--bm-text3)] sm:mx-auto sm:max-w-xs">{s.desc}</p>
               </motion.div>
             ))}
           </div>
@@ -665,7 +668,7 @@ export default function LandingPage() {
 
       {/* Final CTA */}
       <section
-        className="py-24 px-4 text-center"
+        className="px-5 py-16 text-center sm:px-6 sm:py-24"
         style={{ background: "var(--grad-primary)" }}
       >
         <motion.div
@@ -674,7 +677,7 @@ export default function LandingPage() {
           viewport={{ once: true }}
           className="max-w-xl mx-auto flex flex-col gap-5"
         >
-          <h2 className="text-4xl font-bold tracking-tight text-white">
+          <h2 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
             Your competitors are already moving. Are you?
           </h2>
           <p className="text-white/70 text-lg">Start free. No credit card required.</p>
