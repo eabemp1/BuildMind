@@ -6,7 +6,8 @@ export default defineConfig({
     environment: "node",
     globals: true,
     setupFiles: ["__tests__/setup.ts"],
-    exclude: ["e2e/**", "node_modules/**"],
+    include: ["__tests__/**/*.test.{ts,tsx}"],
+    exclude: ["e2e/**", "node_modules/**", ".next/**", ".tmp_*/**", "buildmind_v4/**"],
     coverage: {
       reporter: ["text", "lcov"],
       include: [

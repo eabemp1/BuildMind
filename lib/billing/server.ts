@@ -4,7 +4,7 @@ import { normalizePlan, type Plan } from "@/lib/plan";
 export type PublicPlan = Extract<Plan, "free" | "builder">;
 
 type BillingUpdate = {
-  provider?: "paystack" | "paddle";
+  provider?: "paystack";
   status?: "active" | "canceled" | "processing" | "free";
   reference?: string | null;
   transactionId?: string | null;
@@ -24,9 +24,6 @@ export function getBillingEnvStatus() {
     supabaseServiceRoleKey: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
     paystackPublicKey: Boolean(process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY),
     paystackSecretKey: Boolean(process.env.PAYSTACK_SECRET_KEY),
-    paddleClientToken: Boolean(process.env.NEXT_PUBLIC_PADDLE_CLIENT_TOKEN),
-    paddlePriceBuilder: Boolean(process.env.NEXT_PUBLIC_PADDLE_PRICE_BUILDER),
-    paddleWebhookSecret: Boolean(process.env.PADDLE_WEBHOOK_SECRET),
     groqApiKey: Boolean(process.env.GROQ_API_KEY),
     posthogKey: Boolean(process.env.NEXT_PUBLIC_POSTHOG_KEY),
   };

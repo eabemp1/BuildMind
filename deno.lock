@@ -1,0 +1,55 @@
+{
+  "version": "5",
+  "redirects": {
+    "https://esm.sh/@supabase/phoenix@^0.4.0?target=denonext": "https://esm.sh/@supabase/phoenix@0.4.0?target=denonext",
+    "https://esm.sh/@supabase/supabase-js@2": "https://esm.sh/@supabase/supabase-js@2.105.0",
+    "https://esm.sh/iceberg-js@^0.8.1?target=denonext": "https://esm.sh/iceberg-js@0.8.1?target=denonext"
+  },
+  "remote": {
+    "https://esm.sh/@supabase/auth-js@2.105.0/denonext/auth-js.mjs": "23e41e8fd784aba44bb56e669db9e60e1829bf39588e5069f620bdb9a10b02aa",
+    "https://esm.sh/@supabase/functions-js@2.105.0/denonext/functions-js.mjs": "cf7ecf84079c1d1098f7bab35206466e82ab4677c03e5a4d138bcee53e38a1dd",
+    "https://esm.sh/@supabase/phoenix@0.4.0/denonext/phoenix.mjs": "d9187057b2e3276d1110b9d814f737d4f8eff7f8b2765c4aa6bf7c7c30d070c9",
+    "https://esm.sh/@supabase/phoenix@0.4.0?target=denonext": "c1df3cfcdcf13e9cfddf86181efbdd8d4099b9a2682188b74106596277a69d16",
+    "https://esm.sh/@supabase/postgrest-js@2.105.0/denonext/postgrest-js.mjs": "9a1203f9a118396d83fad229de4e285fba1d044c440cb855968b0649a5f254be",
+    "https://esm.sh/@supabase/realtime-js@2.105.0/denonext/realtime-js.mjs": "6eeedab7e53a2b60fc1da513c421efc64179785bb789a1409431b1715168f02d",
+    "https://esm.sh/@supabase/storage-js@2.105.0/denonext/storage-js.mjs": "9bfe27195da6a37f5da131b06acec4803207a0abf67114176dc23b09f027cd9b",
+    "https://esm.sh/@supabase/supabase-js@2.105.0": "80c6d1a78550118b8efa14ad8549036196e4f5272dbc02a18f85b14d5a759d1d",
+    "https://esm.sh/@supabase/supabase-js@2.105.0/denonext/supabase-js.mjs": "a94a5e9d03cd76b7d7058a79284831d8dd6bb04155cc7bc3f0e684f6aa4c2d85",
+    "https://esm.sh/iceberg-js@0.8.1/denonext/iceberg-js.mjs": "d839d81a2e3966500ca2cdd0c1cb458e9608bacfc91f7bb67a69b2e878dcdb4f",
+    "https://esm.sh/iceberg-js@0.8.1?target=denonext": "58c849d7fe2bf4eca4a84eb501e83c161a7d8c34ca1bec15a962b3bec3062633",
+    "https://esm.sh/tslib@2.8.1/denonext/tslib.mjs": "c38da5dd6da6281964435002ce204cd586634fe3bdfb24a0ee116f48cf3292e9"
+  },
+  "workspace": {
+    "packageJson": {
+      "dependencies": [
+        "npm:@playwright/test@^1.44.0",
+        "npm:@supabase/ssr@~0.5.2",
+        "npm:@supabase/supabase-js@^2.57.0",
+        "npm:@tanstack/react-query@^5.90.21",
+        "npm:@types/node@22.9.0",
+        "npm:@types/react-dom@18.3.1",
+        "npm:@types/react@18.3.12",
+        "npm:@types/web-push@^3.6.4",
+        "npm:@vitest/coverage-v8@^1.6.1",
+        "npm:autoprefixer@10.4.20",
+        "npm:axios@^1.13.6",
+        "npm:clsx@^2.1.1",
+        "npm:framer-motion@^12.35.2",
+        "npm:lucide-react@0.577",
+        "npm:next@^15.5.7",
+        "npm:postcss@8.4.49",
+        "npm:posthog-js@^1.360.1",
+        "npm:react-dom@18.3.1",
+        "npm:react@18.3.1",
+        "npm:recharts@^3.7.0",
+        "npm:tailwind-merge@^2.6.0",
+        "npm:tailwindcss@3.4.15",
+        "npm:typescript@5.6.3",
+        "npm:vitest@^1.6.1",
+        "npm:wait-on@^7.2.0",
+        "npm:web-push@3.6.7",
+        "npm:zod@^4.3.6"
+      ]
+    }
+  }
+}

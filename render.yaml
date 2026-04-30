@@ -1,26 +1,101 @@
-services:
-  - type: web
-    name: evoltrain-backend
-    runtime: python
-    plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
-    envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: evoltrain-db
-          property: connectionString
-      - key: JWT_SECRET
-        sync: false
-      - key: SECRET_KEY
-        sync: false
-      - key: GROQ_API_KEY
-        sync: false
-      - key: FRONTEND_ORIGINS
-        value: https://YOUR_VERCEL_DOMAIN
+# ═══════════════════════════════════════════════════════════════════
+#  render.yaml — BuildMind infrastructure on Render (FREE TIER)
+#
+#  WHY RENDER INSTEAD OF VERCEL CRONS:
+#  Vercel cron jobs require a Pro plan ($20/mo).
+#  Render's free tier includes cron jobs at no cost.
+#
+#  Setup:
+#  1. Push this repo to GitHub
+#  2. Connect to Render → New → Blueprint
+#  3. Set these env vars in Render dashboard:
+#     APP_URL=https://buildmind.live
+#     CRON_SECRET=<same value as your Next.js CRON_SECRET>
+#
+#  The cron calls /api/push/send-daily on your Next.js app daily at 6am UTC.
+# ═══════════════════════════════════════════════════════════════════
 
-databases:
-  - name: evoltrain-db
+services:
+  # ── Daily push notification cron (replaces Vercel cron) ─────────
+  - type: cron
+    name: buildmind-daily-push
+    runtime: node
     plan: free
-    databaseName: evoltrain
-    user: evoltrain
+    schedule: "0 6 * * *"   # 6:00 AM UTC daily
+    buildCommand: echo "No build needed"
+    startCommand: >
+      node -e "
+      const https = require('https');
+      const url = new URL(process.env.APP_URL + '/api/push/send-daily');
+      const options = {
+        hostname: url.hostname,
+        port: 443,
+        path: url.pathname,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-cron-secret': process.env.CRON_SECRET
+        }
+      };
+      const req = https.request(options, res => {
+        let body = '';
+        res.on('data', d => body += d);
+        res.on('end', () => {
+          console.log('[BuildMind Cron] Status:', res.statusCode);
+          console.log('[BuildMind Cron] Response:', body);
+          process.exit(res.statusCode === 200 ? 0 : 1);
+        });
+      });
+      req.on('error', e => {
+        console.error('[BuildMind Cron] Error:', e.message);
+        process.exit(1);
+      });
+      req.end();
+      "
+    envVars:
+      - key: APP_URL
+        value: https://buildmind.live
+      - key: CRON_SECRET
+        sync: false   # set in Render dashboard
+
+  # ── Weekly report cron ───────────────────────────────────────────
+  - type: cron
+    name: buildmind-weekly-report
+    runtime: node
+    plan: free
+    schedule: "0 7 * * 5"   # 7:00 AM UTC every Friday
+    buildCommand: echo "No build needed"
+    startCommand: >
+      node -e "
+      const https = require('https');
+      const url = new URL(process.env.APP_URL + '/api/ai/weekly-report');
+      const options = {
+        hostname: url.hostname,
+        port: 443,
+        path: url.pathname,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-cron-secret': process.env.CRON_SECRET
+        }
+      };
+      const req = https.request(options, res => {
+        let body = '';
+        res.on('data', d => body += d);
+        res.on('end', () => {
+          console.log('[BuildMind Weekly] Status:', res.statusCode);
+          console.log('[BuildMind Weekly] Response:', body);
+          process.exit(res.statusCode === 200 ? 0 : 1);
+        });
+      });
+      req.on('error', e => {
+        console.error('[BuildMind Weekly] Error:', e.message);
+        process.exit(1);
+      });
+      req.end();
+      "
+    envVars:
+      - key: APP_URL
+        value: https://buildmind.live
+      - key: CRON_SECRET
+        sync: false

@@ -6,9 +6,6 @@
 - SUPABASE_SERVICE_ROLE_KEY
 - NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY
 - PAYSTACK_SECRET_KEY
-- PADDLE_API_KEY
-- NEXT_PUBLIC_PADDLE_CLIENT_TOKEN
-- NEXT_PUBLIC_PADDLE_PRICE_BUILDER
 
 ## Required webhook endpoints
 - Paystack webhook URL:
@@ -24,7 +21,7 @@
    - billing_status
    - billing_updated_at
 4. Trigger webhook test and confirm downgrades/cancellations sync to plan=free.
-5. For Paddle, confirm /api/billing/paddle/verify works with a completed transaction id.
+5. Confirm production uses the Paystack checkout and webhook endpoints only.
 
 ## Notes
 - The frontend no longer grants Builder by localStorage only; server verification is required.

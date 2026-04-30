@@ -1,3 +1,18 @@
+# BuildMind — local development stack
+#
+# The project is a monorepo:
+#   . (root)         Next.js 15 frontend  → port 3000
+#   . (root)         FastAPI backend       → port 8000
+#   postgres:15      Database              → port 5433
+#
+# Usage:
+#   cp .env.docker.example .env.docker   # fill in your keys
+#   docker compose up
+#
+# Note: backend and frontend share the same source tree.
+#       The root Dockerfile builds the Next.js app.
+#       Dockerfile.backend builds the FastAPI app.
+
 services:
   backend:
     build:
@@ -15,11 +30,13 @@ services:
       - db
     volumes:
       - .:/app
+      - /app/__pycache__
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   frontend:
     build:
-      context: ./frontend
+      context: .
+      dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000/api/v1}
         NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
@@ -28,8 +45,6 @@ services:
         NEXT_PUBLIC_POSTHOG_HOST: ${NEXT_PUBLIC_POSTHOG_HOST:-https://app.posthog.com}
         NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY: ${NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY:-}
         NEXT_PUBLIC_PAYSTACK_PLAN_BUILDER: ${NEXT_PUBLIC_PAYSTACK_PLAN_BUILDER:-}
-        NEXT_PUBLIC_PADDLE_CLIENT_TOKEN: ${NEXT_PUBLIC_PADDLE_CLIENT_TOKEN:-}
-        NEXT_PUBLIC_PADDLE_PRICE_BUILDER: ${NEXT_PUBLIC_PADDLE_PRICE_BUILDER:-}
         NEXT_PUBLIC_ADMIN_USER_ID: ${NEXT_PUBLIC_ADMIN_USER_ID:-}
     ports:
       - "3000:3000"
@@ -38,7 +53,7 @@ services:
     depends_on:
       - backend
     volumes:
-      - ./frontend:/app
+      - .:/app
       - /app/node_modules
       - /app/.next
     command: npm run dev

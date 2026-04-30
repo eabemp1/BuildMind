@@ -63,7 +63,7 @@ export default function TermsPage() {
 
           <Section title="5. Subscriptions and Payments">
             <p>Paid plans are billed on a recurring monthly or annual basis. By subscribing, you authorise us to charge your payment method on a recurring basis.</p>
-            <p>Payments are processed by third-party providers (Paddle or Paystack). Your payment information is transmitted directly to these processors and is not stored on our servers.</p>
+            <p>Payments are processed by Paystack. Your payment information is transmitted directly to Paystack and is not stored on our servers.</p>
             <p>All fees are stated in US dollars and are exclusive of applicable taxes, which will be added at checkout where required by law.</p>
           </Section>
 
@@ -107,7 +107,7 @@ export default function TermsPage() {
           </Section>
 
           <Section title="12. Third-Party Services">
-            <p>The Service integrates with third-party services including Supabase (database), Anthropic (AI), Paddle and Paystack (payments), and others. Your use of these services is subject to their respective terms and privacy policies. We are not responsible for the practices of third-party services.</p>
+            <p>The Service integrates with third-party services including Supabase (database), Anthropic (AI), Paystack (payments), and others. Your use of these services is subject to their respective terms and privacy policies. We are not responsible for the practices of third-party services.</p>
           </Section>
 
           <Section title="13. Disclaimer of Warranties">

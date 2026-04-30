@@ -52,7 +52,7 @@ export default function PrivacyPage() {
               <li><strong>Account data</strong> — name, email address, and password when you register</li>
               <li><strong>Profile data</strong> — startup name, stage, industry, and goals you enter during onboarding</li>
               <li><strong>Project data</strong> — tasks, milestones, reflections, and notes you create in the Service</li>
-              <li><strong>Payment data</strong> — billing information collected by our payment processors (Paddle, Paystack); we do not store full card numbers</li>
+              <li><strong>Payment data</strong> — billing information collected by Paystack; we do not store full card numbers</li>
               <li><strong>Communications</strong> — messages you send us via email or in-app support</li>
             </ul>
             <p><strong>Information collected automatically:</strong></p>
@@ -88,7 +88,7 @@ export default function PrivacyPage() {
           <Section title="5. Sharing Your Information">
             <p>We share your information only in the following circumstances:</p>
             <ul>
-              <li><strong>Service providers</strong> — Supabase (database hosting), Anthropic (AI inference), Paddle and Paystack (payment processing), and infrastructure providers. These parties process data on our behalf under confidentiality obligations.</li>
+              <li><strong>Service providers</strong> — Supabase (database hosting), Anthropic (AI inference), Paystack (payment processing), and infrastructure providers. These parties process data on our behalf under confidentiality obligations.</li>
               <li><strong>Legal requirements</strong> — if required by law, court order, or government authority</li>
               <li><strong>Business transfers</strong> — in the event of a merger, acquisition, or sale of assets, your data may be transferred to the successor entity</li>
               <li><strong>With your consent</strong> — for example, if you opt in to the public Founder Feed, your displayed name and action summary become visible to other users</li>

@@ -35,7 +35,7 @@ GROQ_API_KEY=                  ← from console.groq.com/keys
 ```
 
 Everything else is optional for local testing. Payments won't process
-locally without Paystack/Paddle keys, but all AI features and auth work.
+locally without Paystack keys, but all AI features and auth work.
 
 If you've already deployed to Vercel, pull your keys directly:
 ```bash
@@ -60,14 +60,11 @@ weekly report, urgency signals, co-founder pulse — everything.
 
 ## Run the database migration (first time only)
 
-The app expects a few Supabase tables (founder memory, push subscriptions, explore feed).
-Run these SQL files once
+The founder memory feature needs one new table. Run this SQL once
 in your Supabase SQL editor (supabase.com → your project → SQL Editor):
 
 ```
 Copy and paste the contents of:
-supabase/migrations/20260419201000_feed_events.sql
-supabase/migrations/20260419202000_push_subscriptions.sql
 supabase/migrations/20260419203000_founder_memory.sql
 ```
 

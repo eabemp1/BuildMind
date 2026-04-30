@@ -1,0 +1,141 @@
+name: Frontend CI
+
+on:
+  push:
+    branches: ["main", "develop"]
+    paths:
+      - "app/**"
+      - "components/**"
+      - "lib/**"
+      - "__tests__/**"
+      - "e2e/**"
+      - "public/**"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.json"
+      - "next.config.mjs"
+      - "vitest.config.ts"
+      - "playwright.config.ts"
+      - ".github/workflows/frontend-ci.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "app/**"
+      - "components/**"
+      - "lib/**"
+      - "__tests__/**"
+      - "package.json"
+      - "tsconfig.json"
+
+concurrency:
+  group: frontend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Unit tests (Vitest) ────────────────────────────────────────────────────
+  unit:
+    name: Unit tests (Vitest)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests with coverage
+        run: npm run test:coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: coverage/
+          retention-days: 7
+
+  # ── TypeScript type-check ──────────────────────────────────────────────────
+  typecheck:
+    name: TypeScript
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - name: Type-check (tsc --noEmit)
+        run: npx tsc --noEmit
+
+  # ── ESLint ─────────────────────────────────────────────────────────────────
+  lint:
+    name: Lint (ESLint)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - run: npm run lint
+
+  # ── Build check ────────────────────────────────────────────────────────────
+  build:
+    name: Next.js build
+    runs-on: ubuntu-latest
+
+    env:
+      # Stub all required build-time env vars so next build doesn't abort
+      NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000/api/v1
+      NEXT_PUBLIC_POSTHOG_KEY: placeholder
+      NEXT_PUBLIC_POSTHOG_HOST: https://app.posthog.com
+      NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY: placeholder
+      NEXT_PUBLIC_PAYSTACK_PLAN_BUILDER: placeholder
+      NEXT_PUBLIC_PADDLE_CLIENT_TOKEN: placeholder
+      NEXT_PUBLIC_PADDLE_PRICE_BUILDER: placeholder
+      NEXT_PUBLIC_ADMIN_USER_ID: placeholder
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build
+        run: npm run build
+
+  # ── Security audit ─────────────────────────────────────────────────────────
+  audit:
+    name: Security audit (npm)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - name: Audit (high severity only)
+        run: npm audit --audit-level=high

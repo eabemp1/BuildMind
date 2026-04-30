@@ -1,62 +1,89 @@
-# BuildMind — Changes Applied
+# BuildMind v5 — Cleanup & Hardening Changelog
 
-## v4 — Identity & Causality Loop (this zip)
+## Route conflict fixes
 
-### What's wired that wasn't before
+### `/overview` route collision (critical)
+- **Removed** `app/overview/page.tsx` — this standalone page had its own inline
+  navigation with no AppShell/sidebar. It competed with
+  `app/(dashboard)/overview/page.tsx` for the same `/overview` URL in Next.js,
+  meaning users could randomly land on the wrong UI depending on build order.
+- **Canonical route** is now exclusively `app/(dashboard)/overview/page.tsx`,
+  which is correctly wrapped in AppShell with the sidebar and topbar.
 
-**1. `/reflect` — first-class Reflect page**
-- Outcome chips: Completed / Partly done / Got blocked / Learned something
-- Blocked type selector: tech / money / time / people
-- Freetext field with context-aware placeholder (changes based on outcome)
-- Confidence slider 1–5 with labels (Lost → Unstoppable)
-- Submits to `/api/ai/reflect-action` → gets personalised causality + next action
-- Falls back to local generation if AI unavailable
-- Writes to `localStorage.bm_last_reflect` + `bm_reflect_history` (30-entry log)
-- Done state shows causality strip + next action preview
-- Identity-reinforcing footer (streak-aware)
+### Dead duplicate UI components removed
+- **Removed** `components/sidebar.tsx` — duplicate of `components/layout/sidebar.tsx`.
+  Nothing in the codebase imported it (verified by grep across all `.tsx`/`.ts` files).
+- **Removed** `components/topbar.tsx` — duplicate of `components/layout/topbar.tsx`.
+  Same situation.
 
-**2. `/api/ai/reflect-action` — AI causality engine**
-- Takes outcome, note, confidence, stage, todayAction, streak
-- Generates: `causality` ("because you said X → tomorrow is Y"), `nextAction`, `identityLine`
-- If Supabase env present: reads project context, writes reflection to `reflections` table
-- Graceful fallback — never breaks the user flow
+## Directory cleanup
 
-**3. Sidebar — Reflect nav + notification dot**
-- `/reflect` added to NAV between Today and Overview
-- Uses `RefreshCw` icon
-- Orange pulsing dot appears when `bm_reflect_pending === "true"` (i.e. after completing today's action)
-- "NOW" badge replaces dot text when pending
-- Dot clears when user opens Reflect page
-- Tagline in logo area changed to "One decision. Already made."
-- 10s polling interval + storage event listener keeps dot state live
+### `backend/` subdirectory removed
+The `backend/` subdirectory contained its own `Dockerfile`, `requirements.txt`,
+and a single route file (`app/routes/break_startup.py`). This route was already
+superseded by the Next.js API route at `app/api/ai/break-my-startup/route.ts`.
+Keeping it created confusion about which backend handled which requests. Removed.
 
-**4. Today page — identity strip + causality strip**
-- Identity strip above stage pill: streak-aware line that changes who you are
-  - 0 days: "One decision. Already made."
-  - 1-2 days: "Day N. Keep going."
-  - 3-6 days: "You're someone who executes."
-  - 7-13 days: "Most founders quit here. You didn't."
-  - 14+ days: "You've outlasted 90% of founders who start."
-- Causality strip below identity: reads `bm_last_reflect.causality` and shows
-  "↺ Because you said X → today is Y" — only visible if reflection exists and action not yet done
-- `handleDone()` now writes:
-  - `bm_reflect_pending: "true"` → triggers sidebar dot
-  - `bm_today_action` → pre-fills reflect page with today's action context
-  - `bm_stage` → gives reflect API the stage for personalisation
+### `static/` directory removed
+`static/` held pre-built HTML/JS/CSS artifacts from the old Lumiere agent UI
+(a previous iteration of the product). The FastAPI main app never mounted a
+`StaticFiles` handler for `/static`, so these files were never actually served.
+They were dead build artifacts consuming space. Removed.
 
-### From v3 (preserved)
-- 5-step onboarding fully preserved
-- PaywallGate component preserved
-- All CSS token system (light/dark mode)
-- Startup Kit Generator (`/startup-kit`) — Builder plan
-- Weekly Share Card (`/weekly-share`) — free for all plans
-- ConsentLedger CTA throughout
-- All 35 component/page token overrides
+## Docker Compose fix
 
-### What still needs real backend wiring
-The causality is live-feeling now but `bm_last_reflect` is localStorage only.
-Full personalisation path: reflect → Supabase `reflections` table → next `/api/ai/today-action`
-call reads last reflection and generates a genuinely personalised action.
-The `reflect-action` route already writes to Supabase if env vars are set — the
-`today-action` route needs one additional query: `SELECT * FROM reflections WHERE user_id = ? ORDER BY created_at DESC LIMIT 1`
-and pass it into the AI prompt. That's the $19/month feature.
+`docker-compose.yml` had the frontend service pointing to `context: ./frontend/`,
+a directory that doesn't exist. The Next.js app lives at the project root (`.`).
+Fixed to `context: .` with `dockerfile: Dockerfile`.
+Also added explicit `ARG` pass-through so all `NEXT_PUBLIC_*` env vars reach
+the Next.js build step correctly.
+
+## Schema management
+
+### `_ensure_runtime_schema()` removed from `app/main.py`
+The ~120-line function that ran raw `ALTER TABLE` SQL on every server boot has
+been removed. Schema changes are now managed exclusively through Alembic.
+
+### Migration `0002_add_missing_columns.py` added
+`app/db/migrations/versions/0002_add_missing_columns.py` contains all the column
+additions and table creations that the old runtime function performed. It is
+idempotent (uses `IF NOT EXISTS` / column existence checks) so it is safe to
+run against both fresh databases and existing ones.
+
+To apply:
+```bash
+alembic upgrade head
+```
+
+## New files
+
+### `lib/server/planGuard.ts`
+Server-side plan enforcement for Next.js Route Handlers. Reads the user's plan
+from Supabase `user_metadata` (signed JWT, server-side) rather than from
+`localStorage`. Wrap any paid-tier API route with `withPlanGuard("venture", handler)`
+to prevent client-side bypass.
+
+Routes to protect (not yet wrapped — audit these):
+- `app/api/ventures/generate/route.ts` → `"venture"`
+- `app/api/cofounder/blueprint/route.ts` → `"venture"`
+- `app/api/ai/coach/route.ts` → `"builder"`
+- `app/api/ai/weekly-report/route.ts` → `"builder"`
+
+### `tests/test_scoring_logic.py`
+13 unit tests for `app/execution/scoring.py` covering:
+- Zero-state safety (no divide-by-zero on new users)
+- Task completion rate calculation (full and partial)
+- Weekly consistency with ISO week deduplication
+- Focus score with single and split milestone work
+- Feedback positivity ratio
+- Score weight validation (task_completion_rate = 30%)
+- `store_weekly_score` DB write and same-week upsert
+
+### `.github/workflows/frontend-ci.yml`
+Complements the existing `backend-ci.yml`. Runs on every push/PR touching
+frontend files:
+- **unit** — Vitest with coverage report artifact
+- **typecheck** — `tsc --noEmit`
+- **lint** — `next lint`
+- **build** — full `next build` with stubbed env vars
+- **audit** — `npm audit --audit-level=high`

@@ -22,7 +22,7 @@ See **START_HERE.md** for detailed setup instructions and troubleshooting.
 - **Frontend + API routes**: Next.js 15 (App Router)
 - **Auth + Database**: Supabase (Postgres)
 - **AI**: Groq (llama-3.3-70b-versatile) — free tier available
-- **Payments**: Paystack (Ghana/Africa) + Paddle (international, geo-detected)
+- **Payments**: Paystack
 - **Python backend**: FastAPI — optional, only needed for legacy analytics
 
 ## Key features
@@ -50,8 +50,6 @@ See `.env.local.example` for the full list.
 
 ```sql
 -- In Supabase SQL editor, run:
--- supabase/migrations/20260419201000_feed_events.sql
--- supabase/migrations/20260419202000_push_subscriptions.sql
 -- supabase/migrations/20260419203000_founder_memory.sql
 ```
 

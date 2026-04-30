@@ -39,32 +39,6 @@ async function verifyPaystack(reference: string): Promise<"builder" | "free" | "
   return "unknown";
 }
 
-async function verifyPaddle(transactionId: string): Promise<"builder" | "free" | "unknown"> {
-  const apiKey = process.env.PADDLE_API_KEY;
-  if (!apiKey) return "unknown";
-
-  const res = await fetch(
-    `https://api.paddle.com/transactions/${encodeURIComponent(transactionId)}`,
-    {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      cache: "no-store",
-    },
-  );
-
-  const payload = (await res.json().catch(() => null)) as
-    | { data?: { status?: string | null } | null }
-    | null;
-
-  if (!res.ok || !payload?.data) return "unknown";
-  const status = payload.data.status?.toLowerCase() ?? "";
-  if (["completed", "paid", "trialing", "active"].includes(status)) return "builder";
-  if (["canceled", "past_due", "failed"].includes(status)) return "free";
-  return "unknown";
-}
-
 export async function POST(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
@@ -95,28 +69,22 @@ export async function POST(req: NextRequest) {
       const provider = typeof meta.billing_provider === "string" ? meta.billing_provider : "";
       const currentPlan = typeof meta.plan === "string" ? meta.plan : "free";
       const reference = typeof meta.billing_reference === "string" ? meta.billing_reference : "";
-      const transactionId =
-        typeof meta.billing_transaction_id === "string" ? meta.billing_transaction_id : "";
 
-      if (provider !== "paystack" && provider !== "paddle") continue;
+      if (provider !== "paystack") continue;
 
       try {
         let providerPlan: "builder" | "free" | "unknown" = "unknown";
         if (provider === "paystack" && reference) {
           providerPlan = await verifyPaystack(reference);
         }
-        if (provider === "paddle" && transactionId) {
-          providerPlan = await verifyPaddle(transactionId);
-        }
 
         if (providerPlan === "unknown") continue;
         if (providerPlan === currentPlan) continue;
 
         await persistUserPlan(user.id, providerPlan, {
-          provider: provider as "paystack" | "paddle",
+          provider: "paystack",
           status: providerPlan === "builder" ? "active" : "canceled",
           reference: reference || null,
-          transactionId: transactionId || null,
           customerEmail: user.email?.toLowerCase() ?? null,
           meta: {
             billing_reconciled_at: new Date().toISOString(),

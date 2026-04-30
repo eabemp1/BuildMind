@@ -21,7 +21,7 @@ This is the complete, production-ready BuildMind frontend (v13). Drop it on top 
 | `app/today/page.tsx` | Updated to v13 — `computeScoreAfter` now delegates to `lib/scoring` instead of duplicating logic. |
 | `app/explore/page.tsx` | **Live data** — fetches from `feed_events` Supabase table on mount with graceful seed fallback. Shows `● live` indicator when real data loads. See SQL schema below. |
 | `app/(dashboard)/dashboard/page.tsx` | Removed stale `ConsentLedgerCTA` import. |
-| `__tests__/` | **NEW** — 57 passing tests covering scoring, stage inference, Paystack webhook, and Paddle verify. Zero test coverage → critical paths covered. |
+| `__tests__/` | **NEW** — tests covering scoring, stage inference, and Paystack webhook. |
 | `vitest.config.ts` | **NEW** — Vitest config with path aliases and coverage. |
 | `package.json` | Added `test`, `test:watch`, `test:coverage` scripts. Added `vitest` and `@vitest/coverage-v8` dev deps. |
 
@@ -43,8 +43,6 @@ NEXT_PUBLIC_API_BASE_URL          = https://your-backend.onrender.com/api/v1
 NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY   = pk_live_...
 NEXT_PUBLIC_PAYSTACK_PLAN_BUILDER = PLN_...
 NEXT_PUBLIC_PAYSTACK_AMOUNT_BUILDER = 29000
-NEXT_PUBLIC_PADDLE_CLIENT_TOKEN   = pdl_live_...   (if Paddle is enabled)
-NEXT_PUBLIC_PADDLE_PRICE_BUILDER  = pri_...       (if Paddle is enabled)
 NEXT_PUBLIC_POSTHOG_KEY           = phc_...       (optional)
 NEXT_PUBLIC_POSTHOG_HOST          = https://app.posthog.com
 NEXT_PUBLIC_ADMIN_USER_ID         = <optional admin UUID, only if you use admin views>
@@ -56,8 +54,6 @@ PAYSTACK_SECRET_KEY               = sk_live_...
 PAYSTACK_AMOUNT_BUILDER           = 29000
 SUPABASE_SERVICE_ROLE_KEY         = eyJ...
 GROQ_API_KEY                      = gsk_...      (if AI routes use it)
-PADDLE_API_KEY                    = pdl_live_... (if Paddle is enabled)
-PADDLE_WEBHOOK_SECRET             = whsec_...    (if Paddle is enabled)
 JWT_SECRET                        = <your-secret>
 SECRET_KEY                        = <your-secret>
 ```
@@ -79,10 +75,6 @@ SUPABASE_SERVICE_ROLE_KEY         = eyJ...   (server-side only — never NEXT_PU
 ```
 NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY   = pk_live_...
 PAYSTACK_SECRET_KEY               = sk_live_...       (webhook signature validation)
-
-NEXT_PUBLIC_PADDLE_CLIENT_TOKEN   = pdl_live_...
-PADDLE_API_KEY                    = pdl_live_...      (transaction verification)
-NEXT_PUBLIC_PADDLE_PRICE_BUILDER  = pri_...
 ```
 
 ### Optional
@@ -160,7 +152,6 @@ Test files:
 - `__tests__/lib/scoring.test.ts`    — 21 tests, pure functions, no mocking
 - `__tests__/lib/stages.test.ts`     — 29 tests, pure functions, no mocking  
 - `__tests__/billing/paystack-webhook.test.ts` — 14 tests, mocked Supabase
-- `__tests__/billing/paddle-verify.test.ts`    — 14 tests, mocked Supabase + fetch
 
 ---
 
@@ -238,7 +229,7 @@ npm run test:all          # unit tests + E2E in sequence
 |------|----------------|
 | `e2e/auth.spec.ts` | Login, redirect, session persistence, route protection |
 | `e2e/today.spec.ts` | Action card, outcome chips, score delta, causality strip |
-| `e2e/billing-paystack.spec.ts` | Paystack verify, Paddle verify, cancel flow |
+| `e2e/billing-paystack.spec.ts` | Paystack verify and cancel flow |
 | `e2e/explore.spec.ts` | Live/seed data loading, filters, outcome expand, live indicator |
 
 The billing tests mock the verify API endpoints so they run without real payment credentials. Remove the mocks and set `PAYSTACK_TEST_PUBLIC_KEY` to run against the real Paystack test environment.

@@ -112,9 +112,8 @@ export default function RefundPage() {
           </Section>
 
           <Section title="8. Payment Processors">
-            <p>Payments are processed by Paddle (for international users) or Paystack (for users in Africa). Refunds are issued through the same processor that handled the original payment. Processing times vary by provider:</p>
+            <p>Payments are processed by Paystack. Refunds are issued through Paystack to the original payment method.</p>
             <ul>
-              <li><strong>Paddle</strong>: 5–10 business days to appear on your statement</li>
               <li><strong>Paystack</strong>: 3–7 business days to appear on your statement</li>
             </ul>
             <p>We are not responsible for delays caused by your bank or card issuer.</p>
