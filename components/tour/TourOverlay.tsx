@@ -81,13 +81,6 @@ export const TOUR_STEPS: TourStep[] = [
     icon: "📋",
     position: "center",
   },
-  {
-    selector: "nav-startup-kit",
-    title: "Startup Kit (Builder)",
-    body: "Generate names, taglines, brand colours, and domain suggestions in 30 seconds. Remove naming paralysis before it kills momentum.",
-    icon: "💡",
-    position: "center",
-  },
 ];
 
 const STORAGE_KEY = "bm_tour_done_v2";

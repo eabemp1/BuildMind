@@ -24,7 +24,6 @@ const BUILDER_FEATURES = [
   "Full Break My Startup + competitor scan",
   "Weekly AI strategy report",
   "Startup score and investor metrics",
-  "Startup kit + landing generator",
   "90-day roadmap tracks",
   "Full history and data export",
   "Streak insurance (1 miss/month)",

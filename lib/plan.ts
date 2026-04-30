@@ -293,6 +293,7 @@ export function recordTaskCompletion(): void {
   if (typeof window === "undefined") return;
   localStorage.setItem(TASK_KEY, String(getTasksDone() + 1));
   recordWeeklyAction();
+  window.dispatchEvent(new CustomEvent("bm_task_completed"));
 }
 export function getTasksDone(): number {
   if (typeof window === "undefined") return 0;

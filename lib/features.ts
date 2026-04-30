@@ -11,7 +11,7 @@ export const FEATURES = {
   analytics:         true,
   startupCommunity:  false,
   breakMyStartup:    true,
-  startupKit:        true,
+  startupKit:        false,
   weeklyShare:       true,
 };
 export type FeatureKey = keyof typeof FEATURES;

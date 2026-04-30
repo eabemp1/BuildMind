@@ -22,14 +22,13 @@ const LIMIT_COPY: Record<LimitReason, { emoji: string; title: string; body: stri
   break_startup:{ emoji: "⚡", title: "Full analysis is a Builder feature.", body: "The real analysis — survival probability, all kill reasons, every survive reason — is Builder only. The preview you saw is a taste.", cta: "Unlock full analysis →" },
   today_action: { emoji: "🎯", title: "You've used your free actions for today.", body: "Free plan gives you 3 AI-powered actions per day. Builder removes all limits and adds AI coaching and weekly reports.", cta: "Unlock unlimited actions →" },
   weekly_report:{ emoji: "📋", title: "Weekly reports are a Builder feature.", body: "Every week: your intention vs action gap, momentum score, biggest blocker, and an honest assessment of where you're headed.", cta: "Unlock weekly reports →" },
-  generic:      { emoji: "🔒", title: "You've reached your free plan limit.", body: "Builder plan removes all limits — unlimited AI Coach, full Break My Startup analysis, weekly reports, startup kit, and everything else.", cta: "Upgrade to Builder →" },
+  generic:      { emoji: "🔒", title: "You've reached your free plan limit.", body: "Builder plan removes all limits — unlimited AI Coach, full Break My Startup analysis, weekly reports, and everything else.", cta: "Upgrade to Builder →" },
 };
 
 const BUILDER_BULLETS = [
   "Unlimited AI Coach — no daily caps",
   "Full Break My Startup analysis",
   "Weekly AI strategy report",
-  "Startup kit: names, domains, branding",
   "Unlimited projects and tasks",
 ];
 

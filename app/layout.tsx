@@ -129,7 +129,7 @@ const jsonLd = [
         name: "Builder",
         price: "19",
         priceCurrency: "USD",
-        description: "Unlimited actions, AI Coach, weekly reports, startup kit, and full Break My Startup analysis",
+        description: "Unlimited actions, AI Coach, weekly reports, and full Break My Startup analysis",
       },
     ],
     aggregateRating: {
@@ -183,7 +183,7 @@ const jsonLd = [
         name: "Is BuildMind free?",
         acceptedAnswer: {
           "@type": "Answer",
-          text: "Yes. BuildMind has a free tier with 3 AI messages per day. Builder plan ($19/month) unlocks unlimited actions, the AI Coach, weekly reports, startup kit generation, and full Break My Startup analysis.",
+          text: "Yes. BuildMind has a free tier with 3 AI messages per day. Builder plan ($19/month) unlocks unlimited actions, the AI Coach, weekly reports, and full Break My Startup analysis.",
         },
       },
       {

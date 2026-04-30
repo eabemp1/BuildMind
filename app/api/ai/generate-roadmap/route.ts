@@ -23,6 +23,91 @@ function normalizeStage(input: string): string {
   return "Idea";
 }
 
+async function insertMilestone(
+  supabase: ReturnType<typeof createAdminClient>,
+  payload: Record<string, unknown>,
+) {
+  const payloads = [
+    payload,
+    {
+      project_id: payload.project_id,
+      user_id: payload.user_id,
+      title: payload.title,
+      stage: payload.stage,
+      order_index: payload.order_index,
+      is_completed: payload.is_completed,
+    },
+    {
+      project_id: payload.project_id,
+      user_id: payload.user_id,
+      title: payload.title,
+      status: payload.is_completed ? "completed" : "pending",
+    },
+    {
+      project_id: payload.project_id,
+      title: payload.title,
+      status: payload.is_completed ? "completed" : "pending",
+    },
+  ];
+
+  for (const row of payloads) {
+    const result = await supabase.from("milestones").insert(row).select("id").single();
+    if (!result.error && result.data?.id) return result.data;
+    const message = result.error?.message?.toLowerCase() ?? "";
+    if (
+      !message.includes("schema cache") &&
+      !message.includes("could not find") &&
+      !message.includes("column") &&
+      !message.includes("null value")
+    ) {
+      throw result.error;
+    }
+  }
+
+  return null;
+}
+
+async function insertTasks(
+  supabase: ReturnType<typeof createAdminClient>,
+  rows: Array<Record<string, unknown>>,
+) {
+  if (!rows.length) return;
+
+  const attempts = [
+    rows,
+    rows.map((row) => ({
+      milestone_id: row.milestone_id,
+      user_id: row.user_id,
+      title: row.title,
+      is_completed: row.is_completed,
+    })),
+    rows.map((row) => ({
+      milestone_id: row.milestone_id,
+      title: row.title,
+      status: row.is_completed ? "completed" : "pending",
+    })),
+    rows.map((row) => ({
+      milestone_id: row.milestone_id,
+      description: row.title,
+      status: row.is_completed ? "completed" : "pending",
+    })),
+  ];
+
+  for (const attempt of attempts) {
+    const result = await supabase.from("tasks").insert(attempt);
+    if (!result.error) return;
+    const message = result.error.message?.toLowerCase() ?? "";
+    if (
+      !message.includes("schema cache") &&
+      !message.includes("could not find") &&
+      !message.includes("column") &&
+      !message.includes("null value")
+    ) {
+      throw result.error;
+    }
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
@@ -67,7 +152,11 @@ Generate a specific roadmap for this startup. Tasks must reference the actual pr
         const supabase = createAdminClient();
 
         // Set initial stage (user can choose a later stage)
-        await supabase.from("projects").update({ startup_stage: initialStage }).eq("id", projectId).eq("user_id", userId);
+        await supabase
+          .from("projects")
+          .update({ startup_stage: initialStage })
+          .eq("id", projectId)
+          .eq("user_id", userId);
 
         // Delete existing milestones for clean slate
         await supabase.from("milestones").delete().eq("project_id", projectId);
@@ -76,21 +165,25 @@ Generate a specific roadmap for this startup. Tasks must reference the actual pr
         const milestoneIds: Array<{ id: string; title: string; order_index: number }> = [];
         for (let i = 0; i < roadmap.length; i++) {
           const milestone = roadmap[i];
-          const { data: createdMilestone } = await supabase
-            .from("milestones")
-            .insert({ project_id: projectId, title: milestone.milestone, stage: milestone.milestone, order_index: i, is_completed: false })
-            .select("id")
-            .single();
+          const createdMilestone = await insertMilestone(supabase, {
+            project_id: projectId,
+            user_id: userId,
+            title: milestone.milestone,
+            stage: milestone.milestone,
+            order_index: i,
+            is_completed: false,
+          });
 
           if (createdMilestone?.id) {
             milestoneIds.push({ id: createdMilestone.id, title: milestone.milestone, order_index: i });
             const taskRows = (milestone.tasks ?? []).map((t) => ({
               milestone_id: createdMilestone.id,
+              user_id: userId,
               title: t,
               is_completed: false,
             }));
             if (taskRows.length) {
-              await supabase.from("tasks").insert(taskRows);
+              await insertTasks(supabase, taskRows);
             }
           }
         }
