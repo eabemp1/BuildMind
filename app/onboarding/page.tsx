@@ -155,6 +155,30 @@ function OnboardingContent() {
     setLoading(true);
     setError("");
     try {
+      if (typeof window !== "undefined" && localStorage.getItem("bm_dev_auth") === "1") {
+        const now = new Date().toISOString();
+        localStorage.setItem("bm_dev_project", JSON.stringify({
+          id: "00000000-0000-4000-8000-000000000001",
+          title: domain || idea || "Local test startup",
+          description: idea || "Local onboarding test project",
+          created_at: now,
+          industry: domain || null,
+          startup_stage: startupStage,
+          validation_score: 35,
+          execution_score: 20,
+          momentum_score: 50,
+          validation_strengths: [],
+          tasksCompleted: 0,
+          tasksTotal: 3,
+          progress: 0,
+          lastActivity: now,
+        }));
+        document.cookie = "bm_dev_onboarded=1; path=/; max-age=86400; samesite=lax";
+        trackFunnelStep("onboarding_complete");
+        router.push("/today?first_session=true");
+        return;
+      }
+
       const user = await getCurrentUser();
       if (!user) { router.replace("/auth/login"); return; }
       await createProjectWithRoadmap({

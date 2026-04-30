@@ -4,6 +4,9 @@ import { FEATURES } from "@/lib/features";
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
+  const devAuthEnabled = process.env.NODE_ENV !== "production" && process.env.DEV_AUTH_ENABLED === "1";
+  const isDevAuthed = devAuthEnabled && request.cookies.get("bm_dev_auth")?.value === "1";
+  const isDevOnboarded = isDevAuthed && request.cookies.get("bm_dev_onboarded")?.value === "1";
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -37,7 +40,7 @@ export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const todayKey = new Date().toISOString().slice(0, 10);
 
-  if (pathname === "/" && request.nextUrl.searchParams.has("code") && !user) {
+  if (pathname === "/" && request.nextUrl.searchParams.has("code") && !user && !isDevAuthed) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/auth/callback";
     if (!redirectUrl.searchParams.has("next")) {
@@ -119,12 +122,14 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  if (user && !isApiRoute) {
-    const metadataCompleted = user.user_metadata?.onboarding_completed === true;
-    const { count: projectCount } = await supabase
-      .from("projects")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", user.id);
+  if ((user || isDevAuthed) && !isApiRoute) {
+    const metadataCompleted = user?.user_metadata?.onboarding_completed === true;
+    const { count: projectCount } = user
+      ? await supabase
+          .from("projects")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", user.id)
+      : { count: isDevOnboarded ? 1 : 0 };
     const onboardingCompleted = metadataCompleted || (projectCount ?? 0) > 0;
 
     if (!onboardingCompleted && !isOnboardingRoute) {
@@ -149,19 +154,19 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  if (!user && !isPublicRoute && !isApiRoute) {
+  if (!user && !isDevAuthed && !isPublicRoute && !isApiRoute) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/auth/login";
     return NextResponse.redirect(redirectUrl);
   }
 
-  if (user && (pathname === "/" || isAuthRoute)) {
+  if ((user || isDevAuthed) && (pathname === "/" || isAuthRoute)) {
     const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = "/today";
+    redirectUrl.pathname = isDevAuthed && !isDevOnboarded ? "/onboarding" : "/today";
     return NextResponse.redirect(redirectUrl);
   }
 
-  if (user && pathname === "/today") {
+  if ((user || isDevAuthed) && pathname === "/today") {
     response.cookies.set("bm_today_seen", todayKey, {
       path: "/",
       sameSite: "lax",

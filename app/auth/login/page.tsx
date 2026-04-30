@@ -70,6 +70,19 @@ function LoginContent() {
 
     try {
       if (tab === "signin") {
+        const devAuth = await fetch("/api/dev-auth", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        }).catch(() => null);
+
+        if (devAuth?.ok) {
+          localStorage.setItem("bm_dev_auth", "1");
+          localStorage.setItem("bm_dev_email", email.trim().toLowerCase());
+          router.replace("/onboarding");
+          return;
+        }
+
         const { error: err } = await supabase.auth.signInWithPassword({ email, password });
         if (err) throw err;
         router.replace("/today");

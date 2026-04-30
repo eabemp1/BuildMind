@@ -15,6 +15,13 @@ function generateRefCode(uid: string): string {
   return uid.slice(0, 8).replace(/-/g, "");
 }
 
+function getLocalOrigin(): string {
+  if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+    return window.location.origin;
+  }
+  return "https://buildmind.live";
+}
+
 export default function InvitePage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [refCode, setRefCode] = useState<string | null>(null);
@@ -25,6 +32,13 @@ export default function InvitePage() {
   useEffect(() => {
     const load = async () => {
       try {
+        if (localStorage.getItem("bm_dev_auth") === "1") {
+          const email = localStorage.getItem("bm_dev_email") ?? "test@buildmind.local";
+          setUserId("local-dev-user");
+          setRefCode(generateRefCode(`local-${email}`));
+          return;
+        }
+
         const sb = createClient();
         const { data } = await sb.auth.getUser();
         if (data.user) {
@@ -37,7 +51,7 @@ export default function InvitePage() {
     load();
   }, []);
 
-  const refLink = refCode ? `https://buildmind.live/ref/${refCode}` : "Loading…";
+  const refLink = refCode ? `${getLocalOrigin()}/ref/${refCode}` : "Loading…";
   const currentMsg = MESSAGES[msgIdx].replace("{link}", refLink);
 
   function copyText(text: string, key: string) {

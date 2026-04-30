@@ -29,6 +29,20 @@ export function normalizeTextArray(input: unknown): string[] {
   return input.map((v) => String(v)).filter(Boolean);
 }
 
+function isLocalDevAuth(): boolean {
+  return typeof window !== "undefined" && localStorage.getItem("bm_dev_auth") === "1";
+}
+
+function getLocalDevProject(): ProjectSummary | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem("bm_dev_project");
+    return raw ? (JSON.parse(raw) as ProjectSummary) : null;
+  } catch {
+    return null;
+  }
+}
+
 function isInvalidRefreshToken(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const maybeError = error as { code?: unknown; message?: unknown; status?: unknown };
@@ -41,6 +55,14 @@ function isInvalidRefreshToken(error: unknown): boolean {
 }
 
 export async function getCurrentUser() {
+  if (isLocalDevAuth()) {
+    return {
+      id: "00000000-0000-4000-8000-000000000000",
+      email: localStorage.getItem("bm_dev_email") ?? "test@buildmind.local",
+      user_metadata: { onboarding_completed: true },
+    };
+  }
+
   const supabase = createClient();
   const { data, error } = await supabase.auth.getUser();
   if (error) {
@@ -105,6 +127,31 @@ export async function markOnboardingComplete(userId: string): Promise<void> {
 }
 
 export async function getProjectsForCurrentUser(): Promise<BuildMindProject[]> {
+  if (isLocalDevAuth()) {
+    const project = getLocalDevProject();
+    if (!project) return [];
+    return [{
+      id: project.id,
+      user_id: "00000000-0000-4000-8000-000000000000",
+      title: project.title,
+      description: project.description,
+      industry: project.industry ?? null,
+      target_market: null,
+      problem_type: null,
+      revenue_model: null,
+      startup_stage: project.startup_stage ?? "Idea",
+      validation_score: project.validation_score ?? 35,
+      execution_score: project.execution_score ?? 20,
+      momentum_score: project.momentum_score ?? 50,
+      target_users: null,
+      problem: null,
+      validation_strengths: project.validation_strengths,
+      validation_weaknesses: [],
+      validation_suggestions: [],
+      created_at: project.created_at,
+    }];
+  }
+
   const user = await getCurrentUser();
   if (!user) return [];
   const supabase = createClient();
@@ -123,6 +170,11 @@ export async function getProjectsForCurrentUser(): Promise<BuildMindProject[]> {
 }
 
 export async function getProjectSummaries(): Promise<ProjectSummary[]> {
+  if (isLocalDevAuth()) {
+    const project = getLocalDevProject();
+    return project ? [project] : [];
+  }
+
   const user = await getCurrentUser();
   if (!user) return [];
   const supabase = createClient();
