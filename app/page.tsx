@@ -34,7 +34,7 @@ function DashboardMockup() {
           className="flex-1 mx-4 h-5 rounded-md text-[9px] flex items-center px-2"
           style={{ background: "var(--bm-bg3)", color: "var(--bm-text3)" }}
         >
-          app.buildmind.co/overview
+          buildmind.live/overview
         </div>
       </div>
 
@@ -49,9 +49,9 @@ function DashboardMockup() {
         {/* Metric row */}
         <div className="grid grid-cols-3 gap-2">
           {[
-            { label: "Score", val: "--" },
-            { label: "Projects", val: "--" },
-            { label: "Streak", val: "--" },
+            { label: "Score", val: "82" },
+            { label: "Projects", val: "3" },
+            { label: "Streak", val: "12d" },
           ].map((m) => (
             <div
               key={m.label}
@@ -85,23 +85,23 @@ function DashboardMockup() {
               />
             </svg>
             <div className="absolute inset-0 flex items-center justify-center">
-              <span className="text-[9px] font-bold text-[var(--bm-accent)]">--</span>
+              <span className="text-[9px] font-bold text-[var(--bm-accent)]">82</span>
             </div>
           </div>
 
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-medium text-[var(--bm-text)] truncate">Your first startup</p>
+            <p className="text-xs font-medium text-[var(--bm-text)] truncate">AI onboarding assistant</p>
             <div className="flex items-center gap-1.5 mt-1.5">
               <div className="flex-1 h-1.5 rounded-full" style={{ background: "var(--bm-bg4)" }}>
                 <motion.div
                   className="h-full rounded-full"
                   style={{ background: "var(--grad-primary)" }}
                   initial={{ width: 0 }}
-                  animate={{ width: "40%" }}
+                  animate={{ width: "82%" }}
                   transition={{ duration: 0.9, delay: 0.7, ease: "easeOut" }}
                 />
               </div>
-              <span className="text-[9px] text-[var(--bm-text3)]">40%</span>
+              <span className="text-[9px] text-[var(--bm-text3)]">82%</span>
             </div>
           </div>
         </div>
@@ -116,7 +116,7 @@ function DashboardMockup() {
           }}
         >
           <span style={{ color: "var(--bm-accent)", fontWeight: 600 }}>AI Coach: </span>
-          "You're making progress. Define your next milestone to keep momentum."
+          "Strong validation signal. Ship the demo to 5 more founders before adding features."
         </div>
       </div>
     </div>
