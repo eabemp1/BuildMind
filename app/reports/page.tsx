@@ -73,7 +73,20 @@ function StatCard({ label, value, sub, trend, sparkData, color }: { label: strin
   );
 }
 
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 767px)");
+    const update = () => setIsMobile(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+  return isMobile;
+}
+
 export default function ReportsPage() {
+  const isMobile = useIsMobile();
   const { plan } = usePlan();
   const queryClient = useQueryClient();
   const { data: summaries = [], isLoading } = useProjectSummariesQuery();
@@ -109,22 +122,22 @@ export default function ReportsPage() {
 
   return (
     <PaywallGate feature="weeklyReport">
-      <div style={{ maxWidth: 860, margin: "0 auto", padding: "28px 24px" }}>
+      <div style={{ maxWidth: 980, margin: "0 auto", padding: isMobile ? "4px 0 24px" : "28px 24px" }}>
 
         {/* Header */}
-        <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 24 }}>
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+        <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: isMobile ? 20 : 24 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexDirection: isMobile ? "column" : "row", flexWrap: "wrap", gap: 14 }}>
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-                <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em", margin: 0 }}>Weekly Report</h1>
+                <h1 style={{ fontSize: isMobile ? 28 : 22, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em", margin: 0 }}>Weekly Report</h1>
                 <span style={{ fontSize: 9, padding: "2px 8px", borderRadius: 20, background: "var(--bm-accent-dim)", color: "var(--bm-accent)", border: "1px solid var(--bm-accent-bd)", fontWeight: 700 }}>BUILDER</span>
               </div>
-              <p style={{ fontSize: 12, color: "var(--bm-text3)", margin: 0 }}>
+              <p style={{ fontSize: isMobile ? 14 : 12, color: "var(--bm-text3)", margin: 0 }}>
                 {new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })} · {project?.title ?? "Your startup"}
               </p>
             </div>
             <button
-              style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 16px", borderRadius: 10, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text2)", fontSize: 12, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}
+              style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 7, padding: "11px 16px", borderRadius: 10, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text2)", fontSize: 12, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s", width: isMobile ? "100%" : "auto" }}
               onMouseEnter={e => { e.currentTarget.style.background = "var(--bm-bg3)"; }}
               onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
               <Download size={12} /> Export PDF
@@ -133,19 +146,19 @@ export default function ReportsPage() {
         </motion.div>
 
         {/* Metrics row */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)", gap: 12, marginBottom: 16 }}>
           <StatCard label="Startup Score" value={score} sub={scoreDelta ? `+${scoreDelta} this week` : "No change this week"} trend={scoreDelta ? "up" : "neutral"} sparkData={weeklyScores} color="var(--bm-accent)" />
           <StatCard label="Tasks Done" value={taskData.reduce((a, b) => a + b, 0)} sub={`${taskDelta >= 0 ? "+" : ""}${taskDelta} vs last week`} trend={taskDelta >= 0 ? "up" : "down"} sparkData={taskData} color="#A78BFA" />
           <StatCard label="Active Streak" value={`${metrics?.activeStreakDays ?? 0}d`} sub={(metrics?.activeStreakDays ?? 0) > 0 ? "Keep it going" : "Complete a task to start"} color="var(--bm-amber)" />
         </div>
 
         {/* Charts row */}
-        <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 12, marginBottom: 16 }}>
-          <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: "20px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.4fr 1fr", gap: 12, marginBottom: 16 }}>
+          <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: isMobile ? "18px" : "20px" }}>
             <div style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 18 }}>Task Completion This Week</div>
             <WeeklyBars data={taskData} color="var(--bm-accent)" />
           </div>
-          <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: "20px" }}>
+          <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: isMobile ? "18px" : "20px" }}>
             <div style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 18 }}>Focus Breakdown</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {focusData.length === 0 ? (
@@ -167,17 +180,17 @@ export default function ReportsPage() {
         </div>
 
         {/* AI Insight */}
-        <div style={{ background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)", borderRadius: 16, padding: "20px 22px", marginBottom: 16 }}>
+        <div style={{ background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)", borderRadius: 16, padding: isMobile ? "18px" : "20px 22px", marginBottom: 16 }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-accent)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>AI Weekly Insight</div>
-          <p style={{ fontSize: 14, color: "var(--bm-text2)", lineHeight: 1.7, margin: "0 0 14px", fontStyle: "italic" }}>
+          <p style={{ fontSize: isMobile ? 15 : 14, color: "var(--bm-text2)", lineHeight: 1.7, margin: "0 0 14px", fontStyle: "italic" }}>
             &ldquo;{scoreDelta > 0 ? `Your score rose by ${scoreDelta} this week because your execution data changed.` : "Your score is waiting on fresh execution data."} Next week: prioritise the next incomplete task before adding new work.&rdquo;
           </p>
           <span style={{ fontSize: 11, color: "var(--bm-accent)", fontWeight: 600 }}>→ Next week&apos;s recommended focus</span>
         </div>
 
         {/* Wins & blockers */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: "18px 20px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
+          <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: isMobile ? "18px" : "18px 20px" }}>
             <div style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 14, display: "flex", alignItems: "center", gap: 7 }}>
               <CheckCircle2 size={13} color="var(--bm-accent)" /> This week&apos;s wins
             </div>
@@ -187,7 +200,7 @@ export default function ReportsPage() {
               </div>
             ))}
           </div>
-          <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: "18px 20px" }}>
+          <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: isMobile ? "18px" : "18px 20px" }}>
             <div style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 14, display: "flex", alignItems: "center", gap: 7 }}>
               <Target size={13} color="var(--bm-amber)" /> Focus for next week
             </div>

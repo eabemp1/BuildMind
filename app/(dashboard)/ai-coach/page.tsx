@@ -85,21 +85,34 @@ function ThinkingDots() {
   );
 }
 
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 767px)");
+    const update = () => setIsMobile(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+  return isMobile;
+}
+
 function MessageBubble({ msg }: { msg: ChatMessage }) {
   const isUser = msg.role === "user";
   const [expanded, setExpanded] = useState(false);
+  const isMobile = useIsMobile();
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}
-      style={{ display: "flex", gap: 10, alignItems: "flex-start", flexDirection: isUser ? "row-reverse" : "row" }}>
+      style={{ display: "flex", gap: isMobile ? 8 : 10, alignItems: "flex-start", flexDirection: isUser ? "row-reverse" : "row" }}>
       <div style={{
-        width: 28, height: 28, borderRadius: "50%", flexShrink: 0,
+        width: isMobile ? 32 : 28, height: isMobile ? 32 : 28, borderRadius: "50%", flexShrink: 0,
         background: isUser ? "rgba(124,58,237,0.12)" : "var(--bm-accent-dim)",
         border: `1px solid ${isUser ? "rgba(124,58,237,0.22)" : "var(--bm-accent-bd)"}`,
         display: "flex", alignItems: "center", justifyContent: "center",
       }}>
         {isUser ? <User size={12} color="#A78BFA" /> : <Bot size={12} color="var(--bm-accent)" />}
       </div>
-      <div style={{ maxWidth: "78%", display: "flex", flexDirection: "column", gap: 6, alignItems: isUser ? "flex-end" : "flex-start" }}>
+      <div style={{ maxWidth: isMobile ? "86%" : "78%", display: "flex", flexDirection: "column", gap: 6, alignItems: isUser ? "flex-end" : "flex-start" }}>
         {!isUser && msg.reasoning && msg.reasoning.length > 0 && (
           <div style={{ background: "rgba(124,58,237,0.05)", border: "1px solid rgba(124,58,237,0.12)", borderRadius: 12, padding: "10px 12px", width: "100%" }}>
             <button onClick={() => setExpanded(v => !v)}
@@ -126,7 +139,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
           padding: "11px 14px", borderRadius: 16,
           background: isUser ? "rgba(124,58,237,0.10)" : "var(--bm-bg3)",
           border: `1px solid ${isUser ? "rgba(124,58,237,0.18)" : "var(--bm-border)"}`,
-          fontSize: 13, lineHeight: 1.6,
+          fontSize: isMobile ? 14 : 13, lineHeight: 1.6,
           color: msg.error ? "var(--bm-red)" : "var(--bm-text2)",
         }}>
           {msg.phase === "thinking" ? <ThinkingDots /> : <span style={{ whiteSpace: "pre-wrap" }}>{msg.content}</span>}
@@ -141,6 +154,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
 }
 
 export default function AICoachPage() {
+  const isMobile = useIsMobile();
   const { plan } = usePlan();
   const { showLimitModal } = useLimitModal();
   const { data: summaries = [] } = useProjectSummariesQuery();
@@ -232,24 +246,24 @@ export default function AICoachPage() {
   const suggestedActions = ["Define your ideal user persona", "Build in public on X consistently", "Create a lead magnet", "Launch on Product Hunt"];
 
   return (
-    <div style={{ maxWidth: 940, margin: "0 auto", padding: "28px 24px", height: "calc(100vh - 80px)", display: "flex", flexDirection: "column" }}>
+    <div style={{ maxWidth: 1040, margin: "0 auto", padding: isMobile ? "4px 0 20px" : "28px 24px", minHeight: isMobile ? "auto" : "calc(100vh - 80px)", height: isMobile ? "auto" : "calc(100vh - 80px)", display: "flex", flexDirection: "column" }}>
 
       {/* Header */}
-      <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 20, flexShrink: 0 }}>
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+      <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: isMobile ? 18 : 20, flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexDirection: isMobile ? "column" : "row", flexWrap: "wrap", gap: 14 }}>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-              <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em", margin: 0 }}>AI Coach</h1>
+              <h1 style={{ fontSize: isMobile ? 28 : 22, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em", margin: 0 }}>AI Coach</h1>
               <span style={{ fontSize: 9, padding: "3px 8px", borderRadius: 20, background: "var(--bm-accent-dim)", color: "var(--bm-accent)", border: "1px solid var(--bm-accent-bd)", fontWeight: 700, letterSpacing: "0.06em" }}>PRO</span>
             </div>
-            <p style={{ fontSize: 12, color: "var(--bm-text3)", margin: 0 }}>Your personal startup coach. Ask anything.</p>
+            <p style={{ fontSize: isMobile ? 14 : 12, color: "var(--bm-text3)", margin: 0 }}>Your personal startup coach. Ask anything.</p>
           </div>
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <span style={{ fontSize: 10, color: "var(--bm-text3)", marginRight: 4 }}>Mode</span>
+          <div style={{ display: "flex", gap: 6, alignItems: "center", width: isMobile ? "100%" : "auto", overflowX: isMobile ? "auto" : "visible", paddingBottom: isMobile ? 2 : 0 }}>
+            <span style={{ fontSize: 10, color: "var(--bm-text3)", marginRight: 4, flexShrink: 0 }}>Mode</span>
             {personalityOptions.map(opt => (
               <button key={opt.id} onClick={() => setPersonality(opt.id)}
                 style={{
-                  padding: "6px 12px", borderRadius: 8, fontFamily: "inherit", cursor: "pointer",
+                  padding: isMobile ? "9px 13px" : "6px 12px", borderRadius: 8, fontFamily: "inherit", cursor: "pointer", flexShrink: 0,
                   border: `1px solid ${personality === opt.id ? "var(--bm-accent-bd)" : "var(--bm-border)"}`,
                   background: personality === opt.id ? "var(--bm-accent-dim)" : "transparent",
                   color: personality === opt.id ? "var(--bm-accent)" : "var(--bm-text3)",
@@ -263,12 +277,12 @@ export default function AICoachPage() {
       </motion.div>
 
       {/* Split layout */}
-      <div style={{ display: "flex", gap: 14, flex: 1, minHeight: 0 }}>
+      <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: isMobile ? 18 : 14, flex: 1, minHeight: 0 }}>
 
         {/* Chat panel */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}
-          style={{ flex: 1, display: "flex", flexDirection: "column", background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 20, overflow: "hidden" }}>
-          <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--bm-border)", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
+          style={{ flex: 1, display: "flex", flexDirection: "column", background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: isMobile ? 16 : 20, overflow: "hidden", minHeight: isMobile ? "72vh" : 0 }}>
+          <div style={{ padding: isMobile ? "16px 16px" : "14px 20px", borderBottom: "1px solid var(--bm-border)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexShrink: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <div style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--bm-accent)" }} />
               <span style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)" }}>Conversation</span>
@@ -280,21 +294,21 @@ export default function AICoachPage() {
             )}
           </div>
 
-          <div style={{ flex: 1, overflowY: "auto", padding: 20, display: "flex", flexDirection: "column", gap: 16, scrollbarWidth: "none" }}>
+          <div style={{ flex: 1, overflowY: "auto", padding: isMobile ? 16 : 20, display: "flex", flexDirection: "column", gap: isMobile ? 18 : 16, scrollbarWidth: "none" }}>
             {messages.length === 0 && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}
                 style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 16, textAlign: "center" }}>
-                <div style={{ width: 56, height: 56, borderRadius: "50%", background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ width: isMobile ? 64 : 56, height: isMobile ? 64 : 56, borderRadius: "50%", background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <Bot size={24} color="var(--bm-accent)" />
                 </div>
                 <div>
-                  <div style={{ fontSize: 16, fontWeight: 700, color: "var(--bm-text)", marginBottom: 6 }}>What's on your mind today?</div>
-                  <div style={{ fontSize: 12, color: "var(--bm-text3)" }}>Ask anything about your startup</div>
+                  <div style={{ fontSize: isMobile ? 18 : 16, fontWeight: 700, color: "var(--bm-text)", marginBottom: 6 }}>What's on your mind today?</div>
+                  <div style={{ fontSize: isMobile ? 14 : 12, color: "var(--bm-text3)" }}>Ask anything about your startup</div>
                 </div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center" }}>
                   {QUICK_PROMPTS.map(p => (
                     <button key={p} onClick={() => sendMessage(p)}
-                      style={{ padding: "8px 14px", borderRadius: 20, border: "1px solid var(--bm-border)", background: "var(--bm-bg3)", color: "var(--bm-text3)", fontSize: 12, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}
+                      style={{ padding: isMobile ? "10px 14px" : "8px 14px", borderRadius: 20, border: "1px solid var(--bm-border)", background: "var(--bm-bg3)", color: "var(--bm-text3)", fontSize: isMobile ? 13 : 12, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}
                       onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--bm-accent-bd)"; e.currentTarget.style.color = "var(--bm-accent)"; }}
                       onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--bm-border)"; e.currentTarget.style.color = "var(--bm-text3)"; }}>
                       {p}
@@ -307,18 +321,18 @@ export default function AICoachPage() {
             <div ref={bottomRef} />
           </div>
 
-          <div style={{ padding: "14px 16px", borderTop: "1px solid var(--bm-border)", flexShrink: 0 }}>
-            <div style={{ display: "flex", gap: 10, alignItems: "flex-end", background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: 14, padding: "10px 14px", transition: "border-color 0.15s" }}
+          <div style={{ padding: isMobile ? "12px" : "14px 16px", borderTop: "1px solid var(--bm-border)", flexShrink: 0 }}>
+            <div style={{ display: "flex", gap: 10, alignItems: "flex-end", background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: 14, padding: isMobile ? "12px 12px" : "10px 14px", transition: "border-color 0.15s" }}
               onFocusCapture={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--bm-accent-bd)"; }}
               onBlurCapture={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--bm-border2)"; }}>
               <textarea ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
                 onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
                 placeholder="Ask anything about your startup..." rows={1} disabled={loading}
-                style={{ flex: 1, background: "none", border: "none", outline: "none", color: "var(--bm-text)", fontSize: 13, resize: "none", lineHeight: 1.5, fontFamily: "inherit", minHeight: 20, maxHeight: 100 }} />
+                style={{ flex: 1, background: "none", border: "none", outline: "none", color: "var(--bm-text)", fontSize: isMobile ? 16 : 13, resize: "none", lineHeight: 1.5, fontFamily: "inherit", minHeight: isMobile ? 28 : 20, maxHeight: 120 }} />
               <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => sendMessage()}
                 disabled={!input.trim() || loading}
                 style={{
-                  width: 32, height: 32, borderRadius: 9, border: "none", flexShrink: 0,
+                  width: isMobile ? 40 : 32, height: isMobile ? 40 : 32, borderRadius: 9, border: "none", flexShrink: 0,
                   background: !input.trim() || loading ? "rgba(255,255,255,0.05)" : "var(--grad-primary)",
                   color: !input.trim() || loading ? "rgba(255,255,255,0.2)" : "#fff",
                   cursor: !input.trim() || loading ? "not-allowed" : "pointer",
@@ -332,9 +346,9 @@ export default function AICoachPage() {
 
         {/* Right sidebar */}
         <motion.div initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.12 }}
-          style={{ width: 256, display: "flex", flexDirection: "column", gap: 12, overflowY: "auto", scrollbarWidth: "none" }}>
+          style={{ width: isMobile ? "100%" : 256, display: "flex", flexDirection: "column", gap: isMobile ? 14 : 12, overflowY: "auto", scrollbarWidth: "none" }}>
 
-          <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 18, padding: 18 }}>
+          <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 18, padding: isMobile ? 18 : 18 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14 }}>
               <Brain size={13} color="#A78BFA" />
               <span style={{ fontSize: 12, fontWeight: 700, color: "var(--bm-text2)" }}>Coach Memory</span>
@@ -356,7 +370,7 @@ export default function AICoachPage() {
             </div>
             {suggestedActions.map((a, i) => (
               <button key={i} onClick={() => sendMessage(`How do I: ${a}`)}
-                style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 9, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", fontSize: 11, cursor: "pointer", fontFamily: "inherit", textAlign: "left", width: "100%", marginBottom: 7, transition: "all 0.15s" }}
+                style={{ display: "flex", alignItems: "center", gap: 8, padding: isMobile ? "11px 12px" : "8px 10px", borderRadius: 9, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", fontSize: isMobile ? 13 : 11, cursor: "pointer", fontFamily: "inherit", textAlign: "left", width: "100%", marginBottom: 7, transition: "all 0.15s" }}
                 onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--bm-accent-bd)"; e.currentTarget.style.background = "var(--bm-accent-dim)"; e.currentTarget.style.color = "var(--bm-text2)"; }}
                 onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--bm-border)"; e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--bm-text3)"; }}>
                 <Zap size={10} color="var(--bm-accent)" style={{ flexShrink: 0 }} />
@@ -379,7 +393,7 @@ export default function AICoachPage() {
             <div style={{ fontSize: 12, fontWeight: 700, color: "var(--bm-text2)", marginBottom: 12 }}>Quick Questions</div>
             {QUICK_PROMPTS.map(p => (
               <button key={p} onClick={() => sendMessage(p)}
-                style={{ display: "block", width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", fontSize: 11, cursor: "pointer", fontFamily: "inherit", textAlign: "left", marginBottom: 6, transition: "all 0.15s" }}
+                style={{ display: "block", width: "100%", padding: isMobile ? "11px 12px" : "8px 10px", borderRadius: 8, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", fontSize: isMobile ? 13 : 11, cursor: "pointer", fontFamily: "inherit", textAlign: "left", marginBottom: 6, transition: "all 0.15s" }}
                 onMouseEnter={e => { e.currentTarget.style.background = "var(--bm-bg3)"; e.currentTarget.style.color = "var(--bm-text2)"; }}
                 onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--bm-text3)"; }}>
                 {p}
