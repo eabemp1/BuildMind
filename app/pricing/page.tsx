@@ -13,7 +13,7 @@ const FREE_FEATURES = [
   "Projects + AI-generated roadmap",
   "Daily action engine by stage",
   "Task tracking + streaks",
-  "3 AI Coach messages/day",
+  "3 AI Coach messages/week",
   "Break My Startup preview",
   "Public weekly share card",
 ];

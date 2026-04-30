@@ -16,7 +16,7 @@ const FEATURES = [
   { label: "Streak insurance (1 miss/month)", free: false, builder: true },
   { label: "Full history & data export", free: false, builder: true },
   { label: "Priority support", free: false, builder: true },
-  { label: "3 AI Coach messages/day", free: true, builder: true },
+  { label: "3 AI Coach messages/week", free: true, builder: true },
   { label: "Projects + AI roadmap", free: true, builder: true },
   { label: "Task tracking + streaks", free: true, builder: true },
 ];

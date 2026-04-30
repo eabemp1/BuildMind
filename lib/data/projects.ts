@@ -466,22 +466,31 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
   const { data: milestones } = projectIds.length
     ? await supabase
         .from("milestones")
-        .select("id, is_completed")
+        .select("id, project_id, is_completed")
         .in("project_id", projectIds)
     : { data: [] };
 
-  const completedMilestones = (milestones ?? []).filter((m) => m.is_completed)
-    .length;
   const milestoneIds = (milestones ?? []).map((m) => m.id);
 
   const { data: tasks } = milestoneIds.length
-    ? await supabase
+      ? await supabase
         .from("tasks")
-        .select("id, is_completed, created_at, updated_at")
+        .select("id, milestone_id, is_completed, created_at, updated_at")
         .in("milestone_id", milestoneIds)
     : { data: [] };
 
   const completedTasks = (tasks ?? []).filter((t) => t.is_completed).length;
+  const tasksByMilestone = new Map<string, Array<{ is_completed: boolean }>>();
+  (tasks ?? []).forEach((task) => {
+    const list = tasksByMilestone.get(task.milestone_id) ?? [];
+    list.push(task);
+    tasksByMilestone.set(task.milestone_id, list);
+  });
+  const completedMilestones = (milestones ?? []).filter((milestone) => {
+    if (milestone.is_completed) return true;
+    const milestoneTasks = tasksByMilestone.get(milestone.id) ?? [];
+    return milestoneTasks.length > 0 && milestoneTasks.every((task) => task.is_completed);
+  }).length;
 
   // BUG FIX: `today` was referenced but never defined. Use proper Date instance.
   const toLocalDateStr = (iso: string) =>

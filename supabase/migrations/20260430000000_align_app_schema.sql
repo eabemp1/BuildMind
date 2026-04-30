@@ -102,6 +102,33 @@ alter table if exists ai_usage
   add column if not exists month text,
   add column if not exists count int default 0;
 
+create table if not exists push_subscriptions (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  subscription jsonb not null,
+  created_at timestamptz default now(),
+  unique(user_id)
+);
+
+alter table push_subscriptions enable row level security;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'push_subscriptions'
+      and policyname = 'Users manage own subscription'
+  ) then
+    create policy "Users manage own subscription"
+      on push_subscriptions
+      for all
+      using (auth.uid() = user_id)
+      with check (auth.uid() = user_id);
+  end if;
+end $$;
+
 create index if not exists projects_user_created_idx on projects (user_id, created_at desc);
 create index if not exists milestones_project_order_idx on milestones (project_id, order_index);
 create index if not exists tasks_milestone_created_idx on tasks (milestone_id, created_at);

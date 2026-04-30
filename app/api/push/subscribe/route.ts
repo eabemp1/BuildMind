@@ -19,7 +19,9 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { hasAdminEnv } from "@/app/api/ai/_utils";
 
 export async function POST(req: NextRequest) {
   try {
@@ -29,7 +31,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing userId or subscription" }, { status: 400 });
     }
 
-    const supabase = await createClient();
+    const authClient = await createClient();
+    const { data: { user }, error: authError } = await authClient.auth.getUser();
+
+    if (authError || !user || user.id !== userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const supabase = hasAdminEnv() ? createAdminClient() : authClient;
 
     const { error } = await supabase
       .from("push_subscriptions")

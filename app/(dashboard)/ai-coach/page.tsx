@@ -4,12 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useProjectSummariesQuery, useDashboardOverviewQuery } from "@/lib/queries";
 import { computeStartupScore } from "@/lib/buildmind";
-import { getAIMessagesToday, getLimits } from "@/lib/plan";
+import { getLimits } from "@/lib/plan";
 import { usePlan } from "@/lib/usePlan";
 import { useLimitModal } from "@/components/LimitModal";
-import { recordAIUse } from "@/lib/upgrade";
 import { updateAchievementStats, checkAndUnlockAchievements, getAchievementStats } from "@/lib/achievements";
 import { trackEvent } from "@/lib/analytics";
+import { createClient } from "@/lib/supabase/client";
 import { Send, Bot, Brain, Sparkles, Zap, User, Clock, ChevronRight } from "lucide-react";
 
 type ChatMessage = {
@@ -50,6 +50,27 @@ const QUICK_PROMPTS = [
   "How do I get my first 10 users?",
   "Am I ready to launch?",
 ];
+
+const FREE_COACH_MESSAGES_PER_WEEK = 3;
+
+function coachWeekKey(date = new Date()) {
+  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const day = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const week = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+  return `${d.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
+}
+
+function getCoachMessagesThisWeek() {
+  if (typeof window === "undefined") return 0;
+  return Number(localStorage.getItem(`bm_coach_${coachWeekKey()}`) ?? "0");
+}
+
+function recordCoachMessage() {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(`bm_coach_${coachWeekKey()}`, String(getCoachMessagesThisWeek() + 1));
+}
 
 function ThinkingDots() {
   return (
@@ -129,17 +150,22 @@ export default function AICoachPage() {
   const [loading, setLoading] = useState(false);
   const [personality, setPersonality] = useState<"direct" | "supportive" | "challenger">("direct");
   const [memory, setMemory] = useState<string[]>([]);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [coachMessagesThisWeek, setCoachMessagesThisWeek] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const activeProject = summaries[0] ?? null;
   const score = activeProject ? computeStartupScore(activeProject) : 0;
-  const msgsToday = getAIMessagesToday();
   const limits = getLimits(plan);
-  const remaining = Math.max(0, limits.aiMessagesPerDay - msgsToday);
+  const coachLimit = plan === "free" ? FREE_COACH_MESSAGES_PER_WEEK : limits.aiMessagesPerDay;
+  const remaining = plan === "free" ? Math.max(0, coachLimit - coachMessagesThisWeek) : Infinity;
 
   useEffect(() => {
     try { const saved = JSON.parse(localStorage.getItem("bm_coach_memory") ?? "[]"); setMemory(saved); } catch {}
+    setCoachMessagesThisWeek(getCoachMessagesThisWeek());
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
   }, []);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
@@ -147,6 +173,14 @@ export default function AICoachPage() {
     const msg = (text ?? input).trim();
     if (!msg || loading) return;
     if (remaining <= 0 && plan === "free") { showLimitModal("aiCoach"); return; }
+    if (!userId) {
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: "assistant", content: "Please sign in again before using AI Coach.", phase: "done", error: true }]);
+      return;
+    }
+    if (!activeProject?.id) {
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: "assistant", content: "Create or select a project first so I can coach against real context.", phase: "done", error: true }]);
+      return;
+    }
     setInput("");
     const userMsg: ChatMessage = { id: Date.now().toString(), role: "user", content: msg };
     const placeholderReasoning = buildPlaceholderReasoning(msg, activeProject?.title, score);
@@ -156,22 +190,34 @@ export default function AICoachPage() {
     try {
       const res = await fetch("/api/ai/coach", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: msg, project: activeProject, overview, memory, personality }),
+        body: JSON.stringify({
+          userId,
+          projectId: activeProject.id,
+          message: msg,
+          project: activeProject,
+          overview,
+          memory,
+          personality,
+          messages,
+        }),
       });
-      if (!res.ok) throw new Error("Coach unavailable");
-      const { data } = await res.json();
-      const reply = data?.reply ?? "I'm having trouble responding right now. Please try again.";
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok || !payload?.success) throw new Error(payload?.error ?? "Coach unavailable");
+      const reply = payload?.data?.reply ?? payload?.data?.answer ?? "I'm having trouble responding right now. Please try again.";
       const newMemory = [...memory, msg].slice(-10);
       setMemory(newMemory);
       localStorage.setItem("bm_coach_memory", JSON.stringify(newMemory));
-      setMessages(prev => prev.map(m => m.id === thinkingMsg.id ? { ...m, content: reply, phase: "done" } : m));
-      recordAIUse();
+      setMessages(prev => prev.map(m => m.id === thinkingMsg.id ? { ...m, content: reply, reasoning: payload?.data?.reasoning ?? m.reasoning, phase: "done" } : m));
+      recordCoachMessage();
+      setCoachMessagesThisWeek(getCoachMessagesThisWeek());
       const stats = getAchievementStats();
       updateAchievementStats({ ...stats, aiMessages: (stats.aiMessages ?? 0) + 1 });
       checkAndUnlockAchievements();
       trackEvent("ai_coach_message", { plan });
-    } catch {
-      setMessages(prev => prev.map(m => m.id === thinkingMsg.id ? { ...m, content: "Something went wrong. Try again.", phase: "done", error: true } : m));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Something went wrong. Try again.";
+      if (message.toLowerCase().includes("limit")) showLimitModal("aiCoach");
+      setMessages(prev => prev.map(m => m.id === thinkingMsg.id ? { ...m, content: message, phase: "done", error: true } : m));
     } finally {
       setLoading(false);
       setTimeout(() => inputRef.current?.focus(), 100);
@@ -228,8 +274,8 @@ export default function AICoachPage() {
               <span style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)" }}>Conversation</span>
             </div>
             {plan === "free" && (
-              <span style={{ fontSize: 11, color: remaining > 5 ? "var(--bm-text3)" : "var(--bm-amber)" }}>
-                {remaining}/{limits.aiMessagesPerDay} messages left
+              <span style={{ fontSize: 11, color: remaining > 1 ? "var(--bm-text3)" : "var(--bm-amber)" }}>
+                {remaining}/{coachLimit} messages left this week
               </span>
             )}
           </div>

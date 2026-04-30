@@ -318,7 +318,7 @@ function SidebarUser({ onSignOut }: { onSignOut: () => void }) {
 }
 
 // ── Sidebar content (used on both desktop & mobile slide-in) ──────────────────
-function SidebarContent({
+export function SidebarContent({
   onNavClick,
   onSignOut,
 }: {

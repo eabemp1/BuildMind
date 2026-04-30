@@ -122,7 +122,7 @@ const jsonLd = [
         name: "Starter",
         price: "0",
         priceCurrency: "USD",
-        description: "7 actions/week, 3 AI messages/day",
+        description: "7 actions/week, 3 AI Coach messages/week",
       },
       {
         "@type": "Offer",
@@ -183,7 +183,7 @@ const jsonLd = [
         name: "Is BuildMind free?",
         acceptedAnswer: {
           "@type": "Answer",
-          text: "Yes. BuildMind has a free tier with 3 AI messages per day. Builder plan ($19/month) unlocks unlimited actions, the AI Coach, weekly reports, and full Break My Startup analysis.",
+          text: "Yes. BuildMind has a free tier with 3 AI Coach messages per week. Builder plan ($19/month) unlocks unlimited actions, the AI Coach, weekly reports, and full Break My Startup analysis.",
         },
       },
       {
@@ -216,7 +216,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=DM+Serif+Display:ital@0;1&display=swap" />
-        <link rel="dns-prefetch" href="https://api.anthropic.com" />
         {/* Icons */}
         <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=3" />
         <link rel="shortcut icon" href="/favicon.svg?v=3" />

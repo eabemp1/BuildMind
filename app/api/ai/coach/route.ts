@@ -1,8 +1,46 @@
 import { NextResponse } from "next/server";
 import { createUserNotification, enforceAndTrackAIUsage, groqJSON, hasAdminEnv } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { checkPlanAccess } from "@/app/api/ai/_planCheck";
+import { getRouteUser } from "@/app/api/ai/_planCheck";
 import type { FounderMemory } from "@/lib/founderMemory";
+
+const FREE_COACH_MESSAGES_PER_WEEK = 3;
+
+function weekKey(date = new Date()): string {
+  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const day = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const week = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+  return `${d.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
+}
+
+async function enforceCoachUsage(userId: string, plan: string) {
+  if (plan !== "free") {
+    await enforceAndTrackAIUsage(userId, plan);
+    return;
+  }
+  if (!hasAdminEnv()) return;
+
+  const supabase = createAdminClient();
+  const month = `coach:${weekKey()}`;
+  const { data: existing, error } = await supabase
+    .from("ai_usage")
+    .select("id,count")
+    .eq("user_id", userId)
+    .eq("month", month)
+    .single();
+
+  if (error && error.code !== "PGRST116") throw new Error(error.message);
+  if (!existing) {
+    await supabase.from("ai_usage").insert({ user_id: userId, month, count: 1 });
+    return;
+  }
+  if ((existing.count ?? 0) >= FREE_COACH_MESSAGES_PER_WEEK) {
+    throw new Error(`Weekly AI Coach limit reached (${FREE_COACH_MESSAGES_PER_WEEK} messages). Upgrade to Builder for unlimited AI Coach.`);
+  }
+  await supabase.from("ai_usage").update({ count: (existing.count ?? 0) + 1 }).eq("id", existing.id);
+}
 
 function buildFounderMemoryContext(memory: FounderMemory | null): string {
   if (!memory) return "";
@@ -89,15 +127,15 @@ Be firm. Avoidance compounds. Interrupting it early is the job.`;
 }
 
 export async function POST(request: Request) {
-
-  // ── Server-side plan enforcement (builder required for AI coach) ──────────
-  const planCheck = await checkPlanAccess("builder");
-  if (!planCheck.ok) return planCheck.response;
-
   try {
+    const routeUser = await getRouteUser();
+    if (!routeUser) {
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    }
+
     const body = await request.json().catch(() => ({}));
-    const userId = String(body?.userId ?? "").trim();
-    const projectId = String(body?.projectId ?? "").trim();
+    const userId = String(body?.userId ?? routeUser.userId).trim();
+    const projectId = String(body?.projectId ?? body?.project?.id ?? "").trim();
     const message = String(body?.message ?? "").trim();
     const blockerType = String(body?.blockerType ?? "").trim();
     const domain = String(body?.domain ?? "").trim();
@@ -108,11 +146,15 @@ export async function POST(request: Request) {
           .slice(-8)
       : [];
 
+    if (userId !== routeUser.userId) {
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    }
+
     if (!userId || !projectId) {
       return NextResponse.json({ success: false, error: "userId and projectId required" }, { status: 400 });
     }
 
-    await enforceAndTrackAIUsage(userId);
+    await enforceCoachUsage(userId, routeUser.plan);
 
     // ── Spiral detection (server-side, plan-gated) ──────────────────────────
     const { detected: spiralDetected, signal: spiralSignal } = detectSpiralSignal(message);
@@ -227,7 +269,7 @@ Return ONLY the JSON object. No preamble. No markdown.`;
 
     return NextResponse.json({
       success: true,
-      data: { reasoning, answer, spiralDetected, spiralSignal },
+      data: { reasoning, answer, reply: answer, spiralDetected, spiralSignal },
     });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Coach failed";

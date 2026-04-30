@@ -2,10 +2,11 @@
 
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { useState, useEffect } from "react";
-import { usePathname } from "next/navigation";
-import Sidebar from "@/components/layout/sidebar";
+import { usePathname, useRouter } from "next/navigation";
+import Sidebar, { SidebarContent } from "@/components/layout/sidebar";
 import Topbar from "@/components/layout/topbar";
 import { trackPageView, trackFunnelStep } from "@/lib/onboarding-analytics";
+import { createClient } from "@/lib/supabase/client";
 
 const PATH_TO_FUNNEL: Record<string, Parameters<typeof trackFunnelStep>[0]> = {
   "/today":   "first_today",
@@ -16,6 +17,7 @@ const PATH_TO_FUNNEL: Record<string, Parameters<typeof trackFunnelStep>[0]> = {
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
   const reduceMotion = useReducedMotion();
 
   useEffect(() => {
@@ -25,6 +27,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       if (step) trackFunnelStep(step);
     } catch {}
   }, [pathname]);
+
+  async function handleSignOut() {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push("/auth/login");
+  }
 
   return (
     <div className="relative flex h-screen overflow-hidden">
@@ -57,24 +65,29 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* ── Sidebar — mobile overlay ── */}
-      {mobileOpen && (
-        <div className="fixed inset-0 z-40 flex md:hidden">
-          <motion.div
-            className="absolute inset-0"
-            style={{ background: "rgba(12,13,15,0.7)", backdropFilter: "blur(4px)" }}
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            onClick={() => setMobileOpen(false)}
-          />
-          <motion.div
-            className="relative h-full w-[232px]"
-            style={{ borderRight: "1px solid var(--bm-border)" }}
-            initial={{ x: -232 }} animate={{ x: 0 }} exit={{ x: -232 }}
-            transition={{ type: "spring", stiffness: 340, damping: 30 }}
-          >
-            <Sidebar />
-          </motion.div>
-        </div>
-      )}
+      <AnimatePresence>
+        {mobileOpen && (
+          <div className="fixed inset-0 z-40 flex md:hidden">
+            <motion.div
+              className="absolute inset-0"
+              style={{ background: "rgba(12,13,15,0.7)", backdropFilter: "blur(4px)" }}
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setMobileOpen(false)}
+            />
+            <motion.div
+              className="relative h-full w-[270px] overflow-hidden"
+              style={{ borderRight: "1px solid var(--bm-border)", background: "var(--bm-bg2)" }}
+              initial={{ x: -270 }} animate={{ x: 0 }} exit={{ x: -270 }}
+              transition={{ type: "spring", stiffness: 340, damping: 30 }}
+            >
+              <SidebarContent
+                onNavClick={() => setMobileOpen(false)}
+                onSignOut={handleSignOut}
+              />
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* ── Main ── */}
       <div className="flex min-w-0 flex-1 flex-col">

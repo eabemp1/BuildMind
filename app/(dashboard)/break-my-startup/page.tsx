@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useProjectsQuery } from "@/lib/queries";
 import { createClient } from "@/lib/supabase/client";
@@ -34,6 +34,16 @@ interface BreakResult {
   survival_probability?: number;
   brutal_advice?: string;
 }
+
+type BreakApiData = {
+  verdict?: string;
+  kill_reasons?: string[];
+  survive_reasons?: string[];
+  brutal_advice?: string;
+  survival_probability?: number;
+  competitor_summary?: string;
+  differentiation_plan?: string[];
+};
 
 const FOCUS_AREAS = [
   "Business Model",
@@ -131,6 +141,51 @@ export default function BreakMyStartupPage() {
   // Pre-fill idea from selected project
   const selectedProject = projects.find((p: any) => p.id === selectedProjectId);
 
+  useEffect(() => {
+    if (!selectedProjectId) return;
+    if (!selectedProject) return;
+    const projectIdea = [
+      selectedProject.title,
+      selectedProject.description,
+      (selectedProject as any).problem,
+      (selectedProject as any).target_users ? `Target users: ${(selectedProject as any).target_users}` : "",
+    ].filter(Boolean).join("\n\n");
+    setCustomIdea(projectIdea);
+  }, [selectedProjectId, selectedProject]);
+
+  function mapApiResult(data: BreakApiData): BreakResult {
+    const probability = typeof data.survival_probability === "number" ? data.survival_probability : undefined;
+    const overallRisk: RiskSeverity =
+      probability == null ? "High" :
+      probability < 25 ? "Critical" :
+      probability < 50 ? "High" :
+      probability < 75 ? "Medium" : "Low";
+
+    const risks: RiskItem[] = (data.kill_reasons?.length ? data.kill_reasons : ["Execution risk not enough data yet"]).map((reason, index) => ({
+      category: ["Market Risk", "Execution Risk", "Moat Risk", "Revenue Risk"][index] ?? "Startup Risk",
+      severity: index === 0 ? overallRisk : overallRisk === "Critical" ? "High" : overallRisk,
+      description: reason,
+      mitigation: data.differentiation_plan?.[index] ?? data.brutal_advice ?? "Talk to 5 target users and validate the riskiest assumption before building more.",
+    }));
+
+    if (data.competitor_summary) {
+      risks.push({
+        category: "Competitive Landscape",
+        severity: "Medium",
+        description: data.competitor_summary,
+        mitigation: data.differentiation_plan?.[0] ?? "Pick one underserved niche and position around that pain instead of competing broadly.",
+      });
+    }
+
+    return {
+      overallRisk,
+      summary: data.verdict ?? "Stress test complete. Review the risks before deciding what to build next.",
+      risks,
+      survival_probability: probability,
+      brutal_advice: data.brutal_advice,
+    };
+  }
+
   function toggleFocus(area: FocusArea) {
     setFocusAreas((prev) =>
       prev.includes(area) ? prev.filter((a) => a !== area) : [...prev, area]
@@ -138,7 +193,7 @@ export default function BreakMyStartupPage() {
   }
 
   async function handleRunTest() {
-    const idea = customIdea.trim() || (selectedProject as any)?.idea_description || "";
+    const idea = customIdea.trim() || selectedProject?.description || selectedProject?.title || "";
     if (!idea) {
       setError("Please describe your startup idea or select a project.");
       return;
@@ -150,21 +205,25 @@ export default function BreakMyStartupPage() {
     setSaved(false);
 
     try {
-      // [endpoint pending] — POST /api/ai/break-my-startup
+      const supabase = createClient();
+      const { data: authData } = await supabase.auth.getUser();
+      if (!authData.user) throw new Error("Not authenticated");
+
       const res = await fetch("/api/ai/break-my-startup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          userId: authData.user.id,
           projectId: selectedProjectId || undefined,
           idea,
           focusAreas,
         }),
       });
 
-      if (!res.ok) throw new Error("Request failed");
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok || !payload?.success) throw new Error(payload?.error ?? "Request failed");
 
-      const data: BreakResult = await res.json();
-      setResult(data);
+      setResult(mapApiResult(payload.data ?? {}));
 
       // Track achievement
       try {
@@ -253,7 +312,7 @@ export default function BreakMyStartupPage() {
                     value={selectedProjectId}
                     onChange={(e) => {
                       setSelectedProjectId(e.target.value);
-                      setCustomIdea("");
+                      if (!e.target.value) setCustomIdea("");
                     }}
                     className="w-full h-10 rounded-lg pl-3 pr-8 text-sm outline-none appearance-none cursor-pointer"
                     style={{
@@ -265,7 +324,7 @@ export default function BreakMyStartupPage() {
                     <option value="">— Use custom idea instead —</option>
                     {projects.map((p: any) => (
                       <option key={p.id} value={p.id}>
-                        {p.project_name ?? p.name ?? "Untitled"}
+                        {p.title ?? p.project_name ?? p.name ?? "Untitled"}
                       </option>
                     ))}
                   </select>
@@ -278,22 +337,21 @@ export default function BreakMyStartupPage() {
 
                 {selectedProject && (
                   <p className="text-xs text-[var(--bm-text3)] leading-relaxed line-clamp-2">
-                    {(selectedProject as any).idea_description ?? "No description"}
+                    {selectedProject.description ?? "No description"}
                   </p>
                 )}
               </Card>
             )}
 
             {/* Custom idea textarea */}
-            {!selectedProjectId && (
-              <Textarea
-                label="Or describe your startup idea"
-                placeholder="What are you building? Who is it for? How do you plan to make money? Paste your pitch, business model, or current strategy..."
-                value={customIdea}
-                onChange={(e) => setCustomIdea(e.target.value)}
-                rows={6}
-              />
-            )}
+            <Textarea
+              label={selectedProjectId ? "Startup context to stress-test" : "Describe your startup idea"}
+              helperText={selectedProjectId ? "Loaded from your selected project. You can edit or add domain-specific context before running the test." : undefined}
+              placeholder="What are you building? Who is it for? How do you plan to make money? Paste your pitch, business model, domain, or current strategy..."
+              value={customIdea}
+              onChange={(e) => setCustomIdea(e.target.value)}
+              rows={6}
+            />
 
             {/* Focus areas */}
             <div className="flex flex-col gap-2">

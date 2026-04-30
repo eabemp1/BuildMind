@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useRef, useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { motion } from "framer-motion";
@@ -133,26 +133,22 @@ const FEATURES = [
   { icon: Globe, title: "Public Progress Pages", desc: "Share your journey, attract your tribe." },
 ];
 
-const DEMO_STEPS = [
-  { title: "Start with one idea", body: "BuildMind turns a rough startup description into a structured project and roadmap." },
-  { title: "Get today's action", body: "Every morning, the command center gives one concrete action based on your stage." },
-  { title: "Track real execution", body: "Tasks, milestones, scores, and reports update from your actual Supabase-backed workspace data." },
-  { title: "Reflect and compound", body: "Evening reflections feed tomorrow's action so the system gets sharper as you build." },
-];
-
 function DemoModal({ onClose }: { onClose: () => void }) {
-  const [step, setStep] = useState(0);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [playing, setPlaying] = useState(false);
 
-  useEffect(() => {
-    const timer = setInterval(() => setStep((current) => (current + 1) % DEMO_STEPS.length), 5000);
-    return () => clearInterval(timer);
-  }, []);
-
-  const active = DEMO_STEPS[step];
+  async function handlePlay() {
+    try {
+      await videoRef.current?.play();
+      setPlaying(true);
+    } catch {
+      setPlaying(false);
+    }
+  }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center px-4" style={{ background: "rgba(0,0,0,0.72)", backdropFilter: "blur(8px)" }}>
-      <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-3xl overflow-hidden rounded-2xl" style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)" }}>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center px-3 py-5 sm:px-6" style={{ background: "rgba(0,0,0,0.72)", backdropFilter: "blur(8px)" }}>
+      <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-6xl max-h-[92vh] overflow-y-auto rounded-2xl" style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)" }}>
         <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: "1px solid var(--bm-border)" }}>
           <div>
             <div className="text-xs font-bold uppercase tracking-widest text-[var(--bm-accent)]">2-minute demo</div>
@@ -162,29 +158,50 @@ function DemoModal({ onClose }: { onClose: () => void }) {
             <X size={18} />
           </button>
         </div>
-        <div className="grid md:grid-cols-[1.1fr_0.9fr] gap-0">
-          <div className="p-5">
-            <div className="relative min-h-[300px] rounded-xl overflow-hidden" style={{ background: "var(--bm-bg)", border: "1px solid var(--bm-border)" }}>
-              <motion.div key={step} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} className="absolute inset-0 p-5 flex flex-col gap-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-[var(--bm-text2)]">Command center</span>
-                  <span className="text-[10px] px-2 py-1 rounded-full bg-[var(--bm-accent-dim)] text-[var(--bm-accent)]">LIVE DATA</span>
-                </div>
-                <DashboardMockup />
-              </motion.div>
-            </div>
+        <div className="p-4 sm:p-6">
+          <div className="relative rounded-xl overflow-hidden" style={{ background: "var(--bm-bg)", border: "1px solid var(--bm-border)" }}>
+            <button
+              type="button"
+              onClick={handlePlay}
+              className={`absolute inset-0 z-10 flex items-center justify-center transition-opacity ${playing ? "pointer-events-none opacity-0" : "opacity-100"}`}
+              style={{ background: "rgba(0,0,0,0.28)" }}
+              aria-label="Play demo video"
+            >
+              <span
+                className="flex h-16 w-16 sm:h-20 sm:w-20 items-center justify-center rounded-full text-white shadow-2xl transition-transform active:scale-95"
+                style={{ background: "var(--grad-primary)" }}
+              >
+                <Play size={30} fill="currentColor" />
+              </span>
+            </button>
+              <video
+                ref={videoRef}
+                className="block w-full aspect-video min-h-[260px] sm:min-h-[420px] bg-black"
+                src="/demo/buildmind_demo.mp4"
+                controls
+                playsInline
+                preload="metadata"
+                poster="/logo/buildmind-og-image.svg"
+                onPlay={() => setPlaying(true)}
+                onPause={() => setPlaying(false)}
+                onEnded={() => setPlaying(false)}
+              />
           </div>
-          <div className="p-6 flex flex-col justify-between" style={{ borderLeft: "1px solid var(--bm-border)" }}>
+          <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <div className="text-[11px] font-bold text-[var(--bm-text3)] uppercase tracking-widest mb-3">Step {step + 1} of {DEMO_STEPS.length}</div>
-              <motion.h3 key={`${step}-title`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="text-2xl font-bold tracking-tight text-[var(--bm-text)] mb-3">{active.title}</motion.h3>
-              <motion.p key={`${step}-body`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="text-sm leading-relaxed text-[var(--bm-text2)]">{active.body}</motion.p>
+              <div className="text-[11px] font-bold text-[var(--bm-text3)] uppercase tracking-widest mb-2">Product walkthrough</div>
+              <h3 className="text-2xl font-bold tracking-tight text-[var(--bm-text)] mb-2">See BuildMind in motion</h3>
+              <p className="max-w-2xl text-sm leading-relaxed text-[var(--bm-text2)]">
+                Watch how a founder moves from idea to execution with projects, daily actions,
+                milestones, scoring, and AI coaching in one workspace.
+              </p>
             </div>
-            <div className="flex gap-2 mt-8">
-              {DEMO_STEPS.map((_, index) => (
-                <button key={index} onClick={() => setStep(index)} className="h-2 flex-1 rounded-full" style={{ background: index === step ? "var(--bm-accent)" : "var(--bm-bg4)" }} aria-label={`Show demo step ${index + 1}`} />
-              ))}
-            </div>
+            <Link href="/auth/login" className="shrink-0">
+              <Button size="sm">
+                Start Building Free
+                <ArrowRight size={12} />
+              </Button>
+            </Link>
           </div>
         </div>
       </motion.div>

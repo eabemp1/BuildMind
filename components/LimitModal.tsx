@@ -18,7 +18,7 @@ const LimitModalContext = createContext<LimitModalContextValue>({
 export function useLimitModal() { return useContext(LimitModalContext); }
 
 const LIMIT_COPY: Record<LimitReason, { emoji: string; title: string; body: string; cta: string }> = {
-  ai_coach:     { emoji: "🤖", title: "You've hit your AI limit for today.", body: "Free plan includes 3 AI messages per day. Builder plan gives you unlimited AI Coach, weekly strategy reports, and full Break My Startup analysis.", cta: "Unlock unlimited AI →" },
+  ai_coach:     { emoji: "🤖", title: "You've hit your AI Coach limit for this week.", body: "Free plan includes 3 AI Coach messages per week. Builder plan gives you unlimited AI Coach, weekly strategy reports, and full Break My Startup analysis.", cta: "Unlock unlimited AI →" },
   break_startup:{ emoji: "⚡", title: "Full analysis is a Builder feature.", body: "The real analysis — survival probability, all kill reasons, every survive reason — is Builder only. The preview you saw is a taste.", cta: "Unlock full analysis →" },
   today_action: { emoji: "🎯", title: "You've used your free actions for today.", body: "Free plan gives you 3 AI-powered actions per day. Builder removes all limits and adds AI coaching and weekly reports.", cta: "Unlock unlimited actions →" },
   weekly_report:{ emoji: "📋", title: "Weekly reports are a Builder feature.", body: "Every week: your intention vs action gap, momentum score, biggest blocker, and an honest assessment of where you're headed.", cta: "Unlock weekly reports →" },

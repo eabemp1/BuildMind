@@ -148,6 +148,19 @@ export async function updateTaskStatus(taskId: string, isCompleted: boolean, not
 
   if (isMilestoneComplete && !wasMilestoneComplete) {
     trackEvent("milestone_completed");
+  }
+
+  if (isMilestoneComplete !== wasMilestoneComplete) {
+    await supabase
+      .from("milestones")
+      .update({
+        is_completed: isMilestoneComplete,
+        completed_at: isMilestoneComplete ? new Date().toISOString() : null,
+      })
+      .eq("id", taskRow.milestone_id);
+  }
+
+  if (isMilestoneComplete && !wasMilestoneComplete) {
     const { data: milestone } = await supabase
       .from("milestones").select("project_id").eq("id", taskRow.milestone_id).single();
     if (milestone?.project_id) {

@@ -79,16 +79,55 @@ function signalScore(
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
-    const userId = String(body?.userId ?? "");
-    const projectId = String(body?.projectId ?? "");
-    if (!userId || !projectId) return NextResponse.json({ success: false, error: "userId and projectId are required" }, { status: 400 });
+    const userId = String(body?.userId ?? "").trim();
+    const projectId = String(body?.projectId ?? "").trim();
+    const idea = String(body?.idea ?? "").trim();
+    const focusAreas = Array.isArray(body?.focusAreas) ? body.focusAreas.map(String).filter(Boolean) : [];
+    if (!userId) return NextResponse.json({ success: false, error: "userId is required" }, { status: 400 });
+    if (!projectId && !idea) return NextResponse.json({ success: false, error: "projectId or idea is required" }, { status: 400 });
 
     await enforceAndTrackAIUsage(userId);
 
+    if (!projectId) {
+      const competitors = await scrapeCompetitors(`${idea} startup tool software competitors`);
+      const competitorContext = competitors.length > 0
+        ? `\nLive competitor data from DuckDuckGo:\n${competitors.map((c, i) => `${i + 1}. ${c.title} — ${c.url}\n   ${c.snippet}`).join("\n")}`
+        : "\nNo direct competitors found in DuckDuckGo search.";
+      const baseSignal = signalScore(0, 0, [], [], 0, 0, "Idea");
+      const defaultResult = {
+        reasoning: [`Read custom idea context`, `Found ${competitors.length} competitor(s) via DuckDuckGo`, `Signal score ${baseSignal}`, "Identifying the riskiest assumptions"],
+        verdict: "This idea needs sharper validation before you build more. The biggest risk is not whether it can be built, but whether a specific group urgently wants it.",
+        kill_reasons: ["No project execution data is attached to this custom test", "No user interview or willingness-to-pay evidence was provided", "Competitive differentiation is still unclear"],
+        survive_reasons: ["You are stress-testing before overbuilding", "A focused niche could still make this viable"],
+        brutal_advice: "Before writing more code, talk to 5 target users and get exact quotes about how they solve this today.",
+        survival_probability: baseSignal,
+        competitor_summary: competitors.length > 0 ? `DuckDuckGo found ${competitors.length} related products or pages. Treat this as proof of demand and a warning to narrow your positioning.` : "DuckDuckGo did not find clear direct competitors. Use more specific market terms for a better scan.",
+        differentiation_plan: ["Pick one narrow user segment and ignore everyone else for 30 days", "Position around the painful workflow competitors underserve", "Validate one differentiated promise with 5 users this week"],
+      };
+
+      let result = defaultResult;
+      try {
+        const ai = await groqJSON<typeof defaultResult>(
+          `You are a brutally honest startup advisor. Return ONLY valid JSON with keys: reasoning, verdict, kill_reasons, survive_reasons, brutal_advice, survival_probability, competitor_summary, differentiation_plan.
+Use the DuckDuckGo competitor data. No markdown.`,
+          `Startup idea:
+${idea}
+
+Focus areas: ${focusAreas.join(", ") || "Everything"}
+Signal score baseline: ${baseSignal}
+${competitorContext}`,
+        );
+        if (ai?.verdict && typeof ai.survival_probability === "number") {
+          result = { ...defaultResult, ...ai };
+        }
+      } catch { /* use default */ }
+
+      return NextResponse.json({ success: true, data: { ...result, competitors } });
+    }
+
     if (!hasAdminEnv()) {
       // Even without Supabase, compute a minimal signal from request body hints
-      const bodyHint = await request.json().catch(() => ({})) as Record<string, unknown>;
-      const hintStage = String(bodyHint?.stage ?? "Idea");
+      const hintStage = String(body?.stage ?? "Idea");
       const hintScore = signalScore(0, 0, [], [], 0, 0, hintStage);
       return NextResponse.json({ success: true, data: {
         reasoning: ["Supabase not configured — cannot read live project data", "Using stage-based baseline estimate"],
