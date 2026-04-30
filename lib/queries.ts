@@ -6,6 +6,7 @@ import {
   deleteProjectForCurrentUser,
   getAICoachAdvice,
   getDashboardOverview,
+  getWeeklyReportMetrics,
   clearNotificationsForCurrentUser,
   getNotificationsForCurrentUser,
   getProjectDetail,
@@ -20,6 +21,7 @@ export const queryKeys = {
   projects: ["projects"] as const,
   project: (id: string) => ["project", id] as const,
   overview: ["dashboard-overview"] as const,
+  weeklyReport: ["weekly-report"] as const,
   notifications: ["notifications"] as const,
   coach: (projectId: string) => ["coach", projectId] as const,
   projectSummaries: ["project-summaries"] as const,
@@ -43,6 +45,10 @@ export function useProjectSummariesQuery() {
 
 export function useDashboardOverviewQuery() {
   return useQuery({ queryKey: queryKeys.overview, queryFn: getDashboardOverview });
+}
+
+export function useWeeklyReportMetricsQuery() {
+  return useQuery({ queryKey: queryKeys.weeklyReport, queryFn: getWeeklyReportMetrics });
 }
 
 export function useNotificationsQuery() {
@@ -77,7 +83,7 @@ export function useDeleteProjectMutation() {
 export function useMarkNotificationMutation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => markNotificationAsRead(id),
+    mutationFn: (id: string) => Promise.resolve(markNotificationAsRead(id)),
     onMutate: async (id) => {
       await qc.cancelQueries({ queryKey: queryKeys.notifications });
       const previous = qc.getQueryData<BuildMindNotification[]>(queryKeys.notifications) ?? [];
@@ -97,7 +103,7 @@ export function useMarkNotificationMutation() {
 export function useClearNotificationsMutation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: clearNotificationsForCurrentUser,
+    mutationFn: () => Promise.resolve(clearNotificationsForCurrentUser()),
     onSuccess: () => void qc.invalidateQueries({ queryKey: queryKeys.notifications }),
   });
 }

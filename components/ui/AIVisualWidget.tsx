@@ -34,27 +34,19 @@ interface AIVisualWidgetProps {
 // Shimmer skeleton
 function Skeleton() {
   return (
-    <div style={{ padding: "16px 0" }}>
-      {[90, 60, 75, 45].map((w, i) => (
+    <div className="animate-pulse" style={{ padding: "16px 0" }}>
+      {[75, 55, 65].map((w, i) => (
         <div
           key={i}
           style={{
-            height: i === 0 ? 18 : 12,
+            height: 12,
             width: `${w}%`,
-            background: "rgba(255,255,255,0.06)",
-            borderRadius: 6,
-            marginBottom: 10,
-            animation: "bm-shimmer 1.4s ease-in-out infinite",
-            animationDelay: `${i * 0.12}s`,
+            background: "var(--bm-bg4)",
+            borderRadius: "var(--r-md)",
+            marginBottom: 8,
           }}
         />
       ))}
-      <style>{`
-        @keyframes bm-shimmer {
-          0%,100% { opacity: 0.4; }
-          50% { opacity: 0.9; }
-        }
-      `}</style>
     </div>
   );
 }

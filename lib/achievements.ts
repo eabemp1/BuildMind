@@ -309,7 +309,7 @@ if (typeof window !== "undefined") {
     xp: getTotalXP,
     reset: () => {
       ["bm_achievements", "bm_achievement_stats", "bm_xp"].forEach(k => localStorage.removeItem(k));
-      console.log("Achievements reset.");
+      if (process.env.NODE_ENV === "development") console.log("Achievements reset.");
     },
   };
 }

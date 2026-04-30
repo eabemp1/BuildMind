@@ -1,261 +1,530 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { z } from "zod";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { computeStartupScore } from "@/lib/buildmind";
 import { getActiveProjectId, setActiveProjectId } from "@/lib/api";
-import { useCreateProjectMutation, useDeleteProjectMutation, useProjectSummariesQuery } from "@/lib/queries";
+import {
+  useCreateProjectMutation,
+  useDeleteProjectMutation,
+  useProjectSummariesQuery,
+} from "@/lib/queries";
 import { projectCreateSchema } from "@/lib/validation";
-import { getPlan, getLimits } from "@/lib/plan";
+import { getLimits } from "@/lib/plan";
+import { usePlan } from "@/lib/usePlan";
 import { useLimitModal } from "@/components/LimitModal";
-import BuildMindLoader from "@/components/BuildMindLoader";
+import {
+  Plus, Trash2, ChevronRight, Check, X, ArrowRight, Clock,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Input, Textarea } from "@/components/ui/input";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-const VIZ = {
-  panel: "rgba(12,12,18,0.98)",
-  border: "rgba(255,255,255,0.06)",
-  text1: "#f0f0f5",
-  text2: "#9494a8",
-  text3: "#4a4a5a",
-  indigo: "#6366f1",
-  violet: "#8b5cf6",
-  emerald: "#4ade80",
-  amber: "#fbbf24",
-  rose: "#f87171",
-};
-
-const STAGE_COLORS: Record<string, string> = {
-  Idea: "#555", Validation: "#818cf8", Prototype: "#fbbf24", MVP: "#4ade80",
-  Launch: "#22d3ee", Growth: "#a78bfa", Revenue: "#4ade80",
-};
-const STAGE_OPTIONS = ["Idea","Validation","MVP","Launch","Growth","Revenue"] as const;
+// ── Types ────────────────────────────────────────────────────────────────────
+const STAGE_OPTIONS = ["Idea", "Validation", "MVP", "Launch", "Growth", "Revenue"] as const;
 type StartupStage = typeof STAGE_OPTIONS[number];
 
+const STAGE_COLORS: Record<string, string> = {
+  Idea: "var(--bm-text3)",
+  Validation: "var(--bm-blue)",
+  Prototype: "var(--bm-amber)",
+  MVP: "var(--bm-amber)",
+  Launch: "var(--bm-green)",
+  Growth: "var(--bm-accent)",
+  Revenue: "var(--bm-green)",
+};
+
+const STAGE_BADGE_VARIANT: Record<string, "neutral" | "info" | "warning" | "success" | "gradient"> = {
+  Idea: "neutral",
+  Validation: "info",
+  MVP: "warning",
+  Launch: "success",
+  Growth: "gradient",
+  Revenue: "success",
+};
+
 function normalizeStage(input: string): StartupStage {
-  const v = String(input||"").trim().toLowerCase();
+  const v = String(input || "").trim().toLowerCase();
   if (v.includes("valid")) return "Validation";
-  if (v.includes("mvp")||v.includes("proto")) return "MVP";
+  if (v.includes("mvp") || v.includes("proto")) return "MVP";
   if (v.includes("launch")) return "Launch";
   if (v.includes("growth")) return "Growth";
   if (v.includes("revenue")) return "Revenue";
   return "Idea";
 }
 
-// Mini arc ring for score
-function MiniRing({ score, size=44 }: { score:number; size?:number }) {
-  const r=(size-5)/2; const circ=2*Math.PI*r;
-  const color=score>=60?VIZ.emerald:score>=30?VIZ.amber:"#444";
+// ── Score ring ────────────────────────────────────────────────────────────────
+function MiniRing({ score, size = 44 }: { score: number; size?: number }) {
+  const r = (size - 5) / 2;
+  const circ = 2 * Math.PI * r;
+  const color = score >= 60 ? "var(--bm-green)" : score >= 30 ? "var(--bm-amber)" : "var(--bm-text3)";
   return (
-    <div style={{ position:"relative",width:size,height:size,flexShrink:0 }}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform:"rotate(-90deg)" }}>
-        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,0.04)" strokeWidth={4.5}/>
-        <motion.circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={4.5}
+    <div style={{ position: "relative", width: size, height: size, flexShrink: 0 }}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform: "rotate(-90deg)" }}>
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth={4.5} />
+        <motion.circle
+          cx={size / 2} cy={size / 2} r={r}
+          fill="none" stroke={color} strokeWidth={4.5}
           strokeLinecap="round" strokeDasharray={circ}
-          initial={{ strokeDashoffset:circ }} animate={{ strokeDashoffset:circ-(score/100)*circ }}
-          transition={{ duration:0.9,ease:"easeOut",delay:0.2 }}/>
+          initial={{ strokeDashoffset: circ }}
+          animate={{ strokeDashoffset: circ - (score / 100) * circ }}
+          transition={{ duration: 0.9, ease: "easeOut", delay: 0.2 }}
+          style={{ filter: `drop-shadow(0 0 3px ${color}60)` }}
+        />
       </svg>
-      <div style={{ position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center" }}>
-        <span style={{ fontSize:11,fontWeight:700,color,lineHeight:1 }}>{score}</span>
+      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <span style={{ fontSize: 11, fontWeight: 800, color, lineHeight: 1 }}>{score}</span>
       </div>
     </div>
   );
 }
 
-// Progress bar
-function ProgressBar({ value, delay=0 }: { value:number; delay?:number }) {
-  const color=value>=60?VIZ.emerald:value>=30?VIZ.indigo:"#333";
+// ── Progress bar ──────────────────────────────────────────────────────────────
+function ProgressBar({
+  value, max, i = 0,
+}: { value: number; max: number; i?: number }) {
+  const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
   return (
-    <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
-      <div style={{ height:3,background:"rgba(255,255,255,0.04)",borderRadius:999,overflow:"hidden",width:80 }}>
-        <motion.div initial={{ width:0 }} animate={{ width:`${value}%` }} transition={{ duration:0.8,ease:"easeOut",delay }}
-          style={{ height:"100%",background:color,borderRadius:999 }} />
-      </div>
-      <span style={{ fontSize:10,color:VIZ.text3 }}>{value}%</span>
+    <div className="w-full h-1.5 rounded-full" style={{ background: "var(--bm-bg4)" }}>
+      <motion.div
+        className="h-full rounded-full"
+        style={{ background: "var(--grad-primary)" }}
+        initial={{ width: 0 }}
+        animate={{ width: `${pct}%` }}
+        transition={{ duration: 0.75, ease: "easeOut", delay: 0.25 + i * 0.05 }}
+      />
     </div>
   );
 }
 
-const inputStyle = {
-  background:"rgba(8,8,12,0.9)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:8,
-  padding:"10px 13px", fontSize:13, color:VIZ.text2, outline:"none",
-  fontFamily:"inherit", width:"100%", boxSizing:"border-box" as const, transition:"border-color 0.15s",
-};
+function EmptyState({
+  title,
+  description,
+  action,
+}: {
+  title: string;
+  description: string;
+  action?: ReactNode;
+}) {
+  return (
+    <Card className="p-6 text-center flex flex-col items-center gap-3">
+      <div className="text-base font-semibold text-[var(--bm-text)]">{title}</div>
+      <div className="text-sm text-[var(--bm-text3)] max-w-md">{description}</div>
+      {action ? <div className="mt-2">{action}</div> : null}
+    </Card>
+  );
+}
 
-export default function ProjectsPage() {
-  const router = useRouter();
-  const { showLimit } = useLimitModal();
-  const limits = getLimits(getPlan());
-  const maxProjects = limits.maxProjects;
+function SkeletonRow() {
+  return (
+    <div className="h-16 rounded-xl bg-[var(--bm-bg3)] animate-pulse" />
+  );
+}
 
-  const { data:summaries=[], isLoading, error:summariesError } = useProjectSummariesQuery();
-  const createMutation = useCreateProjectMutation();
-  const deleteMutation = useDeleteProjectMutation();
-  const [modalOpen, setModalOpen] = useState(false);
-  const [projectName, setProjectName] = useState("");
-  const [ideaDescription, setIdeaDescription] = useState("");
-  const [targetUsers, setTargetUsers] = useState("");
-  const [startupStage, setStartupStage] = useState<StartupStage>("Idea");
+// ── Create Modal ──────────────────────────────────────────────────────────────
+function CreateModal({
+  onClose,
+  onCreate,
+  isPending,
+}: {
+  onClose: () => void;
+  onCreate: (data: { title: string; problem: string; stage: StartupStage }) => void;
+  isPending: boolean;
+}) {
+  const [title, setTitle] = useState("");
+  const [problem, setProblem] = useState("");
+  const [stage, setStage] = useState<StartupStage>("Idea");
   const [error, setError] = useState("");
 
-  useEffect(()=>{
-    if (!summaries.length) return;
-    const active=getActiveProjectId();
-    if (!active) { const firstId=summaries[0]?.id; if(firstId) setActiveProjectId(firstId); }
-  },[summaries]);
-
-  const onCreate = async () => {
+  function handleSubmit() {
+    setError("");
+    if (!title.trim()) { setError("Project name is required."); return; }
     try {
-      setError("");
-      const values=projectCreateSchema.parse({ projectName,ideaDescription,targetUsers });
-      const created=await createMutation.mutateAsync({ project_name:values.projectName,idea_description:values.ideaDescription,target_users:values.targetUsers,problem:values.ideaDescription,startup_stage:startupStage });
-      setModalOpen(false); setProjectName(""); setIdeaDescription(""); setTargetUsers(""); setStartupStage("Idea");
-      router.push(`/projects/${created.id}`);
-    } catch(err) {
-      if (err instanceof z.ZodError) { setError(err.issues[0]?.message??"Fill all fields."); return; }
-      setError(err instanceof Error?err.message:"Failed to create project");
+      projectCreateSchema.parse({ title, problem, startup_stage: stage });
+    } catch (e: any) {
+      setError(e.errors?.[0]?.message ?? "Invalid input");
+      return;
     }
-  };
-
-  // Aggregate stats
-  const totalTasks = summaries.reduce((a,s)=>a+(s.tasksTotal??0),0);
-  const doneTasks = summaries.reduce((a,s)=>a+(s.tasksCompleted??0),0);
+    onCreate({ title, problem, stage });
+  }
 
   return (
-    <div style={{ maxWidth:1040,margin:"0 auto",fontFamily:"system-ui,sans-serif",color:VIZ.text1,paddingBottom:48 }}>
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.72)", backdropFilter: "blur(6px)" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.96, y: 12 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96 }}
+        transition={{ duration: 0.18 }}
+        className="w-full max-w-md rounded-2xl p-7 flex flex-col gap-5"
+        style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)" }}
+      >
+        <div className="flex items-start justify-between">
+          <div>
+            <h2 className="text-xl font-bold text-[var(--bm-text)] tracking-tight">New Project</h2>
+            <p className="text-sm text-[var(--bm-text3)] mt-1">Start with a clear problem statement.</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-[var(--bm-text3)] hover:bg-[var(--bm-bg3)] transition-colors"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="flex flex-col gap-4">
+          <Input
+            label="Project Name"
+            placeholder="e.g. BuildMind, TaskFlow AI…"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            autoFocus
+          />
+
+          <Textarea
+            label="Problem You're Solving"
+            placeholder="Who has this problem? What happens when they can't solve it?"
+            value={problem}
+            onChange={(e) => setProblem(e.target.value)}
+            rows={3}
+          />
+
+          <div className="flex flex-col gap-2">
+            <label className="text-xs font-medium text-[var(--bm-text2)] uppercase tracking-widest">
+              Current Stage
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {STAGE_OPTIONS.map((s) => {
+                const isActive = stage === s;
+                const color = STAGE_COLORS[s] ?? "var(--bm-text3)";
+                return (
+                  <button
+                    key={s}
+                    onClick={() => setStage(s)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-150"
+                    style={{
+                      background: isActive ? `${color}15` : "transparent",
+                      borderColor: isActive ? `${color}55` : "var(--bm-border)",
+                      color: isActive ? color : "var(--bm-text3)",
+                    }}
+                  >
+                    {s}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {error && (
+            <p className="text-xs p-3 rounded-lg" style={{ background: "rgba(224,85,85,0.08)", color: "var(--bm-red)", border: "1px solid rgba(224,85,85,0.2)" }}>
+              {error}
+            </p>
+          )}
+        </div>
+
+        <div className="flex gap-3">
+          <Button variant="secondary" fullWidth onClick={onClose} disabled={isPending}>
+            Cancel
+          </Button>
+          <Button fullWidth onClick={handleSubmit} loading={isPending} disabled={!title.trim()}>
+            Create Project <ArrowRight size={13} />
+          </Button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+export default function ProjectsPage() {
+  const router = useRouter();
+  const { plan } = usePlan();
+  const { showLimitModal } = useLimitModal();
+  const { data: summaries = [], isLoading } = useProjectSummariesQuery();
+  const createMut = useCreateProjectMutation();
+  const deleteMut = useDeleteProjectMutation();
+
+  const [activeId, setActiveId] = useState<string>("");
+  const [showCreate, setShowCreate] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+
+  const limits = getLimits(plan);
+
+  useEffect(() => {
+    const id = getActiveProjectId();
+    if (id) setActiveId(id);
+  }, []);
+
+  async function handleCreate(data: { title: string; problem: string; stage: StartupStage }) {
+    if (summaries.length >= limits.maxProjects) {
+      showLimitModal("projects");
+      return;
+    }
+    try {
+      await createMut.mutateAsync({
+        project_name: data.title.trim(),
+        idea_description: data.problem.trim(),
+        target_users: "",
+        problem: data.problem.trim(),
+        startup_stage: data.stage,
+      });
+      setShowCreate(false);
+    } catch {
+      /* errors handled in modal */
+    }
+  }
+
+  async function handleDelete(id: string) {
+    await deleteMut.mutateAsync(id);
+    if (activeId === id) setActiveId("");
+    setDeleteConfirm(null);
+  }
+
+  async function handleSetActive(id: string) {
+    await setActiveProjectId(id);
+    setActiveId(id);
+  }
+
+  return (
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 flex flex-col gap-8">
 
       {/* Header */}
-      <motion.div initial={{ opacity:0,y:-6 }} animate={{ opacity:1,y:0 }}
-        style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22,paddingBottom:16,borderBottom:`1px solid ${VIZ.border}` }}>
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex items-start justify-between gap-4 flex-wrap"
+      >
         <div>
-          <div style={{ fontSize:21,fontWeight:700,letterSpacing:"-0.03em",marginBottom:3 }}>Projects</div>
-          <div style={{ fontSize:12,color:VIZ.text3 }}>
-            {summaries.length} project{summaries.length!==1?"s":""}
-            {maxProjects!==-1&&<span style={{ color:"#333",marginLeft:6 }}>· free plan: {summaries.length}/{maxProjects}</span>}
-          </div>
+          <h1 className="text-3xl font-bold text-[var(--bm-text)] tracking-tight">Projects</h1>
+          <p className="text-sm text-[var(--bm-text3)] mt-1">
+            Build and manage all your startup ideas in one place.
+          </p>
         </div>
-        <motion.button whileHover={{ scale:1.02 }} whileTap={{ scale:0.97 }}
-          onClick={()=>{ if(maxProjects!==-1&&summaries.length>=maxProjects){ showLimit("generic"); return; } setModalOpen(true); }}
-          style={{ background:"#fff",color:"#000",fontWeight:700,fontSize:13,padding:"9px 18px",borderRadius:9,border:"none",cursor:"pointer",fontFamily:"inherit" }}>
-          + New project
-        </motion.button>
+
+        <div className="flex items-center gap-3">
+          <div
+            className="text-xs px-3 py-1.5 rounded-lg"
+            style={{
+              background: "var(--bm-bg3)",
+              border: "1px solid var(--bm-border)",
+              color: "var(--bm-text3)",
+            }}
+          >
+            {summaries.length}/{limits.maxProjects === Infinity ? "∞" : limits.maxProjects} projects
+          </div>
+          <Button onClick={() => setShowCreate(true)}>
+            <Plus size={14} />
+            New Project
+          </Button>
+        </div>
       </motion.div>
 
-      {/* Stat overview */}
-      {summaries.length>0&&(
-        <div style={{ display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:16 }}>
-          {[
-            { label:"Projects", value:summaries.length, color:VIZ.text1, icon:"📁" },
-            { label:"Tasks done", value:doneTasks, color:VIZ.emerald, icon:"✅" },
-            { label:"Total tasks", value:totalTasks, color:VIZ.text1, icon:"📋" },
-          ].map((t,i)=>(
-            <motion.div key={t.label} initial={{ opacity:0,y:8 }} animate={{ opacity:1,y:0 }} transition={{ delay:i*0.05 }}
-              style={{ background:VIZ.panel,border:`1px solid ${VIZ.border}`,borderRadius:12,padding:"16px 18px" }}>
-              <div style={{ fontSize:16,marginBottom:6 }}>{t.icon}</div>
-              <div style={{ fontSize:9,color:VIZ.text3,textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:600,marginBottom:5 }}>{t.label}</div>
-              <div style={{ fontSize:26,fontWeight:700,color:t.color,letterSpacing:"-0.04em",lineHeight:1 }}>{t.value}</div>
-            </motion.div>
-          ))}
+      {/* Loading */}
+      {isLoading && (
+        <div className="flex flex-col gap-3">
+          {[1, 2, 3].map((i) => <SkeletonRow key={i} />)}
         </div>
       )}
 
-      {isLoading&&<BuildMindLoader variant="card" label="Loading projects…" />}
-      {summariesError&&<div style={{ fontSize:12,color:VIZ.rose }}>{summariesError instanceof Error?summariesError.message:"Failed to load"}</div>}
-
-      {!isLoading&&summaries.length===0&&(
-        <motion.div initial={{ opacity:0,y:10 }} animate={{ opacity:1,y:0 }}
-          style={{ background:VIZ.panel,border:`1px solid ${VIZ.border}`,borderRadius:14,padding:"64px 32px",textAlign:"center" }}>
-          <div style={{ fontSize:40,marginBottom:16 }}>🚀</div>
-          <div style={{ fontSize:16,fontWeight:700,marginBottom:8 }}>No projects yet</div>
-          <div style={{ fontSize:13,color:VIZ.text2,marginBottom:24,lineHeight:1.65,maxWidth:360,margin:"0 auto 24px" }}>
-            Create your first startup project. BuildMind generates milestones and a roadmap automatically.
-          </div>
-          <button onClick={()=>setModalOpen(true)} style={{ background:"#fff",color:"#000",fontWeight:700,fontSize:13,padding:"10px 22px",borderRadius:9,border:"none",cursor:"pointer",fontFamily:"inherit" }}>New project</button>
-        </motion.div>
+      {/* Empty state */}
+      {!isLoading && summaries.length === 0 && (
+        <EmptyState
+          title="No projects yet"
+          description="Start your first project and BuildMind will break it into an executable roadmap."
+          action={
+            <Button onClick={() => setShowCreate(true)}>
+              <Plus size={14} />
+              New Project
+            </Button>
+          }
+        />
       )}
 
-      {/* Projects table — visualizer style */}
-      {summaries.length>0&&(
-        <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} transition={{ delay:0.1 }}
-          style={{ background:VIZ.panel,border:`1px solid ${VIZ.border}`,borderRadius:14,overflow:"hidden" }}>
-          {/* Table header */}
-          <div style={{ display:"grid",gridTemplateColumns:"1fr 100px 110px 64px 90px 40px",padding:"10px 18px",borderBottom:`1px solid ${VIZ.border}`,background:"rgba(255,255,255,0.02)" }}>
-            {["Project","Stage","Progress","Score","Last activity",""].map(h=>(
-              <div key={h} style={{ fontSize:9,color:VIZ.text3,textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:600 }}>{h}</div>
-            ))}
-          </div>
-          {summaries.map((s,i)=>{
-            const stage=s.startup_stage??"Idea";
-            const score=computeStartupScore(s);
-            const progress=s.progress??0;
-            const stageColor=STAGE_COLORS[stage]??"#555";
-            const lastActivity=s.lastActivity?new Date(s.lastActivity).toLocaleDateString("en-GB",{ day:"numeric",month:"short" }):"—";
+      {/* Project list */}
+      {!isLoading && summaries.length > 0 && (
+        <div className="flex flex-col gap-3">
+          {summaries.map((s, i) => {
+            const score = computeStartupScore(s);
+            const stageNorm = normalizeStage(s.startup_stage ?? "");
+            const stageVariant = STAGE_BADGE_VARIANT[stageNorm] ?? "neutral";
+            const isActive = s.id === activeId;
+            const completion = s.tasksTotal > 0
+              ? Math.round((s.tasksCompleted / s.tasksTotal) * 100)
+              : 0;
+
             return (
-              <motion.div key={s.id} initial={{ opacity:0,y:4 }} animate={{ opacity:1,y:0 }} transition={{ delay:i*0.05 }}
-                onClick={()=>{ setActiveProjectId(s.id); router.push(`/projects/${s.id}`); }}
-                style={{ display:"grid",gridTemplateColumns:"1fr 100px 110px 64px 90px 40px",padding:"14px 18px",borderBottom:i<summaries.length-1?`1px solid ${VIZ.border}`:"none",cursor:"pointer",transition:"background 0.15s",alignItems:"center" }}
-                onMouseEnter={e=>(e.currentTarget as HTMLElement).style.background="rgba(255,255,255,0.02)"}
-                onMouseLeave={e=>(e.currentTarget as HTMLElement).style.background="transparent"}>
-                <div>
-                  <div style={{ fontSize:13,color:VIZ.text1,fontWeight:600,marginBottom:2 }}>{s.title}</div>
-                  <div style={{ fontSize:11,color:VIZ.text3,maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{s.description}</div>
-                </div>
-                <div>
-                  <span style={{ fontSize:10,color:stageColor,background:`${stageColor}12`,border:`1px solid ${stageColor}30`,borderRadius:5,padding:"3px 8px",whiteSpace:"nowrap" }}>{stage}</span>
-                </div>
-                <ProgressBar value={progress} delay={0.3+i*0.05} />
-                <MiniRing score={score} />
-                <div style={{ fontSize:11,color:VIZ.text3 }}>{lastActivity}</div>
-                <button onClick={e=>{ e.stopPropagation(); if(window.confirm(`Delete "${s.title}"?`)) deleteMutation.mutate(s.id); }}
-                  style={{ background:"none",border:"none",color:VIZ.text3,fontSize:16,cursor:"pointer",padding:"4px",borderRadius:4,lineHeight:1,transition:"color 0.15s" }}
-                  onMouseEnter={e=>(e.currentTarget as HTMLButtonElement).style.color=VIZ.rose}
-                  onMouseLeave={e=>(e.currentTarget as HTMLButtonElement).style.color=VIZ.text3}>×</button>
+              <motion.div
+                key={s.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.06 }}
+              >
+                <Card
+                  className="overflow-hidden"
+                  style={
+                    isActive
+                      ? {
+                          borderColor: "var(--bm-accent-bd)",
+                          boxShadow: "0 0 24px rgba(92,200,138,0.06)",
+                        }
+                      : undefined
+                  }
+                >
+                  <div className="p-5">
+                    <div className="flex items-start gap-4">
+                      {/* Score ring */}
+                      <MiniRing score={score} />
+
+                      {/* Info */}
+                      <div className="flex-1 min-w-0 flex flex-col gap-2.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-semibold text-[var(--bm-text)]">
+                            {s.title}
+                          </span>
+                          <Badge variant={stageVariant} size="sm">{stageNorm}</Badge>
+                          {isActive && (
+                            <Badge variant="success" size="sm" dot>Active</Badge>
+                          )}
+                        </div>
+
+                        {(s as any).problem && (
+                          <p className="text-xs text-[var(--bm-text3)] leading-relaxed line-clamp-2">
+                            {(s as any).problem}
+                          </p>
+                        )}
+
+                        <ProgressBar value={s.tasksCompleted ?? 0} max={s.tasksTotal ?? 0} i={i} />
+
+                        <div className="flex items-center gap-3 text-xs text-[var(--bm-text3)]">
+                          <span>{s.tasksCompleted ?? 0}/{s.tasksTotal ?? 0} tasks · {completion}%</span>
+                          {s.lastActivity && (
+                            <span className="flex items-center gap-1">
+                              <Clock size={10} />
+                              {new Date(s.lastActivity).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex items-center gap-2 shrink-0 mt-0.5">
+                        {!isActive && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleSetActive(s.id)}
+                            title="Set as active"
+                          >
+                            <Check size={12} />
+                          </Button>
+                        )}
+                        <Link href={`/projects/${s.id}`}>
+                          <Button variant="ghost" size="sm">
+                            View <ChevronRight size={12} />
+                          </Button>
+                        </Link>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setDeleteConfirm(s.id)}
+                          className="text-[var(--bm-red)] hover:bg-[rgba(224,85,85,0.08)]"
+                        >
+                          <Trash2 size={12} />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Delete confirm */}
+                  <AnimatePresence>
+                    {deleteConfirm === s.id && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        style={{ overflow: "hidden", borderTop: "1px solid var(--bm-border)" }}
+                      >
+                        <div
+                          className="flex items-center justify-between gap-3 px-5 py-3"
+                          style={{ background: "rgba(224,85,85,0.04)" }}
+                        >
+                          <span className="text-xs" style={{ color: "var(--bm-red)" }}>
+                            Delete "{s.title}"? This cannot be undone.
+                          </span>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => setDeleteConfirm(null)}
+                            >
+                              Cancel
+                            </Button>
+                            <Button
+                              variant="danger"
+                              size="sm"
+                              loading={deleteMut.isPending}
+                              onClick={() => handleDelete(s.id)}
+                            >
+                              Delete
+                            </Button>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </Card>
               </motion.div>
             );
           })}
-        </motion.div>
+
+          {/* Add more nudge */}
+          {summaries.length < (limits.maxProjects === Infinity ? 999 : limits.maxProjects) && (
+            <motion.button
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.4 }}
+              onClick={() => setShowCreate(true)}
+              className="w-full py-5 rounded-xl text-sm flex items-center justify-center gap-2 transition-all duration-150"
+              style={{
+                border: "2px dashed var(--bm-border)",
+                background: "transparent",
+                color: "var(--bm-text3)",
+                cursor: "pointer",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = "var(--bm-accent-bd)";
+                e.currentTarget.style.color = "var(--bm-accent)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = "var(--bm-border)";
+                e.currentTarget.style.color = "var(--bm-text3)";
+              }}
+            >
+              <Plus size={14} /> Start a new project
+            </motion.button>
+          )}
+        </div>
       )}
 
       {/* Create modal */}
       <AnimatePresence>
-        {modalOpen&&(
-          <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}
-            style={{ position:"fixed",inset:0,zIndex:50,display:"flex",alignItems:"center",justifyContent:"center",padding:24,background:"rgba(0,0,0,0.9)" }}
-            onClick={e=>{ if(e.target===e.currentTarget) setModalOpen(false); }}>
-            <motion.div initial={{ opacity:0,y:12,scale:0.97 }} animate={{ opacity:1,y:0,scale:1 }} exit={{ opacity:0,y:8 }}
-              transition={{ type:"spring",stiffness:300,damping:25 }}
-              style={{ background:"rgba(14,14,20,0.99)",border:`1px solid ${VIZ.border}`,borderTop:`2px solid ${VIZ.indigo}`,borderRadius:14,padding:"26px 28px",width:"100%",maxWidth:480,fontFamily:"inherit",color:VIZ.text1 }}>
-              <div style={{ fontSize:16,fontWeight:700,marginBottom:4,letterSpacing:"-0.02em" }}>New project</div>
-              <div style={{ fontSize:12,color:VIZ.text3,marginBottom:20,lineHeight:1.6 }}>BuildMind generates a stage-aware roadmap and milestone plan automatically.</div>
-              <div style={{ display:"flex",flexDirection:"column",gap:10,marginBottom:16 }}>
-                <input value={projectName} onChange={e=>setProjectName(e.target.value)} placeholder="Project name" style={inputStyle}
-                  onFocus={e=>(e.target as HTMLInputElement).style.borderColor="rgba(99,102,241,0.4)"}
-                  onBlur={e=>(e.target as HTMLInputElement).style.borderColor="rgba(255,255,255,0.07)"} />
-                <textarea value={ideaDescription} onChange={e=>setIdeaDescription(e.target.value)} placeholder="What are you building? Be specific." rows={3}
-                  style={{ ...inputStyle,resize:"none" }}
-                  onFocus={e=>(e.target as HTMLTextAreaElement).style.borderColor="rgba(99,102,241,0.4)"}
-                  onBlur={e=>(e.target as HTMLTextAreaElement).style.borderColor="rgba(255,255,255,0.07)"} />
-                <input value={targetUsers} onChange={e=>setTargetUsers(e.target.value)} placeholder="Who is this for?" style={inputStyle}
-                  onFocus={e=>(e.target as HTMLInputElement).style.borderColor="rgba(99,102,241,0.4)"}
-                  onBlur={e=>(e.target as HTMLInputElement).style.borderColor="rgba(255,255,255,0.07)"} />
-                <div>
-                  <div style={{ fontSize:11,color:VIZ.text3,marginBottom:6 }}>Current stage</div>
-                  <select value={startupStage} onChange={e=>setStartupStage(normalizeStage(e.target.value))}
-                    style={{ ...inputStyle,background:"rgba(10,10,16,0.95)" }}>
-                    {STAGE_OPTIONS.map(s=><option key={s} value={s} style={{ background:"#0a0a10",color:VIZ.text2 }}>{s}</option>)}
-                  </select>
-                </div>
-              </div>
-              {error&&<div style={{ fontSize:12,color:VIZ.rose,marginBottom:12 }}>{error}</div>}
-              <div style={{ display:"flex",gap:8,justifyContent:"flex-end" }}>
-                <button onClick={()=>setModalOpen(false)} style={{ background:"transparent",border:`1px solid ${VIZ.border}`,color:VIZ.text2,fontSize:13,padding:"9px 16px",borderRadius:8,cursor:"pointer",fontFamily:"inherit" }}>Cancel</button>
-                <motion.button whileTap={{ scale:0.97 }} onClick={()=>void onCreate()} disabled={createMutation.isPending}
-                  style={{ background:createMutation.isPending?"#111":"#fff",color:createMutation.isPending?"#444":"#000",fontSize:13,fontWeight:700,padding:"9px 18px",borderRadius:8,border:"none",cursor:createMutation.isPending?"not-allowed":"pointer",fontFamily:"inherit" }}>
-                  {createMutation.isPending?"Generating roadmap...":"Create project →"}
-                </motion.button>
-              </div>
-            </motion.div>
-          </motion.div>
+        {showCreate && (
+          <CreateModal
+            onClose={() => setShowCreate(false)}
+            onCreate={handleCreate}
+            isPending={createMut.isPending}
+          />
         )}
       </AnimatePresence>
     </div>

@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.deps import get_current_admin
 from app.database import get_db
 from app.models import ActivityLog, AppState, Feedback, User
+from app.schemas.buildmind import SystemSettingRequest
 from app.schemas.buildmind import (
     AdminAiUsageOut,
     AdminNotificationRequest,
@@ -252,14 +253,12 @@ def admin_system_settings(
 
 @router.post("/system-settings")
 def admin_set_system_setting(
-    payload: dict,
+    payload: SystemSettingRequest,
     db: Session = Depends(get_db),
     _admin: User = Depends(get_current_admin),
 ):
-    key = str(payload.get("key", "")).strip()
-    value_json = str(payload.get("value_json", "")).strip()
-    if not key:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="key is required")
+    key = payload.key
+    value_json = payload.value_json
     row = db.query(AppState).filter(AppState.key == key).first()
     if row is None:
         row = AppState(key=key, value_json=value_json)

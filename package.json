@@ -1,9 +1,9 @@
 {
-  "name": "founder-execution-os-frontend",
+  "name": "buildmind",
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "node -r ./scripts/disable-next-trace.js node_modules/next/dist/bin/next dev -p 3006",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -29,7 +29,8 @@
     "react-dom": "18.3.1",
     "recharts": "^3.7.0",
     "tailwind-merge": "^2.6.0",
-    "zod": "^4.3.6"
+    "zod": "^4.3.6",
+    "web-push": "3.6.7"
   },
   "optionalDependencies": {
     "@next/swc-linux-x64-gnu": "^15.5.7"
@@ -44,6 +45,8 @@
     "tailwindcss": "3.4.15",
     "typescript": "5.6.3",
     "vitest": "^1.6.1",
-    "@playwright/test": "^1.44.0"
+    "@playwright/test": "^1.44.0",
+    "@types/web-push": "^3.6.4",
+    "wait-on": "^7.2.0"
   }
 }

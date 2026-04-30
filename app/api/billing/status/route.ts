@@ -10,11 +10,11 @@ export async function GET() {
   } = await supabase.auth.getUser();
 
   if (error) {
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: false, authenticated: false, plan: "free" });
   }
 
   if (!user) {
-    return NextResponse.json({ ok: false, authenticated: false, plan: "free" }, { status: 401 });
+    return NextResponse.json({ ok: false, authenticated: false, plan: "free" });
   }
 
   return NextResponse.json({

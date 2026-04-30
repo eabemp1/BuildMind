@@ -1,3 +1,33 @@
+"""
+app/agent/runtime.py — BuildMind agent runtime (route registration shim)
+
+This file is the wiring layer. Feature logic lives in dedicated modules:
+
+  app/agent/khaya.py     — Khaya language API (translate, TTS, ASR)
+  app/agent/memory.py    — Fact extraction, memory CRUD, scope management
+  app/agent/forge.py     — Forge state, checkpoints, evolution features
+  app/agent/workspace.py — Utility workspace (web search, live answers)
+
+Do NOT add new feature logic here. Add it to the appropriate module above
+and register its routes via the register_*_routes() helpers at the bottom
+of this file.
+
+Module map (remaining sections in this file):
+─────────────────────────────────────────────
+  SECTION 1   Configuration & constants         (~L1–150)
+  SECTION 2   Database / state helpers          (~L150–400)
+  SECTION 3   Auth & session management         (~L400–700)
+  SECTION 6   AI inference helpers              (~L700–1700)
+  SECTION 7   Reminder & scheduler              (~L1700–2000)
+  SECTION 8   Core agent chat loop              (~L2000–3500)
+  SECTION 11  Route registration & app wiring   (~L3500+)
+
+Sections 4 (Khaya), 5 (Memory), 9 (Forge), 10 (Workspace) have been
+extracted to their own modules. Backward-compatible re-exports are kept
+below each original block so existing callers don't break.
+  the existing import surface used by app/routes/agent.py.
+"""
+
 # main.py - Lumiere (thumbs rating, levels, fact extraction, chat history, full model selector)
 
 try:

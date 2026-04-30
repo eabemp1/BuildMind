@@ -1,6 +1,13 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 
-const MONTHLY_LIMIT = 50; // raised from 20 for beta testers
+// Plan-aware monthly AI limits
+// Free: 30 calls/month (3/day × 30 days, but we cap monthly for safety)
+// Builder/Venture: unlimited (-1)
+const PLAN_MONTHLY_LIMITS: Record<string, number> = {
+  free: 30,
+  builder: -1,
+  venture: -1,
+};
 
 export function hasAdminEnv(): boolean {
   return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -10,11 +17,31 @@ export function hasGroqKey(): boolean {
   return Boolean(process.env.GROQ_API_KEY);
 }
 
-export async function enforceAndTrackAIUsage(userId: string) {
+export async function enforceAndTrackAIUsage(userId: string, planOverride?: string) {
   if (!hasAdminEnv()) return; // dev mode — skip limits
   const supabase = createAdminClient();
   const d = new Date();
   const month = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+
+  // Look up plan from user metadata if not provided
+  let plan = planOverride ?? "free";
+  if (!planOverride) {
+    const { data: authUser } = await supabase.auth.admin.getUserById(userId).catch(() => ({ data: null }));
+    plan = (authUser?.user?.user_metadata?.plan as string) ?? "free";
+  }
+
+  const monthlyLimit = PLAN_MONTHLY_LIMITS[plan] ?? 30;
+  // Builder/Venture unlimited — just track, don't cap
+  if (monthlyLimit === -1) {
+    const { data: existing } = await supabase
+      .from("ai_usage").select("id,count").eq("user_id", userId).eq("month", month).single();
+    if (!existing) {
+      await supabase.from("ai_usage").insert({ user_id: userId, month, count: 1 });
+    } else {
+      await supabase.from("ai_usage").update({ count: (existing.count ?? 0) + 1 }).eq("id", existing.id);
+    }
+    return;
+  }
 
   const { data: existing, error: selectError } = await supabase
     .from("ai_usage")
@@ -29,8 +56,8 @@ export async function enforceAndTrackAIUsage(userId: string) {
     await supabase.from("ai_usage").insert({ user_id: userId, month, count: 1 });
     return;
   }
-  if ((existing.count ?? 0) >= MONTHLY_LIMIT) {
-    throw new Error("Monthly AI limit reached. Upgrade to continue.");
+  if ((existing.count ?? 0) >= monthlyLimit) {
+    throw new Error(`Monthly AI limit reached (${monthlyLimit} calls). Upgrade to Builder for unlimited AI.`);
   }
   await supabase.from("ai_usage").update({ count: (existing.count ?? 0) + 1 }).eq("id", existing.id);
 }

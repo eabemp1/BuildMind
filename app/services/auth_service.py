@@ -20,7 +20,6 @@ def register_user(db: Session, email: str, password: str, username: str | None =
         email=email.lower(),
         username=(username.strip().lower() if username else None),
         hashed_password=hashed,
-        password_hash=hashed,
     )
     db.add(user)
     db.flush()
@@ -86,7 +85,6 @@ def change_user_password(db: Session, user_id: int, current_password: str, new_p
     if not stored or not verify_password(current_password, stored):
         raise ValueError("Invalid current password")
     hashed = hash_password(new_password)
-    user.password_hash = hashed
     user.hashed_password = hashed
     db.add(user)
     db.flush()

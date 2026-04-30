@@ -1,14 +1,11 @@
 import { MetadataRoute } from "next";
-import { FEATURES } from "@/lib/features";
 
 export default function robots(): MetadataRoute.Robots {
-  const allow = ["/", "/try", "/upgrade", "/students", "/auth/signup"];
-  if (FEATURES.publicProjects) allow.splice(1, 0, "/explore");
   return {
     rules: [
       {
         userAgent: "*",
-        allow,
+        allow: ["/", "/explore", "/try", "/upgrade", "/students"],
         disallow: [
           "/auth/login",
           "/today",

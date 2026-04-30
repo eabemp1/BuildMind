@@ -286,3 +286,5 @@ export function TourOverlay({ forceShow = false, onDone }: { forceShow?: boolean
     </AnimatePresence>
   );
 }
+
+export default TourOverlay;

@@ -23,16 +23,36 @@ export async function middleware(request: NextRequest) {
 
   const {
     data: { user },
+    error: authError,
   } = await supabase.auth.getUser();
 
+  if (authError) {
+    for (const cookie of request.cookies.getAll()) {
+      if (cookie.name.startsWith("sb-")) {
+        response.cookies.delete(cookie.name);
+      }
+    }
+  }
+
   const pathname = request.nextUrl.pathname;
+  const todayKey = new Date().toISOString().slice(0, 10);
+
+  if (pathname === "/" && request.nextUrl.searchParams.has("code") && !user) {
+    const redirectUrl = request.nextUrl.clone();
+    redirectUrl.pathname = "/auth/callback";
+    if (!redirectUrl.searchParams.has("next")) {
+      redirectUrl.searchParams.set("next", "/onboarding");
+    }
+    return NextResponse.redirect(redirectUrl);
+  }
+
   const isAuthRoute = pathname.startsWith("/auth");
   const isConversionRoute =
-    pathname === "/landing" ||
     pathname === "/try" ||
     pathname.startsWith("/try/") ||
+    pathname === "/break" ||
+    pathname.startsWith("/break/") ||
     pathname === "/upgrade" ||
-    pathname === "/welcome" ||
     pathname === "/ventures" ||
     pathname.startsWith("/ventures/");
   const isExploreRoute = pathname === "/explore" || pathname.startsWith("/explore/");
@@ -40,21 +60,44 @@ export async function middleware(request: NextRequest) {
   const isStudentRoute = pathname === "/students";
   const isPublicRoute =
     pathname === "/" ||
+    pathname === "/landing" ||
+    pathname === "/welcome" ||
     isAuthRoute ||
     isExploreRoute ||
     isFounderRoute ||
     isConversionRoute ||
     isStudentRoute;
   const isApiRoute = pathname.startsWith("/api");
+  const isOnboardingRoute = pathname === "/onboarding" || pathname.startsWith("/onboarding/");
 
   // Private admin-only route — /my-ventures
   if (pathname === "/my-ventures" || pathname.startsWith("/my-ventures/")) {
-    const adminId = process.env.NEXT_PUBLIC_ADMIN_USER_ID;
-    if (!user || (adminId && user.id !== adminId)) {
+    let isAdmin = false;
+
+    if (user) {
+      try {
+        const res = await fetch(new URL("/api/system/admin-check", request.url), {
+          headers: { cookie: request.headers.get("cookie") ?? "" },
+        });
+        if (res.ok) {
+          const json = await res.json();
+          isAdmin = json.isAdmin === true;
+        }
+      } catch {}
+    }
+
+    if (!isAdmin) {
       const redirectUrl = request.nextUrl.clone();
-      redirectUrl.pathname = "/dashboard";
+      redirectUrl.pathname = "/overview";
       return NextResponse.redirect(redirectUrl);
     }
+  }
+
+  // /dashboard → /overview (dashboard is now the KPI overview)
+  if (pathname === "/dashboard" || pathname.startsWith("/dashboard/")) {
+    const redirectUrl = request.nextUrl.clone();
+    redirectUrl.pathname = "/overview";
+    return NextResponse.redirect(redirectUrl);
   }
 
   const featureBlocks = [
@@ -71,7 +114,37 @@ export async function middleware(request: NextRequest) {
     const blocked = featureBlocks.some((item) => !item.enabled && item.match(pathname));
     if (blocked) {
       const redirectUrl = request.nextUrl.clone();
-      redirectUrl.pathname = "/dashboard";
+      redirectUrl.pathname = "/overview";
+      return NextResponse.redirect(redirectUrl);
+    }
+  }
+
+  if (user && !isApiRoute) {
+    const metadataCompleted = user.user_metadata?.onboarding_completed === true;
+    const { count: projectCount } = await supabase
+      .from("projects")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id);
+    const onboardingCompleted = metadataCompleted || (projectCount ?? 0) > 0;
+
+    if (!onboardingCompleted && !isOnboardingRoute) {
+      const redirectUrl = request.nextUrl.clone();
+      redirectUrl.pathname = "/onboarding";
+      return NextResponse.redirect(redirectUrl);
+    }
+
+    if (onboardingCompleted && isOnboardingRoute) {
+      const redirectUrl = request.nextUrl.clone();
+      redirectUrl.pathname = "/today";
+      return NextResponse.redirect(redirectUrl);
+    }
+
+    const isPrivateRoute = !isPublicRoute && !isApiRoute;
+    const hasSeenToday = request.cookies.get("bm_today_seen")?.value === todayKey;
+    if (onboardingCompleted && isPrivateRoute && pathname !== "/today" && !hasSeenToday) {
+      const redirectUrl = request.nextUrl.clone();
+      redirectUrl.pathname = "/today";
+      redirectUrl.searchParams.set("next", pathname);
       return NextResponse.redirect(redirectUrl);
     }
   }
@@ -84,13 +157,23 @@ export async function middleware(request: NextRequest) {
 
   if (user && (pathname === "/" || isAuthRoute)) {
     const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = "/dashboard";
+    redirectUrl.pathname = "/today";
     return NextResponse.redirect(redirectUrl);
+  }
+
+  if (user && pathname === "/today") {
+    response.cookies.set("bm_today_seen", todayKey, {
+      path: "/",
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24,
+    });
   }
 
   return response;
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"]
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|sw.js|manifest.json|robots.txt|sitemap.xml|.*\\.(?:svg|png|jpg|jpeg|webp|ico)$).*)",
+  ],
 };

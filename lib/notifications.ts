@@ -66,6 +66,12 @@ export function getUnreadCount(): number {
   return getUnreadNotifications().length;
 }
 
+// Legacy-compatible exports (v4/v6 call-sites expect these names)
+export const getUnreadNotificationCount = getUnreadCount;
+export const markNotificationAsRead = markRead;
+export const getNotificationsForCurrentUser = getAllNotifications;
+export const createNotificationForCurrentUser = addNotification;
+
 function saveNotifications(notifs: AppNotification[]): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(notifs.slice(0, MAX_NOTIFS)));
 }
@@ -255,4 +261,9 @@ export function runNotificationChecks(): void {
   [3, 7, 14, 30, 100].forEach(m => {
     if (streak === m) notifyStreakMilestone(m);
   });
+}
+
+export function clearNotificationsForCurrentUser(): void {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(STORAGE_KEY);
 }

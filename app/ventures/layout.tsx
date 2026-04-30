@@ -1,8 +1,5 @@
-import { notFound } from "next/navigation";
-import { FEATURES } from "@/lib/features";
+import AppShell from "@/components/layout/app-shell";
 
-export default function VenturesLayout({ children }: { children: React.ReactNode }) {
-  if (!FEATURES.ventures) notFound();
-  return children;
+export default function Layout({ children }: { children: React.ReactNode }) {
+  return <AppShell>{children}</AppShell>;
 }
-

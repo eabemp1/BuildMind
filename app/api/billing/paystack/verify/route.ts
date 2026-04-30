@@ -1,102 +1,127 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { persistUserPlan } from "@/lib/billing/server";
 
-type PaystackVerifyBody = {
-  reference?: string;
-};
+const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY ?? "";
+
+// Expected amount in pesewas (GHS 290 = 29000 pesewas)
+function expectedAmountPesewas(): number {
+  return parseInt(process.env.PAYSTACK_AMOUNT_PESEWAS ?? "29000", 10);
+}
 
 type PaystackVerifyResponse = {
   status: boolean;
   message?: string;
   data?: {
-    id?: number | string;
     status?: string;
     reference?: string;
     amount?: number;
     currency?: string;
-    subscription?: number | string | null;
     customer?: { email?: string | null } | null;
     metadata?: Record<string, unknown> | null;
   } | null;
 };
 
-function expectedAmount() {
-  const raw =
-    process.env.PAYSTACK_AMOUNT_BUILDER ??
-    process.env.NEXT_PUBLIC_PAYSTACK_AMOUNT_BUILDER ??
-    "29000";
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 29000;
-}
+type PaystackInitResponse = {
+  status: boolean;
+  message?: string;
+  data?: { authorization_url?: string; access_code?: string; reference?: string } | null;
+};
 
-export async function POST(request: Request) {
-  const secretKey = process.env.PAYSTACK_SECRET_KEY;
-  if (!secretKey) {
-    return NextResponse.json({ ok: false, error: "PAYSTACK_SECRET_KEY is missing." }, { status: 500 });
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json().catch(() => ({})) as Record<string, unknown>;
+    const action = String(body?.action ?? "verify");
+
+    // ── INITIALIZE ──────────────────────────────────────────────────────────
+    if (action === "initialize") {
+      if (!PAYSTACK_SECRET_KEY) {
+        return NextResponse.json({ error: "Paystack not configured. Add PAYSTACK_SECRET_KEY to environment variables." }, { status: 503 });
+      }
+
+      const email = String(body?.email ?? "").trim();
+      const userId = String(body?.userId ?? "").trim();
+      const callbackUrl = String(body?.callbackUrl ?? process.env.NEXT_PUBLIC_APP_URL + "/upgrade");
+
+      if (!email || !userId) {
+        return NextResponse.json({ error: "email and userId required" }, { status: 400 });
+      }
+
+      const res = await fetch("https://api.paystack.co/transaction/initialize", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+        },
+        body: JSON.stringify({
+          email,
+          amount: expectedAmountPesewas(),
+          currency: "GHS",
+          callback_url: callbackUrl,
+          metadata: { user_id: userId, plan: "builder" },
+        }),
+      });
+
+      const data = await res.json() as PaystackInitResponse;
+
+      if (!res.ok || !data.status || !data.data?.authorization_url) {
+        return NextResponse.json({ error: data.message ?? "Paystack initialization failed" }, { status: 500 });
+      }
+
+      return NextResponse.json({ authorization_url: data.data.authorization_url });
+    }
+
+    // ── VERIFY ───────────────────────────────────────────────────────────────
+    const reference = String(body?.reference ?? "").trim();
+    if (!reference) {
+      return NextResponse.json({ ok: false, error: "reference is required" }, { status: 400 });
+    }
+
+    if (!PAYSTACK_SECRET_KEY) {
+      return NextResponse.json({ ok: false, error: "Paystack not configured on server" }, { status: 503 });
+    }
+
+    // Verify with Paystack API
+    const res = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {
+      headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}` },
+    });
+
+    const data = await res.json() as PaystackVerifyResponse;
+
+    if (!res.ok || !data.status || data.data?.status !== "success") {
+      return NextResponse.json({ ok: false, error: "Payment not successful", details: data.message }, { status: 400 });
+    }
+
+    const amount = data.data?.amount ?? 0;
+    const expected = expectedAmountPesewas();
+    if (amount < expected) {
+      return NextResponse.json({ ok: false, error: `Amount mismatch: got ${amount}, expected ${expected}` }, { status: 400 });
+    }
+
+    // Get userId from metadata or from Supabase session
+    const metaUserId = data.data?.metadata?.user_id as string | undefined;
+    let userId = metaUserId;
+
+    if (!userId) {
+      const supabase = await createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      userId = user?.id;
+    }
+
+    if (!userId) {
+      return NextResponse.json({ ok: false, error: "Cannot identify user" }, { status: 401 });
+    }
+
+    // Persist plan upgrade to Supabase user_metadata
+    await persistUserPlan(userId, "builder", {
+      provider: "paystack",
+      reference,
+      status: "active",
+    });
+
+    return NextResponse.json({ ok: true, plan: "builder", reference });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Verification failed";
+    return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
-
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
-
-  if (userError) {
-    return NextResponse.json({ ok: false, error: userError.message }, { status: 500 });
-  }
-
-  if (!user) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-
-  const body = (await request.json()) as PaystackVerifyBody;
-  const reference = body.reference?.trim();
-  if (!reference) {
-    return NextResponse.json({ ok: false, error: "Missing Paystack reference." }, { status: 400 });
-  }
-
-  const response = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {
-    headers: {
-      Authorization: `Bearer ${secretKey}`,
-      "Content-Type": "application/json",
-    },
-    cache: "no-store",
-  });
-
-  const payload = (await response.json().catch(() => null)) as PaystackVerifyResponse | null;
-  if (!response.ok || !payload?.status) {
-    return NextResponse.json(
-      { ok: false, error: payload?.message ?? "Paystack verification failed." },
-      { status: 400 },
-    );
-  }
-
-  const transaction = payload.data;
-  const transactionStatus = transaction?.status?.toLowerCase();
-  if (transactionStatus !== "success") {
-    return NextResponse.json({ ok: false, error: "Payment is not successful yet." }, { status: 409 });
-  }
-
-  const paidAmount = Number(transaction?.amount ?? 0);
-  if (paidAmount < expectedAmount()) {
-    return NextResponse.json({ ok: false, error: "Paid amount does not match the Builder plan." }, { status: 409 });
-  }
-
-  const paidEmail = transaction?.customer?.email?.trim().toLowerCase() ?? null;
-  const userEmail = user.email?.trim().toLowerCase() ?? null;
-  if (paidEmail && userEmail && paidEmail !== userEmail) {
-    return NextResponse.json({ ok: false, error: "This payment belongs to a different account." }, { status: 409 });
-  }
-
-  await persistUserPlan(user.id, "builder", {
-    provider: "paystack",
-    status: "active",
-    reference,
-    transactionId: transaction?.id != null ? String(transaction.id) : null,
-    subscriptionId: transaction?.subscription != null ? String(transaction.subscription) : null,
-    customerEmail: paidEmail ?? userEmail,
-  });
-
-  return NextResponse.json({ ok: true, plan: "builder" });
 }

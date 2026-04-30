@@ -246,247 +246,251 @@ function ValidationTab({ projectId,strengths,weaknesses,suggestions,router }: {
     } catch(err) { setError(err instanceof Error?err.message:"Analysis failed"); }
     finally { setRunning(false); }
   };
-
-  const survColor=(n:number)=>n>=60?VIZ.emerald:n>=40?VIZ.amber:VIZ.rose;
-
-  return (
-    <div style={{ display:"flex",flexDirection:"column",gap:12 }}>
-      {hasData&&(
-        <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10 }}>
-          {[
-            { label:"Strengths",items:strengths,accent:VIZ.emerald,icon:"✓" },
-            { label:"Weaknesses",items:weaknesses,accent:VIZ.rose,icon:"✗" },
-            { label:"Suggestions",items:suggestions,accent:VIZ.amber,icon:"→" },
-          ].map(({ label,items,accent,icon })=>(
-            <Panel key={label} accent={accent} title={`${icon}  ${label}`} delay={0.05}>
-              {(!items||items.length===0)
-                ? <div style={{ fontSize:12,color:VIZ.text3 }}>None identified yet.</div>
-                : items.map((item,i)=>(
-                    <div key={i} style={{ display:"flex",gap:8,padding:"6px 0",borderBottom:i<items.length-1?`1px solid ${VIZ.border}`:"none" }}>
-                      <span style={{ color:accent,fontSize:12,flexShrink:0,marginTop:1 }}>{icon}</span>
-                      <div style={{ fontSize:12,color:VIZ.text2,lineHeight:1.55 }}>{item}</div>
-                    </div>
-                  ))
-              }
-            </Panel>
-          ))}
-        </div>
-      )}
-
-      {!analysis&&(
-        <Panel accent={VIZ.rose} title="🔥  Break My Startup analysis" delay={0.1}>
-          <div style={{ fontSize:13,color:VIZ.text2,lineHeight:1.7,marginBottom:16 }}>
-            Get your survival probability, live competitor scan, every kill reason, and the one thing that saves you — generated from this project&apos;s actual data.
-            {!hasData&&" Add more details to your project first to get a more accurate result."}
+  
+    return (
+      <div style={{ display:"flex",flexDirection:"column",gap:12 }}>
+        <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap" }}>
+          <div>
+            <div style={{ fontSize:13,fontWeight:600,color:VIZ.text1 }}>Validation Review</div>
+            <div style={{ fontSize:11,color:VIZ.text2 }}>Run a quick AI critique of your validation inputs.</div>
           </div>
-          {error&&<div style={{ fontSize:12,color:VIZ.rose,marginBottom:12,padding:"8px 12px",background:"rgba(248,113,113,0.06)",borderRadius:8 }}>{error}</div>}
-          <motion.button whileHover={{ scale:1.01 }} whileTap={{ scale:0.97 }} onClick={()=>void runAnalysis()} disabled={running}
-            style={{ background:running?"rgba(255,255,255,0.03)":"rgba(248,113,113,0.1)",border:"1px solid rgba(248,113,113,0.3)",color:running?VIZ.text3:VIZ.rose,fontSize:13,fontWeight:700,padding:"10px 20px",borderRadius:9,cursor:running?"not-allowed":"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:8 }}>
-            {running?<><motion.div animate={{ rotate:360 }} transition={{ duration:1,repeat:Infinity,ease:"linear" }} style={{ width:13,height:13,borderRadius:"50%",border:"2px solid rgba(248,113,113,0.3)",borderTopColor:VIZ.rose }} />Scanning competitors + analyzing...</>:"Break my startup →"}
-          </motion.button>
-        </Panel>
-      )}
+          <button
+            onClick={runAnalysis}
+            disabled={running || !projectId}
+            style={{
+              background: running ? "rgba(255,255,255,0.08)" : "var(--grad-primary)",
+              color: running ? VIZ.text3 : "#fff",
+              fontSize: 11,
+              fontWeight: 700,
+              padding: "7px 14px",
+              borderRadius: 8,
+              border: "none",
+              cursor: running ? "default" : "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            {running ? "Running…" : "Run analysis"}
+          </button>
+        </div>
 
-      <AnimatePresence>
-        {analysis&&(
-          <motion.div initial={{ opacity:0,y:10 }} animate={{ opacity:1,y:0 }} style={{ display:"flex",flexDirection:"column",gap:12 }}>
-            <Panel accent={VIZ.rose} title="🔥  Survival Analysis" delay={0}>
-              <div style={{ display:"flex",alignItems:"flex-start",gap:20 }}>
-                <div style={{ textAlign:"center",flexShrink:0 }}>
-                  <div style={{ fontSize:36,fontWeight:700,color:survColor(analysis.survival_probability),lineHeight:1 }}>{analysis.survival_probability}%</div>
-                  <div style={{ fontSize:9,color:VIZ.text3,textTransform:"uppercase",letterSpacing:"0.1em",marginTop:3 }}>survival</div>
-                </div>
-                <div>
-                  <div style={{ fontSize:9,color:VIZ.text3,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6 }}>Verdict</div>
-                  <div style={{ fontSize:13,color:VIZ.text2,lineHeight:1.65 }}>{analysis.verdict}</div>
-                </div>
-              </div>
-            </Panel>
-            <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12 }}>
-              <Panel accent={VIZ.rose} title="💀  Kill Reasons" delay={0.05}>
-                {(analysis.kill_reasons??[]).map((r,i)=>(
-                  <div key={i} style={{ display:"flex",gap:8,fontSize:12,color:VIZ.text2,lineHeight:1.5,padding:"5px 0",borderBottom:i<(analysis.kill_reasons?.length??0)-1?`1px solid ${VIZ.border}`:"none" }}>
-                    <span style={{ color:VIZ.rose,flexShrink:0 }}>×</span>{r}
-                  </div>
-                ))}
-              </Panel>
-              <Panel accent={VIZ.emerald} title="✓  Survive Reasons" delay={0.1}>
-                {(analysis.survive_reasons??[]).map((r,i)=>(
-                  <div key={i} style={{ display:"flex",gap:8,fontSize:12,color:VIZ.text2,lineHeight:1.5,padding:"5px 0",borderBottom:i<(analysis.survive_reasons?.length??0)-1?`1px solid ${VIZ.border}`:"none" }}>
-                    <span style={{ color:VIZ.emerald,flexShrink:0 }}>✓</span>{r}
-                  </div>
-                ))}
-              </Panel>
-            </div>
-            {analysis.brutal_advice&&(
-              <Panel accent={VIZ.violet} title="⚡  The one thing that matters" delay={0.15}>
-                <div style={{ fontSize:13,color:VIZ.text2,lineHeight:1.75 }}>{analysis.brutal_advice}</div>
-              </Panel>
-            )}
-            {(analysis.competitors??[]).length>0&&(
-              <Panel accent="#22d3ee" title="🌐  Live competitor scan" delay={0.2}>
-                {analysis.competitor_summary&&<p style={{ fontSize:12,color:VIZ.text2,lineHeight:1.65,marginBottom:12 }}>{analysis.competitor_summary}</p>}
-                {(analysis.competitors??[]).map((c,i)=>(
-                  <div key={i} style={{ padding:"7px 0",borderBottom:i<(analysis.competitors?.length??0)-1?`1px solid ${VIZ.border}`:"none" }}>
-                    <a href={c.url} target="_blank" rel="noopener noreferrer" style={{ fontSize:12,color:"#a78bfa",textDecoration:"none",fontWeight:600 }}>{c.title}</a>
-                    {c.snippet&&<div style={{ fontSize:11,color:VIZ.text3,marginTop:2 }}>{c.snippet.slice(0,100)}...</div>}
-                  </div>
-                ))}
-              </Panel>
-            )}
-            <div style={{ display:"flex",gap:8 }}>
-              <button onClick={()=>setAnalysis(null)} style={{ background:"transparent",border:`1px solid ${VIZ.border}`,color:VIZ.text2,fontSize:12,padding:"8px 14px",borderRadius:7,cursor:"pointer",fontFamily:"inherit" }}>Run again</button>
-              <button onClick={()=>router.push("/break-my-startup")} style={{ background:"transparent",border:"1px solid rgba(248,113,113,0.2)",color:VIZ.rose,fontSize:12,padding:"8px 14px",borderRadius:7,cursor:"pointer",fontFamily:"inherit" }}>Full analysis →</button>
-            </div>
-          </motion.div>
+        {!hasData && (
+          <div style={{ fontSize:11,color:VIZ.text3 }}>
+            Add validation strengths or weaknesses to enable analysis.
+          </div>
         )}
-      </AnimatePresence>
-    </div>
-  );
-}
+
+        {error && (
+          <div style={{ fontSize:11,color:VIZ.rose }}>
+            {error}
+          </div>
+        )}
+
+        {analysis && (
+          <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
+            <div style={{ fontSize:12,color:VIZ.text2 }}>
+              <span style={{ color: VIZ.text1, fontWeight: 600 }}>Verdict:</span> {analysis.verdict}
+            </div>
+            {typeof analysis.survival_probability === "number" && (
+              <div style={{ fontSize:12,color:VIZ.text2 }}>
+                <span style={{ color: VIZ.text1, fontWeight: 600 }}>Survival probability:</span> {analysis.survival_probability}%
+              </div>
+            )}
+            {analysis.brutal_advice && (
+              <div style={{ fontSize:12,color:VIZ.text2, lineHeight: 1.6 }}>
+                <span style={{ color: VIZ.text1, fontWeight: 600 }}>Brutal advice:</span> {analysis.brutal_advice}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
 
 // ─── Main page ──────────────────────────────────────────────────────────────
 export default function ProjectDetailPage() {
-  const { id }=useParams<{ id:string }>();
-  const router=useRouter();
-  const qc=useQueryClient();
-  const { data,isLoading,error }=useProjectDetailQuery(id);
-  const deleteMutation=useDeleteProjectMutation();
-  const updateMutation=useUpdateTaskMutation(id);
+  const { id } = useParams<{ id: string }>();
+  const router = useRouter();
+  const qc = useQueryClient();
+  const { data, isLoading, error } = useProjectDetailQuery(id);
+  const deleteMutation = useDeleteProjectMutation();
+  const updateMutation = useUpdateTaskMutation(id);
 
-  useEffect(()=>{ if(id) setActiveProjectId(id); },[id]);
+  useEffect(() => { if (id) setActiveProjectId(id); }, [id]);
 
-  const milestoneMutation=useMutation({
-    mutationFn:(payload:{ id:string; title?:string; stage?:string })=>updateMilestoneForCurrentUser(payload.id,{ title:payload.title,stage:payload.stage }),
-    onSuccess:()=>void qc.invalidateQueries({ queryKey:queryKeys.project(id) }),
+  const milestoneMutation = useMutation({
+    mutationFn: (payload: { id: string; title?: string; stage?: string }) =>
+      updateMilestoneForCurrentUser(payload.id, { title: payload.title, stage: payload.stage }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: queryKeys.project(id) }),
   });
 
-  const [tab, setTab]=useState<Tab>("milestones");
-  const [newNoteDraft, setNewNoteDraft]=useState<Record<string,string>>({});
-  const [showUpgrade, setShowUpgrade]=useState(false);
+  const [tab, setTab] = useState<Tab>("milestones");
+  const [newNoteDraft, setNewNoteDraft] = useState<Record<string, string>>({});
+  const [showUpgrade, setShowUpgrade] = useState(false);
 
-  const { project,milestones=[],tasks=[] }=data??{};
-  const stage=project?.startup_stage??"MVP";
-  const score=useMemo(()=>project?computeStartupScore({ progress:tasks.length?Math.round((tasks.filter(t=>t.is_completed).length/tasks.length)*100):0,validation_strengths:project.validation_strengths,execution_score:project.execution_score }):0,[project,tasks]);
-  const completedCount=useMemo(()=>tasks.filter(t=>t.is_completed).length,[tasks]);
-  const progress=tasks.length?Math.round((completedCount/tasks.length)*100):0;
-  const progressColor=progress>=60?VIZ.emerald:VIZ.indigo;
+  const { project, milestones = [], tasks = [] } = data ?? {};
+  const stage = project?.startup_stage ?? "MVP";
+  const score = useMemo(() => project ? computeStartupScore({
+    progress: tasks.length ? Math.round((tasks.filter(t => t.is_completed).length / tasks.length) * 100) : 0,
+    validation_strengths: project.validation_strengths,
+    execution_score: project.execution_score,
+  }) : 0, [project, tasks]);
+  const completedCount = useMemo(() => tasks.filter(t => t.is_completed).length, [tasks]);
+  const progress = tasks.length ? Math.round((completedCount / tasks.length) * 100) : 0;
 
-  const toggleTask=(task:BuildMindTask)=>{
-    const newCompleted=!task.is_completed;
-    updateMutation.mutate({ taskId:task.id,isCompleted:newCompleted,notes:task.notes??"" });
+  const toggleTask = (task: BuildMindTask) => {
+    const newCompleted = !task.is_completed;
+    updateMutation.mutate({ taskId: task.id, isCompleted: newCompleted, notes: task.notes ?? "" });
     if (newCompleted) {
       recordTaskCompletion();
-      const streak=Number(localStorage.getItem("bm_streak")??"1");
-      const { shouldUpgrade }=checkUpgradeTrigger(streak);
+      const streak = Number(localStorage.getItem("bm_streak") ?? "1");
+      const { shouldUpgrade } = checkUpgradeTrigger(streak);
       if (shouldUpgrade) setShowUpgrade(true);
     }
   };
 
   if (isLoading) return <BuildMindLoader variant="card" label="Loading project…" />;
-  if (error||!project) return (
-    <div style={{ fontSize:13,color:VIZ.rose,padding:20 }}>
-      {error instanceof Error?error.message:"Project not found."}
-      <button onClick={()=>router.back()} style={{ display:"block",marginTop:12,background:"none",border:"none",color:VIZ.text3,cursor:"pointer",fontFamily:"inherit",fontSize:13 }}>← Back</button>
+  if (error || !project) return (
+    <div style={{ padding: "40px 24px", textAlign: "center" }}>
+      <div style={{ fontSize: 13, color: "var(--bm-red)", marginBottom: 12 }}>
+        {error instanceof Error ? error.message : "Project not found."}
+      </div>
+      <button onClick={() => router.back()} style={{ background: "none", border: "1px solid var(--bm-border)", color: "var(--bm-text2)", cursor: "pointer", fontFamily: "inherit", fontSize: 13, padding: "8px 16px", borderRadius: 9 }}>← Back</button>
     </div>
   );
 
-  const roadmapSteps=STAGE_ROADMAPS[stage]??STAGE_ROADMAPS["MVP"];
+  const roadmapSteps = STAGE_ROADMAPS[stage] ?? STAGE_ROADMAPS["MVP"];
+  const progressColor = progress >= 60 ? "var(--bm-accent)" : "var(--grad-primary)";
 
   return (
-    <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }}
-      style={{ maxWidth:860,margin:"0 auto",fontFamily:"system-ui,sans-serif",color:VIZ.text1,paddingBottom:48 }}>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+      style={{ maxWidth: 860, margin: "0 auto", padding: "28px 24px", paddingBottom: 48 }}>
 
       {/* Upgrade nudge */}
       <AnimatePresence>
-        {showUpgrade&&(
-          <motion.div initial={{ opacity:0,y:-10 }} animate={{ opacity:1,y:0 }} exit={{ opacity:0,y:-10 }}
-            style={{ background:"rgba(99,102,241,0.08)",border:"1px solid rgba(99,102,241,0.2)",borderRadius:11,padding:"14px 18px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center" }}>
+        {showUpgrade && (
+          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
+            style={{ background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.20)", borderRadius: 14, padding: "14px 18px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div>
-              <div style={{ fontSize:13,fontWeight:600,color:"#a78bfa" }}>You're making progress.</div>
-              <div style={{ fontSize:12,color:VIZ.text3,marginTop:2 }}>Unlock your next steps and keep building.</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "#A78BFA" }}>You're making progress.</div>
+              <div style={{ fontSize: 12, color: "var(--bm-text3)", marginTop: 2 }}>Unlock your next steps and keep building.</div>
             </div>
-            <div style={{ display:"flex",gap:8 }}>
-              <button onClick={()=>router.push(`/upgrade?tasks=${getTasksDone()}&streak=${localStorage.getItem("bm_streak")??1}`)} style={{ background:"#fff",color:"#000",fontSize:12,fontWeight:700,padding:"7px 16px",borderRadius:7,border:"none",cursor:"pointer",fontFamily:"inherit" }}>Continue →</button>
-              <button onClick={()=>setShowUpgrade(false)} style={{ background:"none",border:"none",color:VIZ.text3,cursor:"pointer",fontSize:18,lineHeight:1 }}>×</button>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => router.push(`/upgrade?tasks=${getTasksDone()}&streak=${localStorage.getItem("bm_streak") ?? 1}`)}
+                style={{ background: "var(--grad-primary)", color: "#fff", fontSize: 12, fontWeight: 700, padding: "7px 16px", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: "inherit" }}>Continue →</button>
+              <button onClick={() => setShowUpgrade(false)} style={{ background: "none", border: "none", color: "var(--bm-text3)", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</button>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
       {/* Header */}
-      <div style={{ marginBottom:20,paddingBottom:16,borderBottom:`1px solid ${VIZ.border}` }}>
-        <button onClick={()=>router.back()} style={{ background:"none",border:"none",color:VIZ.text3,cursor:"pointer",fontSize:11,padding:0,marginBottom:10,fontFamily:"inherit",display:"flex",alignItems:"center",gap:4 }}>
+      <div style={{ marginBottom: 20 }}>
+        <button onClick={() => router.back()}
+          style={{ background: "none", border: "none", color: "var(--bm-text3)", cursor: "pointer", fontSize: 11, padding: 0, marginBottom: 14, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4 }}>
           ← Projects
         </button>
-        <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16 }}>
-          <div style={{ flex:1,minWidth:0 }}>
-            <div style={{ fontSize:21,fontWeight:700,letterSpacing:"-0.03em",wordBreak:"break-word",marginBottom:8 }}>{project.title}</div>
-            <div style={{ display:"flex",alignItems:"center",gap:8,flexWrap:"wrap" }}>
-              <span style={{ fontSize:11,color:VIZ.violet,background:"rgba(139,92,246,0.1)",border:"1px solid rgba(139,92,246,0.2)",borderRadius:5,padding:"2px 9px" }}>{stage}</span>
-              <span style={{ fontSize:11,color:VIZ.text3 }}>{completedCount}/{tasks.length} tasks</span>
-              <span style={{ fontSize:11,color:VIZ.text3 }}>{progress}% complete</span>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, paddingBottom: 18, borderBottom: "1px solid var(--bm-border)" }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h1 style={{ fontSize: 20, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em", marginBottom: 10, wordBreak: "break-word" }}>{project.title}</h1>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 10, padding: "2px 9px", borderRadius: 20, background: "rgba(124,58,237,0.10)", color: "#A78BFA", border: "1px solid rgba(124,58,237,0.22)", fontWeight: 700 }}>{stage}</span>
+              <span style={{ fontSize: 11, color: "var(--bm-text3)" }}>{completedCount}/{tasks.length} tasks</span>
+              <span style={{ fontSize: 11, color: "var(--bm-text3)" }}>{progress}% complete</span>
             </div>
           </div>
-          <div style={{ display:"flex",alignItems:"center",gap:14,flexShrink:0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, flexShrink: 0 }}>
             <ArcRing score={score} />
-            <div style={{ display:"flex",flexDirection:"column",gap:6 }}>
-              <button onClick={()=>router.push("/today")} style={{ background:"#fff",color:"#000",fontSize:12,fontWeight:700,padding:"8px 16px",borderRadius:8,border:"none",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap" }}>⚡ Today&apos;s action</button>
-              <button onClick={()=>{ if(window.confirm(`Delete "${project.title}"?`)) deleteMutation.mutate(id,{ onSuccess:()=>router.push("/projects") }); }} style={{ background:"none",border:`1px solid ${VIZ.border}`,color:VIZ.text3,fontSize:12,padding:"7px 16px",borderRadius:8,cursor:"pointer",fontFamily:"inherit" }}>Delete</button>
+            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+              <button onClick={() => router.push("/today")}
+                style={{ background: "var(--grad-primary)", color: "#fff", fontSize: 12, fontWeight: 700, padding: "9px 16px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+                ⚡ Today&apos;s action
+              </button>
+              <button onClick={() => { if (window.confirm(`Delete "${project.title}"?`)) deleteMutation.mutate(id, { onSuccess: () => router.push("/projects") }); }}
+                style={{ background: "none", border: "1px solid var(--bm-border)", color: "var(--bm-text3)", fontSize: 12, padding: "7px 16px", borderRadius: 9, cursor: "pointer", fontFamily: "inherit" }}>
+                Delete
+              </button>
             </div>
           </div>
         </div>
       </div>
 
       {/* Progress bar */}
-      <div style={{ height:3,background:"rgba(255,255,255,0.04)",borderRadius:999,overflow:"hidden",marginBottom:20 }}>
-        <motion.div initial={{ width:0 }} animate={{ width:`${progress}%` }} transition={{ duration:0.9,ease:"easeOut" }}
-          style={{ height:"100%",background:progressColor,borderRadius:999 }} />
+      <div style={{ height: 4, background: "var(--bm-bg3)", borderRadius: 99, overflow: "hidden", marginBottom: 24 }}>
+        <motion.div initial={{ width: 0 }} animate={{ width: `${progress}%` }} transition={{ duration: 0.9, ease: "easeOut" }}
+          style={{ height: "100%", background: progressColor, borderRadius: 99 }} />
       </div>
 
       {/* Tabs */}
-      <div style={{ display:"flex",gap:0,borderBottom:`1px solid ${VIZ.border}`,marginBottom:20 }}>
-        {(["milestones","tasks","roadmap","validation"] as Tab[]).map(t=>(
-          <button key={t} onClick={()=>setTab(t)}
-            style={{ padding:"8px 16px",fontSize:12,fontWeight:tab===t?600:400,color:tab===t?VIZ.text1:VIZ.text3,background:"none",border:"none",borderBottom:tab===t?`2px solid ${VIZ.indigo}`:"2px solid transparent",cursor:"pointer",fontFamily:"inherit",textTransform:"capitalize",transition:"color 0.15s",marginBottom:-1 }}>
+      <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--bm-border)", marginBottom: 24 }}>
+        {(["milestones", "tasks", "roadmap", "validation"] as Tab[]).map(t => (
+          <button key={t} onClick={() => setTab(t)}
+            style={{ padding: "9px 18px", fontSize: 12, fontWeight: tab === t ? 700 : 400, color: tab === t ? "var(--bm-accent)" : "var(--bm-text3)", background: "none", border: "none", borderBottom: tab === t ? "2px solid var(--bm-accent)" : "2px solid transparent", cursor: "pointer", fontFamily: "inherit", textTransform: "capitalize", transition: "color 0.15s", marginBottom: -1 }}>
             {t}
           </button>
         ))}
       </div>
 
       {/* ── Milestones ── */}
-      {tab==="milestones"&&(
-        <div style={{ display:"flex",flexDirection:"column",gap:10 }}>
-          {milestones.length===0&&<div style={{ fontSize:13,color:VIZ.text3,textAlign:"center",padding:48 }}>No milestones yet. BuildMind generates them from your project idea.</div>}
-          {milestones.length>0&&(
-            <div style={{ display:"flex",gap:3,marginBottom:6 }}>
-              {milestones.map(m=>{ const mt=tasks.filter(t=>t.milestone_id===m.id); const done=mt.length>0&&mt.every(t=>t.is_completed); const partial=!done&&mt.some(t=>t.is_completed); return <motion.div key={m.id} initial={{ opacity:0 }} animate={{ opacity:1 }} title={m.title} style={{ height:3,flex:1,borderRadius:999,minWidth:20,background:done?VIZ.emerald:partial?VIZ.indigo:"rgba(255,255,255,0.04)",transition:"background 0.4s" }} />; })}
+      {tab === "milestones" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {milestones.length === 0 && (
+            <div style={{ fontSize: 13, color: "var(--bm-text3)", textAlign: "center", padding: "48px 0" }}>No milestones yet. BuildMind generates them from your project idea.</div>
+          )}
+          {milestones.length > 0 && (
+            <div style={{ display: "flex", gap: 3, marginBottom: 10 }}>
+              {milestones.map(m => {
+                const mt = tasks.filter(t => t.milestone_id === m.id);
+                const done = mt.length > 0 && mt.every(t => t.is_completed);
+                const partial = !done && mt.some(t => t.is_completed);
+                return <motion.div key={m.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} title={m.title}
+                  style={{ height: 4, flex: 1, borderRadius: 99, minWidth: 20, background: done ? "var(--bm-accent)" : partial ? "var(--grad-primary)" : "var(--bm-bg3)", transition: "background 0.4s" }} />;
+              })}
             </div>
           )}
-          {milestones.map((m,mi)=>(<MilestoneCard key={m.id} milestone={m} tasks={tasks.filter(t=>t.milestone_id===m.id)} index={mi} onToggleTask={toggleTask} />))}
+          {milestones.map((m, mi) => (
+            <MilestoneCard key={m.id} milestone={m} tasks={tasks.filter(t => t.milestone_id === m.id)} index={mi} onToggleTask={toggleTask} />
+          ))}
         </div>
       )}
 
       {/* ── Tasks ── */}
-      {tab==="tasks"&&(
-        <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
-          {tasks.length===0&&<div style={{ fontSize:13,color:VIZ.text3,textAlign:"center",padding:48 }}>No tasks yet.</div>}
-          {tasks.map((task,ti)=>{
-            const milestone=milestones.find(m=>m.id===task.milestone_id);
-            const notes=splitNotes(task.notes);
+      {tab === "tasks" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {tasks.length === 0 && <div style={{ fontSize: 13, color: "var(--bm-text3)", textAlign: "center", padding: "48px 0" }}>No tasks yet.</div>}
+          {tasks.map((task, ti) => {
+            const milestone = milestones.find(m => m.id === task.milestone_id);
+            const notes = splitNotes(task.notes);
             return (
-              <motion.div key={task.id} initial={{ opacity:0,y:4 }} animate={{ opacity:1,y:0 }} transition={{ delay:ti*0.04 }}
-                style={{ background:VIZ.panel,border:`1px solid ${VIZ.border}`,borderRadius:10,padding:"12px 14px" }}>
-                <div style={{ display:"flex",alignItems:"flex-start",gap:10 }}>
-                  <div style={{ paddingTop:2 }}><TaskCheckbox checked={task.is_completed} onChange={()=>toggleTask(task)} size={15} /></div>
-                  <div style={{ flex:1 }}>
-                    <div style={{ fontSize:13,color:task.is_completed?VIZ.text3:VIZ.text1,textDecoration:task.is_completed?"line-through":"none",marginBottom:milestone?3:0,lineHeight:1.45,fontWeight:500 }}>{task.title}</div>
-                    {milestone&&<div style={{ fontSize:10,color:VIZ.text3,fontFamily:"monospace" }}><span style={{ color:TYPE_COLORS[inferMilestoneType(milestone.title)],marginRight:4 }}>●</span>{milestone.title}</div>}
-                    {notes.map((n,ni)=><div key={ni} style={{ fontSize:11,color:VIZ.text3,marginTop:5,background:"rgba(255,255,255,0.02)",borderRadius:5,padding:"4px 8px" }}>📝 {n}</div>)}
-                    <div style={{ display:"flex",gap:6,marginTop:8 }}>
-                      <input value={newNoteDraft[task.id]??""} onChange={e=>setNewNoteDraft(d=>({ ...d,[task.id]:e.target.value }))} placeholder="Add a note..."
-                        style={{ background:"rgba(255,255,255,0.02)",border:`1px solid ${VIZ.border}`,borderRadius:6,padding:"5px 9px",fontSize:11,color:VIZ.text2,outline:"none",fontFamily:"inherit",flex:1 }}
-                        onKeyDown={e=>{ if(e.key==="Enter"){ const next=newNoteDraft[task.id]??""; if(next.trim()){ updateMutation.mutate({ taskId:task.id,isCompleted:task.is_completed,notes:appendNote(task.notes,next) }); setNewNoteDraft(d=>({ ...d,[task.id]:"" })); } } }} />
+              <motion.div key={task.id} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: ti * 0.04 }}
+                style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 12, padding: "13px 16px" }}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                  <div style={{ paddingTop: 2 }}><TaskCheckbox checked={task.is_completed} onChange={() => toggleTask(task)} size={15} /></div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, color: task.is_completed ? "var(--bm-text3)" : "var(--bm-text)", textDecoration: task.is_completed ? "line-through" : "none", lineHeight: 1.45, fontWeight: 500, marginBottom: milestone ? 4 : 0 }}>{task.title}</div>
+                    {milestone && (
+                      <div style={{ fontSize: 10, color: "var(--bm-text3)" }}>
+                        <span style={{ color: TYPE_COLORS[inferMilestoneType(milestone.title)], marginRight: 4 }}>●</span>
+                        {milestone.title}
+                      </div>
+                    )}
+                    {notes.map((n, ni) => (
+                      <div key={ni} style={{ fontSize: 11, color: "var(--bm-text3)", marginTop: 6, background: "var(--bm-bg3)", borderRadius: 6, padding: "5px 9px", border: "1px solid var(--bm-border)" }}>📝 {n}</div>
+                    ))}
+                    <div style={{ display: "flex", gap: 7, marginTop: 9 }}>
+                      <input value={newNoteDraft[task.id] ?? ""} onChange={e => setNewNoteDraft(d => ({ ...d, [task.id]: e.target.value }))}
+                        placeholder="Add a note…"
+                        style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: 7, padding: "6px 10px", fontSize: 11, color: "var(--bm-text2)", outline: "none", fontFamily: "inherit", flex: 1, transition: "border-color 0.15s" }}
+                        onFocus={e => { e.target.style.borderColor = "var(--bm-accent-bd)"; }}
+                        onBlur={e => { e.target.style.borderColor = "var(--bm-border)"; }}
+                        onKeyDown={e => {
+                          if (e.key === "Enter") {
+                            const next = newNoteDraft[task.id] ?? "";
+                            if (next.trim()) {
+                              updateMutation.mutate({ taskId: task.id, isCompleted: task.is_completed, notes: appendNote(task.notes, next) });
+                              setNewNoteDraft(d => ({ ...d, [task.id]: "" }));
+                            }
+                          }
+                        }} />
                     </div>
                   </div>
                 </div>
@@ -497,19 +501,21 @@ export default function ProjectDetailPage() {
       )}
 
       {/* ── Roadmap ── */}
-      {tab==="roadmap"&&(
+      {tab === "roadmap" && (
         <div>
-          <div style={{ fontSize:12,color:VIZ.text3,marginBottom:16 }}>Proven actions for <span style={{ color:VIZ.violet }}>{stage}</span> stage — based on what actually works</div>
-          <div style={{ display:"flex",flexDirection:"column",gap:10 }}>
-            {roadmapSteps.map((step,i)=>(
-              <motion.div key={i} initial={{ opacity:0,y:6 }} animate={{ opacity:1,y:0 }} transition={{ delay:i*0.08 }}
-                style={{ background:VIZ.panel,border:`1px solid ${VIZ.border}`,borderLeft:`3px solid ${VIZ.indigo}`,borderRadius:11,padding:"16px 18px" }}>
-                <div style={{ display:"flex",gap:14,alignItems:"flex-start" }}>
-                  <div style={{ width:22,height:22,borderRadius:"50%",background:"rgba(99,102,241,0.12)",border:"1px solid rgba(99,102,241,0.25)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:10,color:VIZ.indigo,fontWeight:700 }}>{i+1}</div>
-                  <div style={{ flex:1 }}>
-                    <div style={{ fontSize:13,fontWeight:600,color:VIZ.text1,marginBottom:6,lineHeight:1.45 }}>{step.step}</div>
-                    <div style={{ fontSize:12,color:VIZ.text2,lineHeight:1.65,marginBottom:6 }}>{step.detail}</div>
-                    <div style={{ fontSize:10,color:VIZ.text3 }}>⏱ {step.time}</div>
+          <div style={{ fontSize: 12, color: "var(--bm-text3)", marginBottom: 18 }}>
+            Proven actions for <span style={{ color: "#A78BFA", fontWeight: 600 }}>{stage}</span> stage — based on what actually works.
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {roadmapSteps.map((step, i) => (
+              <motion.div key={i} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}
+                style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderLeft: "3px solid var(--bm-accent)", borderRadius: 12, padding: "16px 18px" }}>
+                <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+                  <div style={{ width: 24, height: 24, borderRadius: "50%", background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 11, color: "var(--bm-accent)", fontWeight: 800 }}>{i + 1}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text)", marginBottom: 6, lineHeight: 1.45 }}>{step.step}</div>
+                    <div style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.65, marginBottom: 6 }}>{step.detail}</div>
+                    <div style={{ fontSize: 10, color: "var(--bm-text3)" }}>⏱ {step.time}</div>
                   </div>
                 </div>
               </motion.div>
@@ -519,7 +525,7 @@ export default function ProjectDetailPage() {
       )}
 
       {/* ── Validation ── */}
-      {tab==="validation"&&(
+      {tab === "validation" && (
         <ValidationTab projectId={id} strengths={project.validation_strengths} weaknesses={project.validation_weaknesses} suggestions={project.validation_suggestions} router={router} />
       )}
     </motion.div>

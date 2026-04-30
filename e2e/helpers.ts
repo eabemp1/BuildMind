@@ -29,10 +29,12 @@ export async function signIn(page: Page) {
 
 /** Sign out via Supabase client (works without a sign-out button in view) */
 export async function signOut(page: Page) {
-  await page.evaluate(async () => {
-    const { createClient } = await import("/lib/supabase/client");
-    await createClient().auth.signOut();
-  }).catch(() => {/* ignore if already signed out */});
+  // Prefer a hard reset (cookies + storage) to avoid bundling app modules into the browser context.
+  await page.context().clearCookies().catch(() => {});
+  await page.evaluate(() => {
+    try { localStorage.clear(); } catch {}
+    try { sessionStorage.clear(); } catch {}
+  }).catch(() => {});
 }
 
 /** Wait for the Today page to be fully loaded (score and action visible) */

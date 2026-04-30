@@ -30,8 +30,50 @@ async function scrapeCompetitors(query: string): Promise<{ title: string; url: s
   } catch { return []; }
 }
 
-function signalScore(taskRate: number, milestoneRate: number, strengths: string[], weaknesses: string[], execScore: number, valScore: number): number {
-  return Math.round(taskRate * 0.25 + milestoneRate * 0.20 + Math.min(strengths.length * 5, 20) * 0.20 + Math.max(0, 10 - weaknesses.length * 2) * 0.15 + execScore * 0.10 + valScore * 0.10);
+/**
+ * signalScore — computes a 0–100 survival probability signal from real project data.
+ *
+ * Weights (total = 100):
+ *   30% task completion rate        — are they actually executing?
+ *   25% milestone completion rate   — are they hitting milestones?
+ *   20% validation strengths        — evidence of market demand (capped at 4 strengths)
+ *   10% weakness penalty            — each weakness subtracts signal
+ *   10% execution score             — project-level exec score from Supabase
+ *   5%  validation score            — project-level val score from Supabase
+ *
+ * Stage adjustment (additive, reflects baseline expectation per stage):
+ *   Idea        → +0  (everything is uncertain, no bonus)
+ *   Validation  → +5  (if you're validating, you're ahead of most)
+ *   MVP         → +8  (you built something real)
+ *   Launch      → +12 (you've shipped publicly)
+ *   Growth      → +15 (you have real users)
+ *   Revenue     → +18 (you have paying customers)
+ *
+ * Result is clamped to [3, 97] — never 0% or 100% (too absolute).
+ */
+function signalScore(
+  taskRate: number,
+  milestoneRate: number,
+  strengths: string[],
+  weaknesses: string[],
+  execScore: number,
+  valScore: number,
+  stage = "Idea",
+): number {
+  const stageBonus: Record<string, number> = {
+    Idea: 0, Validation: 5, MVP: 8, Launch: 12, Growth: 15, Revenue: 18,
+  };
+  const bonus = stageBonus[stage] ?? 0;
+
+  const raw =
+    taskRate * 0.30 +
+    milestoneRate * 0.25 +
+    Math.min(strengths.length * 5, 20) * 0.20 +
+    Math.max(0, 10 - weaknesses.length * 2) * 0.10 +
+    execScore * 0.10 +
+    valScore * 0.05;
+
+  return Math.min(97, Math.max(3, Math.round(raw + bonus)));
 }
 
 export async function POST(request: Request) {
@@ -44,13 +86,17 @@ export async function POST(request: Request) {
     await enforceAndTrackAIUsage(userId);
 
     if (!hasAdminEnv()) {
+      // Even without Supabase, compute a minimal signal from request body hints
+      const bodyHint = await request.json().catch(() => ({})) as Record<string, unknown>;
+      const hintStage = String(bodyHint?.stage ?? "Idea");
+      const hintScore = signalScore(0, 0, [], [], 0, 0, hintStage);
       return NextResponse.json({ success: true, data: {
-        reasoning: ["No live data — Supabase not configured", "Using generic analysis"],
-        verdict: "Analysis requires live project data.",
-        kill_reasons: ["No user interviews recorded", "No paying customers yet"],
-        survive_reasons: ["Founder is taking this seriously"],
-        brutal_advice: "Talk to 10 potential users before writing any more code.",
-        survival_probability: 40,
+        reasoning: ["Supabase not configured — cannot read live project data", "Using stage-based baseline estimate"],
+        verdict: "Connect Supabase to get a real analysis. Right now we can only see your project stage.",
+        kill_reasons: ["No user interviews recorded", "No paying customers yet", "Validation data unavailable — configure Supabase"],
+        survive_reasons: ["Founder is actively analyzing risks", "Stage-based signal suggests early momentum"],
+        brutal_advice: "Add your SUPABASE_SERVICE_ROLE_KEY to env vars — then run this again for real data.",
+        survival_probability: hintScore,
         differentiation_plan: ["Identify one thing none of your 3 closest competitors do", "Make that your only marketing message for 30 days", "Price differently — not cheaper, differently positioned"],
         competitors: [], competitor_summary: "Configure Supabase to enable live competitor scan.",
       }});
@@ -80,7 +126,7 @@ export async function POST(request: Request) {
     const stage = project.startup_stage ?? "Idea";
     const execScore = project.execution_score ?? 0;
     const valScore = project.validation_score ?? 0;
-    const baseSignal = signalScore(taskRate, milestoneRate, strengths, weaknesses, execScore, valScore);
+    const baseSignal = signalScore(taskRate, milestoneRate, strengths, weaknesses, execScore, valScore, stage);
 
     const [directResults, broadResults] = await Promise.allSettled([
       scrapeCompetitors(`${project.title ?? ""} ${project.problem ?? ""} startup site:producthunt.com OR site:crunchbase.com`),

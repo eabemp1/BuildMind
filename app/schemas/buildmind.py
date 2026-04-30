@@ -94,3 +94,28 @@ class AdminNotificationRequest(BaseModel):
 
 class AccountDeleteRequest(BaseModel):
     password: str = Field(min_length=8, max_length=128)
+
+
+# ── AI endpoint schemas ───────────────────────────────────────────────────────
+
+class AiCoachRequest(BaseModel):
+    question: str | None = Field(default=None, max_length=4000)
+    message: str | None = Field(default=None, max_length=4000)
+    projectId: int | None = None
+    project: dict | None = None
+
+    def get_question(self) -> str:
+        return (self.question or self.message or "").strip()
+
+
+class AiMilestonesRequest(BaseModel):
+    idea: str | None = Field(default=None, max_length=2000)
+    description: str | None = Field(default=None, max_length=2000)
+
+    def get_idea(self) -> str:
+        return (self.idea or self.description or "").strip()
+
+
+class SystemSettingRequest(BaseModel):
+    key: str = Field(min_length=1, max_length=255)
+    value_json: str = Field(default="", max_length=65535)

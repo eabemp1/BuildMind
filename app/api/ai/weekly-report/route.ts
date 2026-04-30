@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { groqJSON, hasAdminEnv } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { checkPlanAccess } from "@/app/api/ai/_planCheck";
 
 type AIWeeklyReport = {
   summary: string;
@@ -14,6 +15,11 @@ type AIWeeklyReport = {
 function clamp(n: number, min: number, max: number) { return Math.max(min, Math.min(max, n)); }
 
 export async function POST(request: Request) {
+
+  // ── Server-side plan enforcement (builder required) ───────────────────────
+  const planCheck = await checkPlanAccess("builder");
+  if (!planCheck.ok) return planCheck.response;
+
   try {
     const body = await request.json().catch(() => ({}));
     const userId = String(body?.userId ?? "").trim();

@@ -33,7 +33,7 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
     const reg = await navigator.serviceWorker.register("/sw.js", {
       scope: "/",
     });
-    console.log("[BuildMind SW] Registered:", reg.scope);
+    if (process.env.NODE_ENV === "development") console.log("[BuildMind SW] Registered:", reg.scope);
     return reg;
   } catch (err) {
     console.error("[BuildMind SW] Registration failed:", err);

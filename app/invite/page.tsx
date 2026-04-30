@@ -1,18 +1,9 @@
 "use client";
 
-/**
- * app/invite/page.tsx — Referral System
- *
- * Viral loop: invite a founder → both get 1 month Builder free
- * when the referred founder completes their first 7-day streak.
- *
- * Referral link: buildmind.live/ref/[code]
- * Code is derived from user ID + stored in localStorage.
- */
-
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
+import { Copy, Check, Users, Gift, Flame, ChevronRight, Zap, ArrowRight } from "lucide-react";
 
 const MESSAGES = [
   "Hey — I've been using BuildMind to stay accountable on my startup. It gives me one specific action every morning and tracks my streak. Thought you'd find it useful: {link}",
@@ -40,130 +31,136 @@ export default function InvitePage() {
           setUserId(data.user.id);
           const code = generateRefCode(data.user.id);
           setRefCode(code);
-          // Load stored referrals from localStorage
-          const stored = localStorage.getItem(`bm_referrals_${code}`);
-          if (stored) setReferrals(JSON.parse(stored));
         }
       } catch {}
     };
-    void load();
+    load();
   }, []);
 
   const refLink = refCode ? `https://buildmind.live/ref/${refCode}` : "Loading…";
-  const message = MESSAGES[msgIdx].replace("{link}", refLink);
+  const currentMsg = MESSAGES[msgIdx].replace("{link}", refLink);
 
-  const copy = (text: string, key: string) => {
+  function copyText(text: string, key: string) {
     navigator.clipboard.writeText(text).catch(() => {});
     setCopied(key);
     setTimeout(() => setCopied(null), 2000);
-  };
-
-  const shareOptions = [
-    { label: "WhatsApp", icon: "💬", href: `https://wa.me/?text=${encodeURIComponent(message)}`, color: "#25d366" },
-    { label: "Twitter/X", icon: "𝕏", href: `https://twitter.com/intent/tweet?text=${encodeURIComponent(MESSAGES[0].replace("{link}", refLink))}`, color: "#1da1f2" },
-    { label: "LinkedIn", icon: "in", href: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(refLink)}`, color: "#0a66c2" },
-    { label: "Telegram", icon: "✈️", href: `https://t.me/share/url?url=${encodeURIComponent(refLink)}&text=${encodeURIComponent("Daily execution engine for founders")}`, color: "#0088cc" },
-  ];
+  }
 
   return (
-    <div style={{ maxWidth: 600, margin: "0 auto", fontFamily: "system-ui, sans-serif", padding: "0 0 48px" }}>
-      {/* Hero */}
-      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-        style={{ textAlign: "center", padding: "32px 20px 24px", marginBottom: 8 }}>
-        <div style={{ fontSize: 40, marginBottom: 14 }}>🤝</div>
-        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: "var(--bm-text)", marginBottom: 8 }}>
-          Invite a founder
+    <div style={{ maxWidth: 600, margin: "0 auto" }}>
+
+      {/* Header */}
+      <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 28 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <Gift size={16} color="#4ade80" />
+          <span style={{ fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 700 }}>Referrals</span>
+        </div>
+        <h1 style={{ fontSize: 24, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em", margin: "0 0 6px" }}>
+          Invite &amp; Earn
         </h1>
-        <p style={{ margin: 0, fontSize: 14, color: "#666", lineHeight: 1.6, maxWidth: 400, marginLeft: "auto", marginRight: "auto" }}>
-          When they complete their first 7-day streak, you both get <strong style={{ color: "#a78bfa" }}>1 month of Builder free</strong>. No catch.
+        <p style={{ fontSize: 13, color: "var(--bm-text3)", margin: 0, lineHeight: 1.6 }}>
+          Invite a founder → both of you get 1 month of Builder free when they complete their first 7-day streak.
         </p>
       </motion.div>
 
       {/* How it works */}
-      <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 12, padding: "16px 20px", marginBottom: 16 }}>
-        <div style={{ fontSize: 11, color: "#555", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600, marginBottom: 12 }}>How it works</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.06 }}
+        style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 18, padding: "24px", marginBottom: 16 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--bm-text)", marginBottom: 18 }}>How it works</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           {[
-            { step: "1", text: "Share your referral link with a solo founder you know" },
-            { step: "2", text: "They sign up and start their first project" },
-            { step: "3", text: "When they complete 7 consecutive daily actions, you both get Builder free for 1 month" },
-          ].map(s => (
-            <div key={s.step} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-              <div style={{ width: 22, height: 22, borderRadius: "50%", background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.3)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#a78bfa", flexShrink: 0 }}>{s.step}</div>
-              <div style={{ fontSize: 13, color: "#888", lineHeight: 1.5, paddingTop: 2 }}>{s.text}</div>
+            { step: "1", label: "Share your link", desc: "Copy your referral link and send it to a founder friend.", color: "#4ade80" },
+            { step: "2", label: "They join BuildMind", desc: "They sign up free and start their first project.", color: "#818cf8" },
+            { step: "3", label: "They hit a 7-day streak", desc: "Once they complete 7 consecutive days of action, the reward unlocks.", color: "#fbbf24" },
+            { step: "4", label: "Both get 1 free month", desc: "You both receive 1 month of Builder — automatically applied.", color: "#22d3ee" },
+          ].map(({ step, label, desc, color }) => (
+            <div key={step} style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+              <div style={{ width: 28, height: 28, borderRadius: "50%", background: color + "15", border: `1px solid ${color}30`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <span style={{ fontSize: 11, fontWeight: 800, color }}>{step}</span>
+              </div>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 2 }}>{label}</div>
+                <div style={{ fontSize: 12, color: "var(--bm-text4)", lineHeight: 1.5 }}>{desc}</div>
+              </div>
             </div>
           ))}
         </div>
-      </div>
+      </motion.div>
 
       {/* Referral link */}
-      <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 12, padding: "16px 20px", marginBottom: 16 }}>
-        <div style={{ fontSize: 11, color: "#555", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600, marginBottom: 10 }}>Your referral link</div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <div style={{ flex: 1, background: "#111", border: "1px solid #1a1a1a", borderRadius: 8, padding: "10px 12px", fontSize: 12, color: "#888", fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.10 }}
+        style={{ background: "linear-gradient(135deg, rgba(74,222,128,0.07) 0%, rgba(34,211,238,0.03) 100%)", border: "1px solid rgba(74,222,128,0.20)", borderRadius: 18, padding: "24px", marginBottom: 16 }}>
+        <div style={{ fontSize: 11, color: "#4ade80", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 700, marginBottom: 12 }}>Your Referral Link</div>
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <div style={{ flex: 1, background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: "11px 14px", fontSize: 13, color: "var(--bm-text3)", fontFamily: "var(--font-mono, monospace)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {refLink}
           </div>
-          <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} onClick={() => copy(refLink, "link")}
-            style={{ padding: "10px 16px", borderRadius: 8, border: "none", background: copied === "link" ? "#10b981" : "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", flexShrink: 0, transition: "background 0.2s" }}>
-            {copied === "link" ? "✓ Copied!" : "Copy link"}
+          <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+            onClick={() => copyText(refLink, "link")}
+            style={{ display: "flex", alignItems: "center", gap: 7, padding: "11px 18px", borderRadius: 10, border: "none", background: copied === "link" ? "rgba(74,222,128,0.15)" : "linear-gradient(135deg, #22c55e, #16a34a)", color: copied === "link" ? "#4ade80" : "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", boxShadow: copied !== "link" ? "0 0 16px rgba(34,197,94,0.2)" : "none" }}>
+            {copied === "link" ? <><Check size={13} /> Copied!</> : <><Copy size={13} /> Copy Link</>}
           </motion.button>
         </div>
-      </div>
+      </motion.div>
 
       {/* Message templates */}
-      <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 12, padding: "16px 20px", marginBottom: 16 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-          <div style={{ fontSize: 11, color: "#555", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>Message templates</div>
-          <div style={{ display: "flex", gap: 4 }}>
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.14 }}
+        style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 18, padding: "24px", marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--bm-text)" }}>Outreach Message</div>
+          <div style={{ display: "flex", gap: 6 }}>
             {MESSAGES.map((_, i) => (
               <button key={i} onClick={() => setMsgIdx(i)}
-                style={{ width: 20, height: 6, borderRadius: 3, border: "none", background: msgIdx === i ? "#a78bfa" : "#222", cursor: "pointer", padding: 0 }} />
+                style={{ width: 22, height: 22, borderRadius: "50%", border: `1px solid ${msgIdx === i ? "rgba(74,222,128,0.35)" : "var(--bm-border)"}`, background: msgIdx === i ? "rgba(74,222,128,0.12)" : "transparent", cursor: "pointer", fontSize: 9, fontWeight: 700, color: msgIdx === i ? "#4ade80" : "var(--bm-text4)", fontFamily: "inherit" }}>
+                {i + 1}
+              </button>
             ))}
           </div>
         </div>
-        <div style={{ background: "#111", border: "1px solid #1a1a1a", borderRadius: 8, padding: "12px 14px", fontSize: 12, color: "#777", lineHeight: 1.7, fontFamily: "monospace", marginBottom: 10, minHeight: 80 }}>
-          {message}
+        <AnimatePresence mode="wait">
+          <motion.div key={msgIdx} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+            <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, padding: "14px 16px", marginBottom: 12 }}>
+              <p style={{ fontSize: 13, color: "var(--bm-text3)", lineHeight: 1.65, margin: 0, fontStyle: "italic" }}>"{currentMsg}"</p>
+            </div>
+          </motion.div>
+        </AnimatePresence>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => copyText(currentMsg, "msg")}
+            style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 16px", borderRadius: 9, border: "1px solid var(--bm-border)", background: copied === "msg" ? "rgba(74,222,128,0.06)" : "var(--bm-bg3)", color: copied === "msg" ? "#4ade80" : "var(--bm-text2)", fontSize: 12, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" }}>
+            {copied === "msg" ? <><Check size={11} /> Copied!</> : <><Copy size={11} /> Copy message</>}
+          </button>
+          <a href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(currentMsg)}`} target="_blank" rel="noopener noreferrer"
+            style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 16px", borderRadius: 9, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text2)", fontSize: 12, fontWeight: 500, textDecoration: "none" }}>
+            𝕏 Share on X
+          </a>
         </div>
-        <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }} onClick={() => copy(message, "msg")}
-          style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #2a2a2a", background: copied === "msg" ? "#10b981" : "transparent", color: copied === "msg" ? "#fff" : "#666", fontSize: 12, cursor: "pointer", fontFamily: "inherit", transition: "all 0.2s" }}>
-          {copied === "msg" ? "✓ Copied!" : "Copy message"}
-        </motion.button>
-      </div>
-
-      {/* Share buttons */}
-      <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 12, padding: "16px 20px", marginBottom: 16 }}>
-        <div style={{ fontSize: 11, color: "#555", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600, marginBottom: 12 }}>Share directly</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 }}>
-          {shareOptions.map(opt => (
-            <a key={opt.label} href={opt.href} target="_blank" rel="noopener noreferrer"
-              style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 8, border: "1px solid #1a1a1a", background: "#111", textDecoration: "none", transition: "all 0.15s" }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = opt.color; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "#1a1a1a"; }}>
-              <span style={{ fontSize: 16 }}>{opt.icon}</span>
-              <span style={{ fontSize: 12, color: "#888", fontWeight: 500 }}>{opt.label}</span>
-            </a>
-          ))}
-        </div>
-      </div>
+      </motion.div>
 
       {/* Referral stats */}
-      {referrals.length > 0 ? (
-        <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 12, padding: "16px 20px" }}>
-          <div style={{ fontSize: 11, color: "#555", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600, marginBottom: 10 }}>Your referrals</div>
-          {referrals.map((r, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: i < referrals.length - 1 ? "1px solid #111" : "none" }}>
-              <span style={{ fontSize: 12, color: "#888" }}>{r.email}</span>
-              <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: r.status === "rewarded" ? "rgba(74,222,128,0.1)" : "#111", color: r.status === "rewarded" ? "#4ade80" : "#555" }}>
-                {r.status === "rewarded" ? "✓ Reward earned" : "Pending streak"}
-              </span>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div style={{ textAlign: "center", padding: "20px", fontSize: 12, color: "#333" }}>
-          No referrals yet. Your referred founders will appear here.
-        </div>
-      )}
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18 }}
+        style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 18, padding: "22px 24px" }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--bm-text)", marginBottom: 16 }}>Your Referrals</div>
+        {referrals.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "24px 0" }}>
+            <div style={{ fontSize: 32, marginBottom: 10 }}>🤝</div>
+            <div style={{ fontSize: 13, color: "var(--bm-text3)", lineHeight: 1.6 }}>No referrals yet. Share your link to start earning free months.</div>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {referrals.map((r, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid var(--bm-border)" }}>
+                <div>
+                  <div style={{ fontSize: 13, color: "var(--bm-text2)", fontWeight: 500 }}>{r.email}</div>
+                  <div style={{ fontSize: 11, color: "var(--bm-text4)" }}>Joined {r.joinedAt}</div>
+                </div>
+                <span style={{ fontSize: 10, padding: "3px 10px", borderRadius: 20, background: r.status === "rewarded" ? "rgba(74,222,128,0.10)" : "var(--bm-bg3)", color: r.status === "rewarded" ? "#4ade80" : "var(--bm-text4)", fontWeight: 600 }}>
+                  {r.status === "rewarded" ? "✓ Rewarded" : "Pending streak"}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </motion.div>
     </div>
   );
 }

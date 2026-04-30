@@ -1,0 +1,128 @@
+/**
+ * app/api/ai/break-public/route.ts
+ *
+ * Public-safe Break My Startup endpoint — no userId/auth required.
+ * Rate-limited by IP to prevent abuse (5 calls per IP per hour).
+ * Used by /break landing page to deliver the viral entry experience.
+ */
+
+import { NextResponse } from "next/server";
+import { groqJSON } from "@/app/api/ai/_utils";
+
+const rateLimitMap = new Map<string, { count: number; reset: number }>();
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+  if (!entry || entry.reset < now) {
+    rateLimitMap.set(ip, { count: 1, reset: now + 60 * 60 * 1000 });
+    return true;
+  }
+  if (entry.count >= 5) return false;
+  entry.count++;
+  return true;
+}
+
+async function scrapeCompetitors(query: string): Promise<string> {
+  try {
+    const encoded = encodeURIComponent(query);
+    const res = await fetch(`https://lite.duckduckgo.com/lite/?q=${encoded}`, {
+      headers: { "User-Agent": "Mozilla/5.0", "Accept-Language": "en-US,en;q=0.9" },
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!res.ok) return "";
+    const html = await res.text();
+    const titles = [...html.matchAll(/class="result-link"[^>]*>([^<]+)<\/a>/gi)]
+      .slice(0, 4)
+      .map(m => m[1].trim())
+      .filter(Boolean);
+    return titles.length ? titles.join(", ") : "";
+  } catch { return ""; }
+}
+
+export async function POST(request: Request) {
+  try {
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+    if (!checkRateLimit(ip)) {
+      return NextResponse.json({ success: false, error: "Rate limit reached. Try again in an hour." }, { status: 429 });
+    }
+
+    const body = await request.json().catch(() => ({}));
+    const idea    = String(body?.idea ?? "").trim().slice(0, 800);
+    const users   = String(body?.targetUsers ?? "").trim().slice(0, 200);
+    const problem = String(body?.problem ?? "").trim().slice(0, 400);
+
+    if (!idea || idea.length < 10) {
+      return NextResponse.json({ success: false, error: "Describe your startup idea (at least 10 characters)." }, { status: 400 });
+    }
+
+    // Light competitor scan
+    const competitors = await scrapeCompetitors(`${idea} startup tool software`);
+
+    const systemPrompt = `You are a brutally honest startup advisor. Return ONLY valid JSON with exactly these keys:
+{
+  "verdict": "2-3 blunt sentences assessing this specific idea",
+  "kill_reasons": ["reason 1 (specific, not generic)", "reason 2", "reason 3"],
+  "survive_reasons": ["reason 1", "reason 2"],
+  "brutal_advice": "the single most important thing to do right now — specific to this idea",
+  "survival_probability": <integer 5-95>,
+  "differentiation_plan": ["specific edge 1", "how to position differently", "one action in 30 days"]
+}
+
+Rules:
+- survival_probability: base on idea quality, market clarity, and execution signals. Be honest — most ideas are 20-45%.
+- kill_reasons: must be SPECIFIC to this idea, not generic startup clichés
+- brutal_advice: one concrete action, not platitudes
+- differentiation_plan: reference the actual competitors if found
+No preamble. No markdown. Only JSON.`;
+
+    const userPrompt = `Idea: ${idea}
+${users ? `Target users: ${users}` : ""}
+${problem ? `Problem being solved: ${problem}` : ""}
+${competitors ? `Similar products found online: ${competitors}` : "No similar products found in quick search."}
+
+Analyze this startup idea ruthlessly. Be specific to what was described, not generic.`;
+
+    const defaultResult = {
+      verdict: "This idea has potential but significant execution risks. The market may be crowded and differentiation is unclear.",
+      kill_reasons: [
+        "No clear differentiation from existing solutions — what makes this 10x better?",
+        "Target user definition is vague — unclear who pays and why they switch",
+        "No evidence of validated demand — talking to users before building is critical",
+      ],
+      survive_reasons: [
+        "The problem being solved is real and felt",
+        "Founder clearly cares about the space",
+      ],
+      brutal_advice: "Talk to 5 potential customers this week — not to pitch, but to ask if they currently pay for anything to solve this problem and what they hate about it.",
+      survival_probability: 35,
+      differentiation_plan: [
+        "Identify the #1 complaint users have with existing solutions and make that your core feature",
+        "Price differently — not cheaper, but on a metric that aligns with customer value",
+        "Pick one distribution channel and own it completely before diversifying",
+      ],
+    };
+
+    let result = defaultResult;
+    try {
+      const ai = await groqJSON<typeof defaultResult>(systemPrompt, userPrompt);
+      if (ai?.verdict && ai?.kill_reasons?.length && typeof ai.survival_probability === "number") {
+        result = {
+          verdict: ai.verdict,
+          kill_reasons: ai.kill_reasons.slice(0, 4),
+          survive_reasons: (ai.survive_reasons ?? []).slice(0, 3),
+          brutal_advice: ai.brutal_advice,
+          survival_probability: Math.min(95, Math.max(5, Math.round(ai.survival_probability))),
+          differentiation_plan: (ai.differentiation_plan ?? []).slice(0, 3),
+        };
+      }
+    } catch {
+      // use default — still useful
+    }
+
+    return NextResponse.json({ success: true, data: result });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : "Analysis failed";
+    return NextResponse.json({ success: false, error: msg }, { status: 500 });
+  }
+}

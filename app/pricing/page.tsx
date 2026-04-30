@@ -1,146 +1,158 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { FEATURES } from "@/lib/features";
+import Image from "next/image";
+import { Check, Zap, Star, Shield } from "lucide-react";
+import { PLAN_PRICE_LABEL } from "@/lib/pricing";
 
 export const metadata: Metadata = {
   title: "Pricing | BuildMind",
-  description:
-    "BuildMind pricing plans for founders: Starter (free) and Builder with unlimited AI coaching and execution tools.",
+  description: "BuildMind pricing plans for founders. Free forever or upgrade to Builder for unlimited AI.",
 };
 
-const plans = [
-  {
-    name: "Starter",
-    price: "Free",
-    period: "forever",
-    description: "Real tools. Real limits. No card.",
-    cta: "Start for free",
-    href: "/auth/signup",
-    featured: false,
-    features: [
-      "Projects + AI-generated roadmap",
-      "Daily action engine by stage",
-      "Task tracking + streaks",
-      "3 AI Coach messages/day",
-      "Break My Startup preview",
-      "Public weekly share card",
-    ],
-  },
-  {
-    name: "Builder",
-    price: "GHS 290",
-    period: "/month (~$19)",
-    description: "For solo founders ready to ship consistently.",
-    cta: "Upgrade to Builder",
-    href: "/upgrade?plan=builder",
-    featured: true,
-    features: [
-      "Unlimited AI Coach",
-      "Full Break My Startup + competitor scan",
-      "Weekly AI strategy report",
-      "Startup score and investor metrics",
-      "Startup kit + landing generator",
-      ...(FEATURES.ventures ? ["90-day roadmap tracks"] : []),
-      "Full history and data export",
-    ],
-  },
+const FREE_FEATURES = [
+  "Projects + AI-generated roadmap",
+  "Daily action engine by stage",
+  "Task tracking + streaks",
+  "3 AI Coach messages/day",
+  "Break My Startup preview",
+  "Public weekly share card",
+];
+
+const BUILDER_FEATURES = [
+  "Everything in Free",
+  "Unlimited AI Coach",
+  "Full Break My Startup + competitor scan",
+  "Weekly AI strategy report",
+  "Startup score and investor metrics",
+  "Startup kit + landing generator",
+  "90-day roadmap tracks",
+  "Full history and data export",
+  "Streak insurance (1 miss/month)",
+  "Priority email support",
 ];
 
 export default function PricingPage() {
   return (
-    <main style={{ minHeight: "100vh", padding: "48px 20px 72px", background: "var(--bm-bg)" }}>
-      <div style={{ maxWidth: 1050, margin: "0 auto" }}>
-        <div style={{ textAlign: "center", marginBottom: 28 }}>
+    <main style={{ minHeight: "100vh", background: "var(--bm-bg)", fontFamily: "inherit" }}>
+
+      {/* Nav */}
+      <nav style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 32px", height: 56, borderBottom: "1px solid var(--bm-border)", position: "sticky", top: 0, background: "rgba(15,15,16,0.92)", backdropFilter: "blur(10px)", zIndex: 10 }}>
+        <Link href="/" style={{ display: "flex", alignItems: "center", gap: 9, textDecoration: "none" }}>
           <div
             style={{
-              display: "inline-block",
-              fontSize: 11,
-              color: "var(--bm-accent)",
-              textTransform: "uppercase",
-              letterSpacing: "0.1em",
-              fontWeight: 600,
-              marginBottom: 10,
+              width: 28,
+              height: 28,
+              borderRadius: 8,
+              overflow: "hidden",
+              background: "var(--bm-bg3)",
+              border: "1px solid var(--bm-border)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
             }}
           >
-            Pricing
+            <Image src="/logo/buildmind-mark.svg" alt="BuildMind" width={20} height={20} priority />
           </div>
-          <h1 style={{ fontSize: 40, lineHeight: 1.1, margin: 0, color: "var(--bm-text)" }}>
+          <span style={{ fontSize: 14, fontWeight: 700, color: "var(--bm-text)" }}>BuildMind</span>
+        </Link>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Link href="/auth/login" style={{ padding: "8px 16px", borderRadius: 9, border: "1px solid var(--bm-border)", color: "var(--bm-text2)", fontSize: 13, textDecoration: "none", fontWeight: 500 }}>Log in</Link>
+          <Link href="/auth/login" style={{ padding: "8px 16px", borderRadius: 9, background: "var(--grad-primary)", color: "white", fontSize: 13, textDecoration: "none", fontWeight: 600 }}>Get started free</Link>
+        </div>
+      </nav>
+
+      {/* Ambient glows */}
+      <div style={{ position: "fixed", inset: 0, pointerEvents: "none", overflow: "hidden" }}>
+        <div style={{ position: "absolute", top: "15%", left: "25%", width: 400, height: 400, background: "radial-gradient(circle, var(--bm-accent-dim) 0%, transparent 70%)", filter: "blur(80px)" }} />
+        <div style={{ position: "absolute", bottom: "15%", right: "20%", width: 300, height: 300, background: "radial-gradient(circle, rgba(124,58,237,0.06) 0%, transparent 70%)", filter: "blur(80px)" }} />
+      </div>
+
+      <div style={{ maxWidth: 880, margin: "0 auto", padding: "72px 24px 80px", position: "relative" }}>
+
+        {/* Header */}
+        <div style={{ textAlign: "center", marginBottom: 60 }}>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 10, color: "var(--bm-accent)", textTransform: "uppercase", letterSpacing: "0.14em", fontWeight: 700, marginBottom: 18, padding: "4px 14px", borderRadius: 20, background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)" }}>
+            <Zap size={10} /> Pricing
+          </div>
+          <h1 style={{ fontSize: 46, fontWeight: 900, color: "var(--bm-text)", letterSpacing: "-0.04em", lineHeight: 1.1, margin: "0 0 16px" }}>
             Pick your founder plan
           </h1>
-          <p style={{ fontSize: 14, color: "var(--bm-text3)", marginTop: 10 }}>
+          <p style={{ fontSize: 16, color: "var(--bm-text3)", maxWidth: 400, margin: "0 auto", lineHeight: 1.6 }}>
             Start free, upgrade when you need unlimited execution support.
           </p>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(290px, 1fr))", gap: 14 }}>
-          {plans.map((plan) => (
-            <section
-              key={plan.name}
-              style={{
-                border: plan.featured ? "1px solid rgba(99,102,241,0.35)" : "1px solid var(--bm-border2)",
-                borderRadius: 16,
-                padding: "22px 20px",
-                background: plan.featured
-                  ? "linear-gradient(180deg, rgba(99,102,241,0.12), rgba(255,255,255,0.02))"
-                  : "rgba(255,255,255,0.02)",
-              }}
-            >
-              {plan.featured ? (
-                <div
-                  style={{
-                    fontSize: 10,
-                    color: "#a5b4fc",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.08em",
-                    marginBottom: 8,
-                    fontWeight: 700,
-                  }}
-                >
-                  Most popular
-                </div>
-              ) : null}
+        {/* Plans */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, maxWidth: 720, margin: "0 auto 48px" }}>
 
-              <h2 style={{ margin: "0 0 2px", fontSize: 20, color: "var(--bm-text)" }}>{plan.name}</h2>
-              <p style={{ margin: "0 0 10px", color: "var(--bm-text3)", fontSize: 12 }}>{plan.description}</p>
-
-              <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 16 }}>
-                <div style={{ fontSize: 34, color: "var(--bm-text)", fontWeight: 700 }}>{plan.price}</div>
-                <div style={{ fontSize: 12, color: "var(--bm-text3)" }}>{plan.period}</div>
+          {/* Free */}
+          <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 20, padding: "32px 28px" }}>
+            <div style={{ marginBottom: 28 }}>
+              <div style={{ fontSize: 10, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 700, marginBottom: 10 }}>Starter</div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 6 }}>
+                <span style={{ fontSize: 40, fontWeight: 900, color: "var(--bm-text)", letterSpacing: "-0.04em" }}>Free</span>
               </div>
+              <div style={{ fontSize: 12, color: "var(--bm-text3)" }}>forever — no card required</div>
+            </div>
+            <p style={{ fontSize: 13, color: "var(--bm-text3)", marginBottom: 28, lineHeight: 1.6 }}>Real tools. Real limits. Start building today.</p>
+            <Link href="/auth/login"
+              style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", padding: "13px 0", borderRadius: 12, border: "1px solid var(--bm-border2)", background: "transparent", color: "var(--bm-text)", fontWeight: 600, fontSize: 14, textDecoration: "none", marginBottom: 28, boxSizing: "border-box", transition: "all 0.15s" }}>
+              Start for free
+            </Link>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {FREE_FEATURES.map(f => (
+                <div key={f} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <Check size={13} color="var(--bm-text3)" strokeWidth={2.5} style={{ flexShrink: 0 }} />
+                  <span style={{ fontSize: 13, color: "var(--bm-text3)" }}>{f}</span>
+                </div>
+              ))}
+            </div>
+          </div>
 
-              <ul style={{ margin: "0 0 16px", paddingLeft: 18, color: "var(--bm-text2)", fontSize: 13, lineHeight: 1.8 }}>
-                {plan.features.map((feature) => (
-                  <li key={feature}>{feature}</li>
-                ))}
-              </ul>
-
-              <Link
-                href={plan.href}
-                style={{
-                  display: "inline-block",
-                  width: "100%",
-                  textAlign: "center",
-                  padding: "10px 12px",
-                  borderRadius: 10,
-                  textDecoration: "none",
-                  border: plan.featured ? "none" : "1px solid var(--bm-border2)",
-                  color: plan.featured ? "#fff" : "var(--bm-text)",
-                  background: plan.featured
-                    ? "linear-gradient(135deg,#6366f1,#8b5cf6)"
-                    : "rgba(255,255,255,0.04)",
-                  fontWeight: 600,
-                  fontSize: 13,
-                }}
-              >
-                {plan.cta}
-              </Link>
-            </section>
-          ))}
+          {/* Builder */}
+          <div style={{ background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)", borderRadius: 20, padding: "32px 28px", position: "relative", overflow: "hidden" }}>
+            <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: "var(--grad-primary)", borderRadius: "20px 20px 0 0" }} />
+            <div style={{ marginBottom: 28 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                <div style={{ fontSize: 10, color: "var(--bm-accent)", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 700 }}>Builder</div>
+                <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 20, background: "var(--grad-primary)", color: "white", fontWeight: 700 }}>POPULAR</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 6 }}>
+                <span style={{ fontSize: 40, fontWeight: 900, color: "var(--bm-text)", letterSpacing: "-0.04em" }}>{PLAN_PRICE_LABEL.builder}</span>
+              </div>
+              <div style={{ fontSize: 12, color: "var(--bm-text3)" }}>billed monthly · cancel anytime</div>
+            </div>
+            <p style={{ fontSize: 13, color: "var(--bm-text2)", marginBottom: 28, lineHeight: 1.6 }}>Unlimited AI. Full tools. Maximum execution support.</p>
+            <Link href="/upgrade"
+              style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", padding: "13px 0", borderRadius: 12, border: "none", background: "var(--grad-primary)", color: "white", fontWeight: 700, fontSize: 14, textDecoration: "none", marginBottom: 28, boxSizing: "border-box" }}>
+              <Zap size={14} /> Get Builder
+            </Link>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {BUILDER_FEATURES.map(f => (
+                <div key={f} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <Check size={13} color="var(--bm-accent)" strokeWidth={2.5} style={{ flexShrink: 0 }} />
+                  <span style={{ fontSize: 13, color: "var(--bm-text2)" }}>{f}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
 
-        <p style={{ textAlign: "center", marginTop: 12, fontSize: 12, color: "var(--bm-text4)" }}>
-          Need team or enterprise billing? Contact hello@buildmind.live.
-        </p>
+        {/* Trust bar */}
+        <div style={{ textAlign: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 28, flexWrap: "wrap" }}>
+            {[
+              { icon: <Shield size={13} />, text: "Cancel anytime" },
+              { icon: <Check size={13} />, text: "No contracts" },
+              { icon: <Star size={13} />, text: "Built for founders" },
+            ].map(({ icon, text }) => (
+              <div key={text} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--bm-text3)" }}>
+                <span style={{ color: "var(--bm-accent)" }}>{icon}</span>
+                {text}
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </main>
   );

@@ -18,9 +18,17 @@ class User(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     username: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
-    # Keep both fields for backward compatibility with existing routes.
+    # Single canonical password field. password_hash is kept as a Python
+    # property alias so any code reading it still works without a second DB column.
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=True)
-    password_hash: Mapped[str] = mapped_column(String(255), nullable=True)
+
+    @property
+    def password_hash(self) -> str | None:  # type: ignore[override]
+        return self.hashed_password
+
+    @password_hash.setter
+    def password_hash(self, value: str | None) -> None:
+        self.hashed_password = value
     bio: Mapped[str] = mapped_column(Text, nullable=True)
     avatar_url: Mapped[str] = mapped_column(String(500), nullable=True)
     followers: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

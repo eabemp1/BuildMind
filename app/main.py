@@ -1,25 +1,29 @@
-"""Unified EvolvAI OS backend application.
+"""EvolvAI OS — unified backend.
 
-Single FastAPI app that combines:
-- agent/adaptive capabilities
-- execution tracking capabilities
+Combines execution-tracking APIs with the Lumiere agent runtime.
+The agent runtime is mounted as a sub-application so its flat-file
+state and auth system are fully isolated from the JWT/SQLAlchemy
+auth used by the rest of the platform.
 """
 
 import logging
 import os
 import time
 
-from fastapi import HTTPException
-from fastapi import Request
+from fastapi import FastAPI, HTTPException, Request
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from app.core.rate_limit import limiter
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.routing import APIRoute
 from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 from sqlalchemy import inspect as sa_inspect, text
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.agent.runtime import *  # noqa: F401,F403
-from app.database import Base, engine
+# ── Explicit runtime imports (replaces the dangerous star import) ─────────────
+from app.agent.runtime import app as lumiere_app  # noqa: F401 – sub-app
+from app.database import Base, engine, SessionLocal
 from app.routes.auth import router as auth_router
 from app.routes.projects import router as projects_router
 from app.routes.tasks import router as tasks_router
@@ -40,167 +44,23 @@ from app.routes.weekly_reports import router as weekly_reports_router
 from app.routes.startup_data import router as startup_data_router
 from app.core.config import get_settings
 from app.core.logging_config import configure_logging, request_log_line
-from app.database import SessionLocal
 from app.services.weekly_report_service import generate_weekly_reports_for_all_users
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-
+# ── DB bootstrap ──────────────────────────────────────────────────────────────
+# Schema is managed by Alembic migrations.
+# Run `alembic upgrade head` before starting the server.
+# Migration 0002 (app/db/migrations/versions/0002_add_missing_columns.py) covers
+# all the column additions that were previously patched here at boot time.
+# create_all() is kept as a safety net for any tables Alembic doesn't yet track.
 Base.metadata.create_all(bind=engine)
 
-
-def _ensure_runtime_schema() -> None:
-    inspector = sa_inspect(engine)
-    table_columns = {}
-    for table_name in ["users", "projects", "milestones", "tasks", "feedback"]:
-        try:
-            table_columns[table_name] = {col["name"] for col in inspector.get_columns(table_name)}
-        except Exception:
-            table_columns[table_name] = set()
-
-    alter_map = {
-        "users": [
-            ("username", "ALTER TABLE users ADD COLUMN username VARCHAR(100)"),
-            ("password_hash", "ALTER TABLE users ADD COLUMN password_hash VARCHAR(255)"),
-            ("bio", "ALTER TABLE users ADD COLUMN bio TEXT"),
-            ("avatar_url", "ALTER TABLE users ADD COLUMN avatar_url VARCHAR(500)"),
-            ("followers", "ALTER TABLE users ADD COLUMN followers INTEGER DEFAULT 0"),
-            ("onboarding_completed", "ALTER TABLE users ADD COLUMN onboarding_completed BOOLEAN DEFAULT 0"),
-            ("is_active", "ALTER TABLE users ADD COLUMN is_active BOOLEAN DEFAULT 1"),
-            ("is_admin", "ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT 0"),
-        ],
-        "projects": [
-            ("roadmap_json", "ALTER TABLE projects ADD COLUMN roadmap_json TEXT"),
-            ("problem", "ALTER TABLE projects ADD COLUMN problem TEXT"),
-            ("target_users", "ALTER TABLE projects ADD COLUMN target_users TEXT"),
-            ("industry", "ALTER TABLE projects ADD COLUMN industry VARCHAR(120)"),
-            ("target_market", "ALTER TABLE projects ADD COLUMN target_market VARCHAR(255)"),
-            ("problem_type", "ALTER TABLE projects ADD COLUMN problem_type VARCHAR(120)"),
-            ("revenue_model", "ALTER TABLE projects ADD COLUMN revenue_model VARCHAR(120)"),
-            ("startup_stage", "ALTER TABLE projects ADD COLUMN startup_stage VARCHAR(32)"),
-            ("validation_score", "ALTER TABLE projects ADD COLUMN validation_score FLOAT DEFAULT 0"),
-            ("execution_score", "ALTER TABLE projects ADD COLUMN execution_score FLOAT DEFAULT 0"),
-            ("momentum_score", "ALTER TABLE projects ADD COLUMN momentum_score FLOAT DEFAULT 0"),
-            ("progress", "ALTER TABLE projects ADD COLUMN progress FLOAT DEFAULT 0"),
-            ("is_public", "ALTER TABLE projects ADD COLUMN is_public BOOLEAN DEFAULT FALSE"),
-            ("likes", "ALTER TABLE projects ADD COLUMN likes INTEGER DEFAULT 0"),
-            ("followers", "ALTER TABLE projects ADD COLUMN followers INTEGER DEFAULT 0"),
-            ("is_archived", "ALTER TABLE projects ADD COLUMN is_archived BOOLEAN DEFAULT FALSE"),
-            ("archived_at", "ALTER TABLE projects ADD COLUMN archived_at TIMESTAMP"),
-        ],
-        "milestones": [
-            ("description", "ALTER TABLE milestones ADD COLUMN description TEXT"),
-            ("status", "ALTER TABLE milestones ADD COLUMN status VARCHAR(32) DEFAULT 'pending'"),
-            ("order_index", "ALTER TABLE milestones ADD COLUMN order_index INTEGER DEFAULT 0"),
-            ("completed_at", "ALTER TABLE milestones ADD COLUMN completed_at TIMESTAMP"),
-        ],
-        "tasks": [
-            ("title", "ALTER TABLE tasks ADD COLUMN title VARCHAR(255)"),
-            ("status", "ALTER TABLE tasks ADD COLUMN status VARCHAR(32) DEFAULT 'todo'"),
-            ("priority", "ALTER TABLE tasks ADD COLUMN priority VARCHAR(16) DEFAULT 'medium'"),
-            ("due_date", "ALTER TABLE tasks ADD COLUMN due_date TIMESTAMP"),
-        ],
-        "feedback": [
-            ("project_id", "ALTER TABLE feedback ADD COLUMN project_id INTEGER"),
-            ("rating", "ALTER TABLE feedback ADD COLUMN rating INTEGER"),
-            ("category", "ALTER TABLE feedback ADD COLUMN category VARCHAR(32)"),
-            ("comment", "ALTER TABLE feedback ADD COLUMN comment TEXT"),
-        ],
-    }
-    use_if_not_exists = engine.dialect.name != "sqlite"
-    with engine.begin() as conn:
-        for table_name, alters in alter_map.items():
-            existing = table_columns.get(table_name, set())
-            for column_name, alter_sql in alters:
-                if column_name not in existing:
-                    statement = alter_sql
-                    if use_if_not_exists and "ADD COLUMN" in alter_sql:
-                        statement = alter_sql.replace("ADD COLUMN", "ADD COLUMN IF NOT EXISTS")
-                    conn.execute(text(statement))
-
-        conn.execute(
-            text(
-                """
-                CREATE TABLE IF NOT EXISTS project_updates (
-                    id INTEGER PRIMARY KEY,
-                    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                    content TEXT NOT NULL,
-                    created_at TIMESTAMP
-                )
-                """
-            )
-        )
-        conn.execute(
-            text(
-                """
-                CREATE TABLE IF NOT EXISTS weekly_reports (
-                    id INTEGER PRIMARY KEY,
-                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                    week_start_date TIMESTAMP NOT NULL,
-                    projects_count INTEGER DEFAULT 0,
-                    milestones_completed INTEGER DEFAULT 0,
-                    tasks_completed INTEGER DEFAULT 0,
-                    ai_summary TEXT,
-                    ai_risks TEXT,
-                    ai_suggestions TEXT,
-                    created_at TIMESTAMP
-                )
-                """
-            )
-        )
-        conn.execute(
-            text(
-                """
-                CREATE TABLE IF NOT EXISTS project_comments (
-                    id INTEGER PRIMARY KEY,
-                    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-                    author_name VARCHAR(120),
-                    content TEXT NOT NULL,
-                    created_at TIMESTAMP
-                )
-                """
-            )
-        )
-        conn.execute(
-            text(
-                """
-                CREATE TABLE IF NOT EXISTS validation_data (
-                    id INTEGER PRIMARY KEY,
-                    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-                    users_interviewed INTEGER DEFAULT 0,
-                    interested_users INTEGER DEFAULT 0,
-                    preorders INTEGER DEFAULT 0,
-                    feedback_sentiment VARCHAR(16) DEFAULT 'neutral',
-                    created_at TIMESTAMP,
-                    UNIQUE (project_id)
-                )
-                """
-            )
-        )
-        conn.execute(
-            text(
-                """
-                CREATE TABLE IF NOT EXISTS startup_metrics (
-                    id INTEGER PRIMARY KEY,
-                    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-                    milestones_completed INTEGER DEFAULT 0,
-                    tasks_completed INTEGER DEFAULT 0,
-                    early_users INTEGER DEFAULT 0,
-                    active_users INTEGER DEFAULT 0,
-                    execution_streak INTEGER DEFAULT 0,
-                    updated_at TIMESTAMP,
-                    UNIQUE (project_id)
-                )
-                """
-            )
-        )
-
-
-_ensure_runtime_schema()
-
-app.title = "EvolvAI OS"
+# ── App setup ─────────────────────────────────────────────────────────────────
+app = FastAPI(title="EvolvAI OS")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 configure_logging()
 logger = logging.getLogger("evolvai")
 settings = get_settings()
@@ -216,6 +76,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Mount Lumiere agent as an isolated sub-application ────────────────────────
+# This keeps the agent's flat-file auth/session system completely separate from
+# the JWT platform auth.  All agent calls go to /agent/*, never /api/v1/*.
+app.mount("/agent", lumiere_app)
+
+# ── Platform API routers ──────────────────────────────────────────────────────
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(projects_router, prefix="/api/v1")
 app.include_router(tasks_router, prefix="/api/v1")
@@ -237,10 +103,10 @@ app.include_router(startup_data_router, prefix="/api/v1")
 
 
 def _install_v1_aliases() -> None:
-    """Expose /api/v1 aliases for legacy non-versioned routes (mainly agent/runtime routes)."""
-    skip_prefixes = {"/api/v1", "/docs", "/redoc", "/openapi.json", "/static", "/health"}
+    """Expose /api/v1 aliases for any legacy non-versioned routes."""
+    skip_prefixes = {"/api/v1", "/agent", "/docs", "/redoc", "/openapi.json", "/static", "/health"}
     snapshot = list(app.routes)
-    existing = set()
+    existing: set[tuple] = set()
     for route in snapshot:
         if not isinstance(route, APIRoute):
             continue
@@ -250,7 +116,7 @@ def _install_v1_aliases() -> None:
     for route in snapshot:
         if not isinstance(route, APIRoute):
             continue
-        if any(route.path.startswith(prefix) for prefix in skip_prefixes):
+        if any(route.path.startswith(p) for p in skip_prefixes):
             continue
         methods = sorted(m for m in (route.methods or set()) if m not in {"HEAD", "OPTIONS"})
         if not methods:
@@ -272,6 +138,7 @@ def _install_v1_aliases() -> None:
 _install_v1_aliases()
 
 
+# ── Background jobs ───────────────────────────────────────────────────────────
 def _run_weekly_reports() -> None:
     db = SessionLocal()
     try:
@@ -300,6 +167,7 @@ def _stop_scheduler() -> None:
         _scheduler.shutdown()
 
 
+# ── Middleware ────────────────────────────────────────────────────────────────
 @app.middleware("http")
 async def api_request_logging_middleware(request: Request, call_next):
     started = time.perf_counter()
@@ -308,14 +176,13 @@ async def api_request_logging_middleware(request: Request, call_next):
     try:
         response = await call_next(request)
         logger.info(request_log_line(method, path, response.status_code, time.perf_counter() - started))
-        if "/agent" in path or path.endswith("/ask") or "/ask-live" in path:
-            logger.info(f'event=agent_execution method={method} path="{path}" status={response.status_code}')
         return response
     except Exception:
         logger.exception(f'event=request_error method={method} path="{path}"')
         raise
 
 
+# ── Health endpoints ──────────────────────────────────────────────────────────
 @app.get("/health")
 def root_health():
     return {"status": "ok", "service": "evolvai-backend"}
@@ -326,6 +193,7 @@ def health():
     return {"success": True, "data": {"status": "ok", "service": "evolvai-os"}}
 
 
+# ── Exception handlers ────────────────────────────────────────────────────────
 @app.exception_handler(SQLAlchemyError)
 async def sqlalchemy_exception_handler(_, exc: SQLAlchemyError):
     logger.exception("event=sqlalchemy_exception")
@@ -348,5 +216,3 @@ async def validation_exception_handler(_, exc: RequestValidationError):
         status_code=422,
         content={"success": False, "error": "validation_error", "detail": exc.errors()},
     )
-
-

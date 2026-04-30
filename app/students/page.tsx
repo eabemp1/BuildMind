@@ -56,7 +56,7 @@ export default function StudentsPage() {
           <Link href="/" style={{ textDecoration: "none", fontSize: 15, fontWeight: 600, color: "var(--bm-text)", letterSpacing: "-0.02em" }}>BuildMind</Link>
           <div style={{ display: "flex", gap: 12 }}>
             <Link href="/auth/login" style={{ textDecoration: "none", fontSize: 13, color: "var(--bm-text3)", padding: "7px 14px" }}>Sign in</Link>
-            <Link href="/auth/signup" style={{ textDecoration: "none", fontSize: 13, fontWeight: 600, color: "black", background: "white", borderRadius: 8, padding: "7px 16px" }}>Get free access →</Link>
+            <Link href="/auth/login" style={{ textDecoration: "none", fontSize: 13, fontWeight: 600, color: "black", background: "white", borderRadius: 8, padding: "7px 16px" }}>Get free access →</Link>
           </div>
         </nav>
 
@@ -71,7 +71,7 @@ export default function StudentsPage() {
               One specific action every day — decided by AI, based on your startup stage and yesterday&apos;s reflection. No planning paralysis. Just execute.
             </p>
             <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" as const }}>
-              <Link href="/auth/signup" style={{ textDecoration: "none", background: "white", color: "black", fontWeight: 700, fontSize: 14, borderRadius: 10, padding: "13px 28px" }}>Start free — student access</Link>
+              <Link href="/auth/login" style={{ textDecoration: "none", background: "white", color: "black", fontWeight: 700, fontSize: 14, borderRadius: 10, padding: "13px 28px" }}>Start free — student access</Link>
               <Link href="/try" style={{ textDecoration: "none", color: "var(--bm-text2)", fontSize: 14, borderRadius: 10, padding: "13px 28px", border: "1px solid var(--bm-border2)" }}>Try without signing up →</Link>
             </div>
             <p style={{ marginTop: 14, fontSize: 12, color: "var(--bm-text4)" }}>GitHub Student Pack or .edu email → Builder plan free</p>
@@ -102,7 +102,7 @@ export default function StudentsPage() {
                   Sign up, then send your Pack verification to <strong style={{ color: "var(--bm-text2)" }}>students@buildmind.live</strong>. Upgraded within 24 hours.
                 </p>
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" as const }}>
-                  <Link href="/auth/signup" style={{ textDecoration: "none", background: "white", color: "black", fontWeight: 700, fontSize: 13, borderRadius: 8, padding: "9px 18px" }}>Sign up free →</Link>
+                  <Link href="/auth/login" style={{ textDecoration: "none", background: "white", color: "black", fontWeight: 700, fontSize: 13, borderRadius: 8, padding: "9px 18px" }}>Sign up free →</Link>
                   <a href="https://education.github.com/pack" target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none", color: "var(--bm-text3)", fontSize: 13, borderRadius: 8, padding: "9px 18px", border: "1px solid var(--bm-border2)" }}>Get Student Pack ↗</a>
                 </div>
               </div>
@@ -138,7 +138,7 @@ export default function StudentsPage() {
           <section style={{ textAlign: "center", padding: "0 0 80px" }}>
             <h2 style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em", marginBottom: 10, color: "var(--bm-text)" }}>One decision. Already made.</h2>
             <p style={{ fontSize: 14, color: "var(--bm-text3)", marginBottom: 24 }}>Sign up free. Your first action is waiting.</p>
-            <Link href="/auth/signup" style={{ textDecoration: "none", background: "white", color: "black", fontWeight: 700, fontSize: 14, borderRadius: 12, padding: "13px 32px", display: "inline-block" }}>
+            <Link href="/auth/login" style={{ textDecoration: "none", background: "white", color: "black", fontWeight: 700, fontSize: 14, borderRadius: 12, padding: "13px 32px", display: "inline-block" }}>
               Start building → free for students
             </Link>
           </section>

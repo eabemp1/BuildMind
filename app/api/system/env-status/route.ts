@@ -9,8 +9,19 @@ export async function GET() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const adminId = process.env.NEXT_PUBLIC_ADMIN_USER_ID;
-  if (!user || (adminId && user.id !== adminId)) {
+  // Admin check is server-side via profiles.is_admin (service-role key).
+  // NEXT_PUBLIC_ADMIN_USER_ID is no longer used here.
+  if (!user) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
+
+  const adminProfile = await createAdminClient()
+    .from("profiles")
+    .select("is_admin")
+    .eq("id", user.id)
+    .single();
+
+  if (!adminProfile.data?.is_admin) {
     return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
   }
 

@@ -2,7 +2,6 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import Providers from "@/components/providers";
 import PwaProvider from "@/components/PwaProvider";
-import { FEATURES } from "@/lib/features";
 
 // ─── SEO METADATA ──────────────────────────────────────────────────────────
 // Domain: buildmind.live (GitHub Student Developer Pack)
@@ -150,18 +149,14 @@ const jsonLd = [
     url: "https://buildmind.live",
     name: "BuildMind",
     description: "Daily action engine for founders",
-    ...(FEATURES.publicProjects
-      ? {
-          potentialAction: {
-            "@type": "SearchAction",
-            target: {
-              "@type": "EntryPoint",
-              urlTemplate: "https://buildmind.live/explore?q={search_term_string}",
-            },
-            "query-input": "required name=search_term_string",
-          },
-        }
-      : {}),
+    potentialAction: {
+      "@type": "SearchAction",
+      target: {
+        "@type": "EntryPoint",
+        urlTemplate: "https://buildmind.live/explore?q={search_term_string}",
+      },
+      "query-input": "required name=search_term_string",
+    },
   },
   {
     "@context": "https://schema.org",
@@ -205,7 +200,9 @@ const jsonLd = [
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    // Some browser extensions (e.g. Grammarly) inject attributes into <body>
+    // before React hydrates, which can trigger a hydration mismatch warning.
+    <html lang="en" suppressHydrationWarning>
       <head>
         {jsonLd.map((schema, i) => (
           <script
@@ -237,7 +234,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* Geo targeting (helps local/regional discovery) */}
         <meta name="geo.region" content="GH" />
       </head>
-      <body>
+      <body suppressHydrationWarning>
         <Providers>
           <PwaProvider>{children}</PwaProvider>
         </Providers>

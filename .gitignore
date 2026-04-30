@@ -10,9 +10,15 @@ frontend/.env.local
 forge_state.json
 frontend/node_modules/
 frontend/.next/
+node_modules/
+.next/
+.next-buildmind/
 frontend/*.log
 frontend/swc-cache/
 frontend/tsconfig.tsbuildinfo
+*.log
+tsconfig.tsbuildinfo
+supabase/.temp/
 backend.log
 backend.err.log
 __pycache__/

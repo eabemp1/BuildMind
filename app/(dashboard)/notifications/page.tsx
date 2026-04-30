@@ -3,16 +3,14 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
-import {
-  getAllNotifications, markRead, markAllRead, deleteNotification,
-  type AppNotification, type NotifPriority,
-} from "@/lib/notifications";
+import { getAllNotifications, markRead, markAllRead, deleteNotification, type AppNotification, type NotifPriority } from "@/lib/notifications";
+import { Bell, Check, Trash2 } from "lucide-react";
 
-const PRIORITY_COLOR: Record<NotifPriority, { text: string; bg: string; border: string }> = {
-  low:    { text: "#555",    bg: "transparent",             border: "#111" },
-  medium: { text: "#a78bfa", bg: "rgba(167,139,250,0.05)",  border: "rgba(167,139,250,0.15)" },
-  high:   { text: "#fbbf24", bg: "rgba(251,191,36,0.05)",   border: "rgba(251,191,36,0.15)" },
-  urgent: { text: "#f87171", bg: "rgba(248,113,113,0.06)",  border: "rgba(248,113,113,0.18)" },
+const PRIORITY_STYLES: Record<NotifPriority, { text: string; bg: string; border: string; dot: string }> = {
+  low:    { text: "var(--bm-text3)", bg: "transparent",           border: "var(--bm-border)",                dot: "var(--bm-text3)" },
+  medium: { text: "#A78BFA",         bg: "rgba(167,139,250,0.05)", border: "rgba(167,139,250,0.18)",          dot: "#A78BFA" },
+  high:   { text: "var(--bm-amber)", bg: "rgba(232,160,32,0.05)", border: "rgba(232,160,32,0.18)",           dot: "var(--bm-amber)" },
+  urgent: { text: "var(--bm-red)",   bg: "rgba(224,85,85,0.06)",  border: "rgba(224,85,85,0.20)",            dot: "var(--bm-red)" },
 };
 
 function timeAgo(ts: number): string {
@@ -23,104 +21,65 @@ function timeAgo(ts: number): string {
   return `${Math.floor(d / 86400000)}d ago`;
 }
 
-function NotifRow({ n, onRead, onDelete }: {
-  n: AppNotification;
-  onRead: (id: string) => void;
-  onDelete: (id: string) => void;
-}) {
+function NotifRow({ n, onRead, onDelete }: { n: AppNotification; onRead: (id: string) => void; onDelete: (id: string) => void }) {
   const router = useRouter();
   const isUnread = !n.readAt;
-  const colors = PRIORITY_COLOR[n.priority];
-
-  const handleClick = () => {
-    onRead(n.id);
-    if (n.actionHref) router.push(n.actionHref);
-  };
+  const s = PRIORITY_STYLES[n.priority];
 
   return (
     <motion.div
-      layout
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
+      layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, x: -20, height: 0, marginBottom: 0 }}
       transition={{ duration: 0.2 }}
-      onClick={handleClick}
+      onClick={() => { onRead(n.id); if (n.actionHref) router.push(n.actionHref); }}
       style={{
         display: "flex", alignItems: "flex-start", gap: 14,
-        padding: "16px 20px",
-        background: isUnread ? colors.bg : "transparent",
-        border: `1px solid ${isUnread ? colors.border : "#111"}`,
-        borderRadius: 12, cursor: n.actionHref ? "pointer" : "default",
-        marginBottom: 8, transition: "background 0.15s",
-        position: "relative",
+        padding: "15px 18px",
+        background: isUnread ? s.bg : "transparent",
+        border: `1px solid ${isUnread ? s.border : "var(--bm-border)"}`,
+        borderRadius: 14, cursor: n.actionHref ? "pointer" : "default",
+        marginBottom: 8, transition: "all 0.15s", position: "relative",
       }}
+      onMouseEnter={e => { if (n.actionHref) { e.currentTarget.style.borderColor = isUnread ? s.border : "var(--bm-border2)"; e.currentTarget.style.transform = "translateY(-1px)"; } }}
+      onMouseLeave={e => { e.currentTarget.style.borderColor = isUnread ? s.border : "var(--bm-border)"; e.currentTarget.style.transform = "none"; }}
     >
-      {/* Unread indicator */}
       {isUnread && (
-        <motion.div
-          initial={{ scale: 0 }} animate={{ scale: 1 }}
-          style={{
-            position: "absolute", top: 18, left: -4,
-            width: 8, height: 8, borderRadius: "50%",
-            background: colors.text,
-            boxShadow: `0 0 8px ${colors.text}`,
-          }}
-        />
+        <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}
+          style={{ position: "absolute", top: 18, left: -4, width: 8, height: 8, borderRadius: "50%", background: s.dot, boxShadow: `0 0 8px ${s.dot}` }} />
       )}
 
-      {/* Emoji */}
       <div style={{
-        width: 44, height: 44, borderRadius: 10, flexShrink: 0,
-        background: isUnread ? `${colors.border}` : "#111",
-        border: `1px solid ${isUnread ? colors.border : "#1a1a1a"}`,
-        display: "flex", alignItems: "center", justifyContent: "center",
-        fontSize: 20,
+        width: 42, height: 42, borderRadius: 12, flexShrink: 0,
+        background: isUnread ? "var(--bm-bg3)" : "var(--bm-bg2)",
+        border: `1px solid ${isUnread ? s.border : "var(--bm-border)"}`,
+        display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20,
       }}>
         {n.emoji}
       </div>
 
-      {/* Content */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, marginBottom: 4 }}>
-          <div style={{
-            fontSize: 13, fontWeight: isUnread ? 600 : 400,
-            color: isUnread ? "#fff" : "#777", lineHeight: 1.3,
-          }}>
+          <div style={{ fontSize: 13, fontWeight: isUnread ? 600 : 400, color: isUnread ? "var(--bm-text)" : "var(--bm-text3)", lineHeight: 1.3 }}>
             {n.title}
           </div>
-          <div style={{ fontSize: 10, color: "#333", flexShrink: 0, marginTop: 1 }}>
-            {timeAgo(n.createdAt)}
-          </div>
+          <span style={{ fontSize: 10, color: "var(--bm-text3)", flexShrink: 0, marginTop: 1 }}>{timeAgo(n.createdAt)}</span>
         </div>
-        <div style={{ fontSize: 12, color: isUnread ? "#888" : "#444", lineHeight: 1.6, marginBottom: n.actionLabel ? 8 : 0 }}>
+        <div style={{ fontSize: 12, color: isUnread ? "var(--bm-text2)" : "var(--bm-text3)", lineHeight: 1.6, marginBottom: n.actionLabel ? 8 : 0 }}>
           {n.body}
         </div>
         {n.actionLabel && (
-          <div style={{
-            display: "inline-flex", alignItems: "center", gap: 4,
-            fontSize: 11, color: colors.text, fontWeight: 600,
-            padding: "3px 8px", borderRadius: 6,
-            background: `${colors.border}40`,
-          }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: s.text, fontWeight: 600, padding: "3px 8px", borderRadius: 6, background: `${s.border}` }}>
             {n.actionLabel}
-          </div>
+          </span>
         )}
       </div>
 
-      {/* Delete */}
-      <button
-        onClick={e => { e.stopPropagation(); onDelete(n.id); }}
-        style={{
-          background: "transparent", border: "none", color: "#222",
-          fontSize: 18, cursor: "pointer", lineHeight: 1,
-          flexShrink: 0, padding: 4, borderRadius: 4,
-          transition: "color 0.15s",
-        }}
-        onMouseEnter={e => (e.currentTarget.style.color = "#ef4444")}
-        onMouseLeave={e => (e.currentTarget.style.color = "#222")}
-        aria-label="Dismiss"
-      >
-        ×
+      <button onClick={e => { e.stopPropagation(); onDelete(n.id); }}
+        style={{ background: "transparent", border: "none", color: "var(--bm-text3)", cursor: "pointer", padding: "4px 6px", borderRadius: 6, flexShrink: 0, transition: "all 0.15s", display: "flex", alignItems: "center", justifyContent: "center" }}
+        onMouseEnter={e => { e.currentTarget.style.background = "rgba(224,85,85,0.10)"; e.currentTarget.style.color = "var(--bm-red)"; }}
+        onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--bm-text3)"; }}
+        aria-label="Dismiss">
+        <Trash2 size={13} />
       </button>
     </motion.div>
   );
@@ -132,9 +91,7 @@ export default function NotificationsPage() {
   const [notifs, setNotifs] = useState<AppNotification[]>([]);
   const [filter, setFilter] = useState<Filter>("all");
 
-  const refresh = () => {
-    setNotifs(getAllNotifications().sort((a, b) => b.createdAt - a.createdAt));
-  };
+  const refresh = () => setNotifs(getAllNotifications().sort((a, b) => b.createdAt - a.createdAt));
 
   useEffect(() => {
     refresh();
@@ -150,83 +107,66 @@ export default function NotificationsPage() {
   const unreadCount = notifs.filter(n => !n.readAt).length;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-      style={{ maxWidth: 680, margin: "0 auto", fontFamily: "system-ui,sans-serif", paddingBottom: 40 }}
-    >
+    <div style={{ maxWidth: 720, margin: "0 auto", padding: "28px 24px" }}>
+
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: "var(--bm-text)" }}>
-            🔔 Notifications
-          </h1>
-          <div style={{ fontSize: 12, color: "var(--bm-text3)", marginTop: 3 }}>
-            {unreadCount > 0 ? `${unreadCount} unread` : "All caught up"}
+      <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 24 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+              <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em", margin: 0 }}>Notifications</h1>
+              {unreadCount > 0 && (
+                <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: "var(--bm-accent-dim)", color: "var(--bm-accent)", border: "1px solid var(--bm-accent-bd)", fontWeight: 700 }}>
+                  {unreadCount} new
+                </span>
+              )}
+            </div>
+            <p style={{ fontSize: 12, color: "var(--bm-text3)", margin: 0 }}>Stay up to date with your startup progress.</p>
           </div>
+          {unreadCount > 0 && (
+            <button onClick={handleMarkAll}
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 10, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text2)", fontSize: 12, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}
+              onMouseEnter={e => { e.currentTarget.style.background = "var(--bm-bg3)"; }}
+              onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
+              <Check size={12} /> Mark all read
+            </button>
+          )}
         </div>
-        {unreadCount > 0 && (
-          <button
-            onClick={handleMarkAll}
-            style={{
-              background: "transparent", border: "1px solid #222",
-              borderRadius: 8, padding: "7px 14px",
-              color: "#666", fontSize: 12, cursor: "pointer", fontFamily: "inherit",
-              transition: "all 0.15s",
-            }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "#444"; (e.currentTarget as HTMLElement).style.color = "#fff"; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "#222"; (e.currentTarget as HTMLElement).style.color = "#666"; }}
-          >
-            Mark all read
-          </button>
-        )}
-      </div>
+      </motion.div>
 
       {/* Filter tabs */}
-      <div style={{ display: "flex", gap: 6, marginBottom: 20 }}>
+      <div style={{ display: "flex", gap: 3, background: "var(--bm-bg3)", borderRadius: 10, padding: 3, width: "fit-content", marginBottom: 20, border: "1px solid var(--bm-border)" }}>
         {(["all", "unread"] as Filter[]).map(f => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
+          <button key={f} onClick={() => setFilter(f)}
             style={{
-              padding: "6px 14px", borderRadius: 20, fontSize: 12, cursor: "pointer",
-              fontFamily: "inherit", fontWeight: filter === f ? 600 : 400,
-              background: filter === f ? "#1a1a3a" : "transparent",
-              border: `1px solid ${filter === f ? "#3b3b7a" : "#1a1a1a"}`,
-              color: filter === f ? "#a78bfa" : "#555",
+              padding: "6px 16px", borderRadius: 8, fontFamily: "inherit", cursor: "pointer",
+              background: filter === f ? "var(--bm-bg2)" : "transparent",
+              color: filter === f ? "var(--bm-text)" : "var(--bm-text3)",
+              fontSize: 12, fontWeight: filter === f ? 600 : 400,
+              border: filter === f ? "1px solid var(--bm-border2)" : "1px solid transparent",
               transition: "all 0.15s",
-            }}
-          >
-            {f === "all" ? `All (${notifs.length})` : `Unread (${unreadCount})`}
+            }}>
+            {f === "all" ? "All" : `Unread${unreadCount > 0 ? ` (${unreadCount})` : ""}`}
           </button>
         ))}
       </div>
 
-      {/* Notification list */}
-      <AnimatePresence mode="popLayout">
+      {/* List */}
+      <AnimatePresence>
         {displayed.length === 0 ? (
-          <motion.div
-            key="empty"
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            style={{
-              textAlign: "center", padding: "60px 20px",
-              background: "#0a0a0a", border: "1px solid #111",
-              borderRadius: 16,
-            }}
-          >
-            <div style={{ fontSize: 40, marginBottom: 14 }}>
-              {filter === "unread" ? "✅" : "🔔"}
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+            style={{ textAlign: "center", padding: "60px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
+            <div style={{ width: 52, height: 52, borderRadius: "50%", background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Bell size={22} color="var(--bm-text3)" />
             </div>
-            <div style={{ fontSize: 14, color: "#555" }}>
-              {filter === "unread" ? "No unread notifications" : "No notifications yet"}
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 4 }}>
+                {filter === "unread" ? "All caught up" : "No notifications yet"}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--bm-text3)" }}>
+                {filter === "unread" ? "You've read everything." : "Notifications will appear here as you use BuildMind."}
+              </div>
             </div>
-            {filter === "unread" && notifs.length > 0 && (
-              <button
-                onClick={() => setFilter("all")}
-                style={{ marginTop: 12, background: "transparent", border: "none", color: "#a78bfa", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}
-              >
-                View all →
-              </button>
-            )}
           </motion.div>
         ) : (
           displayed.map(n => (
@@ -234,13 +174,6 @@ export default function NotificationsPage() {
           ))
         )}
       </AnimatePresence>
-
-      {/* Hint */}
-      {notifs.length > 0 && (
-        <div style={{ textAlign: "center", marginTop: 16, fontSize: 11, color: "#2a2a2a" }}>
-          Notifications are stored locally on this device.
-        </div>
-      )}
-    </motion.div>
+    </div>
   );
 }

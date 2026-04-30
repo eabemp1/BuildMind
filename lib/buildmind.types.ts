@@ -73,6 +73,19 @@ export type DashboardOverview = {
   founderStreakDays: number;
 };
 
+export type WeeklyReportMetrics = {
+  score: number;
+  previousScore: number;
+  weeklyScores: number[];
+  taskData: number[];
+  tasksCompletedThisWeek: number;
+  tasksCompletedPreviousWeek: number;
+  activeStreakDays: number;
+  focusData: { label: string; value: number; color: string }[];
+  wins: string[];
+  nextFocus: string[];
+};
+
 export type BuildMindNotification = {
   id: string;
   user_id: string;

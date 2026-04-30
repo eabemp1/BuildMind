@@ -28,44 +28,82 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="relative flex h-screen overflow-hidden">
+
+      {/* ── Subtle noise texture ── */}
       <div
-        className="pointer-events-none absolute inset-0 opacity-[0.05] mix-blend-soft-light"
+        className="pointer-events-none absolute inset-0 opacity-[0.03] mix-blend-soft-light"
         style={{
           backgroundImage:
-            "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E\")",
+            "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200' viewBox='0 0 200 200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E\")",
         }}
       />
-      <div className="pointer-events-none absolute -left-40 top-20 h-80 w-80 rounded-full bg-indigo-500/15 blur-[140px]" />
-      <div className="pointer-events-none absolute right-0 top-10 h-96 w-96 rounded-full bg-purple-500/15 blur-[180px]" />
-      <div className="pointer-events-none absolute bottom-0 left-1/2 h-96 w-96 -translate-x-1/2 rounded-full bg-sky-500/10 blur-[200px]" />
-      <aside className="sticky top-0 hidden h-screen w-[240px] shrink-0 border-r border-[var(--bm-border2)] md:flex">
+
+      {/* ── Neon ambient glow — top-right matching inspiration ── */}
+      <div
+        className="pointer-events-none absolute"
+        style={{
+          top: -120, right: -80,
+          width: 480, height: 480,
+          borderRadius: "50%",
+          background: "radial-gradient(circle, rgba(92,200,138,0.05) 0%, transparent 65%)",
+          filter: "blur(1px)",
+        }}
+      />
+
+      {/* ── Sidebar — desktop ── */}
+      <aside className="sticky top-0 hidden h-screen w-[232px] shrink-0 md:flex"
+             style={{ borderRight: "1px solid var(--bm-border)" }}>
         <Sidebar />
       </aside>
 
-      {mobileOpen ? (
+      {/* ── Sidebar — mobile overlay ── */}
+      {mobileOpen && (
         <div className="fixed inset-0 z-40 flex md:hidden">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setMobileOpen(false)} />
-          <div className="relative h-full w-[240px] border-r border-[var(--bm-border2)] bm-bg">
+          <motion.div
+            className="absolute inset-0"
+            style={{ background: "rgba(12,13,15,0.7)", backdropFilter: "blur(4px)" }}
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            onClick={() => setMobileOpen(false)}
+          />
+          <motion.div
+            className="relative h-full w-[232px]"
+            style={{ borderRight: "1px solid var(--bm-border)" }}
+            initial={{ x: -232 }} animate={{ x: 0 }} exit={{ x: -232 }}
+            transition={{ type: "spring", stiffness: 340, damping: 30 }}
+          >
             <Sidebar />
-          </div>
+          </motion.div>
         </div>
-      ) : null}
+      )}
 
+      {/* ── Main ── */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 h-[60px] border-b border-[var(--bm-border2)] bg-[#0a0a0a]/90 backdrop-blur">
-          <Topbar onToggleSidebar={() => setMobileOpen((prev) => !prev)} />
-        </header>
-        <AnimatePresence mode="wait">
-        <motion.main
-          key={pathname}
-          initial={reduceMotion ? false : { opacity: 0, y: 6 }}
-          animate={reduceMotion ? { opacity: 1, y: 0 } : { opacity: 1, y: 0 }}
-          exit={reduceMotion ? { opacity: 1 } : { opacity: 0, y: -4 }}
-          transition={reduceMotion ? { duration: 0 } : { duration: 0.15, ease: "easeInOut" }}
-          className="flex-1 overflow-y-auto px-6 py-6 sm:px-10"
+        {/* Topbar */}
+        <header
+          className="sticky top-0 z-30"
+          style={{
+            height: 56,
+            borderBottom: "1px solid var(--bm-border)",
+            background: "color-mix(in srgb, var(--bm-bg) 88%, transparent)",
+            backdropFilter: "blur(16px)",
+          }}
         >
-          <div className="mx-auto w-full max-w-[1440px] space-y-6">{children}</div>
-        </motion.main>
+          <Topbar onToggleSidebar={() => setMobileOpen(p => !p)} />
+        </header>
+
+        {/* Page */}
+        <AnimatePresence mode="wait">
+          <motion.main
+            key={pathname}
+            initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={reduceMotion ? { opacity: 1 } : { opacity: 0, y: -4 }}
+            transition={reduceMotion ? { duration: 0 } : { duration: 0.18, ease: [0.4, 0, 0.2, 1] }}
+            className="flex-1 overflow-y-auto"
+            style={{ padding: "28px 32px" }}
+          >
+            <div style={{ maxWidth: 1440, margin: "0 auto" }}>{children}</div>
+          </motion.main>
         </AnimatePresence>
       </div>
     </div>

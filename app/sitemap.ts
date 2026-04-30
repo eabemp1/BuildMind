@@ -1,11 +1,10 @@
 import { MetadataRoute } from "next";
-import { FEATURES } from "@/lib/features";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const base = "https://buildmind.live";
   const now = new Date();
 
-  const items: MetadataRoute.Sitemap = [
+  return [
     // Homepage — highest priority
     {
       url: base,
@@ -14,6 +13,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 1.0,
     },
     // Public content pages — indexable
+    {
+      url: `${base}/explore`,
+      lastModified: now,
+      changeFrequency: "daily",
+      priority: 0.9,
+    },
     {
       url: `${base}/try`,
       lastModified: now,
@@ -32,13 +37,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: "monthly",
       priority: 0.75,
     },
-    // Auth — included for discoverability but low priority
-    {
-      url: `${base}/auth/signup`,
-      lastModified: now,
-      changeFrequency: "monthly",
-      priority: 0.6,
-    },
     // Legal
     {
       url: `${base}/legal/terms`,
@@ -53,15 +51,4 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.3,
     },
   ];
-
-  if (FEATURES.publicProjects) {
-    items.splice(1, 0, {
-      url: `${base}/explore`,
-      lastModified: now,
-      changeFrequency: "daily",
-      priority: 0.9,
-    });
-  }
-
-  return items;
 }

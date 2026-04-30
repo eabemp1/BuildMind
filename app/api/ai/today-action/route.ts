@@ -35,14 +35,14 @@ const FALLBACK_ACTIONS: Record<string, TodayAction> = {
     time: "3 hours to prepare",
   },
   Growth: {
-    action: "Pick one retention lever and run a 7‑day experiment.",
+    action: "Pick one retention lever and run a 7-day experiment.",
     message: "We're testing a small change to improve retention. Can I show you the experiment and get your honest take?",
     why: "Small, repeatable experiments compound faster than big bets.",
     time: "2 hours",
   },
   Revenue: {
     action: "Call one churned user today — not to win them back, to learn why they left.",
-    message: "Hey — I noticed you stopped using [product]. No sales pitch. I just want to understand what didn’t work. 10 minutes?",
+    message: "Hey — I noticed you stopped using [product]. No sales pitch. I just want to understand what didn't work. 10 minutes?",
     why: "Churn analysis beats 10 feature ideas every time.",
     time: "1 hour",
   },
@@ -50,8 +50,8 @@ const FALLBACK_ACTIONS: Record<string, TodayAction> = {
 
 function inferStage(completedTasks: number, totalTasks: number, completedMilestones: number, totalMilestones: number): string {
   if (totalTasks === 0) return "Idea";
-  const taskRate = completedTasks / Math.max(1, totalTasks);
   const milestoneRate = completedMilestones / Math.max(1, totalMilestones);
+  const taskRate = completedTasks / Math.max(1, totalTasks);
   if (milestoneRate >= 0.8) return "Revenue";
   if (milestoneRate >= 0.6) return "Launch";
   if (milestoneRate >= 0.4) return "MVP";
@@ -77,9 +77,12 @@ export async function POST(request: Request) {
     let targetUsers = "";
     let problem = "";
     let title = "";
+    // Last reflection for genuine causality-loop personalisation
+    let lastReflectionContext = "";
 
     if (hasAdminEnv()) {
       const supabase = createAdminClient();
+
       const { data: project } = await supabase
         .from("projects")
         .select("title, description, target_users, problem, startup_stage")
@@ -116,18 +119,46 @@ Description: ${project.description ?? "Not specified"}
 Milestones: ${(milestones ?? []).map((m) => `${m.title} (${m.is_completed ? "complete" : "in progress"})`).join(", ")}
 Tasks: ${completedTasks}/${totalTasks} completed`;
       }
+
+      // Pull last reflection to close the causality loop.
+      // This is the key query that makes today's action a direct response
+      // to what the founder reflected on yesterday — not generic advice.
+      const { data: lastReflection } = await supabase
+        .from("reflections")
+        .select("outcome, note, confidence, today_action, created_at")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .single();
+
+      if (lastReflection) {
+        const reflectDate = new Date(lastReflection.created_at).toLocaleDateString();
+        lastReflectionContext = `
+LAST REFLECTION (${reflectDate}):
+Yesterday's action: "${lastReflection.today_action ?? "Not recorded"}"
+Outcome: ${lastReflection.outcome}
+Confidence (1-5): ${lastReflection.confidence}
+Their note: "${lastReflection.note ?? "No note"}"
+
+INSTRUCTION: Use this to make today's action a direct causal response to yesterday.
+- blocked outcome -> remove that specific blocker first
+- completed outcome -> go one level deeper on the same thread
+- confidence 1-2 -> give an easier, confidence-building first step
+- learned outcome -> apply the insight to one real person today`;
+      }
     }
 
     const fallback = FALLBACK_ACTIONS[stage] ?? FALLBACK_ACTIONS["Idea"];
 
     const result = await groqJSON<TodayAction>(
-      `You are BuildMind, a brutally honest execution coach.
+      `You are BuildMind, a brutally honest execution coach for solo founders.
 Return JSON ONLY with keys: action, message, why, time.
-- action: a single concrete task to do TODAY
-- message: a short outreach/script or next-step message
-- why: 1-2 sentences explaining why this matters now
+- action: a single concrete task to do TODAY, specific to their project and last reflection
+- message: a short script or next-step message they can copy-paste right now
+- why: 1-2 sentences explaining urgency, referencing their actual situation
 - time: realistic time estimate (e.g. "45 minutes")
-Keep it specific to the user's stage and project. No fluff.`,
+If a LAST REFLECTION is provided, today's action MUST directly respond to it.
+No generic advice. If you cannot be specific, ask them to clarify.`,
       `FOUNDER DATA:
 ${projectContext || "Project data unavailable"}
 
@@ -135,6 +166,7 @@ Project title: ${title || "N/A"}
 Stage: ${stage}
 Problem: ${problem || "N/A"}
 Target users: ${targetUsers || "N/A"}
+${lastReflectionContext}
 `,
     ).catch(() => fallback);
 

@@ -1,104 +1,196 @@
 /**
  * lib/plan.ts — Plan tier gating
  *
- * Public product tiers:
- * Free    → $0
- * Builder → $19
- *
- * Older "venture" values are normalized to Builder so existing local state
- * does not break while the public product stays free + builder only.
+ * ╔══════════════════════════════════════════════════════════════════════════╗
+ * ║  ACTIVE TIERS (this week — Playbook v4 §11, item 12):                  ║
+ * ║    Free     → $0   (acquisition engine, limited)                       ║
+ * ║    Builder  → $19  (the one paid tier to ship now)                     ║
+ * ║                                                                        ║
+ * ║  FUTURE TIERS — DO NOT ACTIVATE YET:                                   ║
+ * ║    Operator → $39  opens to WAITLIST at Day 90, only if:               ║
+ * ║                    briefing open rate > 35% AND task completion > 55%  ║
+ * ║                    (Playbook §10, 30/60/90-Day Framework)              ║
+ * ║    Founder  → $69  Month 6–7 (100 users with data)                    ║
+ * ║    Chief of Staff → $120  Month 12+ (200 users, strong retention)      ║
+ * ║                                                                        ║
+ * ║  ACTIVE FEATURES (ship this week — Playbook §5.3 "Now"):              ║
+ * ║    Founder Context Object, Reflexion Strike onboarding,                ║
+ * ║    Morning Briefing (3 days free / daily Builder),                     ║
+ * ║    Evening Check, Cognitive Load Check-in, One Task Rule,              ║
+ * ║    HITL Override, Momentum Score, Explainable Rationale,               ║
+ * ║    Emotional Language Layer, Recovery Mode                             ║
+ * ║                                                                        ║
+ * ║  NOT YET — Month 2:                                                    ║
+ * ║    Pattern Detection, Weekly Mirror Moment, Agent Persona Rotation,    ║
+ * ║    Confidence Gate, Shareable Scorecard                                ║
+ * ║                                                                        ║
+ * ║  NOT YET — Month 3+:                                                   ║
+ * ║    Ghost Competitor, Stress Test Arena, Accountability Pairing,        ║
+ * ║    Ventures Blueprint engine, CoFounder Blueprint mode                 ║
+ * ╚══════════════════════════════════════════════════════════════════════════╝
  */
 
-export type Plan = "free" | "builder" | "venture";
+export type Plan = "free" | "builder";
+
+/**
+ * Future plan types — defined here so normalizePlan() can map legacy/future
+ * values safely without breaking auth flows, but NOT exposed as active tiers.
+ */
+const FUTURE_PLANS = ["operator", "founder", "chiefofstaff"] as const;
 
 export interface PlanLimits {
-  actionsPerWeek:      number;   // -1 = unlimited
-  aiMessagesPerDay:    number;   // -1 = unlimited
-  historyDays:         number;   // -1 = unlimited
-  maxProjects:         number;   // max projects free users can create (-1 = unlimited)
-  ventureTracks:       number;
-  weeklyReport:        boolean;
-  outcomeLearning:     boolean;
-  investorMetrics:     boolean;
-  breakMyStartup:      boolean;
-  pitchDeckGenerator:  boolean;
-  multiProject:        boolean;
-  exportData:          boolean;
-  ideaValidator:       boolean;
-  startupKit:          boolean;
-  landingPageGen:      boolean;
-  growthToolkit:       boolean;
-  weeklyShare:         boolean;
-  streakInsurance:     boolean;  // protect 1 missed day per month — streak survives
-  multiTrack:          boolean;  // unlimited 90-day roadmap tracks
+  // ── Core limits ────────────────────────────────────────────────────────────
+  actionsPerWeek:             number;   // 5 on free (Playbook §6.1), -1 = unlimited
+  aiMessagesPerDay:           number;   // 3 on free, -1 = unlimited
+  historyDays:                number;
+  maxProjects:                number;
+
+  // ── NOW features — both tiers, with Free limits ───────────────────────────
+  reflexionStrike:            boolean;  // free: one-time; builder: on every session
+  morningBriefingDaysPerWeek: number;   // 3 on free, 7 on builder (Playbook §6.1)
+  momentumScoreVisible:       boolean;  // free: level 1 only; builder: full with decay warnings
+  breakMyStartup:             boolean;  // free Stress Test (one-time per session, Playbook §6.1)
+
+  // ── Builder-only NOW features ─────────────────────────────────────────────
+  dailyMorningBriefing:       boolean;
+  unlimitedAITasks:           boolean;
+  explainableRationale:       boolean;
+  cognitiveLoadCheckin:       boolean;
+  fullMomentumScore:          boolean;  // with decay warnings
+  hitlOverrides:              boolean;  // override reason feeds context
+  eveningCheckNudges:         boolean;
+  emotionalLanguageLayer:     boolean;  // warmth at key trigger moments (NEW IN V4)
+  recoveryMode:               boolean;  // forgiveness protocol, Reset Mission (NEW IN V4)
+  founderMemory:              boolean;
+
+  // ── Month 2 features — NOT YET (defined to prevent accidental gating) ─────
+  // patternDetection, weeklyMirrorMoment, agentPersonaRotation,
+  // confidenceGate, shareableScorecard — all false on both tiers until Month 2
+
+  // ── Month 3+ features — NOT YET ──────────────────────────────────────────
+  // ghostCompetitor, stressTestArena, accountabilityPairing,
+  // resourceLibrary, venturesBlueprint, cofounderBlueprint — not in plan yet
 }
 
 export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
+
+  // ── FREE — $0 ──────────────────────────────────────────────────────────────
+  // "Your acquisition engine. The Reflexion Strike is so good it converts."
+  // Paywall moment: "Your Morning Briefing is ready — upgrade to receive it every day."
   free: {
-    actionsPerWeek: 7, aiMessagesPerDay: 3, historyDays: 7,
+    actionsPerWeek: 5,
+    aiMessagesPerDay: 3,
+    historyDays: 7,
     maxProjects: 1,
-    ventureTracks: 0, weeklyReport: false, outcomeLearning: false,
-    investorMetrics: false, breakMyStartup: true,
-    pitchDeckGenerator: false, multiProject: false, exportData: false,
-    ideaValidator: false,
-    startupKit: false,
-    landingPageGen: false,
-    growthToolkit: false,
-    weeklyShare: true,
-    streakInsurance: false,
-    multiTrack: false,
+
+    reflexionStrike: true,
+    morningBriefingDaysPerWeek: 3,
+    momentumScoreVisible: true,   // visible at Level 1 only per playbook
+    breakMyStartup: true,         // one Stress Test — the hook
+
+    dailyMorningBriefing: false,
+    unlimitedAITasks: false,
+    explainableRationale: false,
+    cognitiveLoadCheckin: false,
+    fullMomentumScore: false,
+    hitlOverrides: false,
+    eveningCheckNudges: false,
+    emotionalLanguageLayer: false,
+    recoveryMode: false,
+    founderMemory: false,
   },
+
+  // ── BUILDER — $19/mo ──────────────────────────────────────────────────────
+  // "For: pre-revenue founders in active build mode"
+  // The ONLY paid tier to ship this week.
   builder: {
-    actionsPerWeek: -1, aiMessagesPerDay: -1, historyDays: -1,
-    maxProjects: -1,
-    ventureTracks: 0, weeklyReport: true, outcomeLearning: true,
-    investorMetrics: true, breakMyStartup: true,
-    pitchDeckGenerator: false, multiProject: false, exportData: true,
-    ideaValidator: true,
-    startupKit: true,
-    landingPageGen: true,
-    growthToolkit: true,
-    weeklyShare: true,
-    streakInsurance: true,
-    multiTrack: true,
-  },
-  venture: {
-    actionsPerWeek: -1, aiMessagesPerDay: -1, historyDays: -1,
-    maxProjects: -1,
-    ventureTracks: 0, weeklyReport: true, outcomeLearning: true,
-    investorMetrics: true, breakMyStartup: true,
-    pitchDeckGenerator: true, multiProject: true, exportData: true,
-    ideaValidator: true,
-    startupKit: true,
-    landingPageGen: true,
-    growthToolkit: true,
-    weeklyShare: true,
-    streakInsurance: true,
-    multiTrack: true,
+    actionsPerWeek: -1,
+    aiMessagesPerDay: -1,
+    historyDays: -1,
+    maxProjects: 3,
+
+    reflexionStrike: true,
+    morningBriefingDaysPerWeek: 7,
+    momentumScoreVisible: true,
+    breakMyStartup: true,
+
+    dailyMorningBriefing: true,
+    unlimitedAITasks: true,
+    explainableRationale: true,
+    cognitiveLoadCheckin: true,
+    fullMomentumScore: true,
+    hitlOverrides: true,
+    eveningCheckNudges: true,
+    emotionalLanguageLayer: true,
+    recoveryMode: true,
+    founderMemory: true,
   },
 };
 
-export const PLAN_PRICES: Record<Plan, string> = { free: "$0", builder: "$19", venture: "$19" };
-export const PLAN_NAMES:  Record<Plan, string> = { free: "Starter", builder: "Builder", venture: "Builder" };
+// ─────────────────────────────────────────────────────────────────────────────
 
+export const PLAN_PRICES: Record<Plan, string> = {
+  free:    "$0",
+  builder: "$19",
+};
+
+export const PLAN_NAMES: Record<Plan, string> = {
+  free:    "Free",
+  builder: "Builder",
+};
+
+/** The exact paywall copy from Playbook §6.2 */
+export const PAYWALL_FREE_TO_BUILDER =
+  "Your Morning Briefing is ready. You need Builder to receive it every day.";
+
+/** Feature → minimum plan. Only NOW features are gated here. */
 export const FEATURE_GATES: Record<string, Plan> = {
-  ventures:         "builder",
-  weeklyReport:     "builder",
-  outcomeLearning:  "builder",
-  investorMetrics:  "builder",
-  unlimitedAI:      "builder",
-  exportData:       "builder",
-  ideaValidator:    "builder",
-  startupKit:       "builder",
-  landingPageGen:   "builder",
-  growthToolkit:    "builder",
-  pitchDeck:        "venture",
-  multiProject:     "venture",
+  dailyMorningBriefing:    "builder",
+  unlimitedAITasks:        "builder",
+  explainableRationale:    "builder",
+  cognitiveLoadCheckin:    "builder",
+  fullMomentumScore:       "builder",
+  hitlOverrides:           "builder",
+  eveningCheckNudges:      "builder",
+  emotionalLanguageLayer:  "builder",
+  recoveryMode:            "builder",
+  founderMemory:           "builder",
+  weeklyReport:            "builder",  // alias used in existing route
+  aiCoach:                 "builder",
+
+  // 🔒 Operator tier — disabled until Operator plan launches.
+  // canAccess() returns false for these on all current tiers.
+  venturesBlueprint:       "operator" as Plan,
+  cofounderBlueprint:      "operator" as Plan,
+  cofounderPulse:          "operator" as Plan,
+  generateUI:              "operator" as Plan,
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Core helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PLAN_ORDER: Plan[] = ["free", "builder"];
 
 export function normalizePlan(value: string | null | undefined): Plan {
-  if (value === "builder" || value === "venture") return "builder";
+  if (!value) return "free";
+  const v = value.toLowerCase().trim();
+  if (v === "builder") return "builder";
+  // Venture/operator and any future tiers map to builder (the highest active tier)
+  if ((FUTURE_PLANS as readonly string[]).includes(v) ||
+      v === "venture" || v === "ventures" ||
+      v === "operator" || v === "founder" ||
+      v === "chiefofstaff" || v === "chief-of-staff" || v === "cos") {
+    return "builder";
+  }
   return "free";
+}
+
+export function planMeetsRequirement(actual: Plan, required: Plan): boolean {
+  const actualIndex = PLAN_ORDER.indexOf(actual);
+  const requiredIndex = PLAN_ORDER.indexOf(required);
+  if (actualIndex < 0 || requiredIndex < 0) return false;
+  return actualIndex >= requiredIndex;
 }
 
 export function setStoredPlan(plan: Plan): void {
@@ -126,11 +218,7 @@ export function syncStoredPlanFromUser(
 ): Plan {
   const plan = planFromUserMetadata(user);
   if (typeof window !== "undefined") {
-    if (user) {
-      setStoredPlan(plan);
-    } else {
-      clearStoredPlan();
-    }
+    if (user) { setStoredPlan(plan); } else { clearStoredPlan(); }
   }
   return plan;
 }
@@ -143,38 +231,39 @@ export function getPlan(): Plan {
   return normalizePlan(env);
 }
 
-export function canAccess(feature: string, plan?: Plan): boolean {
-  const current = normalizePlan(plan ?? getPlan());
-  const required = FEATURE_GATES[feature];
-  if (!required) return true;
-  const order: Plan[] = ["free","builder","venture"];
-  return order.indexOf(current) >= order.indexOf(required);
+export function getLimits(plan?: Plan): PlanLimits {
+  return PLAN_LIMITS[plan ?? getPlan()];
 }
 
-export function getLimits(plan?: Plan): PlanLimits { return PLAN_LIMITS[plan ?? getPlan()]; }
+export function canAccess(feature: string, plan?: Plan): boolean {
+  const current = plan ?? getPlan();
+  const required = FEATURE_GATES[feature];
+  if (!required) return true;
+  return planMeetsRequirement(current, required);
+}
 
-// ── Weekly action tracking ──────────────────────────────────────────────────
+// ── Weekly action tracking ────────────────────────────────────────────────────
+
 export function getActionsThisWeek(): number {
   if (typeof window === "undefined") return 0;
   return Number(localStorage.getItem(`bm_actions_${weekKey()}`) ?? "0");
 }
 export function recordWeeklyAction(): void {
   if (typeof window === "undefined") return;
-  const k = `bm_actions_${weekKey()}`;
-  localStorage.setItem(k, String(getActionsThisWeek() + 1));
+  localStorage.setItem(`bm_actions_${weekKey()}`, String(getActionsThisWeek() + 1));
 }
 export function hasHitWeeklyLimit(): boolean {
-  const plan = getPlan();
-  const limit = PLAN_LIMITS[plan].actionsPerWeek;
+  const limit = PLAN_LIMITS[getPlan()].actionsPerWeek;
   return limit !== -1 && getActionsThisWeek() >= limit;
 }
 function weekKey(): string {
   const d = new Date();
-  const j = new Date(d.getFullYear(),0,1);
-  return `${d.getFullYear()}_w${Math.ceil(((d.getTime()-j.getTime())/86400000+j.getDay()+1)/7)}`;
+  const j = new Date(d.getFullYear(), 0, 1);
+  return `${d.getFullYear()}_w${Math.ceil(((d.getTime() - j.getTime()) / 86400000 + j.getDay() + 1) / 7)}`;
 }
 
-// ── Daily AI tracking ───────────────────────────────────────────────────────
+// ── Daily AI tracking ─────────────────────────────────────────────────────────
+
 export function getAIMessagesToday(): number {
   if (typeof window === "undefined") return 0;
   return Number(localStorage.getItem(`bm_ai_${dayKey()}`) ?? "0");
@@ -184,16 +273,19 @@ export function recordAIMessage(): void {
   localStorage.setItem(`bm_ai_${dayKey()}`, String(getAIMessagesToday() + 1));
 }
 export function hasHitDailyAILimit(): boolean {
-  const plan = getPlan();
-  const limit = PLAN_LIMITS[plan].aiMessagesPerDay;
+  const limit = PLAN_LIMITS[getPlan()].aiMessagesPerDay;
   return limit !== -1 && getAIMessagesToday() >= limit;
 }
 function dayKey(): string {
   const d = new Date();
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 }
+function dayKeyFromDate(d: Date): string {
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
 
-// ── Upgrade trigger ─────────────────────────────────────────────────────────
+// ── Upgrade trigger ───────────────────────────────────────────────────────────
+
 const UPGRADE_KEY = "bm_upgrade_shown";
 const TASK_KEY    = "bm_tasks_done";
 
@@ -211,9 +303,9 @@ export function checkUpgradeTrigger(streak: number): { shouldUpgrade: boolean; r
   if (typeof window === "undefined") return { shouldUpgrade: false, reason: "ssr" };
   if (localStorage.getItem(UPGRADE_KEY)) return { shouldUpgrade: false, reason: "already_shown" };
   const done = getTasksDone();
-  if (done >= 2) { localStorage.setItem(UPGRADE_KEY,"1"); return { shouldUpgrade:true, reason:"2_tasks" }; }
-  if (streak >= 3) { localStorage.setItem(UPGRADE_KEY,"1"); return { shouldUpgrade:true, reason:"3_day_streak" }; }
-  if (hasHitWeeklyLimit()) { localStorage.setItem(UPGRADE_KEY,"1"); return { shouldUpgrade:true, reason:"weekly_limit" }; }
+  if (done >= 2) { localStorage.setItem(UPGRADE_KEY, "1"); return { shouldUpgrade: true, reason: "2_tasks" }; }
+  if (streak >= 3) { localStorage.setItem(UPGRADE_KEY, "1"); return { shouldUpgrade: true, reason: "3_day_streak" }; }
+  if (hasHitWeeklyLimit()) { localStorage.setItem(UPGRADE_KEY, "1"); return { shouldUpgrade: true, reason: "weekly_limit" }; }
   return { shouldUpgrade: false, reason: "not_yet" };
 }
 export function resetUpgradeTrigger(): void {
@@ -222,48 +314,28 @@ export function resetUpgradeTrigger(): void {
 }
 
 // Dev helpers
-if (typeof window !== "undefined") {
-  (window as any).setPlan = (p: Plan) => { setStoredPlan(p); console.log(`Plan: ${normalizePlan(p)}. Refresh.`); };
-  (window as any).clearPlan = () => { clearStoredPlan(); console.log("Cleared. Refresh."); };
+if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
+  (window as any).bmSetPlan = (p: string, userId: string) => {
+    if (!userId) { console.warn("bmSetPlan: pass a userId to avoid cross-account bleed"); return; }
+    localStorage.setItem(`bm_plan_${userId}`, normalizePlan(p as Plan));
+    console.log(`[dev] bm_plan_${userId} = ${normalizePlan(p as Plan)}. Refresh.`);
+  };
 }
 
-// ── Streak insurance — Builder only ──────────────────────────────────────────
-// Allows 1 missed day per calendar month without breaking the streak.
-const INSURANCE_KEY = "bm_streak_insurance_used";
+// ── Server-authoritative plan sync ────────────────────────────────────────────
 
-export function canUseStreakInsurance(): boolean {
-  if (typeof window === "undefined") return false;
-  if (!getLimits().streakInsurance) return false;
-  const monthKey = `${new Date().getFullYear()}-${new Date().getMonth()}`;
-  const used = localStorage.getItem(INSURANCE_KEY);
-  return used !== monthKey;
-}
-
-export function useStreakInsurance(): boolean {
-  if (!canUseStreakInsurance()) return false;
-  const monthKey = `${new Date().getFullYear()}-${new Date().getMonth()}`;
-  localStorage.setItem(INSURANCE_KEY, monthKey);
-  return true;
-}
-
-// Checks if yesterday was missed and applies insurance if eligible.
-// Call on app load in providers.
-export function checkAndApplyStreakInsurance(currentStreak: number): { applied: boolean; streak: number } {
-  if (typeof window === "undefined") return { applied: false, streak: currentStreak };
-  const lastDone = localStorage.getItem("bm_today_done_date");
-  if (!lastDone) return { applied: false, streak: currentStreak };
-
-  const lastDate = new Date(lastDone);
-  const today = new Date();
-  const diffDays = Math.floor((today.getTime() - lastDate.getTime()) / 86400000);
-
-  if (diffDays === 2 && canUseStreakInsurance()) {
-    // Exactly one day missed — apply insurance
-    if (useStreakInsurance()) {
-      // Don't reset streak — pretend yesterday was completed
-      localStorage.setItem("bm_streak_insured_day", new Date(today.getTime() - 86400000).toISOString().split("T")[0]);
-      return { applied: true, streak: currentStreak };
-    }
+export async function fetchAndSyncStoredPlanFromBillingStatus(): Promise<Plan> {
+  try {
+    const res = await fetch("/api/billing/status", {
+      cache: "no-store",
+      headers: { "Cache-Control": "no-cache" },
+    });
+    if (!res.ok) return getPlan();
+    const payload = await res.json().catch(() => null) as { ok?: boolean; plan?: string } | null;
+    const plan = normalizePlan(payload?.ok ? (payload.plan ?? null) : null);
+    setStoredPlan(plan);
+    return plan;
+  } catch {
+    return getPlan();
   }
-  return { applied: false, streak: currentStreak };
 }

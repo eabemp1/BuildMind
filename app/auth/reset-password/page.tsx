@@ -67,7 +67,7 @@ export default function ResetPasswordPage() {
     }
     setNotice("Password updated. Redirecting...");
     setLoading(false);
-    router.replace("/dashboard");
+    router.replace("/today");
   };
 
   const sendResetEmail = async (e: FormEvent) => {

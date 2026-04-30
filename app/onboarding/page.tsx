@@ -1,37 +1,35 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { ChangeEvent, ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { z } from "zod";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createProjectWithRoadmap, getCurrentUser, getOnboardingStatus } from "@/lib/buildmind";
+import { createClient } from "@/lib/supabase/client";
 import { onboardingSchema } from "@/lib/validation";
 import { identifyUser } from "@/lib/analytics";
 import { Suspense } from "react";
 import { trackFunnelStep } from "@/lib/onboarding-analytics";
 import BuildMindLoader from "@/components/BuildMindLoader";
+import { ArrowRight, Check, Loader2 } from "lucide-react";
+import Image from "next/image";
 
 type Step = 1 | 2 | 3 | 4 | 5;
 type StartupStage = "Idea" | "Validation" | "MVP" | "Launch" | "Growth" | "Revenue";
 
 const STAGE_OPTIONS: StartupStage[] = ["Idea", "Validation", "MVP", "Launch", "Growth", "Revenue"];
 
-// What's holding you back — pick one
 const BLOCKER_OPTIONS = [
-  { id: "dont_know_what_to_do", label: "I don't know what to do next", icon: "?" },
+  { id: "dont_know_what_to_do", label: "I don't know what to do next",   icon: "?" },
   { id: "too_many_ideas",       label: "Too many ideas, can't pick one",  icon: "◈" },
-  { id: "no_users_yet",        label: "Can't find my first users",        icon: "◎" },
-  { id: "building_too_slow",   label: "Building too slowly",              icon: "▷" },
-  { id: "no_revenue",          label: "Not making any money yet",         icon: "$" },
-  { id: "just_starting",       label: "Just starting — need structure",   icon: "→" },
+  { id: "no_users_yet",         label: "Can't find my first users",       icon: "◎" },
+  { id: "building_too_slow",    label: "Building too slowly",             icon: "▷" },
+  { id: "no_revenue",           label: "Not making any money yet",        icon: "$" },
+  { id: "just_starting",        label: "Just starting — need structure",  icon: "→" },
 ];
 
-// Domain / industry picker
-const DOMAIN_OPTIONS = [
-  "Fintech / Payments", "Legal Tech", "Health Tech", "EdTech",
-  "SaaS / B2B Tools", "Consumer App", "E-commerce", "AI / Dev Tools",
-  "Social / Community", "Other",
-];
+const DOMAIN_OPTIONS = ["Fintech / Payments","Legal Tech","Health Tech","EdTech","SaaS / B2B Tools","Consumer App","E-commerce","AI / Dev Tools","Social / Community","Other"];
 
 function normalizeStage(input: string | null): StartupStage {
   const v = String(input ?? "").trim().toLowerCase();
@@ -43,327 +41,293 @@ function normalizeStage(input: string | null): StartupStage {
   return "Idea";
 }
 
-const BrandMark = ({ size = 24 }: { size?: number }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width={size} height={size} style={{ flexShrink: 0 }}>
-    <rect width="32" height="32" rx="7" fill="#09090B" />
-    <rect width="32" height="32" rx="7" fill="none" stroke="rgba(139,92,246,0.4)" strokeWidth="0.8" />
-    <circle cx="6"  cy="16" r="2.2" fill="#C4B5FD" />
-    <circle cx="16" cy="14" r="2.4" fill="#A78BFA" />
-    <circle cx="26" cy="16" r="2.2" fill="#C4B5FD" />
-  </svg>
-);
+const STEP_LABELS = ["Idea", "Users", "Problem", "Blocker", "Stage"];
+const TOTAL_STEPS = 5;
+
+function ProgressBar({ step }: { step: number }) {
+  return (
+    <div style={{ display: "flex", gap: 6, marginBottom: 36 }}>
+      {Array.from({ length: TOTAL_STEPS }).map((_, i) => (
+        <div key={i} style={{ flex: 1, height: 3, borderRadius: 99, overflow: "hidden", background: "var(--bm-bg3)" }}>
+          <motion.div
+            initial={{ width: 0 }}
+            animate={{ width: i < step ? "100%" : "0%" }}
+            transition={{ duration: 0.35, ease: "easeOut" }}
+            style={{ height: "100%", background: "var(--grad-primary)", borderRadius: 99 }}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function StepLabel({ children }: { children: ReactNode }) {
+  return (
+    <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>
+      {children}
+    </div>
+  );
+}
+
+function StepTitle({ children }: { children: ReactNode }) {
+  return (
+    <h2 style={{ fontSize: 22, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em", margin: "0 0 8px", lineHeight: 1.2 }}>
+      {children}
+    </h2>
+  );
+}
+
+function StepSub({ children }: { children: ReactNode }) {
+  return (
+    <p style={{ fontSize: 13, color: "var(--bm-text3)", margin: "0 0 28px", lineHeight: 1.6 }}>{children}</p>
+  );
+}
+
+function BigTextarea({
+  value,
+  onChange,
+  placeholder,
+  rows = 4,
+}: {
+  value: string;
+  onChange: (event: ChangeEvent<HTMLTextAreaElement>) => void;
+  placeholder: string;
+  rows?: number;
+}) {
+  return (
+    <textarea value={value} onChange={onChange} placeholder={placeholder} rows={rows}
+      style={{ width: "100%", background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: 12, padding: "14px 16px", fontSize: 14, color: "var(--bm-text)", outline: "none", fontFamily: "inherit", resize: "none", boxSizing: "border-box", lineHeight: 1.6, transition: "border-color 0.15s" }}
+      onFocus={e => { e.target.style.borderColor = "var(--bm-accent-bd)"; }}
+      onBlur={e => { e.target.style.borderColor = "var(--bm-border2)"; }}
+    />
+  );
+}
+
+function NextButton({
+  onClick,
+  disabled,
+  loading,
+  children = "Continue",
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  loading?: boolean;
+  children?: ReactNode;
+}) {
+  return (
+    <motion.button whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }} onClick={onClick} disabled={disabled || loading}
+      style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", padding: "14px 0", borderRadius: 12, border: "none", background: disabled || loading ? "var(--bm-bg4)" : "var(--grad-primary)", color: disabled || loading ? "var(--bm-text3)" : "#fff", fontWeight: 700, fontSize: 14, cursor: disabled || loading ? "not-allowed" : "pointer", fontFamily: "inherit", transition: "background 0.15s", marginTop: 20 }}>
+      {loading ? <Loader2 size={16} className="animate-spin" /> : <>{children} <ArrowRight size={16} /></>}
+    </motion.button>
+  );
+}
 
 function OnboardingContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [step, setStep] = useState<Step>(1);
-
-  // Step 1 — idea
   const [idea, setIdea] = useState("");
-  // Step 2 — target users
   const [targetUsers, setTargetUsers] = useState("");
-  // Step 3 — problem
   const [problem, setProblem] = useState(searchParams.get("problem") ?? "");
-  // Step 4 — blocker (what's holding you back)
   const [blockerType, setBlockerType] = useState("");
-  // Step 5 — domain + stage
   const [domain, setDomain] = useState("");
   const [startupStage, setStartupStage] = useState<StartupStage>(normalizeStage(searchParams.get("stage")));
-
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // Reflexion Strike — fires in background after step 1 to prove value immediately
+  const [strikeResult, setStrikeResult] = useState<{ market_gap: string; first_task: string } | null>(null);
+  const [strikeLoading, setStrikeLoading] = useState(false);
 
-  useEffect(() => {
-    const check = async () => {
-      try {
-        const user = await getCurrentUser();
-        if (!user) return router.replace("/auth/login");
-        identifyUser(user.id, user.email);
-        const done = await getOnboardingStatus(user.id);
-        if (done) router.replace("/today");
-        else trackFunnelStep("onboarding_start");
-      } catch { router.replace("/auth/login"); }
-    };
-    void check();
-  }, [router]);
+  function fireReflexionStrike(ideaText: string) {
+    setStrikeLoading(true);
+    fetch("/api/ai/reflexion-strike", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idea: ideaText }),
+    })
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(json => { if (json?.data) setStrikeResult(json.data); })
+      .catch(() => {})
+      .finally(() => setStrikeLoading(false));
+  }
 
-  // Track step progression
-  useEffect(() => {
-    if (step === 1) trackFunnelStep("onboarding_idea");
-    if (step === 3) trackFunnelStep("onboarding_stage");
-  }, [step]);
-
-  const validate = (): boolean => {
+  async function handleFinish() {
+    setLoading(true);
     setError("");
-    if (step === 1 && !idea.trim()) { setError("Describe your startup idea."); return false; }
-    if (step === 2 && !targetUsers.trim()) { setError("Tell us who this is for."); return false; }
-    if (step === 3 && !problem.trim()) { setError("Describe the problem you're solving."); return false; }
-    if (step === 4 && !blockerType) { setError("Pick what's holding you back most."); return false; }
-    if (step === 5 && !domain) { setError("Select your domain."); return false; }
-    return true;
-  };
-
-  const onNext = () => {
-    if (!validate()) return;
-    if (step < 5) setStep((step + 1) as Step);
-  };
-
-  const onBack = () => {
-    setError("");
-    if (step > 1) setStep((step - 1) as Step);
-  };
-
-  const onComplete = async () => {
-    if (!validate()) return;
     try {
-      setLoading(true);
-      onboardingSchema.parse({ idea, targetUsers, problem, blockerType, domain });
+      const user = await getCurrentUser();
+      if (!user) { router.replace("/auth/login"); return; }
       await createProjectWithRoadmap({
-        project_name: idea.trim(),
-        idea_description: idea.trim(),
-        target_users: targetUsers.trim(),
-        problem: problem.trim(),
+        project_name: domain || idea,
+        idea_description: idea,
+        target_users: targetUsers,
+        problem,
         startup_stage: startupStage,
-        // Extra context stored in description for AI personalisation
       });
-      // Store blocker + domain locally so dashboard can personalise first action
-      if (typeof window !== "undefined") {
-        localStorage.setItem("bm_blocker", blockerType);
-        localStorage.setItem("bm_domain", domain);
-        localStorage.setItem("bm_stage", startupStage);
-      }
+      const supabase = createClient();
+      await supabase.auth.updateUser({ data: { onboarding_completed: true } });
       trackFunnelStep("onboarding_complete");
-      router.replace("/today");
-    } catch (err) {
-      if (err instanceof z.ZodError) setError(err.issues[0]?.message ?? "Invalid data.");
-      else setError(err instanceof Error ? err.message : "Failed to complete onboarding.");
+      router.push("/today?first_session=true");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Something went wrong. Please try again.");
     } finally { setLoading(false); }
-  };
-
-  const TOTAL = 5;
-
-  // ── Render ────────────────────────────────────────────────────────────────
-  const stepLabels = ["Idea", "Users", "Problem", "Blocker", "Domain"];
-
-  // Show branded full-screen loader while generating workspace
-  if (loading) return (
-    <BuildMindLoader
-      variant="page"
-      label="Building your workspace…"
-      sublabel="Generating your first action, milestones &amp; 90-day roadmap"
-    />
-  );
+  }
 
   return (
-    <div className="min-h-screen bm-bg flex flex-col items-center justify-center px-4 py-10 overflow-x-hidden"
-      style={{ fontFamily: "system-ui,sans-serif" }}>
+    <div style={{ minHeight: "100vh", background: "var(--bm-bg)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 20px" }}>
+      <div style={{ width: "100%", maxWidth: 520 }}>
 
-      {/* Logo */}
-      <div className="flex items-center gap-2 mb-8">
-        <BrandMark size={22} />
-        <span className="text-[14px] font-medium bm-text">BuildMind</span>
-      </div>
+        {/* Logo */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 36, justifyContent: "center" }}>
+          <div
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 9,
+              overflow: "hidden",
+              background: "var(--bm-bg3)",
+              border: "1px solid var(--bm-border)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Image src="/logo/buildmind-mark.svg" alt="BuildMind" width={22} height={22} priority />
+          </div>
+          <span style={{ fontSize: 15, fontWeight: 700, color: "var(--bm-text)" }}>BuildMind</span>
+        </div>
 
-      {/* Step dots */}
-      <div className="flex items-center gap-2 mb-8">
-        {stepLabels.map((label, i) => {
-          const n = (i + 1) as Step;
-          const done = n < step;
-          const active = n === step;
-          return (
-            <div key={n} className="flex items-center gap-2">
-              <div className="flex flex-col items-center gap-1">
-                <div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-semibold transition-all"
-                  style={{
-                    background: done ? "#fff" : "transparent",
-                    border: active ? "1.5px solid #fff" : done ? "1px solid #fff" : "1px solid #2a2a2a",
-                    color: done ? "#000" : active ? "#fff" : "#333",
-                  }}>
-                  {done ? "✓" : n}
-                </div>
-                <div className="text-[9px] whitespace-nowrap hidden sm:block"
-                  style={{ color: active ? "#d4d4d4" : done ? "#555" : "#2a2a2a" }}>
-                  {label}
-                </div>
+        <ProgressBar step={step} />
+
+        <AnimatePresence mode="wait">
+          <motion.div key={step}
+            initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
+            transition={{ duration: 0.2 }}>
+
+            {step === 1 && (
+              <div>
+                <StepLabel>Step 1 of 5 — Idea</StepLabel>
+                <StepTitle>What are you building?</StepTitle>
+                <StepSub>Describe your startup idea in plain language. Don't polish it — just say it.</StepSub>
+                <BigTextarea value={idea} onChange={(e) => setIdea(e.target.value)} placeholder="E.g. A tool that helps solo founders track their progress and stay accountable using AI coaching..." />
+                <NextButton onClick={() => { trackFunnelStep("onboarding_idea"); fireReflexionStrike(idea); setStep(2); }} disabled={idea.trim().length < 15}>Continue</NextButton>
               </div>
-              {i < TOTAL - 1 && (
-                <div className="w-6 sm:w-10 h-px mb-3" style={{ background: done ? "#444" : "#1c1c1c" }} />
-              )}
-            </div>
-          );
-        })}
-      </div>
+            )}
 
-      {/* Card */}
-      <AnimatePresence mode="wait">
-        <motion.div key={step}
-          initial={{ opacity: 0, x: 20, scale: 0.98 }}
-          animate={{ opacity: 1, x: 0, scale: 1 }}
-          exit={{ opacity: 0, x: -20, scale: 0.98 }}
-          transition={{ duration: 0.18 }}
-          className="w-full max-w-sm">
-
-          <div className="border border-[var(--bm-border2)] rounded-xl overflow-hidden">
-
-            {/* Header */}
-            <div className="px-5 py-4 border-b border-[var(--bm-border)] bm-bg3">
-              <div className="text-[10px] bm-text3 uppercase tracking-wider mb-1">Step {step} of {TOTAL}</div>
-              <div className="text-[15px] font-medium bm-text tracking-tight">
-                {step === 1 && "What are you building?"}
-                {step === 2 && "Who is this for?"}
-                {step === 3 && "What problem does it solve?"}
-                {step === 4 && "What's holding you back most?"}
-                {step === 5 && "Your domain and stage"}
+            {step === 2 && (
+              <div>
+                <StepLabel>Step 2 of 5 — Target Users</StepLabel>
+                <StepTitle>Who is this for?</StepTitle>
+                <StepSub>Be specific. "Everyone" is not an answer. Describe the exact person with this problem.</StepSub>
+                {/* Reflexion Strike result — AI insight fires in background after step 1 */}
+                {(strikeLoading || strikeResult) && (
+                  <div style={{ background: "rgba(167,139,250,0.07)", border: "1px solid rgba(167,139,250,0.25)", borderRadius: 14, padding: "14px 16px", marginBottom: 18 }}>
+                    <div style={{ fontSize: 9, fontWeight: 700, color: "#a78bfa", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8 }}>⚡ AI Market Insight</div>
+                    {strikeLoading && !strikeResult ? (
+                      <div style={{ fontSize: 12, color: "var(--bm-text3)" }}>Analysing market gap…</div>
+                    ) : strikeResult ? (
+                      <>
+                        <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: "0 0 8px", lineHeight: 1.55 }}>{strikeResult.market_gap}</p>
+                        {strikeResult.first_task && (
+                          <div style={{ fontSize: 12, color: "#a78bfa", fontWeight: 600 }}>→ First validated task: {strikeResult.first_task}</div>
+                        )}
+                      </>
+                    ) : null}
+                  </div>
+                )}
+                <BigTextarea value={targetUsers} onChange={(e) => setTargetUsers(e.target.value)} placeholder="E.g. First-time founders building B2B SaaS, aged 25–40, technical background, working full-time on their startup..." rows={3} />
+                <NextButton onClick={() => { trackFunnelStep("onboarding_stage"); setStep(3); }} disabled={targetUsers.trim().length < 10}>Continue</NextButton>
               </div>
-            </div>
+            )}
 
-            {/* Body */}
-            <div className="px-5 py-5 bm-bg">
-
-              {/* Hint */}
-              <div className="text-[12px] bm-text3 mb-4 leading-relaxed">
-                {step === 1 && "Be specific. \"Daily action engine for solo founders\" beats \"AI for startups\"."}
-                {step === 2 && "The more specific your target user, the more focused your roadmap."}
-                {step === 3 && "This shapes every action BuildMind gives you. Be honest about the pain."}
-                {step === 4 && "BuildMind will tailor your first 7 actions around this."}
-                {step === 5 && "This helps BuildMind pull the right tactics, benchmarks, and resources."}
+            {step === 3 && (
+              <div>
+                <StepLabel>Step 3 of 5 — Problem</StepLabel>
+                <StepTitle>What problem does it solve?</StepTitle>
+                <StepSub>What's painful or broken today? Focus on the problem, not your solution.</StepSub>
+                <BigTextarea value={problem} onChange={(e) => setProblem(e.target.value)} placeholder="E.g. Founders have no structured way to measure their own execution. They plan a lot but ship slowly and don't know why..." rows={3} />
+                <NextButton onClick={() => { trackFunnelStep("onboarding_stage"); setStep(4); }} disabled={problem.trim().length < 15}>Continue</NextButton>
               </div>
+            )}
 
-              {/* Step 1 — Idea */}
-              {step === 1 && (
-                <input value={idea} onChange={e => setIdea(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && onNext()}
-                  placeholder="e.g. A tool that tells founders exactly what to do next"
-                  autoFocus
-                  className="w-full bm-bg2 border border-[var(--bm-border2)] rounded-lg px-3 py-2.5 text-[13px] bm-text2 outline-none focus:border-[#444] mb-4 transition-colors"
-                  style={{ fontFamily: "inherit" }} />
-              )}
-
-              {/* Step 2 — Target users */}
-              {step === 2 && (
-                <input value={targetUsers} onChange={e => setTargetUsers(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && onNext()}
-                  placeholder="e.g. Pre-revenue solo founders who feel stuck"
-                  autoFocus
-                  className="w-full bm-bg2 border border-[var(--bm-border2)] rounded-lg px-3 py-2.5 text-[13px] bm-text2 outline-none focus:border-[#444] mb-4 transition-colors"
-                  style={{ fontFamily: "inherit" }} />
-              )}
-
-              {/* Step 3 — Problem */}
-              {step === 3 && (
-                <textarea value={problem} onChange={e => setProblem(e.target.value)}
-                  placeholder="e.g. Founders waste weeks building the wrong thing with no clear daily action"
-                  rows={4} autoFocus
-                  className="w-full bm-bg2 border border-[var(--bm-border2)] rounded-lg px-3 py-2.5 text-[13px] bm-text2 outline-none focus:border-[#444] mb-4 resize-none transition-colors"
-                  style={{ fontFamily: "inherit" }} />
-              )}
-
-              {/* Step 4 — Blocker */}
-              {step === 4 && (
-                <div className="flex flex-col gap-2 mb-4">
+            {step === 4 && (
+              <div>
+                <StepLabel>Step 4 of 5 — Your Blocker</StepLabel>
+                <StepTitle>What's holding you back right now?</StepTitle>
+                <StepSub>Be honest. This helps BuildMind give you the right starting push.</StepSub>
+                <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
                   {BLOCKER_OPTIONS.map(opt => (
                     <button key={opt.id} onClick={() => setBlockerType(opt.id)}
-                      className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-all cursor-pointer"
                       style={{
-                        background: blockerType === opt.id ? "rgba(99,102,241,0.1)" : "#0a0a0a",
-                        border: `1px solid ${blockerType === opt.id ? "rgba(99,102,241,0.35)" : "#1c1c1c"}`,
-                        color: blockerType === opt.id ? "#c7d2fe" : "#888",
-                        fontFamily: "inherit",
+                        display: "flex", alignItems: "center", gap: 12, padding: "13px 16px", borderRadius: 12,
+                        border: `1px solid ${blockerType === opt.id ? "var(--bm-accent-bd)" : "var(--bm-border)"}`,
+                        background: blockerType === opt.id ? "var(--bm-accent-dim)" : "var(--bm-bg2)",
+                        cursor: "pointer", fontFamily: "inherit", textAlign: "left", transition: "all 0.15s",
                       }}>
-                      <span style={{ fontSize: 11, width: 16, textAlign: "center", color: blockerType === opt.id ? "#818cf8" : "#444", flexShrink: 0 }}>{opt.icon}</span>
-                      <span style={{ fontSize: 12 }}>{opt.label}</span>
-                      {blockerType === opt.id && <span style={{ marginLeft: "auto", fontSize: 10, color: "#818cf8" }}>●</span>}
+                      <span style={{ fontSize: 16, width: 24, textAlign: "center", flexShrink: 0 }}>{opt.icon}</span>
+                      <span style={{ fontSize: 13, color: blockerType === opt.id ? "var(--bm-accent)" : "var(--bm-text2)", fontWeight: blockerType === opt.id ? 600 : 400 }}>{opt.label}</span>
+                      {blockerType === opt.id && <Check size={14} color="var(--bm-accent)" style={{ marginLeft: "auto" }} />}
                     </button>
                   ))}
                 </div>
-              )}
+                <NextButton onClick={() => { trackFunnelStep("onboarding_stage"); setStep(5); }} disabled={!blockerType}>Continue</NextButton>
+              </div>
+            )}
 
-              {/* Step 5 — Domain + Stage */}
-              {step === 5 && (
-                <div className="flex flex-col gap-3 mb-4">
-                  <div>
-                    <div className="text-[11px] bm-text3 mb-2 uppercase tracking-wider">Industry / domain</div>
-                    <div className="flex flex-wrap gap-2">
-                      {DOMAIN_OPTIONS.map(d => (
-                        <button key={d} onClick={() => setDomain(d)}
-                          className="px-3 py-1.5 rounded-lg text-[11px] transition-all cursor-pointer"
-                          style={{
-                            background: domain === d ? "rgba(99,102,241,0.1)" : "#0a0a0a",
-                            border: `1px solid ${domain === d ? "rgba(99,102,241,0.3)" : "#1c1c1c"}`,
-                            color: domain === d ? "#c7d2fe" : "#666",
-                            fontFamily: "inherit",
-                          }}>
-                          {d}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] bm-text3 mb-2 uppercase tracking-wider">Current stage</div>
-                    <select value={startupStage} onChange={e => setStartupStage(normalizeStage(e.target.value))}
-                      className="w-full bm-bg2 border border-[var(--bm-border2)] rounded-lg px-3 py-2.5 text-[13px] bm-text2 outline-none focus:border-[#444] transition-colors"
-                      style={{ fontFamily: "inherit" }}>
-                      {STAGE_OPTIONS.map(s => (
-                        <option key={s} value={s} style={{ background:"var(--bm-bg2)", color:"var(--bm-text2)" }}>{s}</option>
-                      ))}
-                    </select>
+            {step === 5 && (
+              <div>
+                <StepLabel>Step 5 of 5 — Stage</StepLabel>
+                <StepTitle>Where are you right now?</StepTitle>
+                <StepSub>Select your current startup stage. BuildMind will tailor your roadmap accordingly.</StepSub>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 9, marginBottom: 20 }}>
+                  {STAGE_OPTIONS.map(s => (
+                    <button key={s} onClick={() => setStartupStage(s)}
+                      style={{
+                        padding: "14px 10px", borderRadius: 12, textAlign: "center",
+                        border: `1px solid ${startupStage === s ? "var(--bm-accent-bd)" : "var(--bm-border)"}`,
+                        background: startupStage === s ? "var(--bm-accent-dim)" : "var(--bm-bg2)",
+                        color: startupStage === s ? "var(--bm-accent)" : "var(--bm-text2)",
+                        fontSize: 13, fontWeight: startupStage === s ? 700 : 400,
+                        cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s",
+                      }}>
+                      {s}
+                    </button>
+                  ))}
+                </div>
+
+                <div style={{ marginBottom: 10 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>Industry (optional)</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+                    {DOMAIN_OPTIONS.map(d => (
+                      <button key={d} onClick={() => setDomain(d)}
+                        style={{ padding: "7px 13px", borderRadius: 20, border: `1px solid ${domain === d ? "var(--bm-accent-bd)" : "var(--bm-border)"}`, background: domain === d ? "var(--bm-accent-dim)" : "transparent", color: domain === d ? "var(--bm-accent)" : "var(--bm-text3)", fontSize: 12, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}>
+                        {d}
+                      </button>
+                    ))}
                   </div>
                 </div>
-              )}
 
-              {/* Error */}
-              {error && (
-                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                  className="text-[12px] text-red-400 mb-3">
-                  {error}
-                </motion.div>
-              )}
-
-              {/* Buttons */}
-              <div className="flex gap-2">
-                {step > 1 && (
-                  <button onClick={onBack}
-                    className="px-4 py-3 text-[13px] bm-text2 bg-transparent border border-[var(--bm-border2)] rounded-lg cursor-pointer"
-                    style={{ fontFamily: "inherit" }}>
-                    Back
-                  </button>
-                )}
-                {step < 5 ? (
-                  <button onClick={onNext}
-                    className="flex-1 py-3 bg-white text-black text-[13px] font-medium rounded-lg border-none cursor-pointer"
-                    style={{ fontFamily: "inherit" }}>
-                    Continue →
-                  </button>
-                ) : (
-                  <button onClick={() => void onComplete()} disabled={loading}
-                    className="flex-1 py-3 text-[13px] font-medium rounded-lg border-none"
-                    style={{
-                      background: loading ? "#1c1c1c" : "#fff",
-                      color: loading ? "#444" : "#000",
-                      cursor: loading ? "not-allowed" : "pointer",
-                      fontFamily: "inherit",
-                    }}>
-                    {loading ? "Generating your workspace..." : "Generate workspace →"}
-                  </button>
-                )}
+                {error && <div style={{ fontSize: 12, color: "var(--bm-red)", marginBottom: 10 }}>{error}</div>}
+                <NextButton onClick={handleFinish} loading={loading}>Build my roadmap</NextButton>
               </div>
-            </div>
-          </div>
+            )}
+          </motion.div>
+        </AnimatePresence>
 
-          {step === 5 && !loading && (
-            <p className="text-center text-[11px] bm-text4 mt-2.5">
-              BuildMind generates your first action, milestones, and 90-day roadmap now.
-            </p>
-          )}
-        </motion.div>
-      </AnimatePresence>
+        {step > 1 && (
+          <button onClick={() => setStep(s => (s - 1) as Step)}
+            style={{ display: "block", margin: "16px auto 0", background: "none", border: "none", color: "var(--bm-text3)", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+            ← Back
+          </button>
+        )}
+      </div>
     </div>
   );
 }
 
 export default function OnboardingPage() {
   return (
-    <Suspense fallback={<BuildMindLoader variant="page" label="Getting ready…" />}>
+    <Suspense fallback={<BuildMindLoader />}>
       <OnboardingContent />
     </Suspense>
   );

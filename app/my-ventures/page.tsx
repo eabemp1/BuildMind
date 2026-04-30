@@ -3,20 +3,20 @@
 /**
  * /my-ventures — PRIVATE ADMIN PAGE
  *
- * Only accessible when the logged-in user's Supabase ID matches
- * NEXT_PUBLIC_ADMIN_USER_ID. Everyone else is redirected to /dashboard.
+ * Only accessible when the logged-in user is marked is_admin in profiles
+ * (verified server-side via /api/system/admin-check). Everyone else is
+ * redirected to /today.
  *
  * This is NOT a feature for other BuildMind users.
  * Other users get their own venture roadmaps at /ventures (generated from
  * their own onboarding data). This page shows YOUR 4 private roadmaps.
  *
- * Setup: set NEXT_PUBLIC_ADMIN_USER_ID=<your-supabase-user-id> in Vercel.
+ * Setup: promote your user with an is_admin flag in Supabase.
  */
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { createClient } from "@/lib/supabase/client";
 import { VENTURE_TRACKS, type VentureTrack, type VentureMilestone } from "@/lib/ventures";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -200,12 +200,15 @@ export default function MyVenturesPage() {
 
   useEffect(() => {
     const check = async () => {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      const adminId = process.env.NEXT_PUBLIC_ADMIN_USER_ID;
-
-      if (!user || (adminId && user.id !== adminId)) {
-        router.replace("/dashboard");
+      try {
+        const res = await fetch("/api/system/admin-check");
+        const json = await res.json();
+        if (!json.isAdmin) {
+          router.replace("/today");
+          return;
+        }
+      } catch {
+        router.replace("/today");
         return;
       }
       setAuthed(true);
@@ -356,7 +359,7 @@ export default function MyVenturesPage() {
             {/* Privacy note */}
             <div style={{ marginTop: 24, padding: "12px 14px", background: "rgba(239,68,68,0.03)", border: "1px solid rgba(239,68,68,0.08)", borderRadius: 8 }}>
               <div style={{ fontSize: 11, color:"var(--bm-text3)", lineHeight: 1.6 }}>
-                This page is only accessible from your account. Other BuildMind users are redirected to /dashboard if they try to access /my-ventures. Their venture roadmaps are generated from their own onboarding data at /ventures — completely separate from yours.
+                This page is only accessible from your account. Other BuildMind users are redirected to /today if they try to access /my-ventures. Their venture roadmaps are generated from their own onboarding data at /ventures — completely separate from yours.
               </div>
             </div>
           </motion.div>

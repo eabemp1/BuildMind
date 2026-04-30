@@ -3,8 +3,9 @@
 /**
  * app/owner/page.tsx — Owner Command Panel
  *
- * Only accessible if the authenticated Supabase UID matches
- * NEXT_PUBLIC_ADMIN_USER_ID env var. Normal users get a 404-style redirect.
+ * Only accessible if the authenticated user has is_admin = true in the profiles
+ * table (verified server-side via /api/system/admin-check). Normal users get a
+ * 404-style redirect.
  *
  * Features:
  * - Plan override (test any plan as owner)
@@ -18,7 +19,6 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
-import { FEATURES } from "@/lib/features";
 import { getPlan, setStoredPlan, type Plan, PLAN_LIMITS } from "@/lib/plan";
 import { getAchievementStats, updateAchievementStats, getTotalXP, checkAndUnlockAchievements, getUnlocked } from "@/lib/achievements";
 import { getFunnelSummary, getDropOffStep, getPageViews, getRecentEvents } from "@/lib/onboarding-analytics";
@@ -58,18 +58,20 @@ export default function OwnerPanel() {
   const [dbStats, setDbStats] = useState<{ users: number; projects: number; signups_today: number } | null>(null);
   const [envStatus, setEnvStatus] = useState<Record<string, boolean>>({});
 
-  // Auth check
+  // Auth check — server-side only via /api/system/admin-check.
+  // The is_admin flag is read from the profiles table using the service-role key.
+  // No client-visible env var is involved.
   useEffect(() => {
     const check = async () => {
       try {
-        const sb = createClient();
-        const { data } = await sb.auth.getUser();
-        const uid = process.env.NEXT_PUBLIC_ADMIN_USER_ID;
-        if (!uid || data.user?.id !== uid) {
+        const res = await fetch("/api/system/admin-check");
+        const json = await res.json();
+        if (!json.isAdmin) {
           setAuthorized(false);
           setTimeout(() => router.replace("/today"), 2000);
         } else {
           setAuthorized(true);
+          const sb = createClient();
           setPlan(getPlan());
           loadEnvStatus();
           loadDbStats(sb);
@@ -183,9 +185,9 @@ export default function OwnerPanel() {
           <div style={SECTION}>
             <div style={LABEL}>Current Plan (Local Override)</div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {(["free", "builder", "venture"] as Plan[]).map(p => (
+              {(["free", "builder"] as Plan[]).map(p => (
                 <button key={p} onClick={() => applyPlan(p)}
-                  style={BTN(plan === p, p === "builder" ? "#6366f1" : p === "venture" ? "#f59e0b" : "#555")}>
+                  style={BTN(plan === p, p === "builder" ? "#6366f1" : "#555")}>
                   {p.charAt(0).toUpperCase() + p.slice(1)}
                   {plan === p && " ✓"}
                 </button>
@@ -375,17 +377,17 @@ export default function OwnerPanel() {
                 { href: "/reflect", label: "🧠 Reflect" },
                 { href: "/overview", label: "🗺️ Overview" },
                 { href: "/projects", label: "📁 Projects" },
-                ...(FEATURES.ventures ? [{ href: "/ventures", label: "🏛️ Ventures" }] : []),
+                { href: "/ventures", label: "🏛️ Ventures" },
                 { href: "/ai-coach", label: "🤖 AI Coach" },
                 { href: "/break-my-startup", label: "💀 Break Startup" },
                 { href: "/reports", label: "📊 Reports" },
                 { href: "/startup-kit", label: "💡 Startup Kit" },
                 { href: "/achievements", label: "🏆 Achievements" },
-                ...(FEATURES.publicProjects ? [{ href: "/explore", label: "🔭 Explore" }] : []),
+                { href: "/explore", label: "🔭 Explore" },
                 { href: "/upgrade", label: "💳 Upgrade" },
                 { href: "/settings", label: "⚙️ Settings" },
                 { href: "/onboarding", label: "🚪 Onboarding" },
-                { href: "/landing", label: "🌐 Landing" },
+                { href: "/", label: "🌐 Landing" },
               ].map(p => (
                 <a key={p.href} href={p.href}
                   style={{ display: "block", padding: "10px 14px", background: "#0f0f0f", border: "1px solid #1a1a1a", borderRadius: 10, color: "#888", fontSize: 12, textDecoration: "none", transition: "all 0.15s" }}

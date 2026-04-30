@@ -49,6 +49,7 @@ export {
   getProjectDetail,
   createProjectWithRoadmap,
   getDashboardOverview,
+  getWeeklyReportMetrics,
   calculateDashboardStats,
 } from "@/lib/data/projects";
 
@@ -82,6 +83,7 @@ export async function getAICoachAdvice(projectId: string): Promise<string[]> {
 import { createClient } from "@/lib/supabase/client";
 import { trackEvent } from "@/lib/analytics";
 import { getProjectSummaries, updateProjectStage } from "@/lib/data/projects";
+import { observeTaskEvent } from "@/lib/founderMemory";
 
 export async function completeTask(taskId: string): Promise<{ newStage: string | null }> {
   const user = await getCurrentUser();
@@ -89,6 +91,7 @@ export async function completeTask(taskId: string): Promise<{ newStage: string |
   const supabase = createClient();
 
   await supabase.from("tasks").update({ is_completed: true }).eq("id", taskId);
+  observeTaskEvent(taskId, "completed").catch(() => {}); // non-blocking memory update
 
   const { data: task } = await supabase
     .from("tasks").select("milestone_id").eq("id", taskId).single();
@@ -136,7 +139,12 @@ export async function updateTaskStatus(taskId: string, isCompleted: boolean, not
   );
   const isMilestoneComplete = nowTasks.length > 0 && nowTasks.every((t) => t.is_completed);
 
-  if (isCompleted && !taskRow.is_completed) trackEvent("task_completed");
+  if (isCompleted && !taskRow.is_completed) {
+    trackEvent("task_completed");
+    observeTaskEvent(taskId, "completed").catch(() => {});
+  } else if (!isCompleted && taskRow.is_completed) {
+    observeTaskEvent(taskId, "skipped").catch(() => {});
+  }
 
   if (isMilestoneComplete && !wasMilestoneComplete) {
     trackEvent("milestone_completed");

@@ -1,8 +1,5 @@
-import { notFound } from "next/navigation";
-import { FEATURES } from "@/lib/features";
+import AppShell from "@/components/layout/app-shell";
 
 export default function FounderLayout({ children }: { children: React.ReactNode }) {
-  if (!FEATURES.publicProjects) notFound();
-  return children;
+  return <AppShell>{children}</AppShell>;
 }
-

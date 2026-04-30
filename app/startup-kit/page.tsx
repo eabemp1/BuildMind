@@ -7,7 +7,8 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { getPlan, canAccess } from "@/lib/plan";
+import { canAccess } from "@/lib/plan";
+import { usePlan } from "@/lib/usePlan";
 
 const SAMPLE_RESULT = {
   names: ["BuildHQ", "GetBuild", "BuildOS"],
@@ -29,6 +30,8 @@ const SAMPLE_RESULT = {
     "Competitive market — differentiation needed",
   ],
 };
+
+type StartupKitResult = typeof SAMPLE_RESULT;
 
 const card: React.CSSProperties = {
   background: "var(--bm-bg2)", border: "1px solid var(--bm-border)",
@@ -163,7 +166,7 @@ function StartupKitContent() {
   const router = useRouter();
   const [idea, setIdea] = useState("");
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<typeof SAMPLE_RESULT | null>(null);
+  const [result, setResult] = useState<StartupKitResult | null>(null);
 
   useEffect(() => {
     const s = typeof window !== "undefined" ? localStorage.getItem("bm_idea") : null;
@@ -176,14 +179,19 @@ function StartupKitContent() {
     await new Promise(r => setTimeout(r, 1800));
     const base = idea.split(" ")[0].toLowerCase().replace(/[^a-z]/g, "");
     const cap = base.charAt(0).toUpperCase() + base.slice(1);
-    setResult({
+    const generated: StartupKitResult = {
       names: [`${cap}HQ`, `Get${cap}`, `${cap}OS`],
       tagline: "The fastest way to turn an idea into a real startup.",
       positioning: `For solo founders who need structure, not complexity. ${idea.split(" ").slice(0, 4).join(" ")} is the execution OS that replaces procrastination with one clear daily action.`,
       colors: [{ name: "Indigo", hex: "#6366f1" }, { name: "Violet", hex: "#8b5cf6" }, { name: "Teal", hex: "#14b8a6" }],
       domains: [{ name: `${base}hq.com`, available: true, price: "$12/yr" }, { name: `get${base}.io`, available: false, price: "—" }, { name: `${base}os.co`, available: true, price: "$28/yr" }],
       risks: ["No clear distribution channel", "Target audience too broad — narrow to one persona", "Competitive market — differentiation needed"],
-    });
+    };
+    setResult(generated);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("bm_startup_kit_idea", idea.trim());
+      localStorage.setItem("bm_startup_kit_result", JSON.stringify(generated));
+    }
     setLoading(false);
   };
 
@@ -223,9 +231,7 @@ function StartupKitContent() {
 
 export default function StartupKitPage() {
   const router = useRouter();
-  const [hasAccess, setHasAccess] = useState<boolean | null>(null);
-  useEffect(() => { setHasAccess(canAccess("startupKit", getPlan())); }, []);
-  if (hasAccess === null) return null;
-  if (!hasAccess) return <FreeTeaserView onUpgrade={() => router.push("/upgrade?feature=startupKit")} />;
+  const { plan } = usePlan();
+  if (!canAccess("startupKit", plan)) return <FreeTeaserView onUpgrade={() => router.push("/upgrade?feature=startupKit")} />;
   return <StartupKitContent />;
 }

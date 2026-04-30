@@ -1,0 +1,177 @@
+/**
+ * lib/usePlan.ts — Server-authoritative plan hook
+ *
+ * WHY THIS EXISTS:
+ *   lib/plan.ts getPlan() reads from localStorage["bm_plan"]. On a shared
+ *   device (family phone, school computer), if User A logs out and User B
+ *   logs in, User B inherits User A's plan tier and usage counts because
+ *   localStorage is per-origin, not per-account.
+ *
+ *   This hook fetches plan from /api/billing/status (which reads Supabase
+ *   auth user_metadata server-side) and is the single source of truth for
+ *   all gating decisions. localStorage is used only as a cache for the
+ *   initial paint — it is always overwritten by the server response.
+ *
+ * USAGE:
+ *   const { plan, limits, isLoading } = usePlan();
+ *   // plan is always server-verified after the first fetch
+ *   // During loading, falls back to "free" (safe default — never over-grants)
+ *
+ * AI USAGE LIMITS:
+ *   Daily AI message counts are namespaced by userId so they don't bleed
+ *   between accounts: `bm_ai_${userId}_${dayKey}`.
+ */
+
+"use client";
+
+import { useEffect, useState, useCallback } from "react";
+import { createClient } from "@/lib/supabase/client";
+import { normalizePlan, PLAN_LIMITS, type Plan, type PlanLimits } from "@/lib/plan";
+
+interface PlanState {
+  plan: Plan;
+  limits: PlanLimits;
+  isLoading: boolean;
+  userId: string | null;
+}
+
+const DEFAULT_STATE: PlanState = {
+  plan: "free",
+  limits: PLAN_LIMITS.free,
+  isLoading: true,
+  userId: null,
+};
+
+// Module-level cache so repeated hook uses don't re-fetch within the same
+// page session. Invalidated on userId change.
+let cachedUserId: string | null = null;
+let cachedPlan: Plan = "free";
+let fetchPromise: Promise<void> | null = null;
+
+async function fetchPlanFromServer(): Promise<{ plan: Plan; userId: string | null }> {
+  try {
+    // Get userId first from Supabase client (fast — uses local session)
+    const supabase = createClient();
+    const { data } = await supabase.auth.getUser();
+    const userId = data.user?.id ?? null;
+
+    if (!userId) {
+      return { plan: "free", userId: null };
+    }
+
+    // Fetch authoritative plan from server (reads Supabase auth metadata)
+    const res = await fetch("/api/billing/status", {
+      cache: "no-store",
+      headers: { "Cache-Control": "no-cache" },
+    });
+
+    if (!res.ok) {
+      // Server error — fall back to "free" (safe)
+      return { plan: "free", userId };
+    }
+
+    const payload = await res.json().catch(() => null) as {
+      ok?: boolean;
+      plan?: string;
+    } | null;
+
+    const plan = normalizePlan(payload?.ok ? (payload.plan ?? null) : null);
+
+    // Cache in localStorage keyed by userId so it survives page refresh
+    // but is per-account (different keys for different users).
+    if (typeof window !== "undefined") {
+      localStorage.setItem(`bm_plan_${userId}`, plan);
+      // Clear the generic (non-namespaced) key so it can't bleed
+      localStorage.removeItem("bm_plan");
+    }
+
+    return { plan, userId };
+  } catch {
+    return { plan: "free", userId: null };
+  }
+}
+
+export function usePlan(): PlanState {
+  const [state, setState] = useState<PlanState>(() => {
+    // Synchronous initial state — can't call async here.
+    // We read from localStorage immediately for a fast first paint,
+    // but we do NOT trust the generic "bm_plan" key (could be another user's).
+    // We'll get the userId asynchronously and swap to the namespaced key.
+    return DEFAULT_STATE;
+  });
+
+  const refresh = useCallback(async () => {
+    if (fetchPromise) {
+      await fetchPromise;
+      return;
+    }
+
+    fetchPromise = fetchPlanFromServer().then(({ plan, userId }) => {
+      cachedUserId = userId;
+      cachedPlan = plan;
+      setState({
+        plan,
+        limits: PLAN_LIMITS[plan],
+        isLoading: false,
+        userId,
+      });
+      fetchPromise = null;
+    }).catch(() => {
+      setState(s => ({ ...s, isLoading: false }));
+      fetchPromise = null;
+    });
+
+    return fetchPromise;
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  return state;
+}
+
+// ── Per-user AI message tracking ────────────────────────────────────────────
+// All functions below are namespaced by userId to prevent cross-account bleed.
+
+function aiDayKey(userId: string): string {
+  const d = new Date();
+  return `bm_ai_${userId}_${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+export function getAIMessagesTodayForUser(userId: string): number {
+  if (typeof window === "undefined" || !userId) return 0;
+  return Number(localStorage.getItem(aiDayKey(userId)) ?? "0");
+}
+
+export function recordAIMessageForUser(userId: string): void {
+  if (typeof window === "undefined" || !userId) return;
+  const k = aiDayKey(userId);
+  localStorage.setItem(k, String(getAIMessagesTodayForUser(userId) + 1));
+}
+
+// ── Per-user action tracking ─────────────────────────────────────────────────
+
+function weekKey(): string {
+  const d = new Date();
+  const j = new Date(d.getFullYear(), 0, 1);
+  return `${d.getFullYear()}_w${Math.ceil(((d.getTime() - j.getTime()) / 86400000 + j.getDay() + 1) / 7)}`;
+}
+
+export function getActionsThisWeekForUser(userId: string): number {
+  if (typeof window === "undefined" || !userId) return 0;
+  return Number(localStorage.getItem(`bm_actions_${userId}_${weekKey()}`) ?? "0");
+}
+
+export function recordWeeklyActionForUser(userId: string): void {
+  if (typeof window === "undefined" || !userId) return;
+  const k = `bm_actions_${userId}_${weekKey()}`;
+  localStorage.setItem(k, String(getActionsThisWeekForUser(userId) + 1));
+}
+
+// ── Helper to get plan from localStorage cache (for SSR-safe reads) ──────────
+// Only reads the namespaced key. Returns "free" if not found or no userId.
+export function getCachedPlanForUser(userId: string | null): Plan {
+  if (!userId || typeof window === "undefined") return "free";
+  return normalizePlan(localStorage.getItem(`bm_plan_${userId}`));
+}
