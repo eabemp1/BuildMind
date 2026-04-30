@@ -110,6 +110,23 @@ create table if not exists push_subscriptions (
   unique(user_id)
 );
 
+delete from push_subscriptions a
+using push_subscriptions b
+where a.user_id = b.user_id
+  and a.created_at < b.created_at;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'push_subscriptions_user_id_key'
+  ) then
+    alter table push_subscriptions
+      add constraint push_subscriptions_user_id_key unique (user_id);
+  end if;
+end $$;
+
 alter table push_subscriptions enable row level security;
 
 do $$

@@ -45,12 +45,36 @@ export async function POST(req: NextRequest) {
       .upsert({ user_id: userId, subscription }, { onConflict: "user_id" });
 
     if (error) {
+      // Older live schemas may only have a unique index on (user_id, endpoint),
+      // so ON CONFLICT (user_id) fails with 42P10. Fall back to replace-by-user.
+      if (error.code === "42P10") {
+        const { error: deleteError } = await supabase
+          .from("push_subscriptions")
+          .delete()
+          .eq("user_id", userId);
+
+        if (deleteError) {
+          console.error("[Push Subscribe] replace delete failed", deleteError);
+          return NextResponse.json({ error: deleteError.message }, { status: 500 });
+        }
+
+        const { error: insertError } = await supabase
+          .from("push_subscriptions")
+          .insert({ user_id: userId, subscription });
+
+        if (!insertError) return NextResponse.json({ ok: true });
+
+        console.error("[Push Subscribe] replace insert failed", insertError);
+        return NextResponse.json({ error: insertError.message }, { status: 500 });
+      }
+
       console.error("[Push Subscribe]", error);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
     return NextResponse.json({ ok: true });
   } catch (err) {
-    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+    console.error("[Push Subscribe] unexpected", err);
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Internal error" }, { status: 500 });
   }
 }
