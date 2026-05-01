@@ -35,6 +35,10 @@ import { NextRequest, NextResponse } from "next/server";
 import webpush from "web-push";
 import { createClient } from "@supabase/supabase-js";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
 // Configure VAPID (do this once at module level)
 webpush.setVapidDetails(
   process.env.VAPID_SUBJECT || "mailto:hello@buildmind.live",
@@ -108,11 +112,53 @@ function getRecoveryMessage() {
   return RECOVERY_MODE_MESSAGES[dayOfYear % RECOVERY_MODE_MESSAGES.length];
 }
 
+function getBearerToken(req: NextRequest): string | undefined {
+  const authorization = req.headers.get("authorization");
+  if (!authorization) return undefined;
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  return match?.[1]?.trim();
+}
+
 export async function POST(req: NextRequest) {
-  // Verify this is called by cron or Supabase edge function
-  const secret = req.headers.get("x-cron-secret");
-  if (secret !== process.env.CRON_SECRET) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!process.env.CRON_SECRET && process.env.NODE_ENV === "production") {
+    return NextResponse.json(
+      { error: "CRON_SECRET is missing. Add it in Vercel Environment Variables so Vercel Cron can authenticate." },
+      { status: 500 },
+    );
+  }
+
+  // Accept Vercel's native cron auth (Authorization: Bearer) OR custom header
+  const cronSecret =
+    req.headers.get("x-cron-secret") ??
+    getBearerToken(req);
+
+  const isValidSecret = cronSecret === process.env.CRON_SECRET;
+  const isDev = process.env.NODE_ENV !== "production";
+
+  if (!isValidSecret && !isDev) {
+    return NextResponse.json(
+      { error: "Unauthorized", hint: "Vercel Cron must call this route with Authorization: Bearer <CRON_SECRET> or x-cron-secret." },
+      { status: 401 },
+    );
+  }
+
+  const envStatus = {
+    supabaseUrl: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
+    serviceRole: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+    vapidPublic: Boolean(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY),
+    vapidPrivate: Boolean(process.env.VAPID_PRIVATE_KEY),
+    cronSecret: Boolean(process.env.CRON_SECRET),
+  };
+
+  const missing = Object.entries(envStatus)
+    .filter(([, ok]) => !ok)
+    .map(([key]) => key);
+
+  if (missing.length > 0) {
+    return NextResponse.json(
+      { error: "Push cron is missing required environment variables.", missing, envStatus },
+      { status: 500 },
+    );
   }
 
   // Admin Supabase client (bypasses RLS)
@@ -128,12 +174,14 @@ export async function POST(req: NextRequest) {
 
   if (error) {
     console.error("[Daily Push] Fetch error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: error.message, step: "fetch_subscriptions" }, { status: 500 });
   }
 
   if (!subs || subs.length === 0) {
-    return NextResponse.json({ sent: 0, message: "No subscribers yet" });
+    return NextResponse.json({ sent: 0, failed: 0, total: 0, message: "No push subscribers yet" });
   }
+
+  const dryRun = req.nextUrl.searchParams.get("dryRun") === "1";
 
   // Fetch founder context for Recovery Mode detection (NEW IN V4)
   const userIds = subs.map((s) => s.user_id);
@@ -148,6 +196,17 @@ export async function POST(req: NextRequest) {
 
   const defaultMessage = getDailyMessage();
   const recoveryMessage = getRecoveryMessage();
+
+  if (dryRun) {
+    return NextResponse.json({
+      ok: true,
+      dryRun: true,
+      total: subs.length,
+      envStatus,
+      message: defaultMessage.title,
+      recoveryMessage: recoveryMessage.title,
+    });
+  }
 
   // Send to all subscribers, using Recovery Mode message when appropriate
   const results = await Promise.allSettled(
@@ -192,6 +251,11 @@ export async function POST(req: NextRequest) {
     (r) => r.status === "fulfilled" && r.value.ok && (r.value as { isInRecovery?: boolean }).isInRecovery
   ).length;
   const failed = results.length - sent;
+  const failedDetails = results
+    .filter((r) => r.status === "fulfilled" && !r.value.ok)
+    .slice(0, 5)
+    .map((r) => (r.status === "fulfilled" ? { userId: r.value.userId, error: r.value.err } : null))
+    .filter(Boolean);
 
   console.log(`[Daily Push] Sent: ${sent}, Recovery Mode: ${recoveryCount}, Failed: ${failed}`);
 
@@ -201,18 +265,11 @@ export async function POST(req: NextRequest) {
     recoveryMode: recoveryCount,
     total: subs.length,
     message: defaultMessage.title,
+    failedDetails,
   });
 }
 
-// Allow GET for manual testing in dev
+// Allow GET for Vercel cron (which always sends GET) and manual testing
 export async function GET(req: NextRequest) {
-  if (process.env.NODE_ENV !== "development") {
-    return NextResponse.json({ error: "Not allowed" }, { status: 403 });
-  }
-  return POST(
-    new NextRequest(req.url, {
-      method: "POST",
-      headers: { "x-cron-secret": process.env.CRON_SECRET || "" },
-    })
-  );
+  return POST(req);
 }

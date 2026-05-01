@@ -19,6 +19,7 @@ import { registerServiceWorker, getPushStatus, requestPushPermission, subscribeT
 import { createClient } from "@/lib/supabase/client";
 
 const PROMPT_KEY = "bm_push_prompted";
+const PROMPT_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
 
 export default function PwaProvider({
   userId: userIdProp,
@@ -70,8 +71,10 @@ export default function PwaProvider({
       return;
     }
 
-    const alreadyPrompted = localStorage.getItem(PROMPT_KEY);
-    if (!alreadyPrompted) setShowPrompt(true);
+    const lastPrompted = Number(localStorage.getItem(PROMPT_KEY) ?? "0");
+    if (!lastPrompted || Date.now() - lastPrompted > PROMPT_COOLDOWN_MS) {
+      setShowPrompt(true);
+    }
   };
 
   useEffect(() => {
@@ -120,7 +123,7 @@ export default function PwaProvider({
 
   async function handleAccept() {
     if (!userId) return;
-    localStorage.setItem(PROMPT_KEY, "1");
+    localStorage.setItem(PROMPT_KEY, String(Date.now()));
     setShowPrompt(false);
     const permission = await requestPushPermission();
     if (permission === "granted") {
@@ -135,7 +138,7 @@ export default function PwaProvider({
   }
 
   function handleDecline() {
-    localStorage.setItem(PROMPT_KEY, "1");
+    localStorage.setItem(PROMPT_KEY, String(Date.now()));
     setShowPrompt(false);
   }
 

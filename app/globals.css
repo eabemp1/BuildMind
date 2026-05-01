@@ -279,6 +279,7 @@ input::placeholder, textarea::placeholder { color: var(--bm-text4); }
 @keyframes bm-fade-in   { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes bm-slide-up  { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes bm-pulse-dot { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+@keyframes bm-pulse { 0%, 100% { opacity: 0.3; transform: scale(0.85); } 50% { opacity: 1; transform: scale(1); } }
 @keyframes bm-shimmer {
   0%   { background-position: -200% 0; }
   100% { background-position:  200% 0; }

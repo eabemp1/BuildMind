@@ -5,9 +5,9 @@ import Link from "next/link";
 import Image from "next/image";
 import { motion } from "framer-motion";
 import {
-  Bot, Target, Zap, Flame, LayoutDashboard, Globe,
-  ChevronRight, ArrowRight, Play, AlertTriangle, Shield,
-  TrendingUp, CheckCircle2, Loader2, AlertCircle, Info, X,
+  Target, Zap, Flame, LayoutDashboard, Globe,
+  ArrowRight, Play, AlertTriangle, Shield,
+  AlertCircle, X, Brain,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -125,12 +125,36 @@ function DashboardMockup() {
 
 // ── Feature cards ─────────────────────────────────────────────────────────────
 const FEATURES = [
-  { icon: Bot, title: "AI Coach", desc: "Your startup advisor, always online." },
-  { icon: Target, title: "Milestone Tracking", desc: "Break big goals into daily actions." },
-  { icon: Zap, title: "Startup Score", desc: "A real-time health check on your execution." },
-  { icon: Flame, title: "Founder Streaks", desc: "Build momentum with accountability." },
-  { icon: LayoutDashboard, title: "Daily Command Center", desc: "One page. Every priority. Every morning." },
-  { icon: Globe, title: "Public Progress Pages", desc: "Share your journey, attract your tribe." },
+  {
+    icon: Brain,
+    title: "Reflexion Loop",
+    desc: "Three AI agents — Executor, Critic, Synthesiser — debate your last move and generate today's action. Not a chatbot. A causality engine.",
+  },
+  {
+    icon: Target,
+    title: "Confidence Gate",
+    desc: "Rates your confidence 1–5 every day. If you spiral below 2 for three days straight, it shifts you into Recovery Mode automatically.",
+  },
+  {
+    icon: Zap,
+    title: "Startup Score",
+    desc: "A composite of validation, execution, and momentum — recalculated after every task. Shows you whether you're building or just staying busy.",
+  },
+  {
+    icon: Flame,
+    title: "Rotating Critic Personas",
+    desc: "Each week, a different lens: the VC, the cynical user, the ex-founder. Same product, six entirely different threat models.",
+  },
+  {
+    icon: LayoutDashboard,
+    title: "Daily Command Center",
+    desc: "Wakes you up with one action — built from yesterday's reflection, your project stage, and what's actually blocking you. No dashboard bloat.",
+  },
+  {
+    icon: Globe,
+    title: "Public Founder Pages",
+    desc: "A live record of your build — milestones, scores, momentum. Accountability that's readable by anyone you want to impress.",
+  },
 ];
 
 function DemoModal({ onClose }: { onClose: () => void }) {
@@ -232,6 +256,18 @@ interface BreakResult {
   summary: string;
 }
 
+interface BreakPublicResponse {
+  success?: boolean;
+  error?: string;
+  data?: {
+    verdict?: string;
+    kill_reasons?: string[];
+    brutal_advice?: string;
+    survival_probability?: number;
+    differentiation_plan?: string[];
+  };
+}
+
 interface PublicStats {
   founders?: number;
   projects?: number;
@@ -258,14 +294,25 @@ function BreakMyStartupSection() {
         body: JSON.stringify({ idea }),
       });
       if (!res.ok) throw new Error("Request failed");
-      const data = (await res.json()) as Partial<BreakResult>;
+      const payload = (await res.json()) as BreakPublicResponse;
+      if (!payload.success) throw new Error(payload.error ?? "Request failed");
+      const data = payload.data;
+      const probability = data?.survival_probability ?? 40;
+      const overallRisk: RiskSeverity =
+        probability < 25 ? "Critical" : probability < 45 ? "High" : probability < 70 ? "Medium" : "Low";
+      const risks: RiskItem[] = (data?.kill_reasons?.length ? data.kill_reasons : ["Execution risk not enough data yet"]).map((reason, index) => ({
+        category: index === 0 ? "Primary risk" : `Risk ${index + 1}`,
+        severity: index === 0 ? overallRisk : overallRisk === "Critical" ? "High" : overallRisk,
+        description: reason,
+        mitigation: data?.differentiation_plan?.[index] ?? data?.brutal_advice ?? "Talk to 5 target users and validate the riskiest assumption before building more.",
+      }));
       setResult({
-        overallRisk: (data?.overallRisk ?? "Medium") as RiskSeverity,
-        summary: (data?.summary ?? "") as string,
-        risks: Array.isArray(data?.risks) ? data.risks : [],
+        overallRisk,
+        summary: data?.verdict ?? "Stress test complete. Review the risks before deciding what to build next.",
+        risks,
       });
-    } catch {
-      setError("Something went wrong. Please try again.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -487,7 +534,18 @@ export default function LandingPage() {
             transition={{ duration: 0.6 }}
             className="flex flex-col gap-5 sm:gap-6"
           >
-            <Badge variant="gradient" size="md">AI Founder Operating System</Badge>
+            <span style={{
+              background: "var(--bm-accent-dim)",
+              border: "1px solid var(--bm-accent-bd)",
+              color: "var(--bm-accent)",
+              borderRadius: 20,
+              padding: "4px 14px",
+              fontSize: 11,
+              fontWeight: 700,
+              textTransform: "uppercase" as const,
+              letterSpacing: "0.07em",
+              display: "inline-block",
+            }}>AI Founder Operating System</span>
 
             <h1 className="text-4xl font-bold leading-[1.08] tracking-tight sm:text-5xl lg:text-6xl">
               Stop planning.
@@ -553,6 +611,11 @@ export default function LandingPage() {
           </motion.div>
         </div>
       </section>
+
+      {/* Break My Startup — interactive hook, no login required */}
+      <div id="break">
+        <BreakMyStartupSection />
+      </div>
 
       {/* Feature Grid */}
       <section id="features" className="px-5 py-16 sm:px-6 sm:py-24" style={{ borderTop: "1px solid var(--bm-border)" }}>
@@ -661,10 +724,24 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Break My Startup */}
-      <div id="break">
-        <BreakMyStartupSection />
-      </div>
+      {/* Social proof — even one real quote beats all six feature cards */}
+      <section className="px-5 py-14 sm:px-6" style={{ borderTop: "1px solid var(--bm-border)" }}>
+        <div className="max-w-2xl mx-auto text-center">
+          <p className="text-[11px] font-bold uppercase tracking-widest mb-8" style={{ color: "var(--bm-text3)" }}>
+            What founders say
+          </p>
+          {/* REPLACE THIS WITH A REAL QUOTE WHEN YOU HAVE ONE */}
+          <blockquote style={{ margin: 0 }}>
+            <p className="text-lg sm:text-xl font-medium leading-relaxed" style={{ color: "var(--bm-text)", letterSpacing: "-0.02em" }}>
+              "I stopped planning and started shipping. BuildMind made the difference between
+              thinking about my startup and actually running it."
+            </p>
+            <footer className="mt-6" style={{ color: "var(--bm-text3)", fontSize: 13 }}>
+              — Replace with a real founder name and their project
+            </footer>
+          </blockquote>
+        </div>
+      </section>
 
       {/* Final CTA */}
       <section

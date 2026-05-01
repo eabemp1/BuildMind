@@ -243,18 +243,28 @@ function OnboardingContent() {
                 <StepLabel>Step 2 of 5 — Target Users</StepLabel>
                 <StepTitle>Who is this for?</StepTitle>
                 <StepSub>Be specific. "Everyone" is not an answer. Describe the exact person with this problem.</StepSub>
-                {/* Reflexion Strike result — AI insight fires in background after step 1 */}
+                {/* Reflexion Strike preview — shows AI already went to work on their idea */}
                 {(strikeLoading || strikeResult) && (
-                  <div style={{ background: "rgba(167,139,250,0.07)", border: "1px solid rgba(167,139,250,0.25)", borderRadius: 14, padding: "14px 16px", marginBottom: 18 }}>
-                    <div style={{ fontSize: 9, fontWeight: 700, color: "#a78bfa", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8 }}>⚡ AI Market Insight</div>
+                  <div style={{
+                    background: "var(--bm-accent-dim)",
+                    border: "1px solid var(--bm-accent-bd)",
+                    borderRadius: 14,
+                    padding: "16px 18px",
+                    marginBottom: 24,
+                  }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-accent)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                      <span>⚡</span> AI already scanned your idea
+                    </div>
                     {strikeLoading && !strikeResult ? (
-                      <div style={{ fontSize: 12, color: "var(--bm-text3)" }}>Analysing market gap…</div>
+                      <p style={{ fontSize: 13, color: "var(--bm-text3)", margin: 0 }}>Analysing your startup…</p>
                     ) : strikeResult ? (
                       <>
-                        <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: "0 0 8px", lineHeight: 1.55 }}>{strikeResult.marketGap}</p>
-                        {strikeResult.firstTask && (
-                          <div style={{ fontSize: 12, color: "#a78bfa", fontWeight: 600 }}>→ First validated task: {strikeResult.firstTask}</div>
-                        )}
+                        <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: "0 0 10px", lineHeight: 1.6 }}>
+                          <strong style={{ color: "var(--bm-text)" }}>Gap spotted:</strong> {strikeResult.marketGap}
+                        </p>
+                        <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.6 }}>
+                          <strong style={{ color: "var(--bm-text)" }}>Your first task:</strong> {strikeResult.firstTask}
+                        </p>
                       </>
                     ) : null}
                   </div>

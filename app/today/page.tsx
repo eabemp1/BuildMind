@@ -204,8 +204,8 @@ function TodayContent() {
           <h2 style={{ fontSize: 24, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em", marginBottom: 10 }}>Check-in recorded</h2>
           <p style={{ fontSize: 14, color: "var(--bm-text3)", marginBottom: 28, lineHeight: 1.6 }}>Come back tomorrow. Consistency compounds.</p>
           <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 10, justifyContent: "center" }}>
-            <button onClick={() => router.push("/reflect")} style={{ padding: "12px 20px", borderRadius: 10, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text2)", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Reflect on today →</button>
-            <button onClick={() => router.push("/overview")} style={{ padding: "12px 20px", borderRadius: 10, border: "none", background: "var(--grad-primary)", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Go to dashboard</button>
+            <button onClick={() => router.push("/reflect")} style={{ padding: "12px 20px", borderRadius: 10, border: "none", background: "var(--grad-primary)", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Reflect on today →</button>
+            <button onClick={() => router.push("/overview")} style={{ padding: "12px 20px", borderRadius: 10, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text2)", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>View full dashboard</button>
           </div>
         </motion.div>
       </div>
@@ -246,8 +246,21 @@ function TodayContent() {
       </motion.div>
 
       {/* Action card */}
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}
-        style={{ background: "var(--bm-bg2)", border: `1px solid ${actionData.isAI ? "var(--bm-accent-bd)" : "var(--bm-border)"}`, borderRadius: 18, padding: isMobile ? "18px" : "24px", marginBottom: 14, transition: "border-color 0.3s" }}>
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.08 }}
+        style={{
+          padding: 1,
+          borderRadius: 19,
+          background: actionData.isAI
+            ? "linear-gradient(135deg, var(--bm-accent-bd) 0%, rgba(74,184,176,0.18) 100%)"
+            : "var(--bm-border)",
+          marginBottom: 14,
+          transition: "background 0.4s",
+        }}
+      >
+        <div style={{ background: "var(--bm-bg2)", borderRadius: 18, padding: isMobile ? "18px" : "24px" }}>
         <div style={{ display: "flex", alignItems: isMobile ? "flex-start" : "center", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
           <span style={{ fontSize: 10, padding: "3px 10px", borderRadius: 20, background: "var(--bm-accent-dim)", color: "var(--bm-accent)", border: "1px solid var(--bm-accent-bd)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em" }}>
             {project?.startup_stage ?? "Idea"} Stage
@@ -258,14 +271,17 @@ function TodayContent() {
             </span>
           ) : actionLoading ? (
             <span style={{ fontSize: 10, color: "var(--bm-text3)", display: "flex", alignItems: "center", gap: 4 }}>
-              <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "var(--bm-accent)", opacity: 0.5, animation: "pulse 1.2s infinite" }} /> Personalising…
+              <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "var(--bm-accent)", opacity: 0.5, animation: "bm-pulse 1.2s ease-in-out infinite" }} /> Personalising…
             </span>
           ) : null}
           <span style={{ fontSize: 11, color: "var(--bm-text3)", display: "flex", alignItems: "center", gap: 4, marginLeft: "auto" }}>
             <Clock size={11} /> {actionData.time}
           </span>
         </div>
-        <p style={{ fontSize: isMobile ? 19 : 17, fontWeight: 700, color: "var(--bm-text)", lineHeight: 1.45, marginBottom: 18, letterSpacing: "-0.01em" }}>{actionData.action}</p>
+        <p style={{ fontSize: isMobile ? 19 : 17, fontWeight: 700, color: "var(--bm-text)", lineHeight: 1.45, marginBottom: 10, letterSpacing: "-0.01em" }}>{actionData.action}</p>
+        <p style={{ fontSize: 12, color: "var(--bm-text3)", marginBottom: 18, lineHeight: 1.5 }}>
+          Copy the message below → pick a channel → send it before you do anything else today.
+        </p>
 
         {/* Why */}
         <div style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: 12, padding: isMobile ? "16px" : "14px 16px", marginBottom: 18 }}>
@@ -278,7 +294,9 @@ function TodayContent() {
         {/* Message template */}
         <div style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: 12, padding: isMobile ? "16px" : "14px 16px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-            <span style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Message Template</span>
+            <span style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-accent)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+              📋 Your outreach script — copy & send this
+            </span>
             <button onClick={handleCopy}
               style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 7, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", fontSize: 11, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}>
               {copied ? <><Check size={11} color="var(--bm-accent)" /> Copied</> : <><Copy size={11} /> Copy</>}
@@ -286,12 +304,16 @@ function TodayContent() {
           </div>
           <p style={{ fontSize: isMobile ? 14 : 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.6, fontStyle: "italic" }}>&ldquo;{actionData.message}&rdquo;</p>
         </div>
+        </div>
       </motion.div>
 
       {/* Destinations */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}
         style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 18, padding: isMobile ? "18px" : "20px 24px", marginBottom: 14 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 14 }}>Where to send this</div>
+        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 4 }}>Where to send this</div>
+        <p style={{ fontSize: 11, color: "var(--bm-text3)", marginBottom: 14, lineHeight: 1.5 }}>
+          Pick one. Send to at least 3 people. Done counts as done even if they don't reply.
+        </p>
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(4, 1fr)", gap: 9 }}>
           {destinations.map(d => (
             <a key={d.label} href={d.url} target="_blank" rel="noopener noreferrer"

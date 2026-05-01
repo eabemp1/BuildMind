@@ -27,9 +27,22 @@ const TESTIMONIALS = [
   { text: "The weekly report alone is worth it — it's like a board meeting with myself.", name: "Daniel O.", role: "Fintech founder" },
 ];
 
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 767px)");
+    const update = () => setIsMobile(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+  return isMobile;
+}
+
 export default function UpgradePage() {
   const router = useRouter();
   const { plan } = usePlan();
+  const isMobile = useIsMobile();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -94,33 +107,33 @@ export default function UpgradePage() {
         <div style={{ position: "absolute", bottom: "20%", right: "15%", width: 350, height: 350, background: "radial-gradient(circle, var(--bm-accent-dim) 0%, transparent 70%)", filter: "blur(80px)" }} />
       </div>
 
-      <div style={{ maxWidth: 860, margin: "0 auto", padding: "60px 24px 80px", position: "relative" }}>
+      <div style={{ maxWidth: 860, margin: "0 auto", padding: isMobile ? "34px 16px 56px" : "60px 24px 80px", position: "relative" }}>
 
         {/* Header */}
-        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} style={{ textAlign: "center", marginBottom: 56 }}>
+        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} style={{ textAlign: "center", marginBottom: isMobile ? 34 : 56 }}>
           <div style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 10, color: "var(--bm-accent)", textTransform: "uppercase", letterSpacing: "0.14em", fontWeight: 700, marginBottom: 20, padding: "4px 14px", borderRadius: 20, background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)" }}>
             <Zap size={10} /> Upgrade to Builder
           </div>
-          <h1 style={{ fontSize: 44, fontWeight: 900, color: "var(--bm-text)", letterSpacing: "-0.04em", lineHeight: 1.1, margin: "0 0 16px" }}>
+          <h1 style={{ fontSize: isMobile ? 34 : 44, fontWeight: 900, color: "var(--bm-text)", letterSpacing: "-0.04em", lineHeight: 1.1, margin: "0 0 16px" }}>
             Stop limiting yourself
           </h1>
-          <p style={{ fontSize: 16, color: "var(--bm-text3)", maxWidth: 420, margin: "0 auto", lineHeight: 1.6 }}>
+          <p style={{ fontSize: isMobile ? 14 : 16, color: "var(--bm-text3)", maxWidth: 420, margin: "0 auto", lineHeight: 1.6 }}>
             Get unlimited AI coaching, full stress-test analysis, and every tool a serious founder needs.
           </p>
         </motion.div>
 
         {/* Pricing card + feature list */}
-        <div style={{ display: "grid", gridTemplateColumns: "1.1fr 1fr", gap: 16, marginBottom: 40, maxWidth: 760, marginLeft: "auto", marginRight: "auto" }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.1fr 1fr", gap: 16, marginBottom: 40, maxWidth: 760, marginLeft: "auto", marginRight: "auto" }}>
 
           {/* CTA card */}
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}
-            style={{ background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)", borderRadius: 22, padding: "32px 28px", position: "relative", overflow: "hidden" }}>
+            style={{ background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)", borderRadius: 22, padding: isMobile ? "24px 18px" : "32px 28px", position: "relative", overflow: "hidden" }}>
             <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: "var(--grad-primary)", borderRadius: "22px 22px 0 0" }} />
 
             <div style={{ marginBottom: 24 }}>
               <div style={{ fontSize: 10, color: "var(--bm-accent)", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 700, marginBottom: 12 }}>Builder Plan</div>
               <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 6 }}>
-                <span style={{ fontSize: 48, fontWeight: 900, color: "var(--bm-text)", letterSpacing: "-0.04em", lineHeight: 1 }}>{PLAN_PRICE_LABEL.builder}</span>
+                <span style={{ fontSize: isMobile ? 40 : 48, fontWeight: 900, color: "var(--bm-text)", letterSpacing: "-0.04em", lineHeight: 1 }}>{PLAN_PRICE_LABEL.builder}</span>
               </div>
               <div style={{ fontSize: 12, color: "var(--bm-text3)" }}>Cancel anytime. No contracts.</div>
             </div>
@@ -146,7 +159,7 @@ export default function UpgradePage() {
 
           {/* Feature comparison */}
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}
-            style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 22, padding: "28px 24px" }}>
+            style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 22, padding: isMobile ? "22px 18px" : "28px 24px" }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: "var(--bm-text2)", marginBottom: 18 }}>What you get</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
               {FEATURES.map((f, i) => (
@@ -168,7 +181,7 @@ export default function UpgradePage() {
 
         {/* Testimonials */}
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18 }}
-          style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, maxWidth: 760, margin: "0 auto" }}>
+          style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3,1fr)", gap: 12, maxWidth: 760, margin: "0 auto" }}>
           {TESTIMONIALS.map((t) => (
             <div key={t.name} style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: "20px" }}>
               <div style={{ display: "flex", gap: 2, marginBottom: 12 }}>

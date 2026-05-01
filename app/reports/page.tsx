@@ -89,6 +89,7 @@ export default function ReportsPage() {
   const isMobile = useIsMobile();
   const { plan } = usePlan();
   const queryClient = useQueryClient();
+  const reportRef = useRef<HTMLDivElement>(null);
   const { data: summaries = [], isLoading } = useProjectSummariesQuery();
   const { data: metrics, isLoading: metricsLoading } = useWeeklyReportMetricsQuery();
   const project = summaries[0] ?? null;
@@ -120,9 +121,13 @@ export default function ReportsPage() {
 
   if (isLoading || metricsLoading) return <BuildMindLoader />;
 
+  function handleExportPdf() {
+    window.print();
+  }
+
   return (
     <PaywallGate feature="weeklyReport">
-      <div style={{ maxWidth: 980, margin: "0 auto", padding: isMobile ? "4px 0 24px" : "28px 24px" }}>
+      <div ref={reportRef} style={{ maxWidth: 980, margin: "0 auto", padding: isMobile ? "4px 0 24px" : "28px 24px" }}>
 
         {/* Header */}
         <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: isMobile ? 20 : 24 }}>
@@ -137,6 +142,7 @@ export default function ReportsPage() {
               </p>
             </div>
             <button
+              onClick={handleExportPdf}
               style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 7, padding: "11px 16px", borderRadius: 10, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text2)", fontSize: 12, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s", width: isMobile ? "100%" : "auto" }}
               onMouseEnter={e => { e.currentTarget.style.background = "var(--bm-bg3)"; }}
               onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
