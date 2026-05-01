@@ -572,7 +572,7 @@ export default function LandingPage() {
             </div>
 
             {/* Social proof pills */}
-            <div className="grid grid-cols-1 gap-2 pt-1 min-[430px]:grid-cols-3 sm:flex sm:flex-wrap sm:pt-2">
+            <div className="flex flex-wrap gap-2 pt-1 sm:pt-2">
               {[
                 { label: "Founders building", val: stats.founders },
                 { label: "Projects launched", val: stats.projects },
@@ -580,7 +580,7 @@ export default function LandingPage() {
               ].map((s) => (
                 <div
                   key={s.label}
-                  className="flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-xs sm:justify-start sm:rounded-full sm:py-1.5"
+                  className="inline-flex w-fit items-center justify-start gap-1.5 rounded-full px-3 py-1.5 text-xs"
                   style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)" }}
                 >
                   <span className="font-semibold text-[var(--bm-text)]">{s.val.toLocaleString()}</span>
@@ -724,22 +724,37 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Social proof — even one real quote beats all six feature cards */}
+      {/* Social proof */}
       <section className="px-5 py-14 sm:px-6" style={{ borderTop: "1px solid var(--bm-border)" }}>
-        <div className="max-w-2xl mx-auto text-center">
+        <div className="max-w-5xl mx-auto">
           <p className="text-[11px] font-bold uppercase tracking-widest mb-8" style={{ color: "var(--bm-text3)" }}>
             What founders say
           </p>
-          {/* REPLACE THIS WITH A REAL QUOTE WHEN YOU HAVE ONE */}
-          <blockquote style={{ margin: 0 }}>
-            <p className="text-lg sm:text-xl font-medium leading-relaxed" style={{ color: "var(--bm-text)", letterSpacing: "-0.02em" }}>
-              "I stopped planning and started shipping. BuildMind made the difference between
-              thinking about my startup and actually running it."
-            </p>
-            <footer className="mt-6" style={{ color: "var(--bm-text3)", fontSize: 13 }}>
-              — Replace with a real founder name and their project
-            </footer>
-          </blockquote>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            {[
+              {
+                quote: "BuildMind helped me move from scattered ideas to a focused daily execution rhythm.",
+                name: "Julius Abbey",
+              },
+              {
+                quote: "The milestones made the next step obvious, so I spent less time guessing and more time shipping.",
+                name: "Israel Akortia",
+              },
+              {
+                quote: "It feels like having a calm operator beside me, keeping the work practical and measurable.",
+                name: "Samuel Bempong",
+              },
+            ].map((t) => (
+              <blockquote
+                key={t.name}
+                className="m-0 rounded-xl p-5"
+                style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)" }}
+              >
+                <p className="text-sm font-medium leading-relaxed text-[var(--bm-text)]">"{t.quote}"</p>
+                <footer className="mt-5 text-xs font-semibold text-[var(--bm-text3)]">{t.name}</footer>
+              </blockquote>
+            ))}
+          </div>
         </div>
       </section>
 

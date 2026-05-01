@@ -340,14 +340,16 @@ export function SidebarContent({
         setReflectPending(localStorage.getItem("bm_reflect_pending") === "true");
         setUnseenBadges(getUnseenCount());
         const stats = JSON.parse(localStorage.getItem("bm_achievement_stats") ?? "{}");
-        setStreakDays(stats.streakDays ?? 0);
+        setStreakDays(stats.streak ?? stats.streakDays ?? Number(localStorage.getItem("bm_streak") ?? "0"));
       } catch {}
     };
     checkPending();
     window.addEventListener("storage", checkPending);
+    window.addEventListener("bm_streak_updated", checkPending);
     const interval = setInterval(checkPending, 8000);
     return () => {
       window.removeEventListener("storage", checkPending);
+      window.removeEventListener("bm_streak_updated", checkPending);
       clearInterval(interval);
     };
   }, []);

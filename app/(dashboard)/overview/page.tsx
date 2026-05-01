@@ -219,7 +219,11 @@ export default function OverviewPage() {
     const refresh = () => setLocalStreak(Number(localStorage.getItem("bm_streak") ?? "0"));
     refresh();
     window.addEventListener("storage", refresh);
-    return () => window.removeEventListener("storage", refresh);
+    window.addEventListener("bm_streak_updated", refresh);
+    return () => {
+      window.removeEventListener("storage", refresh);
+      window.removeEventListener("bm_streak_updated", refresh);
+    };
   }, []);
 
   useEffect(() => {

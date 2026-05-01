@@ -260,6 +260,8 @@ export default function ProjectsPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
   const limits = getLimits(plan);
+  const hasUnlimitedProjects = limits.maxProjects === -1 || limits.maxProjects === Infinity;
+  const canCreateProject = hasUnlimitedProjects || summaries.length < limits.maxProjects;
 
   useEffect(() => {
     const id = getActiveProjectId();
@@ -267,7 +269,7 @@ export default function ProjectsPage() {
   }, []);
 
   async function handleCreate(data: { title: string; problem: string; stage: StartupStage }) {
-    if (summaries.length >= limits.maxProjects) {
+    if (!canCreateProject) {
       showLimitModal("projects");
       return;
     }
@@ -321,7 +323,7 @@ export default function ProjectsPage() {
               color: "var(--bm-text3)",
             }}
           >
-            {summaries.length}/{limits.maxProjects === Infinity ? "∞" : limits.maxProjects} projects
+            {summaries.length}/{hasUnlimitedProjects ? "∞" : limits.maxProjects} projects
           </div>
           <Button onClick={() => setShowCreate(true)}>
             <Plus size={14} />
@@ -489,7 +491,7 @@ export default function ProjectsPage() {
           })}
 
           {/* Add more nudge */}
-          {summaries.length < (limits.maxProjects === Infinity ? 999 : limits.maxProjects) && (
+          {canCreateProject && (
             <motion.button
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}

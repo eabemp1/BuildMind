@@ -7,6 +7,8 @@
  */
 export {
   recordTaskCompletion,
+  incrementDailyStreak,
+  getStoredStreak,
   recordAIMessage as recordAIUse,
   getTasksDone,
   checkUpgradeTrigger,

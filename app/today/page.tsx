@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import { useProjectSummariesQuery, useDashboardOverviewQuery } from "@/lib/queries";
 import { computeStartupScore } from "@/lib/buildmind";
-import { recordTaskCompletion } from "@/lib/plan";
+import { getStoredStreak, incrementDailyStreak, recordTaskCompletion } from "@/lib/plan";
 import { updateAchievementStats, checkAndUnlockAchievements, getAchievementStats } from "@/lib/achievements";
 import { notifyReflectPending, notifyStreakMilestone } from "@/lib/notifications";
 import { trackFunnelStep } from "@/lib/onboarding-analytics";
@@ -22,33 +22,6 @@ type ActionData = {
   destKey?: string;
   isAI: boolean;
 };
-
-// ── Streak helpers ────────────────────────────────────────────────────────────
-// bm_streak was only ever READ, never written. Fixed here.
-const STREAK_KEY = "bm_streak";
-const LAST_CHECKIN_KEY = "bm_last_checkin_date";
-
-function todayDateStr(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-}
-
-function incrementStreak(): number {
-  if (typeof window === "undefined") return 0;
-  const today = todayDateStr();
-  const lastCheckin = localStorage.getItem(LAST_CHECKIN_KEY) ?? "";
-  const current = Number(localStorage.getItem(STREAK_KEY) ?? "0");
-  // If already checked in today, don't double-count
-  if (lastCheckin === today) return current;
-  // If last checkin was yesterday, continue streak; otherwise reset to 1
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth()+1).padStart(2,"0")}-${String(yesterday.getDate()).padStart(2,"0")}`;
-  const newStreak = lastCheckin === yesterdayStr ? current + 1 : 1;
-  localStorage.setItem(STREAK_KEY, String(newStreak));
-  localStorage.setItem(LAST_CHECKIN_KEY, today);
-  return newStreak;
-}
 
 // ── Fallback actions (used when API is unavailable) ───────────────────────────
 const DESTINATIONS: Record<string, { icon: string; label: string; url?: string }[]> = {
@@ -135,7 +108,7 @@ function TodayContent() {
   const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
-    try { setStreak(Number(localStorage.getItem(STREAK_KEY) ?? "0")); } catch {}
+    try { setStreak(getStoredStreak()); } catch {}
     const supabase = createClient();
     supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
   }, []);
@@ -180,10 +153,13 @@ function TodayContent() {
     try {
       recordTaskCompletion();
       const stats = getAchievementStats();
-      updateAchievementStats({ ...stats, tasksDone: (stats.tasksDone ?? 0) + 1 });
+      const newStreak = outcome === "completed" ? incrementDailyStreak() : streak;
+      updateAchievementStats({
+        ...stats,
+        tasksDone: (stats.tasksDone ?? 0) + 1,
+        streak: Math.max(stats.streak ?? 0, newStreak),
+      });
       checkAndUnlockAchievements();
-      // FIX: actually increment and persist the streak (was only ever read before)
-      const newStreak = outcome === "completed" ? incrementStreak() : streak;
       setStreak(newStreak);
       if (outcome === "completed") notifyStreakMilestone(newStreak);
       notifyReflectPending();

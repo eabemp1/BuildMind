@@ -107,7 +107,7 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     actionsPerWeek: -1,
     aiMessagesPerDay: -1,
     historyDays: -1,
-    maxProjects: 3,
+    maxProjects: -1,
 
     reflexionStrike: true,
     morningBriefingDaysPerWeek: 7,
@@ -282,6 +282,38 @@ function dayKey(): string {
 }
 function dayKeyFromDate(d: Date): string {
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+// ── Daily streak tracking ────────────────────────────────────────────────────
+
+const STREAK_KEY = "bm_streak";
+const LAST_CHECKIN_KEY = "bm_last_checkin_date";
+
+function streakDayKey(d = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+export function getStoredStreak(): number {
+  if (typeof window === "undefined") return 0;
+  return Number(localStorage.getItem(STREAK_KEY) ?? "0");
+}
+
+export function incrementDailyStreak(): number {
+  if (typeof window === "undefined") return 0;
+  const today = streakDayKey();
+  const lastCheckin = localStorage.getItem(LAST_CHECKIN_KEY) ?? "";
+  const current = getStoredStreak();
+
+  if (lastCheckin === today) return current;
+
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const next = lastCheckin === streakDayKey(yesterday) ? current + 1 : 1;
+
+  localStorage.setItem(STREAK_KEY, String(next));
+  localStorage.setItem(LAST_CHECKIN_KEY, today);
+  window.dispatchEvent(new CustomEvent("bm_streak_updated", { detail: { streak: next } }));
+  return next;
 }
 
 // ── Upgrade trigger ───────────────────────────────────────────────────────────

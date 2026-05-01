@@ -10,7 +10,7 @@ import {
 import { useDeleteProjectMutation, useProjectDetailQuery, useUpdateTaskMutation } from "@/lib/queries";
 import { setActiveProjectId } from "@/lib/api";
 import { createClient } from "@/lib/supabase/client";
-import { recordTaskCompletion, checkUpgradeTrigger, getTasksDone } from "@/lib/upgrade";
+import { recordTaskCompletion, incrementDailyStreak, checkUpgradeTrigger, getTasksDone } from "@/lib/upgrade";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queries";
 import BuildMindLoader from "@/components/BuildMindLoader";
@@ -342,7 +342,7 @@ export default function ProjectDetailPage() {
     updateMutation.mutate({ taskId: task.id, isCompleted: newCompleted, notes: task.notes ?? "" });
     if (newCompleted) {
       recordTaskCompletion();
-      const streak = Number(localStorage.getItem("bm_streak") ?? "1");
+      const streak = incrementDailyStreak();
       const { shouldUpgrade } = checkUpgradeTrigger(streak);
       if (shouldUpgrade) setShowUpgrade(true);
     }
