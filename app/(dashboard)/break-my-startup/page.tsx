@@ -33,6 +33,8 @@ interface BreakResult {
   risks: RiskItem[];
   survival_probability?: number;
   brutal_advice?: string;
+  gated?: boolean;
+  score_note?: string;
 }
 
 type BreakApiData = {
@@ -43,6 +45,8 @@ type BreakApiData = {
   survival_probability?: number;
   competitor_summary?: string;
   differentiation_plan?: string[];
+  gated?: boolean;
+  reasoning?: string[];
 };
 
 const FOCUS_AREAS = [
@@ -183,6 +187,10 @@ export default function BreakMyStartupPage() {
       risks,
       survival_probability: probability,
       brutal_advice: data.brutal_advice,
+      gated: data.gated,
+      score_note: data.gated
+        ? "Free preview score: estimated from your written idea only."
+        : data.reasoning?.find((item) => item.toLowerCase().includes("signal score")) ?? "Calculated from execution data, validation signals, stage, and competitor context.",
     };
   }
 
@@ -209,6 +217,12 @@ export default function BreakMyStartupPage() {
       const { data: authData } = await supabase.auth.getUser();
       if (!authData.user) throw new Error("Not authenticated");
 
+      const freePreviewKey = `bm_break_preview_used_${authData.user.id}`;
+      if (plan === "free" && localStorage.getItem(freePreviewKey)) {
+        showLimitModal("break_startup");
+        return;
+      }
+
       const res = await fetch("/api/ai/break-my-startup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -223,7 +237,9 @@ export default function BreakMyStartupPage() {
       const payload = await res.json().catch(() => ({}));
       if (!res.ok || !payload?.success) throw new Error(payload?.error ?? "Request failed");
 
-      setResult(mapApiResult(payload.data ?? {}));
+      const mappedResult = mapApiResult(payload.data ?? {});
+      setResult(mappedResult);
+      if (plan === "free") localStorage.setItem(freePreviewKey, "1");
 
       // Track achievement
       try {
@@ -461,6 +477,19 @@ export default function BreakMyStartupPage() {
                 </div>
                 {result.summary && (
                   <p className="text-sm text-[var(--bm-text2)] leading-relaxed">{result.summary}</p>
+                )}
+                {result.score_note && (
+                  <p className="text-xs text-[var(--bm-text3)] leading-relaxed">{result.score_note}</p>
+                )}
+                {result.gated && (
+                  <button
+                    type="button"
+                    onClick={() => showLimitModal("break_startup")}
+                    className="self-start rounded-lg px-3 py-2 text-xs font-semibold"
+                    style={{ background: "var(--bm-accent)", color: "var(--bm-text-inv)", border: "none", cursor: "pointer" }}
+                  >
+                    Unlock full analysis
+                  </button>
                 )}
               </div>
             </Card>

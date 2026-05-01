@@ -321,3 +321,60 @@ input::placeholder, textarea::placeholder { color: var(--bm-text4); }
 @keyframes shimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
 .shimmer { background:linear-gradient(90deg,var(--bm-bg3,#1C1C1F) 25%,var(--bm-bg4,#232327) 50%,var(--bm-bg3,#1C1C1F) 75%); background-size:200% 100%; animation:shimmer 1.6s infinite; }
 select option { background:var(--bm-bg2,#161618); color:var(--bm-text,#ECECEC); }
+
+@media print {
+  @page {
+    margin: 14mm;
+    size: auto;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+    color: #111 !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  aside,
+  header,
+  nav,
+  .bm-print-hidden {
+    display: none !important;
+  }
+
+  main,
+  main > div,
+  body > div,
+  body > div > div {
+    background: #fff !important;
+    color: #111 !important;
+    height: auto !important;
+    max-width: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+
+  .bm-report-print {
+    width: 100% !important;
+    max-width: 980px !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+  }
+
+  .bm-report-print,
+  .bm-report-print * {
+    box-shadow: none !important;
+    text-shadow: none !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .bm-report-print button {
+    display: none !important;
+  }
+
+  .bm-report-print [style*="grid-template-columns"] {
+    break-inside: avoid;
+  }
+}

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { enforceAndTrackAIUsage, groqJSON, hasAdminEnv } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getRouteUser } from "@/app/api/ai/_planCheck";
 
 async function scrapeCompetitors(query: string): Promise<{ title: string; url: string; snippet: string }[]> {
   try {
@@ -76,6 +77,25 @@ function signalScore(
   return Math.min(97, Math.max(3, Math.round(raw + bonus)));
 }
 
+function previewSignalScore(idea: string, focusAreas: string[], stage = "Idea"): number {
+  const words = idea.split(/\s+/).filter(Boolean).length;
+  const hasUser = /\b(for|helps|founders|teams|students|businesses|users|customers|creators|developers)\b/i.test(idea);
+  const hasProblem = /\b(problem|struggle|pain|waste|slow|expensive|hard|difficult|manual|risk)\b/i.test(idea);
+  const hasBusiness = /\b(pay|paid|revenue|subscription|pricing|sell|customer|market)\b/i.test(idea);
+  const stageBonus: Record<string, number> = { Idea: 0, Validation: 5, MVP: 9, Launch: 13, Growth: 16, Revenue: 20 };
+
+  const raw =
+    18 +
+    Math.min(18, words * 0.45) +
+    (hasUser ? 12 : 0) +
+    (hasProblem ? 12 : 0) +
+    (hasBusiness ? 10 : 0) +
+    Math.min(8, focusAreas.length * 2) +
+    (stageBonus[stage] ?? 0);
+
+  return Math.min(82, Math.max(12, Math.round(raw)));
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
@@ -85,6 +105,37 @@ export async function POST(request: Request) {
     const focusAreas = Array.isArray(body?.focusAreas) ? body.focusAreas.map(String).filter(Boolean) : [];
     if (!userId) return NextResponse.json({ success: false, error: "userId is required" }, { status: 400 });
     if (!projectId && !idea) return NextResponse.json({ success: false, error: "projectId or idea is required" }, { status: 400 });
+
+    const routeUser = await getRouteUser();
+    if (!routeUser || routeUser.userId !== userId) {
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    }
+
+    if (routeUser.plan !== "builder") {
+      const previewScore = previewSignalScore(idea, focusAreas, String(body?.stage ?? "Idea"));
+      return NextResponse.json({
+        success: true,
+        data: {
+          gated: true,
+          reasoning: [
+            "Free preview uses only your written idea, not full project history",
+            "Builder unlocks competitor scan, project execution data, and full risk breakdown",
+            `Preview signal score ${previewScore}`,
+          ],
+          verdict: "Preview only: this idea has enough signal to inspect, but the full stress test is Builder-only.",
+          kill_reasons: [
+            "The preview cannot verify demand, execution history, or competitive pressure without Builder analysis.",
+          ],
+          survive_reasons: [
+            previewScore >= 50 ? "Your description includes some useful market signal." : "You are stress-testing before overbuilding, which is already a good sign.",
+          ],
+          brutal_advice: "Upgrade to Builder to run the full adversarial analysis with competitor scan and project data.",
+          survival_probability: previewScore,
+          competitor_summary: "Locked in preview. Builder runs the live competitor scan.",
+          differentiation_plan: ["Locked in preview. Builder unlocks the differentiation plan."],
+        },
+      });
+    }
 
     await enforceAndTrackAIUsage(userId);
 

@@ -1,12 +1,20 @@
 {
   "crons": [
     {
+      "path": "/api/morning-briefing",
+      "schedule": "0 5 * * *"
+    },
+    {
       "path": "/api/push/send-daily",
       "schedule": "0 6 * * *"
     },
     {
       "path": "/api/ai/weekly-report",
       "schedule": "0 7 * * 5"
+    },
+    {
+      "path": "/api/cron/evening-check",
+      "schedule": "0 18 * * *"
     }
   ]
 }

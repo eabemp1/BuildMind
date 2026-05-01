@@ -17,6 +17,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { generateMorningBriefing } from "@/lib/reflexion";
 import { planFromUserMetadata } from "@/lib/plan";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 /** Mon=1, Wed=3, Fri=5 — free tier briefing days */
 const FREE_BRIEFING_DAYS = new Set([1, 3, 5]);
 
@@ -26,7 +29,22 @@ function isBriefingDayForPlan(plan: string): boolean {
   return FREE_BRIEFING_DAYS.has(dow);
 }
 
-export async function GET() {
+function isCronRequest(req: Request): boolean {
+  const authorization = req.headers.get("authorization");
+  const bearer = authorization?.match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
+  const secret = req.headers.get("x-cron-secret") ?? bearer;
+  return Boolean(process.env.CRON_SECRET && secret === process.env.CRON_SECRET);
+}
+
+export async function GET(req: Request) {
+  if (isCronRequest(req)) {
+    return NextResponse.json({
+      ok: true,
+      cron: true,
+      message: "Morning briefing cron is reachable. Supabase scheduled-jobs performs batch generation.",
+    });
+  }
+
   const supabase = await createClient();
   const { data: { user }, error } = await supabase.auth.getUser();
   if (error || !user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });

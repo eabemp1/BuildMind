@@ -127,7 +127,7 @@ export default function ReportsPage() {
 
   return (
     <PaywallGate feature="weeklyReport">
-      <div ref={reportRef} style={{ maxWidth: 980, margin: "0 auto", padding: isMobile ? "4px 0 24px" : "28px 24px" }}>
+      <div ref={reportRef} className="bm-report-print" style={{ maxWidth: 980, margin: "0 auto", padding: isMobile ? "4px 0 24px" : "28px 24px" }}>
 
         {/* Header */}
         <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: isMobile ? 20 : 24 }}>

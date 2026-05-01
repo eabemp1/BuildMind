@@ -23,6 +23,15 @@ function checkRateLimit(ip: string): boolean {
   return true;
 }
 
+function previewSignalScore(idea: string, users: string, problem: string): number {
+  const words = idea.split(/\s+/).filter(Boolean).length;
+  const hasUser = Boolean(users) || /\b(for|helps|founders|teams|students|businesses|users|customers|creators|developers)\b/i.test(idea);
+  const hasProblem = Boolean(problem) || /\b(problem|struggle|pain|waste|slow|expensive|hard|difficult|manual|risk)\b/i.test(idea);
+  const hasBusiness = /\b(pay|paid|revenue|subscription|pricing|sell|customer|market)\b/i.test(idea);
+  const raw = 16 + Math.min(20, words * 0.5) + (hasUser ? 14 : 0) + (hasProblem ? 14 : 0) + (hasBusiness ? 10 : 0);
+  return Math.min(82, Math.max(12, Math.round(raw)));
+}
+
 async function scrapeCompetitors(query: string): Promise<string> {
   try {
     const encoded = encodeURIComponent(query);
@@ -83,6 +92,7 @@ ${competitors ? `Similar products found online: ${competitors}` : "No similar pr
 
 Analyze this startup idea ruthlessly. Be specific to what was described, not generic.`;
 
+    const fallbackScore = previewSignalScore(idea, users, problem);
     const defaultResult = {
       verdict: "This idea has potential but significant execution risks. The market may be crowded and differentiation is unclear.",
       kill_reasons: [
@@ -95,7 +105,7 @@ Analyze this startup idea ruthlessly. Be specific to what was described, not gen
         "Founder clearly cares about the space",
       ],
       brutal_advice: "Talk to 5 potential customers this week — not to pitch, but to ask if they currently pay for anything to solve this problem and what they hate about it.",
-      survival_probability: 35,
+      survival_probability: fallbackScore,
       differentiation_plan: [
         "Identify the #1 complaint users have with existing solutions and make that your core feature",
         "Price differently — not cheaper, but on a metric that aligns with customer value",

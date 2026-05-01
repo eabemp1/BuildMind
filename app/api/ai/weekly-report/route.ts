@@ -3,6 +3,9 @@ import { groqJSON, hasAdminEnv } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { checkPlanAccess } from "@/app/api/ai/_planCheck";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 type AIWeeklyReport = {
   summary: string;
   intention_vs_action: string;
@@ -13,6 +16,16 @@ type AIWeeklyReport = {
 };
 
 function clamp(n: number, min: number, max: number) { return Math.max(min, Math.min(max, n)); }
+
+function getCronSecret(request: Request): string | undefined {
+  const authorization = request.headers.get("authorization");
+  const bearer = authorization?.match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
+  return request.headers.get("x-cron-secret") ?? bearer;
+}
+
+function isCronRequest(request: Request): boolean {
+  return Boolean(process.env.CRON_SECRET && getCronSecret(request) === process.env.CRON_SECRET);
+}
 
 export async function POST(request: Request) {
 
@@ -153,4 +166,35 @@ Be specific. No generic startup advice. Reference what you actually see in the d
     const msg = error instanceof Error ? error.message : "Report failed";
     return NextResponse.json({ success: false, error: msg }, { status: 500 });
   }
+}
+
+export async function GET(request: Request) {
+  if (!isCronRequest(request) && process.env.NODE_ENV === "production") {
+    return NextResponse.json(
+      { success: false, error: "Unauthorized", hint: "Vercel Cron must send Authorization: Bearer <CRON_SECRET>." },
+      { status: 401 },
+    );
+  }
+
+  if (!hasAdminEnv()) {
+    return NextResponse.json(
+      { success: false, error: "Supabase admin env is missing." },
+      { status: 500 },
+    );
+  }
+
+  const supabase = createAdminClient();
+  const { data: builderUsers, error } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  if (error) {
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+
+  const builderCount = builderUsers.users.filter((user) => user.user_metadata?.plan === "builder").length;
+
+  return NextResponse.json({
+    success: true,
+    cron: true,
+    message: "Weekly report cron is reachable. Reports are generated on-demand for Builder users from /reports.",
+    builderUsers: builderCount,
+  });
 }
