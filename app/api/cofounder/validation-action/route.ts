@@ -32,16 +32,15 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json().catch(() => ({}));
-    const userId = String(body?.userId ?? "").trim();
+    // Use the session-verified userId — do NOT trust body.userId.
+    const userId = planCheck.userId;
     const ideaTitle = String(body?.ideaTitle ?? "").trim();
     const ideaDescription = String(body?.ideaDescription ?? "").trim();
     const targetUser = String(body?.targetUser ?? "").trim();
     const problemStatement = String(body?.problemStatement ?? "").trim();
     const stage = String(body?.stage ?? "idea").trim();
 
-    if (!userId) return NextResponse.json({ error: "userId required" }, { status: 400 });
-
-    await enforceAndTrackAIUsage(userId);
+    if (!ideaTitle && !ideaDescription) return NextResponse.json({ error: "ideaTitle or ideaDescription required" }, { status: 400 });
 
     const systemPrompt = `You are BuildMind's Validation Receipt engine. A founder needs outreach templates to collect real human validation before building.
 

@@ -52,7 +52,7 @@ export const metadata: Metadata = {
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",
-    apple: "/favicon.svg",
+    apple: "/logo/apple-touch-icon.png",
   },
   manifest: "/manifest.json",
   appleWebApp: {
@@ -219,7 +219,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* Icons */}
         <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=3" />
         <link rel="shortcut icon" href="/favicon.svg?v=3" />
-        <link rel="apple-touch-icon" href="/favicon.svg?v=3" />
+        <link rel="apple-touch-icon" href="/logo/apple-touch-icon.png" />
         {/* Theme */}
         <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f2f3f9" />
         <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0C0D0F" />

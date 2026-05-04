@@ -12,6 +12,8 @@
  * Stored in localStorage. Supabase persistence is additive (doesn't break local).
  */
 
+import { getStoredStreak } from "@/lib/plan";
+
 export type NotifType =
   | "streak_broken"
   | "streak_milestone"
@@ -246,8 +248,9 @@ export function runNotificationChecks(): void {
   // Weekly report on Fridays
   notifyWeeklyReportReady();
 
-  // Streak checks
-  const streak = Number(localStorage.getItem("bm_streak") ?? "0");
+  // Streak checks — use getStoredStreak() which is kept in sync with the server
+  // via syncStreakFromServer() on mount, rather than reading bm_streak directly
+  const streak = getStoredStreak();
   const lastDone = localStorage.getItem("bm_today_done_date");
   if (lastDone) {
     const daysSince = Math.floor((Date.now() - new Date(lastDone).getTime()) / 86400000);

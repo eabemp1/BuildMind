@@ -12,12 +12,12 @@ export async function POST(req: Request) {
   const { data: { user }, error } = await supabase.auth.getUser();
   if (error || !user) return NextResponse.json({ ok: false }, { status: 401 });
 
-  const { reason = "not specified" } = await req.json().catch(() => ({}));
+  const { reason = "not specified", taskText = "" } = await req.json().catch(() => ({}));
   const admin = createAdminClient();
 
   const { data: ctx } = await admin
     .from("founder_context")
-    .select("momentum_score, tasks_overridden_this_week, override_reasons")
+    .select("momentum_score, tasks_overridden_this_week, override_reasons, current_stage")
     .eq("user_id", user.id)
     .single();
 
@@ -31,7 +31,21 @@ export async function POST(req: Request) {
     momentum_score: newMomentum,
     tasks_overridden_this_week: newOverrides,
     override_reasons: reasons,
+    // Reset consecutive streak — override breaks the chain
+    consecutive_tasks_completed: 0,
   }, { onConflict: "user_id" });
+
+  // Write to task_overrides table so pattern extractor can read it
+  try {
+    await admin.from("task_overrides").insert({
+      user_id: user.id,
+      reason,
+      task_text: taskText || null,
+      stage: ctx?.current_stage ?? null,
+    });
+  } catch {
+    // Non-blocking — table may not exist yet
+  }
 
   return NextResponse.json({ ok: true, momentum: newMomentum });
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createUserNotification, enforceAndTrackAIUsage, groqJSON } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getRouteUser } from "@/app/api/ai/_planCheck";
 
 const FALLBACK_ROADMAP = [
   { milestone: "Idea", tasks: ["Define core value proposition in one sentence", "Draft one-line pitch", "Identify 3 competitor alternatives and what they miss"] },
@@ -110,16 +111,22 @@ async function insertTasks(
 
 export async function POST(request: Request) {
   try {
+    // Authenticate first — userId from the session is authoritative.
+    // Accepting userId from the body was a security hole: an unauthenticated
+    // caller could drain any user's AI quota by supplying their UUID.
+    const routeUser = await getRouteUser();
+    if (!routeUser) {
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    }
+    const userId = routeUser.userId;
+
     const body = await request.json().catch(() => ({}));
-    const userId = String(body?.userId ?? "").trim();
     const projectId = String(body?.projectId ?? "").trim();
     const projectName = String(body?.title ?? body?.project_name ?? "Startup Project");
     const idea = String(body?.idea ?? body?.idea_description ?? "");
     const targetUsers = String(body?.targetUsers ?? body?.target_users ?? "");
     const problem = String(body?.problem ?? "");
     const initialStage = normalizeStage(body?.startup_stage ?? body?.stage ?? "Idea");
-
-    if (!userId) return NextResponse.json({ success: false, error: "userId is required" }, { status: 400 });
 
     await enforceAndTrackAIUsage(userId);
 

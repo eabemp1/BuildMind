@@ -6,14 +6,25 @@ import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import { useProjectSummariesQuery, useDashboardOverviewQuery } from "@/lib/queries";
 import { computeStartupScore } from "@/lib/buildmind";
-import { getStoredStreak, incrementDailyStreak, recordTaskCompletion } from "@/lib/plan";
+import { computeScoreDelta, applyScoreDelta, getXP } from "@/lib/scoring";
+import { getStoredStreak, recordTaskCompletion, syncStreakFromServer } from "@/lib/plan";
+import { syncUrgencyFromServer } from "@/lib/urgency";
 import { updateAchievementStats, checkAndUnlockAchievements, getAchievementStats } from "@/lib/achievements";
-import { notifyReflectPending, notifyStreakMilestone } from "@/lib/notifications";
+import { notifyReflectPending } from "@/lib/notifications";
 import { trackFunnelStep } from "@/lib/onboarding-analytics";
 import BuildMindLoader from "@/components/BuildMindLoader";
 import { Clock, CheckCircle2, Copy, Check, Flame, Brain, ArrowRight, Star, Sparkles } from "lucide-react";
 
 type Outcome = "completed" | "blocked" | "partial" | "learned";
+type ReflexionMeta = {
+  verdict: string;
+  criticPersona: string;
+  rationale: string;
+  loopRan: boolean;
+  passedCritic: boolean;
+  lastReflectionUsed: boolean;
+};
+
 type ActionData = {
   action: string;
   message: string;
@@ -21,6 +32,7 @@ type ActionData = {
   time: string;
   destKey?: string;
   isAI: boolean;
+  reflexion?: ReflexionMeta;
 };
 
 // ── Fallback actions (used when API is unavailable) ───────────────────────────
@@ -106,11 +118,25 @@ function TodayContent() {
   // AI-personalised action state
   const [aiAction, setAiAction] = useState<ActionData | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  // Editable draft for outreach actions
+  const [draftMessage, setDraftMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    try { setStreak(getStoredStreak()); } catch {}
+    // Sync streak from Supabase first (authoritative), fall back to localStorage
+    syncStreakFromServer().then(s => setStreak(s)).catch(() => {
+      try { setStreak(getStoredStreak()); } catch {}
+    });
+    // Seed lastActive + streak into localStorage so urgency signals are correct
+    // on a fresh device or after a localStorage clear
+    syncUrgencyFromServer().catch(() => {});
     const supabase = createClient();
     supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
+
+    // If this user already checked in today, go straight to done screen
+    const today = new Date().toISOString().split("T")[0];
+    if (localStorage.getItem("bm_checkin_done_date") === today) {
+      setDone(true);
+    }
   }, []);
 
   // Fetch personalised action from AI once we have project data
@@ -119,6 +145,17 @@ function TodayContent() {
     if (!project) return;
     const projectId = project.id;
     if (!userId || !projectId) return;
+
+    // Return cached action if it was fetched today
+    const today = new Date().toISOString().split("T")[0];
+    try {
+      const cached = JSON.parse(localStorage.getItem("bm_today_action_cache") ?? "null");
+      if (cached?.date === today && cached?.data) {
+        setAiAction({ ...cached.data, isAI: true });
+        return;
+      }
+    } catch {}
+
     setActionLoading(true);
     fetch("/api/ai/today-action", {
       method: "POST",
@@ -128,7 +165,10 @@ function TodayContent() {
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(json => {
         if (json?.success && json?.data) {
-          setAiAction({ ...json.data, isAI: true });
+          const actionData = { ...json.data, isAI: true };
+          setAiAction(actionData);
+          // Cache with today's date so it survives page revisits
+          localStorage.setItem("bm_today_action_cache", JSON.stringify({ date: today, data: actionData }));
         }
       })
       .catch(() => { /* silently fall back to static */ })
@@ -136,15 +176,30 @@ function TodayContent() {
   }, [summaries, userId]);
 
   const project = summaries[0] ?? null;
-  const score = project ? computeStartupScore(project) : 0;
+  const score = project ? computeStartupScore({
+    ...project,
+    xp: getXP(),
+    streak,
+  }) : 0;
   const stageKey = project?.startup_stage?.toLowerCase() ?? "idea";
   // Use AI action if available, otherwise fall back to static
   const staticAction = STATIC_ACTIONS[stageKey] ?? STATIC_ACTIONS.idea;
   const actionData = aiAction ?? { ...staticAction, isAI: false };
   const destinations = DESTINATIONS[aiAction?.destKey ?? stageKey] ?? DESTINATIONS.idea;
 
+  // Detect whether this action involves sending a message/DM/outreach
+  const OUTREACH_KEYWORDS = ["dm", "message", "send", "email", "outreach", "call", "text", "reach out", "post", "tweet", "share"];
+  const isOutreachAction = OUTREACH_KEYWORDS.some(kw =>
+    actionData.action.toLowerCase().includes(kw) || actionData.message.toLowerCase().includes(kw)
+  );
+
+  // Sync draft when action changes (new day or new AI fetch)
+  useEffect(() => {
+    setDraftMessage(actionData.message);
+  }, [actionData.message]);
+
   function handleCopy() {
-    navigator.clipboard.writeText(actionData.message).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+    navigator.clipboard.writeText(draftMessage ?? actionData.message).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
   }
 
   async function handleCheckIn() {
@@ -153,17 +208,35 @@ function TodayContent() {
     try {
       recordTaskCompletion();
       const stats = getAchievementStats();
-      const newStreak = outcome === "completed" ? incrementDailyStreak() : streak;
       updateAchievementStats({
         ...stats,
-        tasksDone: (stats.tasksDone ?? 0) + 1,
-        streak: Math.max(stats.streak ?? 0, newStreak),
+        checkInsDone: (stats.checkInsDone ?? 0) + 1,
+        // streak is NOT incremented here — it increments only after reflection
       });
       checkAndUnlockAchievements();
-      setStreak(newStreak);
-      if (outcome === "completed") notifyStreakMilestone(newStreak);
       notifyReflectPending();
+
+      // Persist the action + outcome so reflect page can read it and so the
+      // today page knows not to re-render the form today.
+      const today = new Date().toISOString().split("T")[0];
       localStorage.setItem("bm_today_action", JSON.stringify({ action: actionData.action, outcome, note, confidence }));
+      localStorage.setItem("bm_checkin_done_date", today);
+
+      // Write XP delta back to Supabase execution_score
+      if (userId && project) {
+        try {
+          const delta = computeScoreDelta(outcome, confidence);
+          const currentScore = project.execution_score ?? score;
+          const newScore = applyScoreDelta(currentScore, delta);
+          const supabase = createClient();
+          await supabase
+            .from("projects")
+            .update({ execution_score: newScore })
+            .eq("id", project.id)
+            .eq("user_id", userId);
+        } catch { /* non-fatal — score update is best-effort */ }
+      }
+
       setDone(true);
     } finally { setSubmitting(false); }
   }
@@ -242,43 +315,178 @@ function TodayContent() {
             {project?.startup_stage ?? "Idea"} Stage
           </span>
           {actionData.isAI ? (
-            <span style={{ fontSize: 10, padding: "3px 10px", borderRadius: 20, background: "rgba(167,139,250,0.10)", color: "#a78bfa", border: "1px solid rgba(167,139,250,0.25)", fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
-              <Sparkles size={9} /> AI-personalised
-            </span>
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
+              {/* Agent pipeline badge */}
+              <span style={{
+                fontSize: 10, padding: "3px 10px", borderRadius: 20,
+                background: "rgba(167,139,250,0.10)", color: "#a78bfa",
+                border: "1px solid rgba(167,139,250,0.25)", fontWeight: 700,
+                display: "flex", alignItems: "center", gap: 4,
+              }}>
+                <Brain size={9} /> 3-agent loop
+              </span>
+              {/* Critic persona */}
+              {actionData.reflexion?.criticPersona && (
+                <span style={{
+                  fontSize: 10, padding: "3px 10px", borderRadius: 20,
+                  background: actionData.reflexion.passedCritic
+                    ? "rgba(74,184,176,0.08)" : "rgba(232,160,32,0.08)",
+                  color: actionData.reflexion.passedCritic
+                    ? "var(--bm-teal)" : "var(--bm-amber)",
+                  border: `1px solid ${actionData.reflexion.passedCritic
+                    ? "rgba(74,184,176,0.2)" : "rgba(232,160,32,0.2)"}`,
+                  fontWeight: 600,
+                  display: "flex", alignItems: "center", gap: 4,
+                }}>
+                  {actionData.reflexion.passedCritic ? "✓" : "↻"} {actionData.reflexion.criticPersona}
+                </span>
+              )}
+              {/* Last reflection used */}
+              {actionData.reflexion?.lastReflectionUsed && (
+                <span style={{
+                  fontSize: 10, padding: "3px 10px", borderRadius: 20,
+                  background: "rgba(139,92,246,0.08)", color: "var(--bm-purple)",
+                  border: "1px solid rgba(139,92,246,0.2)", fontWeight: 600,
+                }}>
+                  ↺ based on yesterday
+                </span>
+              )}
+            </div>
           ) : actionLoading ? (
-            <span style={{ fontSize: 10, color: "var(--bm-text3)", display: "flex", alignItems: "center", gap: 4 }}>
-              <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "var(--bm-accent)", opacity: 0.5, animation: "bm-pulse 1.2s ease-in-out infinite" }} /> Personalising…
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <span style={{ fontSize: 11, color: "var(--bm-text3)", display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "var(--bm-accent)", opacity: 0.6, animation: "bm-pulse 1.2s ease-in-out infinite" }} />
+                Agent A generating your task…
+              </span>
+              <span style={{ fontSize: 10, color: "var(--bm-text4)", paddingLeft: 14 }}>
+                Agent B will critique it. Agent C refines the final version.
+              </span>
+            </div>
+          ) : (
+            <span style={{ fontSize: 10, color: "var(--bm-text4)", fontStyle: "italic" }}>
+              Fallback task — personalisation unavailable
             </span>
-          ) : null}
+          )}
           <span style={{ fontSize: 11, color: "var(--bm-text3)", display: "flex", alignItems: "center", gap: 4, marginLeft: "auto" }}>
             <Clock size={11} /> {actionData.time}
           </span>
         </div>
-        <p style={{ fontSize: isMobile ? 19 : 17, fontWeight: 700, color: "var(--bm-text)", lineHeight: 1.45, marginBottom: 10, letterSpacing: "-0.01em" }}>{actionData.action}</p>
-        <p style={{ fontSize: 12, color: "var(--bm-text3)", marginBottom: 18, lineHeight: 1.5 }}>
-          Copy the message below → pick a channel → send it before you do anything else today.
-        </p>
-
-        {/* Why */}
-        <div style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: 12, padding: isMobile ? "16px" : "14px 16px", marginBottom: 18 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6, display: "flex", alignItems: "center", gap: 5 }}>
-            <Brain size={10} color="var(--bm-accent)" /> Why this matters
+        {/* ── Primary action — make it a command, not a suggestion ── */}
+        <div style={{
+          background: "var(--bm-accent-dim)",
+          border: "1px solid var(--bm-accent-bd)",
+          borderRadius: 12,
+          padding: isMobile ? "14px 16px" : "12px 16px",
+          marginBottom: 14,
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 10,
+        }}>
+          {/* Step number */}
+          <div style={{
+            width: 28, height: 28, borderRadius: "50%",
+            background: "var(--bm-accent)", color: "var(--bm-text-inv)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 13, fontWeight: 800, flexShrink: 0,
+          }}>1</div>
+          <div>
+            <p style={{ fontSize: isMobile ? 17 : 15, fontWeight: 700, color: "var(--bm-text)", lineHeight: 1.45, margin: "0 0 4px", letterSpacing: "-0.01em" }}>
+              {actionData.action}
+            </p>
+            <p style={{ fontSize: 12, color: "var(--bm-accent)", fontWeight: 600, margin: 0, lineHeight: 1.5 }}>
+              {isOutreachAction
+                ? "This is today's move. Do this before email, Slack, or building anything."
+                : "This is the one task that moves your startup forward today. Everything else waits."}
+            </p>
           </div>
-          <p style={{ fontSize: isMobile ? 14 : 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.6 }}>{actionData.why}</p>
         </div>
 
-        {/* Message template */}
+        {/* ── Script instruction strip ── */}
+        <div style={{
+          display: "flex", alignItems: "center", gap: 8, marginBottom: 10,
+          padding: "8px 12px", borderRadius: 9,
+          background: "var(--bm-bg3)", border: "1px solid var(--bm-border)",
+        }}>
+          <span style={{ fontSize: 15 }}>{isOutreachAction ? "✏️" : "📋"}</span>
+          <div>
+            <p style={{ fontSize: 12, fontWeight: 700, color: "var(--bm-text)", margin: "0 0 1px" }}>
+              {isOutreachAction ? "Step 2 — Edit the script below to fit your product" : "Step 2 — Copy the script below"}
+            </p>
+            <p style={{ fontSize: 11, color: "var(--bm-text3)", margin: 0 }}>
+              {isOutreachAction
+                ? "Replace [brackets]. Imperfect but sent beats perfect but unsent."
+                : "Paste into your chosen channel. Send to at least 3 people."}
+            </p>
+          </div>
+        </div>
+
+        {/* Why — now shows reflexion rationale when available */}
+        <div style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: 12, padding: isMobile ? "16px" : "14px 16px", marginBottom: 18 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6, display: "flex", alignItems: "center", gap: 5 }}>
+            <Brain size={10} color="var(--bm-accent)" /> Why this, why today
+          </div>
+          <p style={{ fontSize: isMobile ? 14 : 13, color: "var(--bm-text2)", margin: "0 0 10px", lineHeight: 1.6 }}>
+            {actionData.reflexion?.rationale ?? actionData.why}
+          </p>
+          {/* Agent chain disclosure — visible only when reflexion ran */}
+          {actionData.reflexion?.loopRan && (
+            <div style={{
+              borderTop: "1px solid var(--bm-border)",
+              paddingTop: 10, marginTop: 4,
+              display: "flex", flexDirection: "column", gap: 5,
+            }}>
+              <div style={{ fontSize: 10, color: "var(--bm-text4)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 2 }}>
+                How this was built
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {[
+                  { label: "A — Generator", desc: "Wrote the task from your founder data", color: "var(--bm-accent)" },
+                  { label: `B — ${actionData.reflexion.criticPersona}`, desc: actionData.reflexion.passedCritic ? "Approved ✓" : "Rejected → rebuilt", color: actionData.reflexion.passedCritic ? "var(--bm-teal)" : "var(--bm-amber)" },
+                  { label: "C — Refiner", desc: "Sharpened for your stage", color: "var(--bm-purple)" },
+                ].map(agent => (
+                  <div key={agent.label} style={{
+                    flex: "1 1 120px", padding: "8px 10px", borderRadius: 8,
+                    background: "var(--bm-bg2)", border: "1px solid var(--bm-border)",
+                    minWidth: 100,
+                  }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: agent.color, marginBottom: 2 }}>{agent.label}</div>
+                    <div style={{ fontSize: 10, color: "var(--bm-text4)", lineHeight: 1.4 }}>{agent.desc}</div>
+                  </div>
+                ))}
+              </div>
+              {actionData.reflexion.lastReflectionUsed && (
+                <div style={{ fontSize: 11, color: "var(--bm-text3)", marginTop: 4, display: "flex", alignItems: "center", gap: 5 }}>
+                  <span style={{ color: "var(--bm-purple)" }}>↺</span>
+                  Your yesterday's reflection was read by Agent A before writing this.
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Message template — editable for outreach actions, read-only otherwise */}
         <div style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: 12, padding: isMobile ? "16px" : "14px 16px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
             <span style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-accent)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-              📋 Your outreach script — copy & send this
+              {isOutreachAction ? "✏️ Your outreach draft — edit & copy" : "📋 Your outreach script — copy & send this"}
             </span>
             <button onClick={handleCopy}
               style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 7, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", fontSize: 11, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}>
               {copied ? <><Check size={11} color="var(--bm-accent)" /> Copied</> : <><Copy size={11} /> Copy</>}
             </button>
           </div>
-          <p style={{ fontSize: isMobile ? 14 : 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.6, fontStyle: "italic" }}>&ldquo;{actionData.message}&rdquo;</p>
+          {isOutreachAction ? (
+            <textarea
+              value={draftMessage ?? ""}
+              onChange={e => setDraftMessage(e.target.value)}
+              rows={4}
+              style={{ width: "100%", background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)", borderRadius: 9, padding: "10px 13px", fontSize: isMobile ? 14 : 13, color: "var(--bm-text)", outline: "none", fontFamily: "inherit", resize: "vertical", boxSizing: "border-box", lineHeight: 1.6, transition: "border-color 0.15s" }}
+              onFocus={e => { e.target.style.borderColor = "var(--bm-accent-bd)"; }}
+              onBlur={e => { e.target.style.borderColor = "var(--bm-border2)"; }}
+            />
+          ) : (
+            <p style={{ fontSize: isMobile ? 14 : 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.6, fontStyle: "italic" }}>&ldquo;{draftMessage ?? actionData.message}&rdquo;</p>
+          )}
         </div>
         </div>
       </motion.div>
@@ -286,9 +494,17 @@ function TodayContent() {
       {/* Destinations */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}
         style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 18, padding: isMobile ? "18px" : "20px 24px", marginBottom: 14 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 4 }}>Where to send this</div>
-        <p style={{ fontSize: 11, color: "var(--bm-text3)", marginBottom: 14, lineHeight: 1.5 }}>
-          Pick one. Send to at least 3 people. Done counts as done even if they don't reply.
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+          <div style={{
+            width: 22, height: 22, borderRadius: "50%",
+            background: "var(--bm-bg4)", color: "var(--bm-text3)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 11, fontWeight: 800, flexShrink: 0,
+          }}>3</div>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)" }}>Send it — pick one channel below</div>
+        </div>
+        <p style={{ fontSize: 11, color: "var(--bm-text3)", marginBottom: 14, lineHeight: 1.5, paddingLeft: 30 }}>
+          At least 3 people. Done counts as done even if they don't reply. Replies are a bonus.
         </p>
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(4, 1fr)", gap: 9 }}>
           {destinations.map(d => (
@@ -306,6 +522,38 @@ function TodayContent() {
       {/* Check-in */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.16 }}
         style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 18, padding: isMobile ? "18px" : "20px 24px" }}>
+
+        {/* Progress tracker — shows user where they are in the loop */}
+        <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 20 }}>
+          {[
+            { n: 1, label: "Read action", done: true },
+            { n: 2, label: "Edit script", done: !!draftMessage },
+            { n: 3, label: "Send it", done: copied },
+            { n: 4, label: "Check in", done: false, active: true },
+          ].map((step, i) => (
+            <div key={step.n} style={{ display: "flex", alignItems: "center", flex: i < 3 ? 1 : "none" }}>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+                <div style={{
+                  width: 24, height: 24, borderRadius: "50%", fontSize: 10, fontWeight: 700,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  background: step.done ? "var(--bm-accent)" : step.active ? "var(--bm-bg4)" : "var(--bm-bg3)",
+                  color: step.done ? "var(--bm-text-inv)" : step.active ? "var(--bm-text)" : "var(--bm-text4)",
+                  border: step.active ? "1px solid var(--bm-border3)" : "none",
+                  transition: "all 0.2s",
+                }}>
+                  {step.done ? "✓" : step.n}
+                </div>
+                <span style={{ fontSize: 9, color: step.done ? "var(--bm-accent)" : step.active ? "var(--bm-text3)" : "var(--bm-text4)", fontWeight: step.active ? 600 : 400, whiteSpace: "nowrap" }}>
+                  {step.label}
+                </span>
+              </div>
+              {i < 3 && (
+                <div style={{ flex: 1, height: 1, background: step.done ? "var(--bm-accent-bd)" : "var(--bm-border)", margin: "0 4px", marginBottom: 14, transition: "background 0.3s" }} />
+              )}
+            </div>
+          ))}
+        </div>
+
         <div style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 14 }}>How did it go?</div>
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 9, marginBottom: 18 }}>
           {OUTCOME_CHIPS.map(chip => (

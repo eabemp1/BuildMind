@@ -20,7 +20,7 @@ import { planFromUserMetadata } from "@/lib/plan";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** Mon=1, Wed=3, Fri=5 — free tier briefing days */
+/** Mon=1, Wed=3, Fri=5 — free tier briefing days (playbook §6.1: 3 days/week) */
 const FREE_BRIEFING_DAYS = new Set([1, 3, 5]);
 
 function isBriefingDayForPlan(plan: string): boolean {
@@ -37,11 +37,89 @@ function isCronRequest(req: Request): boolean {
 }
 
 export async function GET(req: Request) {
+  // ── Cron path: generate briefings for ALL users ─────────────────────────────
+  // Vercel Cron sends GET with Authorization: Bearer <CRON_SECRET>.
+  // Previously this just returned a 200 acknowledgement without doing anything.
+  // Now it actually generates and stores a briefing for every user who qualifies.
   if (isCronRequest(req)) {
+    const admin = createAdminClient();
+    const today = new Date().toISOString().split("T")[0];
+
+    // Fetch all founder contexts (one per user)
+    const { data: contexts, error: ctxErr } = await admin
+      .from("founder_context")
+      .select("user_id, startup_summary, current_stage, momentum_score, avoidance_signals, topics_mentioned_repeatedly, cognitive_load");
+
+    if (ctxErr || !contexts?.length) {
+      return NextResponse.json({ ok: true, cron: true, generated: 0, message: "No founder contexts found" });
+    }
+
+    let generated = 0;
+    let skipped = 0;
+    const errors: string[] = [];
+
+    for (const ctx of contexts) {
+      try {
+        // Skip if briefing already generated today
+        const { data: existing } = await admin
+          .from("morning_briefings")
+          .select("id")
+          .eq("user_id", ctx.user_id)
+          .gte("created_at", `${today}T00:00:00Z`)
+          .limit(1)
+          .maybeSingle();
+
+        if (existing) { skipped++; continue; }
+
+        // Check user's plan for free-tier day-of-week gate
+        const { data: profile } = await admin
+          .from("profiles")
+          .select("plan")
+          .eq("id", ctx.user_id)
+          .maybeSingle();
+
+        const plan = (profile?.plan as string) ?? "free";
+        if (!isBriefingDayForPlan(plan)) { skipped++; continue; }
+
+        // Fetch last reflection for context
+        const { data: lastReflection } = await admin
+          .from("reflections")
+          .select("outcome, note, confidence, today_action")
+          .eq("user_id", ctx.user_id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        const reflexionCtx = {
+          startupSummary: ctx.startup_summary ?? "",
+          stage: ctx.current_stage ?? "Idea",
+          momentumScore: ctx.momentum_score ?? 50,
+          avoidanceSignals: ctx.avoidance_signals ?? [],
+          topicsRepeated: ctx.topics_mentioned_repeatedly ?? [],
+          cognitiveLoad: ctx.cognitive_load ?? "fresh",
+          yesterdayTask: lastReflection?.today_action ?? undefined,
+          completedYesterday: lastReflection?.outcome === "completed",
+        };
+
+        const briefing = await generateMorningBriefing(reflexionCtx);
+        await admin.from("morning_briefings").insert({
+          user_id: ctx.user_id,
+          ...briefing,
+          delivered_at: new Date().toISOString(),
+        });
+        generated++;
+      } catch (e) {
+        errors.push(`${ctx.user_id}: ${String(e).slice(0, 80)}`);
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       cron: true,
-      message: "Morning briefing cron is reachable. Supabase scheduled-jobs performs batch generation.",
+      generated,
+      skipped,
+      errors: errors.slice(0, 5),
+      total: contexts.length,
     });
   }
 

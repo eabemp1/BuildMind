@@ -3,11 +3,16 @@
  *
  * Generates a personalized brutal insight during onboarding.
  * Called once per new user — the "first impact" moment.
- * No rate limit needed (tied to authenticated user session).
+ *
+ * Security:
+ *   - Requires authenticated session (401 if not logged in)
+ *   - Usage tracked against monthly limit (same as all other AI routes)
+ *   - One natural daily cap from the shared monthly limit system
  */
 
 import { NextResponse } from "next/server";
-import { groqJSON } from "@/app/api/ai/_utils";
+import { groqJSON, enforceAndTrackAIUsage } from "@/app/api/ai/_utils";
+import { getRouteUser } from "@/app/api/ai/_planCheck";
 
 type Insight = {
   headline: string;
@@ -26,6 +31,25 @@ const BLOCKER_CONTEXT: Record<string, string> = {
 };
 
 export async function POST(request: Request) {
+  // ── Auth check ─────────────────────────────────────────────────────────────
+  const routeUser = await getRouteUser();
+  if (!routeUser) {
+    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  }
+
+  // ── Usage enforcement ──────────────────────────────────────────────────────
+  try {
+    await enforceAndTrackAIUsage(routeUser.userId);
+  } catch (usageErr) {
+    const msg = usageErr instanceof Error ? usageErr.message : String(usageErr);
+    if (msg.toLowerCase().includes("limit reached")) {
+      return NextResponse.json(
+        { success: false, error: msg, upgradeUrl: "/upgrade" },
+        { status: 429 },
+      );
+    }
+  }
+
   try {
     const body = await request.json().catch(() => ({}));
     const idea    = String(body?.idea ?? "").trim().slice(0, 600);
@@ -58,23 +82,19 @@ Blocker context: ${blockerContext}
 
 Give them their honest first assessment. Make it specific to "${idea.slice(0, 100)}".`;
 
-    const fallback: Insight = {
-      headline: "Your biggest risk isn't execution — it's direction.",
-      risk: `At the ${stage} stage with "${idea.slice(0, 60)}...", the danger is building something technically correct but commercially irrelevant.`,
-      action: "Talk to 3 potential users in the next 48 hours. Ask them what they currently use to solve this problem and what they hate about it.",
-      why: "Every assumption you have about what people want is probably wrong. Real conversations fix this faster than anything else.",
-    };
+    const result = await groqJSON<Insight>(systemPrompt, userPrompt);
 
-    try {
-      const ai = await groqJSON<Insight>(systemPrompt, userPrompt);
-      if (ai?.headline && ai?.action && ai?.risk && ai?.why) {
-        return NextResponse.json({ success: true, data: ai });
-      }
-    } catch {}
-
-    return NextResponse.json({ success: true, data: fallback });
+    return NextResponse.json({
+      success: true,
+      data: {
+        headline: result.headline ?? "Your first assumption is probably wrong.",
+        risk:     result.risk     ?? "Every day without user feedback is a day building on assumptions.",
+        action:   result.action   ?? "Talk to one person who has this problem in the next 24 hours.",
+        why:      result.why      ?? "Real conversations are worth more than a week of planning.",
+      },
+    });
   } catch (error) {
-    const msg = error instanceof Error ? error.message : "Insight failed";
-    return NextResponse.json({ success: false, error: msg }, { status: 500 });
+    const message = error instanceof Error ? error.message : "Onboarding insight failed";
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

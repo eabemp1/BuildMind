@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
-import { createUserNotification, enforceAndTrackAIUsage, groqJSON, hasAdminEnv } from "@/app/api/ai/_utils";
+import { createUserNotification, enforceAndTrackAIUsage, groqJSON, hasAdminEnv, logReflexionQuality } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
 import type { FounderMemory } from "@/lib/founderMemory";
+import { inferStage } from "@/lib/stages";
 
+const FREE_COACH_MESSAGES_PER_DAY = 3;
 const FREE_COACH_MESSAGES_PER_WEEK = 3;
 
 function weekKey(date = new Date()): string {
@@ -24,22 +26,19 @@ async function enforceCoachUsage(userId: string, plan: string) {
 
   const supabase = createAdminClient();
   const month = `coach:${weekKey()}`;
-  const { data: existing, error } = await supabase
-    .from("ai_usage")
-    .select("id,count")
-    .eq("user_id", userId)
-    .eq("month", month)
-    .single();
 
-  if (error && error.code !== "PGRST116") throw new Error(error.message);
-  if (!existing) {
-    await supabase.from("ai_usage").insert({ user_id: userId, month, count: 1 });
-    return;
+  // Atomic increment + cap check — avoids the SELECT→UPDATE race condition.
+  const { data: newCount, error: rpcError } = await supabase.rpc("increment_ai_usage_capped", {
+    p_user_id: userId,
+    p_month: month,
+    p_limit: FREE_COACH_MESSAGES_PER_WEEK,
+  });
+
+  if (rpcError) throw new Error(rpcError.message);
+
+  if (newCount === -1) {
+    throw new Error(`LIMIT_REACHED:coach:That's your 3 AI Coach messages for today. More tomorrow — or upgrade to Builder to keep going right now.`);
   }
-  if ((existing.count ?? 0) >= FREE_COACH_MESSAGES_PER_WEEK) {
-    throw new Error(`Weekly AI Coach limit reached (${FREE_COACH_MESSAGES_PER_WEEK} messages). Upgrade to Builder for unlimited AI Coach.`);
-  }
-  await supabase.from("ai_usage").update({ count: (existing.count ?? 0) + 1 }).eq("id", existing.id);
 }
 
 function buildFounderMemoryContext(memory: FounderMemory | null): string {
@@ -57,17 +56,6 @@ function buildFounderMemoryContext(memory: FounderMemory | null): string {
     lines.push(`Communication style to use: ${memory.cofounder_style}`);
   if (!lines.length) return "";
   return "\n\nFOUNDER MEMORY (persistent — do not repeat back verbatim, just let it inform your tone and advice):\n" + lines.join("\n");
-}
-
-function inferStage(completedTasks: number, totalTasks: number, completedMilestones: number, totalMilestones: number): string {
-  if (totalTasks === 0) return "Idea";
-  const milestoneRate = completedMilestones / Math.max(1, totalMilestones);
-  const taskRate = completedTasks / Math.max(1, totalTasks);
-  if (milestoneRate >= 0.8) return "Revenue";
-  if (milestoneRate >= 0.6) return "Launch";
-  if (milestoneRate >= 0.4) return "MVP";
-  if (milestoneRate >= 0.2 || taskRate >= 0.3) return "Validation";
-  return "Idea";
 }
 
 // ── Spiral detection — the patterns that signal a founder is collapsing ───────
@@ -136,12 +124,13 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
     const userId = String(body?.userId ?? routeUser.userId).trim();
     const projectId = String(body?.projectId ?? body?.project?.id ?? "").trim();
-    const message = String(body?.message ?? "").trim();
-    const blockerType = String(body?.blockerType ?? "").trim();
-    const domain = String(body?.domain ?? "").trim();
+    // Input length limits — prevent prompt injection and runaway token costs
+    const message = String(body?.message ?? "").trim().slice(0, 2000);
+    const blockerType = String(body?.blockerType ?? "").trim().slice(0, 200);
+    const domain = String(body?.domain ?? "").trim().slice(0, 200);
     const history = Array.isArray(body?.messages)
       ? (body.messages as { role?: string; content?: string }[])
-          .map((m) => ({ role: (m?.role === "assistant" ? "assistant" : "user") as "user" | "assistant", content: String(m?.content ?? "").trim() }))
+          .map((m) => ({ role: (m?.role === "assistant" ? "assistant" : "user") as "user" | "assistant", content: String(m?.content ?? "").trim().slice(0, 1000) }))
           .filter((m) => m.content)
           .slice(-8)
       : [];
@@ -266,6 +255,16 @@ Return ONLY the JSON object. No preamble. No markdown.`;
       : "BuildMind couldn't generate a response right now. Focus on your most important open task.";
 
     await createUserNotification(userId, "BuildMind has a new coaching response for you.", "ai_recommendation");
+
+    // Log quality — enables tracking whether coach responses are specific enough
+    logReflexionQuality({
+      userId,
+      projectId,
+      context: "coach",
+      finalOutput: answer,
+      stage,
+      targetUsers: body?.targetUsers as string | undefined,
+    }).catch(() => {});
 
     return NextResponse.json({
       success: true,

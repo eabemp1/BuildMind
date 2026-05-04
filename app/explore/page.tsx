@@ -98,7 +98,7 @@ export default function ExplorePage() {
           .eq("is_public", true)
           .order("score", { ascending: false })
           .limit(48);
-        setStartups((data as any[]) ?? []);
+        setStartups((data as PublicStartup[]) ?? []);
       } catch {} finally { setLoading(false); }
     };
     fetchStartups();

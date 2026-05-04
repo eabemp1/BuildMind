@@ -10,7 +10,7 @@ import {
 import { useDeleteProjectMutation, useProjectDetailQuery, useUpdateTaskMutation } from "@/lib/queries";
 import { setActiveProjectId } from "@/lib/api";
 import { createClient } from "@/lib/supabase/client";
-import { recordTaskCompletion, incrementDailyStreak, checkUpgradeTrigger, getTasksDone } from "@/lib/upgrade";
+import { recordTaskCompletion, incrementDailyStreak, checkUpgradeTrigger, getTasksDone, getStoredStreak } from "@/lib/upgrade";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queries";
 import BuildMindLoader from "@/components/BuildMindLoader";
@@ -375,7 +375,7 @@ export default function ProjectDetailPage() {
               <div style={{ fontSize: 12, color: "var(--bm-text3)", marginTop: 2 }}>Unlock your next steps and keep building.</div>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => router.push(`/upgrade?tasks=${getTasksDone()}&streak=${localStorage.getItem("bm_streak") ?? 1}`)}
+              <button onClick={() => router.push(`/upgrade?tasks=${getTasksDone()}&streak=${getStoredStreak()}`)}
                 style={{ background: "var(--grad-primary)", color: "#fff", fontSize: 12, fontWeight: 700, padding: "7px 16px", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: "inherit" }}>Continue →</button>
               <button onClick={() => setShowUpgrade(false)} style={{ background: "none", border: "none", color: "var(--bm-text3)", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</button>
             </div>

@@ -187,6 +187,7 @@ function OnboardingContent() {
         target_users: targetUsers,
         problem,
         startup_stage: startupStage,
+        blocker_type: blockerType,
       });
       const supabase = createClient();
       await supabase.auth.updateUser({ data: { onboarding_completed: true } });

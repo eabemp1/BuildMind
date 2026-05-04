@@ -4,7 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useProjectsQuery } from "@/lib/queries";
 import { createClient } from "@/lib/supabase/client";
-import { canAccess } from "@/lib/plan";
+import { canAccess, incrementDailyStreak } from "@/lib/plan";
 import { usePlan } from "@/lib/usePlan";
 import { useLimitModal } from "@/components/LimitModal";
 import { updateAchievementStats, checkAndUnlockAchievements } from "@/lib/achievements";
@@ -143,7 +143,7 @@ export default function BreakMyStartupPage() {
   const [saving, setSaving] = useState(false);
 
   // Pre-fill idea from selected project
-  const selectedProject = projects.find((p: any) => p.id === selectedProjectId);
+  const selectedProject = projects.find((p) => p.id === selectedProjectId);
 
   useEffect(() => {
     if (!selectedProjectId) return;
@@ -151,8 +151,8 @@ export default function BreakMyStartupPage() {
     const projectIdea = [
       selectedProject.title,
       selectedProject.description,
-      (selectedProject as any).problem,
-      (selectedProject as any).target_users ? `Target users: ${(selectedProject as any).target_users}` : "",
+      selectedProject.problem,
+      selectedProject.target_users ? `Target users: ${selectedProject.target_users}` : "",
     ].filter(Boolean).join("\n\n");
     setCustomIdea(projectIdea);
   }, [selectedProjectId, selectedProject]);
@@ -245,6 +245,12 @@ export default function BreakMyStartupPage() {
       try {
         updateAchievementStats({ breakMyStartupUsed: true });
         await checkAndUnlockAchievements();
+        // Break My Startup counts as a streak-qualifying activity — increment once per day
+        const todayKey = new Date().toISOString().split("T")[0];
+        if (localStorage.getItem("bm_break_streak_date") !== todayKey) {
+          incrementDailyStreak();
+          localStorage.setItem("bm_break_streak_date", todayKey);
+        }
       } catch {}
     } catch {
       setError("Something went wrong running the stress test. Please try again.");
@@ -338,9 +344,9 @@ export default function BreakMyStartupPage() {
                     }}
                   >
                     <option value="">— Use custom idea instead —</option>
-                    {projects.map((p: any) => (
+                    {projects.map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.title ?? p.project_name ?? p.name ?? "Untitled"}
+                        {p.title ?? "Untitled"}
                       </option>
                     ))}
                   </select>

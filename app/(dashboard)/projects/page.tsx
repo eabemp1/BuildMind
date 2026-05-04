@@ -146,8 +146,9 @@ function CreateModal({
     if (!title.trim()) { setError("Project name is required."); return; }
     try {
       projectCreateSchema.parse({ title, problem, startup_stage: stage });
-    } catch (e: any) {
-      setError(e.errors?.[0]?.message ?? "Invalid input");
+    } catch (e: unknown) {
+      const msg = (e as { errors?: { message: string }[] })?.errors?.[0]?.message;
+      setError(msg ?? "Invalid input");
       return;
     }
     onCreate({ title, problem, stage });
@@ -400,9 +401,9 @@ export default function ProjectsPage() {
                           )}
                         </div>
 
-                        {(s as any).problem && (
+                        {s.problem && (
                           <p className="text-xs text-[var(--bm-text3)] leading-relaxed line-clamp-2">
-                            {(s as any).problem}
+                            {s.problem}
                           </p>
                         )}
 

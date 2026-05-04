@@ -1,3 +1,14 @@
+/**
+ * components/layout/sidebar.tsx  (refactored — Fix 4)
+ *
+ * Reduced from 687 → ~290 lines by extracting:
+ *   • Nav config, pure atoms, and NavItem → sidebar-nav.tsx
+ *
+ * This file now contains only:
+ *   • SidebarUser     — user card + sign-out button
+ *   • SidebarContent  — composed layout (nav loop, admin links, bottom bar)
+ *   • Sidebar (default export) — desktop always-visible + mobile slide-in
+ */
 "use client";
 
 import React, { useEffect, useState } from "react";
@@ -5,245 +16,20 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Zap, FolderKanban, LineChart, Settings, Flame,
-  Map, Shield, RefreshCw, Lightbulb, LayoutDashboard,
-  Trophy, Bell, Users, Globe, Bot, Sparkles,
-  Menu, X, Sun, Moon, LogOut, ChevronRight, ChevronDown,
+  Map, Shield, BarChart2,
+  Menu, X, Sun, Moon, LogOut, ChevronRight, ChevronDown, Sparkles, Users,
 } from "lucide-react";
 import { getUnseenCount } from "@/lib/achievements";
-import { getUnreadCount } from "@/lib/notifications";
-import { FEATURES } from "@/lib/features";
-import { type Plan, canAccess } from "@/lib/plan";
+import { type Plan, canAccess, syncStreakFromServer } from "@/lib/plan";
 import { usePlan } from "@/lib/usePlan";
 import { useTheme } from "@/components/layout/theme-provider";
 import CofounderPulse from "@/components/CofounderPulse";
 import { createClient } from "@/lib/supabase/client";
-import { BrandMark } from "@/components/layout/logo";
+import {
+  NAV, hasPlanAccess, SectionLabel, SidebarLogo, NavItem,
+} from "@/components/layout/sidebar-nav";
 
-// ── Notification badge (live unread count) ────────────────────────────────────
-function NotifBadge() {
-  const [count, setCount] = React.useState(0);
-  React.useEffect(() => {
-    const refresh = () => setCount(getUnreadCount());
-    refresh();
-    window.addEventListener("bm_notification_added", refresh);
-    window.addEventListener("storage", refresh);
-    const t = setInterval(refresh, 10000);
-    return () => {
-      window.removeEventListener("bm_notification_added", refresh);
-      window.removeEventListener("storage", refresh);
-      clearInterval(t);
-    };
-  }, []);
-  if (count === 0) return null;
-  return (
-    <span
-      className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
-      style={{
-        background: "rgba(240,108,108,0.12)",
-        color: "var(--bm-red)",
-        letterSpacing: "0.04em",
-      }}
-    >
-      {count}
-    </span>
-  );
-}
-
-type NavItemConfig = {
-  href: string;
-  label: string;
-  icon: React.ElementType;
-  enabled: boolean;
-  section: string | null;
-  badge: string | null;
-  showDot: boolean;
-  requiredPlan?: Plan;
-};
-
-// ── Nav items (FEATURES-flagged, single source of truth) ─────────────────────
-const NAV: readonly NavItemConfig[] = [
-  { href: "/today",            label: "Today",           icon: Zap,             enabled: true,                     section: "DAILY",     badge: null,       showDot: false },
-  { href: "/overview",         label: "Overview",        icon: LayoutDashboard, enabled: true,                     section: null,        badge: null,       showDot: false },
-  { href: "/reflect",          label: "Reflect",         icon: RefreshCw,       enabled: true,                     section: null,        badge: null,       showDot: true  },
-  { href: "/projects",         label: "Projects",        icon: FolderKanban,    enabled: true,                     section: "WORKSPACE", badge: null,       showDot: false },
-  { href: "/ventures",         label: "Roadmap Tracks",  icon: Map,             enabled: FEATURES.ventures,        section: null,        badge: "New",      showDot: false },
-  { href: "/explore",          label: "Founder Feed",    icon: Globe,           enabled: FEATURES.publicProjects,  section: null,        badge: null,       showDot: false },
-  { href: "/ai-coach",         label: "AI Coach",        icon: Bot,             enabled: FEATURES.aiCoach,         section: "AI TOOLS",  badge: null,       showDot: false },
-  { href: "/break-my-startup", label: "Break Startup",   icon: Flame,           enabled: FEATURES.breakMyStartup,  section: null,        badge: null,       showDot: false },
-  { href: "/startup-kit",      label: "Startup Kit",     icon: Lightbulb,       enabled: FEATURES.startupKit,      section: null,        badge: null,       requiredPlan: "builder" as Plan, showDot: false },
-  { href: "/notifications",    label: "Notifications",   icon: Bell,            enabled: FEATURES.notifications,   section: "ACCOUNT",   badge: null,       showDot: false },
-  { href: "/reports",          label: "Reports",         icon: LineChart,       enabled: FEATURES.analytics,       section: null,        badge: null,       requiredPlan: "builder" as Plan, showDot: false },
-  { href: "/achievements",     label: "Achievements",    icon: Trophy,          enabled: true,                     section: null,        badge: null,       showDot: false },
-  { href: "/invite",           label: "Invite & Earn",   icon: Users,           enabled: true,                     section: null,        badge: "Free mo",  showDot: false },
-  { href: "/settings",         label: "Settings",        icon: Settings,        enabled: true,                     section: null,        badge: null,       showDot: false },
-] as const;
-
-function hasPlanAccess(current: Plan, required: Plan): boolean {
-  const order = ["free", "builder", "venture"] as string[];
-  return order.indexOf(current) >= order.indexOf(required);
-}
-
-// ── Section header ────────────────────────────────────────────────────────────
-function SectionLabel({ label }: { label: string }) {
-  return (
-    <div
-      className="px-3 pt-4 pb-1 text-[9px] font-bold tracking-[0.14em] uppercase"
-      style={{ color: "var(--bm-text4)" }}
-    >
-      {label}
-    </div>
-  );
-}
-
-// ── Logo block (uses dashboard layout's "B" gradient box style) ───────────────
-function SidebarLogo({ streakDays }: { streakDays: number }) {
-  return (
-    <div
-      className="flex items-center gap-2.5 px-4 h-16 shrink-0"
-      style={{ borderBottom: "1px solid var(--bm-border)" }}
-    >
-      <BrandMark size={32} href="/overview" />
-      <div>
-        <div className="text-sm font-semibold" style={{ color: "var(--bm-text)", letterSpacing: "-0.02em" }}>
-          BuildMind
-        </div>
-        <div
-          className="text-[9px] font-bold tracking-[0.12em] uppercase"
-          style={{
-            background: "linear-gradient(90deg, var(--bm-accent), var(--bm-teal))",
-            WebkitBackgroundClip: "text",
-            WebkitTextFillColor: "transparent",
-            lineHeight: 1,
-          }}
-        >
-          AI Founder OS
-        </div>
-      </div>
-      {streakDays > 0 && (
-        <div
-          className="ml-auto flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold"
-          style={{
-            background: "rgba(240,180,41,0.10)",
-            border: "1px solid rgba(240,180,41,0.18)",
-            color: "var(--bm-amber)",
-          }}
-        >
-          🔥 {streakDays}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Single nav link (dashboard layout's left-border active style) ─────────────
-function NavItem({
-  href,
-  label,
-  icon: Icon,
-  active,
-  badge,
-  showLock,
-  showDot,
-  reflectPending,
-  unseenBadges,
-  onClick,
-}: {
-  href: string;
-  label: string;
-  icon: React.ElementType;
-  active: boolean;
-  badge?: string | null;
-  showLock?: boolean;
-  showDot?: boolean;
-  reflectPending?: boolean;
-  unseenBadges?: number;
-  onClick?: () => void;
-}) {
-  const showNotifDot = showDot && reflectPending && !active;
-
-  return (
-    <Link
-      href={href}
-      onClick={onClick}
-      data-tour={`nav-${href.replace("/", "")}`}
-      className="relative flex items-center gap-3 px-3 py-2.5 rounded-lg mx-2 text-sm transition-all duration-150 group"
-      style={
-        active
-          ? {
-              color: "var(--bm-accent)",
-              background: "var(--bm-accent-dim, rgba(0,255,135,0.08))",
-              borderLeft: "2px solid var(--bm-accent)",
-              paddingLeft: "calc(0.75rem - 2px)",
-              fontWeight: 500,
-            }
-          : {
-              color: "var(--bm-text2)",
-            }
-      }
-    >
-      {/* Icon with optional reflect dot */}
-      <div className="relative shrink-0">
-        <Icon
-          size={16}
-          className="transition-colors group-hover:text-[var(--bm-text)]"
-          style={{
-            color: active ? "var(--bm-accent)" : undefined,
-            filter: active ? "drop-shadow(0 0 4px rgba(0,255,135,0.4))" : undefined,
-          }}
-        />
-        {showNotifDot && (
-          <motion.span
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ type: "spring", stiffness: 500, damping: 18 }}
-            className="absolute -top-1 -left-1 w-1.5 h-1.5 rounded-full"
-            style={{ background: "var(--bm-amber)", boxShadow: "0 0 6px rgba(240,180,41,0.6)" }}
-          />
-        )}
-      </div>
-
-      <span className="truncate flex-1 transition-colors group-hover:text-[var(--bm-text)]">
-        {label}
-      </span>
-
-      {/* Right-side badge / lock */}
-      {showNotifDot ? (
-        <span
-          className="text-[8px] font-bold px-1.5 py-0.5 rounded"
-          style={{ background: "rgba(240,180,41,0.12)", color: "var(--bm-amber)" }}
-        >
-          NOW
-        </span>
-      ) : showLock ? (
-        <span className="text-[10px] opacity-30">🔒</span>
-      ) : href === "/notifications" ? (
-        <NotifBadge />
-      ) : href === "/achievements" && (unseenBadges ?? 0) > 0 ? (
-        <span
-          className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
-          style={{ background: "rgba(240,180,41,0.12)", color: "var(--bm-amber)" }}
-        >
-          {unseenBadges} new
-        </span>
-      ) : badge ? (
-        <span
-          className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
-          style={{
-            background: "rgba(0,255,135,0.10)",
-            color: "var(--bm-accent)",
-            letterSpacing: "0.04em",
-            border: "1px solid rgba(0,255,135,0.18)",
-          }}
-        >
-          {badge}
-        </span>
-      ) : null}
-    </Link>
-  );
-}
-
-// ── User card at bottom (from dashboard layout's SidebarUser) ─────────────────
+// ── User card at bottom ───────────────────────────────────────────────────────
 function SidebarUser({ onSignOut }: { onSignOut: () => void }) {
   const { plan } = usePlan();
   const [user, setUser] = useState<{ email?: string; user_metadata?: Record<string, unknown> } | null>(null);
@@ -277,7 +63,6 @@ function SidebarUser({ onSignOut }: { onSignOut: () => void }) {
       >
         {initials}
       </div>
-
       <div className="flex-1 min-w-0">
         <p className="text-xs font-medium truncate" style={{ color: "var(--bm-text)" }}>
           {displayName}
@@ -286,30 +71,20 @@ function SidebarUser({ onSignOut }: { onSignOut: () => void }) {
           className="inline-block text-[9px] font-bold px-1.5 py-0.5 rounded-full mt-0.5"
           style={
             plan === "builder"
-              ? {
-                  background: "linear-gradient(90deg, var(--bm-accent), var(--bm-teal))",
-                  color: "#000",
-                }
+              ? { background: "linear-gradient(90deg, var(--bm-accent), var(--bm-teal))", color: "#000" }
               : { background: "var(--bm-bg)", color: "var(--bm-text4)" }
           }
         >
           {plan === "builder" ? "Builder" : "Free"}
         </span>
       </div>
-
       <button
         onClick={onSignOut}
         className="p-1.5 rounded-lg transition-all"
         style={{ color: "var(--bm-text3)" }}
         title="Sign out"
-        onMouseEnter={(e) => {
-          e.currentTarget.style.color = "var(--bm-red)";
-          e.currentTarget.style.background = "rgba(224,85,85,0.08)";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.color = "var(--bm-text3)";
-          e.currentTarget.style.background = "transparent";
-        }}
+        onMouseEnter={(e) => { e.currentTarget.style.color = "var(--bm-red)"; e.currentTarget.style.background = "rgba(224,85,85,0.08)"; }}
+        onMouseLeave={(e) => { e.currentTarget.style.color = "var(--bm-text3)"; e.currentTarget.style.background = "transparent"; }}
       >
         <LogOut size={14} />
       </button>
@@ -318,13 +93,7 @@ function SidebarUser({ onSignOut }: { onSignOut: () => void }) {
 }
 
 // ── Sidebar content (used on both desktop & mobile slide-in) ──────────────────
-export function SidebarContent({
-  onNavClick,
-  onSignOut,
-}: {
-  onNavClick?: () => void;
-  onSignOut: () => void;
-}) {
+export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => void; onSignOut: () => void }) {
   const pathname = usePathname();
   const { plan } = usePlan();
   const { theme, toggle } = useTheme();
@@ -344,6 +113,7 @@ export function SidebarContent({
       } catch {}
     };
     checkPending();
+    syncStreakFromServer().then(s => setStreakDays(s)).catch(() => {});
     window.addEventListener("storage", checkPending);
     window.addEventListener("bm_streak_updated", checkPending);
     const interval = setInterval(checkPending, 8000);
@@ -368,38 +138,24 @@ export function SidebarContent({
 
   return (
     <div className="flex flex-col h-full" style={{ background: "var(--bm-bg2)" }}>
-      {/* Ambient glow */}
       <div
         className="pointer-events-none absolute top-[-60px] right-[-60px] w-40 h-40 rounded-full"
-        style={{
-          background: "radial-gradient(circle, rgba(0,255,135,0.06) 0%, transparent 70%)",
-          filter: "blur(30px)",
-          zIndex: 0,
-        }}
+        style={{ background: "radial-gradient(circle, rgba(0,255,135,0.06) 0%, transparent 70%)", filter: "blur(30px)", zIndex: 0 }}
       />
-
       <SidebarLogo streakDays={streakDays} />
 
-      {/* Nav */}
       <nav className="flex-1 overflow-y-auto py-2" style={{ scrollbarWidth: "none" }}>
         {NAV.filter((i) => i.enabled).map((item) => {
           const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
           const showLock = !!item.requiredPlan && !hasPlanAccess(plan, item.requiredPlan as Plan);
-
           return (
             <React.Fragment key={item.href}>
               {item.section && <SectionLabel label={item.section} />}
               <NavItem
-                href={item.href}
-                label={item.label}
-                icon={item.icon}
-                active={active}
-                badge={item.badge}
-                showLock={showLock}
-                showDot={item.showDot}
-                reflectPending={reflectPending}
-                unseenBadges={unseenBadges}
-                onClick={onNavClick}
+                href={item.href} label={item.label} icon={item.icon}
+                active={active} badge={item.badge} showLock={showLock}
+                showDot={item.showDot} reflectPending={reflectPending}
+                unseenBadges={unseenBadges} onClick={onNavClick}
               />
             </React.Fragment>
           );
@@ -408,118 +164,52 @@ export function SidebarContent({
         {isAdmin && (
           <>
             <SectionLabel label="ADMIN" />
-            <Link
-              href="/my-ventures"
-              className="flex items-center justify-between gap-2 px-3 py-2.5 mx-2 rounded-lg text-sm transition-colors group"
-              style={{ color: "var(--bm-text4)" }}
-            >
-              <div className="flex items-center gap-3">
-                <Map size={16} />
-                My Ventures
-              </div>
-              <span
-                className="text-[9px] font-bold px-1.5 py-0.5 rounded"
-                style={{ background: "rgba(240,108,108,0.08)", color: "var(--bm-red)" }}
+            {[
+              { href: "/my-ventures", label: "My Ventures", icon: Map,       badge: "Private", badgeColor: "var(--bm-red)",   badgeBg: "rgba(240,108,108,0.08)" },
+              { href: "/owner",       label: "Owner Panel",  icon: Shield,    badge: "Admin",   badgeColor: "var(--bm-amber)", badgeBg: "rgba(240,180,41,0.08)"  },
+              { href: "/admin/quality", label: "Quality Log", icon: BarChart2, badge: "Agent B", badgeColor: "var(--bm-accent)", badgeBg: "rgba(74,184,176,0.08)" },
+            ].map(({ href, label, icon: Icon, badge, badgeColor, badgeBg }) => (
+              <Link key={href} href={href}
+                className="flex items-center justify-between gap-2 px-3 py-2.5 mx-2 rounded-lg text-sm transition-colors group"
+                style={{ color: "var(--bm-text4)" }}
               >
-                Private
-              </span>
-            </Link>
-            <Link
-              href="/owner"
-              className="flex items-center justify-between gap-2 px-3 py-2.5 mx-2 rounded-lg text-sm transition-colors group"
-              style={{ color: "var(--bm-text4)" }}
-            >
-              <div className="flex items-center gap-3">
-                <Shield size={16} />
-                Owner Panel
-              </div>
-              <span
-                className="text-[9px] font-bold px-1.5 py-0.5 rounded"
-                style={{ background: "rgba(240,180,41,0.08)", color: "var(--bm-amber)" }}
-              >
-                Admin
-              </span>
-            </Link>
+                <div className="flex items-center gap-3"><Icon size={16} />{label}</div>
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: badgeBg, color: badgeColor }}>{badge}</span>
+              </Link>
+            ))}
           </>
         )}
       </nav>
 
-      {/* Bottom section */}
       <div className="shrink-0 flex flex-col gap-2 pt-2 pb-3" style={{ borderTop: "1px solid var(--bm-border)" }}>
-        {/* CofounderPulse (feature-gated via canAccess) */}
         {canAccess("cofounderPulse", plan) && (
-          <div className="px-2">
-            <CofounderPulse />
-          </div>
+          <div className="px-2"><CofounderPulse /></div>
         )}
 
-        {/* Theme toggle */}
-        <button
-          onClick={toggle}
+        <button onClick={toggle}
           className="flex items-center gap-2 px-3 py-2 mx-2 rounded-lg text-sm transition-all"
-          style={{
-            border: "1px solid var(--bm-border)",
-            background: "transparent",
-            color: "var(--bm-text3)",
-            cursor: "pointer",
-            fontFamily: "inherit",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = "var(--bm-bg3)";
-            e.currentTarget.style.color = "var(--bm-text2)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = "transparent";
-            e.currentTarget.style.color = "var(--bm-text3)";
-          }}
+          style={{ border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", cursor: "pointer", fontFamily: "inherit" }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bm-bg3)"; e.currentTarget.style.color = "var(--bm-text2)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--bm-text3)"; }}
         >
-          {theme === "dark" ? (
-            <><Sun size={13} /><span>Light mode</span></>
-          ) : (
-            <><Moon size={13} /><span>Dark mode</span></>
-          )}
+          {theme === "dark" ? <><Sun size={13} /><span>Light mode</span></> : <><Moon size={13} /><span>Dark mode</span></>}
         </button>
 
-        <button
-          onClick={() => setFounderMenuOpen((open) => !open)}
+        <button onClick={() => setFounderMenuOpen((o) => !o)}
           className="flex items-center gap-2 px-3 py-2.5 mx-2 rounded-lg transition-all"
-          style={{
-            border: "1px solid var(--bm-border)",
-            background: "transparent",
-            color: "var(--bm-text3)",
-            cursor: "pointer",
-            fontFamily: "inherit",
-          }}
+          style={{ border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", cursor: "pointer", fontFamily: "inherit" }}
         >
           <Sparkles size={13} strokeWidth={1.6} style={{ color: "var(--bm-text4)", flexShrink: 0 }} />
           <span className="flex-1 text-left text-xs font-medium" style={{ color: "var(--bm-text2)" }}>Founder menu</span>
-          <ChevronDown
-            size={12}
-            style={{
-              color: "var(--bm-text4)",
-              transform: founderMenuOpen ? "rotate(180deg)" : "rotate(0deg)",
-              transition: "transform 0.15s",
-            }}
-          />
+          <ChevronDown size={12} style={{ color: "var(--bm-text4)", transform: founderMenuOpen ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.15s" }} />
         </button>
 
         <AnimatePresence initial={false}>
           {founderMenuOpen && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: "auto", opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              className="overflow-hidden flex flex-col gap-2"
-            >
+            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden flex flex-col gap-2">
               {plan === "free" ? (
                 <Link href="/upgrade" className="no-underline block px-2">
-                  <div
-                    className="px-3 py-2.5 rounded-xl cursor-pointer transition-all"
-                    style={{
-                      border: "1px solid rgba(0,255,135,0.18)",
-                      background: "linear-gradient(135deg, rgba(0,255,135,0.07) 0%, rgba(0,229,204,0.03) 100%)",
-                    }}
-                  >
+                  <div className="px-3 py-2.5 rounded-xl cursor-pointer" style={{ border: "1px solid rgba(0,255,135,0.18)", background: "linear-gradient(135deg, rgba(0,255,135,0.07) 0%, rgba(0,229,204,0.03) 100%)" }}>
                     <div className="flex justify-between items-center">
                       <div>
                         <div className="text-xs font-medium" style={{ color: "var(--bm-text2)" }}>Free plan</div>
@@ -531,14 +221,10 @@ export function SidebarContent({
                 </Link>
               ) : (
                 <div className="px-3 py-2.5 mx-2 rounded-xl" style={{ border: "1px solid var(--bm-border)", background: "var(--bm-bg3)" }}>
-                  <div className="flex items-center gap-1.5">
-                    <Sparkles size={11} style={{ color: "var(--bm-accent)" }} />
-                    <span className="text-xs font-medium" style={{ color: "var(--bm-text2)" }}>Builder plan</span>
-                  </div>
+                  <div className="flex items-center gap-1.5"><Sparkles size={11} style={{ color: "var(--bm-accent)" }} /><span className="text-xs font-medium" style={{ color: "var(--bm-text2)" }}>Builder plan</span></div>
                   <div className="text-[10px] mt-0.5" style={{ color: "var(--bm-text4)" }}>Unlimited · All features</div>
                 </div>
               )}
-
               <Link href="/invite" className="flex items-center gap-2 px-3 py-2.5 mx-2 rounded-lg transition-all no-underline" style={{ border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)" }}>
                 <Users size={13} strokeWidth={1.6} style={{ color: "var(--bm-text4)", flexShrink: 0 }} />
                 <div className="flex-1">
@@ -551,44 +237,25 @@ export function SidebarContent({
           )}
         </AnimatePresence>
 
-        {/* Terms & Privacy — properly wired links */}
         <div className="flex items-center justify-center gap-3 px-3 pb-1">
-          <Link
-            href="/legal/terms"
-            className="text-[10px] transition-colors hover:underline"
-            style={{ color: "var(--bm-text4)" }}
-          >
-            Terms
-          </Link>
+          <Link href="/legal/terms" className="text-[10px] transition-colors hover:underline" style={{ color: "var(--bm-text4)" }}>Terms</Link>
           <span style={{ color: "var(--bm-border)" }}>·</span>
-          <Link
-            href="/legal/privacy"
-            className="text-[10px] transition-colors hover:underline"
-            style={{ color: "var(--bm-text4)" }}
-          >
-            Privacy
-          </Link>
+          <Link href="/legal/privacy" className="text-[10px] transition-colors hover:underline" style={{ color: "var(--bm-text4)" }}>Privacy</Link>
         </div>
 
-        {/* User card */}
-        <div className="px-0">
-          <SidebarUser onSignOut={onSignOut} />
-        </div>
+        <div className="px-0"><SidebarUser onSignOut={onSignOut} /></div>
       </div>
     </div>
   );
 }
 
-// ── Root export: handles desktop always-visible + mobile slide-in overlay ─────
+// ── Root export ───────────────────────────────────────────────────────────────
 export default function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // Close on route change
-  useEffect(() => {
-    setMobileOpen(false);
-  }, [pathname]);
+  useEffect(() => { setMobileOpen(false); }, [pathname]);
 
   async function handleSignOut() {
     const supabase = createClient();
@@ -598,66 +265,37 @@ export default function Sidebar() {
 
   return (
     <>
-      {/* ── Mobile hamburger ── */}
-      <button
-        onClick={() => setMobileOpen(true)}
+      <button onClick={() => setMobileOpen(true)}
         className="md:hidden fixed top-3.5 left-3.5 z-[200] p-2 rounded-lg transition-colors"
-        style={{
-          background: "var(--bm-bg2)",
-          border: "1px solid var(--bm-border)",
-          color: "var(--bm-text2)",
-        }}
+        style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", color: "var(--bm-text2)" }}
         aria-label="Open menu"
       >
         <Menu size={18} />
       </button>
 
-      {/* ── Desktop sidebar (always visible, md+) ── */}
-      <aside
-        className="hidden md:flex flex-col h-full w-full relative overflow-hidden"
-        style={{ background: "var(--bm-bg2)" }}
-      >
+      <aside className="hidden md:flex flex-col h-full w-full relative overflow-hidden" style={{ background: "var(--bm-bg2)" }}>
         <SidebarContent onSignOut={handleSignOut} />
       </aside>
 
-      {/* ── Mobile slide-in overlay ── */}
       <AnimatePresence>
         {mobileOpen && (
           <div className="fixed inset-0 z-[300] flex md:hidden">
-            {/* Backdrop */}
-            <motion.div
-              className="absolute inset-0"
+            <motion.div className="absolute inset-0"
               style={{ background: "rgba(0,0,0,0.65)", backdropFilter: "blur(4px)" }}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               onClick={() => setMobileOpen(false)}
             />
-
-            {/* Sidebar panel */}
-            <motion.div
-              className="relative z-10 w-[260px] h-full flex flex-col"
+            <motion.div className="relative z-10 w-[260px] h-full flex flex-col"
               style={{ borderRight: "1px solid var(--bm-border)" }}
-              initial={{ x: -260 }}
-              animate={{ x: 0 }}
-              exit={{ x: -260 }}
+              initial={{ x: -260 }} animate={{ x: 0 }} exit={{ x: -260 }}
               transition={{ type: "spring", stiffness: 300, damping: 30 }}
             >
-              <SidebarContent
-                onNavClick={() => setMobileOpen(false)}
-                onSignOut={handleSignOut}
-              />
+              <SidebarContent onNavClick={() => setMobileOpen(false)} onSignOut={handleSignOut} />
             </motion.div>
-
-            {/* Close button */}
-            <motion.button
-              className="absolute top-4 right-4 z-20 p-2 rounded-lg text-white"
+            <motion.button className="absolute top-4 right-4 z-20 p-2 rounded-lg text-white"
               style={{ background: "var(--bm-bg3)" }}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setMobileOpen(false)}
-              aria-label="Close menu"
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setMobileOpen(false)} aria-label="Close menu"
             >
               <X size={16} />
             </motion.button>

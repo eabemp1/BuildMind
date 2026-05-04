@@ -27,6 +27,10 @@ DROP TABLE IF EXISTS execution_scorecards CASCADE;
 DROP TABLE IF EXISTS ventures_blueprints CASCADE;
 DROP TABLE IF EXISTS push_subscriptions CASCADE;
 DROP TABLE IF EXISTS notifications CASCADE;
+DROP TABLE IF EXISTS task_overrides CASCADE;
+DROP TABLE IF EXISTS feed_events CASCADE;
+DROP TABLE IF EXISTS reflexion_quality_log CASCADE;
+DROP TABLE IF EXISTS users CASCADE;
 DROP TABLE IF EXISTS reflections CASCADE;
 DROP TABLE IF EXISTS scheduled_job_log CASCADE;
 DROP TABLE IF EXISTS evening_checks CASCADE;
@@ -105,13 +109,30 @@ CREATE TABLE founder_context (
   user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   startup_summary text,
   current_stage text,
-  momentum_score int DEFAULT 50 CHECK (momentum_score >= 0 AND momentum_score <= 100),
-  avoidance_signals text[],
-  topics_mentioned_repeatedly text[],
+  momentum_score int2 NOT NULL DEFAULT 50 CHECK (momentum_score >= 0 AND momentum_score <= 100),
+  momentum_updated_at timestamptz NOT NULL DEFAULT now(),
+  avoidance_signals text[] NOT NULL DEFAULT '{}',
+  topics_mentioned_repeatedly text[] NOT NULL DEFAULT '{}',
+  override_reasons text[] NOT NULL DEFAULT '{}',
+  breakthrough_moments text[] NOT NULL DEFAULT '{}',
   last_active date,
-  days_inactive int DEFAULT 0,
-  created_at timestamp DEFAULT now(),
-  updated_at timestamp DEFAULT now()
+  days_inactive int2 NOT NULL DEFAULT 0,
+  tasks_accepted_this_week int2 NOT NULL DEFAULT 0,
+  tasks_overridden_this_week int2 NOT NULL DEFAULT 0,
+  consecutive_tasks_completed int2 NOT NULL DEFAULT 0,
+  cognitive_load text NOT NULL DEFAULT 'fresh' CHECK (cognitive_load IN ('fresh','drained','autopilot')),
+  cognitive_pattern text,
+  competitor_context jsonb NOT NULL DEFAULT '{}'::jsonb,
+  pattern_flags jsonb NOT NULL DEFAULT '{}'::jsonb,
+  timezone_offset int2 NOT NULL DEFAULT 0,
+  morning_briefing_hour int2 NOT NULL DEFAULT 7,
+  evening_check_hour int2 NOT NULL DEFAULT 18,
+  recovery_mode_active boolean NOT NULL DEFAULT false,
+  reset_mission_active boolean NOT NULL DEFAULT false,
+  reset_mission_text text,
+  reset_mission_complete boolean NOT NULL DEFAULT false,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
 
 ALTER TABLE founder_context ENABLE ROW LEVEL SECURITY;
@@ -247,12 +268,14 @@ CREATE TRIGGER tasks_updated_at BEFORE UPDATE ON tasks FOR EACH ROW EXECUTE FUNC
 CREATE TABLE reflections (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  project_id uuid REFERENCES projects(id) ON DELETE SET NULL,
   today_action text,
-  outcome text CHECK (outcome IN ('completed', 'partial', 'abandoned', 'blocked')),
-  confidence int CHECK (confidence >= 1 AND confidence <= 5),
-  reflection_notes text,
-  created_at timestamp DEFAULT now(),
-  updated_at timestamp DEFAULT now()
+  outcome text CHECK (outcome IN ('completed', 'partial', 'abandoned', 'blocked', 'learned')),
+  confidence int2 CHECK (confidence >= 1 AND confidence <= 5),
+  note text,               -- short-form note (used by reflect-action route)
+  reflection_notes text,   -- long-form notes (legacy column, kept for compatibility)
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
 
 ALTER TABLE reflections ENABLE ROW LEVEL SECURITY;
@@ -392,6 +415,89 @@ CREATE TABLE waitlist (
   referral_source text,
   created_at timestamp DEFAULT now()
 );
+
+-- ============================================================================
+-- TABLE: reflexion_quality_log (gatekeeper verdict ledger)
+-- ============================================================================
+CREATE TABLE reflexion_quality_log (
+  id              uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id         uuid        REFERENCES auth.users(id) ON DELETE SET NULL,
+  project_id      uuid        REFERENCES projects(id) ON DELETE SET NULL,
+  context         text,
+  verdict         text        NOT NULL CHECK (verdict IN ('pass', 'fail')),
+  reject_reason   text,
+  original_output text,
+  final_output    text,
+  stage           text,
+  momentum_score  int2,
+  created_at      timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE reflexion_quality_log ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "reflexion_quality_self_read" ON reflexion_quality_log
+  FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "reflexion_quality_service_insert" ON reflexion_quality_log
+  FOR INSERT WITH CHECK (true);
+CREATE INDEX reflexion_quality_verdict_idx ON reflexion_quality_log (verdict, created_at DESC);
+CREATE INDEX reflexion_quality_user_idx ON reflexion_quality_log (user_id, created_at DESC);
+
+-- ============================================================================
+-- TABLE: users (public mirror of auth.users — onboarding state + plan)
+-- Separate from profiles to avoid breaking existing queries in lib/data/projects.ts
+-- ============================================================================
+CREATE TABLE users (
+  id                   uuid        PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  email                text,
+  plan                 text        NOT NULL DEFAULT 'free',
+  onboarding_completed boolean     NOT NULL DEFAULT false,
+  created_at           timestamptz NOT NULL DEFAULT now(),
+  updated_at           timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "users_self_only" ON users FOR ALL
+  USING (auth.uid() = id) WITH CHECK (auth.uid() = id);
+CREATE TRIGGER users_updated_at BEFORE UPDATE ON users
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================================================
+-- TABLE: feed_events (public activity feed — anonymised, no PII)
+-- ============================================================================
+CREATE TABLE feed_events (
+  id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  flag        text        NOT NULL DEFAULT '🌍',
+  location    text        NOT NULL DEFAULT 'Somewhere',
+  stage       text        NOT NULL DEFAULT 'Idea',
+  stage_color text        NOT NULL DEFAULT '#6366f1',
+  action      text,
+  outcome     text,
+  streak      int2        NOT NULL DEFAULT 0,
+  type        text        NOT NULL DEFAULT 'done'
+    CHECK (type IN ('done', 'streak', 'reflect', 'launch')),
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE feed_events ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "feed_events_public_read" ON feed_events FOR SELECT USING (true);
+CREATE POLICY "feed_events_service_insert" ON feed_events FOR INSERT WITH CHECK (true);
+CREATE INDEX feed_events_created_at_idx ON feed_events (created_at DESC);
+
+-- ============================================================================
+-- TABLE: task_overrides (override/skip log — read by pattern extractor)
+-- ============================================================================
+CREATE TABLE task_overrides (
+  id         uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id    uuid        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  reason     text        NOT NULL DEFAULT 'not specified',
+  task_text  text,
+  stage      text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE task_overrides ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "task_overrides_self_only" ON task_overrides FOR ALL
+  USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE INDEX task_overrides_user_created_idx ON task_overrides (user_id, created_at DESC);
 
 -- ============================================================================
 -- VERIFICATION QUERIES (run these to verify setup)

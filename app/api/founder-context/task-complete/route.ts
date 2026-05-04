@@ -17,13 +17,13 @@ export async function POST(req: Request) {
 
   const { data: ctx } = await admin
     .from("founder_context")
-    .select("momentum_score, tasks_accepted_this_week, current_stage")
+    .select("momentum_score, tasks_accepted_this_week, current_stage, consecutive_tasks_completed, last_active")
     .eq("user_id", user.id)
     .maybeSingle();
 
   const current = ctx?.momentum_score ?? 50;
   const previousTaskCount = ctx?.tasks_accepted_this_week ?? 0;
-  const isFirstTask = previousTaskCount === 0; // Flag for first-ever task completion
+  const isFirstTask = previousTaskCount === 0;
 
   // Hard tasks (launch/revenue stage) give bigger momentum boost
   const isHardTask = ["launch", "revenue", "growth"].some(s =>
@@ -31,15 +31,23 @@ export async function POST(req: Request) {
   );
   const newMomentum = momentumOnTaskComplete(current, isHardTask);
 
+  // Consecutive task tracking — powers the Emotional Language Layer in reflexion.ts
+  // If they're returning after a gap, reset to 1 (a restart, not a continuation)
+  const today = new Date().toLocaleDateString("en-CA");
+  const isReturningAfterGap = (ctx?.last_active ?? "") < today;
+  const prevConsecutive = ctx?.consecutive_tasks_completed ?? 0;
+  const newConsecutive = isReturningAfterGap ? 1 : prevConsecutive + 1;
+
   await admin.from("founder_context").upsert({
     user_id: user.id,
     momentum_score: newMomentum,
     momentum_updated_at: new Date().toISOString(),
-    last_active: new Date().toLocaleDateString("en-CA"),
+    last_active: today,
     days_inactive: 0,
     tasks_accepted_this_week: previousTaskCount + 1,
+    consecutive_tasks_completed: newConsecutive,
     ...(stage ? { current_stage: stage } : {}),
   }, { onConflict: "user_id" });
 
-  return NextResponse.json({ ok: true, momentum: newMomentum, isFirstTask });
+  return NextResponse.json({ ok: true, momentum: newMomentum, isFirstTask, consecutiveTasksCompleted: newConsecutive });
 }

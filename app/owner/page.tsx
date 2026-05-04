@@ -228,7 +228,7 @@ export default function OwnerPanel() {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               {[
                 { label: "Streak days", key: "streak" as const, value: stats.streak },
-                { label: "Tasks done", key: "tasksDone" as const, value: stats.tasksDone },
+                { label: "Tasks done", key: "checkInsDone" as const, value: stats.checkInsDone },
                 { label: "AI messages", key: "aiMessages" as const, value: stats.aiMessages },
                 { label: "Reflections", key: "reflectionsLogged" as const, value: stats.reflectionsLogged },
                 { label: "Projects", key: "projectsCreated" as const, value: stats.projectsCreated },

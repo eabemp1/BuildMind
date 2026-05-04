@@ -17,19 +17,21 @@ const LimitModalContext = createContext<LimitModalContextValue>({
 });
 export function useLimitModal() { return useContext(LimitModalContext); }
 
-const LIMIT_COPY: Record<LimitReason, { emoji: string; title: string; body: string; cta: string }> = {
-  ai_coach:     { emoji: "🤖", title: "You've hit your AI Coach limit for this week.", body: "Free plan includes 3 AI Coach messages per week. Builder plan gives you unlimited AI Coach, weekly strategy reports, and full Break My Startup analysis.", cta: "Unlock unlimited AI →" },
-  break_startup:{ emoji: "⚡", title: "Full analysis is a Builder feature.", body: "The real analysis — survival probability, all kill reasons, every survive reason — is Builder only. The preview you saw is a taste.", cta: "Unlock full analysis →" },
-  today_action: { emoji: "🎯", title: "You've used your free actions for today.", body: "Free plan gives you 3 AI-powered actions per day. Builder removes all limits and adds AI coaching and weekly reports.", cta: "Unlock unlimited actions →" },
-  weekly_report:{ emoji: "📋", title: "Weekly reports are a Builder feature.", body: "Every week: your intention vs action gap, momentum score, biggest blocker, and an honest assessment of where you're headed.", cta: "Unlock weekly reports →" },
-  generic:      { emoji: "🔒", title: "You've reached your free plan limit.", body: "Builder plan removes all limits — unlimited AI Coach, full Break My Startup analysis, weekly reports, and everything else.", cta: "Upgrade to Builder →" },
+const LIMIT_COPY: Record<LimitReason, { emoji: string; title: string; body: string; cta: string; feature: string }> = {
+  ai_coach:     { emoji: "🤖", title: "That's your 3 AI Coach messages for today.", body: "More tomorrow — or upgrade to Builder to keep going right now. Builder removes the daily limit so the AI Coach is always there when the decision can't wait.", cta: "Keep going with Builder →", feature: "coach" },
+  break_startup:{ emoji: "⚡", title: "Full analysis is a Builder feature.", body: "The real stress test — all kill reasons, every survive path, the honest verdict — is Builder only. The preview you saw is a taste of what's behind it.", cta: "Unlock full stress test →", feature: "break_startup" },
+  today_action: { emoji: "🎯", title: "You've used your 3 actions this week.", body: "Builder runs the Reflexion Loop every day. Your next action is ready — you just need Builder to receive it.", cta: "Get daily actions with Builder →", feature: "actions" },
+  weekly_report:{ emoji: "📋", title: "Your weekly report is a Builder feature.", body: "Every Friday: your intention vs action gap, momentum trend, biggest blocker, and what the AI thinks you're actually avoiding. The week doesn't close without it.", cta: "Unlock weekly reports →", feature: "report" },
+  generic:      { emoji: "🔒", title: "Builder is where serious founders operate.", body: "Daily Reflexion Loop, Morning Briefing before you wake, unlimited AI Coach, full Strategy Blueprints, Recovery Mode, Pattern Detection. Not more features — a different level of execution.", cta: "Upgrade to Builder →", feature: "generic" },
 };
 
 const BUILDER_BULLETS = [
+  "Daily Reflexion Loop — full 3-agent personalisation",
+  "Morning Briefing every day before you wake",
   "Unlimited AI Coach — no daily caps",
-  "Full Break My Startup analysis",
-  "Weekly AI strategy report",
-  "Unlimited projects and tasks",
+  "Unlimited Strategy Blueprints + Execution Systems",
+  "Recovery Mode — forgiving when you fall behind",
+  "Pattern Detection — AI names what you're avoiding",
 ];
 
 function LimitModalUI({ reason, onClose, onUpgrade }: { reason: LimitReason; onClose: () => void; onUpgrade: () => void }) {
@@ -138,7 +140,7 @@ export function LimitModalProvider({ children }: { children: ReactNode }) {
       r;
     setReason(normalized);
   }, []);
-  const handleUpgrade = () => { setReason(null); router.push(`/upgrade?plan=builder&reason=${reason ?? "generic"}`); };
+  const handleUpgrade = () => { setReason(null); const feat = reason ? LIMIT_COPY[reason].feature : "generic"; router.push(`/upgrade?feature=${feat}`); };
   return (
     <LimitModalContext.Provider value={{ showLimit, showLimitModal }}>
       {children}

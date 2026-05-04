@@ -35,10 +35,9 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json().catch(() => ({}));
-    const userId = String(body?.userId ?? "").trim();
+    // Use the session-verified userId from planCheck — do NOT trust body.userId.
+    const userId = planCheck.userId;
     const projectId = String(body?.projectId ?? "").trim();
-
-    if (!userId) return NextResponse.json({ success: false, error: "userId required" }, { status: 400 });
 
     // Get data from Supabase directly — no Python backend needed
     let tasks = 0, milestones = 0, projects = 0;

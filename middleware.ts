@@ -124,13 +124,24 @@ export async function middleware(request: NextRequest) {
 
   if ((user || isDevAuthed) && !isApiRoute) {
     const metadataCompleted = user?.user_metadata?.onboarding_completed === true;
-    const { count: projectCount } = user
-      ? await supabase
-          .from("projects")
-          .select("id", { count: "exact", head: true })
-          .eq("user_id", user.id)
-      : { count: isDevOnboarded ? 1 : 0 };
-    const onboardingCompleted = metadataCompleted || (projectCount ?? 0) > 0;
+
+    // Fast path: if the JWT metadata already confirms onboarding, skip the
+    // database project-count query. This removes a live DB call on every
+    // page request for the vast majority of returning users.
+    // The slow path (DB query) only runs for new users who haven't yet had
+    // their metadata stamped, or for dev-auth sessions.
+    let onboardingCompleted: boolean;
+    if (metadataCompleted) {
+      onboardingCompleted = true;
+    } else {
+      const { count: projectCount } = user
+        ? await supabase
+            .from("projects")
+            .select("id", { count: "exact", head: true })
+            .eq("user_id", user.id)
+        : { count: isDevOnboarded ? 1 : 0 };
+      onboardingCompleted = (projectCount ?? 0) > 0;
+    }
 
     if (!onboardingCompleted && !isOnboardingRoute) {
       const redirectUrl = request.nextUrl.clone();

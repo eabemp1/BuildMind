@@ -101,8 +101,9 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
     const userId = String(body?.userId ?? "").trim();
     const projectId = String(body?.projectId ?? "").trim();
-    const idea = String(body?.idea ?? "").trim();
-    const focusAreas = Array.isArray(body?.focusAreas) ? body.focusAreas.map(String).filter(Boolean) : [];
+    // Input length limits — prevent prompt injection and runaway token costs
+    const idea = String(body?.idea ?? "").trim().slice(0, 1000);
+    const focusAreas = Array.isArray(body?.focusAreas) ? body.focusAreas.map(String).filter(Boolean).slice(0, 10) : [];
     if (!userId) return NextResponse.json({ success: false, error: "userId is required" }, { status: 400 });
     if (!projectId && !idea) return NextResponse.json({ success: false, error: "projectId or idea is required" }, { status: 400 });
 

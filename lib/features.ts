@@ -1,13 +1,13 @@
 export const FEATURES = {
   aiCoach:           true,
   aiUsageLimits:     true,
-  ventures:          false,  // 🔒 Operator tier — not yet live
+  ventures:          true,   // ✅ enabled
   milestones:        true,
   founderScore:      true,
   startupTimeline:   true,
   notifications:     true,   // ✅ enabled — local notification engine
-  publicProjects:    false,
-  adminPortal:       false,
+  publicProjects:    false,  // 🔒 Month 6–7: requires 100 users with data (Playbook §5.3)
+  adminPortal:       true,   // ✅ enabled
   analytics:         true,
   startupCommunity:  false,
   breakMyStartup:    true,

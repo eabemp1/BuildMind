@@ -23,7 +23,7 @@ export interface Achievement {
 export interface AchievementStats {
   streak: number;
   maxStreak: number;
-  tasksDone: number;
+  checkInsDone: number;
   aiMessages: number;
   projectsCreated: number;
   reflectionsLogged: number;
@@ -58,9 +58,9 @@ export const ACHIEVEMENTS: Achievement[] = [
 
   // ── Streak ──────────────────────────────────────────────────────────────────
   {
-    id: "streak_1", label: "First Flame", description: "Complete your first action", emoji: "🔥",
+    id: "streak_1", label: "First Flame", description: "Complete your first daily check-in", emoji: "🔥",
     rarity: "common", category: "streak", xp: 50,
-    condition: s => s.tasksDone >= 1,
+    condition: s => s.checkInsDone >= 1,
   },
   {
     id: "streak_3", label: "On Fire", description: "3-day streak", emoji: "🔥",
@@ -90,29 +90,29 @@ export const ACHIEVEMENTS: Achievement[] = [
 
   // ── Tasks ───────────────────────────────────────────────────────────────────
   {
-    id: "tasks_5", label: "Getting Started", description: "Complete 5 actions", emoji: "✅",
+    id: "tasks_5", label: "Getting Started", description: "5 daily check-ins completed", emoji: "✅",
     rarity: "common", category: "tasks", xp: 75,
-    condition: s => s.tasksDone >= 5,
+    condition: s => s.checkInsDone >= 5,
   },
   {
-    id: "tasks_10", label: "Action Taker", description: "10 actions done — you're executing", emoji: "⚡",
+    id: "tasks_10", label: "Action Taker", description: "10 daily check-ins — you show up", emoji: "⚡",
     rarity: "common", category: "tasks", xp: 150,
-    condition: s => s.tasksDone >= 10,
+    condition: s => s.checkInsDone >= 10,
   },
   {
-    id: "tasks_25", label: "Momentum Builder", description: "25 actions completed", emoji: "🚀",
+    id: "tasks_25", label: "Momentum Builder", description: "25 check-ins — momentum is real", emoji: "🚀",
     rarity: "rare", category: "tasks", xp: 400,
-    condition: s => s.tasksDone >= 25,
+    condition: s => s.checkInsDone >= 25,
   },
   {
-    id: "tasks_50", label: "Half Century", description: "50 actions done. You're serious.", emoji: "💪",
+    id: "tasks_50", label: "Half Century", description: "50 check-ins. You're serious.", emoji: "💪",
     rarity: "epic", category: "tasks", xp: 800,
-    condition: s => s.tasksDone >= 50,
+    condition: s => s.checkInsDone >= 50,
   },
   {
     id: "tasks_100", label: "Century Founder", description: "100 actions. You've built something real.", emoji: "🎯",
     rarity: "legendary", category: "tasks", xp: 3000, secret: true,
-    condition: s => s.tasksDone >= 100,
+    condition: s => s.checkInsDone >= 100,
   },
 
   // ── AI ──────────────────────────────────────────────────────────────────────
@@ -254,7 +254,7 @@ export function getAchievementStats(): AchievementStats {
 
 function defaultStats(): AchievementStats {
   return {
-    streak: 0, maxStreak: 0, tasksDone: 0, aiMessages: 0,
+    streak: 0, maxStreak: 0, checkInsDone: 0, aiMessages: 0,
     projectsCreated: 0, reflectionsLogged: 0, planUpgraded: false,
     venturesViewed: false, breakMyStartupUsed: false, reportViewed: false,
     shareUsed: false, daysActive: 0,
@@ -302,8 +302,18 @@ export function getUnseenCount(): number {
 }
 
 // ── Dev helper ────────────────────────────────────────────────────────────────
+declare global {
+  interface Window {
+    bmAchievements?: {
+      stats: typeof getAchievementStats;
+      unlocked: typeof getUnlocked;
+      xp: typeof getTotalXP;
+      reset: () => void;
+    };
+  }
+}
 if (typeof window !== "undefined") {
-  (window as any).bmAchievements = {
+  window.bmAchievements = {
     stats: getAchievementStats,
     unlocked: getUnlocked,
     xp: getTotalXP,

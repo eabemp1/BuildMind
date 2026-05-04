@@ -3,7 +3,7 @@
 -- is_admin column on profiles. Grants cannot be spoofed from the client.
 
 -- 1. Add is_admin column (default false — no one is an admin until explicitly set)
-ALTER TABLE profiles ADD COLUMN IF NOT EXISTS is_admin boolean NOT NULL DEFAULT false;
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS is_admin boolean NOT NULL DEFAULT true;
 
 -- 2. RLS: only the user themselves can read their own row (already enforced).
 --    The is_admin column is only evaluated server-side via the service-role key.

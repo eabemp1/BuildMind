@@ -78,7 +78,7 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
   // "Your acquisition engine. The Reflexion Strike is so good it converts."
   // Paywall moment: "Your Morning Briefing is ready — upgrade to receive it every day."
   free: {
-    actionsPerWeek: 5,
+    actionsPerWeek: 3,
     aiMessagesPerDay: 3,
     historyDays: 7,
     maxProjects: 1,
@@ -298,6 +298,33 @@ export function getStoredStreak(): number {
   return Number(localStorage.getItem(STREAK_KEY) ?? "0");
 }
 
+/**
+ * syncStreakFromServer — call on app mount to restore streak from Supabase.
+ * This makes streak survive device switches and localStorage clears.
+ * Updates both localStorage keys so incrementDailyStreak() works correctly.
+ */
+export async function syncStreakFromServer(): Promise<number> {
+  if (typeof window === "undefined") return 0;
+  try {
+    const res = await fetch("/api/founder-context/streak");
+    if (!res.ok) return getStoredStreak();
+    const { streak, lastCheckinDate } = await res.json();
+    if (typeof streak === "number") {
+      // Only update localStorage if server has a higher or equal streak.
+      // This avoids clobbering a streak that was just incremented locally
+      // but hasn't synced yet.
+      const local = getStoredStreak();
+      if (streak >= local) {
+        localStorage.setItem(STREAK_KEY, String(streak));
+        if (lastCheckinDate) localStorage.setItem(LAST_CHECKIN_KEY, lastCheckinDate);
+        window.dispatchEvent(new CustomEvent("bm_streak_updated", { detail: { streak } }));
+      }
+      return Math.max(streak, local);
+    }
+  } catch { /* non-fatal */ }
+  return getStoredStreak();
+}
+
 export function incrementDailyStreak(): number {
   if (typeof window === "undefined") return 0;
   const today = streakDayKey();
@@ -313,6 +340,15 @@ export function incrementDailyStreak(): number {
   localStorage.setItem(STREAK_KEY, String(next));
   localStorage.setItem(LAST_CHECKIN_KEY, today);
   window.dispatchEvent(new CustomEvent("bm_streak_updated", { detail: { streak: next } }));
+
+  // Persist to Supabase so streak survives device switches and localStorage clears.
+  // Fire-and-forget — localStorage already updated so UI is instant.
+  fetch("/api/founder-context/streak", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ streak: next, lastCheckinDate: today }),
+  }).catch(() => { /* non-fatal — localStorage is the fast fallback */ });
+
   return next;
 }
 
@@ -347,8 +383,13 @@ export function resetUpgradeTrigger(): void {
 }
 
 // Dev helpers
+declare global {
+  interface Window {
+    bmSetPlan?: (p: string, userId: string) => void;
+  }
+}
 if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
-  (window as any).bmSetPlan = (p: string, userId: string) => {
+  window.bmSetPlan = (p: string, userId: string) => {
     if (!userId) { console.warn("bmSetPlan: pass a userId to avoid cross-account bleed"); return; }
     localStorage.setItem(`bm_plan_${userId}`, normalizePlan(p as Plan));
     console.log(`[dev] bm_plan_${userId} = ${normalizePlan(p as Plan)}. Refresh.`);

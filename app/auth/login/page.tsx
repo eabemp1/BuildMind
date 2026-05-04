@@ -100,8 +100,8 @@ function LoginContent() {
         setSuccessMsg("Check your email to confirm your account. After confirmation, onboarding opens next.");
         setTab("signin");
       }
-    } catch (err: any) {
-      setError(err?.message ?? "Something went wrong. Please try again.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -116,8 +116,8 @@ function LoginContent() {
         options: { redirectTo: `${window.location.origin}/auth/callback?next=/today` },
       });
       if (err) throw err;
-    } catch (err: any) {
-      setError(err?.message ?? "Google sign-in failed.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Google sign-in failed.");
       setOauthLoading(false);
     }
   }
@@ -135,8 +135,8 @@ function LoginContent() {
       });
       if (err) throw err;
       setSuccessMsg("Password reset email sent. Check your inbox.");
-    } catch (err: any) {
-      setError(err?.message ?? "Failed to send reset email.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to send reset email.");
     } finally {
       setLoading(false);
     }

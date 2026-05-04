@@ -10,24 +10,32 @@ export const metadata: Metadata = {
 };
 
 const FREE_FEATURES = [
-  "Projects + AI-generated roadmap",
-  "Daily action engine by stage",
-  "Task tracking + streaks",
-  "3 AI Coach messages/week",
-  "Break My Startup preview",
-  "Public weekly share card",
+  "Onboarding Reflexion Strike — full quality, one-time",
+  "3 AI-powered actions/week (Reflexion Loop)",
+  "3 AI Coach messages/day",
+  "Morning Briefing — Monday + Thursday",
+  "Momentum Score (Level 1 visibility)",
+  "1 full Strategy Blueprint (all 8 layers)",
+  "Break My Startup — 1 Stress Test",
+  "Public founder profile",
 ];
 
 const BUILDER_FEATURES = [
   "Everything in Free",
-  "Unlimited AI Coach",
-  "Full Break My Startup + competitor scan",
-  "Weekly AI strategy report",
-  "Startup score and investor metrics",
-  "90-day roadmap tracks",
-  "Full history and data export",
-  "Streak insurance (1 miss/month)",
-  "Priority email support",
+  "Daily Reflexion Loop — unlimited AI actions",
+  "Morning Briefing every day — delivered before you wake",
+  "Unlimited AI Coach with Explainable Rationale",
+  "Full Momentum Score + decay warnings",
+  "Cognitive Load Check-in and task routing",
+  "HITL Overrides — every override feeds your context",
+  "Unlimited Strategy Blueprints",
+  "90-day Execution Systems (Roadmap Tracks)",
+  "Evening Check nudges — context-specific, never generic",
+  "Emotional Language Layer — warmth at key moments",
+  "Recovery Mode — forgiving when you fall behind",
+  "Weekly AI Strategy Report every Friday",
+  "Streak insurance — 1 save/month",
+  "Pattern Detection — AI names your avoidance patterns",
 ];
 
 export default function PricingPage() {

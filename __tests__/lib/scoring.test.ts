@@ -20,31 +20,69 @@ describe("computeStartupScore", () => {
     expect(computeStartupScore({})).toBe(0);
   });
 
-  it("uses execution_score as the primary signal", () => {
-    expect(computeStartupScore({ execution_score: 72 })).toBe(72);
+  it("uses execution_score as the primary signal (weight 0.45)", () => {
+    // execution=80 * 0.45 = 36
+    expect(computeStartupScore({ execution_score: 80 })).toBe(36);
   });
 
-  it("adds 8 pts per validation strength (up to 40)", () => {
-    // 3 strengths → +24, base 0, progress 0 → 24
-    expect(computeStartupScore({ validation_strengths: ["a", "b", "c"] })).toBe(24);
+  it("adds momentum_score as a secondary signal (weight 0.25)", () => {
+    // momentum=80 * 0.25 = 20
+    expect(computeStartupScore({ momentum_score: 80 })).toBe(20);
   });
 
-  it("caps validation bonus at 40 (5+ strengths)", () => {
+  it("combines execution and momentum correctly", () => {
+    // exec=60*0.45=27, momentum=80*0.25=20 → 47
+    expect(computeStartupScore({ execution_score: 60, momentum_score: 80 })).toBe(47);
+  });
+
+  it("adds 4 pts per validation strength (up to 20)", () => {
+    // 3 strengths → +12
+    expect(computeStartupScore({ validation_strengths: ["a", "b", "c"] })).toBe(12);
+  });
+
+  it("caps validation bonus at 20 (5+ strengths)", () => {
     const sixStrengths = ["a", "b", "c", "d", "e", "f"];
-    expect(computeStartupScore({ validation_strengths: sixStrengths })).toBe(40);
+    expect(computeStartupScore({ validation_strengths: sixStrengths })).toBe(20);
   });
 
-  it("uses progress as a floor when execution_score is lower", () => {
-    // progress=50 + 0 strengths = 50; execution_score=20 → max(20, 50) = 50
-    expect(computeStartupScore({ progress: 50, execution_score: 20 })).toBe(50);
+  it("XP below threshold gives 0 boost", () => {
+    expect(computeStartupScore({ xp: 100 })).toBe(0);
   });
 
-  it("caps result at 100", () => {
+  it("XP ≥ 200 gives +4 boost", () => {
+    expect(computeStartupScore({ xp: 200 })).toBe(4);
+  });
+
+  it("XP ≥ 3500 gives +20 boost (max)", () => {
+    expect(computeStartupScore({ xp: 5000 })).toBe(20);
+  });
+
+  it("30-day streak gives +10 boost (max streak bonus)", () => {
+    expect(computeStartupScore({ streak: 30 })).toBe(10);
+  });
+
+  it("streak capped at 30 days — 60-day streak = same as 30", () => {
+    expect(computeStartupScore({ streak: 60 })).toBe(10);
+  });
+
+  it("streak scales proportionally below 30 days", () => {
+    // 15 days = 50% of max → 5 pts
+    expect(computeStartupScore({ streak: 15 })).toBe(5);
+  });
+
+  it("progress field is no longer a scoring input (noisy milestone signal removed)", () => {
+    // progress should have no effect — score should remain 0
+    expect(computeStartupScore({ progress: 100 } as any)).toBe(0);
+  });
+
+  it("caps result at 100 with all signals combined", () => {
     expect(
       computeStartupScore({
         execution_score: 95,
-        validation_strengths: ["a", "b", "c", "d", "e"],
-        progress: 100,
+        momentum_score: 95,
+        validation_strengths: ["a", "b", "c", "d", "e", "f"],
+        xp: 5000,
+        streak: 30,
       }),
     ).toBe(100);
   });
@@ -54,7 +92,9 @@ describe("computeStartupScore", () => {
       computeStartupScore({
         execution_score: null,
         validation_strengths: null,
-        progress: null,
+        momentum_score: null,
+        xp: null,
+        streak: null,
       }),
     ).toBe(0);
   });

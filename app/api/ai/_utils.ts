@@ -26,40 +26,37 @@ export async function enforceAndTrackAIUsage(userId: string, planOverride?: stri
   // Look up plan from user metadata if not provided
   let plan = planOverride ?? "free";
   if (!planOverride) {
-    const { data: authUser } = await supabase.auth.admin.getUserById(userId).catch(() => ({ data: null }));
-    plan = (authUser?.user?.user_metadata?.plan as string) ?? "free";
+    try {
+      const { data: authUser } = await supabase.auth.admin.getUserById(userId);
+      plan = (authUser?.user?.user_metadata?.plan as string) ?? "free";
+    } catch {
+      plan = "free";
+    }
   }
 
   const monthlyLimit = PLAN_MONTHLY_LIMITS[plan] ?? 30;
-  // Builder/Venture unlimited — just track, don't cap
+
+  // Builder/Venture: unlimited — just track via atomic upsert, no cap needed.
   if (monthlyLimit === -1) {
-    const { data: existing } = await supabase
-      .from("ai_usage").select("id,count").eq("user_id", userId).eq("month", month).single();
-    if (!existing) {
-      await supabase.from("ai_usage").insert({ user_id: userId, month, count: 1 });
-    } else {
-      await supabase.from("ai_usage").update({ count: (existing.count ?? 0) + 1 }).eq("id", existing.id);
-    }
+    await supabase.rpc("increment_ai_usage", { p_user_id: userId, p_month: month });
     return;
   }
 
-  const { data: existing, error: selectError } = await supabase
-    .from("ai_usage")
-    .select("id,count")
-    .eq("user_id", userId)
-    .eq("month", month)
-    .single();
+  // Free plan: atomically increment and read back the new count in one round-trip.
+  // Using a Postgres RPC prevents the SELECT→UPDATE race condition where two
+  // concurrent requests both read the same count and both think they're under limit.
+  const { data: newCount, error: rpcError } = await supabase.rpc("increment_ai_usage_capped", {
+    p_user_id: userId,
+    p_month: month,
+    p_limit: monthlyLimit,
+  });
 
-  if (selectError && selectError.code !== "PGRST116") throw new Error(selectError.message);
+  if (rpcError) throw new Error(rpcError.message);
 
-  if (!existing) {
-    await supabase.from("ai_usage").insert({ user_id: userId, month, count: 1 });
-    return;
-  }
-  if ((existing.count ?? 0) >= monthlyLimit) {
+  // RPC returns -1 when the limit is already reached (no increment performed).
+  if (newCount === -1) {
     throw new Error(`Monthly AI limit reached (${monthlyLimit} calls). Upgrade to Builder for unlimited AI.`);
   }
-  await supabase.from("ai_usage").update({ count: (existing.count ?? 0) + 1 }).eq("id", existing.id);
 }
 
 /**
@@ -152,4 +149,54 @@ export async function createUserNotification(userId: string, message: string, ty
   if (!hasAdminEnv()) return;
   const supabase = createAdminClient();
   await supabase.from("notifications").insert({ user_id: userId, type, message, is_read: false });
+}
+
+/**
+ * logReflexionQuality — runs Agent B's checklist against a generated output
+ * and writes the verdict to reflexion_quality_log.
+ *
+ * Called fire-and-forget from every route that generates AI tasks.
+ * This is what makes the gatekeeper measurable — without logging, you cannot
+ * know if it's rejecting 0% or 40% of outputs.
+ */
+export async function logReflexionQuality(params: {
+  userId: string;
+  projectId?: string;
+  context: string;          // "today_action" | "coach" | "morning_briefing" | etc.
+  originalOutput?: string;  // what Agent A generated (optional)
+  finalOutput: string;      // what was actually returned to the user
+  stage?: string;
+  targetUsers?: string;
+  momentumScore?: number;
+}): Promise<void> {
+  if (!hasAdminEnv()) return;
+  const { createAdminClient: adminClient } = await import("@/lib/supabase/admin");
+  const supabase = adminClient();
+
+  // Run the same specificity checklist as Agent B
+  const checks = {
+    hasNumber:       /\b\d+\b/.test(params.finalOutput),
+    hasPlatform:     /(linkedin|whatsapp|email|twitter|phone|in person|slack|telegram|instagram)/i.test(params.finalOutput),
+    hasUserType:     params.targetUsers ? params.finalOutput.toLowerCase().includes(params.targetUsers.toLowerCase().split(" ")[0]) : true,
+    notTooGeneric:   !/\b(some people|potential users|your audience|people who)\b/i.test(params.finalOutput),
+    hasConcreteVerb: /(message|call|send|post|dm|email|reach out to|interview|show|share|pitch)/i.test(params.finalOutput),
+  };
+
+  const failedChecks = Object.entries(checks).filter(([, passed]) => !passed).map(([name]) => name);
+  const verdict: "pass" | "fail" = failedChecks.length === 0 ? "pass" : "fail";
+  const reject_reason = failedChecks.length > 0
+    ? `Failed: ${failedChecks.join(", ")}`
+    : null;
+
+  await supabase.from("reflexion_quality_log").insert({
+    user_id:        params.userId,
+    project_id:     params.projectId ?? null,
+    context:        params.context,
+    verdict,
+    reject_reason,
+    original_output: params.originalOutput ?? null,
+    final_output:   params.finalOutput,
+    stage:          params.stage ?? null,
+    momentum_score: params.momentumScore ?? null,
+  });
 }

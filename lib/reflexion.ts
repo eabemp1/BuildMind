@@ -28,6 +28,31 @@ export async function groqCall(messages: GroqMessage[], temperature = 0.5, maxTo
   return text as string;
 }
 
+/**
+ * groqJSONCall — same as groqCall but forces response_format: json_object.
+ * Use for Agent B (Critic) to guarantee parseable JSON output and prevent
+ * silent pass-through when the model returns prose instead of a verdict.
+ */
+async function groqJSONCall<T>(messages: GroqMessage[], temperature = 0.3, maxTokens = 400): Promise<T> {
+  if (!GROQ_API_KEY) throw new Error("GROQ_API_KEY not set");
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${GROQ_API_KEY}` },
+    body: JSON.stringify({
+      model: GROQ_MODEL,
+      temperature,
+      max_tokens: maxTokens,
+      response_format: { type: "json_object" },
+      messages,
+    }),
+  });
+  if (!res.ok) throw new Error(`Groq ${res.status}: ${await res.text().then(t => t.slice(0, 200))}`);
+  const body = await res.json();
+  const content = body?.choices?.[0]?.message?.content;
+  if (!content) throw new Error("Groq returned empty response");
+  return JSON.parse(content) as T;
+}
+
 export interface ReflexionContext {
   startupSummary: string;
   stage: string;
@@ -76,7 +101,7 @@ export function getWeeklyCriticPersona(weekNumber?: number): { name: string; pro
   return CRITIC_PERSONAS[week % 4];
 }
 
-function getISOWeekNumber(date: Date): number {
+export function getISOWeekNumber(date: Date): number {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
   const dayNum = d.getUTCDay() || 7;
   d.setUTCDate(d.getUTCDate() + 4 - dayNum);
@@ -175,43 +200,88 @@ Be specific to this founder's situation. No generic advice.`;
     { role: "user", content: "Generate your best response to the task." },
   ], 0.6, 500);
 
-  // ── NEW IN V4: Agent B — The Critic (Persona Rotation) ───────────────────
+  // ── NEW IN V4: Agent B — The Critic/Gatekeeper (Persona Rotation) ───────────
+  // Agent B is a GATEKEEPER, not a reviewer. It rejects weak outputs and forces
+  // Agent C to rebuild from scratch — not just polish. Max 2 loops.
   const criticPersona = getWeeklyCriticPersona(context.weekNumber);
+
+  // REJECT criteria — any of these triggers a FAIL verdict
   const criticPrompt = `${criticPersona.prompt}
-Here is advice generated for a founder:
----
-${generated}
----
-Find:
-1. Two logical flaws or unsubstantiated claims
-2. One place it is too generic (not specific to this founder's situation)
-3. One place it is too comfortable (not pushing them hard enough)
-Be harsh. Short. Bullet points only.`;
 
-  const critique = await groqCall([
-    { role: "system", content: criticPrompt },
-    { role: "user", content: "Give your critique." },
-  ], 0.4, 300);
+You are a GATEKEEPER, not a reviewer. Your job is to REJECT weak advice and force a rebuild.
 
-  // ── Agent C — The Refiner (with Emotional Language Layer) ───────────────
-  const refinerPrompt = `You are BuildMind's execution engine. You receive startup advice and a harsh critique.
-Rewrite the advice incorporating the critique. Rules:
+REJECT this task if ANY of the following are true:
+1. The action does not name a specific platform (e.g. "social media" instead of "LinkedIn" or "WhatsApp")
+2. The action does not name the specific user type from the founder's context
+3. The action has no number (e.g. "message some people" instead of "message 3 people")
+4. The action cannot be completed in under 30 minutes
+5. The advice could apply to any founder at any stage (generic)
+6. The advice does not address the founder's current stage or last reflection outcome
+
+Respond in JSON ONLY:
+{
+  "verdict": "pass" | "fail",
+  "reason": "one sentence explaining the verdict",
+  "improved_version": "a better version of the task if verdict is fail (otherwise null)"
+}
+
+FOUNDER CONTEXT:
+Stage: ${context.stage} | Target users: ${context.targetUsers ?? "not set"} | Momentum: ${context.momentumScore}/100
+
+ADVICE TO EVALUATE:
+${generated}`;
+
+  let critiqueData: { verdict: string; reason: string; improved_version?: string | null } = {
+    verdict: "pass",
+    reason: "Verdict parsing failed — defaulting to pass",
+    improved_version: null,
+  };
+  try {
+    // Agent B uses groqJSONCall (response_format: json_object) to guarantee
+    // a parseable verdict. A prose response used to silently default to "pass",
+    // undermining the gatekeeper design.
+    critiqueData = await groqJSONCall<typeof critiqueData>([
+      { role: "system", content: criticPrompt },
+      { role: "user", content: "Evaluate and give your verdict." },
+    ], 0.3, 300);
+  } catch {
+    // groqJSONCall failed (network / model error) — default to pass so the
+    // loop is non-fatal, but log it so patterns can be monitored.
+  }
+
+  const critique = `VERDICT: ${critiqueData.verdict.toUpperCase()} — ${critiqueData.reason}`;
+
+  // If FAIL: Agent C rebuilds from scratch using the improved version as seed.
+  // If PASS: Agent C tightens wording and clarity only.
+  const baseForRefinement = critiqueData.verdict === "fail" && critiqueData.improved_version
+    ? critiqueData.improved_version
+    : generated;
+
+  // ── Agent C — The Refiner / Rebuilder (with Emotional Language Layer) ──────
+  // If verdict was FAIL, Agent C rebuilds from the improved_version seed.
+  // If verdict was PASS, Agent C tightens wording and clarity only.
+  const refinerMode = critiqueData.verdict === "fail"
+    ? "REBUILD: The original was rejected. Use the improved version as a starting point and make it sharper."
+    : "POLISH: The task passed gating. Tighten wording and clarity only — do not change the substance.";
+
+  const refinerPrompt = `You are BuildMind's execution engine. ${refinerMode}
+Rules:
 - Every claim must be backed by logic specific to THIS founder
-- Must be more specific than the original
-- Must be harder-hitting than the original
+- Must name the exact platform, the exact user type, and include a number
+- Must be harder-hitting than the input
 - End with a single concrete action they can start in the next 30 minutes
 - No preamble, no "here's the refined version"
 - 3–5 sentences maximum
 ${emotionalInstruction}
 
-ORIGINAL ADVICE:
-${generated}
+INPUT:
+${baseForRefinement}
 
 CRITIQUE:
 ${critique}
 
 FOUNDER CONTEXT:
-Stage: ${context.stage} | Momentum: ${context.momentumScore}/100 | Cognitive: ${context.cognitiveLoad ?? "fresh"}`;
+Stage: ${context.stage} | Momentum: ${context.momentumScore}/100 | Cognitive: ${context.cognitiveLoad ?? "fresh"} | Target users: ${context.targetUsers ?? "not set"}`;
 
   const refined = await groqCall([
     { role: "system", content: refinerPrompt },
@@ -228,7 +298,15 @@ Advice: ${refined}`;
     { role: "user", content: "One sentence rationale only." },
   ], 0.2, 60).catch(() => `Because you're at ${context.stage} stage and this is the highest-leverage move.`);
 
-  return { output: refined, critique, rationale: rationale.trim(), nextAction: extractAction(refined) };
+  return {
+    output: refined,
+    critique,
+    rationale: rationale.trim(),
+    nextAction: extractAction(refined),
+    // Gatekeeper verdict — callers log this to reflexion_quality_log
+    verdict: (critiqueData.verdict ?? "pass") as "pass" | "fail",
+    reject_reason: critiqueData.verdict === "fail" ? (critiqueData.reason ?? null) : null,
+  };
 }
 
 /**

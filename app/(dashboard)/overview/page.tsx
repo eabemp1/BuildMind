@@ -6,7 +6,9 @@ import { motion } from "framer-motion";
 import Link from "next/link";
 import { computeStartupScore } from "@/lib/buildmind";
 import { useProjectSummariesQuery, useDashboardOverviewQuery } from "@/lib/queries";
-import { recordScore, markActiveToday, recordPendingTasks } from "@/lib/urgency";
+import { recordScore, markActiveToday, recordPendingTasks, syncUrgencyFromServer } from "@/lib/urgency";
+import { getStoredStreak } from "@/lib/plan";
+import { getXP } from "@/lib/scoring";
 import {
   Zap, Flame, Target, ArrowRight, ChevronRight,
   FolderKanban, BarChart3, Clock,
@@ -216,10 +218,13 @@ export default function OverviewPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const refresh = () => setLocalStreak(Number(localStorage.getItem("bm_streak") ?? "0"));
+    const refresh = () => setLocalStreak(getStoredStreak());
     refresh();
     window.addEventListener("storage", refresh);
     window.addEventListener("bm_streak_updated", refresh);
+    // Seed streak + lastActive from Supabase so urgency signals are correct
+    // on a fresh device — fires after the localStorage read so UI is instant
+    syncUrgencyFromServer().then(refresh).catch(() => {});
     return () => {
       window.removeEventListener("storage", refresh);
       window.removeEventListener("bm_streak_updated", refresh);
@@ -240,7 +245,11 @@ export default function OverviewPage() {
     );
   }, [summaries]);
 
-  const score = activeProject ? computeStartupScore(activeProject) : 0;
+  const score = activeProject ? computeStartupScore({
+    ...activeProject,
+    xp: getXP(),
+    streak,
+  }) : 0;
   const scoreColor = score >= 60 ? "var(--bm-green)" : score >= 30 ? "var(--bm-amber)" : "var(--bm-red)";
   const stage = activeProject?.startup_stage ?? "Idea";
   const milestonesCompleted = overview?.milestonesCompleted ?? 0;

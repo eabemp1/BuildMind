@@ -7,9 +7,12 @@
  * Imported by:
  *   lib/buildmind.ts   (re-exported for backwards compatibility)
  *   app/api/ai/* routes
+ *
+ * NOTE: No "use client" directive — this module is imported by both client
+ * components AND server-side API routes. All browser-only paths are guarded
+ * with `typeof window !== "undefined"` checks. API routes use createAdminClient
+ * directly and never call the client-side branches of these functions.
  */
-
-"use client";
 
 import { createClient } from "@/lib/supabase/client";
 import { trackEvent } from "@/lib/analytics";
@@ -278,6 +281,8 @@ export async function getProjectSummaries(): Promise<ProjectSummary[]> {
       tasksTotal: current.tasksTotal,
       progress,
       lastActivity: current.lastActivity,
+      problem: project.problem ?? null,
+      target_users: project.target_users ?? null,
     };
   });
 }
@@ -291,6 +296,103 @@ export async function updateProjectStage(
     .from("projects")
     .update({ startup_stage: stage })
     .eq("id", projectId);
+}
+
+/**
+ * updateProjectDetails — updates project fields that affect the Founder Context Object.
+ *
+ * Whenever target_users, problem, or description changes, the startup_summary
+ * in founder_context goes stale. This function updates the project AND
+ * re-synthesizes startup_summary so the AI context stays accurate.
+ *
+ * Called from any UI that lets the user edit their project details.
+ */
+export async function updateProjectDetails(
+  projectId: string,
+  updates: {
+    target_users?: string;
+    problem?: string;
+    description?: string;
+    title?: string;
+  },
+): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+  const supabase = createClient();
+
+  // Update the project itself
+  if (Object.keys(updates).length > 0) {
+    await supabase
+      .from("projects")
+      .update(updates)
+      .eq("id", projectId)
+      .eq("user_id", user.id);
+  }
+
+  // Re-fetch full project to rebuild summary with latest values
+  const { data: project } = await supabase
+    .from("projects")
+    .select("title, description, target_users, problem, startup_stage")
+    .eq("id", projectId)
+    .eq("user_id", user.id)
+    .single();
+
+  if (!project) return;
+
+  // Rebuild startup_summary — try Groq, fall back to concatenation
+  let newSummary = [
+    project.description?.trim() || project.title?.trim(),
+    project.target_users?.trim() ? `for ${project.target_users.trim()}` : null,
+    project.problem?.trim() ? `solving "${project.problem.trim().slice(0, 80)}"` : null,
+  ].filter(Boolean).join(" ").slice(0, 280);
+
+  try {
+    const groqKey = process.env.GROQ_API_KEY;
+    if (groqKey && project.description) {
+      const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${groqKey}` },
+        body: JSON.stringify({
+          model: process.env.GROQ_MODEL || "llama-3.3-70b-versatile",
+          max_tokens: 80,
+          temperature: 0.3,
+          messages: [
+            {
+              role: "system",
+              content: "Write one precise sentence (max 30 words) describing a startup for use in AI coaching prompts. Format: '[product] for [specific user type] that [solves specific problem]'. No preamble. Output only the sentence.",
+            },
+            {
+              role: "user",
+              content: `Idea: ${project.description ?? project.title}\nTarget users: ${project.target_users ?? "not specified"}\nProblem: ${project.problem ?? "not specified"}\nStage: ${project.startup_stage ?? "Idea"}`,
+            },
+          ],
+        }),
+      });
+      if (groqRes.ok) {
+        const groqData = await groqRes.json() as { choices?: Array<{ message?: { content?: string } }> };
+        const synthesized = groqData?.choices?.[0]?.message?.content?.trim();
+        if (synthesized && synthesized.length > 10) newSummary = synthesized.slice(0, 280);
+      }
+    }
+  } catch {
+    // Non-fatal — use concatenated fallback
+  }
+
+  // Push updated summary back to founder_context (fire-and-forget)
+  supabase
+    .from("founder_context")
+    .update({ startup_summary: newSummary, updated_at: new Date().toISOString() })
+    .eq("user_id", user.id)
+    .then(() => {})
+    .catch(() => {});
+
+  // Also sync to founder_memory
+  supabase
+    .from("founder_memory")
+    .update({ startup_summary: newSummary, updated_at: new Date().toISOString() })
+    .eq("user_id", user.id)
+    .then(() => {})
+    .catch(() => {});
 }
 
 export async function getProjectDetail(projectId: string): Promise<{
@@ -345,6 +447,7 @@ export async function createProjectWithRoadmap(params: {
   target_users: string;
   problem: string;
   startup_stage?: string;
+  blocker_type?: string;
 }) {
   const user = await getCurrentUser();
   if (!user) throw new Error("Not authenticated");
@@ -440,245 +543,98 @@ export async function createProjectWithRoadmap(params: {
     .update({ onboarding_completed: true })
     .eq("id", user.id);
 
+  // ── Pre-populate founder_context immediately ─────────────────────────────
+  // Without this, every day-1 prompt reads startup_summary: null, target_users: null
+  // and hits generic fallbacks. The specificity engine has nothing to work with.
+  //
+  // startup_summary is a one-sentence description the AI uses in every prompt.
+  // We attempt a Groq call to synthesize a sharp, natural-language sentence.
+  // Falls back to string concatenation so onboarding never blocks on API failure.
+  let startupSummary = [
+    params.idea_description?.trim(),
+    params.target_users?.trim() ? `for ${params.target_users.trim()}` : null,
+    params.problem?.trim() ? `solving "${params.problem.trim().slice(0, 80)}"` : null,
+  ].filter(Boolean).join(" ").slice(0, 280);
+
+  try {
+    const groqKey = process.env.GROQ_API_KEY;
+    if (groqKey && params.idea_description) {
+      const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${groqKey}` },
+        body: JSON.stringify({
+          model: process.env.GROQ_MODEL || "llama-3.3-70b-versatile",
+          max_tokens: 80,
+          temperature: 0.3,
+          messages: [
+            {
+              role: "system",
+              content: "Write one precise sentence (max 30 words) describing a startup for use in AI coaching prompts. Format: '[product] for [specific user type] that [solves specific problem]'. No preamble. Output only the sentence.",
+            },
+            {
+              role: "user",
+              content: `Idea: ${params.idea_description}\nTarget users: ${params.target_users ?? "not specified"}\nProblem: ${params.problem ?? "not specified"}\nStage: ${params.startup_stage ?? "Idea"}`,
+            },
+          ],
+        }),
+      });
+      if (groqRes.ok) {
+        const groqData = await groqRes.json() as { choices?: Array<{ message?: { content?: string } }> };
+        const synthesized = groqData?.choices?.[0]?.message?.content?.trim();
+        if (synthesized && synthesized.length > 10) startupSummary = synthesized.slice(0, 280);
+      }
+    }
+  } catch {
+    // Non-fatal — fallback string concatenation is already set above
+  }
+
+  // Map onboarding blocker → initial avoidance signal
+  // This seeds the pattern system from day 1 so the first task is already informed
+  const BLOCKER_TO_AVOIDANCE: Record<string, string> = {
+    no_users_yet:        "user outreach",
+    building_too_slow:   "shipping / committing to done",
+    no_revenue:          "pricing conversations",
+    too_many_ideas:      "committing to one direction",
+    dont_know_what_to_do: "prioritisation",
+    just_starting:       "",
+  };
+  const initialAvoidance = params.blocker_type
+    ? [BLOCKER_TO_AVOIDANCE[params.blocker_type]].filter(Boolean)
+    : [];
+
+  await supabase.from("founder_context").upsert({
+    user_id: user.id,
+    startup_summary:   startupSummary,
+    current_stage:     params.startup_stage ?? "Idea",
+    momentum_score:    50,
+    last_active:       new Date().toLocaleDateString("en-CA"),
+    days_inactive:     0,
+    avoidance_signals: initialAvoidance,
+    topics_mentioned_repeatedly: [],
+    consecutive_tasks_completed: 0,
+    tasks_accepted_this_week:    0,
+    tasks_overridden_this_week:  0,
+    cognitive_load:              "fresh",
+  }, { onConflict: "user_id" });
+
+  // Seed founder_memory with onboarding data — used by the coach from message 1
+  await supabase.from("founder_memory").upsert({
+    user_id:          user.id,
+    startup_summary:  startupSummary,
+    avoidance_zones:  [],
+    strengths:        [],
+    personality_tags: [],
+    insight_history:  [],
+    cofounder_style:  "execution-coach",
+    updated_at:       new Date().toISOString(),
+  }, { onConflict: "user_id" }).catch(() => {});
+  // ─────────────────────────────────────────────────────────────────────────
+
   trackEvent("project_created");
   return createdProject;
 }
 
-export async function getDashboardOverview(): Promise<DashboardOverview> {
-  const user = await getCurrentUser();
-  if (!user)
-    return {
-      activeProjects: 0,
-      completedTasks: 0,
-      milestonesCompleted: 0,
-      aiUsage: 0,
-      recentActivity: [],
-      founderStreakDays: 0,
-    };
-  const supabase = createClient();
 
-  const { data: projects } = await supabase
-    .from("projects")
-    .select("id")
-    .eq("user_id", user.id);
-  const projectIds = (projects ?? []).map((p) => p.id);
-
-  const { data: milestones } = projectIds.length
-    ? await supabase
-        .from("milestones")
-        .select("id, project_id, is_completed")
-        .in("project_id", projectIds)
-    : { data: [] };
-
-  const milestoneIds = (milestones ?? []).map((m) => m.id);
-
-  const { data: tasks } = milestoneIds.length
-      ? await supabase
-        .from("tasks")
-        .select("id, milestone_id, is_completed, created_at, updated_at")
-        .in("milestone_id", milestoneIds)
-    : { data: [] };
-
-  const completedTasks = (tasks ?? []).filter((t) => t.is_completed).length;
-  const tasksByMilestone = new Map<string, Array<{ is_completed: boolean }>>();
-  (tasks ?? []).forEach((task) => {
-    const list = tasksByMilestone.get(task.milestone_id) ?? [];
-    list.push(task);
-    tasksByMilestone.set(task.milestone_id, list);
-  });
-  const completedMilestones = (milestones ?? []).filter((milestone) => {
-    if (milestone.is_completed) return true;
-    const milestoneTasks = tasksByMilestone.get(milestone.id) ?? [];
-    return milestoneTasks.length > 0 && milestoneTasks.every((task) => task.is_completed);
-  }).length;
-
-  // BUG FIX: `today` was referenced but never defined. Use proper Date instance.
-  const toLocalDateStr = (iso: string) =>
-    new Date(iso).toLocaleDateString("en-CA");
-
-  const completedDates = new Set(
-    (tasks ?? [])
-      .filter((t) => t.is_completed && (t.updated_at || t.created_at))
-      .map((t) => toLocalDateStr(t.updated_at ?? t.created_at)),
-  );
-
-  let streak = 0;
-  for (let i = 0; i < 90; i++) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    if (completedDates.has(toLocalDateStr(d.toISOString()))) {
-      streak++;
-    } else if (i > 0) {
-      break;
-    }
-  }
-
-  const { data: notifications } = await supabase
-    .from("notifications")
-    .select("message")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false })
-    .limit(5);
-
-  return {
-    activeProjects: projectIds.length,
-    completedTasks,
-    milestonesCompleted: completedMilestones,
-    aiUsage: 0,
-    recentActivity: (notifications ?? []).map((n) => n.message),
-    founderStreakDays: streak,
-  };
-}
-
-const REPORT_COLORS = [
-  "var(--bm-accent)",
-  "#A78BFA",
-  "var(--bm-amber)",
-  "var(--bm-teal)",
-  "var(--bm-text3)",
-];
-
-function weekStart(date = new Date()) {
-  const d = new Date(date);
-  const day = (d.getDay() + 6) % 7;
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() - day);
-  return d;
-}
-
-function dayIndexFromIso(iso: string) {
-  return (new Date(iso).getDay() + 6) % 7;
-}
-
-export async function getWeeklyReportMetrics(): Promise<WeeklyReportMetrics> {
-  const user = await getCurrentUser();
-  const empty: WeeklyReportMetrics = {
-    score: 0,
-    previousScore: 0,
-    weeklyScores: [0, 0, 0, 0, 0, 0, 0],
-    taskData: [0, 0, 0, 0, 0, 0, 0],
-    tasksCompletedThisWeek: 0,
-    tasksCompletedPreviousWeek: 0,
-    activeStreakDays: 0,
-    focusData: [],
-    wins: [],
-    nextFocus: [],
-  };
-  if (!user) return empty;
-
-  const supabase = createClient();
-  const summaries = await getProjectSummaries();
-  if (!summaries.length) return empty;
-
-  const projectIds = summaries.map((p) => p.id);
-  const score = Math.round(
-    summaries.reduce((sum, project) => sum + computeStartupScore(project), 0) / summaries.length,
-  );
-
-  const { data: milestones } = await supabase
-    .from("milestones")
-    .select("id, project_id, title, is_completed, updated_at, created_at")
-    .in("project_id", projectIds);
-  const milestoneIds = (milestones ?? []).map((m) => m.id);
-  const milestoneToProject = new Map<string, string>();
-  const milestoneTitle = new Map<string, string>();
-  (milestones ?? []).forEach((m) => {
-    milestoneToProject.set(m.id, m.project_id);
-    milestoneTitle.set(m.id, m.title);
-  });
-
-  const { data: tasks } = milestoneIds.length
-    ? await supabase
-        .from("tasks")
-        .select("id, title, milestone_id, is_completed, created_at, updated_at")
-        .in("milestone_id", milestoneIds)
-    : { data: [] };
-
-  const start = weekStart();
-  const previousStart = new Date(start);
-  previousStart.setDate(start.getDate() - 7);
-  const taskData = [0, 0, 0, 0, 0, 0, 0];
-  let tasksCompletedPreviousWeek = 0;
-  const completedDates = new Set<string>();
-  const focusCounts = new Map<string, number>();
-
-  (tasks ?? []).forEach((task) => {
-    if (!task.is_completed) return;
-    const completedAt = task.updated_at ?? task.created_at;
-    const completedDate = new Date(completedAt);
-    const projectId = milestoneToProject.get(task.milestone_id);
-    const project = summaries.find((s) => s.id === projectId);
-    const focusLabel = project?.startup_stage ?? milestoneTitle.get(task.milestone_id) ?? "Execution";
-    focusCounts.set(focusLabel, (focusCounts.get(focusLabel) ?? 0) + 1);
-    completedDates.add(completedDate.toLocaleDateString("en-CA"));
-
-    if (completedDate >= start) taskData[dayIndexFromIso(completedAt)] += 1;
-    if (completedDate >= previousStart && completedDate < start) tasksCompletedPreviousWeek += 1;
-  });
-
-  let activeStreakDays = 0;
-  for (let i = 0; i < 90; i++) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    if (completedDates.has(d.toLocaleDateString("en-CA"))) activeStreakDays += 1;
-    else if (i > 0) break;
-  }
-
-  const tasksCompletedThisWeek = taskData.reduce((sum, count) => sum + count, 0);
-  const milestonesCompletedThisWeek = (milestones ?? []).filter((m) => {
-    if (!m.is_completed) return false;
-    const completedAt = new Date(m.updated_at ?? m.created_at);
-    return completedAt >= start;
-  }).length;
-  const previousScore = Math.max(0, score - tasksCompletedThisWeek - milestonesCompletedThisWeek * 2);
-  const weeklyScores = taskData.reduce<number[]>((scores, count, index) => {
-    const base = index === 0 ? previousScore : scores[index - 1];
-    scores.push(Math.min(100, base + count + (index === 6 ? milestonesCompletedThisWeek * 2 : 0)));
-    return scores;
-  }, []);
-
-  const focusData = Array.from(focusCounts.entries()).map(([label, value], index) => ({
-    label,
-    value,
-    color: REPORT_COLORS[index % REPORT_COLORS.length],
-  }));
-
-  const wins = [
-    tasksCompletedThisWeek > 0 ? `Completed ${tasksCompletedThisWeek} task${tasksCompletedThisWeek === 1 ? "" : "s"}` : null,
-    milestonesCompletedThisWeek > 0 ? `Completed ${milestonesCompletedThisWeek} milestone${milestonesCompletedThisWeek === 1 ? "" : "s"}` : null,
-    activeStreakDays > 0 ? `${activeStreakDays}-day activity streak` : null,
-    score > previousScore ? `Startup score up by ${score - previousScore}` : null,
-  ].filter(Boolean) as string[];
-
-  const nextFocus = (tasks ?? [])
-    .filter((task) => !task.is_completed)
-    .slice(0, 3)
-    .map((task) => task.title || "Complete the next project task");
-
-  return {
-    score,
-    previousScore,
-    weeklyScores,
-    taskData,
-    tasksCompletedThisWeek,
-    tasksCompletedPreviousWeek,
-    activeStreakDays,
-    focusData,
-    wins,
-    nextFocus,
-  };
-}
-
-export function calculateDashboardStats(projects: BuildMindProject[]) {
-  const activeProjects = projects.length;
-  return {
-    activeProjects,
-    startupScoreAvg: activeProjects
-      ? Math.round(
-          projects.reduce((sum, p) => sum + computeStartupScore(p), 0) /
-            activeProjects,
-        )
-      : 0,
-    aiUsage: activeProjects ? "Active" : "Getting started",
-  };
-}
+// ── Report/dashboard functions moved to lib/data/reports.ts ──────────────────
+// Re-exported here for backwards compatibility with existing imports.
+export { getDashboardOverview, getWeeklyReportMetrics, calculateDashboardStats } from "@/lib/data/reports";

@@ -71,3 +71,25 @@ export function stageRank(stage: string): number {
   const idx = STAGE_ORDER.indexOf(normalizeStage(stage));
   return idx === -1 ? 0 : idx;
 }
+
+/**
+ * inferStage — flat milestone/task ratio heuristic used in API routes.
+ *
+ * Canonical version — previously duplicated in today-action and coach routes.
+ * Import from here; do not redeclare locally.
+ */
+export function inferStage(
+  completedTasks: number,
+  totalTasks: number,
+  completedMilestones: number,
+  totalMilestones: number,
+): string {
+  if (totalTasks === 0) return "Idea";
+  const milestoneRate = completedMilestones / Math.max(1, totalMilestones);
+  const taskRate = completedTasks / Math.max(1, totalTasks);
+  if (milestoneRate >= 0.8) return "Revenue";
+  if (milestoneRate >= 0.6) return "Launch";
+  if (milestoneRate >= 0.4) return "MVP";
+  if (milestoneRate >= 0.2 || taskRate >= 0.3) return "Validation";
+  return "Idea";
+}

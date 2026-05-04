@@ -1,14 +1,20 @@
 import { NextResponse } from "next/server";
 import { createUserNotification, enforceAndTrackAIUsage, groqJSON } from "@/app/api/ai/_utils";
+import { getRouteUser } from "@/app/api/ai/_planCheck";
 
 export async function POST(request: Request) {
   try {
+    // Authenticate via session — do NOT trust userId from the request body.
+    const routeUser = await getRouteUser();
+    if (!routeUser) {
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    }
+    const userId = routeUser.userId;
+
     const body = await request.json().catch(() => ({}));
-    const userId = String(body?.userId ?? "");
     const idea = String(body?.idea ?? "");
     const targetUsers = String(body?.targetUsers ?? "");
     const problem = String(body?.problem ?? "");
-    if (!userId) return NextResponse.json({ success: false, error: "userId is required" }, { status: 400 });
 
     await enforceAndTrackAIUsage(userId);
 

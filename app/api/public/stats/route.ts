@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+export const revalidate = 300; // cache for 5 minutes
 
 async function countTable(
   supabase: ReturnType<typeof createAdminClient>,
@@ -47,12 +47,12 @@ export async function GET() {
 
     return NextResponse.json(
       { founders: Math.max(profiles, users, authUsers, projectOwners), projects, milestones },
-      { headers: { "Cache-Control": "no-store" } },
+      { headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=60" } },
     );
   } catch {
     return NextResponse.json(
       { founders: 0, projects: 0, milestones: 0 },
-      { headers: { "Cache-Control": "no-store" } },
+      { headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=60" } },
     );
   }
 }

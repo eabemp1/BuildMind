@@ -9,11 +9,11 @@ import { PLAN_NAMES, setStoredPlan, fetchAndSyncStoredPlanFromBillingStatus } fr
 import { PLAN_PRICE_LABEL } from "@/lib/pricing";
 import { usePlan } from "@/lib/usePlan";
 import PushNotificationToggle from "@/components/PushNotificationToggle";
-import { User, CreditCard, Bell, Bot, Shield, Check, Zap } from "lucide-react";
+import { User, CreditCard, Bell, Bot, Shield, Check, Zap, type LucideIcon } from "lucide-react";
 
 type Tab = "profile" | "account" | "notifications" | "ai" | "billing";
 
-const TABS: { id: Tab; label: string; icon: any }[] = [
+const TABS: { id: Tab; label: string; icon: LucideIcon }[] = [
   { id: "profile",       label: "Profile",       icon: User       },
   { id: "account",       label: "Account",       icon: Shield     },
   ...(FEATURES.notifications ? [{ id: "notifications" as Tab, label: "Notifications", icon: Bell }] : []),
@@ -57,7 +57,13 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-function SettingsInput({ value, onChange, placeholder, type = "text", disabled }: any) {
+function SettingsInput({ value, onChange, placeholder, type = "text", disabled }: {
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  placeholder?: string;
+  type?: string;
+  disabled?: boolean;
+}) {
   const isMobile = useIsMobile();
   return (
     <input value={value} onChange={onChange} placeholder={placeholder} type={type} disabled={disabled}
@@ -190,7 +196,9 @@ export default function SettingsPage() {
         setEmail(data.user.email ?? "");
         await ensureUserProfile({ id: data.user.id, email: data.user.email ?? "" });
         const saved = localStorage.getItem("bm_ai_personality");
-        if (saved) setAiPersonality(saved as any);
+        if (saved === "direct" || saved === "supportive" || saved === "challenger") {
+          setAiPersonality(saved);
+        }
       } catch {}
     };
     load();
@@ -253,8 +261,8 @@ export default function SettingsPage() {
                   <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: isMobile ? "18px" : "22px 24px" }}>
                     <div style={{ fontSize: isMobile ? 15 : 13, fontWeight: 700, color: "var(--bm-text)", marginBottom: 20 }}>Public Profile</div>
                     <div style={{ display: "flex", flexDirection: "column", gap: isMobile ? 18 : 16 }}>
-                      <div><FieldLabel>Full Name</FieldLabel><SettingsInput value={name} onChange={(e: any) => setName(e.target.value)} placeholder="Alex Johnson" /></div>
-                      <div><FieldLabel>Username</FieldLabel><SettingsInput value={username} onChange={(e: any) => setUsername(e.target.value)} placeholder="alexbuilds" /></div>
+                      <div><FieldLabel>Full Name</FieldLabel><SettingsInput value={name} onChange={(e) => setName(e.target.value)} placeholder="Alex Johnson" /></div>
+                      <div><FieldLabel>Username</FieldLabel><SettingsInput value={username} onChange={(e) => setUsername(e.target.value)} placeholder="alexbuilds" /></div>
                       <div>
                         <FieldLabel>Bio</FieldLabel>
                         <textarea value={bio} onChange={e => setBio(e.target.value)} rows={3} placeholder="Building in public. Founder of [startup]."
@@ -314,12 +322,12 @@ export default function SettingsPage() {
                     <div style={{ fontSize: isMobile ? 15 : 13, fontWeight: 700, color: "var(--bm-text)", marginBottom: 6 }}>AI Coach Personality</div>
                     <div style={{ fontSize: isMobile ? 13 : 12, color: "var(--bm-text3)", marginBottom: 18 }}>Choose how your AI Coach communicates with you.</div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-                      {[
-                        { id: "direct", label: "Direct & Honest", desc: "Straight talk. No sugarcoating. Highest clarity." },
-                        { id: "supportive", label: "Supportive", desc: "Encouraging tone with actionable feedback." },
-                        { id: "challenger", label: "Challenger", desc: "Pushes your thinking hard. High intensity." },
-                      ].map(opt => (
-                        <button key={opt.id} onClick={() => setAiPersonality(opt.id as any)}
+                      {([ 
+                        { id: "direct" as const, label: "Direct & Honest", desc: "Straight talk. No sugarcoating. Highest clarity." },
+                        { id: "supportive" as const, label: "Supportive", desc: "Encouraging tone with actionable feedback." },
+                        { id: "challenger" as const, label: "Challenger", desc: "Pushes your thinking hard. High intensity." },
+                      ] satisfies { id: "direct" | "supportive" | "challenger"; label: string; desc: string }[]).map(opt => (
+                        <button key={opt.id} onClick={() => setAiPersonality(opt.id)}
                           style={{ padding: isMobile ? "15px" : "13px 16px", borderRadius: 12, border: `1px solid ${aiPersonality === opt.id ? "var(--bm-accent-bd)" : "var(--bm-border)"}`, background: aiPersonality === opt.id ? "var(--bm-accent-dim)" : "var(--bm-bg3)", cursor: "pointer", fontFamily: "inherit", textAlign: "left", transition: "all 0.15s" }}>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                             <div>

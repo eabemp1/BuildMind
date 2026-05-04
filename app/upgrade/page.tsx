@@ -8,23 +8,30 @@ import { PLAN_PRICE_LABEL } from "@/lib/pricing";
 import { Check, Zap, Shield, Star, ArrowRight, Loader2 } from "lucide-react";
 
 const FEATURES = [
-  { label: "Unlimited AI Coach messages", free: false, builder: true },
-  { label: "Full Break My Startup + competitor scan", free: false, builder: true },
-  { label: "Weekly AI strategy report", free: false, builder: true },
-  { label: "Startup score + investor metrics", free: false, builder: true },
-  { label: "90-day roadmap tracks", free: false, builder: true },
-  { label: "Streak insurance (1 miss/month)", free: false, builder: true },
-  { label: "Full history & data export", free: false, builder: true },
-  { label: "Priority support", free: false, builder: true },
-  { label: "3 AI Coach messages/week", free: true, builder: true },
-  { label: "Projects + AI roadmap", free: true, builder: true },
-  { label: "Task tracking + streaks", free: true, builder: true },
+  { label: "Daily Reflexion Loop (free: 3/week)", free: false, builder: true },
+  { label: "Morning Briefing every day before you wake", free: false, builder: true },
+  { label: "Unlimited AI Coach with Explainable Rationale", free: false, builder: true },
+  { label: "Full Momentum Score + decay warnings", free: false, builder: true },
+  { label: "Cognitive Load Check-in — Fresh / Drained / Auto-pilot", free: false, builder: true },
+  { label: "HITL Overrides — every override feeds your context", free: false, builder: true },
+  { label: "Unlimited Strategy Blueprints (free: one full, then draft)", free: false, builder: true },
+  { label: "90-day Execution Systems (Roadmap Tracks)", free: false, builder: true },
+  { label: "Recovery Mode — forgiving when you fall behind", free: false, builder: true },
+  { label: "Weekly AI Strategy Report every Friday", free: false, builder: true },
+  { label: "Streak insurance — 1 save/month", free: false, builder: true },
+  { label: "Pattern Detection — AI names your avoidance patterns", free: false, builder: true },
+  { label: "Onboarding Reflexion Strike", free: true, builder: true },
+  { label: "3 AI actions/week + 3 Coach messages/day", free: true, builder: true },
+  { label: "Morning Briefing — Monday + Thursday", free: true, builder: true },
+  { label: "1 full Strategy Blueprint", free: true, builder: true },
+  { label: "Break My Startup — 1 Stress Test", free: true, builder: true },
+  { label: "Public founder profile", free: true, builder: true },
 ];
 
 const TESTIMONIALS = [
   { text: "I shipped faster in 2 weeks with BuildMind than I did in 3 months without it.", name: "Kwame A.", role: "SaaS founder, Accra" },
-  { text: "The AI Coach is brutally honest. Exactly what I needed to stop overthinking.", name: "Ama S.", role: "EdTech founder" },
-  { text: "The weekly report alone is worth it — it's like a board meeting with myself.", name: "Daniel O.", role: "Fintech founder" },
+  { text: "The Morning Briefing lands before I touch my phone. By the time I open the app, I already know what I'm doing today.", name: "Ama S.", role: "EdTech founder" },
+  { text: "It named the exact thing I kept avoiding. I didn't need more tasks — I needed someone to call it out.", name: "Daniel O.", role: "Fintech founder, Lagos" },
 ];
 
 function useIsMobile() {
@@ -61,8 +68,8 @@ export default function UpgradePage() {
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "Payment verification failed");
         if (!cancelled) router.replace("/overview");
       })
-      .catch((e: any) => {
-        if (!cancelled) setError(e?.message ?? "Payment verification failed");
+      .catch((e: unknown) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Payment verification failed");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -81,8 +88,8 @@ export default function UpgradePage() {
       if (!res.ok) throw new Error("Could not create checkout session");
       const { url } = await res.json();
       if (url) window.location.href = url;
-    } catch (e: any) {
-      setError(e?.message ?? "Something went wrong. Please try again.");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Something went wrong. Please try again.");
     } finally { setLoading(false); }
   }
 
@@ -109,17 +116,32 @@ export default function UpgradePage() {
 
       <div style={{ maxWidth: 860, margin: "0 auto", padding: isMobile ? "34px 16px 56px" : "60px 24px 80px", position: "relative" }}>
 
-        {/* Header */}
+        {/* Header — adapts based on ?feature= query param */}
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} style={{ textAlign: "center", marginBottom: isMobile ? 34 : 56 }}>
           <div style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 10, color: "var(--bm-accent)", textTransform: "uppercase", letterSpacing: "0.14em", fontWeight: 700, marginBottom: 20, padding: "4px 14px", borderRadius: 20, background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)" }}>
             <Zap size={10} /> Upgrade to Builder
           </div>
-          <h1 style={{ fontSize: isMobile ? 34 : 44, fontWeight: 900, color: "var(--bm-text)", letterSpacing: "-0.04em", lineHeight: 1.1, margin: "0 0 16px" }}>
-            Stop limiting yourself
-          </h1>
-          <p style={{ fontSize: isMobile ? 14 : 16, color: "var(--bm-text3)", maxWidth: 420, margin: "0 auto", lineHeight: 1.6 }}>
-            Get unlimited AI coaching, full stress-test analysis, and every tool a serious founder needs.
-          </p>
+          {(() => {
+            const feature = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("feature") : null;
+            const headlines: Record<string, { h1: string; sub: string }> = {
+              ventures:  { h1: "The strategy engine has done the work.", sub: "Builder unlocks all 8 Blueprint layers, unlimited systems, and your 7-day execution plan. Cheaper than building the wrong thing for one more week." },
+              briefing:  { h1: "Your Morning Briefing is ready.", sub: "Builder delivers it every day before you wake. Three lines — yesterday's win, today's risk, your next move. Already decided." },
+              coach:     { h1: "You've used your 3 messages today.", sub: "Builder removes the daily limit so the AI Coach is always there when the decision can't wait until tomorrow." },
+              streak:    { h1: "Builder members get one save/month.", sub: "Strategic founders protect their momentum. Restore your streak — and make sure it never breaks without a safety net again." },
+              actions:   { h1: "You've used your 3 actions this week.", sub: "Builder runs the Reflexion Loop every day. Your next action is ready — you just need Builder to receive it." },
+            };
+            const ctx = feature && headlines[feature] ? headlines[feature] : { h1: "Not a rate limit upgrade. A power upgrade.", sub: "Cheaper than building the wrong thing for one more week. Builder is the system that makes every day of founder work count." };
+            return (
+              <>
+                <h1 style={{ fontSize: isMobile ? 30 : 42, fontWeight: 900, color: "var(--bm-text)", letterSpacing: "-0.04em", lineHeight: 1.12, margin: "0 0 16px" }}>
+                  {ctx.h1}
+                </h1>
+                <p style={{ fontSize: isMobile ? 14 : 15, color: "var(--bm-text3)", maxWidth: 460, margin: "0 auto", lineHeight: 1.65 }}>
+                  {ctx.sub}
+                </p>
+              </>
+            );
+          })()}
         </motion.div>
 
         {/* Pricing card + feature list */}

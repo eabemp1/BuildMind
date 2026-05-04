@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { updateAchievementStats, checkAndUnlockAchievements, getAchievementStats } from "@/lib/achievements";
+import { incrementDailyStreak, getStoredStreak } from "@/lib/plan";
+import { notifyStreakMilestone } from "@/lib/notifications";
 import { trackFunnelStep } from "@/lib/onboarding-analytics";
 import { CheckCircle2, ChevronRight, Flame, Brain, ArrowRight } from "lucide-react";
 
@@ -47,7 +49,7 @@ export default function ReflectPage() {
       setHistory(saved);
       const action = JSON.parse(localStorage.getItem("bm_today_action") ?? "{}");
       setTodayAction(action?.action ?? "");
-      setStreak(Number(localStorage.getItem("bm_streak") ?? "0"));
+      setStreak(getStoredStreak());
     } catch {}
   }, []);
 
@@ -74,6 +76,17 @@ export default function ReflectPage() {
       const stats = getAchievementStats();
       updateAchievementStats({ ...stats, reflectionsLogged: (stats.reflectionsLogged ?? 0) + 1 });
       checkAndUnlockAchievements();
+
+      // Increment streak only when the founder both completed today's action AND reflected.
+      // bm_checkin_done_date is set by today/page.tsx after a successful check-in.
+      const today = new Date().toISOString().split("T")[0];
+      const checkinDoneToday = localStorage.getItem("bm_checkin_done_date") === today;
+      if (checkinDoneToday) {
+        const newStreak = incrementDailyStreak();
+        updateAchievementStats({ ...getAchievementStats(), streak: newStreak });
+        notifyStreakMilestone(newStreak);
+      }
+
       trackFunnelStep("first_reflect");
       setDone(true);
     } finally { setSubmitting(false); }

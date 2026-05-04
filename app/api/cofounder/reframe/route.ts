@@ -36,7 +36,8 @@ export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
 
-    const userId = String(body?.userId ?? "").trim();
+    // Use the session-verified userId — do NOT trust body.userId.
+    const userId = planCheck.userId;
     const competitorUrl = String(body?.competitorUrl ?? "").trim();
     const competitorName = String(body?.competitorName ?? "").trim();
     const projectDescription = String(body?.projectDescription ?? "").trim();
@@ -44,7 +45,6 @@ export async function POST(request: Request) {
     const validationReceipts = Array.isArray(body?.validationReceipts) ? body.validationReceipts : [];
     const founderMemoryContext = body?.founderMemoryContext ?? null;
 
-    if (!userId) return NextResponse.json({ error: "userId required" }, { status: 400 });
     if (!competitorUrl && !competitorName) return NextResponse.json({ error: "competitorUrl or competitorName required" }, { status: 400 });
 
     await enforceAndTrackAIUsage(userId);

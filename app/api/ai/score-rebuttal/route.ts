@@ -4,16 +4,28 @@
  * Scores how well a founder defended against a Break My Startup attack.
  * Returns a 0-100 score and a short response from the adversary.
  *
- * Migrated from Anthropic (claude-opus-4-5) → Groq (llama-3.3-70b-versatile)
+ * Security: requires authenticated session via getCurrentUser() — which reads
+ * from the Supabase server client (cookie-backed JWT), not from request body.
+ * Usage is tracked against the user's monthly AI limit.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/data/projects";
-import { groqJSON } from "@/app/api/ai/_utils";
+import { groqJSON, enforceAndTrackAIUsage } from "@/app/api/ai/_utils";
 
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // ── Usage enforcement ──────────────────────────────────────────────────────
+  try {
+    await enforceAndTrackAIUsage(user.id);
+  } catch (usageErr) {
+    const msg = usageErr instanceof Error ? usageErr.message : String(usageErr);
+    if (msg.toLowerCase().includes("limit reached")) {
+      return NextResponse.json({ error: msg, upgradeUrl: "/upgrade" }, { status: 429 });
+    }
+  }
 
   const body = await req.json().catch(() => ({}));
   const { attack, defense } = body;

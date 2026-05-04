@@ -4,11 +4,39 @@
  * Playbook §2.1, Screen 2:
  * One-sentence startup description → market gap + first task in ~15 seconds.
  * This single interaction proves what BuildMind is faster than any explanation.
+ *
+ * Security:
+ *   - Requires authenticated Supabase session (401 if not logged in)
+ *   - Per-user usage tracking via enforceAndTrackAIUsage (same system as
+ *     today-action and other gated routes)
+ *   - Input length capped at 500 chars to prevent prompt-injection via large payloads
  */
 import { NextResponse } from "next/server";
 import { runReflexionStrike } from "@/lib/reflexion";
+import { getRouteUser } from "@/app/api/ai/_planCheck";
+import { enforceAndTrackAIUsage } from "@/app/api/ai/_utils";
 
 export async function POST(req: Request) {
+  // ── Auth check ─────────────────────────────────────────────────────────────
+  const routeUser = await getRouteUser();
+  if (!routeUser) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
+
+  // ── Usage enforcement ──────────────────────────────────────────────────────
+  try {
+    await enforceAndTrackAIUsage(routeUser.userId);
+  } catch (usageErr) {
+    const msg = usageErr instanceof Error ? usageErr.message : String(usageErr);
+    if (msg.toLowerCase().includes("limit reached")) {
+      return NextResponse.json(
+        { ok: false, error: msg, upgradeUrl: "/upgrade" },
+        { status: 429 },
+      );
+    }
+    // DB unavailable — allow through (graceful degradation)
+  }
+
   try {
     const body = await req.json().catch(() => ({}));
     const startupDescription = body.startupDescription ?? body.idea ?? "";
@@ -25,7 +53,7 @@ export async function POST(req: Request) {
     );
 
     return NextResponse.json({ ok: true, data: result });
-  } catch (e) {
+  } catch {
     // Graceful fallback — never show an error to a new user
     return NextResponse.json({
       ok: true,

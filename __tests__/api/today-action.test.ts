@@ -4,18 +4,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-
-// ── Stage inference helper ────────────────────────────────────────────────────
-function inferStage(completedTasks: number, totalTasks: number, completedMilestones: number, totalMilestones: number): string {
-  if (totalTasks === 0) return "Idea";
-  const milestoneRate = completedMilestones / Math.max(1, totalMilestones);
-  const taskRate = completedTasks / Math.max(1, totalTasks);
-  if (milestoneRate >= 0.8) return "Revenue";
-  if (milestoneRate >= 0.6) return "Launch";
-  if (milestoneRate >= 0.4) return "MVP";
-  if (milestoneRate >= 0.2 || taskRate >= 0.3) return "Validation";
-  return "Idea";
-}
+import { inferStage } from "@/lib/stages";
 
 const FALLBACK_ACTIONS: Record<string, { action: string; message: string; why: string; time: string }> = {
   Idea: { action: "Talk to 5 people who have this problem before writing any code.", message: "Hey, quick question — what's your biggest challenge with [problem area]? I'm researching it and would love 10 minutes.", why: "Every assumption you have about your user is probably wrong.", time: "2 hours" },

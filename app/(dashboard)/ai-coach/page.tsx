@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useProjectSummariesQuery, useDashboardOverviewQuery } from "@/lib/queries";
 import { computeStartupScore } from "@/lib/buildmind";
-import { getLimits } from "@/lib/plan";
+import { getLimits, incrementDailyStreak } from "@/lib/plan";
 import { usePlan } from "@/lib/usePlan";
 import { useLimitModal } from "@/components/LimitModal";
 import { updateAchievementStats, checkAndUnlockAchievements, getAchievementStats } from "@/lib/achievements";
@@ -227,6 +227,12 @@ export default function AICoachPage() {
       const stats = getAchievementStats();
       updateAchievementStats({ ...stats, aiMessages: (stats.aiMessages ?? 0) + 1 });
       checkAndUnlockAchievements();
+      // AI Coach counts as a streak-qualifying activity — increment once per day
+      const todayKey = new Date().toISOString().split("T")[0];
+      if (localStorage.getItem("bm_coach_streak_date") !== todayKey) {
+        incrementDailyStreak();
+        localStorage.setItem("bm_coach_streak_date", todayKey);
+      }
       trackEvent("ai_coach_message", { plan });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Something went wrong. Try again.";

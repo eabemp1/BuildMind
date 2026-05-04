@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { groqJSON, hasAdminEnv } from "@/app/api/ai/_utils";
+import { groqJSON, hasAdminEnv, enforceAndTrackAIUsage } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getRouteUser } from "@/app/api/ai/_planCheck";
 
 interface ReflectActionInput {
   outcome: "completed" | "blocked" | "partial" | "learned";
@@ -42,22 +43,144 @@ const FALLBACKS: Record<string, ReflectActionOutput> = {
   },
 };
 
+/**
+ * extractAndWritePatterns — closes the learning loop.
+ *
+ * Reads the last 5 reflections and writes back avoidance_signals +
+ * topics_mentioned_repeatedly to founder_context. This is what populates
+ * the fields that every prompt reads — without this, the context feed is empty.
+ *
+ * Called fire-and-forget after each reflection save so it never blocks the response.
+ * Multi-source: uses outcomes, notes, override reasons, and repeated tasks.
+ */
+async function extractAndWritePatterns(
+  supabase: ReturnType<typeof import("@/lib/supabase/admin").createAdminClient>,
+  userId: string
+): Promise<void> {
+  // Pull last 5 reflections
+  const { data: recentReflections } = await supabase
+    .from("reflections")
+    .select("outcome, note, today_action, confidence, created_at")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(5);
+
+  if (!recentReflections || recentReflections.length < 2) return; // Not enough signal yet
+
+  // Pull override reasons if the table exists
+  const { data: overrides } = await supabase
+    .from("task_overrides")
+    .select("reason, created_at")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(5)
+    .maybeSingle()
+    .then(() => supabase
+      .from("task_overrides")
+      .select("reason")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(5)
+    ).catch(() => ({ data: [] }));
+
+  const reflectionSummary = recentReflections.map((r, i) =>
+    `${i + 1}. Action: "${r.today_action ?? "none"}" | Outcome: ${r.outcome} | Confidence: ${r.confidence}/5 | Note: "${r.note ?? "none"}"`
+  ).join("\n");
+
+  const overrideSummary = (overrides ?? []).length > 0
+    ? `\nTask overrides/skips:\n${(overrides ?? []).map((o: { reason?: string }) => `- ${o.reason ?? "no reason given"}`).join("\n")}`
+    : "";
+
+  const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: process.env.GROQ_MODEL || "llama-3.3-70b-versatile",
+      temperature: 0.2,
+      max_tokens: 200,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: `You are a behavioral pattern extractor for a startup execution app.
+Analyze this founder's recent reflections and identify:
+1. avoidance_signals: Tasks or activities they keep blocking on, skipping, or reporting as "blocked" (max 3 items, specific action types e.g. "cold outreach", "pricing conversations")
+2. topics_mentioned_repeatedly: Themes or topics that appear in multiple notes (max 3 items, e.g. "payment integration", "user interviews", "co-founder search")
+
+Return JSON ONLY: { "avoidance_signals": [], "topics_mentioned_repeatedly": [] }
+If there are no clear patterns yet, return empty arrays. Do not guess.`,
+        },
+        {
+          role: "user",
+          content: `Recent reflections:\n${reflectionSummary}${overrideSummary}`,
+        },
+      ],
+    }),
+  });
+
+  if (!groqRes.ok) return;
+  const body = await groqRes.json();
+  const patterns = JSON.parse(body?.choices?.[0]?.message?.content ?? "{}") as {
+    avoidance_signals?: string[];
+    topics_mentioned_repeatedly?: string[];
+  };
+
+  if (!patterns.avoidance_signals && !patterns.topics_mentioned_repeatedly) return;
+
+  // Write patterns back to founder_context
+  await supabase
+    .from("founder_context")
+    .upsert(
+      {
+        user_id: userId,
+        ...(patterns.avoidance_signals?.length ? { avoidance_signals: patterns.avoidance_signals } : {}),
+        ...(patterns.topics_mentioned_repeatedly?.length ? { topics_mentioned_repeatedly: patterns.topics_mentioned_repeatedly } : {}),
+      },
+      { onConflict: "user_id" }
+    );
+}
+
 export async function POST(request: Request) {
+  // ── Auth check ─────────────────────────────────────────────────────────────
+  const routeUser = await getRouteUser();
+  if (!routeUser) {
+    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  }
+
+  // ── Usage enforcement ──────────────────────────────────────────────────────
+  try {
+    await enforceAndTrackAIUsage(routeUser.userId);
+  } catch (usageErr) {
+    const msg = usageErr instanceof Error ? usageErr.message : String(usageErr);
+    if (msg.toLowerCase().includes("limit reached")) {
+      return NextResponse.json(
+        { success: false, error: msg, upgradeUrl: "/upgrade" },
+        { status: 429 },
+      );
+    }
+  }
+
   try {
     const body: ReflectActionInput = await request.json();
     const { outcome, note, confidence, stage, todayAction, streak, userId, projectId } = body;
 
+    // Use the server-verified userId from auth, fall back to body for backwards compat
+    const verifiedUserId = routeUser.userId ?? userId;
+
     let projectContext = "";
 
     // If Supabase is wired, pull project context for deeper personalisation
-    if (userId && projectId && hasAdminEnv()) {
+    if (verifiedUserId && projectId && hasAdminEnv()) {
       try {
         const supabase = createAdminClient();
         const { data: project } = await supabase
           .from("projects")
           .select("title, description, target_users, problem, startup_stage")
           .eq("id", projectId)
-          .eq("user_id", userId)
+          .eq("user_id", verifiedUserId)
           .single();
 
         if (project) {
@@ -70,27 +193,33 @@ Target users: ${project.target_users ?? "Not specified"}`;
 
         // Write reflection to Supabase for future personalisation
         await supabase.from("reflections").insert({
-          user_id: userId,
+          user_id: verifiedUserId,
           project_id: projectId,
           outcome,
           note,
           confidence,
           today_action: todayAction,
           created_at: new Date().toISOString(),
-        }); // non-blocking — table may not exist yet
+        });
+
+        // ── Fire-and-forget: close both learning loops ────────────────────────
+        extractAndWritePatterns(supabase, verifiedUserId).catch(() => {});
+
+        // Trigger full synthesis after every reflection (fire-and-forget)
+        fetch(`${process.env.NEXT_PUBLIC_APP_URL ?? ""}/api/ai/founder-insight`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ synthesize: true, userId: verifiedUserId }),
+        }).catch(() => {});
 
         // ── Publish anonymised event to community Founder Feed ──────────────
-        // We derive flag + location from the user's country metadata (set
-        // during auth via Supabase's ip-based geo, or from the user profile).
-        // Falls back to a generic placeholder so the feed always gets a row.
         try {
-          const { data: authUser } = await supabase.auth.admin.getUserById(userId);
+          const { data: authUser } = await supabase.auth.admin.getUserById(verifiedUserId);
           const meta = (authUser?.user?.user_metadata ?? {}) as Record<string, string>;
 
           const flag     = meta.flag     ?? "🌍";
           const location = meta.city     ?? meta.location ?? meta.country ?? "Somewhere";
 
-          // Map outcome → feed event type
           const typeMap: Record<string, string> = {
             completed: streak >= 7 ? "streak" : "done",
             partial:   "done",
@@ -99,7 +228,6 @@ Target users: ${project.target_users ?? "Not specified"}`;
           };
           const eventType = typeMap[outcome] ?? "done";
 
-          // Map stage → accent colour (mirrors explore/page.tsx seed data)
           const stageColorMap: Record<string, string> = {
             Idea:       "#f59e0b",
             Validation: "#10b981",
