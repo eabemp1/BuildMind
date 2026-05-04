@@ -167,8 +167,11 @@ function TodayContent() {
         if (json?.success && json?.data) {
           const actionData = { ...json.data, isAI: true };
           setAiAction(actionData);
-          // Cache with today's date so it survives page revisits
-          localStorage.setItem("bm_today_action_cache", JSON.stringify({ date: today, data: actionData }));
+          // Only cache when the reflexion loop actually ran (real AI response)
+          // Never cache server-side fallbacks — they would freeze the UI for the whole day
+          if (actionData.reflexion?.loopRan) {
+            localStorage.setItem("bm_today_action_cache", JSON.stringify({ date: today, data: actionData }));
+          }
         }
       })
       .catch(() => { /* silently fall back to static */ })

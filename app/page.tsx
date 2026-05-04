@@ -59,6 +59,8 @@ function ReflexionPipelineDemo() {
   const [running, setRunning] = useState(false);
   const [idea, setIdea] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [liveResult, setLiveResult] = useState<{ action: string; why: string; time: string } | null>(null);
+  const [apiError, setApiError] = useState(false);
 
   const STEPS = [
     {
@@ -87,24 +89,54 @@ function ReflexionPipelineDemo() {
     },
   ];
 
-  const FINAL_OUTPUT = {
+  const FALLBACK_OUTPUT = {
     action: `Message 3 founders who built in your space before you. Ask: "What was the first thing that convinced you it was real?" Not a pitch — pure intel.`,
     why: "You have signal from your last check-in that the idea resonates but you haven't stress-tested it against people who already tried. This closes that gap in under 2 hours.",
     time: "90 min",
   };
 
   async function runDemo() {
-    if (!idea.trim() && !submitted) return;
+    if (!idea.trim()) return;
     setSubmitted(true);
     setRunning(true);
     setActiveStep(0);
-    for (let i = 0; i <= STEPS.length; i++) {
-      await new Promise((r) => setTimeout(r, i === 0 ? 400 : 1200));
-      setActiveStep(i);
-    }
+    setLiveResult(null);
+    setApiError(false);
+
+    // Run the step animation in parallel with the API call
+    const animationPromise = (async () => {
+      for (let i = 0; i <= STEPS.length; i++) {
+        await new Promise((r) => setTimeout(r, i === 0 ? 400 : 1200));
+        setActiveStep(i);
+      }
+    })();
+
+    const apiPromise = fetch("/api/ai/break-public", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idea: idea.trim() }),
+    })
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((json) => {
+        if (json?.result) {
+          // Parse the result text into action/why/time shape
+          const raw: string = json.result;
+          const actionMatch = raw.match(/\*\*Action\*\*[:\s]+(.+?)(?:\n|$)/i) ?? raw.match(/^(.+?)(?:\n|$)/);
+          const whyMatch = raw.match(/\*\*Why\*\*[:\s]+(.+?)(?:\n|$)/i) ?? raw.match(/\n(.+?)(?:\n|$)/);
+          setLiveResult({
+            action: actionMatch?.[1]?.trim() ?? raw.slice(0, 120),
+            why: whyMatch?.[1]?.trim() ?? "BuildMind analysed your idea through its 3-agent loop.",
+            time: "~90 min",
+          });
+        }
+      })
+      .catch(() => setApiError(true));
+
+    await Promise.all([animationPromise, apiPromise]);
     setRunning(false);
   }
 
+  const finalOutput = liveResult ?? FALLBACK_OUTPUT;
   const done = !running && activeStep === STEPS.length && submitted;
 
   return (
@@ -239,17 +271,17 @@ function ReflexionPipelineDemo() {
                   ✓ Reflexion output — ready for today
                 </div>
                 <p style={{ fontSize: 14, fontWeight: 700, color: "var(--bm-text)", lineHeight: 1.5, marginBottom: 10 }}>
-                  {FINAL_OUTPUT.action}
+                  {finalOutput.action}
                 </p>
                 <div style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: 9, padding: "10px 13px", marginBottom: 12 }}>
                   <div style={{ fontSize: 10, color: "var(--bm-text3)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4, display: "flex", alignItems: "center", gap: 4 }}>
                     <Brain size={9} color="var(--bm-accent)" /> Why this, why today
                   </div>
-                  <p style={{ fontSize: 12, color: "var(--bm-text2)", margin: 0, lineHeight: 1.6 }}>{FINAL_OUTPUT.why}</p>
+                  <p style={{ fontSize: 12, color: "var(--bm-text2)", margin: 0, lineHeight: 1.6 }}>{finalOutput.why}</p>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <span style={{ fontSize: 11, color: "var(--bm-text3)", display: "flex", alignItems: "center", gap: 4 }}>
-                    <Clock size={10} /> Est. {FINAL_OUTPUT.time}
+                    <Clock size={10} /> Est. {finalOutput.time}
                   </span>
                   <Link href="/auth/login">
                     <Button size="sm">
@@ -843,7 +875,7 @@ function PricingSection() {
 
 // ── Stats — kick off fetch at module load time, before any component renders ──
 // Floor values ensure pills are never empty even if the API is slow or fails.
-const STATS_FLOOR = { founders: 47, projects: 89, milestones: 312 };
+const STATS_FLOOR = { founders: 1, projects: 1, milestones: 0 };
 const statsPromise: Promise<{ founders: number; projects: number; milestones: number }> =
   typeof window !== "undefined"
     ? fetch("/api/public/stats")
