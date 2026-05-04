@@ -330,7 +330,6 @@ export default function ProjectDetailPage() {
   const { project, milestones = [], tasks = [] } = data ?? {};
   const stage = project?.startup_stage ?? "MVP";
   const score = useMemo(() => project ? computeStartupScore({
-    progress: tasks.length ? Math.round((tasks.filter(t => t.is_completed).length / tasks.length) * 100) : 0,
     validation_strengths: project.validation_strengths,
     execution_score: project.execution_score,
   }) : 0, [project, tasks]);
