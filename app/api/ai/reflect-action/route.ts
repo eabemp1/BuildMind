@@ -68,20 +68,19 @@ async function extractAndWritePatterns(
   if (!recentReflections || recentReflections.length < 2) return; // Not enough signal yet
 
   // Pull override reasons if the table exists
-  const { data: overrides } = await supabase
-    .from("task_overrides")
-    .select("reason, created_at")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false })
-    .limit(5)
-    .maybeSingle()
-    .then(() => supabase
+  let overridesData: { reason?: string }[] = [];
+  try {
+    const { data } = await supabase
       .from("task_overrides")
       .select("reason")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
-      .limit(5)
-    ).catch(() => ({ data: [] }));
+      .limit(5);
+    overridesData = data ?? [];
+  } catch {
+    overridesData = [];
+  }
+  const overrides = overridesData;
 
   const reflectionSummary = recentReflections.map((r, i) =>
     `${i + 1}. Action: "${r.today_action ?? "none"}" | Outcome: ${r.outcome} | Confidence: ${r.confidence}/5 | Note: "${r.note ?? "none"}"`

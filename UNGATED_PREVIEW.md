@@ -1,44 +1,40 @@
 # Ungated Preview — How to unlock all features locally
 
-To run BuildMind with all Ventures features unlocked (no auth, no billing check):
+To run BuildMind with builder-tier features unlocked (no billing check):
 
 ## Option 1 — Environment variable (fastest)
 
 In your `.env.local`:
 ```
-NEXT_PUBLIC_USER_PLAN=venture
+NEXT_PUBLIC_USER_PLAN=builder
 ```
-
-This is read by `getPlan()` in `lib/plan.ts` when no localStorage value exists.
 
 ## Option 2 — Browser console (per session)
 
-Open DevTools → Console and run:
 ```js
-localStorage.setItem('bm_plan', 'venture');
+localStorage.setItem('bm_plan', 'builder');
 location.reload();
 ```
 
-## Option 3 — Dev helper (already wired)
+## Option 3 — Dev helper (development mode only)
 
-In development mode, `bmSetPlan()` is exposed on `window`:
+`bmSetPlan()` is exposed on `window` in dev:
 ```js
-bmSetPlan('venture', 'your-user-id-here')
+bmSetPlan('builder', 'your-user-id-here')
 // then refresh
 ```
 
 ## Option 4 — Bypass billing/status API
 
-Create `app/api/billing/status/route.ts` override for local dev:
+Override `app/api/billing/status/route.ts` for local dev:
 ```ts
 import { NextResponse } from "next/server";
 export async function GET() {
-  return NextResponse.json({ ok: true, authenticated: true, plan: "venture" });
+  return NextResponse.json({ ok: true, authenticated: true, plan: "builder" });
 }
 ```
-This makes `usePlan()` always resolve to Ventures without any Supabase call.
 
 ---
 
-All 3 plan tiers are now real (Free / Builder / Ventures).
-`normalizePlan('venture')` returns `'venture'` — no longer collapses to builder.
+Active plan tiers: `free` | `builder`. The `normalizePlan()` function maps any
+legacy tier string (operator, founder, chiefofstaff, venture) to `builder`.

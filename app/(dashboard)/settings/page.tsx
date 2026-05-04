@@ -289,7 +289,7 @@ export default function SettingsPage() {
               {tab === "account" && (
                 <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: isMobile ? "18px" : "22px 24px" }}>
                   <div style={{ fontSize: isMobile ? 15 : 13, fontWeight: 700, color: "var(--bm-text)", marginBottom: 20 }}>Account</div>
-                  <div><FieldLabel>Email Address</FieldLabel><SettingsInput value={email} disabled placeholder="you@example.com" /></div>
+                  <div><FieldLabel>Email Address</FieldLabel><SettingsInput value={email} onChange={() => {}} disabled placeholder="you@example.com" /></div>
                   <div style={{ fontSize: 11, color: "var(--bm-text3)", marginTop: 8 }}>Email is managed through your auth provider.</div>
                 </div>
               )}

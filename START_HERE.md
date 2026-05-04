@@ -6,9 +6,9 @@ No Docker needed. Just Node.js and your Supabase keys.
 
 ## What you need
 
-- **Node.js 18+** — check with `node -v` (install from nodejs.org if needed)
-- **A Supabase project** — free at supabase.com (you likely already have one)
-- **A Groq API key** — free at console.groq.com/keys (takes 30 seconds)
+- **Node.js 18+** — check with `node -v`
+- **A Supabase project** — free at supabase.com
+- **A Groq API key** — free at console.groq.com/keys
 
 ---
 
@@ -26,18 +26,18 @@ npm install
 cp .env.local.example .env.local
 ```
 
-Open `.env.local` and fill in **3 required values**:
+Open `.env.local` and fill in **4 required values**:
 
 ```
 NEXT_PUBLIC_SUPABASE_URL=      ← from Supabase → Settings → API
 NEXT_PUBLIC_SUPABASE_ANON_KEY= ← from Supabase → Settings → API
+SUPABASE_SERVICE_ROLE_KEY=     ← from Supabase → Settings → API
 GROQ_API_KEY=                  ← from console.groq.com/keys
 ```
 
-Everything else is optional for local testing. Payments won't process
-locally without Paystack keys, but all AI features and auth work.
+Payments won't process locally without Paystack keys, but all AI features and auth work.
 
-If you've already deployed to Vercel, pull your keys directly:
+If you've already deployed to Vercel:
 ```bash
 npm install -g vercel
 vercel env pull .env.local
@@ -53,34 +53,20 @@ npm run dev
 
 Open **http://localhost:3000**
 
-The full app runs: auth, AI coach, Break My Startup, onboarding,
-weekly report, urgency signals, co-founder pulse — everything.
-
 ---
 
-## Run the database migration (first time only)
+## Database migrations (first time only)
 
-The founder memory feature needs one new table. Run this SQL once
-in your Supabase SQL editor (supabase.com → your project → SQL Editor):
+Run these SQL files in order in your Supabase SQL editor:
 
-```
-Copy and paste the contents of:
-supabase/migrations/20260419203000_founder_memory.sql
-```
+1. `supabase/migrations/20260419203000_founder_memory.sql`
+2. `supabase/migrations/20260425000000_cofounder_core_and_ventures.sql`
+3. `supabase/migrations/20260426000000_founder_context_and_momentum.sql`
+4. `supabase/migrations/20260429000000_admin_role.sql`
+5. `supabase/migrations/20260430000000_align_app_schema.sql`
+6. `supabase/migrations/20260502000000_agentic_upgrades.sql`
 
----
-
-## Do you need the Python backend?
-
-**Probably not.** All the core product features run through Next.js API
-routes (`/app/api/ai/`). The Python backend handles some legacy analytics
-endpoints but nothing you'll hit in normal testing.
-
-If you do need it:
-```bash
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
-```
+For a fresh database, `supabase/schema-idempotent.sql` applies everything in one shot.
 
 ---
 
@@ -88,12 +74,10 @@ uvicorn main:app --reload --port 8000
 
 **"GROQ_API_KEY is not set"** — Add it to `.env.local`, restart `npm run dev`
 
-**Auth not working** — Check your Supabase URL and anon key. Make sure
-`localhost:3000` is in your Supabase allowed redirect URLs:
-Supabase → Authentication → URL Configuration → add `http://localhost:3000`
+**Auth not working** — Check your Supabase URL and anon key. Add `http://localhost:3000`
+to Supabase → Authentication → URL Configuration → Redirect URLs.
 
-**AI features returning errors** — Your Groq key might be invalid or
-rate-limited. Check console.groq.com for usage.
+**AI features returning errors** — Check console.groq.com for usage/rate limits.
 
-**Database errors** — Run the SQL migration above. Make sure your
-`SUPABASE_SERVICE_ROLE_KEY` is set (needed for server-side DB access).
+**Database errors** — Run migrations in order above. Make sure `SUPABASE_SERVICE_ROLE_KEY`
+is set (needed for server-side DB access).

@@ -92,10 +92,6 @@ function AchievementCard({ a, unlocked }: { a: Achievement; unlocked: boolean })
           }}>
             {a.description}
           </div>
-          {/* Progress bar if achievement has a target */}
-          {a.target !== undefined && a.progress !== undefined && !unlocked && (
-            <ProgressBar value={a.progress} max={a.target} />
-          )}
         </div>
       </div>
     </motion.div>

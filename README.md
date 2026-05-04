@@ -2,7 +2,7 @@
 
 Daily execution engine for solo founders. One action per day, AI co-founder with persistent memory, adversarial startup stress-testing, and weekly shareable reports.
 
-## Quick start (no Docker)
+## Quick start
 
 ```bash
 bash setup.sh
@@ -23,7 +23,6 @@ See **START_HERE.md** for detailed setup instructions and troubleshooting.
 - **Auth + Database**: Supabase (Postgres)
 - **AI**: Groq (llama-3.3-70b-versatile) — free tier available
 - **Payments**: Paystack
-- **Python backend**: FastAPI — optional, only needed for legacy analytics
 
 ## Key features
 
@@ -46,17 +45,22 @@ GROQ_API_KEY
 
 See `.env.local.example` for the full list.
 
-## Database migration (run once)
+## Database migrations
 
-```sql
--- In Supabase SQL editor, run:
--- supabase/migrations/20260419203000_founder_memory.sql
+Run migrations in Supabase SQL editor in order:
 ```
+supabase/migrations/20260419203000_founder_memory.sql
+supabase/migrations/20260425000000_cofounder_core_and_ventures.sql
+supabase/migrations/20260426000000_founder_context_and_momentum.sql
+supabase/migrations/20260429000000_admin_role.sql
+supabase/migrations/20260430000000_align_app_schema.sql
+supabase/migrations/20260502000000_agentic_upgrades.sql
+```
+
+Or use `supabase/schema-idempotent.sql` for a fresh database.
 
 ## Deploy
 
 ```bash
 vercel deploy
 ```
-
-Set env vars in Vercel dashboard or: `vercel env add`
