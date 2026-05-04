@@ -379,20 +379,16 @@ export async function updateProjectDetails(
   }
 
   // Push updated summary back to founder_context (fire-and-forget)
-  supabase
+  void supabase
     .from("founder_context")
     .update({ startup_summary: newSummary, updated_at: new Date().toISOString() })
-    .eq("user_id", user.id)
-    .then(() => {})
-    .catch(() => {});
+    .eq("user_id", user.id);
 
   // Also sync to founder_memory
-  supabase
+  void supabase
     .from("founder_memory")
     .update({ startup_summary: newSummary, updated_at: new Date().toISOString() })
-    .eq("user_id", user.id)
-    .then(() => {})
-    .catch(() => {});
+    .eq("user_id", user.id);
 }
 
 export async function getProjectDetail(projectId: string): Promise<{
@@ -618,7 +614,7 @@ export async function createProjectWithRoadmap(params: {
   }, { onConflict: "user_id" });
 
   // Seed founder_memory with onboarding data — used by the coach from message 1
-  await supabase.from("founder_memory").upsert({
+  void supabase.from("founder_memory").upsert({
     user_id:          user.id,
     startup_summary:  startupSummary,
     avoidance_zones:  [],
@@ -627,7 +623,7 @@ export async function createProjectWithRoadmap(params: {
     insight_history:  [],
     cofounder_style:  "execution-coach",
     updated_at:       new Date().toISOString(),
-  }, { onConflict: "user_id" }).catch(() => {});
+  }, { onConflict: "user_id" });
   // ─────────────────────────────────────────────────────────────────────────
 
   trackEvent("project_created");

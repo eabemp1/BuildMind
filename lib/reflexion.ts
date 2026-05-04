@@ -158,6 +158,8 @@ export interface ReflexionResult {
   critique: string;        // Internal critic output (stored, not shown)
   rationale: string;       // "Why this, why now" tooltip — one sentence
   nextAction?: string;     // Suggested next concrete action
+  verdict: "pass" | "fail"; // Gatekeeper verdict from Agent B
+  reject_reason: string | null; // Reason if verdict is "fail", otherwise null
 }
 
 /**
@@ -181,6 +183,8 @@ export async function runReflexionLoop(
       critique: "Confidence gate triggered — insufficient domain context.",
       rationale: "Because I need more context to give you a firm answer right now.",
       nextAction: "Decide: should we research together, or connect you with a human mentor?",
+      verdict: "fail",
+      reject_reason: "Confidence gate triggered — insufficient domain context.",
     };
   }
 
