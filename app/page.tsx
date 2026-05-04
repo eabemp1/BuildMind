@@ -96,7 +96,7 @@ function ReflexionPipelineDemo() {
   };
 
   async function runDemo() {
-    if (!idea.trim()) return;
+    if (idea.trim().length < 10) return;
     setSubmitted(true);
     setRunning(true);
     setActiveStep(0);
