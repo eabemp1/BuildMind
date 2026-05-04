@@ -194,7 +194,7 @@ export async function getProjectSummaries(): Promise<ProjectSummary[]> {
   const projectIds = projects.map((p) => p.id);
   const { data: milestones } = await supabase
     .from("milestones")
-    .select("id, title, project_id, is_completed, order_index")
+    .select("id, title, project_id")
     .in("project_id", projectIds);
 
   const milestoneIds = (milestones ?? []).map((m) => m.id);

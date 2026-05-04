@@ -102,7 +102,7 @@ export async function completeTask(taskId: string): Promise<{ newStage: string |
   const allDone = (sibling ?? []).every((t) => t.is_completed);
 
   if (allDone) {
-    await supabase.from("milestones").update({ is_completed: true }).eq("id", task.milestone_id);
+    await supabase.from("milestones").update({ status: 'completed' }).eq("id", task.milestone_id);
     const { data: milestone } = await supabase
       .from("milestones").select("project_id").eq("id", task.milestone_id).single();
     if (milestone) {
@@ -154,8 +154,7 @@ export async function updateTaskStatus(taskId: string, isCompleted: boolean, not
     await supabase
       .from("milestones")
       .update({
-        is_completed: isMilestoneComplete,
-        completed_at: isMilestoneComplete ? new Date().toISOString() : null,
+        status: isMilestoneComplete ? 'completed' : 'in_progress',
       })
       .eq("id", taskRow.milestone_id);
   }

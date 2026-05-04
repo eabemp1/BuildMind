@@ -195,12 +195,18 @@ export function planMeetsRequirement(actual: Plan, required: Plan): boolean {
 
 export function setStoredPlan(plan: Plan): void {
   if (typeof window === "undefined") return;
-  localStorage.setItem("bm_plan", normalizePlan(plan));
+  const normalized = normalizePlan(plan);
+  localStorage.setItem("bm_plan", normalized);
+  const activeUserId = localStorage.getItem("bm_active_user_id");
+  if (activeUserId) {
+    localStorage.setItem(`bm_plan_${activeUserId}`, normalized);
+  }
 }
 
 export function clearStoredPlan(): void {
   if (typeof window === "undefined") return;
   localStorage.removeItem("bm_plan");
+  localStorage.removeItem("bm_active_user_id");
 }
 
 export function planFromUserMetadata(
@@ -225,6 +231,11 @@ export function syncStoredPlanFromUser(
 
 export function getPlan(): Plan {
   if (typeof window === "undefined") return "free";
+  const activeUserId = localStorage.getItem("bm_active_user_id");
+  if (activeUserId) {
+    const scoped = localStorage.getItem(`bm_plan_${activeUserId}`);
+    if (scoped) return normalizePlan(scoped);
+  }
   const local = localStorage.getItem("bm_plan");
   if (local) return normalizePlan(local);
   const env = process.env.NEXT_PUBLIC_USER_PLAN;

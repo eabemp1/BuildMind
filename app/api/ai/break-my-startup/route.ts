@@ -200,7 +200,7 @@ ${competitorContext}`,
       .eq("id", projectId).eq("user_id", userId).single();
     if (projectError) throw new Error(projectError.message);
 
-    const { data: milestones } = await supabase.from("milestones").select("id,title,is_completed").eq("project_id", projectId);
+    const { data: milestones } = await supabase.from("milestones").select("id,title,status").eq("project_id", projectId);
     const milestoneIds = (milestones ?? []).map(m => m.id);
     const { data: tasks } = milestoneIds.length
       ? await supabase.from("tasks").select("title,is_completed").in("milestone_id", milestoneIds)
@@ -208,7 +208,7 @@ ${competitorContext}`,
 
     const completedTasks = (tasks ?? []).filter(t => t.is_completed).length;
     const totalTasks = (tasks ?? []).length;
-    const completedMilestones = (milestones ?? []).filter(m => m.is_completed).length;
+    const completedMilestones = (milestones ?? []).filter(m => m.status === 'completed').length;
     const totalMilestones = (milestones ?? []).length;
     const taskRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
     const milestoneRate = totalMilestones > 0 ? Math.round((completedMilestones / totalMilestones) * 100) : 0;

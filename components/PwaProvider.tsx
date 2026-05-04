@@ -22,6 +22,11 @@ import {
 } from "@/lib/push";
 import { createClient } from "@/lib/supabase/client";
 
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
+}
+
 // Re-prompt every 3 days until subscribed (was 7 — too infrequent)
 const PROMPT_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000;
 const PROMPT_KEY = "bm_push_prompted";
@@ -29,6 +34,7 @@ const PROMPT_KEY = "bm_push_prompted";
 const FIRST_SEEN_KEY = "bm_first_seen";
 // Dismiss the persistent banner for the session
 const BANNER_DISMISSED_KEY = "bm_push_banner_dismissed";
+const INSTALL_PROMPT_KEY_PREFIX = "bm_install_prompt_shown";
 
 export default function PwaProvider({
   userId: userIdProp,
@@ -46,6 +52,8 @@ export default function PwaProvider({
   const [showPersistentBanner, setShowPersistentBanner] = useState(false);
   // iOS in-browser (not installed) — show install instructions instead
   const [isIosNotInstalled, setIsIosNotInstalled] = useState(false);
+  const [showInstallPrompt, setShowInstallPrompt] = useState(false);
+  const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null);
 
   // ── Hydrate userId from Supabase if not passed ─────────────────────────
   useEffect(() => {
@@ -66,7 +74,39 @@ export default function PwaProvider({
     if (!localStorage.getItem(FIRST_SEEN_KEY)) {
       localStorage.setItem(FIRST_SEEN_KEY, String(Date.now()));
     }
+
+    const onBeforeInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      setInstallEvent(event as BeforeInstallPromptEvent);
+    };
+    const onAppInstalled = () => {
+      setShowInstallPrompt(false);
+      setInstallEvent(null);
+    };
+
+    window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
+    window.addEventListener("appinstalled", onAppInstalled);
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", onAppInstalled);
+    };
   }, []);
+
+  useEffect(() => {
+    if (!userId || typeof window === "undefined") return;
+    const key = `${INSTALL_PROMPT_KEY_PREFIX}_${userId}`;
+    if (localStorage.getItem(key) === "1") return;
+
+    const isStandalone =
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (window.navigator as { standalone?: boolean }).standalone === true;
+
+    if (!isStandalone) {
+      setShowInstallPrompt(true);
+      localStorage.setItem(key, "1");
+    }
+  }, [userId]);
 
   // ── Evaluate whether to show any prompt ────────────────────────────────
   const evaluatePromptState = async () => {
@@ -159,6 +199,22 @@ export default function PwaProvider({
     }
   }
 
+  async function handleInstallApp() {
+    if (!installEvent) {
+      setShowInstallPrompt(false);
+      return;
+    }
+    try {
+      await installEvent.prompt();
+      await installEvent.userChoice;
+    } catch {
+      // Non-fatal: browser may block or dismiss install prompt.
+    } finally {
+      setInstallEvent(null);
+      setShowInstallPrompt(false);
+    }
+  }
+
   function openBrowserNotificationSettings() {
     const ua = navigator.userAgent.toLowerCase();
     if (ua.includes("edg/")) { window.open("edge://settings/content/notifications", "_blank"); return; }
@@ -169,6 +225,56 @@ export default function PwaProvider({
   return (
     <>
       {children}
+
+      {/* ── First-sign-in install prompt (one-time per user) ─────────────── */}
+      {showInstallPrompt && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 10020,
+          background: "rgba(0,0,0,0.58)",
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+        }}>
+          <div style={{
+            width: "100%", maxWidth: 440,
+            borderRadius: 18, border: "1px solid var(--bm-border2)",
+            background: "var(--bm-bg3)", padding: "20px 18px",
+            boxShadow: "0 16px 48px rgba(0,0,0,0.45)",
+          }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: "var(--bm-text)", marginBottom: 8 }}>
+              Install BuildMind for daily reminders
+            </div>
+            <p style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.6, margin: "0 0 12px" }}>
+              Install the app so you can receive morning action notifications and stay on streak, even when your browser is closed.
+            </p>
+            {isIosNotInstalled && (
+              <p style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.6, margin: "0 0 12px" }}>
+                On iPhone/iPad: Safari → Share (square with arrow) → Add to Home Screen.
+              </p>
+            )}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                onClick={() => void handleInstallApp()}
+                style={{
+                  flex: 1, padding: "10px 12px", borderRadius: 9, border: "none",
+                  background: "var(--grad-primary)", color: "#fff", fontSize: 12, fontWeight: 700,
+                  cursor: "pointer", fontFamily: "inherit",
+                }}
+              >
+                Install app
+              </button>
+              <button
+                onClick={() => setShowInstallPrompt(false)}
+                style={{
+                  flex: 1, padding: "10px 12px", borderRadius: 9,
+                  border: "1px solid var(--bm-border2)", background: "transparent", color: "var(--bm-text3)",
+                  fontSize: 12, cursor: "pointer", fontFamily: "inherit",
+                }}
+              >
+                Not now
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Persistent top banner — shown after 3 days without subscribing ── */}
       {showPersistentBanner && !isIosNotInstalled && (

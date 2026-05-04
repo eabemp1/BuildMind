@@ -29,15 +29,6 @@ async function insertMilestone(
   payload: Record<string, unknown>,
 ) {
   const payloads = [
-    payload,
-    {
-      project_id: payload.project_id,
-      user_id: payload.user_id,
-      title: payload.title,
-      stage: payload.stage,
-      order_index: payload.order_index,
-      is_completed: payload.is_completed,
-    },
     {
       project_id: payload.project_id,
       user_id: payload.user_id,
@@ -46,8 +37,14 @@ async function insertMilestone(
     },
     {
       project_id: payload.project_id,
+      user_id: payload.user_id,
       title: payload.title,
-      status: payload.is_completed ? "completed" : "pending",
+      status: "pending",
+    },
+    {
+      project_id: payload.project_id,
+      title: payload.title,
+      status: "pending",
     },
   ];
 
@@ -200,7 +197,7 @@ Generate a specific roadmap for this startup. Tasks must reference the actual pr
         if (stageIndex > 0 && milestoneIds.length) {
           const toComplete = milestoneIds.filter((m) => m.order_index < stageIndex).map((m) => m.id);
           if (toComplete.length) {
-            await supabase.from("milestones").update({ is_completed: true }).in("id", toComplete);
+            await supabase.from("milestones").update({ status: 'completed' }).in("id", toComplete);
             const { data: earlyTasks } = await supabase.from("tasks").select("id").in("milestone_id", toComplete);
             if (earlyTasks?.length) {
               await supabase.from("tasks").update({ is_completed: true }).in("id", earlyTasks.map((t) => t.id));

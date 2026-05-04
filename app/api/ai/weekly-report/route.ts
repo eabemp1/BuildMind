@@ -71,10 +71,10 @@ export async function POST(request: Request) {
       if (allProjectIds.length > 0) {
         const { data: userMilestones } = await supabase
           .from("milestones")
-          .select("id, is_completed")
+          .select("id, status")
           .in("project_id", allProjectIds);
 
-        milestones = (userMilestones ?? []).filter(m => m.is_completed).length;
+        milestones = (userMilestones ?? []).filter(m => m.status === 'completed').length;
 
         const milestoneIds = (userMilestones ?? []).map(m => m.id);
         if (milestoneIds.length > 0) {

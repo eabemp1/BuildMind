@@ -160,7 +160,7 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
   const projectIds = (projects ?? []).map((p) => p.id);
 
   const { data: milestones } = projectIds.length
-    ? await supabase.from("milestones").select("id, project_id, is_completed").in("project_id", projectIds)
+    ? await supabase.from("milestones").select("id, project_id, status").in("project_id", projectIds)
     : { data: [] };
 
   const milestoneIds = (milestones ?? []).map((m) => m.id);
@@ -176,7 +176,7 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
     tasksByMilestone.set(task.milestone_id, list);
   });
   const completedMilestones = (milestones ?? []).filter((milestone) => {
-    if (milestone.is_completed) return true;
+    if (milestone.status === 'completed') return true;
     const milestoneTasks = tasksByMilestone.get(milestone.id) ?? [];
     return milestoneTasks.length > 0 && milestoneTasks.every((task) => task.is_completed);
   }).length;

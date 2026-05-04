@@ -163,7 +163,7 @@ export async function POST(request: Request) {
           .eq("user_id", userId)
           .single(),
         supabase.from("founder_memory").select("*").eq("user_id", userId).maybeSingle(),
-        supabase.from("milestones").select("id, title, is_completed").eq("project_id", projectId),
+        supabase.from("milestones").select("id, title, status").eq("project_id", projectId),
       ]);
 
       const project = projectResult.status === "fulfilled" ? projectResult.value.data : null;
@@ -177,7 +177,7 @@ export async function POST(request: Request) {
 
       const completedTasks = (tasks ?? []).filter((t) => t.is_completed).length;
       const totalTasks = (tasks ?? []).length;
-      const completedMilestones = milestones.filter((m) => m.is_completed).length;
+      const completedMilestones = milestones.filter((m) => m.status === 'completed').length;
 
       if (project) {
         stage = project.startup_stage ?? inferStage(completedTasks, totalTasks, completedMilestones, milestones.length);

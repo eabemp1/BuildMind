@@ -50,10 +50,14 @@ export type BuildMindMilestone = {
   id: string;
   project_id: string;
   title: string;
-  stage: string;
-  order_index: number;
+  description?: string | null;
+  target_date?: string | null;
+  status: string;
   created_at: string;
-  status?: string | null;
+  updated_at?: string | null;
+  // Legacy fields - no longer in schema but kept for backwards compatibility in client code
+  stage?: string;
+  order_index?: number;
   is_completed?: boolean | null;
 };
 

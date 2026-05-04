@@ -942,7 +942,7 @@ export default function LandingPage() {
         <div className="mx-auto grid max-w-7xl items-center gap-10 md:grid-cols-2 lg:gap-16">
           {/* Left */}
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }} className="flex flex-col gap-5 sm:gap-6">
-            <span style={{ background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)", color: "var(--bm-accent)", borderRadius: 20, padding: "4px 14px", fontSize: 11, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "0.07em", display: "inline-block" }}>
+            <span style={{ background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)", color: "var(--bm-accent)", borderRadius: 16, padding: "3px 10px", fontSize: 10, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "0.07em", display: "inline-block" }}>
               AI Founder Operating System
             </span>
 

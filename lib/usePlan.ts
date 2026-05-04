@@ -56,6 +56,10 @@ async function fetchPlanFromServer(): Promise<{ plan: Plan; userId: string | nul
     const userId = data.user?.id ?? null;
 
     if (!userId) {
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("bm_plan");
+        localStorage.removeItem("bm_active_user_id");
+      }
       return { plan: "free", userId: null };
     }
 
@@ -81,8 +85,9 @@ async function fetchPlanFromServer(): Promise<{ plan: Plan; userId: string | nul
     // but is per-account (different keys for different users).
     if (typeof window !== "undefined") {
       localStorage.setItem(`bm_plan_${userId}`, plan);
-      // Clear the generic (non-namespaced) key so it can't bleed
-      localStorage.removeItem("bm_plan");
+      // Keep generic key in sync for legacy callers that still read bm_plan.
+      localStorage.setItem("bm_plan", plan);
+      localStorage.setItem("bm_active_user_id", userId);
     }
 
     return { plan, userId };

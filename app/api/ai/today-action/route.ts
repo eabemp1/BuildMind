@@ -129,9 +129,9 @@ export async function POST(request: Request) {
 
       const { data: milestones } = await supabase
         .from("milestones")
-        .select("id, title, is_completed")
+        .select("id, title, status")
         .eq("project_id", projectId)
-        .order("order_index", { ascending: true });
+        .order("created_at", { ascending: true });
 
       const milestoneIds = (milestones ?? []).map((m) => m.id);
       const { data: tasks } = milestoneIds.length
@@ -140,7 +140,7 @@ export async function POST(request: Request) {
 
       const completedTasks = (tasks ?? []).filter((t) => t.is_completed).length;
       const totalTasks = (tasks ?? []).length;
-      const completedMilestones = (milestones ?? []).filter((m) => m.is_completed).length;
+      const completedMilestones = (milestones ?? []).filter((m) => m.status === 'completed').length;
 
       if (project) {
         stage = project.startup_stage ?? inferStage(completedTasks, totalTasks, completedMilestones, (milestones ?? []).length);
@@ -153,7 +153,7 @@ Stage: ${stage}
 Problem: ${project.problem ?? "Not specified"}
 Target users: ${project.target_users ?? "Not specified"}
 Description: ${project.description ?? "Not specified"}
-Milestones: ${(milestones ?? []).map((m) => `${m.title} (${m.is_completed ? "complete" : "in progress"})`).join(", ")}
+Milestones: ${(milestones ?? []).map((m) => `${m.title} (${m.status === 'completed' ? "complete" : "in progress"})`).join(", ")}
 Tasks: ${completedTasks}/${totalTasks} completed`;
       }
 

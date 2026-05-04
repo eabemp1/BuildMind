@@ -108,6 +108,7 @@ function TodayContent() {
   const { data: summaries = [], isLoading } = useProjectSummariesQuery();
   const { data: overview } = useDashboardOverviewQuery();
   const [copied, setCopied] = useState(false);
+  const [shared, setShared] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [confidence, setConfidence] = useState(3);
   const [note, setNote] = useState("");
@@ -203,6 +204,25 @@ function TodayContent() {
 
   function handleCopy() {
     navigator.clipboard.writeText(draftMessage ?? actionData.message).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+  }
+
+  async function handleShareMessage() {
+    const text = draftMessage ?? actionData.message;
+    const nav = window.navigator as {
+      share?: (data: ShareData) => Promise<void>;
+      clipboard?: { writeText: (value: string) => Promise<void> };
+    };
+    try {
+      if (typeof nav.share === "function") {
+        await nav.share({ text });
+      } else {
+        await nav.clipboard?.writeText(text);
+      }
+      setShared(true);
+      setTimeout(() => setShared(false), 2000);
+    } catch {
+      // User cancelled share or browser blocked; keep UI unchanged.
+    }
   }
 
   async function handleCheckIn() {
@@ -473,10 +493,18 @@ function TodayContent() {
             <span style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-accent)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
               {isOutreachAction ? "✏️ Your outreach draft — edit & copy" : "📋 Your outreach script — copy & send this"}
             </span>
-            <button onClick={handleCopy}
-              style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 7, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", fontSize: 11, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}>
-              {copied ? <><Check size={11} color="var(--bm-accent)" /> Copied</> : <><Copy size={11} /> Copy</>}
-            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <button
+                onClick={() => void handleShareMessage()}
+                style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 7, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", fontSize: 11, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}
+              >
+                {shared ? <><Check size={11} color="var(--bm-accent)" /> Shared</> : <>↗ Share</>}
+              </button>
+              <button onClick={handleCopy}
+                style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 7, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", fontSize: 11, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}>
+                {copied ? <><Check size={11} color="var(--bm-accent)" /> Copied</> : <><Copy size={11} /> Copy</>}
+              </button>
+            </div>
           </div>
           {isOutreachAction ? (
             <textarea

@@ -34,18 +34,23 @@ export function normalizeStage(raw: string | null | undefined): StartupStage {
  * - If all complete → "Revenue"
  */
 export function inferStageFromMilestones(
-  milestones: Array<{ title: string; is_completed: boolean | null; order_index: number }>,
+  milestones: Array<{ title: string; status?: string | null; created_at?: string }>,
   tasks: Array<{ milestone_id: string; is_completed: boolean }>,
   milestoneIdMap: Map<string, string>, // milestoneId → milestoneTitle
 ): StartupStage {
   if (!milestones.length) return "Idea";
 
-  const sorted = [...milestones].sort((a, b) => a.order_index - b.order_index);
+  // Sort by created_at since order_index doesn't exist in schema
+  const sorted = [...milestones].sort((a, b) => {
+    const dateA = new Date(a.created_at ?? 0).getTime();
+    const dateB = new Date(b.created_at ?? 0).getTime();
+    return dateA - dateB;
+  });
 
   const isMilestoneComplete = (
     m: (typeof sorted)[0] & { id?: string },
   ): boolean => {
-    if (m.is_completed) return true;
+    if (m.status === 'completed') return true;
     const milestoneTasks = tasks.filter(
       (t) => milestoneIdMap.get(t.milestone_id) === m.title,
     );

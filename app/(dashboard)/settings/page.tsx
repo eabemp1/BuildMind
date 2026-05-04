@@ -179,6 +179,7 @@ export default function SettingsPage() {
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
   const [bio, setBio] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState("");
   const [email, setEmail] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -195,6 +196,17 @@ export default function SettingsPage() {
         setUserId(data.user.id);
         setEmail(data.user.email ?? "");
         await ensureUserProfile({ id: data.user.id, email: data.user.email ?? "" });
+        const { data: profile } = await sb
+          .from("profiles")
+          .select("name, username, bio, avatar_url")
+          .eq("id", data.user.id)
+          .maybeSingle();
+        if (profile) {
+          setName(profile.name ?? "");
+          setUsername(profile.username ?? "");
+          setBio(profile.bio ?? "");
+          setAvatarUrl(profile.avatar_url ?? "");
+        }
         const saved = localStorage.getItem("bm_ai_personality");
         if (saved === "direct" || saved === "supportive" || saved === "challenger") {
           setAiPersonality(saved);
@@ -210,7 +222,14 @@ export default function SettingsPage() {
       const sb = createClient();
       const { data } = await sb.auth.getUser();
       if (!data.user) return;
-      await sb.from("profiles").upsert({ id: data.user.id, name: name.trim(), username: username.trim().toLowerCase(), bio: bio.trim(), updated_at: new Date().toISOString() });
+      await sb.from("profiles").upsert({
+        id: data.user.id,
+        name: name.trim(),
+        username: username.trim().toLowerCase(),
+        bio: bio.trim(),
+        avatar_url: avatarUrl.trim() || null,
+        updated_at: new Date().toISOString(),
+      });
       localStorage.setItem("bm_ai_personality", aiPersonality);
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
@@ -261,6 +280,22 @@ export default function SettingsPage() {
                   <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: isMobile ? "18px" : "22px 24px" }}>
                     <div style={{ fontSize: isMobile ? 15 : 13, fontWeight: 700, color: "var(--bm-text)", marginBottom: 20 }}>Public Profile</div>
                     <div style={{ display: "flex", flexDirection: "column", gap: isMobile ? 18 : 16 }}>
+                      <div>
+                        <FieldLabel>Avatar Image URL</FieldLabel>
+                        <SettingsInput value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} placeholder="https://..." />
+                        {!!avatarUrl && (
+                          <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 10 }}>
+                            <img
+                              src={avatarUrl}
+                              alt="Avatar preview"
+                              style={{ width: 36, height: 36, borderRadius: "50%", objectFit: "cover", border: "1px solid var(--bm-border2)" }}
+                              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                              onLoad={(e) => { (e.currentTarget as HTMLImageElement).style.display = "block"; }}
+                            />
+                            <span style={{ fontSize: 11, color: "var(--bm-text3)" }}>Preview</span>
+                          </div>
+                        )}
+                      </div>
                       <div><FieldLabel>Full Name</FieldLabel><SettingsInput value={name} onChange={(e) => setName(e.target.value)} placeholder="Alex Johnson" /></div>
                       <div><FieldLabel>Username</FieldLabel><SettingsInput value={username} onChange={(e) => setUsername(e.target.value)} placeholder="alexbuilds" /></div>
                       <div>
