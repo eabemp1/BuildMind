@@ -5,7 +5,7 @@
  * No login required. Viral entry point → funnel to signup.
  */
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 
@@ -56,10 +56,10 @@ const LOADING_STEPS = [
 
 function LoadingState() {
   const [stepIdx, setStepIdx] = useState(0);
-  useState(() => {
+  useEffect(() => {
     const iv = setInterval(() => setStepIdx(i => Math.min(i+1, LOADING_STEPS.length-1)), 1400);
     return () => clearInterval(iv);
-  });
+  }, []);
   return (
     <div style={{ textAlign:"center", padding:"60px 20px" }}>
       <motion.div animate={{ rotate:360 }} transition={{ duration:1.5, repeat:Infinity, ease:"linear" }}

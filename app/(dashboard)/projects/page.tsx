@@ -145,7 +145,11 @@ function CreateModal({
     setError("");
     if (!title.trim()) { setError("Project name is required."); return; }
     try {
-      projectCreateSchema.parse({ title, problem, startup_stage: stage });
+      projectCreateSchema.parse({
+        projectName: title.trim(),
+        ideaDescription: problem.trim(),
+        targetUsers: "Founders",
+      });
     } catch (e: unknown) {
       const msg = (e as { errors?: { message: string }[] })?.errors?.[0]?.message;
       setError(msg ?? "Invalid input");
@@ -278,7 +282,7 @@ export default function ProjectsPage() {
       await createMut.mutateAsync({
         project_name: data.title.trim(),
         idea_description: data.problem.trim(),
-        target_users: "",
+        target_users: "Founders",
         problem: data.problem.trim(),
         startup_stage: data.stage,
       });

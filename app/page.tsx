@@ -118,14 +118,21 @@ function ReflexionPipelineDemo() {
     })
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then((json) => {
-        if (json?.result) {
-          // Parse the result text into action/why/time shape
-          const raw: string = json.result;
-          const actionMatch = raw.match(/\*\*Action\*\*[:\s]+(.+?)(?:\n|$)/i) ?? raw.match(/^(.+?)(?:\n|$)/);
-          const whyMatch = raw.match(/\*\*Why\*\*[:\s]+(.+?)(?:\n|$)/i) ?? raw.match(/\n(.+?)(?:\n|$)/);
+        const data = json?.data;
+        if (data) {
+          const actionText = typeof data.brutal_advice === "string" && data.brutal_advice.trim()
+            ? data.brutal_advice.trim()
+            : typeof data.verdict === "string" && data.verdict.trim()
+              ? data.verdict.trim()
+              : FALLBACK_OUTPUT.action;
+          const whyText = Array.isArray(data.kill_reasons) && data.kill_reasons.length > 0
+            ? data.kill_reasons[0]
+            : typeof data.verdict === "string" && data.verdict.trim()
+              ? data.verdict.trim()
+              : FALLBACK_OUTPUT.why;
           setLiveResult({
-            action: actionMatch?.[1]?.trim() ?? raw.slice(0, 120),
-            why: whyMatch?.[1]?.trim() ?? "BuildMind analysed your idea through its 3-agent loop.",
+            action: actionText,
+            why: whyText,
             time: "~90 min",
           });
         }
