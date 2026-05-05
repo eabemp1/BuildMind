@@ -136,6 +136,16 @@ export function useUpdateTaskMutation(projectId: string) {
     onError: (_err, _vars, ctx) => {
       if (ctx?.prev) qc.setQueryData(queryKeys.project(projectId), ctx.prev);
     },
+    onSuccess: (_data, variables) => {
+      if (variables?.isCompleted) {
+        void fetch("/api/founder-context/task-complete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+          cache: "no-store",
+        }).catch(() => {});
+      }
+    },
     onSettled: () => {
       // Invalidate everything so stage recomputes everywhere
       void qc.invalidateQueries({ queryKey: queryKeys.project(projectId) });

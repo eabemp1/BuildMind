@@ -325,6 +325,7 @@ export default function ProjectDetailPage() {
 
   const [tab, setTab] = useState<Tab>("milestones");
   const [newNoteDraft, setNewNoteDraft] = useState<Record<string, string>>({});
+  const [regenerating, setRegenerating] = useState(false);
   const [showUpgrade, setShowUpgrade] = useState(false);
 
   const { project, milestones = [], tasks = [] } = data ?? {};
@@ -433,7 +434,35 @@ export default function ProjectDetailPage() {
       {tab === "milestones" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {milestones.length === 0 && (
-            <div style={{ fontSize: 13, color: "var(--bm-text3)", textAlign: "center", padding: "48px 0" }}>No milestones yet. BuildMind generates them from your project idea.</div>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, padding: "48px 0" }}>
+              <div style={{ fontSize: 13, color: "var(--bm-text3)", textAlign: "center" }}>No milestones yet. BuildMind generates them from your project idea.</div>
+              <button
+                onClick={async () => {
+                  try {
+                    setRegenerating(true);
+                    const res = await fetch("/api/ai/generate-roadmap", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ projectId: id, title: project?.title ?? "", idea_description: project?.description ?? "", target_users: project?.target_users ?? "", problem: project?.problem ?? "", startup_stage: project?.startup_stage ?? "Idea" }),
+                    });
+                    if (res.ok) {
+                      void qc.invalidateQueries({ queryKey: queryKeys.project(id) });
+                    } else {
+                      const body = await res.json().catch(() => ({}));
+                      console.error("Regenerate roadmap failed:", res.status, body);
+                    }
+                  } catch (err) {
+                    console.error("Regenerate roadmap error:", err);
+                  } finally {
+                    setRegenerating(false);
+                  }
+                }}
+                disabled={regenerating}
+                style={{ padding: "9px 18px", borderRadius: 9, border: "none", background: "var(--grad-primary)", color: "white", fontSize: 13, fontWeight: 600, cursor: regenerating ? "not-allowed" : "pointer", opacity: regenerating ? 0.65 : 1, fontFamily: "inherit" }}
+              >
+                {regenerating ? "Generating…" : "⚡ Generate milestones & tasks"}
+              </button>
+            </div>
           )}
           {milestones.length > 0 && (
             <div style={{ display: "flex", gap: 3, marginBottom: 10 }}>

@@ -554,7 +554,7 @@ export async function createProjectWithRoadmap(params: {
   if (!createdProject) throw projectError;
 
   try {
-    await fetch("/api/ai/generate-roadmap", {
+    const roadmapRes = await fetch("/api/ai/generate-roadmap", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -567,7 +567,12 @@ export async function createProjectWithRoadmap(params: {
         startup_stage: params.startup_stage ?? "Idea",
       }),
     });
-  } catch {
+    if (!roadmapRes.ok) {
+      const errBody = await roadmapRes.text().catch(() => "(non-json error)");
+      console.error("[createProjectWithRoadmap] Roadmap API error:", roadmapRes.status, errBody);
+    }
+  } catch (err) {
+    console.error("[createProjectWithRoadmap] Roadmap fetch failed:", err);
     // Roadmap generation failed — project still created, user can retry
   }
 

@@ -270,8 +270,14 @@ export function recordWeeklyAction(): void {
   localStorage.setItem(`bm_actions_${weekKey()}`, String(getActionsThisWeek() + 1));
 }
 export function hasHitWeeklyLimit(): boolean {
-  const limit = PLAN_LIMITS[getPlan()].actionsPerWeek;
-  return limit !== -1 && getActionsThisWeek() >= limit;
+  const plan = getPlan();
+  const limit = PLAN_LIMITS[plan].actionsPerWeek;
+  if (limit === -1) return false; // Builder/paid — never block
+  if (getActionsThisWeek() >= limit) {
+    void fetchAndSyncStoredPlanFromBillingStatus();
+    return true;
+  }
+  return false;
 }
 function weekKey(): string {
   const d = new Date();
@@ -290,8 +296,14 @@ export function recordAIMessage(): void {
   localStorage.setItem(`bm_ai_${dayKey()}`, String(getAIMessagesToday() + 1));
 }
 export function hasHitDailyAILimit(): boolean {
-  const limit = PLAN_LIMITS[getPlan()].aiMessagesPerDay;
-  return limit !== -1 && getAIMessagesToday() >= limit;
+  const plan = getPlan();
+  const limit = PLAN_LIMITS[plan].aiMessagesPerDay;
+  if (limit === -1) return false; // Builder/paid — never block
+  if (getAIMessagesToday() >= limit) {
+    void fetchAndSyncStoredPlanFromBillingStatus();
+    return true;
+  }
+  return false;
 }
 function dayKey(): string {
   const d = new Date();
