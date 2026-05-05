@@ -145,21 +145,27 @@ export const PAYWALL_FREE_TO_BUILDER =
 
 /** Feature → minimum plan. Only NOW features are gated here. */
 export const FEATURE_GATES: Record<string, Plan> = {
-  dailyMorningBriefing:    "builder",
-  unlimitedAITasks:        "builder",
-  explainableRationale:    "builder",
-  cognitiveLoadCheckin:    "builder",
-  fullMomentumScore:       "builder",
-  hitlOverrides:           "builder",
-  eveningCheckNudges:      "builder",
-  emotionalLanguageLayer:  "builder",
-  recoveryMode:            "builder",
-  founderMemory:           "builder",
-  weeklyReport:            "builder",  // alias used in existing route
-  aiCoach:                 "builder",
+  // ── NOW features (active in v4) ────────────────────────────────────────────
+  dailyMorningBriefing:       "builder",
+  unlimitedAITasks:           "builder",
+  explainableRationale:       "builder",
+  cognitiveLoadCheckin:       "builder",
+  fullMomentumScore:          "builder",
+  hitlOverrides:              "builder",
+  eveningCheckNudges:         "builder",
+  emotionalLanguageLayer:     "builder",
+  recoveryMode:               "builder",
+  founderMemory:              "builder",
+  weeklyReport:               "builder",  // alias used in existing route
+  aiCoach:                    "builder",
+  
+  // ── CoFounder Core (Month 2/3, currently builder-only, moving to operator) ──
+  competitorReframe:          "builder",  // /api/cofounder/reframe (will move to operator at Day 90)
+  validationAction:           "builder",  // /api/cofounder/validation-action (will move to operator)
+  breakMyStartupFullAnalysis: "builder",  // Full analysis + competitor scan (preview available to free)
 
-  // 🔒 Operator tier — disabled until Operator plan launches.
-  // canAccess() returns false for these on all current tiers.
+  // 🔒 Operator tier — disabled until Operator plan launches at Day 90 (Playbook §10).
+  // canAccess() returns false for these on all current tiers (future-proofing).
   venturesBlueprint:       "operator" as Plan,
   cofounderBlueprint:      "operator" as Plan,
   cofounderPulse:          "operator" as Plan,

@@ -91,9 +91,11 @@ async function insertTasks(
     })),
   ];
 
+  let lastError: unknown;
   for (const attempt of attempts) {
     const result = await supabase.from("tasks").insert(attempt);
     if (!result.error) return;
+    lastError = result.error;
     const message = result.error.message?.toLowerCase() ?? "";
     if (
       !message.includes("schema cache") &&
@@ -103,6 +105,12 @@ async function insertTasks(
     ) {
       throw result.error;
     }
+  }
+  
+  // If all attempts failed, log and throw the last error so we can see what's broken
+  if (lastError) {
+    console.error("insertTasks: all 4 payload attempts failed. Last error:", lastError);
+    throw lastError;
   }
 }
 
