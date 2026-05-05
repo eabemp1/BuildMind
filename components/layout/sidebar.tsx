@@ -152,7 +152,7 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
             <React.Fragment key={item.href}>
               {item.section && <SectionLabel label={item.section} />}
               <NavItem
-                href={item.href} label={item.label} icon={item.icon}
+                href={item.href} label={item.label} icon={item.icon as React.ElementType}
                 active={active} badge={item.badge} showLock={showLock}
                 showDot={item.showDot} reflectPending={reflectPending}
                 unseenBadges={unseenBadges} onClick={onNavClick}

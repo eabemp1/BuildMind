@@ -337,6 +337,32 @@ export default function ProjectDetailPage() {
   const completedCount = useMemo(() => tasks.filter(t => t.is_completed).length, [tasks]);
   const progress = tasks.length ? Math.round((completedCount / tasks.length) * 100) : 0;
 
+  async function handleRegenerateMilestones() {
+    if (!project) return;
+    setRegenerating(true);
+    try {
+      const res = await fetch("/api/ai/generate-roadmap", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: id,
+          title: project.title,
+          idea_description: project.description,
+          target_users: project.target_users ?? "",
+          problem: project.problem ?? "",
+          startup_stage: project.startup_stage ?? "Idea",
+        }),
+      });
+      if (res.ok) {
+        void qc.invalidateQueries({ queryKey: queryKeys.project(id) });
+      }
+    } catch {
+      // Non-fatal
+    } finally {
+      setRegenerating(false);
+    }
+  }
+
   const toggleTask = (task: BuildMindTask) => {
     const newCompleted = !task.is_completed;
     updateMutation.mutate({ taskId: task.id, isCompleted: newCompleted, notes: task.notes ?? "" });
@@ -437,26 +463,7 @@ export default function ProjectDetailPage() {
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, padding: "48px 0" }}>
               <div style={{ fontSize: 13, color: "var(--bm-text3)", textAlign: "center" }}>No milestones yet. BuildMind generates them from your project idea.</div>
               <button
-                onClick={async () => {
-                  try {
-                    setRegenerating(true);
-                    const res = await fetch("/api/ai/generate-roadmap", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ projectId: id, title: project?.title ?? "", idea_description: project?.description ?? "", target_users: project?.target_users ?? "", problem: project?.problem ?? "", startup_stage: project?.startup_stage ?? "Idea" }),
-                    });
-                    if (res.ok) {
-                      void qc.invalidateQueries({ queryKey: queryKeys.project(id) });
-                    } else {
-                      const body = await res.json().catch(() => ({}));
-                      console.error("Regenerate roadmap failed:", res.status, body);
-                    }
-                  } catch (err) {
-                    console.error("Regenerate roadmap error:", err);
-                  } finally {
-                    setRegenerating(false);
-                  }
-                }}
+                onClick={handleRegenerateMilestones}
                 disabled={regenerating}
                 style={{ padding: "9px 18px", borderRadius: 9, border: "none", background: "var(--grad-primary)", color: "white", fontSize: 13, fontWeight: 600, cursor: regenerating ? "not-allowed" : "pointer", opacity: regenerating ? 0.65 : 1, fontFamily: "inherit" }}
               >

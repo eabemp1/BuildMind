@@ -15,7 +15,10 @@ import {
   markNotificationAsRead,
   updateTaskStatus,
   type BuildMindNotification,
+  type BuildMindTask,
 } from "@/lib/buildmind";
+import { observeTaskEvent } from "@/lib/founderMemory";
+import { fetchFounderContext, momentumOnTaskComplete, updateFounderContext } from "@/lib/founderContext";
 
 export const queryKeys = {
   projects: ["projects"] as const,
@@ -136,8 +139,18 @@ export function useUpdateTaskMutation(projectId: string) {
     onError: (_err, _vars, ctx) => {
       if (ctx?.prev) qc.setQueryData(queryKeys.project(projectId), ctx.prev);
     },
-    onSuccess: (_data, variables) => {
+    onSuccess: async (_data, variables) => {
       if (variables?.isCompleted) {
+        void observeTaskEvent(
+          qc.getQueryData<{ tasks: BuildMindTask[] }>(queryKeys.project(projectId))
+            ?.tasks.find(t => t.id === variables.taskId)?.title ?? "task",
+          "completed"
+        );
+        const ctx = await fetchFounderContext();
+        if (ctx) {
+          const newScore = momentumOnTaskComplete(ctx.momentum_score);
+          void updateFounderContext({ momentum_score: newScore });
+        }
         void fetch("/api/founder-context/task-complete", {
           method: "POST",
           headers: { "Content-Type": "application/json" },

@@ -11,9 +11,11 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const mockGetUser = vi.fn();
-const mockSelect  = vi.fn();
-const mockUpsert  = vi.fn();
+const { mockGetUser, mockSelect, mockUpsert } = vi.hoisted(() => ({
+  mockGetUser: vi.fn(),
+  mockSelect:  vi.fn(),
+  mockUpsert:  vi.fn(),
+}));
 
 // Chain builder: .from().select().eq().maybeSingle() etc.
 function buildChain(result: unknown) {

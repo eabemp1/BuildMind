@@ -13,12 +13,21 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
-const mockGetRouteUser = vi.fn();
-const mockEnforceAndTrackAIUsage = vi.fn().mockResolvedValue(undefined);
-const mockGroqJSON = vi.fn();
-const mockHasAdminEnv = vi.fn(() => false);
-const mockLogReflexionQuality = vi.fn().mockResolvedValue(undefined);
-const mockCreateUserNotification = vi.fn().mockResolvedValue(undefined);
+const {
+  mockGetRouteUser,
+  mockEnforceAndTrackAIUsage,
+  mockGroqJSON,
+  mockHasAdminEnv,
+  mockLogReflexionQuality,
+  mockCreateUserNotification,
+} = vi.hoisted(() => ({
+  mockGetRouteUser: vi.fn(),
+  mockEnforceAndTrackAIUsage: vi.fn().mockResolvedValue(undefined),
+  mockGroqJSON: vi.fn(),
+  mockHasAdminEnv: vi.fn(() => false),
+  mockLogReflexionQuality: vi.fn().mockResolvedValue(undefined),
+  mockCreateUserNotification: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock("../../app/api/ai/_planCheck", () => ({
   getRouteUser: mockGetRouteUser,

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useProjectSummariesQuery, useDashboardOverviewQuery } from "@/lib/queries";
 import { computeStartupScore } from "@/lib/buildmind";
-import { getLimits, incrementDailyStreak } from "@/lib/plan";
+import { fetchAndSyncStoredPlanFromBillingStatus, getLimits, incrementDailyStreak } from "@/lib/plan";
 import { usePlan } from "@/lib/usePlan";
 import { useLimitModal } from "@/components/LimitModal";
 import { updateAchievementStats, checkAndUnlockAchievements, getAchievementStats } from "@/lib/achievements";
@@ -174,6 +174,10 @@ export default function AICoachPage() {
   const limits = getLimits(plan);
   const coachLimit = plan === "free" ? FREE_COACH_MESSAGES_PER_WEEK : limits.aiMessagesPerDay;
   const remaining = plan === "free" ? Math.max(0, coachLimit - coachMessagesThisWeek) : Infinity;
+
+  useEffect(() => {
+    void fetchAndSyncStoredPlanFromBillingStatus();
+  }, []);
 
   useEffect(() => {
     try { const saved = JSON.parse(localStorage.getItem("bm_coach_memory") ?? "[]"); setMemory(saved); } catch {}

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { groqJSON, hasAdminEnv, enforceAndTrackAIUsage } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
+import { generateFounderInsight } from "@/lib/founderMemory";
 
 interface ReflectActionInput {
   outcome: "completed" | "blocked" | "partial" | "learned";
@@ -280,6 +281,14 @@ Startup stage: ${stage}
 Current streak: ${streak} days
 ${projectContext}`,
     ).catch(() => fallback);
+
+    void (async () => {
+      try {
+        await generateFounderInsight();
+      } catch {
+        // Non-fatal
+      }
+    })();
 
     return NextResponse.json({ success: true, data: { ...fallback, ...result } });
   } catch (error) {

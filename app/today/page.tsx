@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useProjectSummariesQuery, useDashboardOverviewQuery } from "@/lib/queries";
 import { computeStartupScore } from "@/lib/buildmind";
 import { computeScoreDelta, applyScoreDelta, getXP } from "@/lib/scoring";
-import { getStoredStreak, recordTaskCompletion, syncStreakFromServer } from "@/lib/plan";
+import { fetchAndSyncStoredPlanFromBillingStatus, getStoredStreak, recordTaskCompletion, syncStreakFromServer } from "@/lib/plan";
 import { syncUrgencyFromServer } from "@/lib/urgency";
 import { updateAchievementStats, checkAndUnlockAchievements, getAchievementStats } from "@/lib/achievements";
 import { notifyReflectPending } from "@/lib/notifications";
@@ -121,6 +121,10 @@ function TodayContent() {
   const [actionLoading, setActionLoading] = useState(false);
   // Editable draft for outreach actions
   const [draftMessage, setDraftMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    void fetchAndSyncStoredPlanFromBillingStatus();
+  }, []);
 
   useEffect(() => {
     // Sync streak from Supabase first (authoritative), fall back to localStorage

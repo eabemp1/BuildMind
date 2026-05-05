@@ -182,12 +182,13 @@ export function normalizePlan(value: string | null | undefined): Plan {
   if (!value) return "free";
   const v = value.toLowerCase().trim();
   if (v === "builder") return "builder";
-  // Venture/operator and any future tiers map to builder (the highest active tier)
+  // Future/inactive tiers that are NOT yet purchasable → treat as free
+  // (venture, operator, etc. are defined in FUTURE_PLANS but not active)
   if ((FUTURE_PLANS as readonly string[]).includes(v) ||
       v === "venture" || v === "ventures" ||
       v === "operator" || v === "founder" ||
       v === "chiefofstaff" || v === "chief-of-staff" || v === "cos") {
-    return "builder";
+    return "free";
   }
   return "free";
 }

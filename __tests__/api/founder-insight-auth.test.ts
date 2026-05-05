@@ -7,8 +7,10 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const mockGetCurrentUser = vi.fn();
-const mockEnforce = vi.fn();
+const { mockGetCurrentUser, mockEnforce } = vi.hoisted(() => ({
+  mockGetCurrentUser: vi.fn(),
+  mockEnforce: vi.fn(),
+}));
 
 vi.mock("../../lib/data/projects", () => ({
   getCurrentUser: mockGetCurrentUser,

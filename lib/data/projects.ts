@@ -568,12 +568,13 @@ export async function createProjectWithRoadmap(params: {
       }),
     });
     if (!roadmapRes.ok) {
-      const errBody = await roadmapRes.text().catch(() => "(non-json error)");
+      const errBody = await roadmapRes.json().catch(() => ({}));
       console.error("[createProjectWithRoadmap] Roadmap API error:", roadmapRes.status, errBody);
+      // Don't throw — project was created, milestones just won't exist yet
     }
   } catch (err) {
     console.error("[createProjectWithRoadmap] Roadmap fetch failed:", err);
-    // Roadmap generation failed — project still created, user can retry
+    // Don't throw — project was created, user can regenerate from project page
   }
 
   await supabase.auth.updateUser({

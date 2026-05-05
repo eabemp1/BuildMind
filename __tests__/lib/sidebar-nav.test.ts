@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { NAV, hasPlanAccess } from "../../components/layout/sidebar-nav";
+import { NAV, hasPlanAccess } from "../../lib/nav-config";
 import type { Plan } from "../../lib/plan";
 
 // ── NAV config completeness ───────────────────────────────────────────────────

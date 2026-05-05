@@ -41,7 +41,7 @@ export interface ScoringInput {
  * computeStartupScore — enhanced 5-signal model (v2)
  *
  * Signal weights:
- *   execution_score  (0–100) → primary AI-assessed quality signal,  weight 0.40
+ *   execution_score  (0–100) → primary AI-assessed quality signal,  weight 0.45
  *   momentum_score   (0–100) → server-persisted daily activity,      weight 0.25
  *   consistency_score(0–100) → NEW: streak consistency curve,        weight 0.10
  *   xp boost         (0–20)  → achievement XP via stepped thresholds
@@ -77,7 +77,7 @@ export function computeStartupScore(summary: ScoringInput): number {
   const strengthBoost = Math.min(20, (summary.validation_strengths ?? []).length * 4);
 
   const raw =
-    execution  * 0.40 +
+    execution  * 0.45 +
     momentum   * 0.25 +
     xpBoost         +   // absolute pts (0–20)
     streakBoost     +   // absolute pts (0–10)

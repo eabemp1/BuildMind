@@ -7,7 +7,9 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const mockGroqJSON = vi.fn();
+const { mockGroqJSON } = vi.hoisted(() => ({
+  mockGroqJSON: vi.fn(),
+}));
 
 vi.mock("../../app/api/ai/_planCheck", () => ({
   getRouteUser: vi.fn(),

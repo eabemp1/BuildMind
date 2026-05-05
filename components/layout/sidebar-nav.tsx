@@ -18,15 +18,10 @@
 import React from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import {
-  Zap, FolderKanban, LineChart, Settings, Flame,
-  Map, Shield, RefreshCw, Lightbulb, LayoutDashboard,
-  Trophy, Bell, Users, Globe, Bot, Sparkles, BarChart2,
-} from "lucide-react";
 import { getUnreadCount } from "@/lib/notifications";
-import { FEATURES } from "@/lib/features";
-import { type Plan } from "@/lib/plan";
 import { BrandMark } from "@/components/layout/logo";
+import { NAV, hasPlanAccess, type NavItemConfig } from "@/lib/nav-config";
+export { NAV, hasPlanAccess, type NavItemConfig };
 
 // ── Notification badge (live unread count) ────────────────────────────────────
 export function NotifBadge() {
@@ -56,41 +51,6 @@ export function NotifBadge() {
       {count}
     </span>
   );
-}
-
-// ── Nav item config type ──────────────────────────────────────────────────────
-export type NavItemConfig = {
-  href: string;
-  label: string;
-  icon: React.ElementType;
-  enabled: boolean;
-  section: string | null;
-  badge: string | null;
-  showDot: boolean;
-  requiredPlan?: Plan;
-};
-
-// ── Nav items (FEATURES-flagged, single source of truth) ─────────────────────
-export const NAV: readonly NavItemConfig[] = [
-  { href: "/today",            label: "Today",           icon: Zap,             enabled: true,                     section: "DAILY",     badge: null,       showDot: false },
-  { href: "/overview",         label: "Overview",        icon: LayoutDashboard, enabled: true,                     section: null,        badge: null,       showDot: false },
-  { href: "/reflect",          label: "Reflect",         icon: RefreshCw,       enabled: true,                     section: null,        badge: null,       showDot: true  },
-  { href: "/projects",         label: "Projects",        icon: FolderKanban,    enabled: true,                     section: "WORKSPACE", badge: null,       showDot: false },
-  { href: "/ventures",         label: "Ventures",        icon: Map,             enabled: FEATURES.ventures,        section: null,        badge: "New",      showDot: false },
-  { href: "/explore",          label: "Founder Feed",    icon: Globe,           enabled: FEATURES.publicProjects,  section: null,        badge: null,       showDot: false },
-  { href: "/ai-coach",         label: "AI Coach",        icon: Bot,             enabled: FEATURES.aiCoach,         section: "AI TOOLS",  badge: null,       showDot: false },
-  { href: "/break-my-startup", label: "Break Startup",   icon: Flame,           enabled: FEATURES.breakMyStartup,  section: null,        badge: null,       showDot: false },
-  { href: "/startup-kit",      label: "Startup Kit",     icon: Lightbulb,       enabled: FEATURES.startupKit,      section: null,        badge: null,       requiredPlan: "builder" as Plan, showDot: false },
-  { href: "/notifications",    label: "Notifications",   icon: Bell,            enabled: FEATURES.notifications,   section: "ACCOUNT",   badge: null,       showDot: false },
-  { href: "/reports",          label: "Reports",         icon: LineChart,       enabled: FEATURES.analytics,       section: null,        badge: null,       requiredPlan: "builder" as Plan, showDot: false },
-  { href: "/achievements",     label: "Achievements",    icon: Trophy,          enabled: true,                     section: null,        badge: null,       showDot: false },
-  { href: "/invite",           label: "Invite & Earn",   icon: Users,           enabled: true,                     section: null,        badge: "Free mo",  showDot: false },
-  { href: "/settings",         label: "Settings",        icon: Settings,        enabled: true,                     section: null,        badge: null,       showDot: false },
-] as const;
-
-export function hasPlanAccess(current: Plan, required: Plan): boolean {
-  const order = ["free", "builder", "venture"] as string[];
-  return order.indexOf(current) >= order.indexOf(required);
 }
 
 // ── Section header ────────────────────────────────────────────────────────────

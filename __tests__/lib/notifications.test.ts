@@ -337,8 +337,6 @@ describe("notifyWeeklyReportReady", () => {
   it("does NOT create notification when it is not Friday", () => {
     // Mock a non-Friday day (Monday = 1)
     const spy = vi.spyOn(global, "Date").mockImplementation(() => {
-      const d = new (vi.importActual("vitest") as never)?.Date?.() ?? new Date();
-      void d;
       return { getDay: () => 1 } as unknown as Date;
     });
     notifyWeeklyReportReady();
