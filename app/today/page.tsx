@@ -433,12 +433,12 @@ function TodayContent() {
           <span style={{ fontSize: 15 }}>{isOutreachAction ? "✏️" : "📋"}</span>
           <div>
             <p style={{ fontSize: 12, fontWeight: 700, color: "var(--bm-text)", margin: "0 0 1px" }}>
-              {isOutreachAction ? "Step 2 — Edit the script below to fit your product" : "Step 2 — Copy the script below"}
+              {isOutreachAction ? "👇 Edit this script — personalise the [brackets], then send" : "👇 Copy this script — then send it to at least 3 people today"}
             </p>
             <p style={{ fontSize: 11, color: "var(--bm-text3)", margin: 0 }}>
               {isOutreachAction
-                ? "Replace [brackets]. Imperfect but sent beats perfect but unsent."
-                : "Paste into your chosen channel. Send to at least 3 people."}
+                ? "Change [ProductName] and [Problem] to match your startup. One send is enough to start."
+                : "Don't overthink it. Imperfect and sent beats perfect and unsent."}
             </p>
           </div>
         </div>
