@@ -20,13 +20,26 @@
 
 
 import { NextResponse } from "next/server";
-import { enforceAndTrackAIUsage } from "@/app/api/ai/_utils";
 import { checkPlanAccess } from "@/app/api/ai/_planCheck";
+import { enforceAndTrackAIUsage } from "@/app/api/ai/_utils";
 
-export async function POST(_request: Request) {
-  // 🔒 Operator tier — not yet live. Returns 503 until Operator plan launches.
-  return NextResponse.json(
-    { ok: false, error: "CoFounder Blueprint Mode is coming in the Operator plan. Stay tuned.", tier: "operator" },
-    { status: 503 }
-  );
+export async function POST(request: Request) {
+  try {
+    const access = await checkPlanAccess("builder");
+    if (!access.ok) {
+      return access.response;
+    }
+
+    await enforceAndTrackAIUsage(access.userId);
+
+    // TODO: restore full blueprint logic
+    return NextResponse.json(
+      { ok: false, error: "CoFounder Blueprint Mode is being finalized. Check back soon." },
+      { status: 501 }
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "CoFounder Blueprint Mode failed";
+    const status = message.toLowerCase().includes("limit") ? 429 : 500;
+    return NextResponse.json({ ok: false, error: message }, { status });
+  }
 }

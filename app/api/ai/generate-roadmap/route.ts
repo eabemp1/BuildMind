@@ -29,22 +29,25 @@ async function insertMilestone(
   payload: Record<string, unknown>,
 ) {
   const payloads = [
+    // Attempt 1 — safest: only columns guaranteed in base schema
+    {
+      project_id: payload.project_id,
+      title: payload.title,
+      status: "pending" as string,
+    },
+    // Attempt 2 — with user_id
     {
       project_id: payload.project_id,
       user_id: payload.user_id,
       title: payload.title,
-      status: payload.is_completed ? "completed" : "pending",
+      status: "pending" as string,
     },
+    // Attempt 3 — with is_completed (post-migration)
     {
       project_id: payload.project_id,
       user_id: payload.user_id,
       title: payload.title,
-      status: "pending",
-    },
-    {
-      project_id: payload.project_id,
-      title: payload.title,
-      status: "pending",
+      is_completed: payload.is_completed ?? false,
     },
   ];
 
@@ -72,22 +75,31 @@ async function insertTasks(
   if (!rows.length) return;
 
   const attempts = [
-    rows,
+    // Attempt 1 — safest: only columns guaranteed to exist in base schema
+    rows.map((row) => ({
+      milestone_id: row.milestone_id,
+      title: row.title,
+      status: (row.is_completed ? "completed" : "pending") as string,
+    })),
+    // Attempt 2 — with user_id if available
+    rows.map((row) => ({
+      milestone_id: row.milestone_id,
+      user_id: row.user_id,
+      title: row.title,
+      status: (row.is_completed ? "completed" : "pending") as string,
+    })),
+    // Attempt 3 — with is_completed (only works after migration 20260430000000 runs)
     rows.map((row) => ({
       milestone_id: row.milestone_id,
       user_id: row.user_id,
       title: row.title,
       is_completed: row.is_completed,
     })),
-    rows.map((row) => ({
-      milestone_id: row.milestone_id,
-      title: row.title,
-      status: row.is_completed ? "completed" : "pending",
-    })),
+    // Attempt 4 — description fallback (very old schema)
     rows.map((row) => ({
       milestone_id: row.milestone_id,
       description: row.title,
-      status: row.is_completed ? "completed" : "pending",
+      status: (row.is_completed ? "completed" : "pending") as string,
     })),
   ];
 

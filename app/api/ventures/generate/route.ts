@@ -22,13 +22,31 @@
 
 
 import { NextResponse } from "next/server";
+import { checkPlanAccess } from "@/app/api/ai/_planCheck";
+import { enforceAndTrackAIUsage } from "@/app/api/ai/_utils";
 
 // ─── Route handler ────────────────────────────────────────────────────────────
 
-export async function POST(_request: Request) {
-  // 🔒 Operator tier — not yet live. Returns 503 until Operator plan launches.
-  return NextResponse.json(
-    { ok: false, error: "Ventures Blueprint is coming in the Operator plan. Stay tuned.", tier: "operator" },
-    { status: 503 }
-  );
+export async function POST(request: Request) {
+  try {
+    // Plan gate — builder required (lib/plan.ts FEATURE_GATES.venturesBlueprint)
+    const access = await checkPlanAccess("builder");
+    if (!access.ok) {
+      return access.response;
+    }
+
+    await enforceAndTrackAIUsage(access.userId);
+
+    // TODO: restore full blueprint generation logic from VENTURES_INTEGRATION.md
+    // Returning 501 (not implemented) instead of 503 (service unavailable)
+    // so the plan gate is exercised and builders see a clear "coming soon" vs "forbidden"
+    return NextResponse.json(
+      { ok: false, error: "Ventures Blueprint generation is being finalized. Check back soon." },
+      { status: 501 }
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Ventures Blueprint generation failed";
+    const status = message.toLowerCase().includes("limit") ? 429 : 500;
+    return NextResponse.json({ ok: false, error: message }, { status });
+  }
 }

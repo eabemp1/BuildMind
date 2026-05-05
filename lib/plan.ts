@@ -166,10 +166,10 @@ export const FEATURE_GATES: Record<string, Plan> = {
 
   // 🔒 Operator tier — disabled until Operator plan launches at Day 90 (Playbook §10).
   // canAccess() returns false for these on all current tiers (future-proofing).
-  venturesBlueprint:       "operator" as Plan,
-  cofounderBlueprint:      "operator" as Plan,
-  cofounderPulse:          "operator" as Plan,
-  generateUI:              "operator" as Plan,
+  venturesBlueprint:       "builder",
+  cofounderBlueprint:      "builder",
+  cofounderPulse:          "builder",
+  generateUI:              "builder",
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -182,12 +182,13 @@ export function normalizePlan(value: string | null | undefined): Plan {
   if (!value) return "free";
   const v = value.toLowerCase().trim();
   if (v === "builder") return "builder";
-  // Future/inactive tiers that are NOT yet purchasable → treat as free
-  // (venture, operator, etc. are defined in FUTURE_PLANS but not active)
-  if ((FUTURE_PLANS as readonly string[]).includes(v) ||
-      v === "venture" || v === "ventures" ||
-      v === "operator" || v === "founder" ||
-      v === "chiefofstaff" || v === "chief-of-staff" || v === "cos") {
+  if (v === "free") return "free";
+  // Known future/inactive tiers — treat as free until activated
+  const knownFuture = ["operator", "founder", "chiefofstaff", "chief-of-staff", "cos", "venture", "ventures"];
+  if (knownFuture.includes(v)) {
+    if (process.env.NODE_ENV === "development") {
+      console.warn(`[plan] normalizePlan received inactive tier "${v}" — defaulting to free. If this user should be Builder, fix their user_metadata.plan via /api/admin/plan-override.`);
+    }
     return "free";
   }
   return "free";
