@@ -12,6 +12,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/data/projects";
 import { groqJSON, enforceAndTrackAIUsage } from "@/app/api/ai/_utils";
+import { planFromUserMetadata } from "@/lib/plan";
 
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
@@ -19,7 +20,7 @@ export async function POST(req: NextRequest) {
 
   // ── Usage enforcement ──────────────────────────────────────────────────────
   try {
-    await enforceAndTrackAIUsage(user.id);
+    await enforceAndTrackAIUsage(user.id, planFromUserMetadata(user));
   } catch (usageErr) {
     const msg = usageErr instanceof Error ? usageErr.message : String(usageErr);
     if (msg.toLowerCase().includes("limit reached")) {

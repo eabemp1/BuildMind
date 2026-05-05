@@ -133,7 +133,7 @@ export async function POST(request: Request) {
     const problem = String(body?.problem ?? "");
     const initialStage = normalizeStage(body?.startup_stage ?? body?.stage ?? "Idea");
 
-    await enforceAndTrackAIUsage(userId);
+    await enforceAndTrackAIUsage(userId, routeUser.plan);
 
     let roadmap = FALLBACK_ROADMAP;
 

@@ -199,10 +199,12 @@ export async function getProjectSummaries(): Promise<ProjectSummary[]> {
   
   for (let i = 0; i < projectIds.length; i += BATCH_SIZE) {
     const batchIds = projectIds.slice(i, i + BATCH_SIZE);
-    const { data: milestones } = await supabase
+    const milestonesQuery = supabase
       .from("milestones")
-      .select("id, title, project_id")
-      .in("project_id", batchIds);
+      .select("id, title, project_id");
+    const { data: milestones } = await (batchIds.length === 1
+      ? milestonesQuery.eq("project_id", batchIds[0])
+      : milestonesQuery.in("project_id", batchIds));
     if (milestones) allMilestones = allMilestones.concat(milestones);
   }
 
@@ -212,10 +214,12 @@ export async function getProjectSummaries(): Promise<ProjectSummary[]> {
   if (milestoneIds.length > 0) {
     for (let i = 0; i < milestoneIds.length; i += BATCH_SIZE) {
       const batchIds = milestoneIds.slice(i, i + BATCH_SIZE);
-      const { data: tasks } = await supabase
+      const tasksQuery = supabase
         .from("tasks")
-        .select("id, milestone_id, is_completed, created_at")
-        .in("milestone_id", batchIds);
+        .select("id, milestone_id, is_completed, created_at");
+      const { data: tasks } = await (batchIds.length === 1
+        ? tasksQuery.eq("milestone_id", batchIds[0])
+        : tasksQuery.in("milestone_id", batchIds));
       if (tasks) allTasks = allTasks.concat(tasks);
     }
   }
@@ -441,11 +445,13 @@ export async function getProjectDetail(projectId: string): Promise<{
     
     for (let i = 0; i < milestoneIds.length; i += BATCH_SIZE) {
       const batchIds = milestoneIds.slice(i, i + BATCH_SIZE);
+      const tasksQuery = supabase
+        .from("tasks")
+        .select("*");
       batches.push(
-        supabase
-          .from("tasks")
-          .select("*")
-          .in("milestone_id", batchIds)
+        (batchIds.length === 1
+          ? tasksQuery.eq("milestone_id", batchIds[0])
+          : tasksQuery.in("milestone_id", batchIds))
           .order("created_at", { ascending: true })
       );
     }

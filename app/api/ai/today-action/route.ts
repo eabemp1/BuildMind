@@ -142,8 +142,11 @@ export async function POST(request: Request) {
         const batches = [];
         for (let i = 0; i < milestoneIds.length; i += BATCH_SIZE) {
           const batchIds = milestoneIds.slice(i, i + BATCH_SIZE);
+          const tasksQuery = supabase.from("tasks").select("title, is_completed, milestone_id");
           batches.push(
-            supabase.from("tasks").select("title, is_completed, milestone_id").in("milestone_id", batchIds)
+            batchIds.length === 1
+              ? tasksQuery.eq("milestone_id", batchIds[0])
+              : tasksQuery.in("milestone_id", batchIds)
           );
         }
         const batchResults = await Promise.all(batches);

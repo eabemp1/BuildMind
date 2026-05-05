@@ -68,10 +68,12 @@ export async function getWeeklyReportMetrics(): Promise<WeeklyReportMetrics> {
   
   for (let i = 0; i < projectIds.length; i += BATCH_SIZE) {
     const batchIds = projectIds.slice(i, i + BATCH_SIZE);
-    const { data: milestones } = await supabase
+    const milestonesQuery = supabase
       .from("milestones")
-      .select("id, project_id, title, is_completed, updated_at, created_at")
-      .in("project_id", batchIds);
+      .select("id, project_id, title, is_completed, updated_at, created_at");
+    const { data: milestones } = await (batchIds.length === 1
+      ? milestonesQuery.eq("project_id", batchIds[0])
+      : milestonesQuery.in("project_id", batchIds));
     if (milestones) allMilestones = allMilestones.concat(milestones);
   }
 
@@ -89,10 +91,12 @@ export async function getWeeklyReportMetrics(): Promise<WeeklyReportMetrics> {
   if (milestoneIds.length > 0) {
     for (let i = 0; i < milestoneIds.length; i += BATCH_SIZE) {
       const batchIds = milestoneIds.slice(i, i + BATCH_SIZE);
-      const { data: tasks } = await supabase
+      const tasksQuery = supabase
         .from("tasks")
-        .select("id, title, milestone_id, is_completed, created_at, updated_at")
-        .in("milestone_id", batchIds);
+        .select("id, title, milestone_id, is_completed, created_at, updated_at");
+      const { data: tasks } = await (batchIds.length === 1
+        ? tasksQuery.eq("milestone_id", batchIds[0])
+        : tasksQuery.in("milestone_id", batchIds));
       if (tasks) allTasks = allTasks.concat(tasks);
     }
   }
@@ -183,7 +187,10 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
   if (projectIds.length > 0) {
     for (let i = 0; i < projectIds.length; i += BATCH_SIZE) {
       const batchIds = projectIds.slice(i, i + BATCH_SIZE);
-      const { data: milestones } = await supabase.from("milestones").select("id, project_id, status").in("project_id", batchIds);
+      const milestonesQuery = supabase.from("milestones").select("id, project_id, status");
+      const { data: milestones } = await (batchIds.length === 1
+        ? milestonesQuery.eq("project_id", batchIds[0])
+        : milestonesQuery.in("project_id", batchIds));
       if (milestones) allMilestones = allMilestones.concat(milestones);
     }
   }
@@ -197,7 +204,10 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
   if (milestoneIds.length > 0) {
     for (let i = 0; i < milestoneIds.length; i += BATCH_SIZE) {
       const batchIds = milestoneIds.slice(i, i + BATCH_SIZE);
-      const { data: tasks } = await supabase.from("tasks").select("id, milestone_id, is_completed, created_at, updated_at").in("milestone_id", batchIds);
+      const tasksQuery = supabase.from("tasks").select("id, milestone_id, is_completed, created_at, updated_at");
+      const { data: tasks } = await (batchIds.length === 1
+        ? tasksQuery.eq("milestone_id", batchIds[0])
+        : tasksQuery.in("milestone_id", batchIds));
       if (tasks) allTasks = allTasks.concat(tasks);
     }
   }

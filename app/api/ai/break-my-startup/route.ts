@@ -138,7 +138,7 @@ export async function POST(request: Request) {
       });
     }
 
-    await enforceAndTrackAIUsage(userId);
+    await enforceAndTrackAIUsage(userId, routeUser.plan);
 
     if (!projectId) {
       const competitors = await scrapeCompetitors(`${idea} startup tool software competitors`);
@@ -210,8 +210,11 @@ ${competitorContext}`,
       const batches = [];
       for (let i = 0; i < milestoneIds.length; i += BATCH_SIZE) {
         const batchIds = milestoneIds.slice(i, i + BATCH_SIZE);
+        const tasksQuery = supabase.from("tasks").select("title,is_completed");
         batches.push(
-          supabase.from("tasks").select("title,is_completed").in("milestone_id", batchIds)
+          batchIds.length === 1
+            ? tasksQuery.eq("milestone_id", batchIds[0])
+            : tasksQuery.in("milestone_id", batchIds)
         );
       }
       const batchResults = await Promise.all(batches);

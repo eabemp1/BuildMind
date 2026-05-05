@@ -11,7 +11,7 @@
  */
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { normalizePlan, type Plan } from "@/lib/plan";
+import { planFromUserMetadata, type Plan } from "@/lib/plan";
 
 const PLAN_ORDER: Plan[] = ["free", "builder"];
 
@@ -45,7 +45,7 @@ export async function checkPlanAccess(requiredPlan: Plan): Promise<PlanCheckResu
       };
     }
 
-    const plan = normalizePlan(user.user_metadata?.plan as string | undefined);
+    const plan = planFromUserMetadata(user);
 
     if (!meetsRequirement(plan, requiredPlan)) {
       return {
@@ -79,7 +79,7 @@ export async function getRouteUser(): Promise<{ plan: Plan; userId: string } | n
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
     return {
-      plan: normalizePlan(user.user_metadata?.plan as string | undefined),
+      plan: planFromUserMetadata(user),
       userId: user.id,
     };
   } catch {

@@ -23,6 +23,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/data/projects";
 import { groqChat, groqJSON, hasAdminEnv, enforceAndTrackAIUsage } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { planFromUserMetadata } from "@/lib/plan";
 import type { FounderMemory } from "@/lib/founderMemory";
 
 // ── Internal cron check ───────────────────────────────────────────────────────
@@ -184,7 +185,7 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
   try {
-    await enforceAndTrackAIUsage(user.id);
+    await enforceAndTrackAIUsage(user.id, planFromUserMetadata(user));
   } catch (usageErr) {
     const msg = usageErr instanceof Error ? usageErr.message : String(usageErr);
     if (msg.toLowerCase().includes("limit reached")) {

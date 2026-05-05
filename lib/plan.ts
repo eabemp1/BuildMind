@@ -219,11 +219,17 @@ export function clearStoredPlan(): void {
 export function planFromUserMetadata(
   user: { user_metadata?: Record<string, unknown> | null } | null | undefined,
 ): Plan {
-  const metadataPlan =
-    user?.user_metadata && typeof user.user_metadata.plan === "string"
-      ? user.user_metadata.plan
-      : null;
-  return normalizePlan(metadataPlan);
+  const metadata = user?.user_metadata ?? null;
+  const metadataPlan = typeof metadata?.plan === "string" ? metadata.plan : null;
+  const normalizedPlan = normalizePlan(metadataPlan);
+  if (normalizedPlan === "builder") return "builder";
+
+  // Some payment callbacks can persist billing state before every caller sees
+  // the refreshed plan claim. Active billing should still unlock Builder.
+  const billingStatus = typeof metadata?.billing_status === "string"
+    ? metadata.billing_status.toLowerCase()
+    : null;
+  return billingStatus === "active" ? "builder" : "free";
 }
 
 export function syncStoredPlanFromUser(

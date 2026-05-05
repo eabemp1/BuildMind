@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { normalizePlan, planFromUserMetadata } from "@/lib/plan";
 
 // Plan-aware monthly AI limits
 // Free: 30 calls/month (3/day × 30 days, but we cap monthly for safety)
@@ -24,11 +25,11 @@ export async function enforceAndTrackAIUsage(userId: string, planOverride?: stri
   const month = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 
   // Look up plan from user metadata if not provided
-  let plan = planOverride ?? "free";
+  let plan = normalizePlan(planOverride);
   if (!planOverride) {
     try {
       const { data: authUser } = await supabase.auth.admin.getUserById(userId);
-      plan = (authUser?.user?.user_metadata?.plan as string) ?? "free";
+      plan = planFromUserMetadata(authUser?.user);
     } catch {
       plan = "free";
     }

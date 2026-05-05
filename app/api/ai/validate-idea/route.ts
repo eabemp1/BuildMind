@@ -16,7 +16,7 @@ export async function POST(request: Request) {
     const targetUsers = String(body?.targetUsers ?? "");
     const problem = String(body?.problem ?? "");
 
-    await enforceAndTrackAIUsage(userId);
+    await enforceAndTrackAIUsage(userId, routeUser.plan);
 
     let strengths: string[] = [
       "Clear problem framing.",

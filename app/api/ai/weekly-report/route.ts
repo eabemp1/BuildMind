@@ -75,10 +75,12 @@ export async function POST(request: Request) {
         
         for (let i = 0; i < allProjectIds.length; i += BATCH_SIZE) {
           const batchIds = allProjectIds.slice(i, i + BATCH_SIZE);
-          const { data: userMilestones } = await supabase
+          const milestonesQuery = supabase
             .from("milestones")
-            .select("id, status")
-            .in("project_id", batchIds);
+            .select("id, status");
+          const { data: userMilestones } = await (batchIds.length === 1
+            ? milestonesQuery.eq("project_id", batchIds[0])
+            : milestonesQuery.in("project_id", batchIds));
           if (userMilestones) allMilestones = allMilestones.concat(userMilestones);
         }
 
@@ -90,10 +92,12 @@ export async function POST(request: Request) {
           let allUserTasks: Array<{ is_completed: boolean }> = [];
           for (let i = 0; i < milestoneIds.length; i += BATCH_SIZE) {
             const batchIds = milestoneIds.slice(i, i + BATCH_SIZE);
-            const { data: userTasks } = await supabase
+            const tasksQuery = supabase
               .from("tasks")
-              .select("is_completed")
-              .in("milestone_id", batchIds);
+              .select("is_completed");
+            const { data: userTasks } = await (batchIds.length === 1
+              ? tasksQuery.eq("milestone_id", batchIds[0])
+              : tasksQuery.in("milestone_id", batchIds));
             if (userTasks) allUserTasks = allUserTasks.concat(userTasks);
           }
 
