@@ -129,7 +129,7 @@ export async function getWeeklyReportMetrics(): Promise<WeeklyReportMetrics> {
   }
 
   const tasksCompletedThisWeek = taskData.reduce((sum, count) => sum + count, 0);
-  const milestonesCompletedThisWeek = (milestones ?? []).filter((m) => {
+  const milestonesCompletedThisWeek = (allMilestones ?? []).filter((m) => {
     if (!m.is_completed) return false;
     const completedAt = new Date(m.updated_at ?? m.created_at);
     return completedAt >= start;

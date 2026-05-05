@@ -264,7 +264,7 @@ export async function getProjectSummaries(): Promise<ProjectSummary[]> {
       ? Math.round((current.tasksCompleted / current.tasksTotal) * 100)
       : 0;
 
-    const projectMilestones = (milestones ?? []).filter(
+    const projectMilestones = (allMilestones ?? []).filter(
       (m) => m.project_id === project.id,
     );
     const projectTasks = (tasks ?? []).filter(
