@@ -171,9 +171,24 @@ export async function POST(request: Request) {
       const milestones = milestonesResult.status === "fulfilled" ? milestonesResult.value.data ?? [] : [];
 
       const milestoneIds = milestones.map((m) => m.id);
-      const { data: tasks } = milestoneIds.length
-        ? await supabase.from("tasks").select("title, is_completed").in("milestone_id", milestoneIds)
-        : { data: [] };
+      
+      // Batch milestone IDs to avoid URL length limits
+      let allTasks: Array<{ title: string; is_completed: boolean }> = [];
+      if (milestoneIds.length > 0) {
+        const BATCH_SIZE = 20;
+        const batches = [];
+        for (let i = 0; i < milestoneIds.length; i += BATCH_SIZE) {
+          const batchIds = milestoneIds.slice(i, i + BATCH_SIZE);
+          batches.push(
+            supabase.from("tasks").select("title, is_completed").in("milestone_id", batchIds)
+          );
+        }
+        const batchResults = await Promise.all(batches);
+        for (const result of batchResults) {
+          if (result.data) allTasks = allTasks.concat(result.data);
+        }
+      }
+      const { data: tasks } = { data: allTasks };
 
       const completedTasks = (tasks ?? []).filter((t) => t.is_completed).length;
       const totalTasks = (tasks ?? []).length;

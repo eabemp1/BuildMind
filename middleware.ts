@@ -96,6 +96,29 @@ export async function middleware(request: NextRequest) {
     }
   }
 
+  // Private admin-only route — /admin
+  if (pathname === "/admin" || pathname.startsWith("/admin/")) {
+    let isAdmin = false;
+
+    if (user) {
+      try {
+        const res = await fetch(new URL("/api/system/admin-check", request.url), {
+          headers: { cookie: request.headers.get("cookie") ?? "" },
+        });
+        if (res.ok) {
+          const json = await res.json();
+          isAdmin = json.isAdmin === true;
+        }
+      } catch {}
+    }
+
+    if (!isAdmin) {
+      const redirectUrl = request.nextUrl.clone();
+      redirectUrl.pathname = "/overview";
+      return NextResponse.redirect(redirectUrl);
+    }
+  }
+
   // /dashboard → /overview (dashboard is now the KPI overview)
   if (pathname === "/dashboard" || pathname.startsWith("/dashboard/")) {
     const redirectUrl = request.nextUrl.clone();

@@ -62,24 +62,41 @@ export async function getWeeklyReportMetrics(): Promise<WeeklyReportMetrics> {
     summaries.reduce((sum, project) => sum + computeStartupScore(project), 0) / summaries.length,
   );
 
-  const { data: milestones } = await supabase
-    .from("milestones")
-    .select("id, project_id, title, is_completed, updated_at, created_at")
-    .in("project_id", projectIds);
-  const milestoneIds = (milestones ?? []).map((m) => m.id);
+  // Batch project IDs to avoid URL length limits
+  let allMilestones: Array<{ id: string; project_id: string; title: string; is_completed?: boolean; updated_at?: string; created_at: string }> = [];
+  const BATCH_SIZE = 20;
+  
+  for (let i = 0; i < projectIds.length; i += BATCH_SIZE) {
+    const batchIds = projectIds.slice(i, i + BATCH_SIZE);
+    const { data: milestones } = await supabase
+      .from("milestones")
+      .select("id, project_id, title, is_completed, updated_at, created_at")
+      .in("project_id", batchIds);
+    if (milestones) allMilestones = allMilestones.concat(milestones);
+  }
+
+  const milestoneIds = allMilestones.map((m) => m.id);
   const milestoneToProject = new Map<string, string>();
   const milestoneTitle = new Map<string, string>();
-  (milestones ?? []).forEach((m) => {
+  allMilestones.forEach((m) => {
     milestoneToProject.set(m.id, m.project_id);
     milestoneTitle.set(m.id, m.title);
   });
 
-  const { data: tasks } = milestoneIds.length
-    ? await supabase
+  // Batch milestone IDs to avoid URL length limits
+  let allTasks: Array<{ id: string; title: string; milestone_id: string; is_completed: boolean; created_at: string; updated_at: string }> = [];
+  
+  if (milestoneIds.length > 0) {
+    for (let i = 0; i < milestoneIds.length; i += BATCH_SIZE) {
+      const batchIds = milestoneIds.slice(i, i + BATCH_SIZE);
+      const { data: tasks } = await supabase
         .from("tasks")
         .select("id, title, milestone_id, is_completed, created_at, updated_at")
-        .in("milestone_id", milestoneIds)
-    : { data: [] };
+        .in("milestone_id", batchIds);
+      if (tasks) allTasks = allTasks.concat(tasks);
+    }
+  }
+  const { data: tasks } = { data: allTasks };
 
   const start = weekStart();
   const previousStart = new Date(start);
@@ -159,14 +176,32 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
     .from("projects").select("id").eq("user_id", user.id);
   const projectIds = (projects ?? []).map((p) => p.id);
 
-  const { data: milestones } = projectIds.length
-    ? await supabase.from("milestones").select("id, project_id, status").in("project_id", projectIds)
-    : { data: [] };
+  // Batch project IDs to avoid URL length limits
+  let allMilestones: Array<{ id: string; project_id: string; status: string }> = [];
+  const BATCH_SIZE = 20;
+  
+  if (projectIds.length > 0) {
+    for (let i = 0; i < projectIds.length; i += BATCH_SIZE) {
+      const batchIds = projectIds.slice(i, i + BATCH_SIZE);
+      const { data: milestones } = await supabase.from("milestones").select("id, project_id, status").in("project_id", batchIds);
+      if (milestones) allMilestones = allMilestones.concat(milestones);
+    }
+  }
+  const { data: milestones } = { data: allMilestones };
 
   const milestoneIds = (milestones ?? []).map((m) => m.id);
-  const { data: tasks } = milestoneIds.length
-    ? await supabase.from("tasks").select("id, milestone_id, is_completed, created_at, updated_at").in("milestone_id", milestoneIds)
-    : { data: [] };
+  
+  // Batch milestone IDs to avoid URL length limits
+  let allTasks: Array<{ id: string; milestone_id: string; is_completed: boolean; created_at: string; updated_at: string }> = [];
+  
+  if (milestoneIds.length > 0) {
+    for (let i = 0; i < milestoneIds.length; i += BATCH_SIZE) {
+      const batchIds = milestoneIds.slice(i, i + BATCH_SIZE);
+      const { data: tasks } = await supabase.from("tasks").select("id, milestone_id, is_completed, created_at, updated_at").in("milestone_id", batchIds);
+      if (tasks) allTasks = allTasks.concat(tasks);
+    }
+  }
+  const { data: tasks } = { data: allTasks };
 
   const completedTasks = (tasks ?? []).filter((t) => t.is_completed).length;
   const tasksByMilestone = new Map<string, Array<{ is_completed: boolean }>>();

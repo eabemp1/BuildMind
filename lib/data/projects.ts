@@ -192,22 +192,38 @@ export async function getProjectSummaries(): Promise<ProjectSummary[]> {
   if (!projects?.length) return [];
 
   const projectIds = projects.map((p) => p.id);
-  const { data: milestones } = await supabase
-    .from("milestones")
-    .select("id, title, project_id")
-    .in("project_id", projectIds);
+  
+  // Batch project IDs to avoid URL length limits
+  let allMilestones: Array<{ id: string; title: string; project_id: string }> = [];
+  const BATCH_SIZE = 20;
+  
+  for (let i = 0; i < projectIds.length; i += BATCH_SIZE) {
+    const batchIds = projectIds.slice(i, i + BATCH_SIZE);
+    const { data: milestones } = await supabase
+      .from("milestones")
+      .select("id, title, project_id")
+      .in("project_id", batchIds);
+    if (milestones) allMilestones = allMilestones.concat(milestones);
+  }
 
-  const milestoneIds = (milestones ?? []).map((m) => m.id);
-  const { data: tasks } = milestoneIds.length
-    ? await supabase
+  const milestoneIds = allMilestones.map((m) => m.id);
+  let allTasks: Array<{ id: string; milestone_id: string; is_completed: boolean; created_at: string }> = [];
+  
+  if (milestoneIds.length > 0) {
+    for (let i = 0; i < milestoneIds.length; i += BATCH_SIZE) {
+      const batchIds = milestoneIds.slice(i, i + BATCH_SIZE);
+      const { data: tasks } = await supabase
         .from("tasks")
         .select("id, milestone_id, is_completed, created_at")
-        .in("milestone_id", milestoneIds)
-    : { data: [] };
+        .in("milestone_id", batchIds);
+      if (tasks) allTasks = allTasks.concat(tasks);
+    }
+  }
+  const { data: tasks } = { data: allTasks };
 
   const milestoneToProject = new Map<string, string>();
   const milestoneIdToTitle = new Map<string, string>();
-  (milestones ?? []).forEach((m) => {
+  allMilestones.forEach((m) => {
     milestoneToProject.set(m.id, m.project_id);
     milestoneIdToTitle.set(m.id, m.title);
   });
@@ -415,15 +431,40 @@ export async function getProjectDetail(projectId: string): Promise<{
     .order("order_index", { ascending: true });
   if (milestoneError) throw milestoneError;
 
+  // Batch milestone IDs to avoid URL length limits (max ~20-30 per query)
   const milestoneIds = (milestones ?? []).map((m) => m.id);
-  const { data: tasks, error: tasksError } = milestoneIds.length
-    ? await supabase
-        .from("tasks")
-        .select("*")
-        .in("milestone_id", milestoneIds)
-        .order("created_at", { ascending: true })
-    : { data: [], error: null };
-  if (tasksError) throw tasksError;
+  let allTasks: BuildMindTask[] = [];
+  
+  if (milestoneIds.length > 0) {
+    const BATCH_SIZE = 20;
+    const batches = [];
+    
+    for (let i = 0; i < milestoneIds.length; i += BATCH_SIZE) {
+      const batchIds = milestoneIds.slice(i, i + BATCH_SIZE);
+      batches.push(
+        supabase
+          .from("tasks")
+          .select("*")
+          .in("milestone_id", batchIds)
+          .order("created_at", { ascending: true })
+      );
+    }
+    
+    const batchResults = await Promise.all(batches);
+    let tasksError: unknown = null;
+    
+    for (const result of batchResults) {
+      if (result.error) {
+        tasksError = result.error;
+        break;
+      }
+      if (result.data) {
+        allTasks = allTasks.concat(result.data);
+      }
+    }
+    
+    if (tasksError) throw tasksError;
+  }
 
   return {
     project: {
@@ -433,7 +474,7 @@ export async function getProjectDetail(projectId: string): Promise<{
       validation_suggestions: normalizeTextArray(project.validation_suggestions),
     },
     milestones: (milestones ?? []) as BuildMindMilestone[],
-    tasks: (tasks ?? []) as BuildMindTask[],
+    tasks: allTasks as BuildMindTask[],
   };
 }
 
