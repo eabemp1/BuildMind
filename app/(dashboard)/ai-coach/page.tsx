@@ -155,7 +155,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
 
 export default function AICoachPage() {
   const isMobile = useIsMobile();
-  const { plan } = usePlan();
+  const { plan, isLoading: planLoading } = usePlan();
   const { showLimitModal } = useLimitModal();
   const { data: summaries = [] } = useProjectSummariesQuery();
   const { data: overview } = useDashboardOverviewQuery();
@@ -190,7 +190,7 @@ export default function AICoachPage() {
   async function sendMessage(text?: string) {
     const msg = (text ?? input).trim();
     if (!msg || loading) return;
-    if (remaining <= 0 && plan === "free") { showLimitModal("aiCoach"); return; }
+    if (remaining <= 0 && !planLoading && plan === "free") { showLimitModal("aiCoach"); return; }
     if (!userId) {
       setMessages(prev => [...prev, { id: Date.now().toString(), role: "assistant", content: "Please sign in again before using AI Coach.", phase: "done", error: true }]);
       return;

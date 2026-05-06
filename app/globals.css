@@ -300,7 +300,7 @@ input::placeholder, textarea::placeholder { color: var(--bm-text4); }
    BUILDMIND REDESIGN ADDITIONS — append after :root block
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 :root {
-  --grad-primary: linear-gradient(135deg, #7C3AED, #2563EB);
+  --grad-primary: linear-gradient(135deg, #5CC88A, #4AB8B0);
 }
 .gradient-text {
   background: var(--grad-primary);

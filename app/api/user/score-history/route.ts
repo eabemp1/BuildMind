@@ -63,7 +63,8 @@ export async function POST(req: Request) {
 
   const body = await req.json().catch(() => ({}));
   const date  = String(body?.date  ?? "").slice(0, 10);
-  const score = Number(body?.score ?? 0);
+  const rawScore = body?.score;
+  const score = Number(rawScore);
 
   // Validate date is a real ISO date string (YYYY-MM-DD) — reject garbage dates
   // like "9999-99-99" that would corrupt the history timeline.
@@ -71,7 +72,7 @@ export async function POST(req: Request) {
   if (!date || !dateRegex.test(date) || isNaN(new Date(date).getTime())) {
     return NextResponse.json({ error: "date must be a valid YYYY-MM-DD string" }, { status: 400 });
   }
-  if (isNaN(score)) {
+  if (rawScore === undefined || rawScore === null || rawScore === "" || isNaN(score)) {
     return NextResponse.json({ error: "score must be a number" }, { status: 400 });
   }
   // Clamp score to [0, 100] — scores outside this range are not meaningful and

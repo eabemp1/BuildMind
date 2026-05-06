@@ -41,9 +41,12 @@ export type ProjectSummary = {
   tasksCompleted: number;
   tasksTotal: number;
   progress: number;
+  completion_rate?: number;
   lastActivity: string;
   problem?: string | null;
   target_users?: string | null;
+  pendingMilestones?: string[];
+  pendingTasks?: string[];
 };
 
 export type BuildMindMilestone = {

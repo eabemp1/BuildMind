@@ -28,7 +28,7 @@ async function insertMilestone(
   supabase: ReturnType<typeof createAdminClient>,
   payload: Record<string, unknown>,
 ) {
-  const payloads = [
+  const payloads: Array<Record<string, unknown>> = [
     // Attempt 1 — safest: only columns guaranteed in base schema
     {
       project_id: payload.project_id,
@@ -74,7 +74,7 @@ async function insertTasks(
 ) {
   if (!rows.length) return;
 
-  const attempts = [
+  const attempts: Array<Array<Record<string, unknown>>> = [
     // Attempt 1 — safest: only columns guaranteed to exist in base schema
     rows.map((row) => ({
       milestone_id: row.milestone_id,
@@ -217,10 +217,20 @@ Generate a specific roadmap for this startup. Tasks must reference the actual pr
         if (stageIndex > 0 && milestoneIds.length) {
           const toComplete = milestoneIds.filter((m) => m.order_index < stageIndex).map((m) => m.id);
           if (toComplete.length) {
-            await supabase.from("milestones").update({ status: 'completed' }).in("id", toComplete);
-            const { data: earlyTasks } = await supabase.from("tasks").select("id").in("milestone_id", toComplete);
+            const BATCH_SIZE = 20;
+            const earlyTasks: Array<{ id: string }> = [];
+            for (let i = 0; i < toComplete.length; i += BATCH_SIZE) {
+              const batchIds = toComplete.slice(i, i + BATCH_SIZE);
+              await supabase.from("milestones").update({ status: "completed" }).in("id", batchIds);
+              const { data } = await supabase.from("tasks").select("id").in("milestone_id", batchIds);
+              if (data?.length) earlyTasks.push(...data);
+            }
             if (earlyTasks?.length) {
-              await supabase.from("tasks").update({ is_completed: true }).in("id", earlyTasks.map((t) => t.id));
+              const taskIds = earlyTasks.map((t) => t.id);
+              for (let i = 0; i < taskIds.length; i += BATCH_SIZE) {
+                const batchIds = taskIds.slice(i, i + BATCH_SIZE);
+                await supabase.from("tasks").update({ is_completed: true }).in("id", batchIds);
+              }
             }
           }
         }

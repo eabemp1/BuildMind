@@ -55,6 +55,27 @@ async function groqJSON<T>(systemPrompt: string, userPrompt: string): Promise<T>
   return JSON.parse(body?.choices?.[0]?.message?.content ?? "{}") as T;
 }
 
+/**
+ * signVapid — ECDSA JWT for VAPID authentication.
+ * Required by all modern browsers (Chrome, Firefox, Safari).
+ * Copied from send-daily-push for Deno compatibility (no npm packages).
+ */
+async function signVapid(audience: string, subject: string, privateKeyB64: string): Promise<string> {
+  const header = btoa(JSON.stringify({ typ: "JWT", alg: "ES256" })).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+  const now = Math.floor(Date.now() / 1000);
+  const payload = btoa(JSON.stringify({ aud: audience, exp: now + 43200, sub: subject })).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+  const signingInput = `${header}.${payload}`;
+  const keyBytes = Uint8Array.from(atob(privateKeyB64.replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0));
+  const key = await crypto.subtle.importKey(
+    "pkcs8", keyBytes,
+    { name: "ECDSA", namedCurve: "P-256" },
+    false, ["sign"]
+  );
+  const sig = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, key, new TextEncoder().encode(signingInput));
+  const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sig))).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+  return `${signingInput}.${sigB64}`;
+}
+
 async function sendPushToUser(
   supabase: ReturnType<typeof createClient>,
   userId: string,
@@ -71,17 +92,30 @@ async function sendPushToUser(
   const vapidPrivate = Deno.env.get("VAPID_PRIVATE_KEY") ?? "";
   const vapidSubject = Deno.env.get("VAPID_SUBJECT") ?? "mailto:hello@buildmind.live";
 
+  if (!vapidPublic || !vapidPrivate) return; // VAPID keys not configured — skip silently
+
   const payload = JSON.stringify({ title, body, icon: "/logo/buildmind-favicon.svg", url, tag: "briefing" });
 
   for (const row of subs ?? []) {
-    const sub = row.subscription as { endpoint: string };
-    const origin = new URL(sub.endpoint).origin;
-    // Simple push — production should use proper VAPID signing (see send-daily-push function)
-    await fetch(sub.endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/octet-stream", "TTL": "86400" },
-      body: new TextEncoder().encode(payload),
-    }).catch(() => {});
+    const sub = row.subscription as { endpoint: string; keys?: { p256dh: string; auth: string } };
+    try {
+      const origin = new URL(sub.endpoint).origin;
+      const jwt = await signVapid(origin, vapidSubject, vapidPrivate);
+      const res = await fetch(sub.endpoint, {
+        method: "POST",
+        headers: {
+          "Authorization": `vapid t=${jwt},k=${vapidPublic}`,
+          "Content-Type": "application/octet-stream",
+          "Content-Encoding": "aes128gcm",
+          "TTL": "86400",
+        },
+        body: new TextEncoder().encode(payload),
+      });
+      // Clean up expired subscriptions
+      if (res.status === 410 || res.status === 404) {
+        await supabase.from("push_subscriptions").delete().eq("user_id", userId);
+      }
+    } catch { /* non-fatal — skip broken sub */ }
   }
 }
 

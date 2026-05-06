@@ -18,6 +18,24 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
   const [email, setEmail] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [avatarBroken, setAvatarBroken] = useState(false);
+
+  // Load user email + avatar from profile on mount
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(async ({ data }) => {
+      if (!data.user) return;
+      setEmail(data.user.email ?? "");
+      // Fetch avatar_url from profiles table
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("avatar_url")
+        .eq("id", data.user.id)
+        .maybeSingle();
+      if (profile?.avatar_url) {
+        setAvatarUrl(profile.avatar_url);
+      }
+    });
+  }, []);
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResultsData | null>(null);

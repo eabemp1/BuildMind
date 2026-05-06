@@ -180,6 +180,8 @@ export default function SettingsPage() {
   const [username, setUsername] = useState("");
   const [bio, setBio] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarUploadError, setAvatarUploadError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -281,20 +283,55 @@ export default function SettingsPage() {
                     <div style={{ fontSize: isMobile ? 15 : 13, fontWeight: 700, color: "var(--bm-text)", marginBottom: 20 }}>Public Profile</div>
                     <div style={{ display: "flex", flexDirection: "column", gap: isMobile ? 18 : 16 }}>
                       <div>
-                        <FieldLabel>Avatar Image URL</FieldLabel>
-                        <SettingsInput value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} placeholder="https://..." />
-                        {!!avatarUrl && (
-                          <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 10 }}>
-                            <img
-                              src={avatarUrl}
-                              alt="Avatar preview"
-                              style={{ width: 36, height: 36, borderRadius: "50%", objectFit: "cover", border: "1px solid var(--bm-border2)" }}
-                              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
-                              onLoad={(e) => { (e.currentTarget as HTMLImageElement).style.display = "block"; }}
-                            />
-                            <span style={{ fontSize: 11, color: "var(--bm-text3)" }}>Preview</span>
+                        <FieldLabel>Profile Photo</FieldLabel>
+                        {/* File upload */}
+                        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
+                          <div style={{ position: "relative", width: 56, height: 56, borderRadius: "50%", border: "1px solid var(--bm-border2)", overflow: "hidden", background: "var(--bm-bg3)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                            {avatarUrl
+                              ? <img src={avatarUrl} alt="Avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={() => setAvatarUrl("")} />
+                              : <span style={{ fontSize: 18, color: "var(--bm-text3)" }}>👤</span>
+                            }
                           </div>
-                        )}
+                          <div style={{ flex: 1 }}>
+                            <label style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 8, border: "1px solid var(--bm-border2)", background: "var(--bm-bg3)", color: "var(--bm-text2)", fontSize: 12, fontWeight: 500, cursor: avatarUploading ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: avatarUploading ? 0.6 : 1 }}>
+                              {avatarUploading ? "Uploading…" : "Upload photo"}
+                              <input
+                                type="file"
+                                accept="image/*"
+                                style={{ display: "none" }}
+                                disabled={avatarUploading}
+                                onChange={async (e) => {
+                                  const file = e.target.files?.[0];
+                                  if (!file) return;
+                                  if (file.size > 2 * 1024 * 1024) { setAvatarUploadError("Image must be under 2MB"); return; }
+                                  setAvatarUploading(true);
+                                  setAvatarUploadError(null);
+                                  try {
+                                    const supabase = createClient();
+                                    const { data: { user } } = await supabase.auth.getUser();
+                                    if (!user) throw new Error("Not authenticated");
+                                    const ext = file.name.split(".").pop() ?? "jpg";
+                                    const path = `avatars/${user.id}.${ext}`;
+                                    const { error: upErr } = await supabase.storage.from("public").upload(path, file, { upsert: true });
+                                    if (upErr) throw upErr;
+                                    const { data: urlData } = supabase.storage.from("public").getPublicUrl(path);
+                                    // Bust cache with timestamp
+                                    setAvatarUrl(`${urlData.publicUrl}?t=${Date.now()}`);
+                                  } catch (err) {
+                                    setAvatarUploadError(err instanceof Error ? err.message : "Upload failed");
+                                  } finally {
+                                    setAvatarUploading(false);
+                                  }
+                                }}
+                              />
+                            </label>
+                            <div style={{ fontSize: 10, color: "var(--bm-text4)", marginTop: 5 }}>JPG, PNG, GIF · Max 2 MB</div>
+                            {avatarUploadError && <div style={{ fontSize: 11, color: "var(--bm-red)", marginTop: 4 }}>{avatarUploadError}</div>}
+                          </div>
+                        </div>
+                        {/* Or paste URL */}
+                        <div style={{ fontSize: 10, color: "var(--bm-text4)", marginBottom: 6 }}>or paste an image URL</div>
+                        <SettingsInput value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} placeholder="https://..." />
                       </div>
                       <div><FieldLabel>Full Name</FieldLabel><SettingsInput value={name} onChange={(e) => setName(e.target.value)} placeholder="Alex Johnson" /></div>
                       <div><FieldLabel>Username</FieldLabel><SettingsInput value={username} onChange={(e) => setUsername(e.target.value)} placeholder="alexbuilds" /></div>

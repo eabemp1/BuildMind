@@ -153,56 +153,57 @@ export async function POST(request: Request) {
     let founderMemoryContext = "";
 
     if (hasAdminEnv()) {
-      const supabase = createAdminClient();
+      try {
+        const supabase = createAdminClient();
 
-      const [projectResult, memoryResult, milestonesResult] = await Promise.allSettled([
-        supabase
-          .from("projects")
-          .select("title, description, target_users, problem, startup_stage, validation_strengths, validation_weaknesses")
-          .eq("id", projectId)
-          .eq("user_id", userId)
-          .single(),
-        supabase.from("founder_memory").select("*").eq("user_id", userId).maybeSingle(),
-        supabase.from("milestones").select("id, title, status").eq("project_id", projectId),
-      ]);
+        const [projectResult, memoryResult, milestonesResult] = await Promise.allSettled([
+          supabase
+            .from("projects")
+            .select("title, description, target_users, problem, startup_stage, validation_strengths, validation_weaknesses")
+            .eq("id", projectId)
+            .eq("user_id", userId)
+            .single(),
+          supabase.from("founder_memory").select("*").eq("user_id", userId).maybeSingle(),
+          supabase.from("milestones").select("id, title, status").eq("project_id", projectId),
+        ]);
 
-      const project = projectResult.status === "fulfilled" ? projectResult.value.data : null;
-      const memory = memoryResult.status === "fulfilled" ? memoryResult.value.data as FounderMemory | null : null;
-      const milestones = milestonesResult.status === "fulfilled" ? milestonesResult.value.data ?? [] : [];
+        const project = projectResult.status === "fulfilled" ? projectResult.value.data : null;
+        const memory = memoryResult.status === "fulfilled" ? memoryResult.value.data as FounderMemory | null : null;
+        const milestones = milestonesResult.status === "fulfilled" ? milestonesResult.value.data ?? [] : [];
 
-      const milestoneIds = milestones.map((m) => m.id);
+        const milestoneIds = milestones.map((m) => m.id);
       
-      // Batch milestone IDs to avoid URL length limits
-      let allTasks: Array<{ title: string; is_completed: boolean }> = [];
-      if (milestoneIds.length > 0) {
-        const BATCH_SIZE = 20;
-        const batches = [];
-        for (let i = 0; i < milestoneIds.length; i += BATCH_SIZE) {
-          const batchIds = milestoneIds.slice(i, i + BATCH_SIZE);
-          const tasksQuery = supabase.from("tasks").select("title, is_completed");
-          batches.push(
-            batchIds.length === 1
-              ? tasksQuery.eq("milestone_id", batchIds[0])
-              : tasksQuery.in("milestone_id", batchIds)
-          );
+        // Batch milestone IDs to avoid URL length limits
+        let allTasks: Array<{ title: string; is_completed: boolean }> = [];
+        if (milestoneIds.length > 0) {
+          const BATCH_SIZE = 20;
+          const batches = [];
+          for (let i = 0; i < milestoneIds.length; i += BATCH_SIZE) {
+            const batchIds = milestoneIds.slice(i, i + BATCH_SIZE);
+            const tasksQuery = supabase.from("tasks").select("title, is_completed");
+            batches.push(
+              batchIds.length === 1
+                ? tasksQuery.eq("milestone_id", batchIds[0])
+                : tasksQuery.in("milestone_id", batchIds)
+            );
+          }
+          const batchResults = await Promise.all(batches);
+          for (const result of batchResults) {
+            if (result.data) allTasks = allTasks.concat(result.data);
+          }
         }
-        const batchResults = await Promise.all(batches);
-        for (const result of batchResults) {
-          if (result.data) allTasks = allTasks.concat(result.data);
-        }
-      }
-      const { data: tasks } = { data: allTasks };
+        const { data: tasks } = { data: allTasks };
 
-      const completedTasks = (tasks ?? []).filter((t) => t.is_completed).length;
-      const totalTasks = (tasks ?? []).length;
-      const completedMilestones = milestones.filter((m) => m.status === 'completed').length;
+        const completedTasks = (tasks ?? []).filter((t) => t.is_completed).length;
+        const totalTasks = (tasks ?? []).length;
+        const completedMilestones = milestones.filter((m) => m.status === 'completed').length;
 
-      if (project) {
-        stage = project.startup_stage ?? inferStage(completedTasks, totalTasks, completedMilestones, milestones.length);
-        const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-        const valStrengths = (project.validation_strengths ?? []).join(", ");
-        const valWeaknesses = (project.validation_weaknesses ?? []).join(", ");
-        projectContext = `
+        if (project) {
+          stage = project.startup_stage ?? inferStage(completedTasks, totalTasks, completedMilestones, milestones.length);
+          const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+          const valStrengths = (project.validation_strengths ?? []).join(", ");
+          const valWeaknesses = (project.validation_weaknesses ?? []).join(", ");
+          projectContext = `
 Project: ${project.title}
 Stage: ${stage}
 Problem: ${project.problem ?? "Not defined"}
@@ -211,17 +212,20 @@ Task completion: ${completedTasks}/${totalTasks} (${completionRate}%)
 Milestone completion: ${completedMilestones}/${milestones.length}
 Validation strengths: ${valStrengths || "None recorded"}
 Validation gaps: ${valWeaknesses || "None recorded"}`;
-      }
+        }
 
-      founderMemoryContext = buildFounderMemoryContext(memory);
+        founderMemoryContext = buildFounderMemoryContext(memory);
 
-      // ── Persist spiral event to founder_memory for pattern tracking ────────
-      if (spiralDetected && memory) {
-        const signals = (memory.emotional_signals ?? []) as { trigger: string; type: string; confidence: number }[];
-        signals.push({ trigger: message.slice(0, 80), type: "draining", confidence: 0.85 });
-        await supabase.from("founder_memory")
-          .update({ emotional_signals: signals.slice(-20), updated_at: new Date().toISOString() })
-          .eq("user_id", userId);
+        // ── Persist spiral event to founder_memory for pattern tracking ────────
+        if (spiralDetected && memory) {
+          const signals = (memory.emotional_signals ?? []) as { trigger: string; type: string; confidence: number }[];
+          signals.push({ trigger: message.slice(0, 80), type: "draining", confidence: 0.85 });
+          await supabase.from("founder_memory")
+            .update({ emotional_signals: signals.slice(-20), updated_at: new Date().toISOString() })
+            .eq("user_id", userId);
+        }
+      } catch (err) {
+        console.error("[coach] Optional founder context fetch failed:", err);
       }
     }
 

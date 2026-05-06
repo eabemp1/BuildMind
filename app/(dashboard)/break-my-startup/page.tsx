@@ -129,7 +129,7 @@ function SurvivalRing({ value, size = 110 }: { value: number; size?: number }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function BreakMyStartupPage() {
-  const { plan } = usePlan();
+  const { plan, isLoading: planLoading } = usePlan();
   const { showLimitModal } = useLimitModal();
   const { data: projects = [], isLoading: projectsLoading } = useProjectsQuery();
 
@@ -218,7 +218,9 @@ export default function BreakMyStartupPage() {
       if (!authData.user) throw new Error("Not authenticated");
 
       const freePreviewKey = `bm_break_preview_used_${authData.user.id}`;
-      if (plan === "free" && localStorage.getItem(freePreviewKey)) {
+      // Wait for server-authoritative plan before applying free gate —
+      // prevents Builder users from being blocked during the plan loading window.
+      if (!planLoading && plan === "free" && localStorage.getItem(freePreviewKey)) {
         showLimitModal("break_startup");
         return;
       }

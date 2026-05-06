@@ -2,8 +2,6 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { normalizePlan, type Plan } from "@/lib/plan";
 
-const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY ?? "";
-
 /**
  * Amount config per plan tier (in pesewas / kobo / cents depending on currency).
  *
@@ -39,7 +37,8 @@ function appUrl(req: Request): string {
 }
 
 export async function POST(req: Request) {
-  if (!PAYSTACK_SECRET_KEY) {
+  const paystackSecretKey = process.env.PAYSTACK_SECRET_KEY ?? "";
+  if (!paystackSecretKey) {
     return NextResponse.json(
       { error: "Paystack is not configured. Add PAYSTACK_SECRET_KEY." },
       { status: 503 },
@@ -81,7 +80,7 @@ export async function POST(req: Request) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+      Authorization: `Bearer ${paystackSecretKey}`,
     },
     body: JSON.stringify({
       email: user.email,

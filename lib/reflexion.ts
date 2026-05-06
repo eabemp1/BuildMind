@@ -235,23 +235,13 @@ Stage: ${context.stage} | Target users: ${context.targetUsers ?? "not set"} | Mo
 ADVICE TO EVALUATE:
 ${generated}`;
 
-  let critiqueData: { verdict: string; reason: string; improved_version?: string | null } = {
-    verdict: "pass",
-    reason: "Verdict parsing failed — defaulting to pass",
-    improved_version: null,
-  };
-  try {
-    // Agent B uses groqJSONCall (response_format: json_object) to guarantee
-    // a parseable verdict. A prose response used to silently default to "pass",
-    // undermining the gatekeeper design.
-    critiqueData = await groqJSONCall<typeof critiqueData>([
-      { role: "system", content: criticPrompt },
-      { role: "user", content: "Evaluate and give your verdict." },
-    ], 0.3, 300);
-  } catch {
-    // groqJSONCall failed (network / model error) — default to pass so the
-    // loop is non-fatal, but log it so patterns can be monitored.
-  }
+  // Agent B uses groqJSONCall (response_format: json_object) to guarantee
+  // a parseable verdict. Let failures bubble to the route-level try/catch so
+  // the loop never silently degrades inside the core pipeline.
+  const critiqueData = await groqJSONCall<{ verdict: "pass" | "fail"; reason: string; improved_version?: string | null }>([
+    { role: "system", content: criticPrompt },
+    { role: "user", content: "Evaluate and give your verdict." },
+  ], 0.3, 300);
 
   const critique = `VERDICT: ${critiqueData.verdict.toUpperCase()} — ${critiqueData.reason}`;
 

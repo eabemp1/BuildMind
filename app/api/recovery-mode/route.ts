@@ -56,6 +56,13 @@ export async function POST() {
     return NextResponse.json({ ok: false }, { status: 401 });
   }
 
+  // Recovery Mode is a Builder-only feature
+  const { planFromUserMetadata } = await import("@/lib/plan");
+  const userPlan = planFromUserMetadata(user);
+  if (userPlan !== "builder") {
+    return NextResponse.json({ ok: false, error: "Builder plan required", upgradeUrl: "/upgrade" }, { status: 403 });
+  }
+
   const admin = createAdminClient();
 
   const { data: ctx } = await admin

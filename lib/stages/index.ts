@@ -34,25 +34,27 @@ export function normalizeStage(raw: string | null | undefined): StartupStage {
  * - If all complete → "Revenue"
  */
 export function inferStageFromMilestones(
-  milestones: Array<{ title: string; status?: string | null; created_at?: string }>,
+  milestones: Array<{ id?: string; title: string; status?: string | null; is_completed?: boolean | null; order_index?: number; created_at?: string }>,
   tasks: Array<{ milestone_id: string; is_completed: boolean }>,
   milestoneIdMap: Map<string, string>, // milestoneId → milestoneTitle
 ): StartupStage {
   if (!milestones.length) return "Idea";
 
-  // Sort by created_at since order_index doesn't exist in schema
+  // Prefer roadmap order_index when present, otherwise fall back to created_at.
   const sorted = [...milestones].sort((a, b) => {
+    if (typeof a.order_index === "number" || typeof b.order_index === "number") {
+      return (a.order_index ?? Number.MAX_SAFE_INTEGER) - (b.order_index ?? Number.MAX_SAFE_INTEGER);
+    }
     const dateA = new Date(a.created_at ?? 0).getTime();
     const dateB = new Date(b.created_at ?? 0).getTime();
     return dateA - dateB;
   });
 
-  const isMilestoneComplete = (
-    m: (typeof sorted)[0] & { id?: string },
-  ): boolean => {
+  const isMilestoneComplete = (m: (typeof sorted)[0]): boolean => {
     if (m.status === 'completed') return true;
+    if (m.is_completed === true) return true;
     const milestoneTasks = tasks.filter(
-      (t) => milestoneIdMap.get(t.milestone_id) === m.title,
+      (t) => t.milestone_id === m.id || milestoneIdMap.get(t.milestone_id) === m.title,
     );
     if (!milestoneTasks.length) return false;
     return milestoneTasks.every((t) => t.is_completed);
@@ -60,8 +62,7 @@ export function inferStageFromMilestones(
 
   let lastCompleteIdx = -1;
   for (let i = 0; i < sorted.length; i++) {
-    const m = sorted[i] as (typeof sorted)[0] & { id?: string };
-    if (isMilestoneComplete(m)) lastCompleteIdx = i;
+    if (isMilestoneComplete(sorted[i])) lastCompleteIdx = i;
   }
 
   if (lastCompleteIdx === -1) return "Idea";

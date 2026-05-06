@@ -155,17 +155,30 @@ function TodayContent() {
     const today = new Date().toISOString().split("T")[0];
     try {
       const cached = JSON.parse(localStorage.getItem("bm_today_action_cache") ?? "null");
-      if (cached?.date === today && cached?.data) {
+      if (cached?.date === today && cached?.projectId === projectId && cached?.data) {
         setAiAction({ ...cached.data, isAI: true });
         return;
       }
     } catch {}
 
     setActionLoading(true);
+
+    // Build pending task/milestone context from the projects summary
+    // so the Today page is truly personalized to what's actually in the backlog
+    const pendingMilestones = project.pendingMilestones ?? [];
+    const pendingTasks = project.pendingTasks ?? [];
+
     fetch("/api/ai/today-action", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, projectId, stage: project.startup_stage ?? "Idea" }),
+      body: JSON.stringify({
+        userId,
+        projectId,
+        stage: project.startup_stage ?? "Idea",
+        pendingMilestones,
+        pendingTasks,
+        completionRate: project.completion_rate ?? 0,
+      }),
     })
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(json => {
@@ -175,7 +188,7 @@ function TodayContent() {
           // Only cache when the reflexion loop actually ran (real AI response)
           // Never cache server-side fallbacks — they would freeze the UI for the whole day
           if (actionData.reflexion?.loopRan) {
-            localStorage.setItem("bm_today_action_cache", JSON.stringify({ date: today, data: actionData }));
+            localStorage.setItem("bm_today_action_cache", JSON.stringify({ date: today, projectId, data: actionData }));
           }
         }
       })
@@ -320,6 +333,49 @@ function TodayContent() {
           </div>
         </div>
       </motion.div>
+
+      {/* ── Pending context strip — shows user what tasks are powering today's recommendation ── */}
+      {(project?.pendingMilestones?.length ?? 0) > 0 || (project?.pendingTasks?.length ?? 0) > 0 ? (
+        <motion.div
+          initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
+          style={{
+            padding: "10px 14px", borderRadius: 12, marginBottom: 14,
+            background: "var(--bm-bg3)", border: "1px solid var(--bm-border)",
+            display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center",
+          }}
+        >
+          <span style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.08em", flexShrink: 0 }}>
+            From your project
+          </span>
+          {project?.pendingMilestones?.slice(0, 2).map((m: string, i: number) => (
+            <span key={i} style={{
+              fontSize: 10, padding: "3px 8px", borderRadius: 99,
+              background: "var(--bm-accent-dim)", color: "var(--bm-accent)",
+              border: "1px solid var(--bm-accent-bd)", fontWeight: 600,
+            }}>
+              ◎ {m}
+            </span>
+          ))}
+          {project?.pendingTasks?.slice(0, 2).map((t: string, i: number) => (
+            <span key={i} style={{
+              fontSize: 10, padding: "3px 8px", borderRadius: 99,
+              background: "var(--bm-bg2)", color: "var(--bm-text3)",
+              border: "1px solid var(--bm-border2)", fontWeight: 500,
+            }}>
+              ✦ {t}
+            </span>
+          ))}
+          <button
+            onClick={() => router.push("/projects")}
+            style={{
+              marginLeft: "auto", fontSize: 10, color: "var(--bm-text4)", background: "none",
+              border: "none", cursor: "pointer", fontFamily: "inherit", padding: 0,
+            }}
+          >
+            Edit tasks →
+          </button>
+        </motion.div>
+      ) : null}
 
       {/* Action card */}
       <motion.div

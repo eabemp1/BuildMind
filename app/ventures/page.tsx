@@ -448,7 +448,7 @@ function BlueprintResult({ bp, plan, onNew, isFirstBlueprint }: {
       <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
         <button onClick={handleConvertTo7Days} style={{
           flex: 1, minWidth: 160, padding: "10px 16px", borderRadius: 10, border: "none",
-          background: `linear-gradient(135deg, ${V.indigo}, ${V.violet})`,
+          background: "var(--grad-primary)",
           color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
         }}>
           Convert to 7-day plan →
@@ -490,7 +490,7 @@ function BlueprintResult({ bp, plan, onNew, isFirstBlueprint }: {
           </div>
           <a href="/upgrade?feature=ventures" style={{
             display: "inline-block", padding: "10px 24px", borderRadius: 10, border: "none",
-            background: `linear-gradient(135deg, ${V.indigo}, ${V.violet})`,
+            background: "var(--grad-primary)",
             color: "#fff", fontSize: 13, fontWeight: 700, textDecoration: "none",
           }}>
             Upgrade to Builder →
@@ -502,8 +502,8 @@ function BlueprintResult({ bp, plan, onNew, isFirstBlueprint }: {
 }
 
 // ── Blueprint generator ───────────────────────────────────────────────────────
-function BlueprintGenerator({ plan }: { plan: string }) {
-  const isFull = plan !== "free";
+function BlueprintGenerator({ plan, planLoading = false }: { plan: string; planLoading?: boolean }) {
+  const isFull = !planLoading && plan !== "free";
   const [input, setInput]           = useState("");
   const [loading, setLoading]       = useState(false);
   const [stepIndex, setStepIndex]   = useState(0);
@@ -886,8 +886,8 @@ function NewSystemWizard({ onSave, onCancel }: { onSave: (t: UserTrack) => void;
 // ── Main page ─────────────────────────────────────────────────────────────────
 function VenturesContent() {
   const router = useRouter();
-  const { plan } = usePlan();
-  const isFree = plan === "free";
+  const { plan, isLoading: planLoading } = usePlan();
+  const isFree = !planLoading && plan === "free";
 
   const [tab, setTab]         = useState<"blueprint" | "systems">("blueprint");
   const [tracks, setTracks]   = useState<UserTrack[]>([]);
@@ -974,7 +974,7 @@ function VenturesContent() {
       </div>
 
       {/* Blueprint tab */}
-      {tab === "blueprint" && <BlueprintGenerator plan={plan} />}
+      {tab === "blueprint" && <BlueprintGenerator plan={plan} planLoading={planLoading} />}
 
       {/* Systems tab */}
       {tab === "systems" && (
@@ -992,7 +992,7 @@ function VenturesContent() {
             </p>
             <a href="/upgrade?feature=ventures" style={{
               display: "inline-block", padding: "10px 24px", borderRadius: 10, border: "none",
-              background: `linear-gradient(135deg, ${V.indigo}, ${V.violet})`,
+              background: "var(--grad-primary)",
               color: "#fff", fontSize: 13, fontWeight: 700, textDecoration: "none",
             }}>
               Unlock with Builder →
@@ -1009,7 +1009,7 @@ function VenturesContent() {
                 onClick={() => setShowNew(true)}
                 style={{
                   padding: "9px 18px", borderRadius: 10, border: "none",
-                  background: `linear-gradient(135deg, ${V.indigo}, ${V.violet})`,
+                  background: "var(--grad-primary)",
                   color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
                 }}>
                 + New system
@@ -1025,7 +1025,7 @@ function VenturesContent() {
                 </p>
                 <button onClick={() => setShowNew(true)} style={{
                   padding: "11px 26px", borderRadius: 10, border: "none",
-                  background: `linear-gradient(135deg, ${V.indigo}, ${V.violet})`,
+                  background: "var(--grad-primary)",
                   color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
                 }}>
                   Create your first system →

@@ -194,14 +194,14 @@ export async function getProjectSummaries(): Promise<ProjectSummary[]> {
   const projectIds = projects.map((p) => p.id);
   
   // Batch project IDs to avoid URL length limits
-  let allMilestones: Array<{ id: string; title: string; project_id: string }> = [];
+  let allMilestones: Array<{ id: string; title: string; project_id: string; status: string | null }> = [];
   const BATCH_SIZE = 20;
   
   for (let i = 0; i < projectIds.length; i += BATCH_SIZE) {
     const batchIds = projectIds.slice(i, i + BATCH_SIZE);
     const milestonesQuery = supabase
       .from("milestones")
-      .select("id, title, project_id");
+      .select("id, title, project_id, status");
     const { data: milestones } = await (batchIds.length === 1
       ? milestonesQuery.eq("project_id", batchIds[0])
       : milestonesQuery.in("project_id", batchIds));
@@ -209,14 +209,14 @@ export async function getProjectSummaries(): Promise<ProjectSummary[]> {
   }
 
   const milestoneIds = allMilestones.map((m) => m.id);
-  let allTasks: Array<{ id: string; milestone_id: string; is_completed: boolean; created_at: string }> = [];
+  let allTasks: Array<{ id: string; title: string; milestone_id: string; is_completed: boolean; created_at: string }> = [];
   
   if (milestoneIds.length > 0) {
     for (let i = 0; i < milestoneIds.length; i += BATCH_SIZE) {
       const batchIds = milestoneIds.slice(i, i + BATCH_SIZE);
       const tasksQuery = supabase
         .from("tasks")
-        .select("id, milestone_id, is_completed, created_at");
+        .select("id, title, milestone_id, is_completed, created_at");
       const { data: tasks } = await (batchIds.length === 1
         ? tasksQuery.eq("milestone_id", batchIds[0])
         : tasksQuery.in("milestone_id", batchIds));
@@ -286,6 +286,16 @@ export async function getProjectSummaries(): Promise<ProjectSummary[]> {
     const displayStage = computedStage || project.startup_stage || "Idea";
     const validationStrengths = normalizeTextArray(project.validation_strengths);
 
+    // Pending milestones and tasks — used by Today page for AI personalization
+    const pendingMilestones = projectMilestones
+      .filter((m) => m.status !== "completed")
+      .map((m) => m.title)
+      .slice(0, 5);
+    const pendingTasks = projectTasks
+      .filter((t) => !t.is_completed)
+      .map((t) => t.title)
+      .slice(0, 5);
+
     return {
       id: project.id,
       title: project.title,
@@ -300,9 +310,12 @@ export async function getProjectSummaries(): Promise<ProjectSummary[]> {
       tasksCompleted: current.tasksCompleted,
       tasksTotal: current.tasksTotal,
       progress,
+      completion_rate: progress,
       lastActivity: current.lastActivity,
       problem: project.problem ?? null,
       target_users: project.target_users ?? null,
+      pendingMilestones,
+      pendingTasks,
     };
   });
 }
@@ -497,7 +510,7 @@ export async function createProjectWithRoadmap(params: {
   await ensureUserProfile(user);
   const supabase = createClient();
 
-  const projectPayloads = [
+  const projectPayloads: Array<Record<string, unknown>> = [
     {
       user_id: user.id,
       title: params.project_name,

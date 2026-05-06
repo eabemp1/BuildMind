@@ -39,12 +39,17 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-// Configure VAPID (do this once at module level)
-webpush.setVapidDetails(
-  process.env.VAPID_SUBJECT || "mailto:hello@buildmind.live",
-  process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || "",
-  process.env.VAPID_PRIVATE_KEY || ""
-);
+let vapidConfigured = false;
+
+function configureVapidDetails() {
+  if (vapidConfigured) return;
+  webpush.setVapidDetails(
+    process.env.VAPID_SUBJECT || "mailto:hello@buildmind.live",
+    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!,
+    process.env.VAPID_PRIVATE_KEY!,
+  );
+  vapidConfigured = true;
+}
 
 // Notification templates — rotated daily to avoid fatigue
 // NOTE: Recovery Mode overrides these with a personalised message (NEW IN V4)
@@ -161,6 +166,8 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  configureVapidDetails();
+
   // Admin Supabase client (bypasses RLS)
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -185,18 +192,33 @@ export async function POST(req: NextRequest) {
 
   // Fetch founder context for Recovery Mode detection (NEW IN V4)
   const userIds = subs.map((s) => s.user_id);
-  const { data: contexts } = await supabase
-    .from("founder_context")
-    .select("user_id, days_inactive, momentum_score, recovery_mode_active")
-    .in("user_id", userIds);
+  const BATCH_SIZE = 20;
+  const contexts: Array<{ user_id: string; days_inactive: number; momentum_score: number; recovery_mode_active: boolean }> = [];
+  const todayBriefings: Array<{ user_id: string; win: string; action: string }> = [];
+  for (let i = 0; i < userIds.length; i += BATCH_SIZE) {
+    const batchIds = userIds.slice(i, i + BATCH_SIZE);
+    const contextQuery = supabase
+      .from("founder_context")
+      .select("user_id, days_inactive, momentum_score, recovery_mode_active");
+    const { data } = await (batchIds.length === 1
+      ? contextQuery.eq("user_id", batchIds[0])
+      : contextQuery.in("user_id", batchIds));
+    if (data?.length) contexts.push(...data);
+  }
 
   // Also fetch today's morning briefings so push body matches what user sees in-app
   const today = new Date().toISOString().split("T")[0];
-  const { data: todayBriefings } = await supabase
-    .from("morning_briefings")
-    .select("user_id, win, action")
-    .in("user_id", userIds)
-    .gte("created_at", `${today}T00:00:00Z`);
+  for (let i = 0; i < userIds.length; i += BATCH_SIZE) {
+    const batchIds = userIds.slice(i, i + BATCH_SIZE);
+    const briefingQuery = supabase
+      .from("morning_briefings")
+      .select("user_id, win, action")
+      .gte("created_at", `${today}T00:00:00Z`);
+    const { data } = await (batchIds.length === 1
+      ? briefingQuery.eq("user_id", batchIds[0])
+      : briefingQuery.in("user_id", batchIds));
+    if (data?.length) todayBriefings.push(...data);
+  }
 
   const contextMap = new Map(
     (contexts ?? []).map((c: { user_id: string; days_inactive: number; recovery_mode_active: boolean }) => [c.user_id, c])

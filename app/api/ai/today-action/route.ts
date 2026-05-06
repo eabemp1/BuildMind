@@ -87,6 +87,14 @@ export async function POST(request: Request) {
     const projectId = String(body?.projectId ?? "").trim();
     // Input length limits — prevent prompt injection and runaway token costs
     const providedStage = String(body?.stage ?? "").trim().slice(0, 50);
+    // Client-side pending context (fast path — avoids extra DB round trip)
+    const clientPendingMilestones: string[] = Array.isArray(body?.pendingMilestones)
+      ? (body.pendingMilestones as unknown[]).map(s => String(s).slice(0, 100)).slice(0, 5)
+      : [];
+    const clientPendingTasks: string[] = Array.isArray(body?.pendingTasks)
+      ? (body.pendingTasks as unknown[]).map(s => String(s).slice(0, 100)).slice(0, 5)
+      : [];
+    const clientCompletionRate = typeof body?.completionRate === "number" ? body.completionRate : null;
 
     // Prevent one user from fetching another user's project data
     if (userId !== routeUser.userId) {
@@ -165,14 +173,24 @@ export async function POST(request: Request) {
         targetUsers = project.target_users ?? "";
         problem = project.problem ?? "";
         title = project.title ?? "";
+        const pendingMilestonesList = (milestones ?? [])
+          .filter((m) => m.status !== "completed")
+          .map((m) => m.title)
+          .slice(0, 5);
+        const pendingTasksList = (tasks ?? [])
+          .filter((t) => !t.is_completed)
+          .map((t) => t.title)
+          .slice(0, 5);
+        const completionPct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
         projectContext = `
 Project: ${project.title}
 Stage: ${stage}
 Problem: ${project.problem ?? "Not specified"}
 Target users: ${project.target_users ?? "Not specified"}
 Description: ${project.description ?? "Not specified"}
-Milestones: ${(milestones ?? []).map((m) => `${m.title} (${m.status === 'completed' ? "complete" : "in progress"})`).join(", ")}
-Tasks: ${completedTasks}/${totalTasks} completed`;
+Overall progress: ${completedTasks}/${totalTasks} tasks done (${completionPct}%), ${completedMilestones}/${(milestones ?? []).length} milestones complete
+Pending milestones (next to tackle): ${pendingMilestonesList.length ? pendingMilestonesList.join(", ") : "None"}
+Next open tasks: ${pendingTasksList.length ? pendingTasksList.join(", ") : "None"}`;
       }
 
       // ── Founder memory context — informs task assignment ─────────────────
@@ -238,6 +256,7 @@ SPECIFICITY RULES — every field must pass this checklist:
 - why: 1-2 sentences. Must reference their specific stage, their specific target user, or their last reflection outcome. No generic urgency phrases.
 - time: Realistic estimate, e.g. "45 minutes" or "1 hour".
 
+If PENDING TASKS or PENDING MILESTONES are provided in FOUNDER DATA, today's action MUST directly map to advancing the most important one. Name the specific task or milestone in the action field.
 If a LAST REFLECTION is provided, today's action MUST directly respond to it (blocked → remove blocker; completed → go deeper; confidence ≤2 → smaller confidence-building step).
 
 If target_users or problem is missing from FOUNDER DATA, your action field must end with: "(Update your project details to get a more specific task)"`,
