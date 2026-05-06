@@ -354,7 +354,9 @@ export default function ProjectDetailPage() {
         }),
       });
       if (res.ok) {
-        void qc.invalidateQueries({ queryKey: queryKeys.project(id) });
+        await qc.invalidateQueries({ queryKey: queryKeys.project(id) });
+        await qc.invalidateQueries({ queryKey: queryKeys.projectSummaries });
+        await qc.refetchQueries({ queryKey: queryKeys.project(id) });
       }
     } catch {
       // Non-fatal
@@ -472,14 +474,28 @@ export default function ProjectDetailPage() {
             </div>
           )}
           {milestones.length > 0 && (
-            <div style={{ display: "flex", gap: 3, marginBottom: 10 }}>
-              {milestones.map(m => {
-                const mt = tasks.filter(t => t.milestone_id === m.id);
-                const done = mt.length > 0 && mt.every(t => t.is_completed);
-                const partial = !done && mt.some(t => t.is_completed);
-                return <motion.div key={m.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} title={m.title}
-                  style={{ height: 4, flex: 1, borderRadius: 99, minWidth: 20, background: done ? "var(--bm-accent)" : partial ? "var(--grad-primary)" : "var(--bm-bg3)", transition: "background 0.4s" }} />;
-              })}
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 12 }}>
+                <span style={{ fontSize: 12, color: "var(--bm-text3)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                  {milestones.length} milestone{milestones.length !== 1 ? "s" : ""}
+                </span>
+                <button
+                  onClick={handleRegenerateMilestones}
+                  disabled={regenerating}
+                  style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid var(--bm-border)", background: "transparent", color: regenerating ? "var(--bm-text3)" : "var(--bm-text2)", fontSize: 12, fontWeight: 600, cursor: regenerating ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: regenerating ? 0.65 : 1 }}
+                >
+                  {regenerating ? "Generating..." : "Regenerate"}
+                </button>
+              </div>
+              <div style={{ display: "flex", gap: 3, marginBottom: 10 }}>
+                {milestones.map(m => {
+                  const mt = tasks.filter(t => t.milestone_id === m.id);
+                  const done = mt.length > 0 && mt.every(t => t.is_completed);
+                  const partial = !done && mt.some(t => t.is_completed);
+                  return <motion.div key={m.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} title={m.title}
+                    style={{ height: 4, flex: 1, borderRadius: 99, minWidth: 20, background: done ? "var(--bm-accent)" : partial ? "var(--grad-primary)" : "var(--bm-bg3)", transition: "background 0.4s" }} />;
+                })}
+              </div>
             </div>
           )}
           {milestones.map((m, mi) => (

@@ -24,6 +24,7 @@ import { type Plan, canAccess, syncStreakFromServer } from "@/lib/plan";
 import { usePlan } from "@/lib/usePlan";
 import { useTheme } from "@/components/layout/theme-provider";
 import CofounderPulse from "@/components/CofounderPulse";
+import AIUsageBadge from "@/components/AIUsageBadge";
 import { createClient } from "@/lib/supabase/client";
 import {
   NAV, hasPlanAccess, SectionLabel, SidebarLogo, NavItem,
@@ -108,12 +109,10 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
       try {
         setReflectPending(localStorage.getItem("bm_reflect_pending") === "true");
         setUnseenBadges(getUnseenCount());
-        const stats = JSON.parse(localStorage.getItem("bm_achievement_stats") ?? "{}");
-        setStreakDays(stats.streak ?? stats.streakDays ?? Number(localStorage.getItem("bm_streak") ?? "0"));
       } catch {}
+      syncStreakFromServer().then(s => setStreakDays(s)).catch(() => {});
     };
     checkPending();
-    syncStreakFromServer().then(s => setStreakDays(s)).catch(() => {});
     window.addEventListener("storage", checkPending);
     window.addEventListener("bm_streak_updated", checkPending);
     const interval = setInterval(checkPending, 8000);
@@ -184,6 +183,9 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
       <div className="shrink-0 flex flex-col gap-2 pt-2 pb-3" style={{ borderTop: "1px solid var(--bm-border)" }}>
         {canAccess("cofounderPulse", plan) && (
           <div className="px-2"><CofounderPulse /></div>
+        )}
+        {plan === "free" && (
+          <div className="px-2"><AIUsageBadge /></div>
         )}
 
         <button onClick={toggle}

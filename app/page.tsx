@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { createClient } from "@/lib/supabase/client";
 
 // ── "A Day With BuildMind" timeline data ──────────────────────────────────────
 const DAY_TIMELINE = [
@@ -880,29 +881,63 @@ function PricingSection() {
   );
 }
 
-// ── Stats — kick off fetch at module load time, before any component renders ──
-// Floor values ensure pills are never empty even if the API is slow or fails.
-const STATS_FLOOR = { founders: 1, projects: 1, milestones: 0 };
-const statsPromise: Promise<{ founders: number; projects: number; milestones: number }> =
-  typeof window !== "undefined"
-    ? fetch("/api/public/stats")
+const STATS_FLOOR = { founders: 1, projects: 1, milestones: 1 };
+
+function normalizeStats(d: PublicStats) {
+  return {
+    founders: Math.max(d.founders ?? 0, STATS_FLOOR.founders),
+    projects: Math.max(d.projects ?? 0, STATS_FLOOR.projects),
+    milestones: Math.max(d.milestones ?? 0, STATS_FLOOR.milestones),
+  };
+}
+
+function useRealtimeStats() {
+  const [stats, setStats] = useState(STATS_FLOOR);
+
+  useEffect(() => {
+    const refresh = () => {
+      fetch("/api/public/stats", { cache: "no-store" })
         .then((r) => r.json())
-        .then((d: PublicStats) => ({
-          founders: Math.max(d.founders ?? 0, STATS_FLOOR.founders),
-          projects: Math.max(d.projects ?? 0, STATS_FLOOR.projects),
-          milestones: Math.max(d.milestones ?? 0, STATS_FLOOR.milestones),
-        }))
-        .catch(() => STATS_FLOOR)
-    : Promise.resolve(STATS_FLOOR);
+        .then((d: PublicStats) => setStats(normalizeStats(d)))
+        .catch(() => {});
+    };
+
+    refresh();
+    const supabase = createClient();
+    const channel = supabase
+      .channel("public-stats")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "projects" }, refresh)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "milestones" }, refresh)
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, []);
+
+  return stats;
+}
+
+function CountUp({ to, duration = 1200 }: { to: number; duration?: number }) {
+  const [val, setVal] = useState(0);
+  useEffect(() => {
+    const start = Date.now();
+    let frame = 0;
+    const tick = () => {
+      const t = Math.min(1, (Date.now() - start) / duration);
+      setVal(Math.round(to * (1 - Math.pow(1 - t, 3))));
+      if (t < 1) frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [to, duration]);
+  return <>{val.toLocaleString()}</>;
+}
 
 // ── Main landing page ─────────────────────────────────────────────────────────
 export default function LandingPage() {
-  const [stats, setStats] = useState(STATS_FLOOR);
+  const stats = useRealtimeStats();
   const [demoOpen, setDemoOpen] = useState(false);
-
-  useEffect(() => {
-    statsPromise.then(setStats);
-  }, []);
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: "var(--bm-bg)", color: "var(--bm-text)" }}>
@@ -980,7 +1015,7 @@ export default function LandingPage() {
                   className="inline-flex w-fit items-center justify-start gap-1.5 rounded-full px-3 py-1.5 text-xs"
                   style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)" }}
                 >
-                  <span className="font-semibold text-[var(--bm-text)]">{s.val.toLocaleString()}</span>
+                  <span className="font-semibold text-[var(--bm-text)]"><CountUp to={s.val} /></span>
                   <span className="text-[var(--bm-text3)]">{s.label}</span>
                 </div>
               ))}

@@ -558,7 +558,7 @@ function BlueprintGenerator({ plan, planLoading = false }: { plan: string; planL
       if (!res.ok) throw new Error(body.error ?? "Blueprint generation failed");
 
       if (firstBlueprint) markFirstBlueprintUsed();
-      const bp = body as StartupBlueprint;
+      const bp = (body.blueprint ?? body) as StartupBlueprint;
       setBlueprint(bp);
       saveBlueprint(bp);
       setHistory(loadBlueprints());

@@ -145,22 +145,35 @@ export async function GET() {
   const churnedThisMonth = 0; // requires billing event log; wire up in Month 2
 
   // ── 4. Paystack webhook log ───────────────────────────────────────────────
-  // Reads from paystack_events table (create if absent — see migration below)
-  const { data: webhookRows } = await admin
-    .from("paystack_events")
-    .select("id, event, customer_email, amount, status, received_at, reference")
-    .order("received_at", { ascending: false })
-    .limit(50);
+  // Reads from paystack_events — may not exist until migration is run.
+  // Degrades gracefully: admin dashboard still loads with empty webhook list.
+  let webhooks: Array<{
+    id: string; event: string; customer_email: string | null;
+    amount: number | null; status: "success" | "failed" | "pending";
+    received_at: string; reference: string | null;
+  }> = [];
+  try {
+    const { data: webhookRows, error: webhookErr } = await admin
+      .from("paystack_events")
+      .select("id, event, customer_email, amount, status, received_at, reference")
+      .order("received_at", { ascending: false })
+      .limit(50);
 
-  const webhooks = (webhookRows ?? []).map(r => ({
-    id: String(r.id),
-    event: r.event ?? "",
-    customer_email: r.customer_email ?? null,
-    amount: r.amount ?? null,
-    status: (["success", "failed", "pending"].includes(r.status) ? r.status : "pending") as "success" | "failed" | "pending",
-    received_at: r.received_at ?? new Date().toISOString(),
-    reference: r.reference ?? null,
-  }));
+    if (!webhookErr && webhookRows) {
+      webhooks = webhookRows.map(r => ({
+        id: String(r.id),
+        event: r.event ?? "",
+        customer_email: r.customer_email ?? null,
+        amount: r.amount ?? null,
+        status: (["success", "failed", "pending"].includes(r.status) ? r.status : "pending") as "success" | "failed" | "pending",
+        received_at: r.received_at ?? new Date().toISOString(),
+        reference: r.reference ?? null,
+      }));
+    }
+    // webhookErr usually means table not migrated yet — return empty array
+  } catch {
+    // non-fatal
+  }
 
   // ── 5. Streak histogram ───────────────────────────────────────────────────
   const streakBuckets = [
@@ -189,12 +202,14 @@ export async function GET() {
   }));
 
   // ── 7. Onboarding funnel ──────────────────────────────────────────────────
-  // onboarding-analytics.ts writes to localStorage — mirror into Supabase via
-  // POST /api/analytics/funnel-event (wire up in implementation step 4)
-  // For now, read from onboarding_events table if it exists
-  const { data: funnelRows } = await admin
-    .from("onboarding_events")
-    .select("step, count");
+  // onboarding_events table may not exist until migration is run. Degrade gracefully.
+  let funnelRows: Array<{ step: string; count: number }> | null = null;
+  try {
+    const { data, error: funnelErr } = await admin.from("onboarding_events").select("step, count");
+    if (!funnelErr) funnelRows = data;
+  } catch {
+    // table not yet created — fall through to proxy estimates
+  }
 
   const FUNNEL_STEPS = [
     { step: "landing", label: "Landing page" },
@@ -260,10 +275,19 @@ export async function GET() {
   });
 
   // ── 9. Quality summary ────────────────────────────────────────────────────
-  const { data: qualityRows } = await admin
-    .from("reflexion_log")
-    .select("passed, created_at")
-    .gte("created_at", daysAgo(30));
+  // reflexion_log / reflexion_quality_log may not exist pre-migration — degrade.
+  let qualityRows: Array<{ passed: boolean; created_at: string }> | null = null;
+  try {
+    const { data, error: qErr } = await admin
+      .from("reflexion_quality_log")
+      .select("verdict, created_at")
+      .gte("created_at", daysAgo(30));
+    if (!qErr && data) {
+      qualityRows = data.map(r => ({ passed: r.verdict === "pass", created_at: r.created_at }));
+    }
+  } catch {
+    // table not yet created — quality section returns nulls
+  }
 
   const total = qualityRows?.length ?? 0;
   const totalPass = qualityRows?.filter(r => r.passed).length ?? 0;
@@ -277,12 +301,17 @@ export async function GET() {
     : null;
 
   // ── 10. Operator gate metrics ─────────────────────────────────────────────
-  // Morning briefing open rate: track via push notification click events
-  // Proxy: % of Builder users who have last_seen within 24h of briefing send time
-  const { data: briefingRows } = await admin
-    .from("briefing_opens")
-    .select("user_id, opened_at")
-    .gte("opened_at", daysAgo(30));
+  // briefing_opens table may not exist — degrade to 0
+  let briefingRows: Array<{ user_id: string }> | null = null;
+  try {
+    const { data, error: bErr } = await admin
+      .from("briefing_opens")
+      .select("user_id, opened_at")
+      .gte("opened_at", daysAgo(30));
+    if (!bErr) briefingRows = data;
+  } catch {
+    // non-fatal
+  }
 
   const builderCount = users.filter(u => u.plan === "builder").length;
   const uniqueOpeners = new Set(briefingRows?.map(r => r.user_id) ?? []).size;

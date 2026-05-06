@@ -9,6 +9,7 @@ import { PLAN_NAMES, setStoredPlan, fetchAndSyncStoredPlanFromBillingStatus } fr
 import { PLAN_PRICE_LABEL } from "@/lib/pricing";
 import { usePlan } from "@/lib/usePlan";
 import PushNotificationToggle from "@/components/PushNotificationToggle";
+import AvatarUpload from "@/components/AvatarUpload";
 import { User, CreditCard, Bell, Bot, Shield, Check, Zap, type LucideIcon } from "lucide-react";
 
 type Tab = "profile" | "account" | "notifications" | "ai" | "billing";
@@ -91,12 +92,36 @@ function BillingTab() {
   const { plan } = usePlan();
   const isPaid = plan !== "free";
   const [loading, setLoading] = useState(true);
+  const [cancelLoading, setCancelLoading] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
   const [cancelStep, setCancelStep] = useState<CancelStep>("idle");
   const [cancelReason, setCancelReason] = useState("");
 
   useEffect(() => {
     fetchAndSyncStoredPlanFromBillingStatus().finally(() => setLoading(false));
   }, []);
+
+  async function confirmCancel() {
+    if (!cancelReason || cancelLoading) return;
+    setCancelLoading(true);
+    setCancelError(null);
+    try {
+      const res = await fetch("/api/billing/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "cancel", reason: cancelReason }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.ok) throw new Error(body.error ?? "Cancellation failed");
+      setStoredPlan("free");
+      await fetchAndSyncStoredPlanFromBillingStatus();
+      setCancelStep("final");
+    } catch (e) {
+      setCancelError(e instanceof Error ? e.message : "Cancellation failed");
+    } finally {
+      setCancelLoading(false);
+    }
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -153,17 +178,18 @@ function BillingTab() {
                 ))}
               </div>
               <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 8 }}>
-                <button onClick={() => setCancelStep("final")} disabled={!cancelReason}
-                  style={{ padding: "10px 18px", borderRadius: 10, border: "none", background: cancelReason ? "var(--bm-red)" : "var(--bm-bg4)", color: cancelReason ? "#fff" : "var(--bm-text3)", fontSize: 12, fontWeight: 700, cursor: cancelReason ? "pointer" : "not-allowed", fontFamily: "inherit" }}>
-                  Confirm cancel
+                <button onClick={confirmCancel} disabled={!cancelReason || cancelLoading}
+                  style={{ padding: "10px 18px", borderRadius: 10, border: "none", background: cancelReason ? "var(--bm-red)" : "var(--bm-bg4)", color: cancelReason ? "#fff" : "var(--bm-text3)", fontSize: 12, fontWeight: 700, cursor: cancelReason && !cancelLoading ? "pointer" : "not-allowed", fontFamily: "inherit", opacity: cancelLoading ? 0.7 : 1 }}>
+                  {cancelLoading ? "Cancelling..." : "Confirm cancel"}
                 </button>
                 <button onClick={() => setCancelStep("idle")} style={{ padding: "10px 18px", borderRadius: 10, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text2)", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Go back</button>
               </div>
+              {cancelError && <div style={{ fontSize: 11, color: "var(--bm-red)", marginTop: 10 }}>{cancelError}</div>}
             </motion.div>
           )}
           {cancelStep === "final" && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-              <div style={{ fontSize: 13, color: "var(--bm-text3)", lineHeight: 1.6 }}>Your cancellation is being processed. You'll receive an email confirmation shortly.</div>
+              <div style={{ fontSize: 13, color: "var(--bm-text3)", lineHeight: 1.6 }}>Your subscription has been cancelled. Your account is now on the free plan.</div>
             </motion.div>
           )}
         </div>
@@ -284,51 +310,7 @@ export default function SettingsPage() {
                     <div style={{ display: "flex", flexDirection: "column", gap: isMobile ? 18 : 16 }}>
                       <div>
                         <FieldLabel>Profile Photo</FieldLabel>
-                        {/* File upload */}
-                        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
-                          <div style={{ position: "relative", width: 56, height: 56, borderRadius: "50%", border: "1px solid var(--bm-border2)", overflow: "hidden", background: "var(--bm-bg3)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                            {avatarUrl
-                              ? <img src={avatarUrl} alt="Avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={() => setAvatarUrl("")} />
-                              : <span style={{ fontSize: 18, color: "var(--bm-text3)" }}>👤</span>
-                            }
-                          </div>
-                          <div style={{ flex: 1 }}>
-                            <label style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 8, border: "1px solid var(--bm-border2)", background: "var(--bm-bg3)", color: "var(--bm-text2)", fontSize: 12, fontWeight: 500, cursor: avatarUploading ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: avatarUploading ? 0.6 : 1 }}>
-                              {avatarUploading ? "Uploading…" : "Upload photo"}
-                              <input
-                                type="file"
-                                accept="image/*"
-                                style={{ display: "none" }}
-                                disabled={avatarUploading}
-                                onChange={async (e) => {
-                                  const file = e.target.files?.[0];
-                                  if (!file) return;
-                                  if (file.size > 2 * 1024 * 1024) { setAvatarUploadError("Image must be under 2MB"); return; }
-                                  setAvatarUploading(true);
-                                  setAvatarUploadError(null);
-                                  try {
-                                    const supabase = createClient();
-                                    const { data: { user } } = await supabase.auth.getUser();
-                                    if (!user) throw new Error("Not authenticated");
-                                    const ext = file.name.split(".").pop() ?? "jpg";
-                                    const path = `avatars/${user.id}.${ext}`;
-                                    const { error: upErr } = await supabase.storage.from("public").upload(path, file, { upsert: true });
-                                    if (upErr) throw upErr;
-                                    const { data: urlData } = supabase.storage.from("public").getPublicUrl(path);
-                                    // Bust cache with timestamp
-                                    setAvatarUrl(`${urlData.publicUrl}?t=${Date.now()}`);
-                                  } catch (err) {
-                                    setAvatarUploadError(err instanceof Error ? err.message : "Upload failed");
-                                  } finally {
-                                    setAvatarUploading(false);
-                                  }
-                                }}
-                              />
-                            </label>
-                            <div style={{ fontSize: 10, color: "var(--bm-text4)", marginTop: 5 }}>JPG, PNG, GIF · Max 2 MB</div>
-                            {avatarUploadError && <div style={{ fontSize: 11, color: "var(--bm-red)", marginTop: 4 }}>{avatarUploadError}</div>}
-                          </div>
-                        </div>
+                        <AvatarUpload currentUrl={avatarUrl} onUpload={setAvatarUrl} />
                         {/* Or paste URL */}
                         <div style={{ fontSize: 10, color: "var(--bm-text4)", marginBottom: 6 }}>or paste an image URL</div>
                         <SettingsInput value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} placeholder="https://..." />

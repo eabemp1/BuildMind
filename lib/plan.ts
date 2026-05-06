@@ -275,6 +275,8 @@ export function getActionsThisWeek(): number {
 }
 export function recordWeeklyAction(): void {
   if (typeof window === "undefined") return;
+  const plan = getPlan();
+  if (PLAN_LIMITS[plan].actionsPerWeek === -1) return;
   localStorage.setItem(`bm_actions_${weekKey()}`, String(getActionsThisWeek() + 1));
 }
 export function hasHitWeeklyLimit(): boolean {
@@ -295,19 +297,21 @@ function weekKey(): string {
 
 // ── Daily AI tracking ─────────────────────────────────────────────────────────
 
-export function getAIMessagesToday(): number {
+export function getAIMessagesToday(userId?: string | null): number {
   if (typeof window === "undefined") return 0;
-  return Number(localStorage.getItem(`bm_ai_${dayKey()}`) ?? "0");
+  const key = userId ? `bm_ai_${userId}_${dayKey()}` : `bm_ai_${dayKey()}`;
+  return Number(localStorage.getItem(key) ?? "0");
 }
-export function recordAIMessage(): void {
+export function recordAIMessage(userId?: string | null): void {
   if (typeof window === "undefined") return;
-  localStorage.setItem(`bm_ai_${dayKey()}`, String(getAIMessagesToday() + 1));
+  const key = userId ? `bm_ai_${userId}_${dayKey()}` : `bm_ai_${dayKey()}`;
+  localStorage.setItem(key, String(getAIMessagesToday(userId) + 1));
 }
-export function hasHitDailyAILimit(): boolean {
+export function hasHitDailyAILimit(userId?: string | null): boolean {
   const plan = getPlan();
   const limit = PLAN_LIMITS[plan].aiMessagesPerDay;
   if (limit === -1) return false; // Builder/paid — never block
-  if (getAIMessagesToday() >= limit) {
+  if (getAIMessagesToday(userId) >= limit) {
     void fetchAndSyncStoredPlanFromBillingStatus();
     return true;
   }
@@ -347,16 +351,10 @@ export async function syncStreakFromServer(): Promise<number> {
     if (!res.ok) return getStoredStreak();
     const { streak, lastCheckinDate } = await res.json();
     if (typeof streak === "number") {
-      // Only update localStorage if server has a higher or equal streak.
-      // This avoids clobbering a streak that was just incremented locally
-      // but hasn't synced yet.
-      const local = getStoredStreak();
-      if (streak >= local) {
-        localStorage.setItem(STREAK_KEY, String(streak));
-        if (lastCheckinDate) localStorage.setItem(LAST_CHECKIN_KEY, lastCheckinDate);
-        window.dispatchEvent(new CustomEvent("bm_streak_updated", { detail: { streak } }));
-      }
-      return Math.max(streak, local);
+      localStorage.setItem(STREAK_KEY, String(streak));
+      if (lastCheckinDate) localStorage.setItem(LAST_CHECKIN_KEY, lastCheckinDate);
+      window.dispatchEvent(new CustomEvent("bm_streak_updated", { detail: { streak } }));
+      return streak;
     }
   } catch { /* non-fatal */ }
   return getStoredStreak();

@@ -49,10 +49,11 @@ export async function GET() {
       { founders: Math.max(profiles, users, authUsers, projectOwners), projects, milestones },
       { headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=60" } },
     );
-  } catch {
+  } catch (err) {
+    console.error("[public/stats] error:", err);
     return NextResponse.json(
-      { founders: 0, projects: 0, milestones: 0 },
-      { headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=60" } },
+      { founders: 1, projects: 1, milestones: 1 },
+      { headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300" } },
     );
   }
 }

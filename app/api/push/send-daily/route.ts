@@ -324,6 +324,16 @@ export async function POST(req: NextRequest) {
 
   console.log(`[Daily Push] Sent: ${sent}, Personalised: ${personalisedCount}, Recovery Mode: ${recoveryCount}, Failed: ${failed}`);
 
+  // ── Log cron run for health check endpoint ────────────────────────────────
+  // push_cron_log may not exist yet — log is best-effort, never blocks response
+  void supabase.from("push_cron_log").insert({
+    ran_at: new Date().toISOString(),
+    status: failed === 0 ? "success" : sent > 0 ? "partial" : "failed",
+    sent_count: sent,
+    failed_count: failed,
+    total_subscribers: subs.length,
+  });
+
   return NextResponse.json({
     sent,
     failed,

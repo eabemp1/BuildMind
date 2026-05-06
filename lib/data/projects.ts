@@ -16,7 +16,7 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { trackEvent } from "@/lib/analytics";
-import { inferStageFromMilestones } from "@/lib/stages";
+import { inferStageFromMilestones, normalizeStage, STAGE_ORDER } from "@/lib/stages";
 import { computeStartupScore } from "@/lib/scoring";
 import type {
   BuildMindProject,
@@ -209,14 +209,14 @@ export async function getProjectSummaries(): Promise<ProjectSummary[]> {
   }
 
   const milestoneIds = allMilestones.map((m) => m.id);
-  let allTasks: Array<{ id: string; title: string; milestone_id: string; is_completed: boolean; created_at: string }> = [];
+  let allTasks: Array<{ id: string; milestone_id: string; title: string; is_completed: boolean; created_at: string }> = [];
   
   if (milestoneIds.length > 0) {
     for (let i = 0; i < milestoneIds.length; i += BATCH_SIZE) {
       const batchIds = milestoneIds.slice(i, i + BATCH_SIZE);
       const tasksQuery = supabase
         .from("tasks")
-        .select("id, title, milestone_id, is_completed, created_at");
+        .select("id, milestone_id, title, is_completed, created_at");
       const { data: tasks } = await (batchIds.length === 1
         ? tasksQuery.eq("milestone_id", batchIds[0])
         : tasksQuery.in("milestone_id", batchIds));
@@ -283,7 +283,12 @@ export async function getProjectSummaries(): Promise<ProjectSummary[]> {
       milestoneIdToTitle,
     );
 
-    const displayStage = computedStage || project.startup_stage || "Idea";
+    const storedStage = normalizeStage(project.startup_stage ?? "Idea");
+    const computedIndex = STAGE_ORDER.indexOf(computedStage);
+    const storedIndex = STAGE_ORDER.indexOf(storedStage);
+    const displayStage = Math.abs(computedIndex - storedIndex) <= 1
+      ? computedStage || storedStage
+      : storedStage;
     const validationStrengths = normalizeTextArray(project.validation_strengths);
 
     // Pending milestones and tasks — used by Today page for AI personalization
@@ -510,7 +515,7 @@ export async function createProjectWithRoadmap(params: {
   await ensureUserProfile(user);
   const supabase = createClient();
 
-  const projectPayloads: Array<Record<string, unknown>> = [
+  const projectPayloads = [
     {
       user_id: user.id,
       title: params.project_name,
@@ -548,7 +553,8 @@ export async function createProjectWithRoadmap(params: {
   for (const payload of projectPayloads) {
     const result = await supabase
       .from("projects")
-      .insert(payload)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .insert(payload as any)
       .select("*")
       .single();
 

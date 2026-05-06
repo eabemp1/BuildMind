@@ -51,5 +51,21 @@ export async function POST(request: Request) {
     },
   });
 
+  if (process.env.RESEND_API_KEY && user.email) {
+    await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+      },
+      body: JSON.stringify({
+        from: "BuildMind <noreply@buildmind.live>",
+        to: user.email,
+        subject: "Your BuildMind subscription has been cancelled",
+        html: `<p>Hi,</p><p>Your Builder plan has been cancelled. You still have access to all your project data.</p><p>We're sorry to see you go. If you'd like to share why, reply to this email.</p><p>The BuildMind team</p>`,
+      }),
+    }).catch(() => {});
+  }
+
   return NextResponse.json({ ok: true, mode });
 }

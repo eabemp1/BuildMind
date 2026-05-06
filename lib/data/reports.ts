@@ -241,13 +241,23 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
     else if (i > 0) break;
   }
 
+  const { data: founderContext } = await supabase
+    .from("founder_context")
+    .select("streak")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  const serverStreak = Number(
+    (founderContext as { streak?: number } | null)?.streak
+      ?? streak,
+  );
+
   const { data: notifications } = await supabase
     .from("notifications").select("message").eq("user_id", user.id)
     .order("created_at", { ascending: false }).limit(5);
 
   return {
     activeProjects: projectIds.length, completedTasks, milestonesCompleted: completedMilestones,
-    aiUsage: 0, recentActivity: (notifications ?? []).map((n) => n.message), founderStreakDays: streak,
+    aiUsage: 0, recentActivity: (notifications ?? []).map((n) => n.message), founderStreakDays: serverStreak,
   };
 }
 

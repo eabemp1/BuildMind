@@ -189,9 +189,15 @@ export interface CofounderHandoff {
 export interface StartupBlueprint {
   id: string;
   createdAt: string;
-  inputType: IdeaInputType;
+  inputType?: IdeaInputType;
+  title?: string;
+  oneLiner?: string;
+  stage?: string;
+  industry?: string;
+  plan?: string;
+  layers?: Record<string, { title: string; content: string; locked: boolean }>;
   // Always returned (free + builder)
-  productInterpretation: ProductInterpretation;
+  productInterpretation?: ProductInterpretation;
   // Builder only
   systemDesign?: SystemDesign;
   mvpConstruction?: MVPConstruction;
@@ -297,7 +303,8 @@ export async function generateBlueprint(
 
   onProgress?.("Assembling blueprint...");
 
-  const blueprint: StartupBlueprint = await res.json();
+  const responsePayload = await res.json();
+  const blueprint: StartupBlueprint = responsePayload?.blueprint ?? responsePayload;
 
   // Auto-generate CoFounder handoff validation action if builder plan
   if (isBuilder && blueprint.productInterpretation) {
@@ -340,8 +347,11 @@ export function scoreBlueprintFeasibility(blueprint: StartupBlueprint): {
   let total = 0;
 
   // Problem clarity (20 pts)
-  const problemScore = blueprint.productInterpretation.problemStatement.length > 50 ? 20 : 10;
-  breakdown.push({ dimension: "Problem Clarity", score: problemScore, note: blueprint.productInterpretation.problemStatement.slice(0, 80) + "..." });
+  const problemText = blueprint.productInterpretation?.problemStatement
+    ?? blueprint.layers?.problem?.content
+    ?? "";
+  const problemScore = problemText.length > 50 ? 20 : 10;
+  breakdown.push({ dimension: "Problem Clarity", score: problemScore, note: problemText.slice(0, 80) + "..." });
   total += problemScore;
 
   // MVP scope (20 pts)

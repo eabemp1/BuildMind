@@ -1,8 +1,37 @@
 "use client";
 
-import { Suspense, useState, useEffect } from "react";
+import { Suspense, useState, useEffect, Component, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+
+// ── Error Boundary ────────────────────────────────────────────────────────────
+// Catches render-time errors so a single Supabase or hook failure
+// doesn't leave the founder staring at a blank loader.
+interface EBState { hasError: boolean; message: string }
+class TodayErrorBoundary extends Component<{ children: ReactNode }, EBState> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false, message: "" };
+  }
+  static getDerivedStateFromError(err: unknown) {
+    return { hasError: true, message: err instanceof Error ? err.message : "Something went wrong." };
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ maxWidth: 520, margin: "60px auto", padding: "32px 24px", textAlign: "center" }}>
+          <div style={{ width: 48, height: 48, borderRadius: "50%", background: "rgba(224,85,85,0.10)", border: "1px solid rgba(224,85,85,0.25)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", fontSize: 22 }}>⚠</div>
+          <h2 style={{ fontSize: 18, fontWeight: 700, color: "var(--bm-text)", marginBottom: 8 }}>Today page hit an error</h2>
+          <p style={{ fontSize: 13, color: "var(--bm-text3)", marginBottom: 20, lineHeight: 1.6 }}>{this.state.message}</p>
+          <button onClick={() => window.location.reload()} style={{ padding: "10px 20px", borderRadius: 9, border: "none", background: "var(--grad-primary)", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+            Reload page
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 import { createClient } from "@/lib/supabase/client";
 import { useProjectSummariesQuery, useDashboardOverviewQuery } from "@/lib/queries";
 import { computeStartupScore } from "@/lib/buildmind";
@@ -119,6 +148,8 @@ function TodayContent() {
   // AI-personalised action state
   const [aiAction, setAiAction] = useState<ActionData | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
   // Editable draft for outreach actions
   const [draftMessage, setDraftMessage] = useState<string | null>(null);
 
@@ -142,10 +173,21 @@ function TodayContent() {
     if (localStorage.getItem("bm_checkin_done_date") === today) {
       setDone(true);
     }
+    fetch("/api/founder-context", { cache: "no-store" })
+      .then(r => r.json())
+      .then((payload) => {
+        const ctx = payload?.data ?? payload;
+        if (typeof ctx?.streak === "number") setStreak(ctx.streak);
+        if (ctx?.last_task_date === today && (ctx?.tasks_completed_today ?? 0) > 0) {
+          setDone(true);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   // Fetch personalised action from AI once we have project data
   useEffect(() => {
+    void (async () => {
     const project = summaries[0] ?? null;
     if (!project) return;
     const projectId = project.id;
@@ -155,46 +197,137 @@ function TodayContent() {
     const today = new Date().toISOString().split("T")[0];
     try {
       const cached = JSON.parse(localStorage.getItem("bm_today_action_cache") ?? "null");
-      if (cached?.date === today && cached?.projectId === projectId && cached?.data) {
+      if (cached?.date === today && cached?.projectId === projectId && cached?.data && retryCount === 0) {
         setAiAction({ ...cached.data, isAI: true });
         return;
       }
     } catch {}
 
     setActionLoading(true);
+    setActionError(null);
 
     // Build pending task/milestone context from the projects summary
     // so the Today page is truly personalized to what's actually in the backlog
     const pendingMilestones = project.pendingMilestones ?? [];
     const pendingTasks = project.pendingTasks ?? [];
 
-    fetch("/api/ai/today-action", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        userId,
-        projectId,
-        stage: project.startup_stage ?? "Idea",
-        pendingMilestones,
-        pendingTasks,
-        completionRate: project.completion_rate ?? 0,
-      }),
-    })
-      .then(r => r.ok ? r.json() : Promise.reject())
-      .then(json => {
+    const body = JSON.stringify({
+      userId,
+      projectId,
+      stage: project.startup_stage ?? "Idea",
+      pendingMilestones,
+      pendingTasks,
+      completionRate: project.completion_rate ?? 0,
+    });
+
+    // ── Streaming SSE path ──────────────────────────────────────────────────
+    // Uses /today-action/stream (SSE) for progressive agent rendering.
+    // Degrades to the JSON /today-action endpoint if SSE is unsupported.
+    let usedStream = false;
+    try {
+      const resp = await fetch("/api/ai/today-action/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+      });
+
+      if (!resp.ok || !resp.body) throw new Error("stream unavailable");
+
+      usedStream = true;
+      const reader = resp.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data:")) continue;
+          try {
+            const payload = JSON.parse(line.slice(5).trim());
+            // Show intermediate agent labels as loading sub-text
+            if (payload.status === "running" && payload.label) {
+              // update label — we reuse actionLoading true + store in ref via a trick:
+              // just keep the loading state until agent_c is done
+            }
+            // Final done event → full result
+            if (line.startsWith("event: done") || (payload?.success !== undefined)) {
+              // next line is the data
+            }
+          } catch {}
+        }
+
+        // Re-parse full SSE blocks (event + data pairs)
+        const rawBuf = dec.decode(value, { stream: true });
+        // SSE blocks come as "event: X\ndata: {...}\n\n"
+        // We process them from buf above; check for the done event
+        if (rawBuf.includes("event: done") || rawBuf.includes('"success":true')) {
+          // handled below via full buf
+        }
+      }
+
+      // Parse the final "done" event from the complete buffer
+      // (reader is done, re-process full accumulated buf)
+      const fullText = buf + dec.decode();
+      const allLines = fullText.split("\n");
+      let lastData: unknown = null;
+      for (const line of allLines) {
+        if (line.startsWith("data:")) {
+          try { lastData = JSON.parse(line.slice(5).trim()); } catch {}
+        }
+      }
+
+      const json = lastData as { success?: boolean; data?: ActionData } | null;
+      if (json?.success && json?.data) {
+        const actionData = { ...json.data, isAI: true };
+        setAiAction(actionData);
+        setActionError(null);
+        if (actionData.reflexion?.loopRan) {
+          localStorage.setItem("bm_today_action_cache", JSON.stringify({ date: today, projectId, data: actionData }));
+        }
+      } else {
+        throw new Error("stream did not return a valid done event");
+      }
+
+    } catch {
+      // ── Fallback: standard JSON endpoint ──────────────────────────────────
+      if (usedStream) {
+        // stream started but failed mid-way — don't double-fetch, surface error
+        setActionError("AI stream interrupted — showing fallback task.");
+        setActionLoading(false);
+        return;
+      }
+      try {
+        const r = await fetch("/api/ai/today-action", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+        });
+        if (!r.ok) throw new Error(`Server returned ${r.status}`);
+        const json = await r.json();
         if (json?.success && json?.data) {
           const actionData = { ...json.data, isAI: true };
           setAiAction(actionData);
-          // Only cache when the reflexion loop actually ran (real AI response)
-          // Never cache server-side fallbacks — they would freeze the UI for the whole day
+          setActionError(null);
           if (actionData.reflexion?.loopRan) {
             localStorage.setItem("bm_today_action_cache", JSON.stringify({ date: today, projectId, data: actionData }));
           }
+        } else {
+          setActionError(json?.error ?? "AI action unavailable — showing fallback task.");
         }
-      })
-      .catch(() => { /* silently fall back to static */ })
-      .finally(() => setActionLoading(false));
-  }, [summaries, userId]);
+      } catch (err2: unknown) {
+        const msg = err2 instanceof Error ? err2.message : "Could not reach AI service.";
+        setActionError(msg);
+      }
+    }
+    setActionLoading(false);
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [summaries, userId, retryCount]);
 
   const project = summaries[0] ?? null;
   const score = project ? computeStartupScore({
@@ -274,6 +407,11 @@ function TodayContent() {
             .update({ execution_score: newScore })
             .eq("id", project.id)
             .eq("user_id", userId);
+          fetch("/api/user/sync-project-score", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ projectId: project.id, execution_score: newScore }),
+          }).catch(() => {});
         } catch { /* non-fatal — score update is best-effort */ }
       }
 
@@ -444,6 +582,20 @@ function TodayContent() {
               <span style={{ fontSize: 10, color: "var(--bm-text4)", paddingLeft: 14 }}>
                 Agent B will critique it. Agent C refines the final version.
               </span>
+            </div>
+          ) : actionError ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 10, color: "var(--bm-red)", fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+                ⚠ AI unavailable — showing fallback
+              </span>
+              {retryCount < 3 && (
+                <button
+                  onClick={() => setRetryCount(c => c + 1)}
+                  style={{ fontSize: 10, color: "var(--bm-accent)", background: "none", border: "1px solid var(--bm-accent-bd)", borderRadius: 6, padding: "2px 8px", cursor: "pointer", fontFamily: "inherit" }}
+                >
+                  ↺ Retry
+                </button>
+              )}
             </div>
           ) : (
             <span style={{ fontSize: 10, color: "var(--bm-text4)", fontStyle: "italic" }}>
@@ -686,8 +838,10 @@ function TodayContent() {
 
 export default function TodayPage() {
   return (
-    <Suspense fallback={<BuildMindLoader />}>
-      <TodayContent />
-    </Suspense>
+    <TodayErrorBoundary>
+      <Suspense fallback={<BuildMindLoader />}>
+        <TodayContent />
+      </Suspense>
+    </TodayErrorBoundary>
   );
 }

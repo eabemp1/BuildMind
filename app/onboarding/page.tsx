@@ -140,15 +140,34 @@ function OnboardingContent() {
 
   function fireReflexionStrike(ideaText: string) {
     setStrikeLoading(true);
-    fetch("/api/ai/reflexion-strike", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ startupDescription: ideaText, stage: startupStage, domain }),
-    })
-      .then(r => r.ok ? r.json() : Promise.reject())
-      .then(json => { if (json?.data) setStrikeResult(json.data); })
-      .catch(() => {})
-      .finally(() => setStrikeLoading(false));
+    // Retry once after 1.5s to handle auth session not yet committed
+    const attempt = (retries: number) => {
+      fetch("/api/ai/reflexion-strike", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ startupDescription: ideaText, stage: startupStage, domain }),
+      })
+        .then(r => {
+          if (r.status === 401 && retries > 0) {
+            // Session not committed yet — retry after brief delay
+            return new Promise<void>(res => setTimeout(res, 1500))
+              .then(() => attempt(retries - 1));
+          }
+          return r.ok ? r.json() : Promise.reject(new Error(`${r.status}`));
+        })
+        .then(json => {
+          if (json?.data) setStrikeResult(json.data);
+        })
+        .catch(() => {
+          // Show a meaningful fallback so the panel isn't blank
+          setStrikeResult({
+            marketGap: "This space has generic tools. The gap is deep specificity for your exact user type.",
+            firstTask: "Find one person with this problem — message them in the next 30 minutes.",
+          });
+        })
+        .finally(() => setStrikeLoading(false));
+    };
+    attempt(1);
   }
 
   async function handleFinish() {
@@ -280,6 +299,24 @@ function OnboardingContent() {
                 <StepLabel>Step 3 of 5 — Problem</StepLabel>
                 <StepTitle>What problem does it solve?</StepTitle>
                 <StepSub>What's painful or broken today? Focus on the problem, not your solution.</StepSub>
+                {/* Keep strike result visible — it motivates specific problem articulation */}
+                {strikeResult && (
+                  <div style={{
+                    background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)",
+                    borderRadius: 12, padding: "12px 16px", marginBottom: 18,
+                    display: "flex", alignItems: "flex-start", gap: 10,
+                  }}>
+                    <span style={{ fontSize: 16, flexShrink: 0 }}>⚡</span>
+                    <div>
+                      <p style={{ fontSize: 12, color: "var(--bm-text2)", margin: "0 0 6px", lineHeight: 1.55 }}>
+                        <strong style={{ color: "var(--bm-text)" }}>Market gap:</strong> {strikeResult.marketGap}
+                      </p>
+                      <p style={{ fontSize: 12, color: "var(--bm-accent)", margin: 0, fontWeight: 600 }}>
+                        First task: {strikeResult.firstTask}
+                      </p>
+                    </div>
+                  </div>
+                )}
                 <BigTextarea value={problem} onChange={(e) => setProblem(e.target.value)} placeholder="E.g. Founders have no structured way to measure their own execution. They plan a lot but ship slowly and don't know why..." rows={3} />
                 <NextButton onClick={() => { trackFunnelStep("onboarding_stage"); setStep(4); }} disabled={problem.trim().length < 15}>Continue</NextButton>
               </div>

@@ -10,6 +10,7 @@ import { useLimitModal } from "@/components/LimitModal";
 import { updateAchievementStats, checkAndUnlockAchievements, getAchievementStats } from "@/lib/achievements";
 import { trackEvent } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase/client";
+import AIUsageBadge from "@/components/AIUsageBadge";
 import { Send, Bot, Brain, Sparkles, Zap, User, Clock, ChevronRight } from "lucide-react";
 
 type ChatMessage = {
@@ -332,6 +333,7 @@ export default function AICoachPage() {
           </div>
 
           <div style={{ padding: isMobile ? "12px" : "14px 16px", borderTop: "1px solid var(--bm-border)", flexShrink: 0 }}>
+            {plan === "free" && <div style={{ marginBottom: 10 }}><AIUsageBadge /></div>}
             <div style={{ display: "flex", gap: 10, alignItems: "flex-end", background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: 14, padding: isMobile ? "12px 12px" : "10px 14px", transition: "border-color 0.15s" }}
               onFocusCapture={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--bm-accent-bd)"; }}
               onBlurCapture={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--bm-border2)"; }}>

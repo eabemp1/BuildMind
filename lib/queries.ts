@@ -43,7 +43,12 @@ export function useProjectDetailQuery(projectId: string) {
 }
 
 export function useProjectSummariesQuery() {
-  return useQuery({ queryKey: queryKeys.projectSummaries, queryFn: getProjectSummaries });
+  return useQuery({
+    queryKey: queryKeys.projectSummaries,
+    queryFn: getProjectSummaries,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+  });
 }
 
 export function useDashboardOverviewQuery() {
@@ -150,6 +155,18 @@ export function useUpdateTaskMutation(projectId: string) {
         if (ctx) {
           const newScore = momentumOnTaskComplete(ctx.momentum_score);
           void updateFounderContext({ momentum_score: newScore });
+          const projectData = qc.getQueryData<{ project?: { id?: string } }>(
+            queryKeys.project(projectId),
+          );
+          const dbProjectId = projectData?.project?.id ?? projectId;
+          if (dbProjectId) {
+            const { createClient } = await import("@/lib/supabase/client");
+            const supabase = createClient();
+            await supabase
+              .from("projects")
+              .update({ momentum_score: newScore })
+              .eq("id", dbProjectId);
+          }
         }
         void fetch("/api/founder-context/task-complete", {
           method: "POST",

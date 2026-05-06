@@ -1,7 +1,7 @@
 /**
  * BuildMindLogo
  * SVG recreation of the BuildMind logo with transparent background.
- * Gradient: purple (#cc44ff) → blue (#44aaff)
+ * Gradient: celadon (#5CC88A) → teal (#4AB8B0) → mint (#A7F3D0)
  * Includes: brain, rocket, swoosh, bar chart, wordmark
  */
 
@@ -31,17 +31,17 @@ export function BuildMindLogo({
       >
         <defs>
           <linearGradient id="bm-purple-blue" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
-            <stop offset="0%" stopColor="#cc44ff" />
-            <stop offset="55%" stopColor="#7755ff" />
-            <stop offset="100%" stopColor="#44aaff" />
+            <stop offset="0%" stopColor="#5CC88A" />
+            <stop offset="55%" stopColor="#4AB8B0" />
+            <stop offset="100%" stopColor="#A7F3D0" />
           </linearGradient>
           <linearGradient id="bm-bar-grad" x1="0" y1="30" x2="40" y2="30" gradientUnits="userSpaceOnUse">
-            <stop offset="0%" stopColor="#9966ff" />
-            <stop offset="100%" stopColor="#44aaff" />
+            <stop offset="0%" stopColor="#5CC88A" />
+            <stop offset="100%" stopColor="#A7F3D0" />
           </linearGradient>
           <linearGradient id="bm-swoosh" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
-            <stop offset="0%" stopColor="#aa55ee" stopOpacity="0.9" />
-            <stop offset="100%" stopColor="#6688ff" stopOpacity="0.4" />
+            <stop offset="0%" stopColor="#5CC88A" stopOpacity="0.9" />
+            <stop offset="100%" stopColor="#A7F3D0" stopOpacity="0.4" />
           </linearGradient>
         </defs>
 
@@ -60,8 +60,8 @@ export function BuildMindLogo({
         {/* Brain center divider */}
         <rect x="19" y="9" width="2" height="23" rx="1" fill="url(#bm-purple-blue)" opacity="0.45" />
         {/* Brain detail lines */}
-        <path d="M13 10C14 13 13 17 11 19" stroke="#ee88ff" strokeWidth="0.8" fill="none" opacity="0.5" strokeLinecap="round" />
-        <path d="M11 23C12 25 11 27 11 27" stroke="#ee88ff" strokeWidth="0.7" fill="none" opacity="0.4" strokeLinecap="round" />
+        <path d="M13 10C14 13 13 17 11 19" stroke="#5CC88A" strokeWidth="0.8" fill="none" opacity="0.5" strokeLinecap="round" />
+        <path d="M11 23C12 25 11 27 11 27" stroke="#5CC88A" strokeWidth="0.7" fill="none" opacity="0.4" strokeLinecap="round" />
 
         {/* Swoosh arc */}
         <path
@@ -93,7 +93,7 @@ export function BuildMindLogo({
           <path d="M-2.2,3 L-4.2,6.5 L-1.2,5Z" fill="url(#bm-purple-blue)" opacity="0.75" />
           <path d="M2.2,3 L4.2,6.5 L1.2,5Z" fill="url(#bm-purple-blue)" opacity="0.75" />
           <circle cx="0" cy="-0.5" r="1.2" fill="#0d0d1a" opacity="0.5" />
-          <path d="M-1,5 Q0,8.5 1,5 Q0.5,6.5 0,6 Q-0.5,6.5 -1,5Z" fill="#ffaa44" opacity="0.85" />
+          <path d="M-1,5 Q0,8.5 1,5 Q0.5,6.5 0,6 Q-0.5,6.5 -1,5Z" fill="#5CC88A" opacity="0.85" />
         </g>
       </svg>
 
@@ -103,7 +103,7 @@ export function BuildMindLogo({
             style={{
               fontSize: size * 0.45,
               fontWeight: 900,
-              background: "linear-gradient(135deg, #cc44ff, #7755ff, #44aaff)",
+              background: "linear-gradient(135deg, #5CC88A, #4AB8B0, #A7F3D0)",
               WebkitBackgroundClip: "text",
               WebkitTextFillColor: "transparent",
               backgroundClip: "text",

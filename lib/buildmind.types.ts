@@ -41,12 +41,13 @@ export type ProjectSummary = {
   tasksCompleted: number;
   tasksTotal: number;
   progress: number;
-  completion_rate?: number;
   lastActivity: string;
   problem?: string | null;
   target_users?: string | null;
+  // Populated by getProjectSummaries — used by Today page & AI routes
   pendingMilestones?: string[];
   pendingTasks?: string[];
+  completion_rate?: number;
 };
 
 export type BuildMindMilestone = {

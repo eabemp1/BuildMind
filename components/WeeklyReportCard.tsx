@@ -141,6 +141,31 @@ Building with @buildmind_io — it forces you to be honest with yourself every w
 #buildinpublic #solofounder #startuplife #founder`;
 }
 
+function downloadCSV(report: ReportData, projectTitle: string, weekNumber: number) {
+  const rows = [
+    ["BuildMind Weekly Report"],
+    [`Project: ${projectTitle}`, `Week ${weekNumber}`],
+    [""],
+    ["Section", "Content"],
+    ["Summary", report.summary],
+    ["Intention vs Action", report.intention_vs_action],
+    ["Biggest Gap", report.biggest_gap],
+    ["Next Week Focus", report.next_week_focus],
+    ["Honest Assessment", report.honest_assessment],
+    ["Momentum Score", String(report.momentum_score)],
+  ];
+  const csv = rows
+    .map((r) => r.map((c) => `"${String(c ?? "").replace(/"/g, '""')}"`).join(","))
+    .join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `buildmind-week-${weekNumber}-${projectTitle.toLowerCase().replace(/\s+/g, "-")}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function WeeklyReportCard({
   report, projectTitle, stage, tasksCompleted, tasksTotal, streak, weekNumber,
 }: Props) {
@@ -161,8 +186,26 @@ export default function WeeklyReportCard({
 
   return (
     <div>
+      <style>{`
+        @media print {
+          body * { visibility: hidden !important; }
+          #bm-weekly-report, #bm-weekly-report * { visibility: visible !important; }
+          #bm-weekly-report {
+            position: fixed !important;
+            inset: 0 !important;
+            width: 100vw !important;
+            min-height: 100vh !important;
+            padding: 40px !important;
+            background: #0d0d1a !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+          .no-print { display: none !important; }
+        }
+      `}</style>
       {/* The card itself */}
       <motion.div
+        id="bm-weekly-report"
         ref={cardRef}
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
@@ -289,7 +332,7 @@ export default function WeeklyReportCard({
       </motion.div>
 
       {/* Share buttons — outside the card */}
-      <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+      <div className="no-print" style={{ display: "flex", gap: 8, marginTop: 14 }}>
         <button
           onClick={handleShareLinkedIn}
           style={{
@@ -324,7 +367,19 @@ export default function WeeklyReportCard({
             cursor: "pointer", fontFamily: "inherit",
           }}
         >
-          Save
+          Save as PDF
+        </button>
+        <button
+          onClick={() => downloadCSV(report, projectTitle, weekNumber)}
+          style={{
+            padding: "10px 16px", borderRadius: 8,
+            background: "transparent",
+            border: "1px solid var(--bm-border)",
+            color: "var(--bm-text2)", fontSize: 12,
+            cursor: "pointer", fontFamily: "inherit",
+          }}
+        >
+          Export CSV
         </button>
       </div>
     </div>

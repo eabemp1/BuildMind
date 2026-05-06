@@ -254,7 +254,7 @@ function CreateModal({
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function ProjectsPage() {
   const router = useRouter();
-  const { plan } = usePlan();
+  const { plan, isLoading: planLoading } = usePlan();
   const { showLimitModal } = useLimitModal();
   const { data: summaries = [], isLoading } = useProjectSummariesQuery();
   const createMut = useCreateProjectMutation();
@@ -265,8 +265,10 @@ export default function ProjectsPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
   const limits = getLimits(plan);
-  const hasUnlimitedProjects = limits.maxProjects === -1 || limits.maxProjects === Infinity;
-  const canCreateProject = hasUnlimitedProjects || summaries.length < limits.maxProjects;
+  const hasUnlimitedProjects = planLoading || limits.maxProjects === -1 || limits.maxProjects === Infinity;
+  const canCreateProject = planLoading
+    ? false
+    : (hasUnlimitedProjects || summaries.length < limits.maxProjects);
 
   useEffect(() => {
     const id = getActiveProjectId();

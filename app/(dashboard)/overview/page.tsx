@@ -236,7 +236,7 @@ export default function OverviewPage() {
     return () => clearInterval(t);
   }, []);
 
-  const streak = Math.max(overview?.founderStreakDays ?? 0, localStreak);
+  const streak = overview?.founderStreakDays ?? localStreak;
 
   const activeProject = useMemo(() => {
     if (!summaries.length) return null;

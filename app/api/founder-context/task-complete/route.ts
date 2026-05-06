@@ -17,7 +17,7 @@ export async function POST(req: Request) {
 
   const { data: ctx } = await admin
     .from("founder_context")
-    .select("momentum_score, tasks_accepted_this_week, current_stage, consecutive_tasks_completed, last_active")
+    .select("momentum_score, tasks_accepted_this_week, current_stage, consecutive_tasks_completed, last_active, tasks_completed_today, last_task_date")
     .eq("user_id", user.id)
     .maybeSingle();
 
@@ -34,6 +34,7 @@ export async function POST(req: Request) {
   // Consecutive task tracking — powers the Emotional Language Layer in reflexion.ts
   // If they're returning after a gap, reset to 1 (a restart, not a continuation)
   const today = new Date().toLocaleDateString("en-CA");
+  const previousTodayCount = ctx?.last_task_date === today ? (ctx?.tasks_completed_today ?? 0) : 0;
   const isReturningAfterGap = (ctx?.last_active ?? "") < today;
   const prevConsecutive = ctx?.consecutive_tasks_completed ?? 0;
   const newConsecutive = isReturningAfterGap ? 1 : prevConsecutive + 1;
@@ -46,6 +47,9 @@ export async function POST(req: Request) {
     days_inactive: 0,
     tasks_accepted_this_week: previousTaskCount + 1,
     consecutive_tasks_completed: newConsecutive,
+    tasks_completed_today: previousTodayCount + 1,
+    last_task_date: today,
+    daily_tasks_reset_at: new Date().toISOString(),
     ...(stage ? { current_stage: stage } : {}),
   }, { onConflict: "user_id" });
 

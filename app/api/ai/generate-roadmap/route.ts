@@ -28,7 +28,7 @@ async function insertMilestone(
   supabase: ReturnType<typeof createAdminClient>,
   payload: Record<string, unknown>,
 ) {
-  const payloads: Array<Record<string, unknown>> = [
+  const payloads = [
     // Attempt 1 — safest: only columns guaranteed in base schema
     {
       project_id: payload.project_id,
@@ -52,7 +52,8 @@ async function insertMilestone(
   ];
 
   for (const row of payloads) {
-    const result = await supabase.from("milestones").insert(row).select("id").single();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await supabase.from("milestones").insert(row as any).select("id").single();
     if (!result.error && result.data?.id) return result.data;
     const message = result.error?.message?.toLowerCase() ?? "";
     if (
@@ -74,7 +75,7 @@ async function insertTasks(
 ) {
   if (!rows.length) return;
 
-  const attempts: Array<Array<Record<string, unknown>>> = [
+  const attempts = [
     // Attempt 1 — safest: only columns guaranteed to exist in base schema
     rows.map((row) => ({
       milestone_id: row.milestone_id,
@@ -105,7 +106,8 @@ async function insertTasks(
 
   let lastError: unknown;
   for (const attempt of attempts) {
-    const result = await supabase.from("tasks").insert(attempt);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await supabase.from("tasks").insert(attempt as any);
     if (!result.error) return;
     lastError = result.error;
     const message = result.error.message?.toLowerCase() ?? "";
@@ -212,26 +214,14 @@ Generate a specific roadmap for this startup. Tasks must reference the actual pr
           }
         }
 
-        // If user starts at a later stage, mark earlier milestones/tasks complete
+        // If user starts at a later stage, mark only the immediately previous
+        // phase complete. The stored startup_stage remains authoritative and
+        // broad pre-completion can make stage inference jump too far.
         const stageIndex = STAGE_ORDER.findIndex((s) => s.toLowerCase() === initialStage.toLowerCase());
         if (stageIndex > 0 && milestoneIds.length) {
-          const toComplete = milestoneIds.filter((m) => m.order_index < stageIndex).map((m) => m.id);
-          if (toComplete.length) {
-            const BATCH_SIZE = 20;
-            const earlyTasks: Array<{ id: string }> = [];
-            for (let i = 0; i < toComplete.length; i += BATCH_SIZE) {
-              const batchIds = toComplete.slice(i, i + BATCH_SIZE);
-              await supabase.from("milestones").update({ status: "completed" }).in("id", batchIds);
-              const { data } = await supabase.from("tasks").select("id").in("milestone_id", batchIds);
-              if (data?.length) earlyTasks.push(...data);
-            }
-            if (earlyTasks?.length) {
-              const taskIds = earlyTasks.map((t) => t.id);
-              for (let i = 0; i < taskIds.length; i += BATCH_SIZE) {
-                const batchIds = taskIds.slice(i, i + BATCH_SIZE);
-                await supabase.from("tasks").update({ is_completed: true }).in("id", batchIds);
-              }
-            }
+          const prevMilestone = milestoneIds.find((m) => m.order_index === stageIndex - 1);
+          if (prevMilestone) {
+            await supabase.from("milestones").update({ status: "completed" }).eq("id", prevMilestone.id);
           }
         }
       } catch (dbErr) {
