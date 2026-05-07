@@ -190,7 +190,9 @@ export default function BreakMyStartupPage() {
       gated: data.gated,
       score_note: data.gated
         ? "Free preview score: estimated from your written idea only."
-        : data.reasoning?.find((item) => item.toLowerCase().includes("signal score")) ?? "Calculated from execution data, validation signals, stage, and competitor context.",
+        : data.reasoning?.filter((item) =>
+            /focus areas|5-agent|viability score|competitor/i.test(item)
+          ).join(" · ") || "Calculated from execution data, validation signals, stage, and competitor context.",
     };
   }
 

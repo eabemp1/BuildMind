@@ -39,6 +39,7 @@ export interface StartupContext {
   solution: string;
   stage: string;
   competitors: ScrapedCompetitor[];
+  focusAreas?: string[];
   // Optional enrichment from project data
   validationStrengths?: string[];
   validationWeaknesses?: string[];
@@ -119,6 +120,12 @@ export interface Risk {
   mitigation: string;
 }
 
+function focusAreaLine(ctx: StartupContext): string {
+  return ctx.focusAreas?.length
+    ? `Founder-selected focus areas: ${ctx.focusAreas.join(", ")}. Prioritize these dimensions when deciding what to inspect, criticize, and recommend.`
+    : "Founder-selected focus areas: none.";
+}
+
 // ── Pipeline output ───────────────────────────────────────────────────────────
 
 export interface AgentPipelineResult {
@@ -186,6 +193,7 @@ Problem: ${ctx.problem}
 Target users: ${ctx.targetUsers}
 Solution: ${ctx.solution}
 Stage: ${ctx.stage}
+${focusAreaLine(ctx)}
 ${competitorContext}
 
 Assess market demand. Be specific. Lower confidence when uncertain.`;
@@ -258,6 +266,7 @@ Rules:
 Problem being solved: ${ctx.problem}
 Target users: ${ctx.targetUsers}
 Stage: ${ctx.stage}
+${focusAreaLine(ctx)}
 ${competitorContext}
 
 Map the competitive landscape. Name specific gaps. Be precise.`;
@@ -318,6 +327,7 @@ Rules:
 Problem: ${ctx.problem}
 Target users: ${ctx.targetUsers}
 Stage: ${ctx.stage}
+${focusAreaLine(ctx)}
 Known competitors: ${ctx.competitors.map(c => c.title).join(", ") || "none found"}
 
 Assess timing. Is this the right moment? What forces are at play?`;
@@ -378,6 +388,7 @@ Rules:
 Problem addressed: ${ctx.problem}
 Target users: ${ctx.targetUsers}
 Stage: ${ctx.stage}
+${focusAreaLine(ctx)}
 Competitor snippets (for sentiment inference): ${ctx.competitors.map(c => c.snippet).filter(Boolean).join(" | ") || "none"}
 
 Assess user pain intensity and demand authenticity. Be specific.`;
@@ -443,6 +454,7 @@ Rules:
 Problem: ${ctx.problem}
 Target users: ${ctx.targetUsers}
 Stage: ${ctx.stage}
+${focusAreaLine(ctx)}
 Known weaknesses: ${ctx.validationWeaknesses?.join(", ") || "none provided"}
 Execution score: ${ctx.executionScore ?? "unknown"}/100
 
@@ -770,6 +782,7 @@ Rules:
 Problem: ${ctx.problem}
 Target users: ${ctx.targetUsers}
 Current viability score: ${currentScore}/100
+${focusAreaLine(ctx)}
 
 Signal data:
 - Demand score: ${signals.demand_score}/100

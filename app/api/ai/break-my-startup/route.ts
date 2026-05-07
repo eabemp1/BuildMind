@@ -177,6 +177,11 @@ Build an execution plan that is specific to this startup. Name exact platforms, 
   }
 }
 
+function buildFocusAreaPrompt(focusAreas: string[]): string {
+  if (focusAreas.length === 0) return "";
+  return `\n\nFOUNDER-SELECTED FOCUS AREAS:\n${focusAreas.map((area) => `- ${area}`).join("\n")}\nPrioritize these areas in the analysis, risks, pivots, execution plan, and final recommendation. Do not ignore them.`;
+}
+
 // ─── Main route ───────────────────────────────────────────────────────────────
 
 export async function POST(request: Request) {
@@ -243,6 +248,7 @@ export async function POST(request: Request) {
     ]);
     const patterns = learnedPatterns.status === "fulfilled" ? learnedPatterns.value : null;
     const learnedPatternsPrompt = patterns ? buildLearnedPatternsPrompt(patterns) : "";
+    const focusAreaPrompt = buildFocusAreaPrompt(focusAreas);
     const sessionId = `bms_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
     // ── Idea-only mode (no projectId) ─────────────────────────────────────
@@ -263,6 +269,7 @@ export async function POST(request: Request) {
         solution: parsed.solution,
         stage: String(body?.stage ?? "Idea"),
         competitors,
+        focusAreas,
       };
 
       // Run 5-agent pipeline
@@ -300,9 +307,9 @@ export async function POST(request: Request) {
           founderContext,
           agentPipeline,
           viabilityScore: viabilityResult,
-          task: "What is the single highest-leverage next action for this founder?",
+          task: `What is the single highest-leverage next action for this founder?${focusAreaPrompt}`,
           executionMode: requestExecutionMode,
-          learnedPatternsPrompt,
+          learnedPatternsPrompt: `${learnedPatternsPrompt}${focusAreaPrompt}`,
         });
 
         // Record action shown — starts the learning loop for this run
@@ -331,6 +338,7 @@ export async function POST(request: Request) {
           // ── Legacy fields (BreakMyStartup2.tsx compatibility) ──
           reasoning: [
             `Parsed idea into structured schema: ${parsed.category}`,
+            focusAreas.length ? `Prioritized selected focus areas: ${focusAreas.join(", ")}` : "No focus areas selected",
             `5-agent pipeline completed in ${agentPipeline.duration_ms}ms`,
             `Found ${competitors.length} competitor(s) via DuckDuckGo`,
             `Viability score: ${viabilityResult.viability_score}/100 (${viabilityResult.verdict})`,
@@ -504,6 +512,7 @@ export async function POST(request: Request) {
       validationWeaknesses: weaknesses,
       executionScore: execScore,
       momentumScore: founderCtxRow?.momentum_score ?? 50,
+      focusAreas,
     };
 
     // Run 5-agent pipeline with full project context
@@ -550,9 +559,9 @@ export async function POST(request: Request) {
         founderContext: founderReflexionCtx,
         agentPipeline,
         viabilityScore: viabilityResult,
-        task: `Given this founder's project data and the agent analysis, what is the single highest-leverage next move?`,
+        task: `Given this founder's project data and the agent analysis, what is the single highest-leverage next move?${focusAreaPrompt}`,
         executionMode: requestExecutionMode,
-        learnedPatternsPrompt,
+        learnedPatternsPrompt: `${learnedPatternsPrompt}${focusAreaPrompt}`,
       });
 
       // Record action shown — starts the learning loop for this run
@@ -628,6 +637,7 @@ export async function POST(request: Request) {
         // ── Legacy fields (BreakMyStartup2.tsx compatibility) ──
         reasoning: [
           `Read ${completedTasks}/${totalTasks} tasks and ${completedMilestones}/${totalMilestones} milestones`,
+          focusAreas.length ? `Prioritized selected focus areas: ${focusAreas.join(", ")}` : "No focus areas selected",
           `5-agent pipeline completed in ${agentPipeline.duration_ms}ms`,
           `Found ${competitors.length} competitor(s) via live web scan`,
           `Viability score: ${viabilityResult.viability_score}/100 — ${viabilityResult.verdict}`,
