@@ -14,6 +14,8 @@ type TodayAction = {
   time: string;          // Realistic time estimate
 };
 
+type ReflexionStatus = "ok" | "partial" | "failed";
+
 /** Build a project-specific fallback using real project data — never placeholder text */
 function buildContextualFallback(stage: string, targetUsers: string, problem: string, title: string): TodayAction {
   const userType = targetUsers?.trim() || "potential users";
@@ -320,9 +322,13 @@ ${lastReflectionContext}
       : `${fallback.action} — ${fallback.why}`;
 
     let reflexionOutput: Awaited<ReturnType<typeof runReflexionLoop>> | null = null;
+    let reflexionStatus: ReflexionStatus = "partial";
     try {
       reflexionOutput = await runReflexionLoop(taskSeed, reflexionContext);
-    } catch {
+      reflexionStatus = reflexionOutput ? "ok" : "partial";
+    } catch (err) {
+      reflexionStatus = "failed";
+      console.error("[reflexion] today-action failed:", err);
       // Reflexion loop failure is non-fatal — use single-pass result
     }
 
@@ -365,7 +371,7 @@ ${lastReflectionContext}
       }).catch(() => {});
     }
 
-    return NextResponse.json({ success: true, data: { ...finalResult, stage } });
+    return NextResponse.json({ success: true, data: { ...finalResult, stage, reflexion_status: reflexionStatus } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Today action failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });

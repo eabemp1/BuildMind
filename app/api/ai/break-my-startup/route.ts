@@ -26,6 +26,8 @@ import {
   markIgnoredAfter24h,
 } from "@/lib/learning";
 
+type ReflexionStatus = "ok" | "partial" | "failed";
+
 // ─── Competitor scraper (unchanged from original) ────────────────────────────
 
 async function scrapeCompetitors(query: string): Promise<ScrapedCompetitor[]> {
@@ -235,6 +237,7 @@ export async function POST(request: Request) {
           pivots: [],
           execution_plan: null,
           reflexion_action: null,
+          reflexion_status: "partial" satisfies ReflexionStatus,
         },
       });
     }
@@ -303,6 +306,7 @@ export async function POST(request: Request) {
 
       let reflexionAction = null;
       let learningLogId: string | null = null;
+      let reflexionStatus: ReflexionStatus = "partial";
       try {
         reflexionAction = await runFullReflexionPipeline({
           founderContext,
@@ -325,7 +329,11 @@ export async function POST(request: Request) {
             confidence: reflexionAction.confidence,
           }).catch(() => null);
         }
-      } catch { /* non-fatal */ }
+        reflexionStatus = reflexionAction ? "ok" : "partial";
+      } catch (err) {
+        reflexionStatus = "failed";
+        console.error("[reflexion] break-my-startup idea mode failed:", err);
+      }
 
       // Build legacy-compatible response shape
       const baseSignal = viabilityResult.viability_score;
@@ -390,6 +398,7 @@ export async function POST(request: Request) {
                 log_row_id: learningLogId,
               }
             : null,
+          reflexion_status: reflexionStatus,
           pipeline_duration_ms: agentPipeline.duration_ms,
         },
       });
@@ -417,6 +426,7 @@ export async function POST(request: Request) {
           pivots: [],
           execution_plan: null,
           reflexion_action: null,
+          reflexion_status: "partial" satisfies ReflexionStatus,
         },
       });
     }
@@ -558,6 +568,7 @@ export async function POST(request: Request) {
     // Run full Reflexion pipeline (Stages 0–7)
     let reflexionAction = null;
     let learningLogId: string | null = null;
+    let reflexionStatus: ReflexionStatus = "partial";
     try {
       reflexionAction = await runFullReflexionPipeline({
         founderContext: founderReflexionCtx,
@@ -581,7 +592,11 @@ export async function POST(request: Request) {
           confidence: reflexionAction.confidence,
         }).catch(() => null);
       }
-    } catch { /* non-fatal */ }
+      reflexionStatus = reflexionAction ? "ok" : "partial";
+    } catch (err) {
+      reflexionStatus = "failed";
+      console.error("[reflexion] break-my-startup project mode failed:", err);
+    }
 
     // Iteration delta — load previous analysis if available
     let iterationDelta = null;
@@ -694,6 +709,7 @@ export async function POST(request: Request) {
               log_row_id: learningLogId,
             }
           : null,
+        reflexion_status: reflexionStatus,
         iteration_delta: iterationDelta,
         execution_metrics: {
           task_completion_rate: taskRate,

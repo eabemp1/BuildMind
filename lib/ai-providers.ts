@@ -73,6 +73,30 @@ export function getAIProviderStatus() {
   };
 }
 
+export function getAIProviderDiagnostics() {
+  const status = getAIProviderStatus();
+  const configured = {
+    groq: Boolean(GROQ_API_KEY),
+    cerebras: Boolean(CEREBRAS_API_KEY),
+    gemini: Boolean(GEMINI_API_KEY),
+  };
+  const missingEnv = [
+    configured.groq ? null : "GROQ_API_KEY",
+    configured.cerebras ? null : "CEREBRAS_API_KEY",
+    configured.gemini ? null : "GEMINI_API_KEY",
+  ].filter(Boolean) as string[];
+
+  return {
+    configured,
+    missingEnv,
+    chains: {
+      fast: status.fast.length,
+      reasoning: status.reasoning.length,
+      fallback: status.fallback.length,
+    },
+  };
+}
+
 export function hasAIProvider(): boolean {
   return Boolean(GROQ_API_KEY || CEREBRAS_API_KEY || GEMINI_API_KEY);
 }
@@ -119,6 +143,7 @@ async function groqCall(
   if (!GROQ_API_KEY) throw new Error("GROQ_API_KEY not set");
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
+    signal: AbortSignal.timeout(20000),
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${GROQ_API_KEY}`,
@@ -151,6 +176,7 @@ async function cerebrasCall(
   if (!CEREBRAS_API_KEY) throw new Error("CEREBRAS_API_KEY not set");
   const res = await fetch("https://api.cerebras.ai/v1/chat/completions", {
     method: "POST",
+    signal: AbortSignal.timeout(20000),
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${CEREBRAS_API_KEY}`,
@@ -197,7 +223,7 @@ async function geminiCall(
   };
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
-    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(20000) },
   );
   if (!res.ok) {
     const text = await res.text();
@@ -211,16 +237,44 @@ async function geminiCall(
 
 // ── Rate limit detection ──────────────────────────────────────────────────────
 
-function isRateLimitOrUnavailable(err: unknown): boolean {
+function isRetryableProviderError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
-  return (
+  const lower = msg.toLowerCase();
+  return Boolean(
+    msg.includes("400") ||
+    msg.includes("408") ||
+    msg.includes("409") ||
     msg.includes("429") ||
-    msg.includes("503") ||
+    msg.includes("500") ||
     msg.includes("502") ||
-    msg.toLowerCase().includes("rate limit") ||
-    msg.toLowerCase().includes("decommissioned") ||
-    msg.toLowerCase().includes("unavailable")
+    msg.includes("503") ||
+    msg.includes("504") ||
+    lower.includes("aborterror") ||
+    lower.includes("timeout") ||
+    lower.includes("timed out") ||
+    lower.includes("json_parse") ||
+    lower.includes("json parse") ||
+    lower.includes("unexpected token") ||
+    lower.includes("unterminated string") ||
+    lower.includes("rate limit") ||
+    lower.includes("decommissioned") ||
+    lower.includes("unavailable") ||
+    lower.includes("network") ||
+    lower.includes("fetch failed"),
   );
+}
+
+function assertValidJSONModeOutput(text: string): void {
+  const clean = sanitizeModelOutput(text);
+  const start = clean.indexOf("{");
+  const end = clean.lastIndexOf("}");
+  const json = start >= 0 && end > start ? clean.slice(start, end + 1) : clean;
+  try {
+    JSON.parse(json);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`JSON_PARSE: ${msg}`);
+  }
 }
 
 // ── Provider chains per role ──────────────────────────────────────────────────
@@ -310,23 +364,28 @@ export async function callModel(
     getFastChain();
 
   if (chain.length === 0) {
-    throw new Error("No AI providers configured. Set GROQ_API_KEY, CEREBRAS_API_KEY, or GEMINI_API_KEY in your env.");
+    const diagnostics = getAIProviderDiagnostics();
+    throw new Error(
+      `No AI providers configured for role "${role}". Set at least one provider env var: ${diagnostics.missingEnv.join(", ")}.`,
+    );
   }
 
   const errors: string[] = [];
 
   for (const provider of chain) {
     try {
-      return await provider(messages, temperature, maxTokens, jsonMode);
+      const text = await provider(messages, temperature, maxTokens, jsonMode);
+      if (jsonMode) assertValidJSONModeOutput(text);
+      return text;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       errors.push(msg);
-      if (isRateLimitOrUnavailable(err)) {
+      if (isRetryableProviderError(err)) {
         console.warn(`[ai-providers] Provider failed (${msg.slice(0, 80)}) — rotating to next`);
         continue; // try next provider
       }
-      // Non-rate-limit error — don't rotate, throw immediately
-      throw err;
+      console.warn(`[ai-providers] Provider failed (${msg.slice(0, 80)}) — rotating to next`);
+      continue;
     }
   }
 

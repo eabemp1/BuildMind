@@ -25,6 +25,10 @@ vi.mock("../../lib/supabase/admin", () => ({
   createAdminClient: vi.fn(),
 }));
 
+vi.mock("../../lib/founderMemory", () => ({
+  generateFounderInsight: vi.fn().mockResolvedValue(null),
+}));
+
 vi.mock("next/server", () => ({
   NextResponse: {
     json: (body: unknown, init?: ResponseInit) =>

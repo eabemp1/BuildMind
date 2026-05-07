@@ -22,6 +22,7 @@ interface ScoreBreakdownProps {
   xp?: number | null;
   streak?: number | null;
   validationStrengths?: number; // count
+  compact?: boolean;
 }
 
 const SCORE_COLOR = (s: number) => s >= 60 ? "#4ade80" : s >= 30 ? "#fbbf24" : "#f87171";
@@ -61,6 +62,7 @@ export function ScoreBreakdown(props: ScoreBreakdownProps) {
   const [open, setOpen] = useState(false);
   const rows = computeBreakdown(props);
   const color = SCORE_COLOR(props.score);
+  const compact = props.compact ?? false;
 
   return (
     <div style={{ position: "relative", display: "inline-block" }}>
@@ -69,12 +71,21 @@ export function ScoreBreakdown(props: ScoreBreakdownProps) {
         onClick={() => setOpen(v => !v)}
         title="What moves my score?"
         style={{
-          background: "transparent", border: "none", cursor: "pointer",
-          padding: 0, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4,
+          background: compact ? "var(--bm-bg3)" : "transparent",
+          border: compact ? "1px solid var(--bm-border)" : "none",
+          borderRadius: compact ? 999 : 0,
+          cursor: "pointer",
+          padding: compact ? "5px 9px" : 0,
+          fontFamily: "inherit",
+          display: "flex",
+          alignItems: "center",
+          gap: compact ? 6 : 4,
         }}
       >
-        <span style={{ fontSize: 32, fontWeight: 800, color, lineHeight: 1 }}>{props.score}</span>
-        <span style={{ fontSize: 11, color: "#555", marginTop: 14 }}>/ 100 info</span>
+        <span style={{ fontSize: compact ? 13 : 32, fontWeight: 800, color, lineHeight: 1 }}>{props.score}</span>
+        <span style={{ fontSize: compact ? 10 : 11, color: "var(--bm-text3)", marginTop: compact ? 0 : 14 }}>
+          {compact ? "score details" : "/ 100 details"}
+        </span>
       </button>
 
       <AnimatePresence>

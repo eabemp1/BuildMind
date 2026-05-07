@@ -65,13 +65,16 @@ export function getCanonicalStage(
  * Uses milestone title matching + completion status.
  */
 export function inferStageFromMilestones(
-  milestones: Array<{ title: string; status?: string | null; created_at?: string }>,
+  milestones: Array<{ title: string; status?: string | null; created_at?: string; order_index?: number | null; is_completed?: boolean | null }>,
   tasks: Array<{ milestone_id: string; is_completed: boolean }>,
   milestoneIdMap: Map<string, string>,
 ): StartupStage {
   if (!milestones.length) return "Idea";
 
   const sorted = [...milestones].sort((a, b) => {
+    if (typeof a.order_index === "number" || typeof b.order_index === "number") {
+      return (a.order_index ?? Number.MAX_SAFE_INTEGER) - (b.order_index ?? Number.MAX_SAFE_INTEGER);
+    }
     const dateA = new Date(a.created_at ?? 0).getTime();
     const dateB = new Date(b.created_at ?? 0).getTime();
     return dateA - dateB;
@@ -80,6 +83,7 @@ export function inferStageFromMilestones(
   const isMilestoneComplete = (
     m: (typeof sorted)[0] & { id?: string },
   ): boolean => {
+    if (m.is_completed === true) return true;
     if (m.status === "completed") return true;
     const milestoneTasks = tasks.filter(
       (t) => milestoneIdMap.get(t.milestone_id) === m.title,
@@ -96,6 +100,11 @@ export function inferStageFromMilestones(
 
   if (lastCompleteIdx === -1) return "Idea";
 
+  // If every known milestone is complete, the founder has reached the final stage.
+  if (lastCompleteIdx >= sorted.length - 1 && sorted.every((m) => isMilestoneComplete(m))) {
+    return "Revenue";
+  }
+
   // If the milestone that's next has a recognisable stage name, use it.
   if (lastCompleteIdx < sorted.length - 1) {
     const nextMilestone = sorted[lastCompleteIdx + 1];
@@ -110,12 +119,6 @@ export function inferStageFromMilestones(
     if (currentIdx >= 0 && currentIdx < STAGE_ORDER.length - 1) {
       return STAGE_ORDER[currentIdx + 1];
     }
-  }
-
-  // All milestones complete
-  if (lastCompleteIdx >= sorted.length - 1) {
-    const lastStage = normalizeStage(sorted[sorted.length - 1].title);
-    return lastStage === "Idea" ? "Revenue" : lastStage;
   }
 
   return "Idea";
@@ -147,8 +150,7 @@ export function inferStage(
   // Use a more conservative threshold to avoid premature stage advancement
   const milestoneRate = completedMilestones / Math.max(1, totalMilestones);
   const taskRate = completedTasks / Math.max(1, totalTasks);
-  // Only call "Revenue" if milestones are truly done AND tasks are done
-  if (milestoneRate >= 0.95 && taskRate >= 0.9) return "Revenue";
+  if (milestoneRate >= 0.8) return "Revenue";
   if (milestoneRate >= 0.75 && taskRate >= 0.7) return "Growth";
   if (milestoneRate >= 0.55) return "Launch";
   if (milestoneRate >= 0.35) return "MVP";

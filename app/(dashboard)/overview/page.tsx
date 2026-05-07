@@ -16,6 +16,7 @@ import {
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ScoreBreakdown } from "@/components/ui/ScoreBreakdown";
 
 // ── Stage config ───────────────────────────────────────────────────────────────
 const STAGES = ["Idea", "Validation", "MVP", "Launch", "Growth", "Revenue"];
@@ -250,6 +251,9 @@ export default function OverviewPage() {
     xp: getXP(),
     streak,
   }) : 0;
+  const validationStrengths = Array.isArray(activeProject?.validation_strengths)
+    ? activeProject.validation_strengths.length
+    : 0;
   const scoreColor = score >= 60 ? "var(--bm-green)" : score >= 30 ? "var(--bm-amber)" : "var(--bm-red)";
   const stage = activeProject?.startup_stage ?? "Idea";
   const milestonesCompleted = overview?.milestonesCompleted ?? 0;
@@ -462,6 +466,16 @@ export default function OverviewPage() {
                 Score Breakdown
               </span>
               <Pentagon scores={pentagonScores} />
+              {activeProject && (
+                <ScoreBreakdown
+                  score={score}
+                  executionScore={completionRate}
+                  momentumScore={Math.min(100, streak * 10)}
+                  xp={getXP()}
+                  streak={streak}
+                  validationStrengths={validationStrengths}
+                />
+              )}
             </Card>
 
             {/* AI nudge */}

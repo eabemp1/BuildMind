@@ -14,6 +14,7 @@ import { recordTaskCompletion, incrementDailyStreak, checkUpgradeTrigger, getTas
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queries";
 import BuildMindLoader from "@/components/BuildMindLoader";
+import { ScoreBreakdown } from "@/components/ui/ScoreBreakdown";
 
 type Tab = "milestones" | "tasks" | "validation" | "roadmap";
 
@@ -334,6 +335,9 @@ export default function ProjectDetailPage() {
     validation_strengths: project.validation_strengths,
     execution_score: project.execution_score,
   }) : 0, [project, tasks]);
+  const validationStrengths = Array.isArray(project?.validation_strengths)
+    ? project.validation_strengths.length
+    : 0;
   const completedCount = useMemo(() => tasks.filter(t => t.is_completed).length, [tasks]);
   const progress = tasks.length ? Math.round((completedCount / tasks.length) * 100) : 0;
 
@@ -425,7 +429,17 @@ export default function ProjectDetailPage() {
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 14, flexShrink: 0 }}>
-            <ArcRing score={score} />
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+              <ArcRing score={score} />
+              <ScoreBreakdown
+                score={score}
+                executionScore={project.execution_score ?? progress}
+                momentumScore={progress}
+                streak={getStoredStreak()}
+                validationStrengths={validationStrengths}
+                compact
+              />
+            </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
               <button onClick={() => router.push("/today")}
                 style={{ background: "var(--grad-primary)", color: "#fff", fontSize: 12, fontWeight: 700, padding: "9px 16px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>

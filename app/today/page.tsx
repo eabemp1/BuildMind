@@ -13,6 +13,7 @@ import { updateAchievementStats, checkAndUnlockAchievements, getAchievementStats
 import { notifyReflectPending } from "@/lib/notifications";
 import { trackFunnelStep } from "@/lib/onboarding-analytics";
 import BuildMindLoader from "@/components/BuildMindLoader";
+import { ScoreBreakdown } from "@/components/ui/ScoreBreakdown";
 import { Clock, CheckCircle2, Copy, Check, Flame, Brain, ArrowRight, Star, Sparkles } from "lucide-react";
 
 type Outcome = "completed" | "blocked" | "partial" | "learned";
@@ -350,7 +351,20 @@ function TodayContent() {
                 <span style={{ fontSize: 12, fontWeight: 700, color: "var(--bm-amber)" }}>{streak} day streak</span>
               </div>
             )}
-            <ScoreRing value={score} size={52} />
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <ScoreRing value={score} size={52} />
+              {project && (
+                <ScoreBreakdown
+                  score={score}
+                  executionScore={project.execution_score ?? score}
+                  momentumScore={Math.min(100, streak * 10)}
+                  xp={getXP()}
+                  streak={streak}
+                  validationStrengths={Array.isArray(project.validation_strengths) ? project.validation_strengths.length : 0}
+                  compact
+                />
+              )}
+            </div>
           </div>
         </div>
         {/* Fix #17: Show AI usage remaining to free users */}

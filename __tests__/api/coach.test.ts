@@ -46,7 +46,10 @@ vi.mock("../../lib/supabase/admin", () => ({
     from: vi.fn().mockReturnValue({
       select: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
       single: vi.fn().mockResolvedValue({ data: null, error: null }),
+      maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
       insert: vi.fn().mockResolvedValue({ error: null }),
       update: vi.fn().mockReturnThis(),
     }),
@@ -65,6 +68,13 @@ vi.mock("next/server", () => ({
 }));
 
 import { POST } from "../../app/api/ai/coach/route";
+
+beforeEach(() => {
+  mockHasAdminEnv.mockReturnValue(false);
+  mockEnforceAndTrackAIUsage.mockResolvedValue(undefined);
+  mockCreateUserNotification.mockResolvedValue(undefined);
+  mockLogReflexionQuality.mockResolvedValue(undefined);
+});
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

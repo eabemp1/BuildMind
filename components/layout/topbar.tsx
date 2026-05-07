@@ -25,15 +25,19 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
     supabase.auth.getUser().then(async ({ data }) => {
       if (!data.user) return;
       setEmail(data.user.email ?? "");
+      const authAvatar =
+        typeof data.user.user_metadata?.avatar_url === "string"
+          ? data.user.user_metadata.avatar_url
+          : typeof data.user.user_metadata?.picture === "string"
+            ? data.user.user_metadata.picture
+            : null;
       // Fetch avatar_url from profiles table
       const { data: profile } = await supabase
         .from("profiles")
         .select("avatar_url")
         .eq("id", data.user.id)
         .maybeSingle();
-      if (profile?.avatar_url) {
-        setAvatarUrl(profile.avatar_url);
-      }
+      setAvatarUrl(profile?.avatar_url ?? authAvatar);
     });
   }, []);
   const [open, setOpen] = useState(false);
