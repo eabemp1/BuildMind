@@ -7,7 +7,7 @@ import { Copy, Check, Users, Gift, Flame, ChevronRight, Zap, ArrowRight } from "
 
 const MESSAGES = [
   "Hey — I've been using BuildMind to stay accountable on my startup. It gives me one specific action every morning and tracks my streak. Thought you'd find it useful: {link}",
-  "If you're building something and struggling with what to do next, BuildMind is worth trying. One action per day, AI-generated for your specific startup. Free to start: {link}",
+  "If you're stuck on what to do next, BuildMind is worth trying. It gives founders one execution move every day, already decided. Free to start: {link}",
   "I've been doing daily accountability for my startup on BuildMind. You get a 90-day roadmap, daily actions, weekly AI analysis. Use my link and we both get a free month of Builder: {link}",
 ];
 

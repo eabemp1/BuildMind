@@ -690,12 +690,12 @@ function BreakMyStartupSection() {
       <div className="max-w-3xl mx-auto">
         <motion.div initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }} className="flex flex-col gap-6">
           <div>
-            <Badge variant="danger" dot className="mb-4">Stress-Test Your Idea — Free, No Sign-Up</Badge>
+            <Badge variant="danger" dot className="mb-4">The brutal AI stress test — Free, No Sign-Up</Badge>
             <h2 className="mb-3 text-3xl font-bold tracking-tight text-[var(--bm-text)] sm:text-4xl">
-              What's the biggest risk threatening your startup right now?
+              Find out why your startup will fail.
             </h2>
             <p className="text-base leading-relaxed text-[var(--bm-text2)] sm:text-lg">
-              Paste your idea. The same AI that runs inside BuildMind will find your top vulnerabilities — brutally, honestly, constructively.
+              Break My Startup tells founders why an idea will fail, then turns the result into the next action.
             </p>
           </div>
 
@@ -711,7 +711,7 @@ function BreakMyStartupSection() {
             />
             <Button onClick={handleBreak} loading={loading} disabled={!idea.trim()} size="lg" className="w-full self-start sm:w-auto">
               {!loading && <AlertTriangle size={16} />}
-              Break My Startup →
+              The brutal AI stress test →
             </Button>
           </div>
 
@@ -978,17 +978,17 @@ export default function LandingPage() {
           {/* Left */}
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }} className="flex flex-col gap-5 sm:gap-6">
             <span style={{ background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)", color: "var(--bm-accent)", borderRadius: 999, padding: "3px 10px", fontSize: 10, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "0.07em", display: "inline-flex", alignItems: "center", width: "fit-content" }}>
-              AI Founder Operating System
+              AI Chief of Staff for stuck founders
             </span>
 
             <h1 className="text-4xl font-bold leading-[1.08] tracking-tight sm:text-5xl lg:text-6xl">
-              Most founders guess
+              Stop guessing
               <br />
               <span className="gradient-text">what to do next.</span>
             </h1>
 
             <p className="max-w-xl text-base leading-relaxed text-[var(--bm-text2)] sm:text-lg">
-              BuildMind already decided. Three AI agents debated your last move, stress-tested the options, and queued your highest-leverage action before you woke up.
+              BuildMind decides the next execution move, stress-tests weak ideas, and keeps founder momentum honest.
             </p>
 
             <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
@@ -1100,9 +1100,9 @@ export default function LandingPage() {
       <section className="px-5 py-16 text-center sm:px-6 sm:py-24" style={{ background: "var(--grad-primary)" }}>
         <motion.div initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="max-w-xl mx-auto flex flex-col gap-5">
           <h2 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
-            Don't just show what BuildMind looks like.
+            Stop guessing what matters today.
           </h2>
-          <p className="text-white/80 text-lg">Experience what it does when you're not doing anything.</p>
+          <p className="text-white/80 text-lg">Wake up to one decision already made: the next action that moves your startup forward.</p>
           <div className="flex justify-center">
             <Link href="/auth/login">
               <button className="h-12 px-8 rounded-xl bg-white text-sm font-semibold text-[#111] hover:bg-white/90 transition-all active:scale-95 flex items-center gap-2">

@@ -30,7 +30,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
-import { normalizePlan, type Plan } from "@/lib/plan";
+import { type Plan } from "@/lib/plan";
+import { getFreshPlanForUser } from "@/lib/server/plan";
 
 export type GuardedHandler = (
   req: NextRequest,
@@ -80,9 +81,7 @@ export function withPlanGuard(
       );
     }
 
-    const metadataPlan = normalizePlan(
-      user.user_metadata?.plan as string | undefined,
-    );
+    const metadataPlan = await getFreshPlanForUser(user);
 
     if (!planMeetsRequirement(metadataPlan, requiredPlan)) {
       return NextResponse.json(
@@ -128,7 +127,7 @@ export async function getServerPlan(): Promise<{
   if (!user) return { plan: "free", userId: null };
 
   return {
-    plan: normalizePlan(user.user_metadata?.plan as string | undefined),
+    plan: await getFreshPlanForUser(user),
     userId: user.id,
   };
 }

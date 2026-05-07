@@ -11,7 +11,8 @@
  */
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { planFromUserMetadata, type Plan } from "@/lib/plan";
+import { type Plan } from "@/lib/plan";
+import { getFreshPlanForUser } from "@/lib/server/plan";
 
 const PLAN_ORDER: Plan[] = ["free", "builder"];
 
@@ -45,7 +46,7 @@ export async function checkPlanAccess(requiredPlan: Plan): Promise<PlanCheckResu
       };
     }
 
-    const plan = planFromUserMetadata(user);
+    const plan = await getFreshPlanForUser(user);
 
     if (!meetsRequirement(plan, requiredPlan)) {
       return {
@@ -79,7 +80,7 @@ export async function getRouteUser(): Promise<{ plan: Plan; userId: string } | n
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
     return {
-      plan: planFromUserMetadata(user),
+      plan: await getFreshPlanForUser(user),
       userId: user.id,
     };
   } catch {

@@ -86,7 +86,7 @@ export function SidebarLogo({ streakDays }: { streakDays: number }) {
             lineHeight: 1,
           }}
         >
-          AI Founder OS
+          Chief of Staff
         </div>
       </div>
       {streakDays > 0 && (

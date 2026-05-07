@@ -167,6 +167,7 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
               { href: "/my-ventures", label: "My Ventures", icon: Map,       badge: "Private", badgeColor: "var(--bm-red)",   badgeBg: "rgba(240,108,108,0.08)" },
               { href: "/owner",       label: "Owner Panel",  icon: Shield,    badge: "Admin",   badgeColor: "var(--bm-amber)", badgeBg: "rgba(240,180,41,0.08)"  },
               { href: "/admin/quality", label: "Quality Log", icon: BarChart2, badge: "Agent B", badgeColor: "var(--bm-accent)", badgeBg: "rgba(74,184,176,0.08)" },
+              { href: "/admin/growth", label: "Growth Metrics", icon: BarChart2, badge: "KPI", badgeColor: "var(--bm-accent)", badgeBg: "rgba(74,184,176,0.08)" },
             ].map(({ href, label, icon: Icon, badge, badgeColor, badgeBg }) => (
               <Link key={href} href={href}
                 className="flex items-center justify-between gap-2 px-3 py-2.5 mx-2 rounded-lg text-sm transition-colors group"

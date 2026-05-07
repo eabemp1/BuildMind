@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { planFromUserMetadata } from "@/lib/plan";
+import { getFreshAuthUser } from "@/lib/server/plan";
 
 export async function GET() {
   const supabase = await createClient();
@@ -18,16 +18,7 @@ export async function GET() {
     return NextResponse.json({ ok: false, authenticated: false, plan: "free" });
   }
 
-  let freshUser = user;
-  try {
-    if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      const admin = createAdminClient();
-      const { data } = await admin.auth.admin.getUserById(user.id);
-      freshUser = data.user ?? user;
-    }
-  } catch {
-    freshUser = user;
-  }
+  const freshUser = await getFreshAuthUser(user);
 
   return NextResponse.json({
     ok: true,

@@ -10,16 +10,16 @@ import PwaProvider from "@/components/PwaProvider";
 export const metadata: Metadata = {
   metadataBase: new URL("https://buildmind.live"),
   title: {
-    default: "BuildMind — One Decision. Already Made. | Daily Action Engine for Founders",
+    default: "BuildMind — AI Chief of Staff for Stuck Founders",
     template: "%s | BuildMind",
   },
   description:
-    "BuildMind gives solo founders one clear action every day — decided by AI based on your startup stage, yesterday's reflection, and your streak. No planning paralysis. Just the next move.",
+    "BuildMind is the AI Chief of Staff for stuck founders. It decides the next execution move, stress-tests weak ideas, and keeps founder momentum honest.",
   keywords: [
     "daily action for founders",
     "startup accountability app",
     "solo founder productivity",
-    "founder os",
+    "ai chief of staff for founders",
     "build in public tracker",
     "indie hacker daily planner",
     "startup execution tool",
@@ -65,23 +65,23 @@ export const metadata: Metadata = {
     locale: "en_US",
     url: "https://buildmind.live",
     siteName: "BuildMind",
-    title: "BuildMind — One Decision. Already Made.",
+    title: "BuildMind — AI Chief of Staff for Stuck Founders",
     description:
-      "Wake up. Open BuildMind. Your next move is already there — specific to your startup, based on what you did yesterday. No planning paralysis. Just execute.",
+      "Stop guessing what to do next. BuildMind gives founders one execution move every day, already decided.",
     images: [
       {
         url: "/logo/buildmind-og-image.svg",
         width: 1200,
         height: 630,
-        alt: "BuildMind — Daily Action Engine for Founders",
+        alt: "BuildMind — AI Chief of Staff for Founders",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "BuildMind — One Decision. Already Made.",
+    title: "BuildMind — AI Chief of Staff for Stuck Founders",
     description:
-      "The daily action engine for solo founders. One move. Already decided. Based on your stage and what happened yesterday.",
+      "BuildMind decides the next execution move, stress-tests weak ideas, and keeps founder momentum honest.",
     images: ["/logo/buildmind-og-image.svg"],
     creator: "@buildmind_os",
   },
@@ -107,13 +107,13 @@ const jsonLd = [
     operatingSystem: "Web",
     url: "https://buildmind.live",
     description:
-      "BuildMind is a daily action engine for solo founders and indie hackers. It gives you one obvious task per day based on your startup stage — validation, prototype, MVP, launch, or revenue — and holds you accountable with streaks and reflections.",
+      "BuildMind is the AI Chief of Staff for stuck founders. It decides the next execution move, stress-tests weak ideas, and keeps founder momentum honest.",
     featureList: [
       "AI-powered daily action based on startup stage",
       "Reflect loop — yesterday's outcome changes today's action",
       "Founder streak tracking",
       "AI Coach with real project data",
-      "Break My Startup — adversarial analysis",
+      "Break My Startup — brutal AI stress test",
       "Weekly share card for build-in-public",
     ],
     offers: [
@@ -167,7 +167,7 @@ const jsonLd = [
         name: "What is BuildMind?",
         acceptedAnswer: {
           "@type": "Answer",
-          text: "BuildMind is a daily execution tool for solo founders. Every morning it gives you one specific action based on your startup stage. You reflect on it at night. The next day's action is personalised based on what happened. It's an accountability system that learns from you.",
+          text: "BuildMind is the AI Chief of Staff for stuck founders. It decides the next execution move, stress-tests weak ideas, and keeps founder momentum honest.",
         },
       },
       {

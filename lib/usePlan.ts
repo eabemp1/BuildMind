@@ -46,7 +46,7 @@ const DEFAULT_STATE: PlanState = {
 // page session. Invalidated on userId change.
 let cachedUserId: string | null = null;
 let cachedPlan: Plan = "free";
-let fetchPromise: Promise<void> | null = null;
+let fetchPromise: Promise<{ plan: Plan; userId: string | null }> | null = null;
 
 async function fetchPlanFromServer(): Promise<{ plan: Plan; userId: string | null }> {
   try {
@@ -106,12 +106,7 @@ export function usePlan(): PlanState {
   });
 
   const refresh = useCallback(async () => {
-    if (fetchPromise) {
-      await fetchPromise;
-      return;
-    }
-
-    fetchPromise = fetchPlanFromServer().then(({ plan, userId }) => {
+    const applyPlan = ({ plan, userId }: { plan: Plan; userId: string | null }) => {
       cachedUserId = userId;
       cachedPlan = plan;
       setState({
@@ -120,17 +115,44 @@ export function usePlan(): PlanState {
         isLoading: false,
         userId,
       });
-      fetchPromise = null;
-    }).catch(() => {
-      setState(s => ({ ...s, isLoading: false }));
-      fetchPromise = null;
-    });
+    };
 
-    return fetchPromise;
+    if (fetchPromise) {
+      const result = await fetchPromise;
+      applyPlan(result);
+      return;
+    }
+
+    fetchPromise = fetchPlanFromServer();
+
+    try {
+      const result = await fetchPromise;
+      applyPlan(result);
+    } catch {
+      setState(s => ({ ...s, isLoading: false }));
+    } finally {
+      fetchPromise = null;
+    }
+
+    return;
   }, []);
 
   useEffect(() => {
     void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    const refreshFromEvent = () => {
+      void refresh();
+    };
+    window.addEventListener("bm_plan_changed", refreshFromEvent);
+    window.addEventListener("focus", refreshFromEvent);
+    document.addEventListener("visibilitychange", refreshFromEvent);
+    return () => {
+      window.removeEventListener("bm_plan_changed", refreshFromEvent);
+      window.removeEventListener("focus", refreshFromEvent);
+      document.removeEventListener("visibilitychange", refreshFromEvent);
+    };
   }, [refresh]);
 
   return state;

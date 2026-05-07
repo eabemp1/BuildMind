@@ -9,7 +9,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { planFromUserMetadata, PLAN_LIMITS } from "@/lib/plan";
+import { PLAN_LIMITS } from "@/lib/plan";
+import { getFreshPlanForUser } from "@/lib/server/plan";
 
 const FREE_MONTHLY_LIMIT = 50;
 
@@ -23,7 +24,7 @@ export async function GET() {
     }
 
     // Plan is read from Supabase user_metadata — NOT localStorage
-    const plan = planFromUserMetadata(user);
+    const plan = await getFreshPlanForUser(user);
     const limits = PLAN_LIMITS[plan];
 
     // Builder plan = unlimited AI

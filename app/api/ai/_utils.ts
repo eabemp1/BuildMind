@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { normalizePlan, planFromUserMetadata } from "@/lib/plan";
+import { normalizePlan } from "@/lib/plan";
+import { getFreshPlanForUser } from "@/lib/server/plan";
 
 // Plan-aware monthly AI limits
 // Free: 30 calls/month (3/day × 30 days, but we cap monthly for safety)
@@ -24,15 +25,14 @@ export async function enforceAndTrackAIUsage(userId: string, planOverride?: stri
   const d = new Date();
   const month = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 
-  // Look up plan from user metadata if not provided
+  // Look up a fresh auth user so stale JWT metadata cannot keep Builder users
+  // trapped behind free-tier AI caps.
   let plan = normalizePlan(planOverride);
-  if (!planOverride) {
-    try {
-      const { data: authUser } = await supabase.auth.admin.getUserById(userId);
-      plan = planFromUserMetadata(authUser?.user);
-    } catch {
-      plan = "free";
-    }
+  try {
+    const { data: authUser } = await supabase.auth.admin.getUserById(userId);
+    plan = await getFreshPlanForUser(authUser?.user);
+  } catch {
+    plan = normalizePlan(planOverride);
   }
 
   const monthlyLimit = PLAN_MONTHLY_LIMITS[plan] ?? 30;

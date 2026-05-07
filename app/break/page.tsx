@@ -151,7 +151,7 @@ export default function BreakPublicPage() {
                   style={{ fontSize:40, marginBottom:16 }}>⚡</motion.div>
                 <h1 style={{ fontSize:36, fontWeight:800, letterSpacing:"-0.04em", margin:"0 0 12px", lineHeight:1.1 }}>Break My Startup</h1>
                 <p style={{ fontSize:15, color:"rgba(255,255,255,0.45)", lineHeight:1.6, maxWidth:440, margin:"0 auto" }}>
-                  Paste your startup idea. AI adversaries will find every reason it fails — before your customers do.
+                  The brutal AI stress test that tells founders why their startup will fail, then turns the result into the next action.
                 </p>
                 <div style={{ display:"flex", gap:16, justifyContent:"center", marginTop:16, flexWrap:"wrap" }}>
                   {["No login required","30-second analysis","Shareable result"].map(t=>(
@@ -273,7 +273,7 @@ export default function BreakPublicPage() {
                 style={{ background:"linear-gradient(135deg,rgba(99,102,241,0.08),rgba(139,92,246,0.08))", border:"1px solid rgba(129,140,248,0.2)", borderRadius:14, padding:"24px 28px", textAlign:"center" }}>
                 <div style={{ fontSize:18, fontWeight:700, letterSpacing:"-0.03em", marginBottom:8 }}>Turn this into a daily action system</div>
                 <p style={{ fontSize:13, color:"rgba(255,255,255,0.45)", lineHeight:1.65, marginBottom:20, maxWidth:420, margin:"0 auto 20px" }}>
-                  BuildMind gives you one specific action every day, tracks your execution, and has an AI co-founder that remembers your patterns and calls you out.
+                  BuildMind is the AI Chief of Staff for stuck founders. It decides the next execution move, stress-tests weak ideas, and keeps founder momentum honest.
                 </p>
                 <div style={{ display:"flex", gap:10, justifyContent:"center", flexWrap:"wrap" }}>
                   <Link href={`/auth/login?idea=${encodeURIComponent(idea.slice(0,100))}`}

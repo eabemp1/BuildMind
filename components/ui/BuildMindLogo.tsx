@@ -123,7 +123,7 @@ export function BuildMindLogo({
               marginTop: 1,
             }}
           >
-            Founder OS
+            Chief of Staff
           </div>
         </div>
       )}

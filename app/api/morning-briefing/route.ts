@@ -15,7 +15,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { generateMorningBriefing } from "@/lib/reflexion";
-import { planFromUserMetadata } from "@/lib/plan";
+import { getFreshPlanForUser } from "@/lib/server/plan";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -127,7 +127,7 @@ export async function GET(req: Request) {
   const { data: { user }, error } = await supabase.auth.getUser();
   if (error || !user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
-  const plan = planFromUserMetadata(user);
+  const plan = await getFreshPlanForUser(user);
 
   // Free-tier day-of-week gate
   if (!isBriefingDayForPlan(plan)) {

@@ -2,7 +2,7 @@
  * lib/founderMemory.ts — Persistent Founder Memory System
  *
  * Stores and evolves a rich behavioral profile of the founder across sessions.
- * This gives the AI co-founder "context" about who it's working with —
+ * This gives the AI Chief of Staff context about who it's working with —
  * not just their startup, but how they think, what they avoid, what motivates them.
  *
  * Data lives in Supabase table: founder_memory (one row per user)
