@@ -149,14 +149,6 @@ const jsonLd = [
     url: "https://buildmind.live",
     name: "BuildMind",
     description: "Daily action engine for founders",
-    potentialAction: {
-      "@type": "SearchAction",
-      target: {
-        "@type": "EntryPoint",
-        urlTemplate: "https://buildmind.live/explore?q={search_term_string}",
-      },
-      "query-input": "required name=search_term_string",
-    },
   },
   {
     "@context": "https://schema.org",

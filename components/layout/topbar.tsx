@@ -84,6 +84,8 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
   const signOut = async () => {
     setOpen(false); setSearchOpen(false);
     const supabase = createClient();
+    const { storage } = await import("@/lib/storage");
+    storage.onSignOut();
     await supabase.auth.signOut();
     clearStoredToken();
     router.replace("/auth/login");

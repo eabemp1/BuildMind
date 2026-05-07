@@ -13,7 +13,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { createClient } from "@/lib/supabase/client";
 
 // ── "A Day With BuildMind" timeline data ──────────────────────────────────────
 const DAY_TIMELINE = [
@@ -690,12 +689,12 @@ function BreakMyStartupSection() {
       <div className="max-w-3xl mx-auto">
         <motion.div initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }} className="flex flex-col gap-6">
           <div>
-            <Badge variant="danger" dot className="mb-4">The brutal AI stress test — Free, No Sign-Up</Badge>
+            <Badge variant="danger" dot className="mb-4">Stress-Test Your Idea — Free, No Sign-Up</Badge>
             <h2 className="mb-3 text-3xl font-bold tracking-tight text-[var(--bm-text)] sm:text-4xl">
-              Find out why your startup will fail.
+              What's the biggest risk threatening your startup right now?
             </h2>
             <p className="text-base leading-relaxed text-[var(--bm-text2)] sm:text-lg">
-              Break My Startup tells founders why an idea will fail, then turns the result into the next action.
+              Paste your idea. The same AI that runs inside BuildMind will find your top vulnerabilities — brutally, honestly, constructively.
             </p>
           </div>
 
@@ -711,7 +710,7 @@ function BreakMyStartupSection() {
             />
             <Button onClick={handleBreak} loading={loading} disabled={!idea.trim()} size="lg" className="w-full self-start sm:w-auto">
               {!loading && <AlertTriangle size={16} />}
-              The brutal AI stress test →
+              Break My Startup →
             </Button>
           </div>
 
@@ -881,63 +880,58 @@ function PricingSection() {
   );
 }
 
-const STATS_FLOOR = { founders: 1, projects: 1, milestones: 1 };
-
-function normalizeStats(d: PublicStats) {
-  return {
-    founders: Math.max(d.founders ?? 0, STATS_FLOOR.founders),
-    projects: Math.max(d.projects ?? 0, STATS_FLOOR.projects),
-    milestones: Math.max(d.milestones ?? 0, STATS_FLOOR.milestones),
-  };
-}
-
-function useRealtimeStats() {
-  const [stats, setStats] = useState(STATS_FLOOR);
-
-  useEffect(() => {
-    const refresh = () => {
-      fetch("/api/public/stats", { cache: "no-store" })
-        .then((r) => r.json())
-        .then((d: PublicStats) => setStats(normalizeStats(d)))
-        .catch(() => {});
-    };
-
-    refresh();
-    const supabase = createClient();
-    const channel = supabase
-      .channel("public-stats")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "projects" }, refresh)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "milestones" }, refresh)
-      .subscribe();
-
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, []);
-
-  return stats;
-}
-
-function CountUp({ to, duration = 1200 }: { to: number; duration?: number }) {
-  const [val, setVal] = useState(0);
-  useEffect(() => {
-    const start = Date.now();
-    let frame = 0;
-    const tick = () => {
-      const t = Math.min(1, (Date.now() - start) / duration);
-      setVal(Math.round(to * (1 - Math.pow(1 - t, 3))));
-      if (t < 1) frame = requestAnimationFrame(tick);
-    };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [to, duration]);
-  return <>{val.toLocaleString()}</>;
-}
+// ── Stats floor — shown instantly before API responds ─────────────────────────
+const STATS_FLOOR = { founders: 1, projects: 1, milestones: 0 };
 
 // ── Main landing page ─────────────────────────────────────────────────────────
 export default function LandingPage() {
-  const stats = useRealtimeStats();
+  const [stats, setStats] = useState(STATS_FLOOR);
   const [demoOpen, setDemoOpen] = useState(false);
+
+  // Fix #9: Fetch stats immediately on mount (no stale module-level promise),
+  // then subscribe to Supabase realtime for instant live updates.
+  useEffect(() => {
+    // 1. Fetch current counts immediately
+    fetch("/api/public/stats", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: PublicStats) =>
+        setStats({
+          founders:   Math.max(d.founders   ?? 0, STATS_FLOOR.founders),
+          projects:   Math.max(d.projects   ?? 0, STATS_FLOOR.projects),
+          milestones: Math.max(d.milestones ?? 0, STATS_FLOOR.milestones),
+        })
+      )
+      .catch(() => {});
+
+    // 2. Subscribe to realtime changes — re-fetch on any project/milestone insert
+    let channel: { unsubscribe: () => void } | null = null;
+    import("@/lib/supabase/client").then(({ createClient }) => {
+      const supabase = createClient();
+      const refresh = () =>
+        fetch("/api/public/stats", { cache: "no-store" })
+          .then((r) => r.json())
+          .then((d: PublicStats) =>
+            setStats({
+              founders:   Math.max(d.founders   ?? 0, STATS_FLOOR.founders),
+              projects:   Math.max(d.projects   ?? 0, STATS_FLOOR.projects),
+              milestones: Math.max(d.milestones ?? 0, STATS_FLOOR.milestones),
+            })
+          )
+          .catch(() => {});
+
+      channel = supabase
+        .channel("public-stats-live")
+        .on("postgres_changes", { event: "INSERT", schema: "public", table: "projects" }, refresh)
+        .on("postgres_changes", { event: "INSERT", schema: "public", table: "milestones" }, refresh)
+        .subscribe();
+    }).catch(() => {});
+
+    return () => {
+      import("@/lib/supabase/client").then(({ createClient }) => {
+        if (channel) channel.unsubscribe();
+      }).catch(() => {});
+    };
+  }, []);
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: "var(--bm-bg)", color: "var(--bm-text)" }}>
@@ -978,17 +972,17 @@ export default function LandingPage() {
           {/* Left */}
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }} className="flex flex-col gap-5 sm:gap-6">
             <span style={{ background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)", color: "var(--bm-accent)", borderRadius: 999, padding: "3px 10px", fontSize: 10, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "0.07em", display: "inline-flex", alignItems: "center", width: "fit-content" }}>
-              AI Chief of Staff for stuck founders
+              AI Founder Operating System
             </span>
 
             <h1 className="text-4xl font-bold leading-[1.08] tracking-tight sm:text-5xl lg:text-6xl">
-              Stop guessing
+              Most founders guess
               <br />
               <span className="gradient-text">what to do next.</span>
             </h1>
 
             <p className="max-w-xl text-base leading-relaxed text-[var(--bm-text2)] sm:text-lg">
-              BuildMind decides the next execution move, stress-tests weak ideas, and keeps founder momentum honest.
+              BuildMind already decided. Three AI agents debated your last move, stress-tested the options, and queued your highest-leverage action before you woke up.
             </p>
 
             <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
@@ -1015,7 +1009,7 @@ export default function LandingPage() {
                   className="inline-flex w-fit items-center justify-start gap-1.5 rounded-full px-3 py-1.5 text-xs"
                   style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)" }}
                 >
-                  <span className="font-semibold text-[var(--bm-text)]"><CountUp to={s.val} /></span>
+                  <span className="font-semibold text-[var(--bm-text)]">{s.val.toLocaleString()}</span>
                   <span className="text-[var(--bm-text3)]">{s.label}</span>
                 </div>
               ))}
@@ -1100,9 +1094,9 @@ export default function LandingPage() {
       <section className="px-5 py-16 text-center sm:px-6 sm:py-24" style={{ background: "var(--grad-primary)" }}>
         <motion.div initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="max-w-xl mx-auto flex flex-col gap-5">
           <h2 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
-            Stop guessing what matters today.
+            Don't just show what BuildMind looks like.
           </h2>
-          <p className="text-white/80 text-lg">Wake up to one decision already made: the next action that moves your startup forward.</p>
+          <p className="text-white/80 text-lg">Experience what it does when you're not doing anything.</p>
           <div className="flex justify-center">
             <Link href="/auth/login">
               <button className="h-12 px-8 rounded-xl bg-white text-sm font-semibold text-[#111] hover:bg-white/90 transition-all active:scale-95 flex items-center gap-2">

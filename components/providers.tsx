@@ -1,4 +1,19 @@
 "use client";
+
+/**
+ * components/providers.tsx — v2
+ *
+ * Cross-account localStorage fix:
+ *   Calls initStorageAuthSync() at app boot so the user-scoped storage
+ *   wrapper knows which account is active. Every localStorage read/write
+ *   in the app now goes through lib/storage.ts and is automatically
+ *   namespaced to "bm_u:<userId>:<key>".
+ *
+ *   When User A signs out and User B signs in on the same device,
+ *   storage.onSignOut() wipes all unscoped legacy keys and storage.onSignIn()
+ *   loads User B's own namespace — so User B can never see User A's data.
+ */
+
 import { useEffect, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { initAnalytics } from "@/lib/analytics";
@@ -7,6 +22,8 @@ import { LimitModalProvider } from "@/components/LimitModal";
 import AchievementToast from "@/components/AchievementToast";
 import { runNotificationChecks } from "@/lib/notifications";
 import { fetchAndSyncStoredPlanFromBillingStatus } from "@/lib/plan";
+import { initStorageAuthSync } from "@/lib/storage";
+import { createClient } from "@/lib/supabase/client";
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient({
@@ -19,44 +36,44 @@ export default function Providers({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     initAnalytics();
-    // Run notification checks on every app load
+
+    // ── Cross-account localStorage scoping (fix for account data bleed) ──────
+    // Wire the user-scoped storage singleton to Supabase auth state changes.
+    // This must happen before any other code reads from localStorage.
+    const supabase = createClient();
+    const unsubscribeStorage = initStorageAuthSync(supabase);
+
+    // ── Notification checks ────────────────────────────────────────────────────
     try { runNotificationChecks(); } catch {}
 
+    // ── Plan sync ─────────────────────────────────────────────────────────────
     const syncPlan = async () => {
       const syncedPlan = await fetchAndSyncStoredPlanFromBillingStatus();
       if (syncedPlan !== "builder") return;
-
       const shownKey = "bm_builder_sync_indicator_shown";
       if (sessionStorage.getItem(shownKey)) return;
-
       sessionStorage.setItem(shownKey, "1");
       setShowBillingSynced(true);
-
-      window.setTimeout(() => {
-        setShowBillingSynced(false);
-      }, 2600);
+      window.setTimeout(() => setShowBillingSynced(false), 2600);
     };
 
     void syncPlan();
 
     const handleVisibility = () => {
-      if (document.visibilityState === "visible") {
-        void syncPlan();
-      }
+      if (document.visibilityState === "visible") void syncPlan();
     };
-
-    const handleFocus = () => {
-      void syncPlan();
-    };
+    const handleFocus = () => void syncPlan();
 
     window.addEventListener("focus", handleFocus);
     document.addEventListener("visibilitychange", handleVisibility);
 
     return () => {
+      unsubscribeStorage();
       window.removeEventListener("focus", handleFocus);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>

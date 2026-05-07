@@ -29,6 +29,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }, [pathname]);
 
   async function handleSignOut() {
+    const { storage } = await import("@/lib/storage");
+    storage.onSignOut();
     const supabase = createClient();
     await supabase.auth.signOut();
     router.push("/auth/login");

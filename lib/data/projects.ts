@@ -16,7 +16,7 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { trackEvent } from "@/lib/analytics";
-import { inferStageFromMilestones, normalizeStage, STAGE_ORDER } from "@/lib/stages";
+import { inferStageFromMilestones } from "@/lib/stages";
 import { computeStartupScore } from "@/lib/scoring";
 import type {
   BuildMindProject,
@@ -194,7 +194,7 @@ export async function getProjectSummaries(): Promise<ProjectSummary[]> {
   const projectIds = projects.map((p) => p.id);
   
   // Batch project IDs to avoid URL length limits
-  let allMilestones: Array<{ id: string; title: string; project_id: string; status: string | null }> = [];
+  let allMilestones: Array<{ id: string; title: string; project_id: string; status?: string | null }> = [];
   const BATCH_SIZE = 20;
   
   for (let i = 0; i < projectIds.length; i += BATCH_SIZE) {
@@ -209,14 +209,14 @@ export async function getProjectSummaries(): Promise<ProjectSummary[]> {
   }
 
   const milestoneIds = allMilestones.map((m) => m.id);
-  let allTasks: Array<{ id: string; milestone_id: string; title: string; is_completed: boolean; created_at: string }> = [];
+  let allTasks: Array<{ id: string; title?: string | null; milestone_id: string; is_completed: boolean; created_at: string }> = [];
   
   if (milestoneIds.length > 0) {
     for (let i = 0; i < milestoneIds.length; i += BATCH_SIZE) {
       const batchIds = milestoneIds.slice(i, i + BATCH_SIZE);
       const tasksQuery = supabase
         .from("tasks")
-        .select("id, milestone_id, title, is_completed, created_at");
+        .select("id, title, milestone_id, is_completed, created_at");
       const { data: tasks } = await (batchIds.length === 1
         ? tasksQuery.eq("milestone_id", batchIds[0])
         : tasksQuery.in("milestone_id", batchIds));
@@ -283,12 +283,12 @@ export async function getProjectSummaries(): Promise<ProjectSummary[]> {
       milestoneIdToTitle,
     );
 
-    const storedStage = normalizeStage(project.startup_stage ?? "Idea");
-    const computedIndex = STAGE_ORDER.indexOf(computedStage);
-    const storedIndex = STAGE_ORDER.indexOf(storedStage);
-    const displayStage = Math.abs(computedIndex - storedIndex) <= 1
-      ? computedStage || storedStage
-      : storedStage;
+    // Fix #15: Prefer the user's explicitly set startup_stage over inferred milestone stage.
+    // The inference algorithm can return "Revenue" whenever the auto-generated Idea milestone
+    // is complete — even when the project is brand new at Idea stage.
+    // Only use inferred stage if the user has never set an explicit stage.
+    const userStage = project.startup_stage;
+    const displayStage = userStage || computedStage || "Idea";
     const validationStrengths = normalizeTextArray(project.validation_strengths);
 
     // Pending milestones and tasks — used by Today page for AI personalization
@@ -299,6 +299,7 @@ export async function getProjectSummaries(): Promise<ProjectSummary[]> {
     const pendingTasks = projectTasks
       .filter((t) => !t.is_completed)
       .map((t) => t.title)
+      .filter((title): title is string => Boolean(title))
       .slice(0, 5);
 
     return {
@@ -553,8 +554,7 @@ export async function createProjectWithRoadmap(params: {
   for (const payload of projectPayloads) {
     const result = await supabase
       .from("projects")
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .insert(payload as any)
+      .insert(payload as never)
       .select("*")
       .single();
 

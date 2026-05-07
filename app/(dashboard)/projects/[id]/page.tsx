@@ -354,9 +354,7 @@ export default function ProjectDetailPage() {
         }),
       });
       if (res.ok) {
-        await qc.invalidateQueries({ queryKey: queryKeys.project(id) });
-        await qc.invalidateQueries({ queryKey: queryKeys.projectSummaries });
-        await qc.refetchQueries({ queryKey: queryKeys.project(id) });
+        void qc.invalidateQueries({ queryKey: queryKeys.project(id) });
       }
     } catch {
       // Non-fatal
@@ -474,19 +472,7 @@ export default function ProjectDetailPage() {
             </div>
           )}
           {milestones.length > 0 && (
-            <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 12 }}>
-                <span style={{ fontSize: 12, color: "var(--bm-text3)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                  {milestones.length} milestone{milestones.length !== 1 ? "s" : ""}
-                </span>
-                <button
-                  onClick={handleRegenerateMilestones}
-                  disabled={regenerating}
-                  style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid var(--bm-border)", background: "transparent", color: regenerating ? "var(--bm-text3)" : "var(--bm-text2)", fontSize: 12, fontWeight: 600, cursor: regenerating ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: regenerating ? 0.65 : 1 }}
-                >
-                  {regenerating ? "Generating..." : "Regenerate"}
-                </button>
-              </div>
+            <>
               <div style={{ display: "flex", gap: 3, marginBottom: 10 }}>
                 {milestones.map(m => {
                   const mt = tasks.filter(t => t.milestone_id === m.id);
@@ -496,7 +482,18 @@ export default function ProjectDetailPage() {
                     style={{ height: 4, flex: 1, borderRadius: 99, minWidth: 20, background: done ? "var(--bm-accent)" : partial ? "var(--grad-primary)" : "var(--bm-bg3)", transition: "background 0.4s" }} />;
                 })}
               </div>
-            </div>
+              {/* Fix #2: "Generate again" always visible — not just when 0 milestones */}
+              <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+                <button
+                  onClick={handleRegenerateMilestones}
+                  disabled={regenerating}
+                  style={{ fontSize: 11, color: "var(--bm-text3)", background: "transparent", border: "1px solid var(--bm-border)", borderRadius: 8, padding: "5px 12px", cursor: regenerating ? "not-allowed" : "pointer", opacity: regenerating ? 0.55 : 1, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 5 }}
+                >
+                  <span style={{ fontSize: 13 }}>⚡</span>
+                  {regenerating ? "Generating…" : "Generate milestones & tasks again"}
+                </button>
+              </div>
+            </>
           )}
           {milestones.map((m, mi) => (
             <MilestoneCard key={m.id} milestone={m} tasks={tasks.filter(t => t.milestone_id === m.id)} index={mi} onToggleTask={toggleTask} />

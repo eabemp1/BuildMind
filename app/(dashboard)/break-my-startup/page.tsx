@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useProjectsQuery } from "@/lib/queries";
 import { createClient } from "@/lib/supabase/client";
+import { storage } from "@/lib/storage";
 import { canAccess, incrementDailyStreak } from "@/lib/plan";
 import { usePlan } from "@/lib/usePlan";
 import { useLimitModal } from "@/components/LimitModal";
@@ -35,6 +36,17 @@ interface BreakResult {
   brutal_advice?: string;
   gated?: boolean;
   score_note?: string;
+  agents?: Array<{ name: string; status: string; summary: string; confidence?: number }>;
+  focusAreas?: string[];
+  executionPlan?: { mvp_roadmap?: string[]; first_10_actions?: string[]; gtm_plan?: string[] } | null;
+  reflexionAction?: {
+    action?: string;
+    rationale?: string;
+    confidence?: number;
+    supporting_signals?: string[];
+    risks?: string[];
+    log_row_id?: string | null;
+  } | null;
 }
 
 type BreakApiData = {
@@ -47,6 +59,12 @@ type BreakApiData = {
   differentiation_plan?: string[];
   gated?: boolean;
   reasoning?: string[];
+  agent_outputs?: Record<string, Record<string, unknown> | null>;
+  agent_statuses?: Record<string, string>;
+  signal_summary?: { overall_confidence?: number };
+  execution_plan?: BreakResult["executionPlan"];
+  reflexion_action?: BreakResult["reflexionAction"];
+  focus_areas?: string[];
 };
 
 const FOCUS_AREAS = [
@@ -136,11 +154,13 @@ export default function BreakMyStartupPage() {
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [customIdea, setCustomIdea] = useState("");
   const [focusAreas, setFocusAreas] = useState<FocusArea[]>([]);
+  const [executionMode, setExecutionMode] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<BreakResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [outcomeSaving, setOutcomeSaving] = useState<string | null>(null);
 
   // Pre-fill idea from selected project
   const selectedProject = projects.find((p) => p.id === selectedProjectId);
@@ -181,6 +201,22 @@ export default function BreakMyStartupPage() {
       });
     }
 
+    const agents = Object.entries(data.agent_outputs ?? {}).map(([name, output]) => {
+      const text = output
+        ? Object.values(output)
+            .flat()
+            .filter((value) => typeof value === "string")
+            .slice(0, 2)
+            .join(" ")
+        : "";
+      return {
+        name: name[0].toUpperCase() + name.slice(1),
+        status: data.agent_statuses?.[name] ?? "complete",
+        summary: text || "Agent completed with structured analysis.",
+        confidence: data.signal_summary?.overall_confidence,
+      };
+    });
+
     return {
       overallRisk,
       summary: data.verdict ?? "Stress test complete. Review the risks before deciding what to build next.",
@@ -193,6 +229,10 @@ export default function BreakMyStartupPage() {
         : data.reasoning?.filter((item) =>
             /focus areas|5-agent|viability score|competitor/i.test(item)
           ).join(" · ") || "Calculated from execution data, validation signals, stage, and competitor context.",
+      agents,
+      focusAreas: data.focus_areas,
+      executionPlan: data.execution_plan ?? null,
+      reflexionAction: data.reflexion_action ?? null,
     };
   }
 
@@ -222,7 +262,7 @@ export default function BreakMyStartupPage() {
       const freePreviewKey = `bm_break_preview_used_${authData.user.id}`;
       // Wait for server-authoritative plan before applying free gate —
       // prevents Builder users from being blocked during the plan loading window.
-      if (!planLoading && plan === "free" && localStorage.getItem(freePreviewKey)) {
+      if (!planLoading && plan === "free" && storage.get(freePreviewKey)) {
         showLimitModal("break_startup");
         return;
       }
@@ -235,6 +275,7 @@ export default function BreakMyStartupPage() {
           projectId: selectedProjectId || undefined,
           idea,
           focusAreas,
+          executionMode,
         }),
       });
 
@@ -243,7 +284,7 @@ export default function BreakMyStartupPage() {
 
       const mappedResult = mapApiResult(payload.data ?? {});
       setResult(mappedResult);
-      if (plan === "free") localStorage.setItem(freePreviewKey, "1");
+      if (plan === "free") storage.set(freePreviewKey, "1");
 
       // Track achievement
       try {
@@ -251,9 +292,9 @@ export default function BreakMyStartupPage() {
         await checkAndUnlockAchievements();
         // Break My Startup counts as a streak-qualifying activity — increment once per day
         const todayKey = new Date().toISOString().split("T")[0];
-        if (localStorage.getItem("bm_break_streak_date") !== todayKey) {
+        if (storage.get("bm_break_streak_date") !== todayKey) {
           incrementDailyStreak();
-          localStorage.setItem("bm_break_streak_date", todayKey);
+          storage.set("bm_break_streak_date", todayKey);
         }
       } catch {}
     } catch {
@@ -294,6 +335,21 @@ export default function BreakMyStartupPage() {
     setError(null);
     setSaved(false);
     setCustomIdea("");
+  }
+
+  async function handleOutcome(outcome: "completed" | "partial" | "overridden") {
+    const logRowId = result?.reflexionAction?.log_row_id;
+    if (!logRowId) return;
+    setOutcomeSaving(outcome);
+    try {
+      await fetch("/api/ai/reflexion-outcome", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ log_row_id: logRowId, outcome }),
+      });
+    } finally {
+      setOutcomeSaving(null);
+    }
   }
 
   return (
@@ -381,9 +437,23 @@ export default function BreakMyStartupPage() {
 
             {/* Focus areas */}
             <div className="flex flex-col gap-2">
-              <label className="text-xs font-medium text-[var(--bm-text2)] uppercase tracking-widest">
-                Focus Areas (optional)
-              </label>
+              <div className="flex items-center justify-between gap-3">
+                <label className="text-xs font-medium text-[var(--bm-text2)] uppercase tracking-widest">
+                  Focus Areas (optional)
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setExecutionMode((value) => !value)}
+                  className="rounded-lg px-3 py-1.5 text-xs font-semibold"
+                  style={{
+                    border: "1px solid var(--bm-border)",
+                    background: executionMode ? "rgba(92,200,138,0.12)" : "var(--bm-bg3)",
+                    color: executionMode ? "var(--bm-accent)" : "var(--bm-text3)",
+                  }}
+                >
+                  Focus Mode {executionMode ? "On" : "Off"}
+                </button>
+              </div>
               <div className="flex flex-wrap gap-2">
                 {FOCUS_AREAS.map((area) => {
                   const active = focusAreas.includes(area);
@@ -404,7 +474,7 @@ export default function BreakMyStartupPage() {
                 })}
               </div>
               <p className="text-xs text-[var(--bm-text3)]">
-                Leave empty to stress-test everything.
+                Leave empty to stress-test everything. Focus Mode turns the result into an execution-first plan.
               </p>
             </div>
 
@@ -520,6 +590,68 @@ export default function BreakMyStartupPage() {
                   </span>
                 </div>
                 <p className="text-sm text-[var(--bm-text2)] leading-relaxed">{result.brutal_advice}</p>
+              </Card>
+            )}
+
+            {/* Risk breakdown cards */}
+            {result.agents && result.agents.length > 0 && (
+              <Card className="p-4 flex flex-col gap-3">
+                <h3 className="text-sm font-semibold text-[var(--bm-text)]">Five-Agent Analysis</h3>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {result.agents.map((agent) => (
+                    <div key={agent.name} className="rounded-lg p-3" style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)" }}>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-semibold text-[var(--bm-text)]">{agent.name}</span>
+                        <span className="text-[10px] uppercase tracking-widest text-[var(--bm-text4)]">{agent.status}</span>
+                      </div>
+                      <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-[var(--bm-text3)]">{agent.summary}</p>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+
+            {result.executionPlan && (
+              <Card className="p-4 flex flex-col gap-3">
+                <h3 className="text-sm font-semibold text-[var(--bm-text)]">Focus Mode Plan</h3>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {[
+                    ["MVP Roadmap", result.executionPlan.mvp_roadmap],
+                    ["First Actions", result.executionPlan.first_10_actions],
+                    ["Go To Market", result.executionPlan.gtm_plan],
+                  ].map(([title, items]) => (
+                    <div key={title as string} className="flex flex-col gap-2">
+                      <span className="text-xs font-semibold text-[var(--bm-text2)]">{title as string}</span>
+                      {(items as string[] | undefined)?.slice(0, 4).map((item) => (
+                        <p key={item} className="text-xs leading-relaxed text-[var(--bm-text3)]">{item}</p>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+
+            {result.reflexionAction && (
+              <Card className="p-4 flex flex-col gap-3">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-[var(--bm-text)]">Reflexion Loop</h3>
+                  {typeof result.reflexionAction.confidence === "number" && (
+                    <span className="text-xs text-[var(--bm-text3)]">{Math.round(result.reflexionAction.confidence * 100)}% confidence</span>
+                  )}
+                </div>
+                <p className="text-sm leading-relaxed text-[var(--bm-text2)]">{result.reflexionAction.action}</p>
+                {result.reflexionAction.rationale && (
+                  <p className="text-xs leading-relaxed text-[var(--bm-text3)]">{result.reflexionAction.rationale}</p>
+                )}
+                {result.reflexionAction.log_row_id && (
+                  <div className="flex flex-wrap gap-2">
+                    {(["completed", "partial", "overridden"] as const).map((outcome) => (
+                      <Button key={outcome} variant="ghost" size="sm" onClick={() => handleOutcome(outcome)} loading={outcomeSaving === outcome}>
+                        Mark {outcome}
+                      </Button>
+                    ))}
+                  </div>
+                )}
               </Card>
             )}
 

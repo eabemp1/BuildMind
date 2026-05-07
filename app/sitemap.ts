@@ -14,12 +14,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
     },
     // Public content pages — indexable
     {
-      url: `${base}/explore`,
-      lastModified: now,
-      changeFrequency: "daily",
-      priority: 0.9,
-    },
-    {
       url: `${base}/try`,
       lastModified: now,
       changeFrequency: "weekly",

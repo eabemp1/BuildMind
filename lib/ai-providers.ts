@@ -162,8 +162,38 @@ export async function callModelJSON<T>(
   messages: ChatMessage[],
   options: Omit<Parameters<typeof callModel>[1], "jsonMode"> = {},
 ): Promise<T> {
-  const text = await callModel(messages, { ...options, jsonMode: true });
-  // Strip markdown code fences if present (some models add them despite jsonMode)
-  const clean = text.replace(/^```json\s*/i, "").replace(/```\s*$/, "").trim();
-  return JSON.parse(clean) as T;
+  let text: string;
+  try {
+    text = await callModel(messages, { ...options, jsonMode: true });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message.toLowerCase() : "";
+    const jsonModeUnsupported =
+      msg.includes("response_format") ||
+      msg.includes("json mode") ||
+      msg.includes("json_object");
+
+    if (!jsonModeUnsupported) throw error;
+
+    text = await callModel(
+      [
+        ...messages,
+        {
+          role: "system",
+          content: "Return only valid JSON. Do not wrap it in markdown.",
+        },
+      ],
+      { ...options, jsonMode: false },
+    );
+  }
+
+  // Strip markdown code fences and tolerate prose around JSON.
+  const clean = text
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/```\s*$/i, "")
+    .trim();
+  const start = clean.indexOf("{");
+  const end = clean.lastIndexOf("}");
+  const json = start >= 0 && end > start ? clean.slice(start, end + 1) : clean;
+  return JSON.parse(json) as T;
 }

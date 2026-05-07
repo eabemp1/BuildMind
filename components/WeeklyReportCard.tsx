@@ -1,19 +1,14 @@
 "use client";
 
 /**
- * components/WeeklyReportCard.tsx — LinkedIn-Ready Weekly Report Card
+ * components/WeeklyReportCard.tsx — v3 Beautiful & Shareable
  *
- * A visually impressive, shareable card that founders want to post.
- * Renders the weekly report data as a polished artifact — not a dashboard.
- *
- * Features:
- *   - "Share to LinkedIn" generates a formatted text post with the report data
- *   - "Download card" triggers a browser print/screenshot of just the card
- *   - Momentum arc + week-over-week delta
- *   - Stage progress timeline
- *   - Brutally honest assessment (the viral hook)
- *
- * Used inside /app/reports/page.tsx — Builder plan only.
+ * Fixes issue #7: redesigned as a genuine shareable artifact.
+ * - Print CSS for PDF export (beautiful in print, not a debug dump)
+ * - CSV export option
+ * - LinkedIn / X share
+ * - Celadon brand palette
+ * - Clean data hierarchy
  */
 
 import { useRef } from "react";
@@ -40,40 +35,50 @@ type Props = {
 
 const STAGE_ORDER = ["Idea", "Validation", "MVP", "Launch", "Growth", "Revenue"];
 
-function getWeekNumber(): number {
-  const d = new Date();
-  const j = new Date(d.getFullYear(), 0, 1);
-  return Math.ceil(((d.getTime() - j.getTime()) / 86400000 + j.getDay() + 1) / 7);
-}
+// Celadon-aligned palette
+const C = {
+  celadon:   "#A8D5BA",
+  celadonDim: "rgba(168,213,186,0.12)",
+  celadonBd:  "rgba(168,213,186,0.22)",
+  bg:        "#0d0d14",
+  bg2:       "#111118",
+  card:      "rgba(18,18,26,0.97)",
+  text1:     "#f0f0f6",
+  text2:     "#9090a8",
+  text3:     "#45455a",
+  green:     "#4ade80",
+  amber:     "#fbbf24",
+  red:       "#f87171",
+  indigo:    "#818cf8",
+};
 
-function MomentumArc({ score, size = 140 }: { score: number; size?: number }) {
-  const stroke = 9;
+function MomentumArc({ score, size = 130 }: { score: number; size?: number }) {
+  const stroke = 10;
   const r = (size - stroke) / 2;
   const circ = 2 * Math.PI * r;
-  const color = score >= 70 ? "#4ade80" : score >= 40 ? "#fbbf24" : "#f87171";
+  const color = score >= 70 ? C.green : score >= 40 ? C.amber : C.red;
   const label = score >= 70 ? "Strong" : score >= 40 ? "Building" : "Critical";
-
   return (
     <div style={{ position: "relative", width: size, height: size }}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform: "rotate(-90deg)" }}>
-        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={stroke} />
+        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth={stroke} />
         <motion.circle
           cx={size/2} cy={size/2} r={r} fill="none"
           stroke={color} strokeWidth={stroke} strokeLinecap="round"
           strokeDasharray={circ}
           initial={{ strokeDashoffset: circ }}
           animate={{ strokeDashoffset: circ - (score / 100) * circ }}
-          transition={{ duration: 1.4, ease: "easeOut", delay: 0.2 }}
+          transition={{ duration: 1.4, ease: "easeOut", delay: 0.3 }}
         />
       </svg>
       <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
         <motion.span
-          initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.8 }}
-          style={{ fontSize: size * 0.22, fontWeight: 700, color, lineHeight: 1, letterSpacing: "-0.04em" }}
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1 }}
+          style={{ fontSize: size * 0.23, fontWeight: 800, color, lineHeight: 1, letterSpacing: "-0.04em" }}
         >
           {score}
         </motion.span>
-        <span style={{ fontSize: size * 0.09, color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.1em", marginTop: 3 }}>
+        <span style={{ fontSize: size * 0.1, color: C.text2, textTransform: "uppercase", letterSpacing: "0.08em", marginTop: 2 }}>
           {label}
         </span>
       </div>
@@ -81,89 +86,76 @@ function MomentumArc({ score, size = 140 }: { score: number; size?: number }) {
   );
 }
 
-function StageTimeline({ stage }: { stage: string }) {
-  const normalized = STAGE_ORDER.find(s => stage.toLowerCase().includes(s.toLowerCase())) ?? stage;
-  const idx = STAGE_ORDER.indexOf(normalized);
-
+function StageBar({ stage }: { stage: string }) {
+  const norm = STAGE_ORDER.find(s => stage.toLowerCase().includes(s.toLowerCase())) ?? stage;
+  const idx = STAGE_ORDER.indexOf(norm);
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
       {STAGE_ORDER.map((s, i) => {
         const done = i < idx;
         const active = i === idx;
+        const dot = done ? C.green : active ? C.celadon : "rgba(255,255,255,0.08)";
         return (
-          <div key={s} style={{ display: "flex", alignItems: "center" }}>
-            <div style={{
-              width: active ? 28 : 18,
-              height: active ? 28 : 18,
-              borderRadius: "50%",
-              background: done ? "#4ade80" : active ? "#818cf8" : "rgba(255,255,255,0.08)",
-              border: active ? "2px solid #818cf8" : "none",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              transition: "all 0.3s",
-            }}>
-              {done && <span style={{ fontSize: 10, color: "#000", fontWeight: 700 }}>✓</span>}
-              {active && <span style={{ fontSize: 9, color: "#fff", fontWeight: 700 }}>{i + 1}</span>}
+          <div key={s} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+              <div style={{
+                width: active ? 8 : 6, height: active ? 8 : 6, borderRadius: "50%",
+                background: dot,
+                boxShadow: active ? `0 0 8px ${C.celadon}80` : "none",
+                transition: "all 0.25s",
+              }} />
+              <span style={{ fontSize: 8, color: active ? C.celadon : C.text3, fontWeight: active ? 700 : 400, letterSpacing: "0.04em", whiteSpace: "nowrap" }}>
+                {s}
+              </span>
             </div>
             {i < STAGE_ORDER.length - 1 && (
-              <div style={{
-                width: 20, height: 2,
-                background: done ? "#4ade80" : "rgba(255,255,255,0.08)",
-                transition: "background 0.3s",
-              }} />
+              <div style={{ width: 22, height: 1, background: done ? C.green : "rgba(255,255,255,0.07)", marginBottom: 10, transition: "background 0.3s" }} />
             )}
           </div>
         );
       })}
-      <span style={{ marginLeft: 10, fontSize: 11, color: "#818cf8", fontWeight: 600 }}>{normalized}</span>
     </div>
   );
 }
 
-function buildLinkedInPost(report: ReportData, props: Props): string {
-  const pct = props.tasksTotal > 0
-    ? Math.round((props.tasksCompleted / props.tasksTotal) * 100)
-    : 0;
+function buildShareText(report: ReportData, props: Props): string {
+  const pct = props.tasksTotal > 0 ? Math.round((props.tasksCompleted / props.tasksTotal) * 100) : 0;
+  return `Week ${props.weekNumber} — building ${props.projectTitle} in public 🧵
 
-  return `Week ${props.weekNumber} building ${props.projectTitle} in public 🧵
+📊 Momentum: ${report.momentum_score}/100
+✅ Tasks done: ${props.tasksCompleted}/${props.tasksTotal} (${pct}%)
+🔥 Streak: ${props.streak} days
+📍 Stage: ${props.stage}
 
-📊 Momentum score: ${report.momentum_score}/100
-✅ Tasks completed: ${props.tasksCompleted}/${props.tasksTotal} (${pct}%)
-🔥 Builder streak: ${props.streak} days
-
-This week's honest assessment:
+The honest take:
 "${report.honest_assessment}"
 
-Biggest gap I'm closing next week:
+Next week's focus:
 → ${report.next_week_focus}
 
-Building with @buildmind_io — it forces you to be honest with yourself every week.
+Tracking it all with @buildmind_io
 
-#buildinpublic #solofounder #startuplife #founder`;
+#buildinpublic #solofounder #startuplife`;
 }
 
-function downloadCSV(report: ReportData, projectTitle: string, weekNumber: number) {
+function buildCSV(report: ReportData, props: Props): string {
+  const pct = props.tasksTotal > 0 ? Math.round((props.tasksCompleted / props.tasksTotal) * 100) : 0;
   const rows = [
-    ["BuildMind Weekly Report"],
-    [`Project: ${projectTitle}`, `Week ${weekNumber}`],
-    [""],
-    ["Section", "Content"],
+    ["Week", props.weekNumber],
+    ["Project", props.projectTitle],
+    ["Stage", props.stage],
+    ["Momentum Score", report.momentum_score],
+    ["Tasks Completed", props.tasksCompleted],
+    ["Tasks Total", props.tasksTotal],
+    ["Completion %", pct],
+    ["Streak (days)", props.streak],
     ["Summary", report.summary],
     ["Intention vs Action", report.intention_vs_action],
     ["Biggest Gap", report.biggest_gap],
     ["Next Week Focus", report.next_week_focus],
     ["Honest Assessment", report.honest_assessment],
-    ["Momentum Score", String(report.momentum_score)],
   ];
-  const csv = rows
-    .map((r) => r.map((c) => `"${String(c ?? "").replace(/"/g, '""')}"`).join(","))
-    .join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `buildmind-week-${weekNumber}-${projectTitle.toLowerCase().replace(/\s+/g, "-")}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+  return rows.map(([k, v]) => `"${k}","${String(v).replace(/"/g, '""')}"`).join("\n");
 }
 
 export default function WeeklyReportCard({
@@ -171,216 +163,249 @@ export default function WeeklyReportCard({
 }: Props) {
   const cardRef = useRef<HTMLDivElement>(null);
   const pct = tasksTotal > 0 ? Math.round((tasksCompleted / tasksTotal) * 100) : 0;
-  const pColor = pct >= 70 ? "#4ade80" : pct >= 40 ? "#fbbf24" : "#f87171";
+  const pColor = pct >= 70 ? C.green : pct >= 40 ? C.amber : C.red;
+  const dateStr = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 
-  const handleShareLinkedIn = () => {
-    const text = buildLinkedInPost(report, { report, projectTitle, stage, tasksCompleted, tasksTotal, streak, weekNumber });
-    const url = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent("https://buildmind.live")}&summary=${encodeURIComponent(text)}`;
-    window.open(url, "_blank");
+  const handlePrint = () => {
+    const printStyles = `
+      @page { size: A4 portrait; margin: 0; }
+      @media print {
+        body * { visibility: hidden !important; }
+        #bm-report-card, #bm-report-card * { visibility: visible !important; }
+        #bm-report-card {
+          position: fixed !important;
+          top: 0 !important; left: 0 !important;
+          width: 100vw !important; height: 100vh !important;
+          margin: 0 !important; padding: 40px !important;
+          box-sizing: border-box !important;
+          background: #0d0d14 !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+        .bm-no-print { display: none !important; }
+      }
+    `;
+    const style = document.createElement("style");
+    style.textContent = printStyles;
+    document.head.appendChild(style);
+    window.print();
+    document.head.removeChild(style);
   };
 
-  const handleShareTwitter = () => {
-    const text = buildLinkedInPost(report, { report, projectTitle, stage, tasksCompleted, tasksTotal, streak, weekNumber });
-    window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text.slice(0, 280))}`, "_blank");
+  const handleCSV = () => {
+    const csv = buildCSV(report, { report, projectTitle, stage, tasksCompleted, tasksTotal, streak, weekNumber });
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `buildmind-week-${weekNumber}-${projectTitle.replace(/\s+/g, "-").toLowerCase()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleLinkedIn = () => {
+    const text = buildShareText(report, { report, projectTitle, stage, tasksCompleted, tasksTotal, streak, weekNumber });
+    window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent("https://buildmind.live")}&summary=${encodeURIComponent(text)}`, "_blank");
+  };
+
+  const handleX = () => {
+    const text = buildShareText(report, { report, projectTitle, stage, tasksCompleted, tasksTotal, streak, weekNumber });
+    window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text.slice(0, 270))}`, "_blank");
   };
 
   return (
     <div>
-      <style>{`
-        @media print {
-          body * { visibility: hidden !important; }
-          #bm-weekly-report, #bm-weekly-report * { visibility: visible !important; }
-          #bm-weekly-report {
-            position: fixed !important;
-            inset: 0 !important;
-            width: 100vw !important;
-            min-height: 100vh !important;
-            padding: 40px !important;
-            background: #0d0d1a !important;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-          }
-          .no-print { display: none !important; }
-        }
-      `}</style>
-      {/* The card itself */}
+      {/* ── Print-safe report card ── */}
       <motion.div
-        id="bm-weekly-report"
+        id="bm-report-card"
         ref={cardRef}
-        initial={{ opacity: 0, y: 12 }}
+        initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
         style={{
-          background: "linear-gradient(145deg, #0f0f1a 0%, #13131f 50%, #0a0a14 100%)",
-          border: "1px solid rgba(129,140,248,0.2)",
-          borderRadius: 16,
-          padding: "24px 28px",
+          background: "linear-gradient(145deg, #0d0d14 0%, #111118 60%, #0a0a10 100%)",
+          border: `1px solid ${C.celadonBd}`,
+          borderRadius: 20,
+          padding: "32px 36px",
           position: "relative",
           overflow: "hidden",
         }}
       >
-        {/* Background grid */}
+        {/* Subtle grid texture */}
         <div style={{
-          position: "absolute", inset: 0, opacity: 0.03,
-          backgroundImage: "linear-gradient(rgba(129,140,248,1) 1px, transparent 1px), linear-gradient(90deg, rgba(129,140,248,1) 1px, transparent 1px)",
-          backgroundSize: "32px 32px",
+          position: "absolute", inset: 0, opacity: 0.025,
+          backgroundImage: `linear-gradient(${C.celadon} 1px, transparent 1px), linear-gradient(90deg, ${C.celadon} 1px, transparent 1px)`,
+          backgroundSize: "36px 36px", pointerEvents: "none",
+        }} />
+
+        {/* Celadon glow top-right */}
+        <div style={{
+          position: "absolute", top: -60, right: -60,
+          width: 200, height: 200, borderRadius: "50%",
+          background: `radial-gradient(circle, ${C.celadonDim} 0%, transparent 70%)`,
           pointerEvents: "none",
         }} />
 
-        {/* Header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, position: "relative" }}>
+        {/* ── Header ── */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24, position: "relative" }}>
           <div>
-            <div style={{ fontSize: 10, color: "rgba(129,140,248,0.7)", fontFamily: "monospace", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 4 }}>
-              buildmind · week {weekNumber} report
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+              {/* Logo mark */}
+              <svg viewBox="0 0 20 20" width={16} height={16} fill="none">
+                <circle cx="5" cy="10" r="2" fill={C.celadon} opacity="0.9" />
+                <circle cx="10" cy="6" r="2" fill={C.celadon} opacity="0.7" />
+                <circle cx="10" cy="14" r="2" fill={C.celadon} opacity="0.7" />
+                <circle cx="15" cy="10" r="2" fill={C.celadon} opacity="0.5" />
+                <line x1="7" y1="10" x2="8" y2="6" stroke={C.celadon} strokeWidth="1" opacity="0.5" />
+                <line x1="7" y1="10" x2="8" y2="14" stroke={C.celadon} strokeWidth="1" opacity="0.5" />
+                <line x1="12" y1="6" x2="13" y2="10" stroke={C.celadon} strokeWidth="1" opacity="0.4" />
+              </svg>
+              <span style={{ fontSize: 10, color: C.celadon, fontFamily: "monospace", letterSpacing: "0.14em", textTransform: "uppercase", opacity: 0.8 }}>
+                BuildMind · Week {weekNumber} Report
+              </span>
             </div>
-            <div style={{ fontSize: 20, fontWeight: 700, color: "#f0f0f5", letterSpacing: "-0.03em" }}>
+            <h1 style={{ fontSize: 22, fontWeight: 800, color: C.text1, letterSpacing: "-0.03em", margin: 0, lineHeight: 1.1 }}>
               {projectTitle}
-            </div>
+            </h1>
           </div>
-          <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", fontFamily: "monospace", letterSpacing: "0.08em" }}>
-              {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-            </div>
+          <div style={{ textAlign: "right", flexShrink: 0 }}>
+            <div style={{ fontSize: 11, color: C.text3, fontFamily: "monospace", marginBottom: 4 }}>{dateStr}</div>
             {streak > 0 && (
-              <div style={{ fontSize: 12, color: "#fbbf24", marginTop: 4, fontWeight: 600 }}>
-                🔥 {streak}d streak
-              </div>
+              <div style={{ fontSize: 12, color: C.amber, fontWeight: 700 }}>🔥 {streak}-day streak</div>
             )}
           </div>
         </div>
 
-        {/* Stage timeline */}
-        <div style={{ marginBottom: 20, position: "relative" }}>
-          <StageTimeline stage={stage} />
+        {/* ── Stage progress ── */}
+        <div style={{ marginBottom: 24, padding: "14px 16px", background: "rgba(255,255,255,0.02)", borderRadius: 12, border: "1px solid rgba(255,255,255,0.05)" }}>
+          <div style={{ fontSize: 9, color: C.text3, fontFamily: "monospace", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 10 }}>
+            Stage Progress
+          </div>
+          <StageBar stage={stage} />
         </div>
 
-        {/* Metrics row */}
-        <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: 20, alignItems: "center", marginBottom: 20, position: "relative" }}>
+        {/* ── Metrics grid ── */}
+        <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: 20, alignItems: "center", marginBottom: 22, position: "relative" }}>
           <MomentumArc score={report.momentum_score} />
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {/* Task completion bar */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {/* Task bar */}
             <div>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-                <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontFamily: "monospace", letterSpacing: "0.07em" }}>TASK COMPLETION</span>
-                <span style={{ fontSize: 12, fontWeight: 700, color: pColor, fontFamily: "monospace" }}>{pct}%</span>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <span style={{ fontSize: 10, color: C.text3, fontFamily: "monospace", letterSpacing: "0.08em", textTransform: "uppercase" }}>Task Completion</span>
+                <span style={{ fontSize: 13, fontWeight: 800, color: pColor, fontFamily: "monospace" }}>{pct}%</span>
               </div>
-              <div style={{ height: 4, background: "rgba(255,255,255,0.06)", borderRadius: 2, overflow: "hidden" }}>
+              <div style={{ height: 5, background: "rgba(255,255,255,0.05)", borderRadius: 3, overflow: "hidden" }}>
                 <motion.div
-                  initial={{ width: 0 }}
-                  animate={{ width: `${pct}%` }}
-                  transition={{ duration: 1.1, ease: "easeOut", delay: 0.4 }}
-                  style={{ height: "100%", background: pColor, borderRadius: 2 }}
+                  initial={{ width: 0 }} animate={{ width: `${pct}%` }}
+                  transition={{ duration: 1.1, ease: "easeOut", delay: 0.5 }}
+                  style={{ height: "100%", background: `linear-gradient(90deg, ${pColor} 0%, ${pColor}aa 100%)`, borderRadius: 3 }}
                 />
               </div>
-              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", marginTop: 3, fontFamily: "monospace" }}>
-                {tasksCompleted} of {tasksTotal} tasks
+              <div style={{ fontSize: 10, color: C.text3, marginTop: 4, fontFamily: "monospace" }}>
+                {tasksCompleted} of {tasksTotal} tasks completed
               </div>
             </div>
 
             {/* Summary */}
-            <p style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", lineHeight: 1.6, margin: 0 }}>
+            <p style={{ fontSize: 12.5, color: C.text2, lineHeight: 1.65, margin: 0 }}>
               {report.summary}
             </p>
           </div>
         </div>
 
-        {/* Insights — 2 column grid */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16, position: "relative" }}>
+        {/* ── Intention vs Action ── */}
+        {report.intention_vs_action && (
+          <div style={{ marginBottom: 14, padding: "14px 16px", background: "rgba(168,213,186,0.04)", border: `1px solid ${C.celadonBd}`, borderRadius: 12 }}>
+            <div style={{ fontSize: 9, color: C.celadon, fontFamily: "monospace", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6, fontWeight: 700 }}>
+              Intention vs Reality
+            </div>
+            <p style={{ fontSize: 12.5, color: C.text2, lineHeight: 1.6, margin: 0 }}>{report.intention_vs_action}</p>
+          </div>
+        )}
+
+        {/* ── Insights 2-col ── */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
           {[
-            { label: "Biggest gap", value: report.biggest_gap, color: "#f87171" },
-            { label: "Next week focus", value: report.next_week_focus, color: "#4ade80" },
-          ].map((item) => (
+            { label: "Biggest Gap", value: report.biggest_gap, color: C.red },
+            { label: "Next Week Focus", value: report.next_week_focus, color: C.green },
+          ].map(item => (
             <div key={item.label} style={{
-              background: "rgba(255,255,255,0.03)",
+              background: "rgba(255,255,255,0.025)",
               border: "1px solid rgba(255,255,255,0.06)",
-              borderRadius: 10,
-              padding: "12px 14px",
+              borderRadius: 12, padding: "14px 15px",
             }}>
-              <div style={{ fontSize: 9, color: item.color, fontFamily: "monospace", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6, fontWeight: 600 }}>
+              <div style={{ fontSize: 9, color: item.color, fontFamily: "monospace", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 7, fontWeight: 700 }}>
                 {item.label}
               </div>
-              <p style={{ fontSize: 12, color: "rgba(255,255,255,0.6)", lineHeight: 1.55, margin: 0 }}>
-                {item.value.slice(0, 120)}{item.value.length > 120 ? "..." : ""}
+              <p style={{ fontSize: 12, color: C.text2, lineHeight: 1.6, margin: 0 }}>
+                {item.value.slice(0, 140)}{item.value.length > 140 ? "…" : ""}
               </p>
             </div>
           ))}
         </div>
 
-        {/* Honest assessment — the viral hook */}
+        {/* ── Honest assessment (viral hook) ── */}
         <div style={{
-          background: "rgba(239,68,68,0.05)",
-          border: "1px solid rgba(239,68,68,0.15)",
-          borderRadius: 10,
-          padding: "14px 16px",
+          background: "rgba(248,113,113,0.05)",
+          border: "1px solid rgba(248,113,113,0.18)",
+          borderRadius: 12, padding: "16px 18px",
           position: "relative",
         }}>
-          <div style={{ fontSize: 9, color: "#f87171", fontFamily: "monospace", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8, fontWeight: 600 }}>
-            honest assessment
+          <div style={{ fontSize: 9, color: C.red, fontFamily: "monospace", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 9, fontWeight: 700 }}>
+            Honest Assessment
           </div>
-          <p style={{ fontSize: 13, color: "rgba(255,255,255,0.8)", lineHeight: 1.65, margin: 0, fontStyle: "italic" }}>
+          <p style={{ fontSize: 13.5, color: C.text1, lineHeight: 1.7, margin: 0, fontStyle: "italic", fontWeight: 400 }}>
             "{report.honest_assessment}"
           </p>
         </div>
 
-        {/* Watermark */}
-        <div style={{ marginTop: 16, textAlign: "right", position: "relative" }}>
-          <span style={{ fontSize: 10, color: "rgba(255,255,255,0.15)", fontFamily: "monospace", letterSpacing: "0.05em" }}>
+        {/* ── Watermark ── */}
+        <div style={{ marginTop: 20, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ fontSize: 10, color: C.text3, fontFamily: "monospace" }}>
+            Generated with BuildMind
+          </div>
+          <div style={{ fontSize: 10, color: C.celadon, fontFamily: "monospace", opacity: 0.5 }}>
             buildmind.live
-          </span>
+          </div>
         </div>
       </motion.div>
 
-      {/* Share buttons — outside the card */}
-      <div className="no-print" style={{ display: "flex", gap: 8, marginTop: 14 }}>
-        <button
-          onClick={handleShareLinkedIn}
-          style={{
-            flex: 1, padding: "10px 0", borderRadius: 8,
-            background: "rgba(10,102,194,0.12)",
-            border: "1px solid rgba(10,102,194,0.3)",
-            color: "#60a5fa", fontSize: 12, fontWeight: 600,
-            cursor: "pointer", fontFamily: "inherit",
-          }}
-        >
-          Share to LinkedIn ↗
+      {/* ── Action buttons (hidden on print) ── */}
+      <div className="bm-no-print" style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+        {/* Share */}
+        <button onClick={handleLinkedIn} style={{
+          flex: 1, minWidth: 120, padding: "10px 0", borderRadius: 9,
+          background: "rgba(10,102,194,0.1)", border: "1px solid rgba(10,102,194,0.25)",
+          color: "#60a5fa", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+        }}>
+          Share LinkedIn ↗
         </button>
-        <button
-          onClick={handleShareTwitter}
-          style={{
-            flex: 1, padding: "10px 0", borderRadius: 8,
-            background: "rgba(29,161,242,0.08)",
-            border: "1px solid rgba(29,161,242,0.2)",
-            color: "#93c5fd", fontSize: 12, fontWeight: 600,
-            cursor: "pointer", fontFamily: "inherit",
-          }}
-        >
-          Share to X ↗
+        <button onClick={handleX} style={{
+          flex: 1, minWidth: 100, padding: "10px 0", borderRadius: 9,
+          background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)",
+          color: C.text2, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+        }}>
+          Share X ↗
         </button>
-        <button
-          onClick={() => window.print()}
-          style={{
-            padding: "10px 16px", borderRadius: 8,
-            background: "transparent",
-            border: "1px solid var(--bm-border)",
-            color: "var(--bm-text2)", fontSize: 12,
-            cursor: "pointer", fontFamily: "inherit",
-          }}
-        >
-          Save as PDF
-        </button>
-        <button
-          onClick={() => downloadCSV(report, projectTitle, weekNumber)}
-          style={{
-            padding: "10px 16px", borderRadius: 8,
-            background: "transparent",
-            border: "1px solid var(--bm-border)",
-            color: "var(--bm-text2)", fontSize: 12,
-            cursor: "pointer", fontFamily: "inherit",
-          }}
-        >
-          Export CSV
-        </button>
+
+        {/* Export */}
+        <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+          <button onClick={handlePrint} style={{
+            padding: "10px 16px", borderRadius: 9,
+            background: C.celadonDim, border: `1px solid ${C.celadonBd}`,
+            color: C.celadon, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+          }}>
+            Print / PDF
+          </button>
+          <button onClick={handleCSV} style={{
+            padding: "10px 16px", borderRadius: 9,
+            background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)",
+            color: C.text2, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+          }}>
+            Export CSV
+          </button>
+        </div>
       </div>
     </div>
   );

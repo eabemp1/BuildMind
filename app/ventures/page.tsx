@@ -22,6 +22,7 @@ import { usePlan } from "@/lib/usePlan";
 import { updateAchievementStats, checkAndUnlockAchievements } from "@/lib/achievements";
 import { createClient } from "@/lib/supabase/client";
 import BuildMindLoader from "@/components/BuildMindLoader";
+import ExecutionSystems, { type ExecutionSystem } from "@/components/ExecutionSystem";
 import { PLAN_PRICE_LABEL } from "@/lib/pricing";
 import type { StartupBlueprint } from "@/lib/ventures/index";
 
@@ -891,6 +892,8 @@ function VenturesContent() {
 
   const [tab, setTab]         = useState<"blueprint" | "systems">("blueprint");
   const [tracks, setTracks]   = useState<UserTrack[]>([]);
+  const [execSystems, setExecSystems] = useState<ExecutionSystem[]>([]);
+  const [execLoading, setExecLoading] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [showNew, setShowNew] = useState(false);
 
@@ -922,6 +925,27 @@ function VenturesContent() {
   };
 
   const active = tracks.find(t => t.id === activeId);
+
+  async function handleGenerateExecutionSystems() {
+    const latestBlueprint = loadBlueprints()[0];
+    const description =
+      latestBlueprint
+        ? JSON.stringify(latestBlueprint).slice(0, 3000)
+        : tracks[0]?.description || tracks[0]?.name || "Early-stage startup seeking distribution, validation, and revenue systems.";
+
+    setExecLoading(true);
+    try {
+      const res = await fetch("/api/ventures/execution-systems", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ description, stage: tracks[0]?.stage ?? "Idea" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data.ok) setExecSystems(data.systems ?? []);
+    } finally {
+      setExecLoading(false);
+    }
+  }
 
   if (tab === "systems" && active && !showNew) {
     return <TrackTimeline track={active} onBack={() => setActiveId(null)} onUpdate={saveTrack} />;
@@ -1000,97 +1024,23 @@ function VenturesContent() {
           </div>
         ) : (
           <div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
-              <div>
-                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: V.text1 }}>Execution Systems</h2>
-                <p style={{ margin: "3px 0 0", fontSize: 12, color: V.text2 }}>90-day decision paths. Templates for SaaS, Marketplace, Mobile, Service.</p>
-              </div>
-              <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-                onClick={() => setShowNew(true)}
-                style={{
-                  padding: "9px 18px", borderRadius: 10, border: "none",
-                  background: "var(--grad-primary)",
-                  color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
-                }}>
-                + New system
-              </motion.button>
-            </div>
-
-            {tracks.length === 0 ? (
-              <div style={{ textAlign: "center", padding: "50px 20px", background: V.card, border: `1px solid ${V.border}`, borderRadius: 16 }}>
-                <div style={{ fontSize: 32, marginBottom: 12 }}>⬡</div>
-                <div style={{ fontSize: 15, fontWeight: 600, color: V.text1, marginBottom: 8 }}>No systems yet</div>
-                <p style={{ fontSize: 13, color: V.text2, lineHeight: 1.6, maxWidth: 340, margin: "0 auto 18px" }}>
-                  A 90-day system breaks your startup into decision paths. Pick a template and start operating.
-                </p>
-                <button onClick={() => setShowNew(true)} style={{
-                  padding: "11px 26px", borderRadius: 10, border: "none",
-                  background: "var(--grad-primary)",
-                  color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
-                }}>
-                  Create your first system →
-                </button>
-              </div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <AnimatePresence>
-                  {tracks.map((track, i) => {
-                    const { done, total, pct } = trackProgress(track);
-                    return (
-                      <motion.div key={track.id} layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ delay: 0.05 * i }}>
-                        <div onClick={() => setActiveId(track.id)}
-                          style={{
-                            background: V.card, border: `1px solid ${V.border}`,
-                            borderRadius: 14, padding: 18, cursor: "pointer", transition: "all 0.15s",
-                          }}
-                          onMouseEnter={e => (e.currentTarget.style.borderColor = V.borderActive)}
-                          onMouseLeave={e => (e.currentTarget.style.borderColor = V.border)}
-                        >
-                          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 12 }}>
-                            <div>
-                              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
-                                <div style={{ fontSize: 15, fontWeight: 700, color: V.text1 }}>{track.name}</div>
-                                <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 20, background: V.indigoDim, color: V.indigo, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "0.08em" }}>
-                                  {track.industry}
-                                </span>
-                              </div>
-                              {track.description && <div style={{ fontSize: 12, color: V.text2 }}>{track.description}</div>}
-                            </div>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, marginLeft: 12 }}>
-                              <div style={{ textAlign: "right" }}>
-                                <div style={{ fontSize: 18, fontWeight: 800, color: V.indigo }}>{pct}%</div>
-                                <div style={{ fontSize: 9, color: V.text3, textTransform: "uppercase" as const, letterSpacing: "0.06em" }}>{done}/{total}</div>
-                              </div>
-                              <button onClick={e => { e.stopPropagation(); if (confirm("Delete this system?")) deleteTrack(track.id); }}
-                                style={{ background: "transparent", border: `1px solid ${V.border}`, borderRadius: 6, padding: "4px 8px", color: V.text3, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
-                                ✕
-                              </button>
-                            </div>
-                          </div>
-
-                          <div style={{ height: 3, background: "rgba(255,255,255,0.04)", borderRadius: 2, overflow: "hidden", marginBottom: 10 }}>
-                            <motion.div initial={{ width: 0 }} animate={{ width: `${pct}%` }} transition={{ duration: 0.8 }}
-                              style={{ height: "100%", background: `linear-gradient(90deg, ${V.indigo}, ${V.violet})`, borderRadius: 2 }} />
-                          </div>
-
-                          {/* Path pills */}
-                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" as const }}>
-                            {track.paths.map(p => (
-                              <span key={p.id} style={{
-                                fontSize: 10, padding: "3px 9px", borderRadius: 10,
-                                background: "rgba(255,255,255,0.03)", border: `1px solid ${V.borderSubtle}`,
-                                color: V.text3,
-                              }}>
-                                {p.label}: {p.decisions.filter(d => d.done).length}/{p.decisions.length}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      </motion.div>
-                    );
-                  })}
-                </AnimatePresence>
-              </div>
+            <ExecutionSystems
+              systems={execSystems}
+              isLoading={execLoading}
+              onRun={(id) => setExecSystems(prev => prev.map(s => s.id === id ? { ...s, status: "running" } : s))}
+              onToggle={(id) => setExecSystems(prev =>
+                prev.map(s => s.id === id ? { ...s, status: s.status === "paused" ? "active" : "paused" } : s)
+              )}
+            />
+            {execSystems.length === 0 && !execLoading && (
+              <button onClick={handleGenerateExecutionSystems} style={{
+                marginTop: 16,
+                padding: "11px 22px", borderRadius: 10, border: "none",
+                background: "var(--grad-primary)",
+                color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+              }}>
+                Generate Execution Systems
+              </button>
             )}
           </div>
         )

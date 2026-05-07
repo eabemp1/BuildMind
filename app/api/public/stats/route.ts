@@ -2,58 +2,51 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
-export const revalidate = 300; // cache for 5 minutes
+export const revalidate = 60;
 
-async function countTable(
-  supabase: ReturnType<typeof createAdminClient>,
-  table: string,
-): Promise<number> {
-  const { count, error } = await supabase
-    .from(table)
-    .select("*", { count: "exact", head: true });
-
-  if (error) return 0;
-  return count ?? 0;
+async function safeCount(supabase: ReturnType<typeof createAdminClient>, table: string): Promise<number> {
+  try {
+    const { count, error } = await supabase.from(table).select("*", { count: "exact", head: true });
+    return error ? 0 : (count ?? 0);
+  } catch { return 0; }
 }
 
-async function countProjectOwners(supabase: ReturnType<typeof createAdminClient>): Promise<number> {
-  const { data, error } = await supabase
-    .from("projects")
-    .select("user_id")
-    .not("user_id", "is", null);
-
-  if (error || !data) return 0;
-  return new Set(data.map((row) => row.user_id).filter(Boolean)).size;
+async function safeAuthCount(supabase: ReturnType<typeof createAdminClient>): Promise<number> {
+  try {
+    const { data, error } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    return error ? 0 : data.users.length;
+  } catch { return 0; }
 }
 
-async function countAuthUsers(supabase: ReturnType<typeof createAdminClient>): Promise<number> {
-  const { data, error } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
-  if (error) return 0;
-  return data.users.length;
+async function safeProjectOwners(supabase: ReturnType<typeof createAdminClient>): Promise<number> {
+  try {
+    const { data, error } = await supabase.from("projects").select("user_id").not("user_id", "is", null);
+    return (error || !data) ? 0 : new Set(data.map((r) => r.user_id).filter(Boolean)).size;
+  } catch { return 0; }
 }
 
 export async function GET() {
+  const headers = {
+    // ISR: serve stale for 60s, revalidate in background — instant for users
+    "Cache-Control": "public, s-maxage=60, stale-while-revalidate=30",
+    "Access-Control-Allow-Origin": "*",
+  };
   try {
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      return NextResponse.json({ founders: 0, projects: 0, milestones: 0 }, { headers });
+    }
     const supabase = createAdminClient();
-
     const [profiles, users, authUsers, projectOwners, projects, milestones] = await Promise.all([
-      countTable(supabase, "profiles"),
-      countTable(supabase, "users"),
-      countAuthUsers(supabase),
-      countProjectOwners(supabase),
-      countTable(supabase, "projects"),
-      countTable(supabase, "milestones"),
+      safeCount(supabase, "profiles"),
+      safeCount(supabase, "users"),
+      safeAuthCount(supabase),
+      safeProjectOwners(supabase),
+      safeCount(supabase, "projects"),
+      safeCount(supabase, "milestones"),
     ]);
-
-    return NextResponse.json(
-      { founders: Math.max(profiles, users, authUsers, projectOwners), projects, milestones },
-      { headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=60" } },
-    );
-  } catch (err) {
-    console.error("[public/stats] error:", err);
-    return NextResponse.json(
-      { founders: 1, projects: 1, milestones: 1 },
-      { headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300" } },
-    );
+    const founders = Math.max(profiles, users, authUsers, projectOwners);
+    return NextResponse.json({ founders, projects, milestones }, { headers });
+  } catch {
+    return NextResponse.json({ founders: 0, projects: 0, milestones: 0 }, { headers });
   }
 }

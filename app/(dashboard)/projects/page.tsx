@@ -254,7 +254,7 @@ function CreateModal({
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function ProjectsPage() {
   const router = useRouter();
-  const { plan, isLoading: planLoading } = usePlan();
+  const { plan } = usePlan();
   const { showLimitModal } = useLimitModal();
   const { data: summaries = [], isLoading } = useProjectSummariesQuery();
   const createMut = useCreateProjectMutation();
@@ -263,16 +263,32 @@ export default function ProjectsPage() {
   const [activeId, setActiveId] = useState<string>("");
   const [showCreate, setShowCreate] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  // Fix #1: server-authoritative streak + xp so score is consistent across pages/devices
+  const [serverStreak, setServerStreak] = useState(0);
+  const [serverXP, setServerXP] = useState(0);
 
   const limits = getLimits(plan);
-  const hasUnlimitedProjects = planLoading || limits.maxProjects === -1 || limits.maxProjects === Infinity;
-  const canCreateProject = planLoading
-    ? false
-    : (hasUnlimitedProjects || summaries.length < limits.maxProjects);
+  const hasUnlimitedProjects = limits.maxProjects === -1 || limits.maxProjects === Infinity;
+  const canCreateProject = hasUnlimitedProjects || summaries.length < limits.maxProjects;
 
   useEffect(() => {
     const id = getActiveProjectId();
     if (id) setActiveId(id);
+
+    // Fix #1: Load streak from server (not localStorage) so score matches dashboard/today
+    fetch("/api/founder-context/streak", { cache: "no-store" })
+      .then(r => r.json())
+      .then((d: { streak?: number }) => { if (typeof d.streak === "number") setServerStreak(d.streak); })
+      .catch(() => {});
+
+    // Fix #1: Load XP from server founder_context
+    fetch("/api/founder-context", { cache: "no-store" })
+      .then(r => r.json())
+      .then((d: { xp?: number; data?: { xp?: number } }) => {
+        const xp = d.xp ?? d.data?.xp ?? 0;
+        if (typeof xp === "number") setServerXP(xp);
+      })
+      .catch(() => {});
   }, []);
 
   async function handleCreate(data: { title: string; problem: string; stage: StartupStage }) {
@@ -364,7 +380,11 @@ export default function ProjectsPage() {
       {!isLoading && summaries.length > 0 && (
         <div className="flex flex-col gap-3">
           {summaries.map((s, i) => {
-            const score = computeStartupScore(s);
+            const score = computeStartupScore({
+              ...s,
+              streak: serverStreak,
+              xp: serverXP,
+            });
             const stageNorm = normalizeStage(s.startup_stage ?? "");
             const stageVariant = STAGE_BADGE_VARIANT[stageNorm] ?? "neutral";
             const isActive = s.id === activeId;

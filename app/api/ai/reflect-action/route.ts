@@ -3,6 +3,7 @@ import { groqJSON, hasAdminEnv, enforceAndTrackAIUsage } from "@/app/api/ai/_uti
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { generateFounderInsight } from "@/lib/founderMemory";
+import { FEATURES } from "@/lib/features";
 
 interface ReflectActionInput {
   outcome: "completed" | "blocked" | "partial" | "learned";
@@ -214,6 +215,7 @@ Target users: ${project.target_users ?? "Not specified"}`;
 
         // ── Publish anonymised event to community Founder Feed ──────────────
         try {
+          if (!FEATURES.publicProjects) throw new Error("Founder feed disabled");
           const { data: authUser } = await supabase.auth.admin.getUserById(verifiedUserId);
           const meta = (authUser?.user?.user_metadata ?? {}) as Record<string, string>;
 

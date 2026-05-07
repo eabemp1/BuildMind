@@ -302,6 +302,7 @@ export async function POST(request: Request) {
       };
 
       let reflexionAction = null;
+      let learningLogId: string | null = null;
       try {
         reflexionAction = await runFullReflexionPipeline({
           founderContext,
@@ -314,7 +315,7 @@ export async function POST(request: Request) {
 
         // Record action shown — starts the learning loop for this run
         if (reflexionAction?.action) {
-          recordActionShown({
+          learningLogId = await recordActionShown({
             userId,
             sessionId,
             stage: startupCtx.stage,
@@ -322,7 +323,7 @@ export async function POST(request: Request) {
             criticPersona: reflexionAction._pipeline?.stage4_persona,
             viabilityScore: viabilityResult.viability_score,
             confidence: reflexionAction.confidence,
-          }).catch(() => {});
+          }).catch(() => null);
         }
       } catch { /* non-fatal */ }
 
@@ -352,6 +353,7 @@ export async function POST(request: Request) {
           differentiation_plan: agentPipeline.competitor?.differentiation_opportunities?.slice(0, 3)
             ?? ["Identify the gap no competitor is addressing", "Own one specific niche", "Price differently"],
           competitors,
+          focus_areas: focusAreas,
 
           // ── New fields ──
           parsed_schema: parsed,
@@ -385,6 +387,7 @@ export async function POST(request: Request) {
                 supporting_signals: reflexionAction.supporting_signals,
                 confidence: reflexionAction.confidence,
                 scores: reflexionAction.scores,
+                log_row_id: learningLogId,
               }
             : null,
           pipeline_duration_ms: agentPipeline.duration_ms,
@@ -554,6 +557,7 @@ export async function POST(request: Request) {
 
     // Run full Reflexion pipeline (Stages 0–7)
     let reflexionAction = null;
+    let learningLogId: string | null = null;
     try {
       reflexionAction = await runFullReflexionPipeline({
         founderContext: founderReflexionCtx,
@@ -566,7 +570,7 @@ export async function POST(request: Request) {
 
       // Record action shown — starts the learning loop for this run
       if (reflexionAction?.action) {
-        recordActionShown({
+        learningLogId = await recordActionShown({
           userId,
           projectId,
           sessionId,
@@ -575,7 +579,7 @@ export async function POST(request: Request) {
           criticPersona: reflexionAction._pipeline?.stage4_persona,
           viabilityScore: viabilityResult.viability_score,
           confidence: reflexionAction.confidence,
-        }).catch(() => {});
+        }).catch(() => null);
       }
     } catch { /* non-fatal */ }
 
@@ -652,6 +656,7 @@ export async function POST(request: Request) {
         differentiation_plan: agentPipeline.competitor?.differentiation_opportunities?.slice(0, 3)
           ?? ["Identify the gap no competitor addresses", "Own one specific niche for 60 days", "Price based on outcomes, not features"],
         competitors,
+        focus_areas: focusAreas,
 
         // ── New fields ──
         viability_score: viabilityResult.viability_score,
@@ -686,6 +691,7 @@ export async function POST(request: Request) {
               risks: reflexionAction.risks,
               confidence: reflexionAction.confidence,
               scores: reflexionAction.scores,
+              log_row_id: learningLogId,
             }
           : null,
         iteration_delta: iterationDelta,

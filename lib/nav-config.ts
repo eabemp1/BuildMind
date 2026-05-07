@@ -28,7 +28,7 @@ export const NAV: readonly NavItemConfig[] = [
   { href: "/reflect",          label: "Reflect",        icon: iconStub("RefreshCw"),       enabled: true,  section: null,        badge: null,      showDot: true  },
   { href: "/projects",         label: "Projects",       icon: iconStub("FolderKanban"),    enabled: true,  section: "WORKSPACE", badge: null,      showDot: false },
   { href: "/ventures",         label: "Ventures",       icon: iconStub("Map"),             enabled: true,  section: null,        badge: "New",     showDot: false },
-  { href: "/explore",          label: "Founder Feed",   icon: iconStub("Globe"),           enabled: true,  section: null,        badge: null,      requiredPlan: "builder" as Plan, showDot: false },
+  { href: "/explore",          label: "Founder Feed",   icon: iconStub("Globe"),           enabled: false, section: null,        badge: null,      requiredPlan: "builder" as Plan, showDot: false },
   { href: "/ai-coach",         label: "AI Coach",       icon: iconStub("Bot"),             enabled: true,  section: "AI TOOLS",  badge: null,      showDot: false },
   { href: "/break-my-startup", label: "Break Startup",  icon: iconStub("Flame"),           enabled: true,  section: null,        badge: null,      showDot: false },
   { href: "/startup-kit",      label: "Startup Kit",    icon: iconStub("Lightbulb"),       enabled: false, section: null,        badge: null,      requiredPlan: "builder" as Plan, showDot: false },
