@@ -1,9 +1,34 @@
 import { NextResponse } from "next/server";
-import { enforceAndTrackAIUsage, groqJSON, hasAdminEnv } from "@/app/api/ai/_utils";
+import { enforceAndTrackAIUsage, groqJSON, hasAdminEnv, logReflexionQuality } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
+import {
+  runAgentPipeline,
+  generatePivots,
+  parseStartupIdea,
+  type StartupContext,
+  type ScrapedCompetitor,
+} from "@/lib/agents";
+import {
+  computeViabilityScore,
+  computeViabilityBreakdown,
+  computeIterationDelta,
+  type IterationRecord,
+} from "@/lib/scoring";
+import {
+  runFullReflexionPipeline,
+  type ReflexionContext,
+} from "@/lib/reflexion";
+import {
+  getLearnedPatterns,
+  buildLearnedPatternsPrompt,
+  recordActionShown,
+  markIgnoredAfter24h,
+} from "@/lib/learning";
 
-async function scrapeCompetitors(query: string): Promise<{ title: string; url: string; snippet: string }[]> {
+// ─── Competitor scraper (unchanged from original) ────────────────────────────
+
+async function scrapeCompetitors(query: string): Promise<ScrapedCompetitor[]> {
   try {
     const encoded = encodeURIComponent(query);
     const res = await fetch(`https://lite.duckduckgo.com/lite/?q=${encoded}`, {
@@ -14,7 +39,7 @@ async function scrapeCompetitors(query: string): Promise<{ title: string; url: s
     const html = await res.text();
     const linkMatches = [...html.matchAll(/class="result-link"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi)];
     const snippetMatches = [...html.matchAll(/class="result-snippet"[^>]*>([\s\S]*?)<\/td>/gi)];
-    const results: { title: string; url: string; snippet: string }[] = [];
+    const results: ScrapedCompetitor[] = [];
     for (let i = 0; i < Math.min(linkMatches.length, 6); i++) {
       const href = linkMatches[i]?.[1] ?? "";
       const rawTitle = (linkMatches[i]?.[2] ?? "").replace(/<[^>]+>/g, "").trim();
@@ -31,27 +56,8 @@ async function scrapeCompetitors(query: string): Promise<{ title: string; url: s
   } catch { return []; }
 }
 
-/**
- * signalScore — computes a 0–100 survival probability signal from real project data.
- *
- * Weights (total = 100):
- *   30% task completion rate        — are they actually executing?
- *   25% milestone completion rate   — are they hitting milestones?
- *   20% validation strengths        — evidence of market demand (capped at 4 strengths)
- *   10% weakness penalty            — each weakness subtracts signal
- *   10% execution score             — project-level exec score from Supabase
- *   5%  validation score            — project-level val score from Supabase
- *
- * Stage adjustment (additive, reflects baseline expectation per stage):
- *   Idea        → +0  (everything is uncertain, no bonus)
- *   Validation  → +5  (if you're validating, you're ahead of most)
- *   MVP         → +8  (you built something real)
- *   Launch      → +12 (you've shipped publicly)
- *   Growth      → +15 (you have real users)
- *   Revenue     → +18 (you have paying customers)
- *
- * Result is clamped to [3, 97] — never 0% or 100% (too absolute).
- */
+// ─── Signal score (preserved — used for free tier preview) ───────────────────
+
 function signalScore(
   taskRate: number,
   milestoneRate: number,
@@ -96,14 +102,94 @@ function previewSignalScore(idea: string, focusAreas: string[], stage = "Idea"):
   return Math.min(82, Math.max(12, Math.round(raw)));
 }
 
+// ─── Execution Mode: MVP roadmap builder ─────────────────────────────────────
+
+interface ExecutionPlan {
+  mvp_roadmap: string[];        // 5-step MVP build sequence
+  first_10_actions: string[];   // specific daily actions
+  gtm_plan: string[];           // go-to-market steps
+}
+
+async function generateExecutionPlan(
+  ctx: StartupContext,
+  viabilityScore: number,
+): Promise<ExecutionPlan> {
+  const fallback: ExecutionPlan = {
+    mvp_roadmap: [
+      "Define the single core feature that solves the primary pain point",
+      "Build a no-code or low-code prototype in 48 hours",
+      "Test prototype with 3 target users — record every confusion point",
+      "Iterate based on feedback — fix the top 3 confusions only",
+      "Launch to a small closed beta of 10 users",
+    ],
+    first_10_actions: [
+      "Write down the problem in one sentence — test it on 3 people today",
+      "Find 5 potential users on LinkedIn or WhatsApp and message them",
+      "Set up a simple landing page describing the problem and solution",
+      "Create a private WhatsApp or Telegram group for beta users",
+      "Build a wireframe or mockup using Figma or pen and paper",
+      "Write one social post describing the problem — see who responds",
+      "Research the top 3 competitors and list their biggest complaints on Twitter/Reddit",
+      "Define your pricing model — pick one: monthly subscription or per-use",
+      "Set a 30-day launch deadline and work backwards to today",
+      "Complete your first user interview — ask about their current workaround",
+    ],
+    gtm_plan: [
+      "Target the smallest possible niche first — ignore everyone else for 60 days",
+      "Distribute where your users already gather (WhatsApp groups, LinkedIn, Slack)",
+      "Offer first 10 users free access in exchange for weekly feedback",
+      "Build in public — share progress updates to attract early adopters",
+      "Set one activation metric that proves value (first result achieved)",
+    ],
+  };
+
+  try {
+    const result = await groqJSON<ExecutionPlan>(
+      `You are a startup execution strategist. Return JSON with exactly these keys:
+{
+  "mvp_roadmap": ["step 1", "step 2", "step 3", "step 4", "step 5"],
+  "first_10_actions": ["action 1", ..., "action 10"],
+  "gtm_plan": ["step 1", "step 2", "step 3", "step 4", "step 5"]
+}
+Each item: specific, actionable, tied to THIS startup. No generic advice.
+mvp_roadmap: 5 steps to build the MVP. first_10_actions: the next 10 concrete daily tasks.
+gtm_plan: 5 go-to-market steps specific to this problem and user.`,
+      `Startup: ${ctx.idea}
+Problem: ${ctx.problem}
+Target users: ${ctx.targetUsers}
+Stage: ${ctx.stage}
+Viability score: ${viabilityScore}/100
+Build an execution plan that is specific to this startup. Name exact platforms, user types, and timelines.`,
+    );
+    return {
+      mvp_roadmap: Array.isArray(result?.mvp_roadmap) && result.mvp_roadmap.length >= 5
+        ? result.mvp_roadmap.slice(0, 5)
+        : fallback.mvp_roadmap,
+      first_10_actions: Array.isArray(result?.first_10_actions) && result.first_10_actions.length >= 10
+        ? result.first_10_actions.slice(0, 10)
+        : fallback.first_10_actions,
+      gtm_plan: Array.isArray(result?.gtm_plan) && result.gtm_plan.length >= 5
+        ? result.gtm_plan.slice(0, 5)
+        : fallback.gtm_plan,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+// ─── Main route ───────────────────────────────────────────────────────────────
+
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
     const userId = String(body?.userId ?? "").trim();
     const projectId = String(body?.projectId ?? "").trim();
-    // Input length limits — prevent prompt injection and runaway token costs
     const idea = String(body?.idea ?? "").trim().slice(0, 1000);
-    const focusAreas = Array.isArray(body?.focusAreas) ? body.focusAreas.map(String).filter(Boolean).slice(0, 10) : [];
+    const focusAreas = Array.isArray(body?.focusAreas)
+      ? body.focusAreas.map(String).filter(Boolean).slice(0, 10)
+      : [];
+    const requestExecutionMode = Boolean(body?.executionMode);
+
     if (!userId) return NextResponse.json({ success: false, error: "userId is required" }, { status: 400 });
     if (!projectId && !idea) return NextResponse.json({ success: false, error: "projectId or idea is required" }, { status: 400 });
 
@@ -112,6 +198,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
+    // ── Free tier: preview only ───────────────────────────────────────────
     if (routeUser.plan !== "builder") {
       const previewScore = previewSignalScore(idea, focusAreas, String(body?.stage ?? "Idea"));
       return NextResponse.json({
@@ -120,7 +207,8 @@ export async function POST(request: Request) {
           gated: true,
           reasoning: [
             "Free preview uses only your written idea, not full project history",
-            "Builder unlocks competitor scan, project execution data, and full risk breakdown",
+            "Builder unlocks the 5-agent parallel pipeline with competitor scan",
+            "Builder unlocks the Reflexion Loop with Verifier and Pivot Engine",
             `Preview signal score ${previewScore}`,
           ],
           verdict: "Preview only: this idea has enough signal to inspect, but the full stress test is Builder-only.",
@@ -128,108 +216,251 @@ export async function POST(request: Request) {
             "The preview cannot verify demand, execution history, or competitive pressure without Builder analysis.",
           ],
           survive_reasons: [
-            previewScore >= 50 ? "Your description includes some useful market signal." : "You are stress-testing before overbuilding, which is already a good sign.",
+            previewScore >= 50
+              ? "Your description includes some useful market signal."
+              : "You are stress-testing before overbuilding, which is already a good sign.",
           ],
-          brutal_advice: "Upgrade to Builder to run the full adversarial analysis with competitor scan and project data.",
+          brutal_advice: "Upgrade to Builder to run the full 5-agent analysis with Reflexion Loop and Pivot Engine.",
           survival_probability: previewScore,
           competitor_summary: "Locked in preview. Builder runs the live competitor scan.",
           differentiation_plan: ["Locked in preview. Builder unlocks the differentiation plan."],
+          // New fields — empty in preview
+          viability_score: previewScore,
+          viability_breakdown: null,
+          pivots: [],
+          execution_plan: null,
+          reflexion_action: null,
         },
       });
     }
 
     await enforceAndTrackAIUsage(userId, routeUser.plan);
 
+    // Learning loop: fetch patterns + mark stale rows (non-blocking)
+    const [learnedPatterns] = await Promise.allSettled([
+      getLearnedPatterns(userId),
+      markIgnoredAfter24h(userId),
+    ]);
+    const patterns = learnedPatterns.status === "fulfilled" ? learnedPatterns.value : null;
+    const learnedPatternsPrompt = patterns ? buildLearnedPatternsPrompt(patterns) : "";
+    const sessionId = `bms_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+    // ── Idea-only mode (no projectId) ─────────────────────────────────────
     if (!projectId) {
-      const competitors = await scrapeCompetitors(`${idea} startup tool software competitors`);
-      const competitorContext = competitors.length > 0
-        ? `\nLive competitor data from DuckDuckGo:\n${competitors.map((c, i) => `${i + 1}. ${c.title} — ${c.url}\n   ${c.snippet}`).join("\n")}`
-        : "\nNo direct competitors found in DuckDuckGo search.";
-      const baseSignal = signalScore(0, 0, [], [], 0, 0, "Idea");
-      const defaultResult = {
-        reasoning: [`Read custom idea context`, `Found ${competitors.length} competitor(s) via DuckDuckGo`, `Signal score ${baseSignal}`, "Identifying the riskiest assumptions"],
-        verdict: "This idea needs sharper validation before you build more. The biggest risk is not whether it can be built, but whether a specific group urgently wants it.",
-        kill_reasons: ["No project execution data is attached to this custom test", "No user interview or willingness-to-pay evidence was provided", "Competitive differentiation is still unclear"],
-        survive_reasons: ["You are stress-testing before overbuilding", "A focused niche could still make this viable"],
-        brutal_advice: "Before writing more code, talk to 5 target users and get exact quotes about how they solve this today.",
-        survival_probability: baseSignal,
-        competitor_summary: competitors.length > 0 ? `DuckDuckGo found ${competitors.length} related products or pages. Treat this as proof of demand and a warning to narrow your positioning.` : "DuckDuckGo did not find clear direct competitors. Use more specific market terms for a better scan.",
-        differentiation_plan: ["Pick one narrow user segment and ignore everyone else for 30 days", "Position around the painful workflow competitors underserve", "Validate one differentiated promise with 5 users this week"],
+      // Scrape competitors
+      const competitors = await scrapeCompetitors(
+        `${idea} startup tool software competitors`,
+      );
+
+      // Parse idea into structured schema
+      const parsed = await parseStartupIdea(idea);
+
+      // Build startup context
+      const startupCtx: StartupContext = {
+        idea,
+        problem: parsed.problem,
+        targetUsers: parsed.target_customer,
+        solution: parsed.solution,
+        stage: String(body?.stage ?? "Idea"),
+        competitors,
       };
 
-      let result = defaultResult;
+      // Run 5-agent pipeline
+      const agentPipeline = await runAgentPipeline(startupCtx);
+      const signals = agentPipeline.signal_summary;
+
+      // Viability score
+      const monetizationClarity =
+        parsed.monetization && parsed.monetization !== "Not specified" ? 65 : 35;
+      const viabilityResult = computeViabilityScore(signals, monetizationClarity);
+      const breakdownEntries = computeViabilityBreakdown(viabilityResult.breakdown);
+
+      // Pivots
+      const pivots = await generatePivots(startupCtx, signals, viabilityResult.viability_score);
+
+      // Execution plan (if requested or if score is viable)
+      let executionPlan: ExecutionPlan | null = null;
+      if (requestExecutionMode || viabilityResult.viability_score >= 50) {
+        executionPlan = await generateExecutionPlan(startupCtx, viabilityResult.viability_score);
+      }
+
+      // Reflexion pipeline — Stage 7 action
+      const founderContext: ReflexionContext = {
+        startupSummary: idea,
+        stage: startupCtx.stage,
+        problem: parsed.problem,
+        targetUsers: parsed.target_customer,
+        momentumScore: 50,
+        domainDataPoints: competitors.length + 5,
+      };
+
+      let reflexionAction = null;
       try {
-        const ai = await groqJSON<typeof defaultResult>(
-          `You are a brutally honest startup advisor. Return ONLY valid JSON with keys: reasoning, verdict, kill_reasons, survive_reasons, brutal_advice, survival_probability, competitor_summary, differentiation_plan.
-Use the DuckDuckGo competitor data. No markdown.`,
-          `Startup idea:
-${idea}
+        reflexionAction = await runFullReflexionPipeline({
+          founderContext,
+          agentPipeline,
+          viabilityScore: viabilityResult,
+          task: "What is the single highest-leverage next action for this founder?",
+          executionMode: requestExecutionMode,
+          learnedPatternsPrompt,
+        });
 
-Focus areas: ${focusAreas.join(", ") || "Everything"}
-Signal score baseline: ${baseSignal}
-${competitorContext}`,
-        );
-        if (ai?.verdict && typeof ai.survival_probability === "number") {
-          result = { ...defaultResult, ...ai };
+        // Record action shown — starts the learning loop for this run
+        if (reflexionAction?.action) {
+          recordActionShown({
+            userId,
+            sessionId,
+            stage: startupCtx.stage,
+            actionShown: reflexionAction.action,
+            criticPersona: reflexionAction._pipeline?.stage4_persona,
+            viabilityScore: viabilityResult.viability_score,
+            confidence: reflexionAction.confidence,
+          }).catch(() => {});
         }
-      } catch { /* use default */ }
+      } catch { /* non-fatal */ }
 
-      return NextResponse.json({ success: true, data: { ...result, competitors } });
+      // Build legacy-compatible response shape
+      const baseSignal = viabilityResult.viability_score;
+      const competitorSummary = competitors.length > 0
+        ? `DuckDuckGo found ${competitors.length} related products or pages. ${agentPipeline.competitor?.saturation_level === "high" ? "This is a crowded space — differentiation is critical." : "Competitive landscape shows room to differentiate."}`
+        : "DuckDuckGo did not find clear direct competitors. Use more specific market terms for a better scan.";
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          // ── Legacy fields (BreakMyStartup2.tsx compatibility) ──
+          reasoning: [
+            `Parsed idea into structured schema: ${parsed.category}`,
+            `5-agent pipeline completed in ${agentPipeline.duration_ms}ms`,
+            `Found ${competitors.length} competitor(s) via DuckDuckGo`,
+            `Viability score: ${viabilityResult.viability_score}/100 (${viabilityResult.verdict})`,
+          ],
+          verdict: viabilityResult.verdict_reason,
+          kill_reasons: signals.all_risks.slice(0, 3).map(r => r.description),
+          survive_reasons: signals.all_opportunities.slice(0, 2),
+          brutal_advice: reflexionAction?.action ?? "Talk to 5 target users before writing a single line of code.",
+          survival_probability: baseSignal,
+          competitor_summary: competitorSummary,
+          differentiation_plan: agentPipeline.competitor?.differentiation_opportunities?.slice(0, 3)
+            ?? ["Identify the gap no competitor is addressing", "Own one specific niche", "Price differently"],
+          competitors,
+
+          // ── New fields ──
+          parsed_schema: parsed,
+          viability_score: viabilityResult.viability_score,
+          viability_confidence: viabilityResult.confidence,
+          viability_verdict: viabilityResult.verdict,
+          viability_breakdown: viabilityResult.breakdown,
+          viability_breakdown_labelled: breakdownEntries,
+          signal_summary: {
+            demand_score: signals.demand_score,
+            competition_score: signals.competition_score,
+            timing_score: signals.timing_score,
+            uniqueness_score: signals.uniqueness_score,
+            risk_score: signals.risk_score,
+            overall_confidence: signals.overall_confidence,
+          },
+          agent_outputs: {
+            market: agentPipeline.market,
+            competitor: agentPipeline.competitor,
+            trend: agentPipeline.trend,
+            sentiment: agentPipeline.sentiment,
+            risk: agentPipeline.risk,
+          },
+          agent_statuses: agentPipeline.agent_statuses,
+          pivots,
+          execution_plan: executionPlan,
+          reflexion_action: reflexionAction
+            ? {
+                action: reflexionAction.action,
+                rationale: reflexionAction.rationale,
+                supporting_signals: reflexionAction.supporting_signals,
+                confidence: reflexionAction.confidence,
+                scores: reflexionAction.scores,
+              }
+            : null,
+          pipeline_duration_ms: agentPipeline.duration_ms,
+        },
+      });
     }
 
+    // ── Project mode (has projectId — full Supabase data) ─────────────────
+
     if (!hasAdminEnv()) {
-      // Even without Supabase, compute a minimal signal from request body hints
       const hintStage = String(body?.stage ?? "Idea");
       const hintScore = signalScore(0, 0, [], [], 0, 0, hintStage);
-      return NextResponse.json({ success: true, data: {
-        reasoning: ["Supabase not configured — cannot read live project data", "Using stage-based baseline estimate"],
-        verdict: "Connect Supabase to get a real analysis. Right now we can only see your project stage.",
-        kill_reasons: ["No user interviews recorded", "No paying customers yet", "Validation data unavailable — configure Supabase"],
-        survive_reasons: ["Founder is actively analyzing risks", "Stage-based signal suggests early momentum"],
-        brutal_advice: "Add your SUPABASE_SERVICE_ROLE_KEY to env vars — then run this again for real data.",
-        survival_probability: hintScore,
-        differentiation_plan: ["Identify one thing none of your 3 closest competitors do", "Make that your only marketing message for 30 days", "Price differently — not cheaper, differently positioned"],
-        competitors: [], competitor_summary: "Configure Supabase to enable live competitor scan.",
-      }});
+      return NextResponse.json({
+        success: true,
+        data: {
+          reasoning: ["Supabase not configured — cannot read live project data", "Using stage-based baseline estimate"],
+          verdict: "Connect Supabase to get a real analysis. Right now we can only see your project stage.",
+          kill_reasons: ["No user interviews recorded", "No paying customers yet", "Validation data unavailable — configure Supabase"],
+          survive_reasons: ["Founder is actively analyzing risks", "Stage-based signal suggests early momentum"],
+          brutal_advice: "Add your SUPABASE_SERVICE_ROLE_KEY to env vars — then run this again for real data.",
+          survival_probability: hintScore,
+          differentiation_plan: ["Identify one thing none of your 3 closest competitors do", "Make that your only marketing message for 30 days", "Price differently — not cheaper, differently positioned"],
+          competitors: [],
+          competitor_summary: "Configure Supabase to enable live competitor scan.",
+          viability_score: hintScore,
+          viability_breakdown: null,
+          pivots: [],
+          execution_plan: null,
+          reflexion_action: null,
+        },
+      });
     }
 
     const supabase = createAdminClient();
-    const { data: project, error: projectError } = await supabase
-      .from("projects")
-      .select("title,description,target_users,problem,startup_stage,validation_strengths,validation_weaknesses,validation_score,execution_score")
-      .eq("id", projectId).eq("user_id", userId).single();
-    if (projectError) throw new Error(projectError.message);
 
-    const { data: milestones } = await supabase.from("milestones").select("id,title,status").eq("project_id", projectId);
-    const milestoneIds = (milestones ?? []).map(m => m.id);
-    
-    // Batch milestone IDs to avoid URL length limits
-    let allTasks: Array<{ title: string; is_completed: boolean }> = [];
-    if (milestoneIds.length > 0) {
-      const BATCH_SIZE = 20;
-      const batches = [];
-      for (let i = 0; i < milestoneIds.length; i += BATCH_SIZE) {
-        const batchIds = milestoneIds.slice(i, i + BATCH_SIZE);
-        const tasksQuery = supabase.from("tasks").select("title,is_completed");
-        batches.push(
-          batchIds.length === 1
-            ? tasksQuery.eq("milestone_id", batchIds[0])
-            : tasksQuery.in("milestone_id", batchIds)
-        );
-      }
-      const batchResults = await Promise.all(batches);
-      for (const result of batchResults) {
-        if (result.data) allTasks = allTasks.concat(result.data);
-      }
+    // Load project + milestones + tasks in parallel
+    const [projectResult, milestonesResult, founderContextResult] = await Promise.allSettled([
+      supabase
+        .from("projects")
+        .select("title,description,target_users,problem,startup_stage,validation_strengths,validation_weaknesses,validation_score,execution_score")
+        .eq("id", projectId)
+        .eq("user_id", userId)
+        .single(),
+      supabase
+        .from("milestones")
+        .select("id,title,is_completed")
+        .eq("project_id", projectId),
+      supabase
+        .from("founder_context")
+        .select("momentum_score,cognitive_load,consecutive_tasks_completed,days_inactive,avoidance_signals,topics_repeated")
+        .eq("user_id", userId)
+        .single(),
+    ]);
+
+    if (projectResult.status === "rejected" || projectResult.value.error) {
+      throw new Error(
+        projectResult.status === "rejected"
+          ? "Failed to load project"
+          : projectResult.value.error!.message,
+      );
     }
-    const { data: tasks } = { data: allTasks };
 
+    const project = projectResult.value.data!;
+    const milestones = milestonesResult.status === "fulfilled"
+      ? (milestonesResult.value.data ?? [])
+      : [];
+    const founderCtxRow = founderContextResult.status === "fulfilled"
+      ? founderContextResult.value.data
+      : null;
+
+    // Load tasks for milestone IDs
+    const milestoneIds = milestones.map(m => m.id);
+    const { data: tasks } = milestoneIds.length
+      ? await supabase.from("tasks").select("title,is_completed").in("milestone_id", milestoneIds)
+      : { data: [] };
+
+    // Compute execution metrics
     const completedTasks = (tasks ?? []).filter(t => t.is_completed).length;
     const totalTasks = (tasks ?? []).length;
-    const completedMilestones = (milestones ?? []).filter(m => m.status === 'completed').length;
-    const totalMilestones = (milestones ?? []).length;
+    const completedMilestones = milestones.filter(m => m.is_completed).length;
+    const totalMilestones = milestones.length;
     const taskRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
     const milestoneRate = totalMilestones > 0 ? Math.round((completedMilestones / totalMilestones) * 100) : 0;
+
     const strengths = project.validation_strengths ?? [];
     const weaknesses = project.validation_weaknesses ?? [];
     const stage = project.startup_stage ?? "Idea";
@@ -237,9 +468,14 @@ ${competitorContext}`,
     const valScore = project.validation_score ?? 0;
     const baseSignal = signalScore(taskRate, milestoneRate, strengths, weaknesses, execScore, valScore, stage);
 
+    // Scrape competitors with two parallel queries (direct + broad)
     const [directResults, broadResults] = await Promise.allSettled([
-      scrapeCompetitors(`${project.title ?? ""} ${project.problem ?? ""} startup site:producthunt.com OR site:crunchbase.com`),
-      scrapeCompetitors(`${project.problem ?? project.description ?? ""} startup tool software`),
+      scrapeCompetitors(
+        `${project.title ?? ""} ${project.problem ?? ""} startup site:producthunt.com OR site:crunchbase.com`,
+      ),
+      scrapeCompetitors(
+        `${project.problem ?? project.description ?? ""} startup tool software`,
+      ),
     ]);
 
     const rawCompetitors = [
@@ -248,70 +484,216 @@ ${competitorContext}`,
     ];
     const seen = new Set<string>();
     const competitors = rawCompetitors.filter(c => {
-      try { const d = new URL(c.url).hostname; if (seen.has(d)) return false; seen.add(d); return true; } catch { return false; }
+      try {
+        const d = new URL(c.url).hostname;
+        if (seen.has(d)) return false;
+        seen.add(d);
+        return true;
+      } catch { return false; }
     }).slice(0, 5);
 
-    const competitorContext = competitors.length > 0
-      ? `\nLive competitor data:\n${competitors.map((c, i) => `${i + 1}. ${c.title} — ${c.url}\n   ${c.snippet}`).join("\n")}`
-      : "\nNo direct competitors found in live search.";
-
-    const systemPrompt = `You are a brutally honest startup advisor. Return ONLY valid JSON with exactly these keys:
-{
-  "reasoning": ["step 1 (8-15 words)", "step 2", "step 3", "step 4"],
-  "verdict": "2-3 honest sentences about this specific startup",
-  "kill_reasons": ["reason 1", "reason 2", "reason 3"],
-  "survive_reasons": ["reason 1", "reason 2"],
-  "brutal_advice": "the single most important thing to do RIGHT NOW — be specific",
-  "survival_probability": <integer 0-100 based on real signals, never 20 as default>,
-  "competitor_summary": "1-2 sentences on competitive landscape from live data",
-  "differentiation_plan": [
-    "Specific thing competitors are NOT doing that this founder could own",
-    "How to position differently — not cheaper, but differently angled",
-    "One concrete action to stand out in the next 30 days"
-  ]
-}
-
-survival_probability: base on signal score ${baseSignal}. Adjust up/down based on data quality.
-differentiation_plan: MUST be specific to this startup's actual problem/target users and the live competitors found. Not generic. Reference actual competitor names if found.
-No preamble. No markdown. Only JSON.`;
-
-    const userPrompt = `Startup: ${project.title ?? "Untitled"}
-Problem: ${project.problem ?? "Not defined"}
-Target users: ${project.target_users ?? "Not defined"}
-Description: ${project.description ?? "Not defined"}
-Stage: ${stage} | Exec score: ${execScore}/100 | Val score: ${valScore}/100
-Tasks: ${completedTasks}/${totalTasks} (${taskRate}%) | Milestones: ${completedMilestones}/${totalMilestones} (${milestoneRate}%)
-Strengths: ${strengths.join(", ") || "None"} | Weaknesses: ${weaknesses.join(", ") || "None"}
-Signal score: ${baseSignal}
-${competitorContext}`;
-
-    const defaultResult = {
-      reasoning: [`Reading ${completedTasks}/${totalTasks} tasks`, `Found ${competitors.length} competitor(s) via live web scan`, `Signal score ${baseSignal}`, "Identifying kill risk and differentiation path"],
-      verdict: "Analysis temporarily unavailable.",
-      kill_reasons: ["Execution data insufficient", "Validation not confirmed", "Competitive landscape unclear"],
-      survive_reasons: ["Founder is analyzing risks proactively"],
-      brutal_advice: "Talk to 10 real potential users this week.",
-      survival_probability: baseSignal,
-      competitor_summary: competitors.length > 0 ? `Found ${competitors.length} potential competitors — differentiation is critical.` : "No clear competitors found — needs more specific search terms.",
-      differentiation_plan: ["Identify what each competitor ignores in their product", "Find the user segment they serve badly and own that segment completely", "Build one feature or workflow no competitor has, validate it with 5 users this week"],
+    // Build startup context from project data
+    const startupCtx: StartupContext = {
+      idea: `${project.title ?? ""} — ${project.description ?? ""}`,
+      problem: project.problem ?? "",
+      targetUsers: project.target_users ?? "",
+      solution: project.description ?? "",
+      stage,
+      competitors,
+      validationStrengths: strengths,
+      validationWeaknesses: weaknesses,
+      executionScore: execScore,
+      momentumScore: founderCtxRow?.momentum_score ?? 50,
     };
 
-    let result = defaultResult;
-    try {
-      const ai = await groqJSON<typeof defaultResult>(systemPrompt, userPrompt);
-      if (ai?.verdict && typeof ai.survival_probability === "number") {
-        result = {
-          ...ai,
-          survival_probability: Math.min(100, Math.max(1, Math.round(ai.survival_probability))),
-          reasoning: Array.isArray(ai.reasoning) && ai.reasoning.length > 0 ? ai.reasoning : defaultResult.reasoning,
-          differentiation_plan: Array.isArray(ai.differentiation_plan) && ai.differentiation_plan.length > 0 ? ai.differentiation_plan : defaultResult.differentiation_plan,
-        };
-      }
-    } catch { /* use default */ }
+    // Run 5-agent pipeline with full project context
+    const agentPipeline = await runAgentPipeline(startupCtx);
+    const signals = agentPipeline.signal_summary;
 
-    return NextResponse.json({ success: true, data: { ...result, competitors } });
+    // Viability score — blend agent signals with execution data
+    const executionBoost = Math.round(execScore * 0.15);
+    const rawViability = computeViabilityScore(signals);
+    const viabilityResult = {
+      ...rawViability,
+      viability_score: Math.min(97, Math.max(3, rawViability.viability_score + executionBoost)),
+    };
+    const breakdownEntries = computeViabilityBreakdown(viabilityResult.breakdown);
+
+    // Pivots
+    const pivots = await generatePivots(startupCtx, signals, viabilityResult.viability_score);
+
+    // Execution plan
+    let executionPlan: ExecutionPlan | null = null;
+    if (requestExecutionMode || viabilityResult.viability_score >= 45) {
+      executionPlan = await generateExecutionPlan(startupCtx, viabilityResult.viability_score);
+    }
+
+    // Build Reflexion context from founder_context row
+    const founderReflexionCtx: ReflexionContext = {
+      startupSummary: project.title ?? idea,
+      stage,
+      problem: project.problem ?? undefined,
+      targetUsers: project.target_users ?? undefined,
+      momentumScore: founderCtxRow?.momentum_score ?? 50,
+      cognitiveLoad: (founderCtxRow?.cognitive_load as "fresh" | "drained" | "autopilot") ?? "fresh",
+      consecutiveTasksCompleted: founderCtxRow?.consecutive_tasks_completed ?? 0,
+      daysInactive: founderCtxRow?.days_inactive ?? 0,
+      avoidanceSignals: founderCtxRow?.avoidance_signals ?? [],
+      topicsRepeated: founderCtxRow?.topics_repeated ?? [],
+      domainDataPoints: competitors.length + strengths.length + totalTasks,
+    };
+
+    // Run full Reflexion pipeline (Stages 0–7)
+    let reflexionAction = null;
+    try {
+      reflexionAction = await runFullReflexionPipeline({
+        founderContext: founderReflexionCtx,
+        agentPipeline,
+        viabilityScore: viabilityResult,
+        task: `Given this founder's project data and the agent analysis, what is the single highest-leverage next move?`,
+        executionMode: requestExecutionMode,
+        learnedPatternsPrompt,
+      });
+
+      // Record action shown — starts the learning loop for this run
+      if (reflexionAction?.action) {
+        recordActionShown({
+          userId,
+          projectId,
+          sessionId,
+          stage,
+          actionShown: reflexionAction.action,
+          criticPersona: reflexionAction._pipeline?.stage4_persona,
+          viabilityScore: viabilityResult.viability_score,
+          confidence: reflexionAction.confidence,
+        }).catch(() => {});
+      }
+    } catch { /* non-fatal */ }
+
+    // Iteration delta — load previous analysis if available
+    let iterationDelta = null;
+    try {
+      const { data: prevAnalysis } = await supabase
+        .from("founder_context")
+        .select("last_break_analysis")
+        .eq("user_id", userId)
+        .single();
+
+      if (prevAnalysis?.last_break_analysis) {
+        const prev = prevAnalysis.last_break_analysis as IterationRecord;
+        if (prev.viability_score && prev.breakdown) {
+          const current: IterationRecord = {
+            run_id: `${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            viability_score: viabilityResult.viability_score,
+            breakdown: viabilityResult.breakdown,
+            idea_snapshot: project.title ?? "",
+          };
+          iterationDelta = computeIterationDelta(prev, current);
+
+          // Save current as last_break_analysis (fire-and-forget)
+          void Promise.resolve(
+            supabase
+              .from("founder_context")
+              .update({ last_break_analysis: current })
+              .eq("user_id", userId)
+              .then(() => {}),
+          ).catch(() => {});
+        }
+      }
+    } catch { /* non-fatal — iteration tracking is additive */ }
+
+    // Log to reflexion quality log
+    if (reflexionAction?.action) {
+      logReflexionQuality({
+        userId,
+        projectId,
+        context: "break_my_startup",
+        originalOutput: reflexionAction._pipeline.stage3_generated,
+        finalOutput: reflexionAction.action,
+        stage,
+        targetUsers: project.target_users ?? undefined,
+        momentumScore: founderCtxRow?.momentum_score ?? 50,
+      }).catch(() => {});
+    }
+
+    // Build legacy-compatible response
+    const competitorSummary = competitors.length > 0
+      ? `Found ${competitors.length} potential competitors — ${agentPipeline.competitor?.saturation_level === "high" ? "this is a crowded space, differentiation is critical." : "differentiation opportunities identified."}`
+      : "No clear competitors found — run with more specific search terms.";
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        // ── Legacy fields (BreakMyStartup2.tsx compatibility) ──
+        reasoning: [
+          `Read ${completedTasks}/${totalTasks} tasks and ${completedMilestones}/${totalMilestones} milestones`,
+          `5-agent pipeline completed in ${agentPipeline.duration_ms}ms`,
+          `Found ${competitors.length} competitor(s) via live web scan`,
+          `Viability score: ${viabilityResult.viability_score}/100 — ${viabilityResult.verdict}`,
+        ],
+        verdict: viabilityResult.verdict_reason,
+        kill_reasons: signals.all_risks.slice(0, 3).map(r => r.description),
+        survive_reasons: signals.all_opportunities.slice(0, 2),
+        brutal_advice: reflexionAction?.action
+          ?? "Run 5 user interviews this week and report back on willingness to pay.",
+        survival_probability: viabilityResult.viability_score,
+        competitor_summary: competitorSummary,
+        differentiation_plan: agentPipeline.competitor?.differentiation_opportunities?.slice(0, 3)
+          ?? ["Identify the gap no competitor addresses", "Own one specific niche for 60 days", "Price based on outcomes, not features"],
+        competitors,
+
+        // ── New fields ──
+        viability_score: viabilityResult.viability_score,
+        viability_confidence: viabilityResult.confidence,
+        viability_verdict: viabilityResult.verdict,
+        viability_verdict_reason: viabilityResult.verdict_reason,
+        viability_breakdown: viabilityResult.breakdown,
+        viability_breakdown_labelled: breakdownEntries,
+        signal_summary: {
+          demand_score: signals.demand_score,
+          competition_score: signals.competition_score,
+          timing_score: signals.timing_score,
+          uniqueness_score: signals.uniqueness_score,
+          risk_score: signals.risk_score,
+          overall_confidence: signals.overall_confidence,
+        },
+        agent_outputs: {
+          market: agentPipeline.market,
+          competitor: agentPipeline.competitor,
+          trend: agentPipeline.trend,
+          sentiment: agentPipeline.sentiment,
+          risk: agentPipeline.risk,
+        },
+        agent_statuses: agentPipeline.agent_statuses,
+        pivots,
+        execution_plan: executionPlan,
+        reflexion_action: reflexionAction
+          ? {
+              action: reflexionAction.action,
+              rationale: reflexionAction.rationale,
+              supporting_signals: reflexionAction.supporting_signals,
+              risks: reflexionAction.risks,
+              confidence: reflexionAction.confidence,
+              scores: reflexionAction.scores,
+            }
+          : null,
+        iteration_delta: iterationDelta,
+        execution_metrics: {
+          task_completion_rate: taskRate,
+          milestone_completion_rate: milestoneRate,
+          total_tasks: totalTasks,
+          completed_tasks: completedTasks,
+          base_signal_score: baseSignal,
+        },
+        pipeline_duration_ms: agentPipeline.duration_ms,
+      },
+    });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Analysis failed";
-    return NextResponse.json({ success: false, error: msg }, { status: msg.toLowerCase().includes("limit") ? 429 : 500 });
+    return NextResponse.json(
+      { success: false, error: msg },
+      { status: msg.toLowerCase().includes("limit") ? 429 : 500 },
+    );
   }
 }

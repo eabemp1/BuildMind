@@ -45,6 +45,7 @@ vi.mock("next/server", () => ({
 }));
 
 import { POST } from "../../app/api/ai/founder-insight/route";
+import type { NextRequest } from "next/server";
 
 async function json(res: Response) {
   return res.json() as Promise<Record<string, unknown>>;
@@ -55,7 +56,7 @@ function makeReq(body: object, headers: Record<string, string> = {}) {
     method: "POST",
     headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(body),
-  });
+  }) as NextRequest;
 }
 
 beforeEach(() => {

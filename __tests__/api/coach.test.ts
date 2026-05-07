@@ -89,7 +89,9 @@ const VALID_BODY = {
 // ── Auth: unauthenticated request ─────────────────────────────────────────────
 
 describe("POST /api/ai/coach — authentication", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
   it("returns 401 when getRouteUser returns null", async () => {
     mockGetRouteUser.mockResolvedValue(null);
@@ -103,7 +105,9 @@ describe("POST /api/ai/coach — authentication", () => {
 // ── Auth: userId spoofing prevention ─────────────────────────────────────────
 
 describe("POST /api/ai/coach — userId spoofing", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
   it("returns 401 when body userId does not match session userId", async () => {
     mockGetRouteUser.mockResolvedValue({ userId: "user-real", plan: "free" });
@@ -128,7 +132,9 @@ describe("POST /api/ai/coach — userId spoofing", () => {
 // ── Validation: missing required fields ───────────────────────────────────────
 
 describe("POST /api/ai/coach — input validation", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
   it("returns 400 when userId is missing", async () => {
     mockGetRouteUser.mockResolvedValue({ userId: "", plan: "free" });
@@ -151,7 +157,9 @@ describe("POST /api/ai/coach — input validation", () => {
 // ── Input truncation: message and history limits ──────────────────────────────
 
 describe("POST /api/ai/coach — message length truncation", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
   it("truncates message to 2000 characters without throwing", async () => {
     mockGetRouteUser.mockResolvedValue({ userId: "user-abc", plan: "builder" });
@@ -170,7 +178,9 @@ describe("POST /api/ai/coach — message length truncation", () => {
 // ── Spiral detection ──────────────────────────────────────────────────────────
 
 describe("POST /api/ai/coach — spiral detection", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
   it("detects competitor spiral and includes spiralDetected=true in response", async () => {
     mockGetRouteUser.mockResolvedValue({ userId: "user-abc", plan: "builder" });
@@ -245,7 +255,9 @@ describe("POST /api/ai/coach — spiral detection", () => {
 // ── Plan gating: free plan rate limit ────────────────────────────────────────
 
 describe("POST /api/ai/coach — free plan rate limiting", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
   it("returns 429 when the usage RPC signals limit reached", async () => {
     // Simulate the RPC returning -1 (limit reached), then the enforceCoachUsage
@@ -272,7 +284,9 @@ describe("POST /api/ai/coach — free plan rate limiting", () => {
 // ── Successful response shape ─────────────────────────────────────────────────
 
 describe("POST /api/ai/coach — successful response", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
   it("returns success=true with reasoning array and answer string", async () => {
     mockGetRouteUser.mockResolvedValue({ userId: "user-abc", plan: "builder" });
@@ -333,7 +347,9 @@ describe("POST /api/ai/coach — successful response", () => {
 // ── History input: sanitisation ───────────────────────────────────────────────
 
 describe("POST /api/ai/coach — history sanitisation", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
   it("accepts up to 8 history entries and ignores entries beyond that", async () => {
     mockGetRouteUser.mockResolvedValue({ userId: "user-abc", plan: "builder" });

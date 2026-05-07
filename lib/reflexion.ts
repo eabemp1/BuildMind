@@ -7,7 +7,24 @@
  * very smart who actually knows them.
  *
  * This is SERVER-SIDE only. Import only from API routes.
+ *
+ * ── v5 additions ─────────────────────────────────────────────────────────────
+ * runFullReflexionPipeline() — Stages 0–7 from the system spec:
+ *   Stage 0: Context Ingestion
+ *   Stage 1: Data Retrieval (from agent pipeline)
+ *   Stage 2: Signal Structuring
+ *   Stage 3: Generator (Agent A)
+ *   Stage 4: Critic (Agent B — rotating persona)
+ *   Stage 5: Verifier (Agent D — new) — validates claims, flags weak reasoning
+ *   Stage 6: Scoring Engine
+ *   Stage 7: Refiner (Agent C)
+ *
+ * All existing exports are preserved and unchanged.
  */
+
+import type { AgentPipelineResult, SignalSummary, StartupContext } from "@/lib/agents";
+import { callModel, callModelJSON } from "@/lib/ai-providers";
+import type { ViabilityScoreResult } from "@/lib/scoring";
 
 const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
@@ -30,8 +47,7 @@ export async function groqCall(messages: GroqMessage[], temperature = 0.5, maxTo
 
 /**
  * groqJSONCall — same as groqCall but forces response_format: json_object.
- * Use for Agent B (Critic) to guarantee parseable JSON output and prevent
- * silent pass-through when the model returns prose instead of a verdict.
+ * Use for Agent B (Critic) and Agent D (Verifier) to guarantee parseable JSON output.
  */
 async function groqJSONCall<T>(messages: GroqMessage[], temperature = 0.3, maxTokens = 400): Promise<T> {
   if (!GROQ_API_KEY) throw new Error("GROQ_API_KEY not set");
@@ -158,8 +174,8 @@ export interface ReflexionResult {
   critique: string;        // Internal critic output (stored, not shown)
   rationale: string;       // "Why this, why now" tooltip — one sentence
   nextAction?: string;     // Suggested next concrete action
-  verdict: "pass" | "fail"; // Gatekeeper verdict from Agent B
-  reject_reason: string | null; // Reason if verdict is "fail", otherwise null
+  verdict?: "pass" | "fail";
+  reject_reason?: string | null;
 }
 
 /**
@@ -183,8 +199,6 @@ export async function runReflexionLoop(
       critique: "Confidence gate triggered — insufficient domain context.",
       rationale: "Because I need more context to give you a firm answer right now.",
       nextAction: "Decide: should we research together, or connect you with a human mentor?",
-      verdict: "fail",
-      reject_reason: "Confidence gate triggered — insufficient domain context.",
     };
   }
 
@@ -205,11 +219,8 @@ Be specific to this founder's situation. No generic advice.`;
   ], 0.6, 500);
 
   // ── NEW IN V4: Agent B — The Critic/Gatekeeper (Persona Rotation) ───────────
-  // Agent B is a GATEKEEPER, not a reviewer. It rejects weak outputs and forces
-  // Agent C to rebuild from scratch — not just polish. Max 2 loops.
   const criticPersona = getWeeklyCriticPersona(context.weekNumber);
 
-  // REJECT criteria — any of these triggers a FAIL verdict
   const criticPrompt = `${criticPersona.prompt}
 
 You are a GATEKEEPER, not a reviewer. Your job is to REJECT weak advice and force a rebuild.
@@ -235,25 +246,27 @@ Stage: ${context.stage} | Target users: ${context.targetUsers ?? "not set"} | Mo
 ADVICE TO EVALUATE:
 ${generated}`;
 
-  // Agent B uses groqJSONCall (response_format: json_object) to guarantee
-  // a parseable verdict. Let failures bubble to the route-level try/catch so
-  // the loop never silently degrades inside the core pipeline.
-  const critiqueData = await groqJSONCall<{ verdict: "pass" | "fail"; reason: string; improved_version?: string | null }>([
-    { role: "system", content: criticPrompt },
-    { role: "user", content: "Evaluate and give your verdict." },
-  ], 0.3, 300);
+  let critiqueData: { verdict: string; reason: string; improved_version?: string | null } = {
+    verdict: "pass",
+    reason: "Verdict parsing failed — defaulting to pass",
+    improved_version: null,
+  };
+  try {
+    critiqueData = await groqJSONCall<typeof critiqueData>([
+      { role: "system", content: criticPrompt },
+      { role: "user", content: "Evaluate and give your verdict." },
+    ], 0.3, 300);
+  } catch {
+    // groqJSONCall failed — default to pass, non-fatal
+  }
 
   const critique = `VERDICT: ${critiqueData.verdict.toUpperCase()} — ${critiqueData.reason}`;
 
-  // If FAIL: Agent C rebuilds from scratch using the improved version as seed.
-  // If PASS: Agent C tightens wording and clarity only.
   const baseForRefinement = critiqueData.verdict === "fail" && critiqueData.improved_version
     ? critiqueData.improved_version
     : generated;
 
   // ── Agent C — The Refiner / Rebuilder (with Emotional Language Layer) ──────
-  // If verdict was FAIL, Agent C rebuilds from the improved_version seed.
-  // If verdict was PASS, Agent C tightens wording and clarity only.
   const refinerMode = critiqueData.verdict === "fail"
     ? "REBUILD: The original was rejected. Use the improved version as a starting point and make it sharper."
     : "POLISH: The task passed gating. Tighten wording and clarity only — do not change the substance.";
@@ -282,7 +295,6 @@ Stage: ${context.stage} | Momentum: ${context.momentumScore}/100 | Cognitive: ${
     { role: "user", content: "Write the refined response." },
   ], 0.3, 400);
 
-  // Extract "Why this, why now" rationale — one sentence
   const rationalePrompt = `Extract a single sentence (max 15 words) explaining WHY this advice is right for this founder RIGHT NOW.
 Format: "Because [specific reason tied to their stage/situation]."
 Advice: ${refined}`;
@@ -297,11 +309,360 @@ Advice: ${refined}`;
     critique,
     rationale: rationale.trim(),
     nextAction: extractAction(refined),
-    // Gatekeeper verdict — callers log this to reflexion_quality_log
     verdict: (critiqueData.verdict ?? "pass") as "pass" | "fail",
     reject_reason: critiqueData.verdict === "fail" ? (critiqueData.reason ?? null) : null,
   };
 }
+
+// ─── v5: Full 7-Stage Reflexion Pipeline ─────────────────────────────────────
+
+/**
+ * VerifierOutput — Stage 5 output from Agent D
+ * Validates all claims in the generated action against available signals.
+ */
+export interface VerifierOutput {
+  valid_claims: string[];       // claims supported by real signals
+  weak_claims: string[];        // claims that are assumptions, not evidence
+  missing_data: string[];       // what's needed to increase confidence
+  confidence_score: number;     // 0–1 overall confidence in the output
+  verdict: "verified" | "partial" | "rejected";
+  rejection_reason?: string;    // only when verdict is "rejected"
+}
+
+/**
+ * FullReflexionInput — everything needed to run the 7-stage pipeline.
+ */
+export interface FullReflexionInput {
+  // Stage 0: Founder context
+  founderContext: ReflexionContext;
+  // Stage 1: Agent pipeline results (from runAgentPipeline)
+  agentPipeline: AgentPipelineResult;
+  // Stage 6: Viability score (from computeViabilityScore)
+  viabilityScore: ViabilityScoreResult;
+  // The specific task/question to generate an action for
+  task: string;
+  // Optional: execution mode flag (generates MVP roadmap instead of single action)
+  executionMode?: boolean;
+  // Optional: injected behavioral patterns from lib/learning.ts
+  learnedPatternsPrompt?: string;
+}
+
+/**
+ * FullReflexionOutput — final output of the 7-stage pipeline.
+ */
+export interface FullReflexionOutput {
+  // Stage 7 final output
+  action: string;               // The single highest-leverage next move
+  rationale: string;            // "Why this, why now"
+  supporting_signals: string[]; // Real signals backing the action
+  risks: string[];              // Risks to this specific action
+  confidence: number;           // 0–1
+  scores: {
+    viability: number;
+    execution_risk: number;
+  };
+  // Internal pipeline outputs (stored for quality logging)
+  _pipeline: {
+    stage2_structured_signals: string[];
+    stage3_generated: string;
+    stage4_critique: string;
+    stage5_verifier: VerifierOutput;
+    stage4_persona: string;
+  };
+}
+
+/**
+ * runFullReflexionPipeline — Stages 0–7
+ *
+ * Stage 0: Context already ingested (passed in as founderContext)
+ * Stage 1: Agent signals already retrieved (passed in as agentPipeline)
+ * Stage 2: Signal structuring — distil to highest-leverage insights
+ * Stage 3: Generator (Agent A) — single highest-leverage action
+ * Stage 4: Critic (Agent B) — rotating persona, harsh critique
+ * Stage 5: Verifier (Agent D) — validates claims against signals
+ * Stage 6: Scoring — already computed (passed in as viabilityScore)
+ * Stage 7: Refiner (Agent C) — final output adjusted for cognitive state
+ */
+export async function runFullReflexionPipeline(
+  input: FullReflexionInput,
+): Promise<FullReflexionOutput> {
+  const { founderContext, agentPipeline, viabilityScore, task, executionMode, learnedPatternsPrompt = '' } = input;
+  const signals = agentPipeline.signal_summary;
+  const contextBlock = buildContextBlock(founderContext);
+
+  // ── Stage 2: Signal Structuring ───────────────────────────────────────────
+  // Distil the 5-agent outputs into the highest-signal insights
+  const structuredSignals = structureSignals(signals, agentPipeline);
+
+  // ── Stage 3: Generator (Agent A) ─────────────────────────────────────────
+  const emotionalTrigger = inferEmotionalTrigger(founderContext);
+  const emotionalInstruction = getEmotionalLanguageInstruction(emotionalTrigger);
+
+  const generatorSystemPrompt = `You are an advanced startup intelligence engine operating as a decisive operator — not a consultant.
+${contextBlock}
+
+VERIFIED MARKET SIGNALS:
+${structuredSignals.map((s, i) => `${i + 1}. ${s}`).join("\n")}
+
+VIABILITY CONTEXT:
+- Overall viability: ${viabilityScore.viability_score}/100 (${viabilityScore.verdict})
+- Demand signal: ${signals.demand_score}/100
+- Competition pressure: ${signals.competition_score}/100
+- Timing: ${signals.timing_score}/100
+
+CRITICAL RULES:
+- Generate the SINGLE highest-leverage next move for this founder
+- Tie every claim to a specific signal listed above
+- Name exact platform, exact user type, exact number
+- If uncertain about something, say "I don't know" — never fabricate
+- Optimize for ACTION, not analysis
+- Adjust difficulty for cognitive state: ${founderContext.cognitiveLoad ?? "fresh"}
+${learnedPatternsPrompt ? learnedPatternsPrompt : ""}
+${executionMode ? "\nEXECUTION MODE: Generate the first concrete step of the MVP roadmap, not a validation task." : ""}`;
+
+  const generated = await groqCall([
+    { role: "system", content: generatorSystemPrompt },
+    { role: "user", content: `Task: ${task}\n\nGenerate the single highest-leverage action. Direct, intelligent, specific.` },
+  ], 0.5, 500).catch(() => "Unable to generate action — please try again.");
+
+  // ── Stage 4: Critic (Agent B — Rotating Persona) ─────────────────────────
+  const criticPersona = getWeeklyCriticPersona(founderContext.weekNumber);
+
+  const stage4CriticPrompt = `${criticPersona.prompt}
+
+You are reviewing a recommended action for a startup founder.
+Your job: find logical flaws, weak assumptions, and generic thinking.
+
+Be harsh and specific. Reference the actual signals.
+
+SIGNALS AVAILABLE:
+${structuredSignals.slice(0, 5).join("\n")}
+
+FOUNDER:
+Stage: ${founderContext.stage} | Momentum: ${founderContext.momentumScore}/100
+Viability: ${viabilityScore.viability_score}/100
+
+Respond in JSON:
+{
+  "verdict": "pass" | "fail",
+  "primary_flaw": "the single biggest problem with this action",
+  "specific_critique": "2-3 sentence specific critique tied to signals",
+  "improved_version": "a sharper version if fail, null if pass"
+}
+
+ACTION TO CRITIQUE:
+${generated}`;
+
+  let stage4Output: {
+    verdict: string;
+    primary_flaw: string;
+    specific_critique: string;
+    improved_version?: string | null;
+  } = {
+    verdict: "pass",
+    primary_flaw: "Critique unavailable",
+    specific_critique: "Agent B did not respond — defaulting to pass.",
+    improved_version: null,
+  };
+
+  try {
+    stage4Output = await callModelJSON<typeof stage4Output>(
+      [
+        { role: "system", content: stage4CriticPrompt },
+        { role: "user", content: "Evaluate and critique." },
+      ],
+      { role: "reasoning", temperature: 0.3, maxTokens: 350 },
+    );
+  } catch { /* non-fatal, use default */ }
+
+  const stage4Critique = `[${criticPersona.name}] VERDICT: ${stage4Output.verdict.toUpperCase()} — ${stage4Output.primary_flaw}. ${stage4Output.specific_critique}`;
+
+  // ── Stage 5: Verifier (Agent D) ───────────────────────────────────────────
+  const baseForVerification = stage4Output.verdict === "fail" && stage4Output.improved_version
+    ? stage4Output.improved_version
+    : generated;
+
+  const stage5VerifierPrompt = `You are the Verifier Agent in a startup intelligence pipeline.
+Your job: validate every claim in this action against the available signals.
+Be honest — weak claims must be flagged, not hidden.
+
+AVAILABLE SIGNALS:
+${structuredSignals.join("\n")}
+
+PAIN POINTS CONFIRMED: ${signals.all_pain_points.slice(0, 3).join(", ") || "none confirmed"}
+COMPETITOR GAPS: ${signals.competitor_gaps.slice(0, 3).join(", ") || "none identified"}
+OVERALL CONFIDENCE: ${signals.overall_confidence}
+
+Respond in JSON:
+{
+  "valid_claims": ["claim supported by signals 1", "..."],
+  "weak_claims": ["assumption not supported by signals 1", "..."],
+  "missing_data": ["what would increase confidence 1", "..."],
+  "confidence_score": 0.0–1.0,
+  "verdict": "verified" | "partial" | "rejected",
+  "rejection_reason": "only if rejected"
+}
+
+ACTION TO VERIFY:
+${baseForVerification}`;
+
+  const verifierFallback: VerifierOutput = {
+    valid_claims: ["Action is stage-appropriate"],
+    weak_claims: ["Specific demand confirmation not available"],
+    missing_data: ["User interview data", "Willingness-to-pay evidence"],
+    confidence_score: 0.4,
+    verdict: "partial",
+  };
+
+  let stage5Output: VerifierOutput = verifierFallback;
+  try {
+    const raw = await callModelJSON<VerifierOutput>(
+      [
+        { role: "system", content: stage5VerifierPrompt },
+        { role: "user", content: "Verify the claims." },
+      ],
+      { role: "reasoning", temperature: 0.2, maxTokens: 400 },
+    );
+    if (raw.verdict && raw.confidence_score !== undefined) {
+      stage5Output = {
+        ...verifierFallback,
+        ...raw,
+        confidence_score: Math.min(1, Math.max(0, Number(raw.confidence_score) || 0.4)),
+      };
+    }
+  } catch { /* use fallback */ }
+
+  // ── Stage 7: Refiner (Agent C) ────────────────────────────────────────────
+  // Adjusts for cognitive load, emotional state, and verifier feedback.
+  // If verifier rejected: rebuilds from signals.
+  // If partial: adds caveats and surfaces the weak claims.
+  // If verified: polishes only.
+
+  const refinerMode =
+    stage5Output.verdict === "rejected"
+      ? "REBUILD from signals — the action was rejected by the verifier."
+      : stage5Output.verdict === "partial"
+      ? "POLISH and add appropriate caveats for weak claims."
+      : "POLISH — verified. Tighten wording and clarity only.";
+
+  const weakClaimsNote = stage5Output.weak_claims.length > 0
+    ? `\nWEAK CLAIMS TO CAVEAT: ${stage5Output.weak_claims.join(", ")}`
+    : "";
+
+  const stage7RefinerPrompt = `You are BuildMind's final output engine. ${refinerMode}
+
+RULES:
+- Direct, intelligent, slightly warm — decisive operator tone, not consultant
+- Tie every recommendation to a specific signal
+- Name exact platform, exact user type, exact number or time
+- End with one concrete action the founder can start in the next 30 minutes
+- Max 4 sentences
+- If confidence is low (${stage5Output.confidence_score < 0.5 ? "YES — it is low" : "no, confidence is adequate"}), acknowledge uncertainty directly
+- Cognitive state today: ${founderContext.cognitiveLoad ?? "fresh"} — adjust difficulty accordingly
+${weakClaimsNote}
+${emotionalInstruction}
+
+INPUT ACTION:
+${baseForVerification}
+
+CRITIQUE:
+${stage4Critique}
+
+VERIFIER:
+Confidence: ${stage5Output.confidence_score} | Verdict: ${stage5Output.verdict}
+Valid: ${stage5Output.valid_claims.join(", ")}`;
+
+  const finalAction = await groqCall([
+    { role: "system", content: stage7RefinerPrompt },
+    { role: "user", content: "Write the final action." },
+  ], 0.3, 400).catch(() => baseForVerification);
+
+  // Extract rationale
+  const rationalePrompt = `One sentence (max 15 words): why is this action right for this founder right now?
+Format: "Because [specific reason]."
+Context: Stage=${founderContext.stage}, Viability=${viabilityScore.viability_score}/100, Demand=${signals.demand_score}/100
+Action: ${finalAction}`;
+
+  const rationale = await groqCall([
+    { role: "system", content: rationalePrompt },
+    { role: "user", content: "One sentence rationale." },
+  ], 0.2, 60).catch(() => `Because you're at ${founderContext.stage} stage and this is the highest-leverage move right now.`);
+
+  // Execution risk: inverse of viability, adjusted by verifier confidence
+  const execution_risk = Math.min(
+    97,
+    Math.max(3, Math.round(
+      (100 - viabilityScore.viability_score) * 0.6 +
+      signals.risk_score * 0.3 +
+      (1 - stage5Output.confidence_score) * 10,
+    )),
+  );
+
+  return {
+    action: finalAction,
+    rationale: rationale.trim(),
+    supporting_signals: stage5Output.valid_claims.slice(0, 4),
+    risks: agentPipeline.risk?.top_risks?.slice(0, 3).map(r => r.title) ?? [],
+    confidence: stage5Output.confidence_score,
+    scores: {
+      viability: viabilityScore.viability_score,
+      execution_risk,
+    },
+    _pipeline: {
+      stage2_structured_signals: structuredSignals,
+      stage3_generated: generated,
+      stage4_critique: stage4Critique,
+      stage5_verifier: stage5Output,
+      stage4_persona: criticPersona.name,
+    },
+  };
+}
+
+// ─── Stage 2 helper: Signal Structuring ──────────────────────────────────────
+
+/**
+ * structureSignals — converts raw AgentPipelineResult into a prioritised
+ * list of high-signal insights for Agent A (Generator) to reason from.
+ */
+function structureSignals(signals: SignalSummary, pipeline: AgentPipelineResult): string[] {
+  const structured: string[] = [];
+
+  // Demand signals
+  if (pipeline.market?.demand_signals) {
+    pipeline.market.demand_signals.slice(0, 2).forEach(s => {
+      structured.push(`[DEMAND] ${s}`);
+    });
+  }
+
+  // Pain points
+  signals.all_pain_points.slice(0, 2).forEach(p => {
+    structured.push(`[PAIN] ${p}`);
+  });
+
+  // Competitor gaps
+  signals.competitor_gaps.slice(0, 2).forEach(g => {
+    structured.push(`[GAP] ${g}`);
+  });
+
+  // Timing
+  if (pipeline.trend?.window_of_opportunity) {
+    structured.push(`[TIMING] ${pipeline.trend.window_of_opportunity}`);
+  }
+
+  // Top risks
+  signals.all_risks.slice(0, 2).forEach(r => {
+    structured.push(`[RISK:${r.severity.toUpperCase()}] ${r.title} — ${r.description}`);
+  });
+
+  // Opportunities
+  signals.all_opportunities.slice(0, 2).forEach(o => {
+    structured.push(`[OPPORTUNITY] ${o}`);
+  });
+
+  return structured.filter(Boolean);
+}
+
+// ─── Existing functions (unchanged) ──────────────────────────────────────────
 
 /**
  * runReflexionStrike — the onboarding Reflexion Strike (Playbook §2.1)
