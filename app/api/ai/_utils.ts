@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { normalizePlan } from "@/lib/plan";
 import { getFreshPlanForUser } from "@/lib/server/plan";
+import { callModel, callModelJSON, hasAIProvider } from "@/lib/ai-providers";
 
 // Plan-aware monthly AI limits
 // Free: 30 calls/month (3/day × 30 days, but we cap monthly for safety)
@@ -16,7 +17,7 @@ export function hasAdminEnv(): boolean {
 }
 
 export function hasGroqKey(): boolean {
-  return Boolean(process.env.GROQ_API_KEY);
+  return hasAIProvider();
 }
 
 export async function enforceAndTrackAIUsage(userId: string, planOverride?: string) {
@@ -65,39 +66,10 @@ export async function enforceAndTrackAIUsage(userId: string, planOverride?: stri
  * Use this for conversational AI coach responses.
  */
 export async function groqChat(systemPrompt: string, messages: { role: "user" | "assistant"; content: string }[]): Promise<string> {
-  const apiKey = process.env.GROQ_API_KEY;
-  const model = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
-
-  if (!apiKey) {
-    throw new Error("GROQ_API_KEY is not set. Add it to your Vercel environment variables at buildmind.live");
-  }
-
-  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 0.7,
-      max_tokens: 800,
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...messages,
-      ],
-    }),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Groq error ${response.status}: ${text.slice(0, 300)}`);
-  }
-
-  const body = await response.json();
-  const content = body?.choices?.[0]?.message?.content;
-  if (!content) throw new Error("Groq returned empty response");
-  return content as string;
+  return callModel(
+    [{ role: "system", content: systemPrompt }, ...messages],
+    { role: "fast", temperature: 0.7, maxTokens: 800 },
+  );
 }
 
 /**
@@ -105,45 +77,13 @@ export async function groqChat(systemPrompt: string, messages: { role: "user" | 
  * Use this for structured data (roadmaps, analysis, etc).
  */
 export async function groqJSON<T>(systemPrompt: string, userPrompt: string): Promise<T> {
-  const apiKey = process.env.GROQ_API_KEY;
-  const model = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
-
-  if (!apiKey) {
-    throw new Error("GROQ_API_KEY is not set. Add it to Vercel environment variables.");
-  }
-
-  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 0.3,
-      max_tokens: 1200,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      response_format: { type: "json_object" },
-    }),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Groq error ${response.status}: ${text.slice(0, 300)}`);
-  }
-
-  const body = await response.json();
-  const content = body?.choices?.[0]?.message?.content;
-  if (!content) throw new Error("Groq returned empty response");
-
-  try {
-    return JSON.parse(content) as T;
-  } catch {
-    throw new Error(`Groq returned invalid JSON: ${content.slice(0, 200)}`);
-  }
+  return callModelJSON<T>(
+    [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    { role: "fast", temperature: 0.3, maxTokens: 1200 },
+  );
 }
 
 export async function createUserNotification(userId: string, message: string, type = "ai_recommendation") {

@@ -16,7 +16,7 @@
  * removing the shame.
  */
 
-import { groqCall } from "./reflexion";
+import { callModelJSON } from "./ai-providers";
 import type { ReflexionContext } from "./reflexion";
 
 export interface RecoveryModeStatus {
@@ -68,17 +68,6 @@ export function getRecoveryModeMessage(): string {
 export async function generateResetMission(
   context: ReflexionContext
 ): Promise<ResetMission> {
-  const GROQ_API_KEY = process.env.GROQ_API_KEY;
-  const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
-
-  if (!GROQ_API_KEY) {
-    return {
-      task: "Write one sentence about the problem your startup solves and send it to one person who might care.",
-      rationale: "One sentence is all it takes to restart momentum.",
-      estimatedMinutes: 5,
-    };
-  }
-
   const prompt = `You are BuildMind's Recovery Mode engine. A founder has been inactive for 3+ days.
 Generate a micro-task Reset Mission. Rules:
 - The task must be completable in 5 minutes or less
@@ -97,27 +86,10 @@ Return JSON with exactly: { "task": string, "rationale": string, "estimatedMinut
 The rationale must be one sentence max 12 words. estimatedMinutes must be <= 10.`;
 
   try {
-    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${GROQ_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: GROQ_MODEL,
-        temperature: 0.4,
-        max_tokens: 200,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: prompt },
-          { role: "user", content: "Generate the Reset Mission." },
-        ],
-      }),
-    });
-
-    if (!res.ok) throw new Error(`Groq ${res.status}`);
-    const body = await res.json();
-    const parsed = JSON.parse(body?.choices?.[0]?.message?.content ?? "{}");
+    const parsed = await callModelJSON<Partial<ResetMission>>([
+      { role: "system", content: prompt },
+      { role: "user", content: "Generate the Reset Mission." },
+    ], { role: "reasoning", temperature: 0.4, maxTokens: 200 });
 
     return {
       task: parsed.task ?? "Send one message to a potential user asking if they've ever experienced [your problem].",

@@ -10,32 +10,27 @@ export const metadata: Metadata = {
 };
 
 const FREE_FEATURES = [
-  "Onboarding Reflexion Strike — full quality, one-time",
+  "Onboarding Reflexion Strike - full quality, one-time",
   "3 AI-powered actions/week (Reflexion Loop)",
   "3 AI Coach messages/day",
-  "Morning Briefing — Monday + Thursday",
+  "Morning Briefing - Monday + Thursday",
   "Momentum Score (Level 1 visibility)",
   "1 full Strategy Blueprint (all 8 layers)",
-  "Break My Startup — 1 Stress Test",
+  "Break My Startup - 1 Stress Test",
   "Public founder profile",
 ];
 
 const BUILDER_FEATURES = [
-  "Everything in Free",
-  "Daily Reflexion Loop — unlimited AI actions",
-  "Morning Briefing every day — delivered before you wake",
-  "Unlimited AI Coach with Explainable Rationale",
-  "Full Momentum Score + decay warnings",
-  "Cognitive Load Check-in and task routing",
-  "HITL Overrides — every override feeds your context",
-  "Unlimited Strategy Blueprints",
-  "90-day Execution Systems (Roadmap Tracks)",
-  "Evening Check nudges — context-specific, never generic",
-  "Emotional Language Layer — warmth at key moments",
-  "Recovery Mode — forgiving when you fall behind",
-  "Weekly AI Strategy Report every Friday",
-  "Streak insurance — 1 save/month",
-  "Pattern Detection — AI names your avoidance patterns",
+  "Daily Morning Briefing - every day",
+  "Full Reflexion Loop (3-agent chain)",
+  "Unlimited AI tasks + messages",
+  "Rotating Critic Personas (4 weekly)",
+  "Full Momentum Score with decay warnings",
+  "Recovery Mode - when confidence drops",
+  "Emotional language layer at trigger moments",
+  "Evening check nudges",
+  "Founder memory - AI remembers your history",
+  "Unlimited projects",
 ];
 
 export default function PricingPage() {

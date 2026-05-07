@@ -20,6 +20,7 @@ import { NextResponse } from "next/server";
 import { enforceAndTrackAIUsage, hasAdminEnv, logReflexionQuality } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getWeeklyCriticPersona, groqCall } from "@/lib/reflexion";
+import { callModelJSON } from "@/lib/ai-providers";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
 
 export const runtime = "nodejs";
@@ -183,15 +184,6 @@ export async function POST(request: Request) {
         }
 
         const fallback = buildFallback(stage, targetUsers, problem, title);
-        const GROQ_API_KEY = process.env.GROQ_API_KEY;
-        const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
-
-        if (!GROQ_API_KEY) {
-          emit("done", { success: true, data: { ...fallback, stage, reflexion: null } });
-          controller.close();
-          return;
-        }
-
         // ── Agent A — Generator ───────────────────────────────────────────
         emit("agent_a", { status: "running", label: "Agent A generating your task…" });
 
@@ -222,33 +214,23 @@ ${lastReflectionContext}`;
         let improvedVersion: string | null = null;
 
         try {
-          const criticBody = JSON.stringify({
-            model: GROQ_MODEL,
-            temperature: 0.3,
-            max_tokens: 300,
-            response_format: { type: "json_object" },
-            messages: [
+          const parsed = await callModelJSON<{
+            verdict?: string;
+            reason?: string;
+            improved_version?: string | null;
+          }>(
+            [
               {
                 role: "system",
                 content: `${criticPersona.prompt}\nReject if ANY: no specific platform, no number, no named user type, too vague, applies to any founder.\nJSON: { "verdict": "pass"|"fail", "reason": "one sentence", "improved_version": "better task if fail else null" }\nContext: Stage=${stage}, Target users=${targetUsers || "unknown"}`,
               },
               { role: "user", content: `Evaluate: "${agentAOutput}"` },
             ],
-          });
-
-          const criticRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${GROQ_API_KEY}` },
-            body: criticBody,
-          });
-
-          if (criticRes.ok) {
-            const body = await criticRes.json();
-            const parsed = JSON.parse(body?.choices?.[0]?.message?.content ?? "{}");
-            criticVerdict = (parsed.verdict === "fail" ? "fail" : "pass") as "pass" | "fail";
-            criticReason = parsed.reason ?? "OK";
-            improvedVersion = parsed.improved_version ?? null;
-          }
+            { role: "reasoning", temperature: 0.3, maxTokens: 300 },
+          );
+          criticVerdict = (parsed.verdict === "fail" ? "fail" : "pass") as "pass" | "fail";
+          criticReason = parsed.reason ?? "OK";
+          improvedVersion = parsed.improved_version ?? null;
         } catch {
           // critic failed — default to pass
         }

@@ -27,14 +27,85 @@
 export type ModelRole = "fast" | "reasoning" | "fallback";
 interface ChatMessage { role: "system" | "user" | "assistant"; content: string; }
 
+function readApiKey(name: string): string | undefined {
+  const value = process.env[name]?.trim();
+  if (!value) return undefined;
+  const lowered = value.toLowerCase();
+  if (
+    lowered === "your_key_here" ||
+    lowered === "your_key" ||
+    lowered.startsWith("your_key_from") ||
+    lowered.includes("replace_me")
+  ) {
+    return undefined;
+  }
+  return value;
+}
+
 // ── Env vars ──────────────────────────────────────────────────────────────────
-const GROQ_API_KEY         = process.env.GROQ_API_KEY;
+const GROQ_API_KEY         = readApiKey("GROQ_API_KEY");
 const GROQ_MODEL           = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
 const GROQ_REASONING_MODEL = process.env.GROQ_REASONING_MODEL || "deepseek-r1-distill-llama-70b";
-const CEREBRAS_API_KEY     = process.env.CEREBRAS_API_KEY;
+const CEREBRAS_API_KEY     = readApiKey("CEREBRAS_API_KEY");
 const CEREBRAS_MODEL       = process.env.CEREBRAS_MODEL || "llama-3.3-70b";
-const GEMINI_API_KEY       = process.env.GEMINI_API_KEY;
+const GEMINI_API_KEY       = readApiKey("GEMINI_API_KEY");
 const GEMINI_MODEL         = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+
+export function getAIProviderStatus() {
+  return {
+    fast: [
+      GROQ_API_KEY ? { provider: "groq", model: GROQ_MODEL, configured: true } : null,
+      GROQ_API_KEY ? { provider: "groq", model: "meta-llama/llama-4-maverick-17b-128e-instruct", configured: true } : null,
+      CEREBRAS_API_KEY ? { provider: "cerebras", model: CEREBRAS_MODEL, configured: true } : null,
+      GEMINI_API_KEY ? { provider: "gemini", model: GEMINI_MODEL, configured: true } : null,
+    ].filter(Boolean),
+    reasoning: [
+      GROQ_API_KEY ? { provider: "groq", model: GROQ_REASONING_MODEL, configured: true } : null,
+      CEREBRAS_API_KEY ? { provider: "cerebras", model: "deepseek-r1-distill-llama-70b", configured: true } : null,
+      GROQ_API_KEY ? { provider: "groq", model: GROQ_MODEL, configured: true } : null,
+      GEMINI_API_KEY ? { provider: "gemini", model: GEMINI_MODEL, configured: true } : null,
+    ].filter(Boolean),
+    fallback: [
+      GEMINI_API_KEY ? { provider: "gemini", model: GEMINI_MODEL, configured: true } : null,
+      CEREBRAS_API_KEY ? { provider: "cerebras", model: CEREBRAS_MODEL, configured: true } : null,
+      GROQ_API_KEY ? { provider: "groq", model: GROQ_MODEL, configured: true } : null,
+    ].filter(Boolean),
+  };
+}
+
+export function hasAIProvider(): boolean {
+  return Boolean(GROQ_API_KEY || CEREBRAS_API_KEY || GEMINI_API_KEY);
+}
+
+function sanitizeModelOutput(text: string): string {
+  return text
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .replace(/^\s*```(?:json)?\s*/i, "")
+    .replace(/```\s*$/i, "")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
+    .replace(/\uFFFD/g, "")
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/[—–]/g, "-")
+    .replace(/→/g, "->")
+    .replace(/…/g, "...")
+    .trim();
+}
+
+function sanitizeParsedValue<T>(value: T): T {
+  if (typeof value === "string") {
+    return sanitizeModelOutput(value) as T;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeParsedValue(item)) as T;
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, sanitizeParsedValue(item)]),
+    ) as T;
+  }
+  return value;
+}
 
 // ── Provider call functions ───────────────────────────────────────────────────
 
@@ -67,7 +138,7 @@ async function groqCall(
   const body = await res.json();
   const text = body?.choices?.[0]?.message?.content;
   if (!text) throw new Error("Groq empty response");
-  return text;
+  return sanitizeModelOutput(text);
 }
 
 async function cerebrasCall(
@@ -99,7 +170,7 @@ async function cerebrasCall(
   const body = await res.json();
   const text = body?.choices?.[0]?.message?.content;
   if (!text) throw new Error("Cerebras empty response");
-  return text;
+  return sanitizeModelOutput(text);
 }
 
 async function geminiCall(
@@ -135,7 +206,7 @@ async function geminiCall(
   const data = await res.json();
   const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!text) throw new Error("Gemini empty response");
-  return text;
+  return sanitizeModelOutput(text);
 }
 
 // ── Rate limit detection ──────────────────────────────────────────────────────
@@ -239,7 +310,7 @@ export async function callModel(
     getFastChain();
 
   if (chain.length === 0) {
-    throw new Error("No AI providers configured. Set at least GROQ_API_KEY in your env.");
+    throw new Error("No AI providers configured. Set GROQ_API_KEY, CEREBRAS_API_KEY, or GEMINI_API_KEY in your env.");
   }
 
   const errors: string[] = [];
@@ -272,6 +343,9 @@ export async function callModelJSON<T>(
   options: Omit<Parameters<typeof callModel>[1], "jsonMode"> = {},
 ): Promise<T> {
   const text = await callModel(messages, { ...options, jsonMode: true });
-  const clean = text.replace(/^```json\s*/i, "").replace(/```\s*$/, "").trim();
-  return JSON.parse(clean) as T;
+  const clean = sanitizeModelOutput(text);
+  const start = clean.indexOf("{");
+  const end = clean.lastIndexOf("}");
+  const json = start >= 0 && end > start ? clean.slice(start, end + 1) : clean;
+  return sanitizeParsedValue(JSON.parse(json) as T);
 }

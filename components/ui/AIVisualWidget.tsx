@@ -192,7 +192,7 @@ export function AIVisualWidget({
           >
             <div style={{ fontSize: 11, color: "#f87171" }}>
               {error.includes("not configured")
-                ? "AI not configured — add GROQ_API_KEY to your environment."
+                ? "AI not configured - add GROQ_API_KEY, CEREBRAS_API_KEY, or GEMINI_API_KEY to your environment."
                 : `Failed: ${error}`}
             </div>
           </motion.div>

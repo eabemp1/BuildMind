@@ -2,6 +2,19 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getBillingEnvStatus } from "@/lib/billing/server";
+import { getAIProviderStatus } from "@/lib/ai-providers";
+
+function hasRealSecret(name: string): boolean {
+  const value = process.env[name]?.trim();
+  if (!value) return false;
+  const lowered = value.toLowerCase();
+  return !(
+    lowered === "your_key_here" ||
+    lowered === "your_key" ||
+    lowered.startsWith("your_key_from") ||
+    lowered.includes("replace_me")
+  );
+}
 
 export async function GET() {
   const supabase = await createClient();
@@ -49,7 +62,21 @@ export async function GET() {
     supabaseHost: process.env.NEXT_PUBLIC_SUPABASE_URL
       ? new URL(process.env.NEXT_PUBLIC_SUPABASE_URL).host
       : null,
+    vars: {
+      NEXT_PUBLIC_SUPABASE_URL: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
+      SUPABASE_SERVICE_ROLE_KEY: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+      PAYSTACK_SECRET_KEY: Boolean(process.env.PAYSTACK_SECRET_KEY),
+      PAYSTACK_PUBLIC_KEY: Boolean(process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY),
+      GROQ_API_KEY: hasRealSecret("GROQ_API_KEY"),
+      GROQ_MODEL: Boolean(process.env.GROQ_MODEL),
+      GROQ_REASONING_MODEL: Boolean(process.env.GROQ_REASONING_MODEL),
+      CEREBRAS_API_KEY: hasRealSecret("CEREBRAS_API_KEY"),
+      CEREBRAS_MODEL: Boolean(process.env.CEREBRAS_MODEL),
+      GEMINI_API_KEY: hasRealSecret("GEMINI_API_KEY"),
+      GEMINI_MODEL: Boolean(process.env.GEMINI_MODEL),
+    },
     env,
+    aiProviders: getAIProviderStatus(),
     checks: {
       adminSupabaseReadable,
       currentUserReadable,

@@ -26,23 +26,10 @@ import type { AgentPipelineResult, SignalSummary, StartupContext } from "@/lib/a
 import { callModel, callModelJSON } from "@/lib/ai-providers";
 import type { ViabilityScoreResult } from "@/lib/scoring";
 
-const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
-
 interface GroqMessage { role: "system" | "user" | "assistant"; content: string; }
 
 export async function groqCall(messages: GroqMessage[], temperature = 0.5, maxTokens = 600): Promise<string> {
-  if (!GROQ_API_KEY) throw new Error("GROQ_API_KEY not set");
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${GROQ_API_KEY}` },
-    body: JSON.stringify({ model: GROQ_MODEL, temperature, max_tokens: maxTokens, messages }),
-  });
-  if (!res.ok) throw new Error(`Groq ${res.status}: ${await res.text().then(t => t.slice(0, 200))}`);
-  const body = await res.json();
-  const text = body?.choices?.[0]?.message?.content;
-  if (!text) throw new Error("Groq returned empty response");
-  return text as string;
+  return callModel(messages, { role: "fast", temperature, maxTokens });
 }
 
 /**
@@ -50,23 +37,7 @@ export async function groqCall(messages: GroqMessage[], temperature = 0.5, maxTo
  * Use for Agent B (Critic) and Agent D (Verifier) to guarantee parseable JSON output.
  */
 async function groqJSONCall<T>(messages: GroqMessage[], temperature = 0.3, maxTokens = 400): Promise<T> {
-  if (!GROQ_API_KEY) throw new Error("GROQ_API_KEY not set");
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${GROQ_API_KEY}` },
-    body: JSON.stringify({
-      model: GROQ_MODEL,
-      temperature,
-      max_tokens: maxTokens,
-      response_format: { type: "json_object" },
-      messages,
-    }),
-  });
-  if (!res.ok) throw new Error(`Groq ${res.status}: ${await res.text().then(t => t.slice(0, 200))}`);
-  const body = await res.json();
-  const content = body?.choices?.[0]?.message?.content;
-  if (!content) throw new Error("Groq returned empty response");
-  return JSON.parse(content) as T;
+  return callModelJSON<T>(messages, { role: "reasoning", temperature, maxTokens });
 }
 
 export interface ReflexionContext {
@@ -683,23 +654,10 @@ Be brutally specific. No generic startup advice.
 Stage: ${stage}
 Domain: ${domain || "not specified"}`;
 
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${GROQ_API_KEY}` },
-    body: JSON.stringify({
-      model: GROQ_MODEL,
-      temperature: 0.5,
-      max_tokens: 400,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: prompt },
-        { role: "user", content: `Startup: "${startupDescription}"` },
-      ],
-    }),
-  });
-  if (!res.ok) throw new Error(`Groq ${res.status}`);
-  const body = await res.json();
-  const parsed = JSON.parse(body?.choices?.[0]?.message?.content ?? "{}");
+  const parsed = await callModelJSON<Record<string, string>>([
+    { role: "system", content: prompt },
+    { role: "user", content: `Startup: "${startupDescription}"` },
+  ], { role: "fast", temperature: 0.5, maxTokens: 400 });
   return {
     marketGap: parsed.marketGap ?? "The market has a real gap here — let's validate it.",
     firstTask: parsed.firstTask ?? "Find one person who has this problem and send them a message in the next 30 minutes.",
@@ -724,23 +682,10 @@ ${buildContextBlock(context)}
 ${context.yesterdayTask ? `Yesterday's task: "${context.yesterdayTask}"` : ""}
 ${context.completedYesterday !== undefined ? `Completed: ${context.completedYesterday}` : ""}`;
 
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${GROQ_API_KEY}` },
-    body: JSON.stringify({
-      model: GROQ_MODEL,
-      temperature: 0.4,
-      max_tokens: 200,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: prompt },
-        { role: "user", content: "Generate the morning briefing." },
-      ],
-    }),
-  });
-  if (!res.ok) throw new Error(`Groq ${res.status}`);
-  const body = await res.json();
-  const parsed = JSON.parse(body?.choices?.[0]?.message?.content ?? "{}");
+  const parsed = await callModelJSON<Record<string, string>>([
+    { role: "system", content: prompt },
+    { role: "user", content: "Generate the morning briefing." },
+  ], { role: "fast", temperature: 0.4, maxTokens: 200 });
   return {
     win: parsed.win ?? "You're still here — that already puts you ahead of 90% of founders.",
     risk: parsed.risk ?? "Inertia: every hour without action makes the next action harder.",

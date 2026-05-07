@@ -3,12 +3,13 @@
 /**
  * components/ui/ScoreBreakdown.tsx
  *
- * Execution score tooltip/popover that makes the score feel earned.
- * Shows exactly what moved the number — tasks, milestones, streak, validation.
+ * Global score tooltip/popover that makes the score feel earned.
+ * Mirrors lib/scoring computeStartupScore: execution, momentum, XP, streak,
+ * and validation strengths.
  *
  * Usage:
- *   <ScoreBreakdown score={score} taskRate={0.6} milestoneRate={0.4} streak={7}
- *                   stage="MVP" validationStrengths={2} />
+ *   <ScoreBreakdown score={score} executionScore={70} momentumScore={64}
+ *                   xp={500} streak={7} validationStrengths={2} />
  */
 
 import { useState } from "react";
@@ -16,16 +17,12 @@ import { motion, AnimatePresence } from "framer-motion";
 
 interface ScoreBreakdownProps {
   score: number;
-  taskRate: number;       // 0-1
-  milestoneRate: number;  // 0-1
-  streak: number;
-  stage: string;
+  executionScore?: number | null;
+  momentumScore?: number | null;
+  xp?: number | null;
+  streak?: number | null;
   validationStrengths?: number; // count
 }
-
-const STAGE_BONUS: Record<string, number> = {
-  Idea: 0, Validation: 5, MVP: 8, Launch: 12, Growth: 15, Revenue: 18,
-};
 
 const SCORE_COLOR = (s: number) => s >= 60 ? "#4ade80" : s >= 30 ? "#fbbf24" : "#f87171";
 
@@ -37,18 +34,26 @@ interface BreakdownRow {
 }
 
 function computeBreakdown(props: ScoreBreakdownProps): BreakdownRow[] {
-  const taskPts = Math.round(props.taskRate * 30);
-  const milestonePts = Math.round(props.milestoneRate * 25);
-  const streakPts = Math.min(props.streak * 1.5, 15);
-  const stagePts = STAGE_BONUS[props.stage] ?? 0;
-  const valPts = Math.min((props.validationStrengths ?? 0) * 5, 20);
+  const execution = props.executionScore ?? 0;
+  const momentum = props.momentumScore ?? 0;
+  const xp = props.xp ?? 0;
+  const streak = Math.min(props.streak ?? 0, 30);
+  const validationStrengths = props.validationStrengths ?? 0;
+  const xpPts =
+    xp >= 3500 ? 20 :
+    xp >= 2000 ? 16 :
+    xp >= 1000 ? 12 :
+    xp >= 500 ? 8 :
+    xp >= 200 ? 4 : 0;
+  const streakPts = Math.round((streak / 30) * 10);
+  const validationPts = Math.min(20, validationStrengths * 4);
 
   return [
-    { label: "Task completion", pts: taskPts, max: 30, detail: `${Math.round(props.taskRate * 100)}% of tasks done` },
-    { label: "Milestones hit", pts: milestonePts, max: 25, detail: `${Math.round(props.milestoneRate * 100)}% of milestones complete` },
-    { label: "Stage bonus", pts: stagePts, max: 18, detail: `${props.stage} stage (+${stagePts} pts)` },
-    { label: "Validation", pts: valPts, max: 20, detail: `${props.validationStrengths ?? 0} confirmed strengths` },
-    { label: "Streak", pts: Math.round(streakPts), max: 15, detail: `${props.streak} day streak` },
+    { label: "Execution quality", pts: Math.round(execution * 0.45), max: 45, detail: `${execution}/100 execution score` },
+    { label: "Momentum", pts: Math.round(momentum * 0.25), max: 25, detail: `${momentum}/100 momentum score` },
+    { label: "XP boost", pts: xpPts, max: 20, detail: `${xp} achievement XP` },
+    { label: "Validation", pts: validationPts, max: 20, detail: `${validationStrengths} confirmed strengths` },
+    { label: "Streak", pts: streakPts, max: 10, detail: `${props.streak ?? 0} day streak` },
   ];
 }
 
@@ -69,7 +74,7 @@ export function ScoreBreakdown(props: ScoreBreakdownProps) {
         }}
       >
         <span style={{ fontSize: 32, fontWeight: 800, color, lineHeight: 1 }}>{props.score}</span>
-        <span style={{ fontSize: 11, color: "#555", marginTop: 14 }}>/ 100 ⓘ</span>
+        <span style={{ fontSize: 11, color: "#555", marginTop: 14 }}>/ 100 info</span>
       </button>
 
       <AnimatePresence>
@@ -93,7 +98,7 @@ export function ScoreBreakdown(props: ScoreBreakdownProps) {
               }}
             >
               <div style={{ fontSize: 11, fontWeight: 700, color: "#666", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>
-                What builds your score
+                Global score model
               </div>
 
               {rows.map(row => (
@@ -118,7 +123,7 @@ export function ScoreBreakdown(props: ScoreBreakdownProps) {
               ))}
 
               <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.06)", fontSize: 11, color: "#444" }}>
-                Score updates after each reflection. Complete tasks and hit milestones to move it.
+                Score updates from execution quality, momentum, validation, XP, and streak.
               </div>
             </motion.div>
           </>

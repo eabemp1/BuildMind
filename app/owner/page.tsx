@@ -24,6 +24,11 @@ import { getAchievementStats, updateAchievementStats, getTotalXP, checkAndUnlock
 import { getFunnelSummary, getDropOffStep, getPageViews, getRecentEvents } from "@/lib/onboarding-analytics";
 
 type Tab = "plans" | "features" | "achievements" | "analytics" | "pages";
+type AIProviderInfo = { provider: string; model: string; configured: boolean };
+type EnvStatus = {
+  vars: Record<string, boolean>;
+  aiProviders: Record<string, AIProviderInfo[]>;
+};
 
 const SECTION: React.CSSProperties = {
   background: "#0a0a0a", border: "1px solid #1e1e1e", borderRadius: 14, padding: "20px",
@@ -56,7 +61,7 @@ export default function OwnerPanel() {
   const [xp, setXp] = useState(getTotalXP());
   const [unlocked, setUnlocked] = useState(getUnlocked());
   const [dbStats, setDbStats] = useState<{ users: number; projects: number; signups_today: number } | null>(null);
-  const [envStatus, setEnvStatus] = useState<Record<string, boolean>>({});
+  const [envStatus, setEnvStatus] = useState<EnvStatus>({ vars: {}, aiProviders: {} });
 
   // Auth check — server-side only via /api/system/admin-check.
   // The is_admin flag is read from the profiles table using the service-role key.
@@ -88,7 +93,10 @@ export default function OwnerPanel() {
     try {
       const res = await fetch("/api/system/env-status");
       const data = await res.json();
-      setEnvStatus(data.vars ?? {});
+      setEnvStatus({
+        vars: data.vars ?? {},
+        aiProviders: data.aiProviders ?? {},
+      });
     } catch {}
   };
 
@@ -130,7 +138,7 @@ export default function OwnerPanel() {
   if (authorized === null) {
     return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#000", color: "#666", fontFamily: "system-ui" }}>
-        Verifying identity…
+        Verifying identity...
       </div>
     );
   }
@@ -140,7 +148,7 @@ export default function OwnerPanel() {
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#000", fontFamily: "system-ui" }}>
         <div style={{ textAlign: "center" }}>
           <div style={{ fontSize: 40 }}>🔒</div>
-          <div style={{ color: "#ef4444", fontSize: 14, marginTop: 12 }}>Access denied. Redirecting…</div>
+          <div style={{ color: "#ef4444", fontSize: 14, marginTop: 12 }}>Access denied. Redirecting...</div>
         </div>
       </div>
     );
@@ -189,7 +197,7 @@ export default function OwnerPanel() {
                 <button key={p} onClick={() => applyPlan(p)}
                   style={BTN(plan === p, p === "builder" ? "#6366f1" : "#555")}>
                   {p.charAt(0).toUpperCase() + p.slice(1)}
-                  {plan === p && " ✓"}
+                  {plan === p && " active"}
                 </button>
               ))}
             </div>
@@ -205,7 +213,7 @@ export default function OwnerPanel() {
                 <div key={key} style={{ fontSize: 11, color: "#888", display: "flex", justifyContent: "space-between", padding: "6px 10px", background: "#111", borderRadius: 6 }}>
                   <span style={{ color: "#555" }}>{key}</span>
                   <span style={{ color: typeof val === "boolean" ? (val ? "#4ade80" : "#ef4444") : "#a78bfa", fontWeight: 600 }}>
-                    {typeof val === "boolean" ? (val ? "✓" : "✗") : val === -1 ? "∞" : String(val)}
+                    {typeof val === "boolean" ? (val ? "on" : "off") : val === -1 ? "unlimited" : String(val)}
                   </span>
                 </div>
               ))}
@@ -263,7 +271,7 @@ export default function OwnerPanel() {
                 <button key={key}
                   onClick={() => applyStatUpdate({ [key]: !stats[key] })}
                   style={BTN(!!stats[key], "#4ade80")}>
-                  {stats[key] ? "✓" : "○"} {label}
+                  {stats[key] ? "on" : "off"} {label}
                 </button>
               ))}
             </div>
@@ -277,7 +285,7 @@ export default function OwnerPanel() {
                   {u.id}
                 </div>
               ))}
-              {unlocked.length === 0 && <div style={{ fontSize: 12, color: "#333" }}>No badges yet — simulate some stats above.</div>}
+              {unlocked.length === 0 && <div style={{ fontSize: 12, color: "#333" }}>No badges yet - simulate some stats above.</div>}
             </div>
           </div>
         </motion.div>
@@ -293,7 +301,7 @@ export default function OwnerPanel() {
               <StatCard label="Signups Today" value={dbStats.signups_today} color="#fbbf24" />
             </div>
           ) : (
-            <div style={{ color: "#444", fontSize: 13, marginBottom: 20 }}>Loading DB stats…</div>
+          <div style={{ color: "#444", fontSize: 13, marginBottom: 20 }}>Loading DB stats...</div>
           )}
 
           {/* Funnel */}
@@ -322,7 +330,7 @@ export default function OwnerPanel() {
                       {step.label}
                     </span>
                     <span style={{ fontSize: 10, color: step.reached ? "#4ade80" : "#333", fontWeight: 600 }}>
-                      {step.reached ? (step.ts ? new Date(step.ts).toLocaleDateString() : "✓") : dropped ? "← dropped here" : "—"}
+                      {step.reached ? (step.ts ? new Date(step.ts).toLocaleDateString() : "reached") : dropped ? "dropped here" : "-"}
                     </span>
                   </div>
                 );
@@ -339,7 +347,7 @@ export default function OwnerPanel() {
                   <span style={{ fontSize: 11, color: "#888", fontFamily: "monospace" }}>{pv.path}</span>
                   <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
                     <span style={{ fontSize: 10, color: "#555" }}>last: {new Date(pv.lastVisit).toLocaleDateString()}</span>
-                    <span style={{ fontSize: 12, color: "#a78bfa", fontWeight: 700 }}>{pv.count}×</span>
+                    <span style={{ fontSize: 12, color: "#a78bfa", fontWeight: 700 }}>{pv.count}x</span>
                   </div>
                 </div>
               ))}
@@ -358,7 +366,7 @@ export default function OwnerPanel() {
               ].map(l => (
                 <a key={l.url} href={l.url} target="_blank" rel="noopener noreferrer"
                   style={{ padding: "8px 14px", borderRadius: 8, background: "#111", border: "1px solid #222", color: "#888", fontSize: 12, textDecoration: "none" }}>
-                  {l.label} ↗
+                  {l.label}
                 </a>
               ))}
             </div>
@@ -406,14 +414,41 @@ export default function OwnerPanel() {
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
           <div style={SECTION}>
             <div style={LABEL}>Environment Variables Status</div>
-            {Object.keys(envStatus).length === 0 ? (
-              <div style={{ fontSize: 12, color: "#444" }}>Loading env status…</div>
+            {Object.keys(envStatus.vars).length === 0 ? (
+              <div style={{ fontSize: 12, color: "#444" }}>Loading env status...</div>
             ) : (
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                {Object.entries(envStatus).map(([key, present]) => (
+                {Object.entries(envStatus.vars).map(([key, present]) => (
                   <div key={key} style={{ padding: "8px 12px", background: "#111", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                     <span style={{ fontSize: 11, color: "#666", fontFamily: "monospace" }}>{key}</span>
-                    <span style={{ fontSize: 12, color: present ? "#4ade80" : "#ef4444" }}>{present ? "✓ Set" : "✗ Missing"}</span>
+                    <span style={{ fontSize: 12, color: present ? "#4ade80" : "#ef4444" }}>{present ? "Set" : "Missing"}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div style={SECTION}>
+            <div style={LABEL}>AI Provider Rotation</div>
+            {Object.keys(envStatus.aiProviders).length === 0 ? (
+              <div style={{ fontSize: 12, color: "#444" }}>No AI providers configured.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {Object.entries(envStatus.aiProviders).map(([role, providers]) => (
+                  <div key={role} style={{ background: "#111", border: "1px solid #1d1d1d", borderRadius: 10, padding: "10px 12px" }}>
+                    <div style={{ fontSize: 10, color: "#777", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 700, marginBottom: 8 }}>{role}</div>
+                    {providers.length === 0 ? (
+                      <div style={{ fontSize: 12, color: "#444" }}>No configured providers in this chain.</div>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        {providers.map((p, i) => (
+                          <div key={`${role}-${p.provider}-${p.model}-${i}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                            <span style={{ fontSize: 12, color: "#a78bfa", fontWeight: 700 }}>{i + 1}. {p.provider}</span>
+                            <span style={{ fontSize: 11, color: "#888", fontFamily: "monospace", textAlign: "right", overflowWrap: "anywhere" }}>{p.model}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

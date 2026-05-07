@@ -294,14 +294,15 @@ Return ONLY the JSON object. No preamble. No markdown.`;
     });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Coach failed";
-    const status = msg.toLowerCase().includes("limit") ? 429 : msg.includes("GROQ_API_KEY") ? 503 : 500;
+    const providerMissing = msg.includes("No AI providers configured") || msg.includes("GROQ_API_KEY");
+    const status = msg.toLowerCase().includes("limit") ? 429 : providerMissing ? 503 : 500;
     return NextResponse.json({
       success: false,
       error: msg,
       data: {
         reasoning: ["Encountering an issue...", "Falling back to default guidance..."],
-        answer: msg.includes("GROQ_API_KEY")
-          ? "⚠️ AI is not configured yet. Add the GROQ_API_KEY to your environment variables."
+        answer: providerMissing
+          ? "AI is not configured yet. Add GROQ_API_KEY, CEREBRAS_API_KEY, or GEMINI_API_KEY to your environment variables."
           : "BuildMind is temporarily unavailable. Your most important task right now: complete the top pending item in your project.",
       },
     }, { status });

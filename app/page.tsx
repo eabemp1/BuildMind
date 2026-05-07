@@ -829,15 +829,15 @@ function PricingSection() {
                 </div>
                 <ul className="flex flex-col gap-3 flex-1">
                   {[
-                    "Daily Morning Briefing — every day",
+                    "Daily Morning Briefing - every day",
                     "Full Reflexion Loop (3-agent chain)",
                     "Unlimited AI tasks + messages",
                     "Rotating Critic Personas (4 weekly)",
                     "Full Momentum Score with decay warnings",
-                    "Recovery Mode — when confidence drops",
+                    "Recovery Mode - when confidence drops",
                     "Emotional language layer at trigger moments",
                     "Evening check nudges",
-                    "Founder memory — AI remembers your history",
+                    "Founder memory - AI remembers your history",
                     "Unlimited projects",
                   ].map((f) => (
                     <li key={f} className="flex items-start gap-2 text-sm text-[var(--bm-text)]">

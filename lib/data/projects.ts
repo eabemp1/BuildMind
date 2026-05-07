@@ -18,6 +18,7 @@ import { createClient } from "@/lib/supabase/client";
 import { trackEvent } from "@/lib/analytics";
 import { inferStageFromMilestones } from "@/lib/stages";
 import { computeStartupScore } from "@/lib/scoring";
+import { callModel } from "@/lib/ai-providers";
 import type {
   BuildMindProject,
   ProjectSummary,
@@ -378,7 +379,7 @@ export async function updateProjectDetails(
 
   if (!project) return;
 
-  // Rebuild startup_summary — try Groq, fall back to concatenation
+  // Rebuild startup_summary — try provider rotation, fall back to concatenation
   let newSummary = [
     project.description?.trim() || project.title?.trim(),
     project.target_users?.trim() ? `for ${project.target_users.trim()}` : null,
@@ -386,32 +387,18 @@ export async function updateProjectDetails(
   ].filter(Boolean).join(" ").slice(0, 280);
 
   try {
-    const groqKey = process.env.GROQ_API_KEY;
-    if (groqKey && project.description) {
-      const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${groqKey}` },
-        body: JSON.stringify({
-          model: process.env.GROQ_MODEL || "llama-3.3-70b-versatile",
-          max_tokens: 80,
-          temperature: 0.3,
-          messages: [
-            {
-              role: "system",
-              content: "Write one precise sentence (max 30 words) describing a startup for use in AI coaching prompts. Format: '[product] for [specific user type] that [solves specific problem]'. No preamble. Output only the sentence.",
-            },
-            {
-              role: "user",
-              content: `Idea: ${project.description ?? project.title}\nTarget users: ${project.target_users ?? "not specified"}\nProblem: ${project.problem ?? "not specified"}\nStage: ${project.startup_stage ?? "Idea"}`,
-            },
-          ],
-        }),
-      });
-      if (groqRes.ok) {
-        const groqData = await groqRes.json() as { choices?: Array<{ message?: { content?: string } }> };
-        const synthesized = groqData?.choices?.[0]?.message?.content?.trim();
-        if (synthesized && synthesized.length > 10) newSummary = synthesized.slice(0, 280);
-      }
+    if (project.description) {
+      const synthesized = await callModel([
+        {
+          role: "system",
+          content: "Write one precise sentence (max 30 words) describing a startup for use in AI coaching prompts. Format: '[product] for [specific user type] that [solves specific problem]'. No preamble. Output only the sentence.",
+        },
+        {
+          role: "user",
+          content: `Idea: ${project.description ?? project.title}\nTarget users: ${project.target_users ?? "not specified"}\nProblem: ${project.problem ?? "not specified"}\nStage: ${project.startup_stage ?? "Idea"}`,
+        },
+      ], { role: "fast", temperature: 0.3, maxTokens: 80 });
+      if (synthesized && synthesized.length > 10) newSummary = synthesized.slice(0, 280);
     }
   } catch {
     // Non-fatal — use concatenated fallback
@@ -616,7 +603,7 @@ export async function createProjectWithRoadmap(params: {
   // and hits generic fallbacks. The specificity engine has nothing to work with.
   //
   // startup_summary is a one-sentence description the AI uses in every prompt.
-  // We attempt a Groq call to synthesize a sharp, natural-language sentence.
+  // We attempt provider rotation to synthesize a sharp, natural-language sentence.
   // Falls back to string concatenation so onboarding never blocks on API failure.
   let startupSummary = [
     params.idea_description?.trim(),
@@ -625,32 +612,18 @@ export async function createProjectWithRoadmap(params: {
   ].filter(Boolean).join(" ").slice(0, 280);
 
   try {
-    const groqKey = process.env.GROQ_API_KEY;
-    if (groqKey && params.idea_description) {
-      const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${groqKey}` },
-        body: JSON.stringify({
-          model: process.env.GROQ_MODEL || "llama-3.3-70b-versatile",
-          max_tokens: 80,
-          temperature: 0.3,
-          messages: [
-            {
-              role: "system",
-              content: "Write one precise sentence (max 30 words) describing a startup for use in AI coaching prompts. Format: '[product] for [specific user type] that [solves specific problem]'. No preamble. Output only the sentence.",
-            },
-            {
-              role: "user",
-              content: `Idea: ${params.idea_description}\nTarget users: ${params.target_users ?? "not specified"}\nProblem: ${params.problem ?? "not specified"}\nStage: ${params.startup_stage ?? "Idea"}`,
-            },
-          ],
-        }),
-      });
-      if (groqRes.ok) {
-        const groqData = await groqRes.json() as { choices?: Array<{ message?: { content?: string } }> };
-        const synthesized = groqData?.choices?.[0]?.message?.content?.trim();
-        if (synthesized && synthesized.length > 10) startupSummary = synthesized.slice(0, 280);
-      }
+    if (params.idea_description) {
+      const synthesized = await callModel([
+        {
+          role: "system",
+          content: "Write one precise sentence (max 30 words) describing a startup for use in AI coaching prompts. Format: '[product] for [specific user type] that [solves specific problem]'. No preamble. Output only the sentence.",
+        },
+        {
+          role: "user",
+          content: `Idea: ${params.idea_description}\nTarget users: ${params.target_users ?? "not specified"}\nProblem: ${params.problem ?? "not specified"}\nStage: ${params.startup_stage ?? "Idea"}`,
+        },
+      ], { role: "fast", temperature: 0.3, maxTokens: 80 });
+      if (synthesized && synthesized.length > 10) startupSummary = synthesized.slice(0, 280);
     }
   } catch {
     // Non-fatal — fallback string concatenation is already set above

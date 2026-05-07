@@ -28,7 +28,7 @@
  *   const pipeline = await runAgentPipeline({ idea, stage, competitors, ... });
  */
 
-import { callModelJSON } from "@/lib/ai-providers";
+import { callModelJSON, hasAIProvider } from "@/lib/ai-providers";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -657,7 +657,7 @@ export interface ParsedStartupSchema {
  * Single Groq call, fast, used as Stage 0 before pipeline runs.
  */
 export async function parseStartupIdea(rawIdea: string): Promise<ParsedStartupSchema> {
-  if (!process.env.GROQ_API_KEY) {
+  if (!hasAIProvider()) {
     return {
       problem: rawIdea,
       target_customer: "Not specified",
@@ -752,7 +752,7 @@ export async function generatePivots(
     },
   ];
 
-  if (!process.env.GROQ_API_KEY) return fallbackPivots;
+  if (!hasAIProvider()) return fallbackPivots;
 
   const system = `You are a Pivot Engine in a startup validation system.
 Generate exactly 3 improved pivot variations of this startup idea.

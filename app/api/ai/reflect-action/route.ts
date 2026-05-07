@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { generateFounderInsight } from "@/lib/founderMemory";
 import { FEATURES } from "@/lib/features";
+import { callModelJSON } from "@/lib/ai-providers";
 
 interface ReflectActionInput {
   outcome: "completed" | "blocked" | "partial" | "learned";
@@ -92,42 +93,25 @@ async function extractAndWritePatterns(
     ? `\nTask overrides/skips:\n${(overrides ?? []).map((o: { reason?: string }) => `- ${o.reason ?? "no reason given"}`).join("\n")}`
     : "";
 
-  const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: process.env.GROQ_MODEL || "llama-3.3-70b-versatile",
-      temperature: 0.2,
-      max_tokens: 200,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content: `You are a behavioral pattern extractor for a startup execution app.
+  const patterns = await callModelJSON<{
+    avoidance_signals?: string[];
+    topics_mentioned_repeatedly?: string[];
+  }>([
+    {
+      role: "system",
+      content: `You are a behavioral pattern extractor for a startup execution app.
 Analyze this founder's recent reflections and identify:
 1. avoidance_signals: Tasks or activities they keep blocking on, skipping, or reporting as "blocked" (max 3 items, specific action types e.g. "cold outreach", "pricing conversations")
 2. topics_mentioned_repeatedly: Themes or topics that appear in multiple notes (max 3 items, e.g. "payment integration", "user interviews", "co-founder search")
 
 Return JSON ONLY: { "avoidance_signals": [], "topics_mentioned_repeatedly": [] }
 If there are no clear patterns yet, return empty arrays. Do not guess.`,
-        },
-        {
-          role: "user",
-          content: `Recent reflections:\n${reflectionSummary}${overrideSummary}`,
-        },
-      ],
-    }),
-  });
-
-  if (!groqRes.ok) return;
-  const body = await groqRes.json();
-  const patterns = JSON.parse(body?.choices?.[0]?.message?.content ?? "{}") as {
-    avoidance_signals?: string[];
-    topics_mentioned_repeatedly?: string[];
-  };
+    },
+    {
+      role: "user",
+      content: `Recent reflections:\n${reflectionSummary}${overrideSummary}`,
+    },
+  ], { role: "reasoning", temperature: 0.2, maxTokens: 200 });
 
   if (!patterns.avoidance_signals && !patterns.topics_mentioned_repeatedly) return;
 

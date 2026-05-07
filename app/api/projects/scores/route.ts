@@ -35,7 +35,7 @@ export async function GET(request: Request) {
     // Fetch projects
     let projectsQuery = admin
       .from("projects")
-      .select("id, startup_stage, tasks_completed, total_tasks, milestones_completed, total_milestones, created_at")
+      .select("id, startup_stage, validation_strengths, execution_score, momentum_score, created_at")
       .eq("user_id", user.id);
     if (projectIds?.length) {
       projectsQuery = projectsQuery.in("id", projectIds);
@@ -62,6 +62,22 @@ export async function GET(request: Request) {
     // Build per-project score and canonical stage
     const scores: Record<string, number> = {};
     const stages: Record<string, string> = {};
+    let founderContext: { streak?: number | null; xp?: number | null } | null = null;
+    const founderContextWithXp = await admin
+      .from("founder_context")
+      .select("streak,xp")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (founderContextWithXp.error && /column|schema cache|could not find/i.test(founderContextWithXp.error.message)) {
+      const founderContextWithoutXp = await admin
+        .from("founder_context")
+        .select("streak")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      founderContext = founderContextWithoutXp.data ?? null;
+    } else {
+      founderContext = founderContextWithXp.data ?? null;
+    }
 
     for (const project of projects ?? []) {
       const pMilestones = milestones.filter((m) => m.project_id === project.id);
@@ -72,32 +88,15 @@ export async function GET(request: Request) {
       // Build milestoneIdMap: milestoneId → milestoneTitle
       const milestoneIdMap = new Map(pMilestones.map((m) => [m.id, m.title]));
 
-      // Compute score using same logic as computeStartupScore
-      const tasksCompleted = pTasks.filter((t) => t.is_completed).length;
-      const totalTasks = pTasks.length;
-      const milestonesCompleted = pMilestones.filter(
-        (m) => m.status === "completed" || pTasks.filter((t) => t.milestone_id === m.id && t.is_completed).length === pTasks.filter((t) => t.milestone_id === m.id).length && pTasks.filter((t) => t.milestone_id === m.id).length > 0
-      ).length;
-      const totalMilestones = pMilestones.length;
-
-      // Compute using the same computeStartupScore signature (expects ProjectSummary-like object)
-      const summaryLike = {
-        id: project.id,
-        tasksCompleted,
-        tasksTotal: totalTasks,
-        milestonesCompleted,
-        milestonesTotal: totalMilestones,
-        startup_stage: project.startup_stage,
-        created_at: project.created_at,
-      };
-      try {
-        scores[project.id] = computeStartupScore(summaryLike as Parameters<typeof computeStartupScore>[0]);
-      } catch {
-        // Fallback: simple ratio score
-        scores[project.id] = totalTasks > 0
-          ? Math.round((tasksCompleted / totalTasks) * 100)
-          : 0;
-      }
+      scores[project.id] = computeStartupScore({
+        validation_strengths: Array.isArray(project.validation_strengths)
+          ? project.validation_strengths
+          : [],
+        execution_score: project.execution_score ?? 0,
+        momentum_score: project.momentum_score ?? 50,
+        xp: founderContext?.xp ?? 0,
+        streak: founderContext?.streak ?? 0,
+      });
 
       // Fix #15: canonical stage — always use startup_stage from DB first
       stages[project.id] = getCanonicalStage(
