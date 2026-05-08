@@ -24,6 +24,9 @@
  *   No retry on same provider — rotate first, retry never.
  */
 
+import Cerebras from "@cerebras/cerebras_cloud_sdk";
+import type { ChatCompletionCreateParams } from "@cerebras/cerebras_cloud_sdk/resources/chat/completions";
+
 export type ModelRole = "fast" | "reasoning" | "fallback";
 interface ChatMessage { role: "system" | "user" | "assistant"; content: string; }
 
@@ -47,9 +50,13 @@ const GROQ_API_KEY         = readApiKey("GROQ_API_KEY");
 const GROQ_MODEL           = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
 const GROQ_REASONING_MODEL = process.env.GROQ_REASONING_MODEL || "deepseek-r1-distill-llama-70b";
 const CEREBRAS_API_KEY     = readApiKey("CEREBRAS_API_KEY");
-const CEREBRAS_MODEL       = process.env.CEREBRAS_MODEL || "llama3.3-70b";
+const CEREBRAS_MODEL       = process.env.CEREBRAS_MODEL || "llama3.1-8b";
 const GEMINI_API_KEY       = readApiKey("GEMINI_API_KEY");
 const GEMINI_MODEL         = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+
+const cerebrasClient = CEREBRAS_API_KEY
+  ? new Cerebras({ apiKey: CEREBRAS_API_KEY, timeout: 20000, maxRetries: 0 })
+  : null;
 
 export function getAIProviderStatus() {
   return {
@@ -173,28 +180,22 @@ async function cerebrasCall(
   maxTokens: number,
   jsonMode: boolean,
 ): Promise<string> {
-  if (!CEREBRAS_API_KEY) throw new Error("CEREBRAS_API_KEY not set");
-  const res = await fetch("https://api.cerebras.ai/v1/chat/completions", {
-    method: "POST",
-    signal: AbortSignal.timeout(20000),
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${CEREBRAS_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model,
-      temperature,
-      max_tokens: maxTokens,
-      ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
-      messages,
-    }),
+  if (!cerebrasClient) throw new Error("CEREBRAS_API_KEY not set");
+  const cerebrasMessages = messages.map((message) => ({
+    role: message.role,
+    content: message.content,
+  })) as ChatCompletionCreateParams["messages"];
+  const body = await cerebrasClient.chat.completions.create({
+    messages: cerebrasMessages,
+    model,
+    max_completion_tokens: maxTokens,
+    temperature,
+    top_p: 1,
+    stream: false,
+    ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
   });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`CEREBRAS_${res.status}: ${text.slice(0, 150)}`);
-  }
-  const body = await res.json();
-  const text = body?.choices?.[0]?.message?.content;
+  const response = body as { choices?: Array<{ message?: { content?: string | null } }> };
+  const text = response.choices?.[0]?.message?.content;
   if (!text) throw new Error("Cerebras empty response");
   return sanitizeModelOutput(text);
 }
