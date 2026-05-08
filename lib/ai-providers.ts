@@ -12,8 +12,8 @@
  *
  * REASONING (Critic, Verifier):
  *   1. Groq — deepseek-r1-distill-llama-70b
- *   2. Cerebras — deepseek-r1-distill-llama-70b
- *   3. Groq — llama-3.3-70b-versatile (graceful degradation)
+ *   2. Groq — llama-3.3-70b-versatile (graceful degradation)
+ *   3. Gemini 2.0 Flash
  *
  * FALLBACK:
  *   1. Gemini 2.0 Flash (if API key present)
@@ -48,7 +48,7 @@ function readApiKey(name: string): string | undefined {
 // ── Env vars ──────────────────────────────────────────────────────────────────
 const GROQ_API_KEY         = readApiKey("GROQ_API_KEY");
 const GROQ_MODEL           = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
-const GROQ_REASONING_MODEL = process.env.GROQ_REASONING_MODEL || "deepseek-r1-distill-llama-70b";
+const GROQ_REASONING_MODEL = "deepseek-r1-distill-llama-70b";
 const CEREBRAS_API_KEY     = readApiKey("CEREBRAS_API_KEY");
 const CEREBRAS_MODEL       = process.env.CEREBRAS_MODEL || "llama3.1-8b";
 const GEMINI_API_KEY       = readApiKey("GEMINI_API_KEY");
@@ -68,7 +68,6 @@ export function getAIProviderStatus() {
     ].filter(Boolean),
     reasoning: [
       GROQ_API_KEY ? { provider: "groq", model: GROQ_REASONING_MODEL, configured: true } : null,
-      CEREBRAS_API_KEY ? { provider: "cerebras", model: "deepseek-r1-distill-llama-70b", configured: true } : null,
       GROQ_API_KEY ? { provider: "groq", model: GROQ_MODEL, configured: true } : null,
       GEMINI_API_KEY ? { provider: "gemini", model: GEMINI_MODEL, configured: true } : null,
     ].filter(Boolean),
@@ -310,10 +309,6 @@ function getReasoningChain(): ProviderFn[] {
   const chain: ProviderFn[] = [];
   if (GROQ_API_KEY) {
     chain.push({ label: `groq:${GROQ_REASONING_MODEL}`, call: (m, t, mt, j) => groqCall(m, GROQ_REASONING_MODEL, t, mt, j) });
-  }
-  if (CEREBRAS_API_KEY) {
-    // Cerebras also hosts deepseek-r1 distill
-    chain.push({ label: "cerebras:deepseek-r1-distill-llama-70b", call: (m, t, mt, j) => cerebrasCall(m, "deepseek-r1-distill-llama-70b", t, mt, j) });
   }
   if (GROQ_API_KEY) {
     // Graceful degradation: fall back to fast model on same provider
