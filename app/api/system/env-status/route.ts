@@ -69,6 +69,7 @@ export async function GET() {
       PAYSTACK_PUBLIC_KEY: Boolean(process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY),
       GROQ_API_KEY: hasRealSecret("GROQ_API_KEY"),
       GROQ_MODEL: Boolean(process.env.GROQ_MODEL),
+      GROQ_REASONING_MODEL: Boolean(process.env.GROQ_REASONING_MODEL),
       CEREBRAS_API_KEY: hasRealSecret("CEREBRAS_API_KEY"),
       CEREBRAS_MODEL: Boolean(process.env.CEREBRAS_MODEL),
       GEMINI_API_KEY: hasRealSecret("GEMINI_API_KEY"),
