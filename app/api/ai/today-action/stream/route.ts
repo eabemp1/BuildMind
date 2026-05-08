@@ -140,7 +140,7 @@ export async function POST(request: Request) {
           const supabase = createAdminClient();
           const [projectResult, memoryResult] = await Promise.allSettled([
             supabase.from("projects")
-              .select("title, description, target_users, problem, startup_stage")
+              .select("name, title, description, target_users, problem, startup_stage")
               .eq("id", projectId).eq("user_id", userId).single(),
             supabase.from("founder_memory")
               .select("avoidance_zones, strengths, last_insight")
@@ -154,7 +154,7 @@ export async function POST(request: Request) {
             stage = (project.startup_stage ?? providedStage) || "Idea";
             targetUsers = project.target_users ?? "";
             problem = project.problem ?? "";
-            title = project.title ?? "";
+            title = (project.name ?? project.title) ?? "";
 
             const { data: milestones } = await supabase.from("milestones")
               .select("id, title, status").eq("project_id", projectId)

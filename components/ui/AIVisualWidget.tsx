@@ -143,8 +143,8 @@ export function AIVisualWidget({
               onClick={generate}
               disabled={loading}
               style={{
-                fontSize: 10, color: "#6366f1", background: "rgba(99,102,241,0.1)",
-                border: "1px solid rgba(99,102,241,0.2)", borderRadius: 6,
+                fontSize: 10, color: "var(--bm-accent)", background: "var(--bm-accent-dim)",
+                border: "1px solid var(--bm-accent-bd)", borderRadius: 6,
                 padding: "3px 9px", cursor: loading ? "not-allowed" : "pointer",
                 fontFamily: "inherit", opacity: loading ? 0.5 : 1,
               }}
@@ -157,7 +157,7 @@ export function AIVisualWidget({
               onClick={generate}
               style={{
                 fontSize: 11, color: "white",
-                background: "linear-gradient(135deg,#6366f1,#8b5cf6)",
+                background: "linear-gradient(135deg,var(--bm-accent),#8b5cf6)",
                 border: "none", borderRadius: 7,
                 padding: "5px 12px", cursor: "pointer",
                 fontFamily: "inherit", fontWeight: 600,

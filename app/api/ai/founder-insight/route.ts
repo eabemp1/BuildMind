@@ -21,7 +21,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/data/projects";
-import { groqChat, groqJSON, hasAdminEnv, enforceAndTrackAIUsage } from "@/app/api/ai/_utils";
+import { groqChat, groqJSON, groqReasoningJSON, hasAdminEnv, enforceAndTrackAIUsage } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { FounderMemory } from "@/lib/founderMemory";
 
@@ -113,7 +113,7 @@ async function handleAgenticSynthesis(userId: string) {
     ? `\nPrevious profile:\n- Avoidance: ${(memory.avoidance_zones ?? []).join(", ")}\n- Strengths: ${(memory.strengths ?? []).join(", ")}`
     : "";
 
-  const synthesis = await groqJSON<SynthesisOutput>(
+  const synthesis = await groqReasoningJSON<SynthesisOutput>(
     `You are a behavioral analyst for a startup execution coaching app.
 Analyze the founder's behavioral data and extract a structured profile.
 Return JSON ONLY with these exact keys:

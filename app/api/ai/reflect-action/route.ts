@@ -163,14 +163,14 @@ export async function POST(request: Request) {
         const supabase = createAdminClient();
         const { data: project } = await supabase
           .from("projects")
-          .select("title, description, target_users, problem, startup_stage")
+          .select("name, title, description, target_users, problem, startup_stage")
           .eq("id", projectId)
           .eq("user_id", verifiedUserId)
           .single();
 
         if (project) {
           projectContext = `
-Project: ${project.title}
+Project: ${project.name ?? project.title}
 Stage: ${project.startup_stage ?? stage}
 Problem being solved: ${project.problem ?? "Not specified"}
 Target users: ${project.target_users ?? "Not specified"}`;
@@ -244,7 +244,10 @@ Target users: ${project.target_users ?? "Not specified"}`;
 
     const fallback = FALLBACKS[outcome] ?? FALLBACKS.completed;
 
-    const result = await groqJSON<ReflectActionOutput>(
+    // Fix: wrap in try/catch — groqJSON PromiseLike does not expose .catch()
+    let result: ReflectActionOutput;
+    try {
+      result = await groqJSON<ReflectActionOutput>(
       `You are BuildMind, a ruthlessly honest execution coach for solo founders.
 Your job: take a founder's daily reflection and generate:
 1. causality — a specific "because you said X → tomorrow is Y" sentence (max 18 words, direct, no fluff)
@@ -266,7 +269,10 @@ Today's action was: "${todayAction || "Not specified"}"
 Startup stage: ${stage}
 Current streak: ${streak} days
 ${projectContext}`,
-    ).catch(() => fallback);
+      );
+    } catch {
+      result = fallback;
+    }
 
     void (async () => {
       try {

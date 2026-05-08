@@ -270,3 +270,78 @@ export function clearNotificationsForCurrentUser(): void {
   if (typeof window === "undefined") return;
   localStorage.removeItem(STORAGE_KEY);
 }
+
+// ── Morning briefing & Evening check in-app notifications ─────────────────────
+// These bridge the gap between the Supabase Edge Function scheduled jobs and
+// the in-app notification store. Call seedScheduledNotifications() on app init.
+
+const MORNING_SEED_KEY  = "bm_morning_notif_seeded";
+const EVENING_SEED_KEY  = "bm_evening_notif_seeded";
+
+/**
+ * seedMorningBriefing — creates an in-app "Morning briefing ready" notification
+ * if it's morning hours and one hasn't been seeded today.
+ */
+export function seedMorningBriefing(): void {
+  if (typeof window === "undefined") return;
+  const today = new Date().toISOString().slice(0, 10);
+  const seeded = localStorage.getItem(MORNING_SEED_KEY);
+  if (seeded === today) return; // already done today
+
+  const hour = new Date().getHours();
+  // Seed between 5am and 11am
+  if (hour < 5 || hour >= 11) return;
+
+  localStorage.setItem(MORNING_SEED_KEY, today);
+  addNotification({
+    type: "reflect_pending", // reuse existing type for bell display
+    emoji: "🌅",
+    title: "Morning briefing ready",
+    body: "Your win, biggest risk, and one action for today are waiting.",
+    priority: "high",
+    actionLabel: "Read briefing →",
+    actionHref: "/today",
+    expiresAt: Date.now() + 8 * 60 * 60 * 1000, // expires after 8h
+  });
+}
+
+/**
+ * seedEveningCheck — creates an in-app evening check-in notification
+ * if it's evening and one hasn't been seeded today.
+ */
+export function seedEveningCheck(): void {
+  if (typeof window === "undefined") return;
+  const today = new Date().toISOString().slice(0, 10);
+  const seeded = localStorage.getItem(EVENING_SEED_KEY);
+  if (seeded === today) return;
+
+  const hour = new Date().getHours();
+  // Seed between 4pm and 9pm
+  if (hour < 16 || hour >= 21) return;
+
+  // Only show if they haven't reflected today
+  const reflectedToday = localStorage.getItem("bm_today_done_date") === today;
+  if (reflectedToday) return;
+
+  localStorage.setItem(EVENING_SEED_KEY, today);
+  addNotification({
+    type: "reflect_pending",
+    emoji: "🌇",
+    title: "Evening check-in",
+    body: "Did you make progress today? Log it before tomorrow — the reflexion loop needs your input.",
+    priority: "high",
+    actionLabel: "Reflect now →",
+    actionHref: "/reflect",
+    expiresAt: Date.now() + 6 * 60 * 60 * 1000,
+  });
+}
+
+/**
+ * seedScheduledNotifications — call once on app init (in providers or layout).
+ * Seeds both morning briefing and evening check-in in-app notifications
+ * based on current local time, so they appear even without push permissions.
+ */
+export function seedScheduledNotifications(): void {
+  seedMorningBriefing();
+  seedEveningCheck();
+}

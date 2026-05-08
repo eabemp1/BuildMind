@@ -29,6 +29,7 @@ import { createClient } from "@/lib/supabase/client";
 import {
   NAV, hasPlanAccess, SectionLabel, SidebarLogo, NavItem,
 } from "@/components/layout/sidebar-nav";
+import { getTasksCompleted, syncTasksCompletedFromServer } from "@/lib/nav-config";
 
 // ── User card at bottom ───────────────────────────────────────────────────────
 function SidebarUser({ onSignOut }: { onSignOut: () => void }) {
@@ -103,16 +104,20 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
   const [unseenBadges, setUnseenBadges] = useState(0);
   const [streakDays, setStreakDays] = useState(0);
   const [founderMenuOpen, setFounderMenuOpen] = useState(false);
+  const [tasksCompleted, setTasksCompleted] = useState(0);
 
   useEffect(() => {
     const checkPending = () => {
       try {
         setReflectPending(localStorage.getItem("bm_reflect_pending") === "true");
         setUnseenBadges(getUnseenCount());
+        setTasksCompleted(getTasksCompleted());
       } catch {}
       syncStreakFromServer().then(s => setStreakDays(s)).catch(() => {});
     };
     checkPending();
+    // Sync tasks_completed_total from Supabase so progressive unlock survives device switches
+    void syncTasksCompletedFromServer().then(checkPending);
     window.addEventListener("storage", checkPending);
     window.addEventListener("bm_streak_updated", checkPending);
     const interval = setInterval(checkPending, 8000);
@@ -145,6 +150,29 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
 
       <nav className="flex-1 overflow-y-auto py-2" style={{ scrollbarWidth: "none" }}>
         {NAV.filter((i) => i.enabled).map((item) => {
+          const unlockedAt = item.unlocksAt ?? 0;
+          const isProgressLocked = tasksCompleted < unlockedAt;
+          if (isProgressLocked) {
+            // Show a subtle locked hint for the next tier only
+            const nextUnlock = [1, 3, 7, 14].find(n => n > tasksCompleted) ?? 99;
+            if (unlockedAt !== nextUnlock) return null; // hide deeper tiers entirely
+            return (
+              <React.Fragment key={item.href}>
+                {item.section && <SectionLabel label={item.section} />}
+                <div
+                  className="flex items-center gap-3 px-3 py-2.5 mx-2 rounded-lg text-sm opacity-30 select-none"
+                  title={`Complete ${unlockedAt} tasks to unlock`}
+                  style={{ color: "var(--bm-text4)", cursor: "default" }}
+                >
+                  <item.icon size={16} />
+                  <span className="flex-1 truncate">{item.label}</span>
+                  <span style={{ fontSize: 9, color: "var(--bm-text4)" }}>
+                    {unlockedAt - tasksCompleted} task{unlockedAt - tasksCompleted !== 1 ? "s" : ""} away
+                  </span>
+                </div>
+              </React.Fragment>
+            );
+          }
           const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
           const showLock = !!item.requiredPlan && !hasPlanAccess(plan, item.requiredPlan as Plan);
           return (

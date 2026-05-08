@@ -1,221 +1,555 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
-import { queryKeys, useProjectSummariesQuery, useWeeklyReportMetricsQuery } from "@/lib/queries";
-import { useQueryClient } from "@tanstack/react-query";
+import { useProjectSummariesQuery, useWeeklyReportMetricsQuery } from "@/lib/queries";
+import { computeStartupScore } from "@/lib/buildmind";
+import { getScoreHistory, getXP } from "@/lib/scoring";
+import { getStoredStreak } from "@/lib/plan";
 import BuildMindLoader from "@/components/BuildMindLoader";
-import { useLimitModal } from "@/components/LimitModal";
-import { updateAchievementStats, checkAndUnlockAchievements } from "@/lib/achievements";
 import PaywallGate from "@/components/PaywallGate";
 import { usePlan } from "@/lib/usePlan";
-import { computeStartupScore } from "@/lib/buildmind";
-import { Download, TrendingUp, TrendingDown, BarChart3, Clock, Target, CheckCircle2, Flame, Calendar, ArrowUpRight } from "lucide-react";
+import {
+  Download, FileText, Image as ImageIcon, Table2,
+  TrendingUp, TrendingDown, Minus,
+  CheckCircle2, Target, Flame, BarChart3, Zap,
+  ChevronDown, Star, Activity,
+  type LucideIcon,
+} from "lucide-react";
 
-function Sparkline({ data, color, width = 120, height = 40 }: { data: number[]; color: string; width?: number; height?: number }) {
-  if (data.length < 2) return null;
-  const min = Math.min(...data), max = Math.max(...data);
-  const range = max - min || 1;
-  const pts = data.map((v, i) => `${(i / (data.length - 1)) * width},${height - ((v - min) / range) * (height - 6) - 3}`).join(" ");
+function useIsMobile() {
+  const [m, setM] = useState(false);
+  useEffect(() => {
+    const q = window.matchMedia("(max-width: 767px)");
+    const up = () => setM(q.matches);
+    up(); q.addEventListener("change", up);
+    return () => q.removeEventListener("change", up);
+  }, []);
+  return m;
+}
+
+function ScoreArc({ value, size = 120 }: { value: number; size?: number }) {
+  const r = size * 0.38;
+  const circ = 2 * Math.PI * r;
+  const offset = circ - (value / 100) * circ;
+  const col = value >= 60 ? "var(--bm-green)" : value >= 30 ? "var(--bm-amber)" : "var(--bm-red)";
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} width={width} height={height} style={{ overflow: "visible" }}>
-      <defs>
-        <linearGradient id={`sg-${color.replace("#", "")}`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.15" />
-          <stop offset="100%" stopColor={color} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
-        style={{ filter: `drop-shadow(0 0 3px ${color}60)` }} />
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ display: "block" }}>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="var(--bm-bg3)" strokeWidth={size*0.09} />
+      <motion.circle
+        cx={size/2} cy={size/2} r={r} fill="none"
+        stroke={col} strokeWidth={size*0.09} strokeLinecap="round"
+        strokeDasharray={circ}
+        initial={{ strokeDashoffset: circ }}
+        animate={{ strokeDashoffset: offset }}
+        transition={{ duration: 1.2, ease: "easeOut" }}
+        transform={`rotate(-90 ${size/2} ${size/2})`}
+        style={{ filter: `drop-shadow(0 0 ${size*0.05}px ${col}88)` }}
+      />
+      <text x={size/2} y={size/2+size*0.06} textAnchor="middle" fill={col}
+        style={{ fontSize: size*0.26, fontWeight: 800, fontFamily: "inherit" }}>{value}</text>
+      <text x={size/2} y={size/2+size*0.22} textAnchor="middle" fill="var(--bm-text3)"
+        style={{ fontSize: size*0.09, fontWeight: 600, fontFamily: "inherit", textTransform: "uppercase", letterSpacing: "0.1em" }}>score</text>
     </svg>
   );
 }
 
-function WeeklyBars({ data, color }: { data: number[]; color: string }) {
-  const max = Math.max(...data, 1);
-  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+function Sparkline({ data, color, w = 100, h = 36 }: { data: number[]; color: string; w?: number; h?: number }) {
+  if (data.length < 2) return null;
+  const min = Math.min(...data), max = Math.max(...data);
+  const range = max - min || 1;
+  const pts = data.map((v, i) => `${(i/(data.length-1))*w},${h-((v-min)/range)*(h-6)-3}`).join(" ");
+  const id = "spk" + color.replace(/[^a-z0-9]/gi,"");
   return (
-    <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 80 }}>
+    <svg viewBox={`0 0 ${w} ${h}`} width={w} height={h} style={{ overflow: "visible" }}>
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.18"/>
+          <stop offset="100%" stopColor={color} stopOpacity="0"/>
+        </linearGradient>
+      </defs>
+      <polygon points={`${pts} ${w},${h} 0,${h}`} fill={`url(#${id})`}/>
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.8"
+        strokeLinecap="round" strokeLinejoin="round"
+        style={{ filter: `drop-shadow(0 0 4px ${color}66)` }}/>
+    </svg>
+  );
+}
+
+function DayBars({ data, color }: { data: number[]; color: string }) {
+  const max = Math.max(...data, 1);
+  return (
+    <div style={{ display: "flex", gap: 5, alignItems: "flex-end", height: 72 }}>
       {data.map((v, i) => (
-        <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 5, height: "100%", justifyContent: "flex-end" }}>
-          <motion.div initial={{ height: 0 }} animate={{ height: `${(v / max) * 60}px` }}
-            transition={{ duration: 0.7, delay: i * 0.05, ease: "easeOut" }}
-            style={{ width: "100%", background: color, borderRadius: 5, minHeight: 3, position: "relative", overflow: "hidden" }}>
-            <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "100%", background: `linear-gradient(180deg, rgba(255,255,255,0.15) 0%, transparent 100%)` }} />
-          </motion.div>
-          <span style={{ fontSize: 9, color: "var(--bm-text3)", letterSpacing: "0.04em" }}>{days[i]}</span>
+        <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+          <motion.div
+            initial={{ scaleY: 0 }} animate={{ scaleY: 1 }}
+            transition={{ delay: i*0.06, duration: 0.5, ease: "easeOut" }}
+            style={{ width: "100%", background: color,
+              height: `${Math.max(4, (v/max)*56)}px`, borderRadius: 4,
+              transformOrigin: "bottom", boxShadow: v > 0 ? `0 0 8px ${color}44` : "none" }}/>
+          <span style={{ fontSize: 9, color: "var(--bm-text3)", fontWeight: 600 }}>
+            {["M","T","W","T","F","S","S"][i]}
+          </span>
         </div>
       ))}
     </div>
   );
 }
 
-function StatCard({ label, value, sub, trend, sparkData, color }: { label: string; value: string | number; sub?: string; trend?: "up" | "down" | "neutral"; sparkData?: number[]; color: string }) {
-  const TrendIcon = trend === "up" ? TrendingUp : trend === "down" ? TrendingDown : null;
-  const trendColor = trend === "up" ? "var(--bm-accent)" : trend === "down" ? "var(--bm-red)" : "var(--bm-text3)";
+function Tile({ label, value, sub, trend, spark, color, icon: Icon }: {
+  label: string; value: string | number; sub?: string;
+  trend?: "up"|"down"|"flat"; spark?: number[]; color: string;
+  icon?: LucideIcon;
+}) {
+  const TI = trend === "up" ? TrendingUp : trend === "down" ? TrendingDown : Minus;
+  const tc = trend === "up" ? "var(--bm-green)" : trend === "down" ? "var(--bm-red)" : "var(--bm-text3)";
   return (
-    <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: "18px 20px" }}>
-      <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>{label}</div>
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}>
+    <motion.div initial={{ opacity:0, y:10 }} animate={{ opacity:1, y:0 }}
+      style={{ background:"var(--bm-bg2)", border:"1px solid var(--bm-border)",
+        borderRadius:"var(--r-xl)", padding:"18px 20px", position:"relative", overflow:"hidden" }}>
+      <div style={{ position:"absolute", top:0, right:0, width:120, height:120,
+        background:`radial-gradient(circle at 80% 20%, ${color}18 0%, transparent 65%)`, pointerEvents:"none" }}/>
+      <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:10 }}>
+        {Icon && <Icon size={11} color={color}/>}
+        <span style={{ fontSize:9, fontWeight:700, color:"var(--bm-text3)", textTransform:"uppercase", letterSpacing:"0.1em" }}>{label}</span>
+      </div>
+      <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between", gap:8 }}>
         <div>
-          <div style={{ fontSize: 28, fontWeight: 900, color, letterSpacing: "-0.03em", lineHeight: 1 }}>{value}</div>
+          <div style={{ fontSize:32, fontWeight:900, color, lineHeight:1, letterSpacing:"-0.04em", marginBottom:6 }}>{value}</div>
           {sub && (
-            <div style={{ fontSize: 11, color: trendColor, marginTop: 5, display: "flex", alignItems: "center", gap: 4 }}>
-              {TrendIcon && <TrendIcon size={11} />} {sub}
+            <div style={{ display:"flex", alignItems:"center", gap:4, fontSize:11, color:tc, fontWeight:600 }}>
+              <TI size={10}/> {sub}
             </div>
           )}
         </div>
-        {sparkData && <Sparkline data={sparkData} color={color} width={90} height={36} />}
+        {spark && spark.length > 1 && <Sparkline data={spark} color={color} w={80} h={32}/>}
       </div>
+    </motion.div>
+  );
+}
+
+function SectionHead({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
+      <div style={{ flex:1, height:1, background:"var(--bm-border)" }}/>
+      <span style={{ fontSize:9, fontWeight:700, color:"var(--bm-text3)", textTransform:"uppercase", letterSpacing:"0.14em", whiteSpace:"nowrap" }}>{children}</span>
+      <div style={{ flex:1, height:1, background:"var(--bm-border)" }}/>
     </div>
   );
 }
 
-function useIsMobile() {
-  const [isMobile, setIsMobile] = useState(false);
-  useEffect(() => {
-    const query = window.matchMedia("(max-width: 767px)");
-    const update = () => setIsMobile(query.matches);
-    update();
-    query.addEventListener("change", update);
-    return () => query.removeEventListener("change", update);
-  }, []);
-  return isMobile;
+type ExportFmt = "pdf"|"png"|"csv"|"json";
+
+function ExportMenu({ onSelect, onClose }: { onSelect:(f:ExportFmt)=>void; onClose:()=>void }) {
+  const opts: { fmt:ExportFmt; label:string; sub:string; icon:LucideIcon }[] = [
+    { fmt:"pdf",  label:"PDF Document",  sub:"Print-quality report",        icon:FileText },
+    { fmt:"png",  label:"PNG Image",     sub:"Screenshot for sharing",      icon:ImageIcon },
+    { fmt:"csv",  label:"CSV Spreadsheet", sub:"Raw data for Excel / Sheets", icon:Table2 },
+    { fmt:"json", label:"JSON Export",   sub:"Full structured report data", icon:BarChart3 },
+  ];
+  return (
+    <motion.div initial={{ opacity:0, scale:0.95, y:-4 }} animate={{ opacity:1, scale:1, y:0 }}
+      exit={{ opacity:0, scale:0.95, y:-4 }}
+      style={{ position:"absolute", top:"calc(100% + 6px)", right:0, zIndex:50,
+        background:"var(--bm-bg2)", border:"1px solid var(--bm-border)",
+        borderRadius:"var(--r-xl)", padding:8, minWidth:230,
+        boxShadow:"0 16px 48px rgba(0,0,0,0.35)" }}>
+      {opts.map(({ fmt, label, sub, icon:Icon }) => (
+        <button key={fmt} onClick={() => { onSelect(fmt); onClose(); }}
+          style={{ display:"flex", alignItems:"center", gap:12, width:"100%",
+            padding:"10px 12px", borderRadius:"var(--r-md)", border:"none",
+            background:"transparent", cursor:"pointer", textAlign:"left", transition:"background 0.12s" }}
+          onMouseEnter={e => { e.currentTarget.style.background = "var(--bm-bg3)"; }}
+          onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
+          <div style={{ width:32, height:32, borderRadius:8, background:"var(--bm-bg3)",
+            display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+            <Icon size={14}/>
+          </div>
+          <div>
+            <div style={{ fontSize:13, fontWeight:600, color:"var(--bm-text)" }}>{label}</div>
+            <div style={{ fontSize:11, color:"var(--bm-text3)" }}>{sub}</div>
+          </div>
+        </button>
+      ))}
+    </motion.div>
+  );
 }
 
 export default function ReportsPage() {
   const isMobile = useIsMobile();
   const { plan } = usePlan();
-  const queryClient = useQueryClient();
   const reportRef = useRef<HTMLDivElement>(null);
+  const [exporting, setExporting] = useState<ExportFmt|null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [exported, setExported] = useState<string|null>(null);
+
   const { data: summaries = [], isLoading } = useProjectSummariesQuery();
   const { data: metrics, isLoading: metricsLoading } = useWeeklyReportMetricsQuery();
   const project = summaries[0] ?? null;
-  const score = metrics?.score ?? (project ? computeStartupScore(project) : 0);
-  const weeklyScores = metrics?.weeklyScores ?? [0, 0, 0, 0, 0, 0, score];
-  const taskData = metrics?.taskData ?? [0, 0, 0, 0, 0, 0, 0];
+
+  const liveScore = useMemo(() => {
+    if (!project) return 0;
+    let streak = 0; try { streak = getStoredStreak(); } catch { /* ok */ }
+    let xp = 0; try { xp = getXP(); } catch { /* ok */ }
+    return computeStartupScore({ ...project, streak, xp });
+  }, [project]);
+
+  const score = metrics?.score ?? liveScore;
+  const weeklyScores = metrics?.weeklyScores ?? Array(7).fill(0).map((_,i) => i===6 ? score : 0);
+  const taskData = metrics?.taskData ?? [0,0,0,0,0,0,0];
+  const tasksThisWeek = taskData.reduce((a,b) => a+b, 0);
+  const taskDelta = (metrics?.tasksCompletedThisWeek??0) - (metrics?.tasksCompletedPreviousWeek??0);
+  const scoreDelta = score - (metrics?.previousScore ?? score);
+  const streak = metrics?.activeStreakDays ?? 0;
+
+  const scoreHistory = useMemo(() => {
+    const hist = getScoreHistory();
+    const vals = hist.slice(-7).map(h => h.score);
+    while (vals.length < 7) vals.unshift(0);
+    return vals;
+  }, []);
+
+  const wins = metrics?.wins ?? [];
+  const nextFocus = metrics?.nextFocus ?? [];
   const focusData = metrics?.focusData ?? [];
-  const totalFocus = focusData.reduce((a, s) => a + s.value, 0);
-  const scoreDelta = Math.max(0, score - (metrics?.previousScore ?? score));
-  const taskDelta = (metrics?.tasksCompletedThisWeek ?? 0) - (metrics?.tasksCompletedPreviousWeek ?? 0);
+  const totalFocus = focusData.reduce((a,s) => a+s.value, 0);
 
-  useEffect(() => {
-    const supabase = createClient();
-    const refreshReports = () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.weeklyReport });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.projectSummaries });
-    };
-    const channel = supabase
-      .channel("weekly-report-live")
-      .on("postgres_changes", { event: "*", schema: "public", table: "projects" }, refreshReports)
-      .on("postgres_changes", { event: "*", schema: "public", table: "milestones" }, refreshReports)
-      .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, refreshReports)
-      .on("postgres_changes", { event: "*", schema: "public", table: "reflections" }, refreshReports)
-      .subscribe();
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [queryClient]);
-
-  if (isLoading || metricsLoading) return <BuildMindLoader />;
-
-  function handleExportPdf() {
-    window.print();
+  async function handleExport(fmt: ExportFmt) {
+    setExporting(fmt);
+    try {
+      if (fmt === "pdf" || fmt === "png") {
+        window.print();
+        setExported(fmt === "pdf" ? "PDF sent to print dialog" : "Use browser print → Save as Image");
+      } else if (fmt === "csv") {
+        const rows = [
+          ["Metric","Value"],
+          ["Report Date", new Date().toLocaleDateString("en-GB")],
+          ["Project", project?.title ?? "—"],
+          ["Startup Score", score],
+          ["Score Delta This Week", scoreDelta >= 0 ? `+${scoreDelta}` : scoreDelta],
+          ["Tasks This Week", tasksThisWeek],
+          ["Task Delta vs Last Week", taskDelta >= 0 ? `+${taskDelta}` : taskDelta],
+          ["Active Streak (days)", streak],
+          ["Stage", project?.startup_stage ?? "—"],
+          ["Plan", plan],
+          ["",""],
+          ["Day","Tasks Completed"],
+          ...["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map((d,i) => [d, taskData[i]]),
+          ["",""],
+          ["Wins",""],
+          ...wins.map(w => ["", w]),
+          ["",""],
+          ["Next Focus",""],
+          ...nextFocus.map(f => ["", f]),
+        ];
+        const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,"\"\"")}"` ).join(",")).join("\n");
+        const blob = new Blob([csv], { type:"text/csv" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a"); a.href=url;
+        a.download=`buildmind-report-${new Date().toISOString().slice(0,10)}.csv`;
+        a.click(); URL.revokeObjectURL(url);
+        setExported("CSV downloaded ✓");
+      } else if (fmt === "json") {
+        const data = {
+          generatedAt: new Date().toISOString(),
+          project: { title: project?.title, stage: project?.startup_stage },
+          score, scoreDelta, streak, tasksThisWeek, taskDelta,
+          taskData: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].reduce<Record<string,number>>(
+            (acc,d,i) => { acc[d]=taskData[i]; return acc; }, {}),
+          weeklyScores, wins, nextFocus,
+          focusBreakdown: focusData, plan,
+        };
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type:"application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a"); a.href=url;
+        a.download=`buildmind-report-${new Date().toISOString().slice(0,10)}.json`;
+        a.click(); URL.revokeObjectURL(url);
+        setExported("JSON downloaded ✓");
+      }
+    } finally {
+      setExporting(null);
+      setTimeout(() => setExported(null), 3500);
+    }
   }
+
+  if (isLoading || metricsLoading) return <BuildMindLoader/>;
+
+  const weekLabel = (() => {
+    const now = new Date();
+    const start = new Date(now); start.setDate(now.getDate() - ((now.getDay()+6)%7));
+    const end = new Date(start); end.setDate(start.getDate()+6);
+    const fmt = (d:Date) => d.toLocaleDateString("en-GB",{day:"numeric",month:"short"});
+    return `${fmt(start)} – ${fmt(end)}`;
+  })();
 
   return (
     <PaywallGate feature="weeklyReport">
-      <div ref={reportRef} className="bm-report-print" style={{ maxWidth: 980, margin: "0 auto", padding: isMobile ? "4px 0 24px" : "28px 24px" }}>
+      <style>{`
+        @media print {
+          body * { visibility: hidden; }
+          .bm-report-print, .bm-report-print * { visibility: visible; }
+          .bm-report-print { position: absolute; top: 0; left: 0; width: 100%; }
+          .bm-no-print { display: none !important; }
+          @page { margin: 18mm; }
+        }
+      `}</style>
 
-        {/* Header */}
-        <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: isMobile ? 20 : 24 }}>
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexDirection: isMobile ? "column" : "row", flexWrap: "wrap", gap: 14 }}>
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-                <h1 style={{ fontSize: isMobile ? 28 : 22, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em", margin: 0 }}>Weekly Report</h1>
-                <span style={{ fontSize: 9, padding: "2px 8px", borderRadius: 20, background: "var(--bm-accent-dim)", color: "var(--bm-accent)", border: "1px solid var(--bm-accent-bd)", fontWeight: 700 }}>BUILDER</span>
-              </div>
-              <p style={{ fontSize: isMobile ? 14 : 12, color: "var(--bm-text3)", margin: 0 }}>
-                {new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })} · {project?.title ?? "Your startup"}
-              </p>
+      <div className="bm-report-print" ref={reportRef}
+        style={{ maxWidth:980, margin:"0 auto", padding: isMobile ? "4px 0 40px" : "32px 24px 48px" }}>
+
+        {/* HEADER */}
+        <motion.div initial={{ opacity:0, y:-10 }} animate={{ opacity:1, y:0 }}
+          style={{ marginBottom:28, display:"flex", alignItems:"flex-start",
+            justifyContent:"space-between", flexWrap:"wrap", gap:16 }}>
+          <div>
+            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
+              <h1 style={{ fontSize: isMobile ? 26 : 24, fontWeight:900, color:"var(--bm-text)",
+                letterSpacing:"-0.04em", margin:0, lineHeight:1 }}>Weekly Report</h1>
+              <span style={{ fontSize:9, padding:"3px 8px", borderRadius:20,
+                background:"var(--bm-accent-dim)", color:"var(--bm-accent)",
+                border:"1px solid var(--bm-accent-bd)", fontWeight:700, letterSpacing:"0.08em" }}>
+                {plan.toUpperCase()}
+              </span>
             </div>
-            <button
-              onClick={handleExportPdf}
-              style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 7, padding: "11px 16px", borderRadius: 10, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text2)", fontSize: 12, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s", width: isMobile ? "100%" : "auto" }}
-              onMouseEnter={e => { e.currentTarget.style.background = "var(--bm-bg3)"; }}
-              onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
-              <Download size={12} /> Export PDF
+            <p style={{ fontSize:12, color:"var(--bm-text3)", margin:0, display:"flex", alignItems:"center", gap:8 }}>
+              <span>{weekLabel}</span>
+              <span style={{ color:"var(--bm-border)" }}>·</span>
+              <span style={{ color:"var(--bm-text2)", fontWeight:500 }}>{project?.title ?? "Your startup"}</span>
+            </p>
+          </div>
+          <div style={{ position:"relative" }} className="bm-no-print">
+            <button onClick={() => setMenuOpen(v => !v)} disabled={!!exporting}
+              style={{ display:"flex", alignItems:"center", gap:7, padding:"10px 16px",
+                borderRadius:"var(--r-lg)", border:"1px solid var(--bm-border)",
+                background:"var(--bm-bg2)", color:"var(--bm-text2)", fontSize:12,
+                fontWeight:600, cursor:"pointer", fontFamily:"inherit", transition:"all 0.15s" }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor="var(--bm-accent-bd)"; e.currentTarget.style.color="var(--bm-accent)"; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor="var(--bm-border)"; e.currentTarget.style.color="var(--bm-text2)"; }}>
+              <Download size={12}/>
+              {exporting ? "Exporting…" : "Export"}
+              <ChevronDown size={10} style={{ transform: menuOpen ? "rotate(180deg)" : "none", transition:"transform 0.15s" }}/>
             </button>
+            <AnimatePresence>
+              {menuOpen && <ExportMenu onSelect={handleExport} onClose={() => setMenuOpen(false)}/>}
+            </AnimatePresence>
           </div>
         </motion.div>
 
-        {/* Metrics row */}
-        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)", gap: 12, marginBottom: 16 }}>
-          <StatCard label="Startup Score" value={score} sub={scoreDelta ? `+${scoreDelta} this week` : "No change this week"} trend={scoreDelta ? "up" : "neutral"} sparkData={weeklyScores} color="var(--bm-accent)" />
-          <StatCard label="Tasks Done" value={taskData.reduce((a, b) => a + b, 0)} sub={`${taskDelta >= 0 ? "+" : ""}${taskDelta} vs last week`} trend={taskDelta >= 0 ? "up" : "down"} sparkData={taskData} color="#A78BFA" />
-          <StatCard label="Active Streak" value={`${metrics?.activeStreakDays ?? 0}d`} sub={(metrics?.activeStreakDays ?? 0) > 0 ? "Keep it going" : "Complete a task to start"} color="var(--bm-amber)" />
+        {/* Toast */}
+        <AnimatePresence>
+          {exported && (
+            <motion.div initial={{ opacity:0, y:-8 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0 }}
+              className="bm-no-print"
+              style={{ background:"var(--bm-accent-dim)", border:"1px solid var(--bm-accent-bd)",
+                borderRadius:"var(--r-lg)", padding:"10px 16px", marginBottom:16,
+                fontSize:12, color:"var(--bm-accent)", fontWeight:600,
+                display:"flex", alignItems:"center", gap:8 }}>
+              <CheckCircle2 size={13}/> {exported}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* HERO ROW */}
+        <div style={{ display:"grid",
+          gridTemplateColumns: isMobile ? "1fr" : "auto 1fr 1fr 1fr",
+          gap:12, marginBottom:16, alignItems:"stretch" }}>
+          {/* Score arc */}
+          <motion.div initial={{ opacity:0, scale:0.9 }} animate={{ opacity:1, scale:1 }} transition={{ delay:0.05 }}
+            style={{ background:"var(--bm-bg2)", border:"1px solid var(--bm-border)",
+              borderRadius:"var(--r-xl)", padding:"20px 24px",
+              display:"flex", flexDirection:"column", alignItems:"center",
+              justifyContent:"center", gap:10, minWidth:160, position:"relative", overflow:"hidden" }}>
+            <div style={{ position:"absolute", inset:0,
+              background:`radial-gradient(circle at 50% 50%, ${score>=60?"var(--bm-green)":score>=30?"var(--bm-amber)":"var(--bm-red)"}10 0%, transparent 70%)`,
+              pointerEvents:"none" }}/>
+            <ScoreArc value={score} size={110}/>
+            {scoreDelta !== 0 && (
+              <div style={{ display:"flex", alignItems:"center", gap:5, fontSize:11, fontWeight:700,
+                color: scoreDelta > 0 ? "var(--bm-green)" : "var(--bm-red)",
+                background: scoreDelta > 0 ? "rgba(92,200,138,0.1)" : "rgba(224,85,85,0.1)",
+                border: `1px solid ${scoreDelta > 0 ? "rgba(92,200,138,0.25)" : "rgba(224,85,85,0.25)"}`,
+                borderRadius:20, padding:"3px 10px" }}>
+                {scoreDelta > 0 ? <TrendingUp size={10}/> : <TrendingDown size={10}/>}
+                {scoreDelta > 0 ? `+${scoreDelta}` : scoreDelta} this week
+              </div>
+            )}
+          </motion.div>
+          <Tile label="Tasks Done" value={tasksThisWeek}
+            sub={taskDelta===0 ? "Same as last week" : `${taskDelta>0?"+":""}${taskDelta} vs last week`}
+            trend={taskDelta>0?"up":taskDelta<0?"down":"flat"}
+            spark={taskData} color="var(--bm-accent)" icon={CheckCircle2}/>
+          <Tile label="Active Streak" value={`${streak}d`}
+            sub={streak>0?(streak>=7?"🔥 On fire":"Keep going"):"Complete a task"}
+            trend={streak>0?"up":"flat"} color="var(--bm-amber)" icon={Flame}/>
+          <Tile label="Total XP" value={getXP()}
+            sub="Lifetime achievement points" trend="up"
+            spark={scoreHistory} color="#A78BFA" icon={Zap}/>
         </div>
 
-        {/* Charts row */}
-        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.4fr 1fr", gap: 12, marginBottom: 16 }}>
-          <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: isMobile ? "18px" : "20px" }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 18 }}>Task Completion This Week</div>
-            <WeeklyBars data={taskData} color="var(--bm-accent)" />
-          </div>
-          <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: isMobile ? "18px" : "20px" }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 18 }}>Focus Breakdown</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {focusData.length === 0 ? (
-                <div style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.6 }}>Complete tasks to see your focus breakdown.</div>
-              ) : focusData.map(s => (
-                <div key={s.label}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-                    <span style={{ fontSize: 11, color: "var(--bm-text3)" }}>{s.label}</span>
-                    <span style={{ fontSize: 11, color: s.color, fontWeight: 700 }}>{s.value}%</span>
+        {/* CHARTS */}
+        <div style={{ display:"grid", gridTemplateColumns: isMobile ? "1fr" : "1.5fr 1fr", gap:12, marginBottom:16 }}>
+          <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} transition={{ delay:0.15 }}
+            style={{ background:"var(--bm-bg2)", border:"1px solid var(--bm-border)",
+              borderRadius:"var(--r-xl)", padding:"20px" }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
+              <span style={{ fontSize:12, fontWeight:600, color:"var(--bm-text2)" }}>Task Completion — This Week</span>
+              <span style={{ fontSize:11, color:"var(--bm-text3)" }}>{tasksThisWeek} total</span>
+            </div>
+            <DayBars data={taskData} color="var(--bm-accent)"/>
+          </motion.div>
+          <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} transition={{ delay:0.2 }}
+            style={{ background:"var(--bm-bg2)", border:"1px solid var(--bm-border)",
+              borderRadius:"var(--r-xl)", padding:"20px" }}>
+            <div style={{ fontSize:12, fontWeight:600, color:"var(--bm-text2)", marginBottom:16 }}>Focus Breakdown</div>
+            {focusData.length === 0 ? (
+              <div style={{ fontSize:12, color:"var(--bm-text3)", lineHeight:1.7 }}>Complete tasks to see focus breakdown.</div>
+            ) : (
+              <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+                {focusData.map((s,i) => (
+                  <div key={i}>
+                    <div style={{ display:"flex", justifyContent:"space-between", marginBottom:5 }}>
+                      <span style={{ fontSize:11, color:"var(--bm-text3)", fontWeight:500 }}>{s.label}</span>
+                      <span style={{ fontSize:11, color:s.color, fontWeight:700 }}>
+                        {totalFocus ? Math.round((s.value/totalFocus)*100) : 0}%
+                      </span>
+                    </div>
+                    <div style={{ height:5, borderRadius:99, background:"var(--bm-bg3)", overflow:"hidden" }}>
+                      <motion.div
+                        initial={{ width:0 }} animate={{ width: totalFocus ? `${(s.value/totalFocus)*100}%` : "0%" }}
+                        transition={{ duration:0.8, delay:i*0.1, ease:"easeOut" }}
+                        style={{ height:"100%", background:s.color, borderRadius:99, boxShadow:`0 0 6px ${s.color}66` }}/>
+                    </div>
                   </div>
-                  <div style={{ height: 4, borderRadius: 99, background: "var(--bm-bg3)", overflow: "hidden" }}>
-                    <motion.div initial={{ width: 0 }} animate={{ width: `${totalFocus ? (s.value / totalFocus) * 100 : 0}%` }} transition={{ duration: 0.8, ease: "easeOut" }}
-                      style={{ height: "100%", background: s.color, borderRadius: 99 }} />
+                ))}
+              </div>
+            )}
+          </motion.div>
+        </div>
+
+        {/* SCORE TREND */}
+        <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} transition={{ delay:0.25 }}
+          style={{ background:"var(--bm-bg2)", border:"1px solid var(--bm-border)",
+            borderRadius:"var(--r-xl)", padding:"20px", marginBottom:16 }}>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+              <Activity size={13} color="var(--bm-accent)"/>
+              <span style={{ fontSize:12, fontWeight:600, color:"var(--bm-text2)" }}>Score Trend — Last 7 Days</span>
+            </div>
+            <div style={{ display:"flex", gap:12 }}>
+              {weeklyScores.map((s,i) => (
+                <div key={i} style={{ textAlign:"center" }}>
+                  <div style={{ fontSize:11, fontWeight:700,
+                    color: s>=60?"var(--bm-green)":s>=30?"var(--bm-amber)":s>0?"var(--bm-red)":"var(--bm-text3)" }}>
+                    {s||"—"}
+                  </div>
+                  <div style={{ fontSize:9, color:"var(--bm-text3)" }}>
+                    {["M","T","W","T","F","S","S"][i]}
                   </div>
                 </div>
               ))}
             </div>
           </div>
+          <div style={{ height:60 }}>
+            <Sparkline data={weeklyScores.map(s=>s||0)} color="var(--bm-accent)" w={isMobile?320:880} h={60}/>
+          </div>
+        </motion.div>
+
+        {/* WINS & FOCUS */}
+        <SectionHead>This Week</SectionHead>
+        <div style={{ display:"grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap:12, marginBottom:16 }}>
+          <motion.div initial={{ opacity:0, x:-8 }} animate={{ opacity:1, x:0 }} transition={{ delay:0.3 }}
+            style={{ background:"var(--bm-bg2)", border:"1px solid var(--bm-border)",
+              borderRadius:"var(--r-xl)", padding:"18px 20px" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:14 }}>
+              <Star size={12} color="var(--bm-green)"/>
+              <span style={{ fontSize:12, fontWeight:700, color:"var(--bm-text)" }}>Wins</span>
+            </div>
+            {wins.length === 0 ? (
+              <div style={{ fontSize:12, color:"var(--bm-text3)", lineHeight:1.6 }}>Complete tasks or milestones to log wins.</div>
+            ) : wins.map((w,i) => (
+              <div key={i} style={{ display:"flex", gap:10, alignItems:"flex-start",
+                padding:"9px 0", borderBottom: i<wins.length-1 ? "1px solid var(--bm-border)" : "none" }}>
+                <CheckCircle2 size={13} color="var(--bm-green)" style={{ flexShrink:0, marginTop:1 }}/>
+                <span style={{ fontSize:13, color:"var(--bm-text2)", lineHeight:1.5 }}>{w}</span>
+              </div>
+            ))}
+          </motion.div>
+          <motion.div initial={{ opacity:0, x:8 }} animate={{ opacity:1, x:0 }} transition={{ delay:0.35 }}
+            style={{ background:"var(--bm-bg2)", border:"1px solid var(--bm-border)",
+              borderRadius:"var(--r-xl)", padding:"18px 20px" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:14 }}>
+              <Target size={12} color="var(--bm-amber)"/>
+              <span style={{ fontSize:12, fontWeight:700, color:"var(--bm-text)" }}>Focus Next Week</span>
+            </div>
+            {nextFocus.length === 0 ? (
+              <div style={{ fontSize:12, color:"var(--bm-text3)", lineHeight:1.6 }}>Create project tasks to generate focus items.</div>
+            ) : nextFocus.map((f,i) => (
+              <div key={i} style={{ display:"flex", gap:10, alignItems:"flex-start",
+                padding:"9px 0", borderBottom: i<nextFocus.length-1 ? "1px solid var(--bm-border)" : "none" }}>
+                <div style={{ width:5, height:5, borderRadius:"50%", background:"var(--bm-amber)",
+                  flexShrink:0, marginTop:5, boxShadow:"0 0 6px var(--bm-amber)" }}/>
+                <span style={{ fontSize:13, color:"var(--bm-text2)", lineHeight:1.5 }}>{f}</span>
+              </div>
+            ))}
+          </motion.div>
         </div>
 
-        {/* AI Insight */}
-        <div style={{ background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)", borderRadius: 16, padding: isMobile ? "18px" : "20px 22px", marginBottom: 16 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-accent)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>AI Weekly Insight</div>
-          <p style={{ fontSize: isMobile ? 15 : 14, color: "var(--bm-text2)", lineHeight: 1.7, margin: "0 0 14px", fontStyle: "italic" }}>
-            &ldquo;{scoreDelta > 0 ? `Your score rose by ${scoreDelta} this week because your execution data changed.` : "Your score is waiting on fresh execution data."} Next week: prioritise the next incomplete task before adding new work.&rdquo;
+        {/* PROJECT SNAPSHOT */}
+        {project && (
+          <>
+            <SectionHead>Project Snapshot</SectionHead>
+            <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} transition={{ delay:0.4 }}
+              style={{ background:"var(--bm-bg2)", border:"1px solid var(--bm-border)",
+                borderRadius:"var(--r-xl)", padding:"20px",
+                display:"grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4,1fr)",
+                gap:20, marginBottom:16 }}>
+              {([
+                { label:"Stage",         value: project.startup_stage ?? "—",         color:"var(--bm-text)" },
+                { label:"Tasks Done",    value:`${project.tasksCompleted??0} / ${project.tasksTotal??0}`, color:"var(--bm-accent)" },
+                { label:"Exec Score",    value: project.execution_score ?? 0,          color:"var(--bm-amber)" },
+                { label:"Momentum",      value: project.momentum_score ?? 0,           color:"#A78BFA" },
+              ] as const).map(({ label, value, color }) => (
+                <div key={label}>
+                  <div style={{ fontSize:9, fontWeight:700, color:"var(--bm-text3)",
+                    textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:6 }}>{label}</div>
+                  <div style={{ fontSize:22, fontWeight:900, color, letterSpacing:"-0.03em" }}>{value}</div>
+                </div>
+              ))}
+            </motion.div>
+          </>
+        )}
+
+        {/* AI INSIGHT */}
+        <motion.div initial={{ opacity:0, y:6 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.45 }}
+          style={{ background:"var(--bm-accent-dim)", border:"1px solid var(--bm-accent-bd)",
+            borderLeft:"3px solid var(--bm-accent)", borderRadius:"var(--r-xl)", padding:"18px 22px" }}>
+          <div style={{ fontSize:9, fontWeight:700, color:"var(--bm-accent)",
+            textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:8 }}>BuildMind Analysis</div>
+          <p style={{ fontSize:14, color:"var(--bm-text)", lineHeight:1.65, margin:"0 0 8px", fontWeight:500 }}>
+            {scoreDelta > 5
+              ? `Strong week — your score climbed ${scoreDelta} points. ${tasksThisWeek > 0 ? `Completing ${tasksThisWeek} task${tasksThisWeek>1?"s":""} drove that momentum.` : ""} Maintain this cadence.`
+              : scoreDelta > 0
+              ? `Slight progress this week (+${scoreDelta} pts). Keep shipping — consistency compounds over time.`
+              : tasksThisWeek > 0
+              ? `${tasksThisWeek} task${tasksThisWeek>1?"s":""} completed but score is flat. Run "Break My Startup" — AI analysis is what moves execution_score most.`
+              : `No activity this week. One task today starts the momentum loop. Pick the smallest possible win.`
+            }
           </p>
-          <span style={{ fontSize: 11, color: "var(--bm-accent)", fontWeight: 600 }}>→ Next week&apos;s recommended focus</span>
-        </div>
+          {nextFocus.length > 0 && (
+            <p style={{ fontSize:12, color:"var(--bm-accent)", fontWeight:600, margin:0 }}>
+              → Top priority next week: {nextFocus[0]}
+            </p>
+          )}
+        </motion.div>
 
-        {/* Wins & blockers */}
-        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
-          <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: isMobile ? "18px" : "18px 20px" }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 14, display: "flex", alignItems: "center", gap: 7 }}>
-              <CheckCircle2 size={13} color="var(--bm-accent)" /> This week&apos;s wins
-            </div>
-            {(metrics?.wins.length ? metrics.wins : ["No wins logged from Supabase this week yet"]).map((w, i, arr) => (
-              <div key={i} style={{ display: "flex", gap: 8, fontSize: 13, color: "var(--bm-text2)", padding: "8px 0", borderBottom: i < 2 ? "1px solid var(--bm-border)" : "none" }}>
-                <span style={{ color: "var(--bm-accent)", flexShrink: 0 }}>✓</span> {w}
-              </div>
-            ))}
-          </div>
-          <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: isMobile ? "18px" : "18px 20px" }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 14, display: "flex", alignItems: "center", gap: 7 }}>
-              <Target size={13} color="var(--bm-amber)" /> Focus for next week
-            </div>
-            {(metrics?.nextFocus.length ? metrics.nextFocus : ["Create or complete project tasks to generate next focus items"]).map((f, i) => (
-              <div key={i} style={{ display: "flex", gap: 8, fontSize: 13, color: "var(--bm-text2)", padding: "8px 0", borderBottom: i < 2 ? "1px solid var(--bm-border)" : "none" }}>
-                <span style={{ color: "var(--bm-amber)", flexShrink: 0 }}>→</span> {f}
-              </div>
-            ))}
-          </div>
+        {/* FOOTER */}
+        <div style={{ marginTop:32, paddingTop:16, borderTop:"1px solid var(--bm-border)",
+          display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+          <span style={{ fontSize:10, color:"var(--bm-text3)" }}>
+            Generated by BuildMind · {new Date().toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})}
+          </span>
+          <span style={{ fontSize:10, color:"var(--bm-text3)" }}>{project?.title}</span>
         </div>
       </div>
     </PaywallGate>

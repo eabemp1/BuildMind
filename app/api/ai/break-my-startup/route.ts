@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { enforceAndTrackAIUsage, groqJSON, hasAdminEnv, logReflexionQuality } from "@/app/api/ai/_utils";
+import { enforceAndTrackAIUsage, groqJSON, groqReasoningJSON, hasAdminEnv, logReflexionQuality } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
 import {
@@ -146,7 +146,7 @@ async function generateExecutionPlan(
   };
 
   try {
-    const result = await groqJSON<ExecutionPlan>(
+    const result = await groqReasoningJSON<ExecutionPlan>(
       `You are a startup execution strategist. Return JSON with exactly these keys:
 {
   "mvp_roadmap": ["step 1", "step 2", "step 3", "step 4", "step 5"],
@@ -437,7 +437,7 @@ export async function POST(request: Request) {
     const [projectResult, milestonesResult, founderContextResult] = await Promise.allSettled([
       supabase
         .from("projects")
-        .select("title,description,target_users,problem,startup_stage,validation_strengths,validation_weaknesses,validation_score,execution_score")
+        .select("name,title,description,target_users,problem,startup_stage,validation_strengths,validation_weaknesses,validation_score,execution_score")
         .eq("id", projectId)
         .eq("user_id", userId)
         .single(),
@@ -492,7 +492,7 @@ export async function POST(request: Request) {
     // Scrape competitors with two parallel queries (direct + broad)
     const [directResults, broadResults] = await Promise.allSettled([
       scrapeCompetitors(
-        `${project.title ?? ""} ${project.problem ?? ""} startup site:producthunt.com OR site:crunchbase.com`,
+        `${(project.name ?? project.title) ?? ""} ${project.problem ?? ""} startup site:producthunt.com OR site:crunchbase.com`,
       ),
       scrapeCompetitors(
         `${project.problem ?? project.description ?? ""} startup tool software`,
@@ -515,7 +515,7 @@ export async function POST(request: Request) {
 
     // Build startup context from project data
     const startupCtx: StartupContext = {
-      idea: `${project.title ?? ""} — ${project.description ?? ""}`,
+      idea: `${(project.name ?? project.title) ?? ""} — ${project.description ?? ""}`,
       problem: project.problem ?? "",
       targetUsers: project.target_users ?? "",
       solution: project.description ?? "",
@@ -552,7 +552,7 @@ export async function POST(request: Request) {
 
     // Build Reflexion context from founder_context row
     const founderReflexionCtx: ReflexionContext = {
-      startupSummary: project.title ?? idea,
+      startupSummary: (project.name ?? project.title) ?? idea,
       stage,
       problem: project.problem ?? undefined,
       targetUsers: project.target_users ?? undefined,
@@ -615,7 +615,7 @@ export async function POST(request: Request) {
             timestamp: new Date().toISOString(),
             viability_score: viabilityResult.viability_score,
             breakdown: viabilityResult.breakdown,
-            idea_snapshot: project.title ?? "",
+            idea_snapshot: (project.name ?? project.title) ?? "",
           };
           iterationDelta = computeIterationDelta(prev, current);
 

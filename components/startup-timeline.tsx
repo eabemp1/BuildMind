@@ -57,7 +57,7 @@ export default function StartupTimeline({ project, milestones, tasks }: Timeline
                 <div
                   className={`flex h-5 w-5 items-center justify-center rounded-full border ${
                     complete
-                      ? "border-indigo-400 bg-indigo-500 shadow-[0_0_12px_rgba(99,102,241,0.7)]"
+                      ? "border-[var(--bm-accent)] bg-[var(--bm-accent)]"
                       : "border-white/20 bg-white/5"
                   }`}
                 >
@@ -68,7 +68,7 @@ export default function StartupTimeline({ project, milestones, tasks }: Timeline
               {!isLast ? (
                 <div
                   className={`mx-3 h-px w-10 ${
-                    complete ? "bg-indigo-400 shadow-[0_0_10px_rgba(99,102,241,0.6)]" : "bg-white/10"
+                    complete ? "bg-[var(--bm-accent)]" : "bg-white/10"
                   }`}
                 />
               ) : null}

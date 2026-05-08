@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { enforceAndTrackAIUsage, groqJSON, hasAdminEnv, logReflexionQuality } from "@/app/api/ai/_utils";
+import { enforceAndTrackAIUsage, hasAdminEnv, logReflexionQuality } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { runReflexionLoop, getWeeklyCriticPersona } from "@/lib/reflexion";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
@@ -123,7 +123,7 @@ export async function POST(request: Request) {
       const [projectResult, memoryResult] = await Promise.allSettled([
         supabase
           .from("projects")
-          .select("title, description, target_users, problem, startup_stage")
+          .select("name, title, description, target_users, problem, startup_stage")
           .eq("id", projectId)
           .eq("user_id", userId)
           .single(),
@@ -174,7 +174,7 @@ export async function POST(request: Request) {
         stage = project.startup_stage ?? inferStage(completedTasks, totalTasks, completedMilestones, (milestones ?? []).length);
         targetUsers = project.target_users ?? "";
         problem = project.problem ?? "";
-        title = project.title ?? "";
+        title = (project.name ?? project.title) ?? "";
         const pendingMilestonesList = (milestones ?? [])
           .filter((m) => m.status !== "completed")
           .map((m) => m.title)
@@ -185,7 +185,7 @@ export async function POST(request: Request) {
           .slice(0, 5);
         const completionPct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
         projectContext = `
-Project: ${project.title}
+Project: ${project.name ?? project.title}
 Stage: ${stage}
 Problem: ${project.problem ?? "Not specified"}
 Target users: ${project.target_users ?? "Not specified"}
@@ -246,39 +246,9 @@ INSTRUCTION: Use this to make today's action a direct causal response to yesterd
     // Build contextual fallback using real project data (never placeholder text)
     const fallback = buildContextualFallback(stage, targetUsers, problem, title);
 
-    const result = await groqJSON<TodayAction>(
-      `You are BuildMind, a brutally honest execution coach for solo founders.
-Return JSON ONLY with these exact keys: action, platform, target_user, message, why, time.
-
-SPECIFICITY RULES — every field must pass this checklist:
-- action: Must include a NUMBER (e.g. "3 people", not "some people"), the EXACT user type from target_users, and an EXACT platform. Bad: "message some users". Good: "Message 3 fintech founders on LinkedIn".
-- platform: One specific channel — "LinkedIn", "WhatsApp", "Email", "Twitter/X", "Phone call", or "In person". Never "social media" or "online".
-- target_user: Copy the exact user type from the FOUNDER DATA target_users field. If it says "restaurant owners in Accra", write "restaurant owners in Accra". Do not generalise.
-- message: A complete, send-ready script (not a template with [brackets]). Write the actual words they send, using their product name and problem description. Max 40 words.
-- why: 1-2 sentences. Must reference their specific stage, their specific target user, or their last reflection outcome. No generic urgency phrases.
-- time: Realistic estimate, e.g. "45 minutes" or "1 hour".
-
-If PENDING TASKS or PENDING MILESTONES are provided in FOUNDER DATA, today's action MUST directly map to advancing the most important one. Name the specific task or milestone in the action field.
-If a LAST REFLECTION is provided, today's action MUST directly respond to it (blocked → remove blocker; completed → go deeper; confidence ≤2 → smaller confidence-building step).
-
-If target_users or problem is missing from FOUNDER DATA, your action field must end with: "(Update your project details to get a more specific task)"`,
-      `FOUNDER DATA:
-${projectContext || "Project data unavailable — fallback mode"}
-
-Project title: ${title || "N/A"}
-Stage: ${stage}
-Problem: ${problem || "N/A"}
-Target users: ${targetUsers || "N/A"}
-${lastReflectionContext}
-`,
-    ).catch(() => fallback);
-
-    // ── Run Reflexion Loop (Generator → Critic → Refiner) ──────────────────
-    // This is the actual 3-agent pipeline. Previously the today-action route
-    // bypassed it entirely and ran a plain groqJSON call. The loop:
-    //   Agent A (Generator) — writes the task
-    //   Agent B (Critic)    — vetoes or approves using this week's rotating persona
-    //   Agent C (Refiner)   — polishes (PASS) or rebuilds from seed (FAIL)
+    // Fix #3: Removed pre-call groqJSON — was wasting 1-2 extra Groq calls per load.
+    // Context is fed directly into Agent A as the seed. Reflexion loop (Gen→Crit→Refine)
+    // runs once. This cuts 4-6 calls/load down to 2-3, more than doubling free-tier endurance.
     const criticPersona = getWeeklyCriticPersona();
     const reflexionContext: import("@/lib/reflexion").ReflexionContext = {
       startupSummary: projectContext || `${title} — ${problem || "early stage startup"}`,
@@ -316,10 +286,13 @@ ${lastReflectionContext}
       }
     }
 
-    // Build the task seed from the single groqJSON result — feed it into Agent A
-    const taskSeed = result
-      ? `Task: ${result.action}\nWhy: ${result.why}\nMessage: ${result.message}`
-      : `${fallback.action} — ${fallback.why}`;
+    // Build seed from founder context directly — no pre-call needed
+    const taskSeed = [
+      `Stage: ${stage}`,
+      `Problem: ${problem || "Not specified"}`,
+      `Target users: ${targetUsers || "Not specified"}`,
+      lastReflectionContext ? `Last reflection: ${lastReflectionContext}` : "",
+    ].filter(Boolean).join("\n");
 
     let reflexionOutput: Awaited<ReturnType<typeof runReflexionLoop>> | null = null;
     let reflexionStatus: ReflexionStatus = "partial";
@@ -343,9 +316,9 @@ ${lastReflectionContext}
         lastReflectionUsed: boolean;
       };
     } = {
-      ...(result ?? fallback),
-      // If reflexion ran and the refined output is substantially different, use it for `why`
-      why: reflexionOutput?.rationale ?? result?.why ?? fallback.why,
+      ...fallback,
+      // If reflexion ran, its rationale becomes the task's why
+      why: reflexionOutput?.rationale ?? fallback.why,
     };
 
     if (reflexionOutput) {

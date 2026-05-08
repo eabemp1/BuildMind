@@ -86,6 +86,21 @@ export async function groqJSON<T>(systemPrompt: string, userPrompt: string): Pro
   );
 }
 
+/**
+ * groqReasoningJSON — like groqJSON but routes to the reasoning chain.
+ * Use for deep multi-factor analysis (viability scoring, risk critique, founder insight synthesis).
+ * Falls back gracefully to the fast chain if reasoning models are unavailable.
+ */
+export async function groqReasoningJSON<T>(systemPrompt: string, userPrompt: string): Promise<T> {
+  return callModelJSON<T>(
+    [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    { role: "reasoning", temperature: 0.2, maxTokens: 1400 },
+  );
+}
+
 export async function createUserNotification(userId: string, message: string, type = "ai_recommendation") {
   if (!hasAdminEnv()) return;
   const supabase = createAdminClient();

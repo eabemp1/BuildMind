@@ -8,7 +8,7 @@
  * FAST (Generator, Refiner, Parser):
  *   1. Groq — llama-3.3-70b-versatile
  *   2. Cerebras — llama-3.3-70b (same model, different infra, free)
- *   3. Groq — llama-4-maverick (different model, avoids same rate limit bucket)
+ *   3. Groq — llama-3.1-70b-versatile (different model, avoids same rate limit bucket)
  *
  * REASONING (Critic, Verifier):
  *   1. Groq — deepseek-r1-distill-llama-70b
@@ -47,7 +47,7 @@ const GROQ_API_KEY         = readApiKey("GROQ_API_KEY");
 const GROQ_MODEL           = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
 const GROQ_REASONING_MODEL = process.env.GROQ_REASONING_MODEL || "deepseek-r1-distill-llama-70b";
 const CEREBRAS_API_KEY     = readApiKey("CEREBRAS_API_KEY");
-const CEREBRAS_MODEL       = process.env.CEREBRAS_MODEL || "llama-3.3-70b";
+const CEREBRAS_MODEL       = process.env.CEREBRAS_MODEL || "llama3.3-70b";
 const GEMINI_API_KEY       = readApiKey("GEMINI_API_KEY");
 const GEMINI_MODEL         = process.env.GEMINI_MODEL || "gemini-2.0-flash";
 
@@ -55,7 +55,7 @@ export function getAIProviderStatus() {
   return {
     fast: [
       GROQ_API_KEY ? { provider: "groq", model: GROQ_MODEL, configured: true } : null,
-      GROQ_API_KEY ? { provider: "groq", model: "meta-llama/llama-4-maverick-17b-128e-instruct", configured: true } : null,
+      GROQ_API_KEY ? { provider: "groq", model: "llama-3.1-70b-versatile", configured: true } : null,
       CEREBRAS_API_KEY ? { provider: "cerebras", model: CEREBRAS_MODEL, configured: true } : null,
       GEMINI_API_KEY ? { provider: "gemini", model: GEMINI_MODEL, configured: true } : null,
     ].filter(Boolean),
@@ -291,7 +291,7 @@ function getFastChain(): ProviderFn[] {
   if (GROQ_API_KEY) {
     chain.push((m, t, mt, j) => groqCall(m, GROQ_MODEL, t, mt, j));
     // Second Groq slot uses a different model to avoid same rate limit bucket
-    chain.push((m, t, mt, j) => groqCall(m, "meta-llama/llama-4-maverick-17b-128e-instruct", t, mt, j));
+    chain.push((m, t, mt, j) => groqCall(m, "llama-3.1-70b-versatile", t, mt, j));
   }
   if (CEREBRAS_API_KEY) {
     chain.push((m, t, mt, j) => cerebrasCall(m, CEREBRAS_MODEL, t, mt, j));

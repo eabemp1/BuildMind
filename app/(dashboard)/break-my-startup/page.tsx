@@ -536,61 +536,90 @@ export default function BreakMyStartupPage() {
             transition={{ duration: 0.35 }}
             className="flex flex-col gap-5"
           >
-            {/* Overall risk header */}
-            <Card
-              className="p-5 flex items-center gap-5 flex-wrap"
+            {/* Overall verdict — visceral, full-width */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.97 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.4 }}
               style={{
-                borderColor: overallColor(result.overallRisk) + "44",
-                background: `linear-gradient(135deg, ${overallColor(result.overallRisk)}08 0%, var(--bm-bg2) 60%)`,
+                borderRadius: "var(--r-xl)",
+                padding: "24px",
+                background: `linear-gradient(135deg, ${overallColor(result.overallRisk)}12 0%, var(--bm-bg2) 100%)`,
+                border: `1px solid ${overallColor(result.overallRisk)}40`,
+                boxShadow: `0 0 32px ${overallColor(result.overallRisk)}18`,
               }}
             >
-              {result.survival_probability !== undefined && (
-                <SurvivalRing value={result.survival_probability} />
-              )}
-
-              <div className="flex flex-col gap-2 flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-medium text-[var(--bm-text3)] uppercase tracking-widest">Overall Risk</span>
-                  <Badge variant={severityVariant(result.overallRisk)} size="md" dot>
-                    {result.overallRisk}
-                  </Badge>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 20, flexWrap: "wrap" }}>
+                {result.survival_probability !== undefined && (
+                  <SurvivalRing value={result.survival_probability} />
+                )}
+                <div style={{ flex: 1, minWidth: 200 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                    <span style={{
+                      fontSize: 9, fontWeight: 700, letterSpacing: "0.12em",
+                      textTransform: "uppercase", color: "var(--bm-text3)",
+                    }}>
+                      Verdict
+                    </span>
+                    <Badge variant={severityVariant(result.overallRisk)} size="md" dot>
+                      {result.overallRisk} Risk
+                    </Badge>
+                  </div>
+                  {result.summary && (
+                    <p style={{ fontSize: 15, fontWeight: 600, color: "var(--bm-text)", lineHeight: 1.55, marginBottom: 0 }}>
+                      {result.summary}
+                    </p>
+                  )}
+                  {result.score_note && (
+                    <p style={{ fontSize: 12, color: "var(--bm-text3)", marginTop: 6, lineHeight: 1.5 }}>
+                      {result.score_note}
+                    </p>
+                  )}
+                  {result.gated && (
+                    <button
+                      type="button"
+                      onClick={() => showLimitModal("break_startup")}
+                      style={{
+                        marginTop: 12, display: "inline-flex", alignItems: "center", gap: 6,
+                        fontSize: 12, fontWeight: 600, color: "var(--bm-text-inv)",
+                        background: "var(--bm-accent)", border: "none", borderRadius: "var(--r-md)",
+                        padding: "8px 16px", cursor: "pointer",
+                      }}
+                    >
+                      Unlock full analysis →
+                    </button>
+                  )}
                 </div>
-                {result.summary && (
-                  <p className="text-sm text-[var(--bm-text2)] leading-relaxed">{result.summary}</p>
-                )}
-                {result.score_note && (
-                  <p className="text-xs text-[var(--bm-text3)] leading-relaxed">{result.score_note}</p>
-                )}
-                {result.gated && (
-                  <button
-                    type="button"
-                    onClick={() => showLimitModal("break_startup")}
-                    className="self-start rounded-lg px-3 py-2 text-xs font-semibold"
-                    style={{ background: "var(--bm-accent)", color: "var(--bm-text-inv)", border: "none", cursor: "pointer" }}
-                  >
-                    Unlock full analysis
-                  </button>
-                )}
               </div>
-            </Card>
+            </motion.div>
 
-            {/* Brutal advice */}
+            {/* Brutal advice — high contrast */}
             {result.brutal_advice && (
-              <Card
-                className="p-4 flex flex-col gap-2"
+              <motion.div
+                initial={{ opacity: 0, x: -6 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.2 }}
                 style={{
-                  borderColor: "rgba(232,160,32,0.25)",
-                  background: "rgba(232,160,32,0.04)",
+                  borderRadius: "var(--r-lg)",
+                  padding: "16px 18px",
+                  background: "rgba(232,160,32,0.06)",
+                  border: "1px solid rgba(232,160,32,0.3)",
+                  borderLeft: "3px solid var(--bm-amber)",
                 }}
               >
-                <div className="flex items-center gap-1.5">
-                  <AlertTriangle size={12} style={{ color: "var(--bm-amber)" }} />
-                  <span className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: "var(--bm-amber)" }}>
-                    Brutal Advice
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                  <AlertTriangle size={13} style={{ color: "var(--bm-amber)", flexShrink: 0 }} />
+                  <span style={{
+                    fontSize: 9, fontWeight: 700, textTransform: "uppercase",
+                    letterSpacing: "0.12em", color: "var(--bm-amber)",
+                  }}>
+                    Brutal advice
                   </span>
                 </div>
-                <p className="text-sm text-[var(--bm-text2)] leading-relaxed">{result.brutal_advice}</p>
-              </Card>
+                <p style={{ fontSize: 14, color: "var(--bm-text)", lineHeight: 1.6, fontWeight: 500, margin: 0 }}>
+                  {result.brutal_advice}
+                </p>
+              </motion.div>
             )}
 
             {/* Risk breakdown cards */}
@@ -656,38 +685,60 @@ export default function BreakMyStartupPage() {
             )}
 
             {/* Risk breakdown cards */}
-            <div className="flex flex-col gap-3">
-              <h3 className="text-sm font-semibold text-[var(--bm-text)]">Risk Breakdown</h3>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+                <h3 style={{ fontSize: 12, fontWeight: 700, color: "var(--bm-text)", margin: 0, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                  Kill reasons
+                </h3>
+                <span style={{
+                  fontSize: 10, fontWeight: 600, color: "var(--bm-red)",
+                  background: "rgba(224,85,85,0.1)", border: "1px solid rgba(224,85,85,0.2)",
+                  borderRadius: 4, padding: "1px 6px",
+                }}>
+                  {result.risks.length} found
+                </span>
+              </div>
               {result.risks.map((risk, i) => (
                 <motion.div
                   key={i}
                   initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.07 }}
+                  transition={{ delay: i * 0.08 }}
+                  style={{
+                    borderRadius: "var(--r-md)",
+                    overflow: "hidden",
+                    border: `1px solid ${
+                      risk.severity === "Critical" ? "rgba(224,85,85,0.3)" :
+                      risk.severity === "High" ? "rgba(232,160,32,0.25)" :
+                      "var(--bm-border)"
+                    }`,
+                    background: "var(--bm-bg2)",
+                  }}
                 >
-                  <Card className="p-4 flex flex-col gap-2.5">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-semibold text-[var(--bm-text)]">{risk.category}</span>
+                  <div style={{ height: 3, background: overallColor(risk.severity), opacity: 0.7 }} />
+                  <div style={{ padding: "12px 14px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", minWidth: 18, flexShrink: 0 }}>
+                        #{i + 1}
+                      </span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: "var(--bm-text)", flex: 1 }}>
+                        {risk.category}
+                      </span>
                       <Badge variant={severityVariant(risk.severity)} size="sm" dot>
                         {risk.severity}
                       </Badge>
                     </div>
-                    <p className="text-sm text-[var(--bm-text2)] leading-relaxed">{risk.description}</p>
-                    <div
-                      className="flex items-start gap-2 text-xs p-3 rounded-lg"
-                      style={{
-                        background: "var(--bm-bg3)",
-                        color: "var(--bm-text3)",
-                      }}
-                    >
-                      <CheckCircle2
-                        size={12}
-                        className="shrink-0 mt-0.5"
-                        style={{ color: "var(--bm-accent)" }}
-                      />
-                      <span>{risk.mitigation}</span>
+                    <p style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.55, margin: "0 0 10px 0" }}>
+                      {risk.description}
+                    </p>
+                    <div style={{
+                      display: "flex", alignItems: "flex-start", gap: 8,
+                      background: "var(--bm-bg3)", borderRadius: "var(--r-sm)", padding: "8px 10px",
+                    }}>
+                      <CheckCircle2 size={12} style={{ color: "var(--bm-accent)", flexShrink: 0, marginTop: 1 }} />
+                      <span style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.5 }}>{risk.mitigation}</span>
                     </div>
-                  </Card>
+                  </div>
                 </motion.div>
               ))}
             </div>

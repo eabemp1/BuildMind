@@ -6,7 +6,7 @@
     "dev": "node -r ./scripts/disable-next-trace.js node_modules/next/dist/bin/next dev -p 3006",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

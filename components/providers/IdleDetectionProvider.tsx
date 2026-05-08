@@ -53,14 +53,14 @@ export default function IdleDetectionProvider({ children }: { children: React.Re
             transition={{ type: "spring", stiffness: 300, damping: 26 }}
             style={{
               position: "fixed", bottom: 20, right: 20, zIndex: 9999, maxWidth: 320,
-              background: "rgba(14,14,22,0.97)", border: "1px solid rgba(99,102,241,0.4)",
+              background: "rgba(14,14,22,0.97)", border: "1px solid var(--bm-accent-bd)",
               borderRadius: 14, padding: "14px 16px", boxShadow: "0 12px 40px rgba(0,0,0,0.5)",
             }}
           >
             <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-              <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#6366f1", flexShrink: 0, marginTop: 4, boxShadow: "0 0 8px #6366f1" }} />
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--bm-accent)", flexShrink: 0, marginTop: 4, boxShadow: "0 0 8px var(--bm-accent)" }} />
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "#6366f1", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>CoFounder</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--bm-accent)", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>CoFounder</div>
                 <div style={{ fontSize: 13, color: "#d0d0e0", lineHeight: 1.5 }}>{toast.message}</div>
                 {toast.lastGoal && <div style={{ fontSize: 11, color: "#555", marginTop: 6, fontStyle: "italic" }}>Last goal: &ldquo;{toast.lastGoal}&rdquo;</div>}
               </div>

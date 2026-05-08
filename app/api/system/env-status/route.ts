@@ -74,6 +74,9 @@ export async function GET() {
       CEREBRAS_MODEL: Boolean(process.env.CEREBRAS_MODEL),
       GEMINI_API_KEY: hasRealSecret("GEMINI_API_KEY"),
       GEMINI_MODEL: Boolean(process.env.GEMINI_MODEL),
+      // Fix #7: CRON_SECRET missing = silent 401, all scheduled jobs stop silently
+      CRON_SECRET: hasRealSecret("CRON_SECRET"),
+      NEXT_PUBLIC_APP_URL: Boolean(process.env.NEXT_PUBLIC_APP_URL),
     },
     env,
     aiProviders: getAIProviderStatus(),

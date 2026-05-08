@@ -8,7 +8,7 @@ import { computeStartupScore } from "@/lib/buildmind";
 import { useProjectSummariesQuery, useDashboardOverviewQuery } from "@/lib/queries";
 import { recordScore, markActiveToday, recordPendingTasks, syncUrgencyFromServer } from "@/lib/urgency";
 import { getStoredStreak } from "@/lib/plan";
-import { getXP } from "@/lib/scoring";
+import { getXP, getScoreHistory, syncScoreHistory, syncXP } from "@/lib/scoring";
 import {
   Zap, Flame, Target, ArrowRight, ChevronRight,
   FolderKanban, BarChart3, Clock,
@@ -226,6 +226,9 @@ export default function OverviewPage() {
     // Seed streak + lastActive from Supabase so urgency signals are correct
     // on a fresh device — fires after the localStorage read so UI is instant
     syncUrgencyFromServer().then(refresh).catch(() => {});
+    // Sync score history and XP from server so delta and history are authoritative
+    void syncScoreHistory();
+    void syncXP();
     return () => {
       window.removeEventListener("storage", refresh);
       window.removeEventListener("bm_streak_updated", refresh);
@@ -251,6 +254,16 @@ export default function OverviewPage() {
     xp: getXP(),
     streak,
   }) : 0;
+
+  // Score delta: compare today vs yesterday from history
+  const scoreDelta = useMemo(() => {
+    const history = getScoreHistory();
+    if (history.length < 2) return null;
+    const sorted = [...history].sort((a, b) => b.date.localeCompare(a.date));
+    const prev = sorted[1]?.score;
+    if (prev == null || score === 0) return null;
+    return score - prev;
+  }, [score]);
   const validationStrengths = Array.isArray(activeProject?.validation_strengths)
     ? activeProject.validation_strengths.length
     : 0;
@@ -340,7 +353,19 @@ export default function OverviewPage() {
           label="Startup Score"
           value={
             activeProject ? (
-              <ScoreRing val={score} color={scoreColor} size={48} />
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                <ScoreRing val={score} color={scoreColor} size={48} />
+                {scoreDelta !== null && (
+                  <span style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: scoreDelta > 0 ? "var(--bm-green)" : scoreDelta < 0 ? "var(--bm-red)" : "var(--bm-text3)",
+                    letterSpacing: "0.02em",
+                  }}>
+                    {scoreDelta > 0 ? `+${scoreDelta}` : scoreDelta < 0 ? `${scoreDelta}` : "→"} vs yesterday
+                  </span>
+                )}
+              </div>
             ) : (
               <span className="text-[var(--bm-text3)]">—</span>
             )

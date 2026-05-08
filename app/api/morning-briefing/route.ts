@@ -195,8 +195,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   // For scheduled jobs — requires cron secret
-  const secret = req.headers.get("x-cron-secret");
-  if (secret !== process.env.CRON_SECRET) {
+  if (!isCronRequest(req)) {
     return NextResponse.json({ ok: false }, { status: 401 });
   }
   return NextResponse.json({ ok: true, message: "Use the Supabase Edge Function for scheduled delivery" });

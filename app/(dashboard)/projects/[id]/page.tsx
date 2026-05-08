@@ -331,10 +331,18 @@ export default function ProjectDetailPage() {
 
   const { project, milestones = [], tasks = [] } = data ?? {};
   const stage = project?.startup_stage ?? "MVP";
-  const score = useMemo(() => project ? computeStartupScore({
-    validation_strengths: project.validation_strengths,
-    execution_score: project.execution_score,
-  }) : 0, [project, tasks]);
+  const score = useMemo(() => {
+    if (!project) return 0;
+    let xp = 0;
+    try { const { getXP: _getXP } = require("@/lib/scoring"); xp = _getXP(); } catch { /* ok */ }
+    return computeStartupScore({
+      validation_strengths: project.validation_strengths,
+      execution_score: project.execution_score,
+      momentum_score: project.momentum_score,
+      streak: getStoredStreak(),
+      xp,
+    });
+  }, [project, tasks]);
   const validationStrengths = Array.isArray(project?.validation_strengths)
     ? project.validation_strengths.length
     : 0;

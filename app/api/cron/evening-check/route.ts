@@ -24,3 +24,7 @@ export async function GET(req: Request) {
     message: "Evening check cron is reachable. Supabase scheduled-jobs performs batch nudges.",
   });
 }
+
+export async function POST(req: Request) {
+  return GET(req);
+}

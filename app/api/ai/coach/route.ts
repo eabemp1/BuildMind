@@ -159,7 +159,7 @@ export async function POST(request: Request) {
         const [projectResult, memoryResult, milestonesResult] = await Promise.allSettled([
           supabase
             .from("projects")
-            .select("title, description, target_users, problem, startup_stage, validation_strengths, validation_weaknesses")
+            .select("name, title, description, target_users, problem, startup_stage, validation_strengths, validation_weaknesses")
             .eq("id", projectId)
             .eq("user_id", userId)
             .single(),
@@ -204,7 +204,7 @@ export async function POST(request: Request) {
           const valStrengths = (project.validation_strengths ?? []).join(", ");
           const valWeaknesses = (project.validation_weaknesses ?? []).join(", ");
           projectContext = `
-Project: ${project.title}
+Project: ${project.name ?? project.title}
 Stage: ${stage}
 Problem: ${project.problem ?? "Not defined"}
 Target users: ${project.target_users ?? "Not defined"}

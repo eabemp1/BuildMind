@@ -17,7 +17,7 @@ export async function POST(req: Request) {
 
   const { data: ctx } = await admin
     .from("founder_context")
-    .select("momentum_score, tasks_accepted_this_week, current_stage, consecutive_tasks_completed, last_active, tasks_completed_today, last_task_date")
+    .select("momentum_score, tasks_accepted_this_week, current_stage, consecutive_tasks_completed, last_active, tasks_completed_today, last_task_date, tasks_completed_total")
     .eq("user_id", user.id)
     .maybeSingle();
 
@@ -50,8 +50,9 @@ export async function POST(req: Request) {
     tasks_completed_today: previousTodayCount + 1,
     last_task_date: today,
     daily_tasks_reset_at: new Date().toISOString(),
+    tasks_completed_total: (ctx?.tasks_completed_total ?? 0) + 1,
     ...(stage ? { current_stage: stage } : {}),
   }, { onConflict: "user_id" });
 
-  return NextResponse.json({ ok: true, momentum: newMomentum, isFirstTask, consecutiveTasksCompleted: newConsecutive });
+  return NextResponse.json({ ok: true, momentum: newMomentum, isFirstTask, consecutiveTasksCompleted: newConsecutive, tasksCompletedTotal: (ctx?.tasks_completed_total ?? 0) + 1 });
 }

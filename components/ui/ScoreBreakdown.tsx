@@ -25,7 +25,7 @@ interface ScoreBreakdownProps {
   compact?: boolean;
 }
 
-const SCORE_COLOR = (s: number) => s >= 60 ? "#4ade80" : s >= 30 ? "#fbbf24" : "#f87171";
+const SCORE_COLOR = (s: number) => s >= 60 ? "var(--bm-green)" : s >= 30 ? "var(--bm-amber)" : "var(--bm-red)";
 
 interface BreakdownRow {
   label: string;
@@ -116,7 +116,7 @@ export function ScoreBreakdown(props: ScoreBreakdownProps) {
                 <div key={row.label} style={{ marginBottom: 10 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
                     <span style={{ fontSize: 12, color: "#ccc" }}>{row.label}</span>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: row.pts >= row.max * 0.6 ? "#4ade80" : "#fbbf24" }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: row.pts >= row.max * 0.6 ? "var(--bm-green)" : "var(--bm-amber)" }}>
                       +{row.pts} <span style={{ color: "#444", fontWeight: 400 }}>/ {row.max}</span>
                     </span>
                   </div>
@@ -126,7 +126,7 @@ export function ScoreBreakdown(props: ScoreBreakdownProps) {
                       initial={{ width: 0 }}
                       animate={{ width: `${Math.min(100, (row.pts / row.max) * 100)}%` }}
                       transition={{ duration: 0.5, delay: 0.05 }}
-                      style={{ height: "100%", background: row.pts >= row.max * 0.6 ? "#4ade80" : "#fbbf24", borderRadius: 2 }}
+                      style={{ height: "100%", background: row.pts >= row.max * 0.6 ? "var(--bm-green)" : "var(--bm-amber)", borderRadius: 2 }}
                     />
                   </div>
                   <div style={{ fontSize: 10, color: "#444", marginTop: 2 }}>{row.detail}</div>

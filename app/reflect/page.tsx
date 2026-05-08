@@ -8,6 +8,7 @@ import { incrementDailyStreak, getStoredStreak } from "@/lib/plan";
 import { notifyStreakMilestone } from "@/lib/notifications";
 import { trackFunnelStep } from "@/lib/onboarding-analytics";
 import { CheckCircle2, ChevronRight, Flame, Brain, ArrowRight } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 
 type Outcome = "completed" | "blocked" | "partial" | "learned";
 
@@ -42,6 +43,7 @@ export default function ReflectPage() {
   const [history, setHistory] = useState<any[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [streak, setStreak] = useState(0);
+  const [startupStage, setStartupStage] = useState("Idea");
 
   useEffect(() => {
     try {
@@ -51,6 +53,47 @@ export default function ReflectPage() {
       setTodayAction(action?.action ?? "");
       setStreak(getStoredStreak());
     } catch {}
+    // Fix #2: Fetch actual startup stage from project summaries
+    // Fix #11: Seed reflect history from Supabase so it survives device switches
+    (async () => {
+      try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const [summariesRes, reflectionsRes] = await Promise.allSettled([
+            supabase
+              .from("project_summaries")
+              .select("startup_stage")
+              .eq("user_id", user.id)
+              .order("updated_at", { ascending: false })
+              .limit(1),
+            supabase
+              .from("reflections")
+              .select("outcome, note, confidence, today_action, created_at")
+              .eq("user_id", user.id)
+              .order("created_at", { ascending: false })
+              .limit(30),
+          ]);
+
+          if (summariesRes.status === "fulfilled" && summariesRes.value.data?.[0]?.startup_stage) {
+            setStartupStage(summariesRes.value.data[0].startup_stage);
+          }
+
+          if (reflectionsRes.status === "fulfilled" && reflectionsRes.value.data?.length) {
+            const serverHistory = reflectionsRes.value.data.map((r) => ({
+              date: new Date(r.created_at).getTime(),
+              outcome: r.outcome,
+              note: r.note ?? "",
+              confidence: r.confidence ?? 3,
+              causality: "",
+            })).reverse();
+            // Merge with localStorage — prefer server data, it's the source of truth
+            setHistory(serverHistory);
+            localStorage.setItem("bm_reflect_history", JSON.stringify(serverHistory));
+          }
+        }
+      } catch {}
+    })();
   }, []);
 
   async function handleSubmit() {
@@ -63,7 +106,7 @@ export default function ReflectPage() {
       try {
         const res = await fetch("/api/ai/reflect-action", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ outcome, note, confidence, todayAction, stage: "Idea", streak }),
+          body: JSON.stringify({ outcome, note, confidence, todayAction, stage: startupStage, streak }),
         });
         if (res.ok) { const d = await res.json(); const payload = d.data ?? d; caus = payload.causality || fallback; next = payload.nextAction || ""; }
       } catch {}

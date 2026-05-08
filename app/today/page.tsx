@@ -4,9 +4,10 @@ import { Suspense, useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
-import { useProjectSummariesQuery, useDashboardOverviewQuery } from "@/lib/queries";
+import { useProjectSummariesQuery, useDashboardOverviewQuery, queryKeys } from "@/lib/queries";
+import { useQueryClient } from "@tanstack/react-query";
 import { computeStartupScore } from "@/lib/buildmind";
-import { computeScoreDelta, applyScoreDelta, getXP } from "@/lib/scoring";
+import { computeScoreDelta, applyScoreDelta, getXP, recordScore } from "@/lib/scoring";
 import { fetchAndSyncStoredPlanFromBillingStatus, getStoredStreak, recordTaskCompletion, syncStreakFromServer } from "@/lib/plan";
 import { syncUrgencyFromServer } from "@/lib/urgency";
 import { updateAchievementStats, checkAndUnlockAchievements, getAchievementStats } from "@/lib/achievements";
@@ -106,6 +107,7 @@ function TodayContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const isFirstSession = searchParams.get("first_session") === "true";
+  const queryClient = useQueryClient();
   const { data: summaries = [], isLoading } = useProjectSummariesQuery();
   const { data: overview } = useDashboardOverviewQuery();
   const [copied, setCopied] = useState(false);
@@ -265,6 +267,23 @@ function TodayContent() {
     setSubmitting(true);
     try {
       recordTaskCompletion();
+      // Sync task completion to Supabase (tasks_completed_total → powers progressive sidebar unlock)
+      try {
+        const tcRes = await fetch("/api/founder-context/task-complete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ stage: project?.startup_stage ?? "Idea" }),
+        });
+        if (tcRes.ok) {
+          const tcData = await tcRes.json();
+          if (tcData.tasksCompletedTotal != null) {
+            // Sync the authoritative server total back to localStorage
+            const localTotal = parseInt(localStorage.getItem("bm_tasks_completed_total") ?? "0", 10) || 0;
+            const resolved = Math.max(tcData.tasksCompletedTotal, localTotal);
+            localStorage.setItem("bm_tasks_completed_total", String(resolved));
+          }
+        }
+      } catch { /* non-fatal */ }
       const stats = getAchievementStats();
       updateAchievementStats({
         ...stats,
@@ -296,7 +315,28 @@ function TodayContent() {
             .update({ execution_score: newScore })
             .eq("id", project.id)
             .eq("user_id", userId);
+          // Record new score in history and invalidate dashboard caches
+          const newComputedScore = Math.min(100, Math.max(0, newScore));
+          recordScore(newComputedScore);
+          void queryClient.invalidateQueries({ queryKey: queryKeys.projectSummaries });
+          void queryClient.invalidateQueries({ queryKey: queryKeys.overview });
         } catch { /* non-fatal — score update is best-effort */ }
+      }
+
+      // Fix #4: Write to founder_context on every check-in so AI sees real-time state
+      // Previously only the 5am cron updated this — AI was 20h stale after morning check-in
+      if (userId) {
+        try {
+          await fetch("/api/founder-context", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              tasks_accepted_this_week_increment: 1,
+              days_inactive: 0,
+              last_active: new Date().toISOString().split("T")[0],
+            }),
+          });
+        } catch { /* non-fatal — founder context update is best-effort */ }
       }
 
       setDone(true);
