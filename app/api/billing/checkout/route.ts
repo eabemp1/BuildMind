@@ -25,6 +25,10 @@ const PLAN_AMOUNTS: Record<Plan, () => number> = {
   ),
 };
 
+const PLAN_CODES: Partial<Record<Plan, () => string | undefined>> = {
+  builder: () => process.env.PAYSTACK_BUILDER_PLAN_CODE?.trim(),
+};
+
 /** Plans that can actually be purchased (free is not purchasable). */
 const PURCHASABLE_PLANS: Plan[] = ["builder"];
 
@@ -67,10 +71,17 @@ export async function POST(req: Request) {
     : "builder"; // safe default for the single current paid tier
 
   const amount = PLAN_AMOUNTS[plan]?.();
+  const paystackPlanCode = PLAN_CODES[plan]?.();
   if (!amount || amount <= 0) {
     return NextResponse.json(
       { error: `Plan "${plan}" is not purchasable` },
       { status: 400 },
+    );
+  }
+  if (!paystackPlanCode) {
+    return NextResponse.json(
+      { error: `Recurring billing is not configured. Add PAYSTACK_BUILDER_PLAN_CODE for the monthly Builder plan.` },
+      { status: 503 },
     );
   }
 
@@ -86,8 +97,9 @@ export async function POST(req: Request) {
       email: user.email,
       amount,
       currency: "GHS",
+      plan: paystackPlanCode,
       callback_url: `${baseUrl}/upgrade`,
-      metadata: { user_id: user.id, plan },
+      metadata: { user_id: user.id, plan, billing_interval: "monthly" },
     }),
   });
 
@@ -104,5 +116,5 @@ export async function POST(req: Request) {
     );
   }
 
-  return NextResponse.json({ url: payload.data.authorization_url, plan });
+  return NextResponse.json({ url: payload.data.authorization_url, plan, recurring: true });
 }

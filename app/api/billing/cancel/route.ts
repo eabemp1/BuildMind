@@ -72,6 +72,26 @@ buildmind.live`;
   }
 }
 
+async function disablePaystackSubscription(code: unknown, token: unknown): Promise<string | null> {
+  const subscriptionCode = typeof code === "string" ? code.trim() : "";
+  const emailToken = typeof token === "string" ? token.trim() : "";
+  const secret = process.env.PAYSTACK_SECRET_KEY ?? "";
+  if (!subscriptionCode || !emailToken || !secret) return null;
+
+  const res = await fetch("https://api.paystack.co/subscription/disable", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${secret}`,
+    },
+    body: JSON.stringify({ code: subscriptionCode, token: emailToken }),
+  });
+
+  const payload = (await res.json().catch(() => null)) as { message?: string } | null;
+  if (!res.ok) return payload?.message ?? "Paystack subscription disable failed";
+  return null;
+}
+
 export async function POST(request: Request) {
   const supabase = await createClient();
   const {
@@ -91,6 +111,8 @@ export async function POST(request: Request) {
   const reason = typeof body.reason === "string" ? body.reason.trim().slice(0, 240) : "";
 
   const admin = createAdminClient();
+  const { data: freshUser } = await admin.auth.admin.getUserById(user.id);
+  const metadata = (freshUser.user?.user_metadata ?? {}) as Record<string, unknown>;
 
   if (mode === "pause") {
     const pauseUntil = new Date(Date.now() + 30 * 86400000).toISOString();
@@ -108,13 +130,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, mode, pauseUntil });
   }
 
-  // Cancel: downgrade to free immediately
+  const paystackDisableError = await disablePaystackSubscription(
+    metadata.billing_subscription_id,
+    metadata.billing_subscription_token,
+  );
+
+  // Cancel: stop future billing and downgrade to free immediately
   await persistUserPlan(user.id, "free", {
     status: "canceled",
     customerEmail: user.email?.toLowerCase() ?? null,
+    subscriptionId: typeof metadata.billing_subscription_id === "string" ? metadata.billing_subscription_id : null,
     meta: {
       billing_canceled_at: new Date().toISOString(),
       billing_cancel_reason: reason || null,
+      billing_cancel_provider_error: paystackDisableError,
     },
   });
 
@@ -141,6 +170,8 @@ export async function POST(request: Request) {
     ok: true,
     mode,
     message: "Subscription cancelled. You've been downgraded to the Free plan.",
+    paystackCancelled: !paystackDisableError,
+    paystackDisableError,
     emailSent: !!user.email,
   });
 }

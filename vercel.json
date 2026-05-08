@@ -13,6 +13,10 @@
       "schedule": "0 7 * * 5"
     },
     {
+      "path": "/api/billing/reconcile",
+      "schedule": "0 8 * * *"
+    },
+    {
       "path": "/api/cron/evening-check",
       "schedule": "0 18 * * *"
     }

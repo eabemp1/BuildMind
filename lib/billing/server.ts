@@ -81,6 +81,12 @@ export async function persistUserPlan(userId: string, plan: PublicPlan, update: 
   });
   if (updateError) throw new Error(updateError.message);
 
+  await supabase
+    .from("profiles")
+    .update({ plan })
+    .eq("id", userId)
+    .then(() => undefined, () => undefined);
+
   return {
     plan,
     metadata: nextMetadata,

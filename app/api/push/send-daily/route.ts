@@ -34,6 +34,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import webpush from "web-push";
 import { createClient } from "@supabase/supabase-js";
+import { planFromUserMetadata } from "@/lib/plan";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -124,6 +125,13 @@ function getBearerToken(req: NextRequest): string | undefined {
   return match?.[1]?.trim();
 }
 
+const FREE_BRIEFING_DAYS = new Set([1, 3, 5]);
+
+function isBriefingDayForPlan(plan: string): boolean {
+  if (plan === "builder") return true;
+  return FREE_BRIEFING_DAYS.has(new Date().getDay());
+}
+
 export async function POST(req: NextRequest) {
   if (!process.env.CRON_SECRET && process.env.NODE_ENV === "production") {
     return NextResponse.json(
@@ -195,6 +203,12 @@ export async function POST(req: NextRequest) {
   const BATCH_SIZE = 20;
   const contexts: Array<{ user_id: string; days_inactive: number; momentum_score: number; recovery_mode_active: boolean }> = [];
   const todayBriefings: Array<{ user_id: string; win: string; action: string }> = [];
+  const planMap = new Map<string, string>();
+
+  for (const userId of userIds) {
+    const { data } = await supabase.auth.admin.getUserById(userId);
+    planMap.set(userId, planFromUserMetadata(data.user));
+  }
   for (let i = 0; i < userIds.length; i += BATCH_SIZE) {
     const batchIds = userIds.slice(i, i + BATCH_SIZE);
     const contextQuery = supabase
@@ -231,10 +245,12 @@ export async function POST(req: NextRequest) {
   const recoveryMessage = getRecoveryMessage();
 
   if (dryRun) {
+    const eligible = subs.filter((sub) => isBriefingDayForPlan(planMap.get(sub.user_id) ?? "free")).length;
     return NextResponse.json({
       ok: true,
       dryRun: true,
       total: subs.length,
+      eligible,
       envStatus,
       message: defaultMessage.title,
       recoveryMessage: recoveryMessage.title,
@@ -247,6 +263,11 @@ export async function POST(req: NextRequest) {
   const results = await Promise.allSettled(
     subs.map(async (row) => {
       try {
+        const plan = planMap.get(row.user_id) ?? "free";
+        if (!isBriefingDayForPlan(plan)) {
+          return { userId: row.user_id, ok: true, skipped: true, reason: "not_briefing_day" };
+        }
+
         const ctx = contextMap.get(row.user_id);
         const briefing = briefingMap.get(row.user_id);
         // NEW IN V4: Use Recovery Mode message for founders who are 3+ days inactive
@@ -307,7 +328,10 @@ export async function POST(req: NextRequest) {
   );
 
   const sent = results.filter(
-    (r) => r.status === "fulfilled" && r.value.ok
+    (r) => r.status === "fulfilled" && r.value.ok && !(r.value as { skipped?: boolean }).skipped
+  ).length;
+  const skipped = results.filter(
+    (r) => r.status === "fulfilled" && r.value.ok && (r.value as { skipped?: boolean }).skipped
   ).length;
   const recoveryCount = results.filter(
     (r) => r.status === "fulfilled" && r.value.ok && (r.value as { isInRecovery?: boolean }).isInRecovery
@@ -315,7 +339,7 @@ export async function POST(req: NextRequest) {
   const personalisedCount = results.filter(
     (r) => r.status === "fulfilled" && r.value.ok && (r.value as { personalised?: boolean }).personalised
   ).length;
-  const failed = results.length - sent;
+  const failed = results.length - sent - skipped;
   const failedDetails = results
     .filter((r) => r.status === "fulfilled" && !r.value.ok)
     .slice(0, 5)
@@ -336,6 +360,7 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     sent,
+    skipped,
     failed,
     recoveryMode: recoveryCount,
     personalised: personalisedCount,

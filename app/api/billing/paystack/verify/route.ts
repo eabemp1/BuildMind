@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { persistUserPlan } from "@/lib/billing/server";
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY ?? "";
+const PAYSTACK_BUILDER_PLAN_CODE = process.env.PAYSTACK_BUILDER_PLAN_CODE?.trim() ?? "";
 
 // Expected amount in pesewas (GHS 290 = 29000 pesewas)
 function expectedAmountPesewas(): number {
@@ -19,6 +20,11 @@ type PaystackVerifyResponse = {
     currency?: string;
     customer?: { email?: string | null } | null;
     metadata?: Record<string, unknown> | null;
+    subscription_code?: string | null;
+    subscription?: {
+      subscription_code?: string | null;
+      email_token?: string | null;
+    } | null;
   } | null;
 };
 
@@ -37,6 +43,9 @@ export async function POST(req: NextRequest) {
     if (action === "initialize") {
       if (!PAYSTACK_SECRET_KEY) {
         return NextResponse.json({ error: "Paystack not configured. Add PAYSTACK_SECRET_KEY to environment variables." }, { status: 503 });
+      }
+      if (!PAYSTACK_BUILDER_PLAN_CODE) {
+        return NextResponse.json({ error: "Recurring billing is not configured. Add PAYSTACK_BUILDER_PLAN_CODE for the monthly Builder plan." }, { status: 503 });
       }
 
       const email = String(body?.email ?? "").trim();
@@ -57,8 +66,9 @@ export async function POST(req: NextRequest) {
           email,
           amount: expectedAmountPesewas(),
           currency: "GHS",
+          plan: PAYSTACK_BUILDER_PLAN_CODE,
           callback_url: callbackUrl,
-          metadata: { user_id: userId, plan: "builder" },
+          metadata: { user_id: userId, plan: "builder", billing_interval: "monthly" },
         }),
       });
 
@@ -117,6 +127,11 @@ export async function POST(req: NextRequest) {
       provider: "paystack",
       reference,
       status: "active",
+      subscriptionId: data.data?.subscription_code ?? data.data?.subscription?.subscription_code ?? null,
+      meta: {
+        billing_interval: "monthly",
+        billing_subscription_token: data.data?.subscription?.email_token ?? null,
+      },
     });
 
     return NextResponse.json({ ok: true, plan: "builder", reference });

@@ -9,7 +9,9 @@ type UserLike = {
 };
 
 function isAuthorized(req: NextRequest): boolean {
-  const secret = req.headers.get("x-cron-secret");
+  const authorization = req.headers.get("authorization");
+  const bearer = authorization?.match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
+  const secret = req.headers.get("x-cron-secret") ?? bearer;
   return Boolean(secret) && secret === process.env.CRON_SECRET;
 }
 
@@ -36,6 +38,32 @@ async function verifyPaystack(reference: string): Promise<"builder" | "free" | "
   const status = payload.data?.status?.toLowerCase() ?? "";
   if (status === "success") return "builder";
   if (["failed", "abandoned", "reversed"].includes(status)) return "free";
+  return "unknown";
+}
+
+async function verifyPaystackSubscription(subscriptionCode: string): Promise<"builder" | "free" | "unknown"> {
+  const secretKey = process.env.PAYSTACK_SECRET_KEY;
+  if (!secretKey) return "unknown";
+
+  const res = await fetch(
+    `https://api.paystack.co/subscription/${encodeURIComponent(subscriptionCode)}`,
+    {
+      headers: {
+        Authorization: `Bearer ${secretKey}`,
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+    },
+  );
+
+  const payload = (await res.json().catch(() => null)) as
+    | { status?: boolean; data?: { status?: string | null } | null }
+    | null;
+
+  if (!res.ok || !payload?.status) return "unknown";
+  const status = payload.data?.status?.toLowerCase() ?? "";
+  if (["active", "complete"].includes(status)) return "builder";
+  if (["disabled", "cancelled", "canceled", "non-renewing", "attention"].includes(status)) return "free";
   return "unknown";
 }
 
@@ -69,12 +97,15 @@ export async function POST(req: NextRequest) {
       const provider = typeof meta.billing_provider === "string" ? meta.billing_provider : "";
       const currentPlan = typeof meta.plan === "string" ? meta.plan : "free";
       const reference = typeof meta.billing_reference === "string" ? meta.billing_reference : "";
+      const subscriptionCode = typeof meta.billing_subscription_id === "string" ? meta.billing_subscription_id : "";
 
       if (provider !== "paystack") continue;
 
       try {
         let providerPlan: "builder" | "free" | "unknown" = "unknown";
-        if (provider === "paystack" && reference) {
+        if (provider === "paystack" && subscriptionCode) {
+          providerPlan = await verifyPaystackSubscription(subscriptionCode);
+        } else if (provider === "paystack" && reference) {
           providerPlan = await verifyPaystack(reference);
         }
 
@@ -123,14 +154,5 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
-  if (process.env.NODE_ENV !== "development") {
-    return NextResponse.json({ ok: false, error: "Not allowed" }, { status: 403 });
-  }
-
-  return POST(
-    new NextRequest(req.url, {
-      method: "POST",
-      headers: { "x-cron-secret": process.env.CRON_SECRET || "" },
-    }),
-  );
+  return POST(req);
 }

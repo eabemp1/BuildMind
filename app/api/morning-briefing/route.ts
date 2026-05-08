@@ -15,6 +15,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { generateMorningBriefing } from "@/lib/reflexion";
+import { planFromUserMetadata } from "@/lib/plan";
 import { getFreshPlanForUser } from "@/lib/server/plan";
 
 export const runtime = "nodejs";
@@ -34,6 +35,18 @@ function isCronRequest(req: Request): boolean {
   const bearer = authorization?.match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
   const secret = req.headers.get("x-cron-secret") ?? bearer;
   return Boolean(process.env.CRON_SECRET && secret === process.env.CRON_SECRET);
+}
+
+async function getPlanForUserId(admin: ReturnType<typeof createAdminClient>, userId: string): Promise<string> {
+  const { data, error } = await admin.auth.admin.getUserById(userId);
+  if (!error && data.user) return planFromUserMetadata(data.user);
+
+  const { data: profile } = await admin
+    .from("profiles")
+    .select("plan")
+    .eq("id", userId)
+    .maybeSingle();
+  return (profile?.plan as string) ?? "free";
 }
 
 export async function GET(req: Request) {
@@ -71,14 +84,9 @@ export async function GET(req: Request) {
 
         if (existing) { skipped++; continue; }
 
-        // Check user's plan for free-tier day-of-week gate
-        const { data: profile } = await admin
-          .from("profiles")
-          .select("plan")
-          .eq("id", ctx.user_id)
-          .maybeSingle();
-
-        const plan = (profile?.plan as string) ?? "free";
+        // Check user's plan for free-tier day-of-week gate. Billing writes to
+        // auth user_metadata, so cron must read that same source.
+        const plan = await getPlanForUserId(admin, ctx.user_id);
         if (!isBriefingDayForPlan(plan)) { skipped++; continue; }
 
         // Fetch last reflection for context

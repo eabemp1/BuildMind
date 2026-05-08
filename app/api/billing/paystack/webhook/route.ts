@@ -68,8 +68,9 @@ export async function POST(request: Request) {
     event.data?.subscription_code ??
     event.data?.subscription?.subscription_code ??
     null;
+  const subscriptionToken = event.data?.subscription?.email_token ?? null;
 
-  if (eventName === "charge.success") {
+  if (eventName === "charge.success" || eventName === "subscription.create") {
     await persistUserPlan(userId, "builder", {
       provider: "paystack",
       status: "active",
@@ -77,11 +78,15 @@ export async function POST(request: Request) {
       transactionId,
       subscriptionId,
       customerEmail: email,
+      meta: {
+        billing_interval: subscriptionId ? "monthly" : "unknown",
+        billing_subscription_token: subscriptionToken,
+      },
     });
     return NextResponse.json({ ok: true });
   }
 
-  if (eventName === "subscription.disable" || eventName === "invoice.payment_failed") {
+  if (eventName === "subscription.disable" || eventName === "invoice.payment_failed" || eventName === "subscription.not_renew") {
     await persistUserPlan(userId, "free", {
       provider: "paystack",
       status: "canceled",
