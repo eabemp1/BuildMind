@@ -280,25 +280,28 @@ function assertValidJSONModeOutput(text: string): void {
 
 // ── Provider chains per role ──────────────────────────────────────────────────
 
-type ProviderFn = (
+type ProviderFn = {
+  label: string;
+  call: (
   messages: ChatMessage[],
   temperature: number,
   maxTokens: number,
   jsonMode: boolean,
-) => Promise<string>;
+  ) => Promise<string>;
+};
 
 function getFastChain(): ProviderFn[] {
   const chain: ProviderFn[] = [];
   if (GROQ_API_KEY) {
-    chain.push((m, t, mt, j) => groqCall(m, GROQ_MODEL, t, mt, j));
+    chain.push({ label: `groq:${GROQ_MODEL}`, call: (m, t, mt, j) => groqCall(m, GROQ_MODEL, t, mt, j) });
     // Second Groq slot uses a different model to avoid same rate limit bucket
-    chain.push((m, t, mt, j) => groqCall(m, "llama-3.1-70b-versatile", t, mt, j));
+    chain.push({ label: "groq:llama-3.1-70b-versatile", call: (m, t, mt, j) => groqCall(m, "llama-3.1-70b-versatile", t, mt, j) });
   }
   if (CEREBRAS_API_KEY) {
-    chain.push((m, t, mt, j) => cerebrasCall(m, CEREBRAS_MODEL, t, mt, j));
+    chain.push({ label: `cerebras:${CEREBRAS_MODEL}`, call: (m, t, mt, j) => cerebrasCall(m, CEREBRAS_MODEL, t, mt, j) });
   }
   if (GEMINI_API_KEY) {
-    chain.push((m, t, mt, j) => geminiCall(m, t, mt, j));
+    chain.push({ label: `gemini:${GEMINI_MODEL}`, call: (m, t, mt, j) => geminiCall(m, t, mt, j) });
   }
   return chain;
 }
@@ -306,18 +309,18 @@ function getFastChain(): ProviderFn[] {
 function getReasoningChain(): ProviderFn[] {
   const chain: ProviderFn[] = [];
   if (GROQ_API_KEY) {
-    chain.push((m, t, mt, j) => groqCall(m, GROQ_REASONING_MODEL, t, mt, j));
+    chain.push({ label: `groq:${GROQ_REASONING_MODEL}`, call: (m, t, mt, j) => groqCall(m, GROQ_REASONING_MODEL, t, mt, j) });
   }
   if (CEREBRAS_API_KEY) {
     // Cerebras also hosts deepseek-r1 distill
-    chain.push((m, t, mt, j) => cerebrasCall(m, "deepseek-r1-distill-llama-70b", t, mt, j));
+    chain.push({ label: "cerebras:deepseek-r1-distill-llama-70b", call: (m, t, mt, j) => cerebrasCall(m, "deepseek-r1-distill-llama-70b", t, mt, j) });
   }
   if (GROQ_API_KEY) {
     // Graceful degradation: fall back to fast model on same provider
-    chain.push((m, t, mt, j) => groqCall(m, GROQ_MODEL, t, mt, j));
+    chain.push({ label: `groq:${GROQ_MODEL}`, call: (m, t, mt, j) => groqCall(m, GROQ_MODEL, t, mt, j) });
   }
   if (GEMINI_API_KEY) {
-    chain.push((m, t, mt, j) => geminiCall(m, t, mt, j));
+    chain.push({ label: `gemini:${GEMINI_MODEL}`, call: (m, t, mt, j) => geminiCall(m, t, mt, j) });
   }
   return chain;
 }
@@ -325,13 +328,13 @@ function getReasoningChain(): ProviderFn[] {
 function getFallbackChain(): ProviderFn[] {
   const chain: ProviderFn[] = [];
   if (GEMINI_API_KEY) {
-    chain.push((m, t, mt, j) => geminiCall(m, t, mt, j));
+    chain.push({ label: `gemini:${GEMINI_MODEL}`, call: (m, t, mt, j) => geminiCall(m, t, mt, j) });
   }
   if (CEREBRAS_API_KEY) {
-    chain.push((m, t, mt, j) => cerebrasCall(m, CEREBRAS_MODEL, t, mt, j));
+    chain.push({ label: `cerebras:${CEREBRAS_MODEL}`, call: (m, t, mt, j) => cerebrasCall(m, CEREBRAS_MODEL, t, mt, j) });
   }
   if (GROQ_API_KEY) {
-    chain.push((m, t, mt, j) => groqCall(m, GROQ_MODEL, t, mt, j));
+    chain.push({ label: `groq:${GROQ_MODEL}`, call: (m, t, mt, j) => groqCall(m, GROQ_MODEL, t, mt, j) });
   }
   return chain;
 }
@@ -375,17 +378,18 @@ export async function callModel(
 
   for (const provider of chain) {
     try {
-      const text = await provider(messages, temperature, maxTokens, jsonMode);
+      const text = await provider.call(messages, temperature, maxTokens, jsonMode);
       if (jsonMode) assertValidJSONModeOutput(text);
+      console.info(`[ai-providers] ${role} succeeded via ${provider.label}`);
       return text;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       errors.push(msg);
       if (isRetryableProviderError(err)) {
-        console.warn(`[ai-providers] Provider failed (${msg.slice(0, 80)}) — rotating to next`);
+        console.warn(`[ai-providers] ${provider.label} failed (${msg.slice(0, 80)}) - rotating to next`);
         continue; // try next provider
       }
-      console.warn(`[ai-providers] Provider failed (${msg.slice(0, 80)}) — rotating to next`);
+      console.warn(`[ai-providers] ${provider.label} failed (${msg.slice(0, 80)}) - rotating to next`);
       continue;
     }
   }
