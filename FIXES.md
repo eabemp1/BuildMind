@@ -54,8 +54,8 @@ Supabase schema defines `projects.name` but several routes selected `title`, cau
 
 **Fix 7 — `vercel.json` — Dual cron-fire risk warning**  
 `vercel.json` and `supabase/cron-schedule.sql` both define cron jobs for `morning_briefing` and `evening_check`. If both are active, founders receive double push notifications and the AI usage counter increments twice per check-in.  
-*Changed:* Added `_WARNING` field to `vercel.json` documenting the conflict and instructing to disable the Supabase pg_cron jobs.  
-`vercel.json`
+*Changed:* Documented the conflict in `CODEX_AUDIT_REPORT.md`. Do not add a `_WARNING` field to `vercel.json`; Vercel rejects additional top-level properties.  
+`CODEX_AUDIT_REPORT.md`, `vercel.json`
 
 **Fix 8 — Progressive sidebar unlock (`bm_tasks_completed_total`) was localStorage-only**  
 Switching devices or clearing the browser reset the unlock counter to zero. SSR always returned 99 (show all), so the progressive reveal was only felt on first device.  

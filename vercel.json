@@ -1,5 +1,4 @@
 {
-  "_WARNING": "DUAL-FIRE RISK — supabase/cron-schedule.sql also defines pg_cron for morning_briefing and evening_check. If both are active, founders get double notifications and AI usage increments twice. Disable the Supabase pg_cron jobs and use ONLY these Vercel crons. Check supabase/cron-schedule.sql and comment out the conflicting rows.",
   "crons": [
     {
       "path": "/api/morning-briefing",

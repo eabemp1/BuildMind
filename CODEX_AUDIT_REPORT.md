@@ -32,7 +32,7 @@
 
 ## Cron Dual-Fire Warning
 
-`vercel.json` and `supabase/cron-schedule.sql` both define scheduled jobs. Only one system should fire production crons, or users can receive duplicate push notifications and AI usage can be incremented twice. Keep the `_WARNING` comment in `vercel.json` visible until this is resolved.
+`vercel.json` and `supabase/cron-schedule.sql` both define scheduled jobs. Only one system should fire production crons, or users can receive duplicate push notifications and AI usage can be incremented twice. Keep this warning documented outside `vercel.json`; Vercel rejects additional top-level properties such as `_WARNING`.
 
 ## Database Migrations To Run
 
