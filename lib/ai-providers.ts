@@ -7,12 +7,13 @@
  *
  * FAST (Generator, Refiner, Parser):
  *   1. Groq — llama-3.3-70b-versatile
- *   2. Cerebras — llama-3.3-70b (same model, different infra, free)
- *   3. Groq — llama-3.1-70b-versatile (different model, avoids same rate limit bucket)
+ *   2. Groq — openai/gpt-oss-20b
+ *   3. Cerebras — llama-3.3-70b (same model, different infra, free)
+ *   4. Gemini 2.0 Flash
  *
- * REASONING (Critic, Verifier):
- *   1. Groq — deepseek-r1-distill-llama-70b
- *   2. Cerebras — configured CEREBRAS_MODEL
+ * REASONING (Critic, Verifier — Stages 4 & 5 of Reflexion loop):
+ *   1. Groq — qwen/qwen3-32b
+ *   2. Cerebras — deepseek-r1-distill-llama-70b
  *   3. Groq — llama-3.3-70b-versatile (graceful degradation)
  *   4. Gemini 2.0 Flash
  *
@@ -21,8 +22,12 @@
  *   2. Cerebras (always free, no card)
  *
  * Rate limit detection:
- *   Any 429 or 503 response triggers immediate rotation to next provider.
+ *   Any 429, 503, or decommissioned/deprecated response triggers immediate rotation.
  *   No retry on same provider — rotate first, retry never.
+ *
+ * NOTE on Qwen3-32b JSON calls:
+ *   When jsonMode=true, pass reasoning_format="hidden" so internal <think>
+ *   tokens are stripped before JSON.parse().
  */
 
 import Cerebras from "@cerebras/cerebras_cloud_sdk";
@@ -47,11 +52,20 @@ function readApiKey(name: string): string | undefined {
 }
 
 // ── Env vars ──────────────────────────────────────────────────────────────────
+function resolveGroqReasoningModel(): string {
+  const configured = process.env.GROQ_REASONING_MODEL?.trim();
+  if (!configured || configured === "deepseek-r1-distill-llama-70b") {
+    return "qwen/qwen3-32b";
+  }
+  return configured;
+}
+
 const GROQ_API_KEY         = readApiKey("GROQ_API_KEY");
 const GROQ_MODEL           = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
-const GROQ_REASONING_MODEL = process.env.GROQ_REASONING_MODEL || "deepseek-r1-distill-llama-70b";
+const GROQ_REASONING_MODEL = resolveGroqReasoningModel();
 const CEREBRAS_API_KEY     = readApiKey("CEREBRAS_API_KEY");
-const CEREBRAS_MODEL       = process.env.CEREBRAS_MODEL || "llama3.1-8b";
+const CEREBRAS_MODEL       = process.env.CEREBRAS_MODEL || "llama-3.3-70b";
+const CEREBRAS_REASONING_MODEL = "deepseek-r1-distill-llama-70b";
 const GEMINI_API_KEY       = readApiKey("GEMINI_API_KEY");
 const GEMINI_MODEL         = process.env.GEMINI_MODEL || "gemini-2.0-flash";
 
@@ -63,13 +77,13 @@ export function getAIProviderStatus() {
   return {
     fast: [
       GROQ_API_KEY ? { provider: "groq", model: GROQ_MODEL, configured: true } : null,
-      GROQ_API_KEY ? { provider: "groq", model: "llama-3.1-70b-versatile", configured: true } : null,
+      GROQ_API_KEY ? { provider: "groq", model: "openai/gpt-oss-20b", configured: true } : null,
       CEREBRAS_API_KEY ? { provider: "cerebras", model: CEREBRAS_MODEL, configured: true } : null,
       GEMINI_API_KEY ? { provider: "gemini", model: GEMINI_MODEL, configured: true } : null,
     ].filter(Boolean),
     reasoning: [
       GROQ_API_KEY ? { provider: "groq", model: GROQ_REASONING_MODEL, configured: true } : null,
-      CEREBRAS_API_KEY ? { provider: "cerebras", model: CEREBRAS_MODEL, configured: true } : null,
+      CEREBRAS_API_KEY ? { provider: "cerebras", model: CEREBRAS_REASONING_MODEL, configured: true } : null,
       GROQ_API_KEY ? { provider: "groq", model: GROQ_MODEL, configured: true } : null,
       GEMINI_API_KEY ? { provider: "gemini", model: GEMINI_MODEL, configured: true } : null,
     ].filter(Boolean),
@@ -141,6 +155,11 @@ function sanitizeParsedValue<T>(value: T): T {
 
 // ── Provider call functions ───────────────────────────────────────────────────
 
+function isQwen3ReasoningModel(model: string): boolean {
+  const normalized = model.toLowerCase();
+  return normalized.includes("qwen3") || normalized.includes("qwen/qwen3") || normalized.includes("qwq");
+}
+
 async function groqCall(
   messages: ChatMessage[],
   model: string,
@@ -149,6 +168,7 @@ async function groqCall(
   jsonMode: boolean,
 ): Promise<string> {
   if (!GROQ_API_KEY) throw new Error("GROQ_API_KEY not set");
+  const needsReasoningHidden = jsonMode && isQwen3ReasoningModel(model);
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     signal: AbortSignal.timeout(20000),
@@ -161,6 +181,7 @@ async function groqCall(
       temperature,
       max_tokens: maxTokens,
       ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
+      ...(needsReasoningHidden ? { reasoning_format: "hidden" } : {}),
       messages,
     }),
   });
@@ -260,6 +281,7 @@ function isRetryableProviderError(err: unknown): boolean {
     lower.includes("unterminated string") ||
     lower.includes("rate limit") ||
     lower.includes("decommissioned") ||
+    lower.includes("deprecated") ||
     lower.includes("unavailable") ||
     lower.includes("network") ||
     lower.includes("fetch failed"),
@@ -295,8 +317,7 @@ function getFastChain(): ProviderFn[] {
   const chain: ProviderFn[] = [];
   if (GROQ_API_KEY) {
     chain.push({ label: `groq:${GROQ_MODEL}`, call: (m, t, mt, j) => groqCall(m, GROQ_MODEL, t, mt, j) });
-    // Second Groq slot uses a different model to avoid same rate limit bucket
-    chain.push({ label: "groq:llama-3.1-70b-versatile", call: (m, t, mt, j) => groqCall(m, "llama-3.1-70b-versatile", t, mt, j) });
+    chain.push({ label: "groq:openai/gpt-oss-20b", call: (m, t, mt, j) => groqCall(m, "openai/gpt-oss-20b", t, mt, j) });
   }
   if (CEREBRAS_API_KEY) {
     chain.push({ label: `cerebras:${CEREBRAS_MODEL}`, call: (m, t, mt, j) => cerebrasCall(m, CEREBRAS_MODEL, t, mt, j) });
@@ -313,7 +334,7 @@ function getReasoningChain(): ProviderFn[] {
     chain.push({ label: `groq:${GROQ_REASONING_MODEL}`, call: (m, t, mt, j) => groqCall(m, GROQ_REASONING_MODEL, t, mt, j) });
   }
   if (CEREBRAS_API_KEY) {
-    chain.push({ label: `cerebras:${CEREBRAS_MODEL}`, call: (m, t, mt, j) => cerebrasCall(m, CEREBRAS_MODEL, t, mt, j) });
+    chain.push({ label: `cerebras:${CEREBRAS_REASONING_MODEL}`, call: (m, t, mt, j) => cerebrasCall(m, CEREBRAS_REASONING_MODEL, t, mt, j) });
   }
   if (GROQ_API_KEY) {
     // Graceful degradation: fall back to fast model on same provider
