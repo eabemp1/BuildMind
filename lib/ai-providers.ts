@@ -26,8 +26,8 @@
  *   No retry on same provider — rotate first, retry never.
  *
  * NOTE on Qwen3-32b JSON calls:
- *   When jsonMode=true, pass reasoning_format="hidden" so internal <think>
- *   tokens are stripped before JSON.parse().
+ *   Groq can reject Qwen3 json_object responses with json_validate_failed.
+ *   For Qwen3, use reasoning_format="hidden" and validate JSON locally.
  */
 
 import Cerebras from "@cerebras/cerebras_cloud_sdk";
@@ -168,7 +168,9 @@ async function groqCall(
   jsonMode: boolean,
 ): Promise<string> {
   if (!GROQ_API_KEY) throw new Error("GROQ_API_KEY not set");
-  const needsReasoningHidden = jsonMode && isQwen3ReasoningModel(model);
+  const isQwen3 = isQwen3ReasoningModel(model);
+  const needsReasoningHidden = jsonMode && isQwen3;
+  const useProviderJSONMode = jsonMode && !isQwen3;
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     signal: AbortSignal.timeout(20000),
@@ -180,7 +182,7 @@ async function groqCall(
       model,
       temperature,
       max_tokens: maxTokens,
-      ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
+      ...(useProviderJSONMode ? { response_format: { type: "json_object" } } : {}),
       ...(needsReasoningHidden ? { reasoning_format: "hidden" } : {}),
       messages,
     }),
