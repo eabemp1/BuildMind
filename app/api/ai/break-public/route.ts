@@ -8,20 +8,7 @@
 
 import { NextResponse } from "next/server";
 import { groqJSON } from "@/app/api/ai/_utils";
-
-const rateLimitMap = new Map<string, { count: number; reset: number }>();
-
-function checkRateLimit(ip: string): boolean {
-  const now = Date.now();
-  const entry = rateLimitMap.get(ip);
-  if (!entry || entry.reset < now) {
-    rateLimitMap.set(ip, { count: 1, reset: now + 60 * 60 * 1000 });
-    return true;
-  }
-  if (entry.count >= 20) return false;
-  entry.count++;
-  return true;
-}
+import { getClientIp, rateLimit } from "@/lib/server/rateLimit";
 
 function previewSignalScore(idea: string, users: string, problem: string): number {
   const words = idea.split(/\s+/).filter(Boolean).length;
@@ -51,8 +38,8 @@ async function scrapeCompetitors(query: string): Promise<string> {
 
 export async function POST(request: Request) {
   try {
-    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
-    if (!checkRateLimit(ip)) {
+    const limit = rateLimit(`break-public:${getClientIp(request)}`, 5, 60 * 60 * 1000);
+    if (!limit.ok) {
       return NextResponse.json({ success: false, error: "Rate limit reached. Try again in an hour." }, { status: 429 });
     }
 

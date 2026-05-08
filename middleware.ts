@@ -7,27 +7,42 @@ export async function middleware(request: NextRequest) {
   const devAuthEnabled = process.env.NODE_ENV !== "production" && process.env.DEV_AUTH_ENABLED === "1";
   const isDevAuthed = devAuthEnabled && request.cookies.get("bm_dev_auth")?.value === "1";
   const isDevOnboarded = isDevAuthed && request.cookies.get("bm_dev_onboarded")?.value === "1";
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const supabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
+
+  if (!supabaseConfigured && process.env.NODE_ENV === "production") {
+    return NextResponse.json(
+      { error: "Supabase public environment is not configured." },
+      { status: 500 },
+    );
+  }
+
+  const supabase = supabaseConfigured
+    ? createServerClient(
+        supabaseUrl!,
+        supabaseAnonKey!,
+        {
+          cookies: {
+            getAll() {
+              return request.cookies.getAll();
+            },
+            setAll(cookiesToSet: Array<{ name: string; value: string; options?: Record<string, unknown> }>) {
+              cookiesToSet.forEach(({ name, value, options }) => {
+                response.cookies.set(name, value, options);
+              });
+            },
+          },
         },
-        setAll(cookiesToSet: Array<{ name: string; value: string; options?: Record<string, unknown> }>) {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            response.cookies.set(name, value, options);
-          });
-        },
-      },
-    },
-  );
+      )
+    : null;
 
   const {
     data: { user },
     error: authError,
-  } = await supabase.auth.getUser();
+  } = supabase
+    ? await supabase.auth.getUser()
+    : { data: { user: null }, error: null };
 
   if (authError) {
     for (const cookie of request.cookies.getAll()) {
@@ -158,7 +173,7 @@ export async function middleware(request: NextRequest) {
       onboardingCompleted = true;
     } else {
       const { count: projectCount } = user
-        ? await supabase
+        ? await supabase!
             .from("projects")
             .select("id", { count: "exact", head: true })
             .eq("user_id", user.id)

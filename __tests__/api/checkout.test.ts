@@ -67,6 +67,7 @@ function makeReq(body: object = { plan: "builder" }) {
 
 beforeEach(() => {
   process.env.PAYSTACK_SECRET_KEY = "sk_test_key";
+  process.env.PAYSTACK_BUILDER_PLAN_CODE = "PLN_builder_monthly";
   process.env.NEXT_PUBLIC_APP_URL = "https://buildmind.app";
   vi.clearAllMocks();
   mockGetUser.mockResolvedValue({ data: { user: AUTHED_USER }, error: null });

@@ -61,6 +61,8 @@ const CHARGE_SUCCESS = {
     id: 1234567,
     reference: "ref_abc",
     status: "success",
+    amount: 29000,
+    currency: "GHS",
     customer: { email: "founder@example.com" },
     metadata: { user_id: "user-abc-123" },
     subscription_code: null,
@@ -73,6 +75,7 @@ const CHARGE_SUCCESS = {
 describe("POST /api/billing/paystack/webhook", () => {
   beforeEach(() => {
     process.env.PAYSTACK_SECRET_KEY = TEST_SECRET;
+    process.env.PAYSTACK_AMOUNT_BUILDER = "29000";
     vi.clearAllMocks();
   });
 
@@ -193,6 +196,29 @@ describe("POST /api/billing/paystack/webhook", () => {
     expect(persistUserPlan).not.toHaveBeenCalled();
   });
 
+  it("ignores charge.success when amount is below the configured Builder amount", async () => {
+    const event = {
+      ...CHARGE_SUCCESS,
+      data: { ...CHARGE_SUCCESS.data, amount: 1000 },
+    };
+    const req = makeRequest(event);
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const body = await json(res);
+    expect(body.ignored).toBe("invalid_charge_payload");
+    expect(persistUserPlan).not.toHaveBeenCalled();
+  });
+
+  it("ignores charge.success when currency is not GHS", async () => {
+    const event = {
+      ...CHARGE_SUCCESS,
+      data: { ...CHARGE_SUCCESS.data, currency: "USD" },
+    };
+    const req = makeRequest(event);
+    await POST(req);
+    expect(persistUserPlan).not.toHaveBeenCalled();
+  });
+
   // ── Payload details ─────────────────────────────────────────────────────
 
   it("passes reference, transactionId, subscriptionId to persistUserPlan", async () => {
@@ -236,6 +262,8 @@ describe("POST /api/billing/paystack/webhook", () => {
         id: 999,
         reference: "ref_sub",
         status: "success",
+        amount: 29000,
+        currency: "GHS",
         customer: null,
         metadata: {}, // no user_id
         subscription_code: null,

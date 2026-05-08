@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { normalizePlan, type Plan } from "@/lib/plan";
+import { getClientIp, rateLimit } from "@/lib/server/rateLimit";
 
 /**
  * Amount config per plan tier (in pesewas / kobo / cents depending on currency).
@@ -41,6 +42,11 @@ function appUrl(req: Request): string {
 }
 
 export async function POST(req: Request) {
+  const ipLimit = rateLimit(`checkout:ip:${getClientIp(req)}`, 30, 15 * 60 * 1000);
+  if (!ipLimit.ok) {
+    return NextResponse.json({ error: "Too many checkout attempts. Try again shortly." }, { status: 429 });
+  }
+
   const paystackSecretKey = process.env.PAYSTACK_SECRET_KEY ?? "";
   if (!paystackSecretKey) {
     return NextResponse.json(
@@ -57,6 +63,11 @@ export async function POST(req: Request) {
 
   if (error || !user?.email) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
+  const userLimit = rateLimit(`checkout:user:${user.id}`, 10, 15 * 60 * 1000);
+  if (!userLimit.ok) {
+    return NextResponse.json({ error: "Too many checkout attempts. Try again shortly." }, { status: 429 });
   }
 
   const body = await req.json().catch(() => ({}));

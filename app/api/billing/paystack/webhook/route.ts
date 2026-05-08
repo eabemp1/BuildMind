@@ -8,6 +8,8 @@ type PaystackEvent = {
     id?: number | string;
     reference?: string;
     status?: string;
+    amount?: number;
+    currency?: string;
     customer?: { email?: string | null } | null;
     metadata?: Record<string, unknown> | null;
     subscription_code?: string | null;
@@ -40,6 +42,21 @@ function pickUserIdFromMetadata(event: PaystackEvent) {
   return userId || null;
 }
 
+function expectedAmountPesewas(): number {
+  return parseInt(
+    process.env.PAYSTACK_AMOUNT_BUILDER ??
+    process.env.PAYSTACK_AMOUNT_PESEWAS ??
+    "29000",
+    10,
+  );
+}
+
+function isValidSuccessfulCharge(event: PaystackEvent): boolean {
+  if ((event.data?.status ?? "").toLowerCase() !== "success") return false;
+  if ((event.data?.currency ?? "").toUpperCase() !== "GHS") return false;
+  return (event.data?.amount ?? 0) >= expectedAmountPesewas();
+}
+
 export async function POST(request: Request) {
   const secret = process.env.PAYSTACK_SECRET_KEY;
   if (!secret) {
@@ -69,6 +86,10 @@ export async function POST(request: Request) {
     event.data?.subscription?.subscription_code ??
     null;
   const subscriptionToken = event.data?.subscription?.email_token ?? null;
+
+  if (eventName === "charge.success" && !isValidSuccessfulCharge(event)) {
+    return NextResponse.json({ ok: true, ignored: "invalid_charge_payload" });
+  }
 
   if (eventName === "charge.success" || eventName === "subscription.create") {
     await persistUserPlan(userId, "builder", {

@@ -13,7 +13,7 @@
 
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { isAdminUser } from "@/lib/server/adminAuth";
 
 export async function GET() {
   const supabase = await createClient();
@@ -27,18 +27,8 @@ export async function GET() {
   }
 
   try {
-    const admin = createAdminClient();
-    const { data, error } = await admin
-      .from("profiles")
-      .select("is_admin")
-      .eq("id", user.id)
-      .single();
-
-    if (error || !data) {
-      return NextResponse.json({ isAdmin: false }, { status: 403 });
-    }
-
-    return NextResponse.json({ isAdmin: data.is_admin === true });
+    const isAdmin = await isAdminUser(user.id);
+    return NextResponse.json({ isAdmin }, { status: isAdmin ? 200 : 403 });
   } catch {
     return NextResponse.json({ isAdmin: false }, { status: 500 });
   }

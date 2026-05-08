@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getClientIp, rateLimit } from "@/lib/server/rateLimit";
 
 /**
  * POST /api/waitlist
@@ -22,6 +23,11 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 export async function POST(request: Request) {
   try {
+    const limit = rateLimit(`waitlist:${getClientIp(request)}`, 10, 60 * 60 * 1000);
+    if (!limit.ok) {
+      return NextResponse.json({ success: false, error: "Too many signup attempts. Try again later." }, { status: 429 });
+    }
+
     const body = await request.json().catch(() => ({}));
     const email  = String(body?.email  ?? "").trim().toLowerCase();
     const source = String(body?.source ?? "buildmind").trim();

@@ -9,6 +9,7 @@
 
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isAdminUser } from "@/lib/server/adminAuth";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
@@ -23,17 +24,6 @@ async function getCallerUserId(): Promise<string | null> {
   );
   const { data: { user } } = await supabase.auth.getUser();
   return user?.id ?? null;
-}
-
-async function isAdmin(userId: string): Promise<boolean> {
-  // Option 1: env-var allowlist  (ADMIN_USER_IDS=uuid1,uuid2)
-  const allowlist = (process.env.ADMIN_USER_IDS ?? "").split(",").map(s => s.trim()).filter(Boolean);
-  if (allowlist.includes(userId)) return true;
-
-  // Option 2: user_metadata.is_admin = true
-  const admin = createAdminClient();
-  const { data } = await admin.auth.admin.getUserById(userId);
-  return Boolean(data?.user?.user_metadata?.is_admin);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -56,7 +46,7 @@ export async function GET() {
   if (!callerId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (!(await isAdmin(callerId))) {
+  if (!(await isAdminUser(callerId))) {
     return NextResponse.json({ error: "Admin access required." }, { status: 403 });
   }
 

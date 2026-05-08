@@ -8,4 +8,5 @@ import { beforeEach } from "vitest";
 beforeEach(() => {
   // Reset any env vars individual tests might set
   delete process.env.PAYSTACK_SECRET_KEY;
+  delete process.env.PAYSTACK_BUILDER_PLAN_CODE;
 });
