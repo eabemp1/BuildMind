@@ -9,7 +9,7 @@ import Link from "next/link";
 export const metadata: Metadata = {
   title: "BuildMind for Students — Free Builder Plan | Build Your Startup While Studying",
   description:
-    "BuildMind is free for students. GitHub Student Developer Pack or .edu email gets you the Builder plan ($19/mo) at no cost. One daily action. Build your startup between lectures.",
+    "BuildMind is free for students. GitHub Student Developer Pack or .edu email gets you the Builder plan ($39/mo) at no cost. One daily action. Build your startup between lectures.",
   keywords: ["startup tools for students","free startup app for students","github student developer pack startups","build startup as student","student indie hacker","student founder app free","university startup tools","college founder productivity"],
   openGraph: {
     title: "BuildMind for Students — Free Builder Plan",

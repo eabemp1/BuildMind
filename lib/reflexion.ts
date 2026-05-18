@@ -25,16 +25,24 @@
 import type { AgentPipelineResult, SignalSummary, StartupContext } from "@/lib/agents";
 import { callModel, callModelJSON } from "@/lib/ai-providers";
 import type { ViabilityScoreResult } from "@/lib/scoring";
+import { logError } from "@/lib/server/logger";
+import { getBenchmarkInsights, buildBenchmarkPrompt } from "@/lib/benchmarks";
 
 interface GroqMessage { role: "system" | "user" | "assistant"; content: string; }
 
+// groqCall routes ALL reflexion text calls through the reasoning chain.
+// gpt-oss-120b (primary) handles both text and JSON on Groq; Cerebras fallback is
+// equally fast. Using "reasoning" here means every Reflexion stage (Generator,
+// Refiner, Rationale) gets reasoning_effort=high by default — the same model,
+// no extra cost, measurably better specificity on task generation.
 export async function groqCall(messages: GroqMessage[], temperature = 0.5, maxTokens = 600): Promise<string> {
-  return callModel(messages, { role: "fast", temperature, maxTokens });
+  return callModel(messages, { role: "reasoning", temperature, maxTokens });
 }
 
 /**
  * groqJSONCall — same as groqCall but forces response_format: json_object.
  * Use for Agent B (Critic) and Agent D (Verifier) to guarantee parseable JSON output.
+ * Both use the reasoning chain — gpt-oss-120b with reasoning_effort=high + json_object mode.
  */
 async function groqJSONCall<T>(messages: GroqMessage[], temperature = 0.3, maxTokens = 400): Promise<T> {
   return callModelJSON<T>(messages, { role: "reasoning", temperature, maxTokens });
@@ -56,6 +64,9 @@ export interface ReflexionContext {
   daysInactive?: number;               // for Recovery Mode detection
   weekNumber?: number;                 // for Agent Persona Rotation
   domainDataPoints?: number;           // for Confidence Gate
+  // v8 additions
+  cofounderStyle?: "direct-challenger" | "strategic-partner" | "execution-coach" | "devil-advocate";
+  sessionCount?: number;               // for new-user context injection
 }
 
 // ── NEW IN V4: Agent Persona Rotation (Playbook §4.4) ─────────────────────
@@ -122,6 +133,35 @@ export function getEmotionalLanguageInstruction(trigger?: EmotionalTrigger): str
   return `\n\n${messages[trigger]}`;
 }
 
+/**
+ * getCofounderStyleInstruction — maps cofounder_style to a Refiner tone directive.
+ * Injected into Stage 7 and the 3-agent loop Refiner so the AI's voice adapts
+ * to the founder's stated preference, not just the default "decisive operator."
+ */
+export function getCofounderStyleInstruction(style?: ReflexionContext["cofounderStyle"]): string {
+  if (!style) return "";
+  const directives: Record<NonNullable<ReflexionContext["cofounderStyle"]>, string> = {
+    "direct-challenger":
+      "COMMUNICATION STYLE: Direct-challenger. Push back on the founder's assumptions. Ask the hard question they're avoiding. End every response by naming the assumption that could be wrong.",
+    "strategic-partner":
+      "COMMUNICATION STYLE: Strategic-partner. Think two steps ahead. Connect today's task to the 6-month outcome. Show how this single action fits the larger arc.",
+    "execution-coach":
+      "COMMUNICATION STYLE: Execution-coach. Keep it concrete and forward-moving. Celebrate small wins. Break the task into the smallest possible first step. No philosophy — just action.",
+    "devil-advocate":
+      "COMMUNICATION STYLE: Devil's advocate. After giving the recommendation, end by questioning it: name one reason it might be the wrong move. Make the founder think, not just do.",
+  };
+  return `\n\n${directives[style]}`;
+}
+
+/**
+ * getNewUserContextInstruction — for founders with < 5 sessions, override
+ * the Generator to focus on discovery rather than pattern-driven tasks.
+ */
+export function getNewUserContextInstruction(sessionCount?: number): string {
+  if ((sessionCount ?? 999) >= 5) return "";
+  return `\n\nNEW FOUNDER CONTEXT: This founder has fewer than 5 sessions. You do not have reliable behavioral patterns yet. Do NOT reference patterns you haven't observed. Instead, give a task that will reveal the most about them — one that requires a real decision, forces a conversation with a potential user, or surfaces a hidden assumption. The goal of today's task is as much to learn about this founder as it is to move their startup forward.`;
+}
+
 /** Infer the correct emotional trigger from context */
 export function inferEmotionalTrigger(ctx: ReflexionContext): EmotionalTrigger | undefined {
   if ((ctx.daysInactive ?? 0) >= 3) return "inactive_3plus_days";
@@ -132,8 +172,45 @@ export function inferEmotionalTrigger(ctx: ReflexionContext): EmotionalTrigger |
 
 // ── NEW IN V4: Confidence Gate (Playbook §4.5) ────────────────────────────
 // When context is thin, the AI surfaces its uncertainty instead of guessing.
+// domainDataPoints is now computed from the actual founder profile fields
+// that feed into the Reflexion pipeline — not left at the default of 10.
+
+/**
+ * computeDomainDataPoints — counts how many meaningful founder signals
+ * are present in the context. Used by shouldTriggerConfidenceGate().
+ *
+ * Each present, non-empty signal counts as 1 point:
+ *   startupSummary (non-empty)         → 2 pts (highest signal, primary context)
+ *   stage (non-default "Idea")         → 1 pt
+ *   avoidanceSignals (any)             → 1 pt
+ *   overrideReasons (any)              → 1 pt
+ *   topicsRepeated (any)               → 1 pt
+ *   lastReflection present             → 1 pt
+ *   cognitiveLoad (non-default)        → 1 pt
+ *   consecutiveTasksCompleted > 0      → 1 pt
+ *
+ * Gate fires when total < 5 — means we have fewer than 5 meaningful signals.
+ */
+export function computeDomainDataPoints(ctx: ReflexionContext): number {
+  let pts = 0;
+  if (ctx.startupSummary && ctx.startupSummary.trim().length > 20) pts += 2;
+  if (ctx.stage && ctx.stage !== "Idea") pts += 1;
+  if ((ctx.avoidanceSignals ?? []).length > 0) pts += 1;
+  if ((ctx.overrideReasons ?? []).length > 0) pts += 1;
+  if ((ctx.topicsRepeated ?? []).length > 0) pts += 1;
+  if (ctx.lastReflection) pts += 1;
+  if (ctx.cognitiveLoad && ctx.cognitiveLoad !== "fresh") pts += 1;
+  if ((ctx.consecutiveTasksCompleted ?? 0) > 0) pts += 1;
+  return pts;
+}
+
 export function shouldTriggerConfidenceGate(ctx: ReflexionContext): boolean {
-  return (ctx.domainDataPoints ?? 10) < 5;
+  // Use computeDomainDataPoints if domainDataPoints is not explicitly set.
+  // This ensures the gate actually fires instead of always reading the default 10.
+  const pts = ctx.domainDataPoints !== undefined
+    ? ctx.domainDataPoints
+    : computeDomainDataPoints(ctx);
+  return pts < 5;
 }
 
 export function getConfidenceGateResponse(): string {
@@ -176,18 +253,26 @@ export async function runReflexionLoop(
   // ── NEW IN V4: Emotional Language Layer — infer trigger ──────────────────
   const emotionalTrigger = inferEmotionalTrigger(context);
   const emotionalInstruction = getEmotionalLanguageInstruction(emotionalTrigger);
+  const cofounderStyleInstruction = getCofounderStyleInstruction(context.cofounderStyle);
+  const newUserInstruction = getNewUserContextInstruction(context.sessionCount);
 
   // ── Agent A — The Generator ──────────────────────────────────────────────
-  const generatorPrompt = `You are a world-class startup consultant specialising in early-stage African founders.
+  // POSITIONING FIX (from transcript): BuildMind is a universal founder tool, not an Africa-first tool.
+  // The product's advantage is behavioral intelligence — knowing how THIS specific founder operates,
+  // regardless of geography. Geographic intelligence is a maintenance problem; behavioral intelligence
+  // is what our founder memory system actually delivers. Validators came from Russia, India, UK — not
+  // just Africa. Build for the world, distribute through African networks.
+  const generatorPrompt = `You are a world-class startup execution consultant with behavioral intelligence about this specific founder.
+You know how they operate, what they avoid, and what their execution patterns look like. Your advice is not generic — it is calibrated to this person's context, stage, and behavioral profile.
 ${contextBlock}
-${additionalInstruction}
+${additionalInstruction}${newUserInstruction}
 TASK: ${task}
-Be specific to this founder's situation. No generic advice.`;
+Be specific to this founder's situation. Reference their actual stage, avoidance patterns, and behavioral history. No generic startup advice.`;
 
   const generated = await groqCall([
     { role: "system", content: generatorPrompt },
     { role: "user", content: "Generate your best response to the task." },
-  ], 0.6, 500);
+  ], 0.6, 500).catch(() => "Unable to generate a response right now — please try again.");
 
   // ── NEW IN V4: Agent B — The Critic/Gatekeeper (Persona Rotation) ───────────
   const criticPersona = getWeeklyCriticPersona(context.weekNumber);
@@ -227,8 +312,8 @@ ${generated}`;
       { role: "system", content: criticPrompt },
       { role: "user", content: "Evaluate and give your verdict." },
     ], 0.3, 300);
-  } catch {
-    // groqJSONCall failed — default to pass, non-fatal
+  } catch (err) {
+    logError("reflexion/critic", err); // groqJSONCall failed — default to pass, non-fatal
   }
 
   const critique = `VERDICT: ${critiqueData.verdict.toUpperCase()} — ${critiqueData.reason}`;
@@ -250,7 +335,7 @@ Rules:
 - End with a single concrete action they can start in the next 30 minutes
 - No preamble, no "here's the refined version"
 - 3–5 sentences maximum
-${emotionalInstruction}
+${emotionalInstruction}${cofounderStyleInstruction}
 
 INPUT:
 ${baseForRefinement}
@@ -264,7 +349,7 @@ Stage: ${context.stage} | Momentum: ${context.momentumScore}/100 | Cognitive: ${
   const refined = await groqCall([
     { role: "system", content: refinerPrompt },
     { role: "user", content: "Write the refined response." },
-  ], 0.3, 400);
+  ], 0.3, 400).catch(() => generated);
 
   const rationalePrompt = `Extract a single sentence (max 15 words) explaining WHY this advice is right for this founder RIGHT NOW.
 Format: "Because [specific reason tied to their stage/situation]."
@@ -361,6 +446,28 @@ export async function runFullReflexionPipeline(
   const signals = agentPipeline.signal_summary;
   const contextBlock = buildContextBlock(founderContext);
 
+  // ── Stage 1: Benchmark context ingestion ──────────────────────────────────
+  // Fetch peer cohort insights for this founder's stage.
+  // Best-effort: never blocks pipeline on error (empty string = no benchmark block).
+  let benchmarkPrompt = "";
+  try {
+    // getBenchmarkInsights requires a Supabase client — use the server-side admin
+    // client if available. We pass a minimal compatible interface.
+    const { createClient: createAdminSb } = await import("@supabase/supabase-js");
+    const sbAdmin = createAdminSb(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    );
+    const cohorts = await getBenchmarkInsights(sbAdmin as Parameters<typeof getBenchmarkInsights>[0], {
+      stage:             founderContext.currentStage ?? "Idea",
+      signalTypes:       ["avoidance", "task_completed", "momentum_recovery"],
+      avoidanceCategory: founderContext.avoidanceSignals?.[0],
+    });
+    benchmarkPrompt = buildBenchmarkPrompt(cohorts);
+  } catch {
+    // Non-fatal — pipeline continues without benchmark context
+  }
+
   // ── Stage 2: Signal Structuring ───────────────────────────────────────────
   // Distil the 5-agent outputs into the highest-signal insights
   const structuredSignals = structureSignals(signals, agentPipeline);
@@ -368,9 +475,11 @@ export async function runFullReflexionPipeline(
   // ── Stage 3: Generator (Agent A) ─────────────────────────────────────────
   const emotionalTrigger = inferEmotionalTrigger(founderContext);
   const emotionalInstruction = getEmotionalLanguageInstruction(emotionalTrigger);
+  const cofounderStyleInstruction = getCofounderStyleInstruction(founderContext.cofounderStyle);
+  const newUserInstruction = getNewUserContextInstruction(founderContext.sessionCount);
 
   const generatorSystemPrompt = `You are an advanced startup intelligence engine operating as a decisive operator — not a consultant.
-${contextBlock}
+${contextBlock}${newUserInstruction}
 
 VERIFIED MARKET SIGNALS:
 ${structuredSignals.map((s, i) => `${i + 1}. ${s}`).join("\n")}
@@ -389,6 +498,7 @@ CRITICAL RULES:
 - Optimize for ACTION, not analysis
 - Adjust difficulty for cognitive state: ${founderContext.cognitiveLoad ?? "fresh"}
 ${learnedPatternsPrompt ? learnedPatternsPrompt : ""}
+${benchmarkPrompt ? `\n${benchmarkPrompt}` : ""}
 ${executionMode ? "\nEXECUTION MODE: Generate the first concrete step of the MVP roadmap, not a validation task." : ""}`;
 
   const generated = await groqCall([
@@ -444,7 +554,7 @@ ${generated}`;
       ],
       { role: "reasoning", temperature: 0.3, maxTokens: 350 },
     );
-  } catch { /* non-fatal, use default */ }
+  } catch (err) { logError("reflexion/stage4-critic", err); /* non-fatal, use default */ }
 
   const stage4Critique = `[${criticPersona.name}] VERDICT: ${stage4Output.verdict.toUpperCase()} — ${stage4Output.primary_flaw}. ${stage4Output.specific_critique}`;
 
@@ -501,7 +611,7 @@ ${baseForVerification}`;
         confidence_score: Math.min(1, Math.max(0, Number(raw.confidence_score) || 0.4)),
       };
     }
-  } catch { /* use fallback */ }
+  } catch (err) { logError("reflexion/verifier", err); /* use fallback */ }
 
   // ── Stage 7: Refiner (Agent C) ────────────────────────────────────────────
   // Adjusts for cognitive load, emotional state, and verifier feedback.
@@ -531,7 +641,7 @@ RULES:
 - If confidence is low (${stage5Output.confidence_score < 0.5 ? "YES — it is low" : "no, confidence is adequate"}), acknowledge uncertainty directly
 - Cognitive state today: ${founderContext.cognitiveLoad ?? "fresh"} — adjust difficulty accordingly
 ${weakClaimsNote}
-${emotionalInstruction}
+${emotionalInstruction}${cofounderStyleInstruction}
 
 INPUT ACTION:
 ${baseForVerification}
@@ -657,7 +767,8 @@ Domain: ${domain || "not specified"}`;
   const parsed = await callModelJSON<Record<string, string>>([
     { role: "system", content: prompt },
     { role: "user", content: `Startup: "${startupDescription}"` },
-  ], { role: "fast", temperature: 0.5, maxTokens: 400 });
+  ], { role: "fast", temperature: 0.5, maxTokens: 400 })
+    .catch(() => ({} as Record<string, string>));
   return {
     marketGap: parsed.marketGap ?? "The market has a real gap here — let's validate it.",
     firstTask: parsed.firstTask ?? "Find one person who has this problem and send them a message in the next 30 minutes.",
@@ -685,7 +796,8 @@ ${context.completedYesterday !== undefined ? `Completed: ${context.completedYest
   const parsed = await callModelJSON<Record<string, string>>([
     { role: "system", content: prompt },
     { role: "user", content: "Generate the morning briefing." },
-  ], { role: "fast", temperature: 0.4, maxTokens: 200 });
+  ], { role: "fast", temperature: 0.4, maxTokens: 200 })
+    .catch(() => ({} as Record<string, string>));
   return {
     win: parsed.win ?? "You're still here — that already puts you ahead of 90% of founders.",
     risk: parsed.risk ?? "Inertia: every hour without action makes the next action harder.",

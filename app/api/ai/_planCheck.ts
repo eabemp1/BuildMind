@@ -1,18 +1,16 @@
 /**
  * app/api/ai/_planCheck.ts — Inline server-side plan enforcement
  *
+ * AUDIT FIX C1: getFreshPlanForUser() replaced with getEffectivePlan() so
+ * trial users are correctly treated as "builder" in all plan check paths.
+ *
  * Used inside existing route handlers (which can't use the withPlanGuard wrapper
  * because they parse request bodies themselves).
- *
- * USAGE:
- *   const planResult = await checkPlanAccess("venture");
- *   if (!planResult.ok) return planResult.response;
- *   // ...proceed
  */
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { type Plan } from "@/lib/plan";
-import { getFreshPlanForUser } from "@/lib/server/plan";
+import { getEffectivePlan } from "@/lib/server/plan";
 
 const PLAN_ORDER: Plan[] = ["free", "builder"];
 
@@ -46,7 +44,8 @@ export async function checkPlanAccess(requiredPlan: Plan): Promise<PlanCheckResu
       };
     }
 
-    const plan = await getFreshPlanForUser(user);
+    // FIX C1: getEffectivePlan() is trial-aware; getFreshPlanForUser() was not
+    const plan = await getEffectivePlan(user.id);
 
     if (!meetsRequirement(plan, requiredPlan)) {
       return {
@@ -80,7 +79,8 @@ export async function getRouteUser(): Promise<{ plan: Plan; userId: string } | n
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
     return {
-      plan: await getFreshPlanForUser(user),
+      // FIX C1: use getEffectivePlan() so trial users get builder-level access
+      plan: await getEffectivePlan(user.id),
       userId: user.id,
     };
   } catch {

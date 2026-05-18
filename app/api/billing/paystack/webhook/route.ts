@@ -1,6 +1,8 @@
 import crypto from "node:crypto";
 import { NextResponse } from "next/server";
 import { persistUserPlan, resolveUserIdByEmail } from "@/lib/billing/server";
+import { sendEmail } from "@/lib/email";
+import { logError } from "@/lib/server/logger";
 
 type PaystackEvent = {
   event?: string;
@@ -46,7 +48,7 @@ function expectedAmountPesewas(): number {
   return parseInt(
     process.env.PAYSTACK_AMOUNT_BUILDER ??
     process.env.PAYSTACK_AMOUNT_PESEWAS ??
-    "29000",
+    "44500",
     10,
   );
 }
@@ -58,9 +60,9 @@ function isValidSuccessfulCharge(event: PaystackEvent): boolean {
 }
 
 export async function POST(request: Request) {
-  const secret = process.env.PAYSTACK_SECRET_KEY;
+  const secret = process.env.PAYSTACK_WEBHOOK_SECRET ?? process.env.PAYSTACK_SECRET_KEY;
   if (!secret) {
-    return NextResponse.json({ ok: false, error: "PAYSTACK_SECRET_KEY is missing." }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "PAYSTACK_WEBHOOK_SECRET (or PAYSTACK_SECRET_KEY fallback) is missing." }, { status: 500 });
   }
 
   const signature = request.headers.get("x-paystack-signature");
@@ -71,6 +73,32 @@ export async function POST(request: Request) {
 
   const event = JSON.parse(rawBody) as PaystackEvent;
   const eventName = event.event?.toLowerCase() ?? "";
+
+  // ── Idempotency guard ─────────────────────────────────────────────────────
+  // Store the Paystack event reference before processing to prevent double-upgrades
+  // if Paystack fires the same webhook twice (audit §3: billing reconciliation).
+  const idempotencyKey = event.data?.reference ?? (event.data?.id != null ? String(event.data.id) : null);
+  if (idempotencyKey) {
+    const { createClient: createAdminClient } = await import("@supabase/supabase-js");
+    const adminSupa = createAdminClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    );
+    // Attempt to insert the idempotency key. If it already exists, the INSERT will
+    // fail due to the unique constraint and we return 200 without reprocessing.
+    const { error: dupeError } = await adminSupa
+      .from("processed_webhooks")
+      .insert({ provider: "paystack", event_key: idempotencyKey, event_name: eventName });
+    if (dupeError && dupeError.code === "23505") {
+      // 23505 = unique_violation — webhook already processed
+      return NextResponse.json({ ok: true, ignored: "duplicate_webhook" });
+    }
+    // Other errors (e.g. table not found) should not block webhook processing
+    if (dupeError && dupeError.code !== "42P01") {
+      console.warn("[paystack-webhook] idempotency insert failed (non-fatal):", dupeError.message);
+    }
+  }
+
   const email = pickEmail(event);
   const userIdFromMetadata = pickUserIdFromMetadata(event);
   const userId = userIdFromMetadata ?? (await resolveUserIdByEmail(email));
@@ -104,18 +132,75 @@ export async function POST(request: Request) {
         billing_subscription_token: subscriptionToken,
       },
     });
+
+    // Send subscription confirmation email (best-effort — never blocks the webhook response)
+    if (email) {
+      const amountRaw = event.data?.amount ?? 0;
+      const currency  = (event.data?.currency ?? "GHS").toUpperCase();
+      const amount    = `${currency} ${(amountRaw / 100).toFixed(2)}/month`;
+      const date      = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+      sendEmail({
+        to: email,
+        template: "subscription_confirmed",
+        data: {
+          plan: "Builder",
+          amount,
+          reference: reference ?? transactionId ?? "—",
+          date,
+        },
+      }).catch(err => logError("billing/webhook/email", err, { route: "/api/billing/paystack/webhook" }));
+    }
+
     return NextResponse.json({ ok: true });
   }
 
   if (eventName === "subscription.disable" || eventName === "invoice.payment_failed" || eventName === "subscription.not_renew") {
-    await persistUserPlan(userId, "free", {
+    // Grace period: don't immediately downgrade to free on payment failure or cancellation.
+    // Give a 3-day window before the hard downgrade so:
+    //   (a) temporary payment failures don't punish founders with good standing
+    //   (b) cancellations feel respectful rather than abrupt
+    // The grace_period_ends_at field is checked by getEffectivePlan() — if still in grace,
+    // the user keeps builder access. After 3 days, the next plan check hard-downgrades them.
+    const gracePeriodEndsAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+    const isPaymentFailure = eventName === "invoice.payment_failed";
+
+    await persistUserPlan(userId, isPaymentFailure ? "builder" : "free", {
       provider: "paystack",
-      status: "canceled",
+      status: isPaymentFailure ? "processing" : "canceled",
       reference,
       transactionId,
       subscriptionId,
       customerEmail: email,
+      meta: {
+        grace_period_ends_at: gracePeriodEndsAt,
+        grace_reason: eventName,
+      },
     });
+
+    // Also write grace_period_ends_at into founder_context so plan checks can use it
+    // without an auth admin call
+    if (userId) {
+      const adminForGrace = createAdminClient();
+      adminForGrace
+        .from("founder_context")
+        .update({ grace_period_ends_at: gracePeriodEndsAt })
+        .eq("user_id", userId)
+        .then(() => undefined, () => undefined); // best-effort
+    }
+
+    // Send cancellation / payment failure email (best-effort)
+    if (email) {
+      const cancelDate = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+      const reason = eventName === "invoice.payment_failed"
+        ? "Payment failed — your subscription was not renewed"
+        : undefined;
+      sendEmail({
+        to: email,
+        template: "subscription_cancelled",
+        data: { cancelDate, reason },
+      }).catch(err => logError("billing/webhook/email", err, { route: "/api/billing/paystack/webhook" }));
+    }
+
     return NextResponse.json({ ok: true });
   }
 

@@ -27,6 +27,14 @@ import {
   markIgnoredAfter24h,
   type ActionOutcome,
 } from "@/lib/learning";
+import { logError } from "@/lib/server/logger";
+import { z } from "zod";
+
+const ReflexionOutcomeSchema = z.object({
+  log_row_id:   z.string().min(1, "log_row_id required"),
+  outcome:      z.enum(["completed", "overridden", "partial"]),
+  outcome_note: z.string().max(500).optional(),
+});
 
 export async function POST(request: Request) {
   try {
@@ -36,7 +44,15 @@ export async function POST(request: Request) {
     }
     const userId = routeUser.userId;
 
-    const body = await request.json().catch(() => ({}));
+    const rawBody = await request.json().catch(() => ({}));
+    const parsed = ReflexionOutcomeSchema.safeParse(rawBody);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: "Invalid request", details: parsed.error.flatten() },
+        { status: 400 }
+      );
+    }
+    const body = parsed.data;
     const logRowId = String(body?.log_row_id ?? "").trim();
     const outcome = String(body?.outcome ?? "") as ActionOutcome;
     const outcomeNote = String(body?.outcome_note ?? "").trim().slice(0, 500) || undefined;
@@ -54,7 +70,7 @@ export async function POST(request: Request) {
     }
 
     // Mark stale pending rows as ignored (lazy cleanup — no cron needed)
-    markIgnoredAfter24h(userId).catch(() => {});
+    markIgnoredAfter24h(userId).catch((err) => logError("reflexion-outcome/markIgnored", err));
 
     const success = await recordActionOutcome({
       logRowId,

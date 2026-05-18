@@ -12,8 +12,12 @@ export async function POST(req: NextRequest) {
   }
 
   const update: Record<string, number> = {};
-  if (typeof momentum_score === "number") update.momentum_score = momentum_score;
-  if (typeof execution_score === "number") update.execution_score = execution_score;
+  if (typeof momentum_score === "number") {
+    update.momentum_score = Math.min(100, Math.max(0, Math.round(momentum_score)));
+  }
+  if (typeof execution_score === "number") {
+    update.execution_score = Math.min(100, Math.max(0, Math.round(execution_score)));
+  }
 
   if (Object.keys(update).length === 0) {
     return NextResponse.json({ ok: false, error: "No score supplied" }, { status: 400 });

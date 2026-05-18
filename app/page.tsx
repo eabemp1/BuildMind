@@ -380,7 +380,7 @@ function DayTimeline() {
         })}
       </div>
       <p style={{ fontSize: 11, color: "var(--bm-text4)", marginTop: 8, paddingLeft: 54 }}>
-        Tap any event to expand. The system runs whether you're watching or not.
+        The system runs whether you open the app or not. Morning briefing arrives. Evening check fires. Action is queued for tomorrow.
       </p>
     </div>
   );
@@ -643,7 +643,7 @@ interface BreakPublicResponse {
   success?: boolean; error?: string;
   data?: { verdict?: string; kill_reasons?: string[]; brutal_advice?: string; survival_probability?: number; differentiation_plan?: string[]; };
 }
-interface PublicStats { founders?: number; projects?: number; milestones?: number; }
+interface PublicStats { founders?: number; projects?: number; milestones?: number; weekly_tasks?: number; }
 
 // ── Break My Startup ──────────────────────────────────────────────────────────
 function BreakMyStartupSection() {
@@ -691,10 +691,10 @@ function BreakMyStartupSection() {
           <div>
             <Badge variant="danger" dot className="mb-4">Stress-Test Your Idea — Free, No Sign-Up</Badge>
             <h2 className="mb-3 text-3xl font-bold tracking-tight text-[var(--bm-text)] sm:text-4xl">
-              What's the biggest risk threatening your startup right now?
+              Find the one thing most likely to kill your startup
             </h2>
             <p className="text-base leading-relaxed text-[var(--bm-text2)] sm:text-lg">
-              Paste your idea. The same AI that runs inside BuildMind will find your top vulnerabilities — brutally, honestly, constructively.
+              Paste your idea. The same AI that runs inside BuildMind stress-tests it against the real failure modes — not generic advice, specific threats.
             </p>
           </div>
 
@@ -774,9 +774,9 @@ function PricingSection() {
       <div className="max-w-4xl mx-auto">
         <motion.div initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="mb-10 text-center">
           <h2 className="mb-3 text-3xl font-bold tracking-tight text-[var(--bm-text)]">
-            One decision. Already made.
+            The system works while you're not.
           </h2>
-          <p className="text-[var(--bm-text3)] text-base">Pick what level of intelligence you need.</p>
+          <p className="text-[var(--bm-text3)] text-base">Pick how much of your decision-making you want handed back to you.</p>
         </motion.div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -787,7 +787,7 @@ function PricingSection() {
                 <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Free</div>
                 <div style={{ fontSize: 32, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em" }}>$0</div>
                 <p className="text-sm text-[var(--bm-text3)] mt-2 leading-relaxed">
-                  Test your idea once. See what BuildMind would do — no commitment.
+                  See the next move BuildMind would give you — no commitment, no signup required for the stress-test.
                 </p>
               </div>
               <ul className="flex flex-col gap-3 flex-1">
@@ -822,9 +822,9 @@ function PricingSection() {
                     <span style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text-inv)", textTransform: "uppercase", letterSpacing: "0.08em", background: "var(--bm-accent)", padding: "2px 8px", borderRadius: 10 }}>Builder</span>
                     <span style={{ fontSize: 10, color: "var(--bm-text3)" }}>Most popular</span>
                   </div>
-                  <div style={{ fontSize: 32, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em" }}>$19 <span style={{ fontSize: 14, fontWeight: 400, color: "var(--bm-text3)" }}>/month</span></div>
+                  <div style={{ fontSize: 32, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em" }}>$39 <span style={{ fontSize: 14, fontWeight: 400, color: "var(--bm-text3)" }}>/month</span></div>
                   <p className="text-sm text-[var(--bm-text2)] mt-2 leading-relaxed">
-                    Wake up to a system that already decided your next move. Every day.
+                    The system reads your context overnight and tells you the one move that matters. You open it and execute.
                   </p>
                 </div>
                 <ul className="flex flex-col gap-3 flex-1">
@@ -848,7 +848,7 @@ function PricingSection() {
                 </ul>
                 <Link href="/auth/login">
                   <Button size="md" className="w-full">
-                    Start Builder — $19/mo <ArrowRight size={14} />
+                    Start Builder — $39/mo <ArrowRight size={14} />
                   </Button>
                 </Link>
                 <p style={{ fontSize: 11, color: "var(--bm-text4)", textAlign: "center" }}>
@@ -881,9 +881,152 @@ function PricingSection() {
 }
 
 // ── Stats floor — shown instantly before API responds ─────────────────────────
-const STATS_FLOOR = { founders: 1, projects: 1, milestones: 0 };
+const STATS_FLOOR = { founders: 1, projects: 1, milestones: 0, weekly_tasks: 0 };
 
 // ── Main landing page ─────────────────────────────────────────────────────────
+// ── World Canvas — ambient atmosphere layer ───────────────────────────────────
+function WorldCanvas() {
+  const starsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = starsRef.current;
+    if (!el) return;
+    // Generate 90 stars as small divs
+    for (let i = 0; i < 90; i++) {
+      const s = document.createElement("div");
+      const sz  = Math.random() * 1.4 + 0.3;
+      const dur = (Math.random() * 5 + 3).toFixed(1);
+      const del = (Math.random() * 5).toFixed(1);
+      const op  = (Math.random() * 0.4 + 0.1).toFixed(2);
+      Object.assign(s.style, {
+        position: "absolute",
+        width: `${sz}px`, height: `${sz}px`,
+        borderRadius: "50%",
+        background: "#fff",
+        top: `${Math.random() * 100}%`,
+        left: `${Math.random() * 100}%`,
+        opacity: op,
+        animation: `bm-star-twinkle ${dur}s ${del}s ease-in-out infinite`,
+        pointerEvents: "none",
+      });
+      el.appendChild(s);
+    }
+  }, []);
+
+  return (
+    <>
+      {/* Inject star keyframes once */}
+      <style>{`
+        @keyframes bm-star-twinkle {
+          0%,100% { opacity: var(--op, .2); transform: scale(1); }
+          50%      { opacity: calc(var(--op, .2) * 3); transform: scale(1.5); }
+        }
+        @keyframes bm-grid-drift {
+          0%   { transform: translateY(0); }
+          100% { transform: translateY(56px); }
+        }
+      `}</style>
+
+      <div
+        aria-hidden
+        style={{
+          position: "fixed", inset: 0,
+          pointerEvents: "none", zIndex: 0, overflow: "hidden",
+        }}
+      >
+        {/* Drifting grid */}
+        <div style={{
+          position: "absolute", inset: -56,
+          backgroundImage: `
+            linear-gradient(rgba(92,200,138,0.024) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(92,200,138,0.024) 1px, transparent 1px)
+          `,
+          backgroundSize: "52px 52px",
+          animation: "bm-grid-drift 22s linear infinite",
+          maskImage: "radial-gradient(ellipse 80% 65% at 50% 38%, black 15%, transparent 80%)",
+          WebkitMaskImage: "radial-gradient(ellipse 80% 65% at 50% 38%, black 15%, transparent 80%)",
+        }} />
+
+        {/* Glow orbs */}
+        <div style={{ position:"absolute", width:700, height:500, top:-80, left:"50%", transform:"translateX(-50%)", background:"radial-gradient(ellipse, rgba(92,200,138,0.07) 0%, rgba(74,184,176,0.03) 40%, transparent 70%)", pointerEvents:"none" }} />
+        <div style={{ position:"absolute", width:500, height:400, top:"50%", left:"62%", transform:"translate(-50%,-50%)", background:"radial-gradient(ellipse, rgba(74,184,176,0.04) 0%, transparent 65%)", pointerEvents:"none" }} />
+        <div style={{ position:"absolute", width:400, height:300, bottom:"12%", left:"12%", background:"radial-gradient(ellipse, rgba(155,127,232,0.03) 0%, transparent 65%)", pointerEvents:"none" }} />
+
+        {/* Stars */}
+        <div ref={starsRef} style={{ position:"absolute", inset:0 }} />
+
+        {/* Trajectory SVG — the BuildMind visual signature */}
+        <svg
+          style={{ position:"absolute", inset:0, width:"100%", height:"100%", opacity:0.9 }}
+          viewBox="0 0 1440 900"
+          preserveAspectRatio="xMidYMid slice"
+          fill="none"
+        >
+          <defs>
+            <linearGradient id="bm-tg1" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%"   stopColor="transparent"/>
+              <stop offset="20%"  stopColor="rgba(92,200,138,0.35)"/>
+              <stop offset="80%"  stopColor="rgba(92,200,138,0.35)"/>
+              <stop offset="100%" stopColor="transparent"/>
+            </linearGradient>
+            <linearGradient id="bm-tg2" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%"   stopColor="transparent"/>
+              <stop offset="25%"  stopColor="rgba(74,184,176,0.25)"/>
+              <stop offset="75%"  stopColor="rgba(74,184,176,0.25)"/>
+              <stop offset="100%" stopColor="transparent"/>
+            </linearGradient>
+            <linearGradient id="bm-tg3" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%"   stopColor="transparent"/>
+              <stop offset="30%"  stopColor="rgba(155,127,232,0.15)"/>
+              <stop offset="70%"  stopColor="rgba(155,127,232,0.15)"/>
+              <stop offset="100%" stopColor="transparent"/>
+            </linearGradient>
+            <filter id="bm-gf">
+              <feGaussianBlur stdDeviation="1.5" result="blur"/>
+              <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+          </defs>
+
+          {/* Trajectory curves */}
+          <path id="bm-tp1"
+            d="M -40 720 C 160 660 320 440 520 380 C 720 320 900 460 1080 300 C 1220 180 1340 130 1480 90"
+            stroke="url(#bm-tg1)" strokeWidth="1" strokeDasharray="5 7"/>
+          <path id="bm-tp2"
+            d="M 60 820 C 240 760 420 580 620 500 C 820 420 1020 520 1200 360 C 1320 260 1400 200 1480 160"
+            stroke="url(#bm-tg2)" strokeWidth="0.8" strokeDasharray="3 9" opacity="0.7"/>
+          <path id="bm-tp3"
+            d="M 300 880 C 500 820 680 660 880 580 C 1080 500 1240 580 1440 420"
+            stroke="url(#bm-tg3)" strokeWidth="0.6" strokeDasharray="2 11" opacity="0.45"/>
+
+          {/* Animated dots on primary trajectory */}
+          <circle r="3.5" fill="#5CC88A" opacity="0.85" filter="url(#bm-gf)">
+            <animateMotion dur="9s" repeatCount="indefinite" begin="0s"><mpath href="#bm-tp1"/></animateMotion>
+          </circle>
+          <circle r="2.5" fill="#5CC88A" opacity="0.55">
+            <animateMotion dur="9s" repeatCount="indefinite" begin="3s"><mpath href="#bm-tp1"/></animateMotion>
+          </circle>
+          <circle r="2" fill="#4AB8B0" opacity="0.5">
+            <animateMotion dur="9s" repeatCount="indefinite" begin="6s"><mpath href="#bm-tp1"/></animateMotion>
+          </circle>
+
+          {/* Dots on secondary */}
+          <circle r="2.5" fill="#4AB8B0" opacity="0.4">
+            <animateMotion dur="12s" repeatCount="indefinite" begin="1.5s"><mpath href="#bm-tp2"/></animateMotion>
+          </circle>
+          <circle r="2" fill="#4AB8B0" opacity="0.3">
+            <animateMotion dur="12s" repeatCount="indefinite" begin="7s"><mpath href="#bm-tp2"/></animateMotion>
+          </circle>
+
+          {/* Dot on tertiary */}
+          <circle r="1.8" fill="#9B7FE8" opacity="0.35">
+            <animateMotion dur="15s" repeatCount="indefinite" begin="3s"><mpath href="#bm-tp3"/></animateMotion>
+          </circle>
+        </svg>
+      </div>
+    </>
+  );
+}
+
 export default function LandingPage() {
   const [stats, setStats] = useState(STATS_FLOOR);
   const [demoOpen, setDemoOpen] = useState(false);
@@ -896,9 +1039,10 @@ export default function LandingPage() {
       .then((r) => r.json())
       .then((d: PublicStats) =>
         setStats({
-          founders:   Math.max(d.founders   ?? 0, STATS_FLOOR.founders),
-          projects:   Math.max(d.projects   ?? 0, STATS_FLOOR.projects),
-          milestones: Math.max(d.milestones ?? 0, STATS_FLOOR.milestones),
+          founders:     Math.max(d.founders     ?? 0, STATS_FLOOR.founders),
+          projects:     Math.max(d.projects     ?? 0, STATS_FLOOR.projects),
+          milestones:   Math.max(d.milestones   ?? 0, STATS_FLOOR.milestones),
+          weekly_tasks: d.weekly_tasks ?? 0,
         })
       )
       .catch(() => {});
@@ -934,11 +1078,14 @@ export default function LandingPage() {
   }, []);
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: "var(--bm-bg)", color: "var(--bm-text)" }}>
+    <div className="min-h-screen flex flex-col" style={{ background: "var(--bm-bg)", color: "var(--bm-text)", position: "relative" }}>
+      {/* ── World Canvas: ambient atmosphere ── */}
+      <WorldCanvas />
+
       {/* Navbar */}
       <nav
         className="sticky top-0 z-50 flex h-16 items-center justify-between gap-3 px-4 sm:px-6"
-        style={{ background: "rgba(15,15,16,0.85)", backdropFilter: "blur(12px)", borderBottom: "1px solid var(--bm-border)" }}
+        style={{ background: "rgba(15,15,16,0.85)", backdropFilter: "blur(12px)", borderBottom: "1px solid var(--bm-border)", position: "relative", zIndex: 50 }}
       >
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center" style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)" }}>
@@ -972,17 +1119,17 @@ export default function LandingPage() {
           {/* Left */}
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }} className="flex flex-col gap-5 sm:gap-6">
             <span style={{ background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)", color: "var(--bm-accent)", borderRadius: 999, padding: "3px 10px", fontSize: 10, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "0.07em", display: "inline-flex", alignItems: "center", width: "fit-content" }}>
-              AI Founder Operating System
+              The next move, already decided
             </span>
 
             <h1 className="text-4xl font-bold leading-[1.08] tracking-tight sm:text-5xl lg:text-6xl">
-              Most founders guess
+              The next move is
               <br />
-              <span className="gradient-text">what to do next.</span>
+              <span className="gradient-text">already decided.</span>
             </h1>
 
             <p className="max-w-xl text-base leading-relaxed text-[var(--bm-text2)] sm:text-lg">
-              BuildMind already decided. Three AI agents debated your last move, stress-tested the options, and queued your highest-leverage action before you woke up.
+              BuildMind watches your startup context and tells you the one highest-leverage thing to do next. No lists. No frameworks. Just the next move — generated overnight, waiting when you wake up.
             </p>
 
             <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
@@ -997,11 +1144,11 @@ export default function LandingPage() {
               </Button>
             </div>
 
-            {/* Social proof pills */}
+            {/* Social proof pills — live momentum ticker (Audit v8 PROD #9) */}
             <div className="flex flex-wrap gap-2 pt-1 sm:pt-2">
               {[
                 { label: "Founders building", val: stats.founders },
-                { label: "Projects launched", val: stats.projects },
+                { label: "Projects active", val: stats.projects },
                 { label: "Milestones completed", val: stats.milestones },
               ].map((s) => (
                 <div
@@ -1013,6 +1160,22 @@ export default function LandingPage() {
                   <span className="text-[var(--bm-text3)]">{s.label}</span>
                 </div>
               ))}
+              {/* Live weekly task count — updates every 60s via Supabase realtime */}
+              {stats.weekly_tasks > 0 && (
+                <div
+                  className="inline-flex w-fit items-center justify-start gap-1.5 rounded-full px-3 py-1.5 text-xs"
+                  style={{ background: "rgba(92,200,138,0.06)", border: "1px solid rgba(92,200,138,0.20)" }}
+                >
+                  <span
+                    className="inline-block w-1.5 h-1.5 rounded-full"
+                    style={{ background: "var(--bm-accent)", animation: "pulse 2s ease-in-out infinite" }}
+                  />
+                  <span className="font-semibold" style={{ color: "var(--bm-accent)" }}>
+                    {stats.weekly_tasks.toLocaleString()}
+                  </span>
+                  <span className="text-[var(--bm-text3)]">daily tasks this week</span>
+                </div>
+              )}
             </div>
           </motion.div>
 
@@ -1030,10 +1193,10 @@ export default function LandingPage() {
           <motion.div initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="mb-8">
             <Badge variant="info" dot className="mb-4">Try it live — no account needed</Badge>
             <h2 className="text-3xl font-bold tracking-tight text-[var(--bm-text)] mb-3">
-              Watch the system reason through your startup
+              Watch the system decide your next move
             </h2>
             <p className="text-[var(--bm-text2)] text-base leading-relaxed">
-              This is the same Reflexion Loop that runs inside BuildMind every morning. Enter an idea and watch three agents disagree, reject, and refine in real time.
+              This is the same loop that runs every night while you sleep. Enter your startup idea and watch it generate the one action you should take tomorrow — then go verify it yourself.
             </p>
           </motion.div>
           <motion.div initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.1 }}>
@@ -1047,10 +1210,10 @@ export default function LandingPage() {
         <div className="max-w-6xl mx-auto">
           <motion.div initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="mb-10 text-left sm:mb-14 sm:text-center">
             <h2 className="mb-3 text-3xl font-bold tracking-tight sm:text-3xl">
-              Built on genuine mechanics. Not vibes.
+              Built to remove decisions. Not add more.
             </h2>
             <p className="text-base leading-relaxed text-[var(--bm-text2)]">
-              Every feature maps to a specific failure mode solo founders hit. Here's what's running under the hood.
+              Most tools give you more to manage. BuildMind takes things off your plate — one decision at a time.
             </p>
           </motion.div>
 
@@ -1094,9 +1257,9 @@ export default function LandingPage() {
       <section className="px-5 py-16 text-center sm:px-6 sm:py-24" style={{ background: "var(--grad-primary)" }}>
         <motion.div initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="max-w-xl mx-auto flex flex-col gap-5">
           <h2 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
-            Don't just show what BuildMind looks like.
+            Stop deciding what to do next.
           </h2>
-          <p className="text-white/80 text-lg">Experience what it does when you're not doing anything.</p>
+          <p className="text-white/80 text-lg">Let the system watch your context and tell you the move. Every morning.</p>
           <div className="flex justify-center">
             <Link href="/auth/login">
               <button className="h-12 px-8 rounded-xl bg-white text-sm font-semibold text-[#111] hover:bg-white/90 transition-all active:scale-95 flex items-center gap-2">

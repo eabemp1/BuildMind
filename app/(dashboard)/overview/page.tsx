@@ -8,15 +8,17 @@ import { computeStartupScore } from "@/lib/buildmind";
 import { useProjectSummariesQuery, useDashboardOverviewQuery } from "@/lib/queries";
 import { recordScore, markActiveToday, recordPendingTasks, syncUrgencyFromServer } from "@/lib/urgency";
 import { getStoredStreak } from "@/lib/plan";
-import { getXP, getScoreHistory, syncScoreHistory, syncXP } from "@/lib/scoring";
+import { getXP, getScoreHistory, syncScoreHistory, syncXP, computeConsistencyBonus } from "@/lib/scoring";
 import {
   Zap, Flame, Target, ArrowRight, ChevronRight,
   FolderKanban, BarChart3, Clock,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { MrrWidget } from "@/components/MrrWidget";
 import { Button } from "@/components/ui/button";
 import { ScoreBreakdown } from "@/components/ui/ScoreBreakdown";
+import { ProfileCompletenessBar } from "@/components/ProfileCompletenessBar";
 
 // ── Stage config ───────────────────────────────────────────────────────────────
 const STAGES = ["Idea", "Validation", "MVP", "Launch", "Growth", "Revenue"];
@@ -267,8 +269,18 @@ export default function OverviewPage() {
   const validationStrengths = Array.isArray(activeProject?.validation_strengths)
     ? activeProject.validation_strengths.length
     : 0;
+  // Fix #9 — Consistency score: surface regularity metric (active days in last 7)
+  const consistencyBonus = useMemo(() => {
+    const history = getScoreHistory();
+    return computeConsistencyBonus(history);
+  }, [score]);
+  const consistencyPct = Math.round((consistencyBonus / 10) * 100);
+
   const scoreColor = score >= 60 ? "var(--bm-green)" : score >= 30 ? "var(--bm-amber)" : "var(--bm-red)";
   const stage = activeProject?.startup_stage ?? "Idea";
+  const [currentMrr, setCurrentMrr] = useState<number>(
+    (activeProject as unknown as Record<string, number>)?.current_mrr ?? 0
+  );
   const milestonesCompleted = overview?.milestonesCompleted ?? 0;
 
   const totalTasks = summaries.reduce((a, s) => a + (s.tasksTotal ?? 0), 0);
@@ -341,6 +353,19 @@ export default function OverviewPage() {
         )}
       </motion.div>
 
+      {/* ── Profile completeness card (full card variant — shows when score < 80) ── */}
+      <ProfileCompletenessBar
+        fields={{
+          startupSummary: activeProject?.description ?? activeProject?.startup_summary ?? "",
+          stage:          activeProject?.stage ?? activeProject?.startup_stage ?? "",
+          targetUsers:    activeProject?.target_users ?? "",
+          avoidanceZones: overview?.avoidanceZones ?? [],
+          mrr:            activeProject?.mrr ?? 0,
+          displayName:    overview?.founderName ?? "",
+          tasksCompleted: activeProject?.tasksCompleted ?? 0,
+        }}
+      />
+
       {/* ── Metric row ── */}
       <motion.div
         initial={{ opacity: 0, y: 8 }}
@@ -373,6 +398,19 @@ export default function OverviewPage() {
           accent={!!activeProject}
         />
         <MetricCard
+          icon={<Zap size={14} />}
+          label="Consistency"
+          value={
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+              <span style={{ fontSize: 20, fontWeight: 700, color: consistencyBonus >= 8 ? "var(--bm-green)" : consistencyBonus >= 5 ? "var(--bm-amber)" : "var(--bm-text2)" }}>
+                {consistencyPct}%
+              </span>
+              <span style={{ fontSize: 10, color: "var(--bm-text3)" }}>last 7 days</span>
+            </div>
+          }
+          accent={consistencyBonus >= 8}
+        />
+        <MetricCard
           icon={<FolderKanban size={14} />}
           label="Active Projects"
           value={summaries.length > 0 ? summaries.length : <span className="text-[var(--bm-text3)]">—</span>}
@@ -387,6 +425,19 @@ export default function OverviewPage() {
           label="Founder Streak"
           value={streak > 0 ? `${streak}d` : <span className="text-[var(--bm-text3)]">—</span>}
         />
+        {activeProject && (
+          <MetricCard
+            icon={<Target size={14} />}
+            label="Current MRR"
+            value={
+              <MrrWidget
+                projectId={activeProject.id}
+                currentMrr={currentMrr}
+                onUpdate={setCurrentMrr}
+              />
+            }
+          />
+        )}
       </motion.div>
 
       {/* ── Empty state ── */}

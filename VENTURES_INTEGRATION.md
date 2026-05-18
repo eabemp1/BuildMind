@@ -1,7 +1,12 @@
 # BuildMind Ventures + CoFounder Core — Integration Guide
 
-**Date:** April 2026  
-**Status:** Implementation Complete — Ready for UI wiring
+**Date:** April 2026 / Updated May 2026  
+**Status:** Implementation Complete — Ventures is a Builder feature, NOT a separate plan tier
+
+> **IMPORTANT (May 2026 update):** The "Ventures" plan tier has been removed.
+> Ventures (Blueprint engine, Roadmap Tracks) is now a **feature** accessible on the **Builder plan**.
+> There is no separate Ventures subscription. Reference the Playbook for future tier plans (Operator, Founder, etc).
+> The `/ventures` route is Builder-gated. The `venturesBlueprint` feature gate maps to `"builder"` in `lib/plan.ts`.
 
 ---
 

@@ -1,5 +1,33 @@
 # BuildMind Changelog
 
+## v6.4 — Audit fixes: pattern detection, coach prompt quality (2026-05-13)
+
+### Finding 6 fixed: Pattern avoidance signal now receives recent task titles
+`detectPattern()` has a high-severity avoidance check ("zone appears in tasks 3+
+times in the last 14 days") that was always silently evaluating to 0 matches
+because no caller passed `recent_task_titles`. Fixed in both call sites:
+
+- `app/api/founder-context/task-complete/route.ts` — added a third parallel
+  `Promise.allSettled` leg that fetches the last 30 `reflections.today_action`
+  values from the past 14 days and passes them as `recent_task_titles` to
+  `detectPattern()`.
+- `app/api/cron/evening-check/route.ts` — same fix applied to the nightly
+  pattern detection run.
+
+### Finding 8 fixed: Coach proactive insight truncated to first sentence
+`buildProactiveObservation()` was pushing the full `last_insight` string (a
+multi-sentence AI-generated paragraph) directly into the prompt instruction,
+producing bloated coaching context. It now extracts only the first sentence and
+caps it at 120 characters before injecting it. This keeps the proactive
+instruction concise and prevents the model from echoing stale lengthy insights.
+
+**Files changed:**
+- `app/api/founder-context/task-complete/route.ts`
+- `app/api/cron/evening-check/route.ts`
+- `app/api/ai/coach/route.ts`
+
+---
+
 ## v6.3 — Code cleanup (2026-05-03)
 
 ### lib/api.ts rewritten

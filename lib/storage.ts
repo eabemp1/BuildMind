@@ -108,7 +108,7 @@ class UserScopedStorage {
 
   /** Call immediately after Supabase auth.getUser() resolves with a user */
   onSignIn(userId: string): void {
-    if (typeof window === "undefined") return;
+    if (typeof globalThis.window === "undefined") return;
     const prev = localStorage.getItem("bm_active_user_id");
     if (prev && prev !== userId) {
       // Different user signed in on this device — wipe their unscoped legacy keys
@@ -121,7 +121,7 @@ class UserScopedStorage {
 
   /** Call on sign-out — clears unscoped legacy keys, keeps scoped data */
   onSignOut(): void {
-    if (typeof window === "undefined") return;
+    if (typeof globalThis.window === "undefined") return;
     this._wipeLegacyUnscopedKeys();
     // Also clear the active user marker
     localStorage.removeItem("bm_active_user_id");
@@ -152,7 +152,7 @@ class UserScopedStorage {
   /** Get the current userId — reads from Supabase session if not set */
   private _uid(): string | null {
     if (this._userId) return this._userId;
-    if (typeof window === "undefined") return null;
+    if (typeof globalThis.window === "undefined") return null;
     // Fall back to the stored marker (set during sign-in)
     return localStorage.getItem("bm_active_user_id");
   }
@@ -160,7 +160,7 @@ class UserScopedStorage {
   // ── Core API ────────────────────────────────────────────────────────────────
 
   get(key: string): string | null {
-    if (typeof window === "undefined") return null;
+    if (typeof globalThis.window === "undefined") return null;
     // Global keys are not scoped
     if (GLOBAL_KEYS.has(key)) return localStorage.getItem(key);
     const uid = this._uid();
@@ -173,7 +173,7 @@ class UserScopedStorage {
   }
 
   set(key: string, value: string): void {
-    if (typeof window === "undefined") return;
+    if (typeof globalThis.window === "undefined") return;
     if (GLOBAL_KEYS.has(key)) { localStorage.setItem(key, value); return; }
     const uid = this._uid();
     if (!uid) return; // No user — don't write
@@ -183,7 +183,7 @@ class UserScopedStorage {
   }
 
   remove(key: string): void {
-    if (typeof window === "undefined") return;
+    if (typeof globalThis.window === "undefined") return;
     if (GLOBAL_KEYS.has(key)) { localStorage.removeItem(key); return; }
     const uid = this._uid();
     if (uid) localStorage.removeItem(scopedKey(uid, key));
@@ -222,50 +222,50 @@ class UserScopedStorage {
 
   getAIMessagesToday(): number {
     const uid = this._uid();
-    if (!uid || typeof window === "undefined") return 0;
+    if (!uid || typeof globalThis.window === "undefined") return 0;
     return Number(localStorage.getItem(aiDayKey(uid)) ?? "0");
   }
   recordAIMessage(): void {
     const uid = this._uid();
-    if (!uid || typeof window === "undefined") return;
+    if (!uid || typeof globalThis.window === "undefined") return;
     const k = aiDayKey(uid);
     localStorage.setItem(k, String(this.getAIMessagesToday() + 1));
   }
 
   getActionsThisWeek(): number {
     const uid = this._uid();
-    if (!uid || typeof window === "undefined") return 0;
+    if (!uid || typeof globalThis.window === "undefined") return 0;
     return Number(localStorage.getItem(scopedKey(uid, `bm_actions_${weekKey()}`)) ?? "0");
   }
   recordWeeklyAction(): void {
     const uid = this._uid();
-    if (!uid || typeof window === "undefined") return;
+    if (!uid || typeof globalThis.window === "undefined") return;
     const k = scopedKey(uid, `bm_actions_${weekKey()}`);
     localStorage.setItem(k, String(this.getActionsThisWeek() + 1));
   }
 
   getCoachMessagesThisWeek(): number {
     const uid = this._uid();
-    if (!uid || typeof window === "undefined") return 0;
+    if (!uid || typeof globalThis.window === "undefined") return 0;
     return Number(
       localStorage.getItem(scopedKey(uid, `bm_coach_${coachWeekKey()}`)) ?? "0"
     );
   }
   recordCoachMessage(): void {
     const uid = this._uid();
-    if (!uid || typeof window === "undefined") return;
+    if (!uid || typeof globalThis.window === "undefined") return;
     const k = scopedKey(uid, `bm_coach_${coachWeekKey()}`);
     localStorage.setItem(k, String(this.getCoachMessagesThisWeek() + 1));
   }
 
   getPlan(): string | null {
     const uid = this._uid();
-    if (!uid || typeof window === "undefined") return null;
+    if (!uid || typeof globalThis.window === "undefined") return null;
     return localStorage.getItem(scopedKey(uid, "bm_plan"));
   }
   setPlan(plan: string): void {
     const uid = this._uid();
-    if (!uid || typeof window === "undefined") return;
+    if (!uid || typeof globalThis.window === "undefined") return;
     localStorage.setItem(scopedKey(uid, "bm_plan"), plan);
     // Keep generic key for legacy callers — overwritten on next sign-in
     localStorage.setItem("bm_plan", plan);

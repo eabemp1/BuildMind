@@ -13,6 +13,7 @@
  */
 
 import { getLimits } from "@/lib/plan";
+import { storage } from "@/lib/storage";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -42,29 +43,22 @@ export function getWorkWindow(): WorkWindow {
   if (typeof window === "undefined") {
     return { startHour: 9, endHour: 18, timezone: "Africa/Accra" };
   }
-  try {
-    return JSON.parse(
-      localStorage.getItem(WORK_WINDOW_KEY) ??
-      JSON.stringify({ startHour: 9, endHour: 18, timezone: "Africa/Accra" })
-    );
-  } catch {
-    return { startHour: 9, endHour: 18, timezone: "Africa/Accra" };
-  }
+  return storage.getJSON<WorkWindow>(WORK_WINDOW_KEY, { startHour: 9, endHour: 18, timezone: "Africa/Accra" });
 }
 
-export function setWorkWindow(window: WorkWindow): void {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(WORK_WINDOW_KEY, JSON.stringify(window));
+export function setWorkWindow(w: WorkWindow): void {
+  if (typeof w === "undefined") return;
+  storage.setJSON(WORK_WINDOW_KEY, w);
 }
 
 export function setLastDeclaredGoal(goal: string): void {
   if (typeof window === "undefined") return;
-  localStorage.setItem(LAST_GOAL_KEY, goal);
+  storage.set(LAST_GOAL_KEY, goal);
 }
 
 export function getLastDeclaredGoal(): string | null {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem(LAST_GOAL_KEY);
+  return storage.get(LAST_GOAL_KEY);
 }
 
 // ─── Idle check ───────────────────────────────────────────────────────────────
@@ -95,12 +89,11 @@ export function checkIdleStatus(): IdleCheckResult {
 
   // Check if we already alerted today
   const todayKey = now.toISOString().slice(0, 10);
-  if (localStorage.getItem(IDLE_ALERTED_KEY) === todayKey) {
+  if (storage.get(IDLE_ALERTED_KEY) === todayKey) {
     return { isIdle: false, hoursIdle: 0 };
   }
 
-  // Read last active timestamp — same key used by urgency.ts
-  const lastActiveRaw = localStorage.getItem("bm_last_active_date");
+  const lastActiveRaw = storage.get("bm_last_active_date");
   if (!lastActiveRaw) return { isIdle: false, hoursIdle: 0 };
 
   const lastActive = new Date(lastActiveRaw);
@@ -118,8 +111,7 @@ export function checkIdleStatus(): IdleCheckResult {
     ? `You said you were building the ${lastGoal} today. It's been ${hoursStr} hours. Is something blocking you or did something happen? Reply here.`
     : `It's been ${hoursStr} hours since you last touched BuildMind and you're in your work window. Still building today?`;
 
-  // Mark alerted so we don't repeat
-  localStorage.setItem(IDLE_ALERTED_KEY, todayKey);
+  storage.set(IDLE_ALERTED_KEY, todayKey);
 
   return {
     isIdle: true,
@@ -136,5 +128,5 @@ export function checkIdleStatus(): IdleCheckResult {
  */
 export function recordActivity(): void {
   if (typeof window === "undefined") return;
-  localStorage.setItem("bm_last_active_date", new Date().toISOString());
+  storage.set("bm_last_active_date", new Date().toISOString());
 }

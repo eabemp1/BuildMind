@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BuildMind — The next move, already decided.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Geist:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: 'Geist', sans-serif;
+  background: #0C0C0D;
+  color: #E8E8E8;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+:root {
+  --bg:       #0C0C0D;
+  --bg2:      #131315;
+  --bg3:      #1A1A1D;
+  --bg4:      #222226;
+  --bg5:      #2A2A2F;
+  --border:   #1E1E22;
+  --border2:  #282830;
+  --border3:  #343440;
+  --text:     #E8E8E8;
+  --text2:    #888892;
+  --text3:    #50505C;
+  --text4:    #34343E;
+  --accent:   #5CC88A;
+  --accent2:  #44A870;
+  --adim:     rgba(92,200,138,0.07);
+  --abd:      rgba(92,200,138,0.2);
+  --teal:     #4AB8B0;
+  --amber:    #E8A020;
+  --purple:   #9B7FE8;
+  --grad:     linear-gradient(135deg, #5CC88A 0%, #4AB8B0 100%);
+}
+
+/* ── Keyframes ── */
+@keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:.2} }
+@keyframes fade-up { from{opacity:0;transform:translateY(18px)} to{opacity:1;transform:translateY(0)} }
+@keyframes fade-in { from{opacity:0} to{opacity:1} }
+@keyframes glow-pulse { 0%,100%{box-shadow:0 0 0 0 rgba(92,200,138,0)} 50%{box-shadow:0 0 24px 4px rgba(92,200,138,0.18)} }
+@keyframes travel-h { 0%{left:-8px;opacity:0} 10%{opacity:1} 90%{opacity:1} 100%{left:calc(100% + 8px);opacity:0} }
+@keyframes travel-v { 0%{top:-8px;opacity:0} 10%{opacity:1} 90%{opacity:1} 100%{top:calc(100% + 8px);opacity:0} }
+@keyframes typewriter { from{width:0} to{width:100%} }
+@keyframes blink-cursor { 0%,100%{opacity:1} 50%{opacity:0} }
+@keyframes scan { 0%{transform:translateY(-100%)} 100%{transform:translateY(100%)} }
+@keyframes agent-active { 0%,100%{border-color:var(--border2);box-shadow:none} 50%{border-color:var(--abd);box-shadow:0 0 20px rgba(92,200,138,0.12)} }
+@keyframes output-appear { 0%{opacity:0;transform:translateY(10px) scale(0.98)} 100%{opacity:1;transform:translateY(0) scale(1)} }
+
+/* Space atmosphere animations */
+@keyframes grid-drift   { 0%{transform:translateY(0)} 100%{transform:translateY(60px)} }
+@keyframes ambient-glow { 0%,100%{opacity:.5} 50%{opacity:1} }
+@keyframes star-twinkle { 0%,100%{opacity:.2;transform:scale(1)} 50%{opacity:.8;transform:scale(1.4)} }
+@keyframes traj-dot     { 0%{offset-distance:0%;opacity:0} 8%{opacity:1} 92%{opacity:1} 100%{offset-distance:100%;opacity:0} }
+
+/* ── Utility ── */
+.serif { font-family: 'DM Serif Display', serif; }
+.serif-italic { font-family: 'DM Serif Display', serif; font-style: italic; }
+.gradient-text {
+  background: var(--grad);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ═══════════════════════════════════════════
+   WORLD CANVAS — fixed behind everything
+═══════════════════════════════════════════ */
+.world-canvas {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+/* Drifting grid */
+.wc-grid {
+  position: absolute;
+  inset: -60px;
+  background-image:
+    linear-gradient(rgba(92,200,138,0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(92,200,138,0.025) 1px, transparent 1px);
+  background-size: 52px 52px;
+  animation: grid-drift 22s linear infinite;
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, black 20%, transparent 80%);
+}
+
+/* Ambient glow blobs */
+.wc-glow-top {
+  position: absolute;
+  width: 700px; height: 500px;
+  top: -80px; left: 50%;
+  transform: translateX(-50%);
+  background: radial-gradient(ellipse, rgba(92,200,138,0.065) 0%, rgba(74,184,176,0.03) 40%, transparent 70%);
+  animation: ambient-glow 9s ease-in-out infinite;
+}
+.wc-glow-mid {
+  position: absolute;
+  width: 500px; height: 400px;
+  top: 50%; left: 60%;
+  transform: translate(-50%,-50%);
+  background: radial-gradient(ellipse, rgba(74,184,176,0.04) 0%, transparent 65%);
+  animation: ambient-glow 13s ease-in-out infinite reverse;
+}
+.wc-glow-bot {
+  position: absolute;
+  width: 400px; height: 300px;
+  bottom: 10%; left: 15%;
+  background: radial-gradient(ellipse, rgba(155,127,232,0.035) 0%, transparent 65%);
+  animation: ambient-glow 11s ease-in-out 2s infinite;
+}
+
+/* Stars */
+.wc-stars { position: absolute; inset: 0; }
+.star {
+  position: absolute;
+  border-radius: 50%;
+  background: #fff;
+  animation: star-twinkle ease-in-out infinite;
+}
+
+/* Trajectory SVG — the signature motion language */
+.wc-traj {
+  position: absolute;
+  inset: 0;
+  width: 100%; height: 100%;
+}
+
+/* ── Nav ── */
+nav {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 200;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 32px;
+  background: rgba(12,12,13,0.82);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border);
+}
+.nav-brand { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+.nav-mark { width: 30px; height: 30px; background: var(--bg3); border: 1px solid var(--border2); border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+.nav-name { font-size: 14px; font-weight: 600; color: var(--text); letter-spacing: -0.01em; }
+.nav-links { display: flex; align-items: center; gap: 28px; list-style: none; }
+.nav-links a { font-size: 13px; color: var(--text3); text-decoration: none; transition: color 0.2s; }
+.nav-links a:hover { color: var(--text2); }
+.nav-actions { display: flex; align-items: center; gap: 10px; }
+
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: 'Geist', sans-serif;
+  font-size: 13px; font-weight: 500;
+  border-radius: 9px; padding: 0 16px; height: 36px;
+  border: none; cursor: pointer; text-decoration: none;
+  transition: all 0.18s ease; white-space: nowrap;
+}
+.btn-ghost { background: transparent; color: var(--text3); border: 1px solid transparent; }
+.btn-ghost:hover { color: var(--text2); background: var(--bg3); }
+.btn-primary { background: var(--grad); color: #0C0C0D; font-weight: 600; }
+.btn-primary:hover { filter: brightness(1.06); transform: translateY(-1px); }
+.btn-secondary { background: var(--bg3); color: var(--text2); border: 1px solid var(--border2); }
+.btn-secondary:hover { border-color: var(--border3); color: var(--text); background: var(--bg4); }
+
+/* ── Hero ── */
+.hero {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 120px 32px 80px;
+  position: relative;
+  z-index: 1; /* sits above world canvas */
+}
+
+/* Keep original hero grid but subtler — world canvas handles atmosphere */
+.hero::before {
+  content: '';
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: 48px 48px;
+  opacity: 0.18;
+  mask-image: radial-gradient(ellipse at 50% 40%, black 0%, transparent 68%);
+  pointer-events: none;
+}
+
+.hero-inner {
+  max-width: 1100px; width: 100%;
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 64px; align-items: center;
+  position: relative; z-index: 2;
+}
+
+.hero-copy { display: flex; flex-direction: column; gap: 24px; }
+.hero-badge {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--bg2); border: 1px solid var(--border2);
+  border-radius: 999px; padding: 5px 14px; width: fit-content;
+  font-size: 11px; color: var(--text3); font-weight: 500;
+  animation: fade-up 0.5s ease both;
+}
+.badge-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulse-dot 2s ease-in-out infinite; flex-shrink: 0; box-shadow: 0 0 6px var(--accent); }
+.hero-h1 { font-size: clamp(2.6rem,4.5vw,4rem); font-weight: 700; line-height: 1.06; letter-spacing: -0.025em; color: var(--text); animation: fade-up 0.5s 0.08s ease both; }
+.hero-h1 .serif-italic { font-size: 1.08em; display: block; margin-top: 2px; }
+.hero-body { font-size: 15px; line-height: 1.7; color: var(--text2); max-width: 400px; animation: fade-up 0.5s 0.16s ease both; }
+.hero-actions { display: flex; gap: 10px; flex-wrap: wrap; animation: fade-up 0.5s 0.24s ease both; }
+.hero-actions .btn { height: 42px; font-size: 14px; padding: 0 20px; border-radius: 11px; }
+.hero-proof { display: flex; align-items: center; gap: 16px; animation: fade-up 0.5s 0.32s ease both; }
+.proof-stat { display: flex; flex-direction: column; gap: 1px; }
+.proof-n { font-size: 18px; font-weight: 700; color: var(--text); letter-spacing: -0.02em; line-height: 1; }
+.proof-label { font-size: 10px; color: var(--text4); text-transform: uppercase; letter-spacing: 0.08em; }
+.proof-sep { width: 1px; height: 28px; background: var(--border2); }
+
+/* ── Pipeline (original, untouched) ── */
+.pipeline-wrap { position: relative; animation: fade-up 0.6s 0.2s ease both; }
+.pipeline {
+  background: var(--bg2); border: 1px solid var(--border2);
+  border-radius: 20px; padding: 24px;
+  position: relative; overflow: hidden;
+  /* Upgraded: top accent line */
+  box-shadow: 0 0 0 1px rgba(92,200,138,0.06), 0 24px 64px rgba(0,0,0,0.5);
+}
+.pipeline::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(92,200,138,0.4), transparent);
+}
+.pipeline::after {
+  content: '';
+  position: absolute; left: 0; right: 0; height: 40px;
+  background: linear-gradient(to bottom, transparent, rgba(92,200,138,0.025), transparent);
+  animation: scan 3s linear infinite;
+  pointer-events: none;
+}
+.pipeline-header { display: flex; align-items: center; gap: 8px; margin-bottom: 20px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+.pipe-title { font-size: 10px; font-weight: 700; color: var(--text4); text-transform: uppercase; letter-spacing: 0.12em; flex: 1; }
+.running-badge { display: flex; align-items: center; gap: 5px; font-size: 10px; color: var(--accent); font-weight: 600; }
+.running-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); animation: pulse-dot 1.4s ease-in-out infinite; box-shadow: 0 0 6px var(--accent); }
+
+.agents-row { display: flex; align-items: center; gap: 0; margin-bottom: 20px; position: relative; }
+.agent-node { flex: 1; background: var(--bg3); border: 1px solid var(--border2); border-radius: 14px; padding: 14px; position: relative; transition: border-color 0.3s, box-shadow 0.3s; }
+.agent-node.is-active { animation: agent-active 2.5s ease-in-out infinite; }
+.agent-node.is-active:nth-child(1) { animation-delay: 0s; }
+.agent-node.is-active:nth-child(3) { animation-delay: 0.85s; }
+.agent-node.is-active:nth-child(5) { animation-delay: 1.7s; }
+.agent-icon { width: 32px; height: 32px; border-radius: 9px; display: flex; align-items: center; justify-content: center; margin-bottom: 8px; font-size: 14px; }
+.agent-icon.gen    { background: rgba(92,200,138,0.12); }
+.agent-icon.critic { background: rgba(232,160,32,0.1); }
+.agent-icon.refiner{ background: rgba(155,127,232,0.1); }
+.agent-label { font-size: 10px; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 3px; }
+.agent-name  { font-size: 12px; font-weight: 600; color: var(--text2); line-height: 1.3; }
+.agent-status { font-size: 10px; color: var(--text4); margin-top: 6px; line-height: 1.4; }
+.agent-status.running { color: var(--accent); }
+.agent-status.waiting { color: var(--amber); }
+
+.connector { width: 28px; flex-shrink: 0; height: 1px; background: var(--border2); position: relative; overflow: hidden; }
+.pulse-bead {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 8px rgba(92,200,138,0.7);
+  animation: travel-h 2.2s linear infinite;
+}
+.connector:nth-of-type(2) .pulse-bead { animation-delay: 0.85s; background: var(--amber); box-shadow: 0 0 8px rgba(232,160,32,0.7); }
+.connector:nth-of-type(4) .pulse-bead { animation-delay: 1.7s; background: var(--purple); box-shadow: 0 0 8px rgba(155,127,232,0.7); }
+
+.down-connector { display: flex; align-items: center; justify-content: center; height: 24px; margin: -4px 0; position: relative; }
+.down-line { width: 1px; height: 100%; background: linear-gradient(to bottom, var(--abd), var(--border2)); position: relative; overflow: visible; }
+.down-bead { position: absolute; left: 50%; transform: translateX(-50%); width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px rgba(92,200,138,0.6); animation: travel-v 1.6s 1.0s linear both; }
+
+.output-card {
+  background: var(--bg3); border: 1px solid var(--abd);
+  border-radius: 14px; padding: 16px;
+  position: relative; overflow: hidden;
+  animation: output-appear 0.5s 1.2s ease both;
+  opacity: 0; animation-fill-mode: forwards;
+}
+.output-card::before { content: ''; position: absolute; inset: 0; background: linear-gradient(135deg, rgba(92,200,138,0.04) 0%, transparent 50%); pointer-events: none; }
+.output-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.output-tag { font-size: 9px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.1em; background: var(--adim); border: 1px solid var(--abd); border-radius: 6px; padding: 2px 8px; }
+.output-time { font-size: 10px; color: var(--text4); }
+.action-text { font-size: 13px; font-weight: 600; color: var(--text); line-height: 1.5; margin-bottom: 10px; overflow: hidden; white-space: nowrap; border-right: 2px solid var(--accent); animation: typewriter 1.8s steps(42) 1.4s both, blink-cursor 1.1s 3.2s ease-in-out infinite; width: 0; animation-fill-mode: forwards; max-width: 100%; }
+.output-metrics { display: flex; gap: 8px; }
+.metric-chip { background: var(--bg4); border: 1px solid var(--border2); border-radius: 7px; padding: 4px 9px; font-size: 10px; color: var(--text3); display: flex; align-items: center; gap: 4px; }
+.metric-chip span { color: var(--text2); font-weight: 600; }
+
+.pipeline-caption { text-align: center; margin-top: 12px; font-size: 11px; color: var(--text4); letter-spacing: 0.02em; }
+
+/* ── Separator ── */
+.sep { height: 1px; background: linear-gradient(to right, transparent, var(--border2), transparent); margin: 0 auto; max-width: 1100px; position: relative; z-index: 1; }
+
+/* ── Sections ── */
+section { padding: 96px 32px; max-width: 1100px; margin: 0 auto; position: relative; z-index: 1; }
+.section-eyebrow { font-size: 10px; font-weight: 700; color: var(--text4); text-transform: uppercase; letter-spacing: 0.14em; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+.section-eyebrow::before { content: ''; display: inline-block; width: 20px; height: 1px; background: var(--accent); }
+.section-h2 { font-size: clamp(1.8rem,3vw,2.8rem); font-weight: 700; letter-spacing: -0.02em; color: var(--text); line-height: 1.12; margin-bottom: 16px; }
+.section-body { font-size: 15px; color: var(--text2); line-height: 1.7; max-width: 520px; }
+
+/* ── Day timeline (original) ── */
+.day-section { display: grid; grid-template-columns: 1fr 1fr; gap: 80px; align-items: start; }
+.timeline { display: flex; flex-direction: column; position: relative; }
+.timeline-track { position: absolute; left: 14px; top: 0; bottom: 0; width: 1px; background: linear-gradient(to bottom, var(--accent) 0%, var(--abd) 25%, var(--border2) 65%, transparent 100%); }
+.tl-item { display: flex; gap: 18px; padding: 16px 0; cursor: pointer; transition: opacity 0.2s; }
+.tl-item:hover { opacity: 0.85; }
+.tl-dot-wrap { width: 28px; flex-shrink: 0; display: flex; align-items: flex-start; justify-content: center; padding-top: 3px; }
+.tl-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--bg4); border: 1px solid var(--border3); transition: all 0.3s; flex-shrink: 0; }
+.tl-dot.active { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 8px rgba(92,200,138,0.5); }
+.tl-content { flex: 1; }
+.tl-time { font-size: 10px; font-weight: 700; color: var(--text4); letter-spacing: 0.04em; margin-bottom: 3px; }
+.tl-time.accent { color: var(--accent); }
+.tl-event { font-size: 14px; font-weight: 600; color: var(--text2); line-height: 1.4; transition: color 0.3s; }
+.tl-event.active { color: var(--text); }
+.tl-detail { font-size: 12px; color: var(--text4); line-height: 1.5; margin-top: 4px; }
+.day-detail { position: sticky; top: 100px; background: var(--bg2); border: 1px solid var(--border2); border-radius: 18px; padding: 28px; overflow: hidden; }
+.day-detail::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--grad); border-radius: 18px 18px 0 0; }
+.detail-time { font-size: 11px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; }
+.detail-title { font-size: 18px; font-weight: 700; color: var(--text); margin-bottom: 10px; line-height: 1.35; }
+.detail-body { font-size: 13px; color: var(--text3); line-height: 1.65; margin-bottom: 20px; }
+.detail-metric { display: flex; gap: 8px; flex-wrap: wrap; }
+.detail-chip { background: var(--bg3); border: 1px solid var(--border2); border-radius: 8px; padding: 6px 12px; font-size: 11px; color: var(--text2); }
+.detail-chip b { color: var(--text); font-weight: 700; }
+
+/* ── Features grid (original) ── */
+.features-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 2px; background: var(--border); border: 1px solid var(--border); border-radius: 20px; overflow: hidden; margin-top: 56px; }
+.feature-cell { background: var(--bg2); padding: 28px 24px; transition: background 0.2s; }
+.feature-cell:hover { background: var(--bg3); }
+.feat-icon { width: 38px; height: 38px; border-radius: 11px; display: flex; align-items: center; justify-content: center; font-size: 18px; margin-bottom: 16px; }
+.feat-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 8px; letter-spacing: -0.01em; }
+.feat-body { font-size: 12px; color: var(--text3); line-height: 1.6; }
+.feat-badge { display: inline-block; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; padding: 2px 8px; border-radius: 6px; margin-bottom: 10px; }
+
+/* ── Pricing (original) ── */
+.pricing-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; max-width: 740px; margin: 48px auto 0; }
+.price-card { background: var(--bg2); border: 1px solid var(--border2); border-radius: 18px; padding: 28px; }
+.price-card.featured { border-color: var(--abd); background: linear-gradient(160deg, var(--bg2) 0%, var(--bg3) 100%); position: relative; }
+.price-card.featured::before { content: 'Most popular'; position: absolute; top: -1px; left: 50%; transform: translateX(-50%); background: var(--grad); color: #0C0C0D; font-size: 9px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 3px 14px; border-radius: 0 0 9px 9px; }
+.price-tier { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text4); margin-bottom: 8px; }
+.price-amount { font-size: 36px; font-weight: 800; color: var(--text); letter-spacing: -0.03em; line-height: 1; margin-bottom: 4px; }
+.price-amount span { font-size: 14px; font-weight: 400; color: var(--text4); }
+.price-desc { font-size: 12px; color: var(--text3); line-height: 1.5; margin: 12px 0 20px; }
+.price-features { list-style: none; display: flex; flex-direction: column; gap: 10px; margin-bottom: 24px; }
+.price-features li { font-size: 12px; color: var(--text2); display: flex; align-items: flex-start; gap: 8px; line-height: 1.4; }
+.price-features li::before { content: '→'; color: var(--accent); font-size: 11px; flex-shrink: 0; margin-top: 1px; }
+
+/* ── CTA ── */
+.cta-section { padding: 96px 32px; text-align: center; position: relative; z-index: 1; overflow: hidden; }
+.cta-section::before { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 0%, rgba(92,200,138,0.09) 0%, transparent 65%); pointer-events: none; }
+.cta-inner { max-width: 560px; margin: 0 auto; position: relative; z-index: 1; }
+.cta-h2 { font-size: clamp(2rem,4vw,3.2rem); font-weight: 700; letter-spacing: -0.025em; color: var(--text); line-height: 1.1; margin-bottom: 16px; }
+.cta-body { font-size: 15px; color: var(--text2); line-height: 1.65; margin-bottom: 32px; }
+.cta-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+.cta-actions .btn { height: 46px; font-size: 15px; padding: 0 28px; border-radius: 12px; }
+
+/* ── Footer ── */
+footer { border-top: 1px solid var(--border); padding: 32px; display: flex; align-items: center; justify-content: space-between; max-width: 1100px; margin: 0 auto; font-size: 12px; color: var(--text4); position: relative; z-index: 1; }
+footer a { color: var(--text4); text-decoration: none; }
+footer a:hover { color: var(--text3); }
+
+/* ── Reveal ── */
+.reveal { opacity: 0; transform: translateY(20px); transition: opacity 0.6s ease, transform 0.6s ease; }
+.reveal.visible { opacity: 1; transform: translateY(0); }
+
+/* ── Mobile ── */
+@media (max-width: 768px) {
+  nav { padding: 0 16px; }
+  .nav-links { display: none; }
+  .hero { padding: 100px 16px 60px; }
+  .hero-inner { grid-template-columns: 1fr; gap: 48px; }
+  .hero-h1 { font-size: 2.4rem; }
+  .day-section { grid-template-columns: 1fr; gap: 40px; }
+  .features-grid { grid-template-columns: 1fr; }
+  .pricing-grid { grid-template-columns: 1fr; }
+  section { padding: 60px 16px; }
+  .cta-section { padding: 60px 16px; }
+  footer { flex-direction: column; gap: 12px; text-align: center; }
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════
+     WORLD CANVAS — lives behind everything
+═══════════════════════════════════════════ -->
+<div class="world-canvas">
+  <div class="wc-grid"></div>
+  <div class="wc-glow-top"></div>
+  <div class="wc-glow-mid"></div>
+  <div class="wc-glow-bot"></div>
+  <div class="wc-stars" id="stars"></div>
+
+  <!-- Trajectory SVG: the signature BuildMind visual -->
+  <svg class="wc-traj" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="tg1" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%"   stop-color="transparent"/>
+        <stop offset="20%"  stop-color="rgba(92,200,138,0.35)"/>
+        <stop offset="80%"  stop-color="rgba(92,200,138,0.35)"/>
+        <stop offset="100%" stop-color="transparent"/>
+      </linearGradient>
+      <linearGradient id="tg2" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%"   stop-color="transparent"/>
+        <stop offset="25%"  stop-color="rgba(74,184,176,0.25)"/>
+        <stop offset="75%"  stop-color="rgba(74,184,176,0.25)"/>
+        <stop offset="100%" stop-color="transparent"/>
+      </linearGradient>
+      <linearGradient id="tg3" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%"   stop-color="transparent"/>
+        <stop offset="30%"  stop-color="rgba(155,127,232,0.15)"/>
+        <stop offset="70%"  stop-color="rgba(155,127,232,0.15)"/>
+        <stop offset="100%" stop-color="transparent"/>
+      </linearGradient>
+    </defs>
+
+    <!-- Primary momentum trajectory -->
+    <path id="tp1" d="M -40 720 C 160 660 320 440 520 380 C 720 320 900 460 1080 300 C 1220 180 1340 130 1480 90"
+      stroke="url(#tg1)" stroke-width="1" stroke-dasharray="5 7" opacity="0.7"/>
+    <!-- Secondary curve -->
+    <path id="tp2" d="M 60 820 C 240 760 420 580 620 500 C 820 420 1020 520 1200 360 C 1320 260 1400 200 1480 160"
+      stroke="url(#tg2)" stroke-width="0.8" stroke-dasharray="3 9" opacity="0.5"/>
+    <!-- Tertiary subtle -->
+    <path id="tp3" d="M 300 880 C 500 820 680 660 880 580 C 1080 500 1240 580 1440 420"
+      stroke="url(#tg3)" stroke-width="0.6" stroke-dasharray="2 11" opacity="0.35"/>
+
+    <!-- Animated dots traveling along primary trajectory -->
+    <circle r="3.5" fill="#5CC88A" opacity="0.8" filter="url(#gf)">
+      <animateMotion dur="9s" repeatCount="indefinite" begin="0s"><mpath href="#tp1"/></animateMotion>
+    </circle>
+    <circle r="2.5" fill="#5CC88A" opacity="0.5">
+      <animateMotion dur="9s" repeatCount="indefinite" begin="3s"><mpath href="#tp1"/></animateMotion>
+    </circle>
+    <circle r="2" fill="#4AB8B0" opacity="0.5">
+      <animateMotion dur="9s" repeatCount="indefinite" begin="6s"><mpath href="#tp1"/></animateMotion>
+    </circle>
+    <!-- Dot on secondary -->
+    <circle r="2.5" fill="#4AB8B0" opacity="0.4">
+      <animateMotion dur="12s" repeatCount="indefinite" begin="1.5s"><mpath href="#tp2"/></animateMotion>
+    </circle>
+    <circle r="2" fill="#4AB8B0" opacity="0.3">
+      <animateMotion dur="12s" repeatCount="indefinite" begin="7s"><mpath href="#tp2"/></animateMotion>
+    </circle>
+    <!-- Dot on tertiary -->
+    <circle r="1.8" fill="#9B7FE8" opacity="0.35">
+      <animateMotion dur="15s" repeatCount="indefinite" begin="3s"><mpath href="#tp3"/></animateMotion>
+    </circle>
+
+    <defs>
+      <filter id="gf"><feGaussianBlur stdDeviation="1.5" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    </defs>
+  </svg>
+</div>
+
+<!-- ── Navbar ── -->
+<nav>
+  <a href="/" class="nav-brand">
+    <div class="nav-mark">
+      <svg viewBox="0 0 64 64" width="18" height="18" fill="none">
+        <circle cx="14" cy="22" r="3" fill="#7BBFA0" opacity="0.6"/>
+        <circle cx="14" cy="32" r="3.5" fill="#A8D5BA"/>
+        <circle cx="14" cy="42" r="3" fill="#7BBFA0" opacity="0.6"/>
+        <circle cx="32" cy="16" r="3" fill="#7BBFA0" opacity="0.7"/>
+        <circle cx="32" cy="27" r="4" fill="#A8D5BA"/>
+        <circle cx="32" cy="38" r="3" fill="#7BBFA0" opacity="0.7"/>
+        <circle cx="32" cy="49" r="3" fill="#7BBFA0" opacity="0.55"/>
+        <circle cx="50" cy="22" r="3" fill="#7BBFA0" opacity="0.6"/>
+        <circle cx="50" cy="32" r="3.5" fill="#A8D5BA"/>
+        <circle cx="50" cy="42" r="3" fill="#7BBFA0" opacity="0.6"/>
+        <line x1="17.5" y1="32" x2="28.5" y2="27" stroke="#A8D5BA" stroke-width="1.4" opacity="0.9"/>
+        <line x1="35.5" y1="27" x2="46.5" y2="32" stroke="#A8D5BA" stroke-width="1.4" opacity="0.9"/>
+        <line x1="17.5" y1="22" x2="28.5" y2="16" stroke="rgba(168,213,186,0.35)" stroke-width="0.8"/>
+        <line x1="17.5" y1="22" x2="28.5" y2="27" stroke="rgba(168,213,186,0.3)" stroke-width="0.8"/>
+        <line x1="17.5" y1="42" x2="28.5" y2="38" stroke="rgba(168,213,186,0.3)" stroke-width="0.8"/>
+        <line x1="17.5" y1="42" x2="28.5" y2="49" stroke="rgba(168,213,186,0.25)" stroke-width="0.8"/>
+        <line x1="35.5" y1="16" x2="46.5" y2="22" stroke="rgba(168,213,186,0.35)" stroke-width="0.8"/>
+        <line x1="35.5" y1="38" x2="46.5" y2="32" stroke="rgba(168,213,186,0.3)" stroke-width="0.8"/>
+        <line x1="35.5" y1="49" x2="46.5" y2="42" stroke="rgba(168,213,186,0.25)" stroke-width="0.8"/>
+      </svg>
+    </div>
+    <span class="nav-name">BuildMind</span>
+  </a>
+  <ul class="nav-links">
+    <li><a href="#how">How it works</a></li>
+    <li><a href="#features">Features</a></li>
+    <li><a href="#pricing">Pricing</a></li>
+  </ul>
+  <div class="nav-actions">
+    <a href="/auth/login" class="btn btn-ghost">Log in</a>
+    <a href="/auth/login" class="btn btn-primary">Start Free →</a>
+  </div>
+</nav>
+
+<!-- ── Hero ── -->
+<div class="hero">
+  <div class="hero-inner">
+    <div class="hero-copy">
+      <div class="hero-badge">
+        <span class="badge-dot"></span>
+        System running — 47 founders building
+      </div>
+      <h1 class="hero-h1">
+        The next move is
+        <span class="serif-italic gradient-text">already decided.</span>
+      </h1>
+      <p class="hero-body">
+        BuildMind runs three AI agents overnight — they read your context, debate your next move, and leave the highest-leverage action waiting when you wake up. No frameworks. Just the move.
+      </p>
+      <div class="hero-actions">
+        <a href="/auth/login" class="btn btn-primary">Start Building Free →</a>
+        <a href="#how" class="btn btn-secondary">See how it works</a>
+      </div>
+      <div class="hero-proof">
+        <div class="proof-stat"><span class="proof-n">47</span><span class="proof-label">Founders</span></div>
+        <div class="proof-sep"></div>
+        <div class="proof-stat"><span class="proof-n">81%</span><span class="proof-label">Avg momentum</span></div>
+        <div class="proof-sep"></div>
+        <div class="proof-stat"><span class="proof-n">14d</span><span class="proof-label">Longest streak</span></div>
+      </div>
+    </div>
+
+    <!-- Pipeline — unchanged from original -->
+    <div class="pipeline-wrap">
+      <div class="pipeline">
+        <div class="pipeline-header">
+          <span class="pipe-title">Reflexion Loop — running now</span>
+          <div class="running-badge"><span class="running-dot"></span>Live</div>
+        </div>
+        <div class="agents-row">
+          <div class="agent-node is-active">
+            <div class="agent-icon gen">🧠</div>
+            <div class="agent-label">Agent A</div>
+            <div class="agent-name">Generator</div>
+            <div class="agent-status running">Reading context…</div>
+          </div>
+          <div class="connector"><div class="pulse-bead"></div></div>
+          <div class="agent-node is-active">
+            <div class="agent-icon critic">⚡</div>
+            <div class="agent-label">Agent B</div>
+            <div class="agent-name">YC Critic</div>
+            <div class="agent-status waiting">Reviewing…</div>
+          </div>
+          <div class="connector"><div class="pulse-bead"></div></div>
+          <div class="agent-node is-active">
+            <div class="agent-icon refiner">✦</div>
+            <div class="agent-label">Agent C</div>
+            <div class="agent-name">Refiner</div>
+            <div class="agent-status" style="color:var(--text4)">Queued</div>
+          </div>
+        </div>
+        <div class="down-connector">
+          <div class="down-line"><div class="down-bead"></div></div>
+        </div>
+        <div class="output-card">
+          <div class="output-header">
+            <span class="output-tag">Tomorrow's action</span>
+            <span class="output-time">Ready at 07:00</span>
+          </div>
+          <div class="action-text">Send a Loom to 5 founders. Ask one question.</div>
+          <div class="output-metrics">
+            <div class="metric-chip">Score <span>↑ 81</span></div>
+            <div class="metric-chip">Streak <span>14d</span></div>
+            <div class="metric-chip">Confidence <span>4/5</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="pipeline-caption">Runs overnight · Briefing waits at 7am · You just execute</div>
+    </div>
+  </div>
+</div>
+
+<div class="sep"></div>
+
+<!-- ── A Day With BuildMind ── -->
+<section id="how" class="reveal">
+  <div class="day-section">
+    <div>
+      <div class="section-eyebrow">A day with BuildMind</div>
+      <h2 class="section-h2">The system runs.<br>You execute.</h2>
+      <p class="section-body">BuildMind isn't a task manager you maintain — it's an operating rhythm that maintains itself. Three agents run every night. One action arrives every morning. Your job is to do it.</p>
+      <div class="timeline" style="margin-top:40px">
+        <div class="timeline-track"></div>
+        <div class="tl-item" onclick="selectDay(0)">
+          <div class="tl-dot-wrap"><div class="tl-dot active" id="dot-0"></div></div>
+          <div class="tl-content"><div class="tl-time accent">7:00 AM</div><div class="tl-event active" id="ev-0">Morning Briefing arrives</div><div class="tl-detail">Agent A built today's action overnight from your last reflection.</div></div>
+        </div>
+        <div class="tl-item" onclick="selectDay(1)">
+          <div class="tl-dot-wrap"><div class="tl-dot" id="dot-1"></div></div>
+          <div class="tl-content"><div class="tl-time">9:20 AM</div><div class="tl-event" id="ev-1">Action executed. Streak extended.</div><div class="tl-detail">You sent the outreach. Streak runs 14 days now.</div></div>
+        </div>
+        <div class="tl-item" onclick="selectDay(2)">
+          <div class="tl-dot-wrap"><div class="tl-dot" id="dot-2"></div></div>
+          <div class="tl-content"><div class="tl-time">2:00 PM</div><div class="tl-event" id="ev-2">Two replies received</div><div class="tl-detail">Momentum score rises 74 → 81. Pattern detector notes traction.</div></div>
+        </div>
+        <div class="tl-item" onclick="selectDay(3)">
+          <div class="tl-dot-wrap"><div class="tl-dot" id="dot-3"></div></div>
+          <div class="tl-content"><div class="tl-time">6:00 PM</div><div class="tl-event" id="ev-3">Evening check triggers</div><div class="tl-detail">Confidence 4/5. Third consecutive strong day.</div></div>
+        </div>
+        <div class="tl-item" onclick="selectDay(4)">
+          <div class="tl-dot-wrap"><div class="tl-dot" id="dot-4"></div></div>
+          <div class="tl-content"><div class="tl-time">11:59 PM</div><div class="tl-event" id="ev-4">Reflexion Loop queued</div><div class="tl-detail">Agents A, B, C scheduled to debate your outcome and prepare tomorrow.</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="day-detail" id="day-detail">
+      <div class="detail-time">7:00 AM</div>
+      <div class="detail-title">Your morning briefing is waiting.</div>
+      <div class="detail-body">While you slept, Agent A read your last reflection, your momentum trend, and what the YC Critic said last time. It built one action — the highest leverage thing you can do today. No list. No options. Just the move.</div>
+      <div class="detail-metric">
+        <div class="detail-chip">Momentum <b>81</b></div>
+        <div class="detail-chip">Streak <b>14d</b></div>
+        <div class="detail-chip">3-agent loop <b>ran</b></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="sep"></div>
+
+<!-- ── Features ── -->
+<section id="features" class="reveal">
+  <div class="section-eyebrow">What it actually does</div>
+  <h2 class="section-h2">Built to remove decisions.<br>Not add more.</h2>
+  <div class="features-grid">
+    <div class="feature-cell"><div class="feat-icon" style="background:rgba(92,200,138,0.1)">🔁</div><div class="feat-badge" style="background:rgba(92,200,138,0.1);color:var(--accent)">Core engine</div><div class="feat-title">Reflexion Loop</div><div class="feat-body">Generator writes your task. Critic (YC partner / growth hacker / cynical user) rejects or approves. Refiner sharpens. All in under 2 seconds.</div></div>
+    <div class="feature-cell"><div class="feat-icon" style="background:rgba(232,160,32,0.1)">⚡</div><div class="feat-badge" style="background:rgba(232,160,32,0.1);color:var(--amber)">Daily</div><div class="feat-title">Morning Briefing</div><div class="feat-body">Every day at 7am, one action card generated from your overnight context. Open. Read. Execute. That's the whole interaction.</div></div>
+    <div class="feature-cell"><div class="feat-icon" style="background:rgba(74,184,176,0.1)">📈</div><div class="feat-badge" style="background:rgba(74,184,176,0.1);color:var(--teal)">Live</div><div class="feat-title">Momentum Score</div><div class="feat-body">A single number that tracks your execution health. Rises when you act, decays when you don't. Streaks, check-ins, confidence — all rolled in.</div></div>
+    <div class="feature-cell"><div class="feat-icon" style="background:rgba(155,127,232,0.1)">🎭</div><div class="feat-badge" style="background:rgba(155,127,232,0.1);color:var(--purple)">Weekly rotate</div><div class="feat-title">Rotating Critic Personas</div><div class="feat-body">Four critic modes cycle weekly — YC partner, growth hacker, cynical user, domain expert. Each one attacks from a different angle.</div></div>
+    <div class="feature-cell"><div class="feat-icon" style="background:rgba(224,85,85,0.1)">🛡️</div><div class="feat-badge" style="background:rgba(224,85,85,0.1);color:#E05555">Auto-trigger</div><div class="feat-title">Recovery Mode</div><div class="feat-body">When confidence drops below 2/5 for two days straight, the system shifts register — softer language, smaller actions, re-grounding before the next push.</div></div>
+    <div class="feature-cell"><div class="feat-icon" style="background:rgba(92,200,138,0.08)">🧬</div><div class="feat-badge" style="background:rgba(92,200,138,0.08);color:var(--accent)">Memory</div><div class="feat-title">Founder Memory</div><div class="feat-body">Every reflection, every outcome, every check-in builds context. The AI remembers your history — actions get sharper as the system learns what works for you.</div></div>
+  </div>
+</section>
+
+<div class="sep"></div>
+
+<!-- ── Pricing ── -->
+<section id="pricing" class="reveal" style="text-align:center">
+  <div class="section-eyebrow" style="justify-content:center">Pricing</div>
+  <h2 class="section-h2">The system works while you're not.</h2>
+  <p class="section-body" style="margin:0 auto">Pick how much of your decision-making you want handed back to you.</p>
+  <div class="pricing-grid">
+    <div class="price-card">
+      <div class="price-tier">Free</div>
+      <div class="price-amount">$0</div>
+      <div class="price-desc">See the next move BuildMind would give you — no commitment needed.</div>
+      <ul class="price-features">
+        <li>Morning Briefing — 3 days/week</li>
+        <li>One stress-test per session</li>
+        <li>5 actions per week</li>
+        <li>3 AI messages per day</li>
+        <li>Momentum Score (Level 1)</li>
+        <li>1 project</li>
+      </ul>
+      <a href="/auth/login" class="btn btn-secondary" style="width:100%;justify-content:center">Start Free</a>
+    </div>
+    <div class="price-card featured">
+      <div class="price-tier">Builder</div>
+      <div class="price-amount">$39 <span>/month</span></div>
+      <div class="price-desc">The system reads your context overnight and tells you the one move that matters. Open. Execute.</div>
+      <ul class="price-features">
+        <li>Daily Morning Briefing — every day</li>
+        <li>Full Reflexion Loop (3-agent chain)</li>
+        <li>Unlimited AI tasks + messages</li>
+        <li>Rotating Critic Personas (4 weekly)</li>
+        <li>Full Momentum Score with decay warnings</li>
+        <li>Recovery Mode — when confidence drops</li>
+        <li>Evening check nudges</li>
+        <li>Founder memory — AI remembers your history</li>
+        <li>Unlimited projects</li>
+      </ul>
+      <a href="/auth/login" class="btn btn-primary" style="width:100%;justify-content:center">Start Builder — $39/mo →</a>
+    </div>
+  </div>
+</section>
+
+<div class="sep"></div>
+
+<div class="cta-section">
+  <div class="cta-inner">
+    <h2 class="cta-h2 serif-italic">Stop deciding<br>what to do next.</h2>
+    <p class="cta-body">Let the system watch your context and tell you the move. Every morning, before you've had to think.</p>
+    <div class="cta-actions"><a href="/auth/login" class="btn btn-primary">Start Building Free →</a></div>
+  </div>
+</div>
+
+<footer>
+  <span>© 2026 BuildMind. Built for founders who ship.</span>
+  <div style="display:flex;gap:20px">
+    <a href="/legal/terms">Terms</a>
+    <a href="/legal/privacy">Privacy</a>
+    <a href="/legal/cookies">Cookies</a>
+  </div>
+</footer>
+
+<script>
+/* Stars */
+(function() {
+  const sf = document.getElementById('stars');
+  if (!sf) return;
+  for (let i = 0; i < 90; i++) {
+    const s = document.createElement('div');
+    s.className = 'star';
+    const sz = Math.random() * 1.6 + 0.3;
+    s.style.cssText = `width:${sz}px;height:${sz}px;top:${Math.random()*100}%;left:${Math.random()*100}%;opacity:${(Math.random()*.4+.1).toFixed(2)};animation-duration:${(Math.random()*5+3).toFixed(1)}s;animation-delay:${(Math.random()*5).toFixed(1)}s`;
+    sf.appendChild(s);
+  }
+})();
+
+/* Day timeline */
+const DAYS = [
+  { time:"7:00 AM", title:"Your morning briefing is waiting.", body:"While you slept, Agent A read your last reflection, your momentum trend, and what the YC Critic said last time. It built one action — the highest leverage thing you can do today. No list. No options. Just the move.", chips:["Momentum <b>81</b>","Streak <b>14d</b>","3-agent loop <b>ran</b>"] },
+  { time:"9:20 AM", title:"Task sent. Streak extended to 14 days.", body:"You copied the outreach script. Three founders messaged. Streak holds. Momentum edges up. The system logged the action and will factor it into tonight's reflection loop.", chips:["Streak <b>14d</b>","Actions <b>+1</b>","Outreach <b>sent</b>"] },
+  { time:"2:00 PM", title:"Two replies received. Traction detected.", body:"Pattern detector notes the second positive reply in 3 days. Momentum rises from 74 → 81. The YC Critic will be more generous tonight — you're showing signal.", chips:["Score <b>74→81</b>","Replies <b>2</b>","Pattern <b>detected</b>"] },
+  { time:"6:00 PM", title:"Evening check — third strong day.", body:"Confidence 4/5. Three consecutive days above threshold. No Recovery Mode needed. The system notes your cadence and will extend the streak target in tomorrow's briefing.", chips:["Confidence <b>4/5</b>","Day <b>3 of 3</b>","Recovery <b>off</b>"] },
+  { time:"11:59 PM", title:"Reflexion Loop queued for tonight.", body:"Agents A, B, and C are scheduled. A will read today's outcome and yesterday's reflection. B will critique the next proposed action from three angles. C will refine. Tomorrow's move will be waiting at 7am.", chips:["Agents <b>3</b>","Queued <b>00:01</b>","Tomorrow <b>ready</b>"] }
+];
+let selected = 0;
+function selectDay(i) {
+  selected = i;
+  DAYS.forEach((_,j) => {
+    const dot = document.getElementById('dot-'+j);
+    const ev  = document.getElementById('ev-'+j);
+    const timeEl = dot?.parentElement?.parentElement?.querySelector('.tl-time');
+    dot.classList.toggle('active', j===i);
+    ev.classList.toggle('active', j===i);
+    if (timeEl) timeEl.classList.toggle('accent', j===i);
+  });
+  const d = DAYS[i];
+  const detail = document.getElementById('day-detail');
+  detail.innerHTML = `<div class="detail-time">${d.time}</div><div class="detail-title">${d.title}</div><div class="detail-body">${d.body}</div><div class="detail-metric">${d.chips.map(c=>`<div class="detail-chip">${c}</div>`).join('')}</div>`;
+  detail.style.animation = 'none';
+  detail.offsetHeight;
+  detail.style.animation = 'output-appear 0.3s ease both';
+}
+setInterval(() => selectDay((selected+1) % DAYS.length), 3800);
+
+/* Scroll reveal */
+const observer = new IntersectionObserver(
+  entries => entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); }),
+  { threshold: 0.1 }
+);
+document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+</script>
+</body>
+</html>

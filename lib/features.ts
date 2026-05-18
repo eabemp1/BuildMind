@@ -13,5 +13,11 @@ export const FEATURES = {
   breakMyStartup:    true,
   startupKit:        false,
   weeklyShare:       true,
+  // Growth Improvement #2: public founder score (backend ready, toggle to enable)
+  publicFounderScore: false, // 🔒 activate when ready — /founder/[username] is built
+  // Growth Improvement #3: teams waitlist (UI built, captures demand before feature exists)
+  teamsWaitlist:     true,   // ✅ waitlist capture is live
+  // Growth Improvement #5: detailed onboarding funnel tracking
+  onboardingFunnelTracking: true,
 };
 export type FeatureKey = keyof typeof FEATURES;

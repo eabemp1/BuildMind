@@ -1,4 +1,18 @@
-// lib/ventures.ts — Complete venture track data (UPDATED: ConsentLedger added)
+/**
+ * lib/ventures.ts — Static venture track data (track definitions, milestones, timeline)
+ *
+ * SCOPE: This file owns VENTURE_TRACKS, VENTURE_TIMELINE, and COMBINED_REVENUE.
+ *        It is the data layer — hardcoded track definitions consumed by the UI.
+ *
+ * DO NOT CONFUSE WITH lib/ventures/index.ts, which is the AI blueprint engine:
+ *   lib/ventures/index.ts  → generateBlueprint(), StartupBlueprint type,
+ *                            scoreBlueprintFeasibility(), blueprintToExecutionTasks()
+ *
+ * Consumers:
+ *   app/my-ventures/page.tsx   → imports VENTURE_TRACKS, VentureTrack, VentureMilestone
+ *
+ * If you are looking for the AI-powered blueprint generator, see lib/ventures/index.ts.
+ */
 
 export type MilestoneType = "action" | "research" | "legal" | "money" | "security";
 

@@ -182,21 +182,36 @@ export async function POST(req: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  // Fetch all push subscriptions with founder context for Recovery Mode check
-  const { data: subs, error } = await supabase
-    .from("push_subscriptions")
-    .select("user_id, subscription");
+  const dryRun = req.nextUrl.searchParams.get("dryRun") === "1";
 
-  if (error) {
-    console.error("[Daily Push] Fetch error:", error);
-    return NextResponse.json({ error: error.message, step: "fetch_subscriptions" }, { status: 500 });
+  // Cursor-paginated fetch — prevents OOM crash at scale (fixes audit §3 critical issue).
+  const PAGE_SIZE = 100;
+  const allSubs: Array<{ user_id: string; subscription: object }> = [];
+  let pageFrom = 0;
+  let hasMore = true;
+
+  while (hasMore) {
+    const { data: page, error } = await supabase
+      .from("push_subscriptions")
+      .select("user_id, subscription")
+      .range(pageFrom, pageFrom + PAGE_SIZE - 1);
+
+    if (error) {
+      logger.error("[Daily Push] Fetch error", { error: error instanceof Error ? error.message : String(error) });
+      return NextResponse.json({ error: error.message, step: "fetch_subscriptions" }, { status: 500 });
+    }
+
+    const rows = page ?? [];
+    allSubs.push(...rows);
+    hasMore = rows.length === PAGE_SIZE;
+    pageFrom += PAGE_SIZE;
   }
+
+  const subs = allSubs;
 
   if (!subs || subs.length === 0) {
     return NextResponse.json({ sent: 0, failed: 0, total: 0, message: "No push subscribers yet" });
   }
-
-  const dryRun = req.nextUrl.searchParams.get("dryRun") === "1";
 
   // Fetch founder context for Recovery Mode detection (NEW IN V4)
   const userIds = subs.map((s) => s.user_id);
@@ -220,8 +235,35 @@ export async function POST(req: NextRequest) {
     if (data?.length) contexts.push(...data);
   }
 
-  // Also fetch today's morning briefings so push body matches what user sees in-app
+  // ── Dependency check: wait for morning briefings if they haven't generated yet ──
+  // The morning-briefing cron runs at 05:00 UTC; this job runs at 07:00 UTC.
+  // If the 05:00 job was slow or partially failed, some users won't have a
+  // briefing row yet. We give it one retry trigger before falling back to the
+  // generic template so founders always get a personalised notification.
   const today = new Date().toISOString().split("T")[0];
+  const { count: briefingCount } = await supabase
+    .from("morning_briefings")
+    .select("id", { count: "exact", head: true })
+    .gte("created_at", `${today}T00:00:00Z`);
+
+  if (!briefingCount || briefingCount === 0) {
+    // No briefings generated yet — trigger the morning briefing job and wait
+    // up to 20 seconds before proceeding with whatever exists
+    try {
+      const briefingUrl = new URL("/api/morning-briefing", process.env.NEXT_PUBLIC_APP_URL || "https://buildmind.live");
+      await fetch(briefingUrl.toString(), {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${process.env.CRON_SECRET}`,
+        },
+        signal: AbortSignal.timeout(20_000),
+      });
+    } catch {
+      // Non-fatal — proceed with fallback templates
+    }
+  }
+
+  // Also fetch today's morning briefings so push body matches what user sees in-app
   for (let i = 0; i < userIds.length; i += BATCH_SIZE) {
     const batchIds = userIds.slice(i, i + BATCH_SIZE);
     const briefingQuery = supabase
@@ -346,7 +388,7 @@ export async function POST(req: NextRequest) {
     .map((r) => (r.status === "fulfilled" ? { userId: r.value.userId, error: r.value.err } : null))
     .filter(Boolean);
 
-  console.log(`[Daily Push] Sent: ${sent}, Personalised: ${personalisedCount}, Recovery Mode: ${recoveryCount}, Failed: ${failed}`);
+  logger.info("[Daily Push] complete", { sent, personalisedCount, recoveryCount, failed });
 
   // ── Log cron run for health check endpoint ────────────────────────────────
   // push_cron_log may not exist yet — log is best-effort, never blocks response

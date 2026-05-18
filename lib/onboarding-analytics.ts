@@ -12,6 +12,8 @@
  *   upgrade_seen → upgrade_converted
  */
 
+import { storage } from "@/lib/storage";
+
 export type FunnelStep =
   | "landing"
   | "signup"
@@ -48,16 +50,36 @@ const MAX_SESSIONS = 200;
 
 export function getFunnelEvents(): FunnelEvent[] {
   if (typeof window === "undefined") return [];
-  try { return JSON.parse(localStorage.getItem(FUNNEL_KEY) ?? "[]"); } catch { return []; }
+  return storage.getJSON<FunnelEvent[]>(FUNNEL_KEY, []);
 }
 
 export function trackFunnelStep(step: FunnelStep, meta?: FunnelEvent["meta"]): void {
   if (typeof window === "undefined") return;
   const events = getFunnelEvents();
-  // Only record each step once (first occurrence matters)
   if (events.find(e => e.step === step)) return;
   events.push({ step, ts: Date.now(), meta });
-  localStorage.setItem(FUNNEL_KEY, JSON.stringify(events));
+  storage.setJSON(FUNNEL_KEY, events);
+
+  // Growth #5: dual-write to server for real analytics — fire-and-forget
+  try {
+    let sessionId = storage.getJSON<string>("bm_session_id", "");
+    if (!sessionId) {
+      sessionId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+      storage.setJSON("bm_session_id", sessionId);
+    }
+    fetch("/api/analytics/funnel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        step,
+        meta,
+        sessionId,
+        referrer: document.referrer?.slice(0, 200) || undefined,
+      }),
+    }).catch(() => {}); // analytics must never block UX
+  } catch {
+    // non-critical
+  }
 }
 
 export function getFunnelSummary(): {
@@ -103,41 +125,33 @@ export interface PageView {
 
 export function trackPageView(path: string): void {
   if (typeof window === "undefined") return;
-  try {
-    const views: Record<string, PageView> = JSON.parse(localStorage.getItem(PAGE_KEY) ?? "{}");
-    const existing = views[path];
-    const now = Date.now();
-    views[path] = existing
-      ? { ...existing, count: existing.count + 1, lastVisit: now }
-      : { path, count: 1, firstVisit: now, lastVisit: now };
-    localStorage.setItem(PAGE_KEY, JSON.stringify(views));
-  } catch {}
+  const views = storage.getJSON<Record<string, PageView>>(PAGE_KEY, {});
+  const existing = views[path];
+  const now = Date.now();
+  views[path] = existing
+    ? { ...existing, count: existing.count + 1, lastVisit: now }
+    : { path, count: 1, firstVisit: now, lastVisit: now };
+  storage.setJSON(PAGE_KEY, views);
 }
 
 export function getPageViews(): PageView[] {
   if (typeof window === "undefined") return [];
-  try {
-    const views: Record<string, PageView> = JSON.parse(localStorage.getItem(PAGE_KEY) ?? "{}");
-    return Object.values(views).sort((a, b) => b.count - a.count);
-  } catch { return []; }
+  const views = storage.getJSON<Record<string, PageView>>(PAGE_KEY, {});
+  return Object.values(views).sort((a, b) => b.count - a.count);
 }
 
 // ── Session events ────────────────────────────────────────────────────────────
 
 export function trackEvent(type: string, page: string, meta?: SessionEvent["meta"]): void {
   if (typeof window === "undefined") return;
-  try {
-    const events: SessionEvent[] = JSON.parse(localStorage.getItem(SESSION_KEY) ?? "[]");
-    events.unshift({ type, page, ts: Date.now(), meta });
-    localStorage.setItem(SESSION_KEY, JSON.stringify(events.slice(0, MAX_SESSIONS)));
-  } catch {}
+  const events = storage.getJSON<SessionEvent[]>(SESSION_KEY, []);
+  events.unshift({ type, page, ts: Date.now(), meta });
+  storage.setJSON(SESSION_KEY, events.slice(0, MAX_SESSIONS));
 }
 
 export function getRecentEvents(limit = 20): SessionEvent[] {
   if (typeof window === "undefined") return [];
-  try {
-    return (JSON.parse(localStorage.getItem(SESSION_KEY) ?? "[]") as SessionEvent[]).slice(0, limit);
-  } catch { return []; }
+  return storage.getJSON<SessionEvent[]>(SESSION_KEY, []).slice(0, limit);
 }
 
 // ── Drop-off analysis ─────────────────────────────────────────────────────────

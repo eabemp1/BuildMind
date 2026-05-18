@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import webpush from "web-push";
 import { planFromUserMetadata } from "@/lib/plan";
+import { enqueueBatch } from "@/lib/queue";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -63,15 +64,6 @@ export async function GET(req: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  const { data: subs, error } = await supabase
-    .from("push_subscriptions")
-    .select("user_id, subscription");
-
-  if (error) {
-    return NextResponse.json({ ok: false, error: error.message, step: "fetch_subscriptions" }, { status: 500 });
-  }
-
-  const rows = subs ?? [];
   const today = new Date().toISOString().split("T")[0];
   const dryRun = req.nextUrl.searchParams.get("dryRun") === "1";
 
@@ -81,6 +73,63 @@ export async function GET(req: NextRequest) {
   let sent = 0;
   let failed = 0;
   const failedDetails: Array<{ userId: string; error: string }> = [];
+
+  // Cursor-paginated fetch — prevents OOM crash at scale.
+  // At >500 users: set QSTASH_TOKEN to fan jobs out via the queue (lib/queue/index.ts).
+  // Without QSTASH_TOKEN: runs inline (current behaviour, safe up to ~500 users).
+  const PAGE_SIZE = 100;
+  let pageFrom = 0;
+  let hasMore = true;
+  let totalRows = 0;
+  const allUserIds: string[] = [];
+
+  // First pass: collect all user IDs (pagination stays fast — no AI calls here)
+  while (hasMore) {
+    const { data: subs, error } = await supabase
+      .from("push_subscriptions")
+      .select("user_id, subscription")
+      .range(pageFrom, pageFrom + PAGE_SIZE - 1);
+
+    if (error) {
+      return NextResponse.json({ ok: false, error: error.message, step: "fetch_subscriptions" }, { status: 500 });
+    }
+
+    const rows = subs ?? [];
+    totalRows += rows.length;
+    rows.forEach(r => allUserIds.push(r.user_id));
+    hasMore = rows.length === PAGE_SIZE;
+    pageFrom += PAGE_SIZE;
+  }
+
+  // If QStash is configured, fan out to per-user worker endpoints and return early.
+  // This keeps the orchestrator function fast and lets each worker run within its own timeout.
+  if (process.env.QSTASH_TOKEN && allUserIds.length > 0) {
+    try {
+      await enqueueBatch("evening-check", allUserIds.map(userId => ({ userId })));
+      return NextResponse.json({ ok: true, queued: allUserIds.length, mode: "queue" });
+    } catch (queueErr) {
+      console.error("[evening-check] QStash enqueue failed, falling back to inline:", queueErr);
+      // Fall through to inline processing
+    }
+  }
+
+  // Inline processing path (no QStash, or QStash unavailable)
+  let pageFrom2 = 0;
+  hasMore = true;
+
+  while (hasMore) {
+    const { data: subs, error } = await supabase
+      .from("push_subscriptions")
+      .select("user_id, subscription")
+      .range(pageFrom2, pageFrom2 + PAGE_SIZE - 1);
+
+    if (error) {
+      return NextResponse.json({ ok: false, error: error.message, step: "fetch_subscriptions" }, { status: 500 });
+    }
+
+    const rows = subs ?? [];
+    hasMore = rows.length === PAGE_SIZE;
+    pageFrom2 += PAGE_SIZE;
 
   for (const row of rows) {
     const { data: authUser } = await supabase.auth.admin.getUserById(row.user_id);
@@ -106,14 +155,63 @@ export async function GET(req: NextRequest) {
       continue;
     }
 
-    const { data: ctx } = await supabase
-      .from("founder_context")
-      .select("days_inactive")
-      .eq("user_id", row.user_id)
-      .maybeSingle();
+    // Fetch context + memory in parallel for pattern detection (Playbook §3.2)
+    const eveningFourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+    const [ctxResult, memoryResult, recentTasksResult] = await Promise.allSettled([
+      supabase
+        .from("founder_context")
+        .select("days_inactive, momentum_score, momentum_last_week, tasks_accepted_this_week, tasks_overridden_this_week, override_reasons, topics_mentioned_repeatedly, last_pattern_shown_at")
+        .eq("user_id", row.user_id)
+        .maybeSingle(),
+      supabase
+        .from("founder_memory")
+        .select("avoidance_zones")
+        .eq("user_id", row.user_id)
+        .maybeSingle(),
+      supabase
+        .from("reflections")
+        .select("today_action")
+        .eq("user_id", row.user_id)
+        .gte("created_at", eveningFourteenDaysAgo)
+        .not("today_action", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(30),
+    ]);
 
+    const ctx = ctxResult.status === "fulfilled" ? ctxResult.value.data : null;
+    const memory = memoryResult.status === "fulfilled" ? memoryResult.value.data : null;
+    const recentTaskTitles = recentTasksResult.status === "fulfilled"
+      ? (recentTasksResult.value.data ?? []).map((r: { today_action: string }) => r.today_action).filter(Boolean)
+      : [];
     const daysInactive = Math.max(1, (ctx?.days_inactive ?? 0) + 1);
-    const body = eveningNudge(daysInactive);
+
+    // Pattern Detection — Playbook §3.2: fires automatically every evening
+    const { detectPattern, shouldSurfacePattern } = await import("@/lib/patternDetection");
+    const pattern = detectPattern({
+      avoidance_zones: (memory?.avoidance_zones ?? []) as string[],
+      override_reasons: (ctx?.override_reasons ?? []) as string[],
+      tasks_overridden_this_week: ctx?.tasks_overridden_this_week ?? 0,
+      tasks_accepted_this_week: ctx?.tasks_accepted_this_week ?? 0,
+      momentum_score: ctx?.momentum_score ?? 50,
+      momentum_last_week: ctx?.momentum_last_week ?? null,
+      topics_mentioned_repeatedly: (ctx?.topics_mentioned_repeatedly ?? []) as string[],
+      days_inactive: daysInactive,
+      recent_task_titles: recentTaskTitles,
+    });
+    const usePattern = pattern.signal && shouldSurfacePattern(ctx?.last_pattern_shown_at, pattern.severity);
+
+    let body: string;
+    if (usePattern) {
+      body = pattern.message;
+      // Persist so we do not repeat tomorrow
+      await supabase.from("founder_context").update({
+        active_pattern_signal: pattern.signal,
+        active_pattern_message: pattern.message,
+        last_pattern_shown_at: new Date().toISOString(),
+      }).eq("user_id", row.user_id);
+    } else {
+      body = eveningNudge(daysInactive);
+    }
 
     if (dryRun) continue;
 
@@ -159,11 +257,13 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  } // end while (pagination)
+
   return NextResponse.json({
     ok: true,
     cron: true,
     dryRun,
-    total: rows.length,
+    total: totalRows,
     eligible,
     skippedFree,
     skippedReflected,

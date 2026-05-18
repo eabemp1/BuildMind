@@ -23,6 +23,22 @@ export interface ExecutionScorecard {
   generatedAt: string;         // ISO timestamp
 }
 
+/**
+ * ScorecardDelta — the change between two consecutive scorecards.
+ * Tells the founder what moved and by how much.
+ */
+export interface ScorecardDelta {
+  momentumScoreDelta: number;        // positive = improved
+  tasksCompletedDelta: number;       // tasks added since last card
+  daysActiveDelta: number;           // days elapsed between cards
+  stageChanged: boolean;             // did the stage advance?
+  previousStage: string | null;
+  previousMomentumScore: number | null;
+  previousTasksCompleted: number | null;
+  previousGeneratedAt: string | null;
+  summary: string;                   // human-readable delta sentence
+}
+
 export interface ScorecardSharePayload {
   text: string;                // Pre-composed X/Twitter text
   url: string;                 // Link to buildmind.co
@@ -123,6 +139,81 @@ function inferCategory(summary: string): string {
   }
 
   return "Startup"; // Fallback — generic but honest
+}
+
+// ── Delta tracking ───────────────────────────────────────────────────────────
+
+/**
+ * computeScorecardDelta — compares a new scorecard against the most recently
+ * persisted one to produce a human-readable progress summary.
+ *
+ * Pass the previous scorecard row from `execution_scorecards` (select
+ * momentum_score, tasks_completed, stage, created_at). Pass null if this
+ * is the founder's first scorecard.
+ */
+export function computeScorecardDelta(
+  current: ExecutionScorecard,
+  previous: {
+    momentum_score: number;
+    tasks_completed: number;
+    stage: string;
+    created_at: string;
+  } | null
+): ScorecardDelta {
+  if (!previous) {
+    return {
+      momentumScoreDelta: 0,
+      tasksCompletedDelta: 0,
+      daysActiveDelta: 0,
+      stageChanged: false,
+      previousStage: null,
+      previousMomentumScore: null,
+      previousTasksCompleted: null,
+      previousGeneratedAt: null,
+      summary: "First scorecard — nothing to compare yet. Come back after your next milestone.",
+    };
+  }
+
+  const momentumScoreDelta = current.momentumScore - previous.momentum_score;
+  const tasksCompletedDelta = current.tasksCompleted - previous.tasks_completed;
+  const daysActiveDelta = Math.round(
+    (new Date(current.generatedAt).getTime() - new Date(previous.created_at).getTime()) /
+    (1000 * 60 * 60 * 24)
+  );
+  const stageChanged = current.stage !== previous.stage;
+
+  // Build a plain-English summary the UI can display directly
+  const parts: string[] = [];
+
+  if (stageChanged) {
+    parts.push(`Advanced from ${previous.stage} → ${current.stage}.`);
+  }
+
+  if (momentumScoreDelta > 0) {
+    parts.push(`Momentum up ${momentumScoreDelta} points (${previous.momentum_score} → ${current.momentumScore}).`);
+  } else if (momentumScoreDelta < 0) {
+    parts.push(`Momentum dropped ${Math.abs(momentumScoreDelta)} points (${previous.momentum_score} → ${current.momentumScore}).`);
+  } else {
+    parts.push(`Momentum held steady at ${current.momentumScore}.`);
+  }
+
+  if (tasksCompletedDelta > 0) {
+    parts.push(`${tasksCompletedDelta} more task${tasksCompletedDelta === 1 ? "" : "s"} completed in ${daysActiveDelta} day${daysActiveDelta === 1 ? "" : "s"}.`);
+  }
+
+  const summary = parts.join(" ") || "No change since last scorecard.";
+
+  return {
+    momentumScoreDelta,
+    tasksCompletedDelta,
+    daysActiveDelta,
+    stageChanged,
+    previousStage: previous.stage,
+    previousMomentumScore: previous.momentum_score,
+    previousTasksCompleted: previous.tasks_completed,
+    previousGeneratedAt: previous.created_at,
+    summary,
+  };
 }
 
 // ── API helpers ───────────────────────────────────────────────────────────────

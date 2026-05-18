@@ -1,9 +1,17 @@
 import { NextResponse } from "next/server";
 import { enforceAndTrackAIUsage, hasAdminEnv, logReflexionQuality } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { runReflexionLoop, getWeeklyCriticPersona } from "@/lib/reflexion";
+import { runReflexionLoop, getWeeklyCriticPersona, type ReflexionContext } from "@/lib/reflexion";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
+import { logError, generateRequestId } from "@/lib/server/logger";
+import { fetchNotionContext, formatNotionContextForPrompt } from "@/lib/integrations/notion";
+import { fetchLinearContext, formatLinearContextForPrompt } from "@/lib/integrations/linear";
+
+export const runtime     = "nodejs";
+export const dynamic     = "force-dynamic";
+export const maxDuration = 30; // reflexion loop (Generator + Critic + Refiner) ~15–20 s
 import { inferStage } from "@/lib/stages";
+import { recordActionShown } from "@/lib/learning";
 
 type TodayAction = {
   action: string;        // Concrete task with platform, user type, count, and context
@@ -84,19 +92,31 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = await request.json().catch(() => ({}));
+    const rawBody = await request.json().catch(() => ({}));
+
+    // Zod validation — typed, early rejection of malformed inputs
+    const { z } = await import("zod");
+    const bodySchema = z.object({
+      userId:            z.string().optional(),
+      projectId:         z.string().optional(),
+      stage:             z.string().max(50).optional(),
+      pendingMilestones: z.array(z.string().max(100)).max(5).optional(),
+      pendingTasks:      z.array(z.string().max(100)).max(5).optional(),
+      completionRate:    z.number().min(0).max(100).optional(),
+    });
+    const parsedBody = bodySchema.safeParse(rawBody);
+    if (!parsedBody.success) {
+      return NextResponse.json({ success: false, error: "Invalid request body", issues: parsedBody.error.flatten() }, { status: 400 });
+    }
+    const body = parsedBody.data;
+
     const userId = String(body?.userId ?? routeUser.userId).trim();
+    const requestId = generateRequestId(); // traces this pipeline run through all log lines
     const projectId = String(body?.projectId ?? "").trim();
-    // Input length limits — prevent prompt injection and runaway token costs
     const providedStage = String(body?.stage ?? "").trim().slice(0, 50);
-    // Client-side pending context (fast path — avoids extra DB round trip)
-    const clientPendingMilestones: string[] = Array.isArray(body?.pendingMilestones)
-      ? (body.pendingMilestones as unknown[]).map(s => String(s).slice(0, 100)).slice(0, 5)
-      : [];
-    const clientPendingTasks: string[] = Array.isArray(body?.pendingTasks)
-      ? (body.pendingTasks as unknown[]).map(s => String(s).slice(0, 100)).slice(0, 5)
-      : [];
-    const clientCompletionRate = typeof body?.completionRate === "number" ? body.completionRate : null;
+    const clientPendingMilestones: string[] = body?.pendingMilestones ?? [];
+    const clientPendingTasks: string[]       = body?.pendingTasks ?? [];
+    const clientCompletionRate = body?.completionRate ?? null;
 
     // Prevent one user from fetching another user's project data
     if (userId !== routeUser.userId) {
@@ -115,15 +135,19 @@ export async function POST(request: Request) {
     let problem = "";
     let title = "";
     let lastReflectionContext = "";
+    // FIX 1.3: Hoist memoryResult to outer scope so it can be reused later
+    // without a second DB round-trip to founder_memory
+    let memoryResult: PromiseSettledResult<{ data: Record<string, unknown> | null; error: unknown }> | null = null;
 
     if (hasAdminEnv()) {
       const supabase = createAdminClient();
 
-      // Fetch project, founder_memory, and last reflection in parallel
-      const [projectResult, memoryResult] = await Promise.allSettled([
+      // Fetch project, founder_memory, and last reflection in one parallel round-trip
+      // (eliminates the second reflections fetch that was happening 80 lines below)
+      const [projectResult, _memoryResult, reflectionResult] = await Promise.allSettled([
         supabase
           .from("projects")
-          .select("name, title, description, target_users, problem, startup_stage")
+          .select("name, title, description, target_users, problem, startup_stage, biggest_blocker, created_at, current_mrr")
           .eq("id", projectId)
           .eq("user_id", userId)
           .single(),
@@ -132,10 +156,19 @@ export async function POST(request: Request) {
           .select("avoidance_zones, strengths, personality_tags, last_insight, cofounder_style")
           .eq("user_id", userId)
           .maybeSingle(),
+        supabase
+          .from("reflections")
+          .select("outcome, note, confidence, today_action, created_at")
+          .eq("user_id", userId)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
       ]);
 
+      memoryResult = _memoryResult;
       const project = projectResult.status === "fulfilled" ? projectResult.value.data : null;
       const memory = memoryResult.status === "fulfilled" ? memoryResult.value.data : null;
+      const hoistedReflection = reflectionResult.status === "fulfilled" ? reflectionResult.value.data : null;
 
       const { data: milestones } = await supabase
         .from("milestones")
@@ -184,6 +217,42 @@ export async function POST(request: Request) {
           .map((t) => t.title)
           .slice(0, 5);
         const completionPct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+        // Surface the onboarding blocker in the first 3 days so the first actions
+        // directly address what the founder said was their biggest challenge.
+        const projectCreatedAt = project.created_at ? new Date(project.created_at) : null;
+        const daysSinceOnboarding = projectCreatedAt
+          ? Math.floor((Date.now() - projectCreatedAt.getTime()) / 86400000)
+          : 999;
+        const onboardingBlockerLine = project.biggest_blocker && daysSinceOnboarding <= 3
+          ? `
+FOUNDER'S STATED BLOCKER AT ONBOARDING: "${project.biggest_blocker}"
+→ This is what they said their biggest challenge was. Today's task must directly address or reduce this blocker. Reference it explicitly in the rationale.`
+          : "";
+
+        // Notion / Linear context injection (Audit v8 PROD #8)
+        // Pull the founder's real task list and inject it into the Generator prompt.
+        // This prevents the AI from suggesting work the founder is already doing.
+        let integrationContext = "";
+        if (hasAdminEnv()) {
+          try {
+            const { data: integrations } = await supabase
+              .from("integrations")
+              .select("provider, access_token, database_id")
+              .eq("user_id", userId)
+              .in("provider", ["notion", "linear"]);
+
+            for (const intg of (integrations ?? []) as Array<{ provider: string; access_token: string; database_id?: string }>) {
+              if (intg.provider === "notion" && intg.database_id) {
+                const notionCtx = await fetchNotionContext(intg.access_token, intg.database_id);
+                integrationContext += formatNotionContextForPrompt(notionCtx);
+              } else if (intg.provider === "linear") {
+                const linearCtx = await fetchLinearContext(intg.access_token);
+                integrationContext += formatLinearContextForPrompt(linearCtx);
+              }
+            }
+          } catch { /* non-fatal — integration context is best-effort */ }
+        }
+
         projectContext = `
 Project: ${project.name ?? project.title}
 Stage: ${stage}
@@ -192,7 +261,8 @@ Target users: ${project.target_users ?? "Not specified"}
 Description: ${project.description ?? "Not specified"}
 Overall progress: ${completedTasks}/${totalTasks} tasks done (${completionPct}%), ${completedMilestones}/${(milestones ?? []).length} milestones complete
 Pending milestones (next to tackle): ${pendingMilestonesList.length ? pendingMilestonesList.join(", ") : "None"}
-Next open tasks: ${pendingTasksList.length ? pendingTasksList.join(", ") : "None"}`;
+Next open tasks: ${pendingTasksList.length ? pendingTasksList.join(", ") : "None"}
+Current MRR: ${project.current_mrr && project.current_mrr > 0 ? `GHS ${(project.current_mrr / 100).toFixed(0)} / month` : "GHS 0 (pre-revenue)"}${project.current_mrr && project.current_mrr > 0 ? "\n→ This founder has paying customers. Tasks must prioritize retention, upsell, and reducing churn over acquisition." : "\n→ This founder has no revenue yet. Every task should move them closer to a first paying customer."}${onboardingBlockerLine}${integrationContext}`;
       }
 
       // ── Founder memory context — informs task assignment ─────────────────
@@ -202,6 +272,7 @@ Next open tasks: ${pendingTasksList.length ? pendingTasksList.join(", ") : "None
         const avoidance = (memory.avoidance_zones ?? []) as string[];
         const strengths = (memory.strengths ?? []) as string[];
         const lastInsight = memory.last_insight as string | null;
+        const lastWeekSummaryRaw = (memory as Record<string, unknown>).last_week_summary as string | null;
 
         if (avoidance.length || strengths.length || lastInsight) {
           lastReflectionContext += `\n\nFOUNDER MEMORY (behavioral profile — use to shape the task):`;
@@ -216,15 +287,26 @@ Next open tasks: ${pendingTasksList.length ? pendingTasksList.join(", ") : "None
             lastReflectionContext += `\nLast observed pattern: "${lastInsight}"`;
           }
         }
+
+        // REC 2.1: On Mondays, inject last week's summary as causal context for today's task
+        const isMonday = new Date().getDay() === 1;
+        if (isMonday && lastWeekSummaryRaw) {
+          try {
+            const lastWeek = JSON.parse(lastWeekSummaryRaw) as {
+              tasks_completed?: number; avg_confidence?: number;
+              biggest_gap?: string; next_week_focus?: string;
+            };
+            lastReflectionContext += `\n\nLAST WEEK SUMMARY (Monday — use this to set today's direction):`;
+            lastReflectionContext += `\nCompleted ${lastWeek.tasks_completed ?? 0} tasks. Avg confidence: ${lastWeek.avg_confidence ?? "?"}/5`;
+            if (lastWeek.biggest_gap) lastReflectionContext += `\nBiggest gap last week: "${lastWeek.biggest_gap}"`;
+            if (lastWeek.next_week_focus) lastReflectionContext += `\nFocused direction for this week: "${lastWeek.next_week_focus}"`;
+            lastReflectionContext += `\nINSTRUCTION: Monday's first task must directly address the biggest gap from last week. If override rate was high last week (avg confidence <3), start with an easier confidence-building task.`;
+          } catch { /* non-fatal — malformed JSON in last_week_summary */ }
+        }
       }
 
-      const { data: lastReflection } = await supabase
-        .from("reflections")
-        .select("outcome, note, confidence, today_action, created_at")
-        .eq("user_id", userId)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      // Use the hoisted reflection fetched in the parallel round-trip above
+      const lastReflection = hoistedReflection;
 
       if (lastReflection) {
         const reflectDate = new Date(lastReflection.created_at).toLocaleDateString();
@@ -260,28 +342,34 @@ INSTRUCTION: Use this to make today's action a direct causal response to yesterd
       cognitiveLoad: "fresh",
     };
 
-    // Enrich context with founder memory and last reflection if available
+    // Populate reflexionContext from data already fetched in the parallel round-trip above.
+    // No additional DB calls needed — both memoryResult and hoistedReflection are already in scope.
     if (hasAdminEnv()) {
-      const supabase = createAdminClient();
-      const [memRes, reflRes] = await Promise.allSettled([
-        supabase.from("founder_memory")
-          .select("avoidance_zones, strengths, personality_tags, last_insight")
-          .eq("user_id", userId).maybeSingle(),
-        supabase.from("reflections")
-          .select("outcome, note, confidence")
-          .eq("user_id", userId)
-          .order("created_at", { ascending: false }).limit(1).maybeSingle(),
-      ]);
-      if (memRes.status === "fulfilled" && memRes.value.data) {
-        const m = memRes.value.data;
+      // Avoidance signals + cofounder style — from already-fetched memoryResult
+      if (memoryResult && memoryResult.status === "fulfilled" && memoryResult.value.data) {
+        const m = memoryResult.value.data;
         reflexionContext.avoidanceSignals = (m.avoidance_zones ?? []) as string[];
+        // Wire cofounder_style so Stage 7 Refiner adjusts its communication tone
+        if (m.cofounder_style) {
+          reflexionContext.cofounderStyle = m.cofounder_style as ReflexionContext["cofounderStyle"];
+        }
       }
-      if (reflRes.status === "fulfilled" && reflRes.value.data) {
-        const r = reflRes.value.data;
+      // Session count for new-user cold-start injection — prevents the pipeline
+      // from referencing behavioral patterns that don't exist yet for new founders.
+      // Reflections count is a cheap proxy: one count() call on an indexed column.
+      try {
+        const { count } = await supabase
+          .from("reflections")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", userId);
+        reflexionContext.sessionCount = count ?? 0;
+      } catch { /* non-fatal — defaults to 999 (skips new-user injection) */ }
+      // Reuse the hoisted reflection — no extra DB call needed
+      if (hoistedReflection) {
         reflexionContext.lastReflection = {
-          outcome: r.outcome ?? "unknown",
-          note: r.note ?? "",
-          confidence: r.confidence ?? 3,
+          outcome: hoistedReflection.outcome ?? "unknown",
+          note: hoistedReflection.note ?? "",
+          confidence: hoistedReflection.confidence ?? 3,
         };
       }
     }
@@ -301,7 +389,7 @@ INSTRUCTION: Use this to make today's action a direct causal response to yesterd
       reflexionStatus = reflexionOutput ? "ok" : "partial";
     } catch (err) {
       reflexionStatus = "failed";
-      console.error("[reflexion] today-action failed:", err);
+      logError("today-action/reflexion", err, { route: "/api/ai/today-action", userId, requestId });
       // Reflexion loop failure is non-fatal — use single-pass result
     }
 
@@ -317,6 +405,8 @@ INSTRUCTION: Use this to make today's action a direct causal response to yesterd
       };
     } = {
       ...fallback,
+      // FIX 1.1: Use the reflexion-generated action, not the fallback template
+      action: reflexionOutput?.output ?? fallback.action,
       // If reflexion ran, its rationale becomes the task's why
       why: reflexionOutput?.rationale ?? fallback.why,
     };
@@ -341,7 +431,23 @@ INSTRUCTION: Use this to make today's action a direct causal response to yesterd
         finalOutput: finalResult.action,
         stage,
         targetUsers,
-      }).catch(() => {});
+      }).catch((err) => logError("today-action/logReflexionQuality", err));
+    }
+
+    // ── Learning loop — record action shown (Playbook §5, Month 2) ───────────
+    // Extends reflexion_learning_log to the daily loop so the learning system
+    // has data from every check-in, not just break-my-startup sessions.
+    // Fire-and-forget — never blocks the response.
+    if (hasAdminEnv() && finalResult.action && userId) {
+      recordActionShown({
+        userId,
+        projectId: projectId ?? "",
+        actionShown: finalResult.action,
+        criticPersona: reflexionOutput ? getWeeklyCriticPersona().name : "fallback",
+        viabilityScore: null,
+        confidenceScore: reflexionOutput?.confidence ?? null,
+        source: "today_action",
+      }).catch((err) => logError("today-action/recordActionShown", err));
     }
 
     return NextResponse.json({ success: true, data: { ...finalResult, stage, reflexion_status: reflexionStatus } });

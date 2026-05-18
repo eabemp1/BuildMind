@@ -1,6 +1,14 @@
 -- ============================================================================
 -- SCHEDULE BUILDMIND CRON JOBS (pg_cron)
 -- Run this AFTER schema-verify-and-init.sql completes successfully
+--
+-- ⚠️  PRODUCTION WARNING: Vercel cron (vercel.json) is already configured
+-- to run all scheduled jobs. Running this file in production will create
+-- DUPLICATE cron jobs — founders receive double push notifications and AI
+-- usage is incremented twice per check-in.
+--
+-- ONLY run this if you have removed all cron entries from vercel.json and
+-- are intentionally switching to pg_cron as the scheduler.
 -- ============================================================================
 
 -- IMPORTANT: Replace these with your actual values if different:

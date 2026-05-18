@@ -25,7 +25,16 @@ import { fetchAndSyncStoredPlanFromBillingStatus } from "@/lib/plan";
 import { initStorageAuthSync } from "@/lib/storage";
 import { createClient } from "@/lib/supabase/client";
 
-export default function Providers({ children }: { children: React.ReactNode }) {
+/**
+ * AUDIT FIX M1: Accepts nonce prop and stores it on window for any dynamically
+ * injected scripts to consume. Prevents silent CSP failures when scripts added
+ * through this provider tree lack the per-request nonce.
+ */
+export default function Providers({ children, nonce }: { children: React.ReactNode; nonce?: string }) {
+  // Store nonce on window so any dynamically injected scripts can read it
+  if (typeof window !== 'undefined' && nonce) {
+    (window as typeof window & { __CSP_NONCE__?: string }).__CSP_NONCE__ = nonce;
+  }
   const [queryClient] = useState(() => new QueryClient({
     defaultOptions: {
       queries: { staleTime: 1000 * 30, refetchOnWindowFocus: false, retry: 1 },

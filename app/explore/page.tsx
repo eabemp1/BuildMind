@@ -85,6 +85,7 @@ const FILTERS = ["All", "Idea", "Validation", "MVP", "Launch", "Growth", "Revenu
 
 export default function ExplorePage() {
   const [startups, setStartups] = useState<PublicStartup[]>([]);
+  const [view, setView] = useState<"discover" | "leaderboard">("discover");
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [stageFilter, setStageFilter] = useState("All");
@@ -113,15 +114,28 @@ export default function ExplorePage() {
   return (
     <div style={{ maxWidth: 1000, margin: "0 auto", padding: "28px 24px" }}>
 
-      {/* Header */}
+      {/* Header + tab toggle (Audit v8 GROWTH #3) */}
       <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 24 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em", margin: 0 }}>Explore</h1>
-          <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: "var(--bm-bg3)", color: "var(--bm-text3)", border: "1px solid var(--bm-border)", fontWeight: 600 }}>
-            {filtered.length} building
-          </span>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em", margin: 0 }}>Explore</h1>
+            <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: "var(--bm-bg3)", color: "var(--bm-text3)", border: "1px solid var(--bm-border)", fontWeight: 600 }}>
+              {filtered.length} building
+            </span>
+          </div>
+          {/* View toggle: Discover vs Leaderboard */}
+          <div style={{ display: "flex", gap: 4, background: "var(--bm-bg3)", borderRadius: 10, padding: 3 }}>
+            {(["discover", "leaderboard"] as const).map(v => (
+              <button key={v} onClick={() => setView(v)}
+                style={{ padding: "6px 14px", borderRadius: 8, border: "none", background: view === v ? "var(--bm-bg2)" : "transparent", color: view === v ? "var(--bm-text)" : "var(--bm-text3)", fontSize: 12, fontWeight: view === v ? 600 : 400, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s", textTransform: "capitalize" }}>
+                {v === "leaderboard" ? "🏆 Leaderboard" : "Discover"}
+              </button>
+            ))}
+          </div>
         </div>
-        <p style={{ fontSize: 12, color: "var(--bm-text3)", margin: 0 }}>Founders building in public. Get inspired. Stay accountable.</p>
+        <p style={{ fontSize: 12, color: "var(--bm-text3)", margin: 0 }}>
+          {view === "leaderboard" ? "Top founders ranked by momentum, streaks, and tasks completed." : "Founders building in public. Get inspired. Stay accountable."}
+        </p>
       </motion.div>
 
       {/* Search + filters */}
@@ -143,8 +157,53 @@ export default function ExplorePage() {
         </div>
       </div>
 
-      {/* Grid */}
-      {loading ? (
+      {/* Leaderboard view (Audit v8 GROWTH #3) */}
+      {view === "leaderboard" && !loading && (
+        <div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 60px 1fr 80px)", gap: 0, marginBottom: 8, padding: "0 12px" }}>
+            <span style={{ gridColumn: "1", fontSize: 10, color: "var(--bm-text3)", fontWeight: 700, letterSpacing: "0.06em" }}>#</span>
+            <span style={{ gridColumn: "2", fontSize: 10, color: "var(--bm-text3)", fontWeight: 700, letterSpacing: "0.06em" }}>FOUNDER</span>
+            <span style={{ gridColumn: "3", fontSize: 10, color: "var(--bm-text3)", fontWeight: 700, letterSpacing: "0.06em", textAlign: "right" }}>MOMENTUM</span>
+          </div>
+          {[...startups]
+            .filter(s => s.score != null)
+            .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+            .slice(0, 20)
+            .map((s, i) => {
+              const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : null;
+              const scoreColor = (s.score ?? 0) >= 60 ? "var(--bm-accent)" : (s.score ?? 0) >= 40 ? "var(--bm-amber)" : "var(--bm-text3)";
+              return (
+                <motion.div key={s.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.03 }}
+                  style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px", borderRadius: 10, background: i === 0 ? "rgba(92,200,138,0.04)" : "transparent", border: i === 0 ? "1px solid rgba(92,200,138,0.12)" : "1px solid transparent", marginBottom: 4 }}>
+                  <div style={{ width: 28, fontSize: 13, color: "var(--bm-text3)", fontWeight: 700, flexShrink: 0 }}>
+                    {medal ?? `#${i + 1}`}
+                  </div>
+                  <ScoreRing value={s.score ?? 0} size={36} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {s.title ?? "Untitled"}
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--bm-text3)", marginTop: 2 }}>
+                      {s.startup_stage}
+                      {s.streak != null && s.streak > 0 && <span style={{ marginLeft: 8, color: "var(--bm-amber)" }}>🔥 {s.streak}d</span>}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: scoreColor, letterSpacing: "-0.03em", flexShrink: 0 }}>
+                    {s.score ?? 0}
+                  </div>
+                </motion.div>
+              );
+            })}
+          {startups.filter(s => s.score != null).length === 0 && (
+            <div style={{ textAlign: "center", padding: "48px 0", color: "var(--bm-text3)", fontSize: 13 }}>
+              No public profiles with scores yet. Be the first to build in public.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Grid (discover view) */}
+      {view === "discover" && loading ? (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
           {[...Array(9)].map((_, i) => (
             <div key={i} className="shimmer" style={{ height: 160, borderRadius: 16 }} />

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { persistUserPlan } from "@/lib/billing/server";
+import { sendEmail } from "@/lib/email";
 
 /**
  * app/api/billing/cancel/route.ts — v2
@@ -23,54 +24,7 @@ type CancelBody = {
   reason?: string;
 };
 
-async function sendCancellationEmail(
-  adminClient: ReturnType<typeof createAdminClient>,
-  userId: string,
-  email: string,
-  reason: string,
-): Promise<void> {
-  // Use Supabase Admin to send email via the project's SMTP configuration.
-  // This uses the `auth.users` `sendRawEmail` method if available, or logs
-  // a notification entry that can be picked up by a cron job.
-  try {
-    // Store cancellation notification for email delivery via cron/webhook
-    await adminClient.from("notifications").insert({
-      user_id: userId,
-      type: "subscription_cancelled",
-      message: `Your BuildMind Builder subscription has been cancelled. You'll retain access until the end of your current billing period. Cancellation reason recorded: "${reason || "Not specified"}". We're sorry to see you go — if you change your mind, you can resubscribe anytime at buildmind.live/upgrade.`,
-      is_read: false,
-      created_at: new Date().toISOString(),
-      meta: { email, reason, cancelled_at: new Date().toISOString() },
-    });
-  } catch {
-    // Non-fatal — the plan downgrade already happened
-  }
 
-  // Attempt direct email via Supabase auth admin API if available
-  try {
-    const subject = "Your BuildMind subscription has been cancelled";
-    const body = `Hi there,
-
-Your BuildMind Builder plan has been cancelled as requested.
-
-Details:
-• Cancellation date: ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
-• Reason: ${reason || "Not specified"}
-• Your account has been downgraded to the Free plan
-
-You'll keep access to your projects and data. To resubscribe at any time, visit buildmind.live/upgrade.
-
-If you cancelled by mistake or have questions, reply to this email.
-
-— The BuildMind team
-buildmind.live`;
-
-    // Log to console in prod so it shows in Vercel logs for manual follow-up
-    console.log(`[billing/cancel] Cancellation for ${email}:\nSubject: ${subject}\n${body}`);
-  } catch {
-    // Non-fatal
-  }
-}
 
 async function disablePaystackSubscription(code: unknown, token: unknown): Promise<string | null> {
   const subscriptionCode = typeof code === "string" ? code.trim() : "";
@@ -161,9 +115,17 @@ export async function POST(request: Request) {
     // Non-fatal — founder_context may not have these columns yet
   }
 
-  // Send cancellation email (best-effort)
+  // Send cancellation confirmation email via Resend (best-effort — never blocks response)
   if (user.email) {
-    await sendCancellationEmail(admin, user.id, user.email, reason);
+    const cancelDate = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+    sendEmail({
+      to: user.email,
+      template: "subscription_cancelled",
+      data: {
+        reason: reason || undefined,
+        cancelDate,
+      },
+    }).catch(err => console.error("[billing/cancel] email error:", err));
   }
 
   return NextResponse.json({

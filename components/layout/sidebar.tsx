@@ -16,7 +16,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Map, Shield, BarChart2,
+  Shield,
   Menu, X, Sun, Moon, LogOut, ChevronRight, ChevronDown, Sparkles, Users,
 } from "lucide-react";
 import { getUnseenCount } from "@/lib/achievements";
@@ -149,26 +149,33 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
       <SidebarLogo streakDays={streakDays} />
 
       <nav className="flex-1 overflow-y-auto py-2" style={{ scrollbarWidth: "none" }}>
-        {NAV.filter((i) => i.enabled).map((item) => {
+        {NAV.filter((i) => i.enabled && !i.hidden).map((item) => {
           const unlockedAt = item.unlocksAt ?? 0;
           const isProgressLocked = tasksCompleted < unlockedAt;
           if (isProgressLocked) {
-            // Show a subtle locked hint for the next tier only
-            const nextUnlock = [1, 3, 7, 14].find(n => n > tasksCompleted) ?? 99;
-            if (unlockedAt !== nextUnlock) return null; // hide deeper tiers entirely
+            // REC 4.1: Show ALL locked items as ghost entries with progress toward unlock
+            // This makes the product's feature depth visible and turns locks into reward mechanisms
+            const tasksNeeded = unlockedAt - tasksCompleted;
+            const progressPct = Math.min(100, Math.round((tasksCompleted / unlockedAt) * 100));
             return (
               <React.Fragment key={item.href}>
                 {item.section && <SectionLabel label={item.section} />}
                 <div
-                  className="flex items-center gap-3 px-3 py-2.5 mx-2 rounded-lg text-sm opacity-30 select-none"
-                  title={`Complete ${unlockedAt} tasks to unlock`}
-                  style={{ color: "var(--bm-text4)", cursor: "default" }}
+                  className="px-3 py-2 mx-2 rounded-lg select-none"
+                  title={`Complete ${tasksNeeded} more task${tasksNeeded !== 1 ? "s" : ""} to unlock ${item.label}`}
+                  style={{ cursor: "default", opacity: 0.45 }}
                 >
-                  <item.icon size={16} />
-                  <span className="flex-1 truncate">{item.label}</span>
-                  <span style={{ fontSize: 9, color: "var(--bm-text4)" }}>
-                    {unlockedAt - tasksCompleted} task{unlockedAt - tasksCompleted !== 1 ? "s" : ""} away
-                  </span>
+                  <div className="flex items-center gap-3" style={{ color: "var(--bm-text4)" }}>
+                    <item.icon size={15} />
+                    <span className="flex-1 truncate" style={{ fontSize: 13 }}>{item.label}</span>
+                    <span style={{ fontSize: 9, color: "var(--bm-text4)", whiteSpace: "nowrap" }}>
+                      🔒 {tasksNeeded} task{tasksNeeded !== 1 ? "s" : ""}
+                    </span>
+                  </div>
+                  {/* Progress bar toward unlock */}
+                  <div style={{ height: 2, background: "var(--bm-bg4)", borderRadius: 99, marginTop: 5, marginLeft: 24, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${progressPct}%`, background: "var(--bm-accent)", borderRadius: 99, transition: "width 0.4s" }} />
+                  </div>
                 </div>
               </React.Fragment>
             );
@@ -191,20 +198,13 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
         {isAdmin && (
           <>
             <SectionLabel label="ADMIN" />
-            {[
-              { href: "/my-ventures", label: "My Ventures", icon: Map,       badge: "Private", badgeColor: "var(--bm-red)",   badgeBg: "rgba(240,108,108,0.08)" },
-              { href: "/owner",       label: "Owner Panel",  icon: Shield,    badge: "Admin",   badgeColor: "var(--bm-amber)", badgeBg: "rgba(240,180,41,0.08)"  },
-              { href: "/admin/quality", label: "Quality Log", icon: BarChart2, badge: "Agent B", badgeColor: "var(--bm-accent)", badgeBg: "rgba(74,184,176,0.08)" },
-              { href: "/admin/growth", label: "Growth Metrics", icon: BarChart2, badge: "KPI", badgeColor: "var(--bm-accent)", badgeBg: "rgba(74,184,176,0.08)" },
-            ].map(({ href, label, icon: Icon, badge, badgeColor, badgeBg }) => (
-              <Link key={href} href={href}
-                className="flex items-center justify-between gap-2 px-3 py-2.5 mx-2 rounded-lg text-sm transition-colors group"
-                style={{ color: "var(--bm-text4)" }}
-              >
-                <div className="flex items-center gap-3"><Icon size={16} />{label}</div>
-                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: badgeBg, color: badgeColor }}>{badge}</span>
-              </Link>
-            ))}
+            <Link href="/admin"
+              className="flex items-center justify-between gap-2 px-3 py-2.5 mx-2 rounded-lg text-sm transition-colors group"
+              style={{ color: "var(--bm-text4)" }}
+            >
+              <div className="flex items-center gap-3"><Shield size={16} />Dashboard</div>
+              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(232,160,32,0.08)", color: "var(--bm-amber)" }}>Admin</span>
+            </Link>
           </>
         )}
       </nav>

@@ -27,6 +27,7 @@ import {
   generateScorecard,
   buildShareText,
   shouldOfferScorecard,
+  computeScorecardDelta,
 } from "@/lib/executionScorecard";
 
 export async function POST(req: Request) {
@@ -76,16 +77,17 @@ export async function POST(req: Request) {
     Math.floor((Date.now() - createdAt.getTime()) / (1000 * 60 * 60 * 24))
   );
 
-  // ── Check if already shared ───────────────────────────────────────────────
-  const { data: existingCard } = await admin
+  // ── Check if already shared / fetch previous for delta ───────────────────
+  const { data: previousCards } = await admin
     .from("execution_scorecards")
-    .select("id")
+    .select("id, momentum_score, tasks_completed, stage, created_at")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(2);
 
-  const alreadyShared = !!existingCard;
+  const alreadyShared = !!(previousCards && previousCards.length > 0);
+  // The most recent existing card is the "previous" for delta purposes
+  const previousCard = (previousCards && previousCards.length > 0) ? previousCards[0] : null;
 
   // ── Validate trigger conditions ───────────────────────────────────────────
   if (!shouldOfferScorecard(daysActive, tasksCompleted ?? 0, alreadyShared)) {
@@ -107,6 +109,9 @@ export async function POST(req: Request) {
 
   const sharePayload = buildShareText(scorecard);
 
+  // ── Compute delta against previous scorecard ──────────────────────────────
+  const delta = computeScorecardDelta(scorecard, previousCard);
+
   // ── Persist to DB ─────────────────────────────────────────────────────────
   await admin
     .from("execution_scorecards")
@@ -123,7 +128,7 @@ export async function POST(req: Request) {
       created_at: new Date().toISOString(),
     });
 
-  return NextResponse.json({ ok: true, data: sharePayload });
+  return NextResponse.json({ ok: true, data: { ...sharePayload, delta } });
 }
 
 /**

@@ -15,48 +15,51 @@
 #  The cron calls /api/push/send-daily on your Next.js app daily at 6am UTC.
 # ═══════════════════════════════════════════════════════════════════
 
+# FIX 1.7: Disabled buildmind-daily-push here — Vercel cron is the single source of truth.
+# Running both causes duplicate notifications. Keep this file for the weekly-report cron only.
+# To re-enable: move to a different key and add back, but ONLY if Vercel cron is disabled.
 services:
-  # ── Daily push notification cron (replaces Vercel cron) ─────────
-  - type: cron
-    name: buildmind-daily-push
-    runtime: node
-    plan: free
-    schedule: "0 6 * * *"   # 6:00 AM UTC daily
-    buildCommand: echo "No build needed"
-    startCommand: >
-      node -e "
-      const https = require('https');
-      const url = new URL(process.env.APP_URL + '/api/push/send-daily');
-      const options = {
-        hostname: url.hostname,
-        port: 443,
-        path: url.pathname,
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-cron-secret': process.env.CRON_SECRET
-        }
-      };
-      const req = https.request(options, res => {
-        let body = '';
-        res.on('data', d => body += d);
-        res.on('end', () => {
-          console.log('[BuildMind Cron] Status:', res.statusCode);
-          console.log('[BuildMind Cron] Response:', body);
-          process.exit(res.statusCode === 200 ? 0 : 1);
-        });
-      });
-      req.on('error', e => {
-        console.error('[BuildMind Cron] Error:', e.message);
-        process.exit(1);
-      });
-      req.end();
-      "
-    envVars:
-      - key: APP_URL
-        value: https://buildmind.live
-      - key: CRON_SECRET
-        sync: false   # set in Render dashboard
+  # ── Daily push notification cron — DISABLED (use Vercel cron only) ─────────
+  # - type: cron
+  #   name: buildmind-daily-push
+  # runtime: node
+  # plan: free
+  # schedule: "0 6 * * *"   # 6:00 AM UTC daily
+  # buildCommand: echo "No build needed"
+  # startCommand: >
+  # node -e "
+  # const https = require('https');
+  # const url = new URL(process.env.APP_URL + '/api/push/send-daily');
+  # const options = {
+  # hostname: url.hostname,
+  # port: 443,
+  # path: url.pathname,
+  # method: 'POST',
+  # headers: {
+  # 'Content-Type': 'application/json',
+  # 'x-cron-secret': process.env.CRON_SECRET
+  # }
+  # };
+  # const req = https.request(options, res => {
+  # let body = '';
+  # res.on('data', d => body += d);
+  # res.on('end', () => {
+  # console.log('[BuildMind Cron] Status:', res.statusCode);
+  # console.log('[BuildMind Cron] Response:', body);
+  # process.exit(res.statusCode === 200 ? 0 : 1);
+  # });
+  # });
+  # req.on('error', e => {
+  # console.error('[BuildMind Cron] Error:', e.message);
+  # process.exit(1);
+  # });
+  # req.end();
+  # "
+  # envVars:
+  # - key: APP_URL
+  # value: https://buildmind.live
+  # - key: CRON_SECRET
+  # sync: false   # set in Render dashboard
 
   # ── Weekly report cron ───────────────────────────────────────────
   - type: cron

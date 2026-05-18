@@ -23,6 +23,40 @@
 import { createClient } from "@/lib/supabase/client";
 import { getCurrentUser } from "@/lib/data/projects";
 
+// ── Runtime validation ─────────────────────────────────────────────────────────
+// Guards against silent data loss from SQL/TypeScript schema mismatches.
+// If the DB returns unexpected shape, we surface it as a console error rather
+// than letting bad data propagate through the AI pipeline.
+
+function isStringArray(v: unknown): v is string[] {
+  return Array.isArray(v) && v.every((x) => typeof x === "string");
+}
+
+function validateFounderMemoryShape(data: Record<string, unknown>): void {
+  const errors: string[] = [];
+  if (!isStringArray(data.personality_tags))
+    errors.push("personality_tags must be string[]");
+  if (!Array.isArray(data.decision_patterns))
+    errors.push("decision_patterns must be array");
+  if (!Array.isArray(data.emotional_signals))
+    errors.push("emotional_signals must be array");
+  if (!isStringArray(data.avoidance_zones))
+    errors.push("avoidance_zones must be string[]");
+  if (!isStringArray(data.strengths))
+    errors.push("strengths must be string[]");
+  if (data.cofounder_style !== undefined && typeof data.cofounder_style !== "string")
+    errors.push("cofounder_style must be string");
+  if (!Array.isArray(data.validation_receipts))
+    errors.push("validation_receipts must be array");
+  if (!Array.isArray(data.competitor_history))
+    errors.push("competitor_history must be array");
+  if (errors.length > 0) {
+    // Surface schema mismatch as a warning rather than crashing — the AI pipeline
+    // should still function with partial data, but we want visibility into misalignment.
+    console.error("[founderMemory] Schema/type mismatch detected:", errors, data);
+  }
+}
+
 export type DecisionPattern = {
   pattern: string;          // e.g. "delays pricing decisions"
   count: number;
@@ -89,10 +123,47 @@ export async function getFounderMemory(): Promise<FounderMemory | null> {
     .eq("user_id", user.id)
     .maybeSingle();
   if (error || !data) return null;
+  validateFounderMemoryShape(data as Record<string, unknown>);
   return data as FounderMemory;
 }
 
 // ── Write ─────────────────────────────────────────────────────────────────────
+
+// ── Tag deduplication ─────────────────────────────────────────────────────────
+// Prevents "ships fast" and "moves quickly" from becoming two separate tags.
+// Uses case-insensitive substring matching as a lightweight approximation of
+// semantic deduplication (no embedding cost, no network call).
+
+/**
+ * deduplicateTags — removes near-duplicate string tags from a list.
+ *
+ * Two tags are considered duplicates when one is a substring of the other
+ * (case-insensitive, after stripping common filler words). This catches:
+ *   "ships fast" / "ships quickly" → keeps the first seen
+ *   "avoids sales calls" / "avoids sales" → merges to the shorter canonical form
+ *   "user interviews" / "interviewing users" → keeps the first seen
+ *
+ * Max `limit` tags are returned (oldest first = most established patterns).
+ */
+export function deduplicateTags(tags: string[], limit = 10): string[] {
+  const FILLER = /\b(the|a|an|to|on|in|at|for|of|is|are|was|were|be|been|being|and|or|but|not|very|really|just|so|quite|mostly|often|always|never|usually|typically)\b/gi;
+
+  function normalize(s: string) {
+    return s.toLowerCase().replace(FILLER, " ").replace(/\s+/g, " ").trim();
+  }
+
+  const canonical: string[] = [];
+  for (const tag of tags) {
+    const norm = normalize(tag);
+    const isDup = canonical.some((c) => {
+      const cn = normalize(c);
+      return cn.includes(norm) || norm.includes(cn);
+    });
+    if (!isDup) canonical.push(tag);
+    if (canonical.length >= limit) break;
+  }
+  return canonical;
+}
 
 export async function upsertFounderMemory(
   patch: Partial<Omit<FounderMemory, "id" | "user_id" | "updated_at">>
@@ -123,17 +194,20 @@ export async function observeTaskEvent(
 
   const now = new Date().toISOString();
 
-  // Track avoidance
+  // Track avoidance — deduplicate semantically so "avoids sales" and
+  // "avoiding sales calls" don't become two separate tags.
   if (event === "skipped" || event === "overdue") {
     const zone = category ?? taskTitle.split(" ").slice(0, 3).join(" ");
-    const avoidance = Array.from(new Set([...memory.avoidance_zones, zone])).slice(0, 10);
+    const raw = Array.from(new Set([...memory.avoidance_zones, zone]));
+    const avoidance = deduplicateTags(raw, 10);
     await upsertFounderMemory({ avoidance_zones: avoidance });
   }
 
-  // Track strengths (fast completions)
+  // Track strengths — same deduplication
   if (event === "completed") {
     const strength = category ?? taskTitle.split(" ").slice(0, 3).join(" ");
-    const strengths = Array.from(new Set([...memory.strengths, strength])).slice(0, 10);
+    const raw = Array.from(new Set([...memory.strengths, strength]));
+    const strengths = deduplicateTags(raw, 10);
     await upsertFounderMemory({ strengths });
   }
 

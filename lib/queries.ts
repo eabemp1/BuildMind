@@ -173,7 +173,7 @@ export function useUpdateTaskMutation(projectId: string) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({}),
           cache: "no-store",
-        }).catch(() => {});
+        }).catch((err) => console.warn("[queries] task-complete ping failed:", err));
       }
     },
     onSettled: () => {

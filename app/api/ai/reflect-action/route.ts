@@ -5,6 +5,7 @@ import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { generateFounderInsight } from "@/lib/founderMemory";
 import { FEATURES } from "@/lib/features";
 import { callModelJSON } from "@/lib/ai-providers";
+import { logError } from "@/lib/server/logger";
 
 interface ReflectActionInput {
   outcome: "completed" | "blocked" | "partial" | "learned";
@@ -188,14 +189,14 @@ Target users: ${project.target_users ?? "Not specified"}`;
         });
 
         // ── Fire-and-forget: close both learning loops ────────────────────────
-        extractAndWritePatterns(supabase, verifiedUserId).catch(() => {});
+        extractAndWritePatterns(supabase, verifiedUserId).catch((err) => logError("reflect-action/extractPatterns", err));
 
         // Trigger full synthesis after every reflection (fire-and-forget)
         fetch(`${process.env.NEXT_PUBLIC_APP_URL ?? ""}/api/ai/founder-insight`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ synthesize: true, userId: verifiedUserId }),
-        }).catch(() => {});
+        }).catch((err) => logError("reflect-action/founderInsight", err));
 
         // ── Publish anonymised event to community Founder Feed ──────────────
         try {

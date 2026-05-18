@@ -1,58 +1,59 @@
 /**
- * lib/nav-config.ts — Progressive nav unlock
+ * lib/nav-config.ts — Progressive nav unlock  (Product Improvement #1)
  *
- * Nav items are gated by tasksCompleted milestone so new users
- * only see what's relevant at their stage. The sidebar reads
- * localStorage("bm_tasks_completed_total") which is written by
- * the today page on every check-in.
+ * Restructured from 9 destinations to 3 primary sections:
+ *   TODAY    — daily execution loop (Today, Reflect)
+ *   ANALYZE  — strategic intelligence (Break My Startup, Ventures, Reports, Overview)
+ *   COACH    — AI guidance (AI Coach, Projects)
  *
- * Unlock thresholds:
- *   0  tasks  → Today only
- *   1  task   → + Reflect
- *   3  tasks  → + Overview, Projects, Ventures
- *   7  tasks  → + AI Tools, Reports, Achievements, Invite
- *  14  tasks  → everything
+ * Secondary items (Achievements, Notifications, Settings, Invite) live at
+ * the bottom, visually separated so they don't compete with the 3 primary
+ * destinations.
  */
 
 import type { Plan } from "@/lib/plan";
 import type { ElementType } from "react";
+import { storage } from "@/lib/storage";
 
 export type NavItemConfig = {
   href: string;
   label: string;
   icon: ElementType<{ size?: number }>;
   enabled: boolean;
+  hidden?: boolean;  // AUDIT v8: temporarily hidden from nav while simplifying product surface
   section: string | null;
   badge: string | null;
   showDot: boolean;
   requiredPlan?: Plan;
-  unlocksAt?: number; // tasks completed threshold
+  unlocksAt?: number;
 };
 
 const iconStub = (_name: string): ElementType<{ size?: number }> => function NavIcon() { return null; };
 
 export const NAV: readonly NavItemConfig[] = [
-  // Always visible — the core loop
-  { href: "/today",            label: "Today",          icon: iconStub("Zap"),             enabled: true,  section: "DAILY",     badge: null,      showDot: false, unlocksAt: 0 },
-  { href: "/reflect",          label: "Reflect",        icon: iconStub("RefreshCw"),       enabled: true,  section: null,        badge: null,      showDot: true,  unlocksAt: 1 },
+  // ── TODAY ──────────────────────────────────────────────────────────────────
+  { href: "/today",            label: "Today",            icon: iconStub("Zap"),             enabled: true,  section: "TODAY",   badge: null,      showDot: false, unlocksAt: 0 },
+  { href: "/reflect",          label: "Reflect",          icon: iconStub("RefreshCw"),       enabled: true,  section: null,      badge: null,      showDot: true,  unlocksAt: 1 },
 
-  // Unlocks after 3 tasks — they've seen the product work
-  { href: "/overview",         label: "Overview",       icon: iconStub("LayoutDashboard"), enabled: true,  section: "WORKSPACE", badge: null,      showDot: false, unlocksAt: 3 },
-  { href: "/projects",         label: "Projects",       icon: iconStub("FolderKanban"),    enabled: true,  section: null,        badge: null,      showDot: false, unlocksAt: 3 },
-  { href: "/ventures",         label: "Ventures",       icon: iconStub("Map"),             enabled: true,  section: null,        badge: "New",     showDot: false, unlocksAt: 3 },
+  // ── ANALYZE ────────────────────────────────────────────────────────────────
+  { href: "/break-my-startup", label: "Break My Startup", icon: iconStub("Flame"),           enabled: true,  section: "ANALYZE", badge: null,      showDot: false, unlocksAt: 3 },
+  { href: "/overview",         label: "Overview",         icon: iconStub("LayoutDashboard"), enabled: true,  section: null,      badge: null,      showDot: false, unlocksAt: 3 },
+  // AUDIT v8 PROD #2: Hide Ventures from primary nav — founders overwhelmed by options
+  // AUDIT v8 PROD #10: Insights — behavioral mirror
+  { href: "/insights",         label: "Insights",         icon: iconStub("BarChart2"),       enabled: true,  section: null,      badge: null,      showDot: false, unlocksAt: 3 },
+  { href: "/ventures",         label: "Ventures",         icon: iconStub("Map"),             enabled: false, hidden: true,  section: null,      badge: "Builder", requiredPlan: "builder" as Plan, showDot: false, unlocksAt: 7 },
+  { href: "/reports",          label: "Reports",          icon: iconStub("LineChart"),       enabled: true,  section: null,      badge: "Builder", requiredPlan: "builder" as Plan, showDot: false, unlocksAt: 7 },
 
-  // Unlocks after 7 tasks — they're retained, show power features
-  { href: "/ai-coach",         label: "AI Coach",       icon: iconStub("Bot"),             enabled: true,  section: "AI TOOLS",  badge: null,      showDot: false, unlocksAt: 7 },
-  { href: "/break-my-startup", label: "Break Startup",  icon: iconStub("Flame"),           enabled: true,  section: null,        badge: null,      showDot: false, unlocksAt: 7 },
-  { href: "/startup-kit",      label: "Startup Kit",    icon: iconStub("Lightbulb"),       enabled: false, section: null,        badge: null,      requiredPlan: "builder" as Plan, showDot: false, unlocksAt: 7 },
-  { href: "/reports",          label: "Reports",        icon: iconStub("LineChart"),       enabled: true,  section: null,        badge: null,      requiredPlan: "builder" as Plan, showDot: false, unlocksAt: 7 },
-  { href: "/achievements",     label: "Achievements",   icon: iconStub("Trophy"),          enabled: true,  section: "ACCOUNT",   badge: null,      showDot: false, unlocksAt: 7 },
-  { href: "/invite",           label: "Invite & Earn",  icon: iconStub("Users"),           enabled: true,  section: null,        badge: "Free mo", showDot: false, unlocksAt: 7 },
+  // ── COACH ──────────────────────────────────────────────────────────────────
+  { href: "/ai-coach",         label: "AI Coach",         icon: iconStub("Bot"),             enabled: true,  section: "COACH",   badge: null,      showDot: false, unlocksAt: 3 },
+  { href: "/projects",         label: "Projects",         icon: iconStub("FolderKanban"),    enabled: true,  section: null,      badge: null,      showDot: false, unlocksAt: 3 },
 
-  // Always at bottom
-  { href: "/explore",          label: "Founder Feed",   icon: iconStub("Globe"),           enabled: false, section: null,        badge: null,      requiredPlan: "builder" as Plan, showDot: false, unlocksAt: 14 },
-  { href: "/notifications",    label: "Notifications",  icon: iconStub("Bell"),            enabled: true,  section: null,        badge: null,      showDot: false, unlocksAt: 0 },
-  { href: "/settings",         label: "Settings",       icon: iconStub("Settings"),        enabled: true,  section: null,        badge: null,      showDot: false, unlocksAt: 0 },
+  // ── MORE (bottom) ──────────────────────────────────────────────────────────
+  // AUDIT v8 PROD #2: Achievements hidden — gamification before core loop is proven distracts
+  { href: "/achievements",     label: "Achievements",     icon: iconStub("Trophy"),          enabled: false, hidden: true,  section: "MORE",    badge: null,      showDot: false, unlocksAt: 7 },
+  { href: "/invite",           label: "Invite & Earn",    icon: iconStub("Users"),           enabled: true,  section: null,      badge: "Free mo", showDot: false, unlocksAt: 7 },
+  { href: "/notifications",    label: "Notifications",    icon: iconStub("Bell"),            enabled: true,  section: null,      badge: null,      showDot: false, unlocksAt: 0 },
+  { href: "/settings",         label: "Settings",         icon: iconStub("Settings"),        enabled: true,  section: null,      badge: null,      showDot: false, unlocksAt: 0 },
 ] as const;
 
 export function hasPlanAccess(current: Plan, required: Plan): boolean {
@@ -60,21 +61,11 @@ export function hasPlanAccess(current: Plan, required: Plan): boolean {
   return order.indexOf(current) >= order.indexOf(required);
 }
 
-/** Read tasks completed from localStorage (client-side only) */
 export function getTasksCompleted(): number {
-  if (typeof window === "undefined") return 99; // SSR: show everything
-  try {
-    return parseInt(localStorage.getItem("bm_tasks_completed_total") ?? "0", 10) || 0;
-  } catch {
-    return 0;
-  }
+  if (typeof window === "undefined") return 99;
+  return parseInt(storage.get("bm_tasks_completed_total") ?? "0", 10) || 0;
 }
 
-/**
- * Sync tasks_completed_total from Supabase back into localStorage.
- * Call once on app load (e.g. in sidebar useEffect) so the counter
- * survives device switches. Fire-and-forget — never awaited in render path.
- */
 export async function syncTasksCompletedFromServer(): Promise<void> {
   if (typeof window === "undefined") return;
   try {
@@ -90,10 +81,8 @@ export async function syncTasksCompletedFromServer(): Promise<void> {
     if (data?.tasks_completed_total != null) {
       const serverVal = data.tasks_completed_total;
       const localVal = getTasksCompleted();
-      // Take the max — if localStorage is ahead (offline writes), keep it
       const resolved = Math.max(serverVal, localVal);
-      localStorage.setItem("bm_tasks_completed_total", String(resolved));
-      // Write back the resolved value to Supabase if local was ahead
+      storage.set("bm_tasks_completed_total", String(resolved));
       if (localVal > serverVal) {
         await supabase.from("founder_context").upsert(
           { user_id: user.id, tasks_completed_total: resolved },
@@ -102,6 +91,6 @@ export async function syncTasksCompletedFromServer(): Promise<void> {
       }
     }
   } catch {
-    // Non-fatal — localStorage value remains active
+    // Non-fatal
   }
 }

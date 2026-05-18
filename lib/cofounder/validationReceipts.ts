@@ -16,6 +16,7 @@
 
 import { ValidationReceipt } from "./competitorReframe";
 import { getLimits } from "@/lib/plan";
+import { storage } from "@/lib/storage";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -41,11 +42,7 @@ const RECEIPTS_KEY = "bm_validation_receipts";
 
 export function getValidationReceipts(): ValidationReceipt[] {
   if (typeof window === "undefined") return [];
-  try {
-    return JSON.parse(localStorage.getItem(RECEIPTS_KEY) ?? "[]");
-  } catch {
-    return [];
-  }
+  return storage.getJSON<ValidationReceipt[]>(RECEIPTS_KEY, []);
 }
 
 export function saveValidationReceipt(receipt: Omit<ValidationReceipt, "id">): ValidationReceipt {
@@ -56,15 +53,14 @@ export function saveValidationReceipt(receipt: Omit<ValidationReceipt, "id">): V
   const existing = getValidationReceipts();
   existing.unshift(full); // newest first
   if (typeof window !== "undefined") {
-    localStorage.setItem(RECEIPTS_KEY, JSON.stringify(existing));
+    storage.setJSON(RECEIPTS_KEY, existing);
   }
   return full;
 }
 
 export function deleteValidationReceipt(id: string): void {
   if (typeof window === "undefined") return;
-  const filtered = getValidationReceipts().filter(r => r.id !== id);
-  localStorage.setItem(RECEIPTS_KEY, JSON.stringify(filtered));
+  storage.setJSON(RECEIPTS_KEY, getValidationReceipts().filter(r => r.id !== id));
 }
 
 /** Returns receipts where a human confirmed the problem exists */

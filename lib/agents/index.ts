@@ -586,17 +586,35 @@ function mergeSignals(
  * Uses Promise.allSettled so one agent failing doesn't kill the whole pipeline.
  * Failed agents fall back to their typed defaults.
  * Returns AgentPipelineResult with all outputs + merged SignalSummary.
+ *
+ * Budget: 25 s aggregate wall-clock cap. Each provider already has a 20 s
+ * per-call AbortSignal, but the fallback chain can attempt up to 4 providers
+ * sequentially — so without an outer cap the pipeline could theoretically
+ * block for 80 s per agent. The race below limits the whole fan-out to 25 s;
+ * any agent that hasn't resolved by then is treated as failed (null output).
  */
+
+const PIPELINE_TIMEOUT_MS = 25_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms),
+    ),
+  ]);
+}
+
 export async function runAgentPipeline(ctx: StartupContext): Promise<AgentPipelineResult> {
   const start = Date.now();
 
   const [marketResult, competitorResult, trendResult, sentimentResult, riskResult] =
     await Promise.allSettled([
-      runMarketResearchAgent(ctx),
-      runCompetitorAgent(ctx),
-      runTrendAgent(ctx),
-      runSentimentAgent(ctx),
-      runRiskAgent(ctx),
+      withTimeout(runMarketResearchAgent(ctx),  PIPELINE_TIMEOUT_MS, "MarketResearchAgent"),
+      withTimeout(runCompetitorAgent(ctx),       PIPELINE_TIMEOUT_MS, "CompetitorAgent"),
+      withTimeout(runTrendAgent(ctx),            PIPELINE_TIMEOUT_MS, "TrendAgent"),
+      withTimeout(runSentimentAgent(ctx),        PIPELINE_TIMEOUT_MS, "SentimentAgent"),
+      withTimeout(runRiskAgent(ctx),             PIPELINE_TIMEOUT_MS, "RiskAgent"),
     ]);
 
   const market = marketResult.status === "fulfilled" ? marketResult.value : null;

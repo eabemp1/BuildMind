@@ -1,406 +1,611 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import type { ChangeEvent, ReactNode } from "react";
+/**
+ * app/onboarding/page.tsx — Onboarding v2 (Playbook §2.1)
+ *
+ * Screen 1: One sentence input. Nothing else.
+ * Screen 2: Reflexion Strike — market gap + first task in ~15 seconds.
+ * Screen 3: Identity begins. Momentum Score appears. Founder is inside the product.
+ *
+ * RULE: Value before explanation. The founder feels BuildMind before they understand it.
+ */
+
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { z } from "zod";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { createProjectWithRoadmap, getCurrentUser, getOnboardingStatus } from "@/lib/buildmind";
 import { createClient } from "@/lib/supabase/client";
-import { onboardingSchema } from "@/lib/validation";
 import { identifyUser } from "@/lib/analytics";
-import { Suspense } from "react";
 import { trackFunnelStep } from "@/lib/onboarding-analytics";
 import BuildMindLoader from "@/components/BuildMindLoader";
-import { ArrowRight, Check, Loader2 } from "lucide-react";
-import Image from "next/image";
+import { ArrowRight, Loader2, Zap } from "lucide-react";
+import { Suspense } from "react";
 
-type Step = 1 | 2 | 3 | 4 | 5;
-type StartupStage = "Idea" | "Validation" | "MVP" | "Launch" | "Growth" | "Revenue";
+type Screen = "input" | "strike" | "depth" | "identity" | "saving";
 
-const STAGE_OPTIONS: StartupStage[] = ["Idea", "Validation", "MVP", "Launch", "Growth", "Revenue"];
-
-const BLOCKER_OPTIONS = [
-  { id: "dont_know_what_to_do", label: "I don't know what to do next",   icon: "?" },
-  { id: "too_many_ideas",       label: "Too many ideas, can't pick one",  icon: "◈" },
-  { id: "no_users_yet",         label: "Can't find my first users",       icon: "◎" },
-  { id: "building_too_slow",    label: "Building too slowly",             icon: "▷" },
-  { id: "no_revenue",           label: "Not making any money yet",        icon: "$" },
-  { id: "just_starting",        label: "Just starting — need structure",  icon: "→" },
-];
-
-const DOMAIN_OPTIONS = ["Fintech / Payments","Legal Tech","Health Tech","EdTech","SaaS / B2B Tools","Consumer App","E-commerce","AI / Dev Tools","Social / Community","Other"];
-
-function normalizeStage(input: string | null): StartupStage {
-  const v = String(input ?? "").trim().toLowerCase();
-  if (v.includes("valid")) return "Validation";
-  if (v.includes("mvp") || v.includes("proto")) return "MVP";
-  if (v.includes("launch")) return "Launch";
-  if (v.includes("growth")) return "Growth";
-  if (v.includes("revenue")) return "Revenue";
-  return "Idea";
+// ── Depth screen answers ──────────────────────────────────────────────────────
+interface DepthAnswers {
+  avoidance: string;
+  revenueModel: string;
+  targetUsers: string;
 }
 
-const STEP_LABELS = ["Idea", "Users", "Problem", "Blocker", "Stage"];
-const TOTAL_STEPS = 5;
-
-function ProgressBar({ step }: { step: number }) {
-  return (
-    <div style={{ display: "flex", gap: 6, marginBottom: 36 }}>
-      {Array.from({ length: TOTAL_STEPS }).map((_, i) => (
-        <div key={i} style={{ flex: 1, height: 3, borderRadius: 99, overflow: "hidden", background: "var(--bm-bg3)" }}>
-          <motion.div
-            initial={{ width: 0 }}
-            animate={{ width: i < step ? "100%" : "0%" }}
-            transition={{ duration: 0.35, ease: "easeOut" }}
-            style={{ height: "100%", background: "var(--grad-primary)", borderRadius: 99 }}
-          />
-        </div>
-      ))}
-    </div>
-  );
+interface StrikeResult {
+  marketGap: string;
+  firstTask: string;
+  rationale: string;
 }
 
-function StepLabel({ children }: { children: ReactNode }) {
-  return (
-    <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>
-      {children}
-    </div>
-  );
-}
+// ── Shared visual tokens ──────────────────────────────────────────────────────
+const VIZ = {
+  bg: "var(--bm-bg)",
+  text: "var(--bm-text)",
+  text2: "var(--bm-text2)",
+  text3: "var(--bm-text3)",
+  accent: "var(--bm-accent)",
+  panel: "var(--bm-bg2)",
+  border: "var(--bm-border)",
+  grad: "var(--grad-primary)",
+};
 
-function StepTitle({ children }: { children: ReactNode }) {
-  return (
-    <h2 style={{ fontSize: 22, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em", margin: "0 0 8px", lineHeight: 1.2 }}>
-      {children}
-    </h2>
-  );
-}
-
-function StepSub({ children }: { children: ReactNode }) {
-  return (
-    <p style={{ fontSize: 13, color: "var(--bm-text3)", margin: "0 0 28px", lineHeight: 1.6 }}>{children}</p>
-  );
-}
-
-function BigTextarea({
-  value,
-  onChange,
-  placeholder,
-  rows = 4,
-}: {
-  value: string;
-  onChange: (event: ChangeEvent<HTMLTextAreaElement>) => void;
-  placeholder: string;
-  rows?: number;
-}) {
-  return (
-    <textarea value={value} onChange={onChange} placeholder={placeholder} rows={rows}
-      style={{ width: "100%", background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: 12, padding: "14px 16px", fontSize: 14, color: "var(--bm-text)", outline: "none", fontFamily: "inherit", resize: "none", boxSizing: "border-box", lineHeight: 1.6, transition: "border-color 0.15s" }}
-      onFocus={e => { e.target.style.borderColor = "var(--bm-accent-bd)"; }}
-      onBlur={e => { e.target.style.borderColor = "var(--bm-border2)"; }}
-    />
-  );
-}
-
-function NextButton({
-  onClick,
-  disabled,
-  loading,
-  children = "Continue",
-}: {
-  onClick: () => void;
-  disabled?: boolean;
-  loading?: boolean;
-  children?: ReactNode;
-}) {
-  return (
-    <motion.button whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }} onClick={onClick} disabled={disabled || loading}
-      style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", padding: "14px 0", borderRadius: 12, border: "none", background: disabled || loading ? "var(--bm-bg4)" : "var(--grad-primary)", color: disabled || loading ? "var(--bm-text3)" : "#fff", fontWeight: 700, fontSize: 14, cursor: disabled || loading ? "not-allowed" : "pointer", fontFamily: "inherit", transition: "background 0.15s", marginTop: 20 }}>
-      {loading ? <Loader2 size={16} className="animate-spin" /> : <>{children} <ArrowRight size={16} /></>}
-    </motion.button>
-  );
-}
-
-function OnboardingContent() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const [step, setStep] = useState<Step>(1);
+// ── Screen 1 — The Only Question That Matters ─────────────────────────────────
+function InputScreen({ onSubmit }: { onSubmit: (idea: string) => void }) {
   const [idea, setIdea] = useState("");
-  const [targetUsers, setTargetUsers] = useState("");
-  const [problem, setProblem] = useState(searchParams.get("problem") ?? "");
-  const [blockerType, setBlockerType] = useState("");
-  const [domain, setDomain] = useState("");
-  const [startupStage, setStartupStage] = useState<StartupStage>(normalizeStage(searchParams.get("stage")));
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  // Reflexion Strike — fires in background after step 1 to prove value immediately
-  const [strikeResult, setStrikeResult] = useState<{ marketGap: string; firstTask: string } | null>(null);
-  const [strikeLoading, setStrikeLoading] = useState(false);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  function fireReflexionStrike(ideaText: string) {
-    setStrikeLoading(true);
-    // Retry once after 1.5s to handle auth session not yet committed
-    const attempt = (retries: number) => {
-      fetch("/api/ai/reflexion-strike", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ startupDescription: ideaText, stage: startupStage, domain }),
-      })
-        .then(r => {
-          if (r.status === 401 && retries > 0) {
-            // Session not committed yet — retry after brief delay
-            return new Promise<void>(res => setTimeout(res, 1500))
-              .then(() => attempt(retries - 1));
-          }
-          return r.ok ? r.json() : Promise.reject(new Error(`${r.status}`));
-        })
-        .then(json => {
-          if (json?.data) setStrikeResult(json.data);
-        })
-        .catch(() => {
-          // Show a meaningful fallback so the panel isn't blank
-          setStrikeResult({
-            marketGap: "This space has generic tools. The gap is deep specificity for your exact user type.",
-            firstTask: "Find one person with this problem — message them in the next 30 minutes.",
-          });
-        })
-        .finally(() => setStrikeLoading(false));
-    };
-    attempt(1);
-  }
+  useEffect(() => { inputRef.current?.focus(); }, []);
 
-  async function handleFinish() {
+  const handleSubmit = () => {
+    if (!idea.trim() || loading) return;
     setLoading(true);
-    setError("");
-    try {
-      if (typeof window !== "undefined" && localStorage.getItem("bm_dev_auth") === "1") {
-        const now = new Date().toISOString();
-        localStorage.setItem("bm_dev_project", JSON.stringify({
-          id: "00000000-0000-4000-8000-000000000001",
-          title: domain || idea || "Local test startup",
-          description: idea || "Local onboarding test project",
-          created_at: now,
-          industry: domain || null,
-          startup_stage: startupStage,
-          validation_score: 35,
-          execution_score: 20,
-          momentum_score: 50,
-          validation_strengths: [],
-          tasksCompleted: 0,
-          tasksTotal: 3,
-          progress: 0,
-          lastActivity: now,
-        }));
-        document.cookie = "bm_dev_onboarded=1; path=/; max-age=86400; samesite=lax";
-        trackFunnelStep("onboarding_complete");
-        router.push("/today?first_session=true");
-        return;
-      }
+    onSubmit(idea.trim());
+  };
 
-      const user = await getCurrentUser();
-      if (!user) { router.replace("/auth/login"); return; }
-      await createProjectWithRoadmap({
-        project_name: domain || idea,
-        idea_description: idea,
-        target_users: targetUsers,
-        problem,
-        startup_stage: startupStage,
-        blocker_type: blockerType,
-      });
-      const supabase = createClient();
-      await supabase.auth.updateUser({ data: { onboarding_completed: true } });
-      trackFunnelStep("onboarding_complete");
-      router.push("/today?first_session=true");
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Something went wrong. Please try again.");
-    } finally { setLoading(false); }
-  }
+  const handleKey = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSubmit(); }
+  };
 
   return (
-    <div style={{ minHeight: "100vh", background: "var(--bm-bg)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 20px" }}>
-      <div style={{ width: "100%", maxWidth: 520 }}>
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -16 }}
+      transition={{ duration: 0.4, ease: "easeOut" }}
+      style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100dvh", padding: "24px", background: VIZ.bg }}
+    >
+      {/* Logo */}
+      <div style={{ marginBottom: 48, display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ width: 32, height: 32, borderRadius: 8, background: VIZ.grad, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Zap size={16} color="#fff" />
+        </div>
+        <span style={{ fontWeight: 700, fontSize: 18, color: VIZ.text, letterSpacing: "-0.02em" }}>BuildMind</span>
+      </div>
 
-        {/* Logo */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 36, justifyContent: "center" }}>
-          <div
+      <div style={{ width: "100%", maxWidth: 560 }}>
+        {/* The only question */}
+        <motion.h1
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          style={{ fontSize: "clamp(26px, 5vw, 38px)", fontWeight: 800, color: VIZ.text, letterSpacing: "-0.03em", lineHeight: 1.15, margin: "0 0 32px", textAlign: "center" }}
+        >
+          Describe your startup<br />in one sentence.
+        </motion.h1>
+
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}>
+          <textarea
+            ref={inputRef}
+            value={idea}
+            onChange={e => setIdea(e.target.value)}
+            onKeyDown={handleKey}
+            placeholder="e.g. I'm building a tool that helps African SMEs manage compliance without lawyers."
+            rows={3}
             style={{
-              width: 32,
-              height: 32,
-              borderRadius: 9,
-              overflow: "hidden",
-              background: "var(--bm-bg3)",
-              border: "1px solid var(--bm-border)",
+              width: "100%",
+              padding: "16px 18px",
+              fontSize: 15,
+              fontFamily: "inherit",
+              color: VIZ.text,
+              background: VIZ.panel,
+              border: `1px solid ${VIZ.border}`,
+              borderRadius: 12,
+              outline: "none",
+              resize: "none",
+              lineHeight: 1.5,
+              boxSizing: "border-box",
+              transition: "border-color 0.2s",
+            }}
+            onFocus={e => { e.target.style.borderColor = VIZ.accent; }}
+            onBlur={e => { e.target.style.borderColor = VIZ.border; }}
+          />
+
+          <motion.button
+            onClick={handleSubmit}
+            disabled={!idea.trim() || loading}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            style={{
+              width: "100%",
+              marginTop: 14,
+              padding: "14px 24px",
+              background: idea.trim() && !loading ? VIZ.grad : VIZ.panel,
+              color: idea.trim() && !loading ? "#fff" : VIZ.text3,
+              border: "none",
+              borderRadius: 10,
+              fontSize: 15,
+              fontWeight: 600,
+              cursor: idea.trim() && !loading ? "pointer" : "not-allowed",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
+              gap: 8,
+              transition: "all 0.2s",
+              fontFamily: "inherit",
             }}
           >
-            <Image src="/logo/buildmind-mark.svg" alt="BuildMind" width={22} height={22} priority />
+            {loading
+              ? <><Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} /> Analysing your market...</>
+              : <><ArrowRight size={16} /> Run the analysis</>
+            }
+          </motion.button>
+
+          <p style={{ textAlign: "center", fontSize: 12, color: VIZ.text3, marginTop: 12 }}>
+            15 seconds. No email. No tour. Just your market gap and first task.
+          </p>
+        </motion.div>
+      </div>
+
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </motion.div>
+  );
+}
+
+// ── Screen 2 — The Reflexion Strike ──────────────────────────────────────────
+function StrikeScreen({ idea, result, onContinue }: { idea: string; result: StrikeResult; onContinue: () => void }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -16 }}
+      transition={{ duration: 0.4 }}
+      style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100dvh", padding: "24px", background: VIZ.bg }}
+    >
+      <div style={{ width: "100%", maxWidth: 560 }}>
+        {/* What they said */}
+        <p style={{ fontSize: 13, color: VIZ.text3, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>Your idea</p>
+        <p style={{ fontSize: 15, color: VIZ.text2, marginBottom: 32, lineHeight: 1.5, fontStyle: "italic" }}>"{idea}"</p>
+
+        {/* Market gap */}
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15 }}
+          style={{ background: VIZ.panel, border: `1px solid ${VIZ.border}`, borderTop: `2px solid ${VIZ.accent}`, borderRadius: 12, padding: "18px 20px", marginBottom: 14 }}
+        >
+          <p style={{ fontSize: 11, fontWeight: 700, color: VIZ.accent, textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 8px" }}>Market gap</p>
+          <p style={{ fontSize: 15, color: VIZ.text, lineHeight: 1.55, margin: 0 }}>{result.marketGap}</p>
+        </motion.div>
+
+        {/* First task */}
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          style={{ background: VIZ.panel, border: `1px solid ${VIZ.border}`, borderTop: "2px solid #22c55e", borderRadius: 12, padding: "18px 20px", marginBottom: 14 }}
+        >
+          <p style={{ fontSize: 11, fontWeight: 700, color: "#22c55e", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 8px" }}>Your first task — right now</p>
+          <p style={{ fontSize: 15, color: VIZ.text, lineHeight: 1.55, margin: 0, fontWeight: 500 }}>{result.firstTask}</p>
+        </motion.div>
+
+        {/* Rationale */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.45 }}
+          style={{ marginBottom: 28 }}
+        >
+          <p style={{ fontSize: 13, color: VIZ.text3, lineHeight: 1.5, fontStyle: "italic", margin: 0 }}>
+            {result.rationale}
+          </p>
+        </motion.div>
+
+        <motion.button
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.55 }}
+          onClick={onContinue}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          style={{
+            width: "100%",
+            padding: "14px 24px",
+            background: VIZ.grad,
+            color: "#fff",
+            border: "none",
+            borderRadius: 10,
+            fontSize: 15,
+            fontWeight: 600,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+            fontFamily: "inherit",
+          }}
+        >
+          <Zap size={15} /> Start operating like this every day
+        </motion.button>
+      </div>
+    </motion.div>
+  );
+}
+
+// ── Screen 3 — Richer Depth (Product Improvement #6) ─────────────────────────
+// Conversational 3-question screen. Feels like a chat, not a form.
+// All questions optional — skippable — but "30 points" nudge encourages completion.
+function DepthScreen({ onComplete }: { onComplete: (answers: DepthAnswers) => void }) {
+  const [avoidance,    setAvoidance]    = useState("");
+  const [revenueModel, setRevenueModel] = useState("");
+  const [targetUsers,  setTargetUsers]  = useState("");
+  const [step,         setStep]         = useState<0|1|2>(0);
+
+  const questions = [
+    {
+      emoji:       "🚫",
+      heading:     "What kind of work do you keep putting off?",
+      sub:         "Sales calls? Writing? Talking to users? Be honest — AI uses this to call you out.",
+      placeholder: "I avoid…",
+      value:       avoidance,
+      onChange:    setAvoidance,
+    },
+    {
+      emoji:       "💰",
+      heading:     "How do you plan to charge?",
+      sub:         "Subscription, one-time, usage-based, freemium, B2B deals? Even \"not sure yet\" is useful.",
+      placeholder: "We'll charge by…",
+      value:       revenueModel,
+      onChange:    setRevenueModel,
+    },
+    {
+      emoji:       "🎯",
+      heading:     "Who exactly are you building this for?",
+      sub:         "Job title, frustration, situation. The more specific, the better your AI advice.",
+      placeholder: "Founders who are…",
+      value:       targetUsers,
+      onChange:    setTargetUsers,
+    },
+  ] as const;
+
+  const q = questions[step];
+  const totalFilled = [avoidance, revenueModel, targetUsers].filter(s => s.trim()).length;
+  const pointsUnlocked = totalFilled * 10; // rough nudge: each answer = 10 quality pts
+
+  const handleNext = () => {
+    if (step < 2) { setStep((step + 1) as 1 | 2); }
+    else          { onComplete({ avoidance, revenueModel, targetUsers }); }
+  };
+
+  const handleSkip = () => {
+    if (step < 2) { setStep((step + 1) as 1 | 2); }
+    else          { onComplete({ avoidance, revenueModel, targetUsers }); }
+  };
+
+  return (
+    <motion.div
+      key={`depth-${step}`}
+      initial={{ opacity: 0, y: 18 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -18 }}
+      transition={{ duration: 0.35, ease: "easeOut" }}
+      style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100dvh", padding: "24px", background: VIZ.bg }}
+    >
+      {/* Progress dots */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 40 }}>
+        {[0,1,2].map(i => (
+          <div key={i} style={{
+            width: i === step ? 20 : 6, height: 6, borderRadius: 3,
+            background: i <= step ? VIZ.accent : "rgba(255,255,255,0.1)",
+            transition: "all 0.3s",
+          }} />
+        ))}
+      </div>
+
+      <div style={{ width: "100%", maxWidth: 520 }}>
+        {/* Quality nudge */}
+        {pointsUnlocked > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            style={{
+              marginBottom: 20, padding: "8px 14px",
+              background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)",
+              borderRadius: 8, fontSize: 12, color: "#10b981",
+              display: "flex", alignItems: "center", gap: 6,
+            }}
+          >
+            <Zap size={11} /> AI advice quality +{pointsUnlocked} points so far
+          </motion.div>
+        )}
+        {pointsUnlocked === 0 && step === 0 && (
+          <div style={{ marginBottom: 20, padding: "8px 14px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8, fontSize: 12, color: VIZ.text3 }}>
+            <Zap size={11} style={{ display: "inline", marginRight: 5 }} />
+            These 3 questions improve your AI advice quality by up to 30 points
           </div>
-          <span style={{ fontSize: 15, fontWeight: 700, color: "var(--bm-text)" }}>BuildMind</span>
+        )}
+
+        <div style={{ fontSize: 32, marginBottom: 14 }}>{q.emoji}</div>
+
+        <h2 style={{ fontSize: 22, fontWeight: 800, color: VIZ.text, letterSpacing: "-0.03em", margin: "0 0 8px", lineHeight: 1.25 }}>
+          {q.heading}
+        </h2>
+        <p style={{ fontSize: 13, color: VIZ.text3, margin: "0 0 24px", lineHeight: 1.5 }}>{q.sub}</p>
+
+        <input
+          value={q.value}
+          onChange={e => q.onChange(e.target.value.slice(0, 80))}
+          placeholder={q.placeholder}
+          maxLength={80}
+          autoFocus
+          onKeyDown={e => { if (e.key === "Enter") handleNext(); }}
+          style={{
+            width: "100%", background: VIZ.panel, border: `1px solid ${VIZ.border}`,
+            borderRadius: 10, padding: "14px 16px", fontSize: 16, color: VIZ.text,
+            outline: "none", fontFamily: "inherit", boxSizing: "border-box",
+            transition: "border-color 0.15s",
+          }}
+          onFocus={e => { e.target.style.borderColor = VIZ.accent; }}
+          onBlur={e => { e.target.style.borderColor = VIZ.border; }}
+        />
+        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.2)", textAlign: "right", marginTop: 4 }}>
+          {q.value.length}/80
         </div>
 
-        <ProgressBar step={step} />
-
-        <AnimatePresence mode="wait">
-          <motion.div key={step}
-            initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
-            transition={{ duration: 0.2 }}>
-
-            {step === 1 && (
-              <div>
-                <StepLabel>Step 1 of 5 — Idea</StepLabel>
-                <StepTitle>What are you building?</StepTitle>
-                <StepSub>Describe your startup idea in plain language. Don't polish it — just say it.</StepSub>
-                <BigTextarea value={idea} onChange={(e) => setIdea(e.target.value)} placeholder="E.g. A tool that helps solo founders track their progress and stay accountable using AI coaching..." />
-                <NextButton onClick={() => { trackFunnelStep("onboarding_idea"); fireReflexionStrike(idea); setStep(2); }} disabled={idea.trim().length < 15}>Continue</NextButton>
-              </div>
-            )}
-
-            {step === 2 && (
-              <div>
-                <StepLabel>Step 2 of 5 — Target Users</StepLabel>
-                <StepTitle>Who is this for?</StepTitle>
-                <StepSub>Be specific. "Everyone" is not an answer. Describe the exact person with this problem.</StepSub>
-                {/* Reflexion Strike preview — shows AI already went to work on their idea */}
-                {(strikeLoading || strikeResult) && (
-                  <div style={{
-                    background: "var(--bm-accent-dim)",
-                    border: "1px solid var(--bm-accent-bd)",
-                    borderRadius: 14,
-                    padding: "16px 18px",
-                    marginBottom: 24,
-                  }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-accent)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
-                      <span>⚡</span> AI already scanned your idea
-                    </div>
-                    {strikeLoading && !strikeResult ? (
-                      <p style={{ fontSize: 13, color: "var(--bm-text3)", margin: 0 }}>Analysing your startup…</p>
-                    ) : strikeResult ? (
-                      <>
-                        <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: "0 0 10px", lineHeight: 1.6 }}>
-                          <strong style={{ color: "var(--bm-text)" }}>Gap spotted:</strong> {strikeResult.marketGap}
-                        </p>
-                        <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.6 }}>
-                          <strong style={{ color: "var(--bm-text)" }}>Your first task:</strong> {strikeResult.firstTask}
-                        </p>
-                      </>
-                    ) : null}
-                  </div>
-                )}
-                <BigTextarea value={targetUsers} onChange={(e) => setTargetUsers(e.target.value)} placeholder="E.g. First-time founders building B2B SaaS, aged 25–40, technical background, working full-time on their startup..." rows={3} />
-                <NextButton onClick={() => { trackFunnelStep("onboarding_stage"); setStep(3); }} disabled={targetUsers.trim().length < 10}>Continue</NextButton>
-              </div>
-            )}
-
-            {step === 3 && (
-              <div>
-                <StepLabel>Step 3 of 5 — Problem</StepLabel>
-                <StepTitle>What problem does it solve?</StepTitle>
-                <StepSub>What's painful or broken today? Focus on the problem, not your solution.</StepSub>
-                {/* Keep strike result visible — it motivates specific problem articulation */}
-                {strikeResult && (
-                  <div style={{
-                    background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)",
-                    borderRadius: 12, padding: "12px 16px", marginBottom: 18,
-                    display: "flex", alignItems: "flex-start", gap: 10,
-                  }}>
-                    <span style={{ fontSize: 16, flexShrink: 0 }}>⚡</span>
-                    <div>
-                      <p style={{ fontSize: 12, color: "var(--bm-text2)", margin: "0 0 6px", lineHeight: 1.55 }}>
-                        <strong style={{ color: "var(--bm-text)" }}>Market gap:</strong> {strikeResult.marketGap}
-                      </p>
-                      <p style={{ fontSize: 12, color: "var(--bm-accent)", margin: 0, fontWeight: 600 }}>
-                        First task: {strikeResult.firstTask}
-                      </p>
-                    </div>
-                  </div>
-                )}
-                <BigTextarea value={problem} onChange={(e) => setProblem(e.target.value)} placeholder="E.g. Founders have no structured way to measure their own execution. They plan a lot but ship slowly and don't know why..." rows={3} />
-                <NextButton onClick={() => { trackFunnelStep("onboarding_stage"); setStep(4); }} disabled={problem.trim().length < 15}>Continue</NextButton>
-              </div>
-            )}
-
-            {step === 4 && (
-              <div>
-                <StepLabel>Step 4 of 5 — Your Blocker</StepLabel>
-                <StepTitle>What's holding you back right now?</StepTitle>
-                <StepSub>Be honest. This helps BuildMind give you the right starting push.</StepSub>
-                <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-                  {BLOCKER_OPTIONS.map(opt => (
-                    <button key={opt.id} onClick={() => setBlockerType(opt.id)}
-                      style={{
-                        display: "flex", alignItems: "center", gap: 12, padding: "13px 16px", borderRadius: 12,
-                        border: `1px solid ${blockerType === opt.id ? "var(--bm-accent-bd)" : "var(--bm-border)"}`,
-                        background: blockerType === opt.id ? "var(--bm-accent-dim)" : "var(--bm-bg2)",
-                        cursor: "pointer", fontFamily: "inherit", textAlign: "left", transition: "all 0.15s",
-                      }}>
-                      <span style={{ fontSize: 16, width: 24, textAlign: "center", flexShrink: 0 }}>{opt.icon}</span>
-                      <span style={{ fontSize: 13, color: blockerType === opt.id ? "var(--bm-accent)" : "var(--bm-text2)", fontWeight: blockerType === opt.id ? 600 : 400 }}>{opt.label}</span>
-                      {blockerType === opt.id && <Check size={14} color="var(--bm-accent)" style={{ marginLeft: "auto" }} />}
-                    </button>
-                  ))}
-                </div>
-                <NextButton onClick={() => { trackFunnelStep("onboarding_stage"); setStep(5); }} disabled={!blockerType}>Continue</NextButton>
-              </div>
-            )}
-
-            {step === 5 && (
-              <div>
-                <StepLabel>Step 5 of 5 — Stage</StepLabel>
-                <StepTitle>Where are you right now?</StepTitle>
-                <StepSub>Select your current startup stage. BuildMind will tailor your roadmap accordingly.</StepSub>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 9, marginBottom: 20 }}>
-                  {STAGE_OPTIONS.map(s => (
-                    <button key={s} onClick={() => setStartupStage(s)}
-                      style={{
-                        padding: "14px 10px", borderRadius: 12, textAlign: "center",
-                        border: `1px solid ${startupStage === s ? "var(--bm-accent-bd)" : "var(--bm-border)"}`,
-                        background: startupStage === s ? "var(--bm-accent-dim)" : "var(--bm-bg2)",
-                        color: startupStage === s ? "var(--bm-accent)" : "var(--bm-text2)",
-                        fontSize: 13, fontWeight: startupStage === s ? 700 : 400,
-                        cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s",
-                      }}>
-                      {s}
-                    </button>
-                  ))}
-                </div>
-
-                <div style={{ marginBottom: 10 }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>Industry (optional)</div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
-                    {DOMAIN_OPTIONS.map(d => (
-                      <button key={d} onClick={() => setDomain(d)}
-                        style={{ padding: "7px 13px", borderRadius: 20, border: `1px solid ${domain === d ? "var(--bm-accent-bd)" : "var(--bm-border)"}`, background: domain === d ? "var(--bm-accent-dim)" : "transparent", color: domain === d ? "var(--bm-accent)" : "var(--bm-text3)", fontSize: 12, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}>
-                        {d}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {error && <div style={{ fontSize: 12, color: "var(--bm-red)", marginBottom: 10 }}>{error}</div>}
-                <NextButton onClick={handleFinish} loading={loading}>Build my roadmap</NextButton>
-              </div>
-            )}
-          </motion.div>
-        </AnimatePresence>
-
-        {step > 1 && (
-          <button onClick={() => setStep(s => (s - 1) as Step)}
-            style={{ display: "block", margin: "16px auto 0", background: "none", border: "none", color: "var(--bm-text3)", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
-            ← Back
+        <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.97 }}
+            onClick={handleNext}
+            style={{
+              flex: 1, padding: "13px 20px", background: VIZ.grad, color: "#fff",
+              border: "none", borderRadius: 10, fontSize: 14, fontWeight: 600,
+              cursor: "pointer", fontFamily: "inherit",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+            }}
+          >
+            {step < 2 ? "Next →" : "Start building →"}
+          </motion.button>
+          <button
+            onClick={handleSkip}
+            style={{
+              padding: "13px 16px", background: "transparent", color: VIZ.text3,
+              border: `1px solid ${VIZ.border}`, borderRadius: 10, fontSize: 13,
+              cursor: "pointer", fontFamily: "inherit",
+            }}
+          >
+            Skip
           </button>
-        )}
+        </div>
       </div>
-    </div>
+    </motion.div>
+  );
+}
+
+// ── Screen 4 — Identity Begins ────────────────────────────────────────────────
+function IdentityScreen({ onComplete }: { onComplete: () => void }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.97 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.5, ease: "easeOut" }}
+      style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100dvh", padding: "24px", background: VIZ.bg, textAlign: "center" }}
+    >
+      {/* Momentum score appears */}
+      <motion.div
+        initial={{ scale: 0.5, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ delay: 0.2, type: "spring", stiffness: 200, damping: 15 }}
+        style={{ width: 96, height: 96, borderRadius: "50%", background: VIZ.grad, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 24, boxShadow: `0 0 40px ${VIZ.accent}44` }}
+      >
+        <span style={{ fontSize: 28, fontWeight: 800, color: "#fff" }}>50</span>
+      </motion.div>
+
+      <motion.h2
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.4 }}
+        style={{ fontSize: 22, fontWeight: 800, color: VIZ.text, letterSpacing: "-0.03em", margin: "0 0 12px" }}
+      >
+        You are now operating like<br />a high-execution founder.
+      </motion.h2>
+
+      <motion.p
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.55 }}
+        style={{ fontSize: 14, color: VIZ.text2, lineHeight: 1.55, maxWidth: 380, margin: "0 0 32px" }}
+      >
+        Your Momentum Score starts at 50. Every task you complete pushes it higher.
+        Every day you don't act, it decays slowly — but never breaks completely.
+        BuildMind already knows what you should do next.
+      </motion.p>
+
+      <motion.button
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.7 }}
+        onClick={onComplete}
+        whileHover={{ scale: 1.02 }}
+        whileTap={{ scale: 0.98 }}
+        style={{
+          padding: "14px 36px",
+          background: VIZ.grad,
+          color: "#fff",
+          border: "none",
+          borderRadius: 10,
+          fontSize: 15,
+          fontWeight: 600,
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          fontFamily: "inherit",
+        }}
+      >
+        <ArrowRight size={15} /> See today&apos;s action
+      </motion.button>
+    </motion.div>
+  );
+}
+
+// ── Main Onboarding Component ─────────────────────────────────────────────────
+function OnboardingInner() {
+  const router = useRouter();
+  const [screen, setScreen] = useState<Screen>("input");
+  const [idea, setIdea] = useState("");
+  const [strikeResult, setStrikeResult] = useState<StrikeResult | null>(null);
+  const [depthAnswers, setDepthAnswers] = useState<DepthAnswers>({ avoidance: "", revenueModel: "", targetUsers: "" });
+  const [error, setError] = useState<string | null>(null);
+
+  // Redirect if already onboarded
+  useEffect(() => {
+    getCurrentUser().then(user => {
+      if (!user) { router.replace("/auth"); return; }
+      getOnboardingStatus(user.id).then(status => {
+        if (status?.completed) router.replace("/today");
+      });
+    });
+  }, [router]);
+
+  const handleIdeaSubmit = async (submittedIdea: string) => {
+    setIdea(submittedIdea);
+    setError(null);
+
+    try {
+      trackFunnelStep("reflexion_strike_started");
+      const res = await fetch("/api/ai/reflexion-strike", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ startupDescription: submittedIdea, stage: "Idea" }),
+      });
+      const data = await res.json();
+      if (data.ok && data.data) {
+        setStrikeResult(data.data);
+        setScreen("strike");
+        trackFunnelStep("reflexion_strike_shown");
+      } else {
+        throw new Error("Strike failed");
+      }
+    } catch {
+      // Graceful fallback — never show an error to a new user
+      setStrikeResult({
+        marketGap: "The crowded part of this market is generic solutions. The gap nobody has claimed yet is serving your exact type of user with deep specificity.",
+        firstTask: "Find one person who has this problem. Send them a message in the next 30 minutes asking what they currently do about it.",
+        rationale: "Because talking to one real person beats a week of planning every time.",
+      });
+      setScreen("strike");
+      trackFunnelStep("reflexion_strike_fallback");
+    }
+  };
+
+  const handleStrikeContinue = () => {
+    setScreen("depth");
+    trackFunnelStep("reflexion_strike_accepted");
+  };
+
+  const handleDepthComplete = (answers: DepthAnswers) => {
+    setDepthAnswers(answers);
+    setScreen("identity");
+    trackFunnelStep("depth_questions_answered");
+  };
+
+  const handleIdentityComplete = async () => {
+    setScreen("saving");
+    try {
+      const user = await getCurrentUser();
+      if (!user) { router.replace("/auth"); return; }
+
+      // Map onboarding v2 fields to createProjectWithRoadmap's expected params.
+      // project_name: first ≤60 chars of the idea sentence, title-cased
+      // idea_description: the full one-sentence idea from screen 1
+      // problem: the market gap surfaced by the Reflexion Strike (screen 2)
+      // target_users: the AI will refine this via the coach; "founders" is the
+      //   default fallback so the context object is never empty on day 1
+      const projectName = idea.slice(0, 60).replace(/[.!?]+$/, "").trim();
+      await createProjectWithRoadmap({
+        project_name: projectName,
+        idea_description: idea,
+        // Use depth screen answer if provided, else sensible default
+        target_users: depthAnswers.targetUsers.trim() || "founders",
+        problem: strikeResult?.marketGap ?? idea,
+        startup_stage: "Idea",
+      });
+
+      identifyUser(user.id, { onboarding_v2: true });
+      trackFunnelStep("onboarding_complete");
+
+      // Persist depth-screen answers into founder_memory.avoidance_zones
+      // and startup context (best-effort, non-blocking)
+      if (depthAnswers.avoidance.trim() || depthAnswers.revenueModel.trim()) {
+        fetch("/api/onboarding/depth-answers", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(depthAnswers),
+        }).catch(() => {});
+      }
+
+      // Stamp onboarding_completed into JWT metadata so middleware never
+      // runs the slow DB project-count query again for this user (W6 fix).
+      const supabase = createClient();
+      await supabase.auth.updateUser({ data: { onboarding_completed: true } });
+
+      // Fire welcome email — best-effort, never blocks navigation
+      fetch("/api/user/welcome-email", { method: "POST" }).catch(() => {});
+
+      router.push("/today?first_session=true");
+    } catch {
+      setError("Something went wrong saving your project. Please try again.");
+      setScreen("identity");
+    }
+  };
+
+  if (screen === "saving") {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100dvh", background: VIZ.bg }}>
+        <BuildMindLoader />
+        <p style={{ color: VIZ.text2, marginTop: 16, fontSize: 14 }}>Setting up your execution system...</p>
+      </div>
+    );
+  }
+
+  return (
+    <AnimatePresence mode="wait">
+      {screen === "input" && (
+        <InputScreen key="input" onSubmit={handleIdeaSubmit} />
+      )}
+      {screen === "strike" && strikeResult && (
+        <StrikeScreen key="strike" idea={idea} result={strikeResult} onContinue={handleStrikeContinue} />
+      )}
+      {screen === "depth" && (
+        <DepthScreen key="depth" onComplete={handleDepthComplete} />
+      )}
+      {screen === "identity" && (
+        <IdentityScreen key="identity" onComplete={handleIdentityComplete} />
+      )}
+    </AnimatePresence>
   );
 }
 
 export default function OnboardingPage() {
   return (
-    <Suspense fallback={<BuildMindLoader />}>
-      <OnboardingContent />
+    <Suspense fallback={
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100dvh" }}>
+        <Loader2 size={20} style={{ animation: "spin 1s linear infinite" }} />
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    }>
+      <OnboardingInner />
     </Suspense>
   );
 }

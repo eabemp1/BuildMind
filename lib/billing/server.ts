@@ -4,12 +4,18 @@ import { normalizePlan, type Plan } from "@/lib/plan";
 export type PublicPlan = Extract<Plan, "free" | "builder">;
 
 type BillingUpdate = {
-  provider?: "paystack";
-  status?: "active" | "canceled" | "processing" | "free";
+  provider?: "paystack" | "stripe";
+  status?: "active" | "canceled" | "processing" | "free" | "grace";
   reference?: string | null;
   transactionId?: string | null;
   subscriptionId?: string | null;
   customerEmail?: string | null;
+  customerId?: string | null;
+  periodStart?: string | null;
+  periodEnd?: string | null;
+  gracePeriodEndsAt?: string | null;
+  amountMinor?: number | null;
+  currency?: string | null;
   meta?: Record<string, unknown>;
 };
 
@@ -81,6 +87,35 @@ export async function persistUserPlan(userId: string, plan: PublicPlan, update: 
   });
   if (updateError) throw new Error(updateError.message);
 
+  // ── Dual-write to subscriptions table (Audit v8 ENG #1) ─────────────────
+  // The subscriptions table is the target architecture — user_metadata is kept
+  // in sync during the transition but is not the source of truth going forward.
+  const subscriptionRow = {
+    user_id:                 userId,
+    plan,
+    status:                  (update.status ?? (plan === "builder" ? "active" : "free")) as string,
+    provider:                update.provider ?? null,
+    provider_subscription_id: update.subscriptionId ?? null,
+    provider_customer_id:    update.customerId ?? null,
+    provider_reference:      update.reference ?? null,
+    current_period_start:    update.periodStart ?? null,
+    current_period_end:      update.periodEnd ?? null,
+    grace_period_ends_at:    update.gracePeriodEndsAt ?? (update.meta?.grace_period_ends_at as string | null) ?? null,
+    canceled_at:             update.status === "canceled" ? new Date().toISOString() : null,
+    customer_email:          update.customerEmail ?? null,
+    amount_minor:            update.amountMinor ?? null,
+    currency:                update.currency ?? "GHS",
+  };
+
+  await supabase
+    .from("subscriptions")
+    .upsert(subscriptionRow, { onConflict: "user_id" })
+    .then(() => undefined, (err) => {
+      // Non-fatal: user_metadata was already updated. Log and continue.
+      console.warn("[billing/persistUserPlan] subscriptions upsert failed:", err?.message ?? err);
+    });
+
+  // Also sync to profiles for any UI that reads from there
   await supabase
     .from("profiles")
     .update({ plan })

@@ -14,8 +14,9 @@ import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { fetchMorningBriefing, type MorningBriefing } from "@/lib/founderContext";
 import { usePlan } from "@/lib/usePlan";
+import { AIErrorBoundary } from "./AIErrorBoundary";
 
-export default function MorningBriefingCard() {
+function MorningBriefingCardInner() {
   const [briefing, setBriefing] = useState<MorningBriefing | null>(null);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(true);
@@ -98,5 +99,13 @@ export default function MorningBriefingCard() {
         )}
       </motion.div>
     </AnimatePresence>
+  );
+}
+
+export default function MorningBriefingCard() {
+  return (
+    <AIErrorBoundary feature="Morning Briefing">
+      <MorningBriefingCardInner />
+    </AIErrorBoundary>
   );
 }

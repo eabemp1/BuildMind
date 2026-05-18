@@ -11,6 +11,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { rateLimitAsync } from "@/lib/server/rateLimit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,6 +43,16 @@ export async function GET() {
 export async function POST(req: Request) {
   const userId = await getUserId();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const limit = await rateLimitAsync(
+    `xp:${userId}`,
+    20,              // 20 XP grants per hour — generous for legitimate use
+    60 * 60 * 1000,
+    { failClosed: false }  // fail open — authenticated route
+  );
+  if (!limit.ok) {
+    return NextResponse.json({ error: "Too many XP requests" }, { status: 429 });
+  }
 
   const body = await req.json().catch(() => ({}));
   const amount = Number(body?.amount ?? 0);

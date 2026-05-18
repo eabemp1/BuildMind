@@ -4,7 +4,7 @@
  * ╔══════════════════════════════════════════════════════════════════════════╗
  * ║  ACTIVE TIERS (this week — Playbook v4 §11, item 12):                  ║
  * ║    Free     → $0   (acquisition engine, limited)                       ║
- * ║    Builder  → $19  (the one paid tier to ship now)                     ║
+ * ║    Builder  → $39  (the one paid tier to ship now)                     ║
  * ║                                                                        ║
  * ║  FUTURE TIERS — DO NOT ACTIVATE YET:                                   ║
  * ║    Operator → $39  opens to WAITLIST at Day 90, only if:               ║
@@ -13,22 +13,29 @@
  * ║    Founder  → $69  Month 6–7 (100 users with data)                    ║
  * ║    Chief of Staff → $120  Month 12+ (200 users, strong retention)      ║
  * ║                                                                        ║
- * ║  ACTIVE FEATURES (ship this week — Playbook §5.3 "Now"):              ║
- * ║    Founder Context Object, Reflexion Strike onboarding,                ║
+ * ║  ACTIVE FEATURES (live — Playbook v4):                                 ║
+ * ║    Founder Context Object, Reflexion Strike onboarding (v2),           ║
  * ║    Morning Briefing (3 days free / daily Builder),                     ║
  * ║    Evening Check, Cognitive Load Check-in, One Task Rule,              ║
  * ║    HITL Override, Momentum Score, Explainable Rationale,               ║
- * ║    Emotional Language Layer, Recovery Mode                             ║
+ * ║    Emotional Language Layer, Recovery Mode,                            ║
+ * ║    Pattern Detection (lib/patternDetection.ts — fires from evening     ║
+ * ║      check cron + task-complete route, Playbook §3.2),                 ║
+ * ║    Agent Persona Rotation (weekly Critic rotation, lib/reflexion.ts),  ║
+ * ║    Confidence Gate (lib/reflexion.ts §4.5),                            ║
+ * ║    Behavioral Learning Loop (lib/learning.ts),                         ║
+ * ║    Contextual Paywall Moments (components/PaywallMoment.tsx §6.2)      ║
  * ║                                                                        ║
- * ║  NOT YET — Month 2:                                                    ║
- * ║    Pattern Detection, Weekly Mirror Moment, Agent Persona Rotation,    ║
- * ║    Confidence Gate, Shareable Scorecard                                ║
+ * ║  NOT YET — activate when metrics warrant (Playbook §10):               ║
+ * ║    Weekly Mirror Moment, Shareable Scorecard,                          ║
+ * ║    Ghost Competitor, Stress Test Arena, Accountability Pairing         ║
  * ║                                                                        ║
  * ║  NOT YET — Month 3+:                                                   ║
- * ║    Ghost Competitor, Stress Test Arena, Accountability Pairing,        ║
  * ║    Ventures Blueprint engine, CoFounder Blueprint mode                 ║
  * ╚══════════════════════════════════════════════════════════════════════════╝
  */
+
+import { storage } from "@/lib/storage";
 
 export type Plan = "free" | "builder";
 
@@ -63,13 +70,122 @@ export interface PlanLimits {
   recoveryMode:               boolean;  // forgiveness protocol, Reset Mission (NEW IN V4)
   founderMemory:              boolean;
 
-  // ── Month 2 features — NOT YET (defined to prevent accidental gating) ─────
-  // patternDetection, weeklyMirrorMoment, agentPersonaRotation,
-  // confidenceGate, shareableScorecard — all false on both tiers until Month 2
+  // ── Live behavioral features (no separate flag needed — always on for Builder) ─
+  // patternDetection      → lib/patternDetection.ts (fires from evening cron + task-complete)
+  // agentPersonaRotation  → lib/reflexion.ts getWeeklyCriticPersona()
+  // confidenceGate        → lib/reflexion.ts shouldTriggerConfidenceGate()
+  // learningLoop          → lib/learning.ts (injected into reflexion pipeline)
+  // paywallMoments        → components/PaywallMoment.tsx
 
-  // ── Month 3+ features — NOT YET ──────────────────────────────────────────
+  // ── Not yet — activate when metrics warrant (Playbook §10) ───────────────
+  // weeklyMirrorMoment, shareableScorecard,
   // ghostCompetitor, stressTestArena, accountabilityPairing,
-  // resourceLibrary, venturesBlueprint, cofounderBlueprint — not in plan yet
+  // resourceLibrary, venturesBlueprint, cofounderBlueprint
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 14-Day Free Trial System (Audit v8: 7 days is insufficient for behavioral
+// personalization to become visible. Founders need ~2 weeks of daily sessions
+// for the avoidance detection, pattern surfacing, and learning loop to feel
+// genuinely personal. The conversion event is day 14, by which point behavioral
+// memory is built and the switching cost is real. No credit card required at trial start.)
+//
+// New users get 14 days of Builder-level access on signup.
+// On day 15, a hard paywall blocks all Builder features until they pay.
+//
+// Trial state is persisted in:
+//   - user_metadata.trial_started_at  (set at signup by the auth callback)
+//   - founder_context.trial_ends_at   (set server-side, authoritative)
+//
+// Client-side functions below read trial state from localStorage for fast
+// rendering; the server always re-validates via /api/billing/status.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const TRIAL_DURATION_DAYS = 14;
+
+/** Number of milliseconds in the trial window. */
+const TRIAL_MS = TRIAL_DURATION_DAYS * 24 * 60 * 60 * 1000;
+
+const TRIAL_KEY = "bm_trial_started_at";
+const TRIAL_EXPIRED_KEY = "bm_trial_expired";
+
+/**
+ * startFreeTrial — called once at signup (auth callback).
+ * Sets trial_started_at in localStorage and fires a server request to
+ * persist it in founder_context so it survives device switches.
+ */
+export function startFreeTrial(): void {
+  if (typeof window === "undefined") return;
+  if (storage.get(TRIAL_KEY)) return; // already started
+  const now = new Date().toISOString();
+  storage.set(TRIAL_KEY, now);
+  // Persist server-side — fire-and-forget, storage is the fast path
+  fetch("/api/billing/start-trial", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ trialStartedAt: now }),
+  }).catch(() => { /* non-fatal */ });
+}
+
+/**
+ * getTrialStatus — returns the current trial state.
+ * Uses storage for instant rendering; caller should validate against
+ * /api/billing/status for server-authoritative truth.
+ */
+export function getTrialStatus(): {
+  isInTrial: boolean;
+  isExpired: boolean;
+  daysRemaining: number;
+  trialStartedAt: string | null;
+} {
+  if (typeof window === "undefined") {
+    return { isInTrial: false, isExpired: false, daysRemaining: 0, trialStartedAt: null };
+  }
+  const expired = storage.get(TRIAL_EXPIRED_KEY) === "1";
+  if (expired) return { isInTrial: false, isExpired: true, daysRemaining: 0, trialStartedAt: null };
+
+  const trialStartedAt = storage.get(TRIAL_KEY);
+  if (!trialStartedAt) return { isInTrial: false, isExpired: false, daysRemaining: 0, trialStartedAt: null };
+
+  const elapsed = Date.now() - new Date(trialStartedAt).getTime();
+  const remaining = Math.ceil((TRIAL_MS - elapsed) / (24 * 60 * 60 * 1000));
+
+  if (elapsed >= TRIAL_MS) {
+    storage.set(TRIAL_EXPIRED_KEY, "1");
+    return { isInTrial: false, isExpired: true, daysRemaining: 0, trialStartedAt };
+  }
+
+  return { isInTrial: true, isExpired: false, daysRemaining: Math.max(0, remaining), trialStartedAt };
+}
+
+/**
+ * isTrialActive — quick boolean for gating UI.
+ * Returns true if the user is within their 7-day trial window.
+ */
+export function isTrialActive(): boolean {
+  return getTrialStatus().isInTrial;
+}
+
+/**
+ * markTrialExpired — called by billing/status when the server confirms expiry.
+ * Ensures the hard paywall kicks in even if the user hasn't refreshed.
+ */
+export function markTrialExpired(): void {
+  if (typeof window === "undefined") return;
+  storage.set(TRIAL_EXPIRED_KEY, "1");
+}
+
+/**
+ * getEffectivePlan — returns the plan that should be used for feature gating.
+ * During an active trial, free users get Builder-level access.
+ * After trial expiry, they are hard-gated back to free until they pay.
+ */
+export function getEffectivePlan(basePlan?: Plan): Plan {
+  const plan = basePlan ?? getPlan();
+  if (plan === "builder") return "builder";
+  const trial = getTrialStatus();
+  if (trial.isInTrial) return "builder"; // trial grants full builder access
+  return "free"; // trial expired or never started → strict free tier
 }
 
 export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
@@ -100,7 +216,7 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     founderMemory: false,
   },
 
-  // ── BUILDER — $19/mo ──────────────────────────────────────────────────────
+  // ── BUILDER — $39/mo ──────────────────────────────────────────────────────
   // "For: pre-revenue founders in active build mode"
   // The ONLY paid tier to ship this week.
   builder: {
@@ -131,7 +247,7 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
 
 export const PLAN_PRICES: Record<Plan, string> = {
   free:    "$0",
-  builder: "$19",
+  builder: "$39",
 };
 
 export const PLAN_NAMES: Record<Plan, string> = {
@@ -203,18 +319,12 @@ export function planMeetsRequirement(actual: Plan, required: Plan): boolean {
 
 export function setStoredPlan(plan: Plan): void {
   if (typeof window === "undefined") return;
-  const normalized = normalizePlan(plan);
-  localStorage.setItem("bm_plan", normalized);
-  const activeUserId = localStorage.getItem("bm_active_user_id");
-  if (activeUserId) {
-    localStorage.setItem(`bm_plan_${activeUserId}`, normalized);
-  }
+  storage.setPlan(normalizePlan(plan));
 }
 
 export function clearStoredPlan(): void {
   if (typeof window === "undefined") return;
-  localStorage.removeItem("bm_plan");
-  localStorage.removeItem("bm_active_user_id");
+  storage.onSignOut();
 }
 
 export function planFromUserMetadata(
@@ -245,13 +355,8 @@ export function syncStoredPlanFromUser(
 
 export function getPlan(): Plan {
   if (typeof window === "undefined") return "free";
-  const activeUserId = localStorage.getItem("bm_active_user_id");
-  if (activeUserId) {
-    const scoped = localStorage.getItem(`bm_plan_${activeUserId}`);
-    if (scoped) return normalizePlan(scoped);
-  }
-  const local = localStorage.getItem("bm_plan");
-  if (local) return normalizePlan(local);
+  const scoped = storage.getPlan();
+  if (scoped) return normalizePlan(scoped);
   const env = process.env.NEXT_PUBLIC_USER_PLAN;
   return normalizePlan(env);
 }
@@ -271,13 +376,13 @@ export function canAccess(feature: string, plan?: Plan): boolean {
 
 export function getActionsThisWeek(): number {
   if (typeof window === "undefined") return 0;
-  return Number(localStorage.getItem(`bm_actions_${weekKey()}`) ?? "0");
+  return storage.getActionsThisWeek();
 }
 export function recordWeeklyAction(): void {
   if (typeof window === "undefined") return;
   const plan = getPlan();
   if (PLAN_LIMITS[plan].actionsPerWeek === -1) return;
-  localStorage.setItem(`bm_actions_${weekKey()}`, String(getActionsThisWeek() + 1));
+  storage.recordWeeklyAction();
 }
 export function hasHitWeeklyLimit(): boolean {
   const plan = getPlan();
@@ -299,13 +404,11 @@ function weekKey(): string {
 
 export function getAIMessagesToday(userId?: string | null): number {
   if (typeof window === "undefined") return 0;
-  const key = userId ? `bm_ai_${userId}_${dayKey()}` : `bm_ai_${dayKey()}`;
-  return Number(localStorage.getItem(key) ?? "0");
+  return storage.getAIMessagesToday();
 }
 export function recordAIMessage(userId?: string | null): void {
   if (typeof window === "undefined") return;
-  const key = userId ? `bm_ai_${userId}_${dayKey()}` : `bm_ai_${dayKey()}`;
-  localStorage.setItem(key, String(getAIMessagesToday(userId) + 1));
+  storage.recordAIMessage();
 }
 export function hasHitDailyAILimit(userId?: string | null): boolean {
   const plan = getPlan();
@@ -336,13 +439,12 @@ function streakDayKey(d = new Date()): string {
 
 export function getStoredStreak(): number {
   if (typeof window === "undefined") return 0;
-  return Number(localStorage.getItem(STREAK_KEY) ?? "0");
+  return storage.getStreak();
 }
 
 /**
  * syncStreakFromServer — call on app mount to restore streak from Supabase.
- * This makes streak survive device switches and localStorage clears.
- * Updates both localStorage keys so incrementDailyStreak() works correctly.
+ * This makes streak survive device switches and storage clears.
  */
 export async function syncStreakFromServer(): Promise<number> {
   if (typeof window === "undefined") return 0;
@@ -351,8 +453,8 @@ export async function syncStreakFromServer(): Promise<number> {
     if (!res.ok) return getStoredStreak();
     const { streak, lastCheckinDate } = await res.json();
     if (typeof streak === "number") {
-      localStorage.setItem(STREAK_KEY, String(streak));
-      if (lastCheckinDate) localStorage.setItem(LAST_CHECKIN_KEY, lastCheckinDate);
+      storage.setStreak(streak);
+      if (lastCheckinDate) storage.setLastCheckinDate(lastCheckinDate);
       window.dispatchEvent(new CustomEvent("bm_streak_updated", { detail: { streak } }));
       return streak;
     }
@@ -363,7 +465,7 @@ export async function syncStreakFromServer(): Promise<number> {
 export function incrementDailyStreak(): number {
   if (typeof window === "undefined") return 0;
   const today = streakDayKey();
-  const lastCheckin = localStorage.getItem(LAST_CHECKIN_KEY) ?? "";
+  const lastCheckin = storage.getLastCheckinDate();
   const current = getStoredStreak();
 
   if (lastCheckin === today) return current;
@@ -372,17 +474,16 @@ export function incrementDailyStreak(): number {
   yesterday.setDate(yesterday.getDate() - 1);
   const next = lastCheckin === streakDayKey(yesterday) ? current + 1 : 1;
 
-  localStorage.setItem(STREAK_KEY, String(next));
-  localStorage.setItem(LAST_CHECKIN_KEY, today);
+  storage.setStreak(next);
+  storage.setLastCheckinDate(today);
   window.dispatchEvent(new CustomEvent("bm_streak_updated", { detail: { streak: next } }));
 
-  // Persist to Supabase so streak survives device switches and localStorage clears.
-  // Fire-and-forget — localStorage already updated so UI is instant.
+  // Persist to Supabase so streak survives device switches and storage clears.
   fetch("/api/founder-context/streak", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ streak: next, lastCheckinDate: today }),
-  }).catch(() => { /* non-fatal — localStorage is the fast fallback */ });
+  }).catch(() => { /* non-fatal — storage is the fast fallback */ });
 
   return next;
 }
@@ -394,27 +495,27 @@ const TASK_KEY    = "bm_tasks_done";
 
 export function recordTaskCompletion(): void {
   if (typeof window === "undefined") return;
-  localStorage.setItem(TASK_KEY, String(getTasksDone() + 1));
+  storage.set(TASK_KEY, String(getTasksDone() + 1));
   recordWeeklyAction();
   window.dispatchEvent(new CustomEvent("bm_task_completed"));
 }
 export function getTasksDone(): number {
   if (typeof window === "undefined") return 0;
-  return Number(localStorage.getItem(TASK_KEY) ?? "0");
+  return Number(storage.get(TASK_KEY) ?? "0");
 }
 export function checkUpgradeTrigger(streak: number): { shouldUpgrade: boolean; reason: string } {
   if (getPlan() !== "free") return { shouldUpgrade: false, reason: "already_paid" };
   if (typeof window === "undefined") return { shouldUpgrade: false, reason: "ssr" };
-  if (localStorage.getItem(UPGRADE_KEY)) return { shouldUpgrade: false, reason: "already_shown" };
+  if (storage.get(UPGRADE_KEY)) return { shouldUpgrade: false, reason: "already_shown" };
   const done = getTasksDone();
-  if (done >= 2) { localStorage.setItem(UPGRADE_KEY, "1"); return { shouldUpgrade: true, reason: "2_tasks" }; }
-  if (streak >= 3) { localStorage.setItem(UPGRADE_KEY, "1"); return { shouldUpgrade: true, reason: "3_day_streak" }; }
-  if (hasHitWeeklyLimit()) { localStorage.setItem(UPGRADE_KEY, "1"); return { shouldUpgrade: true, reason: "weekly_limit" }; }
+  if (done >= 2) { storage.set(UPGRADE_KEY, "1"); return { shouldUpgrade: true, reason: "2_tasks" }; }
+  if (streak >= 3) { storage.set(UPGRADE_KEY, "1"); return { shouldUpgrade: true, reason: "3_day_streak" }; }
+  if (hasHitWeeklyLimit()) { storage.set(UPGRADE_KEY, "1"); return { shouldUpgrade: true, reason: "weekly_limit" }; }
   return { shouldUpgrade: false, reason: "not_yet" };
 }
 export function resetUpgradeTrigger(): void {
   if (typeof window === "undefined") return;
-  [UPGRADE_KEY, TASK_KEY].forEach(k => localStorage.removeItem(k));
+  [UPGRADE_KEY, TASK_KEY].forEach(k => storage.remove(k));
 }
 
 // Dev helpers
@@ -426,8 +527,9 @@ declare global {
 if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
   window.bmSetPlan = (p: string, userId: string) => {
     if (!userId) { console.warn("bmSetPlan: pass a userId to avoid cross-account bleed"); return; }
-    localStorage.setItem(`bm_plan_${userId}`, normalizePlan(p as Plan));
-    console.log(`[dev] bm_plan_${userId} = ${normalizePlan(p as Plan)}. Refresh.`);
+    storage.onSignIn(userId);
+    storage.setPlan(normalizePlan(p as Plan));
+    console.log(`[dev] bm_plan scoped to ${userId} = ${normalizePlan(p as Plan)}. Refresh.`);
   };
 }
 

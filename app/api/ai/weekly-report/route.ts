@@ -13,6 +13,9 @@ type AIWeeklyReport = {
   next_week_focus: string;
   honest_assessment: string;
   momentum_score: number;
+  // REC 2.1 + 2.2: intention vs execution headline number
+  intention_vs_execution_rate?: number; // 0-100 percentage
+  execution_trend?: "up" | "down" | "flat";
 };
 
 function clamp(n: number, min: number, max: number) { return Math.max(min, Math.min(max, n)); }
@@ -113,9 +116,11 @@ export async function POST(request: Request) {
   "summary": "2-sentence momentum assessment",
   "intention_vs_action": "what they committed vs what they actually did this week",
   "biggest_gap": "the single biggest execution gap right now",
-  "next_week_focus": "one specific thing to prioritize next week",
+  "next_week_focus": "one specific thing to prioritize next week. This will become Monday's first task — make it concrete and actionable.",
   "honest_assessment": "a direct, uncomfortable truth about where this founder is headed",
-  "momentum_score": <number 0-100>
+  "momentum_score": <number 0-100>,
+  "intention_vs_execution_rate": <number 0-100 — tasks completed / tasks committed this week>,
+  "execution_trend": "up" | "down" | "flat"
 }
 No preamble. No markdown. Only JSON.`;
 
@@ -164,7 +169,66 @@ Be specific. No generic startup advice. Reference what you actually see in the d
       // use fallback — still better than crashing
     }
 
-    // Also store summary back to report data for the static report section
+    // REC 2.2: Weekly report is the primary writer of avoidance_zones to founder_memory.
+    // Pull override reasons from reflections this week and update founder_memory.
+    if (hasAdminEnv()) {
+      try {
+        const supabase = createAdminClient();
+        const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+        const { data: weekReflections } = await supabase
+          .from("reflections")
+          .select("outcome, note, confidence")
+          .eq("user_id", userId)
+          .gte("created_at", weekAgo)
+          .order("created_at", { ascending: false });
+
+        if (weekReflections && weekReflections.length > 0) {
+          // Extract avoidance signals from blocked/overridden reflections
+          const blockedNotes = weekReflections
+            .filter(r => r.outcome === "blocked" || r.confidence <= 2)
+            .map(r => r.note)
+            .filter(Boolean)
+            .slice(0, 3);
+
+          const avgConfidence = weekReflections.reduce((sum, r) => sum + (r.confidence ?? 3), 0) / weekReflections.length;
+
+          // Write avoidance patterns and last week summary to founder_memory for Monday's task
+          const { data: existingMemory } = await supabase
+            .from("founder_memory")
+            .select("avoidance_zones, last_insight")
+            .eq("user_id", userId)
+            .maybeSingle();
+
+          const currentZones = (existingMemory?.avoidance_zones ?? []) as string[];
+          const newInsight = result.biggest_gap;
+
+          // Add new avoidance patterns detected this week
+          const newZones = [...new Set([...currentZones, ...blockedNotes])].slice(0, 10);
+
+          await supabase
+            .from("founder_memory")
+            .upsert({
+              user_id: userId,
+              avoidance_zones: newZones,
+              last_insight: newInsight,
+              // Store last week summary so Monday's task generator can reference it
+              last_week_summary: JSON.stringify({
+                tasks_completed: tasks,
+                milestones_completed: milestones,
+                avg_confidence: Math.round(avgConfidence * 10) / 10,
+                biggest_gap: result.biggest_gap,
+                next_week_focus: result.next_week_focus,
+                generated_at: new Date().toISOString(),
+              }),
+            }, { onConflict: "user_id" });
+        }
+      } catch {
+        // Non-fatal — report still returns even if memory writeback fails
+      }
+    }
+
+    // REC 2.1: Store next_week_focus as Monday's seed action
+    // Today-action generator reads last_week_summary from founder_memory on Monday
     const reportData = {
       week_start_date: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
       projects_count: projects,
@@ -175,9 +239,30 @@ Be specific. No generic startup advice. Reference what you actually see in the d
       ai_suggestions: result.next_week_focus,
     };
 
+    // Growth #4: Generate a share token so the report can be linked publicly.
+    // Token is a random 16-byte hex string — not guessable, not user-derivable.
+    // Stored in weekly_reports table so /reports/share/[token] can render it
+    // without authentication. Founders share the URL on X/LinkedIn.
+    const shareToken = crypto.randomUUID().replace(/-/g, "").slice(0, 24);
+
+    // Upsert to weekly_reports for share URL persistence
+    const supabaseForShare = createAdminClient();
+    await supabaseForShare
+      .from("weekly_reports")
+      .upsert({
+        user_id:     userId,
+        share_token: shareToken,
+        report_data: reportData,
+        ai_summary:  result.summary,
+        created_at:  new Date().toISOString(),
+      }, { onConflict: "user_id,share_token" })
+      .then(() => {});
+
+    const shareUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "https://buildmind.live"}/reports/share/${shareToken}`;
+
     return NextResponse.json({
       success: true,
-      data: { ...result, reportData },
+      data: { ...result, reportData, shareToken, shareUrl },
     });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Report failed";

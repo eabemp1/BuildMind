@@ -21,6 +21,9 @@ type ReportData = {
   next_week_focus: string;
   honest_assessment: string;
   momentum_score: number;
+  // REC 6.2: intention vs execution rate headline
+  intention_vs_execution_rate?: number;
+  execution_trend?: "up" | "down" | "flat";
 };
 
 type Props = {
@@ -120,20 +123,30 @@ function StageBar({ stage }: { stage: string }) {
 
 function buildShareText(report: ReportData, props: Props): string {
   const pct = props.tasksTotal > 0 ? Math.round((props.tasksCompleted / props.tasksTotal) * 100) : 0;
-  return `Week ${props.weekNumber} — building ${props.projectTitle} in public 🧵
+  const momentumDir = report.momentum_score >= 60 ? "↑ above average" : report.momentum_score >= 40 ? "at average" : "↓ below average";
 
-📊 Momentum: ${report.momentum_score}/100
-✅ Tasks done: ${props.tasksCompleted}/${props.tasksTotal} (${pct}%)
-🔥 Streak: ${props.streak} days
-📍 Stage: ${props.stage}
+  // Audit v8 PROD #5: a real "build in public" card — honest, specific, shareable.
+  // "14-day streak. 3 tasks completed. BuildMind told me I was avoiding sales
+  //  conversations for 2 weeks. I wasn't ready to hear it."
+  const avoPattern = (report as Record<string, unknown>).avoidance_pattern as string | undefined;
+  const avoidanceLine = avoPattern
+    ? `
 
-The honest take:
-"${report.honest_assessment}"
+Hard truth from my AI co-founder:
+"${avoPattern}"`
+    : "";
 
-Next week's focus:
+  return `Week ${props.weekNumber} — ${props.projectTitle} (${props.stage} stage) 🧵
+
+📊 Momentum: ${report.momentum_score}/100 — ${momentumDir} for my stage
+✅ ${props.tasksCompleted} of ${props.tasksTotal} tasks completed (${pct}%)
+${props.streak > 0 ? `🔥 ${props.streak}-day streak` : ""}${avoidanceLine}
+
+Next week:
 → ${report.next_week_focus}
 
-Tracking it all with @buildmind_io
+Not using vibes. Using behavioral data.
+buildmind.live — AI that knows how you actually build.
 
 #buildinpublic #solofounder #startuplife`;
 }
@@ -369,6 +382,31 @@ export default function WeeklyReportCard({
             buildmind.live
           </div>
         </div>
+      </motion.div>
+
+      {/* ── Visual share card (Audit v8 PROD #5) ── */}
+      <motion.div className="bm-no-print"
+        initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}
+        style={{ marginTop: 14, background: "linear-gradient(135deg, #0F0F10 0%, #161618 100%)", border: "1px solid rgba(92,200,138,0.22)", borderRadius: 12, padding: "16px 20px", position: "relative", overflow: "hidden" }}>
+        <div style={{ position: "absolute", top: -24, right: -24, width: 120, height: 120, borderRadius: "50%", background: "radial-gradient(circle, rgba(92,200,138,0.12) 0%, transparent 70%)", pointerEvents: "none" }} />
+        <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.12em", color: "rgba(92,200,138,0.55)", marginBottom: 10, textTransform: "uppercase" }}>
+          Week {weekNumber} · {projectTitle}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: report.next_week_focus ? 10 : 0 }}>
+          <div>
+            <span style={{ fontSize: 28, fontWeight: 800, color: "#ECECEC", letterSpacing: "-0.04em" }}>{report.momentum_score}</span>
+            <span style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", marginLeft: 3 }}>/100</span>
+          </div>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", lineHeight: 1.7 }}>
+            {tasksCompleted}/{tasksTotal} tasks complete{streak > 0 && <><br /><span style={{ color: "#E8A020" }}>🔥 {streak}-day streak</span></>}
+          </div>
+        </div>
+        {report.next_week_focus && (
+          <div style={{ fontSize: 10, color: "rgba(92,200,138,0.65)", borderTop: "1px solid rgba(92,200,138,0.1)", paddingTop: 8 }}>
+            Next: {report.next_week_focus.slice(0, 90)}{report.next_week_focus.length > 90 ? "…" : ""}
+          </div>
+        )}
+        <div style={{ position: "absolute", bottom: 8, right: 12, fontSize: 8, color: "rgba(255,255,255,0.12)", fontWeight: 700, letterSpacing: "0.08em" }}>BUILDMIND.LIVE</div>
       </motion.div>
 
       {/* ── Action buttons (hidden on print) ── */}

@@ -5,8 +5,8 @@ import { Check, Zap, Star, Shield } from "lucide-react";
 import { PLAN_PRICE_LABEL } from "@/lib/pricing";
 
 export const metadata: Metadata = {
-  title: "Pricing | BuildMind",
-  description: "BuildMind pricing plans for founders. Free forever or upgrade to Builder for unlimited AI.",
+  title: "Pricing | BuildMind — The next move, already decided",
+  description: "BuildMind removes the decision of what to do next. Free to try. Builder plan gives you the system every day.",
 };
 
 const FREE_FEATURES = [
@@ -77,7 +77,8 @@ export default function PricingPage() {
             <Zap size={10} /> Pricing
           </div>
           <h1 style={{ fontSize: 46, fontWeight: 900, color: "var(--bm-text)", letterSpacing: "-0.04em", lineHeight: 1.1, margin: "0 0 16px" }}>
-            Pick your founder plan
+            The system works.
+You pick how much of it you want.
           </h1>
           <p style={{ fontSize: 16, color: "var(--bm-text3)", maxWidth: 400, margin: "0 auto", lineHeight: 1.6 }}>
             Start free, upgrade when you need unlimited execution support.

@@ -10,9 +10,10 @@ import { PLAN_PRICE_LABEL } from "@/lib/pricing";
 import { usePlan } from "@/lib/usePlan";
 import PushNotificationToggle from "@/components/PushNotificationToggle";
 import AvatarUpload from "@/components/AvatarUpload";
-import { User, CreditCard, Bell, Bot, Shield, Check, Zap, type LucideIcon } from "lucide-react";
+import { ProfileCompletenessBar } from "@/components/ProfileCompletenessBar";
+import { User, CreditCard, Bell, Bot, Shield, Check, Zap, Globe, type LucideIcon } from "lucide-react";
 
-type Tab = "profile" | "account" | "notifications" | "ai" | "billing";
+type Tab = "profile" | "account" | "notifications" | "ai" | "billing" | "public";
 
 const TABS: { id: Tab; label: string; icon: LucideIcon }[] = [
   { id: "profile",       label: "Profile",       icon: User       },
@@ -20,6 +21,7 @@ const TABS: { id: Tab; label: string; icon: LucideIcon }[] = [
   ...(FEATURES.notifications ? [{ id: "notifications" as Tab, label: "Notifications", icon: Bell }] : []),
   { id: "billing",       label: "Billing",       icon: CreditCard },
   { id: "ai",            label: "AI Usage",      icon: Bot        },
+  { id: "public",        label: "Public Profile", icon: Globe     },
 ];
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
@@ -214,6 +216,14 @@ export default function SettingsPage() {
   const [notifs, setNotifs] = useState({ streakReminder: true, weeklyReport: true, coachTips: false });
   const [aiPersonality, setAiPersonality] = useState<"direct" | "supportive" | "challenger">("direct");
   const [userId, setUserId] = useState<string>("");
+  // Public profile state
+  const [publicProfile, setPublicProfile] = useState(false);
+  const [publicUsername, setPublicUsername] = useState("");
+  const [usernameError, setUsernameError] = useState<string | null>(null);
+  const [publicSaving, setPublicSaving] = useState(false);
+  const [publicSaved, setPublicSaved] = useState(false);
+  // For ProfileCompletenessBar in profile tab
+  const [activeProject, setActiveProject] = useState<Record<string, unknown> | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -226,15 +236,26 @@ export default function SettingsPage() {
         await ensureUserProfile({ id: data.user.id, email: data.user.email ?? "" });
         const { data: profile } = await sb
           .from("profiles")
-          .select("name, username, bio, avatar_url")
+          .select("name, username, bio, avatar_url, public_profile")
           .eq("id", data.user.id)
           .maybeSingle();
         if (profile) {
           setName(profile.name ?? "");
           setUsername(profile.username ?? "");
+          setPublicUsername(profile.username ?? "");
           setBio(profile.bio ?? "");
           setAvatarUrl(profile.avatar_url ?? "");
+          setPublicProfile(profile.public_profile ?? false);
         }
+        // Fetch active project for ProfileCompletenessBar
+        const { data: project } = await sb
+          .from("projects")
+          .select("description, startup_summary, stage, startup_stage, target_users, problem")
+          .eq("user_id", data.user.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (project) setActiveProject(project as Record<string, unknown>);
         const saved = localStorage.getItem("bm_ai_personality");
         if (saved === "direct" || saved === "supportive" || saved === "challenger") {
           setAiPersonality(saved);
@@ -262,6 +283,42 @@ export default function SettingsPage() {
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch {} finally { setSaving(false); }
+  }
+
+  async function handlePublicSave() {
+    setUsernameError(null);
+    const slug = publicUsername.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+    if (!slug) { setUsernameError("Username is required to enable a public profile."); return; }
+    if (slug.length < 3) { setUsernameError("Username must be at least 3 characters."); return; }
+
+    setPublicSaving(true);
+    try {
+      const sb = createClient();
+      const { data } = await sb.auth.getUser();
+      if (!data.user) return;
+
+      // Check uniqueness (only if changed)
+      if (slug !== username) {
+        const { data: existing } = await sb
+          .from("profiles")
+          .select("id")
+          .eq("username", slug)
+          .neq("id", data.user.id)
+          .maybeSingle();
+        if (existing) { setUsernameError("That username is taken. Try another."); return; }
+      }
+
+      await sb.from("profiles").upsert({
+        id:             data.user.id,
+        username:       slug,
+        public_profile: publicProfile,
+        updated_at:     new Date().toISOString(),
+      });
+      setUsername(slug);
+      setPublicSaved(true);
+      setTimeout(() => setPublicSaved(false), 2500);
+    } catch { setUsernameError("Save failed — please try again."); }
+    finally { setPublicSaving(false); }
   }
 
   return (
@@ -305,6 +362,19 @@ export default function SettingsPage() {
 
               {tab === "profile" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                  {/* Profile completeness card (full card) */}
+                  <ProfileCompletenessBar
+                    fields={{
+                      startupSummary:   (activeProject?.startup_summary as string) ?? (activeProject?.description as string) ?? "",
+                      stage:            (activeProject?.stage as string) ?? (activeProject?.startup_stage as string) ?? "",
+                      targetUsers:      (activeProject?.target_users as string) ?? "",
+                      problem:          (activeProject?.problem as string) ?? "",
+                      revenueModel:     "",
+                      weeklyRevenueGoal: 0,
+                      avoidanceZones:   [],
+                      personalityTags:  [],
+                    }}
+                  />
                   <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: isMobile ? "18px" : "22px 24px" }}>
                     <div style={{ fontSize: isMobile ? 15 : 13, fontWeight: 700, color: "var(--bm-text)", marginBottom: 20 }}>Public Profile</div>
                     <div style={{ display: "flex", flexDirection: "column", gap: isMobile ? 18 : 16 }}>
@@ -401,6 +471,62 @@ export default function SettingsPage() {
               )}
 
               {tab === "billing" && <BillingTab />}
+
+              {tab === "public" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                  <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: isMobile ? "18px" : "22px 24px" }}>
+                    <div style={{ fontSize: isMobile ? 15 : 13, fontWeight: 700, color: "var(--bm-text)", marginBottom: 6 }}>Public Founder Score</div>
+                    <div style={{ fontSize: isMobile ? 13 : 12, color: "var(--bm-text3)", lineHeight: 1.55, marginBottom: 20 }}>
+                      Share your Momentum Score publicly at <code style={{ background: "var(--bm-bg3)", padding: "2px 6px", borderRadius: 4, fontSize: 11 }}>buildmind.live/founder/{publicUsername || "your-username"}</code>
+                    </div>
+
+                    <div style={{ marginBottom: 16 }}>
+                      <FieldLabel>Username</FieldLabel>
+                      <SettingsInput
+                        value={publicUsername}
+                        onChange={e => { setPublicUsername(e.target.value); setUsernameError(null); }}
+                        placeholder="alexbuilds"
+                      />
+                      {publicUsername && (
+                        <div style={{ fontSize: 11, color: "var(--bm-text3)", marginTop: 6 }}>
+                          Preview: <span style={{ color: "var(--bm-accent)" }}>buildmind.live/founder/{publicUsername.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "")}</span>
+                        </div>
+                      )}
+                      {usernameError && <div style={{ fontSize: 11, color: "var(--bm-red)", marginTop: 6 }}>{usernameError}</div>}
+                    </div>
+
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, padding: "16px 0", borderTop: "1px solid var(--bm-border)" }}>
+                      <div>
+                        <div style={{ fontSize: isMobile ? 14 : 13, fontWeight: 500, color: "var(--bm-text2)", marginBottom: 2 }}>Show my Momentum Score publicly</div>
+                        <div style={{ fontSize: isMobile ? 12 : 11, color: "var(--bm-text3)", lineHeight: 1.45 }}>
+                          {FEATURES.publicFounderScore
+                            ? "Anyone with your link can see your score and stage."
+                            : "Currently gated — activate via FEATURES.publicFounderScore when ready."}
+                        </div>
+                      </div>
+                      <Toggle checked={publicProfile} onChange={setPublicProfile} />
+                    </div>
+
+                    {!FEATURES.publicFounderScore && (
+                      <div style={{ marginTop: 12, padding: "10px 14px", background: "rgba(232,160,32,0.06)", border: "1px solid rgba(232,160,32,0.18)", borderRadius: 8, fontSize: 12, color: "var(--bm-amber)" }}>
+                        🔒 Public profiles are currently in private beta. Your settings will go live when this feature activates.
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 14 }}>
+                    <AnimatePresence>
+                      {publicSaved && (
+                        <motion.span initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                          style={{ fontSize: 12, color: "var(--bm-accent)", display: "flex", alignItems: "center", gap: 6 }}>
+                          <Check size={12} /> Saved
+                        </motion.span>
+                      )}
+                    </AnimatePresence>
+                    <SaveButton loading={publicSaving} onClick={handlePublicSave} />
+                  </div>
+                </div>
+              )}
 
             </motion.div>
           </AnimatePresence>

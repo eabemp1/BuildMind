@@ -11,7 +11,9 @@ import { updateAchievementStats, checkAndUnlockAchievements, getAchievementStats
 import { trackEvent } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase/client";
 import AIUsageBadge from "@/components/AIUsageBadge";
+import { ConfidenceBadge } from "@/components/ConfidenceBadge";
 import { Send, Bot, Brain, Sparkles, Zap, User, Clock, ChevronRight } from "lucide-react";
+import { withAIErrorBoundary } from "@/components/AIErrorBoundary";
 
 type ChatMessage = {
   id: string;
@@ -20,6 +22,8 @@ type ChatMessage = {
   reasoning?: string[];
   phase?: "thinking" | "writing" | "done";
   error?: boolean;
+  /** Reflexion confidence_score (0–1). Badge renders when < 0.75 */
+  confidence_score?: number | null;
 };
 
 function buildPlaceholderReasoning(message: string, projectTitle?: string, score?: number): string[] {
@@ -145,16 +149,19 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
         }}>
           {msg.phase === "thinking" ? <ThinkingDots /> : <span style={{ whiteSpace: "pre-wrap" }}>{msg.content}</span>}
         </div>
-        <div style={{ fontSize: 10, color: "var(--bm-text3)", display: "flex", alignItems: "center", gap: 4 }}>
+        <div style={{ fontSize: 10, color: "var(--bm-text3)", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
           <Clock size={9} />
           {new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+          {!isUser && typeof msg.confidence_score === "number" && (
+            <ConfidenceBadge score={msg.confidence_score} />
+          )}
         </div>
       </div>
     </motion.div>
   );
 }
 
-export default function AICoachPage() {
+function AICoachPageInner() {
   const isMobile = useIsMobile();
   const { plan, isLoading: planLoading } = usePlan();
   const { showLimitModal } = useLimitModal();
@@ -223,10 +230,11 @@ export default function AICoachPage() {
       const payload = await res.json().catch(() => ({}));
       if (!res.ok || !payload?.success) throw new Error(payload?.error ?? "Coach unavailable");
       const reply = payload?.data?.reply ?? payload?.data?.answer ?? "I'm having trouble responding right now. Please try again.";
+      const confidence_score = typeof payload?.data?.confidence_score === "number" ? payload.data.confidence_score : null;
       const newMemory = [...memory, msg].slice(-10);
       setMemory(newMemory);
       localStorage.setItem("bm_coach_memory", JSON.stringify(newMemory));
-      setMessages(prev => prev.map(m => m.id === thinkingMsg.id ? { ...m, content: reply, reasoning: payload?.data?.reasoning ?? m.reasoning, phase: "done" } : m));
+      setMessages(prev => prev.map(m => m.id === thinkingMsg.id ? { ...m, content: reply, reasoning: payload?.data?.reasoning ?? m.reasoning, phase: "done", confidence_score } : m));
       recordCoachMessage();
       setCoachMessagesThisWeek(getCoachMessagesThisWeek());
       const stats = getAchievementStats();
@@ -417,3 +425,6 @@ export default function AICoachPage() {
     </div>
   );
 }
+
+// Wrapped with AIErrorBoundary so AI pipeline crashes show a recoverable fallback
+export default withAIErrorBoundary(AICoachPageInner, "AI Coach");

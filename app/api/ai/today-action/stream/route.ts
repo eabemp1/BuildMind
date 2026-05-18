@@ -18,14 +18,15 @@
 
 import { NextResponse } from "next/server";
 import { enforceAndTrackAIUsage, hasAdminEnv, logReflexionQuality } from "@/app/api/ai/_utils";
+import { logError } from "@/lib/server/logger";
+
+export const runtime     = "nodejs";
+export const dynamic     = "force-dynamic";
+export const maxDuration = 30; // SSE reflexion stream — 3 sequential LLM calls ~15–25 s
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getWeeklyCriticPersona, groqCall } from "@/lib/reflexion";
 import { callModelJSON } from "@/lib/ai-providers";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
-
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-export const maxDuration = 30;
 
 function sse(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -299,7 +300,7 @@ ${lastReflectionContext}`;
             context: "today_action_stream",
             finalOutput: finalData.action,
             stage, targetUsers,
-          }).catch(() => {});
+          }).catch((err) => logError("today-action/stream/logReflexionQuality", err));
         }
 
         emit("done", { success: true, data: finalData });

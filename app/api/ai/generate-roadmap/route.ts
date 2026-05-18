@@ -52,8 +52,7 @@ async function insertMilestone(
   ];
 
   for (const row of payloads) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result = await supabase.from("milestones").insert(row as any).select("id").single();
+    const result = await supabase.from("milestones").insert(row as Record<string, unknown> as never).select("id").single();
     if (!result.error && result.data?.id) return result.data;
     const message = result.error?.message?.toLowerCase() ?? "";
     if (
@@ -107,7 +106,7 @@ async function insertTasks(
   let lastError: unknown;
   for (const attempt of attempts) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result = await supabase.from("tasks").insert(attempt as any);
+    const result = await supabase.from("tasks").insert(attempt as Record<string, unknown>[] as never);
     if (!result.error) return;
     lastError = result.error;
     const message = result.error.message?.toLowerCase() ?? "";

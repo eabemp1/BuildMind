@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { createUserNotification, enforceAndTrackAIUsage, groqJSON } from "@/app/api/ai/_utils";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
+
+export const runtime     = "nodejs";
+export const dynamic     = "force-dynamic";
+export const maxDuration = 60; // 5-agent pipeline can take up to ~45 s on provider fallback
+
 import { parseStartupIdea, runAgentPipeline, generatePivots } from "@/lib/agents";
 import { computeViabilityScore, computeViabilityBreakdown } from "@/lib/scoring";
 
@@ -12,10 +17,22 @@ export async function POST(request: Request) {
     }
     const userId = routeUser.userId;
 
-    const body = await request.json().catch(() => ({}));
-    const idea = String(body?.idea ?? "").trim().slice(0, 1000);
-    const targetUsers = String(body?.targetUsers ?? "").trim().slice(0, 300);
-    const problem = String(body?.problem ?? "").trim().slice(0, 500);
+    const rawBody = await request.json().catch(() => ({}));
+    const { z } = await import("zod");
+    const bodySchema = z.object({
+      idea:        z.string().max(1000).optional(),
+      targetUsers: z.string().max(300).optional(),
+      problem:     z.string().max(500).optional(),
+      stage:       z.string().max(50).optional(),
+    });
+    const parsedBody = bodySchema.safeParse(rawBody);
+    if (!parsedBody.success) {
+      return NextResponse.json({ success: false, error: "Invalid request body" }, { status: 400 });
+    }
+    const body = parsedBody.data;
+    const idea = String(body?.idea ?? "").trim();
+    const targetUsers = String(body?.targetUsers ?? "").trim();
+    const problem = String(body?.problem ?? "").trim();
     const stage = String(body?.stage ?? "Idea").trim();
 
     await enforceAndTrackAIUsage(userId, routeUser.plan);

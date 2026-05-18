@@ -8,6 +8,8 @@
  * feels like it actually knows the founder is entirely this object.
  */
 
+import { storage } from "@/lib/storage";
+
 export type CognitiveLoad = "fresh" | "drained" | "autopilot";
 
 export interface FounderContext {
@@ -48,44 +50,20 @@ export interface MorningBriefing {
 }
 
 // ── Momentum Score logic ────────────────────────────────────────────────────
-// Replaces streaks. Never breaks. Decays slowly. AI warns before it drops.
-
-/** Task completed → +6 to +12 depending on category */
-export function momentumOnTaskComplete(current: number, isHardTask = false): number {
-  const gain = isHardTask ? 12 : 6;
-  return Math.min(100, current + gain);
-}
-
-/** Reflection filed → +3 (learning compounds) */
-export function momentumOnReflect(current: number): number {
-  return Math.min(100, current + 3);
-}
-
-/** Daily decay — called by evening check if no task completed */
-export function momentumDecay(current: number, daysInactive: number): number {
-  // Gentle decay: -2 per day inactive, floor at 20
-  // Designed so a 7-day break takes you from 80 → 66, not to 0
-  const decay = Math.min(daysInactive * 2, 30);
-  return Math.max(20, current - decay);
-}
-
-/** Override (not today) → -1 (soft signal, not punitive) */
-export function momentumOnOverride(current: number): number {
-  return Math.max(20, current - 1);
-}
-
-/** Warning threshold — agent surface this to user before they drop further */
-export function isMomentumDecaying(current: number, previous: number): boolean {
-  return previous - current >= 5;
-}
-
-export function momentumLabel(score: number): { label: string; color: string; emoji: string } {
-  if (score >= 80) return { label: "Unstoppable", color: "#4ade80", emoji: "🔥" };
-  if (score >= 65) return { label: "Building momentum", color: "#86efac", emoji: "⚡" };
-  if (score >= 50) return { label: "Steady", color: "#fbbf24", emoji: "⚙️" };
-  if (score >= 35) return { label: "Slowing down", color: "#fb923c", emoji: "⚠️" };
-  return { label: "Needs a win", color: "#f87171", emoji: "🔴" };
-}
+// Pure math extracted to lib/momentum.ts (Engineering Fix #9) so it can be
+// unit-tested independently from the Supabase fetch helpers in this file.
+// Re-exported here for backward compatibility — all call sites unchanged.
+export {
+  momentumOnTaskComplete,
+  momentumOnReflect,
+  momentumDecay,
+  momentumOnOverride,
+  isMomentumDecaying,
+  momentumLabel,
+  computeMomentumTrend,
+  projectMomentum,
+} from "@/lib/momentum";
+export type { MomentumLabel, MomentumTrend } from "@/lib/momentum";
 
 // ── Context API helpers ─────────────────────────────────────────────────────
 
@@ -130,7 +108,7 @@ export async function recordOverride(reason: string): Promise<void> {
 /** Record cognitive load check-in */
 export async function recordCognitiveLoad(load: CognitiveLoad): Promise<void> {
   if (typeof window !== "undefined") {
-    localStorage.setItem("bm_cognitive_load", load);
+    storage.set("bm_cognitive_load", load);
   }
   await updateFounderContext({ cognitive_load: load });
 }

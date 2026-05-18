@@ -1,17 +1,19 @@
 "use client";
 
 /**
- * app/ventures/page.tsx — v6
+ * app/ventures/page.tsx — v7
  *
- * Playbook alignment:
+ * Playbook alignment (updated per v4 recommendations):
+ *   - Ventures is a FEATURE under Builder — not a separate plan tier.
+ *     The "Ventures" plan has been removed. Access = Builder subscription.
  *   - Blueprint is the hero (lands here by default)
  *   - Roadmap Tracks as side-by-side timeline columns (not stacked rows)
  *   - Purple/indigo palette throughout — distinct from core app green
  *   - Language: "decisions", "paths", "systems" — not "tasks", "milestones"
- *   - Blueprint gating: free gets full 8 layers ONCE, then layers 2-8 blurred as "Draft"
+ *   - Blueprint gating: free gets preview ONCE, then full experience behind Builder paywall
  *   - Roadmap Tracks: Builder-only (playbook §6.1)
  *   - "Convert to 7-day plan" bridge to Today page
- *   - Locked overlay: "Builder plan" only (Operator not yet live)
+ *   - Future: venturesBlueprint engine (Month 3+ per Playbook) — currently manual/template
  */
 
 import { useState, useEffect, useRef } from "react";
@@ -592,6 +594,32 @@ function BlueprintGenerator({ plan, planLoading = false }: { plan: string; planL
           Describe your startup. The 8-layer intelligence engine will map your product, system, execution path, market, risks, and founder fit.
           {!isFull && " You get the full blueprint free — once."}
         </p>
+
+        {/* Fix #7 — Guided first-venture onboarding: 3-step guide shown when no blueprints exist */}
+        {history.length === 0 && !blueprint && (
+          <div style={{ marginBottom: 20, padding: "16px 18px", background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.18)", borderRadius: 14 }}>
+            <p style={{ margin: "0 0 12px", fontSize: 12, fontWeight: 700, color: V.indigo, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              How it works — your first blueprint
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {[
+                { n: "1", title: "Describe your startup", desc: "One paragraph: what it does, who it’s for, what problem it solves." },
+                { n: "2", title: "8-layer AI analysis", desc: "Product, GTM, execution path, market, risks, competitor moat, founder fit, and 7-day action plan." },
+                { n: "3", title: "Your strategy blueprint", desc: "A structured playbook specific to your startup — download, share, or iterate." },
+              ].map(step => (
+                <div key={step.n} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                  <div style={{ width: 24, height: 24, borderRadius: "50%", background: "rgba(99,102,241,0.15)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, color: V.indigo, flexShrink: 0 }}>
+                    {step.n}
+                  </div>
+                  <div>
+                    <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: V.text1 }}>{step.title}</p>
+                    <p style={{ margin: "2px 0 0", fontSize: 11, color: V.text3, lineHeight: 1.5 }}>{step.desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <textarea
           value={input}

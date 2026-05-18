@@ -1,12 +1,16 @@
 "use client";
 
+import { storage } from "@/lib/storage";
+
 // ─── localStorage keys ────────────────────────────────────────────────────────
 const TOKEN_KEY             = "buildmind_jwt";
-const ACTIVE_PROJECT_ID_KEY = "buildmind_active_project_id";
 const HAS_LOGGED_IN_KEY     = "buildmind_has_logged_in";
 const TOUR_SHOW_KEY         = "buildmind_show_tour";
 const TOUR_SEEN_KEY         = "buildmind_tour_seen";
+
+// User-scoped keys — accessed via storage module (namespaced per user)
 const ONBOARDED_KEY         = "buildmind_onboarded";
+const ACTIVE_PROJECT_ID_KEY = "buildmind_active_project_id";
 
 // ─── localStorage helpers ─────────────────────────────────────────────────────
 
@@ -22,12 +26,12 @@ export function clearStoredToken(): void {
 
 export function isOnboarded(): boolean {
   if (typeof window === "undefined") return false;
-  return window.localStorage.getItem(ONBOARDED_KEY) === "1";
+  return storage.get(ONBOARDED_KEY) === "1";
 }
 
 export function setOnboarded(): void {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(ONBOARDED_KEY, "1");
+  storage.set(ONBOARDED_KEY, "1");
 }
 
 export function shouldShowTour(): boolean {
@@ -43,12 +47,12 @@ export function markTourSeen(): void {
 
 export function getActiveProjectId(): string | null {
   if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(ACTIVE_PROJECT_ID_KEY);
+  return storage.get(ACTIVE_PROJECT_ID_KEY);
 }
 
 export function setActiveProjectId(projectId: string): void {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(ACTIVE_PROJECT_ID_KEY, projectId);
+  storage.set(ACTIVE_PROJECT_ID_KEY, projectId);
 }
 
 /** Call after first successful login to trigger the product tour on next open. */
@@ -153,6 +157,9 @@ export type BreakMyStartupResult = {
   analysis: BreakMyStartupAnalysis;
   webSearchUsed: boolean;
   searchResultCount: number;
+  competitors_scraped: boolean;
+  /** "ddg" | "brave" | "ai_synthesised" | "none" — indicates whether competitor data was live-scraped or AI-inferred */
+  competitor_data_source?: string;
   projectContext: {
     founder?: string;
     project?: {

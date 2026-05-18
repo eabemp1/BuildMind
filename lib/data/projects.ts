@@ -679,3 +679,24 @@ export async function createProjectWithRoadmap(params: {
 // ── Report/dashboard functions moved to lib/data/reports.ts ──────────────────
 // Re-exported here for backwards compatibility with existing imports.
 export { getDashboardOverview, getWeeklyReportMetrics, calculateDashboardStats } from "@/lib/data/reports";
+
+// ── Revenue tracking ────────────────────────────────────────────────────────
+
+/**
+ * updateProjectMRR — saves the founder's manually entered MRR.
+ * Called from the MRR widget on the overview or project page.
+ * The value is fed into the reflexion loop so tasks are revenue-aware.
+ */
+export async function updateProjectMRR(
+  projectId: string,
+  mrrPesewas: number,
+): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) return;
+  const supabase = createClient();
+  await supabase
+    .from("projects")
+    .update({ current_mrr: mrrPesewas, mrr_updated_at: new Date().toISOString() })
+    .eq("id", projectId)
+    .eq("user_id", user.id);
+}

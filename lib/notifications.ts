@@ -13,6 +13,7 @@
  */
 
 import { getStoredStreak } from "@/lib/plan";
+import { storage } from "@/lib/storage";
 
 export type NotifType =
   | "streak_broken"
@@ -48,14 +49,9 @@ const MAX_NOTIFS = 50;
 
 export function getAllNotifications(): AppNotification[] {
   if (typeof window === "undefined") return [];
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const all: AppNotification[] = JSON.parse(raw);
-    // Prune expired
-    const now = Date.now();
-    return all.filter(n => !n.expiresAt || n.expiresAt > now);
-  } catch { return []; }
+  const all = storage.getJSON<AppNotification[]>(STORAGE_KEY, []);
+  const now = Date.now();
+  return all.filter(n => !n.expiresAt || n.expiresAt > now);
 }
 
 export function getUnreadNotifications(): AppNotification[] {
@@ -75,7 +71,7 @@ export const getNotificationsForCurrentUser = getAllNotifications;
 export const createNotificationForCurrentUser = addNotification;
 
 function saveNotifications(notifs: AppNotification[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(notifs.slice(0, MAX_NOTIFS)));
+  storage.setJSON(STORAGE_KEY, notifs.slice(0, MAX_NOTIFS));
 }
 
 export function addNotification(notif: Omit<AppNotification, "id" | "createdAt">): AppNotification {
@@ -241,17 +237,15 @@ export function runNotificationChecks(): void {
   notifyWelcome();
 
   // Reflect pending
-  if (localStorage.getItem("bm_reflect_pending") === "true") {
+  if (storage.get("bm_reflect_pending") === "true") {
     notifyReflectPending();
   }
 
   // Weekly report on Fridays
   notifyWeeklyReportReady();
 
-  // Streak checks — use getStoredStreak() which is kept in sync with the server
-  // via syncStreakFromServer() on mount, rather than reading bm_streak directly
   const streak = getStoredStreak();
-  const lastDone = localStorage.getItem("bm_today_done_date");
+  const lastDone = storage.get("bm_today_done_date");
   if (lastDone) {
     const daysSince = Math.floor((Date.now() - new Date(lastDone).getTime()) / 86400000);
     if (daysSince >= 2) {
@@ -268,7 +262,7 @@ export function runNotificationChecks(): void {
 
 export function clearNotificationsForCurrentUser(): void {
   if (typeof window === "undefined") return;
-  localStorage.removeItem(STORAGE_KEY);
+  storage.remove(STORAGE_KEY);
 }
 
 // ── Morning briefing & Evening check in-app notifications ─────────────────────
@@ -285,14 +279,12 @@ const EVENING_SEED_KEY  = "bm_evening_notif_seeded";
 export function seedMorningBriefing(): void {
   if (typeof window === "undefined") return;
   const today = new Date().toISOString().slice(0, 10);
-  const seeded = localStorage.getItem(MORNING_SEED_KEY);
-  if (seeded === today) return; // already done today
+  if (storage.get(MORNING_SEED_KEY) === today) return;
 
   const hour = new Date().getHours();
-  // Seed between 5am and 11am
   if (hour < 5 || hour >= 11) return;
 
-  localStorage.setItem(MORNING_SEED_KEY, today);
+  storage.set(MORNING_SEED_KEY, today);
   addNotification({
     type: "reflect_pending", // reuse existing type for bell display
     emoji: "🌅",
@@ -312,18 +304,15 @@ export function seedMorningBriefing(): void {
 export function seedEveningCheck(): void {
   if (typeof window === "undefined") return;
   const today = new Date().toISOString().slice(0, 10);
-  const seeded = localStorage.getItem(EVENING_SEED_KEY);
-  if (seeded === today) return;
+  if (storage.get(EVENING_SEED_KEY) === today) return;
 
   const hour = new Date().getHours();
-  // Seed between 4pm and 9pm
   if (hour < 16 || hour >= 21) return;
 
-  // Only show if they haven't reflected today
-  const reflectedToday = localStorage.getItem("bm_today_done_date") === today;
+  const reflectedToday = storage.get("bm_today_done_date") === today;
   if (reflectedToday) return;
 
-  localStorage.setItem(EVENING_SEED_KEY, today);
+  storage.set(EVENING_SEED_KEY, today);
   addNotification({
     type: "reflect_pending",
     emoji: "🌇",

@@ -64,7 +64,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         style={
           isPrimary
             ? {
-                background: "var(--grad-primary)",
+                background: "var(--grad-primary, linear-gradient(135deg,#5CC88A,#4AB8B0))",
+                color: "#04060A",
                 ...style,
               }
             : style

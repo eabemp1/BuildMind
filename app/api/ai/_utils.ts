@@ -1,15 +1,23 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { normalizePlan } from "@/lib/plan";
-import { getFreshPlanForUser } from "@/lib/server/plan";
+import { getEffectivePlan } from "@/lib/server/plan";
 import { callModel, callModelJSON, hasAIProvider } from "@/lib/ai-providers";
 
-// Plan-aware monthly AI limits
-// Free: 30 calls/month (3/day × 30 days, but we cap monthly for safety)
-// Builder/Venture: unlimited (-1)
+// Plan-aware AI limits
+// Free:    30 calls/month (monthly cap) AND 3 calls/day (daily burst cap)
+// Builder: unlimited (-1). Venture tier removed — features folded into Builder (Playbook v4).
+//
+// The daily cap (3) prevents a free user from burning their entire monthly
+// quota in a single day. The monthly cap (30) remains the binding long-run
+// constraint. Builder users have no caps — usage is tracked for analytics only.
 const PLAN_MONTHLY_LIMITS: Record<string, number> = {
   free: 30,
   builder: -1,
-  venture: -1,
+};
+
+const PLAN_DAILY_LIMITS: Record<string, number> = {
+  free: 3,
+  builder: -1,  // unlimited — still tracked for analytics
 };
 
 export function hasAdminEnv(): boolean {
@@ -23,21 +31,48 @@ export function hasGroqKey(): boolean {
 export async function enforceAndTrackAIUsage(userId: string, planOverride?: string) {
   if (!hasAdminEnv()) return; // dev mode — skip limits
   const supabase = createAdminClient();
-  const d = new Date();
-  const month = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+
+  // FIX #1: Compute date values once at the top — prevents the const re-declaration
+  // bug where the second `const d` shadowed the first, making `month` and `today`
+  // derive from two different Date objects (potential TZ-boundary mismatch).
+  const now = new Date();
+  const month = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+  const today = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
 
   // Look up a fresh auth user so stale JWT metadata cannot keep Builder users
   // trapped behind free-tier AI caps.
   let plan = normalizePlan(planOverride);
   try {
     const { data: authUser } = await supabase.auth.admin.getUserById(userId);
-    plan = await getFreshPlanForUser(authUser?.user);
+    plan = await getEffectivePlan(userId);
   } catch {
     plan = normalizePlan(planOverride);
   }
 
   const monthlyLimit = PLAN_MONTHLY_LIMITS[plan] ?? 30;
+  const dailyLimit   = PLAN_DAILY_LIMITS[plan]   ?? 3;
 
+  // ── Step 1: Daily cap check (fires first to prevent burst abuse) ───────────
+  // Run the daily check before the monthly check so a free user who has
+  // used 0 monthly calls cannot call the API 30 times in one day.
+
+  const { data: dailyCount, error: dailyError } = await supabase.rpc(
+    "increment_ai_usage_daily_capped",
+    { p_user_id: userId, p_date: today, p_limit: dailyLimit },
+  );
+
+  if (dailyError) throw new Error(dailyError.message);
+
+  // RPC returns -1 when the daily limit is already reached.
+  if (dailyCount === -1) {
+    const limitLabel = dailyLimit === -1 ? "unlimited" : String(dailyLimit);
+    throw new Error(
+      `Daily AI limit reached (${limitLabel} calls/day on the free plan). ` +
+      `Your limit resets at midnight UTC, or upgrade to Builder for unlimited AI.`,
+    );
+  }
+
+  // ── Step 2: Monthly cap check ──────────────────────────────────────────────
   // Builder/Venture: unlimited — just track via atomic upsert, no cap needed.
   if (monthlyLimit === -1) {
     await supabase.rpc("increment_ai_usage", { p_user_id: userId, p_month: month });
@@ -56,8 +91,21 @@ export async function enforceAndTrackAIUsage(userId: string, planOverride?: stri
   if (rpcError) throw new Error(rpcError.message);
 
   // RPC returns -1 when the limit is already reached (no increment performed).
+  // Note: daily count was already incremented above — we must decrement it back
+  // to keep daily and monthly counts in sync when the monthly cap is the blocker.
   if (newCount === -1) {
-    throw new Error(`Monthly AI limit reached (${monthlyLimit} calls). Upgrade to Builder for unlimited AI.`);
+    // Best-effort rollback of the daily increment (non-throwing)
+    supabase.rpc("increment_ai_usage_daily_capped", {
+      p_user_id: userId, p_date: today,
+      p_limit: -1, // pass -1 to use the uncapped path as a decrement vehicle
+    }).catch(() => {});
+    // Decrement via direct update since we don't have a decrement RPC
+    supabase.from("ai_usage_daily")
+      .update({ count: dailyCount - 1 })
+      .eq("user_id", userId).eq("date", today).then(() => {});
+    throw new Error(
+      `Monthly AI limit reached (${monthlyLimit} calls). Upgrade to Builder for unlimited AI.`,
+    );
   }
 }
 

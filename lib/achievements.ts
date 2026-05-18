@@ -2,8 +2,10 @@
  * lib/achievements.ts — BuildMind Achievement & Badge System
  *
  * Duolingo-style streaks + Free Fire-style rare/legendary drops.
- * All state stored in localStorage — no backend required.
+ * All state stored via the user-scoped storage wrapper (lib/storage.ts).
  */
+
+import { storage } from "@/lib/storage";
 
 export type AchievementRarity = "common" | "rare" | "epic" | "legendary";
 export type AchievementCategory = "streak" | "tasks" | "ai" | "projects" | "social" | "explorer" | "founder";
@@ -211,7 +213,7 @@ export function xpToLevel(xp: number): { level: number; title: string; nextXp: n
 
   let current = thresholds[0];
   let next = thresholds[1];
-  for (let i = 0; i < thresholds.length - 1; i++) {
+  for (let i = 0; i < thresholds.length; i++) {
     if (xp >= thresholds[i].xp) {
       current = thresholds[i];
       next = thresholds[i + 1] ?? thresholds[thresholds.length - 1];
@@ -230,26 +232,25 @@ const XP_KEY      = "bm_xp";
 
 export function getUnlocked(): UnlockedAchievement[] {
   if (typeof window === "undefined") return [];
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]"); } catch { return []; }
+  return storage.getJSON<UnlockedAchievement[]>(STORAGE_KEY, []);
 }
 
 function saveUnlocked(list: UnlockedAchievement[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+  storage.setJSON(STORAGE_KEY, list);
 }
 
 export function getTotalXP(): number {
   if (typeof window === "undefined") return 0;
-  return Number(localStorage.getItem(XP_KEY) ?? "0");
+  return Number(storage.get(XP_KEY) ?? "0");
 }
 
 function addXP(amount: number): void {
-  const current = getTotalXP();
-  localStorage.setItem(XP_KEY, String(current + amount));
+  storage.set(XP_KEY, String(getTotalXP() + amount));
 }
 
 export function getAchievementStats(): AchievementStats {
   if (typeof window === "undefined") return defaultStats();
-  try { return { ...defaultStats(), ...JSON.parse(localStorage.getItem(STATS_KEY) ?? "{}") }; } catch { return defaultStats(); }
+  return { ...defaultStats(), ...storage.getJSON<Partial<AchievementStats>>(STATS_KEY, {}) };
 }
 
 function defaultStats(): AchievementStats {
@@ -265,9 +266,8 @@ export function updateAchievementStats(partial: Partial<AchievementStats>): void
   if (typeof window === "undefined") return;
   const current = getAchievementStats();
   const updated = { ...current, ...partial };
-  // Always track max streak
   if ((partial.streak ?? 0) > current.maxStreak) updated.maxStreak = partial.streak!;
-  localStorage.setItem(STATS_KEY, JSON.stringify(updated));
+  storage.setJSON(STATS_KEY, updated);
 }
 
 /** Returns newly unlocked achievements (call after any stat update) */
@@ -318,7 +318,7 @@ if (typeof window !== "undefined") {
     unlocked: getUnlocked,
     xp: getTotalXP,
     reset: () => {
-      ["bm_achievements", "bm_achievement_stats", "bm_xp"].forEach(k => localStorage.removeItem(k));
+      [STORAGE_KEY, STATS_KEY, XP_KEY].forEach(k => storage.remove(k));
       if (process.env.NODE_ENV === "development") console.log("Achievements reset.");
     },
   };

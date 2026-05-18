@@ -127,12 +127,35 @@ export async function POST(request: NextRequest) {
     const { data: existing } = await admin.auth.admin.getUserById(user.id);
     const existingMeta = (existing?.user?.user_metadata ?? {}) as Record<string, unknown>;
 
+    // Derive timezone offset from country code using Vercel's geo header or body
+    // This populates founder_context.timezone_offset used by cron delivery timing.
+    const countryCode = body.countryCode ?? request.headers.get("x-vercel-ip-country") ?? null;
+    const COUNTRY_TZ_OFFSET: Record<string, number> = {
+      GH: 0, SN: 0, CI: 0, ML: 0, GN: 0,           // UTC+0
+      NG: 1, BJ: 1, NE: 1, CM: 1, CF: 1, CD: 1,     // UTC+1
+      KE: 3, ET: 3, TZ: 3, UG: 3, SO: 3, RW: 2, ZA: 2, // UTC+2/3
+      MA: 1, TN: 1, DZ: 1, EG: 2,                    // North Africa
+      US: -5, CA: -5, MX: -6, BR: -3,                // Americas (rough EST)
+      GB: 0, DE: 1, FR: 1, NL: 1, SE: 1,             // Europe
+      IN: 5, PK: 5, BD: 6, SG: 8, PH: 8, AU: 10,    // Asia-Pacific
+      AE: 4,
+    };
+    const tzOffset = countryCode ? (COUNTRY_TZ_OFFSET[countryCode.toUpperCase()] ?? 0) : 0;
+
+    // Also write timezone_offset to founder_context so cron jobs can read it
+    // without hitting user_metadata (which requires admin API per-user)
+    await supabase
+      .from("founder_context")
+      .update({ timezone_offset: tzOffset })
+      .eq("user_id", user.id);
+
     const { error: updateError } = await admin.auth.admin.updateUserById(user.id, {
       user_metadata: {
         ...existingMeta,
         flag:     finalFlag,
         city:     finalCity,
         country:  finalCountry,
+        timezone_offset: tzOffset,
         geo_set_at: new Date().toISOString(),
       },
     });

@@ -1,36 +1,41 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { normalizePlan, type Plan } from "@/lib/plan";
-import { getClientIp, rateLimit } from "@/lib/server/rateLimit";
+import { getClientIp, rateLimitAsync } from "@/lib/server/rateLimit";
+import { usdToPesewas } from "@/lib/fx";
 
 /**
- * Amount config per plan tier (in pesewas / kobo / cents depending on currency).
- *
- * Fixed the dead-code branch that previously always resolved to "builder"
- * regardless of what the client sent:
- *   const plan = body?.plan === "builder" ? "builder" : "builder";  // DEAD
- *
- * Now correctly reads the plan from the request body, validates it against
- * the known tiers, and uses the corresponding amount env var.
- *
- * Adding a new tier: set PAYSTACK_AMOUNT_<TIER_UPPER> in env and add an entry
- * below. The checkout route will automatically pick it up.
+ * Countries billed in GHS via the local Paystack plan.
+ * Everyone else is billed in USD.
  */
-const PLAN_AMOUNTS: Record<Plan, () => number> = {
-  free:    () => 0,
-  builder: () => parseInt(
-    process.env.PAYSTACK_AMOUNT_BUILDER ??
-    process.env.PAYSTACK_AMOUNT_PESEWAS ??
-    "29000",
-    10,
-  ),
+const GHS_COUNTRIES = new Set(["GH", "Ghana"]);
+
+/**
+ * USD price per plan — single source of truth.
+ * GHS is converted live from this at checkout.
+ * USD plan charges this amount directly in dollars.
+ */
+const PLAN_PRICE_USD: Record<Plan, number> = {
+  free:    0,
+  builder: 39,
 };
 
-const PLAN_CODES: Partial<Record<Plan, () => string | undefined>> = {
-  builder: () => process.env.PAYSTACK_BUILDER_PLAN_CODE?.trim(),
+/** USD price in cents for Paystack (USD plan) */
+const PLAN_PRICE_CENTS: Record<Plan, number> = {
+  free:    0,
+  builder: 3900, // $39.00
 };
 
-/** Plans that can actually be purchased (free is not purchasable). */
+/**
+ * Paystack plan codes — set these in your env.
+ * GHS plan: create on Paystack dashboard in GHS (we update periodically).
+ * USD plan: create on Paystack dashboard in USD (stable, no conversion needed).
+ */
+const PLAN_CODES = {
+  ghs: () => process.env.PAYSTACK_BUILDER_PLAN_CODE?.trim(),
+  usd: () => process.env.PAYSTACK_BUILDER_PLAN_CODE_USD?.trim(),
+};
+
 const PURCHASABLE_PLANS: Plan[] = ["builder"];
 
 function appUrl(req: Request): string {
@@ -41,8 +46,21 @@ function appUrl(req: Request): string {
   ).replace(/\/$/, "");
 }
 
+/**
+ * Detect whether the request comes from a GHS-billed country.
+ * Uses Vercel's geo header when available, falls back to the request body.
+ */
+function resolveCountry(req: Request, body: Record<string, unknown>): string {
+  // Vercel sets this header automatically in production
+  const geoCountry = (req.headers.get("x-vercel-ip-country") ?? "").trim().toUpperCase();
+  if (geoCountry) return geoCountry;
+
+  // Fallback: client can send { country: "GH" } in the request body
+  return String(body?.country ?? "").trim().toUpperCase();
+}
+
 export async function POST(req: Request) {
-  const ipLimit = rateLimit(`checkout:ip:${getClientIp(req)}`, 30, 15 * 60 * 1000);
+  const ipLimit = await rateLimitAsync(`checkout:ip:${getClientIp(req)}`, 30, 15 * 60 * 1000, { failClosed: true });
   if (!ipLimit.ok) {
     return NextResponse.json({ error: "Too many checkout attempts. Try again shortly." }, { status: 429 });
   }
@@ -56,42 +74,54 @@ export async function POST(req: Request) {
   }
 
   const supabase = await createClient();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
+  const { data: { user }, error } = await supabase.auth.getUser();
   if (error || !user?.email) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const userLimit = rateLimit(`checkout:user:${user.id}`, 10, 15 * 60 * 1000);
+  const userLimit = await rateLimitAsync(`checkout:user:${user.id}`, 10, 15 * 60 * 1000, { failClosed: true });
   if (!userLimit.ok) {
     return NextResponse.json({ error: "Too many checkout attempts. Try again shortly." }, { status: 429 });
   }
 
   const body = await req.json().catch(() => ({}));
-
-  // ── Fix 3: Correctly resolve the target plan from the request body ─────────
-  // Previously: const plan = body?.plan === "builder" ? "builder" : "builder";
-  // Both branches returned "builder" — the plan param was silently ignored.
-  // Now: validate against PURCHASABLE_PLANS so new tiers just work.
   const requestedPlan = normalizePlan(body?.plan as string | undefined);
-  const plan: Plan = PURCHASABLE_PLANS.includes(requestedPlan)
-    ? requestedPlan
-    : "builder"; // safe default for the single current paid tier
+  const plan: Plan = PURCHASABLE_PLANS.includes(requestedPlan) ? requestedPlan : "builder";
 
-  const amount = PLAN_AMOUNTS[plan]?.();
-  const paystackPlanCode = PLAN_CODES[plan]?.();
-  if (!amount || amount <= 0) {
-    return NextResponse.json(
-      { error: `Plan "${plan}" is not purchasable` },
-      { status: 400 },
-    );
+  const usdPrice = PLAN_PRICE_USD[plan];
+  if (!usdPrice || usdPrice <= 0) {
+    return NextResponse.json({ error: `Plan "${plan}" is not purchasable` }, { status: 400 });
   }
+
+  // ── Currency routing ────────────────────────────────────────────────────────
+  const country = resolveCountry(req, body);
+  const isGhs = GHS_COUNTRIES.has(country) || GHS_COUNTRIES.has(body?.country as string);
+
+  let amount: number;
+  let currency: "GHS" | "USD";
+  let paystackPlanCode: string | undefined;
+  let fxMeta: Record<string, unknown> = {};
+
+  if (isGhs) {
+    // Local (Ghana) — convert $39 to pesewas at live BoG rate
+    const { pesewas, rateUsed, source } = await usdToPesewas(usdPrice);
+    amount = pesewas;
+    currency = "GHS";
+    paystackPlanCode = PLAN_CODES.ghs();
+    fxMeta = { fx_rate: rateUsed, fx_source: source };
+    console.log(`[checkout] GHS path — $${usdPrice} → ${pesewas} pesewas (rate: ${rateUsed ?? "n/a"}, source: ${source})`);
+  } else {
+    // Global — charge in USD directly, no conversion needed
+    amount = PLAN_PRICE_CENTS[plan];
+    currency = "USD";
+    paystackPlanCode = PLAN_CODES.usd();
+    console.log(`[checkout] USD path — $${usdPrice} → ${amount} cents`);
+  }
+
   if (!paystackPlanCode) {
+    const envVar = isGhs ? "PAYSTACK_BUILDER_PLAN_CODE" : "PAYSTACK_BUILDER_PLAN_CODE_USD";
     return NextResponse.json(
-      { error: `Recurring billing is not configured. Add PAYSTACK_BUILDER_PLAN_CODE for the monthly Builder plan.` },
+      { error: `Recurring billing not configured. Add ${envVar} to your env.` },
       { status: 503 },
     );
   }
@@ -107,10 +137,17 @@ export async function POST(req: Request) {
     body: JSON.stringify({
       email: user.email,
       amount,
-      currency: "GHS",
+      currency,
       plan: paystackPlanCode,
       callback_url: `${baseUrl}/upgrade`,
-      metadata: { user_id: user.id, plan, billing_interval: "monthly" },
+      metadata: {
+        user_id: user.id,
+        plan,
+        billing_interval: "monthly",
+        billing_currency: currency,
+        billing_country: country || "unknown",
+        ...fxMeta,
+      },
     }),
   });
 
@@ -127,5 +164,5 @@ export async function POST(req: Request) {
     );
   }
 
-  return NextResponse.json({ url: payload.data.authorization_url, plan, recurring: true });
+  return NextResponse.json({ url: payload.data.authorization_url, plan, recurring: true, currency });
 }

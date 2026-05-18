@@ -1,5 +1,10 @@
 /**
- * lib/ventures/index.ts — BuildMind Ventures Engine
+ * lib/ventures/index.ts — BuildMind Ventures AI Engine (blueprint generator)
+ *
+ * DO NOT CONFUSE WITH lib/ventures.ts, which holds static track/milestone data:
+ *   lib/ventures.ts  → VENTURE_TRACKS, VENTURE_TIMELINE, COMBINED_REVENUE
+ *
+ * This file owns the AI-powered blueprint generation pipeline (Layers 1–8).
  *
  * Transforms raw startup ideas (text, image, sketch, screenshot, competitor UI)
  * into complete, executable startup blueprints across four structured layers:
@@ -23,6 +28,7 @@
 import { getLimits } from "@/lib/plan";
 import { getValidationReceipts, formatReceiptsForAIContext } from "@/lib/cofounder/validationReceipts";
 import { generateValidationAction } from "@/lib/cofounder/validationReceipts";
+import { storage } from "@/lib/storage";
 
 // ─── Input types ──────────────────────────────────────────────────────────────
 
@@ -228,25 +234,19 @@ const BLUEPRINTS_KEY = "bm_ventures_blueprints";
 
 export function getSavedBlueprints(): StartupBlueprint[] {
   if (typeof window === "undefined") return [];
-  try {
-    return JSON.parse(localStorage.getItem(BLUEPRINTS_KEY) ?? "[]");
-  } catch {
-    return [];
-  }
+  return storage.getJSON<StartupBlueprint[]>(BLUEPRINTS_KEY, []);
 }
 
 export function saveBlueprint(blueprint: StartupBlueprint): void {
   if (typeof window === "undefined") return;
   const existing = getSavedBlueprints();
   existing.unshift(blueprint);
-  // Keep only last 20 blueprints locally
-  localStorage.setItem(BLUEPRINTS_KEY, JSON.stringify(existing.slice(0, 20)));
+  storage.setJSON(BLUEPRINTS_KEY, existing.slice(0, 20));
 }
 
 export function deleteBlueprint(id: string): void {
   if (typeof window === "undefined") return;
-  const filtered = getSavedBlueprints().filter(b => b.id !== id);
-  localStorage.setItem(BLUEPRINTS_KEY, JSON.stringify(filtered));
+  storage.setJSON(BLUEPRINTS_KEY, getSavedBlueprints().filter(b => b.id !== id));
 }
 
 // ─── Blueprint generation ─────────────────────────────────────────────────────

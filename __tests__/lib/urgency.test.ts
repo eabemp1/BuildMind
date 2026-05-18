@@ -16,7 +16,12 @@ vi.mock("../../lib/scoring", () => ({
   recordScore: vi.fn(),
 }));
 
-import { computeUrgencySignal, getMissedDayCost, recordPendingTasks, markActiveToday, syncUrgencyFromServer } from "../../lib/urgency";
+// Import from the split modules directly — validates the urgency.ts refactor.
+// The barrel shim at lib/urgency.ts also re-exports all of these, so both
+// import paths should resolve identically.
+import { computeUrgencySignal, getMissedDayCost } from "../../lib/urgency/signal";
+import { recordPendingTasks } from "../../lib/urgency/taskDebt";
+import { markActiveToday, syncUrgencyFromServer } from "../../lib/urgency/activeDate";
 import { getScoreHistory } from "../../lib/scoring";
 
 // ── localStorage mock ─────────────────────────────────────────────────────────

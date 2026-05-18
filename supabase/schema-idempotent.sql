@@ -1,6 +1,18 @@
 -- ============================================================================
--- BuildMind Complete Schema - IDEMPOTENT VERSION
--- Safe to run multiple times without errors
+-- BuildMind Complete Schema - FRESH INSTALL ONLY
+--
+-- ⚠️  WARNING: THIS FILE DROPS ALL TABLES AND ALL DATA BEFORE RECREATING.
+-- ⚠️  DO NOT RUN THIS ON A DATABASE THAT HAS REAL USER DATA.
+--
+-- Use this ONLY for:
+--   - First-time local dev setup
+--   - CI/CD test environments that start from scratch
+--
+-- For production schema changes use the numbered migrations in:
+--   supabase/migrations/  (run in timestamp order via Supabase dashboard)
+--
+-- For a safe schema audit of an existing database use:
+--   supabase/schema-verify-and-init.sql  (additive only, never drops)
 -- ============================================================================
 
 -- Drop old triggers if they exist (prevents "already exists" errors)
@@ -20,6 +32,7 @@ DROP TRIGGER IF EXISTS ventures_blueprints_updated_at ON ventures_blueprints;
 DROP FUNCTION IF EXISTS update_updated_at_column() CASCADE;
 
 -- Drop tables if they exist (in reverse dependency order)
+DROP TABLE IF EXISTS processed_webhooks CASCADE;
 DROP TABLE IF EXISTS waitlist CASCADE;
 DROP TABLE IF EXISTS cofounder_reframe_log CASCADE;
 DROP TABLE IF EXISTS ai_usage CASCADE;
@@ -79,16 +92,43 @@ CREATE POLICY profiles_update_own ON profiles FOR UPDATE USING (auth.uid() = id)
 CREATE TRIGGER profiles_updated_at BEFORE UPDATE ON profiles FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- ============================================================================
+-- TABLE: processed_webhooks (idempotency store for billing webhooks)
+-- Prevents double-processing when payment providers fire duplicate events.
+-- ============================================================================
+CREATE TABLE processed_webhooks (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  provider text NOT NULL,
+  event_key text NOT NULL,
+  event_name text,
+  processed_at timestamptz DEFAULT now(),
+  UNIQUE (provider, event_key)
+);
+
+ALTER TABLE processed_webhooks ENABLE ROW LEVEL SECURITY;
+-- Only service-role can access this table (no user-facing RLS policies needed)
+
+-- ============================================================================
 -- TABLE: founder_memory (core identity storage — replaces CodEx)
 -- ============================================================================
 CREATE TABLE founder_memory (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  -- Fields aligned with TypeScript FounderMemory type
+  personality_tags text[] NOT NULL DEFAULT '{}',
+  decision_patterns jsonb NOT NULL DEFAULT '[]',
+  emotional_signals jsonb NOT NULL DEFAULT '[]',
+  avoidance_zones text[] NOT NULL DEFAULT '{}',
+  strengths text[] NOT NULL DEFAULT '{}',
+  cofounder_style text NOT NULL DEFAULT 'strategic-partner',
+  last_insight text,
+  insight_history jsonb NOT NULL DEFAULT '[]',
+  -- CoFounder Core additions
+  validation_receipts jsonb NOT NULL DEFAULT '[]',
+  competitor_history jsonb NOT NULL DEFAULT '[]',
+  -- Legacy fields retained for backward compatibility (not used by TS type)
   startup_summary text,
   founding_story text,
   core_motivations text[],
-  personality_profile jsonb,
-  validation_receipts jsonb[] DEFAULT '{}',
   last_updated_batch_count int DEFAULT 0,
   created_at timestamp DEFAULT now(),
   updated_at timestamp DEFAULT now()
@@ -131,6 +171,7 @@ CREATE TABLE founder_context (
   reset_mission_active boolean NOT NULL DEFAULT false,
   reset_mission_text text,
   reset_mission_complete boolean NOT NULL DEFAULT false,
+  last_re_engagement_email_at timestamptz,           -- tracks re-engagement email sends to prevent double-sending
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -216,6 +257,39 @@ CREATE POLICY projects_own_data ON projects FOR SELECT USING (auth.uid() = user_
 CREATE POLICY projects_update_own ON projects FOR UPDATE USING (auth.uid() = user_id);
 CREATE POLICY projects_insert_own ON projects FOR INSERT WITH CHECK (auth.uid() = user_id);
 CREATE TRIGGER projects_updated_at BEFORE UPDATE ON projects FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================================================
+-- VIEW: project_summaries (required by app/reflect/page.tsx)
+-- Backported from migration 20260513000000_project_summaries_view.sql
+-- Must be placed after the projects table definition.
+-- ============================================================================
+CREATE OR REPLACE VIEW project_summaries
+WITH (security_invoker = true) AS
+SELECT
+  id,
+  user_id,
+  COALESCE(name, title, 'Untitled project')  AS name,
+  COALESCE(title, name, 'Untitled project')  AS title,
+  COALESCE(startup_stage, 'Idea')            AS startup_stage,
+  COALESCE(momentum_score, 50)               AS momentum_score,
+  COALESCE(validation_score, 0)              AS validation_score,
+  COALESCE(execution_score, 0)               AS execution_score,
+  COALESCE(streak, 0)                        AS streak,
+  status,
+  target_users,
+  problem,
+  description,
+  updated_at,
+  created_at
+FROM projects
+WHERE auth.uid() = user_id
+  AND COALESCE(status, 'active') != 'archived';
+
+COMMENT ON VIEW project_summaries IS
+  'Safe read-only summary of each founder''s projects. Used by Reflect page '
+  'and any route that needs startup_stage without loading the full projects row. '
+  'security_invoker=true means RLS on projects is fully enforced.';
+
 
 -- ============================================================================
 -- TABLE: milestones (project milestones)
@@ -513,3 +587,110 @@ CREATE INDEX task_overrides_user_created_idx ON task_overrides (user_id, created
 -- Check trigger functions:
 -- SELECT trigger_name, event_object_table FROM information_schema.triggers 
 -- WHERE event_object_schema = 'public' ORDER BY event_object_table;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Tables added after initial schema — appended by audit fix (session 4)
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- ai_usage_daily (from migration 20260515000000_daily_ai_cap.sql)
+CREATE TABLE IF NOT EXISTS ai_usage_daily (
+  user_id  uuid        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  date     date        NOT NULL DEFAULT current_date,
+  count    integer     NOT NULL DEFAULT 0,
+  CONSTRAINT ai_usage_daily_user_date_key UNIQUE (user_id, date)
+);
+ALTER TABLE ai_usage_daily ENABLE ROW LEVEL SECURITY;
+CREATE POLICY ai_usage_daily_read_own ON ai_usage_daily
+  FOR SELECT USING (auth.uid() = user_id);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_daily_user_date
+  ON ai_usage_daily(user_id, date DESC);
+
+-- ip_rate_limits (from migration 20260510000000_ip_rate_limits.sql)
+CREATE TABLE IF NOT EXISTS ip_rate_limits (
+  key          text        NOT NULL,
+  window_start bigint      NOT NULL,
+  count        integer     NOT NULL DEFAULT 0,
+  PRIMARY KEY (key, window_start)
+);
+
+-- reflexion_learning_log (from migration 20260507000000_reflexion_learning_log.sql)
+CREATE TABLE IF NOT EXISTS reflexion_learning_log (
+  id                  uuid          PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id             uuid          NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  project_id          text,
+  session_id          text          NOT NULL,
+  stage               text          NOT NULL DEFAULT 'Idea',
+  action_shown        text          NOT NULL,
+  action_type         text,
+  action_platform     text,
+  critic_persona      text,
+  viability_score     integer,
+  confidence          numeric(4,3),
+  outcome             text,
+  created_at          timestamptz   NOT NULL DEFAULT now()
+);
+ALTER TABLE reflexion_learning_log ENABLE ROW LEVEL SECURITY;
+CREATE POLICY reflexion_learning_log_self ON reflexion_learning_log
+  FOR ALL USING (auth.uid() = user_id);
+
+-- venture_tracks (from migration 20260504000000_venture_tracks.sql)
+CREATE TABLE IF NOT EXISTS venture_tracks (
+  id          text          PRIMARY KEY,
+  user_id     uuid          NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  data        jsonb         NOT NULL DEFAULT '{}'::jsonb,
+  created_at  timestamptz   NOT NULL DEFAULT now(),
+  updated_at  timestamptz   NOT NULL DEFAULT now()
+);
+ALTER TABLE venture_tracks ENABLE ROW LEVEL SECURITY;
+CREATE POLICY venture_tracks_self_only ON venture_tracks
+  FOR ALL USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+-- testimonials (from migration 20260514000000_testimonials.sql)
+CREATE TABLE IF NOT EXISTS testimonials (
+  id            uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id       uuid        REFERENCES auth.users(id) ON DELETE SET NULL,
+  display_name  text        NOT NULL DEFAULT 'Anonymous founder',
+  avatar_url    text,
+  streak        int2        NOT NULL DEFAULT 0,
+  stage         text        NOT NULL DEFAULT 'Idea',
+  quote         text        NOT NULL CHECK (char_length(quote) BETWEEN 10 AND 400),
+  rating        int2        NOT NULL DEFAULT 5 CHECK (rating BETWEEN 1 AND 5),
+  is_public     boolean     NOT NULL DEFAULT false,
+  source        text        NOT NULL DEFAULT 'manual'
+                  CHECK (source IN ('streak_7', 'streak_14', 'high_confidence', 'streak_30', 'admin', 'manual')),
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  approved_at   timestamptz
+);
+ALTER TABLE testimonials ENABLE ROW LEVEL SECURITY;
+CREATE POLICY testimonials_public_read ON testimonials
+  FOR SELECT USING (is_public = true);
+CREATE POLICY testimonials_own_read ON testimonials
+  FOR SELECT USING (auth.uid() = user_id);
+
+-- funnel_events (from migration 20260517000004_funnel_events.sql)
+CREATE TABLE IF NOT EXISTS funnel_events (
+  id         bigserial    PRIMARY KEY,
+  user_id    uuid         REFERENCES auth.users(id) ON DELETE SET NULL,
+  step       text         NOT NULL,
+  meta       jsonb,
+  session_id text,
+  referrer   text,
+  user_agent text,
+  created_at timestamptz  NOT NULL DEFAULT now()
+);
+ALTER TABLE funnel_events ENABLE ROW LEVEL SECURITY;
+CREATE INDEX IF NOT EXISTS idx_funnel_events_step_created
+  ON funnel_events (step, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_funnel_events_user_id
+  ON funnel_events (user_id, created_at ASC)
+  WHERE user_id IS NOT NULL;
+CREATE POLICY funnel_events_insert_authenticated ON funnel_events
+  FOR INSERT TO authenticated
+  WITH CHECK (auth.uid() = user_id OR user_id IS NULL);
+CREATE POLICY funnel_events_insert_anon ON funnel_events
+  FOR INSERT TO anon
+  WITH CHECK (user_id IS NULL);
+CREATE POLICY funnel_events_no_select ON funnel_events
+  FOR SELECT TO authenticated
+  USING (false);

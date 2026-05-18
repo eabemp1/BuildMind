@@ -13,6 +13,7 @@
  */
 
 import { getLimits } from "@/lib/plan";
+import { storage } from "@/lib/storage";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -46,7 +47,7 @@ const BLUEPRINT_USAGE_KEY = "bm_blueprint_uses"; // { projectId: number }
 export function getBlueprintUsesForProject(projectId: string): number {
   if (typeof window === "undefined") return 0;
   try {
-    const stored = JSON.parse(localStorage.getItem(BLUEPRINT_USAGE_KEY) ?? "{}");
+    const stored = JSON.parse(storage.get(BLUEPRINT_USAGE_KEY) ?? "{}");
     return stored[projectId] ?? 0;
   } catch {
     return 0;
@@ -62,9 +63,9 @@ export function canUseBlueprintMode(projectId: string): boolean {
 function incrementBlueprintUse(projectId: string): void {
   if (typeof window === "undefined") return;
   try {
-    const stored = JSON.parse(localStorage.getItem(BLUEPRINT_USAGE_KEY) ?? "{}");
+    const stored = JSON.parse(storage.get(BLUEPRINT_USAGE_KEY) ?? "{}");
     stored[projectId] = (stored[projectId] ?? 0) + 1;
-    localStorage.setItem(BLUEPRINT_USAGE_KEY, JSON.stringify(stored));
+    storage.set(BLUEPRINT_USAGE_KEY, JSON.stringify(stored));
   } catch {
     // silently fail
   }

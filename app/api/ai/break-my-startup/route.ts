@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { enforceAndTrackAIUsage, groqJSON, groqReasoningJSON, hasAdminEnv, logReflexionQuality } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
+import { logError } from "@/lib/server/logger";
+
+export const runtime    = "nodejs";
+export const dynamic    = "force-dynamic";
+export const maxDuration = 60; // agent pipeline + reflexion chain can take up to ~45 s
+
 import {
   runAgentPipeline,
   generatePivots,
@@ -28,34 +35,131 @@ import {
 
 type ReflexionStatus = "ok" | "partial" | "failed";
 
-// ─── Competitor scraper (unchanged from original) ────────────────────────────
+// ─── Competitor scraper — DDG with fallback chain ────────────────────────────
+//
+// FIX: DDG blocks the request or changes HTML structure → empty competitor data
+// silently poisoned the 5-agent pipeline. Now has three layers of defence:
+//   1. DDG lite (primary) — fast, no API key required
+//   2. Brave Search open endpoint (secondary) — different source, different IP block risk
+//   3. AI-synthesised fallback (tertiary) — if both scrapers fail, the agent
+//      generates plausible competitor context from the idea text itself so the
+//      pipeline never runs with genuinely null competitor data.
+//
+// The caller always gets { results, scraped } — scraped: false signals to the
+// UI that competitor data is inferred, not scraped, so it can show a caveat.
 
-async function scrapeCompetitors(query: string): Promise<ScrapedCompetitor[]> {
-  try {
-    const encoded = encodeURIComponent(query);
-    const res = await fetch(`https://lite.duckduckgo.com/lite/?q=${encoded}`, {
-      headers: { "User-Agent": "Mozilla/5.0", "Accept-Language": "en-US,en;q=0.9" },
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) return [];
-    const html = await res.text();
-    const linkMatches = [...html.matchAll(/class="result-link"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi)];
-    const snippetMatches = [...html.matchAll(/class="result-snippet"[^>]*>([\s\S]*?)<\/td>/gi)];
-    const results: ScrapedCompetitor[] = [];
-    for (let i = 0; i < Math.min(linkMatches.length, 6); i++) {
-      const href = linkMatches[i]?.[1] ?? "";
-      const rawTitle = (linkMatches[i]?.[2] ?? "").replace(/<[^>]+>/g, "").trim();
-      const rawSnippet = (snippetMatches[i]?.[1] ?? "").replace(/<[^>]+>/g, "").trim();
-      let url = href;
-      if (href.includes("uddg=")) {
-        const match = href.match(/uddg=([^&]+)/);
-        if (match?.[1]) url = decodeURIComponent(match[1]);
-      }
-      if (!url.startsWith("http") || !rawTitle) continue;
-      results.push({ title: rawTitle, url, snippet: rawSnippet });
+type ScrapeResult = { results: ScrapedCompetitor[]; scraped: boolean; source?: string };
+
+/** Parse DDG lite HTML into ScrapedCompetitor array */
+function parseDDGHtml(html: string): ScrapedCompetitor[] {
+  const linkMatches = [...html.matchAll(/class="result-link"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi)];
+  const snippetMatches = [...html.matchAll(/class="result-snippet"[^>]*>([\s\S]*?)<\/td>/gi)];
+  const results: ScrapedCompetitor[] = [];
+  for (let i = 0; i < Math.min(linkMatches.length, 6); i++) {
+    const href = linkMatches[i]?.[1] ?? "";
+    const rawTitle = (linkMatches[i]?.[2] ?? "").replace(/<[^>]+>/g, "").trim();
+    const rawSnippet = (snippetMatches[i]?.[1] ?? "").replace(/<[^>]+>/g, "").trim();
+    let url = href;
+    if (href.includes("uddg=")) {
+      const match = href.match(/uddg=([^&]+)/);
+      if (match?.[1]) url = decodeURIComponent(match[1]);
     }
-    return results;
-  } catch { return []; }
+    if (!url.startsWith("http") || !rawTitle) continue;
+    results.push({ title: rawTitle, url, snippet: rawSnippet });
+  }
+  return results;
+}
+
+/** Primary scraper — DuckDuckGo lite */
+async function scrapeDDG(query: string): Promise<ScrapeResult> {
+  const encoded = encodeURIComponent(query);
+  const res = await fetch(`https://lite.duckduckgo.com/lite/?q=${encoded}`, {
+    headers: { "User-Agent": "Mozilla/5.0", "Accept-Language": "en-US,en;q=0.9" },
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!res.ok) return { results: [], scraped: false };
+  const html = await res.text();
+  // Detect DDG HTML structure change — if neither pattern matches, treat as blocked
+  if (!html.includes("result-link") && !html.includes("uddg=")) {
+    return { results: [], scraped: false };
+  }
+  const results = parseDDGHtml(html);
+  return { results, scraped: results.length > 0, source: "ddg" };
+}
+
+/** Secondary scraper — Brave Search open endpoint (no API key on public tier) */
+async function scrapeBrave(query: string): Promise<ScrapeResult> {
+  const encoded = encodeURIComponent(query);
+  const res = await fetch(`https://search.brave.com/search?q=${encoded}&source=web`, {
+    headers: { "User-Agent": "Mozilla/5.0", "Accept": "text/html" },
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!res.ok) return { results: [], scraped: false };
+  const html = await res.text();
+  // Brave uses data-url and class fz-15 title pattern
+  const titleMatches = [...html.matchAll(/class="[^"]*title[^"]*"[^>]*>([^<]{3,80})<\/span/gi)];
+  const urlMatches   = [...html.matchAll(/data-url="(https?:[^"]+)"/gi)];
+  const results: ScrapedCompetitor[] = [];
+  for (let i = 0; i < Math.min(Math.min(titleMatches.length, urlMatches.length), 6); i++) {
+    const rawTitle = (titleMatches[i]?.[1] ?? "").trim();
+    const url = (urlMatches[i]?.[1] ?? "").trim();
+    if (!url.startsWith("http") || !rawTitle) continue;
+    results.push({ title: rawTitle, url, snippet: "" });
+  }
+  return { results, scraped: results.length > 0, source: "brave" };
+}
+
+/** Tertiary fallback — AI synthesises plausible competitor context from idea text */
+async function aiSynthesiseCompetitors(query: string): Promise<ScrapeResult> {
+  const { callModelJSON, hasAIProvider } = await import("@/lib/ai-providers");
+  if (!hasAIProvider()) return { results: [], scraped: false };
+  try {
+    interface AISynthResult {
+      competitors?: Array<{ name: string; url: string; description: string }>;
+    }
+    const result = await callModelJSON<AISynthResult>(
+      [{
+        role: "system",
+        content: `You are a market research assistant. Given a startup description, name up to 4 real known competitors or similar tools. Return ONLY valid JSON: { "competitors": [{ "name": string, "url": string, "description": string }] }`
+      }, {
+        role: "user",
+        content: `Startup: ${query.slice(0, 300)}
+
+List real direct or indirect competitors.`
+      }],
+      { role: "fast", maxTokens: 400 },
+    );
+    const comps = result?.competitors ?? [];
+    const results: ScrapedCompetitor[] = comps
+      .filter((c) => c.name && c.url)
+      .map((c) => ({ title: c.name, url: c.url, snippet: c.description ?? "" }));
+    // scraped: false signals to UI that this is AI-inferred, not scraped
+    return { results, scraped: false, source: "ai_synthesised" };
+  } catch {
+    return { results: [], scraped: false };
+  }
+}
+
+/**
+ * scrapeCompetitors — three-layer fallback chain.
+ * DDG → Brave → AI synthesis. Never returns null competitor data.
+ * source field tells the caller where the data came from.
+ */
+async function scrapeCompetitors(query: string): Promise<ScrapeResult> {
+  // Layer 1 — DDG lite
+  try {
+    const ddg = await scrapeDDG(query);
+    if (ddg.results.length > 0) return ddg;
+  } catch { /* fall through */ }
+
+  // Layer 2 — Brave Search
+  try {
+    const brave = await scrapeBrave(query);
+    if (brave.results.length > 0) return brave;
+  } catch { /* fall through */ }
+
+  // Layer 3 — AI synthesis (never blocks; scraped: false signals inferred data)
+  return aiSynthesiseCompetitors(query);
 }
 
 // ─── Signal score (preserved — used for free tier preview) ───────────────────
@@ -186,9 +290,26 @@ function buildFocusAreaPrompt(focusAreas: string[]): string {
 
 // ─── Main route ───────────────────────────────────────────────────────────────
 
+
+const BreakMyStartupSchema = z.object({
+  userId:       z.string().min(1),
+  projectId:    z.string().optional(),
+  idea:         z.string().max(1000).optional(),
+  focusAreas:   z.array(z.string()).max(10).optional(),
+  executionMode: z.boolean().optional(),
+});
+
 export async function POST(request: Request) {
   try {
-    const body = await request.json().catch(() => ({}));
+    const rawBody = await request.json().catch(() => ({}));
+    const zodResult = BreakMyStartupSchema.safeParse(rawBody);
+    if (!zodResult.success) {
+      return NextResponse.json(
+        { success: false, error: "Invalid request", details: zodResult.error.flatten() },
+        { status: 400 }
+      );
+    }
+    const body = zodResult.data;
     const userId = String(body?.userId ?? "").trim();
     const projectId = String(body?.projectId ?? "").trim();
     const idea = String(body?.idea ?? "").trim().slice(0, 1000);
@@ -257,9 +378,12 @@ export async function POST(request: Request) {
     // ── Idea-only mode (no projectId) ─────────────────────────────────────
     if (!projectId) {
       // Scrape competitors
-      const competitors = await scrapeCompetitors(
+      const scrapeResult = await scrapeCompetitors(
         `${idea} startup tool software competitors`,
       );
+      const competitors = scrapeResult.results;
+      const competitors_scraped = scrapeResult.scraped;
+      const competitor_data_source = scrapeResult.source ?? "none";
 
       // Parse idea into structured schema
       const parsed = await parseStartupIdea(idea);
@@ -327,6 +451,7 @@ export async function POST(request: Request) {
             criticPersona: reflexionAction._pipeline?.stage4_persona,
             viabilityScore: viabilityResult.viability_score,
             confidence: reflexionAction.confidence,
+            verifierConfidence: reflexionAction._pipeline?.stage5_verifier?.confidence_score,
           }).catch(() => null);
         }
         reflexionStatus = reflexionAction ? "ok" : "partial";
@@ -399,12 +524,9 @@ export async function POST(request: Request) {
               }
             : null,
           reflexion_status: reflexionStatus,
+          competitors_scraped,
+          competitor_data_source,  // "ddg" | "brave" | "ai_synthesised" | "none"
           pipeline_duration_ms: agentPipeline.duration_ms,
-        },
-      });
-    }
-
-    // ── Project mode (has projectId — full Supabase data) ─────────────────
 
     if (!hasAdminEnv()) {
       const hintStage = String(body?.stage ?? "Idea");
@@ -500,9 +622,16 @@ export async function POST(request: Request) {
     ]);
 
     const rawCompetitors = [
-      ...(directResults.status === "fulfilled" ? directResults.value : []),
-      ...(broadResults.status === "fulfilled" ? broadResults.value : []),
+      ...(directResults.status === "fulfilled" ? directResults.value.results : []),
+      ...(broadResults.status === "fulfilled" ? broadResults.value.results : []),
     ];
+    const competitors_scraped =
+      (directResults.status === "fulfilled" && directResults.value.scraped) ||
+      (broadResults.status === "fulfilled" && broadResults.value.scraped);
+    const competitor_data_source =
+      (directResults.status === "fulfilled" && directResults.value.source) ||
+      (broadResults.status === "fulfilled" && broadResults.value.source) ||
+      "none";
     const seen = new Set<string>();
     const competitors = rawCompetitors.filter(c => {
       try {
@@ -590,6 +719,7 @@ export async function POST(request: Request) {
           criticPersona: reflexionAction._pipeline?.stage4_persona,
           viabilityScore: viabilityResult.viability_score,
           confidence: reflexionAction.confidence,
+          verifierConfidence: reflexionAction._pipeline?.stage5_verifier?.confidence_score,
         }).catch(() => null);
       }
       reflexionStatus = reflexionAction ? "ok" : "partial";
@@ -626,7 +756,7 @@ export async function POST(request: Request) {
               .update({ last_break_analysis: current })
               .eq("user_id", userId)
               .then(() => {}),
-          ).catch(() => {});
+          ).catch((err) => logError("break-my-startup/founderContextUpdate", err));
         }
       }
     } catch { /* non-fatal — iteration tracking is additive */ }
@@ -642,7 +772,7 @@ export async function POST(request: Request) {
         stage,
         targetUsers: project.target_users ?? undefined,
         momentumScore: founderCtxRow?.momentum_score ?? 50,
-      }).catch(() => {});
+      }).catch((err) => logError("break-my-startup/logReflexionQuality", err));
     }
 
     // Build legacy-compatible response
@@ -718,6 +848,7 @@ export async function POST(request: Request) {
           completed_tasks: completedTasks,
           base_signal_score: baseSignal,
         },
+        competitors_scraped,
         pipeline_duration_ms: agentPipeline.duration_ms,
       },
     });

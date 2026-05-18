@@ -1,17 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { persistUserPlan } from "@/lib/billing/server";
-import { getClientIp, rateLimit } from "@/lib/server/rateLimit";
+import { getClientIp, rateLimitAsync } from "@/lib/server/rateLimit";
+import { usdToPesewas } from "@/lib/fx";
 
-// Expected amount in pesewas (GHS 290 = 29000 pesewas)
-function expectedAmountPesewas(): number {
-  return parseInt(
-    process.env.PAYSTACK_AMOUNT_BUILDER ??
-    process.env.PAYSTACK_AMOUNT_PESEWAS ??
-    "29000",
-    10,
-  );
-}
+/**
+ * Amount tolerance: allow ±5% of expected to account for minor rate drift
+ * between when the checkout was initialized and when verify runs.
+ */
+const AMOUNT_TOLERANCE = 0.05;
 
 type PaystackVerifyResponse = {
   status: boolean;
@@ -34,7 +31,7 @@ type PaystackVerifyResponse = {
 
 export async function POST(req: NextRequest) {
   try {
-    const limit = rateLimit(`paystack-verify:${getClientIp(req)}`, 20, 15 * 60 * 1000);
+    const limit = await rateLimitAsync(`paystack-verify:${getClientIp(req)}`, 20, 15 * 60 * 1000, { failClosed: true });
     if (!limit.ok) {
       return NextResponse.json(
         { ok: false, error: "Too many verification attempts. Try again shortly." },
@@ -53,7 +50,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Paystack not configured on server" }, { status: 503 });
     }
 
-    // Verify with Paystack API
     const res = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {
       headers: { Authorization: `Bearer ${paystackSecretKey}` },
     });
@@ -70,14 +66,32 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Not authenticated" }, { status: 401 });
     }
 
-    const amount = data.data?.amount ?? 0;
-    const expected = expectedAmountPesewas();
-    if (amount < expected) {
-      return NextResponse.json({ ok: false, error: `Amount mismatch: got ${amount}, expected ${expected}` }, { status: 400 });
-    }
+    const paidAmount = data.data?.amount ?? 0;
+    const paidCurrency = data.data?.currency ?? "";
 
-    if (data.data?.currency !== "GHS") {
-      return NextResponse.json({ ok: false, error: "Currency mismatch" }, { status: 400 });
+    // Verify amount based on currency
+    if (paidCurrency === "USD") {
+      // USD: Paystack sends cents — $39 = 3900 cents
+      const expectedCents = 3900;
+      const lower = Math.floor(expectedCents * (1 - AMOUNT_TOLERANCE));
+      if (paidAmount < lower) {
+        return NextResponse.json(
+          { ok: false, error: `Amount mismatch: got ${paidAmount} cents, expected ~${expectedCents}` },
+          { status: 400 },
+        );
+      }
+    } else if (paidCurrency === "GHS") {
+      // GHS: get live expected pesewas (same conversion used at checkout)
+      const { pesewas: expectedPesewas } = await usdToPesewas(39);
+      const lower = Math.floor(expectedPesewas * (1 - AMOUNT_TOLERANCE));
+      if (paidAmount < lower) {
+        return NextResponse.json(
+          { ok: false, error: `Amount mismatch: got ${paidAmount} pesewas, expected ~${expectedPesewas}` },
+          { status: 400 },
+        );
+      }
+    } else {
+      return NextResponse.json({ ok: false, error: `Unexpected currency: ${paidCurrency}` }, { status: 400 });
     }
 
     const metaUserId = typeof data.data?.metadata?.user_id === "string"
@@ -92,13 +106,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Payment email mismatch" }, { status: 403 });
     }
 
-    const expectedPlanCode = process.env.PAYSTACK_BUILDER_PLAN_CODE?.trim();
+    const expectedPlanCode = paidCurrency === "USD"
+      ? process.env.PAYSTACK_BUILDER_PLAN_CODE_USD?.trim()
+      : process.env.PAYSTACK_BUILDER_PLAN_CODE?.trim();
+
     const actualPlanCode = data.data?.subscription?.plan?.plan_code?.trim();
     if (expectedPlanCode && actualPlanCode && actualPlanCode !== expectedPlanCode) {
       return NextResponse.json({ ok: false, error: "Plan code mismatch" }, { status: 400 });
     }
 
-    // Persist plan upgrade to Supabase user_metadata
     await persistUserPlan(user.id, "builder", {
       provider: "paystack",
       reference,
@@ -107,6 +123,7 @@ export async function POST(req: NextRequest) {
       customerEmail: customerEmail || user.email,
       meta: {
         billing_interval: "monthly",
+        billing_currency: paidCurrency,
         billing_subscription_token: data.data?.subscription?.email_token ?? null,
       },
     });

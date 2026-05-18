@@ -2,12 +2,12 @@ import type { Plan } from "@/lib/plan";
 
 export const PLAN_PRICE_MONTHLY: Record<Plan, number> = {
   free: 0,
-  builder: 19,
+  builder: 39,
 };
 
 export const PLAN_PRICE_LABEL: Record<Plan, string> = {
   free: "$0",
-  builder: "$19/mo",
+  builder: "$39/mo",
 };
 
 export const PLAN_NAME: Record<Plan, string> = {

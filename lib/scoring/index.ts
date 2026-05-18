@@ -29,6 +29,7 @@
  */
 
 import type { SignalSummary } from "@/lib/agents";
+import { storage } from "@/lib/storage";
 
 // ─── Score computation (existing — unchanged) ─────────────────────────────────
 
@@ -380,42 +381,30 @@ export function recordScore(score: number): void {
   if (typeof window === "undefined") return;
   const today = new Date().toISOString().slice(0, 10);
 
-  // 1. Update localStorage cache immediately (for instant UI reads)
+  // 1. Update storage cache immediately (for instant UI reads)
   try {
-    const raw = localStorage.getItem(SCORE_HIST_KEY);
-    const history: ScoreHistoryEntry[] = raw ? JSON.parse(raw) : [];
+    const history = storage.getJSON<ScoreHistoryEntry[]>(SCORE_HIST_KEY, []);
     const idx = history.findIndex(h => h.date === today);
     if (idx >= 0) { history[idx].score = score; }
     else { history.push({ date: today, score }); }
-    localStorage.setItem(SCORE_HIST_KEY, JSON.stringify(history.slice(-30)));
-  } catch { /* localStorage unavailable (SSR guard above should prevent this) */ }
+    storage.setJSON(SCORE_HIST_KEY, history.slice(-30));
+  } catch { /* storage unavailable */ }
 
   // 2. Persist to server (fire-and-forget — never blocks UI)
   fetch("/api/user/score-history", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ date: today, score }),
-  }).catch(() => { /* server unavailable — localStorage copy is the fallback */ });
+  }).catch(() => { /* server unavailable — storage copy is the fallback */ });
 }
 
-/**
- * getScoreHistory — returns the last 30 days of score history.
- *
- * Reads from localStorage cache. Call syncScoreHistory() on page load to
- * ensure the cache is seeded from the server.
- */
 export function getScoreHistory(): ScoreHistoryEntry[] {
   if (typeof window === "undefined") return [];
-  try {
-    const raw = localStorage.getItem(SCORE_HIST_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
+  return storage.getJSON<ScoreHistoryEntry[]>(SCORE_HIST_KEY, []);
 }
 
 /**
- * syncScoreHistory — fetches server-side score history and merges into localStorage.
+ * syncScoreHistory — fetches server-side score history and merges into storage.
  *
  * Call once on page load (Today page, Overview page). The merge strategy is
  * "server wins for dates where the server has a record".
@@ -428,7 +417,6 @@ export async function syncScoreHistory(): Promise<ScoreHistoryEntry[]> {
     const { history } = (await res.json()) as { history: ScoreHistoryEntry[] };
     if (!Array.isArray(history)) return getScoreHistory();
 
-    // Merge: server records override local for same dates
     const local = getScoreHistory();
     const merged = new Map<string, number>();
     local.forEach(h => merged.set(h.date, h.score));
@@ -438,7 +426,7 @@ export async function syncScoreHistory(): Promise<ScoreHistoryEntry[]> {
       .sort((a, b) => a.date.localeCompare(b.date))
       .slice(-30);
 
-    localStorage.setItem(SCORE_HIST_KEY, JSON.stringify(sorted));
+    storage.setJSON(SCORE_HIST_KEY, sorted);
     return sorted;
   } catch {
     return getScoreHistory();
@@ -446,21 +434,15 @@ export async function syncScoreHistory(): Promise<ScoreHistoryEntry[]> {
 }
 
 /**
- * getXP — returns the XP value, preferring server-synced value stored in
- * localStorage under a key that is written by syncXP().
+ * getXP — returns the XP value from the user-scoped storage cache.
  */
 export function getXP(): number {
   if (typeof window === "undefined") return 0;
-  try {
-    return Number(localStorage.getItem(XP_KEY) ?? "0");
-  } catch {
-    return 0;
-  }
+  return Number(storage.get(XP_KEY) ?? "0");
 }
 
 /**
- * syncXP — fetches XP from the server and writes it to localStorage.
- * The server reads XP from founder_context.xp (added in migration).
+ * syncXP — fetches XP from the server and writes it to storage.
  */
 export async function syncXP(): Promise<number> {
   if (typeof window === "undefined") return 0;
@@ -468,7 +450,7 @@ export async function syncXP(): Promise<number> {
     const res = await fetch("/api/user/xp");
     if (!res.ok) return getXP();
     const { xp } = (await res.json()) as { xp: number };
-    if (typeof xp === "number") localStorage.setItem(XP_KEY, String(xp));
+    if (typeof xp === "number") storage.set(XP_KEY, String(xp));
     return xp;
   } catch {
     return getXP();

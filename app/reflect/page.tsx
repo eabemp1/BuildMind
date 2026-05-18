@@ -9,6 +9,11 @@ import { notifyStreakMilestone } from "@/lib/notifications";
 import { trackFunnelStep } from "@/lib/onboarding-analytics";
 import { CheckCircle2, ChevronRight, Flame, Brain, ArrowRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import TestimonialModal, {
+  shouldShowTestimonialModal,
+  markTestimonialAsked,
+  type TestimonialSource,
+} from "@/components/TestimonialModal";
 
 type Outcome = "completed" | "blocked" | "partial" | "learned";
 
@@ -44,6 +49,13 @@ export default function ReflectPage() {
   const [showHistory, setShowHistory] = useState(false);
   const [streak, setStreak] = useState(0);
   const [startupStage, setStartupStage] = useState("Idea");
+  const [testimonialSource, setTestimonialSource] = useState<TestimonialSource | null>(null);
+  /**
+   * historySynthesis — AI interpretation of the founder's reflection
+   * history across time. Fetched on page load when ≥ 5 reflections exist.
+   * Null until loaded; empty string if the API returned nothing useful.
+   */
+  const [historySynthesis, setHistorySynthesis] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -90,6 +102,38 @@ export default function ReflectPage() {
             // Merge with localStorage — prefer server data, it's the source of truth
             setHistory(serverHistory);
             localStorage.setItem("bm_reflect_history", JSON.stringify(serverHistory));
+
+            // ── Cross-time AI synthesis ──────────────────────────────────────
+            // Only fire when there's enough history to say something meaningful.
+            // We send the last 10 reflections (enough for pattern recognition,
+            // cheap enough to keep latency acceptable).
+            if (serverHistory.length >= 5) {
+              try {
+                const synthRes = await fetch("/api/ai/reflect-synthesis", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    history: serverHistory.slice(-10).map((h: { outcome: string; note: string; confidence: number; date: number }) => ({
+                      outcome: h.outcome,
+                      note: h.note,
+                      confidence: h.confidence,
+                      daysAgo: Math.round((Date.now() - h.date) / (1000 * 60 * 60 * 24)),
+                    })),
+                    stage: summariesRes.status === "fulfilled"
+                      ? summariesRes.value.data?.[0]?.startup_stage ?? "Idea"
+                      : "Idea",
+                    streak: getStoredStreak(),
+                  }),
+                });
+                if (synthRes.ok) {
+                  const synthData = await synthRes.json();
+                  const synthesis = (synthData.data ?? synthData).synthesis ?? "";
+                  if (synthesis) setHistorySynthesis(synthesis);
+                }
+              } catch {
+                // Non-fatal — synthesis is additive, not required
+              }
+            }
           }
         }
       } catch {}
@@ -131,6 +175,16 @@ export default function ReflectPage() {
       }
 
       trackFunnelStep("first_reflect");
+      // Mark reflection done today for the daily loop status bar in app-shell
+      const rfNow = new Date();
+      const rfKey = `bm_reflect_done_${rfNow.getFullYear()}-${rfNow.getMonth()}-${rfNow.getDate()}`;
+      localStorage.setItem(rfKey, "1");
+
+      // Check if this session should trigger the testimonial modal
+      const currentStreak = getStoredStreak();
+      const modalSource = shouldShowTestimonialModal(currentStreak, outcome, confidence);
+      if (modalSource) setTestimonialSource(modalSource);
+
       setDone(true);
     } finally { setSubmitting(false); }
   }
@@ -165,6 +219,19 @@ export default function ReflectPage() {
             <button onClick={() => router.push("/today")} style={{ flex: 1, padding: "12px 0", borderRadius: 10, border: "none", background: "var(--grad-primary)", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>See tomorrow's action →</button>
           </div>
         </motion.div>
+
+        {/* Testimonial modal — shown at high-engagement moments */}
+        {testimonialSource && (
+          <TestimonialModal
+            source={testimonialSource}
+            streak={streak}
+            stage={startupStage}
+            onClose={() => {
+              markTestimonialAsked(testimonialSource);
+              setTestimonialSource(null);
+            }}
+          />
+        )}
       </div>
     );
   }
@@ -176,6 +243,17 @@ export default function ReflectPage() {
         <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em", margin: 0 }}>How did today go?</h1>
         {todayAction && <p style={{ fontSize: 13, color: "var(--bm-text3)", marginTop: 6, lineHeight: 1.5 }}>Today's action: <span style={{ color: "var(--bm-text2)" }}>{todayAction}</span></p>}
       </motion.div>
+
+      {/* Cross-time AI synthesis — shown when we have enough history */}
+      {historySynthesis && (
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.04 }}
+          style={{ background: "linear-gradient(135deg, rgba(99,102,241,0.07) 0%, rgba(99,102,241,0.03) 100%)", border: "1px solid var(--bm-accent-bd)", borderRadius: 16, padding: "16px 20px", marginBottom: 16 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-accent)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8, display: "flex", alignItems: "center", gap: 5 }}>
+            <Brain size={10} /> Pattern across your reflections
+          </div>
+          <p style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.6, margin: 0 }}>{historySynthesis}</p>
+        </motion.div>
+      )}
 
       {/* Outcome */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.06 }}

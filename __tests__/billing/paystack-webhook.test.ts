@@ -61,7 +61,7 @@ const CHARGE_SUCCESS = {
     id: 1234567,
     reference: "ref_abc",
     status: "success",
-    amount: 29000,
+    amount: 44500,
     currency: "GHS",
     customer: { email: "founder@example.com" },
     metadata: { user_id: "user-abc-123" },
@@ -75,7 +75,7 @@ const CHARGE_SUCCESS = {
 describe("POST /api/billing/paystack/webhook", () => {
   beforeEach(() => {
     process.env.PAYSTACK_SECRET_KEY = TEST_SECRET;
-    process.env.PAYSTACK_AMOUNT_BUILDER = "29000";
+    process.env.PAYSTACK_AMOUNT_BUILDER = "44500";
     vi.clearAllMocks();
   });
 
@@ -262,7 +262,7 @@ describe("POST /api/billing/paystack/webhook", () => {
         id: 999,
         reference: "ref_sub",
         status: "success",
-        amount: 29000,
+        amount: 44500,
         currency: "GHS",
         customer: null,
         metadata: {}, // no user_id

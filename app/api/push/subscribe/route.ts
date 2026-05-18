@@ -25,7 +25,7 @@ import { hasAdminEnv } from "@/app/api/ai/_utils";
 
 export async function POST(req: NextRequest) {
   try {
-    const { userId, subscription } = await req.json();
+    const { userId, subscription } = await req.json().catch(() => ({}));
 
     if (!userId || !subscription) {
       return NextResponse.json({ error: "Missing userId or subscription" }, { status: 400 });

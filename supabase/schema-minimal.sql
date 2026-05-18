@@ -45,6 +45,18 @@ $$ LANGUAGE plpgsql;
 -- ============================================================================
 
 -- founder_context: Required by morning_briefing, evening_check, weekly_mirror jobs
+-- TABLE: processed_webhooks (idempotency store for billing webhooks)
+CREATE TABLE IF NOT EXISTS processed_webhooks (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  provider text NOT NULL,
+  event_key text NOT NULL,
+  event_name text,
+  processed_at timestamptz DEFAULT now(),
+  UNIQUE (provider, event_key)
+);
+
+ALTER TABLE processed_webhooks ENABLE ROW LEVEL SECURITY;
+
 CREATE TABLE founder_context (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -174,11 +186,23 @@ CREATE TRIGGER profiles_set_updated_at BEFORE UPDATE ON profiles
 CREATE TABLE founder_memory (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  -- Fields aligned with TypeScript FounderMemory type
+  personality_tags text[] NOT NULL DEFAULT '{}',
+  decision_patterns jsonb NOT NULL DEFAULT '[]',
+  emotional_signals jsonb NOT NULL DEFAULT '[]',
+  avoidance_zones text[] NOT NULL DEFAULT '{}',
+  strengths text[] NOT NULL DEFAULT '{}',
+  cofounder_style text NOT NULL DEFAULT 'strategic-partner',
+  last_insight text,
+  insight_history jsonb NOT NULL DEFAULT '[]',
+  -- CoFounder Core additions
+  validation_receipts jsonb NOT NULL DEFAULT '[]',
+  competitor_history jsonb NOT NULL DEFAULT '[]',
+  -- Legacy fields retained for backward compatibility
   startup_summary text,
   founding_story text,
   core_motivations text[],
-  personality_profile jsonb,
-  validation_receipts jsonb[] DEFAULT '{}',
+  last_updated_batch_count int DEFAULT 0,
   created_at timestamp DEFAULT now(),
   updated_at timestamp DEFAULT now()
 );

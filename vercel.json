@@ -1,4 +1,36 @@
 {
+  "functions": {
+    "app/api/ai/break-my-startup/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/ai/validate-idea/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/ai/today-action/route.ts": {
+      "maxDuration": 30
+    },
+    "app/api/ai/today-action/stream/route.ts": {
+      "maxDuration": 30
+    },
+    "app/api/ai/coach/route.ts": {
+      "maxDuration": 30
+    },
+    "app/api/ai/weekly-report/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/cron/aggregate-benchmarks/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/ai/embed-tags/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/cron/meta-critic/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/cron/sunday-email/route.ts": {
+      "maxDuration": 300
+    }
+  },
   "crons": [
     {
       "path": "/api/morning-briefing",
@@ -6,10 +38,10 @@
     },
     {
       "path": "/api/push/send-daily",
-      "schedule": "30 5 * * *"
+      "schedule": "0 7 * * *"
     },
     {
-      "path": "/api/ai/weekly-report",
+      "path": "/api/cron/weekly-report",
       "schedule": "0 7 * * 5"
     },
     {
@@ -19,6 +51,26 @@
     {
       "path": "/api/cron/evening-check",
       "schedule": "0 18 * * *"
+    },
+    {
+      "path": "/api/cron/re-engage",
+      "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/aggregate-benchmarks",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/ai/embed-tags",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/meta-critic",
+      "schedule": "0 6 * * 0"
+    },
+    {
+      "path": "/api/cron/sunday-email",
+      "schedule": "0 8 * * 0"
     }
   ]
 }

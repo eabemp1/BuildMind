@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import { Copy, Check, Users, Gift, Flame, ChevronRight, Zap, ArrowRight } from "lucide-react";
+import { TeamsWaitlistCard } from "@/components/TeamsWaitlistCard";
+import { FEATURES } from "@/lib/features";
 
 const MESSAGES = [
   "Hey — I've been using BuildMind to stay accountable on my startup. It gives me one specific action every morning and tracks my streak. Thought you'd find it useful: {link}",
@@ -175,6 +177,18 @@ export default function InvitePage() {
           </div>
         )}
       </motion.div>
+
+      {/* Teams waitlist — captures demand for co-founder / team mode */}
+      {FEATURES.teamsWaitlist && (
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          style={{ marginTop: 20 }}
+        >
+          <TeamsWaitlistCard />
+        </motion.div>
+      )}
     </div>
   );
 }

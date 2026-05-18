@@ -7,6 +7,71 @@ import Sidebar, { SidebarContent } from "@/components/layout/sidebar";
 import Topbar from "@/components/layout/topbar";
 import { trackPageView, trackFunnelStep } from "@/lib/onboarding-analytics";
 import { createClient } from "@/lib/supabase/client";
+import { TrialBanner, TrialPaywall } from "@/components/TrialBanner";
+
+// REC 4.2: Persistent daily loop status bar
+function DailyLoopStatusBar() {
+  const [loopState, setLoopState] = useState<{
+    dayOfWeek: number;
+    taskDone: boolean;
+    reflectionDone: boolean;
+    hoursUntilBriefing: number;
+  } | null>(null);
+
+  useEffect(() => {
+    const now = new Date();
+    const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon...
+    const hoursUntilBriefing = now.getHours() < 7
+      ? 7 - now.getHours()
+      : 24 - now.getHours() + 7;
+
+    const today = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
+    const taskDone = localStorage.getItem(`bm_task_done_${today}`) === "1";
+    const reflectionDone = localStorage.getItem(`bm_reflect_done_${today}`) === "1";
+
+    setLoopState({ dayOfWeek, taskDone, reflectionDone, hoursUntilBriefing });
+  }, []);
+
+  if (!loopState) return null;
+
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const dayLabel = dayNames[loopState.dayOfWeek];
+  const briefingNote = loopState.hoursUntilBriefing <= 2
+    ? "Briefing arriving soon"
+    : `Briefing at 7am`;
+
+  return (
+    <div style={{
+      borderBottom: "1px solid var(--bm-border)",
+      background: "rgba(255,255,255,0.015)",
+      padding: "5px 16px",
+      display: "flex",
+      alignItems: "center",
+      gap: 16,
+      fontSize: 11,
+      color: "var(--bm-text4)",
+      flexWrap: "wrap",
+    }}>
+      <span style={{ color: "var(--bm-text3)", fontWeight: 600 }}>{dayLabel}</span>
+      <span style={{ color: "var(--bm-border)" }}>·</span>
+      <span>
+        Task:{" "}
+        <span style={{ color: loopState.taskDone ? "#4ade80" : "var(--bm-text4)", fontWeight: loopState.taskDone ? 700 : 400 }}>
+          {loopState.taskDone ? "done ✓" : "not yet"}
+        </span>
+      </span>
+      <span style={{ color: "var(--bm-border)" }}>·</span>
+      <span>
+        Reflection:{" "}
+        <span style={{ color: loopState.reflectionDone ? "#4ade80" : "var(--bm-text4)", fontWeight: loopState.reflectionDone ? 700 : 400 }}>
+          {loopState.reflectionDone ? "done ✓" : "pending"}
+        </span>
+      </span>
+      <span style={{ color: "var(--bm-border)" }}>·</span>
+      <span>{briefingNote}</span>
+    </div>
+  );
+}
 
 const PATH_TO_FUNNEL: Record<string, Parameters<typeof trackFunnelStep>[0]> = {
   "/today":   "first_today",
@@ -19,6 +84,25 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const reduceMotion = useReducedMotion();
+
+  // ── 7-Day Free Trial state ────────────────────────────────────────────────
+  const [trialDaysRemaining, setTrialDaysRemaining] = useState(0);
+  const [trialExpired, setTrialExpired] = useState(false);
+
+  useEffect(() => {
+    // Fetch authoritative trial state from billing/status once per page.
+    fetch("/api/billing/status", { cache: "no-store" })
+      .then(r => r.ok ? r.json() : null)
+      .then((d: { trial?: { active?: boolean; expired?: boolean; daysRemaining?: number } } | null) => {
+        if (!d?.trial) return;
+        if (d.trial.expired) {
+          setTrialExpired(true);
+        } else if (d.trial.active) {
+          setTrialDaysRemaining(d.trial.daysRemaining ?? 0);
+        }
+      })
+      .catch(() => {});
+  }, [pathname]);
 
   useEffect(() => {
     try {
@@ -105,6 +189,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         >
           <Topbar onToggleSidebar={() => setMobileOpen(p => !p)} />
         </header>
+
+        {/* REC 4.2: Persistent daily loop status bar — visible from every dashboard page */}
+        <DailyLoopStatusBar />
+
+        {/* ── 7-Day Free Trial banner (active trial) + hard paywall (expired) ── */}
+        {trialDaysRemaining > 0 && (
+          <div style={{ padding: "8px 16px 0" }}>
+            <TrialBanner daysRemaining={trialDaysRemaining} />
+          </div>
+        )}
+        <TrialPaywall expired={trialExpired} />
 
         {/* Page */}
         <AnimatePresence mode="wait">

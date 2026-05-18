@@ -378,3 +378,52 @@ select option { background:var(--bm-bg2,#161618); color:var(--bm-text,#ECECEC); 
     break-inside: avoid;
   }
 }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   AUTH PAGE V3 — KEYFRAME ANIMATIONS
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+@keyframes orbit-cw  { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }
+@keyframes orbit-ccw { from { transform: rotate(0deg) } to { transform: rotate(-360deg) } }
+@keyframes breathe {
+  0%,100% { opacity:.5; transform:translate(-50%,-50%) scale(1) }
+  50%     { opacity:1;  transform:translate(-50%,-50%) scale(1.06) }
+}
+@keyframes scan {
+  0%   { top:-1px; opacity:0 }
+  8%   { opacity:1 }
+  92%  { opacity:.6 }
+  100% { top:100%; opacity:0 }
+}
+@keyframes brain-glow {
+  0%,100% { filter: drop-shadow(0 0 22px rgba(92,200,138,.22)) drop-shadow(0 0 70px rgba(74,184,176,.07)) }
+  50%     { filter: drop-shadow(0 0 42px rgba(92,200,138,.38)) drop-shadow(0 0 120px rgba(74,184,176,.14)) }
+}
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.2} }
+@keyframes float {
+  0%,100% { transform: translateY(0) }
+  50%     { transform: translateY(-5px) }
+}
+@keyframes fade-in {
+  from { opacity: 0 }
+  to   { opacity: 1 }
+}
+@keyframes build-reveal {
+  0%   { opacity:0; letter-spacing:.55em; filter:blur(8px) }
+  55%  { opacity:.9; letter-spacing:.02em; filter:blur(1px) }
+  100% { opacity:1; letter-spacing:-.015em; filter:blur(0) }
+}
+@keyframes letter-drop {
+  0%   { opacity:0; transform:translateY(-16px) scaleY(.65) }
+  62%  { opacity:1; transform:translateY(2px) scaleY(1.04) }
+  100% { opacity:1; transform:translateY(0) scaleY(1) }
+}
+@keyframes blink { 0%,49%{opacity:1} 50%,100%{opacity:0} }
+@keyframes sig-draw {
+  from { stroke-dashoffset: 600 }
+  to   { stroke-dashoffset: 0 }
+}
+@keyframes underline-sweep {
+  from { transform: scaleX(0); transform-origin: left }
+  to   { transform: scaleX(1); transform-origin: left }
+}

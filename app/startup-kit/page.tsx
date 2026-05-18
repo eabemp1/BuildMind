@@ -134,7 +134,7 @@ function FreeTeaserView({ onUpgrade }: { onUpgrade: () => void }) {
           <div style={{ fontSize: 11, color: "#a78bfa", fontWeight: 600, marginBottom: 14, textAlign: "center" }}>↑ Sample output for &ldquo;BuildMind&rdquo; — your idea generates a custom version</div>
           <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} onClick={onUpgrade}
             style={{ width: "100%", maxWidth: 360, padding: "14px 0", background: "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "#fff", fontWeight: 700, fontSize: 14, borderRadius: 12, border: "none", cursor: "pointer", fontFamily: "inherit", boxShadow: "0 4px 20px rgba(99,102,241,0.35)" }}>
-            Unlock Startup Kit — $19/mo →
+            Unlock Startup Kit — $39/mo →
           </motion.button>
           <div style={{ fontSize: 11, color: "var(--bm-text4)", marginTop: 8 }}>Cancel anytime. Instant access.</div>
         </div>

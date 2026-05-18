@@ -15,6 +15,7 @@
  */
 
 import { getLimits } from "@/lib/plan";
+import { storage } from "@/lib/storage";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -63,16 +64,12 @@ const REFRAME_USAGE_KEY = "bm_reframe_usage"; // { week: "YYYY-Www", count: numb
 
 function getCompetitorHistory(): CompetitorHistoryEntry[] {
   if (typeof window === "undefined") return [];
-  try {
-    return JSON.parse(localStorage.getItem(COMPETITOR_HISTORY_KEY) ?? "[]");
-  } catch {
-    return [];
-  }
+  return storage.getJSON<CompetitorHistoryEntry[]>(COMPETITOR_HISTORY_KEY, []);
 }
 
 function saveCompetitorHistory(history: CompetitorHistoryEntry[]): void {
   if (typeof window === "undefined") return;
-  localStorage.setItem(COMPETITOR_HISTORY_KEY, JSON.stringify(history));
+  storage.setJSON(COMPETITOR_HISTORY_KEY, history);
 }
 
 function getISOWeek(date: Date): string {
@@ -120,25 +117,17 @@ export function getReframeUsageThisWeek(): { used: number; limit: number; canUse
   if (weekLimit === -1) return { used: 0, limit: -1, canUse: true };
 
   const thisWeek = getISOWeek(new Date());
-  try {
-    const stored = JSON.parse(localStorage.getItem(REFRAME_USAGE_KEY) ?? "{}");
-    const used = stored.week === thisWeek ? (stored.count ?? 0) : 0;
-    return { used, limit: weekLimit, canUse: used < weekLimit };
-  } catch {
-    return { used: 0, limit: weekLimit, canUse: true };
-  }
+  const stored = storage.getJSON<{ week?: string; count?: number }>(REFRAME_USAGE_KEY, {});
+  const used = stored.week === thisWeek ? (stored.count ?? 0) : 0;
+  return { used, limit: weekLimit, canUse: used < weekLimit };
 }
 
 function incrementReframeUsage(): void {
   if (typeof window === "undefined") return;
   const thisWeek = getISOWeek(new Date());
-  try {
-    const stored = JSON.parse(localStorage.getItem(REFRAME_USAGE_KEY) ?? "{}");
-    const currentCount = stored.week === thisWeek ? (stored.count ?? 0) : 0;
-    localStorage.setItem(REFRAME_USAGE_KEY, JSON.stringify({ week: thisWeek, count: currentCount + 1 }));
-  } catch {
-    localStorage.setItem(REFRAME_USAGE_KEY, JSON.stringify({ week: thisWeek, count: 1 }));
-  }
+  const stored = storage.getJSON<{ week?: string; count?: number }>(REFRAME_USAGE_KEY, {});
+  const currentCount = stored.week === thisWeek ? (stored.count ?? 0) : 0;
+  storage.setJSON(REFRAME_USAGE_KEY, { week: thisWeek, count: currentCount + 1 });
 }
 
 // ─── Main reframe call ────────────────────────────────────────────────────────

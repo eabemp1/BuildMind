@@ -5,7 +5,8 @@ import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { usePlan } from "@/lib/usePlan";
 import { PLAN_PRICE_LABEL } from "@/lib/pricing";
-import { Check, Zap, Shield, Star, ArrowRight, Loader2 } from "lucide-react";
+import { Check, Zap, Shield, Star, ArrowRight, Loader2, Users } from "lucide-react";
+import { TeamsWaitlistCard } from "@/components/TeamsWaitlistCard";
 
 const FEATURES = [
   { label: "Daily Reflexion Loop (free: 3/week)", free: false, builder: true },
@@ -57,6 +58,7 @@ export default function UpgradePage() {
   const isMobile = useIsMobile();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [teamsModalOpen, setTeamsModalOpen] = useState(false);
 
   useEffect(() => {
     const reference = new URLSearchParams(window.location.search).get("reference");
@@ -220,6 +222,35 @@ export default function UpgradePage() {
             </div>
           ))}
         </motion.div>
+
+        {/* Teams waitlist CTA */}
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.24 }}
+          style={{ textAlign: "center", marginTop: 32, paddingTop: 28, borderTop: "1px solid var(--bm-border)" }}>
+          <p style={{ fontSize: 12, color: "var(--bm-text3)", marginBottom: 12 }}>
+            Building with a co-founder or small team?
+          </p>
+          <button
+            onClick={() => setTeamsModalOpen(true)}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 8,
+              padding: "10px 20px", borderRadius: 12,
+              background: "var(--bm-bg2)", border: "1px solid var(--bm-border)",
+              color: "var(--bm-text2)", fontSize: 13, fontWeight: 600,
+              cursor: "pointer", fontFamily: "inherit",
+              transition: "border-color 0.15s, background 0.15s",
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--bm-accent-bd)"; e.currentTarget.style.background = "var(--bm-accent-dim)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--bm-border)"; e.currentTarget.style.background = "var(--bm-bg2)"; }}
+          >
+            <Users size={14} color="var(--bm-accent)" />
+            Join the Teams early-access list
+          </button>
+        </motion.div>
+
+        {/* TeamsWaitlistCard modal */}
+        {teamsModalOpen && (
+          <TeamsWaitlistCard asModal onClose={() => setTeamsModalOpen(false)} />
+        )}
       </div>
     </div>
   );

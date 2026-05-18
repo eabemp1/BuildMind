@@ -9,7 +9,7 @@
  *   - One-liner problem hypothesis
  *   - Suggested channels with reasoning
  *
- * Migrated from Anthropic (claude-sonnet-4-5) → Groq (llama-3.3-70b-versatile)
+ * Migrated from Anthropic (claude-sonnet-4-5) → Groq (openai/gpt-oss-120b via fast chain)
  */
 
 import { NextResponse } from "next/server";

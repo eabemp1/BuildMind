@@ -27,12 +27,17 @@
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { normalizePlan, PLAN_LIMITS, type Plan, type PlanLimits } from "@/lib/plan";
+import { storage } from "@/lib/storage";
 
 interface PlanState {
   plan: Plan;
   limits: PlanLimits;
   isLoading: boolean;
   userId: string | null;
+  // Trial fields — from billing/status
+  trialActive: boolean;
+  trialExpired: boolean;
+  trialDaysRemaining: number;
 }
 
 const DEFAULT_STATE: PlanState = {
@@ -40,6 +45,9 @@ const DEFAULT_STATE: PlanState = {
   limits: PLAN_LIMITS.free,
   isLoading: true,
   userId: null,
+  trialActive: false,
+  trialExpired: false,
+  trialDaysRemaining: 0,
 };
 
 // Module-level cache so repeated hook uses don't re-fetch within the same
@@ -48,7 +56,7 @@ let cachedUserId: string | null = null;
 let cachedPlan: Plan = "free";
 let fetchPromise: Promise<{ plan: Plan; userId: string | null }> | null = null;
 
-async function fetchPlanFromServer(): Promise<{ plan: Plan; userId: string | null }> {
+async function fetchPlanFromServer(): Promise<{ plan: Plan; userId: string | null; trialActive: boolean; trialExpired: boolean; trialDaysRemaining: number }> {
   try {
     // Get userId first from Supabase client (fast — uses local session)
     const supabase = createClient();
@@ -57,10 +65,9 @@ async function fetchPlanFromServer(): Promise<{ plan: Plan; userId: string | nul
 
     if (!userId) {
       if (typeof window !== "undefined") {
-        localStorage.removeItem("bm_plan");
-        localStorage.removeItem("bm_active_user_id");
+        storage.onSignOut();
       }
-      return { plan: "free", userId: null };
+      return { plan: "free", userId: null, trialActive: false, trialExpired: false, trialDaysRemaining: 0 };
     }
 
     // Fetch authoritative plan from server (reads Supabase auth metadata)
@@ -71,26 +78,27 @@ async function fetchPlanFromServer(): Promise<{ plan: Plan; userId: string | nul
 
     if (!res.ok) {
       // Server error — fall back to "free" (safe)
-      return { plan: "free", userId };
+      return { plan: "free", userId, trialActive: false, trialExpired: false, trialDaysRemaining: 0 };
     }
 
     const payload = await res.json().catch(() => null) as {
       ok?: boolean;
       plan?: string;
+      trial?: { active?: boolean; expired?: boolean; daysRemaining?: number };
     } | null;
 
     const plan = normalizePlan(payload?.ok ? (payload.plan ?? null) : null);
+    const trialActive = payload?.trial?.active ?? false;
+    const trialExpired = payload?.trial?.expired ?? false;
+    const trialDaysRemaining = payload?.trial?.daysRemaining ?? 0;
 
-    // Cache in localStorage keyed by userId so it survives page refresh
-    // but is per-account (different keys for different users).
+    // Cache via scoped storage so it survives page refresh but is per-account.
     if (typeof window !== "undefined") {
-      localStorage.setItem(`bm_plan_${userId}`, plan);
-      // Keep generic key in sync for legacy callers that still read bm_plan.
-      localStorage.setItem("bm_plan", plan);
-      localStorage.setItem("bm_active_user_id", userId);
+      storage.onSignIn(userId);
+      storage.setPlan(plan);
     }
 
-    return { plan, userId };
+    return { plan, userId, trialActive, trialExpired, trialDaysRemaining };
   } catch {
     return { plan: "free", userId: null };
   }
@@ -106,7 +114,7 @@ export function usePlan(): PlanState {
   });
 
   const refresh = useCallback(async () => {
-    const applyPlan = ({ plan, userId }: { plan: Plan; userId: string | null }) => {
+    const applyPlan = ({ plan, userId, trialActive, trialExpired, trialDaysRemaining }: { plan: Plan; userId: string | null; trialActive: boolean; trialExpired: boolean; trialDaysRemaining: number }) => {
       cachedUserId = userId;
       cachedPlan = plan;
       setState({
@@ -114,6 +122,9 @@ export function usePlan(): PlanState {
         limits: PLAN_LIMITS[plan],
         isLoading: false,
         userId,
+        trialActive,
+        trialExpired,
+        trialDaysRemaining,
       });
     };
 
@@ -129,7 +140,7 @@ export function usePlan(): PlanState {
       const result = await fetchPromise;
       applyPlan(result);
     } catch {
-      setState(s => ({ ...s, isLoading: false }));
+      setState(s => ({ ...s, isLoading: false, trialActive: false, trialExpired: false, trialDaysRemaining: 0 }));
     } finally {
       fetchPromise = null;
     }
@@ -168,13 +179,14 @@ function aiDayKey(userId: string): string {
 
 export function getAIMessagesTodayForUser(userId: string): number {
   if (typeof window === "undefined" || !userId) return 0;
-  return Number(localStorage.getItem(aiDayKey(userId)) ?? "0");
+  storage.onSignIn(userId);
+  return storage.getAIMessagesToday();
 }
 
 export function recordAIMessageForUser(userId: string): void {
   if (typeof window === "undefined" || !userId) return;
-  const k = aiDayKey(userId);
-  localStorage.setItem(k, String(getAIMessagesTodayForUser(userId) + 1));
+  storage.onSignIn(userId);
+  storage.recordAIMessage();
 }
 
 // ── Per-user action tracking ─────────────────────────────────────────────────
@@ -187,18 +199,20 @@ function weekKey(): string {
 
 export function getActionsThisWeekForUser(userId: string): number {
   if (typeof window === "undefined" || !userId) return 0;
-  return Number(localStorage.getItem(`bm_actions_${userId}_${weekKey()}`) ?? "0");
+  storage.onSignIn(userId);
+  return storage.getActionsThisWeek();
 }
 
 export function recordWeeklyActionForUser(userId: string): void {
   if (typeof window === "undefined" || !userId) return;
-  const k = `bm_actions_${userId}_${weekKey()}`;
-  localStorage.setItem(k, String(getActionsThisWeekForUser(userId) + 1));
+  storage.onSignIn(userId);
+  storage.recordWeeklyAction();
 }
 
-// ── Helper to get plan from localStorage cache (for SSR-safe reads) ──────────
+// ── Helper to get plan from storage cache (for SSR-safe reads) ──────────
 // Only reads the namespaced key. Returns "free" if not found or no userId.
 export function getCachedPlanForUser(userId: string | null): Plan {
   if (!userId || typeof window === "undefined") return "free";
-  return normalizePlan(localStorage.getItem(`bm_plan_${userId}`));
+  storage.onSignIn(userId);
+  return normalizePlan(storage.getPlan());
 }

@@ -3,7 +3,21 @@ import { createServerClient } from "@supabase/ssr";
 import { FEATURES } from "@/lib/features";
 
 export async function middleware(request: NextRequest) {
-  let response = NextResponse.next({ request });
+  // Generate a per-request nonce for CSP (W5 fix — replaces static unsafe-inline)
+  const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
+  const csp = [
+    "default-src 'self'",
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: https:",
+    "connect-src 'self' https:/*.supabase.co https://api.groq.com https://api.cerebras.ai https://generativelanguage.googleapis.com",
+    "frame-ancestors 'none'",
+  ].join("; ");
+
+  let response = NextResponse.next({
+    request: { headers: new Headers({ ...Object.fromEntries(request.headers), "x-nonce": nonce }) },
+  });
+  response.headers.set("Content-Security-Policy", csp);
   const devAuthEnabled = process.env.NODE_ENV !== "production" && process.env.DEV_AUTH_ENABLED === "1";
   const isDevAuthed = devAuthEnabled && request.cookies.get("bm_dev_auth")?.value === "1";
   const isDevOnboarded = isDevAuthed && request.cookies.get("bm_dev_onboarded")?.value === "1";
@@ -88,31 +102,12 @@ export async function middleware(request: NextRequest) {
   const isApiRoute = pathname.startsWith("/api");
   const isOnboardingRoute = pathname === "/onboarding" || pathname.startsWith("/onboarding/");
 
-  // Private admin-only route — /my-ventures
-  if (pathname === "/my-ventures" || pathname.startsWith("/my-ventures/")) {
-    let isAdmin = false;
+  // Private admin-only routes — /my-ventures and /admin
+  // Consolidated into one check to avoid two identical fetch round-trips on admin routes.
+  const isAdminRoute = pathname === "/admin" || pathname.startsWith("/admin/");
+  const isMyVenturesRoute = pathname === "/my-ventures" || pathname.startsWith("/my-ventures/");
 
-    if (user) {
-      try {
-        const res = await fetch(new URL("/api/system/admin-check", request.url), {
-          headers: { cookie: request.headers.get("cookie") ?? "" },
-        });
-        if (res.ok) {
-          const json = await res.json();
-          isAdmin = json.isAdmin === true;
-        }
-      } catch {}
-    }
-
-    if (!isAdmin) {
-      const redirectUrl = request.nextUrl.clone();
-      redirectUrl.pathname = "/overview";
-      return NextResponse.redirect(redirectUrl);
-    }
-  }
-
-  // Private admin-only route — /admin
-  if (pathname === "/admin" || pathname.startsWith("/admin/")) {
+  if (isAdminRoute || isMyVenturesRoute) {
     let isAdmin = false;
 
     if (user) {

@@ -91,7 +91,7 @@ export async function completeTask(taskId: string): Promise<{ newStage: string |
   const supabase = createClient();
 
   await supabase.from("tasks").update({ is_completed: true }).eq("id", taskId);
-  observeTaskEvent(taskId, "completed").catch(() => {}); // non-blocking memory update
+  observeTaskEvent(taskId, "completed").catch((err) => console.warn("[buildmind] observeTaskEvent failed:", err)); // non-blocking memory update
 
   const { data: task } = await supabase
     .from("tasks").select("milestone_id").eq("id", taskId).single();
@@ -141,9 +141,9 @@ export async function updateTaskStatus(taskId: string, isCompleted: boolean, not
 
   if (isCompleted && !taskRow.is_completed) {
     trackEvent("task_completed");
-    observeTaskEvent(taskId, "completed").catch(() => {});
+    observeTaskEvent(taskId, "completed").catch((err) => console.warn("[buildmind] observeTaskEvent failed:", err));
   } else if (!isCompleted && taskRow.is_completed) {
-    observeTaskEvent(taskId, "skipped").catch(() => {});
+    observeTaskEvent(taskId, "skipped").catch((err) => console.warn("[buildmind] observeTaskEvent failed:", err));
   }
 
   if (isMilestoneComplete && !wasMilestoneComplete) {

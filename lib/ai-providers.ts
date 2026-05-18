@@ -6,24 +6,30 @@
  * Provider priority per role:
  *
  * FAST (Generator, Refiner, Parser):
- *   1. Groq — llama-3.3-70b-versatile
- *   2. Groq — openai/gpt-oss-20b
- *   3. Cerebras — llama-3.3-70b (same model, different infra, free)
- *   4. Gemini 2.0 Flash
+ *   1. Groq — openai/gpt-oss-120b  (MoE 120B, near o4-mini reasoning, free tier)
+ *   2. Groq — llama-3.3-70b-versatile (fast fallback)
+ *   3. Cerebras — gpt-oss-120b  (same model, 1,854 t/s on wafer silicon)
+ *   4. Gemini 2.5 Flash
  *
  * REASONING (Critic, Verifier — Stages 4 & 5 of Reflexion loop):
- *   1. Groq — qwen/qwen3-32b
- *   2. Cerebras — deepseek-r1-distill-llama-70b
- *   3. Groq — llama-3.3-70b-versatile (graceful degradation)
- *   4. Gemini 2.0 Flash
+ *   1. Groq — openai/gpt-oss-120b  (native CoT, reasoning_effort=high, free)
+ *   2. Groq — qwen/qwen3-32b       (strong math/logic, free)
+ *   3. Cerebras — gpt-oss-120b     (1,854 t/s throughput fallback)
+ *   4. Gemini 2.5 Flash
  *
  * FALLBACK:
- *   1. Gemini 2.0 Flash (if API key present)
- *   2. Cerebras (always free, no card)
+ *   1. Gemini 2.5 Flash (if API key present)
+ *   2. Cerebras gpt-oss-120b (always free, no card required)
  *
  * Rate limit detection:
  *   Any 429, 503, or decommissioned/deprecated response triggers immediate rotation.
  *   No retry on same provider — rotate first, retry never.
+ *
+ * NOTE on gpt-oss reasoning:
+ *   Groq's gpt-oss-120b supports reasoning_effort ('low'|'medium'|'high').
+ *   For REASONING role calls we set reasoning_effort='high' and strip the
+ *   <think>...</think> block from the visible output before returning.
+ *   For JSON calls we use json_object mode (supported on gpt-oss-120b on Groq).
  *
  * NOTE on Qwen3-32b JSON calls:
  *   Groq can reject Qwen3 json_object responses with json_validate_failed.
@@ -54,20 +60,27 @@ function readApiKey(name: string): string | undefined {
 // ── Env vars ──────────────────────────────────────────────────────────────────
 function resolveGroqReasoningModel(): string {
   const configured = process.env.GROQ_REASONING_MODEL?.trim();
-  if (!configured || configured === "deepseek-r1-distill-llama-70b") {
-    return "qwen/qwen3-32b";
+  // Migrate away from the deprecated deepseek-r1-distill-llama-70b (decommissioned Sep 2025)
+  // and default to gpt-oss-120b which delivers near o4-mini reasoning at zero cost.
+  if (!configured || configured === "deepseek-r1-distill-llama-70b" || configured === "qwen/qwen3-32b") {
+    return "openai/gpt-oss-120b";
   }
   return configured;
 }
 
 const GROQ_API_KEY         = readApiKey("GROQ_API_KEY");
-const GROQ_MODEL           = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
+// Primary fast model: gpt-oss-120b on Groq — MoE architecture (5.1B active params),
+// near o4-mini reasoning, free tier, replaces the Llama 3.3 70B default.
+const GROQ_MODEL           = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
 const GROQ_REASONING_MODEL = resolveGroqReasoningModel();
 const CEREBRAS_API_KEY     = readApiKey("CEREBRAS_API_KEY");
-const CEREBRAS_MODEL       = process.env.CEREBRAS_MODEL || "llama-3.3-70b";
-const CEREBRAS_REASONING_MODEL = "deepseek-r1-distill-llama-70b";
+// Cerebras hosts gpt-oss-120b at 1,854 t/s — the fastest inference available.
+const CEREBRAS_MODEL       = process.env.CEREBRAS_MODEL || "gpt-oss-120b";
+// Reasoning role on Cerebras: same gpt-oss-120b (deepseek-r1-distill deprecated Sep 2025)
+const CEREBRAS_REASONING_MODEL = "gpt-oss-120b";
 const GEMINI_API_KEY       = readApiKey("GEMINI_API_KEY");
-const GEMINI_MODEL         = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+// Upgrade to Gemini 2.5 Flash — stronger reasoning and lower hallucination rate
+const GEMINI_MODEL         = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
 const cerebrasClient = CEREBRAS_API_KEY
   ? new Cerebras({ apiKey: CEREBRAS_API_KEY, timeout: 20000, maxRetries: 0 })
@@ -77,14 +90,14 @@ export function getAIProviderStatus() {
   return {
     fast: [
       GROQ_API_KEY ? { provider: "groq", model: GROQ_MODEL, configured: true } : null,
-      GROQ_API_KEY ? { provider: "groq", model: "openai/gpt-oss-20b", configured: true } : null,
+      GROQ_API_KEY ? { provider: "groq", model: "llama-3.3-70b-versatile", configured: true } : null,
       CEREBRAS_API_KEY ? { provider: "cerebras", model: CEREBRAS_MODEL, configured: true } : null,
       GEMINI_API_KEY ? { provider: "gemini", model: GEMINI_MODEL, configured: true } : null,
     ].filter(Boolean),
     reasoning: [
       GROQ_API_KEY ? { provider: "groq", model: GROQ_REASONING_MODEL, configured: true } : null,
+      GROQ_API_KEY ? { provider: "groq", model: "qwen/qwen3-32b", configured: true } : null,
       CEREBRAS_API_KEY ? { provider: "cerebras", model: CEREBRAS_REASONING_MODEL, configured: true } : null,
-      GROQ_API_KEY ? { provider: "groq", model: GROQ_MODEL, configured: true } : null,
       GEMINI_API_KEY ? { provider: "gemini", model: GEMINI_MODEL, configured: true } : null,
     ].filter(Boolean),
     fallback: [
@@ -160,15 +173,23 @@ function isQwen3ReasoningModel(model: string): boolean {
   return normalized.includes("qwen3") || normalized.includes("qwen/qwen3") || normalized.includes("qwq");
 }
 
+function isGptOssModel(model: string): boolean {
+  const normalized = model.toLowerCase();
+  return normalized.includes("gpt-oss") || normalized.includes("openai/gpt-oss");
+}
+
 async function groqCall(
   messages: ChatMessage[],
   model: string,
   temperature: number,
   maxTokens: number,
   jsonMode: boolean,
+  reasoningRole = false,
 ): Promise<string> {
   if (!GROQ_API_KEY) throw new Error("GROQ_API_KEY not set");
   const isQwen3 = isQwen3ReasoningModel(model);
+  const isGptOss = isGptOssModel(model);
+  // gpt-oss supports json_object natively; Qwen3 needs reasoning hidden to avoid validate errors
   const needsReasoningHidden = jsonMode && isQwen3;
   const useProviderJSONMode = jsonMode && !isQwen3;
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -184,6 +205,8 @@ async function groqCall(
       max_tokens: maxTokens,
       ...(useProviderJSONMode ? { response_format: { type: "json_object" } } : {}),
       ...(needsReasoningHidden ? { reasoning_format: "hidden" } : {}),
+      // gpt-oss supports reasoning_effort: 'low'|'medium'|'high' (not reasoning_format)
+      ...(isGptOss ? { reasoning_effort: reasoningRole ? "high" : "medium" } : {}),
       messages,
     }),
   });
@@ -192,8 +215,12 @@ async function groqCall(
     throw new Error(`GROQ_${res.status}: ${text.slice(0, 150)}`);
   }
   const body = await res.json();
-  const text = body?.choices?.[0]?.message?.content;
+  let text: string = body?.choices?.[0]?.message?.content;
   if (!text) throw new Error("Groq empty response");
+  // Strip any exposed <think>...</think> block that gpt-oss may include
+  if (isGptOss) {
+    text = text.replace(/^<think>[\s\S]*?<\/think>\s*/i, "").trim();
+  }
   return sanitizeModelOutput(text);
 }
 
@@ -318,10 +345,13 @@ type ProviderFn = {
 function getFastChain(): ProviderFn[] {
   const chain: ProviderFn[] = [];
   if (GROQ_API_KEY) {
+    // gpt-oss-120b first — strongest reasoning of any free model
     chain.push({ label: `groq:${GROQ_MODEL}`, call: (m, t, mt, j) => groqCall(m, GROQ_MODEL, t, mt, j) });
-    chain.push({ label: "groq:openai/gpt-oss-20b", call: (m, t, mt, j) => groqCall(m, "openai/gpt-oss-20b", t, mt, j) });
+    // Llama 3.3 70B as fast fallback on the same provider
+    chain.push({ label: "groq:llama-3.3-70b-versatile", call: (m, t, mt, j) => groqCall(m, "llama-3.3-70b-versatile", t, mt, j) });
   }
   if (CEREBRAS_API_KEY) {
+    // Cerebras runs gpt-oss-120b at 1,854 t/s — world's fastest for this model
     chain.push({ label: `cerebras:${CEREBRAS_MODEL}`, call: (m, t, mt, j) => cerebrasCall(m, CEREBRAS_MODEL, t, mt, j) });
   }
   if (GEMINI_API_KEY) {
@@ -333,21 +363,20 @@ function getFastChain(): ProviderFn[] {
 function getReasoningChain(): ProviderFn[] {
   const chain: ProviderFn[] = [];
   if (GROQ_API_KEY) {
-    chain.push({ label: `groq:${GROQ_REASONING_MODEL}`, call: (m, t, mt, j) => groqCall(m, GROQ_REASONING_MODEL, t, mt, j) });
+    // gpt-oss-120b with reasoning_effort=high — native CoT, near o4-mini quality
+    chain.push({ label: `groq:${GROQ_REASONING_MODEL}`, call: (m, t, mt, j) => groqCall(m, GROQ_REASONING_MODEL, t, mt, j, true) });
+    // Qwen3-32b as secondary reasoning model (strong math/logic)
+    chain.push({ label: "groq:qwen/qwen3-32b", call: (m, t, mt, j) => groqCall(m, "qwen/qwen3-32b", t, mt, j, true) });
   }
   if (CEREBRAS_API_KEY) {
+    // Cerebras gpt-oss-120b — high throughput reasoning fallback
     chain.push({ label: `cerebras:${CEREBRAS_REASONING_MODEL}`, call: (m, t, mt, j) => cerebrasCall(m, CEREBRAS_REASONING_MODEL, t, mt, j) });
-  }
-  if (GROQ_API_KEY) {
-    // Graceful degradation: fall back to fast model on same provider
-    chain.push({ label: `groq:${GROQ_MODEL}`, call: (m, t, mt, j) => groqCall(m, GROQ_MODEL, t, mt, j) });
   }
   if (GEMINI_API_KEY) {
     chain.push({ label: `gemini:${GEMINI_MODEL}`, call: (m, t, mt, j) => geminiCall(m, t, mt, j) });
   }
   return chain;
 }
-
 function getFallbackChain(): ProviderFn[] {
   const chain: ProviderFn[] = [];
   if (GEMINI_API_KEY) {

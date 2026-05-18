@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getClientIp, rateLimit } from "@/lib/server/rateLimit";
+import { getClientIp, rateLimitAsync } from "@/lib/server/rateLimit";
 
 export async function POST(req: NextRequest) {
-  const limit = rateLimit(`funnel:${getClientIp(req)}`, 120, 60 * 1000);
+  const limit = await rateLimitAsync(`funnel:${getClientIp(req)}`, 120, 60 * 1000);
   if (!limit.ok) return NextResponse.json({ ok: true });
 
   const { step } = await req.json().catch(() => ({}));
@@ -11,8 +11,9 @@ export async function POST(req: NextRequest) {
   const admin = createAdminClient();
   try {
     await admin.rpc("increment_funnel_step", { p_step: step });
-  } catch {
+  } catch (err) {
     // Silently fail — table may not exist yet
+    console.warn("[funnel-event] increment_funnel_step failed:", err);
   }
   return NextResponse.json({ ok: true });
 }

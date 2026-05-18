@@ -1,20 +1,22 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { createUserNotification, enforceAndTrackAIUsage, groqJSON, hasAdminEnv, logReflexionQuality } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
+import { logError } from "@/lib/server/logger";
 import type { FounderMemory } from "@/lib/founderMemory";
+
+export const runtime     = "nodejs";
+export const dynamic     = "force-dynamic";
+export const maxDuration = 30; // single JSON LLM call with context assembly ~5–15 s
 import { inferStage } from "@/lib/stages";
+import { detectSpiralFull } from "@/lib/cofounder/spiralDetection";
+import { injectContinuityIntoSystemPrompt, recordInteractionServer, type RecentInteraction } from "@/lib/conversationContinuity";
 
 const FREE_COACH_MESSAGES_PER_DAY = 3;
-const FREE_COACH_MESSAGES_PER_WEEK = 3;
 
-function weekKey(date = new Date()): string {
-  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-  const day = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - day);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  const week = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
-  return `${d.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
+function dayKey(date = new Date()): string {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
 }
 
 async function enforceCoachUsage(userId: string, plan: string) {
@@ -25,13 +27,13 @@ async function enforceCoachUsage(userId: string, plan: string) {
   if (!hasAdminEnv()) return;
 
   const supabase = createAdminClient();
-  const month = `coach:${weekKey()}`;
+  const month = `coach:${dayKey()}`;
 
   // Atomic increment + cap check — avoids the SELECT→UPDATE race condition.
   const { data: newCount, error: rpcError } = await supabase.rpc("increment_ai_usage_capped", {
     p_user_id: userId,
     p_month: month,
-    p_limit: FREE_COACH_MESSAGES_PER_WEEK,
+    p_limit: FREE_COACH_MESSAGES_PER_DAY,
   });
 
   if (rpcError) throw new Error(rpcError.message);
@@ -54,8 +56,43 @@ function buildFounderMemoryContext(memory: FounderMemory | null): string {
     lines.push(`Last pattern observed: "${memory.last_insight}"`);
   if (memory.cofounder_style)
     lines.push(`Communication style to use: ${memory.cofounder_style}`);
+  // REC 2.5: Include topics mentioned repeatedly for proactive observation
+  const topicsRepeated = (memory as Record<string, unknown>).topics_mentioned_repeatedly as string[] | undefined;
+  if (topicsRepeated?.length)
+    lines.push(`Topics mentioned repeatedly without action: ${topicsRepeated.join(", ")}`);
   if (!lines.length) return "";
   return "\n\nFOUNDER MEMORY (persistent — do not repeat back verbatim, just let it inform your tone and advice):\n" + lines.join("\n");
+}
+
+// REC 2.5: Build the proactive observation the coach leads with before answering.
+// This is the distinction between consulting (answering questions) and coaching (noticing patterns).
+function buildProactiveObservation(memory: FounderMemory | null, currentMessage: string): string {
+  if (!memory) return "";
+  const avoidance = memory.avoidance_zones ?? [];
+  const topicsRepeated = ((memory as Record<string, unknown>).topics_mentioned_repeatedly as string[] | undefined) ?? [];
+  const lastInsight = memory.last_insight ?? "";
+
+  // Don't surface the same topic they're already asking about
+  const messageLower = currentMessage.toLowerCase();
+  const unreaisedAvoidance = avoidance.find((z: string) => !messageLower.includes(z.toLowerCase()));
+  const unreaisedTopic = topicsRepeated.find((t: string) => !messageLower.includes(t.toLowerCase()));
+
+  const observations: string[] = [];
+  if (unreaisedAvoidance) observations.push(`You've been avoiding ${unreaisedAvoidance} consistently`);
+  if (unreaisedTopic) observations.push(`You've mentioned ${unreaisedTopic} multiple times without acting on it`);
+  if (lastInsight && !messageLower.includes(lastInsight.toLowerCase().slice(0, 20))) {
+    // Truncate to the first sentence to avoid bloating prompt instructions with
+    // a full multi-sentence AI-generated paragraph (audit finding §2.5).
+    const firstSentence = lastInsight.split(/(?<=[.!?])\s+/)[0] ?? lastInsight;
+    const truncated = firstSentence.length > 120 ? firstSentence.slice(0, 120).trimEnd() + "…" : firstSentence;
+    observations.push(truncated);
+  }
+
+  if (!observations.length) return "";
+
+  // Pick the most interesting unraised observation
+  const obs = observations[0];
+  return `\n\nPROACTIVE COACHING INSTRUCTION: Before answering the founder's question, open with one direct observation from their behavioral profile that they have NOT raised in this message. Do not ask a question — make a statement. Example format: "Before you ask — [observation]. What's actually blocking that?" The observation to use: "${obs}"`;
 }
 
 // ── Spiral detection — the patterns that signal a founder is collapsing ───────
@@ -114,6 +151,16 @@ Be firm. Avoidance compounds. Interrupting it early is the job.`;
   return "";
 }
 
+
+const CoachBodySchema = z.object({
+  userId:       z.string().optional(),
+  projectId:    z.string().optional(),
+  message:      z.string().max(2000).optional(),
+  blockerType:  z.string().max(200).optional(),
+  domain:       z.string().max(200).optional(),
+  messages:     z.array(z.object({ role: z.string().optional(), content: z.string().optional() })).optional(),
+});
+
 export async function POST(request: Request) {
   try {
     const routeUser = await getRouteUser();
@@ -121,7 +168,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = await request.json().catch(() => ({}));
+    const rawBody = await request.json().catch(() => ({}));
+    const zodResult = CoachBodySchema.safeParse(rawBody);
+    const body = zodResult.success ? zodResult.data : rawBody;
     const userId = String(body?.userId ?? routeUser.userId).trim();
     const projectId = String(body?.projectId ?? body?.project?.id ?? "").trim();
     // Input length limits — prevent prompt injection and runaway token costs
@@ -151,12 +200,16 @@ export async function POST(request: Request) {
     let projectContext = "";
     let stage = "MVP";
     let founderMemoryContext = "";
+    let memory: FounderMemory | null = null;
+    let lastMorningNote = "";
+    let confidenceScore: number | null = null;
 
-    if (hasAdminEnv()) {
+    // supabase client is needed outside the hasAdminEnv block for recordInteractionServer
+    const supabase = hasAdminEnv() ? createAdminClient() : null;
+
+    if (hasAdminEnv() && supabase) {
       try {
-        const supabase = createAdminClient();
-
-        const [projectResult, memoryResult, milestonesResult] = await Promise.allSettled([
+        const [projectResult, memoryResult, milestonesResult, profileResult] = await Promise.allSettled([
           supabase
             .from("projects")
             .select("name, title, description, target_users, problem, startup_stage, validation_strengths, validation_weaknesses")
@@ -165,11 +218,26 @@ export async function POST(request: Request) {
             .single(),
           supabase.from("founder_memory").select("*").eq("user_id", userId).maybeSingle(),
           supabase.from("milestones").select("id, title, status").eq("project_id", projectId),
+          // Task 5: fetch recent_interactions to extract today's morning note
+          // NOTE: recent_interactions lives on founder_context (migration 20260517000000), not profiles
+          supabase.from("founder_context").select("recent_interactions").eq("user_id", userId).maybeSingle(),
         ]);
 
         const project = projectResult.status === "fulfilled" ? projectResult.value.data : null;
-        const memory = memoryResult.status === "fulfilled" ? memoryResult.value.data as FounderMemory | null : null;
+        memory = memoryResult.status === "fulfilled" ? memoryResult.value.data as FounderMemory | null : null;
         const milestones = milestonesResult.status === "fulfilled" ? milestonesResult.value.data ?? [] : [];
+
+        // Task 5: extract today's morning note from recent_interactions
+        const profileInteractions = profileResult.status === "fulfilled"
+          ? (profileResult.value.data?.recent_interactions as Array<{ type?: string; note?: string; timestamp?: string }> | null) ?? []
+          : [];
+        const todayUTC = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
+        const todayMorningCheckin = profileInteractions.find(
+          (r) => r.type === "morning_checkin" && r.timestamp?.startsWith(todayUTC),
+        );
+        if (todayMorningCheckin?.note) {
+          lastMorningNote = todayMorningCheckin.note;
+        }
 
         const milestoneIds = milestones.map((m) => m.id);
       
@@ -242,7 +310,39 @@ Validation gaps: ${valWeaknesses || "None recorded"}`;
     // ── Spiral instruction injected into system prompt when detected ─────────
     const spiralInstruction = buildSpiralInstruction(spiralSignal, message);
 
-    const systemPrompt = `You are BuildMind — a direct, honest AI coach for founders. You think like a great co-founder: you have full context on their project, you follow the conversation, and you never give generic advice.
+    // REC 2.5: Build proactive observation from founder memory
+    const proactiveObservation = buildProactiveObservation(memory, message);
+
+    // AI Improvement #1: Use LLM spiral classifier (not just regex) for nuanced detection
+    const spiralResultFull = await detectSpiralFull(message);
+    // spiralDetected / spiralSignal are already declared from the regex pass above;
+    // if the LLM classifier fires, use its result for the instruction builder.
+    const effectiveSpiralSignal: SpiralSignal =
+      spiralResultFull.detected && spiralResultFull.detectedBy === "llm"
+        ? (spiralResultFull.signal as SpiralSignal)
+        : spiralSignal;
+    const effectiveSpiralDetected = spiralDetected || (spiralResultFull.detected && spiralResultFull.detectedBy === "llm");
+
+    // Task 1: derive a confidence_score from the quality checks so ConfidenceBadge can render
+    // We compute it after project context is assembled — same checks Agent B runs.
+    const hasProjectContext   = Boolean(projectContext.trim());
+    const hasTargetUsers      = Boolean(body?.targetUsers || projectContext.includes("Target users:") && !projectContext.includes("Target users: Not defined"));
+    const hasMemory           = Boolean(memory && (memory.personality_tags?.length || memory.strengths?.length));
+    const hasMorningNote      = Boolean(lastMorningNote);
+    const rawScore = [hasProjectContext, hasTargetUsers, hasMemory, hasMorningNote].filter(Boolean).length / 4;
+    confidenceScore = Math.round(rawScore * 100) / 100; // e.g. 0.75
+
+    // Task 5: inject today's morning note into system prompt so coach has same-day context
+    const morningNoteContext = lastMorningNote
+      ? `\n\nTODAY'S MORNING INTENTION (founder logged this earlier today): "${lastMorningNote}" — if relevant, connect your coaching to what they said they'd do today.`
+      : "";
+
+    // AI Improvement #2: inject last 3 cross-feature interactions into system prompt
+    // profileResult already fetched above; extract recent_interactions from it
+    const founderContextRow = profileResult.status === "fulfilled" ? profileResult.value.data : null;
+    const recentInteractions = ((founderContextRow as { recent_interactions?: RecentInteraction[] } | null)?.recent_interactions ?? []) as RecentInteraction[];
+
+    const baseSystemPrompt = `You are BuildMind — a direct, honest AI coach for founders. You think like a great co-founder: you have full context on their project, you follow the conversation, and you never give generic advice.
 
 You must return ONLY valid JSON with exactly these two fields:
 {
@@ -258,13 +358,16 @@ Answer rules:
 - If they ask for your opinion, give it. Do not deflect.
 - Only push toward action when it naturally fits.
 - Under 200 words. Dense and direct. Never "Great question!" Never filler.
-${spiralInstruction}
+${spiralInstruction}${proactiveObservation}
 
-${projectContext ? `FOUNDER'S REAL DATA:\n${projectContext}` : ""}${founderMemoryContext}${blockerContext}${domainContext}${historyContext}
+${projectContext ? `FOUNDER'S REAL DATA:\n${projectContext}` : ""}${founderMemoryContext}${morningNoteContext}${blockerContext}${domainContext}${historyContext}
 
 Founder's message: ${message}
 
 Return ONLY the JSON object. No preamble. No markdown.`;
+
+    // Inject cross-feature continuity block before the base system prompt
+    const systemPrompt = injectContinuityIntoSystemPrompt(baseSystemPrompt, recentInteractions);
 
     const result = await groqJSON<{ reasoning: string[]; answer: string }>(systemPrompt, message);
 
@@ -286,11 +389,34 @@ Return ONLY the JSON object. No preamble. No markdown.`;
       finalOutput: answer,
       stage,
       targetUsers: body?.targetUsers as string | undefined,
+    }).catch((err) => logError("coach/logReflexionQuality", err));
+
+    // AI Improvement #2: record this interaction for cross-feature continuity
+    const interactionSummary = answer.slice(0, 120) + (answer.length > 120 ? "…" : "");
+    if (supabase) {
+      recordInteractionServer(
+        supabase as Parameters<typeof recordInteractionServer>[0],
+        userId,
+        "ai_coach",
+        interactionSummary,
+        effectiveSpiralDetected ? (effectiveSpiralSignal ?? undefined) : undefined,
+      ).catch(() => {}); // fire-and-forget
+    }
+
+    // AI Improvement #3: trigger embedding update for tag deduplication
+    // (fire-and-forget — never blocks the coach response)
+    fetch(`${process.env.NEXT_PUBLIC_APP_URL ?? ""}/api/ai/embed-tags`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        authorization: `Bearer ${process.env.CRON_SECRET ?? ""}`,
+      },
+      body: JSON.stringify({ userId }),
     }).catch(() => {});
 
     return NextResponse.json({
       success: true,
-      data: { reasoning, answer, reply: answer, spiralDetected, spiralSignal },
+      data: { reasoning, answer, reply: answer, spiralDetected: effectiveSpiralDetected, spiralSignal: effectiveSpiralSignal, confidence_score: confidenceScore },
     });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Coach failed";

@@ -157,3 +157,52 @@ export function inferStage(
   if (milestoneRate >= 0.15 || taskRate >= 0.3) return "Validation";
   return "Idea";
 }
+
+/**
+ * shouldPromptStageTransition — The three-signal stage transition trigger.
+ *
+ * From the verbal transcript recommendations:
+ * Don't use time as the primary signal. Use three signals together:
+ *   1. All stage milestones complete
+ *   2. Average reflection confidence above 3.5 in last 3+ reflections
+ *   3. Fewer than 2 overrides/skips in the last 7 days
+ *
+ * When all three align — that's when the transition prompt fires.
+ */
+export function shouldPromptStageTransition(params: {
+  stageMilestonesComplete: boolean;
+  recentReflections: Array<{ confidence: number }>;
+  recentOverrides: number; // overrides/skips in last 7 days
+}): { shouldPrompt: boolean; reason: string } {
+  const { stageMilestonesComplete, recentReflections, recentOverrides } = params;
+
+  if (!stageMilestonesComplete) {
+    return { shouldPrompt: false, reason: "stage_milestones_incomplete" };
+  }
+
+  const hasEnoughReflections = recentReflections.length >= 3;
+  const avgConfidence = hasEnoughReflections
+    ? recentReflections.reduce((sum, r) => sum + r.confidence, 0) / recentReflections.length
+    : 0;
+  const confidenceSolid = avgConfidence > 3.5;
+
+  if (!hasEnoughReflections || !confidenceSolid) {
+    return {
+      shouldPrompt: false,
+      reason: hasEnoughReflections
+        ? `confidence_too_low:${avgConfidence.toFixed(1)}`
+        : "insufficient_reflections",
+    };
+  }
+
+  const executionStable = recentOverrides < 2;
+  if (!executionStable) {
+    return { shouldPrompt: false, reason: `too_many_overrides:${recentOverrides}` };
+  }
+
+  // All three signals aligned
+  return {
+    shouldPrompt: true,
+    reason: `all_signals_aligned:confidence=${avgConfidence.toFixed(1)},overrides=${recentOverrides}`,
+  };
+}

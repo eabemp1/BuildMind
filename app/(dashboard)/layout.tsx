@@ -1,6 +1,8 @@
+import AppShell from "@/components/layout/app-shell";
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  // Keep a single app-shell for all authenticated pages (Today/Reports/etc) so
-  // styling + navigation behavior stays consistent across the product.
-  const AppShell = require("@/components/layout/app-shell").default as (p: { children: React.ReactNode }) => React.ReactNode;
+  // Single app-shell for all authenticated pages — consistent nav, sidebar,
+  // and daily loop status bar across Today/Reports/Overview/etc.
+  // Import is static so Next.js App Router can tree-shake and SSR correctly.
   return <AppShell>{children}</AppShell>;
 }

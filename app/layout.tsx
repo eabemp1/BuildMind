@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { headers } from "next/headers";
 import "./globals.css";
 import Providers from "@/components/providers";
 import PwaProvider from "@/components/PwaProvider";
@@ -10,30 +11,30 @@ import PwaProvider from "@/components/PwaProvider";
 export const metadata: Metadata = {
   metadataBase: new URL("https://buildmind.live"),
   title: {
-    default: "BuildMind — AI Chief of Staff for Stuck Founders",
+    default: "BuildMind — Your next move, already decided",
     template: "%s | BuildMind",
   },
   description:
-    "BuildMind is the AI Chief of Staff for stuck founders. It decides the next execution move, stress-tests weak ideas, and keeps founder momentum honest.",
+    "BuildMind watches your startup context and tells you the one highest-leverage thing to do next. No lists. No frameworks. Just the next move — decided overnight while you sleep.",
   keywords: [
+    "what to do next as a founder",
+    "founder decision fatigue",
     "daily action for founders",
-    "startup accountability app",
+    "startup execution tool",
     "solo founder productivity",
-    "ai chief of staff for founders",
+    "ai for founders",
+    "founder momentum tracker",
     "build in public tracker",
     "indie hacker daily planner",
-    "startup execution tool",
-    "founder streak app",
     "validate startup idea free",
-    "startup stage tracker",
+    "startup accountability app",
+    "founder daily routine",
     "solofounder app",
-    "founder accountability partner",
-    "daily startup task",
-    "mvp launch checklist",
-    "startup growth tracker",
+    "startup stage tracker",
     "buildmind",
     "build mind app",
-    "founder daily routine",
+    "founder next move",
+    "remove decision fatigue startup",
   ],
   authors: [{ name: "BuildMind", url: "https://buildmind.live" }],
   creator: "BuildMind",
@@ -65,15 +66,15 @@ export const metadata: Metadata = {
     locale: "en_US",
     url: "https://buildmind.live",
     siteName: "BuildMind",
-    title: "BuildMind — AI Chief of Staff for Stuck Founders",
+    title: "BuildMind — Your next move, already decided",
     description:
-      "Stop guessing what to do next. BuildMind gives founders one execution move every day, already decided.",
+      "BuildMind watches your startup context and tells you the one highest-leverage thing to do next. No lists. No frameworks. Just the next move.",
     images: [
       {
         url: "/logo/buildmind-og-image.svg",
         width: 1200,
         height: 630,
-        alt: "BuildMind — AI Chief of Staff for Founders",
+        alt: "BuildMind — The next move, already decided",
       },
     ],
   },
@@ -127,7 +128,7 @@ const jsonLd = [
       {
         "@type": "Offer",
         name: "Builder",
-        price: "19",
+        price: "39",
         priceCurrency: "USD",
         description: "Unlimited actions, AI Coach, weekly reports, and full Break My Startup analysis",
       },
@@ -175,7 +176,7 @@ const jsonLd = [
         name: "Is BuildMind free?",
         acceptedAnswer: {
           "@type": "Answer",
-          text: "Yes. BuildMind has a free tier with 3 AI Coach messages per week. Builder plan ($19/month) unlocks unlimited actions, the AI Coach, weekly reports, and full Break My Startup analysis.",
+          text: "Yes. BuildMind has a free tier with 3 AI Coach messages per week. Builder plan ($39/month) unlocks unlimited actions, the AI Coach, weekly reports, and full Break My Startup analysis.",
         },
       },
       {
@@ -190,7 +191,10 @@ const jsonLd = [
   },
 ];
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Read the per-request nonce injected by middleware (W5 CSP fix)
+  const headersList = await headers();
+  const nonce = headersList.get("x-nonce") ?? "";
   return (
     // Some browser extensions (e.g. Grammarly) inject attributes into <body>
     // before React hydrates, which can trigger a hydration mismatch warning.
@@ -199,6 +203,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {jsonLd.map((schema, i) => (
           <script
             key={i}
+            nonce={nonce}
             type="application/ld+json"
             dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
           />
@@ -226,7 +231,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="geo.region" content="GH" />
       </head>
       <body suppressHydrationWarning>
-        <Providers>
+        <Providers nonce={nonce}>
           <PwaProvider>{children}</PwaProvider>
         </Providers>
       </body>

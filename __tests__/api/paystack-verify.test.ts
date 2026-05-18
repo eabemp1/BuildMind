@@ -48,7 +48,7 @@ function paystackPayload(overrides: Record<string, unknown> = {}) {
       data: {
         status: "success",
         reference: "ref_123",
-        amount: 29000,
+        amount: 44500,
         currency: "GHS",
         customer: { email: "founder@example.com" },
         metadata: { user_id: "user-123" },
@@ -73,7 +73,7 @@ describe("POST /api/billing/paystack/verify", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.PAYSTACK_SECRET_KEY = "sk_test";
-    process.env.PAYSTACK_AMOUNT_BUILDER = "29000";
+    process.env.PAYSTACK_AMOUNT_BUILDER = "44500";
     process.env.PAYSTACK_BUILDER_PLAN_CODE = "PLN_builder_monthly";
     mockGetUser.mockResolvedValue({ data: { user: AUTHED_USER }, error: null });
     mockPersistUserPlan.mockResolvedValue({ plan: "builder" });

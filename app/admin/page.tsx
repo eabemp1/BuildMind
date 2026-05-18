@@ -1,352 +1,252 @@
 "use client";
 
 /**
- * app/admin/page.tsx — BuildMind Admin Dashboard
+ * app/admin/page.tsx — BuildMind Unified Admin
  *
- * Phase 1 components (all data already exists in Supabase):
- *  ① User table + plan filter + billing status panel
- *  ② Plan override tool (wraps persistUserPlan via /api/admin/plan-override)
- *  ③ MRR snapshot (billing_status = 'active' users × $19)
- *  ④ Paystack webhook event log
- *  ⑤ AI quality monitor (extends app/admin/quality/)
- *  ⑥ Streak distribution histogram
- *  ⑦ Groq API usage table (ai_usage table)
- *  ⑧ Onboarding funnel visualisation
- *  ⑨ DAU / WAU chart (PostHog / Supabase mirror)
+ * All admin surfaces in one place — previously scattered across
+ * /admin, /admin/growth, /admin/quality, /admin/testimonials, /my-ventures.
  *
- * Operator-tier gate trackers (plan.ts hardcoded rule):
- *  → Briefing open rate must be > 35%
- *  → Task completion must be > 55%
- *
- * Design: matches existing BuildMind design system
- * (Warm Obsidian + Celadon Green, Geist + DM Serif Display)
+ * 8 tabs: Overview · Users · Revenue · AI & Quality · Engagement · Growth · Testimonials · Ventures
+ * Protected by middleware (is_admin check via /api/system/admin-check).
  */
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  BarChart2, Users, DollarSign, Brain, Activity, Shield, AlertTriangle, Webhook,
-  RefreshCw, ChevronUp, ChevronDown, ArrowUpRight, TrendingUp, Zap,
+  BarChart2, Users, DollarSign, Brain, Activity, Shield, AlertTriangle,
+  Webhook, RefreshCw, ChevronUp, ChevronDown, TrendingUp, CheckCircle2,
+  Target, BarChart3, XCircle, MessageSquare, Map, Globe, EyeOff, Copy,
+  Check, Star, Search, ArrowUpDown, Zap, Flame, Clock,
 } from "lucide-react";
+import { VENTURE_TRACKS, type VentureTrack } from "@/lib/ventures";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type Plan = "free" | "builder";
-type BillingStatus = "active" | "canceled" | "processing" | "free";
-
-interface AdminUser {
-  id: string;
-  email: string;
-  plan: Plan;
-  billing_status: BillingStatus;
-  billing_reference: string | null;
-  subscription_id: string | null;
-  streak: number;
-  last_seen: string | null;
-  created_at: string;
-  projects_count: number;
-  ai_calls_this_month: number;
-}
-
-interface MRRData {
-  mrr: number;
-  active_builders: number;
-  new_this_month: number;
-  churned_this_month: number;
-  trend: { date: string; mrr: number }[];
-}
-
-interface WebhookEvent {
-  id: string;
-  event: string;
-  customer_email: string | null;
-  amount: number | null;
-  status: "success" | "failed" | "pending";
-  received_at: string;
-  reference: string | null;
-}
-
-interface StreakBucket {
-  label: string;
-  min: number;
-  max: number;
-  count: number;
-}
-
-interface AIUsageRow {
-  user_id: string;
-  email: string;
-  month: string;
-  count: number;
-  plan: Plan;
-}
-
-interface FunnelStep {
-  step: string;
-  label: string;
-  count: number;
-  drop_pct: number | null;
-}
-
-interface ActivityPoint {
-  date: string;
-  dau: number;
-  wau: number;
-}
-
-interface QualitySummary {
-  total: number;
-  overallPassRate: number | null;
-  recentPassRate: number | null;
-  qualityAlert: string | null;
-}
-
-interface DashboardPayload {
-  users: AdminUser[];
-  mrr: MRRData;
-  webhooks: WebhookEvent[];
-  streaks: StreakBucket[];
-  ai_usage: AIUsageRow[];
-  funnel: FunnelStep[];
-  activity: ActivityPoint[];
-  quality: QualitySummary;
-  operator_gate: {
-    briefing_open_rate: number;
-    task_completion_rate: number;
-    day: number;
-  };
-  last_updated: string;
-}
-
-// ─── Design tokens (mirrors globals.css) ──────────────────────────────────────
-
-const T = {
-  bg:      "var(--bm-bg)",
-  bg2:     "var(--bm-bg2)",
-  bg3:     "var(--bm-bg3)",
-  bg4:     "var(--bm-bg4)",
-  border:  "var(--bm-border)",
-  border2: "var(--bm-border2)",
-  text:    "var(--bm-text)",
-  text2:   "var(--bm-text2)",
-  text3:   "var(--bm-text3)",
-  accent:  "var(--bm-accent)",
-  accent2: "var(--bm-accent2)",
-  accentDim: "var(--bm-accent-dim)",
-  accentBd:  "var(--bm-accent-bd)",
-  amber:   "var(--bm-amber)",
-  red:     "var(--bm-red)",
-  blue:    "var(--bm-blue)",
-  rLg:     "var(--r-lg)",
-  rMd:     "var(--r-md)",
-  shadow:  "var(--shadow-md)",
+// ─── Tokens ───────────────────────────────────────────────────────────────────
+const C = {
+  bg:  "var(--bm-bg)",  bg2: "var(--bm-bg2)", bg3: "var(--bm-bg3)",
+  bg4: "var(--bm-bg4)", bg5: "var(--bm-bg5)",
+  b:   "var(--bm-border)",  b2: "var(--bm-border2)", b3: "var(--bm-border3)",
+  t:   "var(--bm-text)", t2: "var(--bm-text2)", t3: "var(--bm-text3)", t4: "var(--bm-text4)",
+  a:   "var(--bm-accent)", a2: "var(--bm-accent2)", ad: "var(--bm-accent-dim)", ab: "var(--bm-accent-bd)",
+  amber: "var(--bm-amber)", red: "var(--bm-red)", teal: "var(--bm-teal)", blue: "var(--bm-blue)",
+  rSm: "var(--r-sm)", rMd: "var(--r-md)", rLg: "var(--r-lg)", rXl: "var(--r-xl)",
 };
 
-// ─── Tiny helpers ─────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
+type Plan = "free" | "builder";
+type BillingStatus = "active" | "canceled" | "processing" | "free";
+type MetricStatus = "on_track" | "watch" | "below_target" | "no_data";
+type DoneMap = Record<string, boolean>;
+type Tab = "overview" | "users" | "revenue" | "ai" | "engagement" | "growth" | "testimonials" | "ventures";
 
-function fmt(n: number) { return n.toLocaleString(); }
-function fmtDate(s: string | null) {
-  if (!s) return "—";
-  return new Date(s).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" });
-}
-function fmtTime(s: string) {
-  return new Date(s).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
-}
-function ago(s: string | null) {
-  if (!s) return "never";
-  const diff = Date.now() - new Date(s).getTime();
-  const m = Math.floor(diff / 60000);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
-}
+interface AdminUser { id: string; email: string; plan: Plan; billing_status: BillingStatus; billing_reference: string | null; subscription_id: string | null; streak: number; last_seen: string | null; created_at: string; projects_count: number; ai_calls_this_month: number; }
+interface MRRData { mrr: number; active_builders: number; new_this_month: number; churned_this_month: number; trend: { date: string; mrr: number }[]; }
+interface WebhookEvent { id: string; event: string; customer_email: string | null; amount: number | null; status: "success" | "failed" | "pending"; received_at: string; reference: string | null; }
+interface StreakBucket { label: string; min: number; max: number; count: number; }
+interface AIUsageRow { user_id: string; email: string; month: string; count: number; plan: Plan; }
+interface FunnelStep { step: string; label: string; count: number; drop_pct: number | null; }
+interface ActivityPoint { date: string; dau: number; wau: number; }
+interface QualitySummary { total: number; totalPass: number; totalFail: number; overallPassRate: number | null; recentPassRate: number | null; qualityAlert: string | null; dailyTrend: { date: string; pass: number; fail: number; total: number; passRate: number | null }[]; contextBreakdown: { context: string; pass: number; fail: number; total: number; passRate: number | null }[]; topRejectReasons: { reason: string; count: number }[]; }
+interface GrowthMetric { key: string; label: string; value: number | null; target: number; unit: "percent" | "count"; status: MetricStatus; detail: string; }
+interface GrowthData { generatedAt: string; summary: GrowthMetric[]; weeklyActive: { founders: number; since: string }; conversion: { activatedUsers: number; paidActivatedUsers: number }; executionBehavior: { foundersWithThreeCompletedActions: number; averageCompletedActionsPerActivatedFounder: number | null; }; }
+interface Testimonial { id: string; user_id: string | null; display_name: string; avatar_url: string | null; streak: number; stage: string; quote: string; rating: number; is_public: boolean; source: string; created_at: string; approved_at: string | null; }
+interface DashboardPayload { users: AdminUser[]; mrr: MRRData; webhooks: WebhookEvent[]; streaks: StreakBucket[]; ai_usage: AIUsageRow[]; funnel: FunnelStep[]; activity: ActivityPoint[]; quality: QualitySummary; operator_gate: { briefing_open_rate: number; task_completion_rate: number; day: number }; last_updated: string; }
 
-// ─── Primitives ───────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+const n = (v: number) => v.toLocaleString();
+const ago = (s: string | null) => { if (!s) return "never"; const m = Math.floor((Date.now() - new Date(s).getTime()) / 60000); if (m < 60) return `${m}m`; const h = Math.floor(m / 60); if (h < 24) return `${h}h`; return `${Math.floor(h / 24)}d`; };
+const fmtDT = (s: string) => new Date(s).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+const statusColor = (s: MetricStatus) => ({ on_track: C.a, watch: C.amber, below_target: C.red, no_data: C.t3 })[s];
+const statusLabel = (s: MetricStatus) => ({ on_track: "On track", watch: "Watch", below_target: "Below", no_data: "—" })[s];
 
-function Card({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
-  return (
-    <div style={{ background: T.bg2, border: `1px solid ${T.border}`, borderRadius: T.rLg, ...style }}>
-      {children}
-    </div>
-  );
-}
+// ─── Base UI atoms ────────────────────────────────────────────────────────────
+const Card = ({ children, style, onClick }: { children: React.ReactNode; style?: React.CSSProperties; onClick?: () => void }) => (
+  <div onClick={onClick} style={{ background: C.bg2, border: `1px solid ${C.b}`, borderRadius: C.rLg, transition: "border-color 0.15s", ...(onClick ? { cursor: "pointer" } : {}), ...style }}>
+    {children}
+  </div>
+);
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div style={{ fontSize: 10, fontWeight: 700, color: T.text3, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 16 }}>
-      {children}
-    </div>
-  );
-}
+const Label = ({ children }: { children: React.ReactNode }) => (
+  <div style={{ fontSize: 10, fontWeight: 700, color: C.t3, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 14 }}>{children}</div>
+);
 
-function PlanBadge({ plan }: { plan: Plan }) {
-  const isBuilder = plan === "builder";
-  return (
-    <span style={{
-      fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 5,
-      background: isBuilder ? T.accentDim : T.bg4,
-      color: isBuilder ? T.accent : T.text3,
-      border: `1px solid ${isBuilder ? T.accentBd : T.border2}`,
-      textTransform: "uppercase", letterSpacing: "0.06em",
-    }}>
-      {plan}
-    </span>
-  );
-}
+const Badge = ({ label, color, bg, border }: { label: string; color: string; bg: string; border: string }) => (
+  <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99, background: bg, color, border: `1px solid ${border}`, whiteSpace: "nowrap" }}>{label}</span>
+);
 
-function StatusDot({ status }: { status: BillingStatus }) {
-  const map: Record<BillingStatus, string> = {
-    active: T.accent, canceled: T.red, processing: T.amber, free: T.text3,
-  };
-  return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, color: T.text2 }}>
-      <span style={{ width: 7, height: 7, borderRadius: "50%", background: map[status], display: "inline-block", flexShrink: 0 }} />
-      {status}
-    </span>
-  );
-}
+const PlanBadge = ({ plan }: { plan: Plan }) => (
+  <Badge label={plan} color={plan === "builder" ? C.a : C.t3} bg={plan === "builder" ? C.ad : C.bg4} border={plan === "builder" ? C.ab : C.b2} />
+);
 
-function Spinner({ size = 13 }: { size?: number }) {
-  return (
-    <RefreshCw size={size} style={{ animation: "bm-spin 1s linear infinite", color: T.text3 }} />
-  );
-}
+const Dot = ({ status }: { status: BillingStatus }) => {
+  const col = { active: C.a, canceled: C.red, processing: C.amber, free: C.t4 }[status];
+  return <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, color: C.t2 }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: col, display: "inline-block", flexShrink: 0, boxShadow: status === "active" ? `0 0 6px ${col}` : "none" }} />{status}</span>;
+};
 
-function MiniSparkline({ data, color = T.accent }: { data: number[]; color?: string }) {
+const Spin = () => <RefreshCw size={12} style={{ animation: "adm-spin 0.8s linear infinite", color: C.t3 }} />;
+
+const Stat = ({ label, value, sub, color, icon: Icon }: { label: string; value: string | number; sub?: string; color?: string; icon?: React.ElementType }) => (
+  <div style={{ background: C.bg3, border: `1px solid ${C.b}`, borderRadius: C.rMd, padding: "16px 18px" }}>
+    {Icon && <Icon size={14} color={color ?? C.a} style={{ marginBottom: 8 }} />}
+    <div style={{ fontSize: 10, color: C.t3, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>{label}</div>
+    <div style={{ fontSize: 24, fontWeight: 800, color: color ?? C.t, letterSpacing: "-0.03em", lineHeight: 1 }}>{value}</div>
+    {sub && <div style={{ fontSize: 11, color: C.t3, marginTop: 5 }}>{sub}</div>}
+  </div>
+);
+
+function Sparkline({ data, color = C.a, h = 40 }: { data: number[]; color?: string; h?: number }) {
   if (!data.length) return null;
   const max = Math.max(...data, 1);
-  const H = 36, W = data.length * 14;
-  const pts = data.map((v, i) => `${i * 14 + 7},${H - Math.round((v / max) * (H - 4)) - 2}`).join(" ");
+  const W = data.length * 12;
+  const pts = data.map((v, i) => `${i * 12 + 6},${h - 4 - Math.round((v / max) * (h - 8))}`).join(" ");
   return (
-    <svg width={W} height={H} style={{ overflow: "visible" }}>
-      <polyline fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" points={pts} opacity={0.8} />
+    <svg width={W} height={h} style={{ overflow: "visible", display: "block" }}>
+      <defs>
+        <linearGradient id="spk" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.25" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <polygon fill="url(#spk)" points={`6,${h} ${pts} ${(data.length - 1) * 12 + 6},${h}`} />
+      <polyline fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" points={pts} />
     </svg>
   );
 }
 
-// ─── Gate tracker (Operator tier unlock) ──────────────────────────────────────
+// ─── Tabs ─────────────────────────────────────────────────────────────────────
+const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
+  { id: "overview",     label: "Overview",      icon: BarChart2 },
+  { id: "users",        label: "Users",         icon: Users },
+  { id: "revenue",      label: "Revenue",       icon: DollarSign },
+  { id: "ai",           label: "AI & Quality",  icon: Brain },
+  { id: "engagement",   label: "Engagement",    icon: Activity },
+  { id: "growth",       label: "Growth",        icon: TrendingUp },
+  { id: "testimonials", label: "Testimonials",  icon: MessageSquare },
+  { id: "ventures",     label: "My Ventures",   icon: Map },
+];
 
-function OperatorGate({ gate }: { gate: DashboardPayload["operator_gate"] }) {
-  const briefingOk = gate.briefing_open_rate >= 35;
-  const taskOk = gate.task_completion_rate >= 55;
-  const allGood = briefingOk && taskOk;
-  const daysLeft = Math.max(0, 90 - gate.day);
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION: OVERVIEW
+// ═══════════════════════════════════════════════════════════════════════════════
+function OverviewTab({ data, onTabChange }: { data: DashboardPayload; onTabChange: (t: Tab) => void }) {
+  const { operator_gate: gate, mrr, quality, streaks, activity } = data;
+  const briefOk = gate.briefing_open_rate >= 35;
+  const taskOk  = gate.task_completion_rate >= 55;
+  const allOk   = briefOk && taskOk;
+  const qRate   = quality.overallPassRate;
+  const qColor  = qRate === null ? C.t3 : qRate >= 80 ? C.a : qRate >= 60 ? C.amber : C.red;
 
   return (
-    <Card style={{ padding: "18px 22px", border: `1px solid ${allGood ? T.accentBd : "rgba(232,160,32,0.25)"}` }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Shield size={14} color={allGood ? T.accent : T.amber} />
-          <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>Operator Tier Gate</span>
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+
+      {/* KPI strip */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
+        <Stat label="MRR" value={`$${n(mrr.mrr)}`} sub={`+${mrr.new_this_month} new · ${mrr.churned_this_month} churned`} color={C.a} icon={DollarSign} />
+        <Stat label="Builders" value={mrr.active_builders} sub="paying subscribers" color={C.teal} icon={Users} />
+        <Stat label="AI pass rate" value={qRate !== null ? `${qRate}%` : "—"} sub="Agent B overall" color={qColor} icon={Brain} />
+        <Stat label="Weekly active" value={activity[activity.length - 1]?.wau ?? "—"} sub="founders (WAU)" color={C.blue} icon={Activity} />
+      </div>
+
+      {/* Operator gate */}
+      <Card style={{ padding: "20px 24px", borderColor: allOk ? C.ab : "rgba(232,160,32,0.3)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+          <div style={{ width: 32, height: 32, borderRadius: C.rMd, background: allOk ? C.ad : "rgba(232,160,32,0.1)", border: `1px solid ${allOk ? C.ab : "rgba(232,160,32,0.3)"}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Shield size={15} color={allOk ? C.a : C.amber} />
+          </div>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: C.t }}>Operator Tier Gate</div>
+            <div style={{ fontSize: 12, color: C.t3 }}>Day {gate.day}/90 — {allOk ? "all thresholds met ✓" : `${[!briefOk && "briefing open rate", !taskOk && "task completion"].filter(Boolean).join(", ")} below target`}</div>
+          </div>
+          <span style={{ marginLeft: "auto", padding: "4px 12px", borderRadius: 99, fontSize: 11, fontWeight: 700, background: allOk ? C.ad : "rgba(232,160,32,0.1)", color: allOk ? C.a : C.amber, border: `1px solid ${allOk ? C.ab : "rgba(232,160,32,0.25)"}` }}>
+            {allOk ? "Unlocked" : `${Math.max(0, 90 - gate.day)}d left`}
+          </span>
         </div>
-        <span style={{
-          fontSize: 10, fontWeight: 700, padding: "3px 9px", borderRadius: 6,
-          background: allGood ? T.accentDim : "rgba(232,160,32,0.08)",
-          color: allGood ? T.accent : T.amber,
-          border: `1px solid ${allGood ? T.accentBd : "rgba(232,160,32,0.25)"}`,
-        }}>
-          Day {gate.day}/90 {allGood ? "✓ Unlocked" : daysLeft > 0 ? `(${daysLeft}d left)` : "Expired"}
-        </span>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        {[
-          { label: "Briefing open rate", value: gate.briefing_open_rate, threshold: 35, ok: briefingOk },
-          { label: "Task completion rate", value: gate.task_completion_rate, threshold: 55, ok: taskOk },
-        ].map(({ label, value, threshold, ok }) => (
-          <div key={label} style={{ background: ok ? "rgba(74,184,176,0.04)" : "rgba(232,160,32,0.04)", border: `1px solid ${ok ? "rgba(74,184,176,0.15)" : "rgba(232,160,32,0.15)"}`, borderRadius: T.rMd, padding: "12px 14px" }}>
-            <div style={{ fontSize: 10, color: T.text3, marginBottom: 6 }}>{label}</div>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-              <span style={{ fontSize: 20, fontWeight: 700, color: ok ? T.accent : T.amber }}>{value}%</span>
-              <span style={{ fontSize: 10, color: T.text3 }}>of {threshold}%</span>
-            </div>
-          </div>
-        ))}
-      </div>
-    </Card>
-  );
-}
-
-// ─── MRR Snapshot ─────────────────────────────────────────────────────────────
-
-function MRRSnapshot({ mrr }: { mrr: MRRData }) {
-  const trend = mrr.trend.map(d => d.mrr);
-  return (
-    <Card style={{ padding: "18px 22px" }}>
-      <SectionLabel>Revenue</SectionLabel>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12 }}>
-        <div style={{ background: T.bg3, borderRadius: T.rMd, padding: "14px 16px", gridColumn: "span 1" }}>
-          <div style={{ fontSize: 10, color: T.text3, marginBottom: 8 }}>MRR</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: T.accent, marginBottom: 10 }}>
-            ${fmt(mrr.mrr)}
-          </div>
-          <MiniSparkline data={trend} />
-        </div>
-        {[
-          { label: "Builder subscribers", value: fmt(mrr.active_builders), color: T.text },
-          { label: "New this month", value: `+${mrr.new_this_month}`, color: T.accent },
-          { label: "Churned this month", value: `${mrr.churned_this_month}`, color: mrr.churned_this_month > 0 ? T.red : T.text3 },
-        ].map(({ label, value, color }) => (
-          <div key={label} style={{ background: T.bg3, borderRadius: T.rMd, padding: "14px 16px" }}>
-            <div style={{ fontSize: 10, color: T.text3, marginBottom: 8 }}>{label}</div>
-            <div style={{ fontSize: 18, fontWeight: 700, color }}>{value}</div>
-          </div>
-        ))}
-      </div>
-    </Card>
-  );
-}
-
-// ─── DAU / WAU Chart ──────────────────────────────────────────────────────────
-
-function ActivityChart({ data }: { data: ActivityPoint[] }) {
-  if (!data.length) return null;
-  const maxVal = Math.max(...data.flatMap(d => [d.dau, d.wau]), 1);
-  const H = 80;
-  const W_per = Math.max(20, Math.floor(600 / data.length));
-
-  return (
-    <Card style={{ padding: "18px 22px" }}>
-      <SectionLabel>DAU / WAU — last 30 days</SectionLabel>
-      <div style={{ overflowX: "auto" }}>
-        <div style={{ display: "flex", alignItems: "flex-end", gap: 3, minWidth: data.length * (W_per + 3), height: H + 20, paddingBottom: 20, position: "relative" }}>
-          {data.map((d, i) => (
-            <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, flex: "0 0 auto" }}>
-              <div style={{ display: "flex", gap: 1, height: H }}>
-                <div style={{ width: Math.floor(W_per / 2) - 1, background: T.accent, borderRadius: 2, height: Math.max(2, (d.dau / maxVal) * H), alignSelf: "flex-end" }} title={`DAU: ${d.dau}`} />
-                <div style={{ width: Math.floor(W_per / 2) - 1, background: T.blue, borderRadius: 2, height: Math.max(2, (d.wau / maxVal) * H), alignSelf: "flex-end" }} title={`WAU: ${d.wau}`} />
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          {[
+            { label: "Briefing open rate", value: gate.briefing_open_rate, target: 35, ok: briefOk },
+            { label: "Task completion rate", value: gate.task_completion_rate, target: 55, ok: taskOk },
+          ].map(({ label, value, target, ok }) => (
+            <div key={label} style={{ background: C.bg3, borderRadius: C.rMd, padding: "14px 16px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
+                <span style={{ fontSize: 12, color: C.t2 }}>{label}</span>
+                <span style={{ fontSize: 11, color: C.t3 }}>target {target}%</span>
               </div>
-              <span style={{ fontSize: 8, color: T.text3 }}>{new Date(d.date).getDate()}</span>
+              <div style={{ fontSize: 28, fontWeight: 800, color: ok ? C.a : C.amber, letterSpacing: "-0.04em", marginBottom: 10 }}>{value}%</div>
+              <div style={{ height: 3, borderRadius: 99, background: C.bg4, overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${Math.min(100, (value / target) * 100)}%`, background: ok ? C.a : C.amber, borderRadius: 99, transition: "width 0.5s ease" }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* Activity + streaks */}
+      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16 }}>
+        <MiniActivityChart data={data.activity} />
+        <StreakHisto buckets={streaks} />
+      </div>
+
+      {/* Quick nav to other tabs */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10 }}>
+        {(["users", "revenue", "ai", "testimonials"] as Tab[]).map(id => {
+          const tab = TABS.find(t => t.id === id)!;
+          const Icon = tab.icon;
+          return (
+            <button key={id} onClick={() => onTabChange(id)}
+              style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 14px", borderRadius: C.rMd, border: `1px solid ${C.b}`, background: C.bg3, color: C.t2, fontSize: 12, fontWeight: 500, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s", textAlign: "left" }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = C.ab; (e.currentTarget as HTMLElement).style.color = C.a; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = C.b; (e.currentTarget as HTMLElement).style.color = C.t2; }}>
+              <Icon size={14} />{tab.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function MiniActivityChart({ data }: { data: ActivityPoint[] }) {
+  const maxVal = Math.max(...data.flatMap(d => [d.dau, d.wau]), 1);
+  const H = 72;
+  return (
+    <Card style={{ padding: "20px 22px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <Label>DAU / WAU — last 30 days</Label>
+        <div style={{ display: "flex", gap: 14 }}>
+          {[{ c: C.a, l: "DAU" }, { c: C.blue, l: "WAU" }].map(({ c, l }) => (
+            <div key={l} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: C.t3 }}>
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: c }} />{l}
             </div>
           ))}
         </div>
       </div>
-      {/* Legend */}
-      <div style={{ display: "flex", gap: 16, marginTop: 4 }}>
-        {[{ color: T.accent, label: "DAU" }, { color: T.blue, label: "WAU" }].map(({ color, label }) => (
-          <div key={label} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: T.text2 }}>
-            <span style={{ width: 8, height: 8, borderRadius: 2, background: color }} />
-            {label}
-          </div>
-        ))}
+      <div style={{ overflowX: "auto" }}>
+        <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: H + 18, minWidth: data.length * 18 }}>
+          {data.map((d, i) => (
+            <div key={i} title={`${d.date}: DAU ${d.dau} / WAU ${d.wau}`} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, flex: "0 0 16px" }}>
+              <div style={{ display: "flex", gap: 1, alignItems: "flex-end", height: H }}>
+                <div style={{ width: 7, background: C.a, borderRadius: "2px 2px 0 0", height: Math.max(2, (d.dau / maxVal) * H), opacity: 0.85 }} />
+                <div style={{ width: 7, background: C.blue, borderRadius: "2px 2px 0 0", height: Math.max(2, (d.wau / maxVal) * H), opacity: 0.65 }} />
+              </div>
+              {i % 5 === 0 && <span style={{ fontSize: 8, color: C.t4, marginTop: 2 }}>{new Date(d.date).getDate()}</span>}
+            </div>
+          ))}
+        </div>
       </div>
     </Card>
   );
 }
 
-// ─── Streak Histogram ─────────────────────────────────────────────────────────
-
-function StreakHistogram({ buckets }: { buckets: StreakBucket[] }) {
+function StreakHisto({ buckets }: { buckets: StreakBucket[] }) {
   const max = Math.max(...buckets.map(b => b.count), 1);
   return (
-    <Card style={{ padding: "18px 22px" }}>
-      <SectionLabel>Streak distribution</SectionLabel>
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 8, height: 80 }}>
-        {buckets.map((b) => (
-          <div key={b.label} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, flex: 1 }}>
-            <div style={{ width: "100%", height: Math.max(4, (b.count / max) * 72), background: T.accent, borderRadius: 3, transition: "height 0.3s" }} title={`${b.label}: ${b.count}`} />
-            <span style={{ fontSize: 9, color: T.text3 }}>{b.label}</span>
-            <span style={{ fontSize: 10, fontWeight: 600, color: T.text }}>{b.count}</span>
+    <Card style={{ padding: "20px 22px" }}>
+      <Label>Streak distribution</Label>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 72 }}>
+        {buckets.map(b => (
+          <div key={b.label} title={`${b.label}: ${b.count} founders`} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, flex: 1 }}>
+            <div style={{ width: "100%", height: Math.max(4, (b.count / max) * 64), background: `linear-gradient(to top, ${C.a}, ${C.teal})`, borderRadius: "3px 3px 0 0", opacity: 0.8 }} />
+            <span style={{ fontSize: 9, color: C.t4 }}>{b.label}</span>
+            <span style={{ fontSize: 10, fontWeight: 700, color: C.t2 }}>{b.count}</span>
           </div>
         ))}
       </div>
@@ -354,211 +254,161 @@ function StreakHistogram({ buckets }: { buckets: StreakBucket[] }) {
   );
 }
 
-// ─── Onboarding Funnel ────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION: USERS
+// ═══════════════════════════════════════════════════════════════════════════════
+function UsersTab({ users, onOverride }: { users: AdminUser[]; onOverride: (u: AdminUser) => void }) {
+  const [plan, setPlan] = useState<"all" | Plan>("all");
+  const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<"last_seen" | "streak" | "ai_calls">("last_seen");
+  const [page, setPage] = useState(0);
+  const PAGE = 20;
 
-function OnboardingFunnel({ steps }: { steps: FunnelStep[] }) {
-  const maxCount = Math.max(...steps.map(s => s.count), 1);
+  const filtered = users
+    .filter(u => (plan === "all" || u.plan === plan) && (!search || u.email.toLowerCase().includes(search.toLowerCase())))
+    .sort((a, b) => {
+      if (sort === "streak") return b.streak - a.streak;
+      if (sort === "ai_calls") return b.ai_calls_this_month - a.ai_calls_this_month;
+      const ta = a.last_seen ? new Date(a.last_seen).getTime() : 0;
+      const tb = b.last_seen ? new Date(b.last_seen).getTime() : 0;
+      return tb - ta;
+    });
+
+  const pages = Math.ceil(filtered.length / PAGE);
+  const visible = filtered.slice(page * PAGE, (page + 1) * PAGE);
+
+  const builders = users.filter(u => u.plan === "builder").length;
+  const active7d = users.filter(u => u.last_seen && (Date.now() - new Date(u.last_seen).getTime()) < 7 * 864e5).length;
+
   return (
-    <Card style={{ padding: "18px 22px" }}>
-      <SectionLabel>Onboarding funnel</SectionLabel>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {steps.map((s, i) => (
-          <div key={i}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-              <span style={{ fontSize: 12, color: T.text2 }}>{s.label}</span>
-              <span style={{ fontSize: 11, color: T.text3 }}>{fmt(s.count)}</span>
-            </div>
-            <div style={{ background: T.bg3, borderRadius: 3, height: 6, overflow: "hidden" }}>
-              <div style={{ height: "100%", width: `${(s.count / maxCount) * 100}%`, background: s.drop_pct && s.drop_pct > 20 ? T.amber : T.accent, transition: "width 0.3s" }} />
-            </div>
-            {s.drop_pct !== null && <span style={{ fontSize: 9, color: T.text3, marginTop: 2, display: "block" }}>↓ {s.drop_pct}% drop</span>}
-          </div>
-        ))}
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* Summary row */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+        <Stat label="Total users" value={n(users.length)} color={C.t} />
+        <Stat label="Builders" value={n(builders)} color={C.a} />
+        <Stat label="Active 7d" value={n(active7d)} color={C.teal} />
+        <Stat label="Free tier" value={n(users.length - builders)} color={C.t3} />
       </div>
-    </Card>
-  );
-}
 
-// ─── Webhook Log ──────────────────────────────────────────────────────────────
-
-function WebhookLog({ events }: { events: WebhookEvent[] }) {
-  const [expanded, setExpanded] = useState(false);
-  const visible = expanded ? events : events.slice(0, 6);
-  return (
-    <Card style={{ padding: "18px 22px" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-        <SectionLabel>Paystack webhook log</SectionLabel>
-        <Webhook size={13} color={T.text3} />
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 1, overflowX: "auto" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 80px 90px", gap: 8, padding: "0 0 8px 0", borderBottom: `1px solid ${T.border}`, marginBottom: 6 }}>
-          {["Event", "Email", "Amount", "Status", "Time"].map(h => (
-            <div key={h} style={{ fontSize: 9, fontWeight: 700, color: T.text3, textTransform: "uppercase", letterSpacing: "0.06em" }}>{h}</div>
-          ))}
+      {/* Toolbar */}
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <div style={{ position: "relative", flex: 1, minWidth: 200 }}>
+          <Search size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: C.t3 }} />
+          <input type="text" placeholder="Search by email…" value={search}
+            onChange={e => { setSearch(e.target.value); setPage(0); }}
+            style={{ width: "100%", paddingLeft: 32, paddingRight: 12, paddingTop: 9, paddingBottom: 9, borderRadius: C.rMd, border: `1px solid ${C.b}`, background: C.bg3, color: C.t, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
         </div>
-        {visible.map(ev => (
-          <div key={ev.id} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 80px 90px", gap: 8, padding: "8px 0", borderBottom: `1px solid ${T.border}`, fontSize: 12 }}>
-            <span style={{ color: T.text2 }}>{ev.event}</span>
-            <span style={{ color: T.text3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.customer_email || "—"}</span>
-            <span style={{ color: T.text2 }}>{ev.amount ? `₦${fmt(ev.amount)}` : "—"}</span>
-            <span style={{ color: ev.status === "success" ? T.accent : ev.status === "failed" ? T.red : T.amber, fontSize: 10, fontWeight: 600 }}>
-              {ev.status}
-            </span>
-            <span style={{ color: T.text3, fontSize: 11 }}>{fmtTime(ev.received_at)}</span>
-          </div>
-        ))}
+        <select value={plan} onChange={e => { setPlan(e.target.value as "all" | Plan); setPage(0); }}
+          style={{ padding: "9px 12px", borderRadius: C.rMd, border: `1px solid ${C.b}`, background: C.bg3, color: C.t, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+          <option value="all">All plans</option>
+          <option value="free">Free</option>
+          <option value="builder">Builder</option>
+        </select>
+        <select value={sort} onChange={e => setSort(e.target.value as typeof sort)}
+          style={{ padding: "9px 12px", borderRadius: C.rMd, border: `1px solid ${C.b}`, background: C.bg3, color: C.t, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+          <option value="last_seen">Sort: Recent</option>
+          <option value="streak">Sort: Streak</option>
+          <option value="ai_calls">Sort: AI calls</option>
+        </select>
       </div>
-      {events.length > 6 && (
-        <button onClick={() => setExpanded(e => !e)} style={{ marginTop: 12, fontSize: 11, color: T.accent, background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", gap: 4, fontFamily: "inherit" }}>
-          {expanded ? <><ChevronUp size={12} /> Show less</> : <><ChevronDown size={12} /> Show {events.length - 6} more</>}
-        </button>
-      )}
-    </Card>
-  );
-}
 
-// ─── AI Usage Table ───────────────────────────────────────────────────────────
-
-function AIUsageTable({ rows }: { rows: AIUsageRow[] }) {
-  const sorted = [...rows].sort((a, b) => b.count - a.count);
-  const total = rows.reduce((s, r) => s + r.count, 0);
-  const maxCount = Math.max(...rows.map(r => r.count), 1);
-
-  return (
-    <Card style={{ padding: "18px 22px" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-        <SectionLabel>Groq API usage — this month</SectionLabel>
-        <span style={{ fontSize: 11, color: T.text3 }}>{fmt(total)} total calls</span>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 60px 120px", gap: 8, padding: "0 0 8px 0", borderBottom: `1px solid ${T.border}`, marginBottom: 4 }}>
-          {["Email", "Calls", "Plan", ""].map(h => (
-            <div key={h} style={{ fontSize: 9, fontWeight: 700, color: T.text3, textTransform: "uppercase", letterSpacing: "0.06em" }}>{h}</div>
-          ))}
+      {/* Table */}
+      <Card style={{ overflow: "hidden" }}>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: C.bg3, borderBottom: `1px solid ${C.b}` }}>
+                {["Email", "Plan", "Billing", "Streak", "Last seen", "Projects", "AI calls", ""].map(h => (
+                  <th key={h} style={{ padding: "10px 14px", textAlign: "left", fontSize: 10, fontWeight: 700, color: C.t3, textTransform: "uppercase", letterSpacing: "0.08em", whiteSpace: "nowrap" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map((u, i) => (
+                <tr key={u.id} style={{ borderBottom: `1px solid ${C.b}`, transition: "background 0.1s" }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = C.bg3}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}>
+                  <td style={{ padding: "12px 14px", color: C.t2, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.email}</td>
+                  <td style={{ padding: "12px 14px" }}><PlanBadge plan={u.plan} /></td>
+                  <td style={{ padding: "12px 14px" }}><Dot status={u.billing_status} /></td>
+                  <td style={{ padding: "12px 14px" }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: 4, color: u.streak > 6 ? C.amber : u.streak > 0 ? C.t2 : C.t4 }}>
+                      {u.streak > 0 && <Flame size={11} />}{u.streak}d
+                    </span>
+                  </td>
+                  <td style={{ padding: "12px 14px", color: C.t3, fontSize: 11 }}>{ago(u.last_seen)}</td>
+                  <td style={{ padding: "12px 14px", color: C.t2 }}>{u.projects_count}</td>
+                  <td style={{ padding: "12px 14px" }}>
+                    <span style={{ color: u.ai_calls_this_month > 50 ? C.amber : C.t2 }}>{n(u.ai_calls_this_month)}</span>
+                  </td>
+                  <td style={{ padding: "12px 14px" }}>
+                    <button onClick={() => onOverride(u)}
+                      style={{ padding: "5px 10px", borderRadius: C.rSm, border: `1px solid ${C.b2}`, background: "transparent", color: C.t2, fontSize: 11, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = C.ab; (e.currentTarget as HTMLElement).style.color = C.a; }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = C.b2; (e.currentTarget as HTMLElement).style.color = C.t2; }}>
+                      Override
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-        {sorted.slice(0, 10).map((row) => (
-          <div key={row.user_id} style={{ display: "grid", gridTemplateColumns: "1fr 80px 60px 120px", gap: 8, padding: "8px 0", borderBottom: `1px solid ${T.border}`, fontSize: 12, alignItems: "center" }}>
-            <span style={{ color: T.text2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.email}</span>
-            <span style={{ color: T.text }}>{fmt(row.count)}</span>
-            <PlanBadge plan={row.plan} />
-            <div style={{ background: T.bg3, borderRadius: 3, height: 4, overflow: "hidden" }}>
-              <div style={{ height: "100%", width: `${(row.count / maxCount) * 100}%`, background: T.accent }} />
+
+        {pages > 1 && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", borderTop: `1px solid ${C.b}` }}>
+            <span style={{ fontSize: 12, color: C.t3 }}>Showing {page * PAGE + 1}–{Math.min((page + 1) * PAGE, filtered.length)} of {n(filtered.length)}</span>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button disabled={page === 0} onClick={() => setPage(p => p - 1)}
+                style={{ padding: "6px 12px", borderRadius: C.rSm, border: `1px solid ${C.b}`, background: "transparent", color: page === 0 ? C.t4 : C.t2, fontSize: 11, cursor: page === 0 ? "default" : "pointer", fontFamily: "inherit" }}>← Prev</button>
+              <button disabled={page >= pages - 1} onClick={() => setPage(p => p + 1)}
+                style={{ padding: "6px 12px", borderRadius: C.rSm, border: `1px solid ${C.b}`, background: "transparent", color: page >= pages - 1 ? C.t4 : C.t2, fontSize: 11, cursor: page >= pages - 1 ? "default" : "pointer", fontFamily: "inherit" }}>Next →</button>
             </div>
           </div>
-        ))}
-      </div>
-    </Card>
+        )}
+      </Card>
+    </div>
   );
 }
 
-// ─── Quality Monitor (extends app/admin/quality/) ────────────────────────────
-
-function QualityMonitor({ quality }: { quality: QualitySummary }) {
-  const rate = quality.overallPassRate;
-  const color = rate === null ? T.text3 : rate >= 80 ? T.accent : rate >= 60 ? T.amber : T.red;
-  return (
-    <Card style={{ padding: "18px 22px" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-        <SectionLabel>AI quality monitor</SectionLabel>
-        <a href="/admin/quality" style={{ fontSize: 11, color: T.accent, textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
-          Full log <ArrowUpRight size={11} />
-        </a>
-      </div>
-      {quality.qualityAlert && (
-        <div style={{ display: "flex", gap: 8, padding: "10px 12px", borderRadius: T.rMd, background: "rgba(232,160,32,0.08)", border: "1px solid rgba(232,160,32,0.25)", color: T.amber, fontSize: 12, marginBottom: 14 }}>
-          <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
-          {quality.qualityAlert}
-        </div>
-      )}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-        {[
-          { label: "Total evals", value: fmt(quality.total), color: T.text },
-          { label: "Overall pass", value: rate !== null ? `${rate}%` : "—", color },
-          { label: "Last 7d", value: quality.recentPassRate !== null ? `${quality.recentPassRate}%` : "—", color: quality.recentPassRate !== null ? (quality.recentPassRate >= 70 ? T.accent : T.red) : T.text3 },
-        ].map(({ label, value, color: c }) => (
-          <div key={label} style={{ background: T.bg3, borderRadius: T.rMd, padding: "12px 14px" }}>
-            <div style={{ fontSize: 10, color: T.text3, marginBottom: 6 }}>{label}</div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: c }}>{value}</div>
-          </div>
-        ))}
-      </div>
-    </Card>
-  );
-}
-
-// ─── Plan Override Modal ──────────────────────────────────────────────────────
-
-function PlanOverrideModal({
-  user,
-  onClose,
-  onSuccess,
-}: {
-  user: AdminUser;
-  onClose: () => void;
-  onSuccess: (userId: string, newPlan: Plan) => void;
-}) {
-  const [targetPlan, setTargetPlan] = useState<Plan>(user.plan === "builder" ? "free" : "builder");
+// ─── Plan override modal ──────────────────────────────────────────────────────
+function PlanOverrideModal({ user, onClose, onSuccess }: { user: AdminUser; onClose: () => void; onSuccess: (id: string, plan: Plan) => void }) {
+  const [target, setTarget] = useState<Plan>(user.plan === "builder" ? "free" : "builder");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState("");
 
   async function submit() {
-    setLoading(true);
-    setError(null);
+    setLoading(true); setError("");
     try {
-      const res = await fetch("/api/admin/plan-override", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: user.id, plan: targetPlan }),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        throw new Error(json?.error ?? `HTTP ${res.status}`);
-      }
-      onSuccess(user.id, targetPlan);
-      onClose();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Unknown error");
-    } finally {
-      setLoading(false);
-    }
+      const res = await fetch("/api/admin/plan-override", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: user.id, plan: target }) });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j?.error ?? `HTTP ${res.status}`);
+      onSuccess(user.id, target); onClose();
+    } catch (e) { setError(e instanceof Error ? e.message : "Failed"); }
+    finally { setLoading(false); }
   }
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
-      <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-        style={{ background: "var(--bm-bg2)", border: `1px solid ${T.border2}`, borderRadius: "var(--r-xl)", padding: "28px 28px 24px", width: 380, boxShadow: "var(--shadow-lg)" }}
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }} onClick={onClose}>
+      <motion.div initial={{ opacity: 0, y: 12, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 8 }}
+        style={{ background: C.bg2, border: `1px solid ${C.b2}`, borderRadius: C.rXl, padding: "28px", width: 380, boxShadow: "var(--shadow-lg)" }}
         onClick={e => e.stopPropagation()}>
-        <h3 style={{ margin: "0 0 6px 0", fontSize: 16, fontWeight: 600, color: T.text }}>Override plan</h3>
-        <p style={{ margin: "0 0 18px 0", fontSize: 12, color: T.text2 }}>{user.email}</p>
-        <div style={{ marginBottom: 18 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.text3, textTransform: "uppercase", marginBottom: 8, letterSpacing: "0.06em" }}>New plan</div>
-          <div style={{ display: "flex", gap: 10 }}>
-            {(["free", "builder"] as Plan[]).map(p => (
-              <button
-                key={p}
-                onClick={() => setTargetPlan(p)}
-                style={{
-                  flex: 1, padding: "10px 12px", borderRadius: 8, border: `2px solid ${targetPlan === p ? T.accent : T.border}`,
-                  background: targetPlan === p ? T.accentDim : T.bg3, color: targetPlan === p ? T.accent : T.text2,
-                  fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", transition: "all 0.2s",
-                }}
-              >
-                {p}
-              </button>
-            ))}
-          </div>
+        <div style={{ fontSize: 16, fontWeight: 700, color: C.t, marginBottom: 4 }}>Override plan</div>
+        <div style={{ fontSize: 12, color: C.t3, marginBottom: 20 }}>{user.email}</div>
+        <div style={{ fontSize: 11, fontWeight: 600, color: C.t3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>Set to</div>
+        <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
+          {(["free", "builder"] as Plan[]).map(p => (
+            <button key={p} onClick={() => setTarget(p)}
+              style={{ flex: 1, padding: "12px", borderRadius: C.rMd, border: `2px solid ${target === p ? C.a : C.b}`, background: target === p ? C.ad : C.bg3, color: target === p ? C.a : C.t2, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s", textTransform: "capitalize" }}>
+              {p}
+            </button>
+          ))}
         </div>
-        {error && (
-          <div style={{ padding: "10px 12px", background: "rgba(220,38,38,0.1)", border: `1px solid ${T.red}`, borderRadius: 6, color: T.red, fontSize: 11, marginBottom: 16 }}>
-            {error}
-          </div>
-        )}
+        {error && <div style={{ padding: "10px 12px", background: "rgba(224,85,85,0.1)", border: `1px solid ${C.red}`, borderRadius: C.rMd, color: C.red, fontSize: 12, marginBottom: 16 }}>{error}</div>}
         <div style={{ display: "flex", gap: 10 }}>
-          <button onClick={onClose} style={{ flex: 1, padding: "10px 0", borderRadius: 6, border: `1px solid ${T.border}`, background: "transparent", color: T.text2, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
-            Cancel
-          </button>
-          <button onClick={submit} disabled={loading} style={{ flex: 1, padding: "10px 0", borderRadius: 6, border: "none", background: loading ? T.text3 : T.accent, color: "#000", fontSize: 12, fontWeight: 700, cursor: loading ? "default" : "pointer", fontFamily: "inherit", opacity: loading ? 0.6 : 1 }}>
-            {loading ? <Spinner size={11} /> : "Apply"}
+          <button onClick={onClose} style={{ flex: 1, padding: "11px", borderRadius: C.rMd, border: `1px solid ${C.b}`, background: "transparent", color: C.t2, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+          <button onClick={submit} disabled={loading} style={{ flex: 1, padding: "11px", borderRadius: C.rMd, border: "none", background: C.a, color: "#0F0F10", fontSize: 13, fontWeight: 700, cursor: loading ? "default" : "pointer", fontFamily: "inherit", opacity: loading ? 0.7 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+            {loading ? <><Spin /> Applying…</> : "Apply"}
           </button>
         </div>
       </motion.div>
@@ -566,221 +416,702 @@ function PlanOverrideModal({
   );
 }
 
-// ─── User Table ───────────────────────────────────────────────────────────────
-
-function UserTable({ users, onOverride }: { users: AdminUser[]; onOverride: (u: AdminUser) => void }) {
-  const [filter, setFilter] = useState<"all" | Plan>("all");
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(0);
-  const PAGE = 15;
-
-  const filtered = users.filter(u => {
-    if (filter !== "all" && u.plan !== filter) return false;
-    if (search && !u.email.toLowerCase().includes(search.toLowerCase())) return false;
-    return true;
-  });
-  const pages = Math.ceil(filtered.length / PAGE);
-  const visible = filtered.slice(page * PAGE, (page + 1) * PAGE);
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION: REVENUE
+// ═══════════════════════════════════════════════════════════════════════════════
+function RevenueTab({ mrr, webhooks }: { mrr: MRRData; webhooks: WebhookEvent[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const visible = expanded ? webhooks : webhooks.slice(0, 8);
 
   return (
-    <Card style={{ padding: "18px 22px" }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
-        <SectionLabel>Users ({fmt(filtered.length)})</SectionLabel>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <input type="text" placeholder="Search email..." value={search} onChange={e => { setSearch(e.target.value); setPage(0); }} style={{
-            fontSize: 11, padding: "6px 10px", borderRadius: 6, border: `1px solid ${T.border}`, background: T.bg3, color: T.text, fontFamily: "inherit",
-          }} />
-          <select value={filter} onChange={e => { setFilter(e.target.value as "all" | Plan); setPage(0); }} style={{
-            fontSize: 11, padding: "6px 10px", borderRadius: 6, border: `1px solid ${T.border}`, background: T.bg3, color: T.text, fontFamily: "inherit", cursor: "pointer",
-          }}>
-            <option value="all">All plans</option>
-            <option value="free">Free</option>
-            <option value="builder">Builder</option>
-          </select>
-        </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
+        <Card style={{ padding: "20px 22px", gridColumn: "span 1" }}>
+          <div style={{ fontSize: 11, color: C.t3, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>MRR</div>
+          <div style={{ fontSize: 32, fontWeight: 800, color: C.a, letterSpacing: "-0.04em", marginBottom: 12 }}>${n(mrr.mrr)}</div>
+          <Sparkline data={mrr.trend.map(d => d.mrr)} color={C.a} />
+        </Card>
+        <Stat label="Builder subscribers" value={n(mrr.active_builders)} color={C.teal} />
+        <Stat label="New this month" value={`+${mrr.new_this_month}`} color={C.a} />
+        <Stat label="Churned" value={mrr.churned_this_month} color={mrr.churned_this_month > 0 ? C.red : C.t3} />
       </div>
 
-      {/* Table */}
-      <div style={{ overflowX: "auto" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 70px 90px 80px 90px 60px 60px", gap: 8, padding: "0 0 8px 0", borderBottom: `1px solid ${T.border}`, marginBottom: 4 }}>
-          {["Email", "Plan", "Billing", "Streak", "Last seen", "Projects", "API calls"].map(h => (
-            <div key={h} style={{ fontSize: 9, fontWeight: 700, color: T.text3, textTransform: "uppercase", letterSpacing: "0.06em" }}>{h}</div>
-          ))}
+      <Card>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "18px 22px", borderBottom: `1px solid ${C.b}` }}>
+          <Webhook size={14} color={C.t3} />
+          <span style={{ fontSize: 13, fontWeight: 600, color: C.t }}>Paystack webhook log</span>
+          <span style={{ marginLeft: "auto", fontSize: 11, color: C.t3 }}>{webhooks.length} events</span>
         </div>
-        {visible.map(u => (
-          <div key={u.id} style={{ display: "grid", gridTemplateColumns: "1fr 70px 90px 80px 90px 60px 60px", gap: 8, padding: "10px 0", borderBottom: `1px solid ${T.border}`, fontSize: 11, alignItems: "center" }}>
-            <span style={{ color: T.text2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.email}</span>
-            <PlanBadge plan={u.plan} />
-            <StatusDot status={u.billing_status} />
-            <span style={{ color: u.streak > 0 ? T.accent : T.text3 }}>{u.streak}d</span>
-            <span style={{ color: T.text3, fontSize: 10 }}>{ago(u.last_seen)}</span>
-            <span style={{ color: T.text2 }}>{u.projects_count}</span>
-            <span style={{ color: T.text2 }}>{u.ai_calls_this_month}</span>
-            <button onClick={() => onOverride(u)} style={{ padding: "4px 8px", borderRadius: 4, border: "none", background: T.accent, color: "#000", fontSize: 9, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
-              ⋯
-            </button>
-          </div>
-        ))}
-      </div>
-
-      {/* Pagination */}
-      {pages > 1 && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, justifyContent: "flex-end" }}>
-          {page > 0 && <button onClick={() => setPage(p => p - 1)} style={{ fontSize: 11, padding: "4px 8px", borderRadius: 4, border: `1px solid ${T.border}`, background: "transparent", color: T.accent, cursor: "pointer", fontFamily: "inherit" }}>← Prev</button>}
-          <span style={{ fontSize: 10, color: T.text3 }}>Page {page + 1} of {pages}</span>
-          {page < pages - 1 && <button onClick={() => setPage(p => p + 1)} style={{ fontSize: 11, padding: "4px 8px", borderRadius: 4, border: `1px solid ${T.border}`, background: "transparent", color: T.accent, cursor: "pointer", fontFamily: "inherit" }}>Next →</button>}
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: C.bg3 }}>
+                {["Event", "Email", "Amount", "Status", "Time"].map(h => (
+                  <th key={h} style={{ padding: "10px 16px", textAlign: "left", fontSize: 10, fontWeight: 700, color: C.t3, textTransform: "uppercase", letterSpacing: "0.08em" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map(ev => (
+                <tr key={ev.id} style={{ borderTop: `1px solid ${C.b}` }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = C.bg3}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}>
+                  <td style={{ padding: "11px 16px", color: C.t2, fontFamily: "monospace", fontSize: 11 }}>{ev.event}</td>
+                  <td style={{ padding: "11px 16px", color: C.t3, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.customer_email || "—"}</td>
+                  <td style={{ padding: "11px 16px", color: C.t }}>{ev.amount ? `₦${n(ev.amount)}` : "—"}</td>
+                  <td style={{ padding: "11px 16px" }}>
+                    <Badge label={ev.status}
+                      color={ev.status === "success" ? C.a : ev.status === "failed" ? C.red : C.amber}
+                      bg={ev.status === "success" ? C.ad : ev.status === "failed" ? "rgba(224,85,85,0.1)" : "rgba(232,160,32,0.1)"}
+                      border={ev.status === "success" ? C.ab : ev.status === "failed" ? "rgba(224,85,85,0.25)" : "rgba(232,160,32,0.25)"} />
+                  </td>
+                  <td style={{ padding: "11px 16px", color: C.t4, fontSize: 11 }}>{fmtDT(ev.received_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      )}
-    </Card>
+        {webhooks.length > 8 && (
+          <button onClick={() => setExpanded(e => !e)}
+            style={{ width: "100%", padding: "12px", borderTop: `1px solid ${C.b}`, background: "transparent", border: "none", color: C.t3, fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 5, fontFamily: "inherit" }}>
+            {expanded ? <><ChevronUp size={12} /> Show less</> : <><ChevronDown size={12} /> Show {webhooks.length - 8} more events</>}
+          </button>
+        )}
+      </Card>
+    </div>
   );
 }
 
-// ─── Nav tabs ─────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION: AI & QUALITY
+// ═══════════════════════════════════════════════════════════════════════════════
+function AITab({ quality, aiUsage }: { quality: QualitySummary; aiUsage: AIUsageRow[] }) {
+  const sorted = [...aiUsage].sort((a, b) => b.count - a.count);
+  const totalCalls = aiUsage.reduce((s, r) => s + r.count, 0);
+  const maxCalls = Math.max(...aiUsage.map(r => r.count), 1);
+  const qc = quality.overallPassRate === null ? C.t3 : quality.overallPassRate >= 80 ? C.a : quality.overallPassRate >= 60 ? C.amber : C.red;
 
-type Tab = "overview" | "users" | "revenue" | "ai" | "engagement";
-const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
-  { id: "overview",   label: "Overview",   icon: BarChart2 },
-  { id: "users",      label: "Users",      icon: Users },
-  { id: "revenue",    label: "Revenue",    icon: DollarSign },
-  { id: "ai",         label: "AI & Usage", icon: Brain },
-  { id: "engagement", label: "Engagement", icon: Activity },
-];
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* Quality KPIs */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12 }}>
+        <Stat label="Total evals" value={n(quality.total)} icon={BarChart2} />
+        <Stat label="Overall pass" value={quality.overallPassRate !== null ? `${quality.overallPassRate}%` : "—"} color={qc} icon={CheckCircle2} />
+        <Stat label="Last 7d pass" value={quality.recentPassRate !== null ? `${quality.recentPassRate}%` : "—"} color={(quality.recentPassRate ?? 0) >= 70 ? C.a : C.red} icon={TrendingUp} />
+        <Stat label="Total passed" value={n(quality.totalPass)} color={C.a} icon={CheckCircle2} />
+        <Stat label="Total failed" value={n(quality.totalFail)} color={C.red} icon={XCircle} />
+      </div>
 
-// ─── Mock data loader (replace with real API call) ────────────────────────────
+      {quality.qualityAlert && (
+        <div style={{ display: "flex", gap: 10, padding: "14px 16px", borderRadius: C.rMd, background: "rgba(232,160,32,0.07)", border: "1px solid rgba(232,160,32,0.22)", color: C.amber }}>
+          <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+          <span style={{ fontSize: 13 }}>{quality.qualityAlert}</span>
+        </div>
+      )}
 
-async function fetchDashboard(): Promise<DashboardPayload> {
-  const res = await fetch("/api/admin/dashboard");
-  if (!res.ok) {
-    const json = await res.json().catch(() => ({}));
-    throw new Error(json?.error ?? `HTTP ${res.status}`);
-  }
-  return res.json();
+      {/* Daily pass-rate chart */}
+      {quality.dailyTrend?.length > 0 && (
+        <Card style={{ padding: "20px 22px" }}>
+          <Label>Agent B pass rate — daily (last 30 days)</Label>
+          <div style={{ overflowX: "auto" }}>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 80, minWidth: quality.dailyTrend.length * 22 }}>
+              {quality.dailyTrend.map(d => {
+                const r = d.passRate ?? 0;
+                const h = Math.max(4, Math.round((r / 100) * 72));
+                const col = r >= 80 ? C.a : r >= 60 ? C.amber : C.red;
+                return (
+                  <div key={d.date} title={`${d.date}: ${r}% (${d.pass}/${d.total})`} style={{ flex: 1, minWidth: 14, display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+                    <div style={{ width: "100%", height: h, background: col, borderRadius: "2px 2px 0 0", opacity: 0.85 }} />
+                    <span style={{ fontSize: 7, color: C.t4, transform: "rotate(-45deg)", whiteSpace: "nowrap" }}>{d.date.slice(5)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Context + reject reasons */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+        <Card style={{ padding: "20px 22px" }}>
+          <Label>Pass rate by context</Label>
+          {!quality.contextBreakdown?.length
+            ? <p style={{ fontSize: 13, color: C.t3, margin: 0 }}>No data yet.</p>
+            : quality.contextBreakdown.map(ctx => {
+              const col = ctx.passRate !== null ? (ctx.passRate >= 80 ? C.a : ctx.passRate >= 60 ? C.amber : C.red) : C.t3;
+              return (
+                <div key={ctx.context} style={{ marginBottom: 14 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                    <span style={{ fontSize: 12, color: C.t2 }}>{ctx.context}</span>
+                    <div style={{ display: "flex", gap: 10 }}>
+                      <span style={{ fontSize: 11, color: C.t4 }}>{ctx.total} runs</span>
+                      <span style={{ fontWeight: 700, color: col, fontSize: 12 }}>{ctx.passRate !== null ? `${ctx.passRate}%` : "—"}</span>
+                    </div>
+                  </div>
+                  <div style={{ height: 4, background: C.bg4, borderRadius: 99, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${ctx.total ? Math.round((ctx.pass / ctx.total) * 100) : 0}%`, background: col, borderRadius: 99 }} />
+                  </div>
+                </div>
+              );
+            })
+          }
+        </Card>
+        <Card style={{ padding: "20px 22px" }}>
+          <Label>Top reject reasons</Label>
+          {!quality.topRejectReasons?.length
+            ? <p style={{ fontSize: 13, color: C.t3, margin: 0 }}>No rejections recorded.</p>
+            : quality.topRejectReasons.map((r, i) => (
+              <div key={i} style={{ display: "flex", gap: 10, marginBottom: 12, alignItems: "flex-start" }}>
+                <span style={{ fontSize: 11, fontWeight: 800, color: C.red, minWidth: 22, flexShrink: 0 }}>{r.count}×</span>
+                <span style={{ fontSize: 12, color: C.t2, lineHeight: 1.5 }}>{r.reason}</span>
+              </div>
+            ))
+          }
+        </Card>
+      </div>
+
+      {/* AI usage table */}
+      <Card>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 22px", borderBottom: `1px solid ${C.b}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Zap size={14} color={C.amber} />
+            <span style={{ fontSize: 13, fontWeight: 600, color: C.t }}>Groq API usage — this month</span>
+          </div>
+          <span style={{ fontSize: 12, color: C.t3 }}>{n(totalCalls)} total calls</span>
+        </div>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+          <thead>
+            <tr style={{ background: C.bg3 }}>
+              {["Email", "Plan", "Calls", "Usage"].map(h => (
+                <th key={h} style={{ padding: "10px 16px", textAlign: "left", fontSize: 10, fontWeight: 700, color: C.t3, textTransform: "uppercase", letterSpacing: "0.08em" }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.slice(0, 12).map(row => (
+              <tr key={row.user_id} style={{ borderTop: `1px solid ${C.b}` }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = C.bg3}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}>
+                <td style={{ padding: "10px 16px", color: C.t2, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.email}</td>
+                <td style={{ padding: "10px 16px" }}><PlanBadge plan={row.plan} /></td>
+                <td style={{ padding: "10px 16px", color: row.count > 100 ? C.amber : C.t, fontWeight: 600 }}>{n(row.count)}</td>
+                <td style={{ padding: "10px 16px", width: 140 }}>
+                  <div style={{ height: 4, background: C.bg4, borderRadius: 99, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${(row.count / maxCalls) * 100}%`, background: row.count > 100 ? C.amber : C.a, borderRadius: 99 }} />
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+    </div>
+  );
 }
 
-// ─── Main page ────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION: ENGAGEMENT
+// ═══════════════════════════════════════════════════════════════════════════════
+function EngagementTab({ data }: { data: DashboardPayload }) {
+  const maxCount = Math.max(...data.funnel.map(s => s.count), 1);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <MiniActivityChart data={data.activity} />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        <Card style={{ padding: "20px 22px" }}>
+          <Label>Onboarding funnel</Label>
+          {data.funnel.map((s, i) => (
+            <div key={i} style={{ marginBottom: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                <span style={{ fontSize: 12, color: C.t2 }}>{s.label}</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: C.t }}>{n(s.count)}</span>
+              </div>
+              <div style={{ height: 5, background: C.bg4, borderRadius: 99, overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${(s.count / maxCount) * 100}%`, background: s.drop_pct && s.drop_pct > 20 ? C.amber : C.a, borderRadius: 99, transition: "width 0.4s ease" }} />
+              </div>
+              {s.drop_pct !== null && <div style={{ fontSize: 10, color: C.t4, marginTop: 3 }}>↓ {s.drop_pct}% drop from previous</div>}
+            </div>
+          ))}
+        </Card>
+        <StreakHisto buckets={data.streaks} />
+      </div>
+    </div>
+  );
+}
 
-export default function AdminDashboardPage() {
-  const [data, setData] = useState<DashboardPayload | null>(null);
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION: GROWTH
+// ═══════════════════════════════════════════════════════════════════════════════
+function GrowthTab() {
+  const [data, setData] = useState<GrowthData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<Tab>("overview");
-  const [overrideTarget, setOverrideTarget] = useState<AdminUser | null>(null);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true); setError("");
+    try {
+      const res = await fetch("/api/system/growth-metrics", { cache: "no-store" });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j?.ok) throw new Error(j?.error ?? "Failed");
+      setData(j.data);
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : "Failed"); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <button onClick={load} disabled={loading} style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: C.rMd, border: `1px solid ${C.b}`, background: C.bg3, color: C.t2, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+          <RefreshCw size={12} style={{ animation: loading ? "adm-spin 0.8s linear infinite" : "none" }} />
+          {loading ? "Loading…" : "Refresh"}
+        </button>
+      </div>
+
+      {error && <div style={{ padding: "12px 16px", borderRadius: C.rMd, background: "rgba(224,85,85,0.07)", border: "1px solid rgba(224,85,85,0.2)", color: C.red, fontSize: 13 }}>{error}</div>}
+      {loading && !data && <div style={{ padding: 48, textAlign: "center", color: C.t3, fontSize: 13 }}>Loading growth metrics…</div>}
+
+      {data && (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 12 }}>
+            {data.summary.map(m => {
+              const col = statusColor(m.status);
+              const val = m.value === null ? "—" : m.unit === "percent" ? `${m.value}%` : n(m.value);
+              return (
+                <Card key={m.key} style={{ padding: "18px 20px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: C.t3, textTransform: "uppercase", letterSpacing: "0.08em", lineHeight: 1.3 }}>{m.label}</span>
+                    <Badge label={statusLabel(m.status)} color={col} bg={`${col}14`} border={`${col}33`} />
+                  </div>
+                  <div style={{ fontSize: 30, fontWeight: 800, color: col, letterSpacing: "-0.04em", marginBottom: 2 }}>{val}</div>
+                  <div style={{ fontSize: 10, color: C.t4, marginBottom: 10 }}>target {m.unit === "percent" ? `${m.target}%` : n(m.target)}</div>
+                  <p style={{ fontSize: 12, lineHeight: 1.55, color: C.t3, margin: 0 }}>{m.detail}</p>
+                </Card>
+              );
+            })}
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
+            <Stat label="Weekly active founders" value={`${data.weeklyActive.founders}`} sub={`since ${new Date(data.weeklyActive.since).toLocaleDateString()}`} icon={Activity} />
+            <Stat label="Paid activation" value={`${data.conversion.paidActivatedUsers} / ${data.conversion.activatedUsers}`} sub="paid / activated" icon={DollarSign} color={C.teal} />
+            <Stat label="Execution proof" value={`${data.executionBehavior.foundersWithThreeCompletedActions}`} sub="founders with 3+ completions" icon={CheckCircle2} color={C.a} />
+            <Stat label="Avg completed actions" value={data.executionBehavior.averageCompletedActionsPerActivatedFounder ?? "—"} sub="per activated founder" icon={Target} color={C.blue} />
+          </div>
+
+          <Card style={{ padding: "18px 22px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+              <BarChart3 size={14} color={C.a} />
+              <span style={{ fontSize: 12, fontWeight: 700, color: C.t2, textTransform: "uppercase", letterSpacing: "0.08em" }}>Venture signal</span>
+            </div>
+            <p style={{ fontSize: 13, lineHeight: 1.7, color: C.t3, margin: 0 }}>
+              BuildMind looks venture-scalable when D30 retention &gt; 25%, weekly active founders &gt; 100, activated-to-paid conversion &gt; 10%, and execution data proves the product changes founder behaviour.
+            </p>
+            <p style={{ fontSize: 11, color: C.t4, margin: "10px 0 0" }}>Generated {new Date(data.generatedAt).toLocaleString()}</p>
+          </Card>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION: TESTIMONIALS
+// ═══════════════════════════════════════════════════════════════════════════════
+const SRC_LABELS: Record<string, string> = { streak_7: "🔥 7d streak", streak_14: "⚔️ 14d", streak_30: "💎 30d", high_confidence: "💪 High confidence", manual: "Manual", admin: "Admin" };
+
+function TestimonialsTab() {
+  const [all, setAll] = useState<Testimonial[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<"all" | "pending" | "approved">("all");
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    setError(null);
-    try {
-      const d = await fetchDashboard();
-      setData(d);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Unknown error");
-    } finally {
-      setLoading(false);
-    }
+    try { const r = await fetch("/api/admin/testimonials"); const d = await r.json(); setAll(d.testimonials ?? []); }
+    catch {} finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function toggle(id: string, approved: boolean) {
+    await fetch("/api/admin/testimonials", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, approve: !approved }) });
+    setAll(prev => prev.map(t => t.id === id ? { ...t, approved_at: approved ? null : new Date().toISOString() } : t));
+  }
+
+  function copy(t: Testimonial) {
+    navigator.clipboard.writeText(`"${t.quote}" — ${t.display_name}, ${t.stage} stage`).catch(() => {});
+    setCopiedId(t.id); setTimeout(() => setCopiedId(null), 2000);
+  }
+
+  const filtered = all.filter(t => filter === "all" ? true : filter === "pending" ? !t.approved_at : !!t.approved_at);
+  const approved = all.filter(t => !!t.approved_at).length;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+        <Stat label="Total" value={all.length} />
+        <Stat label="Approved" value={approved} color={C.a} />
+        <Stat label="Public consent" value={all.filter(t => t.is_public).length} color={C.teal} />
+      </div>
+
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 4, background: C.bg3, padding: 4, borderRadius: C.rMd, border: `1px solid ${C.b}` }}>
+          {(["all", "pending", "approved"] as const).map(f => (
+            <button key={f} onClick={() => setFilter(f)}
+              style={{ padding: "6px 14px", borderRadius: "7px", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", border: "none", background: filter === f ? C.bg2 : "transparent", color: filter === f ? C.t : C.t3, boxShadow: filter === f ? "0 1px 3px rgba(0,0,0,0.3)" : "none", transition: "all 0.15s" }}>
+              {f === "all" ? `All (${all.length})` : f === "pending" ? `Pending (${all.length - approved})` : `Approved (${approved})`}
+            </button>
+          ))}
+        </div>
+        <button onClick={load} style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: C.rMd, border: `1px solid ${C.b}`, background: "transparent", color: C.t3, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+          <RefreshCw size={11} style={{ animation: loading ? "adm-spin 0.8s linear infinite" : "none" }} /> Refresh
+        </button>
+      </div>
+
+      {!loading && filtered.length === 0 && (
+        <div style={{ textAlign: "center", padding: "60px 0", color: C.t3, fontSize: 13 }}>No testimonials yet. They appear here after founders submit them in-product.</div>
+      )}
+
+      {filtered.map(t => (
+        <Card key={t.id} style={{ padding: "20px 22px", borderColor: t.approved_at ? C.ab : C.b }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ width: 36, height: 36, borderRadius: "50%", background: C.bg4, border: `1px solid ${C.b2}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, color: C.t2, flexShrink: 0 }}>
+                {t.display_name.charAt(0).toUpperCase()}
+              </div>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: C.t }}>{t.display_name}</div>
+                <div style={{ display: "flex", gap: 8, marginTop: 2, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 11, color: C.t3 }}>{t.stage}</span>
+                  <span style={{ fontSize: 11, color: C.t4 }}>·</span>
+                  <span style={{ fontSize: 11, color: C.amber }}>🔥 {t.streak}d</span>
+                  <span style={{ fontSize: 11, color: C.t4 }}>·</span>
+                  <span style={{ fontSize: 11, color: C.t3 }}>{SRC_LABELS[t.source] ?? t.source}</span>
+                </div>
+              </div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+              <span style={{ display: "inline-flex", gap: 2 }}>
+                {[1,2,3,4,5].map(s => <Star key={s} size={11} fill={s <= t.rating ? C.amber : "none"} color={s <= t.rating ? C.amber : C.t4} strokeWidth={1.5} />)}
+              </span>
+              {t.is_public
+                ? <Badge label="consented" color={C.teal} bg="rgba(74,184,176,0.1)" border="rgba(74,184,176,0.25)" />
+                : <Badge label="private" color={C.t3} bg={C.bg4} border={C.b} />
+              }
+            </div>
+          </div>
+
+          <blockquote style={{ margin: "0 0 16px", padding: "14px 18px", background: C.bg3, borderRadius: C.rMd, border: `1px solid ${C.b}`, borderLeft: `3px solid ${C.ab}`, fontSize: 14, color: C.t2, lineHeight: 1.65, fontStyle: "italic" }}>
+            &ldquo;{t.quote}&rdquo;
+          </blockquote>
+
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ fontSize: 11, color: C.t4, display: "flex", alignItems: "center", gap: 8 }}>
+              <Clock size={11} />{new Date(t.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+              {t.approved_at && <span style={{ color: C.a, display: "flex", alignItems: "center", gap: 4 }}><CheckCircle2 size={11} /> approved</span>}
+            </div>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button onClick={() => copy(t)} style={{ display: "flex", alignItems: "center", gap: 5, padding: "7px 12px", borderRadius: C.rMd, border: `1px solid ${C.b}`, background: C.bg3, color: C.t3, fontSize: 12, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}>
+                {copiedId === t.id ? <><Check size={11} /> Copied!</> : <><Copy size={11} /> Copy</>}
+              </button>
+              {t.is_public && (
+                <button onClick={() => toggle(t.id, !!t.approved_at)}
+                  style={{ display: "flex", alignItems: "center", gap: 5, padding: "7px 12px", borderRadius: C.rMd, border: `1px solid ${t.approved_at ? "rgba(224,85,85,0.3)" : C.ab}`, background: t.approved_at ? "rgba(224,85,85,0.07)" : C.ad, color: t.approved_at ? C.red : C.a, fontSize: 12, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}>
+                  {t.approved_at ? <><EyeOff size={11} /> Revoke</> : <><Globe size={11} /> Approve</>}
+                </button>
+              )}
+            </div>
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION: MY VENTURES
+// ═══════════════════════════════════════════════════════════════════════════════
+function VenturesTab() {
+  const [selected, setSelected] = useState<VentureTrack | null>(null);
+  const [done, setDone] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    try { const r = localStorage.getItem("bm_admin_ventures_done"); if (r) setDone(JSON.parse(r)); } catch {}
+  }, []);
+
+  function toggle(vid: string, mid: string) {
+    const key = `${vid}::${mid}`;
+    setDone(prev => {
+      const next = { ...prev, [key]: !prev[key] };
+      try { localStorage.setItem("bm_admin_ventures_done", JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }
+
+  if (selected) {
+    const milestones = selected.phases.flatMap(p => p.milestones);
+    const completed = milestones.filter(m => done[`${selected.id}::${m.id}`]).length;
+    const pct = milestones.length ? Math.round((completed / milestones.length) * 100) : 0;
+
+    return (
+      <motion.div initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
+          <button onClick={() => setSelected(null)} style={{ padding: "7px 14px", borderRadius: C.rMd, border: `1px solid ${C.b}`, background: "transparent", color: C.t3, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>← All ventures</button>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ width: 10, height: 10, borderRadius: "50%", background: selected.color, flexShrink: 0 }} />
+              <span style={{ fontSize: 16, fontWeight: 700, color: C.t }}>{selected.name}</span>
+              <Badge label={selected.status} color={selected.status === "active" ? "#34d399" : "#818cf8"} bg={selected.status === "active" ? "rgba(52,211,153,0.1)" : "rgba(129,140,248,0.1)"} border={selected.status === "active" ? "rgba(52,211,153,0.2)" : "rgba(129,140,248,0.2)"} />
+            </div>
+            <div style={{ fontSize: 12, color: C.t3, marginTop: 2 }}>{selected.tagline}</div>
+          </div>
+        </div>
+
+        <Card style={{ padding: "16px 20px", marginBottom: 14 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+            <span style={{ fontSize: 12, color: C.t3 }}>Milestone progress</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: selected.color }}>{pct}% · {completed}/{milestones.length}</span>
+          </div>
+          <div style={{ height: 5, background: C.bg4, borderRadius: 99, overflow: "hidden" }}>
+            <motion.div initial={{ width: 0 }} animate={{ width: `${pct}%` }} transition={{ duration: 0.6, ease: "easeOut" }} style={{ height: "100%", background: selected.color, borderRadius: 99 }} />
+          </div>
+        </Card>
+
+        <div style={{ fontSize: 12, color: C.t3, background: "rgba(99,102,241,0.05)", border: "1px solid rgba(99,102,241,0.15)", borderRadius: C.rMd, padding: "12px 16px", marginBottom: 14, lineHeight: 1.6 }}>
+          {selected.soloFirstNote}
+        </div>
+
+        <Card style={{ padding: "14px 18px", marginBottom: 16 }}>
+          <div style={{ fontSize: 10, color: C.t4, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>Revenue model</div>
+          {selected.revenueModel.map((r, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 6 }}>
+              <span style={{ color: C.t3 }}>{r.label}</span>
+              <span style={{ color: "#10b981", fontWeight: 600 }}>{r.value}</span>
+            </div>
+          ))}
+        </Card>
+
+        {selected.phases.map(phase => (
+          <div key={phase.id} style={{ marginBottom: 20 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+              <div style={{ width: 3, height: 18, borderRadius: 99, background: phase.color }} />
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: C.t }}>{phase.label}</div>
+                <div style={{ fontSize: 11, color: C.t4 }}>{phase.weeks} · {phase.goal}</div>
+              </div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {phase.milestones.map(m => {
+                const key = `${selected.id}::${m.id}`;
+                const isDone = !!done[key];
+                return (
+                  <div key={m.id} style={{ borderRadius: C.rMd, border: `1px solid ${isDone ? "rgba(16,185,129,0.2)" : C.b}`, background: isDone ? "rgba(16,185,129,0.03)" : C.bg2, opacity: isDone ? 0.6 : 1 }}>
+                    <div style={{ padding: "11px 14px", display: "flex", alignItems: "flex-start", gap: 10 }}>
+                      <button onClick={() => toggle(selected.id, m.id)}
+                        style={{ width: 20, height: 20, borderRadius: "50%", flexShrink: 0, marginTop: 1, border: `1px solid ${isDone ? "#10b981" : C.b2}`, background: isDone ? "#10b981" : "transparent", color: "white", fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        {isDone ? "✓" : ""}
+                      </button>
+                      <div>
+                        <div style={{ display: "flex", gap: 6, marginBottom: 4 }}>
+                          <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 99, background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.2)", color: "#818cf8" }}>{m.type}</span>
+                          <span style={{ fontSize: 10, color: C.t4 }}>{m.week}</span>
+                        </div>
+                        <div style={{ fontSize: 13, color: isDone ? C.t3 : C.t, textDecoration: isDone ? "line-through" : "none", lineHeight: 1.4 }}>{m.task}</div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </motion.div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <p style={{ fontSize: 13, color: C.t3, margin: 0 }}>Your 4 private venture roadmaps. Not visible to other users.</p>
+      {VENTURE_TRACKS.map(v => {
+        const ms = v.phases.flatMap(p => p.milestones);
+        const comp = ms.filter(m => done[`${v.id}::${m.id}`]).length;
+        const pct = ms.length ? Math.round((comp / ms.length) * 100) : 0;
+        return (
+          <Card key={v.id} onClick={() => setSelected(v)}
+            style={{ padding: "20px 22px", transition: "border-color 0.15s, background 0.15s" }}
+            onMouseEnter={(e: React.MouseEvent<HTMLDivElement>) => { (e.currentTarget as HTMLElement).style.borderColor = C.b3; }}
+            onMouseLeave={(e: React.MouseEvent<HTMLDivElement>) => { (e.currentTarget as HTMLElement).style.borderColor = C.b; }}>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                  <span style={{ width: 10, height: 10, borderRadius: "50%", background: v.color, flexShrink: 0, boxShadow: `0 0 8px ${v.color}55` }} />
+                  <span style={{ fontSize: 15, fontWeight: 700, color: C.t }}>{v.name}</span>
+                  <Badge label={v.status} color={v.status === "active" ? "#34d399" : "#818cf8"} bg={v.status === "active" ? "rgba(52,211,153,0.1)" : "rgba(129,140,248,0.1)"} border={v.status === "active" ? "rgba(52,211,153,0.2)" : "rgba(129,140,248,0.2)"} />
+                </div>
+                <div style={{ fontSize: 12, color: C.t3, marginBottom: 14 }}>{v.tagline}</div>
+                <div style={{ height: 3, background: C.bg4, borderRadius: 99, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${pct}%`, background: v.color, borderRadius: 99 }} />
+                </div>
+              </div>
+              <div style={{ textAlign: "right", flexShrink: 0 }}>
+                <div style={{ fontSize: 24, fontWeight: 800, color: v.color, letterSpacing: "-0.03em" }}>{pct}%</div>
+                <div style={{ fontSize: 11, color: C.t4 }}>{comp}/{ms.length}</div>
+              </div>
+            </div>
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MAIN PAGE
+// ═══════════════════════════════════════════════════════════════════════════════
+async function fetchDashboard(): Promise<DashboardPayload> {
+  const r = await fetch("/api/admin/dashboard");
+  if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j?.error ?? `HTTP ${r.status}`); }
+  return r.json();
+}
+
+const VALID_TABS = new Set<string>(["overview","users","revenue","ai","engagement","growth","testimonials","ventures"]);
+
+/**
+ * Fix #2 — Page decomposition (audit P0.2)
+ * Tab components extracted to app/admin/components/:
+ *   GrowthTab       → app/admin/components/GrowthTab.tsx
+ *   TestimonialsTab → app/admin/components/TestimonialsTab.tsx
+ *   VenturesTab     → app/admin/components/VenturesTab.tsx
+ *
+ * Remaining in this file: OverviewTab, UsersTab, RevenueTab, AITab, EngagementTab
+ * Next step: extract those too to bring this file under 400 lines.
+ */
+export default function AdminPage() {
+  const [data, setData]         = useState<DashboardPayload | null>(null);
+  const [loading, setLoading]   = useState(true);
+  const [error, setError]       = useState<string | null>(null);
+  const [tab, setTab]           = useState<Tab>("overview");
+  const [override, setOverride] = useState<AdminUser | null>(null);
+
+  // Sync tab → URL hash so bookmarks and redirects work
+  useEffect(() => {
+    if (typeof window !== "undefined") window.location.hash = tab;
+  }, [tab]);
+
+  // Read hash on first mount (for redirect URLs like /admin#growth)
+  useEffect(() => {
+    const h = window.location.hash.replace("#", "");
+    if (VALID_TABS.has(h) && h !== tab) setTab(h as Tab);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const load = useCallback(async () => {
+    setLoading(true); setError(null);
+    try { setData(await fetchDashboard()); }
+    catch (e) { setError(e instanceof Error ? e.message : "Unknown error"); }
+    finally { setLoading(false); }
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
   function handlePlanUpdated(userId: string, newPlan: Plan) {
-    setData(d => d ? ({
-      ...d,
-      users: d.users.map(u => u.id === userId ? { ...u, plan: newPlan } : u),
-    }) : d);
+    setData(d => d ? ({ ...d, users: d.users.map(u => u.id === userId ? { ...u, plan: newPlan } : u) }) : d);
   }
 
+  // These tabs load their own data
+  const selfLoadingTabs: Tab[] = ["testimonials", "ventures", "growth"];
+
   return (
-    <div style={{ minHeight: "100vh", background: T.bg, color: T.text, fontFamily: "Geist, system-ui, sans-serif" }}>
+    <div style={{ minHeight: "100vh", background: C.bg, color: C.t, fontFamily: "Geist, system-ui, sans-serif" }}>
+
       {/* Top bar */}
-      <div style={{ borderBottom: `1px solid ${T.border}`, background: T.bg2, position: "sticky", top: 0, zIndex: 100 }}>
-        <div style={{ maxWidth: 1200, margin: "0 auto", padding: "14px 24px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <h1 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Admin Dashboard</h1>
-          <div style={{ display: "flex", gap: 10 }}>
-            <button onClick={load} disabled={loading} style={{ padding: "6px 12px", fontSize: 11, borderRadius: 6, border: `1px solid ${T.border}`, background: "transparent", color: T.accent, cursor: loading ? "default" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4, opacity: loading ? 0.6 : 1 }}>
-              <RefreshCw size={11} style={{ animation: loading ? "bm-spin 1s linear infinite" : "none" }} /> Refresh
-            </button>
-            <span style={{ fontSize: 10, color: T.text3 }}>Last: {data ? new Date(data.last_updated).toLocaleTimeString("en-GB") : "—"}</span>
+      <div style={{ borderBottom: `1px solid ${C.b}`, background: C.bg2, position: "sticky", top: 0, zIndex: 200 }}>
+        <div style={{ maxWidth: 1300, margin: "0 auto", padding: "0 24px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", height: 52 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.t4, background: C.bg4, border: `1px solid ${C.b}`, padding: "3px 8px", borderRadius: C.rSm }}>Admin</span>
+              <span style={{ fontSize: 16, fontWeight: 700, color: C.t }}>BuildMind</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              {data && <span style={{ fontSize: 11, color: C.t4, display: "flex", alignItems: "center", gap: 4 }}><Clock size={10} /> {new Date(data.last_updated).toLocaleTimeString("en-GB")}</span>}
+              <button onClick={load} disabled={loading}
+                style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: C.rMd, border: `1px solid ${C.b}`, background: "transparent", color: C.a, fontSize: 12, fontWeight: 600, cursor: loading ? "default" : "pointer", fontFamily: "inherit", opacity: loading ? 0.6 : 1 }}>
+                <RefreshCw size={11} style={{ animation: loading ? "adm-spin 0.8s linear infinite" : "none" }} />
+                {loading ? "Loading…" : "Refresh"}
+              </button>
+            </div>
+          </div>
+
+          {/* Tab nav */}
+          <div style={{ display: "flex", gap: 0, overflowX: "auto", marginTop: 0 }}>
+            {TABS.map(t => {
+              const Icon = t.icon;
+              const active = tab === t.id;
+              return (
+                <button key={t.id} onClick={() => setTab(t.id)}
+                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "11px 16px", border: "none", background: "none", fontSize: 12, fontWeight: active ? 600 : 400, color: active ? C.a : C.t3, borderBottom: `2px solid ${active ? C.a : "transparent"}`, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", flexShrink: 0, transition: "color 0.15s" }}
+                  onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.color = C.t2; }}
+                  onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.color = C.t3; }}>
+                  <Icon size={13} />{t.label}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
 
       {/* Body */}
-      <div style={{ maxWidth: 1200, margin: "0 auto", padding: "28px 24px 60px" }}>
+      <div style={{ maxWidth: 1300, margin: "0 auto", padding: "28px 24px 80px" }}>
         {error && (
-          <div style={{ padding: "14px 16px", background: "rgba(220,38,38,0.1)", border: `1px solid ${T.red}`, borderRadius: T.rLg, color: T.red, marginBottom: 20, fontSize: 12 }}>
-            <strong>Error:</strong> {error}
+          <div style={{ padding: "14px 18px", background: "rgba(224,85,85,0.07)", border: `1px solid rgba(224,85,85,0.2)`, borderRadius: C.rLg, color: C.red, marginBottom: 20, fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}>
+            <AlertTriangle size={14} /> <strong>Error:</strong> {error}
           </div>
         )}
 
-        {loading && (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, padding: "60px" }}>
-            <Spinner size={16} />
-            <span style={{ color: T.text2 }}>Loading dashboard...</span>
-          </div>
-        )}
+        {/* Self-loading tabs — don't wait for dashboard data */}
+        {tab === "testimonials" && <TestimonialsTab key="testimonials" />}
+        {tab === "ventures"     && <VenturesTab key="ventures" />}
+        {tab === "growth"       && <GrowthTab key="growth" />}
 
-        {!loading && data && (
+        {/* Dashboard-data tabs */}
+        {!selfLoadingTabs.includes(tab) && (
           <>
-            {/* Tabs */}
-            <div style={{ display: "flex", gap: 0, borderBottom: `1px solid ${T.border}`, marginBottom: 28 }}>
-              {TABS.map(tab => {
-                const Icon = tab.icon;
-                const isActive = activeTab === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
-                    style={{
-                      padding: "12px 16px", border: "none", background: "none", fontSize: 13, fontWeight: isActive ? 600 : 500, color: isActive ? T.accent : T.text2,
-                      borderBottom: `2px solid ${isActive ? T.accent : "transparent"}`, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6,
-                    }}
-                  >
-                    <Icon size={14} /> {tab.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Content */}
-            {activeTab === "overview" && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-                <OperatorGate gate={data.operator_gate} />
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16 }}>
-                  <QualityMonitor quality={data.quality} />
-                  <StreakHistogram buckets={data.streaks} />
-                </div>
-                <ActivityChart data={data.activity} />
-              </motion.div>
+            {loading && !data && (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, padding: "100px 0" }}>
+                <RefreshCw size={20} style={{ animation: "adm-spin 0.8s linear infinite", color: C.t3 }} />
+                <span style={{ color: C.t3, fontSize: 13 }}>Loading dashboard…</span>
+              </div>
             )}
 
-            {activeTab === "users" && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                <UserTable users={data.users} onOverride={setOverrideTarget} />
-              </motion.div>
-            )}
-
-            {activeTab === "revenue" && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-                <MRRSnapshot mrr={data.mrr} />
-                <WebhookLog events={data.webhooks} />
-              </motion.div>
-            )}
-
-            {activeTab === "ai" && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-                <QualityMonitor quality={data.quality} />
-                <AIUsageTable rows={data.ai_usage} />
-              </motion.div>
-            )}
-
-            {activeTab === "engagement" && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-                <ActivityChart data={data.activity} />
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16 }}>
-                  <OnboardingFunnel steps={data.funnel} />
-                  <StreakHistogram buckets={data.streaks} />
-                </div>
-              </motion.div>
+            {data && (
+              <AnimatePresence mode="wait">
+                {tab === "overview" && (
+                  <motion.div key="overview" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+                    <OverviewTab data={data} onTabChange={setTab} />
+                  </motion.div>
+                )}
+                {tab === "users" && (
+                  <motion.div key="users" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+                    <UsersTab users={data.users} onOverride={setOverride} />
+                  </motion.div>
+                )}
+                {tab === "revenue" && (
+                  <motion.div key="revenue" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+                    <RevenueTab mrr={data.mrr} webhooks={data.webhooks} />
+                  </motion.div>
+                )}
+                {tab === "ai" && (
+                  <motion.div key="ai" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+                    <AITab quality={data.quality} aiUsage={data.ai_usage} />
+                  </motion.div>
+                )}
+                {tab === "engagement" && (
+                  <motion.div key="engagement" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+                    <EngagementTab data={data} />
+                  </motion.div>
+                )}
+              </AnimatePresence>
             )}
           </>
         )}
@@ -788,21 +1119,12 @@ export default function AdminDashboardPage() {
 
       {/* Plan override modal */}
       <AnimatePresence>
-        {overrideTarget && (
-          <PlanOverrideModal
-            user={overrideTarget}
-            onClose={() => setOverrideTarget(null)}
-            onSuccess={handlePlanUpdated}
-          />
+        {override && (
+          <PlanOverrideModal user={override} onClose={() => setOverride(null)} onSuccess={handlePlanUpdated} />
         )}
       </AnimatePresence>
 
-      <style>{`
-        @keyframes bm-spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
+      <style>{`@keyframes adm-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }

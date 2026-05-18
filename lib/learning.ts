@@ -30,6 +30,7 @@
  */
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { logError } from "@/lib/server/logger";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -82,6 +83,20 @@ export interface LearnedPatterns {
   total_logged: number;
   // Whether we have enough data to be confident in the patterns
   patterns_reliable: boolean;  // true when total_logged >= 5
+  /**
+   * weak_quality_action_types — action types where the pipeline
+   * consistently produces low Verifier confidence (< 0.5) OR low
+   * viability scores (< 40), regardless of founder outcome. These
+   * categories need stronger Agent A signals, not just avoidance.
+   */
+  weak_quality_action_types: ActionType[];
+  /**
+   * avg_verifier_confidence — mean Verifier Agent confidence across all
+   * rows with a recorded verifier score. If this trends below 0.5,
+   * the whole pipeline is generating weak analyses, not just rejected
+   * ones — the problem is upstream of the founder's choices.
+   */
+  avg_verifier_confidence: number | null;
 }
 
 export interface LearningLogRow {
@@ -96,6 +111,22 @@ export interface LearningLogRow {
   critic_persona?: string | null;
   viability_score?: number | null;
   confidence?: number | null;
+  /**
+   * verifier_confidence — the Verifier Agent's (Agent D) confidence_score
+   * for this run (0–1). Low values mean the Verifier found weak reasoning
+   * or missing data. Used to detect categories where the pipeline
+   * consistently produces low-quality outputs, not just ones the founder
+   * ignores.
+   */
+  verifier_confidence?: number | null;
+  /**
+   * rebuttal_score — viability_score at the time the action was shown.
+   * Stored separately so deriveLearnedPatterns can track whether whole
+   * categories of actions arrive with structurally weak viability, which
+   * signals the Generator is mis-calibrated for that type, not that the
+   * founder is hard to please.
+   */
+  rebuttal_score?: number | null;
   pivot_angle?: string | null;
   pivot_title?: string | null;
   outcome: ActionOutcome;
@@ -114,6 +145,16 @@ export function inferActionType(action: string): ActionType {
   const a = action.toLowerCase();
   if (/interview|talk to|speak with|call|user research|conversation|ask \d+ people/i.test(a))
     return "user_interview";
+  // pricing check before content — "publish your pricing" should be pricing not content.
+  // But exclude: "payment integration" (build), "analyse/research pricing strategies" (research).
+  // Require pricing/charge/monetize NOT preceded by research/analyse/study verbs,
+  // and exclude "payment integration" patterns.
+  if (
+    /\bprice|pricing|charge|subscription|revenue|monetize\b/i.test(a) &&
+    !/payment.*(integrat|gateway|api|system|process)|integrat.*payment/i.test(a) &&
+    !/(?:research|analys[ei]s?|analyz|study|compare|look.up|find).*(?:pric|charg|subscript)/i.test(a)
+  )
+    return "pricing";
   if (/post|write|publish|content|article|tweet|thread|blog|share/i.test(a))
     return "content";
   if (/message|reach out|dm|email|contact|outreach|send to \d+|cold/i.test(a))
@@ -124,8 +165,6 @@ export function inferActionType(action: string): ActionType {
     return "research";
   if (/pivot|niche|reposition|change target|different market/i.test(a))
     return "pivot";
-  if (/price|pricing|charge|subscription|revenue|monetize|pay/i.test(a))
-    return "pricing";
   return "other";
 }
 
@@ -161,6 +200,8 @@ export function deriveLearnedPatterns(rows: LearningLogRow[]): LearnedPatterns {
     completion_rate: 0,
     total_logged: 0,
     patterns_reliable: false,
+    weak_quality_action_types: [],
+    avg_verifier_confidence: null,
   };
 
   if (!rows || rows.length === 0) return empty;
@@ -235,6 +276,57 @@ export function deriveLearnedPatterns(rows: LearningLogRow[]): LearnedPatterns {
     .filter((v, i, arr) => arr.indexOf(v) === i) // deduplicate
     .slice(0, 5);
 
+  // ── Quality degradation signals ───────────────────────────────────────────
+  // These track pipeline output quality independently of founder behaviour.
+  // A category that the founder never ignores can still be producing weak
+  // analyses — that needs a different fix (better signals to Agent A) than
+  // simply telling the Generator to avoid that category.
+
+  // Per-type quality tracking: accumulate verifier confidence and viability
+  const typeVerifierScores = new Map<ActionType, number[]>();
+  const typeViabilityScores = new Map<ActionType, number[]>();
+
+  for (const row of rows) {
+    if (!row.action_type) continue;
+    if (row.verifier_confidence != null) {
+      const existing = typeVerifierScores.get(row.action_type) ?? [];
+      existing.push(row.verifier_confidence);
+      typeVerifierScores.set(row.action_type, existing);
+    }
+    const viability = row.rebuttal_score ?? row.viability_score;
+    if (viability != null) {
+      const existing = typeViabilityScores.get(row.action_type) ?? [];
+      existing.push(viability);
+      typeViabilityScores.set(row.action_type, existing);
+    }
+  }
+
+  // Weak quality: action types where avg verifier confidence < 0.5 OR
+  // avg viability < 40, with at least 2 data points.
+  const weak_quality_action_types = Array.from(
+    new Set([...typeVerifierScores.keys(), ...typeViabilityScores.keys()])
+  ).filter((type) => {
+    const verScores = typeVerifierScores.get(type) ?? [];
+    const viabScores = typeViabilityScores.get(type) ?? [];
+    const hasEnoughData = (verScores.length + viabScores.length) >= 2;
+    if (!hasEnoughData) return false;
+    const avgVer = verScores.length > 0
+      ? verScores.reduce((a, b) => a + b, 0) / verScores.length
+      : null;
+    const avgViab = viabScores.length > 0
+      ? viabScores.reduce((a, b) => a + b, 0) / viabScores.length
+      : null;
+    return (avgVer != null && avgVer < 0.5) || (avgViab != null && avgViab < 40);
+  }).slice(0, 3) as ActionType[];
+
+  // Overall average verifier confidence across all rows that have it
+  const allVerifierScores = rows
+    .map(r => r.verifier_confidence)
+    .filter((v): v is number => v != null);
+  const avg_verifier_confidence = allVerifierScores.length > 0
+    ? Math.round((allVerifierScores.reduce((a, b) => a + b, 0) / allVerifierScores.length) * 100) / 100
+    : null;
+
   return {
     preferred_action_types,
     avoided_action_types,
@@ -244,6 +336,8 @@ export function deriveLearnedPatterns(rows: LearningLogRow[]): LearnedPatterns {
     completion_rate,
     total_logged: rows.length,
     patterns_reliable: rows.length >= 5,
+    weak_quality_action_types,
+    avg_verifier_confidence,
   };
 }
 
@@ -253,6 +347,13 @@ export function deriveLearnedPatterns(rows: LearningLogRow[]): LearnedPatterns {
  *
  * Returns empty string if patterns are not yet reliable (< 5 rows).
  * This prevents the AI from over-fitting to noise in early runs.
+ *
+ * Includes two classes of signal:
+ *   1. Founder behaviour (avoidance, completion, override reasons) — was
+ *      already here. Tells the Generator what the founder does.
+ *   2. Pipeline quality (verifier confidence, weak action types) — NEW.
+ *      Tells the Generator where ITS OWN outputs have been structurally
+ *      weak, regardless of what the founder chose to do.
  */
 export function buildLearnedPatternsPrompt(patterns: LearnedPatterns): string {
   if (!patterns.patterns_reliable) return "";
@@ -303,6 +404,24 @@ export function buildLearnedPatternsPrompt(patterns: LearnedPatterns): string {
     );
   }
 
+  // ── Pipeline quality signals (NEW) ────────────────────────────────────────
+  // These are about the quality of YOUR previous outputs, not the founder's
+  // behaviour. Low verifier confidence means the Verifier Agent found weak
+  // reasoning — you need stronger market signals before recommending in
+  // those categories.
+
+  if (patterns.weak_quality_action_types.length > 0) {
+    lines.push(
+      `- PIPELINE QUALITY WARNING: Your past outputs for action types [${patterns.weak_quality_action_types.join(", ")}] had consistently low Verifier confidence or viability scores. Before recommending actions in these categories, ensure you have stronger demand signals, specific competitor data, or a concrete validation mechanism. Do not generate actions in these categories without explicit evidence.`
+    );
+  }
+
+  if (patterns.avg_verifier_confidence != null && patterns.avg_verifier_confidence < 0.5) {
+    lines.push(
+      `- PIPELINE QUALITY WARNING: Average Verifier confidence across all past runs is ${Math.round(patterns.avg_verifier_confidence * 100)}% — below the 50% threshold. This means your analyses have been arriving with weak evidence overall. Prioritise specificity: name actual platforms, cite concrete signals, and avoid generic recommendations. Quality over novelty.`
+    );
+  }
+
   return lines.join("\n");
 }
 
@@ -323,6 +442,8 @@ export async function getLearnedPatterns(userId: string): Promise<LearnedPattern
     completion_rate: 0,
     total_logged: 0,
     patterns_reliable: false,
+    weak_quality_action_types: [],
+    avg_verifier_confidence: null,
   };
 
   try {
@@ -341,7 +462,8 @@ export async function getLearnedPatterns(userId: string): Promise<LearnedPattern
 
     // Slow path: derive from log (first time, or cache miss)
     return await deriveAndCachePatterns(userId);
-  } catch {
+  } catch (err) {
+    logError("learning/getLearnedPatterns", err);
     return empty;
   }
 }
@@ -360,6 +482,8 @@ export async function deriveAndCachePatterns(userId: string): Promise<LearnedPat
     completion_rate: 0,
     total_logged: 0,
     patterns_reliable: false,
+    weak_quality_action_types: [],
+    avg_verifier_confidence: null,
   };
 
   try {
@@ -383,10 +507,11 @@ export async function deriveAndCachePatterns(userId: string): Promise<LearnedPat
         .update({ learned_patterns: patterns })
         .eq("user_id", userId)
         .then(() => {}),
-    ).catch(() => {});
+    ).catch((err) => logError("learning/cachePatterns", err));
 
     return patterns;
-  } catch {
+  } catch (err) {
+    logError("learning/deriveAndCachePatterns", err);
     return empty;
   }
 }
@@ -405,6 +530,8 @@ export async function recordActionShown(params: {
   criticPersona?: string;
   viabilityScore?: number;
   confidence?: number;
+  /** verifierConfidence — Verifier Agent (Agent D) confidence_score (0–1). */
+  verifierConfidence?: number;
   pivotAngle?: string;
   pivotTitle?: string;
 }): Promise<string | null> {
@@ -427,6 +554,10 @@ export async function recordActionShown(params: {
         critic_persona: params.criticPersona ?? null,
         viability_score: params.viabilityScore ?? null,
         confidence: params.confidence ?? null,
+        verifier_confidence: params.verifierConfidence ?? null,
+        // rebuttal_score mirrors viability_score at show-time so
+        // deriveLearnedPatterns can use it without ambiguity
+        rebuttal_score: params.viabilityScore ?? null,
         pivot_angle: params.pivotAngle ?? null,
         pivot_title: params.pivotTitle ?? null,
         outcome: "pending",
@@ -436,7 +567,8 @@ export async function recordActionShown(params: {
 
     if (error || !data) return null;
     return data.id as string;
-  } catch {
+  } catch (err) {
+    logError("learning/recordActionShown", err);
     return null;
   }
 }
@@ -470,10 +602,11 @@ export async function recordActionOutcome(params: {
     // Re-derive and cache patterns after outcome recorded (fire-and-forget)
     deriveAndCachePatterns(params.userId)
       .then(() => {})
-      .catch(() => {});
+      .catch((err) => logError("learning/deriveAndCachePatterns", err));
 
     return true;
-  } catch {
+  } catch (err) {
+    logError("learning/recordActionOutcome", err);
     return false;
   }
 }
@@ -498,5 +631,5 @@ export async function markIgnoredAfter24h(userId: string): Promise<void> {
       .eq("user_id", userId)
       .eq("outcome", "pending")
       .lt("created_at", cutoff);
-  } catch { /* non-fatal */ }
+  } catch (err) { logError("learning/markIgnoredAfter24h", err); /* non-fatal */ }
 }

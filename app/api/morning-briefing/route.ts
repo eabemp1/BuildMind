@@ -61,7 +61,7 @@ export async function GET(req: Request) {
     // Fetch all founder contexts (one per user)
     const { data: contexts, error: ctxErr } = await admin
       .from("founder_context")
-      .select("user_id, startup_summary, current_stage, momentum_score, avoidance_signals, topics_mentioned_repeatedly, cognitive_load");
+      .select("user_id, startup_summary, current_stage, momentum_score, avoidance_signals, topics_mentioned_repeatedly, cognitive_load, timezone_offset");
 
     if (ctxErr || !contexts?.length) {
       return NextResponse.json({ ok: true, cron: true, generated: 0, message: "No founder contexts found" });
@@ -73,6 +73,15 @@ export async function GET(req: Request) {
 
     for (const ctx of contexts) {
       try {
+        // ── Timezone-aware delivery window ──────────────────────────────────
+        // founder_context.timezone_offset is populated by /api/user/geo.
+        // We only generate a briefing when it's between 05:00-09:00 in the
+        // founder's local time. Founders with no timezone data get UTC (offset 0).
+        const tzOffset: number = (ctx as Record<string, unknown>).timezone_offset as number ?? 0;
+        const localHour = (new Date().getUTCHours() + tzOffset + 24) % 24;
+        const inDeliveryWindow = localHour >= 5 && localHour < 9;
+        if (!inDeliveryWindow) { skipped++; continue; }
+
         // Skip if briefing already generated today
         const { data: existing } = await admin
           .from("morning_briefings")
@@ -202,9 +211,74 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  // For scheduled jobs — requires cron secret
+  /**
+   * AUDIT FIX M2: POST handler now actually triggers morning briefing generation
+   * instead of returning a stub response.
+   *
+   * Vercel cron sends POST to /api/morning-briefing at 05:00 daily.
+   * Previously this returned { ok: true, message: "Use the Supabase Edge Function" }
+   * without generating any briefings. Supabase pg_cron is disabled
+   * (migration 20260513000001_disable_supabase_cron.sql), so neither path ran.
+   *
+   * Now: POST iterates all users, checks plan + briefing-day eligibility,
+   * and calls the GET handler (generateMorningBriefing) for each eligible user.
+   * Errors per-user are caught so one failure doesn't abort the batch.
+   */
   if (!isCronRequest(req)) {
-    return NextResponse.json({ ok: false }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
-  return NextResponse.json({ ok: true, message: "Use the Supabase Edge Function for scheduled delivery" });
+
+  if (!hasAdminEnv()) {
+    return NextResponse.json({ ok: false, error: "Supabase admin env missing" }, { status: 500 });
+  }
+
+  const admin = createAdminClient();
+
+  // Paginated fetch — avoids silent 1,000-user truncation
+  const PAGE_SIZE = 200;
+  const allAuthUsers: Array<{ id: string; user_metadata?: Record<string, unknown> }> = [];
+  for (let page = 1; ; page++) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: PAGE_SIZE });
+    if (error) {
+      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    }
+    allAuthUsers.push(...(data?.users ?? []));
+    if ((data?.users ?? []).length < PAGE_SIZE) break;
+  }
+
+  // Include trial users
+  const now = new Date();
+  const { data: trialRows } = await admin
+    .from("founder_context")
+    .select("user_id, trial_ends_at")
+    .gt("trial_ends_at", now.toISOString());
+  const trialUserIds = new Set((trialRows ?? []).map((r: { user_id: string }) => r.user_id));
+
+  const eligibleUsers = allAuthUsers.filter((u) => {
+    const plan = u.user_metadata?.plan === "builder" || trialUserIds.has(u.id) ? "builder" : "free";
+    return isBriefingDayForPlan(plan);
+  });
+
+  let generated = 0;
+  let failed = 0;
+
+  await Promise.allSettled(
+    eligibleUsers.map(async (u) => {
+      try {
+        const plan = await getPlanForUserId(admin, u.id);
+        await generateMorningBriefing(admin, u.id, plan);
+        generated++;
+      } catch {
+        failed++;
+      }
+    })
+  );
+
+  return NextResponse.json({
+    ok: true,
+    ran_at: now.toISOString(),
+    eligible: eligibleUsers.length,
+    generated,
+    failed,
+  });
 }

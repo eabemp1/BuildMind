@@ -1,37 +1,21 @@
 /**
  * lib/server/planGuard.ts — Server-side plan enforcement for Next.js API routes
  *
- * WHY THIS EXISTS:
- *   lib/plan.ts getPlan() reads from localStorage — client-side only.
- *   Any feature gate that relies solely on that can be bypassed by setting
- *   localStorage.setItem('bm_plan', 'venture') in the browser console.
+ * AUDIT FIX C3: createServerClient now uses NEXT_PUBLIC_SUPABASE_ANON_KEY
+ * instead of SUPABASE_SERVICE_ROLE_KEY for session validation via auth.getUser().
+ * The service role key is for admin database queries (RLS bypass), not for
+ * validating user session JWTs. Using it here silently bypassed RLS for the
+ * entire request context.
  *
- *   This module provides withPlanGuard(), a Next.js Route Handler wrapper that
- *   reads the plan from Supabase user_metadata (server-side, signed JWT) before
- *   the handler runs. If the user's actual plan doesn't meet the required tier, a
- *   403 is returned — no client code involved.
- *
- * USAGE:
- *   // app/api/ventures/generate/route.ts
- *   import { withPlanGuard } from "@/lib/server/planGuard";
- *
- *   export const POST = withPlanGuard("venture", async (req, user, plan) => {
- *     return NextResponse.json({ ok: true });
- *   });
- *
- * ROUTES TO PROTECT (audit these):
- *   app/api/ventures/generate/route.ts      → "venture"
- *   app/api/cofounder/blueprint/route.ts    → "venture"
- *   app/api/cofounder/reframe/route.ts      → "builder"
- *   app/api/ai/coach/route.ts               → "builder" (unlimited tier)
- *   app/api/ai/weekly-report/route.ts       → "builder"
+ * AUDIT FIX C1: getFreshPlanForUser() replaced with getEffectivePlan() so
+ * trial users are correctly treated as "builder" in all guard paths.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { type Plan } from "@/lib/plan";
-import { getFreshPlanForUser } from "@/lib/server/plan";
+import { getEffectivePlan } from "@/lib/server/plan";
 
 export type GuardedHandler = (
   req: NextRequest,
@@ -42,13 +26,16 @@ export type GuardedHandler = (
 const PLAN_ORDER: Plan[] = ["free", "builder"];
 
 function planMeetsRequirement(actual: Plan, required: Plan): boolean {
-  return PLAN_ORDER.indexOf(actual) >= PLAN_ORDER.indexOf(required);
+  const actualIdx = PLAN_ORDER.indexOf(actual);
+  const requiredIdx = PLAN_ORDER.indexOf(required);
+  if (actualIdx < 0 || requiredIdx < 0) return false;
+  return actualIdx >= requiredIdx;
 }
 
 /**
  * Wrap a Next.js Route Handler with server-side plan enforcement.
  *
- * @param requiredPlan  Minimum plan tier required ("builder" | "venture")
+ * @param requiredPlan  Minimum plan tier required ("builder" — only active paid tier)
  * @param handler       The route handler to call if the check passes
  */
 export function withPlanGuard(
@@ -58,9 +45,12 @@ export function withPlanGuard(
   return async (req: NextRequest): Promise<NextResponse> => {
     const cookieStore = await cookies();
 
+    // FIX C3: Use ANON_KEY for session validation — NOT the service role key.
+    // auth.getUser() validates the session JWT against Supabase Auth; it does
+    // not need (and must not use) admin-level credentials for that operation.
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         cookies: {
           getAll: () => cookieStore.getAll(),
@@ -81,21 +71,22 @@ export function withPlanGuard(
       );
     }
 
-    const metadataPlan = await getFreshPlanForUser(user);
+    // FIX C1: Use getEffectivePlan() so trial users are correctly treated as builder
+    const effectivePlan = await getEffectivePlan(user.id);
 
-    if (!planMeetsRequirement(metadataPlan, requiredPlan)) {
+    if (!planMeetsRequirement(effectivePlan, requiredPlan)) {
       return NextResponse.json(
         {
           ok: false,
           error: "Plan upgrade required",
           required: requiredPlan,
-          current: metadataPlan,
+          current: effectivePlan,
         },
         { status: 403 },
       );
     }
 
-    return handler(req, { id: user.id, email: user.email }, metadataPlan);
+    return handler(req, { id: user.id, email: user.email }, effectivePlan);
   };
 }
 
@@ -109,9 +100,10 @@ export async function getServerPlan(): Promise<{
 }> {
   const cookieStore = await cookies();
 
+  // FIX C3: Use ANON_KEY here too
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
         getAll: () => cookieStore.getAll(),
@@ -127,7 +119,7 @@ export async function getServerPlan(): Promise<{
   if (!user) return { plan: "free", userId: null };
 
   return {
-    plan: await getFreshPlanForUser(user),
+    plan: await getEffectivePlan(user.id),
     userId: user.id,
   };
 }

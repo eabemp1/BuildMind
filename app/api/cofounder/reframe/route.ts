@@ -10,7 +10,7 @@
  * Month 3 — part of Ghost Competitor / operator tier.
  * Move guard to operator when Operator tier activates at Day 90 (Playbook §10).
  *
- * Migrated from Anthropic (claude-sonnet-4-5 + web_search) → Groq (llama-3.3-70b-versatile)
+ * Migrated from Anthropic (claude-sonnet-4-5 + web_search) → Groq (openai/gpt-oss-120b via fast chain)
  * Note: web search removed — context is built from founder-provided data instead.
  * Re-enable web search when Operator tier ships with Anthropic key.
  */

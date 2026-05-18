@@ -102,7 +102,11 @@ Be specific and concrete — no vague buzzwords.`,
 }
 
 async function generateFullBlueprint(description: string, founderContext?: Record<string, unknown>): Promise<Omit<StartupBlueprint, "generatedAt" | "plan">> {
-  const [l1, l2, l3, l4, l5, l6, l7, l8] = await Promise.allSettled([
+  // Run layers in two batches of 4 so Groq free-tier rate limits aren't hit by
+  // 8 simultaneous requests. Each batch uses Promise.allSettled so one failure
+  // doesn't cancel the others. Total time: ~2 batches × ~3s = ~6s vs the old
+  // all-parallel approach which reliably 429'd on free tier.
+  const batchA = await Promise.allSettled([
     groqJSON<{ layer1: BlueprintLayer1 }>(
       `You are a startup product strategist. Return ONLY valid JSON with key "layer1".
 layer1: { appCategory, problemStatement, targetUser, valueProposition, intentSummary, coreFeatures (4-6 strings) }`,
@@ -123,6 +127,9 @@ layer3: { mvpFeatures (3 features max), phase1Weeks, phase2Weeks, techDependenci
 layer4: { week1Tasks (array of 3), week2Tasks (array of 3), week3Tasks (array of 3), launchChecklist (array of 5), criticalPath (string) }`,
       `Startup: ${description}\nCreate a concrete 3-week execution plan.`
     ),
+  ]);
+
+  const batchB = await Promise.allSettled([
     groqJSON<{ layer5: BlueprintLayer5 }>(
       `You are a founder coach. Return ONLY valid JSON with key "layer5".
 layer5: { founderStrengthMatch (string), risksToWatch (array of 3), recommendation (string) }
@@ -145,6 +152,9 @@ layer8: { validationAction (string — specific action to take this week), compe
       `Startup: ${description}\nCreate the CoFounder Core handoff.`
     ),
   ]);
+
+  const [l1, l2, l3, l4] = batchA;
+  const [l5, l6, l7, l8] = batchB;
 
   const safeGet = <T,>(result: PromiseSettledResult<T>, key: keyof T): T[keyof T] | undefined => {
     if (result.status === "fulfilled") return result.value[key];
