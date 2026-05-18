@@ -129,7 +129,7 @@ export async function POST(request: NextRequest) {
 
     // Derive timezone offset from country code using Vercel's geo header or body
     // This populates founder_context.timezone_offset used by cron delivery timing.
-    const countryCode = body.countryCode ?? request.headers.get("x-vercel-ip-country") ?? null;
+    const tzCountryCode = body.countryCode ?? request.headers.get("x-vercel-ip-country") ?? null;
     const COUNTRY_TZ_OFFSET: Record<string, number> = {
       GH: 0, SN: 0, CI: 0, ML: 0, GN: 0,           // UTC+0
       NG: 1, BJ: 1, NE: 1, CM: 1, CF: 1, CD: 1,     // UTC+1
@@ -140,7 +140,7 @@ export async function POST(request: NextRequest) {
       IN: 5, PK: 5, BD: 6, SG: 8, PH: 8, AU: 10,    // Asia-Pacific
       AE: 4,
     };
-    const tzOffset = countryCode ? (COUNTRY_TZ_OFFSET[countryCode.toUpperCase()] ?? 0) : 0;
+    const tzOffset = tzCountryCode ? (COUNTRY_TZ_OFFSET[tzCountryCode.toUpperCase()] ?? 0) : 0;
 
     // Also write timezone_offset to founder_context so cron jobs can read it
     // without hitting user_metadata (which requires admin API per-user)

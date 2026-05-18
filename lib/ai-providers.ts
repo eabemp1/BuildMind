@@ -458,7 +458,16 @@ export async function callModelJSON<T>(
   messages: ChatMessage[],
   options: Omit<Parameters<typeof callModel>[1], "jsonMode"> = {},
 ): Promise<T> {
-  const text = await callModel(messages, { ...options, jsonMode: true });
+  const jsonMessages = messages.some((message) => /\bjson\b/i.test(message.content))
+    ? messages
+    : [
+        {
+          role: "system" as const,
+          content: "Return only valid JSON. Do not include markdown or prose.",
+        },
+        ...messages,
+      ];
+  const text = await callModel(jsonMessages, { ...options, jsonMode: true });
   const clean = sanitizeModelOutput(text);
   const start = clean.indexOf("{");
   const end = clean.lastIndexOf("}");

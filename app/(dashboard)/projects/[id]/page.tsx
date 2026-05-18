@@ -326,6 +326,29 @@ export default function ProjectDetailPage() {
   const { data, isLoading, error } = useProjectDetailQuery(id);
   const deleteMutation = useDeleteProjectMutation();
   const updateMutation = useUpdateTaskMutation(id);
+  const { project, milestones = [], tasks = [] } = data ?? {};
+
+  const [tab, setTab] = useState<Tab>("milestones");
+  const [newNoteDraft, setNewNoteDraft] = useState<Record<string, string>>({});
+  const [regenerating, setRegenerating] = useState(false);
+  const [showUpgrade, setShowUpgrade] = useState(false);
+  // REC 3.2 + 2.3 + 3.1: narrative sentence, transition challenge, readiness prompt
+  const [narrativeSentence, setNarrativeSentence] = useState<string | null>(null);
+  const [transitionChallenge, setTransitionChallenge] = useState<{
+    challenges: string[]; recommended_action: string; milestone_sentence: string;
+    milestone_title?: string; acknowledged: boolean;
+  } | null>(null);
+  const [challengeAcknowledged, setChallengeAcknowledged] = useState(false);
+  const [transitionReadiness, setTransitionReadiness] = useState<{
+    shouldPrompt: boolean; transitionMessage: string;
+    currentStage: string; nextStage: string | null;
+    signals: { milestonesComplete: boolean; avgConfidence: number | null; recentOverrides: number };
+  } | null>(null);
+  const [readinessDismissed, setReadinessDismissed] = useState(false);
+  const [stageTransitionPrompt, setStageTransitionPrompt] = useState<{
+    currentStage: string; nextStage: string | null; reason: string;
+  } | null>(null);
+  const [stageTransitionDismissed, setStageTransitionDismissed] = useState(false);
 
   useEffect(() => { if (id) setActiveProjectId(id); }, [id]);
 
@@ -449,25 +472,6 @@ export default function ProjectDetailPage() {
     onSuccess: () => void qc.invalidateQueries({ queryKey: queryKeys.project(id) }),
   });
 
-  const [tab, setTab] = useState<Tab>("milestones");
-  const [newNoteDraft, setNewNoteDraft] = useState<Record<string, string>>({});
-  const [regenerating, setRegenerating] = useState(false);
-  const [showUpgrade, setShowUpgrade] = useState(false);
-  // REC 3.2 + 2.3 + 3.1: narrative sentence, transition challenge, readiness prompt
-  const [narrativeSentence, setNarrativeSentence] = useState<string | null>(null);
-  const [transitionChallenge, setTransitionChallenge] = useState<{
-    challenges: string[]; recommended_action: string; milestone_sentence: string;
-    milestone_title?: string; acknowledged: boolean;
-  } | null>(null);
-  const [challengeAcknowledged, setChallengeAcknowledged] = useState(false);
-  const [transitionReadiness, setTransitionReadiness] = useState<{
-    shouldPrompt: boolean; transitionMessage: string;
-    currentStage: string; nextStage: string | null;
-    signals: { milestonesComplete: boolean; avgConfidence: number | null; recentOverrides: number };
-  } | null>(null);
-  const [readinessDismissed, setReadinessDismissed] = useState(false);
-
-  const { project, milestones = [], tasks = [] } = data ?? {};
   const stage = project?.startup_stage ?? "MVP";
   const score = useMemo(() => {
     if (!project) return 0;

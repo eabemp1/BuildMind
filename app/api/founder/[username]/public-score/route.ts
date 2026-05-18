@@ -29,14 +29,14 @@ export const revalidate = 300;
 
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { username: string } },
+  { params }: { params: Promise<{ username: string }> },
 ): Promise<NextResponse> {
   // Feature flag — return 404 when not yet activated
   if (!FEATURES.publicFounderScore) {
     return NextResponse.json({ ok: false, error: "Not yet available" }, { status: 404 });
   }
 
-  const { username } = params;
+  const { username } = await params;
   if (!username || username.length > 50) {
     return NextResponse.json({ ok: false, error: "Invalid username" }, { status: 400 });
   }

@@ -81,9 +81,10 @@ async function getReportByToken(token: string): Promise<WeeklyReportRow | null> 
 // ── OG metadata ───────────────────────────────────────────────────────────────
 
 export async function generateMetadata(
-  { params }: { params: { token: string } },
+  { params }: { params: Promise<{ token: string }> },
 ): Promise<Metadata> {
-  const report = await getReportByToken(params.token);
+  const { token } = await params;
+  const report = await getReportByToken(token);
   if (!report) return { title: "Weekly Report | BuildMind" };
 
   const name   = report.display_name ?? "A founder";
@@ -115,8 +116,9 @@ export async function generateMetadata(
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-export default async function ShareReportPage({ params }: { params: { token: string } }) {
-  const report = await getReportByToken(params.token);
+export default async function ShareReportPage({ params }: { params: Promise<{ token: string }> }) {
+  const { token } = await params;
+  const report = await getReportByToken(token);
   if (!report) notFound();
 
   return <ShareReportClient report={report} />;

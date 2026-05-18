@@ -29,11 +29,16 @@ export type BuildMindProject = {
 
 export type ProjectSummary = {
   id: string;
+  name?: string | null;
   title: string;
   description: string | null;
   created_at: string;
   industry?: string | null;
+  stage?: string | null;
+  startup_summary?: string | null;
   startup_stage?: string | null;
+  current_mrr?: number | null;
+  mrr?: number | null;
   validation_score?: number | null;
   execution_score?: number | null;
   momentum_score?: number | null;
@@ -81,6 +86,8 @@ export type DashboardOverview = {
   aiUsage: number;
   recentActivity: string[];
   founderStreakDays: number;
+  avoidanceZones?: string[];
+  founderName?: string | null;
 };
 
 export type WeeklyReportMetrics = {

@@ -16,7 +16,7 @@ pnpm-debug.log*
 coverage/
 playwright-report/
 test-results/
-tsconfig.tsbuildinfo
+*.tsbuildinfo
 
 .vercel/
 .DS_Store

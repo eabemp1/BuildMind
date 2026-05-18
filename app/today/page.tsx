@@ -253,6 +253,7 @@ function TodayContent() {
 
   // Fetch personalised action from AI once we have project data
   useEffect(() => {
+    void (async () => {
     const project = summaries[0] ?? null;
     if (!project) return;
     const projectId = project.id;
@@ -354,6 +355,7 @@ function TodayContent() {
     }
 
     setActionLoading(false);
+    })();
   }, [summaries, userId]);
 
   const project = summaries[0] ?? null;
