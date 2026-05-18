@@ -307,7 +307,7 @@ export default function TestimonialModal({ source, streak = 0, stage = "Idea", o
               {/* Display name */}
               <div style={{ marginBottom: 14 }}>
                 <label style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)", display: "block", marginBottom: 6 }}>
-                  Display name <span style={{ color: "var(--bm-text3)", fontWeight: 400" }}>(leave blank for "Anonymous founder")</span>
+                  Display name <span style={{ color: "var(--bm-text3)", fontWeight: 400 }}>(leave blank for "Anonymous founder")</span>
                 </label>
                 <input
                   type="text"

@@ -22,12 +22,28 @@ CREATE TABLE IF NOT EXISTS ip_rate_limits (
 );
 
 -- Auto-purge rows older than 2 hours to keep the table small.
--- pg_cron must be enabled (it is in schema-idempotent.sql).
-SELECT cron.schedule(
-  'purge-ip-rate-limits',
-  '0 * * * *',
-  $$DELETE FROM ip_rate_limits WHERE window_start < extract(epoch from now()) - 7200$$
-);
+-- pg_cron is optional; Vercel cron is the authoritative scheduler in production.
+DO $ip_rate_limit_cleanup$
+DECLARE jid integer;
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
+    SELECT jobid INTO jid
+    FROM cron.job
+    WHERE jobname = 'purge-ip-rate-limits';
+
+    IF jid IS NOT NULL THEN
+      PERFORM cron.unschedule(jid);
+    END IF;
+
+    PERFORM cron.schedule(
+      'purge-ip-rate-limits',
+      '0 * * * *',
+      $$DELETE FROM ip_rate_limits WHERE window_start < extract(epoch from now()) - 7200$$
+    );
+  END IF;
+EXCEPTION WHEN OTHERS THEN NULL;
+END
+$ip_rate_limit_cleanup$;
 
 CREATE OR REPLACE FUNCTION rate_limit_check_and_increment(
   p_key        text,

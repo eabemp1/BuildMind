@@ -1152,7 +1152,7 @@ function TodayContent() {
           </div>
         )}
 
-        {/* Confidence */}}
+        {/* Confidence */}
         <div style={{ marginBottom: 18 }}>
           <div style={{ fontSize: 11, color: "var(--bm-text3)", marginBottom: 10 }}>
             Confidence level: <span style={{ color: CONFIDENCE_COLORS[confidence], fontWeight: 600 }}>{CONFIDENCE_LABELS[confidence]}</span>

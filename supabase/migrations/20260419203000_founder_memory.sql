@@ -20,13 +20,19 @@ CREATE TABLE IF NOT EXISTS founder_memory (
 -- RLS: users can only see their own memory
 ALTER TABLE founder_memory ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can read own memory" ON founder_memory;
+
 CREATE POLICY "Users can read own memory"
   ON founder_memory FOR SELECT
   USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can upsert own memory" ON founder_memory;
+
 CREATE POLICY "Users can upsert own memory"
   ON founder_memory FOR INSERT
   WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can update own memory" ON founder_memory;
 
 CREATE POLICY "Users can update own memory"
   ON founder_memory FOR UPDATE
@@ -44,6 +50,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS founder_memory_updated_at ON founder_memory;
+
 CREATE TRIGGER founder_memory_updated_at
   BEFORE UPDATE ON founder_memory
   FOR EACH ROW EXECUTE FUNCTION update_founder_memory_timestamp();
+
+

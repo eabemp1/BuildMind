@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS ai_usage_daily (
 ALTER TABLE ai_usage_daily ENABLE ROW LEVEL SECURITY;
 
 -- Users can read their own daily usage (for the usage badge in the UI)
+DROP POLICY IF EXISTS ai_usage_daily_read_own ON ai_usage_daily;
 CREATE POLICY ai_usage_daily_read_own ON ai_usage_daily
   FOR SELECT USING (auth.uid() = user_id);
 
@@ -91,3 +92,4 @@ COMMENT ON TABLE ai_usage_daily IS
   'Per-day AI call counts per user. Used to enforce a daily burst cap for '
   'free users (3 calls/day) independently of the monthly cap (30/month). '
   'Builder plan rows are written for analytics but no cap is enforced.';
+

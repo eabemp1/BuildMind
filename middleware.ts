@@ -5,12 +5,16 @@ import { FEATURES } from "@/lib/features";
 export async function middleware(request: NextRequest) {
   // Generate a per-request nonce for CSP (W5 fix — replaces static unsafe-inline)
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
+  const isDev = process.env.NODE_ENV !== "production";
+  const devScriptSources = isDev ? " 'unsafe-eval'" : "";
+  const devConnectSources = isDev ? " http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*" : "";
   const csp = [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
-    "style-src 'self' 'unsafe-inline'",
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${devScriptSources}`,
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data: https:",
-    "connect-src 'self' https:/*.supabase.co https://api.groq.com https://api.cerebras.ai https://generativelanguage.googleapis.com",
+    `connect-src 'self' https://*.supabase.co https://api.groq.com https://api.cerebras.ai https://generativelanguage.googleapis.com${devConnectSources}`,
     "frame-ancestors 'none'",
   ].join("; ");
 

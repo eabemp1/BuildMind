@@ -44,10 +44,11 @@ create table if not exists benchmark_cohorts (
   recovery_rate           numeric(5,4) not null default 0,
   avg_days_to_first_user  numeric(8,2),
   insight_text            text,    -- natural language insight, AI-generated nightly
-  updated_at              timestamptz not null default now(),
-
-  unique (stage, signal_type, coalesce(category, ''))
+  updated_at              timestamptz not null default now()
 );
+
+create unique index if not exists benchmark_cohorts_unique_stage_signal_category
+  on benchmark_cohorts (stage, signal_type, coalesce(category, ''));
 
 create index if not exists idx_benchmark_cohorts_stage_signal
   on benchmark_cohorts (stage, signal_type, sample_size desc);
@@ -58,6 +59,7 @@ create index if not exists idx_benchmark_cohorts_stage_signal
 alter table benchmark_events enable row level security;
 
 -- Authenticated users can insert (write their anonymized events)
+DROP POLICY IF EXISTS "benchmark_events_insert_authenticated" ON benchmark_events;
 create policy "benchmark_events_insert_authenticated"
   on benchmark_events
   for insert
@@ -65,6 +67,7 @@ create policy "benchmark_events_insert_authenticated"
   with check (true);
 
 -- No SELECT for regular users — only service role (aggregation cron)
+DROP POLICY IF EXISTS "benchmark_events_no_select" ON benchmark_events;
 create policy "benchmark_events_no_select"
   on benchmark_events
   for select
@@ -74,6 +77,8 @@ create policy "benchmark_events_no_select"
 -- ── RLS — benchmark_cohorts is read-only for authenticated users ──────────────
 alter table benchmark_cohorts enable row level security;
 
+DROP POLICY IF EXISTS "benchmark_cohorts_select_authenticated" ON benchmark_cohorts;
+
 create policy "benchmark_cohorts_select_authenticated"
   on benchmark_cohorts
   for select
@@ -81,6 +86,7 @@ create policy "benchmark_cohorts_select_authenticated"
   using (sample_size >= 10);  -- enforce minimum cohort size at DB level
 
 -- No user writes to cohorts — only service role from aggregation cron
+DROP POLICY IF EXISTS "benchmark_cohorts_no_insert" ON benchmark_cohorts;
 create policy "benchmark_cohorts_no_insert"
   on benchmark_cohorts
   for insert
@@ -94,3 +100,4 @@ comment on table benchmark_events is
 
 comment on table benchmark_cohorts is
   'Pre-aggregated cohort statistics. Refreshed nightly by /api/cron/aggregate-benchmarks. Sample size < 10 rows are excluded by RLS. See lib/benchmarks.ts.';
+

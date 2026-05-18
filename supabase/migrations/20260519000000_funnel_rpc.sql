@@ -29,5 +29,5 @@ $$;
 GRANT EXECUTE ON FUNCTION increment_funnel_step(text, uuid, jsonb) TO authenticated;
 GRANT EXECUTE ON FUNCTION increment_funnel_step(text, uuid, jsonb) TO anon;
 
-COMMENT ON FUNCTION increment_funnel_step IS
+COMMENT ON FUNCTION increment_funnel_step(text, uuid, jsonb) IS
   'Inserts a funnel event row. Called by /api/analytics/funnel-event. Added by migration 20260519000000 — the table existed since 20260517000004 but the RPC was missing.';

@@ -34,6 +34,8 @@ BEGIN
     -- Drop the old unnamed / differently-named policy if present
     DROP POLICY IF EXISTS profiles_own_data ON profiles;
 
+    DROP POLICY IF EXISTS profiles_self_only ON profiles;
+
     CREATE POLICY profiles_self_only ON profiles
       FOR ALL
       USING (auth.uid() = id)
@@ -53,6 +55,7 @@ BEGIN
       AND tablename  = 'profiles'
       AND policyname = 'profiles_cannot_self_promote_admin'
   ) THEN
+    DROP POLICY IF EXISTS profiles_cannot_self_promote_admin ON profiles;
     CREATE POLICY profiles_cannot_self_promote_admin ON profiles
       AS RESTRICTIVE
       FOR UPDATE
@@ -78,6 +81,8 @@ CREATE TABLE IF NOT EXISTS admin_audit_log (
 -- Service-role only — never exposed to authenticated/anon roles
 ALTER TABLE admin_audit_log ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS admin_audit_log_no_client_access ON admin_audit_log;
+
 CREATE POLICY admin_audit_log_no_client_access ON admin_audit_log
   AS RESTRICTIVE
   FOR ALL
@@ -92,3 +97,4 @@ CREATE INDEX IF NOT EXISTS idx_admin_audit_log_target_id
 COMMENT ON TABLE admin_audit_log IS
   'Append-only log of all admin actions. Written by server routes using '
   'the service-role key. Not readable by any client role.';
+

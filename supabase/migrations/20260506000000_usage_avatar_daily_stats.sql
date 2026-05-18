@@ -18,6 +18,7 @@ on conflict (id) do nothing;
 do $$
 begin
   if not exists (select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname = 'Avatar upload: own file only') then
+    DROP POLICY IF EXISTS "Avatar upload: own file only" ON storage.objects;
     create policy "Avatar upload: own file only"
     on storage.objects for insert to authenticated
     with check (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
@@ -27,6 +28,7 @@ end $$;
 do $$
 begin
   if not exists (select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname = 'Avatar update: own file only') then
+    DROP POLICY IF EXISTS "Avatar update: own file only" ON storage.objects;
     create policy "Avatar update: own file only"
     on storage.objects for update to authenticated
     using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
@@ -36,6 +38,7 @@ end $$;
 do $$
 begin
   if not exists (select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname = 'Avatar delete: own file only') then
+    DROP POLICY IF EXISTS "Avatar delete: own file only" ON storage.objects;
     create policy "Avatar delete: own file only"
     on storage.objects for delete to authenticated
     using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
@@ -45,6 +48,7 @@ end $$;
 do $$
 begin
   if not exists (select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname = 'Avatar read: public') then
+    DROP POLICY IF EXISTS "Avatar read: public" ON storage.objects;
     create policy "Avatar read: public"
     on storage.objects for select to public
     using (bucket_id = 'avatars');
@@ -64,9 +68,11 @@ alter table ai_usage enable row level security;
 do $$
 begin
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'ai_usage' and policyname = 'ai_usage: own rows only') then
+    DROP POLICY IF EXISTS "ai_usage: own rows only" ON ai_usage;
     create policy "ai_usage: own rows only" on ai_usage
       for all to authenticated
       using (user_id = auth.uid())
       with check (user_id = auth.uid());
   end if;
 end $$;
+

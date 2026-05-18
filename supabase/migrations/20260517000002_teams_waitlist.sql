@@ -18,14 +18,17 @@ create index if not exists idx_teams_waitlist_submitted_at on teams_waitlist (su
 alter table teams_waitlist enable row level security;
 
 -- Users can insert their own entry
+DROP POLICY IF EXISTS "teams_waitlist_insert" ON teams_waitlist;
 create policy "teams_waitlist_insert"
   on teams_waitlist for insert to authenticated
   with check (true);
 
 -- Users cannot read any rows
+DROP POLICY IF EXISTS "teams_waitlist_no_select" ON teams_waitlist;
 create policy "teams_waitlist_no_select"
   on teams_waitlist for select to authenticated
   using (false);
 
 comment on table teams_waitlist is
   'Teams early-access waitlist. See /api/waitlist/teams and Growth Improvement #3.';
+

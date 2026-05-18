@@ -295,6 +295,7 @@ const BreakMyStartupSchema = z.object({
   userId:       z.string().min(1),
   projectId:    z.string().optional(),
   idea:         z.string().max(1000).optional(),
+  stage:        z.string().optional(),
   focusAreas:   z.array(z.string()).max(10).optional(),
   executionMode: z.boolean().optional(),
 });
@@ -527,6 +528,9 @@ export async function POST(request: Request) {
           competitors_scraped,
           competitor_data_source,  // "ddg" | "brave" | "ai_synthesised" | "none"
           pipeline_duration_ms: agentPipeline.duration_ms,
+        },
+      });
+    }
 
     if (!hasAdminEnv()) {
       const hintStage = String(body?.stage ?? "Idea");

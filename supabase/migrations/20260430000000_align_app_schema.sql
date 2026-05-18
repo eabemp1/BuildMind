@@ -138,6 +138,7 @@ begin
       and tablename = 'push_subscriptions'
       and policyname = 'Users manage own subscription'
   ) then
+    DROP POLICY IF EXISTS "Users manage own subscription" ON push_subscriptions;
     create policy "Users manage own subscription"
       on push_subscriptions
       for all
@@ -149,3 +150,4 @@ end $$;
 create index if not exists projects_user_created_idx on projects (user_id, created_at desc);
 create index if not exists milestones_project_order_idx on milestones (project_id, order_index);
 create index if not exists tasks_milestone_created_idx on tasks (milestone_id, created_at);
+

@@ -40,22 +40,26 @@ CREATE TABLE IF NOT EXISTS testimonials (
 ALTER TABLE testimonials ENABLE ROW LEVEL SECURITY;
 
 -- Users can read their own testimonials
+DROP POLICY IF EXISTS testimonials_read_own ON testimonials;
 CREATE POLICY testimonials_read_own ON testimonials
   FOR SELECT
   USING (auth.uid() = user_id);
 
 -- Users can insert their own testimonials
+DROP POLICY IF EXISTS testimonials_insert_own ON testimonials;
 CREATE POLICY testimonials_insert_own ON testimonials
   FOR INSERT
   WITH CHECK (auth.uid() = user_id);
 
 -- Users can update their own (e.g. toggle is_public, edit quote)
+DROP POLICY IF EXISTS testimonials_update_own ON testimonials;
 CREATE POLICY testimonials_update_own ON testimonials
   FOR UPDATE
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
 
 -- Public-approved testimonials are readable by everyone (for landing page)
+DROP POLICY IF EXISTS testimonials_read_approved ON testimonials;
 CREATE POLICY testimonials_read_approved ON testimonials
   FOR SELECT
   USING (is_public = true AND approved_at IS NOT NULL);
@@ -71,3 +75,4 @@ CREATE INDEX IF NOT EXISTS idx_testimonials_public_approved
 COMMENT ON TABLE testimonials IS
   'Founder testimonials collected in-product at high-engagement moments. '
   'is_public + approved_at must both be set before a testimonial appears on the landing page.';
+

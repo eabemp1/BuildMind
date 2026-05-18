@@ -32,14 +32,23 @@ CREATE INDEX IF NOT EXISTS project_analyses_updated_at_idx
 
 ALTER TABLE project_analyses ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "project_analyses_select_own" ON project_analyses;
+
 CREATE POLICY "project_analyses_select_own" ON project_analyses FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "project_analyses_insert_own" ON project_analyses;
 CREATE POLICY "project_analyses_insert_own" ON project_analyses FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "project_analyses_update_own" ON project_analyses;
 CREATE POLICY "project_analyses_update_own" ON project_analyses FOR UPDATE USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "project_analyses_delete_own" ON project_analyses;
 CREATE POLICY "project_analyses_delete_own" ON project_analyses FOR DELETE USING (auth.uid() = user_id);
 
 CREATE OR REPLACE FUNCTION update_project_analyses_updated_at()
   RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.updated_at = now(); RETURN NEW; END; $$;
 
+DROP TRIGGER IF EXISTS trg_project_analyses_updated_at ON project_analyses;
+
 CREATE TRIGGER trg_project_analyses_updated_at
   BEFORE UPDATE ON project_analyses
   FOR EACH ROW EXECUTE FUNCTION update_project_analyses_updated_at();
+
+

@@ -27,19 +27,23 @@ create index if not exists idx_funnel_events_user_id
 alter table funnel_events enable row level security;
 
 -- Authenticated users can insert their own events
+DROP POLICY IF EXISTS "funnel_events_insert_authenticated" ON funnel_events;
 create policy "funnel_events_insert_authenticated"
   on funnel_events for insert to authenticated
   with check (auth.uid() = user_id or user_id is null);
 
 -- No user reads — admin only via service role
+DROP POLICY IF EXISTS "funnel_events_no_select" ON funnel_events;
 create policy "funnel_events_no_select"
   on funnel_events for select to authenticated
   using (false);
 
 -- Anon can insert (for pre-auth funnel steps like landing page visit)
+DROP POLICY IF EXISTS "funnel_events_insert_anon" ON funnel_events;
 create policy "funnel_events_insert_anon"
   on funnel_events for insert to anon
   with check (user_id is null);
 
 comment on table funnel_events is
   'Server-side onboarding funnel events. See /api/analytics/funnel and Growth Improvement #5.';
+

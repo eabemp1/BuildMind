@@ -61,8 +61,12 @@ CREATE TABLE IF NOT EXISTS feed_events (
 -- but no PII — only flag, location (city/country), stage, and action text
 ALTER TABLE feed_events ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "feed_events_public_read" ON feed_events;
+
 CREATE POLICY "feed_events_public_read"
   ON feed_events FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "feed_events_service_insert" ON feed_events;
 
 CREATE POLICY "feed_events_service_insert"
   ON feed_events FOR INSERT WITH CHECK (true);
@@ -81,6 +85,8 @@ CREATE TABLE IF NOT EXISTS task_overrides (
 );
 
 ALTER TABLE task_overrides ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "task_overrides_self_only" ON task_overrides;
 
 CREATE POLICY "task_overrides_self_only"
   ON task_overrides FOR ALL
@@ -181,11 +187,13 @@ CREATE TABLE IF NOT EXISTS reflexion_quality_log (
 ALTER TABLE reflexion_quality_log ENABLE ROW LEVEL SECURITY;
 
 -- Founders can read their own quality log (useful for transparency / debugging)
+DROP POLICY IF EXISTS "reflexion_quality_self_read" ON reflexion_quality_log;
 CREATE POLICY "reflexion_quality_self_read"
   ON reflexion_quality_log FOR SELECT
   USING (auth.uid() = user_id);
 
 -- Service role inserts (called server-side)
+DROP POLICY IF EXISTS "reflexion_quality_service_insert" ON reflexion_quality_log;
 CREATE POLICY "reflexion_quality_service_insert"
   ON reflexion_quality_log FOR INSERT WITH CHECK (true);
 
@@ -212,6 +220,7 @@ BEGIN
     SELECT 1 FROM pg_policies WHERE tablename = 'users' AND policyname = 'users_self_only'
   ) THEN
     ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+    DROP POLICY IF EXISTS "users_self_only" ON users;
     CREATE POLICY "users_self_only" ON users FOR ALL
       USING (auth.uid() = id) WITH CHECK (auth.uid() = id);
   END IF;
@@ -233,3 +242,4 @@ SELECT
        'feed_events','task_overrides','profiles'
      )
   ) AS tables_present;
+

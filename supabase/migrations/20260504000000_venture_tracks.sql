@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS venture_tracks (
 -- RLS: each user can only access their own tracks
 ALTER TABLE venture_tracks ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "venture_tracks_self_only" ON venture_tracks;
+
 CREATE POLICY "venture_tracks_self_only"
   ON venture_tracks
   FOR ALL
@@ -43,6 +45,7 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_trigger WHERE tgname = 'venture_tracks_updated_at'
   ) THEN
+    DROP TRIGGER IF EXISTS venture_tracks_updated_at ON venture_tracks;
     CREATE TRIGGER venture_tracks_updated_at
       BEFORE UPDATE ON venture_tracks
       FOR EACH ROW EXECUTE FUNCTION set_updated_at();
@@ -60,3 +63,5 @@ COMMENT ON TABLE venture_tracks IS
 
 COMMENT ON COLUMN venture_tracks.data IS
   'Full UserTrack JSON object. Replaced on every save (last-write-wins, same as the localStorage pattern it replaces).';
+
+

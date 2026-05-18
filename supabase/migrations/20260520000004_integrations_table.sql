@@ -18,9 +18,14 @@ CREATE TABLE IF NOT EXISTS integrations (
 
 ALTER TABLE integrations ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "integrations_select_own" ON integrations;
+
 CREATE POLICY "integrations_select_own" ON integrations FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "integrations_insert_own" ON integrations;
 CREATE POLICY "integrations_insert_own" ON integrations FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "integrations_update_own" ON integrations;
 CREATE POLICY "integrations_update_own" ON integrations FOR UPDATE USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "integrations_delete_own" ON integrations;
 CREATE POLICY "integrations_delete_own" ON integrations FOR DELETE USING (auth.uid() = user_id);
 
 CREATE INDEX IF NOT EXISTS integrations_user_provider_idx ON integrations (user_id, provider);
@@ -28,6 +33,10 @@ CREATE INDEX IF NOT EXISTS integrations_user_provider_idx ON integrations (user_
 CREATE OR REPLACE FUNCTION update_integrations_updated_at()
   RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.updated_at = now(); RETURN NEW; END; $$;
 
+DROP TRIGGER IF EXISTS trg_integrations_updated_at ON integrations;
+
 CREATE TRIGGER trg_integrations_updated_at
   BEFORE UPDATE ON integrations
   FOR EACH ROW EXECUTE FUNCTION update_integrations_updated_at();
+
+

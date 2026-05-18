@@ -53,6 +53,8 @@ CREATE TABLE IF NOT EXISTS founder_context (
 
 ALTER TABLE founder_context ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "founder_context_self_only" ON founder_context;
+
 CREATE POLICY "founder_context_self_only"
   ON founder_context FOR ALL
   USING (auth.uid() = user_id)
@@ -66,6 +68,8 @@ CREATE OR REPLACE FUNCTION update_founder_context_timestamp()
 RETURNS TRIGGER AS $$
 BEGIN NEW.updated_at = now(); RETURN NEW; END;
 $$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS founder_context_updated_at ON founder_context;
 
 CREATE TRIGGER founder_context_updated_at
   BEFORE UPDATE ON founder_context
@@ -91,6 +95,7 @@ CREATE TABLE IF NOT EXISTS morning_briefings (
 );
 
 ALTER TABLE morning_briefings ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "briefings_self_only" ON morning_briefings;
 CREATE POLICY "briefings_self_only" ON morning_briefings FOR ALL
   USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 CREATE INDEX IF NOT EXISTS morning_briefings_user_created
@@ -110,6 +115,7 @@ CREATE TABLE IF NOT EXISTS evening_checks (
 );
 
 ALTER TABLE evening_checks ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "evening_checks_self_only" ON evening_checks;
 CREATE POLICY "evening_checks_self_only" ON evening_checks FOR ALL
   USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
@@ -126,6 +132,7 @@ CREATE TABLE IF NOT EXISTS scheduled_job_log (
 
 -- Only service role can write to this
 ALTER TABLE scheduled_job_log ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "scheduled_job_log_service_only" ON scheduled_job_log;
 CREATE POLICY "scheduled_job_log_service_only"
   ON scheduled_job_log FOR ALL USING (false);
 
@@ -152,3 +159,5 @@ BEGIN
     ALTER TABLE users ADD COLUMN cognitive_load text DEFAULT 'fresh';
   END IF;
 END $$;
+
+

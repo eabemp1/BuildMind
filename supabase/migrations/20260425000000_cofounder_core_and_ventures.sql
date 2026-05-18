@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS ventures_blueprints (
 -- RLS: users can only see their own blueprints
 ALTER TABLE ventures_blueprints ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "ventures_blueprints_self_only" ON ventures_blueprints;
+
 CREATE POLICY "ventures_blueprints_self_only"
   ON ventures_blueprints
   FOR ALL
@@ -53,7 +55,16 @@ CREATE TABLE IF NOT EXISTS cofounder_reframe_log (
   created_at      timestamptz NOT NULL DEFAULT now()
 );
 
+ALTER TABLE cofounder_reframe_log
+  ADD COLUMN IF NOT EXISTS user_id         uuid REFERENCES auth.users(id) ON DELETE CASCADE,
+  ADD COLUMN IF NOT EXISTS competitor_name text NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS competitor_url  text,
+  ADD COLUMN IF NOT EXISTS week_key        text NOT NULL DEFAULT to_char(now(), 'IYYY-"W"IW'),
+  ADD COLUMN IF NOT EXISTS created_at      timestamptz NOT NULL DEFAULT now();
+
 ALTER TABLE cofounder_reframe_log ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "reframe_log_self_only" ON cofounder_reframe_log;
 
 CREATE POLICY "reframe_log_self_only"
   ON cofounder_reframe_log
@@ -82,9 +93,12 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_trigger WHERE tgname = 'ventures_blueprints_updated_at'
   ) THEN
+    DROP TRIGGER IF EXISTS ventures_blueprints_updated_at ON ventures_blueprints;
     CREATE TRIGGER ventures_blueprints_updated_at
       BEFORE UPDATE ON ventures_blueprints
       FOR EACH ROW EXECUTE FUNCTION set_updated_at();
   END IF;
 END;
 $$;
+
+

@@ -72,13 +72,18 @@ CREATE INDEX IF NOT EXISTS rll_user_outcome
 ALTER TABLE reflexion_learning_log ENABLE ROW LEVEL SECURITY;
 
 -- Users can only read and write their own rows
+DROP POLICY IF EXISTS "rll_select_own" ON reflexion_learning_log;
 CREATE POLICY "rll_select_own"
   ON reflexion_learning_log FOR SELECT
   USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "rll_insert_own" ON reflexion_learning_log;
+
 CREATE POLICY "rll_insert_own"
   ON reflexion_learning_log FOR INSERT
   WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "rll_update_own" ON reflexion_learning_log;
 
 CREATE POLICY "rll_update_own"
   ON reflexion_learning_log FOR UPDATE
@@ -94,6 +99,7 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_trigger WHERE tgname = 'rll_updated_at'
   ) THEN
+    DROP TRIGGER IF EXISTS rll_updated_at ON reflexion_learning_log;
     CREATE TRIGGER rll_updated_at
       BEFORE UPDATE ON reflexion_learning_log
       FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -129,3 +135,5 @@ COMMENT ON COLUMN founder_context.learned_patterns IS
   'Derived behavioral pattern summary. Updated by lib/learning.ts. '
   'Shape: { preferred_action_types, avoided_action_types, avoided_platforms, '
   'override_reasons, pivot_angles_tried, completion_rate, total_logged }';
+
+

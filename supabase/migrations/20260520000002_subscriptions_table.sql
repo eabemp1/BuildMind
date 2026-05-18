@@ -63,12 +63,15 @@ CREATE INDEX IF NOT EXISTS subscriptions_grace_period_idx
 ALTER TABLE subscriptions ENABLE ROW LEVEL SECURITY;
 
 -- Users can read their own subscription
+DROP POLICY IF EXISTS "subscriptions_select_own" ON subscriptions;
 CREATE POLICY "subscriptions_select_own" ON subscriptions FOR SELECT USING (auth.uid() = user_id);
 -- Only service role (backend) can insert/update — never the client directly
 -- (Client uses API routes which use the admin client)
 
 CREATE OR REPLACE FUNCTION update_subscriptions_updated_at()
   RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.updated_at = now(); RETURN NEW; END; $$;
+
+DROP TRIGGER IF EXISTS trg_subscriptions_updated_at ON subscriptions;
 
 CREATE TRIGGER trg_subscriptions_updated_at
   BEFORE UPDATE ON subscriptions
@@ -77,3 +80,5 @@ CREATE TRIGGER trg_subscriptions_updated_at
 COMMENT ON TABLE subscriptions IS
   'Authoritative billing source. Written by billing webhook + persistUserPlan(). '
   'getEffectivePlan() reads this first; falls back to user_metadata during transition period.';
+
+

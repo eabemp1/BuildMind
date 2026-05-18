@@ -31,38 +31,67 @@ ALTER TABLE founder_memory
   ADD COLUMN IF NOT EXISTS insight_history       jsonb   NOT NULL DEFAULT '[]',
   ADD COLUMN IF NOT EXISTS competitor_history    jsonb   NOT NULL DEFAULT '[]';
 
--- Migrate old personality_profile data into new columns where possible
--- personality_profile was a freeform jsonb; extract known keys if present.
-UPDATE founder_memory
-SET
-  personality_tags  = COALESCE(
-    ARRAY(SELECT jsonb_array_elements_text(personality_profile->'personality_tags')),
-    personality_tags
-  ),
-  avoidance_zones   = COALESCE(
-    ARRAY(SELECT jsonb_array_elements_text(personality_profile->'avoidance_zones')),
-    avoidance_zones
-  ),
-  strengths         = COALESCE(
-    ARRAY(SELECT jsonb_array_elements_text(personality_profile->'strengths')),
-    strengths
-  ),
-  cofounder_style   = COALESCE(
-    (personality_profile->>'cofounder_style'),
-    cofounder_style
-  ),
-  last_insight      = COALESCE(
-    (personality_profile->>'last_insight'),
-    last_insight
-  )
-WHERE personality_profile IS NOT NULL;
+-- Migrate old personality_profile data into new columns where possible.
+-- personality_profile was a freeform jsonb in older databases; fresh v8 schemas
+-- do not have it, so guard this block before referencing the legacy column.
+DO $personality_profile_migration$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'founder_memory'
+      AND column_name = 'personality_profile'
+  ) THEN
+    EXECUTE $sql$
+      UPDATE founder_memory
+      SET
+        personality_tags  = COALESCE(
+          ARRAY(SELECT jsonb_array_elements_text(personality_profile->'personality_tags')),
+          personality_tags
+        ),
+        avoidance_zones   = COALESCE(
+          ARRAY(SELECT jsonb_array_elements_text(personality_profile->'avoidance_zones')),
+          avoidance_zones
+        ),
+        strengths         = COALESCE(
+          ARRAY(SELECT jsonb_array_elements_text(personality_profile->'strengths')),
+          strengths
+        ),
+        cofounder_style   = COALESCE(
+          (personality_profile->>'cofounder_style'),
+          cofounder_style
+        ),
+        last_insight      = COALESCE(
+          (personality_profile->>'last_insight'),
+          last_insight
+        )
+      WHERE personality_profile IS NOT NULL
+    $sql$;
+  END IF;
+END
+$personality_profile_migration$;
 
--- Migrate old validation_receipts jsonb[] → jsonb (array stored as jsonb)
--- The TypeScript type uses ValidationReceipt[] which maps to jsonb, not jsonb[].
--- We coerce the old jsonb[] to a jsonb array.
-UPDATE founder_memory
-SET validation_receipts = to_jsonb(validation_receipts)
-WHERE validation_receipts IS NOT NULL;
+-- Migrate old validation_receipts jsonb[] -> jsonb (array stored as jsonb).
+-- Fresh v8 schemas already use jsonb, so only alter legacy jsonb[] columns.
+DO $validation_receipts_migration$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'founder_memory'
+      AND column_name = 'validation_receipts'
+      AND udt_name = '_jsonb'
+  ) THEN
+    ALTER TABLE founder_memory
+      ALTER COLUMN validation_receipts DROP DEFAULT,
+      ALTER COLUMN validation_receipts TYPE jsonb
+      USING to_jsonb(validation_receipts),
+      ALTER COLUMN validation_receipts SET DEFAULT '[]'::jsonb;
+  END IF;
+END
+$validation_receipts_migration$;
 
 -- ── 2. Add processed_webhooks table for billing idempotency ──────────────────
 --
@@ -85,11 +114,27 @@ ALTER TABLE processed_webhooks ENABLE ROW LEVEL SECURITY;
 
 -- Auto-clean old records after 90 days to keep the table small.
 -- Requires pg_cron extension (already enabled in schema).
-SELECT cron.schedule(
-  'cleanup-processed-webhooks',
-  '0 3 * * *',  -- 3 AM daily
-  $$DELETE FROM processed_webhooks WHERE processed_at < now() - interval '90 days'$$
-) ON CONFLICT DO NOTHING;
+DO $processed_webhooks_cleanup$
+DECLARE jid integer;
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
+    SELECT jobid INTO jid
+    FROM cron.job
+    WHERE jobname = 'cleanup-processed-webhooks';
+
+    IF jid IS NOT NULL THEN
+      PERFORM cron.unschedule(jid);
+    END IF;
+
+    PERFORM cron.schedule(
+      'cleanup-processed-webhooks',
+      '0 3 * * *',  -- 3 AM daily
+      $$DELETE FROM processed_webhooks WHERE processed_at < now() - interval '90 days'$$
+    );
+  END IF;
+EXCEPTION WHEN OTHERS THEN NULL;
+END
+$processed_webhooks_cleanup$;
 
 -- ============================================================================
 -- End of migration
