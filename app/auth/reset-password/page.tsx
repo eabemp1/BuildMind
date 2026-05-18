@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { BrandMark } from "@/components/layout/logo";
 import { createClient } from "@/lib/supabase/client";
 
 export default function ResetPasswordPage() {
@@ -93,10 +94,54 @@ export default function ResetPasswordPage() {
   };
 
   return (
-    <div className="grid min-h-screen place-items-center p-6">
-      <div className="glass-panel panel-glow w-full max-w-md p-8">
-        <h1 className="text-2xl font-semibold bm-text">Reset password</h1>
-        <p className="text-body mt-1">Set a new password for your account.</p>
+    <div
+      className="relative grid min-h-screen place-items-center overflow-hidden p-6"
+      style={{
+        background: "#0C0C0D",
+        color: "#E8E8E8",
+        ["--bm-bg" as string]: "#0C0C0D",
+        ["--bm-bg2" as string]: "#131315",
+        ["--bm-bg3" as string]: "#1A1A1D",
+        ["--bm-border" as string]: "#1E1E22",
+        ["--bm-border2" as string]: "#282830",
+        ["--bm-text" as string]: "#E8E8E8",
+        ["--bm-text2" as string]: "#888892",
+        ["--bm-text3" as string]: "#50505C",
+        ["--bm-text4" as string]: "#34343E",
+      }}
+    >
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-[-60px]"
+        style={{
+          backgroundImage: `
+            linear-gradient(rgba(92,200,138,0.012) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(92,200,138,0.012) 1px, transparent 1px)
+          `,
+          backgroundSize: "52px 52px",
+          maskImage: "radial-gradient(ellipse 80% 70% at 50% 42%, black 12%, transparent 82%)",
+          WebkitMaskImage: "radial-gradient(ellipse 80% 70% at 50% 42%, black 12%, transparent 82%)",
+        }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{ background: "radial-gradient(ellipse at 50% 0%, rgba(92,200,138,0.075) 0%, transparent 65%)" }}
+      />
+      <div
+        className="relative z-10 w-full max-w-md rounded-[18px] p-8"
+        style={{
+          background: "var(--bm-bg2)",
+          border: "1px solid var(--bm-border2)",
+          boxShadow: "0 0 0 1px rgba(92,200,138,0.045), 0 24px 64px rgba(0,0,0,0.46)",
+        }}
+      >
+        <div className="mb-6 flex items-center gap-2.5">
+          <BrandMark size={32} href="/" />
+          <span className="text-sm font-semibold tracking-[-0.01em] text-[var(--bm-text)]">BuildMind</span>
+        </div>
+        <h1 className="font-display text-3xl italic leading-tight text-[var(--bm-text)]">Reset password</h1>
+        <p className="mt-2 text-sm leading-relaxed text-[var(--bm-text2)]">Set a new password for your account.</p>
 
         {!hasSession ? (
           <form className="mt-5 space-y-4" onSubmit={sendResetEmail}>
@@ -107,7 +152,7 @@ export default function ResetPasswordPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
-            <Button className="w-full bg-gradient-to-r from-indigo-500 to-purple-500 bm-text" disabled={loading}>
+            <Button className="w-full" disabled={loading}>
               {loading ? "Sending..." : "Send reset link"}
             </Button>
             {error ? <p className="text-sm text-rose-400">{error}</p> : null}
@@ -132,7 +177,7 @@ export default function ResetPasswordPage() {
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
           />
-            <Button className="w-full bg-gradient-to-r from-indigo-500 to-purple-500 bm-text" disabled={loading}>
+            <Button className="w-full" disabled={loading}>
               {loading ? "Updating..." : "Update password"}
             </Button>
             {error ? <p className="text-sm text-rose-400">{error}</p> : null}

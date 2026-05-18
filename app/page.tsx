@@ -1,8 +1,7 @@
 "use client";
 
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, type CSSProperties } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion";
 import {
   Target, Zap, Flame, LayoutDashboard, Globe,
@@ -13,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { BrandMark } from "@/components/layout/logo";
 
 // ── "A Day With BuildMind" timeline data ──────────────────────────────────────
 const DAY_TIMELINE = [
@@ -20,13 +20,19 @@ const DAY_TIMELINE = [
     time: "7:00 AM",
     event: "Morning Briefing arrives",
     detail: "Agent A read your last reflection and built today's action overnight.",
+    title: "Your morning briefing is waiting.",
+    body: "While you slept, Agent A read your last reflection, your momentum trend, and what the YC Critic said last time. It built one action: the highest leverage thing you can do today. No list. No options. Just the move.",
+    chips: ["Momentum 81", "Streak 14d", "3-agent loop ran"],
     color: "var(--bm-accent)",
     icon: Sparkles,
   },
   {
     time: "9:20 AM",
-    event: "Task sent to 3 founders",
+    event: "Action executed. Streak extended.",
     detail: "You copied the outreach script. Streak extended to 14 days.",
+    title: "Task sent. Streak extended to 14 days.",
+    body: "You copied the outreach script. Three founders messaged. Streak holds. Momentum edges up. The system logged the action and will factor it into tonight's reflection loop.",
+    chips: ["Streak 14d", "Actions +1", "Outreach sent"],
     color: "var(--bm-teal)",
     icon: Activity,
   },
@@ -34,6 +40,9 @@ const DAY_TIMELINE = [
     time: "2:00 PM",
     event: "Two replies received",
     detail: "Momentum score rises from 74 → 81. Pattern detector notes traction.",
+    title: "Two replies received. Traction detected.",
+    body: "Pattern detector notes the second positive reply in 3 days. Momentum rises from 74 to 81. The YC Critic will be more generous tonight because you're showing signal.",
+    chips: ["Score 74 to 81", "Replies 2", "Pattern detected"],
     color: "var(--bm-accent)",
     icon: TrendingUp,
   },
@@ -41,6 +50,9 @@ const DAY_TIMELINE = [
     time: "6:00 PM",
     event: "Evening check triggers",
     detail: "Confidence at 4 — system notes 3rd consecutive strong day. No Recovery Mode needed.",
+    title: "Evening check: third strong day.",
+    body: "Confidence 4/5. Three consecutive days above threshold. No Recovery Mode needed. The system notes your cadence and will extend the streak target in tomorrow's briefing.",
+    chips: ["Confidence 4/5", "Day 3 of 3", "Recovery off"],
     color: "var(--bm-blue)",
     icon: Clock,
   },
@@ -48,6 +60,9 @@ const DAY_TIMELINE = [
     time: "11:59 PM",
     event: "Reflexion Loop queued",
     detail: "Agents A, B, C scheduled to debate your outcome and prepare tomorrow's action.",
+    title: "Reflexion Loop queued for tonight.",
+    body: "Agents A, B, and C are scheduled. A will read today's outcome and yesterday's reflection. B will critique the next proposed action from three angles. C will refine. Tomorrow's move will be waiting at 7am.",
+    chips: ["Agents 3", "Queued 00:01", "Tomorrow ready"],
     color: "#A78BFA",
     icon: Brain,
   },
@@ -148,6 +163,7 @@ function ReflexionPipelineDemo() {
 
   return (
     <div
+      className="html-soft-panel"
       style={{
         background: "var(--bm-bg2)",
         border: "1px solid var(--bm-border2)",
@@ -305,83 +321,206 @@ function ReflexionPipelineDemo() {
   );
 }
 
+function HeroReflexionPipeline() {
+  return (
+    <div className="relative">
+      <style>{`
+        @keyframes bm-agent-active {
+          0%,100% { border-color: var(--bm-border2); box-shadow: none; }
+          50% { border-color: var(--bm-accent-bd); box-shadow: 0 0 24px rgba(92,200,138,0.13); }
+        }
+        @keyframes bm-travel-h {
+          0% { left: -8px; opacity: 0; }
+          10%,90% { opacity: 1; }
+          100% { left: calc(100% + 8px); opacity: 0; }
+        }
+        @keyframes bm-travel-v {
+          0% { top: -8px; opacity: 0; }
+          10%,90% { opacity: 1; }
+          100% { top: calc(100% + 8px); opacity: 0; }
+        }
+        @keyframes bm-output-appear {
+          from { opacity: 0; transform: translateY(10px) scale(.98); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+      `}</style>
+      <div
+        className="html-panel relative overflow-hidden rounded-[20px] p-5 sm:p-6"
+        style={{
+          background: "var(--bm-bg2)",
+          border: "1px solid var(--bm-border2)",
+          boxShadow: "0 0 0 1px rgba(92,200,138,0.06), 0 24px 64px rgba(0,0,0,0.5)",
+        }}
+      >
+        <div className="absolute left-0 right-0 top-0 h-px bg-gradient-to-r from-transparent via-[rgba(92,200,138,0.45)] to-transparent" />
+        <div className="mb-5 flex items-center gap-2 border-b border-[var(--bm-border)] pb-4">
+          <span className="flex-1 text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--bm-text4)]">Reflexion Loop: running now</span>
+          <span className="flex items-center gap-1.5 text-[10px] font-semibold text-[var(--bm-accent)]">
+            <span className="h-1.5 w-1.5 rounded-full bg-[var(--bm-accent)] shadow-[0_0_8px_rgba(92,200,138,0.8)] animate-pulse" />
+            Live
+          </span>
+        </div>
+
+        <div className="mb-5 flex items-stretch gap-0">
+          {[
+            { label: "Agent A", name: "Generator", status: "Reading context...", color: "var(--bm-accent)", bg: "rgba(92,200,138,0.12)", delay: "0s" },
+            { label: "Agent B", name: "YC Critic", status: "Reviewing...", color: "var(--bm-amber)", bg: "rgba(232,160,32,0.1)", delay: ".8s" },
+            { label: "Agent C", name: "Refiner", status: "Queued", color: "#9B7FE8", bg: "rgba(155,127,232,0.1)", delay: "1.6s" },
+          ].map((agent, i, arr) => (
+            <div key={agent.label} className="contents">
+              <div
+                className="flex-1 rounded-[14px] border p-3.5"
+                style={{
+                  background: "var(--bm-bg3)",
+                  borderColor: "var(--bm-border2)",
+                  animation: `bm-agent-active 2.5s ${agent.delay} ease-in-out infinite`,
+                }}
+              >
+                <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg text-sm" style={{ background: agent.bg }}>
+                  {i === 0 ? "A" : i === 1 ? "B" : "C"}
+                </div>
+                <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-[var(--bm-text3)]">{agent.label}</div>
+                <div className="text-xs font-semibold leading-snug text-[var(--bm-text2)]">{agent.name}</div>
+                <div className="mt-1.5 text-[10px]" style={{ color: i === 2 ? "var(--bm-text4)" : agent.color }}>{agent.status}</div>
+              </div>
+              {i < arr.length - 1 && (
+                <div className="relative mt-16 h-px w-7 shrink-0 overflow-hidden bg-[var(--bm-border2)]">
+                  <span
+                    className="absolute top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full"
+                    style={{ background: agent.color, boxShadow: `0 0 8px ${agent.color}`, animation: `bm-travel-h 2.2s ${agent.delay} linear infinite` }}
+                  />
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="relative mx-auto mb-0 flex h-6 w-px justify-center bg-gradient-to-b from-[var(--bm-accent-bd)] to-[var(--bm-border2)]">
+          <span className="absolute left-1/2 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-[var(--bm-accent)] shadow-[0_0_8px_rgba(92,200,138,0.7)]" style={{ animation: "bm-travel-v 1.6s 1s linear both" }} />
+        </div>
+
+        <div
+          className="relative overflow-hidden rounded-[14px] border p-4"
+          style={{
+            background: "linear-gradient(135deg, rgba(92,200,138,0.08), var(--bm-bg3) 52%)",
+            borderColor: "var(--bm-accent-bd)",
+            animation: "bm-output-appear .5s 1.2s ease both",
+          }}
+        >
+          <div className="mb-2.5 flex items-center justify-between">
+            <span className="rounded-md border border-[var(--bm-accent-bd)] bg-[var(--bm-accent-dim)] px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-[var(--bm-accent)]">Tomorrow's action</span>
+            <span className="text-[10px] text-[var(--bm-text4)]">Ready at 07:00</span>
+          </div>
+          <p className="mb-3 text-sm font-semibold leading-6 text-[var(--bm-text)]">Send a Loom to 5 founders. Ask one question.</p>
+          <div className="flex flex-wrap gap-2">
+            {["Score up to 81", "Streak 14d", "Confidence 4/5"].map((metric) => (
+              <span key={metric} className="rounded-lg border border-[var(--bm-border2)] bg-[var(--bm-bg4)] px-2.5 py-1 text-[10px] text-[var(--bm-text2)]">{metric}</span>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="mt-3 text-center text-[11px] tracking-wide text-[var(--bm-text4)]">Runs overnight · Briefing waits at 7am · You just execute</div>
+    </div>
+  );
+}
+
 // ── "A Day With BuildMind" section ────────────────────────────────────────────
 function DayTimeline() {
-  const [active, setActive] = useState<number | null>(null);
+  const [active, setActive] = useState(2);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setActive((current) => (current + 1) % DAY_TIMELINE.length);
+    }, 3800);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const selected = DAY_TIMELINE[active];
 
   return (
-    <div style={{ position: "relative" }}>
-      {/* Vertical line */}
-      <div
-        style={{
-          position: "absolute",
-          left: 19,
-          top: 24,
-          bottom: 24,
-          width: 1,
-          background: "linear-gradient(180deg, var(--bm-accent-bd), var(--bm-border), transparent)",
-        }}
-      />
-      <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-        {DAY_TIMELINE.map((item, i) => {
-          const Icon = item.icon;
-          const isActive = active === i;
-          return (
-            <motion.div
-              key={item.time}
-              initial={{ opacity: 0, x: -10 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: i * 0.08 }}
-              onClick={() => setActive(isActive ? null : i)}
-              style={{
-                display: "flex", gap: 16, alignItems: "flex-start",
-                padding: "16px 0", cursor: "pointer",
-              }}
-            >
-              {/* Dot */}
-              <div style={{
-                width: 38, height: 38, borderRadius: "50%", flexShrink: 0,
-                background: isActive ? item.color + "20" : "var(--bm-bg3)",
-                border: `1px solid ${isActive ? item.color + "44" : "var(--bm-border)"}`,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                transition: "all 0.2s",
-              }}>
-                <Icon size={14} color={isActive ? item.color : "var(--bm-text4)"} />
-              </div>
+    <div className="grid gap-10 lg:grid-cols-[1fr_0.9fr] lg:gap-20">
+      <div>
+        <div className="mb-4 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--bm-text4)]">
+          <span className="h-px w-5 bg-[var(--bm-accent)]" />
+          A day with BuildMind
+        </div>
+        <h2 className="mb-5 text-4xl font-bold leading-tight tracking-tight sm:text-5xl">
+          The system runs.
+          <br />
+          You execute.
+        </h2>
+        <p className="max-w-xl text-base leading-7 text-[var(--bm-text2)]">
+          BuildMind isn't a task manager you maintain. It's an operating rhythm that maintains itself. Three agents run every night. One action arrives every morning. Your job is to do it.
+        </p>
 
-              <div style={{ flex: 1, paddingTop: 4 }}>
-                <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 4 }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: item.color, fontVariantNumeric: "tabular-nums" }}>
-                    {item.time}
+        <div className="relative mt-10">
+          <div className="absolute bottom-0 left-[14px] top-0 w-px bg-gradient-to-b from-[var(--bm-accent)] via-[var(--bm-accent-bd)] to-transparent" />
+          <div className="flex flex-col">
+            {DAY_TIMELINE.map((item, i) => {
+              const isActive = active === i;
+              return (
+                <button
+                  key={item.time}
+                  type="button"
+                  onClick={() => setActive(i)}
+                  className="relative flex gap-5 py-4 text-left transition-opacity hover:opacity-85"
+                >
+                  <span className="flex w-7 shrink-0 justify-center pt-1">
+                    <span
+                      className="h-2 w-2 rounded-full transition-all"
+                      style={{
+                        background: isActive ? "var(--bm-accent)" : "var(--bm-bg4)",
+                        border: `1px solid ${isActive ? "var(--bm-accent)" : "var(--bm-border3)"}`,
+                        boxShadow: isActive ? "0 0 12px rgba(92,200,138,0.55)" : "none",
+                      }}
+                    />
                   </span>
-                  <span style={{ fontSize: 14, fontWeight: 600, color: "var(--bm-text)" }}>
-                    {item.event}
-                  </span>
-                </div>
-                <AnimatePresence>
-                  {isActive && (
-                    <motion.p
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: "auto" }}
-                      exit={{ opacity: 0, height: 0 }}
-                      style={{ fontSize: 13, color: "var(--bm-text3)", margin: 0, lineHeight: 1.6, overflow: "hidden" }}
+                  <span>
+                    <span
+                      className="mb-1 block text-[10px] font-bold tracking-wide"
+                      style={{ color: isActive ? "var(--bm-accent)" : "var(--bm-text4)" }}
                     >
-                      {item.detail}
-                    </motion.p>
-                  )}
-                </AnimatePresence>
-                {!isActive && (
-                  <p style={{ fontSize: 12, color: "var(--bm-text4)", margin: 0, lineHeight: 1.5 }}>{item.detail}</p>
-                )}
-              </div>
-            </motion.div>
-          );
-        })}
+                      {item.time}
+                    </span>
+                    <span className="block text-sm font-semibold" style={{ color: isActive ? "var(--bm-text)" : "var(--bm-text2)" }}>
+                      {item.event}
+                    </span>
+                    <span className="mt-1 block text-xs leading-5 text-[var(--bm-text4)]">{item.detail}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </div>
-      <p style={{ fontSize: 11, color: "var(--bm-text4)", marginTop: 8, paddingLeft: 54 }}>
-        The system runs whether you open the app or not. Morning briefing arrives. Evening check fires. Action is queued for tomorrow.
-      </p>
+
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={selected.time}
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          transition={{ duration: 0.25 }}
+          className="html-soft-panel relative h-fit overflow-hidden rounded-[18px] p-7 lg:sticky lg:top-28"
+          style={{
+            background: "var(--bm-bg2)",
+            border: "1px solid var(--bm-border2)",
+            boxShadow: "0 24px 80px rgba(0,0,0,0.28)",
+          }}
+        >
+          <div className="absolute left-0 right-0 top-0 h-0.5 bg-[var(--grad-primary)]" />
+          <div className="mb-2 text-[11px] font-bold uppercase tracking-widest text-[var(--bm-accent)]">{selected.time}</div>
+          <h3 className="mb-3 text-xl font-bold leading-snug text-[var(--bm-text)]">{selected.title}</h3>
+          <p className="mb-5 text-sm leading-7 text-[var(--bm-text3)]">{selected.body}</p>
+          <div className="flex flex-wrap gap-2">
+            {selected.chips.map((chip) => (
+              <span key={chip} className="rounded-lg border border-[var(--bm-border2)] bg-[var(--bm-bg3)] px-3 py-1.5 text-[11px] text-[var(--bm-text2)]">
+                {chip}
+              </span>
+            ))}
+          </div>
+        </motion.div>
+      </AnimatePresence>
     </div>
   );
 }
@@ -514,44 +653,44 @@ const FEATURES = [
   {
     icon: Brain,
     title: "Reflexion Loop",
-    desc: "Three Groq agents in sequence: Generator writes your task, a rotating Critic (YC partner / growth hacker / cynical user) rejects or approves it, Refiner sharpens the final version. All in under 2 seconds.",
+    desc: "Generator writes your task. Critic rejects or approves. Refiner sharpens. The agent chain turns your context into one specific next move.",
     badge: "Core engine",
     badgeColor: "var(--bm-accent)",
   },
   {
-    icon: Target,
-    title: "Confidence Gate",
-    desc: "You rate 1–5 daily. Three consecutive days below 2 and BuildMind auto-shifts you into Recovery Mode — lighter tasks, a different prompt register, no streak pressure.",
-    badge: "Founder wellbeing",
-    badgeColor: "var(--bm-teal)",
+    icon: Sparkles,
+    title: "Morning Briefing",
+    desc: "Every day at 7am, one action card is generated from your overnight context. Open. Read. Execute. That's the whole interaction.",
+    badge: "Daily",
+    badgeColor: "var(--bm-amber)",
   },
   {
-    icon: Zap,
-    title: "Startup Score",
-    desc: "Composite of validation signal, execution output, and momentum — recalculated on every check-in. Tells you whether you're building or just staying busy.",
-    badge: "Real-time",
-    badgeColor: "var(--bm-amber)",
+    icon: TrendingUp,
+    title: "Momentum Score",
+    desc: "A single number that tracks execution health. It rises when you act, decays when you don't, and folds streaks, check-ins, and confidence into one signal.",
+    badge: "Live",
+    badgeColor: "var(--bm-teal)",
   },
   {
     icon: Flame,
     title: "Rotating Critic Personas",
-    desc: "Week 1: sceptical YC partner. Week 2: aggressive growth hacker. Week 3: the cynical early adopter. Same product, four entirely different threat models — rotated so advice doesn't go stale.",
-    badge: "Anti-echo-chamber",
+    desc: "YC partner, growth hacker, cynical user, and domain expert modes cycle weekly. Each attacks the same product from a different angle.",
+    badge: "Weekly rotate",
     badgeColor: "#A78BFA",
   },
   {
-    icon: LayoutDashboard,
-    title: "Daily Command Center",
-    desc: "One action per day, built from yesterday's reflection. Includes an editable outreach script and destination links (X, Indie Hackers, Product Hunt, WhatsApp). No deciding where to post.",
-    badge: "One task rule",
-    badgeColor: "var(--bm-accent)",
+    icon: Shield,
+    title: "Recovery Mode",
+    desc: "When confidence drops for multiple days, the system shifts register: softer language, smaller actions, and re-grounding before the next push.",
+    badge: "Auto-trigger",
+    badgeColor: "var(--bm-red)",
   },
   {
-    icon: Globe,
-    title: "Public Founder Pages",
-    desc: "A live record of your build — milestones, scores, momentum. Shareable with investors, co-founders, or your future self.",
-    badge: "Accountability",
-    badgeColor: "var(--bm-blue)",
+    icon: Activity,
+    title: "Founder Memory",
+    desc: "Every reflection, outcome, and check-in builds context. The AI remembers your history, so actions get sharper as it learns what works for you.",
+    badge: "Memory",
+    badgeColor: "var(--bm-accent)",
   },
 ];
 
@@ -685,7 +824,7 @@ function BreakMyStartupSection() {
   }
 
   return (
-    <section className="px-5 py-16 sm:px-6 sm:py-24" style={{ background: "var(--bm-bg2)", borderTop: "1px solid var(--bm-border)" }}>
+    <section className="html-section px-5 py-[60px] sm:px-8 sm:py-24" style={{ borderTop: subtleSectionBorder }}>
       <div className="max-w-3xl mx-auto">
         <motion.div initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }} className="flex flex-col gap-6">
           <div>
@@ -770,8 +909,8 @@ function BreakMyStartupSection() {
 // ── Pricing section ───────────────────────────────────────────────────────────
 function PricingSection() {
   return (
-    <section className="px-5 py-16 sm:px-6 sm:py-24" style={{ borderTop: "1px solid var(--bm-border)" }}>
-      <div className="max-w-4xl mx-auto">
+    <section className="html-section px-5 py-[60px] sm:px-8 sm:py-24" style={{ borderTop: subtleSectionBorder }}>
+      <div className="mx-auto max-w-[740px]">
         <motion.div initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="mb-10 text-center">
           <h2 className="mb-3 text-3xl font-bold tracking-tight text-[var(--bm-text)]">
             The system works while you're not.
@@ -779,10 +918,10 @@ function PricingSection() {
           <p className="text-[var(--bm-text3)] text-base">Pick how much of your decision-making you want handed back to you.</p>
         </motion.div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="mt-12 grid grid-cols-1 gap-4 md:grid-cols-2">
           {/* Free */}
           <motion.div initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.05 }}>
-            <Card className="p-6 flex flex-col gap-5 h-full">
+            <Card className="html-soft-panel flex h-full flex-col gap-5 rounded-[18px] p-7">
               <div>
                 <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Free</div>
                 <div style={{ fontSize: 32, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em" }}>$0</div>
@@ -815,8 +954,8 @@ function PricingSection() {
 
           {/* Builder */}
           <motion.div initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.1 }}>
-            <div style={{ padding: 1, borderRadius: 15, background: "linear-gradient(135deg, var(--bm-accent-bd), rgba(74,184,176,0.2))" }}>
-              <Card className="p-6 flex flex-col gap-5 h-full" style={{ borderRadius: 14 }}>
+            <div style={{ padding: 1, borderRadius: 18, background: "linear-gradient(160deg, rgba(92,200,138,0.20), rgba(74,184,176,0.12))" }}>
+              <Card className="flex h-full flex-col gap-5 p-7" style={{ borderRadius: 17, background: "linear-gradient(160deg, var(--bm-bg2) 0%, var(--bm-bg3) 100%)", border: "none" }}>
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                     <span style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text-inv)", textTransform: "uppercase", letterSpacing: "0.08em", background: "var(--bm-accent)", padding: "2px 8px", borderRadius: 10 }}>Builder</span>
@@ -861,7 +1000,7 @@ function PricingSection() {
       </div>
 
       {/* Founders already building — real week-one users */}
-      <div className="mt-14 border-t pt-12" style={{ borderColor: "var(--bm-border)" }}>
+      <div className="mt-14 border-t pt-12" style={{ borderColor: "rgba(255,255,255,0.028)" }}>
         <p className="text-[11px] font-bold uppercase tracking-widest mb-8" style={{ color: "var(--bm-text3)" }}>What founders say</p>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           {[
@@ -938,13 +1077,13 @@ function WorldCanvas() {
         <div style={{
           position: "absolute", inset: -56,
           backgroundImage: `
-            linear-gradient(rgba(92,200,138,0.024) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(92,200,138,0.024) 1px, transparent 1px)
+            linear-gradient(rgba(92,200,138,0.010) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(92,200,138,0.010) 1px, transparent 1px)
           `,
           backgroundSize: "52px 52px",
           animation: "bm-grid-drift 22s linear infinite",
-          maskImage: "radial-gradient(ellipse 80% 65% at 50% 38%, black 15%, transparent 80%)",
-          WebkitMaskImage: "radial-gradient(ellipse 80% 65% at 50% 38%, black 15%, transparent 80%)",
+          maskImage: "radial-gradient(ellipse 82% 68% at 50% 38%, rgba(0,0,0,0.8) 12%, transparent 82%)",
+          WebkitMaskImage: "radial-gradient(ellipse 82% 68% at 50% 38%, rgba(0,0,0,0.8) 12%, transparent 82%)",
         }} />
 
         {/* Glow orbs */}
@@ -957,7 +1096,7 @@ function WorldCanvas() {
 
         {/* Trajectory SVG — the BuildMind visual signature */}
         <svg
-          style={{ position:"absolute", inset:0, width:"100%", height:"100%", opacity:0.9 }}
+          style={{ position:"absolute", inset:0, width:"100%", height:"100%", opacity:0.42 }}
           viewBox="0 0 1440 900"
           preserveAspectRatio="xMidYMid slice"
           fill="none"
@@ -965,20 +1104,20 @@ function WorldCanvas() {
           <defs>
             <linearGradient id="bm-tg1" x1="0%" y1="0%" x2="100%" y2="0%">
               <stop offset="0%"   stopColor="transparent"/>
-              <stop offset="20%"  stopColor="rgba(92,200,138,0.35)"/>
-              <stop offset="80%"  stopColor="rgba(92,200,138,0.35)"/>
+              <stop offset="20%"  stopColor="rgba(92,200,138,0.18)"/>
+              <stop offset="80%"  stopColor="rgba(92,200,138,0.18)"/>
               <stop offset="100%" stopColor="transparent"/>
             </linearGradient>
             <linearGradient id="bm-tg2" x1="0%" y1="0%" x2="100%" y2="0%">
               <stop offset="0%"   stopColor="transparent"/>
-              <stop offset="25%"  stopColor="rgba(74,184,176,0.25)"/>
-              <stop offset="75%"  stopColor="rgba(74,184,176,0.25)"/>
+              <stop offset="25%"  stopColor="rgba(74,184,176,0.12)"/>
+              <stop offset="75%"  stopColor="rgba(74,184,176,0.12)"/>
               <stop offset="100%" stopColor="transparent"/>
             </linearGradient>
             <linearGradient id="bm-tg3" x1="0%" y1="0%" x2="100%" y2="0%">
               <stop offset="0%"   stopColor="transparent"/>
-              <stop offset="30%"  stopColor="rgba(155,127,232,0.15)"/>
-              <stop offset="70%"  stopColor="rgba(155,127,232,0.15)"/>
+              <stop offset="30%"  stopColor="rgba(155,127,232,0.07)"/>
+              <stop offset="70%"  stopColor="rgba(155,127,232,0.07)"/>
               <stop offset="100%" stopColor="transparent"/>
             </linearGradient>
             <filter id="bm-gf">
@@ -990,13 +1129,13 @@ function WorldCanvas() {
           {/* Trajectory curves */}
           <path id="bm-tp1"
             d="M -40 720 C 160 660 320 440 520 380 C 720 320 900 460 1080 300 C 1220 180 1340 130 1480 90"
-            stroke="url(#bm-tg1)" strokeWidth="1" strokeDasharray="5 7"/>
+            stroke="url(#bm-tg1)" strokeWidth="0.75" strokeDasharray="5 8"/>
           <path id="bm-tp2"
             d="M 60 820 C 240 760 420 580 620 500 C 820 420 1020 520 1200 360 C 1320 260 1400 200 1480 160"
-            stroke="url(#bm-tg2)" strokeWidth="0.8" strokeDasharray="3 9" opacity="0.7"/>
+            stroke="url(#bm-tg2)" strokeWidth="0.6" strokeDasharray="3 10" opacity="0.62"/>
           <path id="bm-tp3"
             d="M 300 880 C 500 820 680 660 880 580 C 1080 500 1240 580 1440 420"
-            stroke="url(#bm-tg3)" strokeWidth="0.6" strokeDasharray="2 11" opacity="0.45"/>
+            stroke="url(#bm-tg3)" strokeWidth="0.45" strokeDasharray="2 12" opacity="0.35"/>
 
           {/* Animated dots on primary trajectory */}
           <circle r="3.5" fill="#5CC88A" opacity="0.85" filter="url(#bm-gf)">
@@ -1024,6 +1163,74 @@ function WorldCanvas() {
         </svg>
       </div>
     </>
+  );
+}
+
+const landingShellStyle = {
+  "--bm-bg": "#0C0C0D",
+  "--bm-bg2": "#131315",
+  "--bm-bg3": "#1A1A1D",
+  "--bm-bg4": "#222226",
+  "--bm-bg5": "#2A2A2F",
+  "--bm-border": "#1E1E22",
+  "--bm-border2": "#282830",
+  "--bm-border3": "#343440",
+  "--bm-text": "#E8E8E8",
+  "--bm-text2": "#888892",
+  "--bm-text3": "#50505C",
+  "--bm-text4": "#34343E",
+  background: "var(--bm-bg)",
+  color: "var(--bm-text)",
+  position: "relative",
+} as CSSProperties;
+
+const subtleSectionBorder = "1px solid rgba(255,255,255,0.028)";
+
+function LandingAestheticLayer() {
+  return (
+    <style>{`
+      .bm-landing-skin {
+        -webkit-font-smoothing: antialiased;
+      }
+      .bm-landing-skin .gradient-text {
+        background: var(--grad-primary, linear-gradient(135deg,#5CC88A,#4AB8B0));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+      .bm-landing-skin button,
+      .bm-landing-skin a {
+        transition: color .18s ease, background .18s ease, border-color .18s ease, filter .18s ease, transform .18s ease;
+      }
+      .bm-landing-skin button:hover,
+      .bm-landing-skin a:hover {
+        filter: brightness(1.04);
+      }
+      .bm-landing-skin .html-panel {
+        background: var(--bm-bg2);
+        border: 1px solid var(--bm-border2);
+        box-shadow: 0 0 0 1px rgba(92,200,138,0.045), 0 24px 64px rgba(0,0,0,0.46);
+      }
+      .bm-landing-skin .html-soft-panel {
+        background: var(--bm-bg2);
+        border: 1px solid var(--bm-border2);
+      }
+      .bm-landing-skin .html-section {
+        position: relative;
+        z-index: 1;
+      }
+      .bm-landing-skin .html-btn-secondary {
+        background: var(--bm-bg3) !important;
+        color: var(--bm-text2) !important;
+        border-color: var(--bm-border2) !important;
+        box-shadow: none !important;
+      }
+      .bm-landing-skin .html-btn-secondary:hover {
+        background: var(--bm-bg4) !important;
+        color: var(--bm-text) !important;
+        border-color: var(--bm-border3) !important;
+      }
+    `}</style>
   );
 }
 
@@ -1055,11 +1262,12 @@ export default function LandingPage() {
         fetch("/api/public/stats", { cache: "no-store" })
           .then((r) => r.json())
           .then((d: PublicStats) =>
-            setStats({
+            setStats((prev) => ({
               founders:   Math.max(d.founders   ?? 0, STATS_FLOOR.founders),
               projects:   Math.max(d.projects   ?? 0, STATS_FLOOR.projects),
               milestones: Math.max(d.milestones ?? 0, STATS_FLOOR.milestones),
-            })
+              weekly_tasks: d.weekly_tasks ?? prev.weekly_tasks,
+            }))
           )
           .catch(() => {});
 
@@ -1078,23 +1286,23 @@ export default function LandingPage() {
   }, []);
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: "var(--bm-bg)", color: "var(--bm-text)", position: "relative" }}>
+    <div className="bm-landing-skin min-h-screen flex flex-col" style={landingShellStyle}>
+      <LandingAestheticLayer />
       {/* ── World Canvas: ambient atmosphere ── */}
       <WorldCanvas />
 
       {/* Navbar */}
       <nav
         className="sticky top-0 z-50 flex h-16 items-center justify-between gap-3 px-4 sm:px-6"
-        style={{ background: "rgba(15,15,16,0.85)", backdropFilter: "blur(12px)", borderBottom: "1px solid var(--bm-border)", position: "relative", zIndex: 50 }}
+        style={{ background: "rgba(12,12,13,0.82)", backdropFilter: "blur(16px)", borderBottom: "1px solid rgba(255,255,255,0.028)", position: "relative", zIndex: 50 }}
       >
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center" style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)" }}>
-            <Image src="/logo/buildmind-mark.svg" alt="BuildMind" width={24} height={24} priority />
-          </div>
+          <BrandMark size={32} href="/" />
           <span className="font-semibold text-sm text-[var(--bm-text)]">BuildMind</span>
         </div>
 
         <div className="hidden md:flex items-center gap-6 text-sm text-[var(--bm-text2)]">
+          <a href="#how" className="hover:text-[var(--bm-text)] transition-colors">How it works</a>
           <a href="#features" className="hover:text-[var(--bm-text)] transition-colors">Features</a>
           <a href="#break" className="hover:text-[var(--bm-text)] transition-colors">Stress-Test</a>
           <a href="#pricing" className="hover:text-[var(--bm-text)] transition-colors">Pricing</a>
@@ -1114,21 +1322,22 @@ export default function LandingPage() {
       </nav>
 
       {/* Hero */}
-      <section className="flex-1 px-5 pb-16 pt-14 sm:px-6 sm:pb-24 sm:pt-20 lg:pb-32">
-        <div className="mx-auto grid max-w-7xl items-center gap-10 md:grid-cols-2 lg:gap-16">
+      <section className="html-section flex min-h-[calc(100vh-64px)] items-center px-5 pb-16 pt-14 sm:px-8 sm:pb-20 sm:pt-20 lg:pb-24">
+        <div className="mx-auto grid w-full max-w-[1100px] items-center gap-12 md:grid-cols-2 lg:gap-16">
           {/* Left */}
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }} className="flex flex-col gap-5 sm:gap-6">
-            <span style={{ background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)", color: "var(--bm-accent)", borderRadius: 999, padding: "3px 10px", fontSize: 10, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "0.07em", display: "inline-flex", alignItems: "center", width: "fit-content" }}>
+            <span style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)", color: "var(--bm-text3)", borderRadius: 999, padding: "5px 14px", fontSize: 11, fontWeight: 500, display: "inline-flex", alignItems: "center", width: "fit-content" }}>
+              <span className="mr-2 h-1.5 w-1.5 rounded-full bg-[var(--bm-accent)] shadow-[0_0_6px_var(--bm-accent)] animate-pulse" />
               The next move, already decided
             </span>
 
-            <h1 className="text-4xl font-bold leading-[1.08] tracking-tight sm:text-5xl lg:text-6xl">
+            <h1 className="text-[clamp(2.6rem,4.5vw,4rem)] font-bold leading-[1.06] tracking-tight text-[var(--bm-text)]">
               The next move is
               <br />
-              <span className="gradient-text">already decided.</span>
+              <span className="font-display italic gradient-text">already decided.</span>
             </h1>
 
-            <p className="max-w-xl text-base leading-relaxed text-[var(--bm-text2)] sm:text-lg">
+            <p className="max-w-[400px] text-[15px] leading-[1.7] text-[var(--bm-text2)]">
               BuildMind watches your startup context and tells you the one highest-leverage thing to do next. No lists. No frameworks. Just the next move — generated overnight, waiting when you wake up.
             </p>
 
@@ -1138,7 +1347,7 @@ export default function LandingPage() {
                   Start Building Free <ArrowRight size={16} />
                 </Button>
               </Link>
-              <Button size="lg" variant="secondary" onClick={() => setDemoOpen(true)} className="w-full sm:w-auto">
+              <Button size="lg" variant="secondary" onClick={() => setDemoOpen(true)} className="html-btn-secondary w-full sm:w-auto">
                 <Play size={14} />
                 Watch 2-min Demo
               </Button>
@@ -1179,16 +1388,22 @@ export default function LandingPage() {
             </div>
           </motion.div>
 
-          {/* Right — upgraded "before/after" mockup */}
+          {/* Right — Reflexion Loop agent pipeline */}
           <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.7, delay: 0.15 }} className="relative mt-2 md:mt-0">
             <div className="absolute inset-0 -z-10" style={{ background: "radial-gradient(ellipse at center, rgba(92,200,138,0.12) 0%, transparent 70%)", filter: "blur(20px)", transform: "scale(1.2)" }} />
-            <HeroMockup />
+            <HeroReflexionPipeline />
           </motion.div>
         </div>
       </section>
 
+      <section id="how" className="html-section px-5 py-[60px] sm:px-8 sm:py-24" style={{ borderTop: subtleSectionBorder }}>
+        <div className="mx-auto max-w-[1100px]">
+          <DayTimeline />
+        </div>
+      </section>
+
       {/* Interactive Reflexion Loop Demo */}
-      <section className="px-5 py-16 sm:px-6 sm:py-20" style={{ background: "var(--bm-bg2)", borderTop: "1px solid var(--bm-border)" }}>
+      <section className="html-section px-5 py-[60px] sm:px-8 sm:py-24" style={{ borderTop: subtleSectionBorder }}>
         <div className="max-w-3xl mx-auto">
           <motion.div initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="mb-8">
             <Badge variant="info" dot className="mb-4">Try it live — no account needed</Badge>
@@ -1206,8 +1421,8 @@ export default function LandingPage() {
       </section>
 
       {/* Feature Grid */}
-      <section id="features" className="px-5 py-16 sm:px-6 sm:py-24" style={{ borderTop: "1px solid var(--bm-border)" }}>
-        <div className="max-w-6xl mx-auto">
+      <section id="features" className="html-section px-5 py-[60px] sm:px-8 sm:py-24" style={{ borderTop: subtleSectionBorder }}>
+        <div className="mx-auto max-w-[1100px]">
           <motion.div initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="mb-10 text-left sm:mb-14 sm:text-center">
             <h2 className="mb-3 text-3xl font-bold tracking-tight sm:text-3xl">
               Built to remove decisions. Not add more.
@@ -1217,7 +1432,10 @@ export default function LandingPage() {
             </p>
           </motion.div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div
+            className="mt-14 grid grid-cols-1 overflow-hidden rounded-[20px] sm:grid-cols-2 lg:grid-cols-3"
+            style={{ gap: 2, background: "var(--bm-border)", border: "1px solid var(--bm-border)" }}
+          >
             {FEATURES.map((f, i) => {
               const Icon = f.icon;
               return (
@@ -1228,17 +1446,21 @@ export default function LandingPage() {
                   viewport={{ once: true }}
                   transition={{ delay: i * 0.07 }}
                 >
-                  <Card hover className="p-6 flex flex-col gap-3 h-full">
+                  <Card
+                    hover
+                    className="flex h-full flex-col gap-3 rounded-none border-0 p-6 transition-colors hover:bg-[var(--bm-bg3)]"
+                    style={{ background: "var(--bm-bg2)" }}
+                  >
                     <div className="flex items-center justify-between">
-                      <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: "var(--bm-bg3)", color: "var(--bm-accent)" }}>
+                      <div className="flex h-[38px] w-[38px] items-center justify-center rounded-[11px]" style={{ background: "var(--bm-bg3)", color: "var(--bm-accent)" }}>
                         <Icon size={20} />
                       </div>
                       <span style={{ fontSize: 9, fontWeight: 700, color: f.badgeColor, background: f.badgeColor + "18", border: `1px solid ${f.badgeColor}33`, padding: "2px 8px", borderRadius: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>
                         {f.badge}
                       </span>
                     </div>
-                    <h3 className="font-semibold text-[var(--bm-text)]">{f.title}</h3>
-                    <p className="text-sm text-[var(--bm-text3)] leading-relaxed">{f.desc}</p>
+                    <h3 className="text-sm font-semibold tracking-[-0.01em] text-[var(--bm-text)]">{f.title}</h3>
+                    <p className="text-xs leading-[1.6] text-[var(--bm-text3)]">{f.desc}</p>
                   </Card>
                 </motion.div>
               );
@@ -1254,15 +1476,38 @@ export default function LandingPage() {
       <div id="pricing"><PricingSection /></div>
 
       {/* Final CTA */}
-      <section className="px-5 py-16 text-center sm:px-6 sm:py-24" style={{ background: "var(--grad-primary)" }}>
-        <motion.div initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="max-w-xl mx-auto flex flex-col gap-5">
-          <h2 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
-            Stop deciding what to do next.
+      <section
+        className="relative overflow-hidden px-5 py-[60px] text-center sm:px-8 sm:py-24"
+        style={{ borderTop: "1px solid rgba(255,255,255,0.028)" }}
+      >
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0"
+          style={{ background: "radial-gradient(ellipse at 50% 0%, rgba(92,200,138,0.09) 0%, transparent 65%)" }}
+        />
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="relative z-[1] mx-auto max-w-[560px]"
+        >
+          <h2
+            className="font-display italic text-[clamp(2rem,4vw,3.2rem)] font-bold leading-[1.1] tracking-tight text-[var(--bm-text)]"
+            style={{ marginBottom: 16 }}
+          >
+            Stop deciding
+            <br />
+            what to do next.
           </h2>
-          <p className="text-white/80 text-lg">Let the system watch your context and tell you the move. Every morning.</p>
-          <div className="flex justify-center">
+          <p className="mx-auto mb-8 text-[15px] leading-[1.65] text-[var(--bm-text2)]">
+            Let the system watch your context and tell you the move. Every morning, before you've had to think.
+          </p>
+          <div className="flex flex-wrap justify-center gap-3">
             <Link href="/auth/login">
-              <button className="h-12 px-8 rounded-xl bg-white text-sm font-semibold text-[#111] hover:bg-white/90 transition-all active:scale-95 flex items-center gap-2">
+              <button
+                className="inline-flex h-[46px] items-center gap-1.5 rounded-xl px-7 text-[15px] font-semibold transition-all hover:brightness-105 active:scale-95"
+                style={{ background: "var(--grad-primary)", color: "#0C0C0D" }}
+              >
                 Start Building Free <ArrowRight size={16} />
               </button>
             </Link>
@@ -1271,7 +1516,7 @@ export default function LandingPage() {
       </section>
 
       {/* Footer */}
-      <footer className="py-8 px-6 text-center text-xs" style={{ borderTop: "1px solid var(--bm-border)", color: "var(--bm-text3)" }}>
+      <footer className="py-8 px-6 text-center text-xs" style={{ borderTop: "1px solid rgba(255,255,255,0.028)", color: "var(--bm-text3)" }}>
         © {new Date().getFullYear()} BuildMind. Built for founders who ship.
       </footer>
 
