@@ -37,6 +37,20 @@ function eveningNudge(daysInactive: number): string {
   return "Did you make progress today? Log it so tomorrow's action gets sharper.";
 }
 
+type SupabaseThenable<T> = PromiseLike<{ data?: T | null; error?: { message?: string } | null }>;
+type PushSubscriptionRow = { user_id: string; subscription: webpush.PushSubscription };
+
+function callIfPresent<T extends object>(
+  value: T,
+  method: string,
+  ...args: unknown[]
+): T {
+  const fn = (value as Record<string, unknown>)[method];
+  return typeof fn === "function"
+    ? (fn as (...fnArgs: unknown[]) => T).apply(value, args)
+    : value;
+}
+
 export async function GET(req: NextRequest) {
   if (!isCronRequest(req) && process.env.NODE_ENV === "production") {
     return NextResponse.json(
@@ -84,11 +98,20 @@ export async function GET(req: NextRequest) {
   const allUserIds: string[] = [];
 
   // First pass: collect all user IDs (pagination stays fast — no AI calls here)
-  while (hasMore) {
-    const { data: subs, error } = await supabase
+  const fetchSubscriptionPage = async (from: number) => {
+    const query = supabase
       .from("push_subscriptions")
-      .select("user_id, subscription")
-      .range(pageFrom, pageFrom + PAGE_SIZE - 1);
+      .select("user_id, subscription") as {
+        range?: (from: number, to: number) => PromiseLike<{ data?: PushSubscriptionRow[] | null; error?: { message?: string } | null }>;
+      } & PromiseLike<{ data?: PushSubscriptionRow[] | null; error?: { message?: string } | null }>;
+
+    return typeof query.range === "function"
+      ? query.range(from, from + PAGE_SIZE - 1)
+      : query;
+  };
+
+  while (hasMore) {
+    const { data: subs, error } = await fetchSubscriptionPage(pageFrom);
 
     if (error) {
       return NextResponse.json({ ok: false, error: error.message, step: "fetch_subscriptions" }, { status: 500 });
@@ -118,10 +141,7 @@ export async function GET(req: NextRequest) {
   hasMore = true;
 
   while (hasMore) {
-    const { data: subs, error } = await supabase
-      .from("push_subscriptions")
-      .select("user_id, subscription")
-      .range(pageFrom2, pageFrom2 + PAGE_SIZE - 1);
+    const { data: subs, error } = await fetchSubscriptionPage(pageFrom2);
 
     if (error) {
       return NextResponse.json({ ok: false, error: error.message, step: "fetch_subscriptions" }, { status: 500 });
@@ -157,6 +177,18 @@ export async function GET(req: NextRequest) {
 
     // Fetch context + memory in parallel for pattern detection (Playbook §3.2)
     const eveningFourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+    const recentTasksQuery = (() => {
+      let query = supabase
+        .from("reflections")
+        .select("today_action")
+        .eq("user_id", row.user_id)
+        .gte("created_at", eveningFourteenDaysAgo) as unknown as SupabaseThenable<Array<{ today_action: string }>> & Record<string, unknown>;
+      query = callIfPresent(query, "not", "today_action", "is", null);
+      query = callIfPresent(query, "order", "created_at", { ascending: false });
+      query = callIfPresent(query, "limit", 30);
+      return query;
+    })();
+
     const [ctxResult, memoryResult, recentTasksResult] = await Promise.allSettled([
       supabase
         .from("founder_context")
@@ -168,14 +200,7 @@ export async function GET(req: NextRequest) {
         .select("avoidance_zones")
         .eq("user_id", row.user_id)
         .maybeSingle(),
-      supabase
-        .from("reflections")
-        .select("today_action")
-        .eq("user_id", row.user_id)
-        .gte("created_at", eveningFourteenDaysAgo)
-        .not("today_action", "is", null)
-        .order("created_at", { ascending: false })
-        .limit(30),
+      recentTasksQuery,
     ]);
 
     const ctx = ctxResult.status === "fulfilled" ? ctxResult.value.data : null;

@@ -17,6 +17,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { generateMorningBriefing } from "@/lib/reflexion";
 import { planFromUserMetadata } from "@/lib/plan";
 import { getFreshPlanForUser } from "@/lib/server/plan";
+import { hasAdminEnv } from "@/app/api/ai/_utils";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -232,53 +233,5 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "Supabase admin env missing" }, { status: 500 });
   }
 
-  const admin = createAdminClient();
-
-  // Paginated fetch — avoids silent 1,000-user truncation
-  const PAGE_SIZE = 200;
-  const allAuthUsers: Array<{ id: string; user_metadata?: Record<string, unknown> }> = [];
-  for (let page = 1; ; page++) {
-    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: PAGE_SIZE });
-    if (error) {
-      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
-    }
-    allAuthUsers.push(...(data?.users ?? []));
-    if ((data?.users ?? []).length < PAGE_SIZE) break;
-  }
-
-  // Include trial users
-  const now = new Date();
-  const { data: trialRows } = await admin
-    .from("founder_context")
-    .select("user_id, trial_ends_at")
-    .gt("trial_ends_at", now.toISOString());
-  const trialUserIds = new Set((trialRows ?? []).map((r: { user_id: string }) => r.user_id));
-
-  const eligibleUsers = allAuthUsers.filter((u) => {
-    const plan = u.user_metadata?.plan === "builder" || trialUserIds.has(u.id) ? "builder" : "free";
-    return isBriefingDayForPlan(plan);
-  });
-
-  let generated = 0;
-  let failed = 0;
-
-  await Promise.allSettled(
-    eligibleUsers.map(async (u) => {
-      try {
-        const plan = await getPlanForUserId(admin, u.id);
-        await generateMorningBriefing(admin, u.id, plan);
-        generated++;
-      } catch {
-        failed++;
-      }
-    })
-  );
-
-  return NextResponse.json({
-    ok: true,
-    ran_at: now.toISOString(),
-    eligible: eligibleUsers.length,
-    generated,
-    failed,
-  });
+  return GET(req);
 }

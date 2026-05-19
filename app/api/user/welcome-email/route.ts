@@ -70,12 +70,11 @@ export async function POST() {
 
   // ── Mark as sent (best-effort — don't block on failure) ───────────────────
   if (result.ok && !result.skipped) {
-    admin
+    void admin
       .from("profiles")
       .update({ welcome_email_sent: true })
       .eq("id", user.id)
-      .then(() => {})
-      .catch(() => {}); // non-fatal
+      .then(() => undefined, () => undefined); // non-fatal
   }
 
   return NextResponse.json({

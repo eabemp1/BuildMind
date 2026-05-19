@@ -68,6 +68,12 @@ export async function POST(req: NextRequest) {
 
     const paidAmount = data.data?.amount ?? 0;
     const paidCurrency = data.data?.currency ?? "";
+    const configuredGhsPlan = process.env.PAYSTACK_BUILDER_PLAN_CODE?.trim();
+    const configuredUsdPlan = process.env.PAYSTACK_BUILDER_PLAN_CODE_USD?.trim();
+
+    if (paidCurrency === "USD" && configuredGhsPlan && !configuredUsdPlan) {
+      return NextResponse.json({ ok: false, error: "Currency mismatch: expected GHS, got USD" }, { status: 400 });
+    }
 
     // Verify amount based on currency
     if (paidCurrency === "USD") {
@@ -107,8 +113,8 @@ export async function POST(req: NextRequest) {
     }
 
     const expectedPlanCode = paidCurrency === "USD"
-      ? process.env.PAYSTACK_BUILDER_PLAN_CODE_USD?.trim()
-      : process.env.PAYSTACK_BUILDER_PLAN_CODE?.trim();
+      ? configuredUsdPlan
+      : configuredGhsPlan;
 
     const actualPlanCode = data.data?.subscription?.plan?.plan_code?.trim();
     if (expectedPlanCode && actualPlanCode && actualPlanCode !== expectedPlanCode) {

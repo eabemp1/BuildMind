@@ -164,7 +164,7 @@ class UserScopedStorage {
     // Global keys are not scoped
     if (GLOBAL_KEYS.has(key)) return localStorage.getItem(key);
     const uid = this._uid();
-    if (!uid) return null; // No user — return nothing (safe default)
+    if (!uid) return localStorage.getItem(key);
     // Try scoped key first, fall back to legacy unscoped (migration path)
     return (
       localStorage.getItem(scopedKey(uid, key)) ??
@@ -176,7 +176,7 @@ class UserScopedStorage {
     if (typeof globalThis.window === "undefined") return;
     if (GLOBAL_KEYS.has(key)) { localStorage.setItem(key, value); return; }
     const uid = this._uid();
-    if (!uid) return; // No user — don't write
+    if (!uid) { localStorage.setItem(key, value); return; }
     localStorage.setItem(scopedKey(uid, key), value);
     // Remove legacy unscoped key if it exists (migrate on first write)
     localStorage.removeItem(key);

@@ -473,7 +473,7 @@ function OnboardingInner() {
     getCurrentUser().then(user => {
       if (!user) { router.replace("/auth"); return; }
       getOnboardingStatus(user.id).then(status => {
-        if (status?.completed) router.replace("/today");
+        if (status) router.replace("/today");
       });
     });
   }, [router]);
@@ -542,7 +542,7 @@ function OnboardingInner() {
         startup_stage: "Idea",
       });
 
-      identifyUser(user.id, { onboarding_v2: true });
+      identifyUser(user.id, user.email ?? null);
       trackFunnelStep("onboarding_complete");
 
       // Persist depth-screen answers into founder_memory.avoidance_zones

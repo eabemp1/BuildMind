@@ -29,8 +29,8 @@ export const dynamic  = "force-dynamic";
 const FUNNEL_STEPS = [
   "landing", "signup", "onboarding_start", "onboarding_idea",
   "onboarding_stage", "reflexion_strike_started", "reflexion_strike_shown",
-  "reflexion_strike_fallback", "reflexion_strike_accepted", "onboarding_complete",
-  "first_today", "first_action_done", "first_reflect", "first_report",
+  "reflexion_strike_fallback", "reflexion_strike_accepted", "depth_questions_answered",
+  "onboarding_complete", "first_today", "first_task_completed", "first_action_done", "first_reflect", "first_report",
   "upgrade_seen", "upgrade_converted",
 ] as const;
 
@@ -38,7 +38,7 @@ type FunnelStep = typeof FUNNEL_STEPS[number];
 
 const schema = z.object({
   step:      z.enum(FUNNEL_STEPS),
-  meta:      z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
+  meta:      z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
   sessionId: z.string().max(64).optional(), // client-generated session id for attribution
   referrer:  z.string().max(200).optional(),
 });
@@ -58,7 +58,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // Auth — get userId; gracefully degrade if auth fails
   let userId: string | null = null;
   try {
-    const supabase = createSupabaseClient();
+    const supabase = await createSupabaseClient();
     const { data: { user } } = await supabase.auth.getUser();
     userId = user?.id ?? null;
   } catch {
@@ -66,7 +66,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const supabase = createSupabaseClient();
+    const supabase = await createSupabaseClient();
     await supabase.from("funnel_events").insert({
       user_id:    userId,
       step,
@@ -94,7 +94,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const supabase = createSupabaseClient();
+    const supabase = await createSupabaseClient();
 
     // Count distinct users who reached each step
     const results: Record<string, number> = {};

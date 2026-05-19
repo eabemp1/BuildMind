@@ -118,15 +118,22 @@ export async function POST(req: Request) {
     console.log(`[checkout] USD path — $${usdPrice} → ${amount} cents`);
   }
 
-  if (!paystackPlanCode) {
-    const envVar = isGhs ? "PAYSTACK_BUILDER_PLAN_CODE" : "PAYSTACK_BUILDER_PLAN_CODE_USD";
-    return NextResponse.json(
-      { error: `Recurring billing not configured. Add ${envVar} to your env.` },
-      { status: 503 },
-    );
-  }
-
   const baseUrl = appUrl(req);
+  const paystackBody = {
+    email: user.email,
+    amount,
+    currency,
+    ...(paystackPlanCode ? { plan: paystackPlanCode } : {}),
+    callback_url: `${baseUrl}/upgrade`,
+    metadata: {
+      user_id: user.id,
+      plan,
+      billing_interval: "monthly",
+      billing_currency: currency,
+      billing_country: country || "unknown",
+      ...fxMeta,
+    },
+  };
 
   const res = await fetch("https://api.paystack.co/transaction/initialize", {
     method: "POST",
@@ -134,21 +141,7 @@ export async function POST(req: Request) {
       "Content-Type": "application/json",
       Authorization: `Bearer ${paystackSecretKey}`,
     },
-    body: JSON.stringify({
-      email: user.email,
-      amount,
-      currency,
-      plan: paystackPlanCode,
-      callback_url: `${baseUrl}/upgrade`,
-      metadata: {
-        user_id: user.id,
-        plan,
-        billing_interval: "monthly",
-        billing_currency: currency,
-        billing_country: country || "unknown",
-        ...fxMeta,
-      },
-    }),
+    body: JSON.stringify(paystackBody),
   });
 
   const payload = (await res.json().catch(() => ({}))) as {

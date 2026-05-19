@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdminUser } from "@/lib/server/adminAuth";
+import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  if (!(await isAdminUser())) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!(await isAdminUser(user?.id ?? ""))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const admin = createAdminClient();
@@ -20,7 +23,9 @@ export async function GET() {
 }
 
 export async function PATCH(req: Request) {
-  if (!(await isAdminUser())) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!(await isAdminUser(user?.id ?? ""))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const { id, approve } = await req.json();

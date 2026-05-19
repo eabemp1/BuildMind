@@ -359,34 +359,40 @@ export function buildLearnedPatternsPrompt(patterns: LearnedPatterns): string {
   if (!patterns.patterns_reliable) return "";
 
   const lines: string[] = ["LEARNED FOUNDER BEHAVIOR (from past analysis runs):"];
+  const preferredActionTypes = patterns.preferred_action_types ?? [];
+  const avoidedActionTypes = patterns.avoided_action_types ?? [];
+  const avoidedPlatforms = patterns.avoided_platforms ?? [];
+  const overrideReasons = patterns.override_reasons ?? [];
+  const pivotAnglesTried = patterns.pivot_angles_tried ?? [];
+  const weakQualityActionTypes = patterns.weak_quality_action_types ?? [];
 
-  if (patterns.preferred_action_types.length > 0) {
+  if (preferredActionTypes.length > 0) {
     lines.push(
-      `- This founder COMPLETES actions of type: ${patterns.preferred_action_types.join(", ")}. Prioritise these.`
+      `- This founder COMPLETES actions of type: ${preferredActionTypes.join(", ")}. Prioritise these.`
     );
   }
 
-  if (patterns.avoided_action_types.length > 0) {
+  if (avoidedActionTypes.length > 0) {
     lines.push(
-      `- This founder AVOIDS or OVERRIDES actions of type: ${patterns.avoided_action_types.join(", ")}. Do NOT recommend these unless unavoidable.`
+      `- This founder AVOIDS or OVERRIDES actions of type: ${avoidedActionTypes.join(", ")}. Do NOT recommend these unless unavoidable.`
     );
   }
 
-  if (patterns.avoided_platforms.length > 0) {
+  if (avoidedPlatforms.length > 0) {
     lines.push(
-      `- This founder has repeatedly ignored or rejected actions on: ${patterns.avoided_platforms.join(", ")}. Suggest alternative platforms.`
+      `- This founder has repeatedly ignored or rejected actions on: ${avoidedPlatforms.join(", ")}. Suggest alternative platforms.`
     );
   }
 
-  if (patterns.override_reasons.length > 0) {
+  if (overrideReasons.length > 0) {
     lines.push(
-      `- When they override, they say: "${patterns.override_reasons.slice(0, 2).join('" / "')}". Address these objections proactively.`
+      `- When they override, they say: "${overrideReasons.slice(0, 2).join('" / "')}". Address these objections proactively.`
     );
   }
 
-  if (patterns.pivot_angles_tried.length > 0) {
+  if (pivotAnglesTried.length > 0) {
     lines.push(
-      `- Pivot angles already shown (do NOT repeat): ${patterns.pivot_angles_tried.join(", ")}.`
+      `- Pivot angles already shown (do NOT repeat): ${pivotAnglesTried.join(", ")}.`
     );
   }
 
@@ -410,9 +416,9 @@ export function buildLearnedPatternsPrompt(patterns: LearnedPatterns): string {
   // reasoning — you need stronger market signals before recommending in
   // those categories.
 
-  if (patterns.weak_quality_action_types.length > 0) {
+  if (weakQualityActionTypes.length > 0) {
     lines.push(
-      `- PIPELINE QUALITY WARNING: Your past outputs for action types [${patterns.weak_quality_action_types.join(", ")}] had consistently low Verifier confidence or viability scores. Before recommending actions in these categories, ensure you have stronger demand signals, specific competitor data, or a concrete validation mechanism. Do not generate actions in these categories without explicit evidence.`
+      `- PIPELINE QUALITY WARNING: Your past outputs for action types [${weakQualityActionTypes.join(", ")}] had consistently low Verifier confidence or viability scores. Before recommending actions in these categories, ensure you have stronger demand signals, specific competitor data, or a concrete validation mechanism. Do not generate actions in these categories without explicit evidence.`
     );
   }
 

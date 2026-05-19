@@ -135,12 +135,14 @@ export async function POST(request: Request) {
     let problem = "";
     let title = "";
     let lastReflectionContext = "";
+    let supabase: ReturnType<typeof createAdminClient> | null = null;
+    let hoistedReflection: { outcome?: string | null; note?: string | null; confidence?: number | null; today_action?: string | null; created_at?: string | null } | null = null;
     // FIX 1.3: Hoist memoryResult to outer scope so it can be reused later
     // without a second DB round-trip to founder_memory
     let memoryResult: PromiseSettledResult<{ data: Record<string, unknown> | null; error: unknown }> | null = null;
 
     if (hasAdminEnv()) {
-      const supabase = createAdminClient();
+      supabase = createAdminClient();
 
       // Fetch project, founder_memory, and last reflection in one parallel round-trip
       // (eliminates the second reflections fetch that was happening 80 lines below)
@@ -168,7 +170,7 @@ export async function POST(request: Request) {
       memoryResult = _memoryResult;
       const project = projectResult.status === "fulfilled" ? projectResult.value.data : null;
       const memory = memoryResult.status === "fulfilled" ? memoryResult.value.data : null;
-      const hoistedReflection = reflectionResult.status === "fulfilled" ? reflectionResult.value.data : null;
+      hoistedReflection = reflectionResult.status === "fulfilled" ? reflectionResult.value.data : null;
 
       const { data: milestones } = await supabase
         .from("milestones")
@@ -309,7 +311,9 @@ Current MRR: ${project.current_mrr && project.current_mrr > 0 ? `GHS ${(project.
       const lastReflection = hoistedReflection;
 
       if (lastReflection) {
-        const reflectDate = new Date(lastReflection.created_at).toLocaleDateString();
+        const reflectDate = lastReflection.created_at
+          ? new Date(lastReflection.created_at).toLocaleDateString()
+          : "recently";
         lastReflectionContext = `
 LAST REFLECTION (${reflectDate}):
 Yesterday's action: "${lastReflection.today_action ?? "Not recorded"}"
@@ -344,7 +348,7 @@ INSTRUCTION: Use this to make today's action a direct causal response to yesterd
 
     // Populate reflexionContext from data already fetched in the parallel round-trip above.
     // No additional DB calls needed — both memoryResult and hoistedReflection are already in scope.
-    if (hasAdminEnv()) {
+    if (hasAdminEnv() && supabase) {
       // Avoidance signals + cofounder style — from already-fetched memoryResult
       if (memoryResult && memoryResult.status === "fulfilled" && memoryResult.value.data) {
         const m = memoryResult.value.data;
@@ -439,14 +443,16 @@ INSTRUCTION: Use this to make today's action a direct causal response to yesterd
     // has data from every check-in, not just break-my-startup sessions.
     // Fire-and-forget — never blocks the response.
     if (hasAdminEnv() && finalResult.action && userId) {
+      const learningSessionId = `today_action:${projectId ?? "none"}:${Date.now()}`;
       recordActionShown({
         userId,
         projectId: projectId ?? "",
+        sessionId: learningSessionId,
+        stage,
         actionShown: finalResult.action,
         criticPersona: reflexionOutput ? getWeeklyCriticPersona().name : "fallback",
-        viabilityScore: null,
-        confidenceScore: reflexionOutput?.confidence ?? null,
-        source: "today_action",
+        viabilityScore: undefined,
+        confidence: undefined,
       }).catch((err) => logError("today-action/recordActionShown", err));
     }
 

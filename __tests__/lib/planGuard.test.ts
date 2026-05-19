@@ -22,6 +22,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 const mockGetUser = vi.fn();
 const mockGetFreshPlanForUser = vi.fn();
+const mockGetEffectivePlan = vi.fn();
 
 vi.mock("next/headers", () => ({
   cookies: vi.fn(() => ({
@@ -38,6 +39,7 @@ vi.mock("@supabase/ssr", () => ({
 
 vi.mock("../../lib/server/plan", () => ({
   getFreshPlanForUser: (...args: unknown[]) => mockGetFreshPlanForUser(...args),
+  getEffectivePlan: (...args: unknown[]) => mockGetEffectivePlan(...args),
 }));
 
 vi.mock("next/server", async (importOriginal) => {
@@ -72,7 +74,10 @@ const FREE_USER    = { id: "user-free",    email: "free@test.com"    };
 // ── Authentication ────────────────────────────────────────────────────────────
 
 describe("withPlanGuard — authentication", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetEffectivePlan.mockImplementation((...args: unknown[]) => mockGetFreshPlanForUser(...args));
+  });
 
   it("returns 401 when getUser returns no user", async () => {
     mockGetUser.mockResolvedValue({ data: { user: null }, error: { message: "Not logged in" } });
@@ -101,7 +106,10 @@ describe("withPlanGuard — authentication", () => {
 // ── Plan gating — insufficient plan ──────────────────────────────────────────
 
 describe("withPlanGuard — plan below required tier", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetEffectivePlan.mockImplementation((...args: unknown[]) => mockGetFreshPlanForUser(...args));
+  });
 
   it("returns 403 when free user tries to access builder-gated route", async () => {
     mockGetUser.mockResolvedValue({ data: { user: FREE_USER }, error: null });
@@ -133,7 +141,10 @@ describe("withPlanGuard — plan below required tier", () => {
 // ── Plan gating — sufficient plan ────────────────────────────────────────────
 
 describe("withPlanGuard — plan meets requirement", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetEffectivePlan.mockImplementation((...args: unknown[]) => mockGetFreshPlanForUser(...args));
+  });
 
   it("calls handler and returns its response when plan matches", async () => {
     mockGetUser.mockResolvedValue({ data: { user: BUILDER_USER }, error: null });
@@ -176,7 +187,10 @@ describe("withPlanGuard — plan meets requirement", () => {
 // ── Handler receives correct user object ──────────────────────────────────────
 
 describe("withPlanGuard — handler arguments", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetEffectivePlan.mockImplementation((...args: unknown[]) => mockGetFreshPlanForUser(...args));
+  });
 
   it("passes user id and email to the handler", async () => {
     mockGetUser.mockResolvedValue({ data: { user: BUILDER_USER }, error: null });
@@ -197,7 +211,10 @@ describe("withPlanGuard — handler arguments", () => {
 // ── getServerPlan ─────────────────────────────────────────────────────────────
 
 describe("getServerPlan", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetEffectivePlan.mockImplementation((...args: unknown[]) => mockGetFreshPlanForUser(...args));
+  });
 
   it("returns free plan and null userId when not authenticated", async () => {
     mockGetUser.mockResolvedValue({ data: { user: null }, error: null });

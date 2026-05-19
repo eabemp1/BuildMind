@@ -80,19 +80,19 @@ export async function GET(request: Request) {
 
       logInfo("meta-critic/gap", "Framing gap detected", { userId, criticPassRate: Math.round(criticPassRate*100), completionRate: Math.round(completionRate*100), total });
 
-      updates.push(
+      updates.push(Promise.resolve(
         supabase.from("founder_context")
           .update({ meta_critic_last_run: new Date().toISOString(), meta_critic_gap_detected: true, meta_critic_signal: signal })
           .eq("user_id", userId)
           .then(() => undefined, (err: unknown) => logError("meta-critic/update", err, { userId }))
-      );
+      ));
     } else {
-      updates.push(
+      updates.push(Promise.resolve(
         supabase.from("founder_context")
           .update({ meta_critic_last_run: new Date().toISOString(), meta_critic_gap_detected: false })
           .eq("user_id", userId)
           .then(() => undefined, () => undefined)
-      );
+      ));
     }
   }
 

@@ -44,13 +44,14 @@ export interface AppNotification {
 
 const STORAGE_KEY = "bm_notifications";
 const MAX_NOTIFS = 50;
+const nowMs = () => (typeof Date.now === "function" ? Date.now() : new Date().getTime?.() ?? 0);
 
 // ── CRUD ──────────────────────────────────────────────────────────────────────
 
 export function getAllNotifications(): AppNotification[] {
   if (typeof window === "undefined") return [];
   const all = storage.getJSON<AppNotification[]>(STORAGE_KEY, []);
-  const now = Date.now();
+  const now = nowMs();
   return all.filter(n => !n.expiresAt || n.expiresAt > now);
 }
 
@@ -77,13 +78,13 @@ function saveNotifications(notifs: AppNotification[]): void {
 export function addNotification(notif: Omit<AppNotification, "id" | "createdAt">): AppNotification {
   const full: AppNotification = {
     ...notif,
-    id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-    createdAt: Date.now(),
+    id: `notif_${nowMs()}_${Math.random().toString(36).slice(2, 7)}`,
+    createdAt: nowMs(),
   };
   const existing = getAllNotifications();
   // Deduplicate by type — don't add same type if one exists unread in last 24h
   const recent = existing.find(n =>
-    n.type === notif.type && !n.readAt && Date.now() - n.createdAt < 24 * 60 * 60 * 1000
+    n.type === notif.type && !n.readAt && nowMs() - n.createdAt < 24 * 60 * 60 * 1000
   );
   if (recent) return recent;
   saveNotifications([full, ...existing]);
@@ -96,13 +97,13 @@ export function markRead(id: string): void {
   if (typeof window === "undefined") return;
   const notifs = getAllNotifications();
   const idx = notifs.findIndex(n => n.id === id);
-  if (idx !== -1) { notifs[idx].readAt = Date.now(); saveNotifications(notifs); }
+  if (idx !== -1) { notifs[idx].readAt = nowMs(); saveNotifications(notifs); }
 }
 
 export function markAllRead(): void {
   if (typeof window === "undefined") return;
   const notifs = getAllNotifications();
-  const now = Date.now();
+  const now = nowMs();
   notifs.forEach(n => { if (!n.readAt) n.readAt = now; });
   saveNotifications(notifs);
 }
@@ -123,7 +124,7 @@ export function notifyStreakBroken(lastStreak: number): void {
     priority: "high",
     actionLabel: "Do today's action →",
     actionHref: "/today",
-    expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
+    expiresAt: nowMs() + 7 * 24 * 60 * 60 * 1000,
   });
 }
 
@@ -145,7 +146,7 @@ export function notifyStreakMilestone(streak: number): void {
     priority: "medium",
     actionLabel: "View badges →",
     actionHref: "/achievements",
-    expiresAt: Date.now() + 3 * 24 * 60 * 60 * 1000,
+    expiresAt: nowMs() + 3 * 24 * 60 * 60 * 1000,
   });
 }
 
@@ -158,7 +159,7 @@ export function notifyReflectPending(): void {
     priority: "medium",
     actionLabel: "Reflect now →",
     actionHref: "/reflect",
-    expiresAt: Date.now() + 18 * 60 * 60 * 1000, // expires end of day
+    expiresAt: nowMs() + 18 * 60 * 60 * 1000, // expires end of day
   });
 }
 
@@ -173,7 +174,7 @@ export function notifyWeeklyReportReady(): void {
     priority: "high",
     actionLabel: "Read report →",
     actionHref: "/reports",
-    expiresAt: Date.now() + 3 * 24 * 60 * 60 * 1000,
+    expiresAt: nowMs() + 3 * 24 * 60 * 60 * 1000,
   });
 }
 
@@ -193,7 +194,7 @@ export function notifyInactivity(daysSinceLastAction: number): void {
     priority: daysSinceLastAction >= 7 ? "urgent" : "high",
     actionLabel: "Get back on track →",
     actionHref: "/today",
-    expiresAt: Date.now() + 2 * 24 * 60 * 60 * 1000,
+    expiresAt: nowMs() + 2 * 24 * 60 * 60 * 1000,
   });
 }
 
@@ -211,7 +212,7 @@ export function notifyUpgradeNudge(reason: "weekly_limit" | "ai_limit" | "featur
     priority: "medium",
     actionLabel: "Upgrade to Builder →",
     actionHref: "/upgrade",
-    expiresAt: Date.now() + 5 * 24 * 60 * 60 * 1000,
+    expiresAt: nowMs() + 5 * 24 * 60 * 60 * 1000,
   });
 }
 

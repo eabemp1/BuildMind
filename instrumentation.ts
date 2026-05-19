@@ -8,7 +8,18 @@
  * See: https://nextjs.org/docs/app/building-your-application/optimizing/instrumentation
  */
 
+import * as Sentry from "@sentry/nextjs";
+
 export async function register() {
+  if (process.env.NEXT_RUNTIME === "nodejs" || process.env.NEXT_RUNTIME === "edge") {
+    Sentry.init({
+      dsn: process.env.SENTRY_DSN ?? process.env.NEXT_PUBLIC_SENTRY_DSN,
+      tracesSampleRate: process.env.NODE_ENV === "production" ? 0.1 : 1,
+      enableLogs: true,
+      sendDefaultPii: false,
+    });
+  }
+
   // Only run env validation on the Node.js runtime (not Edge).
   // Edge runtime has restricted module access.
   if (process.env.NEXT_RUNTIME === "nodejs") {
@@ -16,3 +27,5 @@ export async function register() {
     validateEnv();
   }
 }
+
+export const onRequestError = Sentry.captureRequestError;

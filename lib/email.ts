@@ -323,8 +323,10 @@ function buildHTML<T extends EmailTemplate>(template: T, data: TemplateData[T]):
 // ─── Send function ────────────────────────────────────────────────────────────
 export interface SendEmailOptions<T extends EmailTemplate> {
   to: string;
-  template: T;
-  data: TemplateData[T];
+  template?: T;
+  data?: TemplateData[T];
+  subject?: string;
+  html?: string;
   /** Override the auto-generated subject line */
   subjectOverride?: string;
 }
@@ -360,7 +362,9 @@ export async function sendEmail<T extends EmailTemplate>(
   }
 
   try {
-    const { html, subject } = buildHTML(options.template, options.data);
+    const { html, subject } = options.template && options.data
+      ? buildHTML(options.template, options.data)
+      : { html: options.html ?? "", subject: options.subject ?? options.subjectOverride ?? "BuildMind" };
 
     const res = await fetch(RESEND_API_URL, {
       method: "POST",
@@ -371,7 +375,7 @@ export async function sendEmail<T extends EmailTemplate>(
       body: JSON.stringify({
         from: FROM,
         to: [options.to],
-        subject: options.subjectOverride ?? subject,
+        subject: options.subjectOverride ?? options.subject ?? subject,
         html,
       }),
     });

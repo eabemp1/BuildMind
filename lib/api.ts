@@ -140,7 +140,7 @@ export type FounderProfileData = {
 };
 
 export type BreakMyStartupAnalysis = {
-  failureReasons: { num: number; title: string; body: string; evidence: string }[];
+    failureReasons: { num: number; title: string; body: string; evidence: string; severity?: "low" | "medium" | "high" | "fatal" | string }[];
   competitors: Array<{
     name: string;
     description: string;

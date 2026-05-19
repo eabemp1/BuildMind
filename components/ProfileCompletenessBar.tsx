@@ -25,11 +25,14 @@ import { motion, AnimatePresence } from "framer-motion";
 
 interface ProfileFields {
   startupSummary?: string;
+  problem?: string;
   stage?: string;
   targetUsers?: string;
   avoidanceZones?: string[];
   mrr?: number;
   revenueModel?: string;
+  weeklyRevenueGoal?: number;
+  personalityTags?: string[];
   displayName?: string;
   tasksCompleted?: number;
 }

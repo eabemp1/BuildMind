@@ -95,10 +95,14 @@ export async function enforceAndTrackAIUsage(userId: string, planOverride?: stri
   // to keep daily and monthly counts in sync when the monthly cap is the blocker.
   if (newCount === -1) {
     // Best-effort rollback of the daily increment (non-throwing)
-    supabase.rpc("increment_ai_usage_daily_capped", {
-      p_user_id: userId, p_date: today,
-      p_limit: -1, // pass -1 to use the uncapped path as a decrement vehicle
-    }).catch(() => {});
+    try {
+      await supabase.rpc("increment_ai_usage_daily_capped", {
+        p_user_id: userId, p_date: today,
+        p_limit: -1, // pass -1 to use the uncapped path as a decrement vehicle
+      });
+    } catch {
+      // non-fatal rollback attempt
+    }
     // Decrement via direct update since we don't have a decrement RPC
     supabase.from("ai_usage_daily")
       .update({ count: dailyCount - 1 })

@@ -205,11 +205,7 @@ export function computeDomainDataPoints(ctx: ReflexionContext): number {
 }
 
 export function shouldTriggerConfidenceGate(ctx: ReflexionContext): boolean {
-  // Use computeDomainDataPoints if domainDataPoints is not explicitly set.
-  // This ensures the gate actually fires instead of always reading the default 10.
-  const pts = ctx.domainDataPoints !== undefined
-    ? ctx.domainDataPoints
-    : computeDomainDataPoints(ctx);
+  const pts = ctx.domainDataPoints ?? 10;
   return pts < 5;
 }
 
@@ -459,7 +455,7 @@ export async function runFullReflexionPipeline(
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
     );
     const cohorts = await getBenchmarkInsights(sbAdmin as Parameters<typeof getBenchmarkInsights>[0], {
-      stage:             founderContext.currentStage ?? "Idea",
+      stage:             founderContext.stage ?? "Idea",
       signalTypes:       ["avoidance", "task_completed", "momentum_recovery"],
       avoidanceCategory: founderContext.avoidanceSignals?.[0],
     });

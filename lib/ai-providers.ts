@@ -189,9 +189,10 @@ async function groqCall(
   if (!GROQ_API_KEY) throw new Error("GROQ_API_KEY not set");
   const isQwen3 = isQwen3ReasoningModel(model);
   const isGptOss = isGptOssModel(model);
-  // gpt-oss supports json_object natively; Qwen3 needs reasoning hidden to avoid validate errors
+  // Groq can reject otherwise useful GPT OSS/Qwen JSON with json_validate_failed.
+  // For those models, prompt for JSON and validate locally instead of using provider JSON mode.
   const needsReasoningHidden = jsonMode && isQwen3;
-  const useProviderJSONMode = jsonMode && !isQwen3;
+  const useProviderJSONMode = jsonMode && !isQwen3 && !isGptOss;
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     signal: AbortSignal.timeout(20000),
@@ -305,6 +306,8 @@ function isRetryableProviderError(err: unknown): boolean {
     lower.includes("timeout") ||
     lower.includes("timed out") ||
     lower.includes("json_parse") ||
+    lower.includes("json_validate_failed") ||
+    lower.includes("failed to validate json") ||
     lower.includes("json parse") ||
     lower.includes("unexpected token") ||
     lower.includes("unterminated string") ||

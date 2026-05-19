@@ -42,6 +42,12 @@ type ActionData = {
   log_row_id?: string;
 };
 
+type CachedTodayAction = {
+  date?: string;
+  projectId?: string;
+  data?: ActionData;
+};
+
 // ── Stored reflection shape (from bm_today_action written by /reflect) ──────
 type StoredReflection = {
   action: string;
@@ -262,7 +268,7 @@ function TodayContent() {
     const today = new Date().toISOString().split("T")[0];
     const cacheKey = `bm_today_action_cache_${userId}`;
     try {
-      const cached = storage.getJSON(cacheKey, null);
+      const cached = storage.getJSON<CachedTodayAction | null>(cacheKey, null);
       if (cached?.date === today && cached?.projectId === projectId && cached?.data) {
         setAiAction({ ...cached.data, isAI: true });
         return;

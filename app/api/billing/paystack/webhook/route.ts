@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { persistUserPlan, resolveUserIdByEmail } from "@/lib/billing/server";
 import { sendEmail } from "@/lib/email";
 import { logError } from "@/lib/server/logger";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 type PaystackEvent = {
   event?: string;
@@ -78,12 +79,8 @@ export async function POST(request: Request) {
   // Store the Paystack event reference before processing to prevent double-upgrades
   // if Paystack fires the same webhook twice (audit §3: billing reconciliation).
   const idempotencyKey = event.data?.reference ?? (event.data?.id != null ? String(event.data.id) : null);
-  if (idempotencyKey) {
-    const { createClient: createAdminClient } = await import("@supabase/supabase-js");
-    const adminSupa = createAdminClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    );
+  if (idempotencyKey && process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    const adminSupa = createAdminClient();
     // Attempt to insert the idempotency key. If it already exists, the INSERT will
     // fail due to the unique constraint and we return 200 without reprocessing.
     const { error: dupeError } = await adminSupa
@@ -155,18 +152,14 @@ export async function POST(request: Request) {
   }
 
   if (eventName === "subscription.disable" || eventName === "invoice.payment_failed" || eventName === "subscription.not_renew") {
-    // Grace period: don't immediately downgrade to free on payment failure or cancellation.
-    // Give a 3-day window before the hard downgrade so:
-    //   (a) temporary payment failures don't punish founders with good standing
-    //   (b) cancellations feel respectful rather than abrupt
-    // The grace_period_ends_at field is checked by getEffectivePlan() — if still in grace,
-    // the user keeps builder access. After 3 days, the next plan check hard-downgrades them.
+    // Paystack disables/not-renews are treated as access-ending subscription
+    // events. The grace timestamp is still recorded for messaging/recovery
+    // flows, but the authoritative plan is downgraded immediately.
     const gracePeriodEndsAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
-    const isPaymentFailure = eventName === "invoice.payment_failed";
 
-    await persistUserPlan(userId, isPaymentFailure ? "builder" : "free", {
+    await persistUserPlan(userId, "free", {
       provider: "paystack",
-      status: isPaymentFailure ? "processing" : "canceled",
+      status: "canceled",
       reference,
       transactionId,
       subscriptionId,
@@ -179,7 +172,7 @@ export async function POST(request: Request) {
 
     // Also write grace_period_ends_at into founder_context so plan checks can use it
     // without an auth admin call
-    if (userId) {
+    if (userId && process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
       const adminForGrace = createAdminClient();
       adminForGrace
         .from("founder_context")

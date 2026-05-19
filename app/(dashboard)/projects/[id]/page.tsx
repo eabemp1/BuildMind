@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { motion, AnimatePresence, useAnimation } from "framer-motion";
+import { motion, useAnimation } from "framer-motion";
 import {
   type BuildMindMilestone, type BuildMindTask,
   computeStartupScore, updateMilestoneForCurrentUser,
@@ -17,6 +17,54 @@ import BuildMindLoader from "@/components/BuildMindLoader";
 import { ScoreBreakdown } from "@/components/ui/ScoreBreakdown";
 
 type Tab = "milestones" | "tasks" | "validation" | "roadmap";
+
+type TransitionReadinessPrompt = {
+  shouldPrompt: boolean;
+  transitionMessage: string;
+  currentStage: string;
+  nextStage: string | null;
+  signals: { milestonesComplete: boolean; avgConfidence: number | null; recentOverrides: number };
+};
+
+function ReadinessPrompt({
+  readiness,
+  projectId,
+  onDismiss,
+}: {
+  readiness: TransitionReadinessPrompt;
+  projectId: string;
+  onDismiss: () => void;
+}) {
+  return (
+    <div style={{ background: "rgba(74,222,128,0.05)", border: "1px solid rgba(74,222,128,0.2)", borderRadius: 14, padding: "16px 20px", marginBottom: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#4ade80", marginBottom: 8 }}>
+            Ready to advance to {String(readiness.nextStage ?? "the next")} stage?
+          </div>
+          <div style={{ fontSize: 12, color: "var(--bm-text2)", lineHeight: 1.6, marginBottom: 10 }}>
+            {String(readiness.transitionMessage)}
+          </div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", fontSize: 11, color: "var(--bm-text4)" }}>
+            <span>✓ Milestones complete</span>
+            {readiness.signals.avgConfidence !== null ? (
+              <span>✓ Confidence {readiness.signals.avgConfidence.toFixed(1)}/5</span>
+            ) : null}
+            <span>✓ Execution stable</span>
+          </div>
+        </div>
+        <button
+          onClick={() => {
+            localStorage.setItem(`bm_transition_dismissed_${projectId}_${readiness.currentStage}`, "1");
+            onDismiss();
+          }}
+          style={{ background: "none", border: "none", color: "var(--bm-text4)", cursor: "pointer", fontSize: 16, padding: 0, lineHeight: 1 }}>
+          ×
+        </button>
+      </div>
+    </div>
+  );
+}
 
 // ─── Design tokens ──────────────────────────────────────────────────────────
 const VIZ = {
@@ -202,7 +250,7 @@ function MilestoneCard({ milestone, tasks, index, onToggleTask }: { milestone:Bu
           <motion.span animate={{ rotate:expanded?180:0 }} transition={{ duration:0.2 }} style={{ fontSize:10,color:VIZ.text3,flexShrink:0,marginTop:4,display:"block" }}>▼</motion.span>
         </div>
       </div>
-      <AnimatePresence>
+      <>
         {expanded&&(
           <motion.div initial={{ height:0,opacity:0 }} animate={{ height:"auto",opacity:1 }} exit={{ height:0,opacity:0 }} transition={{ duration:0.22 }} style={{ overflow:"hidden" }}>
             <div style={{ borderTop:`1px solid ${VIZ.border}`,padding:"14px 16px 16px",display:"flex",flexDirection:"column",gap:14 }}>
@@ -230,7 +278,7 @@ function MilestoneCard({ milestone, tasks, index, onToggleTask }: { milestone:Bu
             </div>
           </motion.div>
         )}
-      </AnimatePresence>
+      </>
     </motion.div>
   );
 }
@@ -339,11 +387,7 @@ export default function ProjectDetailPage() {
     milestone_title?: string; acknowledged: boolean;
   } | null>(null);
   const [challengeAcknowledged, setChallengeAcknowledged] = useState(false);
-  const [transitionReadiness, setTransitionReadiness] = useState<{
-    shouldPrompt: boolean; transitionMessage: string;
-    currentStage: string; nextStage: string | null;
-    signals: { milestonesComplete: boolean; avgConfidence: number | null; recentOverrides: number };
-  } | null>(null);
+  const [transitionReadiness, setTransitionReadiness] = useState<TransitionReadinessPrompt | null>(null);
   const [readinessDismissed, setReadinessDismissed] = useState(false);
   const [stageTransitionPrompt, setStageTransitionPrompt] = useState<{
     currentStage: string; nextStage: string | null; reason: string;
@@ -437,9 +481,28 @@ export default function ProjectDetailPage() {
     // Fire in background — non-blocking
     fetch(`/api/ai/stage-transition-readiness?projectId=${id}`)
       .then(r => r.json())
-      .then(data => {
+      .then((data: {
+        success?: boolean;
+        data?: {
+          shouldPrompt?: boolean;
+          transitionMessage?: string;
+          currentStage?: string;
+          nextStage?: string | null;
+          signals?: { milestonesComplete?: boolean; avgConfidence?: number | null; recentOverrides?: number };
+        };
+      }) => {
         if (data?.success && data.data?.shouldPrompt) {
-          setTransitionReadiness(data.data);
+          setTransitionReadiness({
+            shouldPrompt: data.data.shouldPrompt,
+            transitionMessage: data.data.transitionMessage ?? "",
+            currentStage: data.data.currentStage ?? project.startup_stage ?? "Idea",
+            nextStage: data.data.nextStage ?? null,
+            signals: {
+              milestonesComplete: data.data.signals?.milestonesComplete ?? false,
+              avgConfidence: data.data.signals?.avgConfidence ?? null,
+              recentOverrides: data.data.signals?.recentOverrides ?? 0,
+            },
+          });
         }
       })
       .catch(() => { /* non-fatal */ });
@@ -472,7 +535,7 @@ export default function ProjectDetailPage() {
     onSuccess: () => void qc.invalidateQueries({ queryKey: queryKeys.project(id) }),
   });
 
-  const stage = project?.startup_stage ?? "MVP";
+  const stage = String(project?.startup_stage ?? "MVP");
   const score = useMemo(() => {
     if (!project) return 0;
     let xp = 0;
@@ -552,209 +615,105 @@ export default function ProjectDetailPage() {
 
   const roadmapSteps = STAGE_ROADMAPS[stage] ?? STAGE_ROADMAPS["MVP"];
   const progressColor = progress >= 60 ? "var(--bm-accent)" : "var(--grad-primary)";
+  const shouldShowReadinessPrompt = Boolean(transitionReadiness?.shouldPrompt && !readinessDismissed);
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+    <div
       style={{ maxWidth: 860, margin: "0 auto", padding: "28px 24px", paddingBottom: 48 }}>
 
-      {/* Upgrade nudge */}
-      <AnimatePresence>
-        {showUpgrade && (
-          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
-            style={{ background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.20)", borderRadius: 14, padding: "14px 18px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: "#A78BFA" }}>You're making progress.</div>
-              <div style={{ fontSize: 12, color: "var(--bm-text3)", marginTop: 2 }}>Unlock your next steps and keep building.</div>
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => router.push(`/upgrade?tasks=${getTasksDone()}&streak=${getStoredStreak()}`)}
-                style={{ background: "var(--grad-primary)", color: "#fff", fontSize: 12, fontWeight: 700, padding: "7px 16px", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: "inherit" }}>Continue →</button>
-              <button onClick={() => setShowUpgrade(false)} style={{ background: "none", border: "none", color: "var(--bm-text3)", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {showUpgrade ? (
+        <div style={{ background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.24)", borderRadius: 12, padding: "14px 16px", marginBottom: 16, display: "flex", gap: 12, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 800, color: "#c4b5fd", marginBottom: 4 }}>Execution streak unlocked Builder tools</div>
+            <div style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.5 }}>Your project is moving. Reports, startup kit, and deeper coaching can now compound that momentum.</div>
+          </div>
+          <button onClick={() => router.push("/upgrade")} style={{ background: "var(--grad-primary)", border: "none", color: "#fff", borderRadius: 8, padding: "8px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Upgrade</button>
+        </div>
+      ) : null}
 
-      {/* Verbal transcript: Three-signal stage transition prompt */}
-      <AnimatePresence>
-        {stageTransitionPrompt && !stageTransitionDismissed && (
-          <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
-            style={{ background: "rgba(74,184,176,0.06)", border: "1px solid rgba(74,184,176,0.25)", borderRadius: 14, padding: "16px 20px", marginBottom: 16 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-              <span style={{ fontSize: 16 }}>🚀</span>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--bm-accent)" }}>
-                You&apos;re ready to move to {stageTransitionPrompt.nextStage ?? "the next stage"}
+      {stageTransitionPrompt && !stageTransitionDismissed ? (
+        <div style={{ background: "rgba(96,165,250,0.06)", border: "1px solid rgba(96,165,250,0.2)", borderRadius: 12, padding: "14px 16px", marginBottom: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 800, color: "#93c5fd", marginBottom: 6 }}>
+                Stage check: {stageTransitionPrompt.currentStage} → {stageTransitionPrompt.nextStage ?? "next stage"}
               </div>
+              <div style={{ fontSize: 12, color: "var(--bm-text2)", lineHeight: 1.55 }}>{stageTransitionPrompt.reason}</div>
             </div>
-            <div style={{ fontSize: 12, color: "var(--bm-text2)", marginBottom: 12, lineHeight: 1.55 }}>
-              All three signals are aligned: your stage milestones are complete, your reflection confidence is solid, and your execution has been consistent. The next stage is yours to take — or stay here if something still needs resolving.
-            </div>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <button onClick={() => {
-                const dismissKey = `bm_stage_transition_dismissed_${project?.id}_${project?.startup_stage}`;
-                localStorage.setItem(dismissKey, "1");
+            <button
+              onClick={() => {
+                localStorage.setItem(`bm_stage_transition_dismissed_${project.id}_${project.startup_stage}`, "1");
                 setStageTransitionDismissed(true);
-              }} style={{ background: "rgba(74,184,176,0.12)", border: "1px solid rgba(74,184,176,0.3)", color: "var(--bm-accent)", fontSize: 12, fontWeight: 700, padding: "7px 16px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>
-                Ready — take me to {stageTransitionPrompt.nextStage ?? "next stage"}
-              </button>
-              <button onClick={() => {
-                const dismissKey = `bm_stage_transition_dismissed_${project?.id}_${project?.startup_stage}`;
-                localStorage.setItem(dismissKey, "1");
-                setStageTransitionDismissed(true);
-              }} style={{ background: "transparent", border: "1px solid var(--bm-border)", color: "var(--bm-text3)", fontSize: 12, padding: "7px 16px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>
-                Not yet — something&apos;s still unresolved
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+              }}
+              style={{ background: "none", border: "none", color: "var(--bm-text4)", cursor: "pointer", fontSize: 16, padding: 0, lineHeight: 1 }}>
+              ×
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {/* REC 2.3: Transition Challenge Interstitial — acknowledge gate before today's work */}
-      <AnimatePresence>
-        {transitionChallenge && !challengeAcknowledged && (
-          <motion.div initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }}
-            style={{ background: "rgba(251,191,36,0.06)", border: "1px solid rgba(251,191,36,0.25)", borderRadius: 14, padding: "18px 20px", marginBottom: 20 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-              <span style={{ fontSize: 16 }}>⚠</span>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#FCD34D" }}>
-                {transitionChallenge.milestone_title
-                  ? `Milestone complete: "${transitionChallenge.milestone_title}"`
-                  : "Stage transition checkpoint"}
-              </div>
-            </div>
-            <div style={{ fontSize: 12, color: "var(--bm-text2)", marginBottom: 10, lineHeight: 1.5 }}>
-              {transitionChallenge.milestone_sentence}
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 7, marginBottom: 14 }}>
-              {transitionChallenge.challenges.map((c, i) => (
-                <div key={i} style={{ fontSize: 12, color: "var(--bm-text3)", paddingLeft: 14, position: "relative", lineHeight: 1.45 }}>
-                  <span style={{ position: "absolute", left: 0, color: "#FCD34D" }}>→</span>
-                  {c}
-                </div>
-              ))}
-            </div>
-            <div style={{ fontSize: 11, color: "#A78BFA", fontStyle: "italic", marginBottom: 14, padding: "8px 12px", background: "rgba(139,92,246,0.06)", borderRadius: 8, border: "1px solid rgba(139,92,246,0.15)" }}>
-              Before continuing: {transitionChallenge.recommended_action}
-            </div>
-            <button onClick={() => { setChallengeAcknowledged(true); }}
-              style={{ background: "rgba(251,191,36,0.15)", border: "1px solid rgba(251,191,36,0.35)", color: "#FCD34D", fontSize: 12, fontWeight: 700, padding: "8px 18px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>
-              I&apos;ve read this — continue
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {transitionChallenge && !challengeAcknowledged ? (
+        <div style={{ background: "rgba(251,191,36,0.06)", border: "1px solid rgba(251,191,36,0.22)", borderRadius: 12, padding: "14px 16px", marginBottom: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: "#fbbf24", marginBottom: 6 }}>
+            Milestone challenge: {transitionChallenge.milestone_title ?? "prove the next step"}
+          </div>
+          <div style={{ fontSize: 12, color: "var(--bm-text2)", lineHeight: 1.55, marginBottom: 10 }}>{transitionChallenge.milestone_sentence}</div>
+          <ul style={{ margin: "0 0 12px 16px", padding: 0, color: "var(--bm-text3)", fontSize: 12, lineHeight: 1.55 }}>
+            {transitionChallenge.challenges.slice(0, 3).map(item => <li key={item}>{item}</li>)}
+          </ul>
+          <button onClick={() => setChallengeAcknowledged(true)} style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", color: "var(--bm-text2)", borderRadius: 8, padding: "7px 10px", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+            I understand the risk
+          </button>
+        </div>
+      ) : null}
 
-      {/* REC 3.1: Stage transition readiness prompt — three signals aligned */}
-      <AnimatePresence>
-        {transitionReadiness?.shouldPrompt && !readinessDismissed && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
-            style={{ background: "rgba(74,222,128,0.05)", border: "1px solid rgba(74,222,128,0.2)", borderRadius: 14, padding: "16px 20px", marginBottom: 20 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: "#4ade80", marginBottom: 8 }}>
-                  Ready to advance to {transitionReadiness.nextStage} stage?
-                </div>
-                <div style={{ fontSize: 12, color: "var(--bm-text2)", lineHeight: 1.6, marginBottom: 10 }}>
-                  {transitionReadiness.transitionMessage}
-                </div>
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", fontSize: 11, color: "var(--bm-text4)" }}>
-                  <span>✓ Milestones complete</span>
-                  {transitionReadiness.signals.avgConfidence !== null && (
-                    <span>✓ Confidence {transitionReadiness.signals.avgConfidence.toFixed(1)}/5</span>
-                  )}
-                  <span>✓ Execution stable</span>
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  const dismissKey = `bm_transition_dismissed_${id}_${transitionReadiness.currentStage}`;
-                  localStorage.setItem(dismissKey, "1");
-                  setReadinessDismissed(true);
-                }}
-                style={{ background: "none", border: "none", color: "var(--bm-text4)", cursor: "pointer", fontSize: 16, padding: 0, lineHeight: 1 }}>
-                ×
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {shouldShowReadinessPrompt && transitionReadiness ? (
+        <ReadinessPrompt
+          readiness={transitionReadiness}
+          projectId={id}
+          onDismiss={() => setReadinessDismissed(true)}
+        />
+      ) : null}
 
-      {/* Header */}
-      <div style={{ marginBottom: 20 }}>
+      <div style={{ marginBottom: 20, paddingBottom: 18, borderBottom: "1px solid var(--bm-border)" }}>
         <button onClick={() => router.back()}
-          style={{ background: "none", border: "none", color: "var(--bm-text3)", cursor: "pointer", fontSize: 11, padding: 0, marginBottom: 14, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4 }}>
+          style={{ background: "none", border: "none", color: "var(--bm-text3)", cursor: "pointer", fontSize: 11, padding: 0, marginBottom: 14, fontFamily: "inherit" }}>
           ← Projects
         </button>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, paddingBottom: 18, borderBottom: "1px solid var(--bm-border)" }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <h1 style={{ fontSize: 20, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em", marginBottom: 10, wordBreak: "break-word" }}>{project.title}</h1>
-            {/* REC 3.4: Stage label as directive, not just badge */}
-            <div style={{ marginBottom: 8 }}>
-              <span style={{ fontSize: 10, padding: "2px 9px", borderRadius: 20, background: "rgba(124,58,237,0.10)", color: "#A78BFA", border: "1px solid rgba(124,58,237,0.22)", fontWeight: 700 }}>{stage}</span>
-            </div>
-            {/* Stage directive — what this stage actually means right now */}
-            {STAGE_DIRECTIVES[stage] && (
-              <div style={{ fontSize: 11, color: "var(--bm-text3)", lineHeight: 1.55, marginBottom: 6, fontStyle: "italic" }}>
-                {STAGE_DIRECTIVES[stage]}
-              </div>
-            )}
-            {/* REC 3.2: Narrative sentence — interpretation, not summary */}
-            {narrativeSentence && (
-              <div style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.6, marginBottom: 8, padding: "10px 14px", background: "rgba(255,255,255,0.025)", borderRadius: 8, borderLeft: "3px solid var(--bm-accent)" }}>
-                {narrativeSentence}
-              </div>
-            )}
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <span style={{ fontSize: 11, color: "var(--bm-text3)" }}>{completedCount}/{tasks.length} tasks</span>
-              <span style={{ fontSize: 11, color: "var(--bm-text3)" }}>·</span>
-              {/* REC 3.3: Momentum direction instead of bare percentage */}
-              <span style={{ fontSize: 11, color: progress >= 60 ? "#4ade80" : progress >= 30 ? "#fbbf24" : "var(--bm-text3)" }}>
-                {progress >= 60 ? "↑" : progress >= 30 ? "→" : "↓"} {progress}% complete
-              </span>
-            </div>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 14, flexShrink: 0 }}>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-              <ArcRing score={score} />
-              <ScoreBreakdown
-                score={score}
-                executionScore={project.execution_score ?? progress}
-                momentumScore={progress}
-                streak={getStoredStreak()}
-                validationStrengths={validationStrengths}
-                compact
-              />
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-              <button onClick={() => router.push("/today")}
-                style={{ background: "var(--grad-primary)", color: "#fff", fontSize: 12, fontWeight: 700, padding: "9px 16px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
-                ⚡ Today&apos;s action
-              </button>
-              <button onClick={() => { if (window.confirm(`Delete "${project.title}"?`)) deleteMutation.mutate(id, { onSuccess: () => router.push("/projects") }); }}
-                style={{ background: "none", border: "1px solid var(--bm-border)", color: "var(--bm-text3)", fontSize: 12, padding: "7px 16px", borderRadius: 9, cursor: "pointer", fontFamily: "inherit" }}>
-                Delete
-              </button>
-            </div>
-          </div>
+        <h1 style={{ fontSize: 20, fontWeight: 800, color: "var(--bm-text)", marginBottom: 10, wordBreak: "break-word" }}>{String(project.title ?? "Untitled project")}</h1>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 10, padding: "2px 9px", borderRadius: 20, background: "rgba(124,58,237,0.10)", color: "#A78BFA", border: "1px solid rgba(124,58,237,0.22)", fontWeight: 700 }}>{String(stage)}</span>
+          <ScoreBreakdown score={score} compact />
+          <span style={{ fontSize: 11, color: "var(--bm-text3)" }}>{completedCount}/{tasks.length} tasks</span>
+          <span style={{ fontSize: 11, color: progress >= 60 ? "#4ade80" : progress >= 30 ? "#fbbf24" : "var(--bm-text3)" }}>{progress}% complete</span>
+          <button onClick={() => router.push("/today")}
+            style={{ marginLeft: "auto", background: "var(--grad-primary)", color: "#fff", fontSize: 12, fontWeight: 700, padding: "8px 14px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit" }}>
+            Today&apos;s action
+          </button>
         </div>
       </div>
 
       {/* Progress bar */}
       <div style={{ height: 4, background: "var(--bm-bg3)", borderRadius: 99, overflow: "hidden", marginBottom: 16 }}>
-        <motion.div initial={{ width: 0 }} animate={{ width: `${progress}%` }} transition={{ duration: 0.9, ease: "easeOut" }}
-          style={{ height: "100%", background: progressColor, borderRadius: 99 }} />
+        <div style={{ height: "100%", width: `${progress}%`, background: progressColor, borderRadius: 99 }} />
       </div>
 
+      {narrativeSentence ? (
+        <div style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.55, marginBottom: 16, borderLeft: "2px solid var(--bm-border)", paddingLeft: 12 }}>
+          {narrativeSentence}
+        </div>
+      ) : null}
+
       {/* REC 3.5: Avoidance pattern surface — BuildMind does what a to-do list cannot */}
-      {project && (project as Record<string, unknown>).avoidance_pattern && (
+      {Boolean((project as Record<string, unknown>).avoidance_pattern) ? (
         <div style={{ background: "rgba(251,191,36,0.04)", border: "1px solid rgba(251,191,36,0.15)", borderRadius: 10, padding: "10px 14px", marginBottom: 16, display: "flex", gap: 10, alignItems: "flex-start" }}>
           <span style={{ fontSize: 14, flexShrink: 0 }}>⚠</span>
           <div style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.5 }}>
             {String((project as Record<string, unknown>).avoidance_pattern)}
           </div>
         </div>
-      )}
+      ) : null}
 
       {/* Tabs */}
       <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--bm-border)", marginBottom: 24 }}>
@@ -886,6 +845,6 @@ export default function ProjectDetailPage() {
       {tab === "validation" && (
         <ValidationTab projectId={id} strengths={project.validation_strengths} weaknesses={project.validation_weaknesses} suggestions={project.validation_suggestions} router={router} />
       )}
-    </motion.div>
+    </div>
   );
 }

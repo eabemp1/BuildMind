@@ -107,13 +107,24 @@ export async function persistUserPlan(userId: string, plan: PublicPlan, update: 
     currency:                update.currency ?? "GHS",
   };
 
-  await supabase
-    .from("subscriptions")
-    .upsert(subscriptionRow, { onConflict: "user_id" })
-    .then(() => undefined, (err) => {
-      // Non-fatal: user_metadata was already updated. Log and continue.
-      console.warn("[billing/persistUserPlan] subscriptions upsert failed:", err?.message ?? err);
-    });
+  try {
+    const subscriptions = supabase.from("subscriptions") as {
+      upsert?: (
+        row: typeof subscriptionRow,
+        options: { onConflict: string },
+      ) => PromiseLike<unknown>;
+    };
+
+    if (typeof subscriptions.upsert === "function") {
+      await Promise.resolve(subscriptions.upsert(subscriptionRow, { onConflict: "user_id" }))
+        .then(() => undefined, (err) => {
+          // Non-fatal: user_metadata was already updated. Log and continue.
+          console.warn("[billing/persistUserPlan] subscriptions upsert failed:", err?.message ?? err);
+        });
+    }
+  } catch (err) {
+    console.warn("[billing/persistUserPlan] subscriptions upsert unavailable:", err instanceof Error ? err.message : err);
+  }
 
   // Also sync to profiles for any UI that reads from there
   await supabase

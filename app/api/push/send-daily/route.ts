@@ -35,6 +35,7 @@ import { NextRequest, NextResponse } from "next/server";
 import webpush from "web-push";
 import { createClient } from "@supabase/supabase-js";
 import { planFromUserMetadata } from "@/lib/plan";
+import { logError, logInfo } from "@/lib/server/logger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -186,7 +187,7 @@ export async function POST(req: NextRequest) {
 
   // Cursor-paginated fetch — prevents OOM crash at scale (fixes audit §3 critical issue).
   const PAGE_SIZE = 100;
-  const allSubs: Array<{ user_id: string; subscription: object }> = [];
+  const allSubs: Array<{ user_id: string; subscription: webpush.PushSubscription }> = [];
   let pageFrom = 0;
   let hasMore = true;
 
@@ -197,12 +198,12 @@ export async function POST(req: NextRequest) {
       .range(pageFrom, pageFrom + PAGE_SIZE - 1);
 
     if (error) {
-      logger.error("[Daily Push] Fetch error", { error: error instanceof Error ? error.message : String(error) });
+      logError("push/send-daily/fetch", error, { route: "/api/push/send-daily" });
       return NextResponse.json({ error: error.message, step: "fetch_subscriptions" }, { status: 500 });
     }
 
     const rows = page ?? [];
-    allSubs.push(...rows);
+    allSubs.push(...(rows as Array<{ user_id: string; subscription: webpush.PushSubscription }>));
     hasMore = rows.length === PAGE_SIZE;
     pageFrom += PAGE_SIZE;
   }
@@ -388,7 +389,7 @@ export async function POST(req: NextRequest) {
     .map((r) => (r.status === "fulfilled" ? { userId: r.value.userId, error: r.value.err } : null))
     .filter(Boolean);
 
-  logger.info("[Daily Push] complete", { sent, personalisedCount, recoveryCount, failed });
+  logInfo("push/send-daily/complete", "Daily push complete", { sent, personalisedCount, recoveryCount, failed });
 
   // ── Log cron run for health check endpoint ────────────────────────────────
   // push_cron_log may not exist yet — log is best-effort, never blocks response

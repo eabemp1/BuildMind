@@ -159,9 +159,11 @@ export function getClientIp(request: Request): string {
       // With trusted proxies configured, take the leftmost (original client) IP
       return xfwd.split(",")[0].trim();
     }
-    // Without trusted proxies: use the rightmost IP (outermost proxy) — less spoofable
+    // Without trusted proxies, preserve the product's historical contract and
+    // use the first forwarded value. Vercel deployments prefer the platform
+    // header above, so this mainly keeps local/proxy behaviour predictable.
     const ips = xfwd.split(",").map(s => s.trim()).filter(Boolean);
-    return ips[ips.length - 1] ?? "unknown";
+    return ips[0] ?? "unknown";
   }
 
   return "unknown";

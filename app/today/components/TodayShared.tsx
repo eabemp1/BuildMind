@@ -1,6 +1,8 @@
 "use client";
 // app/today/components/TodayShared.tsx
 // Extracted from today/page.tsx (Fix #2 — page decomposition)
+import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
 
 export function ScoreRing({ value, size = 80 }: { value: number; size?: number }) {
   const stroke = 5;
@@ -37,4 +39,3 @@ export function useIsMobile() {
   }, []);
   return isMobile;
 }
-

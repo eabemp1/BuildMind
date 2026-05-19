@@ -43,6 +43,7 @@ export const NAV: readonly NavItemConfig[] = [
   { href: "/insights",         label: "Insights",         icon: iconStub("BarChart2"),       enabled: true,  section: null,      badge: null,      showDot: false, unlocksAt: 3 },
   { href: "/ventures",         label: "Ventures",         icon: iconStub("Map"),             enabled: false, hidden: true,  section: null,      badge: "Builder", requiredPlan: "builder" as Plan, showDot: false, unlocksAt: 7 },
   { href: "/reports",          label: "Reports",          icon: iconStub("LineChart"),       enabled: true,  section: null,      badge: "Builder", requiredPlan: "builder" as Plan, showDot: false, unlocksAt: 7 },
+  { href: "/startup-kit",      label: "Startup Kit",      icon: iconStub("Lightbulb"),       enabled: true,  section: null,      badge: "Builder", requiredPlan: "builder" as Plan, showDot: false, unlocksAt: 7 },
 
   // ── COACH ──────────────────────────────────────────────────────────────────
   { href: "/ai-coach",         label: "AI Coach",         icon: iconStub("Bot"),             enabled: true,  section: "COACH",   badge: null,      showDot: false, unlocksAt: 3 },

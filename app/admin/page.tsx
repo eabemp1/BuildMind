@@ -59,8 +59,8 @@ const statusColor = (s: MetricStatus) => ({ on_track: C.a, watch: C.amber, below
 const statusLabel = (s: MetricStatus) => ({ on_track: "On track", watch: "Watch", below_target: "Below", no_data: "—" })[s];
 
 // ─── Base UI atoms ────────────────────────────────────────────────────────────
-const Card = ({ children, style, onClick }: { children: React.ReactNode; style?: React.CSSProperties; onClick?: () => void }) => (
-  <div onClick={onClick} style={{ background: C.bg2, border: `1px solid ${C.b}`, borderRadius: C.rLg, transition: "border-color 0.15s", ...(onClick ? { cursor: "pointer" } : {}), ...style }}>
+const Card = ({ children, style, onClick, onMouseEnter, onMouseLeave }: { children: React.ReactNode; style?: React.CSSProperties; onClick?: () => void; onMouseEnter?: React.MouseEventHandler<HTMLDivElement>; onMouseLeave?: React.MouseEventHandler<HTMLDivElement> }) => (
+  <div onClick={onClick} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} style={{ background: C.bg2, border: `1px solid ${C.b}`, borderRadius: C.rLg, transition: "border-color 0.15s", ...(onClick ? { cursor: "pointer" } : {}), ...style }}>
     {children}
   </div>
 );

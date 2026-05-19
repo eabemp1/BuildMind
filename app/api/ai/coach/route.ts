@@ -203,6 +203,7 @@ export async function POST(request: Request) {
     let memory: FounderMemory | null = null;
     let lastMorningNote = "";
     let confidenceScore: number | null = null;
+    let recentInteractions: RecentInteraction[] = [];
 
     // supabase client is needed outside the hasAdminEnv block for recordInteractionServer
     const supabase = hasAdminEnv() ? createAdminClient() : null;
@@ -238,6 +239,7 @@ export async function POST(request: Request) {
         if (todayMorningCheckin?.note) {
           lastMorningNote = todayMorningCheckin.note;
         }
+        recentInteractions = profileInteractions as RecentInteraction[];
 
         const milestoneIds = milestones.map((m) => m.id);
       
@@ -336,11 +338,6 @@ Validation gaps: ${valWeaknesses || "None recorded"}`;
     const morningNoteContext = lastMorningNote
       ? `\n\nTODAY'S MORNING INTENTION (founder logged this earlier today): "${lastMorningNote}" — if relevant, connect your coaching to what they said they'd do today.`
       : "";
-
-    // AI Improvement #2: inject last 3 cross-feature interactions into system prompt
-    // profileResult already fetched above; extract recent_interactions from it
-    const founderContextRow = profileResult.status === "fulfilled" ? profileResult.value.data : null;
-    const recentInteractions = ((founderContextRow as { recent_interactions?: RecentInteraction[] } | null)?.recent_interactions ?? []) as RecentInteraction[];
 
     const baseSystemPrompt = `You are BuildMind — a direct, honest AI coach for founders. You think like a great co-founder: you have full context on their project, you follow the conversation, and you never give generic advice.
 
