@@ -600,7 +600,7 @@ export default function ProjectDetailPage() {
   };
 
   if (isLoading) return (
-    <div className="mx-auto max-w-[860px] px-6 py-7 pb-12">
+    <div className="mx-auto max-w-[860px] px-3 py-5 pb-10 sm:px-6 sm:py-7 sm:pb-12">
       <div className="mb-6 space-y-3 border-b border-[var(--bm-border)] pb-5">
         <div className="h-3 w-24 animate-pulse rounded-lg bg-[var(--bm-bg3)]" />
         <div className="h-7 w-2/3 animate-pulse rounded-lg bg-[var(--bm-bg3)]" />
@@ -617,7 +617,7 @@ export default function ProjectDetailPage() {
     </div>
   );
   if (error || !project) return (
-    <div className="px-6 py-10 text-center">
+    <div className="px-3 py-10 text-center sm:px-6">
       <div className="mb-3 text-[13px] text-[var(--bm-red)]">
         {error instanceof Error ? error.message : "Project not found."}
       </div>
@@ -631,23 +631,23 @@ export default function ProjectDetailPage() {
 
   return (
     <div
-      style={{ maxWidth: 860, margin: "0 auto", padding: "28px 24px", paddingBottom: 48 }}>
+      style={{ maxWidth: 860, margin: "0 auto", padding: "20px clamp(12px, 4vw, 24px)", paddingBottom: 48 }}>
 
       {showUpgrade ? (
-        <div style={{ background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.24)", borderRadius: 12, padding: "14px 16px", marginBottom: 16, display: "flex", gap: 12, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+        <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 12, padding: "14px 16px", marginBottom: 16, display: "flex", gap: 12, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
           <div>
-            <div style={{ fontSize: 12, fontWeight: 800, color: "#c4b5fd", marginBottom: 4 }}>Execution streak unlocked Builder tools</div>
+            <div style={{ fontSize: 12, fontWeight: 800, color: "var(--bm-text)", marginBottom: 4 }}>Execution streak unlocked Builder tools</div>
             <div style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.5 }}>Your project is moving. Reports, startup kit, and deeper coaching can now compound that momentum.</div>
           </div>
-          <button onClick={() => router.push("/upgrade")} style={{ background: "var(--grad-primary)", border: "none", color: "#fff", borderRadius: 8, padding: "8px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Upgrade</button>
+          <button onClick={() => router.push("/upgrade")} style={{ background: "var(--bm-text)", border: "none", color: "var(--bm-bg)", borderRadius: 8, padding: "8px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", flex: "1 1 120px", maxWidth: 180 }}>Upgrade</button>
         </div>
       ) : null}
 
       {stageTransitionPrompt && !stageTransitionDismissed ? (
-        <div style={{ background: "rgba(96,165,250,0.06)", border: "1px solid rgba(96,165,250,0.2)", borderRadius: 12, padding: "14px 16px", marginBottom: 16 }}>
+        <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 12, padding: "14px 16px", marginBottom: 16 }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
             <div>
-              <div style={{ fontSize: 12, fontWeight: 800, color: "#93c5fd", marginBottom: 6 }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: "var(--bm-text)", marginBottom: 6 }}>
                 Stage check: {stageTransitionPrompt.currentStage} → {stageTransitionPrompt.nextStage ?? "next stage"}
               </div>
               <div style={{ fontSize: 12, color: "var(--bm-text2)", lineHeight: 1.55 }}>{stageTransitionPrompt.reason}</div>
@@ -698,13 +698,13 @@ export default function ProjectDetailPage() {
           subtitle={narrativeSentence ?? `${completedCount}/${tasks.length} tasks · ${progress}% complete`}
           action={
             <button onClick={() => router.push("/today")}
-              className="rounded-lg border-none bg-[var(--grad-primary)] px-3.5 py-2 text-[12px] font-bold text-white">
+              className="w-full rounded-lg border-none bg-[var(--bm-text)] px-3.5 py-2 text-[12px] font-bold text-[var(--bm-bg)] sm:w-auto">
               Today&apos;s action
             </button>
           }
         />
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <span style={{ fontSize: 10, padding: "2px 9px", borderRadius: 20, background: "rgba(124,58,237,0.10)", color: "#A78BFA", border: "1px solid rgba(124,58,237,0.22)", fontWeight: 700 }}>{String(stage)}</span>
+          <span style={{ fontSize: 10, padding: "2px 9px", borderRadius: 20, background: "var(--bm-bg3)", color: "var(--bm-text3)", border: "1px solid var(--bm-border)", fontWeight: 700 }}>{String(stage)}</span>
           <ScoreBreakdown score={score} compact />
           <span className="text-[11px] text-[var(--bm-text3)]">{completedCount}/{tasks.length} tasks</span>
           <span className="text-[11px]" style={{ color: progress >= 60 ? "#4ade80" : progress >= 30 ? "#fbbf24" : "var(--bm-text3)" }}>{progress}% complete</span>
@@ -733,7 +733,7 @@ export default function ProjectDetailPage() {
       ) : null}
 
       {/* Tabs */}
-      <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--bm-border)", marginBottom: 24 }}>
+      <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--bm-border)", marginBottom: 24, overflowX: "auto" }}>
         {(["milestones", "tasks", "roadmap", "validation"] as Tab[]).map(t => (
           <button key={t} onClick={() => setTab(t)}
             style={{ padding: "9px 18px", fontSize: 12, fontWeight: tab === t ? 700 : 400, color: tab === t ? "var(--bm-accent)" : "var(--bm-text3)", background: "none", border: "none", borderBottom: tab === t ? "2px solid var(--bm-accent)" : "2px solid transparent", cursor: "pointer", fontFamily: "inherit", textTransform: "capitalize", transition: "color 0.15s", marginBottom: -1 }}>

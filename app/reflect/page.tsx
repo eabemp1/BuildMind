@@ -207,7 +207,7 @@ export default function ReflectPage() {
 
   if (done) {
     return (
-      <div style={{ maxWidth: 560, margin: "0 auto", padding: "60px 24px" }}>
+      <div style={{ maxWidth: 560, margin: "0 auto", padding: "48px clamp(12px, 5vw, 24px)" }}>
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
           <div style={{ textAlign: "center", marginBottom: 28 }}>
             <div style={{ width: 60, height: 60, borderRadius: "50%", background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
@@ -230,7 +230,7 @@ export default function ReflectPage() {
               <p style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.6, margin: 0 }}>{nextAction}</p>
             </div>
           )}
-          <div style={{ display: "flex", gap: 10 }}>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <button onClick={() => router.push("/overview")} style={{ flex: 1, padding: "12px 0", borderRadius: 10, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text2)", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Back to dashboard</button>
             <button onClick={() => router.push("/today")} style={{ flex: 1, padding: "12px 0", borderRadius: 10, border: "none", background: "var(--grad-primary)", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>See tomorrow's action →</button>
           </div>
@@ -253,7 +253,7 @@ export default function ReflectPage() {
   }
 
   return (
-    <div className="mx-auto max-w-[620px] px-6 py-7">
+    <div className="mx-auto max-w-[620px] px-3 py-5 sm:px-6 sm:py-7">
       <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className="mb-6">
         <PageHeader
           title="How did today go?"
@@ -272,7 +272,7 @@ export default function ReflectPage() {
       {/* Cross-time AI synthesis — shown when we have enough history */}
       {historySynthesis && (
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.04 }}
-          style={{ background: "linear-gradient(135deg, rgba(99,102,241,0.07) 0%, rgba(99,102,241,0.03) 100%)", border: "1px solid var(--bm-accent-bd)", borderRadius: 16, padding: "16px 20px", marginBottom: 16 }}>
+          style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: "16px 18px", marginBottom: 16 }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-accent)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8, display: "flex", alignItems: "center", gap: 5 }}>
             <Brain size={10} /> Pattern across your reflections
           </div>
@@ -282,7 +282,7 @@ export default function ReflectPage() {
 
       {/* Outcome */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.06 }}
-        style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 18, padding: "20px 22px", marginBottom: 12 }}>
+        style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 14, padding: "18px clamp(14px, 4vw, 22px)", marginBottom: 12 }}>
         <div style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 14 }}>What happened?</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 9 }}>
           {OUTCOME_CHIPS.map(chip => (
@@ -300,7 +300,7 @@ export default function ReflectPage() {
 
       {/* Note */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.10 }}
-        style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 18, padding: "20px 22px", marginBottom: 12 }}>
+        style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 14, padding: "18px clamp(14px, 4vw, 22px)", marginBottom: 12 }}>
         <div style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 10 }}>What actually happened? <span style={{ color: "var(--bm-text3)", fontWeight: 400 }}>(optional)</span></div>
         <textarea value={note} onChange={e => setNote(e.target.value)} rows={3} placeholder="Be specific. What did you do? What did you learn? What got in the way?"
           style={{ width: "100%", background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: 10, padding: "11px 14px", fontSize: 13, color: "var(--bm-text)", outline: "none", fontFamily: "inherit", resize: "none", boxSizing: "border-box", lineHeight: 1.6, transition: "border-color 0.15s" }}
@@ -310,7 +310,7 @@ export default function ReflectPage() {
 
       {/* Confidence */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.14 }}
-        style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 18, padding: "20px 22px", marginBottom: 20 }}>
+        style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 14, padding: "18px clamp(14px, 4vw, 22px)", marginBottom: 20 }}>
         <div style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 6 }}>How confident do you feel?</div>
         <div style={{ fontSize: 12, color: CONFIDENCE_COLORS[confidence], fontWeight: 600, marginBottom: 12 }}>{CONFIDENCE_LABELS[confidence]}</div>
         <div style={{ display: "flex", gap: 9 }}>

@@ -132,7 +132,7 @@ function CreateModal({
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96 }}
         transition={{ duration: 0.18 }}
-        className="w-full max-w-md rounded-2xl p-7 flex flex-col gap-5"
+        className="w-full max-w-md rounded-2xl p-5 sm:p-7 flex flex-col gap-5"
         style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)" }}
       >
         <div className="flex items-start justify-between">
@@ -198,7 +198,7 @@ function CreateModal({
           )}
         </div>
 
-        <div className="flex gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row">
           <Button variant="secondary" fullWidth onClick={onClose} disabled={isPending}>
             Cancel
           </Button>
@@ -365,7 +365,7 @@ export default function ProjectsPage() {
                   }
                 >
                   <div className="p-5">
-                    <div className="flex items-start gap-4">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
                       {/* Score ring */}
                       <ScoreRing value={score} size={44} color={score >= 60 ? "var(--bm-green)" : score >= 30 ? "var(--bm-amber)" : "var(--bm-text3)"} />
 
@@ -401,19 +401,20 @@ export default function ProjectsPage() {
                       </div>
 
                       {/* Actions */}
-                      <div className="flex items-center gap-2 shrink-0 mt-0.5">
+                      <div className="grid w-full grid-cols-3 gap-2 sm:mt-0.5 sm:flex sm:w-auto sm:shrink-0 sm:items-center">
                         {!isActive && (
                           <Button
                             variant="ghost"
                             size="sm"
                             onClick={() => handleSetActive(s.id)}
                             title="Set as active"
+                            className="w-full"
                           >
                             <Check size={12} />
                           </Button>
                         )}
                         <Link href={`/projects/${s.id}`}>
-                          <Button variant="ghost" size="sm">
+                          <Button variant="ghost" size="sm" className="w-full">
                             View <ChevronRight size={12} />
                           </Button>
                         </Link>
@@ -439,13 +440,13 @@ export default function ProjectsPage() {
                         style={{ overflow: "hidden", borderTop: "1px solid var(--bm-border)" }}
                       >
                         <div
-                          className="flex items-center justify-between gap-3 px-5 py-3"
+                          className="flex flex-col gap-3 px-5 py-3 sm:flex-row sm:items-center sm:justify-between"
                           style={{ background: "rgba(224,85,85,0.04)" }}
                         >
                           <span className="text-xs" style={{ color: "var(--bm-red)" }}>
                             Delete "{s.title}"? This cannot be undone.
                           </span>
-                          <div className="flex gap-2">
+                          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
                             <Button
                               variant="secondary"
                               size="sm"

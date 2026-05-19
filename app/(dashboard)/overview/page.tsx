@@ -157,7 +157,7 @@ function SkeletonRow() {
 
 function SkeletonGrid({ count = 4 }: { count?: number }) {
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
       {Array.from({ length: count }).map((_, i) => (
         <div key={i} className="h-20 rounded-xl bg-[var(--bm-bg3)] animate-pulse" />
       ))}
@@ -330,7 +330,7 @@ export default function OverviewPage() {
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.06 }}
-        className="grid grid-cols-2 lg:grid-cols-4 gap-4"
+        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4"
       >
         <MetricCard
           icon={<Zap size={14} />}
@@ -409,7 +409,7 @@ export default function OverviewPage() {
       )}
 
       {summaries.length > 0 && (
-        <div className="grid lg:grid-cols-[1fr_220px] gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_220px] gap-5 lg:gap-6">
 
           {/* ── Projects list ── */}
           <motion.div
@@ -444,7 +444,7 @@ export default function OverviewPage() {
                     transition={{ delay: 0.15 + i * 0.06 }}
                   >
                     <Card hover className="p-4">
-                      <div className="flex items-center gap-4">
+                      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
                         {/* Score ring */}
                         <ScoreRing value={pScore} color={pColor} size={44} />
 
@@ -473,7 +473,7 @@ export default function OverviewPage() {
                         </div>
 
                         {/* View link */}
-                        <Link href={`/projects/${s.id}`} className="shrink-0">
+                        <Link href={`/projects/${s.id}`} className="w-full shrink-0 sm:w-auto">
                           <Button variant="ghost" size="sm">
                             View <ArrowRight size={12} />
                           </Button>

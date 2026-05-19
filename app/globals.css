@@ -346,6 +346,78 @@ select option { background:var(--bm-bg2,#161618); color:var(--bm-text,#ECECEC); 
   [role="button"] {
     min-height: 42px;
   }
+
+  .grid-cols-2,
+  .grid-cols-3,
+  .grid-cols-4,
+  .grid-cols-5,
+  .grid-cols-6 {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  [style*="grid-template-columns: 1fr 1fr"],
+  [style*="grid-template-columns: repeat(2"],
+  [style*="grid-template-columns: repeat(3"],
+  [style*="grid-template-columns: repeat(4"],
+  [style*="grid-template-columns: 2fr 1fr"],
+  [style*="grid-template-columns: 1.5fr 1fr"],
+  [style*="grid-template-columns: auto 1fr"] {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  [style*="width: 380"],
+  [style*="width:380"],
+  [style*="width: 420"],
+  [style*="width:420"],
+  [style*="width: 440"],
+  [style*="width:440"],
+  [style*="width: 560"],
+  [style*="width:560"],
+  [style*="width: 620"],
+  [style*="width:620"] {
+    width: calc(100vw - 24px) !important;
+    max-width: calc(100vw - 24px) !important;
+  }
+
+  [style*="min-width: 200"],
+  [style*="min-width: 220"],
+  [style*="min-width: 260"] {
+    min-width: 0 !important;
+  }
+
+  [style*="padding: 28px 24px"],
+  [style*="padding: 32px 24px"],
+  [style*="padding: 60px 24px"] {
+    padding: 18px 12px !important;
+  }
+
+  table {
+    display: block;
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  th,
+  td {
+    white-space: nowrap;
+  }
+
+  .bm-mobile-stack {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+
+  .bm-mobile-scroll {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .bm-mobile-full {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
 }
 
 @media print {

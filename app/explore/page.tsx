@@ -20,12 +20,12 @@ type PublicStartup = {
 };
 
 const STAGE_COLORS: Record<string, { text: string; bg: string; border: string }> = {
-  Idea:       { text: "#A78BFA", bg: "rgba(167,139,250,0.08)", border: "rgba(167,139,250,0.20)" },
-  Validation: { text: "var(--bm-amber)", bg: "rgba(232,160,32,0.08)", border: "rgba(232,160,32,0.22)" },
-  MVP:        { text: "var(--bm-blue)", bg: "rgba(74,144,217,0.10)", border: "rgba(74,144,217,0.22)" },
+  Idea:       { text: "var(--bm-text3)", bg: "var(--bm-bg3)", border: "var(--bm-border)" },
+  Validation: { text: "var(--bm-text3)", bg: "var(--bm-bg3)", border: "var(--bm-border)" },
+  MVP:        { text: "var(--bm-text3)", bg: "var(--bm-bg3)", border: "var(--bm-border)" },
   Launch:     { text: "var(--bm-accent)", bg: "var(--bm-accent-dim)", border: "var(--bm-accent-bd)" },
-  Growth:     { text: "#F97316", bg: "rgba(249,115,22,0.08)", border: "rgba(249,115,22,0.22)" },
-  Revenue:    { text: "var(--bm-green)", bg: "rgba(34,197,94,0.08)", border: "rgba(34,197,94,0.22)" },
+  Growth:     { text: "var(--bm-text3)", bg: "var(--bm-bg3)", border: "var(--bm-border)" },
+  Revenue:    { text: "var(--bm-accent)", bg: "var(--bm-accent-dim)", border: "var(--bm-accent-bd)" },
 };
 
 function ScoreRing({ value, size = 38 }: { value: number; size?: number }) {
@@ -112,7 +112,7 @@ export default function ExplorePage() {
   });
 
   return (
-    <div style={{ maxWidth: 1000, margin: "0 auto", padding: "28px 24px" }}>
+    <div style={{ maxWidth: 1000, margin: "0 auto", padding: "20px clamp(12px, 4vw, 24px)" }}>
 
       {/* Header + tab toggle (Audit v8 GROWTH #3) */}
       <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 24 }}>
@@ -124,11 +124,11 @@ export default function ExplorePage() {
             </span>
           </div>
           {/* View toggle: Discover vs Leaderboard */}
-          <div style={{ display: "flex", gap: 4, background: "var(--bm-bg3)", borderRadius: 10, padding: 3 }}>
+          <div style={{ display: "flex", gap: 4, background: "var(--bm-bg3)", borderRadius: 10, padding: 3, width: "100%", maxWidth: 260 }}>
             {(["discover", "leaderboard"] as const).map(v => (
               <button key={v} onClick={() => setView(v)}
-                style={{ padding: "6px 14px", borderRadius: 8, border: "none", background: view === v ? "var(--bm-bg2)" : "transparent", color: view === v ? "var(--bm-text)" : "var(--bm-text3)", fontSize: 12, fontWeight: view === v ? 600 : 400, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s", textTransform: "capitalize" }}>
-                {v === "leaderboard" ? "🏆 Leaderboard" : "Discover"}
+                style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: "none", background: view === v ? "var(--bm-bg2)" : "transparent", color: view === v ? "var(--bm-text)" : "var(--bm-text3)", fontSize: 12, fontWeight: view === v ? 600 : 400, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s", textTransform: "capitalize", whiteSpace: "nowrap" }}>
+                {v === "leaderboard" ? "Leaderboard" : "Discover"}
               </button>
             ))}
           </div>
@@ -140,14 +140,14 @@ export default function ExplorePage() {
 
       {/* Search + filters */}
       <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
-        <div style={{ position: "relative", flex: 1, minWidth: 200 }}>
+        <div style={{ position: "relative", flex: "1 1 240px", minWidth: 0 }}>
           <Search size={13} color="var(--bm-text3)" style={{ position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)" }} />
           <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search startups…"
             style={{ width: "100%", paddingLeft: 36, paddingRight: 14, height: 38, borderRadius: 10, background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", color: "var(--bm-text)", fontSize: 13, outline: "none", fontFamily: "inherit", boxSizing: "border-box", transition: "border-color 0.15s" }}
             onFocus={e => { e.target.style.borderColor = "var(--bm-accent-bd)"; }}
             onBlur={e => { e.target.style.borderColor = "var(--bm-border2)"; }} />
         </div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", minWidth: 0 }}>
           {FILTERS.map(f => (
             <button key={f} onClick={() => setStageFilter(f)}
               style={{ padding: "7px 14px", borderRadius: 20, border: `1px solid ${stageFilter === f ? "var(--bm-accent-bd)" : "var(--bm-border)"}`, background: stageFilter === f ? "var(--bm-accent-dim)" : "transparent", color: stageFilter === f ? "var(--bm-accent)" : "var(--bm-text3)", fontSize: 12, fontWeight: stageFilter === f ? 600 : 400, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}>
@@ -160,7 +160,7 @@ export default function ExplorePage() {
       {/* Leaderboard view (Audit v8 GROWTH #3) */}
       {view === "leaderboard" && !loading && (
         <div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 60px 1fr 80px)", gap: 0, marginBottom: 8, padding: "0 12px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "44px minmax(0,1fr) 72px", gap: 0, marginBottom: 8, padding: "0 12px" }}>
             <span style={{ gridColumn: "1", fontSize: 10, color: "var(--bm-text3)", fontWeight: 700, letterSpacing: "0.06em" }}>#</span>
             <span style={{ gridColumn: "2", fontSize: 10, color: "var(--bm-text3)", fontWeight: 700, letterSpacing: "0.06em" }}>FOUNDER</span>
             <span style={{ gridColumn: "3", fontSize: 10, color: "var(--bm-text3)", fontWeight: 700, letterSpacing: "0.06em", textAlign: "right" }}>MOMENTUM</span>

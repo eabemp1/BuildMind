@@ -124,10 +124,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="relative flex h-screen overflow-hidden">
+    <div className="relative flex h-dvh min-h-dvh overflow-hidden">
 
       {/* ── Sidebar — desktop ── */}
-      <aside className="sticky top-0 hidden h-screen w-[232px] shrink-0 md:flex"
+      <aside className="sticky top-0 hidden h-dvh w-[232px] shrink-0 md:flex"
              style={{ borderRight: "1px solid var(--bm-border)" }}>
         <Sidebar />
       </aside>

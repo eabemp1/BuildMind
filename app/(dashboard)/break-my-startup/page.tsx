@@ -420,14 +420,14 @@ export default function BreakMyStartupPage() {
 
             {/* Focus areas */}
             <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <label className="text-xs font-medium text-[var(--bm-text2)] uppercase tracking-widest">
                   Focus Areas (optional)
                 </label>
                 <button
                   type="button"
                   onClick={() => setExecutionMode((value) => !value)}
-                  className="rounded-lg px-3 py-1.5 text-xs font-semibold"
+                  className="w-full rounded-lg px-3 py-1.5 text-xs font-semibold sm:w-auto"
                   style={{
                     border: "1px solid var(--bm-border)",
                     background: executionMode ? "rgba(92,200,138,0.12)" : "var(--bm-bg3)",
@@ -500,7 +500,7 @@ export default function BreakMyStartupPage() {
                 size="lg"
                 onClick={handleRunTest}
                 disabled={!customIdea.trim() && !selectedProjectId}
-                className="self-start"
+                className="w-full sm:w-auto sm:self-start"
               >
                 <AlertTriangle size={15} />
                 Run Stress Test →
@@ -526,7 +526,7 @@ export default function BreakMyStartupPage() {
               transition={{ duration: 0.4 }}
               style={{
                 borderRadius: "var(--r-xl)",
-                padding: "24px",
+                padding: "clamp(16px, 4vw, 24px)",
                 background: `linear-gradient(135deg, ${overallColor(result.overallRisk)}12 0%, var(--bm-bg2) 100%)`,
                 border: `1px solid ${overallColor(result.overallRisk)}40`,
                 boxShadow: `0 0 32px ${overallColor(result.overallRisk)}18`,
@@ -536,7 +536,7 @@ export default function BreakMyStartupPage() {
                 {result.survival_probability !== undefined && (
                   <SurvivalRing value={result.survival_probability} />
                 )}
-                <div style={{ flex: 1, minWidth: 200 }}>
+                <div style={{ flex: "1 1 220px", minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                     <span style={{
                       fontSize: 9, fontWeight: 700, letterSpacing: "0.12em",
@@ -645,7 +645,7 @@ export default function BreakMyStartupPage() {
 
             {result.reflexionAction && (
               <Card className="p-4 flex flex-col gap-3">
-                <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                   <h3 className="text-sm font-semibold text-[var(--bm-text)]">Reflexion Loop</h3>
                   {typeof result.reflexionAction.confidence === "number" && (
                     <span className="text-xs text-[var(--bm-text3)]">{Math.round(result.reflexionAction.confidence * 100)}% confidence</span>
@@ -727,7 +727,7 @@ export default function BreakMyStartupPage() {
             </div>
 
             {/* Actions */}
-            <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
               {selectedProjectId && (
                 <Button
                   variant="secondary"

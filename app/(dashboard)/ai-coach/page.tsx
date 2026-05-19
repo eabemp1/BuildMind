@@ -103,18 +103,18 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}
       className={`flex items-start gap-2.5 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
       <div style={{
-        background: isUser ? "var(--bm-bg4)" : "var(--grad-primary)",
-        border: `1px solid ${isUser ? "rgba(124,58,237,0.22)" : "var(--bm-accent-bd)"}`,
+        background: isUser ? "var(--bm-bg4)" : "var(--bm-bg3)",
+        border: "1px solid var(--bm-border)",
       }} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full">
-        {isUser ? <User size={12} color="#A78BFA" /> : <Bot size={12} color="white" />}
+        {isUser ? <User size={12} color="var(--bm-text3)" /> : <Bot size={12} color="var(--bm-text3)" />}
       </div>
-      <div className={`flex flex-col gap-1.5 ${isUser ? "items-end max-w-[75%]" : "items-start max-w-[85%]"}`}>
+      <div className={`flex min-w-0 flex-col gap-1.5 ${isUser ? "items-end max-w-[88%] sm:max-w-[75%]" : "items-start max-w-[92%] sm:max-w-[85%]"}`}>
         {!isUser && msg.reasoning && msg.reasoning.length > 0 && (
-          <div className="w-full rounded-xl border border-[rgba(124,58,237,0.12)] bg-[rgba(124,58,237,0.05)] px-3 py-2.5">
+          <div className="w-full rounded-xl border border-[var(--bm-border)] bg-[var(--bm-bg3)] px-3 py-2.5">
             <button onClick={() => setExpanded(v => !v)}
               className="flex cursor-pointer items-center gap-1.5 border-0 bg-transparent p-0 text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--bm-text3)]">
-              <Brain size={10} color="#A78BFA" />
-              <span style={{ color: "#A78BFA" }}>Thinking</span>
+              <Brain size={10} color="var(--bm-text3)" />
+              <span style={{ color: "var(--bm-text3)" }}>Thinking</span>
               <ChevronRight size={10} color="var(--bm-text3)" style={{ transform: expanded ? "rotate(90deg)" : "none", transition: "transform 0.15s" }} />
             </button>
             <AnimatePresence>
@@ -122,7 +122,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
                 <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: "hidden", marginTop: 8 }}>
                   {msg.reasoning.map((step, i) => (
                     <div key={i} className="mb-1 flex items-start gap-2 text-[11px] text-[var(--bm-text3)]">
-                      <span style={{ color: "rgba(124,58,237,0.5)", flexShrink: 0 }}>›</span>
+                      <span style={{ color: "var(--bm-text4)", flexShrink: 0 }}>›</span>
                       {step}
                     </div>
                   ))}
@@ -132,7 +132,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
           </div>
         )}
         <div
-          className={`px-3.5 py-2.5 text-[13px] leading-relaxed ${isUser ? "rounded-2xl rounded-tr-sm border border-[var(--bm-accent-bd)] bg-[var(--bm-accent-dim)]" : "rounded-2xl rounded-tl-sm border border-[var(--bm-border2)] bg-[var(--bm-bg3)]"}`}
+          className={`px-3.5 py-2.5 text-[13px] leading-relaxed ${isUser ? "rounded-2xl rounded-tr-sm border border-[var(--bm-border3)] bg-[var(--bm-bg4)]" : "rounded-2xl rounded-tl-sm border border-[var(--bm-border2)] bg-[var(--bm-bg3)]"}`}
           style={{ color: msg.error ? "var(--bm-red)" : "var(--bm-text2)" }}
         >
           {msg.phase === "thinking" ? <ThinkingDots /> : <span style={{ whiteSpace: "pre-wrap" }}>{msg.content}</span>}
@@ -309,8 +309,8 @@ function AICoachPageInner() {
             {messages.length === 0 && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}
                 className="flex h-full flex-col items-center justify-center gap-4 text-center">
-                <div className="flex h-16 w-16 items-center justify-center rounded-full border border-[var(--bm-accent-bd)] bg-[var(--bm-accent-dim)] sm:h-14 sm:w-14">
-                  <Bot size={24} color="var(--bm-accent)" />
+              <div className="flex h-16 w-16 items-center justify-center rounded-full border border-[var(--bm-border)] bg-[var(--bm-bg3)] sm:h-14 sm:w-14">
+                  <Bot size={24} color="var(--bm-text3)" />
                 </div>
                 <div>
                   <div className="mb-1.5 text-[16px] font-bold text-[var(--bm-text)] sm:text-[18px]">What's on your mind today?</div>
@@ -342,7 +342,7 @@ function AICoachPageInner() {
               <motion.button whileTap={{ scale: 0.95 }} onClick={() => sendMessage()}
                 disabled={!input.trim() || loading}
                 className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border-0 sm:h-8 sm:w-8"
-                style={{ background: !input.trim() || loading ? "rgba(255,255,255,0.05)" : "var(--grad-primary)", color: !input.trim() || loading ? "rgba(255,255,255,0.2)" : "#fff", cursor: !input.trim() || loading ? "not-allowed" : "pointer" }}>
+                style={{ background: !input.trim() || loading ? "var(--bm-bg4)" : "var(--bm-text)", color: !input.trim() || loading ? "var(--bm-text3)" : "var(--bm-bg)", cursor: !input.trim() || loading ? "not-allowed" : "pointer" }}>
                 <Send size={13} />
               </motion.button>
             </div>
@@ -355,7 +355,7 @@ function AICoachPageInner() {
 
           <Card className="p-4">
             <div className="mb-3.5 flex items-center gap-1.5">
-              <Brain size={13} color="#A78BFA" />
+              <Brain size={13} color="var(--bm-text3)" />
               <span className="text-[13px] font-semibold text-[var(--bm-text)]">Coach Memory</span>
             </div>
             {memory.length === 0 ? (
@@ -370,7 +370,7 @@ function AICoachPageInner() {
 
           <Card className="p-4">
             <div className="mb-3.5 flex items-center gap-1.5">
-              <Sparkles size={13} color="var(--bm-amber)" />
+              <Sparkles size={13} color="var(--bm-text3)" />
               <span className="text-[13px] font-semibold text-[var(--bm-text)]">Suggested Actions</span>
             </div>
             {suggestedActions.map((a, i) => (
