@@ -69,9 +69,28 @@ function buildPersonalizedDraft(action: string, fallback: TodayAction, context: 
   return cleanVisibleText(fallback.message, `Hi [Name], quick question - how are you handling ${topic} today, and what is the most frustrating part? I'd value 10 minutes of honest context.`);
 }
 
-function buildFallback(stage: string, targetUsers: string, problem: string, title: string): TodayAction {
-  const userType = targetUsers?.trim() || "potential users";
-  const problemDesc = problem?.trim() || "this problem";
+function inferProjectAudience(targetUsers: string, title: string, description = "", problem = ""): string {
+  if (targetUsers?.trim()) return targetUsers.trim();
+  const haystack = `${title} ${description} ${problem}`.toLowerCase();
+  if (/(consent|privacy|gdpr|compliance|audit)/.test(haystack)) return "data privacy officers or compliance managers";
+  if (/(fintech|payment|bank|invoice|accounting|finance)/.test(haystack)) return "finance operators or fintech founders";
+  if (/(health|clinic|patient|medical)/.test(haystack)) return "healthcare operators";
+  if (/(school|student|teacher|course|learning)/.test(haystack)) return "education operators";
+  if (/(shop|commerce|store|retail)/.test(haystack)) return "e-commerce operators";
+  return title?.trim() ? `${title.trim()} target users` : "people in your target segment";
+}
+
+function inferProjectProblem(problem: string, title: string, description = ""): string {
+  if (problem?.trim()) return problem.trim();
+  const haystack = `${title} ${description}`.toLowerCase();
+  if (/(consent|privacy|gdpr|compliance|audit)/.test(haystack)) return "verifiable consent tracking and audit logging";
+  if (description?.trim()) return description.trim().slice(0, 120);
+  return title?.trim() ? `${title.trim()} and the workflow it improves` : "their current workflow";
+}
+
+function buildFallback(stage: string, targetUsers: string, problem: string, title: string, description = ""): TodayAction {
+  const userType = inferProjectAudience(targetUsers, title, description, problem);
+  const problemDesc = inferProjectProblem(problem, title, description);
   const productName = title?.trim() || "your product";
   const fallbacks: Record<string, TodayAction> = {
     Idea: {
@@ -162,6 +181,7 @@ export async function POST(request: Request) {
         let targetUsers = "";
         let problem = "";
         let title = "";
+        let description = "";
         let projectContext = "";
         let lastReflectionContext = "";
 
@@ -184,6 +204,7 @@ export async function POST(request: Request) {
             targetUsers = project.target_users ?? "";
             problem = project.problem ?? "";
             title = (project.name ?? project.title) ?? "";
+            description = project.description ?? "";
 
             const { data: milestones } = await supabase.from("milestones")
               .select("id, title, status").eq("project_id", projectId)
@@ -212,7 +233,7 @@ export async function POST(request: Request) {
           }
         }
 
-        const fallback = buildFallback(stage, targetUsers, problem, title);
+        const fallback = buildFallback(stage, targetUsers, problem, title, description);
         // ── Agent A — Generator ───────────────────────────────────────────
         emit("agent_a", { status: "running", label: "Agent A generating your task…" });
 

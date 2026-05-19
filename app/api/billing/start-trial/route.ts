@@ -1,7 +1,7 @@
 /**
  * app/api/billing/start-trial/route.ts
  *
- * POST — called once at signup to initialise the 7-day free trial.
+ * POST — called once at signup to initialise the free trial.
  * Sets trial_started_at and trial_ends_at in founder_context so the
  * server is the authoritative source of trial state.
  *

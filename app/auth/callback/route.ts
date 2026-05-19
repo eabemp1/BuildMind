@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(redirectUrl);
     }
 
-    // ── 7-Day Free Trial: initialise on first sign-in ────────────────────────
+    // ── Free Trial: initialise on first sign-in ──────────────────────────────
     // Only starts the trial if it hasn't been started yet (idempotent).
     // We use the admin client so this works for both OAuth and email signups.
     try {

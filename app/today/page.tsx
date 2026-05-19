@@ -119,6 +119,43 @@ const STATIC_ACTIONS: Record<string, { action: string; message: string; why: str
   revenue:    { action: "Call one churned user today — not to win them back, to understand why they left.", message: "Hey [name] — I noticed you stopped using [product]. No sales pitch. I just want to understand what didn't work so I can fix it. 10 minutes?", why: "Churn analysis conversations are the highest-leverage activity at revenue stage.", time: "1 hour", destKey: "revenue" },
 };
 
+function inferProjectAudience(targetUsers: string, productName: string, description = "", problem = ""): string {
+  if (targetUsers.trim()) return targetUsers.trim();
+  const haystack = `${productName} ${description} ${problem}`.toLowerCase();
+  if (/(consent|privacy|gdpr|compliance|audit)/.test(haystack)) return "data privacy officers or compliance managers";
+  if (/(fintech|payment|bank|invoice|accounting|finance)/.test(haystack)) return "finance operators or fintech founders";
+  if (/(health|clinic|patient|medical)/.test(haystack)) return "healthcare operators";
+  if (/(school|student|teacher|course|learning)/.test(haystack)) return "education operators";
+  if (/(shop|commerce|store|retail)/.test(haystack)) return "e-commerce operators";
+  return productName.trim() ? `${productName.trim()} target users` : "people in your target segment";
+}
+
+function inferProjectProblem(problem: string, productName: string, description = ""): string {
+  if (problem.trim()) return problem.trim();
+  const haystack = `${productName} ${description}`.toLowerCase();
+  if (/(consent|privacy|gdpr|compliance|audit)/.test(haystack)) return "verifiable consent tracking and audit logging";
+  if (description.trim()) return description.trim().slice(0, 120);
+  return productName.trim() ? `${productName.trim()} and the workflow it improves` : "their current workflow";
+}
+
+function buildContextualStaticAction(
+  stageKey: string,
+  productName: string,
+  targetUsers: string,
+  problem: string,
+  description: string,
+): { action: string; message: string; why: string; time: string; destKey: string } {
+  const base = STATIC_ACTIONS[stageKey] ?? STATIC_ACTIONS.idea;
+  const audience = inferProjectAudience(targetUsers, productName, description, problem);
+  const problemDesc = inferProjectProblem(problem, productName, description);
+  return {
+    ...base,
+    action: `Message 3 ${audience} today - ask about ${problemDesc}, not your idea.`,
+    message: `Hi [Name], quick question - I'm researching ${problemDesc} for ${audience}. How are you handling this today, and what is the most frustrating part? I'd value 10 minutes of honest context.`,
+    why: `This gives ${productName || "your startup"} real evidence from ${audience} instead of another internal guess.`,
+  };
+}
+
 const OUTCOME_CHIPS: { id: Outcome; label: string; color: string; bg: string; border: string }[] = [
   { id: "completed", label: "Nailed it ✓",         color: "var(--bm-green)", bg: "var(--bm-accent-dim)",           border: "var(--bm-accent-bd)"            },
   { id: "partial",   label: "Partly done ◐",       color: "var(--bm-amber)", bg: "rgba(232,160,32,0.08)",         border: "rgba(232,160,32,0.22)"          },
@@ -479,6 +516,7 @@ function TodayContent() {
   const productName = project?.name ?? project?.title ?? "";
   const targetUsers = project?.target_users ?? "";
   const problem = project?.problem ?? "";
+  const projectDescription = project?.description ?? "";
 
   // REC 2.4: stage transition challenge
   useEffect(() => {
@@ -503,7 +541,7 @@ function TodayContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project?.id, project?.startup_stage]);
 
-  const staticAction = STATIC_ACTIONS[stageKey] ?? STATIC_ACTIONS.idea;
+  const staticAction = buildContextualStaticAction(stageKey, productName, targetUsers, problem, projectDescription);
   const actionData = aiAction ?? { ...staticAction, isAI: false };
   const destinations = DESTINATIONS[aiAction?.destKey ?? stageKey] ?? DESTINATIONS.idea;
 

@@ -160,7 +160,7 @@ export function getTrialStatus(): {
 
 /**
  * isTrialActive — quick boolean for gating UI.
- * Returns true if the user is within their 7-day trial window.
+ * Returns true if the user is within their trial window.
  */
 export function isTrialActive(): boolean {
   return getTrialStatus().isInTrial;

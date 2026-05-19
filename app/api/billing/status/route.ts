@@ -22,7 +22,9 @@ export async function GET() {
   const freshUser = await getFreshAuthUser(user);
   const basePlan = planFromUserMetadata(freshUser);
 
-  // ── 7-Day Free Trial: read from founder_context (server-authoritative) ────
+  // ── Free Trial: read from founder_context (server-authoritative) ──────────
+  // If the auth callback missed trial creation, bootstrap it here so a new
+  // signed-in free user never loses trial access because one redirect failed.
   let trialActive = false;
   let trialExpired = false;
   let trialDaysRemaining = 0;
@@ -36,15 +38,51 @@ export async function GET() {
       .eq("user_id", user.id)
       .maybeSingle();
 
-    if (ctx?.trial_ends_at) {
-      trialEndsAt = ctx.trial_ends_at;
-      const now = new Date();
-      const ends = new Date(ctx.trial_ends_at);
+    let trialRow = ctx;
+    if (!trialRow?.trial_started_at && basePlan !== "builder" && !freshUser.user_metadata?.billing_status) {
+      const trialStartedAt = new Date().toISOString();
+      const trialEndsAtNew = new Date(
+        new Date(trialStartedAt).getTime() + TRIAL_DURATION_DAYS * 24 * 60 * 60 * 1000,
+      ).toISOString();
 
-      if (ctx.trial_expired || ends <= now) {
+      const { data: inserted } = await admin
+        .from("founder_context")
+        .upsert(
+          {
+            user_id: user.id,
+            trial_started_at: trialStartedAt,
+            trial_ends_at: trialEndsAtNew,
+            trial_expired: false,
+          },
+          { onConflict: "user_id" },
+        )
+        .select("trial_started_at, trial_ends_at, trial_expired")
+        .maybeSingle();
+
+      trialRow = inserted ?? {
+        trial_started_at: trialStartedAt,
+        trial_ends_at: trialEndsAtNew,
+        trial_expired: false,
+      };
+
+      await admin.auth.admin.updateUserById(user.id, {
+        user_metadata: {
+          ...((freshUser.user_metadata as Record<string, unknown>) ?? {}),
+          trial_started_at: trialStartedAt,
+          trial_ends_at: trialEndsAtNew,
+        },
+      });
+    }
+
+    if (trialRow?.trial_ends_at) {
+      trialEndsAt = trialRow.trial_ends_at;
+      const now = new Date();
+      const ends = new Date(trialRow.trial_ends_at);
+
+      if (trialRow.trial_expired || ends <= now) {
         // Trial has expired — enforce hard paywall
         trialExpired = true;
-        if (!ctx.trial_expired) {
+        if (!trialRow.trial_expired) {
           // Mark expired server-side (best-effort)
           await admin
             .from("founder_context")
