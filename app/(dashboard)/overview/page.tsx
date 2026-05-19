@@ -19,6 +19,11 @@ import { MrrWidget } from "@/components/MrrWidget";
 import { Button } from "@/components/ui/button";
 import { ScoreBreakdown } from "@/components/ui/ScoreBreakdown";
 import { ProfileCompletenessBar } from "@/components/ProfileCompletenessBar";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { SectionHeader } from "@/components/ui/SectionHeader";
+import { ScoreRing } from "@/components/ui/ScoreRing";
+import { StatCard } from "@/components/ui/StatCard";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 // ── Stage config ───────────────────────────────────────────────────────────────
 const STAGES = ["Idea", "Validation", "MVP", "Launch", "Growth", "Revenue"];
@@ -96,28 +101,6 @@ function Pentagon({ scores }: { scores: Record<string, number> }) {
   );
 }
 
-// ── Score ring ────────────────────────────────────────────────────────────────
-function ScoreRing({ val, color, size = 52 }: { val: number; color: string; size?: number }) {
-  const r = (size - 7) / 2;
-  const circ = 2 * Math.PI * r;
-  return (
-    <div style={{ position: "relative", width: size, height: size, flexShrink: 0 }}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform: "rotate(-90deg)" }}>
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth={5} />
-        <motion.circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={5}
-          strokeLinecap="round" strokeDasharray={circ}
-          initial={{ strokeDashoffset: circ }}
-          animate={{ strokeDashoffset: circ - (Math.min(val, 100) / 100) * circ }}
-          transition={{ duration: 1.1, ease: "easeOut", delay: 0.2 }}
-          style={{ filter: `drop-shadow(0 0 3px ${color}60)` }} />
-      </svg>
-      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <span style={{ fontSize: size * 0.24, fontWeight: 800, color, lineHeight: 1 }}>{val}</span>
-      </div>
-    </div>
-  );
-}
-
 // ── Progress bar ──────────────────────────────────────────────────────────────
 function ProgressBar({ value, max }: { value: number; max: number }) {
   const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
@@ -162,24 +145,6 @@ function MetricCard({
         <span className="text-xs uppercase tracking-wide text-[var(--bm-text3)]">{label}</span>
         <div className="text-lg font-semibold text-[var(--bm-text)]">{value}</div>
       </div>
-    </Card>
-  );
-}
-
-function EmptyState({
-  title,
-  description,
-  action,
-}: {
-  title: string;
-  description: string;
-  action?: ReactNode;
-}) {
-  return (
-    <Card className="p-6 text-center flex flex-col items-center gap-3">
-      <div className="text-base font-semibold text-[var(--bm-text)]">{title}</div>
-      <div className="text-sm text-[var(--bm-text3)] max-w-md">{description}</div>
-      {action ? <div className="mt-2">{action}</div> : null}
     </Card>
   );
 }
@@ -338,19 +303,13 @@ export default function OverviewPage() {
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex items-start justify-between gap-4 flex-wrap"
+        transition={{ duration: 0.2 }}
       >
-        <div>
-          <h1 className="text-3xl font-bold text-[var(--bm-text)] tracking-tight">
-            {greeting}
-          </h1>
-          <p className="text-sm text-[var(--bm-text3)] mt-1">{dateStr}</p>
-        </div>
-        {activeProject && (
-          <Badge variant="neutral" size="md">
-            Active: {activeProject.title}
-          </Badge>
-        )}
+        <PageHeader
+          title={greeting}
+          subtitle={dateStr}
+          action={activeProject ? <Badge variant="neutral" size="md">Active: {activeProject.title}</Badge> : undefined}
+        />
       </motion.div>
 
       {/* ── Profile completeness card (full card variant — shows when score < 80) ── */}
@@ -378,15 +337,10 @@ export default function OverviewPage() {
           label="Startup Score"
           value={
             activeProject ? (
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-                <ScoreRing val={score} color={scoreColor} size={48} />
+              <div className="flex flex-col items-center gap-1">
+                <ScoreRing value={score} color={scoreColor} size={48} />
                 {scoreDelta !== null && (
-                  <span style={{
-                    fontSize: 11,
-                    fontWeight: 600,
-                    color: scoreDelta > 0 ? "var(--bm-green)" : scoreDelta < 0 ? "var(--bm-red)" : "var(--bm-text3)",
-                    letterSpacing: "0.02em",
-                  }}>
+                  <span className="text-[11px] font-semibold tracking-[0.02em]" style={{ color: scoreDelta > 0 ? "var(--bm-green)" : scoreDelta < 0 ? "var(--bm-red)" : "var(--bm-text3)" }}>
                     {scoreDelta > 0 ? `+${scoreDelta}` : scoreDelta < 0 ? `${scoreDelta}` : "→"} vs yesterday
                   </span>
                 )}
@@ -401,29 +355,29 @@ export default function OverviewPage() {
           icon={<Zap size={14} />}
           label="Consistency"
           value={
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-              <span style={{ fontSize: 20, fontWeight: 700, color: consistencyBonus >= 8 ? "var(--bm-green)" : consistencyBonus >= 5 ? "var(--bm-amber)" : "var(--bm-text2)" }}>
+            <div className="flex flex-col items-center gap-1">
+              <span className="text-xl font-bold" style={{ color: consistencyBonus >= 8 ? "var(--bm-green)" : consistencyBonus >= 5 ? "var(--bm-amber)" : "var(--bm-text2)" }}>
                 {consistencyPct}%
               </span>
-              <span style={{ fontSize: 10, color: "var(--bm-text3)" }}>last 7 days</span>
+              <span className="text-[10px] text-[var(--bm-text3)]">last 7 days</span>
             </div>
           }
           accent={consistencyBonus >= 8}
         />
-        <MetricCard
-          icon={<FolderKanban size={14} />}
+        <StatCard
+          icon={FolderKanban}
           label="Active Projects"
-          value={summaries.length > 0 ? summaries.length : <span className="text-[var(--bm-text3)]">—</span>}
+          value={summaries.length > 0 ? summaries.length : "—"}
         />
-        <MetricCard
-          icon={<Target size={14} />}
+        <StatCard
+          icon={Target}
           label="Milestones Completed"
-          value={milestonesCompleted > 0 ? milestonesCompleted : <span className="text-[var(--bm-text3)]">—</span>}
+          value={milestonesCompleted > 0 ? milestonesCompleted : "—"}
         />
-        <MetricCard
-          icon={<Flame size={14} />}
+        <StatCard
+          icon={Flame}
           label="Founder Streak"
-          value={streak > 0 ? `${streak}d` : <span className="text-[var(--bm-text3)]">—</span>}
+          value={streak > 0 ? `${streak}d` : "—"}
         />
         {activeProject && (
           <MetricCard
@@ -443,8 +397,9 @@ export default function OverviewPage() {
       {/* ── Empty state ── */}
       {summaries.length === 0 && (
         <EmptyState
+          icon={FolderKanban}
           title="No projects yet"
-          description="Create your first project and BuildMind will turn it into an executable plan."
+          body="Create your first project and BuildMind will turn it into an executable plan."
           action={
             <Button onClick={() => router.push("/projects")}>
               Create your first project <ArrowRight size={14} />
@@ -463,14 +418,16 @@ export default function OverviewPage() {
             transition={{ delay: 0.12 }}
             className="flex flex-col gap-4"
           >
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold text-[var(--bm-text)]">Your Projects</h2>
+            <SectionHeader
+              label="Your Projects"
+              action={
               <Link href="/projects">
                 <Button variant="ghost" size="sm">
                   View all <ChevronRight size={12} />
                 </Button>
               </Link>
-            </div>
+              }
+            />
 
             <div className="flex flex-col gap-3">
               {summaries.slice(0, 3).map((s, i) => {
@@ -489,7 +446,7 @@ export default function OverviewPage() {
                     <Card hover className="p-4">
                       <div className="flex items-center gap-4">
                         {/* Score ring */}
-                        <ScoreRing val={pScore} color={pColor} size={44} />
+                        <ScoreRing value={pScore} color={pColor} size={44} />
 
                         {/* Info */}
                         <div className="flex-1 min-w-0 flex flex-col gap-2">
@@ -538,9 +495,9 @@ export default function OverviewPage() {
           >
             {/* Score breakdown */}
             <Card className="p-5 flex flex-col items-center gap-3">
-              <span className="text-xs font-medium text-[var(--bm-text3)] uppercase tracking-widest self-start">
-                Score Breakdown
-              </span>
+              <div className="self-stretch">
+                <SectionHeader label="Score Breakdown" />
+              </div>
               <Pentagon scores={pentagonScores} />
               {activeProject && (
                 <ScoreBreakdown

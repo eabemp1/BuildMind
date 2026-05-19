@@ -18,6 +18,8 @@ import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { computeUrgencySignal, type UrgencySignal, type UrgencyLevel } from "@/lib/urgency";
+import { storage } from "@/lib/storage";
+import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
 
 const LEVEL_STYLES: Record<UrgencyLevel, { bg: string; border: string; dot: string; text: string }> = {
   none:     { bg: "transparent", border: "transparent", dot: "#555", text: "var(--bm-text2)" },
@@ -30,19 +32,21 @@ const LEVEL_STYLES: Record<UrgencyLevel, { bg: string; border: string; dot: stri
 const DISMISS_KEY = "bm_urgency_dismissed";
 
 function getDismissedDate(): string {
-  if (typeof window === "undefined") return "";
-  return localStorage.getItem(DISMISS_KEY) ?? "";
+  return storage.get(DISMISS_KEY) ?? "";
 }
 
 function setDismissedToday(): void {
-  if (typeof window === "undefined") return;
-  const d = new Date();
-  localStorage.setItem(DISMISS_KEY, `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`);
+  const date = todayDismissKey();
+  storage.set(DISMISS_KEY, date);
+  persistBehaviorState({ urgency_dismissed_date: date });
 }
 
 function isDismissedToday(): boolean {
-  const d = new Date();
-  return getDismissedDate() === `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  return getDismissedDate() === todayDismissKey();
+}
+
+function todayDismissKey(): string {
+  return new Date().toISOString().slice(0, 10);
 }
 
 export default function UrgencyBanner({ currentScore }: { currentScore: number }) {
@@ -56,6 +60,13 @@ export default function UrgencyBanner({ currentScore }: { currentScore: number }
     const s = computeUrgencySignal(currentScore);
     setSignal(s);
     setVisible(s.level !== "none");
+    fetchBehaviorState<{ urgency_dismissed_date: string }>(["urgency_dismissed_date"]).then(values => {
+      if (values.urgency_dismissed_date === todayDismissKey()) {
+        storage.set(DISMISS_KEY, values.urgency_dismissed_date);
+        setDismissed(true);
+        setVisible(false);
+      }
+    }).catch(() => {});
   }, [currentScore]);
 
   const handleDismiss = () => {

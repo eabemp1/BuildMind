@@ -6,6 +6,7 @@
  */
 
 import { storage } from "@/lib/storage";
+import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
 
 export type AchievementRarity = "common" | "rare" | "epic" | "legendary";
 export type AchievementCategory = "streak" | "tasks" | "ai" | "projects" | "social" | "explorer" | "founder";
@@ -237,6 +238,7 @@ export function getUnlocked(): UnlockedAchievement[] {
 
 function saveUnlocked(list: UnlockedAchievement[]): void {
   storage.setJSON(STORAGE_KEY, list);
+  persistBehaviorState({ achievements_unlocked: list });
 }
 
 export function getTotalXP(): number {
@@ -245,7 +247,13 @@ export function getTotalXP(): number {
 }
 
 function addXP(amount: number): void {
-  storage.set(XP_KEY, String(getTotalXP() + amount));
+  const next = getTotalXP() + amount;
+  storage.set(XP_KEY, String(next));
+  fetch("/api/user/xp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ amount }),
+  }).catch(() => {});
 }
 
 export function getAchievementStats(): AchievementStats {
@@ -268,6 +276,32 @@ export function updateAchievementStats(partial: Partial<AchievementStats>): void
   const updated = { ...current, ...partial };
   if ((partial.streak ?? 0) > current.maxStreak) updated.maxStreak = partial.streak!;
   storage.setJSON(STATS_KEY, updated);
+  persistBehaviorState({ achievement_stats: updated });
+}
+
+export async function syncAchievementsFromServer(): Promise<void> {
+  if (typeof window === "undefined") return;
+  const [behavior, xpRes] = await Promise.allSettled([
+    fetchBehaviorState<{
+      achievements_unlocked: UnlockedAchievement[];
+      achievement_stats: Partial<AchievementStats>;
+    }>(["achievements_unlocked", "achievement_stats"]),
+    fetch("/api/user/xp", { cache: "no-store" }),
+  ]);
+
+  if (behavior.status === "fulfilled") {
+    if (Array.isArray(behavior.value.achievements_unlocked)) {
+      storage.setJSON(STORAGE_KEY, behavior.value.achievements_unlocked);
+    }
+    if (behavior.value.achievement_stats && typeof behavior.value.achievement_stats === "object") {
+      storage.setJSON(STATS_KEY, { ...defaultStats(), ...behavior.value.achievement_stats });
+    }
+  }
+
+  if (xpRes.status === "fulfilled" && xpRes.value.ok) {
+    const payload = await xpRes.value.json().catch(() => null) as { xp?: number } | null;
+    if (typeof payload?.xp === "number") storage.set(XP_KEY, String(payload.xp));
+  }
 }
 
 /** Returns newly unlocked achievements (call after any stat update) */

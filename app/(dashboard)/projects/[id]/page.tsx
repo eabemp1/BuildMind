@@ -10,11 +10,12 @@ import {
 import { useDeleteProjectMutation, useProjectDetailQuery, useUpdateTaskMutation } from "@/lib/queries";
 import { setActiveProjectId } from "@/lib/api";
 import { createClient } from "@/lib/supabase/client";
-import { recordTaskCompletion, incrementDailyStreak, checkUpgradeTrigger, getTasksDone, getStoredStreak } from "@/lib/upgrade";
+import { storage } from "@/lib/storage";
+import { getTasksDone, getStoredStreak } from "@/lib/upgrade";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queries";
-import BuildMindLoader from "@/components/BuildMindLoader";
 import { ScoreBreakdown } from "@/components/ui/ScoreBreakdown";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 type Tab = "milestones" | "tasks" | "validation" | "roadmap";
 
@@ -55,7 +56,7 @@ function ReadinessPrompt({
         </div>
         <button
           onClick={() => {
-            localStorage.setItem(`bm_transition_dismissed_${projectId}_${readiness.currentStage}`, "1");
+            storage.set(`bm_transition_dismissed_${projectId}_${readiness.currentStage}`, "1");
             onDismiss();
           }}
           style={{ background: "none", border: "none", color: "var(--bm-text4)", cursor: "pointer", fontSize: 16, padding: 0, lineHeight: 1 }}>
@@ -449,7 +450,7 @@ export default function ProjectDetailPage() {
   useEffect(() => {
     if (!project?.id) return;
     const dismissKey = `bm_stage_transition_dismissed_${project.id}_${project.startup_stage}`;
-    if (localStorage.getItem(dismissKey)) return;
+    if (storage.get(dismissKey)) return;
 
     fetch("/api/ai/check-stage-transition", {
       method: "POST",
@@ -474,7 +475,7 @@ export default function ProjectDetailPage() {
   useEffect(() => {
     if (!id || !project?.id) return;
     const dismissKey = `bm_transition_dismissed_${id}_${project.startup_stage}`;
-    if (localStorage.getItem(dismissKey)) {
+    if (storage.get(dismissKey)) {
       setReadinessDismissed(true);
       return;
     }
@@ -584,11 +585,6 @@ export default function ProjectDetailPage() {
     const newCompleted = !task.is_completed;
     updateMutation.mutate({ taskId: task.id, isCompleted: newCompleted, notes: task.notes ?? "" });
     if (newCompleted) {
-      recordTaskCompletion();
-      const streak = incrementDailyStreak();
-      const { shouldUpgrade } = checkUpgradeTrigger(streak);
-      if (shouldUpgrade) setShowUpgrade(true);
-
       // REC 2.3: Check if completing this task finishes a milestone — if so, trigger challenge
       const taskMilestone = milestones.find(m => m.id === task.milestone_id);
       if (taskMilestone) {
@@ -603,13 +599,29 @@ export default function ProjectDetailPage() {
     }
   };
 
-  if (isLoading) return <BuildMindLoader variant="card" label="Loading project…" />;
+  if (isLoading) return (
+    <div className="mx-auto max-w-[860px] px-6 py-7 pb-12">
+      <div className="mb-6 space-y-3 border-b border-[var(--bm-border)] pb-5">
+        <div className="h-3 w-24 animate-pulse rounded-lg bg-[var(--bm-bg3)]" />
+        <div className="h-7 w-2/3 animate-pulse rounded-lg bg-[var(--bm-bg3)]" />
+        <div className="flex gap-2">
+          <div className="h-6 w-20 animate-pulse rounded-full bg-[var(--bm-bg3)]" />
+          <div className="h-6 w-24 animate-pulse rounded-full bg-[var(--bm-bg3)]" />
+        </div>
+      </div>
+      <div className="grid gap-4">
+        {[0, 1, 2, 3].map((row) => (
+          <div key={row} className="h-24 animate-pulse rounded-xl border border-[var(--bm-border)] bg-[var(--bm-bg2)]" />
+        ))}
+      </div>
+    </div>
+  );
   if (error || !project) return (
-    <div style={{ padding: "40px 24px", textAlign: "center" }}>
-      <div style={{ fontSize: 13, color: "var(--bm-red)", marginBottom: 12 }}>
+    <div className="px-6 py-10 text-center">
+      <div className="mb-3 text-[13px] text-[var(--bm-red)]">
         {error instanceof Error ? error.message : "Project not found."}
       </div>
-      <button onClick={() => router.back()} style={{ background: "none", border: "1px solid var(--bm-border)", color: "var(--bm-text2)", cursor: "pointer", fontFamily: "inherit", fontSize: 13, padding: "8px 16px", borderRadius: 9 }}>← Back</button>
+      <button onClick={() => router.back()} className="rounded-lg border border-[var(--bm-border)] bg-transparent px-4 py-2 text-[13px] text-[var(--bm-text2)]">← Back</button>
     </div>
   );
 
@@ -642,7 +654,7 @@ export default function ProjectDetailPage() {
             </div>
             <button
               onClick={() => {
-                localStorage.setItem(`bm_stage_transition_dismissed_${project.id}_${project.startup_stage}`, "1");
+                storage.set(`bm_stage_transition_dismissed_${project.id}_${project.startup_stage}`, "1");
                 setStageTransitionDismissed(true);
               }}
               style={{ background: "none", border: "none", color: "var(--bm-text4)", cursor: "pointer", fontSize: 16, padding: 0, lineHeight: 1 }}>
@@ -676,21 +688,26 @@ export default function ProjectDetailPage() {
         />
       ) : null}
 
-      <div style={{ marginBottom: 20, paddingBottom: 18, borderBottom: "1px solid var(--bm-border)" }}>
+      <div className="mb-5 border-b border-[var(--bm-border)] pb-[18px]">
         <button onClick={() => router.back()}
-          style={{ background: "none", border: "none", color: "var(--bm-text3)", cursor: "pointer", fontSize: 11, padding: 0, marginBottom: 14, fontFamily: "inherit" }}>
+          className="mb-3.5 border-none bg-transparent p-0 text-[11px] text-[var(--bm-text3)]">
           ← Projects
         </button>
-        <h1 style={{ fontSize: 20, fontWeight: 800, color: "var(--bm-text)", marginBottom: 10, wordBreak: "break-word" }}>{String(project.title ?? "Untitled project")}</h1>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <PageHeader
+          title={String(project.title ?? "Untitled project")}
+          subtitle={narrativeSentence ?? `${completedCount}/${tasks.length} tasks · ${progress}% complete`}
+          action={
+            <button onClick={() => router.push("/today")}
+              className="rounded-lg border-none bg-[var(--grad-primary)] px-3.5 py-2 text-[12px] font-bold text-white">
+              Today&apos;s action
+            </button>
+          }
+        />
+        <div className="mt-3 flex flex-wrap items-center gap-2">
           <span style={{ fontSize: 10, padding: "2px 9px", borderRadius: 20, background: "rgba(124,58,237,0.10)", color: "#A78BFA", border: "1px solid rgba(124,58,237,0.22)", fontWeight: 700 }}>{String(stage)}</span>
           <ScoreBreakdown score={score} compact />
-          <span style={{ fontSize: 11, color: "var(--bm-text3)" }}>{completedCount}/{tasks.length} tasks</span>
-          <span style={{ fontSize: 11, color: progress >= 60 ? "#4ade80" : progress >= 30 ? "#fbbf24" : "var(--bm-text3)" }}>{progress}% complete</span>
-          <button onClick={() => router.push("/today")}
-            style={{ marginLeft: "auto", background: "var(--grad-primary)", color: "#fff", fontSize: 12, fontWeight: 700, padding: "8px 14px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit" }}>
-            Today&apos;s action
-          </button>
+          <span className="text-[11px] text-[var(--bm-text3)]">{completedCount}/{tasks.length} tasks</span>
+          <span className="text-[11px]" style={{ color: progress >= 60 ? "#4ade80" : progress >= 30 ? "#fbbf24" : "var(--bm-text3)" }}>{progress}% complete</span>
         </div>
       </div>
 

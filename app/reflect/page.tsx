@@ -9,11 +9,14 @@ import { notifyStreakMilestone } from "@/lib/notifications";
 import { trackFunnelStep } from "@/lib/onboarding-analytics";
 import { CheckCircle2, ChevronRight, Flame, Brain, ArrowRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { storage } from "@/lib/storage";
+import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
 import TestimonialModal, {
   shouldShowTestimonialModal,
   markTestimonialAsked,
   type TestimonialSource,
 } from "@/components/TestimonialModal";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 type Outcome = "completed" | "blocked" | "partial" | "learned";
 
@@ -49,6 +52,7 @@ export default function ReflectPage() {
   const [showHistory, setShowHistory] = useState(false);
   const [streak, setStreak] = useState(0);
   const [startupStage, setStartupStage] = useState("Idea");
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [testimonialSource, setTestimonialSource] = useState<TestimonialSource | null>(null);
   /**
    * historySynthesis — AI interpretation of the founder's reflection
@@ -59,12 +63,18 @@ export default function ReflectPage() {
 
   useEffect(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem("bm_reflect_history") ?? "[]");
+      const saved = storage.getJSON("bm_reflect_history", []);
       setHistory(saved);
-      const action = JSON.parse(localStorage.getItem("bm_today_action") ?? "{}");
+      const action = storage.getJSON<{ action?: string }>("bm_today_action", {});
       setTodayAction(action?.action ?? "");
       setStreak(getStoredStreak());
     } catch {}
+    fetchBehaviorState<{ today_action: { action?: string } }>(["today_action"]).then(values => {
+      if (values.today_action?.action) {
+        storage.setJSON("bm_today_action", values.today_action);
+        setTodayAction(values.today_action.action);
+      }
+    }).catch(() => {});
     // Fix #2: Fetch actual startup stage from project summaries
     // Fix #11: Seed reflect history from Supabase so it survives device switches
     (async () => {
@@ -75,7 +85,7 @@ export default function ReflectPage() {
           const [summariesRes, reflectionsRes] = await Promise.allSettled([
             supabase
               .from("project_summaries")
-              .select("startup_stage")
+              .select("id, startup_stage")
               .eq("user_id", user.id)
               .order("updated_at", { ascending: false })
               .limit(1),
@@ -90,6 +100,9 @@ export default function ReflectPage() {
           if (summariesRes.status === "fulfilled" && summariesRes.value.data?.[0]?.startup_stage) {
             setStartupStage(summariesRes.value.data[0].startup_stage);
           }
+          if (summariesRes.status === "fulfilled" && summariesRes.value.data?.[0]?.id) {
+            setActiveProjectId(summariesRes.value.data[0].id);
+          }
 
           if (reflectionsRes.status === "fulfilled" && reflectionsRes.value.data?.length) {
             const serverHistory = reflectionsRes.value.data.map((r) => ({
@@ -101,7 +114,7 @@ export default function ReflectPage() {
             })).reverse();
             // Merge with localStorage — prefer server data, it's the source of truth
             setHistory(serverHistory);
-            localStorage.setItem("bm_reflect_history", JSON.stringify(serverHistory));
+            storage.setJSON("bm_reflect_history", serverHistory);
 
             // ── Cross-time AI synthesis ──────────────────────────────────────
             // Only fire when there's enough history to say something meaningful.
@@ -150,7 +163,7 @@ export default function ReflectPage() {
       try {
         const res = await fetch("/api/ai/reflect-action", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ outcome, note, confidence, todayAction, stage: startupStage, streak }),
+          body: JSON.stringify({ outcome, note, confidence, todayAction, stage: startupStage, streak, projectId: activeProjectId }),
         });
         if (res.ok) { const d = await res.json(); const payload = d.data ?? d; caus = payload.causality || fallback; next = payload.nextAction || ""; }
       } catch {}
@@ -159,7 +172,10 @@ export default function ReflectPage() {
       const entry = { date: Date.now(), outcome, note, confidence, causality: caus };
       const newHistory = [...history, entry].slice(-30);
       setHistory(newHistory);
-      localStorage.setItem("bm_reflect_history", JSON.stringify(newHistory));
+      storage.setJSON("bm_reflect_history", newHistory);
+      persistBehaviorState({
+        today_action: { action: todayAction, outcome, note, confidence },
+      });
       const stats = getAchievementStats();
       updateAchievementStats({ ...stats, reflectionsLogged: (stats.reflectionsLogged ?? 0) + 1 });
       checkAndUnlockAchievements();
@@ -167,7 +183,8 @@ export default function ReflectPage() {
       // Increment streak only when the founder both completed today's action AND reflected.
       // bm_checkin_done_date is set by today/page.tsx after a successful check-in.
       const today = new Date().toISOString().split("T")[0];
-      const checkinDoneToday = localStorage.getItem("bm_checkin_done_date") === today;
+      const serverState = await fetchBehaviorState<{ checkin_done_date: string }>(["checkin_done_date"]);
+      const checkinDoneToday = (serverState.checkin_done_date ?? storage.get("bm_checkin_done_date")) === today;
       if (checkinDoneToday) {
         const newStreak = incrementDailyStreak();
         updateAchievementStats({ ...getAchievementStats(), streak: newStreak });
@@ -176,9 +193,8 @@ export default function ReflectPage() {
 
       trackFunnelStep("first_reflect");
       // Mark reflection done today for the daily loop status bar in app-shell
-      const rfNow = new Date();
-      const rfKey = `bm_reflect_done_${rfNow.getFullYear()}-${rfNow.getMonth()}-${rfNow.getDate()}`;
-      localStorage.setItem(rfKey, "1");
+      const rfKey = `bm_reflect_done_${new Date().toISOString().slice(0, 10)}`;
+      storage.set(rfKey, "1");
 
       // Check if this session should trigger the testimonial modal
       const currentStreak = getStoredStreak();
@@ -237,11 +253,20 @@ export default function ReflectPage() {
   }
 
   return (
-    <div style={{ maxWidth: 620, margin: "0 auto", padding: "28px 24px" }}>
-      <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 24 }}>
-        <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 6 }}>Daily Reflection</div>
-        <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em", margin: 0 }}>How did today go?</h1>
-        {todayAction && <p style={{ fontSize: 13, color: "var(--bm-text3)", marginTop: 6, lineHeight: 1.5 }}>Today's action: <span style={{ color: "var(--bm-text2)" }}>{todayAction}</span></p>}
+    <div className="mx-auto max-w-[620px] px-6 py-7">
+      <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className="mb-6">
+        <PageHeader
+          title="How did today go?"
+          subtitle={todayAction ? `Today's action: ${todayAction}` : "Daily reflection"}
+          action={
+            streak > 0 ? (
+              <span className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-[var(--bm-border)] bg-[var(--bm-bg2)] px-3 text-[11px] font-bold text-[var(--bm-amber)]">
+                <Flame size={13} />
+                {streak}d
+              </span>
+            ) : null
+          }
+        />
       </motion.div>
 
       {/* Cross-time AI synthesis — shown when we have enough history */}

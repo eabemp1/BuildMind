@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { z } from "zod";
 import { useRouter } from "next/navigation";
@@ -24,6 +24,10 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input, Textarea } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { SectionHeader } from "@/components/ui/SectionHeader";
+import { ScoreRing } from "@/components/ui/ScoreRing";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 const STAGE_OPTIONS = ["Idea", "Validation", "MVP", "Launch", "Growth", "Revenue"] as const;
@@ -58,32 +62,6 @@ function normalizeStage(input: string): StartupStage {
   return "Idea";
 }
 
-// ── Score ring ────────────────────────────────────────────────────────────────
-function MiniRing({ score, size = 44 }: { score: number; size?: number }) {
-  const r = (size - 5) / 2;
-  const circ = 2 * Math.PI * r;
-  const color = score >= 60 ? "var(--bm-green)" : score >= 30 ? "var(--bm-amber)" : "var(--bm-text3)";
-  return (
-    <div style={{ position: "relative", width: size, height: size, flexShrink: 0 }}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform: "rotate(-90deg)" }}>
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth={4.5} />
-        <motion.circle
-          cx={size / 2} cy={size / 2} r={r}
-          fill="none" stroke={color} strokeWidth={4.5}
-          strokeLinecap="round" strokeDasharray={circ}
-          initial={{ strokeDashoffset: circ }}
-          animate={{ strokeDashoffset: circ - (score / 100) * circ }}
-          transition={{ duration: 0.9, ease: "easeOut", delay: 0.2 }}
-          style={{ filter: `drop-shadow(0 0 3px ${color}60)` }}
-        />
-      </svg>
-      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <span style={{ fontSize: 11, fontWeight: 800, color, lineHeight: 1 }}>{score}</span>
-      </div>
-    </div>
-  );
-}
-
 // ── Progress bar ──────────────────────────────────────────────────────────────
 function ProgressBar({
   value, max, i = 0,
@@ -99,24 +77,6 @@ function ProgressBar({
         transition={{ duration: 0.75, ease: "easeOut", delay: 0.25 + i * 0.05 }}
       />
     </div>
-  );
-}
-
-function EmptyState({
-  title,
-  description,
-  action,
-}: {
-  title: string;
-  description: string;
-  action?: ReactNode;
-}) {
-  return (
-    <Card className="p-6 text-center flex flex-col items-center gap-3">
-      <div className="text-base font-semibold text-[var(--bm-text)]">{title}</div>
-      <div className="text-sm text-[var(--bm-text3)] max-w-md">{description}</div>
-      {action ? <div className="mt-2">{action}</div> : null}
-    </Card>
   );
 }
 
@@ -328,31 +288,23 @@ export default function ProjectsPage() {
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex items-start justify-between gap-4 flex-wrap"
+        transition={{ duration: 0.2 }}
       >
-        <div>
-          <h1 className="text-3xl font-bold text-[var(--bm-text)] tracking-tight">Projects</h1>
-          <p className="text-sm text-[var(--bm-text3)] mt-1">
-            Build and manage all your startup ideas in one place.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <div
-            className="text-xs px-3 py-1.5 rounded-lg"
-            style={{
-              background: "var(--bm-bg3)",
-              border: "1px solid var(--bm-border)",
-              color: "var(--bm-text3)",
-            }}
-          >
-            {summaries.length}/{hasUnlimitedProjects ? "∞" : limits.maxProjects} projects
-          </div>
-          <Button onClick={() => setShowCreate(true)}>
-            <Plus size={14} />
-            New Project
-          </Button>
-        </div>
+        <PageHeader
+          title="Projects"
+          subtitle="Build and manage all your startup ideas in one place."
+          action={
+            <>
+              <div className="rounded-lg border border-[var(--bm-border)] bg-[var(--bm-bg3)] px-3 py-1.5 text-xs text-[var(--bm-text3)]">
+                {summaries.length}/{hasUnlimitedProjects ? "∞" : limits.maxProjects} projects
+              </div>
+              <Button onClick={() => setShowCreate(true)}>
+                <Plus size={14} />
+                New Project
+              </Button>
+            </>
+          }
+        />
       </motion.div>
 
       {/* Loading */}
@@ -365,8 +317,9 @@ export default function ProjectsPage() {
       {/* Empty state */}
       {!isLoading && summaries.length === 0 && (
         <EmptyState
+          icon={Plus}
           title="No projects yet"
-          description="Start your first project and BuildMind will break it into an executable roadmap."
+          body="Start your first project and BuildMind will break it into an executable roadmap."
           action={
             <Button onClick={() => setShowCreate(true)}>
               <Plus size={14} />
@@ -379,6 +332,7 @@ export default function ProjectsPage() {
       {/* Project list */}
       {!isLoading && summaries.length > 0 && (
         <div className="flex flex-col gap-3">
+          <SectionHeader label="Active portfolio" />
           {summaries.map((s, i) => {
             const score = computeStartupScore({
               ...s,
@@ -413,7 +367,7 @@ export default function ProjectsPage() {
                   <div className="p-5">
                     <div className="flex items-start gap-4">
                       {/* Score ring */}
-                      <MiniRing score={score} />
+                      <ScoreRing value={score} size={44} color={score >= 60 ? "var(--bm-green)" : score >= 30 ? "var(--bm-amber)" : "var(--bm-text3)"} />
 
                       {/* Info */}
                       <div className="flex-1 min-w-0 flex flex-col gap-2.5">

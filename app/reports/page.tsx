@@ -6,7 +6,6 @@ import { useProjectSummariesQuery, useWeeklyReportMetricsQuery } from "@/lib/que
 import { computeStartupScore } from "@/lib/buildmind";
 import { getScoreHistory, getXP } from "@/lib/scoring";
 import { getStoredStreak } from "@/lib/plan";
-import BuildMindLoader from "@/components/BuildMindLoader";
 import PaywallGate from "@/components/PaywallGate";
 import { usePlan } from "@/lib/usePlan";
 import {
@@ -16,6 +15,7 @@ import {
   ChevronDown, Star, Activity,
   type LucideIcon,
 } from "lucide-react";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 function useIsMobile() {
   const [m, setM] = useState(false);
@@ -273,7 +273,20 @@ export default function ReportsPage() {
     }
   }
 
-  if (isLoading || metricsLoading) return <BuildMindLoader/>;
+  if (isLoading || metricsLoading) return (
+    <div className="mx-auto max-w-[980px] px-6 py-8">
+      <div className="mb-7 space-y-3 border-b border-[var(--bm-border)] pb-5">
+        <div className="h-7 w-48 animate-pulse rounded-lg bg-[var(--bm-bg3)]" />
+        <div className="h-4 w-72 animate-pulse rounded-lg bg-[var(--bm-bg3)]" />
+      </div>
+      <div className="grid gap-3 sm:grid-cols-4">
+        {[0, 1, 2, 3].map((card) => (
+          <div key={card} className="h-28 animate-pulse rounded-xl border border-[var(--bm-border)] bg-[var(--bm-bg2)]" />
+        ))}
+      </div>
+      <div className="mt-4 h-56 animate-pulse rounded-xl border border-[var(--bm-border)] bg-[var(--bm-bg2)]" />
+    </div>
+  );
 
   const weekLabel = (() => {
     const now = new Date();
@@ -299,41 +312,29 @@ export default function ReportsPage() {
         style={{ maxWidth:980, margin:"0 auto", padding: isMobile ? "4px 0 40px" : "32px 24px 48px" }}>
 
         {/* HEADER */}
-        <motion.div initial={{ opacity:0, y:-10 }} animate={{ opacity:1, y:0 }}
-          style={{ marginBottom:28, display:"flex", alignItems:"flex-start",
-            justifyContent:"space-between", flexWrap:"wrap", gap:16 }}>
-          <div>
-            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
-              <h1 style={{ fontSize: isMobile ? 26 : 24, fontWeight:900, color:"var(--bm-text)",
-                letterSpacing:"-0.04em", margin:0, lineHeight:1 }}>Weekly Report</h1>
-              <span style={{ fontSize:9, padding:"3px 8px", borderRadius:20,
-                background:"var(--bm-accent-dim)", color:"var(--bm-accent)",
-                border:"1px solid var(--bm-accent-bd)", fontWeight:700, letterSpacing:"0.08em" }}>
-                {plan.toUpperCase()}
-              </span>
-            </div>
-            <p style={{ fontSize:12, color:"var(--bm-text3)", margin:0, display:"flex", alignItems:"center", gap:8 }}>
-              <span>{weekLabel}</span>
-              <span style={{ color:"var(--bm-border)" }}>·</span>
-              <span style={{ color:"var(--bm-text2)", fontWeight:500 }}>{project?.title ?? "Your startup"}</span>
-            </p>
-          </div>
-          <div style={{ position:"relative" }} className="bm-no-print">
-            <button onClick={() => setMenuOpen(v => !v)} disabled={!!exporting}
-              style={{ display:"flex", alignItems:"center", gap:7, padding:"10px 16px",
-                borderRadius:"var(--r-lg)", border:"1px solid var(--bm-border)",
-                background:"var(--bm-bg2)", color:"var(--bm-text2)", fontSize:12,
-                fontWeight:600, cursor:"pointer", fontFamily:"inherit", transition:"all 0.15s" }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor="var(--bm-accent-bd)"; e.currentTarget.style.color="var(--bm-accent)"; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor="var(--bm-border)"; e.currentTarget.style.color="var(--bm-text2)"; }}>
-              <Download size={12}/>
-              {exporting ? "Exporting…" : "Export"}
-              <ChevronDown size={10} style={{ transform: menuOpen ? "rotate(180deg)" : "none", transition:"transform 0.15s" }}/>
-            </button>
-            <AnimatePresence>
-              {menuOpen && <ExportMenu onSelect={handleExport} onClose={() => setMenuOpen(false)}/>}
-            </AnimatePresence>
-          </div>
+        <motion.div initial={{ opacity:0, y:-10 }} animate={{ opacity:1, y:0 }} transition={{ duration: 0.2 }} className="mb-7">
+          <PageHeader
+            title="Weekly Report"
+            subtitle={`${weekLabel} · ${project?.title ?? "Your startup"}`}
+            action={
+              <div className="bm-no-print flex items-center gap-2">
+                <span className="hidden rounded-full border border-[var(--bm-accent-bd)] bg-[var(--bm-accent-dim)] px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-[var(--bm-accent)] sm:inline-flex">
+                  {plan.toUpperCase()}
+                </span>
+                <div className="relative">
+                  <button onClick={() => setMenuOpen(v => !v)} disabled={!!exporting}
+                    className="flex items-center gap-2 rounded-lg border border-[var(--bm-border)] bg-[var(--bm-bg2)] px-4 py-2.5 text-[12px] font-semibold text-[var(--bm-text2)] transition-colors hover:border-[var(--bm-accent-bd)] hover:text-[var(--bm-accent)]">
+                    <Download size={12}/>
+                    {exporting ? "Exporting…" : "Export"}
+                    <ChevronDown size={10} style={{ transform: menuOpen ? "rotate(180deg)" : "none", transition:"transform 0.15s" }}/>
+                  </button>
+                  <AnimatePresence>
+                    {menuOpen && <ExportMenu onSelect={handleExport} onClose={() => setMenuOpen(false)}/>}
+                  </AnimatePresence>
+                </div>
+              </div>
+            }
+          />
         </motion.div>
 
         {/* Toast */}

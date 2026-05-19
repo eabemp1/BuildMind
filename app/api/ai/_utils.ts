@@ -94,19 +94,19 @@ export async function enforceAndTrackAIUsage(userId: string, planOverride?: stri
   // Note: daily count was already incremented above — we must decrement it back
   // to keep daily and monthly counts in sync when the monthly cap is the blocker.
   if (newCount === -1) {
-    // Best-effort rollback of the daily increment (non-throwing)
+    // Best-effort rollback of the daily increment (non-throwing).
+    // Use a dedicated decrement RPC; increment_ai_usage_daily_capped(-1) is
+    // the unlimited increment path, not a decrement path.
     try {
-      await supabase.rpc("increment_ai_usage_daily_capped", {
-        p_user_id: userId, p_date: today,
-        p_limit: -1, // pass -1 to use the uncapped path as a decrement vehicle
-      });
+      await supabase.rpc("decrement_ai_usage_daily", { p_user_id: userId, p_date: today });
     } catch {
-      // non-fatal rollback attempt
+      // Fallback for environments that have not run the decrement RPC migration.
+      await supabase
+        .from("ai_usage_daily")
+        .update({ count: Math.max(0, Number(dailyCount ?? 1) - 1) })
+        .eq("user_id", userId)
+        .eq("date", today);
     }
-    // Decrement via direct update since we don't have a decrement RPC
-    supabase.from("ai_usage_daily")
-      .update({ count: dailyCount - 1 })
-      .eq("user_id", userId).eq("date", today).then(() => {});
     throw new Error(
       `Monthly AI limit reached (${monthlyLimit} calls). Upgrade to Builder for unlimited AI.`,
     );

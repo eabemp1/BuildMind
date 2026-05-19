@@ -30,6 +30,7 @@ import {
   NAV, hasPlanAccess, SectionLabel, SidebarLogo, NavItem,
 } from "@/components/layout/sidebar-nav";
 import { getTasksCompleted, syncTasksCompletedFromServer } from "@/lib/nav-config";
+import { storage } from "@/lib/storage";
 
 // ── User card at bottom ───────────────────────────────────────────────────────
 function SidebarUser({ onSignOut }: { onSignOut: () => void }) {
@@ -109,7 +110,7 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
   useEffect(() => {
     const checkPending = () => {
       try {
-        setReflectPending(localStorage.getItem("bm_reflect_pending") === "true");
+        setReflectPending(storage.get("bm_reflect_pending") === "true");
         setUnseenBadges(getUnseenCount());
         setTasksCompleted(getTasksCompleted());
       } catch {}

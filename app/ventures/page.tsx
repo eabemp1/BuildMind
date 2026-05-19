@@ -27,6 +27,7 @@ import BuildMindLoader from "@/components/BuildMindLoader";
 import ExecutionSystems, { type ExecutionSystem } from "@/components/ExecutionSystem";
 import { PLAN_PRICE_LABEL } from "@/lib/pricing";
 import type { StartupBlueprint } from "@/lib/ventures/index";
+import { storage } from "@/lib/storage";
 
 // ── Design tokens — purple/indigo palette, distinct from core app ─────────────
 const V = {
@@ -156,21 +157,29 @@ const BLUEPRINT_USED_KEY = "bm_blueprint_first_used";
 // ── Local cache helpers (sync, instant) ──────────────────────────────────────
 
 function loadTracks(): UserTrack[] {
-  if (typeof window === "undefined") return [];
-  try { return JSON.parse(localStorage.getItem(TRACKS_KEY) ?? "[]"); } catch { return []; }
+  return storage.getJSON<UserTrack[]>(TRACKS_KEY, []);
 }
 function cacheTracksLocally(t: UserTrack[]) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(TRACKS_KEY, JSON.stringify(t));
+  storage.setJSON(TRACKS_KEY, t);
 }
 function loadBlueprints(): StartupBlueprint[] {
-  if (typeof window === "undefined") return [];
-  try { return JSON.parse(localStorage.getItem(BLUEPRINTS_KEY) ?? "[]"); } catch { return []; }
+  return storage.getJSON<StartupBlueprint[]>(BLUEPRINTS_KEY, []);
 }
 function cacheBlueprint(bp: StartupBlueprint) {
-  if (typeof window === "undefined") return;
   const existing = loadBlueprints();
-  localStorage.setItem(BLUEPRINTS_KEY, JSON.stringify([bp, ...existing].slice(0, 20)));
+  storage.setJSON(BLUEPRINTS_KEY, [bp, ...existing].slice(0, 20));
+}
+async function syncBlueprintsFromServer(): Promise<StartupBlueprint[]> {
+  try {
+    const res = await fetch("/api/ventures/blueprints", { cache: "no-store" });
+    if (!res.ok) return loadBlueprints();
+    const { blueprints } = await res.json();
+    if (Array.isArray(blueprints)) {
+      storage.setJSON(BLUEPRINTS_KEY, blueprints);
+      return blueprints;
+    }
+  } catch {}
+  return loadBlueprints();
 }
 
 // ── Server sync helpers (async, fire-and-forget on write) ────────────────────
@@ -229,8 +238,7 @@ function trackProgress(t: UserTrack) {
 // blueprint. Now the flag is persisted server-side; localStorage is just a cache.
 
 function hasUsedFirstBlueprintLocally(): boolean {
-  if (typeof window === "undefined") return false;
-  return localStorage.getItem(BLUEPRINT_USED_KEY) === "true";
+  return storage.get(BLUEPRINT_USED_KEY) === "true";
 }
 
 async function hasUsedFirstBlueprint(): Promise<boolean> {
@@ -240,8 +248,8 @@ async function hasUsedFirstBlueprint(): Promise<boolean> {
     const res = await fetch("/api/ventures/blueprint-used", { cache: "no-store" });
     if (!res.ok) return hasUsedFirstBlueprintLocally();
     const { used } = await res.json();
-    if (used && typeof window !== "undefined") {
-      localStorage.setItem(BLUEPRINT_USED_KEY, "true"); // warm local cache
+    if (used) {
+      storage.set(BLUEPRINT_USED_KEY, "true"); // warm local cache
     }
     return used;
   } catch {
@@ -250,14 +258,17 @@ async function hasUsedFirstBlueprint(): Promise<boolean> {
 }
 
 function markFirstBlueprintUsed(): void {
-  if (typeof window !== "undefined") {
-    localStorage.setItem(BLUEPRINT_USED_KEY, "true");
-  }
+  storage.set(BLUEPRINT_USED_KEY, "true");
   fetch("/api/ventures/blueprint-used", { method: "POST" }).catch(() => {});
 }
 
-function saveBlueprint(bp: StartupBlueprint): void {
+function saveBlueprint(bp: StartupBlueprint, description?: string): void {
   cacheBlueprint(bp);
+  fetch("/api/ventures/blueprints", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ blueprint: bp, description }),
+  }).catch(() => {});
 }
 
 // ── Layer labels ──────────────────────────────────────────────────────────────
@@ -396,14 +407,14 @@ function BlueprintResult({ bp, plan, onNew, isFirstBlueprint }: {
   ];
 
   function handleConvertTo7Days() {
-    // Push blueprint summary to localStorage for Today page to pick up
+    // Push blueprint summary to scoped local cache for Today page to pick up
     const summary = {
       blueprintId: bp.id,
       category: pi?.appCategory,
       intent: pi?.intentSummary ?? pi?.problemStatement,
       createdAt: Date.now(),
     };
-    localStorage.setItem("bm_blueprint_to_7day", JSON.stringify(summary));
+    storage.setJSON("bm_blueprint_to_7day", summary);
     router.push("/today?from=blueprint");
   }
 
@@ -457,7 +468,7 @@ function BlueprintResult({ bp, plan, onNew, isFirstBlueprint }: {
           Convert to 7-day plan →
         </button>
         <button onClick={() => {
-          localStorage.setItem("bm_stress_test_idea", pi?.problemStatement ?? "");
+          storage.set("bm_stress_test_idea", pi?.problemStatement ?? "");
           window.location.href = "/break-my-startup";
         }} style={{
           padding: "10px 16px", borderRadius: 10, border: `1px solid ${V.borderActive}`,
@@ -516,7 +527,10 @@ function BlueprintGenerator({ plan, planLoading = false }: { plan: string; planL
   const [isFirstBp, setIsFirstBp]   = useState(false);
   const stepTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  useEffect(() => { setHistory(loadBlueprints()); }, []);
+  useEffect(() => {
+    setHistory(loadBlueprints());
+    syncBlueprintsFromServer().then(setHistory).catch(() => {});
+  }, []);
 
   async function generate() {
     if (!input.trim() || loading) return;
@@ -561,9 +575,14 @@ function BlueprintGenerator({ plan, planLoading = false }: { plan: string; planL
       if (!res.ok) throw new Error(body.error ?? "Blueprint generation failed");
 
       if (firstBlueprint) markFirstBlueprintUsed();
-      const bp = (body.blueprint ?? body) as StartupBlueprint;
+      const rawBlueprint = (body.blueprint ?? body) as StartupBlueprint & { generatedAt?: string };
+      const bp = {
+        ...rawBlueprint,
+        id: rawBlueprint.id ?? crypto.randomUUID(),
+        createdAt: rawBlueprint.createdAt ?? rawBlueprint.generatedAt ?? new Date().toISOString(),
+      } as StartupBlueprint;
       setBlueprint(bp);
-      saveBlueprint(bp);
+      saveBlueprint(bp, input.trim());
       setHistory(loadBlueprints());
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
@@ -955,7 +974,7 @@ function VenturesContent() {
   const active = tracks.find(t => t.id === activeId);
 
   async function handleGenerateExecutionSystems() {
-    const latestBlueprint = loadBlueprints()[0];
+    const latestBlueprint = (await syncBlueprintsFromServer())[0];
     const description =
       latestBlueprint
         ? JSON.stringify(latestBlueprint).slice(0, 3000)

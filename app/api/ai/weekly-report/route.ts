@@ -73,36 +73,41 @@ export async function POST(request: Request) {
       const allProjectIds = (userProjects ?? []).map(p => p.id);
       if (allProjectIds.length > 0) {
         // Batch project IDs to avoid URL length limits
-        let allMilestones: Array<{ id: string; status: string }> = [];
         const BATCH_SIZE = 20;
-        
+        const projectBatches: string[][] = [];
         for (let i = 0; i < allProjectIds.length; i += BATCH_SIZE) {
-          const batchIds = allProjectIds.slice(i, i + BATCH_SIZE);
+          projectBatches.push(allProjectIds.slice(i, i + BATCH_SIZE));
+        }
+        const milestoneResults = await Promise.all(projectBatches.map((batchIds) => {
           const milestonesQuery = supabase
             .from("milestones")
             .select("id, status");
-          const { data: userMilestones } = await (batchIds.length === 1
+          return batchIds.length === 1
             ? milestonesQuery.eq("project_id", batchIds[0])
-            : milestonesQuery.in("project_id", batchIds));
-          if (userMilestones) allMilestones = allMilestones.concat(userMilestones);
-        }
+            : milestonesQuery.in("project_id", batchIds);
+        }));
+        const allMilestones: Array<{ id: string; status: string }> =
+          milestoneResults.flatMap((result) => result.data ?? []);
 
         milestones = allMilestones.filter(m => m.status === 'completed').length;
 
         const milestoneIds = allMilestones.map(m => m.id);
         if (milestoneIds.length > 0) {
           // Batch milestone IDs to avoid URL length limits
-          let allUserTasks: Array<{ is_completed: boolean }> = [];
+          const milestoneBatches: string[][] = [];
           for (let i = 0; i < milestoneIds.length; i += BATCH_SIZE) {
-            const batchIds = milestoneIds.slice(i, i + BATCH_SIZE);
+            milestoneBatches.push(milestoneIds.slice(i, i + BATCH_SIZE));
+          }
+          const taskResults = await Promise.all(milestoneBatches.map((batchIds) => {
             const tasksQuery = supabase
               .from("tasks")
               .select("is_completed");
-            const { data: userTasks } = await (batchIds.length === 1
+            return batchIds.length === 1
               ? tasksQuery.eq("milestone_id", batchIds[0])
-              : tasksQuery.in("milestone_id", batchIds));
-            if (userTasks) allUserTasks = allUserTasks.concat(userTasks);
-          }
+              : tasksQuery.in("milestone_id", batchIds);
+          }));
+          const allUserTasks: Array<{ is_completed: boolean }> =
+            taskResults.flatMap((result) => result.data ?? []);
 
           tasks = allUserTasks.filter(t => t.is_completed).length;
         }

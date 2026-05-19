@@ -78,6 +78,43 @@ const USER_DATA_KEYS = [
   "bm_push_prompt_shown",
   "bm_domain",
   "bm_idea",
+  "bm_active_project_id",
+  "bm_has_onboarded",
+  "bm_has_logged_in",
+  "bm_tour_seen",
+  "bm_tour_show",
+  "bm_score_history",
+  "bm_xp",
+  "bm_notifications",
+  "bm_morning_seeded",
+  "bm_evening_seeded",
+  "bm_task_debt",
+  "bm_tasks_completed_total",
+  "bm_session_id",
+  "bm_funnel_events",
+  "bm_page_views",
+  "bm_session_events",
+  "bm_blueprints",
+  "bm_venture_tracks",
+  "bm_blueprint_first_used",
+  "bm_blueprint_usage",
+  "bm_work_window",
+  "bm_last_goal",
+  "bm_idle_alerted",
+  "bm_competitor_history",
+  "bm_reframe_usage",
+  "bm_avoidance_signals",
+  "bm_validation_receipts",
+  "bm_today_revenue_delta",
+  "bm_first_task_completed_tracked",
+  "bm_builder_sync_indicator_shown",
+  "bm_testimonial_last_asked",
+  "bm_urgency_dismissed",
+  "buildmind_has_logged_in",
+  "buildmind_show_tour",
+  "buildmind_tour_seen",
+  "buildmind_onboarded",
+  "buildmind_active_project_id",
 ];
 
 // Prefix format: "bm_u:<userId>:"
@@ -85,22 +122,25 @@ function scopedKey(userId: string, key: string): string {
   return `bm_u:${userId}:${key}`;
 }
 
-// Week/day key helpers (same format as plan.ts)
+// Week/day key helpers (UTC, shared shape with plan.ts/usePlan.ts)
 function aiDayKey(userId: string): string {
-  const d = new Date();
-  return scopedKey(userId, `bm_ai_${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`);
+  return scopedKey(userId, `bm_ai_${new Date().toISOString().slice(0, 10)}`);
 }
 function weekKey(): string {
   const d = new Date();
-  const j = new Date(d.getFullYear(), 0, 1);
-  return `${d.getFullYear()}_w${Math.ceil(((d.getTime() - j.getTime()) / 86400000 + j.getDay() + 1) / 7)}`;
+  const utc = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const day = utc.getUTCDay() || 7;
+  utc.setUTCDate(utc.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(utc.getUTCFullYear(), 0, 1));
+  const week = Math.ceil((((utc.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+  return `${utc.getUTCFullYear()}_w${week}`;
 }
 function coachWeekKey(): string {
   const d = new Date();
-  const day = d.getDay();
-  const monday = new Date(d);
-  monday.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
-  return `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, "0")}-${String(monday.getDate()).padStart(2, "0")}`;
+  const day = d.getUTCDay() || 7;
+  const monday = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  monday.setUTCDate(monday.getUTCDate() - (day - 1));
+  return `${monday.getUTCFullYear()}-${String(monday.getUTCMonth() + 1).padStart(2, "0")}-${String(monday.getUTCDate()).padStart(2, "0")}`;
 }
 
 class UserScopedStorage {
@@ -134,13 +174,26 @@ class UserScopedStorage {
     for (const key of USER_DATA_KEYS) {
       localStorage.removeItem(key);
     }
-    // Also wipe any bm_ai_* and bm_actions_* and bm_coach_* unscoped variants
+    // Also wipe dated/prefixed unscoped variants that contain account activity.
     const toDelete: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
       if (!k) continue;
       if (
-        (k.startsWith("bm_ai_") || k.startsWith("bm_actions_") || k.startsWith("bm_coach_")) &&
+        (
+          k.startsWith("bm_ai_") ||
+          k.startsWith("bm_actions_") ||
+          k.startsWith("bm_coach_") ||
+          k.startsWith("bm_task_done_") ||
+          k.startsWith("bm_reflect_done_") ||
+          k.startsWith("bm_checkin_done_date_") ||
+          k.startsWith("bm_morning_checkin_") ||
+          k.startsWith("bm_evening_checkin_") ||
+          k.startsWith("bm_last_stage_") ||
+          k.startsWith("bm_transition_dismissed_") ||
+          k.startsWith("bm_stage_transition_dismissed_") ||
+          k.startsWith("bm_testimonial_asked_")
+        ) &&
         !k.startsWith("bm_u:")
       ) {
         toDelete.push(k);

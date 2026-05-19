@@ -16,6 +16,7 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { storage } from "@/lib/storage";
 
 // ── Config — flip these when ConsentLedger launches ──────────────────────────
 const CL_LIVE = false;                        // ← set true when live
@@ -40,9 +41,7 @@ function WaitlistForm({ compact = false }: { compact?: boolean }) {
   const [alreadyJoined, setAlreadyJoined] = useState(false);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      setAlreadyJoined(!!localStorage.getItem("bm_cl_waitlist"));
-    }
+    setAlreadyJoined(!!storage.get("bm_cl_waitlist"));
   }, []);
 
   const submit = async () => {
@@ -51,9 +50,7 @@ function WaitlistForm({ compact = false }: { compact?: boolean }) {
     setState("loading");
     try {
       // Store locally immediately so it survives even if the API doesn't exist yet
-      if (typeof window !== "undefined") {
-        localStorage.setItem("bm_cl_waitlist", trimmed);
-      }
+      storage.set("bm_cl_waitlist", trimmed);
       // POST to /api/waitlist when that route is ready — silently ignores 404
       await fetch("/api/waitlist", {
         method: "POST",
@@ -322,8 +319,7 @@ export default function ConsentLedgerCTA({ variant = "compact", context }: Conse
 
   // Check domain — hide entirely for Legal Tech / GDPR users (would look like a competitor)
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const domain = localStorage.getItem("bm_domain") ?? "";
+    const domain = storage.get("bm_domain") ?? "";
     const isLegalTech = HIDDEN_DOMAINS.some(d => domain.toLowerCase().includes(d.toLowerCase()));
     setVisible(!isLegalTech);
   }, []);

@@ -51,17 +51,18 @@ export interface ScoringInput {
  * Signal weights:
  *   execution_score  (0–100) → primary AI-assessed quality signal,  weight 0.45
  *   momentum_score   (0–100) → server-persisted daily activity,      weight 0.25
- *   consistency_score(0–100) → NEW: streak consistency curve,        weight 0.10
- *   xp boost         (0–20)  → achievement XP via stepped thresholds
- *   streak boost     (0–10)  → raw streak days, capped at 30
- *   validation boost (0–20)  → validation_strengths × 4, capped at 20
+ *   xp boost         (0–20)  → absolute achievement XP bonus
+ *   streak boost     (0–10)  → absolute raw streak bonus, capped at 30 days
+ *   validation boost (0–20)  → absolute validation_strengths bonus
  *
  * The consistency_score differs from the streak boost:
  *   streak_boost    = linear ramp up to 30 days (rewards length)
  *   consistency     = measures *regularity* — did you show up at least 5 of the
  *                     last 7 days? This rewards cadence over raw day count.
  *
- * Total is clamped to [0, 100]. All inputs are optional — missing ones score 0.
+ * The raw ceiling can exceed 100, intentionally allowing exceptional behaviour
+ * to offset weak signals. The final result is clamped to [0, 100]. All inputs
+ * are optional — missing ones score 0.
  * Returns an integer 0–100.
  */
 export function computeStartupScore(summary: ScoringInput): number {

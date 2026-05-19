@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
+import { storage } from "@/lib/storage";
 
 type KitDomain = {
   name: string;
@@ -61,9 +62,8 @@ export default function LandingGenPage() {
   const [kit, setKit] = useState<KitResult>(FALLBACK);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const storedIdea = normalizeIdea(localStorage.getItem("bm_startup_kit_idea"));
-    const rawKit = localStorage.getItem("bm_startup_kit_result");
+    const storedIdea = normalizeIdea(storage.get("bm_startup_kit_idea"));
+    const rawKit = storage.get("bm_startup_kit_result");
     let parsed = FALLBACK;
     if (rawKit) {
       try {

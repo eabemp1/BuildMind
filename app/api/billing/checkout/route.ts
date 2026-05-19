@@ -8,7 +8,7 @@ import { usdToPesewas } from "@/lib/fx";
  * Countries billed in GHS via the local Paystack plan.
  * Everyone else is billed in USD.
  */
-const GHS_COUNTRIES = new Set(["GH", "Ghana"]);
+const GHS_COUNTRIES = new Set(["GH", "GHANA"]);
 
 /**
  * USD price per plan — single source of truth.
@@ -50,13 +50,17 @@ function appUrl(req: Request): string {
  * Detect whether the request comes from a GHS-billed country.
  * Uses Vercel's geo header when available, falls back to the request body.
  */
+function normalizeCountry(value: unknown): string {
+  return String(value ?? "").trim().toUpperCase();
+}
+
 function resolveCountry(req: Request, body: Record<string, unknown>): string {
   // Vercel sets this header automatically in production
-  const geoCountry = (req.headers.get("x-vercel-ip-country") ?? "").trim().toUpperCase();
+  const geoCountry = normalizeCountry(req.headers.get("x-vercel-ip-country"));
   if (geoCountry) return geoCountry;
 
   // Fallback: client can send { country: "GH" } in the request body
-  return String(body?.country ?? "").trim().toUpperCase();
+  return normalizeCountry(body?.country);
 }
 
 export async function POST(req: Request) {
@@ -95,7 +99,7 @@ export async function POST(req: Request) {
 
   // ── Currency routing ────────────────────────────────────────────────────────
   const country = resolveCountry(req, body);
-  const isGhs = GHS_COUNTRIES.has(country) || GHS_COUNTRIES.has(body?.country as string);
+  const isGhs = GHS_COUNTRIES.has(country);
 
   let amount: number;
   let currency: "GHS" | "USD";

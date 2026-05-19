@@ -3,7 +3,7 @@
  *
  * Flow:
  *   1. User clicks "Connect Notion" → redirect to Notion OAuth URL
- *   2. Notion redirects back here with ?code=... & ?state=<userId>
+ *   2. Notion redirects back here with ?code=... & signed state
  *   3. Exchange code for access_token
  *   4. Find or create their default database (first DB in workspace)
  *   5. Store in integrations table
@@ -13,13 +13,14 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logError } from "@/lib/server/logger";
+import { verifyOAuthState } from "@/lib/server/oauthState";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://buildmind.live";
 
 export async function GET(request: Request) {
   const url     = new URL(request.url);
   const code    = url.searchParams.get("code");
-  const state   = url.searchParams.get("state"); // userId encoded as state
+  const state   = url.searchParams.get("state");
   const errorParam = url.searchParams.get("error");
 
   if (errorParam || !code) {
@@ -27,13 +28,22 @@ export async function GET(request: Request) {
   }
 
   try {
+    const userId = verifyOAuthState(state);
+    if (!userId) {
+      return NextResponse.redirect(`${APP_URL}/settings?integration=notion&status=error&reason=invalid_state`);
+    }
+
+    const clientId = process.env.NOTION_CLIENT_ID ?? "";
+    const clientSecret = process.env.NOTION_CLIENT_SECRET ?? "";
+    if (!clientId || !clientSecret) {
+      throw new Error("Notion OAuth credentials are not configured");
+    }
+
     // Exchange code for token
     const tokenRes = await fetch("https://api.notion.com/v1/oauth/token", {
       method: "POST",
       headers: {
-        "Authorization": "Basic " + Buffer.from(
-          `${process.env.NOTION_CLIENT_ID}:${process.env.NOTION_CLIENT_SECRET}`
-        ).toString("base64"),
+        "Authorization": "Basic " + Buffer.from(`${clientId}:${clientSecret}`).toString("base64"),
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -70,15 +80,8 @@ export async function GET(request: Request) {
       databaseId = searchData.results?.[0]?.id ?? null;
     } catch { /* non-fatal — user can configure later */ }
 
-    // Determine userId: from state param or from session
+    // Determine userId from signed state.
     const supabase = createAdminClient();
-    let userId = state ?? null;
-
-    if (!userId) {
-      // Fallback: get user from session cookie — requires server-side session
-      // In this architecture, state should always carry the userId
-      return NextResponse.redirect(`${APP_URL}/settings?integration=notion&status=error&reason=no_user`);
-    }
 
     await supabase.from("integrations").upsert({
       user_id:      userId,

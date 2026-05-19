@@ -36,13 +36,13 @@ export function setOnboarded(): void {
 
 export function shouldShowTour(): boolean {
   if (typeof window === "undefined") return false;
-  return window.localStorage.getItem(TOUR_SHOW_KEY) === "1";
+  return storage.get(TOUR_SHOW_KEY) === "1";
 }
 
 export function markTourSeen(): void {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(TOUR_SEEN_KEY, "1");
-  window.localStorage.removeItem(TOUR_SHOW_KEY);
+  storage.set(TOUR_SEEN_KEY, "1");
+  storage.remove(TOUR_SHOW_KEY);
 }
 
 export function getActiveProjectId(): string | null {
@@ -58,11 +58,11 @@ export function setActiveProjectId(projectId: string): void {
 /** Call after first successful login to trigger the product tour on next open. */
 export function markFirstLogin(): void {
   if (typeof window === "undefined") return;
-  const hasLoggedIn = window.localStorage.getItem(HAS_LOGGED_IN_KEY) === "1";
-  if (!hasLoggedIn && window.localStorage.getItem(TOUR_SEEN_KEY) !== "1") {
-    window.localStorage.setItem(TOUR_SHOW_KEY, "1");
+  const hasLoggedIn = storage.get(HAS_LOGGED_IN_KEY) === "1";
+  if (!hasLoggedIn && storage.get(TOUR_SEEN_KEY) !== "1") {
+    storage.set(TOUR_SHOW_KEY, "1");
   }
-  window.localStorage.setItem(HAS_LOGGED_IN_KEY, "1");
+  storage.set(HAS_LOGGED_IN_KEY, "1");
 }
 
 // ─── Types (shared across the app) ───────────────────────────────────────────

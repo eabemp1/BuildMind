@@ -57,7 +57,7 @@ export async function POST(req: Request) {
   const newMomentum = momentumOnTaskComplete(current, isHardTask);
 
   // Consecutive task tracking — powers the Emotional Language Layer in reflexion.ts
-  const today = new Date().toLocaleDateString("en-CA");
+  const today = new Date().toISOString().slice(0, 10);
   const previousTodayCount = ctx?.last_task_date === today ? (ctx?.tasks_completed_today ?? 0) : 0;
   const isReturningAfterGap = (ctx?.last_active ?? "") < today;
   const prevConsecutive = ctx?.consecutive_tasks_completed ?? 0;

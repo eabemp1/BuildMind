@@ -21,6 +21,8 @@ import {
   subscribeToPush,
 } from "@/lib/push";
 import { createClient } from "@/lib/supabase/client";
+import { storage } from "@/lib/storage";
+import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -98,6 +100,13 @@ export default function PwaProvider({
     const key = `${INSTALL_PROMPT_KEY_PREFIX}_${userId}`;
     if (localStorage.getItem(key) === "1") return;
 
+    fetchBehaviorState<{ install_prompt_shown: boolean }>(["install_prompt_shown"]).then(values => {
+      if (values.install_prompt_shown === true) {
+        localStorage.setItem(key, "1");
+        setShowInstallPrompt(false);
+      }
+    }).catch(() => {});
+
     const isStandalone =
       window.matchMedia("(display-mode: standalone)").matches ||
       (window.navigator as { standalone?: boolean }).standalone === true;
@@ -105,6 +114,7 @@ export default function PwaProvider({
     if (!isStandalone) {
       setShowInstallPrompt(true);
       localStorage.setItem(key, "1");
+      persistBehaviorState({ install_prompt_shown: true });
     }
   }, [userId]);
 
@@ -131,8 +141,19 @@ export default function PwaProvider({
     }
 
     // Check if first-task milestone hit
-    const tasksDone = Number(localStorage.getItem("bm_tasks_done") ?? "0");
-    const lastPrompted = Number(localStorage.getItem(PROMPT_KEY) ?? "0");
+    const tasksDone = Number(storage.get("bm_tasks_done") ?? "0");
+    const serverState = await fetchBehaviorState<{
+      push_prompted_at: number;
+      push_banner_dismissed_date: string;
+      first_seen_at: number;
+    }>(["push_prompted_at", "push_banner_dismissed_date", "first_seen_at"]);
+    if (serverState.first_seen_at && !localStorage.getItem(FIRST_SEEN_KEY)) {
+      localStorage.setItem(FIRST_SEEN_KEY, String(serverState.first_seen_at));
+    } else if (!serverState.first_seen_at) {
+      persistBehaviorState({ first_seen_at: Number(localStorage.getItem(FIRST_SEEN_KEY) ?? Date.now()) });
+    }
+
+    const lastPrompted = Number(serverState.push_prompted_at ?? localStorage.getItem(PROMPT_KEY) ?? "0");
     const cooldownExpired = !lastPrompted || Date.now() - lastPrompted > PROMPT_COOLDOWN_MS;
 
     if (tasksDone >= 1 && cooldownExpired) {
@@ -142,7 +163,10 @@ export default function PwaProvider({
     // Persistent banner: user has been around 3+ days and still no subscription
     const firstSeen = Number(localStorage.getItem(FIRST_SEEN_KEY) ?? Date.now());
     const daysSinceFirst = (Date.now() - firstSeen) / 86400000;
-    const bannerDismissed = sessionStorage.getItem(BANNER_DISMISSED_KEY) === "1";
+    const today = new Date().toISOString().split("T")[0];
+    const bannerDismissed =
+      sessionStorage.getItem(BANNER_DISMISSED_KEY) === "1" ||
+      serverState.push_banner_dismissed_date === today;
     if (daysSinceFirst >= 3 && !bannerDismissed && !showPrompt) {
       setShowPersistentBanner(true);
     }
@@ -169,7 +193,9 @@ export default function PwaProvider({
   // ── Handlers ───────────────────────────────────────────────────────────
   async function handleAccept() {
     if (!userId) return;
-    localStorage.setItem(PROMPT_KEY, String(Date.now()));
+    const promptedAt = Date.now();
+    localStorage.setItem(PROMPT_KEY, String(promptedAt));
+    persistBehaviorState({ push_prompted_at: promptedAt });
     setShowPrompt(false);
     setShowPersistentBanner(false);
     const permission = await requestPushPermission();
@@ -181,12 +207,15 @@ export default function PwaProvider({
   }
 
   function handleDecline() {
-    localStorage.setItem(PROMPT_KEY, String(Date.now()));
+    const promptedAt = Date.now();
+    localStorage.setItem(PROMPT_KEY, String(promptedAt));
+    persistBehaviorState({ push_prompted_at: promptedAt });
     setShowPrompt(false);
   }
 
   function handleDismissBanner() {
     sessionStorage.setItem(BANNER_DISMISSED_KEY, "1");
+    persistBehaviorState({ push_banner_dismissed_date: new Date().toISOString().split("T")[0] });
     setShowPersistentBanner(false);
   }
 

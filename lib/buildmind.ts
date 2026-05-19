@@ -90,12 +90,12 @@ export async function completeTask(taskId: string): Promise<{ newStage: string |
   if (!user) throw new Error("Not authenticated");
   const supabase = createClient();
 
-  await supabase.from("tasks").update({ is_completed: true }).eq("id", taskId);
-  observeTaskEvent(taskId, "completed").catch((err) => console.warn("[buildmind] observeTaskEvent failed:", err)); // non-blocking memory update
-
   const { data: task } = await supabase
-    .from("tasks").select("milestone_id").eq("id", taskId).single();
+    .from("tasks").select("title, milestone_id").eq("id", taskId).single();
   if (!task) return { newStage: null };
+
+  await supabase.from("tasks").update({ is_completed: true }).eq("id", taskId);
+  observeTaskEvent(task.title ?? "task", "completed").catch((err) => console.warn("[buildmind] observeTaskEvent failed:", err)); // non-blocking memory update
 
   const { data: sibling } = await supabase
     .from("tasks").select("is_completed").eq("milestone_id", task.milestone_id);
@@ -120,7 +120,7 @@ export async function completeTask(taskId: string): Promise<{ newStage: string |
 export async function updateTaskStatus(taskId: string, isCompleted: boolean, notes?: string) {
   const supabase = createClient();
   const { data: taskRow, error: taskError } = await supabase
-    .from("tasks").select("id, milestone_id, is_completed").eq("id", taskId).single();
+    .from("tasks").select("id, title, milestone_id, is_completed").eq("id", taskId).single();
   if (taskError) throw taskError;
 
   const { data: milestoneTasks, error: milestoneError } = await supabase
@@ -141,9 +141,9 @@ export async function updateTaskStatus(taskId: string, isCompleted: boolean, not
 
   if (isCompleted && !taskRow.is_completed) {
     trackEvent("task_completed");
-    observeTaskEvent(taskId, "completed").catch((err) => console.warn("[buildmind] observeTaskEvent failed:", err));
+    observeTaskEvent(taskRow.title ?? "task", "completed").catch((err) => console.warn("[buildmind] observeTaskEvent failed:", err));
   } else if (!isCompleted && taskRow.is_completed) {
-    observeTaskEvent(taskId, "skipped").catch((err) => console.warn("[buildmind] observeTaskEvent failed:", err));
+    observeTaskEvent(taskRow.title ?? "task", "skipped").catch((err) => console.warn("[buildmind] observeTaskEvent failed:", err));
   }
 
   if (isMilestoneComplete && !wasMilestoneComplete) {

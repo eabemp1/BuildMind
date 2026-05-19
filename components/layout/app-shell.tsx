@@ -8,6 +8,7 @@ import Topbar from "@/components/layout/topbar";
 import { trackPageView, trackFunnelStep } from "@/lib/onboarding-analytics";
 import { createClient } from "@/lib/supabase/client";
 import { TrialBanner, TrialPaywall } from "@/components/TrialBanner";
+import { storage } from "@/lib/storage";
 
 // REC 4.2: Persistent daily loop status bar
 function DailyLoopStatusBar() {
@@ -25,9 +26,9 @@ function DailyLoopStatusBar() {
       ? 7 - now.getHours()
       : 24 - now.getHours() + 7;
 
-    const today = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
-    const taskDone = localStorage.getItem(`bm_task_done_${today}`) === "1";
-    const reflectionDone = localStorage.getItem(`bm_reflect_done_${today}`) === "1";
+    const today = now.toISOString().slice(0, 10);
+    const taskDone = storage.get(`bm_task_done_${today}`) === "1";
+    const reflectionDone = storage.get(`bm_reflect_done_${today}`) === "1";
 
     setLoopState({ dayOfWeek, taskDone, reflectionDone, hoursUntilBriefing });
   }, []);

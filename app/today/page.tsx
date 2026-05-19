@@ -17,8 +17,10 @@ import BuildMindLoader from "@/components/BuildMindLoader";
 import { PaywallMoment } from "@/components/PaywallMoment";
 import { Clock, CheckCircle2, Copy, Check, Flame, Brain, ArrowRight, Sparkles, AlertCircle, TrendingUp, RotateCcw } from "lucide-react";
 import { storage } from "@/lib/storage";
+import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
 import { MobileCheckin } from "@/components/MobileCheckin";
 import { ProfileCompletenessBar } from "@/components/ProfileCompletenessBar";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 type Outcome = "completed" | "blocked" | "partial" | "learned";
 type ReflexionMeta = {
@@ -48,6 +50,24 @@ type CachedTodayAction = {
   data?: ActionData;
 };
 
+function isActionData(value: unknown): value is ActionData {
+  if (!value || typeof value !== "object") return false;
+  const data = value as Partial<ActionData>;
+  return (
+    typeof data.action === "string" &&
+    typeof data.message === "string" &&
+    typeof data.why === "string" &&
+    typeof data.time === "string"
+  );
+}
+
+function unwrapActionPayload(payload: unknown): ActionData | null {
+  if (!payload || typeof payload !== "object") return null;
+  const maybePayload = payload as { data?: unknown };
+  const candidate = isActionData(maybePayload.data) ? maybePayload.data : payload;
+  return isActionData(candidate) ? { ...candidate, isAI: true } : null;
+}
+
 // ── Stored reflection shape (from bm_today_action written by /reflect) ──────
 type StoredReflection = {
   action: string;
@@ -60,7 +80,7 @@ type StoredReflection = {
 const DESTINATIONS: Record<string, { icon: string; label: string; url?: string }[]> = {
   idea:       [{ icon: "𝕏", label: "Twitter / X", url: "https://twitter.com/intent/tweet" }, { icon: "🧵", label: "Indie Hackers", url: "https://www.indiehackers.com" }, { icon: "💬", label: "r/startups", url: "https://reddit.com/r/startups/submit" }, { icon: "📱", label: "Text 3 people" }],
   validation: [{ icon: "𝕏", label: "Twitter / X", url: "https://twitter.com/intent/tweet" }, { icon: "🧵", label: "Indie Hackers", url: "https://www.indiehackers.com" }, { icon: "💼", label: "LinkedIn DM" }, { icon: "📱", label: "WhatsApp" }],
-  prototype:  [{ icon: "🚀", label: "Product Hunt", url: "https://www.producthunt.com" }, { icon: "𝕏", label: "Twitter / X\", url: \"https://twitter.com/intent/tweet" }, { icon: "🧵", label: "Indie Hackers", url: "https://www.indiehackers.com" }, { icon: "🎥", label: "Loom → share" }],
+  prototype:  [{ icon: "🚀", label: "Product Hunt", url: "https://www.producthunt.com" }, { icon: "𝕏", label: "Twitter / X", url: "https://twitter.com/intent/tweet" }, { icon: "🧵", label: "Indie Hackers", url: "https://www.indiehackers.com" }, { icon: "🎥", label: "Loom → share" }],
   mvp:        [{ icon: "🚀", label: "Product Hunt", url: "https://www.producthunt.com" }, { icon: "𝕏", label: "Twitter / X", url: "https://twitter.com/intent/tweet" }, { icon: "🧵", label: "Indie Hackers", url: "https://www.indiehackers.com" }, { icon: "💬", label: "WhatsApp" }],
   launch:     [{ icon: "🚀", label: "Product Hunt", url: "https://www.producthunt.com/posts/new" }, { icon: "𝕏", label: "Twitter / X", url: "https://twitter.com/intent/tweet" }, { icon: "🧵", label: "Indie Hackers", url: "https://www.indiehackers.com/post" }, { icon: "📰", label: "Hacker News", url: "https://news.ycombinator.com/submit" }],
   revenue:    [{ icon: "📞", label: "Call directly" }, { icon: "📧", label: "Email personally" }, { icon: "💼", label: "LinkedIn" }, { icon: "𝕏", label: "Twitter DM" }],
@@ -242,13 +262,27 @@ function TodayContent() {
       if (uid) {
         const today = new Date().toISOString().split("T")[0];
         const checkinKey = `bm_checkin_done_date_${uid}`;
-        if (storage.get(checkinKey) === today) {
-          setDone(true);
-        }
+        const cachedDoneDate = storage.get(checkinKey);
+        if (cachedDoneDate === today) setDone(true);
+
+        fetchBehaviorState<{
+          checkin_done_date: string;
+          today_action: StoredReflection;
+        }>(["checkin_done_date", "today_action"]).then(values => {
+          if (values.checkin_done_date === today) {
+            storage.set(checkinKey, today);
+            storage.set("bm_checkin_done_date", today);
+            setDone(true);
+          }
+          if (values.today_action?.outcome) {
+            storage.setJSON("bm_today_action", values.today_action);
+            setYesterdayReflection(values.today_action);
+          }
+        }).catch(() => {});
       }
     });
 
-    // Load yesterday's reflection from localStorage so the causal thread is visible
+    // Load cached reflection instantly; server behavior state hydrates above.
     try {
       const stored = storage.getJSON("bm_today_action", null) as StoredReflection | null;
       if (stored?.outcome) {
@@ -267,13 +301,28 @@ function TodayContent() {
 
     const today = new Date().toISOString().split("T")[0];
     const cacheKey = `bm_today_action_cache_${userId}`;
+    const serverCache = await fetchBehaviorState<{ today_action_cache: CachedTodayAction }>(["today_action_cache"]);
+    if (
+      serverCache.today_action_cache?.date === today &&
+      serverCache.today_action_cache?.projectId === projectId &&
+      isActionData(serverCache.today_action_cache.data)
+    ) {
+      storage.setJSON(cacheKey, serverCache.today_action_cache);
+      setAiAction({ ...serverCache.today_action_cache.data, isAI: true });
+      return;
+    }
     try {
       const cached = storage.getJSON<CachedTodayAction | null>(cacheKey, null);
-      if (cached?.date === today && cached?.projectId === projectId && cached?.data) {
+      if (cached?.date === today && cached?.projectId === projectId && isActionData(cached.data)) {
         setAiAction({ ...cached.data, isAI: true });
         return;
       }
-    } catch {}
+      if (cached?.date === today && cached?.projectId === projectId && cached?.data) {
+        storage.remove(cacheKey);
+      }
+    } catch {
+      storage.remove(cacheKey);
+    }
 
     setActionLoading(true);
 
@@ -324,10 +373,13 @@ function TodayContent() {
 
             if (event === "done" && payload && typeof payload === "object") {
               const p = payload as Record<string, unknown>;
-              const actionData = { ...p, isAI: true } as ActionData;
+              const actionData = unwrapActionPayload(p);
+              if (!actionData) break outer;
               setAiAction(actionData);
-              if ((p.reflexion as Record<string, unknown>)?.loopRan) {
-                storage.setJSON(cacheKey, { date: today, projectId, data: actionData });
+              if (actionData.reflexion?.loopRan) {
+                const cacheValue = { date: today, projectId, data: actionData };
+                storage.setJSON(cacheKey, cacheValue);
+                persistBehaviorState({ today_action_cache: cacheValue });
               }
               streamSucceeded = true;
               break outer;
@@ -347,11 +399,13 @@ function TodayContent() {
       })
         .then(r => r.ok ? r.json() : Promise.reject())
         .then(json => {
-          if (json?.success && json?.data) {
-            const actionData = { ...json.data, isAI: true };
+          const actionData = unwrapActionPayload(json);
+          if (json?.success && actionData) {
             setAiAction(actionData);
             if (actionData.reflexion?.loopRan) {
-              storage.setJSON(cacheKey, { date: today, projectId, data: actionData });
+              const cacheValue = { date: today, projectId, data: actionData };
+              storage.setJSON(cacheKey, cacheValue);
+              persistBehaviorState({ today_action_cache: cacheValue });
             }
           }
         })
@@ -444,8 +498,7 @@ function TodayContent() {
         trackFunnelStep("first_task_completed");
         storage.set("bm_first_task_completed_tracked", "1");
       }
-      const today = new Date();
-      const todayKey = `bm_task_done_${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
+      const todayKey = `bm_task_done_${new Date().toISOString().slice(0, 10)}`;
       storage.set(todayKey, "1");
 
       try {
@@ -476,7 +529,12 @@ function TodayContent() {
       notifyReflectPending();
 
       const todayDate = new Date().toISOString().split("T")[0];
-      storage.setJSON("bm_today_action", { action: actionData.action, outcome, note, confidence });
+      const todayActionState = { action: actionData.action, outcome, note, confidence };
+      storage.setJSON("bm_today_action", todayActionState);
+      persistBehaviorState({
+        today_action: todayActionState,
+        checkin_done_date: todayDate,
+      });
 
       if (revenueDelta && parseFloat(revenueDelta) > 0) {
         storage.setJSON("bm_today_revenue_delta", {
@@ -487,7 +545,7 @@ function TodayContent() {
       }
 
       if (userId) {
-        localStorage.setItem(`bm_checkin_done_date_${userId}`, todayDate);
+        storage.set(`bm_checkin_done_date_${userId}`, todayDate);
       }
       storage.set("bm_checkin_done_date", todayDate);
 
@@ -552,7 +610,22 @@ function TodayContent() {
     } finally { setSubmitting(false); }
   }
 
-  if (isLoading) return <BuildMindLoader />;
+  if (isLoading) return (
+    <div className="mx-auto max-w-[820px] px-6 py-7">
+      <div className="mb-6 space-y-3 border-b border-[var(--bm-border)] pb-5">
+        <div className="h-3 w-28 animate-pulse rounded-lg bg-[var(--bm-bg3)]" />
+        <div className="h-7 w-3/5 animate-pulse rounded-lg bg-[var(--bm-bg3)]" />
+        <div className="h-4 w-2/5 animate-pulse rounded-lg bg-[var(--bm-bg3)]" />
+      </div>
+      <div className="space-y-4">
+        <div className="h-48 animate-pulse rounded-xl border border-[var(--bm-border)] bg-[var(--bm-bg2)]" />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="h-28 animate-pulse rounded-xl border border-[var(--bm-border)] bg-[var(--bm-bg2)]" />
+          <div className="h-28 animate-pulse rounded-xl border border-[var(--bm-border)] bg-[var(--bm-bg2)]" />
+        </div>
+      </div>
+    </div>
+  );
 
   // ── Done state ────────────────────────────────────────────────────────────
   if (done) {
@@ -650,13 +723,13 @@ function TodayContent() {
         const isEvening = h >= 18 && h < 22;
         const morningKey = `bm_morning_checkin_${new Date().toDateString()}`;
         const eveningKey = `bm_evening_checkin_${new Date().toDateString()}`;
-        const doneMorning = typeof window !== "undefined" && !!localStorage.getItem(morningKey);
-        const doneEvening = typeof window !== "undefined" && !!localStorage.getItem(eveningKey);
+        const doneMorning = !!storage.get(morningKey);
+        const doneEvening = !!storage.get(eveningKey);
         if (isMorning && !doneMorning) {
           return (
             <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 16 }}>
               <MobileCheckin type="morning" onComplete={(note) => {
-                localStorage.setItem(morningKey, "1");
+                storage.set(morningKey, "1");
                 fetch("/api/morning-checkin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ note }) }).catch(() => {});
               }} />
             </motion.div>
@@ -666,7 +739,7 @@ function TodayContent() {
           return (
             <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 16 }}>
               <MobileCheckin type="evening" onComplete={(note) => {
-                localStorage.setItem(eveningKey, "1");
+                storage.set(eveningKey, "1");
                 fetch("/api/evening-checkin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ note }) }).catch(() => {});
               }} />
             </motion.div>
@@ -685,35 +758,25 @@ function TodayContent() {
       {/* ══════════════════════════════════════════════════════════════════════
           PERSONALISED HEADER — greeting + startup context at a glance
       ══════════════════════════════════════════════════════════════════════ */}
-      <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 20 }}>
+      <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className="mb-5">
 
         {/* Greeting row */}
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 4 }}>
-          <div>
-            <p style={{ fontSize: 12, color: "var(--bm-text3)", margin: "0 0 2px" }}>{greetingLine}</p>
-            <h1 style={{ fontSize: isMobile ? 22 : 18, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em", margin: 0 }}>
-              {productName
-                ? <>Here's what moves <span style={{ color: "var(--bm-accent)" }}>{productName}</span> forward today</>
-                : "Today's Action"}
-            </h1>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            {streak > 1 && (
-              <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 20, background: "rgba(232,160,32,0.08)", border: "1px solid rgba(232,160,32,0.18)" }}>
+        <PageHeader
+          title={productName ? `Today's action for ${productName}` : "Today's Action"}
+          subtitle={[
+            greetingLine,
+            targetUsers ? `Serving ${targetUsers}` : null,
+            project?.startup_stage ? `${project.startup_stage} stage` : null,
+          ].filter(Boolean).join(" · ")}
+          action={
+            streak > 1 ? (
+              <div className="flex items-center gap-1.5 rounded-full border px-2.5 py-1.5" style={{ background: "rgba(232,160,32,0.08)", borderColor: "rgba(232,160,32,0.18)" }}>
                 <Flame size={12} color="var(--bm-amber)" />
                 <span style={{ fontSize: 11, fontWeight: 700, color: "var(--bm-amber)" }}>{streak}d streak</span>
               </div>
-            )}
-          </div>
-        </div>
-
-        {/* Target user sub-line */}
-        {targetUsers && (
-          <p style={{ fontSize: 12, color: "var(--bm-text3)", margin: "4px 0 0" }}>
-            Serving <strong style={{ color: "var(--bm-text2)", fontWeight: 500 }}>{targetUsers}</strong>
-            {project?.startup_stage ? <> · <span style={{ color: "var(--bm-accent)" }}>{project.startup_stage} stage</span></> : null}
-          </p>
-        )}
+            ) : null
+          }
+        />
 
         {/* AI usage warning */}
         {aiUsage && !aiUsage.unlimited && (aiUsage.monthlyLimit - aiUsage.monthlyUsed) <= 5 && (

@@ -195,34 +195,40 @@ export async function getProjectSummaries(): Promise<ProjectSummary[]> {
   const projectIds = projects.map((p) => p.id);
   
   // Batch project IDs to avoid URL length limits
-  let allMilestones: Array<{ id: string; title: string; project_id: string; status?: string | null }> = [];
   const BATCH_SIZE = 20;
-  
+
+  const projectBatches: string[][] = [];
   for (let i = 0; i < projectIds.length; i += BATCH_SIZE) {
-    const batchIds = projectIds.slice(i, i + BATCH_SIZE);
+    projectBatches.push(projectIds.slice(i, i + BATCH_SIZE));
+  }
+  const milestoneResults = await Promise.all(projectBatches.map((batchIds) => {
     const milestonesQuery = supabase
       .from("milestones")
-      .select("id, title, project_id, status");
-    const { data: milestones } = await (batchIds.length === 1
+      .select("id, title, project_id, status, order_index");
+    return batchIds.length === 1
       ? milestonesQuery.eq("project_id", batchIds[0])
-      : milestonesQuery.in("project_id", batchIds));
-    if (milestones) allMilestones = allMilestones.concat(milestones);
-  }
+      : milestonesQuery.in("project_id", batchIds);
+  }));
+  const allMilestones: Array<{ id: string; title: string; project_id: string; status?: string | null; order_index?: number | null }> =
+    milestoneResults.flatMap((result) => result.data ?? []);
 
   const milestoneIds = allMilestones.map((m) => m.id);
   let allTasks: Array<{ id: string; title?: string | null; milestone_id: string; is_completed: boolean; created_at: string }> = [];
   
   if (milestoneIds.length > 0) {
+    const milestoneBatches: string[][] = [];
     for (let i = 0; i < milestoneIds.length; i += BATCH_SIZE) {
-      const batchIds = milestoneIds.slice(i, i + BATCH_SIZE);
+      milestoneBatches.push(milestoneIds.slice(i, i + BATCH_SIZE));
+    }
+    const taskResults = await Promise.all(milestoneBatches.map((batchIds) => {
       const tasksQuery = supabase
         .from("tasks")
         .select("id, title, milestone_id, is_completed, created_at");
-      const { data: tasks } = await (batchIds.length === 1
+      return batchIds.length === 1
         ? tasksQuery.eq("milestone_id", batchIds[0])
-        : tasksQuery.in("milestone_id", batchIds));
-      if (tasks) allTasks = allTasks.concat(tasks);
-    }
+        : tasksQuery.in("milestone_id", batchIds);
+    }));
+    allTasks = taskResults.flatMap((result) => result.data ?? []);
   }
   const { data: tasks } = { data: allTasks };
 
@@ -295,6 +301,7 @@ export async function getProjectSummaries(): Promise<ProjectSummary[]> {
     // Pending milestones and tasks — used by Today page for AI personalization
     const pendingMilestones = projectMilestones
       .filter((m) => m.status !== "completed")
+      .sort((a, b) => (a.order_index ?? Number.MAX_SAFE_INTEGER) - (b.order_index ?? Number.MAX_SAFE_INTEGER))
       .map((m) => m.title)
       .slice(0, 5);
     const pendingTasks = projectTasks
@@ -362,9 +369,13 @@ export async function updateProjectDetails(
 
   // Update the project itself
   if (Object.keys(updates).length > 0) {
+    const projectUpdates = {
+      ...updates,
+      ...(typeof updates.title === "string" ? { name: updates.title } : {}),
+    };
     await supabase
       .from("projects")
-      .update(updates)
+      .update(projectUpdates)
       .eq("id", projectId)
       .eq("user_id", user.id);
   }
@@ -372,7 +383,7 @@ export async function updateProjectDetails(
   // Re-fetch full project to rebuild summary with latest values
   const { data: project } = await supabase
     .from("projects")
-    .select("title, description, target_users, problem, startup_stage")
+    .select("name, title, description, target_users, problem, startup_stage")
     .eq("id", projectId)
     .eq("user_id", user.id)
     .single();
@@ -381,7 +392,7 @@ export async function updateProjectDetails(
 
   // Rebuild startup_summary — try provider rotation, fall back to concatenation
   let newSummary = [
-    project.description?.trim() || project.title?.trim(),
+    project.description?.trim() || project.name?.trim() || project.title?.trim(),
     project.target_users?.trim() ? `for ${project.target_users.trim()}` : null,
     project.problem?.trim() ? `solving "${project.problem.trim().slice(0, 80)}"` : null,
   ].filter(Boolean).join(" ").slice(0, 280);
@@ -503,67 +514,28 @@ export async function createProjectWithRoadmap(params: {
   await ensureUserProfile(user);
   const supabase = createClient();
 
-  const projectPayloads = [
-    {
-      user_id: user.id,
-      title: params.project_name,
-      description: params.idea_description,
-      target_users: params.target_users,
-      problem: params.problem,
-      startup_stage: params.startup_stage ?? "Idea",
-      validation_strengths: [],
-      validation_weaknesses: [],
-      validation_suggestions: [],
-    },
-    {
-      user_id: user.id,
-      title: params.project_name,
-      description: params.idea_description,
-      target_users: params.target_users,
-      problem: params.problem,
-      startup_stage: params.startup_stage ?? "Idea",
-    },
-    {
-      user_id: user.id,
-      title: params.project_name,
-      description: params.idea_description,
-    },
-    {
-      user_id: user.id,
-      name: params.project_name,
-      description: params.idea_description,
-    },
-  ];
+  const projectPayload = {
+    user_id: user.id,
+    name: params.project_name,
+    title: params.project_name,
+    description: params.idea_description,
+    target_users: params.target_users,
+    problem: params.problem,
+    startup_stage: params.startup_stage ?? "Idea",
+    validation_strengths: [],
+    validation_weaknesses: [],
+    validation_suggestions: [],
+  };
 
-  let createdProject: Record<string, unknown> | null = null;
-  let projectError: unknown = null;
+  const { data: createdProject, error: projectError } = await supabase
+    .from("projects")
+    .insert(projectPayload as never)
+    .select("*")
+    .single();
 
-  for (const payload of projectPayloads) {
-    const result = await supabase
-      .from("projects")
-      .insert(payload as never)
-      .select("*")
-      .single();
-
-    if (!result.error && result.data) {
-      createdProject = result.data as Record<string, unknown>;
-      projectError = null;
-      break;
-    }
-
-    projectError = result.error;
-    const message = result.error?.message?.toLowerCase() ?? "";
-    if (
-      !message.includes("schema cache") &&
-      !message.includes("could not find") &&
-      !message.includes("column") &&
-      !message.includes("null value")
-    ) {
-      break;
-    }
+  if (projectError || !createdProject) {
+    throw projectError ?? new Error("Project insert returned no project");
   }
-
-  if (!createdProject) throw projectError;
 
   try {
     const roadmapRes = await fetch("/api/ai/generate-roadmap", {
@@ -648,7 +620,7 @@ export async function createProjectWithRoadmap(params: {
     startup_summary:   startupSummary,
     current_stage:     params.startup_stage ?? "Idea",
     momentum_score:    50,
-    last_active:       new Date().toLocaleDateString("en-CA"),
+    last_active:       new Date().toISOString().slice(0, 10),
     days_inactive:     0,
     avoidance_signals: initialAvoidance,
     topics_mentioned_repeatedly: [],

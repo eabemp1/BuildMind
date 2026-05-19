@@ -24,6 +24,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Star, CheckCircle2, Loader2 } from "lucide-react";
+import { storage } from "@/lib/storage";
 
 export type TestimonialSource =
   | "streak_7"
@@ -417,13 +418,13 @@ export function shouldShowTestimonialModal(
 ): TestimonialSource | null {
   try {
     // Global cooldown — don't ask more often than every 14 days
-    const lastAsked = parseInt(localStorage.getItem("bm_testimonial_last_asked") ?? "0", 10);
+    const lastAsked = parseInt(storage.get("bm_testimonial_last_asked") ?? "0", 10);
     const daysSince = (Date.now() - lastAsked) / (1000 * 60 * 60 * 24);
     if (lastAsked && daysSince < 14) return null;
 
     // Check per-source "already asked" flags
     const already = (src: string) =>
-      localStorage.getItem(`bm_testimonial_asked_${src}`) === "1";
+      storage.get(`bm_testimonial_asked_${src}`) === "1";
 
     if (streak >= 30 && !already("streak_30")) return "streak_30";
     if (streak >= 14 && !already("streak_14")) return "streak_14";
@@ -450,7 +451,7 @@ export function shouldShowTestimonialModal(
  */
 export function markTestimonialAsked(source: TestimonialSource) {
   try {
-    localStorage.setItem(`bm_testimonial_asked_${source}`, "1");
-    localStorage.setItem("bm_testimonial_last_asked", String(Date.now()));
+    storage.set(`bm_testimonial_asked_${source}`, "1");
+    storage.set("bm_testimonial_last_asked", String(Date.now()));
   } catch {}
 }

@@ -10,10 +10,14 @@ import { useLimitModal } from "@/components/LimitModal";
 import { updateAchievementStats, checkAndUnlockAchievements, getAchievementStats } from "@/lib/achievements";
 import { trackEvent } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase/client";
+import { storage } from "@/lib/storage";
+import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
 import AIUsageBadge from "@/components/AIUsageBadge";
 import { ConfidenceBadge } from "@/components/ConfidenceBadge";
 import { Send, Bot, Brain, Sparkles, Zap, User, Clock, ChevronRight } from "lucide-react";
 import { withAIErrorBoundary } from "@/components/AIErrorBoundary";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { Card } from "@/components/ui/card";
 
 type ChatMessage = {
   id: string;
@@ -58,23 +62,12 @@ const QUICK_PROMPTS = [
 
 const FREE_COACH_MESSAGES_PER_WEEK = 3;
 
-function coachWeekKey(date = new Date()) {
-  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-  const day = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - day);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  const week = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
-  return `${d.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
-}
-
 function getCoachMessagesThisWeek() {
-  if (typeof window === "undefined") return 0;
-  return Number(localStorage.getItem(`bm_coach_${coachWeekKey()}`) ?? "0");
+  return storage.getCoachMessagesThisWeek();
 }
 
 function recordCoachMessage() {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(`bm_coach_${coachWeekKey()}`, String(getCoachMessagesThisWeek() + 1));
+  storage.recordCoachMessage();
 }
 
 function ThinkingDots() {
@@ -108,20 +101,18 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
   const isMobile = useIsMobile();
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}
-      style={{ display: "flex", gap: isMobile ? 8 : 10, alignItems: "flex-start", flexDirection: isUser ? "row-reverse" : "row" }}>
+      className={`flex items-start gap-2.5 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
       <div style={{
-        width: isMobile ? 32 : 28, height: isMobile ? 32 : 28, borderRadius: "50%", flexShrink: 0,
-        background: isUser ? "rgba(124,58,237,0.12)" : "var(--bm-accent-dim)",
+        background: isUser ? "var(--bm-bg4)" : "var(--grad-primary)",
         border: `1px solid ${isUser ? "rgba(124,58,237,0.22)" : "var(--bm-accent-bd)"}`,
-        display: "flex", alignItems: "center", justifyContent: "center",
-      }}>
-        {isUser ? <User size={12} color="#A78BFA" /> : <Bot size={12} color="var(--bm-accent)" />}
+      }} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full">
+        {isUser ? <User size={12} color="#A78BFA" /> : <Bot size={12} color="white" />}
       </div>
-      <div style={{ maxWidth: isMobile ? "86%" : "78%", display: "flex", flexDirection: "column", gap: 6, alignItems: isUser ? "flex-end" : "flex-start" }}>
+      <div className={`flex flex-col gap-1.5 ${isUser ? "items-end max-w-[75%]" : "items-start max-w-[85%]"}`}>
         {!isUser && msg.reasoning && msg.reasoning.length > 0 && (
-          <div style={{ background: "rgba(124,58,237,0.05)", border: "1px solid rgba(124,58,237,0.12)", borderRadius: 12, padding: "10px 12px", width: "100%" }}>
+          <div className="w-full rounded-xl border border-[rgba(124,58,237,0.12)] bg-[rgba(124,58,237,0.05)] px-3 py-2.5">
             <button onClick={() => setExpanded(v => !v)}
-              style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "none", color: "var(--bm-text3)", fontSize: 10, cursor: "pointer", fontFamily: "inherit", padding: 0, letterSpacing: "0.06em", textTransform: "uppercase", fontWeight: 600 }}>
+              className="flex cursor-pointer items-center gap-1.5 border-0 bg-transparent p-0 text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--bm-text3)]">
               <Brain size={10} color="#A78BFA" />
               <span style={{ color: "#A78BFA" }}>Thinking</span>
               <ChevronRight size={10} color="var(--bm-text3)" style={{ transform: expanded ? "rotate(90deg)" : "none", transition: "transform 0.15s" }} />
@@ -130,7 +121,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
               {expanded && (
                 <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: "hidden", marginTop: 8 }}>
                   {msg.reasoning.map((step, i) => (
-                    <div key={i} style={{ fontSize: 11, color: "var(--bm-text3)", marginBottom: 4, display: "flex", gap: 7, alignItems: "flex-start" }}>
+                    <div key={i} className="mb-1 flex items-start gap-2 text-[11px] text-[var(--bm-text3)]">
                       <span style={{ color: "rgba(124,58,237,0.5)", flexShrink: 0 }}>›</span>
                       {step}
                     </div>
@@ -140,16 +131,13 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
             </AnimatePresence>
           </div>
         )}
-        <div style={{
-          padding: "11px 14px", borderRadius: 16,
-          background: isUser ? "rgba(124,58,237,0.10)" : "var(--bm-bg3)",
-          border: `1px solid ${isUser ? "rgba(124,58,237,0.18)" : "var(--bm-border)"}`,
-          fontSize: isMobile ? 14 : 13, lineHeight: 1.6,
-          color: msg.error ? "var(--bm-red)" : "var(--bm-text2)",
-        }}>
+        <div
+          className={`px-3.5 py-2.5 text-[13px] leading-relaxed ${isUser ? "rounded-2xl rounded-tr-sm border border-[var(--bm-accent-bd)] bg-[var(--bm-accent-dim)]" : "rounded-2xl rounded-tl-sm border border-[var(--bm-border2)] bg-[var(--bm-bg3)]"}`}
+          style={{ color: msg.error ? "var(--bm-red)" : "var(--bm-text2)" }}
+        >
           {msg.phase === "thinking" ? <ThinkingDots /> : <span style={{ whiteSpace: "pre-wrap" }}>{msg.content}</span>}
         </div>
-        <div style={{ fontSize: 10, color: "var(--bm-text3)", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+        <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-[var(--bm-text3)]">
           <Clock size={9} />
           {new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
           {!isUser && typeof msg.confidence_score === "number" && (
@@ -188,10 +176,22 @@ function AICoachPageInner() {
   }, []);
 
   useEffect(() => {
-    try { const saved = JSON.parse(localStorage.getItem("bm_coach_memory") ?? "[]"); setMemory(saved); } catch {}
+    try { setMemory(storage.getJSON<string[]>("bm_coach_memory", [])); } catch {}
     setCoachMessagesThisWeek(getCoachMessagesThisWeek());
     const supabase = createClient();
     supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
+    fetchBehaviorState<{
+      coach_memory: string[];
+      ai_personality: "direct" | "supportive" | "challenger";
+    }>(["coach_memory", "ai_personality"]).then(values => {
+      if (Array.isArray(values.coach_memory)) {
+        storage.setJSON("bm_coach_memory", values.coach_memory);
+        setMemory(values.coach_memory);
+      }
+      if (values.ai_personality === "direct" || values.ai_personality === "supportive" || values.ai_personality === "challenger") {
+        setPersonality(values.ai_personality);
+      }
+    }).catch(() => {});
   }, []);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
@@ -233,7 +233,8 @@ function AICoachPageInner() {
       const confidence_score = typeof payload?.data?.confidence_score === "number" ? payload.data.confidence_score : null;
       const newMemory = [...memory, msg].slice(-10);
       setMemory(newMemory);
-      localStorage.setItem("bm_coach_memory", JSON.stringify(newMemory));
+      storage.setJSON("bm_coach_memory", newMemory);
+      persistBehaviorState({ coach_memory: newMemory });
       setMessages(prev => prev.map(m => m.id === thinkingMsg.id ? { ...m, content: reply, reasoning: payload?.data?.reasoning ?? m.reasoning, phase: "done", confidence_score } : m));
       recordCoachMessage();
       setCoachMessagesThisWeek(getCoachMessagesThisWeek());
@@ -242,9 +243,9 @@ function AICoachPageInner() {
       checkAndUnlockAchievements();
       // AI Coach counts as a streak-qualifying activity — increment once per day
       const todayKey = new Date().toISOString().split("T")[0];
-      if (localStorage.getItem("bm_coach_streak_date") !== todayKey) {
+      if (storage.get("bm_coach_streak_date") !== todayKey) {
         incrementDailyStreak();
-        localStorage.setItem("bm_coach_streak_date", todayKey);
+        storage.set("bm_coach_streak_date", todayKey);
       }
       trackEvent("ai_coach_message", { plan });
     } catch (error) {
@@ -265,71 +266,60 @@ function AICoachPageInner() {
   const suggestedActions = ["Define your ideal user persona", "Build in public on X consistently", "Create a lead magnet", "Launch on Product Hunt"];
 
   return (
-    <div style={{ maxWidth: 1040, margin: "0 auto", padding: isMobile ? "4px 0 20px" : "28px 24px", minHeight: isMobile ? "auto" : "calc(100vh - 80px)", height: isMobile ? "auto" : "calc(100vh - 80px)", display: "flex", flexDirection: "column" }}>
+    <div className="mx-auto flex max-w-6xl flex-col gap-5 px-0 py-1 sm:px-6 sm:py-7" style={{ minHeight: isMobile ? "auto" : "calc(100vh - 80px)", height: isMobile ? "auto" : "calc(100vh - 80px)" }}>
 
       {/* Header */}
-      <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: isMobile ? 18 : 20, flexShrink: 0 }}>
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexDirection: isMobile ? "column" : "row", flexWrap: "wrap", gap: 14 }}>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-              <h1 style={{ fontSize: isMobile ? 28 : 22, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em", margin: 0 }}>AI Coach</h1>
-              <span style={{ fontSize: 9, padding: "3px 8px", borderRadius: 20, background: "var(--bm-accent-dim)", color: "var(--bm-accent)", border: "1px solid var(--bm-accent-bd)", fontWeight: 700, letterSpacing: "0.06em" }}>PRO</span>
-            </div>
-            <p style={{ fontSize: isMobile ? 14 : 12, color: "var(--bm-text3)", margin: 0 }}>Your personal startup coach. Ask anything.</p>
-          </div>
-          <div style={{ display: "flex", gap: 6, alignItems: "center", width: isMobile ? "100%" : "auto", overflowX: isMobile ? "auto" : "visible", paddingBottom: isMobile ? 2 : 0 }}>
-            <span style={{ fontSize: 10, color: "var(--bm-text3)", marginRight: 4, flexShrink: 0 }}>Mode</span>
+      <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className="shrink-0">
+        <PageHeader
+          title="AI Coach"
+          subtitle="Your personal startup coach. Ask anything."
+          action={
+            <div className="flex w-full items-center gap-2 overflow-x-auto pb-0.5 sm:w-auto">
+            <span className="mr-1 shrink-0 text-[10px] text-[var(--bm-text3)]">Mode</span>
             {personalityOptions.map(opt => (
               <button key={opt.id} onClick={() => setPersonality(opt.id)}
-                style={{
-                  padding: isMobile ? "9px 13px" : "6px 12px", borderRadius: 8, fontFamily: "inherit", cursor: "pointer", flexShrink: 0,
-                  border: `1px solid ${personality === opt.id ? "var(--bm-accent-bd)" : "var(--bm-border)"}`,
-                  background: personality === opt.id ? "var(--bm-accent-dim)" : "transparent",
-                  color: personality === opt.id ? "var(--bm-accent)" : "var(--bm-text3)",
-                  fontSize: 11, fontWeight: personality === opt.id ? 600 : 400,
-                }}>
+                className={`shrink-0 cursor-pointer rounded-lg border px-3 py-2 text-[11px] ${personality === opt.id ? "border-[var(--bm-accent-bd)] bg-[var(--bm-accent-dim)] font-semibold text-[var(--bm-accent)]" : "border-[var(--bm-border)] bg-transparent font-normal text-[var(--bm-text3)]"}`}>
                 {opt.label}
               </button>
             ))}
           </div>
-        </div>
+          }
+        />
       </motion.div>
 
       {/* Split layout */}
-      <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: isMobile ? 18 : 14, flex: 1, minHeight: 0 }}>
+      <div className="flex min-h-0 flex-1 flex-col gap-5 lg:flex-row">
 
         {/* Chat panel */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}
-          style={{ flex: 1, display: "flex", flexDirection: "column", background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: isMobile ? 16 : 20, overflow: "hidden", minHeight: isMobile ? "72vh" : 0 }}>
-          <div style={{ padding: isMobile ? "16px 16px" : "14px 20px", borderBottom: "1px solid var(--bm-border)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexShrink: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--bm-accent)" }} />
-              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)" }}>Conversation</span>
+          className="flex min-h-[72vh] flex-1 flex-col overflow-hidden rounded-2xl border border-[var(--bm-border)] bg-[var(--bm-bg2)] shadow-md lg:min-h-0">
+          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--bm-border)] px-4 py-4 sm:px-5">
+            <div className="flex items-center gap-2">
+              <div className="h-2 w-2 rounded-full bg-[var(--bm-accent)]" />
+              <span className="text-[13px] font-semibold text-[var(--bm-text2)]">Conversation</span>
             </div>
             {plan === "free" && (
-              <span style={{ fontSize: 11, color: remaining > 1 ? "var(--bm-text3)" : "var(--bm-amber)" }}>
+              <span className="text-[11px]" style={{ color: remaining > 1 ? "var(--bm-text3)" : "var(--bm-amber)" }}>
                 {remaining}/{coachLimit} messages left this week
               </span>
             )}
           </div>
 
-          <div style={{ flex: 1, overflowY: "auto", padding: isMobile ? 16 : 20, display: "flex", flexDirection: "column", gap: isMobile ? 18 : 16, scrollbarWidth: "none" }}>
+          <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4 sm:p-5" style={{ scrollbarWidth: "none" }}>
             {messages.length === 0 && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}
-                style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 16, textAlign: "center" }}>
-                <div style={{ width: isMobile ? 64 : 56, height: isMobile ? 64 : 56, borderRadius: "50%", background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                className="flex h-full flex-col items-center justify-center gap-4 text-center">
+                <div className="flex h-16 w-16 items-center justify-center rounded-full border border-[var(--bm-accent-bd)] bg-[var(--bm-accent-dim)] sm:h-14 sm:w-14">
                   <Bot size={24} color="var(--bm-accent)" />
                 </div>
                 <div>
-                  <div style={{ fontSize: isMobile ? 18 : 16, fontWeight: 700, color: "var(--bm-text)", marginBottom: 6 }}>What's on your mind today?</div>
-                  <div style={{ fontSize: isMobile ? 14 : 12, color: "var(--bm-text3)" }}>Ask anything about your startup</div>
+                  <div className="mb-1.5 text-[16px] font-bold text-[var(--bm-text)] sm:text-[18px]">What's on your mind today?</div>
+                  <div className="text-[13px] text-[var(--bm-text3)]">Ask anything about your startup</div>
                 </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center" }}>
+                <div className="flex max-w-full gap-2 overflow-x-auto px-1 sm:flex-wrap sm:justify-center">
                   {QUICK_PROMPTS.map(p => (
                     <button key={p} onClick={() => sendMessage(p)}
-                      style={{ padding: isMobile ? "10px 14px" : "8px 14px", borderRadius: 20, border: "1px solid var(--bm-border)", background: "var(--bm-bg3)", color: "var(--bm-text3)", fontSize: isMobile ? 13 : 12, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}
-                      onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--bm-accent-bd)"; e.currentTarget.style.color = "var(--bm-accent)"; }}
-                      onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--bm-border)"; e.currentTarget.style.color = "var(--bm-text3)"; }}>
+                      className="shrink-0 rounded-full border border-[var(--bm-border)] bg-[var(--bm-bg3)] px-4 py-2 text-[12px] text-[var(--bm-text3)] transition-colors hover:border-[var(--bm-accent-bd)] hover:text-[var(--bm-accent)]">
                       {p}
                     </button>
                   ))}
@@ -340,24 +330,19 @@ function AICoachPageInner() {
             <div ref={bottomRef} />
           </div>
 
-          <div style={{ padding: isMobile ? "12px" : "14px 16px", borderTop: "1px solid var(--bm-border)", flexShrink: 0 }}>
-            {plan === "free" && <div style={{ marginBottom: 10 }}><AIUsageBadge /></div>}
-            <div style={{ display: "flex", gap: 10, alignItems: "flex-end", background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: 14, padding: isMobile ? "12px 12px" : "10px 14px", transition: "border-color 0.15s" }}
+          <div className="sticky bottom-0 shrink-0 border-t border-[var(--bm-border)] bg-[var(--bm-bg)]/90 p-3 backdrop-blur-sm sm:p-4">
+            {plan === "free" && <div className="mb-2.5"><AIUsageBadge /></div>}
+            <div className="flex items-end gap-2.5 rounded-xl border border-[var(--bm-border2)] bg-[var(--bm-bg3)] px-3.5 py-3 transition-colors"
               onFocusCapture={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--bm-accent-bd)"; }}
               onBlurCapture={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--bm-border2)"; }}>
               <textarea ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
                 onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
                 placeholder="Ask anything about your startup..." rows={1} disabled={loading}
-                style={{ flex: 1, background: "none", border: "none", outline: "none", color: "var(--bm-text)", fontSize: isMobile ? 16 : 13, resize: "none", lineHeight: 1.5, fontFamily: "inherit", minHeight: isMobile ? 28 : 20, maxHeight: 120 }} />
-              <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => sendMessage()}
+                className="min-h-7 max-h-[120px] flex-1 resize-none border-0 bg-transparent text-[16px] leading-relaxed text-[var(--bm-text)] outline-none sm:text-[13px]" />
+              <motion.button whileTap={{ scale: 0.95 }} onClick={() => sendMessage()}
                 disabled={!input.trim() || loading}
-                style={{
-                  width: isMobile ? 40 : 32, height: isMobile ? 40 : 32, borderRadius: 9, border: "none", flexShrink: 0,
-                  background: !input.trim() || loading ? "rgba(255,255,255,0.05)" : "var(--grad-primary)",
-                  color: !input.trim() || loading ? "rgba(255,255,255,0.2)" : "#fff",
-                  cursor: !input.trim() || loading ? "not-allowed" : "pointer",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                }}>
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border-0 sm:h-8 sm:w-8"
+                style={{ background: !input.trim() || loading ? "rgba(255,255,255,0.05)" : "var(--grad-primary)", color: !input.trim() || loading ? "rgba(255,255,255,0.2)" : "#fff", cursor: !input.trim() || loading ? "not-allowed" : "pointer" }}>
                 <Send size={13} />
               </motion.button>
             </div>
@@ -366,60 +351,56 @@ function AICoachPageInner() {
 
         {/* Right sidebar */}
         <motion.div initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.12 }}
-          style={{ width: isMobile ? "100%" : 256, display: "flex", flexDirection: "column", gap: isMobile ? 14 : 12, overflowY: "auto", scrollbarWidth: "none" }}>
+          className="flex w-full flex-col gap-3 overflow-y-auto lg:w-64" style={{ scrollbarWidth: "none" }}>
 
-          <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 18, padding: isMobile ? 18 : 18 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14 }}>
+          <Card className="p-4">
+            <div className="mb-3.5 flex items-center gap-1.5">
               <Brain size={13} color="#A78BFA" />
-              <span style={{ fontSize: 12, fontWeight: 700, color: "var(--bm-text2)" }}>Coach Memory</span>
+              <span className="text-[13px] font-semibold text-[var(--bm-text)]">Coach Memory</span>
             </div>
             {memory.length === 0 ? (
-              <p style={{ fontSize: 11, color: "var(--bm-text3)", lineHeight: 1.5 }}>Memory builds as you talk to the coach.</p>
+              <p className="text-[13px] leading-relaxed text-[var(--bm-text3)]">Memory builds as you talk to the coach.</p>
             ) : memory.slice(-4).map((m, i) => (
-              <div key={i} style={{ display: "flex", gap: 7, alignItems: "flex-start", marginBottom: 8 }}>
-                <div style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--bm-accent)", marginTop: 5, flexShrink: 0, opacity: 0.6 }} />
-                <span style={{ fontSize: 11, color: "var(--bm-text3)", lineHeight: 1.45 }}>{m.slice(0, 55)}{m.length > 55 ? "…" : ""}</span>
+              <div key={i} className="mb-2 flex items-start gap-2">
+                <div className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--bm-accent)] opacity-60" />
+                <span className="text-[11px] leading-relaxed text-[var(--bm-text3)]">{m.slice(0, 55)}{m.length > 55 ? "…" : ""}</span>
               </div>
             ))}
-          </div>
+          </Card>
 
-          <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 18, padding: 18 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14 }}>
+          <Card className="p-4">
+            <div className="mb-3.5 flex items-center gap-1.5">
               <Sparkles size={13} color="var(--bm-amber)" />
-              <span style={{ fontSize: 12, fontWeight: 700, color: "var(--bm-text2)" }}>Suggested Actions</span>
+              <span className="text-[13px] font-semibold text-[var(--bm-text)]">Suggested Actions</span>
             </div>
             {suggestedActions.map((a, i) => (
               <button key={i} onClick={() => sendMessage(`How do I: ${a}`)}
-                style={{ display: "flex", alignItems: "center", gap: 8, padding: isMobile ? "11px 12px" : "8px 10px", borderRadius: 9, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", fontSize: isMobile ? 13 : 11, cursor: "pointer", fontFamily: "inherit", textAlign: "left", width: "100%", marginBottom: 7, transition: "all 0.15s" }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--bm-accent-bd)"; e.currentTarget.style.background = "var(--bm-accent-dim)"; e.currentTarget.style.color = "var(--bm-text2)"; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--bm-border)"; e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--bm-text3)"; }}>
+                className="mb-2 flex w-full cursor-pointer items-center gap-2 rounded-lg border border-[var(--bm-border)] bg-transparent px-3 py-2 text-left text-[12px] text-[var(--bm-text3)] transition-colors hover:border-[var(--bm-accent-bd)] hover:bg-[var(--bm-accent-dim)] hover:text-[var(--bm-text2)]">
                 <Zap size={10} color="var(--bm-accent)" style={{ flexShrink: 0 }} />
                 {a}
               </button>
             ))}
-          </div>
+          </Card>
 
-          <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-accent-bd)", borderRadius: 18, padding: 18 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--bm-text2)", marginBottom: 10 }}>Today's Focus</div>
-            <div style={{ fontSize: 13, color: "var(--bm-text)", fontWeight: 600, marginBottom: 8 }}>
+          <Card className="border-[var(--bm-accent-bd)] p-4">
+            <div className="mb-2.5 text-[13px] font-semibold text-[var(--bm-text)]">Today's Focus</div>
+            <div className="mb-2 text-[13px] font-semibold text-[var(--bm-text)]">
               {activeProject?.startup_stage === "Idea" ? "Talk to 5 potential users" :
                activeProject?.startup_stage === "MVP" ? "Ship your first version" :
                "Talk to 3 potential users"}
             </div>
-            <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: "rgba(224,85,85,0.10)", color: "var(--bm-red)", border: "1px solid rgba(224,85,85,0.22)", fontWeight: 700 }}>High Impact</span>
-          </div>
+            <span className="rounded-full border border-[rgba(224,85,85,0.22)] bg-[rgba(224,85,85,0.10)] px-2 py-0.5 text-[10px] font-bold text-[var(--bm-red)]">High Impact</span>
+          </Card>
 
-          <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 18, padding: 18 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--bm-text2)", marginBottom: 12 }}>Quick Questions</div>
+          <Card className="p-4">
+            <div className="mb-3 text-[13px] font-semibold text-[var(--bm-text)]">Quick Questions</div>
             {QUICK_PROMPTS.map(p => (
               <button key={p} onClick={() => sendMessage(p)}
-                style={{ display: "block", width: "100%", padding: isMobile ? "11px 12px" : "8px 10px", borderRadius: 8, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", fontSize: isMobile ? 13 : 11, cursor: "pointer", fontFamily: "inherit", textAlign: "left", marginBottom: 6, transition: "all 0.15s" }}
-                onMouseEnter={e => { e.currentTarget.style.background = "var(--bm-bg3)"; e.currentTarget.style.color = "var(--bm-text2)"; }}
-                onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--bm-text3)"; }}>
+                className="mb-1.5 block w-full cursor-pointer rounded-lg border border-[var(--bm-border)] bg-transparent px-3 py-2 text-left text-[12px] text-[var(--bm-text3)] transition-colors hover:bg-[var(--bm-bg3)] hover:text-[var(--bm-text2)]">
                 {p}
               </button>
             ))}
-          </div>
+          </Card>
         </motion.div>
       </div>
     </div>

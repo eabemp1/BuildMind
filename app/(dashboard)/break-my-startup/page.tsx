@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useProjectsQuery } from "@/lib/queries";
 import { createClient } from "@/lib/supabase/client";
@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge, BadgeVariant } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/input";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 type RiskSeverity = "Critical" | "High" | "Medium" | "Low";
@@ -90,24 +91,6 @@ function overallColor(s: RiskSeverity) {
   if (s === "High") return "var(--bm-amber)";
   if (s === "Medium") return "var(--bm-blue)";
   return "var(--bm-green)";
-}
-
-function EmptyState({
-  title,
-  description,
-  action,
-}: {
-  title: string;
-  description: string;
-  action?: ReactNode;
-}) {
-  return (
-    <Card className="p-6 text-center flex flex-col items-center gap-3">
-      <div className="text-base font-semibold text-[var(--bm-text)]">{title}</div>
-      <div className="text-sm text-[var(--bm-text3)] max-w-md">{description}</div>
-      {action ? <div className="mt-2">{action}</div> : null}
-    </Card>
-  );
 }
 
 // ── Survival ring ─────────────────────────────────────────────────────────────
@@ -359,18 +342,18 @@ export default function BreakMyStartupPage() {
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col gap-1"
+        transition={{ duration: 0.2 }}
       >
-        <div className="flex items-center gap-2">
-          <Shield size={20} style={{ color: "var(--bm-red)" }} />
-          <h1 className="text-3xl font-bold text-[var(--bm-text)] tracking-tight">
-            Break My Startup
-          </h1>
-        </div>
-        <p className="text-sm text-[var(--bm-text2)] leading-relaxed max-w-xl mt-1">
-          Run a brutal, honest stress-test on your current project or any idea.
-          No sugarcoating. The goal is to make you stronger, not scare you.
-        </p>
+        <PageHeader
+          title="Break My Startup"
+          subtitle="Run a brutal, honest stress-test on your current project or any idea. No sugarcoating. The goal is to make you stronger, not scare you."
+          action={
+            <span className="inline-flex h-9 items-center gap-2 rounded-xl border border-[var(--bm-border)] bg-[var(--bm-bg2)] px-3 text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--bm-red)]">
+              <Shield size={15} />
+              Stress test
+            </span>
+          }
+        />
       </motion.div>
 
       {/* Input panel */}

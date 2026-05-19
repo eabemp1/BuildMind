@@ -20,7 +20,8 @@ import { initAnalytics } from "@/lib/analytics";
 import { ThemeProvider } from "@/components/layout/theme-provider";
 import { LimitModalProvider } from "@/components/LimitModal";
 import AchievementToast from "@/components/AchievementToast";
-import { runNotificationChecks, seedScheduledNotifications } from "@/lib/notifications";
+import { runNotificationChecks, seedScheduledNotifications, syncNotificationsFromServer } from "@/lib/notifications";
+import { syncAchievementsFromServer } from "@/lib/achievements";
 import { fetchAndSyncStoredPlanFromBillingStatus } from "@/lib/plan";
 import { initStorageAuthSync } from "@/lib/storage";
 import { createClient } from "@/lib/supabase/client";
@@ -53,7 +54,13 @@ export default function Providers({ children, nonce }: { children: React.ReactNo
     const unsubscribeStorage = initStorageAuthSync(supabase);
 
     // ── Notification checks ────────────────────────────────────────────────────
-    try { runNotificationChecks(); seedScheduledNotifications(); } catch {}
+    try {
+      void syncNotificationsFromServer().finally(() => {
+        runNotificationChecks();
+        seedScheduledNotifications();
+      });
+      void syncAchievementsFromServer();
+    } catch {}
 
     // ── Plan sync ─────────────────────────────────────────────────────────────
     const syncPlan = async () => {

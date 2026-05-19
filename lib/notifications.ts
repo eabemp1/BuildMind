@@ -14,6 +14,7 @@
 
 import { getStoredStreak } from "@/lib/plan";
 import { storage } from "@/lib/storage";
+import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
 
 export type NotifType =
   | "streak_broken"
@@ -72,7 +73,18 @@ export const getNotificationsForCurrentUser = getAllNotifications;
 export const createNotificationForCurrentUser = addNotification;
 
 function saveNotifications(notifs: AppNotification[]): void {
-  storage.setJSON(STORAGE_KEY, notifs.slice(0, MAX_NOTIFS));
+  const next = notifs.slice(0, MAX_NOTIFS);
+  storage.setJSON(STORAGE_KEY, next);
+  persistBehaviorState({ notifications: next });
+}
+
+export async function syncNotificationsFromServer(): Promise<void> {
+  if (typeof window === "undefined") return;
+  const values = await fetchBehaviorState<{ notifications: AppNotification[] }>(["notifications"]);
+  if (Array.isArray(values.notifications)) {
+    storage.setJSON(STORAGE_KEY, values.notifications.slice(0, MAX_NOTIFS));
+    window.dispatchEvent(new Event("bm_notification_added"));
+  }
 }
 
 export function addNotification(notif: Omit<AppNotification, "id" | "createdAt">): AppNotification {

@@ -179,8 +179,7 @@ export function usePlan(): PlanState {
 // All functions below are namespaced by userId to prevent cross-account bleed.
 
 function aiDayKey(userId: string): string {
-  const d = new Date();
-  return `bm_ai_${userId}_${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  return `bm_ai_${userId}_${new Date().toISOString().slice(0, 10)}`;
 }
 
 export function getAIMessagesTodayForUser(userId: string): number {
@@ -199,8 +198,12 @@ export function recordAIMessageForUser(userId: string): void {
 
 function weekKey(): string {
   const d = new Date();
-  const j = new Date(d.getFullYear(), 0, 1);
-  return `${d.getFullYear()}_w${Math.ceil(((d.getTime() - j.getTime()) / 86400000 + j.getDay() + 1) / 7)}`;
+  const utc = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const day = utc.getUTCDay() || 7;
+  utc.setUTCDate(utc.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(utc.getUTCFullYear(), 0, 1));
+  const week = Math.ceil((((utc.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+  return `${utc.getUTCFullYear()}_w${week}`;
 }
 
 export function getActionsThisWeekForUser(userId: string): number {

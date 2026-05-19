@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { canAccess } from "@/lib/plan";
 import { usePlan } from "@/lib/usePlan";
+import { storage } from "@/lib/storage";
 
 const SAMPLE_RESULT = {
   names: ["BuildHQ", "GetBuild", "BuildOS"],
@@ -169,7 +170,7 @@ function StartupKitContent() {
   const [result, setResult] = useState<StartupKitResult | null>(null);
 
   useEffect(() => {
-    const s = typeof window !== "undefined" ? localStorage.getItem("bm_idea") : null;
+    const s = storage.get("bm_idea");
     if (s) setIdea(s);
   }, []);
 
@@ -188,10 +189,8 @@ function StartupKitContent() {
       risks: ["No clear distribution channel", "Target audience too broad — narrow to one persona", "Competitive market — differentiation needed"],
     };
     setResult(generated);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("bm_startup_kit_idea", idea.trim());
-      localStorage.setItem("bm_startup_kit_result", JSON.stringify(generated));
-    }
+    storage.set("bm_startup_kit_idea", idea.trim());
+    storage.setJSON("bm_startup_kit_result", generated);
     setLoading(false);
   };
 

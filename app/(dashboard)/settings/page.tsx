@@ -8,10 +8,13 @@ import { FEATURES } from "@/lib/features";
 import { PLAN_NAMES, setStoredPlan, fetchAndSyncStoredPlanFromBillingStatus } from "@/lib/plan";
 import { PLAN_PRICE_LABEL } from "@/lib/pricing";
 import { usePlan } from "@/lib/usePlan";
+import { storage } from "@/lib/storage";
+import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
 import PushNotificationToggle from "@/components/PushNotificationToggle";
 import AvatarUpload from "@/components/AvatarUpload";
 import { ProfileCompletenessBar } from "@/components/ProfileCompletenessBar";
 import { User, CreditCard, Bell, Bot, Shield, Check, Zap, Globe, type LucideIcon } from "lucide-react";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 type Tab = "profile" | "account" | "notifications" | "ai" | "billing" | "public";
 
@@ -256,9 +259,14 @@ export default function SettingsPage() {
           .limit(1)
           .maybeSingle();
         if (project) setActiveProject(project as Record<string, unknown>);
-        const saved = localStorage.getItem("bm_ai_personality");
+        const saved = storage.get("bm_ai_personality");
         if (saved === "direct" || saved === "supportive" || saved === "challenger") {
           setAiPersonality(saved);
+        }
+        const behavior = await fetchBehaviorState<{ ai_personality: "direct" | "supportive" | "challenger" }>(["ai_personality"]);
+        if (behavior.ai_personality === "direct" || behavior.ai_personality === "supportive" || behavior.ai_personality === "challenger") {
+          storage.set("bm_ai_personality", behavior.ai_personality);
+          setAiPersonality(behavior.ai_personality);
         }
       } catch {}
     };
@@ -279,7 +287,8 @@ export default function SettingsPage() {
         avatar_url: avatarUrl.trim() || null,
         updated_at: new Date().toISOString(),
       });
-      localStorage.setItem("bm_ai_personality", aiPersonality);
+      storage.set("bm_ai_personality", aiPersonality);
+      persistBehaviorState({ ai_personality: aiPersonality });
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch {} finally { setSaving(false); }
@@ -322,31 +331,28 @@ export default function SettingsPage() {
   }
 
   return (
-    <div style={{ maxWidth: 920, margin: "0 auto", padding: isMobile ? "4px 0 24px" : "28px 24px" }}>
-      <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: isMobile ? 20 : 28 }}>
-        <h1 style={{ fontSize: isMobile ? 28 : 22, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em", margin: "0 0 4px" }}>Settings</h1>
-        <p style={{ fontSize: isMobile ? 14 : 12, color: "var(--bm-text3)", margin: 0 }}>Manage your account, notifications, and AI preferences.</p>
+    <div className="mx-auto flex max-w-5xl flex-col gap-6 px-0 py-1 sm:px-6 sm:py-7">
+      <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
+        <PageHeader
+          title="Settings"
+          subtitle="Manage your account, notifications, and AI preferences."
+        />
       </motion.div>
 
-      <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: isMobile ? 18 : 20 }}>
+      <div className="flex flex-col gap-5 lg:flex-row">
         {/* Sidebar nav */}
-        <div style={{ width: isMobile ? "100%" : 160, flexShrink: 0, overflowX: isMobile ? "auto" : "visible", paddingBottom: isMobile ? 4 : 0 }}>
-          <nav style={{ display: "flex", flexDirection: isMobile ? "row" : "column", gap: isMobile ? 8 : 2, minWidth: isMobile ? "max-content" : "auto" }}>
+        <div className="w-full shrink-0 overflow-x-auto pb-1 lg:w-40 lg:overflow-visible">
+          <nav className="flex min-w-max flex-row gap-2 lg:min-w-0 lg:flex-col">
             {TABS.map(t => {
               const Icon = t.icon;
               const active = tab === t.id;
               return (
                 <button key={t.id} onClick={() => setTab(t.id)}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 9, padding: isMobile ? "11px 14px" : "9px 12px", borderRadius: 9,
-                    border: `1px solid ${active ? "var(--bm-accent-bd)" : "transparent"}`,
-                    background: active ? "var(--bm-accent-dim)" : "transparent",
-                    color: active ? "var(--bm-accent)" : "var(--bm-text3)",
-                    fontSize: 13, fontWeight: active ? 600 : 400,
-                    cursor: "pointer", fontFamily: "inherit", textAlign: "left", width: isMobile ? "auto" : "100%", flexShrink: 0, transition: "all 0.13s",
-                  }}
-                  onMouseEnter={e => { if (!active) { e.currentTarget.style.background = "var(--bm-bg3)"; e.currentTarget.style.color = "var(--bm-text2)"; }}}
-                  onMouseLeave={e => { if (!active) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--bm-text3)"; }}}>
+                  className={`flex h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-none border-b-2 px-3.5 text-left text-[13px] transition-colors lg:w-full lg:rounded-lg lg:border-b-0 lg:border-l-2 ${
+                    active
+                      ? "border-[var(--bm-accent)] bg-[var(--bm-accent-dim)] font-semibold text-[var(--bm-accent)]"
+                      : "border-transparent bg-transparent font-normal text-[var(--bm-text3)] hover:bg-[var(--bm-bg3)] hover:text-[var(--bm-text2)]"
+                  }`}>
                   <Icon size={14} strokeWidth={active ? 2.2 : 1.6} style={{ flexShrink: 0 }} />
                   {t.label}
                 </button>
@@ -356,7 +362,7 @@ export default function SettingsPage() {
         </div>
 
         {/* Content area */}
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="min-w-0 flex-1">
           <AnimatePresence mode="wait">
             <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
 

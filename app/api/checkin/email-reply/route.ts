@@ -27,6 +27,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { createHmac, timingSafeEqual } from "crypto";
 import { sendEmail } from "@/lib/email";
 
 export const runtime  = "nodejs";
@@ -39,6 +41,68 @@ interface ResendInboundPayload {
   subject?: string;
   text?: string;
   html?: string;
+}
+
+function getWebhookSecret(): string {
+  return (
+    process.env.INBOUND_EMAIL_WEBHOOK_SECRET ??
+    process.env.CHECKIN_EMAIL_WEBHOOK_SECRET ??
+    process.env.RESEND_INBOUND_WEBHOOK_SECRET ??
+    ""
+  );
+}
+
+function safeEqual(a: string, b: string): boolean {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+
+function verifyInboundSignature(req: NextRequest, rawBody: string): boolean {
+  const secret = getWebhookSecret();
+  if (!secret) return process.env.NODE_ENV !== "production";
+
+  const sharedSecret =
+    req.headers.get("x-inbound-secret") ??
+    req.headers.get("x-buildmind-webhook-secret");
+  if (sharedSecret && safeEqual(sharedSecret, secret)) return true;
+
+  const signature =
+    req.headers.get("x-buildmind-signature") ??
+    req.headers.get("x-webhook-signature") ??
+    req.headers.get("resend-signature");
+  if (!signature) return false;
+
+  const expected = createHmac("sha256", secret).update(rawBody).digest("hex");
+  const received = signature.replace(/^sha256=/i, "").trim();
+  return safeEqual(received, expected);
+}
+
+function payloadFromFormEncoded(rawBody: string): ResendInboundPayload {
+  const form = new URLSearchParams(rawBody);
+  return {
+    from:    form.get("From") ?? form.get("from") ?? undefined,
+    to:      form.get("To") ?? form.get("to") ?? undefined,
+    subject: form.get("Subject") ?? form.get("subject") ?? undefined,
+    text:    form.get("TextBody") ?? form.get("text") ?? undefined,
+  };
+}
+
+async function findAuthUserByEmail(supabase: SupabaseClient, senderEmail: string) {
+  const target = senderEmail.toLowerCase();
+  const perPage = 1000;
+
+  for (let page = 1; page <= 100; page += 1) {
+    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage });
+    if (error) throw error;
+
+    const users = data?.users ?? [];
+    const user = users.find((u) => u.email?.toLowerCase() === target);
+    if (user) return user;
+    if (users.length < perPage) break;
+  }
+
+  return null;
 }
 
 function extractReplyText(text: string): string {
@@ -94,20 +158,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ ok: false, error: "Supabase env vars missing" }, { status: 500 });
   }
 
+  const rawBody = await req.text();
+  if (!verifyInboundSignature(req, rawBody)) {
+    return NextResponse.json({ ok: false, error: "Invalid signature" }, { status: 401 });
+  }
+
   let payload: ResendInboundPayload;
   try {
     const contentType = req.headers.get("content-type") ?? "";
     if (contentType.includes("application/json")) {
-      payload = await req.json() as ResendInboundPayload;
+      payload = JSON.parse(rawBody) as ResendInboundPayload;
+    } else if (contentType.includes("application/x-www-form-urlencoded")) {
+      payload = payloadFromFormEncoded(rawBody);
     } else {
-      // Postmark sends form-encoded
-      const form = await req.formData();
-      payload = {
-        from:    form.get("From") as string,
-        to:      form.get("To") as string,
-        subject: form.get("Subject") as string,
-        text:    form.get("TextBody") as string,
-      };
+      payload = payloadFromFormEncoded(rawBody);
     }
   } catch {
     return NextResponse.json({ ok: false, error: "Invalid payload" }, { status: 400 });
@@ -130,8 +194,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const supabase = createClient(supabaseUrl, serviceKey);
 
   // Resolve user from email
-  const { data: authList } = await supabase.auth.admin.listUsers();
-  const user = authList?.users?.find(u => u.email?.toLowerCase() === senderEmail);
+  const user = await findAuthUserByEmail(supabase, senderEmail);
 
   if (!user) {
     // Don't 404 — just silently ignore unrecognised inbound emails

@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Bell, X } from "lucide-react";
 import { getPushStatus, requestPushPermission, subscribeToPush } from "@/lib/push";
+import { storage } from "@/lib/storage";
+import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
 
 interface FirstTaskNotificationPromptProps {
   userId: string;
@@ -17,7 +19,9 @@ export default function FirstTaskNotificationPrompt({ userId }: FirstTaskNotific
   useEffect(() => {
     const checkShowPrompt = async () => {
       try {
-        const alreadyPrompted = localStorage.getItem("bm_push_prompt_shown") === "true";
+        const serverState = await fetchBehaviorState<{ push_prompt_shown: boolean }>(["push_prompt_shown"]);
+        const alreadyPrompted = serverState.push_prompt_shown === true || storage.get("bm_push_prompt_shown") === "true";
+        if (serverState.push_prompt_shown === true) storage.set("bm_push_prompt_shown", "true");
         const status = await getPushStatus();
         if (!alreadyPrompted && (status === "default" || status === "granted")) {
           setShow(true);
@@ -36,7 +40,8 @@ export default function FirstTaskNotificationPrompt({ userId }: FirstTaskNotific
     try {
       const permission = await requestPushPermission();
       if (permission !== "granted") {
-        localStorage.setItem("bm_push_prompt_shown", "true");
+        storage.set("bm_push_prompt_shown", "true");
+        persistBehaviorState({ push_prompt_shown: true });
         setShow(false);
         return;
       }
@@ -45,7 +50,8 @@ export default function FirstTaskNotificationPrompt({ userId }: FirstTaskNotific
         setError("Could not enable notifications. Check your browser settings and try again in Settings.");
         return;
       }
-      localStorage.setItem("bm_push_prompt_shown", "true");
+      storage.set("bm_push_prompt_shown", "true");
+      persistBehaviorState({ push_prompt_shown: true });
       setShow(false);
     } catch (error) {
       console.error("Push permission error:", error);
@@ -55,7 +61,8 @@ export default function FirstTaskNotificationPrompt({ userId }: FirstTaskNotific
   };
 
   const handleDismiss = () => {
-    localStorage.setItem("bm_push_prompt_shown", "true");
+    storage.set("bm_push_prompt_shown", "true");
+    persistBehaviorState({ push_prompt_shown: true });
     setShow(false);
   };
 
