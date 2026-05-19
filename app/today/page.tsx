@@ -184,6 +184,31 @@ function hydrateScript(
     .replace(/\[Problem\]/g, problem || "[problem]");
 }
 
+function inferAudienceFromAction(action: string, fallback: string): string {
+  if (fallback.trim()) return fallback.trim();
+  const match = action.match(/\b(?:to|with)\s+(?:\d+\s+)?(.+?)(?:\s+(?:on|via|today|who|and|while|before|after)|\s+[—-]|[.,]|$)/i);
+  return match?.[1]?.trim() || "people in your target segment";
+}
+
+function inferTopicFromAction(action: string, problem: string, productName: string): string {
+  if (problem.trim()) return problem.trim();
+  const about = action.match(/\b(?:about|around|with)\s+(.+?)(?:[.,]|[—-]|\s+today|\s+before|\s+after|$)/i);
+  if (about?.[1]?.trim()) return about[1].trim();
+  return productName.trim() ? `${productName.trim()} and the problem it solves` : "this workflow";
+}
+
+function isGenericDraft(message: string): boolean {
+  return /\b(this problem|your problem area|potential users|\[problem\]|\[target users\]|\[your product\])\b/i.test(message);
+}
+
+function buildPersonalizedDraftFromAction(action: string, message: string, productName: string, targetUsers: string, problem: string): string {
+  const hydrated = hydrateScript(message, productName, targetUsers, problem);
+  if (!isGenericDraft(hydrated)) return hydrated;
+  const audience = inferAudienceFromAction(action, targetUsers);
+  const topic = inferTopicFromAction(action, problem, productName);
+  return `Hi [Name], quick question - I'm researching ${topic} for ${audience}. How are you handling this today, and what is the most frustrating part? I'd value 10 minutes of honest context.`;
+}
+
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
@@ -489,8 +514,8 @@ function TodayContent() {
 
   // Hydrate draft with real project values on action change
   useEffect(() => {
-    setDraftMessage(hydrateScript(actionData.message, productName, targetUsers, problem));
-  }, [actionData.message, productName, targetUsers, problem]);
+    setDraftMessage(buildPersonalizedDraftFromAction(actionData.action, actionData.message, productName, targetUsers, problem));
+  }, [actionData.action, actionData.message, productName, targetUsers, problem]);
 
   function handleCopy() {
     navigator.clipboard.writeText(draftMessage ?? actionData.message).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });

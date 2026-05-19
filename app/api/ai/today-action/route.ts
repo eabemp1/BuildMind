@@ -30,6 +30,29 @@ function cleanVisibleText(value: string | undefined, fallback: string): string {
   return clean || fallback;
 }
 
+function inferAudience(action: string, explicit: string): string {
+  if (explicit.trim()) return explicit.trim();
+  const match = action.match(/\b(?:to|with)\s+(?:\d+\s+)?(.+?)(?:\s+(?:on|via|today|who|and|while|before|after)|\s+[—-]|[.,]|$)/i);
+  return match?.[1]?.trim() || "people in your target segment";
+}
+
+function inferTopic(action: string, explicit: string, title: string): string {
+  if (explicit.trim()) return explicit.trim();
+  const about = action.match(/\b(?:about|around|with)\s+(.+?)(?:[.,]|[—-]|\s+today|\s+before|\s+after|$)/i);
+  if (about?.[1]?.trim()) return about[1].trim();
+  return title.trim() ? `${title.trim()} and the problem it solves` : "this workflow";
+}
+
+function buildPersonalizedDraft(action: string, fallback: TodayAction, context: { title: string; targetUsers: string; problem: string }): string {
+  const audience = inferAudience(action, context.targetUsers);
+  const topic = inferTopic(action, context.problem, context.title);
+  const product = context.title.trim();
+  if (product) {
+    return `Hi [Name], quick question - I'm researching ${topic} for ${audience}. How are you handling this today, and what is the most frustrating part? I'd value 10 minutes of honest context.`;
+  }
+  return cleanVisibleText(fallback.message, `Hi [Name], quick question - how are you handling ${topic} today, and what is the most frustrating part? I'd value 10 minutes of honest context.`);
+}
+
 /** Build a project-specific fallback using real project data — never placeholder text */
 function buildContextualFallback(stage: string, targetUsers: string, problem: string, title: string): TodayAction {
   const userType = targetUsers?.trim() || "potential users";
@@ -420,6 +443,7 @@ INSTRUCTION: Use this to make today's action a direct causal response to yesterd
       // If reflexion ran, its rationale becomes the task's why
       why: cleanVisibleText(reflexionOutput?.rationale, fallback.why),
     };
+    finalResult.message = buildPersonalizedDraft(finalResult.action, fallback, { title, targetUsers, problem });
 
     if (reflexionOutput) {
       finalResult.reflexion = {
