@@ -12,6 +12,7 @@ import { storage } from "@/lib/storage";
 
 // REC 4.2: Persistent daily loop status bar
 function DailyLoopStatusBar() {
+  const pathname = usePathname();
   const [loopState, setLoopState] = useState<{
     dayOfWeek: number;
     taskDone: boolean;
@@ -20,6 +21,7 @@ function DailyLoopStatusBar() {
   } | null>(null);
 
   useEffect(() => {
+    if (pathname !== "/today") return;
     const now = new Date();
     const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon...
     const hoursUntilBriefing = now.getHours() < 7
@@ -31,8 +33,9 @@ function DailyLoopStatusBar() {
     const reflectionDone = storage.get(`bm_reflect_done_${today}`) === "1";
 
     setLoopState({ dayOfWeek, taskDone, reflectionDone, hoursUntilBriefing });
-  }, []);
+  }, [pathname]);
 
+  if (pathname !== "/today") return null;
   if (!loopState) return null;
 
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];

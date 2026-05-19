@@ -294,13 +294,17 @@ function buildFocusAreaPrompt(focusAreas: string[]): string {
 const BreakMyStartupSchema = z.object({
   userId:       z.string().min(1),
   projectId:    z.string().optional(),
-  idea:         z.string().max(1000).optional(),
+  idea:         z.string().max(4000).optional(),
   stage:        z.string().optional(),
   focusAreas:   z.array(z.string()).max(10).optional(),
   executionMode: z.boolean().optional(),
 });
 
 export async function POST(request: Request) {
+  let fallbackIdea = "";
+  let fallbackStage = "Idea";
+  let fallbackFocusAreas: string[] = [];
+  let fallbackExecutionMode = false;
   try {
     const rawBody = await request.json().catch(() => ({}));
     const zodResult = BreakMyStartupSchema.safeParse(rawBody);
@@ -313,11 +317,15 @@ export async function POST(request: Request) {
     const body = zodResult.data;
     const userId = String(body?.userId ?? "").trim();
     const projectId = String(body?.projectId ?? "").trim();
-    const idea = String(body?.idea ?? "").trim().slice(0, 1000);
+    const idea = String(body?.idea ?? "").trim().slice(0, 4000);
     const focusAreas = Array.isArray(body?.focusAreas)
       ? body.focusAreas.map(String).filter(Boolean).slice(0, 10)
       : [];
     const requestExecutionMode = Boolean(body?.executionMode);
+    fallbackIdea = idea;
+    fallbackStage = String(body?.stage ?? "Idea");
+    fallbackFocusAreas = focusAreas;
+    fallbackExecutionMode = requestExecutionMode;
 
     if (!userId) return NextResponse.json({ success: false, error: "userId is required" }, { status: 400 });
     if (!projectId && !idea) return NextResponse.json({ success: false, error: "projectId or idea is required" }, { status: 400 });
@@ -858,6 +866,63 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Analysis failed";
+    if (fallbackIdea) {
+      const score = previewSignalScore(fallbackIdea, fallbackFocusAreas, fallbackStage);
+      const execution_plan = fallbackExecutionMode || score >= 45
+        ? {
+            mvp_roadmap: [
+              "Define the narrowest user segment and the painful workflow they repeat weekly",
+              "Turn the idea into one testable promise and one landing-page headline",
+              "Create a clickable mockup or no-code prototype for the core workflow",
+              "Put it in front of 5 target users and record every confusion point",
+              "Ship the smallest paid or waitlist version based on what those users actually did",
+            ],
+            first_10_actions: [
+              "Write the one-sentence pitch for this exact user",
+              "List 20 people or communities where that user already gathers",
+              "Send 5 problem-discovery messages today",
+              "Document the top 3 current workarounds",
+              "Pick the one feature needed to prove demand",
+              "Sketch the core flow in 30 minutes",
+              "Ask 3 users to react to the sketch",
+              "Choose one pricing hypothesis",
+              "Create a simple waitlist or checkout test",
+              "Review replies and decide what to cut",
+            ],
+            gtm_plan: [
+              "Start with one niche channel where target users already ask for help",
+              "Publish the problem in the user's words, not product language",
+              "DM people who engage and ask for a short call",
+              "Convert calls into a small beta list",
+              "Use the first beta outcomes as proof for the next outreach wave",
+            ],
+          }
+        : null;
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          reasoning: ["Fallback custom-idea analysis returned because the live pipeline failed", msg],
+          verdict: "The live stress-test pipeline could not finish, but the idea still has enough signal to produce a useful next move.",
+          kill_reasons: ["Demand is not proven yet", "The target user may be too broad", "The first version could become too large"],
+          survive_reasons: ["You are testing the idea before overbuilding", "A narrow user segment can make the next step clear"],
+          brutal_advice: "Talk to 5 specific target users before building. If they will not give time, they probably will not give money.",
+          survival_probability: score,
+          competitor_summary: "Competitor scan unavailable in fallback mode. Re-run later for live market context.",
+          differentiation_plan: ["Own one narrow niche", "Use the user's exact painful language", "Prove willingness to pay before polishing"],
+          competitors: [],
+          focus_areas: fallbackFocusAreas,
+          viability_score: score,
+          viability_breakdown: null,
+          pivots: [],
+          execution_plan,
+          reflexion_action: null,
+          reflexion_status: "partial" satisfies ReflexionStatus,
+          competitors_scraped: false,
+          competitor_data_source: "fallback",
+        },
+      });
+    }
     return NextResponse.json(
       { success: false, error: msg },
       { status: msg.toLowerCase().includes("limit") ? 429 : 500 },

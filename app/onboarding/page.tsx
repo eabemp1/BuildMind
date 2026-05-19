@@ -21,7 +21,7 @@ import BuildMindLoader from "@/components/BuildMindLoader";
 import { ArrowRight, Loader2, Zap } from "lucide-react";
 import { Suspense } from "react";
 
-type Screen = "input" | "strike" | "depth" | "identity" | "saving";
+type Screen = "input" | "strike" | "depth" | "stage" | "identity" | "saving";
 
 // ── Depth screen answers ──────────────────────────────────────────────────────
 interface DepthAnswers {
@@ -391,6 +391,213 @@ function DepthScreen({ onComplete }: { onComplete: (answers: DepthAnswers) => vo
   );
 }
 
+const STAGE_OPTIONS: {
+  value: string;
+  emoji: string;
+  label: string;
+  sub: string;
+}[] = [
+  {
+    value: "Idea",
+    emoji: "💡",
+    label: "Idea",
+    sub: "I have an idea but haven't validated it with real people yet.",
+  },
+  {
+    value: "Validation",
+    emoji: "🧪",
+    label: "Validation",
+    sub: "I'm talking to potential users and testing assumptions.",
+  },
+  {
+    value: "MVP",
+    emoji: "🛠️",
+    label: "MVP / Prototype",
+    sub: "I have something working - rough, but real people can use it.",
+  },
+  {
+    value: "Launch",
+    emoji: "🚀",
+    label: "Launched",
+    sub: "I'm live and actively acquiring my first users or customers.",
+  },
+  {
+    value: "Growth",
+    emoji: "📈",
+    label: "Growth",
+    sub: "I have repeatable traction and I'm scaling what works.",
+  },
+  {
+    value: "Revenue",
+    emoji: "💰",
+    label: "Revenue / Scale",
+    sub: "I'm generating meaningful revenue and optimising for retention.",
+  },
+];
+
+function StageScreen({ onComplete }: { onComplete: (stage: string) => void }) {
+  const [selected, setSelected] = useState<string | null>(null);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -16 }}
+      transition={{ duration: 0.35, ease: "easeOut" }}
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: "100dvh",
+        padding: "24px",
+        background: VIZ.bg,
+      }}
+    >
+      <div style={{ width: "100%", maxWidth: 520 }}>
+        <div style={{ marginBottom: 28, textAlign: "center" }}>
+          <h2
+            style={{
+              fontSize: "clamp(22px, 4vw, 30px)",
+              fontWeight: 800,
+              color: VIZ.text,
+              letterSpacing: "-0.03em",
+              lineHeight: 1.2,
+              margin: "0 0 10px",
+            }}
+          >
+            Where are you right now?
+          </h2>
+          <p
+            style={{
+              fontSize: 13,
+              color: VIZ.text3,
+              lineHeight: 1.5,
+              margin: 0,
+            }}
+          >
+            Be honest - BuildMind calibrates everything to your real stage.
+            <br />
+            You can change this later.
+          </p>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 9, marginBottom: 22 }}>
+          {STAGE_OPTIONS.map((opt) => {
+            const isSelected = selected === opt.value;
+            return (
+              <motion.button
+                key={opt.value}
+                onClick={() => setSelected(opt.value)}
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.98 }}
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 14,
+                  padding: "14px 16px",
+                  borderRadius: 12,
+                  border: `1px solid ${isSelected ? VIZ.accent : VIZ.border}`,
+                  background: isSelected
+                    ? `color-mix(in srgb, ${VIZ.accent} 8%, ${VIZ.panel})`
+                    : VIZ.panel,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  textAlign: "left",
+                  transition: "all 0.15s",
+                  width: "100%",
+                }}
+              >
+                <span style={{ fontSize: 22, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>
+                  {opt.emoji}
+                </span>
+                <div>
+                  <div
+                    style={{
+                      fontSize: 14,
+                      fontWeight: 700,
+                      color: isSelected ? VIZ.accent : VIZ.text,
+                      marginBottom: 3,
+                      letterSpacing: "-0.01em",
+                    }}
+                  >
+                    {opt.label}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: VIZ.text3,
+                      lineHeight: 1.45,
+                    }}
+                  >
+                    {opt.sub}
+                  </div>
+                </div>
+                <div
+                  style={{
+                    marginLeft: "auto",
+                    width: 18,
+                    height: 18,
+                    borderRadius: "50%",
+                    flexShrink: 0,
+                    border: `2px solid ${isSelected ? VIZ.accent : VIZ.border}`,
+                    background: isSelected ? VIZ.accent : "transparent",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    transition: "all 0.15s",
+                    marginTop: 2,
+                  }}
+                >
+                  {isSelected && (
+                    <div
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: "50%",
+                        background: "#fff",
+                      }}
+                    />
+                  )}
+                </div>
+              </motion.button>
+            );
+          })}
+        </div>
+
+        <motion.button
+          onClick={() => {
+            if (selected) onComplete(selected);
+          }}
+          disabled={!selected}
+          whileHover={selected ? { scale: 1.02 } : {}}
+          whileTap={selected ? { scale: 0.98 } : {}}
+          style={{
+            width: "100%",
+            padding: "14px 24px",
+            background: selected ? VIZ.grad : VIZ.panel,
+            color: selected ? "#fff" : VIZ.text3,
+            border: "none",
+            borderRadius: 10,
+            fontSize: 15,
+            fontWeight: 600,
+            cursor: selected ? "pointer" : "not-allowed",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+            fontFamily: "inherit",
+            transition: "all 0.2s",
+          }}
+        >
+          <ArrowRight size={15} />
+          {selected ? `Continue as ${selected} stage ->` : "Select your stage to continue"}
+        </motion.button>
+      </div>
+    </motion.div>
+  );
+}
+
 // ── Screen 4 — Identity Begins ────────────────────────────────────────────────
 function IdentityScreen({ onComplete }: { onComplete: () => void }) {
   return (
@@ -466,6 +673,7 @@ function OnboardingInner() {
   const [idea, setIdea] = useState("");
   const [strikeResult, setStrikeResult] = useState<StrikeResult | null>(null);
   const [depthAnswers, setDepthAnswers] = useState<DepthAnswers>({ avoidance: "", revenueModel: "", targetUsers: "" });
+  const [startupStage, setStartupStage] = useState<string>("Idea");
   const [error, setError] = useState<string | null>(null);
 
   // Redirect if already onboarded
@@ -487,7 +695,7 @@ function OnboardingInner() {
       const res = await fetch("/api/ai/reflexion-strike", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ startupDescription: submittedIdea, stage: "Idea" }),
+        body: JSON.stringify({ startupDescription: submittedIdea, stage: startupStage }),
       });
       const data = await res.json();
       if (data.ok && data.data) {
@@ -516,8 +724,14 @@ function OnboardingInner() {
 
   const handleDepthComplete = (answers: DepthAnswers) => {
     setDepthAnswers(answers);
-    setScreen("identity");
+    setScreen("stage");
     trackFunnelStep("depth_questions_answered");
+  };
+
+  const handleStageComplete = (stage: string) => {
+    setStartupStage(stage);
+    setScreen("identity");
+    trackFunnelStep("stage_selected");
   };
 
   const handleIdentityComplete = async () => {
@@ -539,7 +753,7 @@ function OnboardingInner() {
         // Use depth screen answer if provided, else sensible default
         target_users: depthAnswers.targetUsers.trim() || "founders",
         problem: strikeResult?.marketGap ?? idea,
-        startup_stage: "Idea",
+        startup_stage: startupStage,
       });
 
       identifyUser(user.id, user.email ?? null);
@@ -589,6 +803,9 @@ function OnboardingInner() {
       )}
       {screen === "depth" && (
         <DepthScreen key="depth" onComplete={handleDepthComplete} />
+      )}
+      {screen === "stage" && (
+        <StageScreen key="stage" onComplete={handleStageComplete} />
       )}
       {screen === "identity" && (
         <IdentityScreen key="identity" onComplete={handleIdentityComplete} />

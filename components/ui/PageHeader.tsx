@@ -16,7 +16,17 @@ export function PageHeader({
           {title}
         </h1>
         {subtitle ? (
-          <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-[var(--bm-text2)]">
+          <p
+            className="mt-1 text-[13px] leading-relaxed text-[var(--bm-text2)]"
+            style={{
+              maxWidth: 480,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+            }}
+          >
             {subtitle}
           </p>
         ) : null}

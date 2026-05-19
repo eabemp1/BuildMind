@@ -20,6 +20,7 @@ export type FunnelStep =
   | "onboarding_start"
   | "onboarding_idea"
   | "onboarding_stage"
+  | "stage_selected"
   | "reflexion_strike_started"
   | "reflexion_strike_shown"
   | "reflexion_strike_fallback"

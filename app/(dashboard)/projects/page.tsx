@@ -1,15 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { z } from "zod";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { computeStartupScore } from "@/lib/buildmind";
-import { getActiveProjectId, setActiveProjectId } from "@/lib/api";
 import {
   useCreateProjectMutation,
-  useDeleteProjectMutation,
   useProjectSummariesQuery,
 } from "@/lib/queries";
 import { projectCreateSchema } from "@/lib/validation";
@@ -17,16 +13,13 @@ import { getLimits } from "@/lib/plan";
 import { usePlan } from "@/lib/usePlan";
 import { useLimitModal } from "@/components/LimitModal";
 import {
-  Plus, Trash2, ChevronRight, Check, X, ArrowRight, Clock,
+  Plus, X, ArrowRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Input, Textarea } from "@/components/ui/input";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SectionHeader } from "@/components/ui/SectionHeader";
-import { ScoreRing } from "@/components/ui/ScoreRing";
 import { EmptyState } from "@/components/ui/EmptyState";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -41,15 +34,6 @@ const STAGE_COLORS: Record<string, string> = {
   Launch: "var(--bm-green)",
   Growth: "var(--bm-accent)",
   Revenue: "var(--bm-green)",
-};
-
-const STAGE_BADGE_VARIANT: Record<string, "neutral" | "info" | "warning" | "success" | "gradient"> = {
-  Idea: "neutral",
-  Validation: "info",
-  MVP: "warning",
-  Launch: "success",
-  Growth: "gradient",
-  Revenue: "success",
 };
 
 function normalizeStage(input: string): StartupStage {
@@ -218,38 +202,12 @@ export default function ProjectsPage() {
   const { showLimitModal } = useLimitModal();
   const { data: summaries = [], isLoading } = useProjectSummariesQuery();
   const createMut = useCreateProjectMutation();
-  const deleteMut = useDeleteProjectMutation();
 
-  const [activeId, setActiveId] = useState<string>("");
   const [showCreate, setShowCreate] = useState(false);
-  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
-  // Fix #1: server-authoritative streak + xp so score is consistent across pages/devices
-  const [serverStreak, setServerStreak] = useState(0);
-  const [serverXP, setServerXP] = useState(0);
 
   const limits = getLimits(plan);
   const hasUnlimitedProjects = limits.maxProjects === -1 || limits.maxProjects === Infinity;
   const canCreateProject = hasUnlimitedProjects || summaries.length < limits.maxProjects;
-
-  useEffect(() => {
-    const id = getActiveProjectId();
-    if (id) setActiveId(id);
-
-    // Fix #1: Load streak from server (not localStorage) so score matches dashboard/today
-    fetch("/api/founder-context/streak", { cache: "no-store" })
-      .then(r => r.json())
-      .then((d: { streak?: number }) => { if (typeof d.streak === "number") setServerStreak(d.streak); })
-      .catch(() => {});
-
-    // Fix #1: Load XP from server founder_context
-    fetch("/api/founder-context", { cache: "no-store" })
-      .then(r => r.json())
-      .then((d: { xp?: number; data?: { xp?: number } }) => {
-        const xp = d.xp ?? d.data?.xp ?? 0;
-        if (typeof xp === "number") setServerXP(xp);
-      })
-      .catch(() => {});
-  }, []);
 
   async function handleCreate(data: { title: string; problem: string; stage: StartupStage }) {
     if (!canCreateProject) {
@@ -268,17 +226,6 @@ export default function ProjectsPage() {
     } catch {
       /* errors handled in modal */
     }
-  }
-
-  async function handleDelete(id: string) {
-    await deleteMut.mutateAsync(id);
-    if (activeId === id) setActiveId("");
-    setDeleteConfirm(null);
-  }
-
-  async function handleSetActive(id: string) {
-    await setActiveProjectId(id);
-    setActiveId(id);
   }
 
   return (
@@ -334,14 +281,7 @@ export default function ProjectsPage() {
         <div className="flex flex-col gap-3">
           <SectionHeader label="Active portfolio" />
           {summaries.map((s, i) => {
-            const score = computeStartupScore({
-              ...s,
-              streak: serverStreak,
-              xp: serverXP,
-            });
             const stageNorm = normalizeStage(s.startup_stage ?? "");
-            const stageVariant = STAGE_BADGE_VARIANT[stageNorm] ?? "neutral";
-            const isActive = s.id === activeId;
             const completion = s.tasksTotal > 0
               ? Math.round((s.tasksCompleted / s.tasksTotal) * 100)
               : 0;
@@ -353,120 +293,28 @@ export default function ProjectsPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.06 }}
               >
-                <Card
-                  className="overflow-hidden"
-                  style={
-                    isActive
-                      ? {
-                          borderColor: "var(--bm-accent-bd)",
-                          boxShadow: "0 0 24px rgba(92,200,138,0.06)",
-                        }
-                      : undefined
-                  }
-                >
-                  <div className="p-5">
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-                      {/* Score ring */}
-                      <ScoreRing value={score} size={44} color={score >= 60 ? "var(--bm-green)" : score >= 30 ? "var(--bm-amber)" : "var(--bm-text3)"} />
-
-                      {/* Info */}
-                      <div className="flex-1 min-w-0 flex flex-col gap-2.5">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm font-semibold text-[var(--bm-text)]">
-                            {s.title}
-                          </span>
-                          <Badge variant={stageVariant} size="sm">{stageNorm}</Badge>
-                          {isActive && (
-                            <Badge variant="success" size="sm" dot>Active</Badge>
-                          )}
-                        </div>
-
-                        {s.problem && (
-                          <p className="text-xs text-[var(--bm-text3)] leading-relaxed line-clamp-2">
-                            {s.problem}
-                          </p>
-                        )}
-
-                        <ProgressBar value={s.tasksCompleted ?? 0} max={s.tasksTotal ?? 0} i={i} />
-
-                        <div className="flex items-center gap-3 text-xs text-[var(--bm-text3)]">
-                          <span>{s.tasksCompleted ?? 0}/{s.tasksTotal ?? 0} tasks · {completion}%</span>
-                          {s.lastActivity && (
-                            <span className="flex items-center gap-1">
-                              <Clock size={10} />
-                              {new Date(s.lastActivity).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Actions */}
-                      <div className="grid w-full grid-cols-3 gap-2 sm:mt-0.5 sm:flex sm:w-auto sm:shrink-0 sm:items-center">
-                        {!isActive && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleSetActive(s.id)}
-                            title="Set as active"
-                            className="w-full"
-                          >
-                            <Check size={12} />
-                          </Button>
-                        )}
-                        <Link href={`/projects/${s.id}`}>
-                          <Button variant="ghost" size="sm" className="w-full">
-                            View <ChevronRight size={12} />
-                          </Button>
-                        </Link>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setDeleteConfirm(s.id)}
-                          className="text-[var(--bm-red)] hover:bg-[rgba(224,85,85,0.08)]"
-                        >
-                          <Trash2 size={12} />
-                        </Button>
-                      </div>
+                <Card className="flex flex-col gap-3 px-[22px] py-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="m-0 mb-1 truncate text-[16px] font-bold tracking-tight text-[var(--bm-text)]">
+                        {s.title}
+                      </h3>
+                      <span className="text-[11px] font-semibold text-[var(--bm-text3)]">
+                        {stageNorm} stage
+                      </span>
                     </div>
                   </div>
 
-                  {/* Delete confirm */}
-                  <AnimatePresence>
-                    {deleteConfirm === s.id && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: "auto", opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        style={{ overflow: "hidden", borderTop: "1px solid var(--bm-border)" }}
-                      >
-                        <div
-                          className="flex flex-col gap-3 px-5 py-3 sm:flex-row sm:items-center sm:justify-between"
-                          style={{ background: "rgba(224,85,85,0.04)" }}
-                        >
-                          <span className="text-xs" style={{ color: "var(--bm-red)" }}>
-                            Delete "{s.title}"? This cannot be undone.
-                          </span>
-                          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => setDeleteConfirm(null)}
-                            >
-                              Cancel
-                            </Button>
-                            <Button
-                              variant="danger"
-                              size="sm"
-                              loading={deleteMut.isPending}
-                              onClick={() => handleDelete(s.id)}
-                            >
-                              Delete
-                            </Button>
-                          </div>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+                  <ProgressBar value={s.tasksCompleted ?? 0} max={s.tasksTotal ?? 0} i={i} />
+
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-[11px] text-[var(--bm-text4)]">
+                      {completion}% complete
+                    </span>
+                    <Link href={`/projects/${s.id}`} className="flex items-center gap-1 text-[12px] font-semibold text-[var(--bm-accent)] no-underline">
+                      View <ArrowRight size={11} />
+                    </Link>
+                  </div>
                 </Card>
               </motion.div>
             );

@@ -29,20 +29,39 @@ async function insertMilestone(
   payload: Record<string, unknown>,
 ) {
   const payloads = [
-    // Attempt 1 — safest: only columns guaranteed in base schema
+    // Attempt 1 — rich schema used by current app
+    {
+      project_id: payload.project_id,
+      user_id: payload.user_id,
+      title: payload.title,
+      stage: payload.stage,
+      order_index: payload.order_index,
+      status: "pending" as string,
+      is_completed: payload.is_completed ?? false,
+    },
+    // Attempt 2 — with ordering/stage but without is_completed
+    {
+      project_id: payload.project_id,
+      user_id: payload.user_id,
+      title: payload.title,
+      stage: payload.stage,
+      order_index: payload.order_index,
+      status: "pending" as string,
+    },
+    // Attempt 3 — safest: only columns guaranteed in base schema
     {
       project_id: payload.project_id,
       title: payload.title,
       status: "pending" as string,
     },
-    // Attempt 2 — with user_id
+    // Attempt 4 — with user_id
     {
       project_id: payload.project_id,
       user_id: payload.user_id,
       title: payload.title,
       status: "pending" as string,
     },
-    // Attempt 3 — with is_completed (post-migration)
+    // Attempt 5 — with is_completed (post-migration)
     {
       project_id: payload.project_id,
       user_id: payload.user_id,
@@ -146,11 +165,10 @@ export async function POST(request: Request) {
     const problem = String(body?.problem ?? "");
     const initialStage = normalizeStage(body?.startup_stage ?? body?.stage ?? "Idea");
 
-    await enforceAndTrackAIUsage(userId, routeUser.plan);
-
     let roadmap = FALLBACK_ROADMAP;
 
     try {
+      await enforceAndTrackAIUsage(userId, routeUser.plan);
       const result = await groqJSON<{ roadmap: Array<{ milestone: string; tasks: string[] }> }>(
         `You are a startup execution strategist. Return JSON with key "roadmap" only — an array of 5 milestone objects.
 Each object has "milestone" (string) and "tasks" (array of 3-5 specific action strings).
@@ -167,8 +185,8 @@ Generate a specific roadmap for this startup. Tasks must reference the actual pr
         roadmap = result.roadmap;
       }
     } catch (err) {
-      console.error("Groq roadmap generation failed:", err);
-      // Use fallback — that's fine, don't throw
+      console.error("Roadmap AI generation failed, writing fallback roadmap:", err);
+      // Use fallback — project creation must still produce milestones/tasks.
     }
 
     // If we have a projectId, write the roadmap to Supabase directly

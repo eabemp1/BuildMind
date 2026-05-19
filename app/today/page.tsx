@@ -15,12 +15,11 @@ import { notifyReflectPending } from "@/lib/notifications";
 import { trackFunnelStep } from "@/lib/onboarding-analytics";
 import BuildMindLoader from "@/components/BuildMindLoader";
 import { PaywallMoment } from "@/components/PaywallMoment";
-import { Clock, CheckCircle2, Copy, Check, Flame, Brain, ArrowRight, Sparkles, AlertCircle, TrendingUp, RotateCcw } from "lucide-react";
+import { Clock, CheckCircle2, Copy, Check, Flame, Brain, ArrowRight, Sparkles, AlertCircle, TrendingUp, RotateCcw, Zap } from "lucide-react";
 import { storage } from "@/lib/storage";
 import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
 import { MobileCheckin } from "@/components/MobileCheckin";
 import { ProfileCompletenessBar } from "@/components/ProfileCompletenessBar";
-import { PageHeader } from "@/components/ui/PageHeader";
 
 type Outcome = "completed" | "blocked" | "partial" | "learned";
 type ReflexionMeta = {
@@ -723,7 +722,15 @@ function TodayContent() {
           <div style={{ width: 64, height: 64, borderRadius: "50%", background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px" }}>
             <CheckCircle2 size={28} color="var(--bm-accent)" />
           </div>
-          <h2 style={{ fontSize: 24, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em", marginBottom: 10 }}>Check-in recorded</h2>
+          <h2 style={{ fontSize: 24, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em", marginBottom: 10 }}>
+            {outcome === "completed"
+              ? "Task done. BuildMind is learning."
+              : outcome === "blocked"
+              ? "Noted. Tomorrow's task will remove the blocker."
+              : outcome === "partial"
+              ? "Progress counts. Tomorrow picks up here."
+              : "Insight logged. BuildMind adapts."}
+          </h2>
           <p style={{ fontSize: 14, color: "var(--bm-text3)", marginBottom: 20, lineHeight: 1.6 }}>
             {displayName ? `Come back tomorrow, ${displayName.split(" ")[0]}. Consistency compounds.` : "Come back tomorrow. Consistency compounds."}
           </p>
@@ -843,28 +850,110 @@ function TodayContent() {
         </motion.div>
       )}
 
-      {/* ══════════════════════════════════════════════════════════════════════
-          PERSONALISED HEADER — greeting + startup context at a glance
-      ══════════════════════════════════════════════════════════════════════ */}
-      <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className="mb-5">
+      {/* ══ HERO HEADER ══════════════════════════════════════════════════════════ */}
+      <motion.div
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3 }}
+        style={{ marginBottom: 20 }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 16,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: 7,
+                background: "var(--grad-primary)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Zap size={14} color="#fff" />
+            </div>
+            <span
+              style={{
+                fontSize: 13,
+                fontWeight: 700,
+                color: "var(--bm-text3)",
+                letterSpacing: "-0.01em",
+              }}
+            >
+              BuildMind
+            </span>
+          </div>
 
-        {/* Greeting row */}
-        <PageHeader
-          title={productName ? `Today's action for ${productName}` : "Today's Action"}
-          subtitle={[
-            greetingLine,
-            targetUsers ? `Serving ${targetUsers}` : null,
-            project?.startup_stage ? `${project.startup_stage} stage` : null,
-          ].filter(Boolean).join(" · ")}
-          action={
-            streak > 1 ? (
-              <div className="flex items-center gap-1.5 rounded-full border px-2.5 py-1.5" style={{ background: "var(--bm-bg2)", borderColor: "var(--bm-border)" }}>
-                <Flame size={12} color="var(--bm-text3)" />
-                <span style={{ fontSize: 11, fontWeight: 700, color: "var(--bm-text3)" }}>{streak}d streak</span>
-              </div>
-            ) : null
-          }
-        />
+          {streak > 1 && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+                padding: "4px 10px",
+                borderRadius: 20,
+                background: "var(--bm-bg2)",
+                border: "1px solid var(--bm-border)",
+              }}
+            >
+              <Flame size={11} color="var(--bm-text3)" />
+              <span style={{ fontSize: 11, fontWeight: 700, color: "var(--bm-text3)" }}>
+                {streak}d streak
+              </span>
+            </div>
+          )}
+        </div>
+
+        <div style={{ paddingBottom: 16, borderBottom: "1px solid var(--bm-border)" }}>
+          <p
+            style={{
+              fontSize: 12,
+              color: "var(--bm-text3)",
+              fontWeight: 600,
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+              margin: "0 0 6px",
+            }}
+          >
+            {greetingLine}
+          </p>
+          <h1
+            style={{
+              fontSize: "clamp(22px, 4vw, 30px)",
+              fontWeight: 800,
+              color: "var(--bm-text)",
+              letterSpacing: "-0.03em",
+              lineHeight: 1.2,
+              margin: "0 0 8px",
+            }}
+          >
+            {productName
+              ? `Here's what moves ${productName} forward today.`
+              : "Here's your one move for today."}
+          </h1>
+          <p
+            style={{
+              fontSize: 13,
+              color: "var(--bm-text3)",
+              margin: 0,
+              lineHeight: 1.5,
+            }}
+          >
+            {[
+              project?.startup_stage ? `${project.startup_stage} stage` : null,
+              targetUsers ? `serving ${targetUsers}` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </p>
+        </div>
 
         {/* AI usage warning */}
         {aiUsage && !aiUsage.unlimited && (aiUsage.monthlyLimit - aiUsage.monthlyUsed) <= 5 && (
@@ -947,6 +1036,30 @@ function TodayContent() {
         </motion.div>
       )}
 
+      {/* ══ FOCUS CALLOUT ══════════════════════════════════════════════════════ */}
+      {!yesterdayReflection && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.05 }}
+          style={{
+            padding: "10px 14px",
+            borderRadius: 10,
+            marginBottom: 14,
+            background: "var(--bm-bg3)",
+            border: "1px solid var(--bm-border)",
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
+          <TrendingUp size={13} color="var(--bm-text3)" style={{ flexShrink: 0 }} />
+          <p style={{ fontSize: 12, color: "var(--bm-text3)", margin: 0, lineHeight: 1.5 }}>
+            BuildMind gives you <strong style={{ color: "var(--bm-text2)" }}>one action per day</strong> - calibrated to your stage, your roadmap, and what you did yesterday. Do it before anything else.
+          </p>
+        </motion.div>
+      )}
+
       {/* ══════════════════════════════════════════════════════════════════════
           PENDING CONTEXT STRIP — what's powering this recommendation
       ══════════════════════════════════════════════════════════════════════ */}
@@ -1007,58 +1120,27 @@ function TodayContent() {
           transition: "background 0.4s",
         }}
       >
-        <div style={{ background: "var(--bm-bg2)", borderRadius: 18, padding: isMobile ? "18px" : "24px" }}>
+        <div style={{ background: "var(--bm-bg2)", borderRadius: 18, padding: isMobile ? "20px" : "28px" }}>
 
-          {/* Meta row */}
-          <div style={{ display: "flex", alignItems: isMobile ? "flex-start" : "center", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+          {/* Meta row — simplified */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
             {project?.startup_stage && (
               <span style={{ fontSize: 10, padding: "3px 10px", borderRadius: 20, background: "var(--bm-accent-dim)", color: "var(--bm-accent)", border: "1px solid var(--bm-accent-bd)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em" }}>
-                {project.startup_stage} Stage
+                {project.startup_stage} stage
               </span>
             )}
-            {actionData.isAI ? (
-              <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
-                <span style={{
-                  fontSize: 10, padding: "3px 10px", borderRadius: 20,
-                  background: "var(--bm-bg3)", color: "var(--bm-text3)",
-                  border: "1px solid var(--bm-border)", fontWeight: 700,
-                  display: "flex", alignItems: "center", gap: 4,
-                }}>
-                  <Brain size={9} /> 3-agent loop
-                </span>
-                {actionData.reflexion?.criticPersona && (
-                  <span style={{
-                    fontSize: 10, padding: "3px 10px", borderRadius: 20,
-                    background: "var(--bm-bg3)",
-                    color: "var(--bm-text3)",
-                    border: "1px solid var(--bm-border)",
-                    fontWeight: 600,
-                    display: "flex", alignItems: "center", gap: 4,
-                  }}>
-                    {actionData.reflexion.passedCritic ? "Checked" : "Revised"} by {actionData.reflexion.criticPersona}
-                  </span>
-                )}
-                {actionData.reflexion?.lastReflectionUsed && (
-                  <span style={{
-                    fontSize: 10, padding: "3px 10px", borderRadius: 20,
-                    background: "var(--bm-bg3)", color: "var(--bm-text3)",
-                    border: "1px solid var(--bm-border)", fontWeight: 600,
-                  }}>
-                    shaped by yesterday
-                  </span>
-                )}
-              </div>
-            ) : actionLoading ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <span style={{ fontSize: 11, color: "var(--bm-text3)", display: "flex", alignItems: "center", gap: 6 }}>
-                  <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "var(--bm-accent)", opacity: 0.6, animation: "bm-pulse 1.2s ease-in-out infinite" }} />
-                  Personalising your task…
-                </span>
-                <span style={{ fontSize: 10, color: "var(--bm-text4)", paddingLeft: 14 }}>
-                  Reading your reflection, milestones, and stage.
-                </span>
-              </div>
-            ) : (
+            {actionData.isAI && !actionLoading && (
+              <span style={{ fontSize: 10, padding: "3px 10px", borderRadius: 20, background: "var(--bm-bg3)", color: "var(--bm-text3)", border: "1px solid var(--bm-border)", fontWeight: 600 }}>
+                AI-personalised
+              </span>
+            )}
+            {actionLoading && (
+              <span style={{ fontSize: 11, color: "var(--bm-text3)", display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "var(--bm-accent)", opacity: 0.6, animation: "bm-pulse 1.2s ease-in-out infinite" }} />
+                Personalising...
+              </span>
+            )}
+            {!actionData.isAI && !actionLoading && (
               <span style={{ fontSize: 10, color: "var(--bm-text4)", fontStyle: "italic" }}>
                 Fallback task — personalisation unavailable
               </span>
@@ -1086,7 +1168,7 @@ function TodayContent() {
               fontSize: 13, fontWeight: 800, flexShrink: 0,
             }}>1</div>
             <div>
-              <p style={{ fontSize: isMobile ? 17 : 15, fontWeight: 700, color: "var(--bm-text)", lineHeight: 1.45, margin: "0 0 4px", letterSpacing: "-0.01em" }}>
+              <p style={{ fontSize: isMobile ? 19 : 17, fontWeight: 700, color: "var(--bm-text)", lineHeight: 1.45, margin: "0 0 4px", letterSpacing: "-0.01em" }}>
                 {actionData.action}
               </p>
               <p style={{ fontSize: 12, color: "var(--bm-text3)", fontWeight: 600, margin: 0, lineHeight: 1.5 }}>
@@ -1123,36 +1205,9 @@ function TodayContent() {
             <p style={{ fontSize: isMobile ? 14 : 13, color: "var(--bm-text2)", margin: "0 0 10px", lineHeight: 1.6 }}>
               {actionData.reflexion?.rationale ?? actionData.why}
             </p>
-            {actionData.reflexion?.loopRan && (
-              <div style={{
-                borderTop: "1px solid var(--bm-border)",
-                paddingTop: 10, marginTop: 4,
-                display: "flex", flexDirection: "column", gap: 5,
-              }}>
-                <div style={{ fontSize: 10, color: "var(--bm-text4)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 2 }}>
-                  How this was built
-                </div>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  {[
-                    { label: "Generator", desc: "Wrote the task from your founder data", color: "var(--bm-text2)" },
-                    { label: actionData.reflexion.criticPersona, desc: actionData.reflexion.passedCritic ? "Checked the task" : "Asked for a rebuild", color: "var(--bm-text2)" },
-                    { label: "Refiner", desc: "Sharpened for your stage", color: "var(--bm-text2)" },
-                  ].map(agent => (
-                    <div key={agent.label} style={{
-                      flex: "1 1 120px", padding: "8px 10px", borderRadius: 8,
-                      background: "var(--bm-bg2)", border: "1px solid var(--bm-border)",
-                      minWidth: 100,
-                    }}>
-                      <div style={{ fontSize: 10, fontWeight: 700, color: agent.color, marginBottom: 2 }}>{agent.label}</div>
-                      <div style={{ fontSize: 10, color: "var(--bm-text4)", lineHeight: 1.4 }}>{agent.desc}</div>
-                    </div>
-                  ))}
-                </div>
-                {actionData.reflexion.lastReflectionUsed && (
-                  <div style={{ fontSize: 11, color: "var(--bm-text3)", marginTop: 4, display: "flex", alignItems: "center", gap: 5 }}>
-                    Your yesterday's reflection shaped the first draft.
-                  </div>
-                )}
+            {actionData.reflexion?.lastReflectionUsed && (
+              <div style={{ fontSize: 11, color: "var(--bm-text3)", borderTop: "1px solid var(--bm-border)", paddingTop: 10 }}>
+                Your yesterday's reflection shaped this recommendation.
               </div>
             )}
           </div>
@@ -1225,6 +1280,29 @@ function TodayContent() {
       {/* ── Check-in ── */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.16 }}
         style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 18, padding: isMobile ? "18px" : "20px 24px" }}>
+
+        {/* Stage motivator */}
+        {project?.startup_stage && (
+          <p
+            style={{
+              fontSize: 12,
+              color: "var(--bm-text3)",
+              marginBottom: 14,
+              lineHeight: 1.5,
+              fontStyle: "italic",
+            }}
+          >
+            {{
+              Idea: "At Idea stage, one conversation with a real person beats a week of planning.",
+              Validation: "Validation is about behaviour, not opinions. Did someone commit time or money?",
+              MVP: "Stop polishing. Every day you don't share it, you're building in the dark.",
+              Launch: "Visibility compounds. Every post, every DM, every share is a future customer.",
+              Growth: "Retention beats acquisition. The best founders call churned users.",
+              Revenue: "Revenue is a signal. Today's action helps you read it accurately.",
+            }[project.startup_stage] ??
+              "Momentum compounds. The work you do today shapes tomorrow's recommendation."}
+          </p>
+        )}
 
         {/* Progress tracker */}
         <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 20, overflow: "hidden" }}>

@@ -14,12 +14,14 @@ export const Card = forwardRef<HTMLDivElement, CardProps>(
     { hover = false, gradient = false, className = "", children, style, ...rest },
     ref
   ) => {
+    const hasPadding = /\bp[trblxy]?-\d|\bp-\[/.test(className);
     const base = [
-      "rounded-xl border",
+      "rounded-[18px] border",
       gradient
         ? "bg-gradient-to-br from-[var(--bm-bg2)] to-[var(--bm-bg3)]"
         : "bg-[var(--bm-bg2)]",
       "border-[var(--bm-border)]",
+      hasPadding ? "" : "p-6",
       hover ? "card-hover cursor-pointer" : "",
       className,
     ].join(" ");
@@ -52,7 +54,7 @@ Card.displayName = "Card";
 export function CardHeader({ className = "", ...props }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={["px-4 py-3 border-b border-[var(--bm-border)]", className].join(" ")}
+      className={["px-6 py-4 border-b border-[var(--bm-border)]", className].join(" ")}
       {...props}
     />
   );
@@ -70,7 +72,7 @@ export function CardTitle({ className = "", ...props }: HTMLAttributes<HTMLHeadi
 export function CardContent({ className = "", ...props }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={["px-4 py-4", className].join(" ")}
+      className={["px-6 py-6", className].join(" ")}
       {...props}
     />
   );

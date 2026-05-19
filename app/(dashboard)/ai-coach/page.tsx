@@ -132,8 +132,8 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
           </div>
         )}
         <div
-          className={`px-3.5 py-2.5 text-[13px] leading-relaxed ${isUser ? "rounded-2xl rounded-tr-sm border border-[var(--bm-border3)] bg-[var(--bm-bg4)]" : "rounded-2xl rounded-tl-sm border border-[var(--bm-border2)] bg-[var(--bm-bg3)]"}`}
-          style={{ color: msg.error ? "var(--bm-red)" : "var(--bm-text2)" }}
+          className={`text-[13px] leading-relaxed ${isUser ? "rounded-2xl rounded-tr-sm border border-[var(--bm-border3)] bg-[var(--bm-bg4)] px-3.5 py-2.5" : "border-l-2 border-[var(--bm-border2)] bg-transparent py-1 pl-3.5 pr-2"}`}
+          style={{ color: msg.error ? "var(--bm-red)" : "var(--bm-text2)", borderRadius: isUser ? undefined : 0 }}
         >
           {msg.phase === "thinking" ? <ThinkingDots /> : <span style={{ whiteSpace: "pre-wrap" }}>{msg.content}</span>}
         </div>
@@ -330,7 +330,7 @@ function AICoachPageInner() {
             <div ref={bottomRef} />
           </div>
 
-          <div className="sticky bottom-0 shrink-0 border-t border-[var(--bm-border)] bg-[var(--bm-bg)]/90 p-3 backdrop-blur-sm sm:p-4">
+          <div className="sticky bottom-0 shrink-0 border-t border-[var(--bm-border)] bg-[var(--bm-bg)] p-3 pt-3 sm:p-4 sm:pt-3">
             {plan === "free" && <div className="mb-2.5"><AIUsageBadge /></div>}
             <div className="flex items-end gap-2.5 rounded-xl border border-[var(--bm-border2)] bg-[var(--bm-bg3)] px-3.5 py-3 transition-colors"
               onFocusCapture={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--bm-accent-bd)"; }}
