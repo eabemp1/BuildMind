@@ -29,24 +29,18 @@ interface Props {
 
 const CONFIG = {
   morning: {
-    emoji:       "☀️",
+    eyebrow:     "Morning check-in",
     heading:     "What's the one thing today?",
     sub:         "Name the task you'll regret not doing. One sentence.",
     placeholder: "Today I'm shipping…",
-    cta:         "Lock it in →",
-    accent:      "#f59e0b",
-    accentBg:    "rgba(245,158,11,0.1)",
-    accentBorder:"rgba(245,158,11,0.25)",
+    cta:         "Lock it in",
   },
   evening: {
-    emoji:       "🌙",
+    eyebrow:     "Evening check-in",
     heading:     "How did today go?",
     sub:         "One honest sentence. No judgment.",
     placeholder: "Today I…",
-    cta:         "Log it →",
-    accent:      "#10b981",
-    accentBg:    "rgba(16,185,129,0.1)",
-    accentBorder:"rgba(16,185,129,0.25)",
+    cta:         "Log it",
   },
 };
 
@@ -108,28 +102,39 @@ export function MobileCheckin({ type, onComplete, fullScreen = false }: Props) {
           padding: fullScreen ? "60px 32px" : "24px",
           textAlign: "center",
           minHeight: fullScreen ? "100dvh" : "auto",
-          background: fullScreen ? "#0F0F10" : "transparent",
+          background: fullScreen ? "var(--bm-bg)" : "transparent",
         }}
       >
         <motion.div
           initial={{ scale: 0 }}
           animate={{ scale: 1 }}
           transition={{ type: "spring", stiffness: 400, damping: 20 }}
-          style={{ fontSize: 48, marginBottom: 16 }}
+          style={{
+            width: 48,
+            height: 48,
+            borderRadius: "50%",
+            display: "grid",
+            placeItems: "center",
+            background: "var(--bm-bg3)",
+            border: "1px solid var(--bm-border)",
+            color: "var(--bm-text2)",
+            fontSize: 20,
+            marginBottom: 16,
+          }}
         >
-          {type === "morning" ? "🎯" : "✓"}
+          ✓
         </motion.div>
-        <div style={{ fontSize: 18, fontWeight: 700, color: "#e5e7eb", marginBottom: 8 }}>
+        <div style={{ fontSize: 18, fontWeight: 700, color: "var(--bm-text)", marginBottom: 8 }}>
           {type === "morning" ? "Locked in." : "Logged."}
         </div>
         <div style={{
           fontSize: 14,
-          color: "#6b7280",
+          color: "var(--bm-text3)",
           maxWidth: 240,
           lineHeight: 1.6,
           padding: "10px 16px",
-          background: "rgba(255,255,255,0.03)",
-          border: "1px solid rgba(255,255,255,0.06)",
+          background: "var(--bm-bg3)",
+          border: "1px solid var(--bm-border)",
           borderRadius: 10,
           fontStyle: "italic",
         }}>
@@ -147,22 +152,22 @@ export function MobileCheckin({ type, onComplete, fullScreen = false }: Props) {
       minHeight: fullScreen ? "100dvh" : "auto",
       justifyContent: fullScreen ? "center" : "flex-start",
       maxWidth: fullScreen ? "none" : "480px",
-      background: fullScreen ? "#0F0F10" : "transparent",
+      background: fullScreen ? "var(--bm-bg)" : "transparent",
       boxSizing: "border-box",
     }}>
       {/* Header */}
       <div style={{ marginBottom: 24, textAlign: fullScreen ? "center" : "left" }}>
-        <div style={{ fontSize: fullScreen ? 40 : 28, marginBottom: 10 }}>{cfg.emoji}</div>
+        <div style={{ fontSize: 11, fontWeight: 700, color: "var(--bm-text4)", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>{cfg.eyebrow}</div>
         <h2 style={{
           fontSize: fullScreen ? 22 : 18,
           fontWeight: 700,
-          color: "#e5e7eb",
+          color: "var(--bm-text)",
           margin: "0 0 8px",
           lineHeight: 1.3,
         }}>
           {cfg.heading}
         </h2>
-        <p style={{ fontSize: 14, color: "#6b7280", margin: 0, lineHeight: 1.5 }}>
+        <p style={{ fontSize: 14, color: "var(--bm-text3)", margin: 0, lineHeight: 1.5 }}>
           {cfg.sub}
         </p>
       </div>
@@ -179,10 +184,10 @@ export function MobileCheckin({ type, onComplete, fullScreen = false }: Props) {
         style={{
           width: "100%",
           padding: "16px",
-          background: "rgba(255,255,255,0.04)",
-          border: `1px solid ${note.trim() ? cfg.accentBorder : "rgba(255,255,255,0.08)"}`,
+          background: "var(--bm-bg3)",
+          border: `1px solid ${note.trim() ? "var(--bm-border3)" : "var(--bm-border)"}`,
           borderRadius: 12,
-          color: "#e5e7eb",
+          color: "var(--bm-text)",
           fontSize: 16, // 16px prevents iOS auto-zoom
           lineHeight: 1.6,
           fontFamily: "inherit",
@@ -195,7 +200,7 @@ export function MobileCheckin({ type, onComplete, fullScreen = false }: Props) {
       />
 
       {/* Character count */}
-      <div style={{ textAlign: "right", fontSize: 11, color: "#374151", marginBottom: 16 }}>
+      <div style={{ textAlign: "right", fontSize: 11, color: "var(--bm-text4)", marginBottom: 16 }}>
         {note.length}/300
       </div>
 
@@ -209,16 +214,14 @@ export function MobileCheckin({ type, onComplete, fullScreen = false }: Props) {
           padding: "17px 0",
           borderRadius: 14,
           border: "none",
-          background: note.trim()
-            ? `linear-gradient(135deg, ${cfg.accent}, ${cfg.accent}cc)`
-            : "rgba(255,255,255,0.06)",
-          color: note.trim() ? (type === "morning" ? "#000" : "#fff") : "#4b5563",
+          background: note.trim() ? "var(--bm-text)" : "var(--bm-bg4)",
+          color: note.trim() ? "var(--bm-bg)" : "var(--bm-text3)",
           fontWeight: 700,
           fontSize: 16,
           cursor: note.trim() ? "pointer" : "not-allowed",
           fontFamily: "inherit",
           transition: "all 0.2s",
-          boxShadow: note.trim() ? `0 4px 24px ${cfg.accent}33` : "none",
+          boxShadow: "none",
           minHeight: 56, // iOS touch target minimum
         }}
       >
@@ -233,7 +236,7 @@ export function MobileCheckin({ type, onComplete, fullScreen = false }: Props) {
             marginTop: 12,
             background: "none",
             border: "none",
-            color: "#374151",
+            color: "var(--bm-text4)",
             fontSize: 13,
             cursor: "pointer",
             fontFamily: "inherit",

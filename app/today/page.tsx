@@ -157,21 +157,21 @@ function buildContextualStaticAction(
 }
 
 const OUTCOME_CHIPS: { id: Outcome; label: string; color: string; bg: string; border: string }[] = [
-  { id: "completed", label: "Nailed it ✓",         color: "var(--bm-green)", bg: "var(--bm-accent-dim)",           border: "var(--bm-accent-bd)"            },
-  { id: "partial",   label: "Partly done ◐",       color: "var(--bm-amber)", bg: "rgba(232,160,32,0.08)",         border: "rgba(232,160,32,0.22)"          },
-  { id: "blocked",   label: "Got blocked ✕",       color: "var(--bm-red)",   bg: "rgba(224,85,85,0.08)",          border: "rgba(224,85,85,0.22)"           },
-  { id: "learned",   label: "Learned something ↯", color: "#A78BFA",         bg: "rgba(167,139,250,0.08)",        border: "rgba(167,139,250,0.22)"         },
+  { id: "completed", label: "Completed",         color: "var(--bm-text)",  bg: "var(--bm-bg4)", border: "var(--bm-border3)" },
+  { id: "partial",   label: "Partly done",       color: "var(--bm-text)",  bg: "var(--bm-bg4)", border: "var(--bm-border3)" },
+  { id: "blocked",   label: "Blocked",           color: "var(--bm-text)",  bg: "var(--bm-bg4)", border: "var(--bm-border3)" },
+  { id: "learned",   label: "Learned something", color: "var(--bm-text)",  bg: "var(--bm-bg4)", border: "var(--bm-border3)" },
 ];
 
 const CONFIDENCE_LABELS = ["", "Lost", "Uncertain", "Steady", "Confident", "Unstoppable"];
-const CONFIDENCE_COLORS = ["", "var(--bm-red)", "var(--bm-amber)", "var(--bm-text2)", "var(--bm-teal)", "var(--bm-accent)"];
+const CONFIDENCE_COLORS = ["", "var(--bm-text3)", "var(--bm-text3)", "var(--bm-text2)", "var(--bm-text)", "var(--bm-text)"];
 
 // ── Outcome colour helpers ───────────────────────────────────────────────────
 const OUTCOME_META: Record<Outcome, { icon: string; label: string; color: string }> = {
-  completed: { icon: "✓", label: "Nailed it",          color: "var(--bm-green)" },
-  partial:   { icon: "◐", label: "Partly done",        color: "var(--bm-amber)" },
-  blocked:   { icon: "✕", label: "Got blocked",        color: "var(--bm-red)"   },
-  learned:   { icon: "↯", label: "Learned something",  color: "#A78BFA"         },
+  completed: { icon: "✓", label: "Completed",         color: "var(--bm-text2)" },
+  partial:   { icon: "–", label: "Partly done",       color: "var(--bm-text2)" },
+  blocked:   { icon: "!", label: "Blocked",           color: "var(--bm-text2)" },
+  learned:   { icon: "i", label: "Learned something", color: "var(--bm-text2)" },
 };
 
 /**
@@ -346,6 +346,7 @@ function TodayContent() {
       setDisplayName(name);
 
       if (uid) {
+        storage.onSignIn(uid);
         const today = new Date().toISOString().split("T")[0];
         const checkinKey = `bm_checkin_done_date_${uid}`;
         const cachedDoneDate = storage.get(checkinKey);
@@ -776,13 +777,13 @@ function TodayContent() {
     : null;
 
   return (
-    <div style={{ maxWidth: 820, margin: "0 auto", padding: isMobile ? "4px 0 24px" : "28px 24px" }}>
+    <div style={{ maxWidth: 760, margin: "0 auto", padding: isMobile ? "0 0 24px" : "24px 8px" }}>
 
       {/* ── First-session banner ── */}
       {isFirstSession && (
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
-          style={{ background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)", borderRadius: 14, padding: isMobile ? "16px" : "14px 18px", marginBottom: 20, display: "flex", alignItems: "center", gap: 12 }}>
-          <Sparkles size={16} color="var(--bm-accent)" style={{ flexShrink: 0 }} />
+          style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 12, padding: isMobile ? "14px" : "14px 18px", marginBottom: 16, display: "flex", alignItems: "center", gap: 12 }}>
+          <Sparkles size={16} color="var(--bm-text3)" style={{ flexShrink: 0 }} />
           <div style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.5 }}>
             Your roadmap is ready. <strong style={{ color: "var(--bm-text)" }}>Here's your first action.</strong> Complete it before you do anything else — momentum starts now.
           </div>
@@ -857,9 +858,9 @@ function TodayContent() {
           ].filter(Boolean).join(" · ")}
           action={
             streak > 1 ? (
-              <div className="flex items-center gap-1.5 rounded-full border px-2.5 py-1.5" style={{ background: "rgba(232,160,32,0.08)", borderColor: "rgba(232,160,32,0.18)" }}>
-                <Flame size={12} color="var(--bm-amber)" />
-                <span style={{ fontSize: 11, fontWeight: 700, color: "var(--bm-amber)" }}>{streak}d streak</span>
+              <div className="flex items-center gap-1.5 rounded-full border px-2.5 py-1.5" style={{ background: "var(--bm-bg2)", borderColor: "var(--bm-border)" }}>
+                <Flame size={12} color="var(--bm-text3)" />
+                <span style={{ fontSize: 11, fontWeight: 700, color: "var(--bm-text3)" }}>{streak}d streak</span>
               </div>
             ) : null
           }
@@ -867,8 +868,8 @@ function TodayContent() {
 
         {/* AI usage warning */}
         {aiUsage && !aiUsage.unlimited && (aiUsage.monthlyLimit - aiUsage.monthlyUsed) <= 5 && (
-          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", borderRadius: 10, background: "rgba(240,108,108,0.06)", border: "1px solid rgba(240,108,108,0.18)", marginTop: 10 }}>
-            <span style={{ fontSize: 11, color: "var(--bm-red)", fontWeight: 600, flex: 1 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", borderRadius: 10, background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", marginTop: 10 }}>
+            <span style={{ fontSize: 11, color: "var(--bm-text3)", fontWeight: 600, flex: 1 }}>
               {aiUsage.monthlyLimit - aiUsage.monthlyUsed} AI calls remaining this month.
             </span>
             <a href="/upgrade" style={{ fontSize: 11, fontWeight: 700, color: "var(--bm-accent)", textDecoration: "none", whiteSpace: "nowrap" }}>Upgrade for unlimited →</a>
@@ -897,10 +898,8 @@ function TodayContent() {
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0, paddingTop: 2 }}>
               <div style={{
                 width: 28, height: 28, borderRadius: "50%",
-                background: yesterdayReflection.outcome === "completed" ? "rgba(74,222,128,0.12)"
-                  : yesterdayReflection.outcome === "blocked" ? "rgba(239,68,68,0.12)"
-                  : yesterdayReflection.outcome === "partial" ? "rgba(245,158,11,0.12)"
-                  : "rgba(167,139,250,0.12)",
+                background: "var(--bm-bg3)",
+                border: "1px solid var(--bm-border)",
                 display: "flex", alignItems: "center", justifyContent: "center",
                 fontSize: 12, fontWeight: 700,
                 color: OUTCOME_META[yesterdayReflection.outcome].color,
@@ -919,14 +918,8 @@ function TodayContent() {
                 <span style={{
                   fontSize: 10, padding: "2px 8px", borderRadius: 99, fontWeight: 600,
                   color: OUTCOME_META[yesterdayReflection.outcome].color,
-                  background: yesterdayReflection.outcome === "completed" ? "rgba(74,222,128,0.08)"
-                    : yesterdayReflection.outcome === "blocked" ? "rgba(239,68,68,0.08)"
-                    : yesterdayReflection.outcome === "partial" ? "rgba(245,158,11,0.08)"
-                    : "rgba(167,139,250,0.08)",
-                  border: `1px solid ${yesterdayReflection.outcome === "completed" ? "rgba(74,222,128,0.2)"
-                    : yesterdayReflection.outcome === "blocked" ? "rgba(239,68,68,0.2)"
-                    : yesterdayReflection.outcome === "partial" ? "rgba(245,158,11,0.2)"
-                    : "rgba(167,139,250,0.2)"}`,
+                  background: "var(--bm-bg3)",
+                  border: "1px solid var(--bm-border)",
                 }}>
                   {OUTCOME_META[yesterdayReflection.outcome].label}
                 </span>
@@ -942,9 +935,9 @@ function TodayContent() {
               <div style={{
                 display: "flex", gap: 6, alignItems: "flex-start",
                 padding: "8px 10px", borderRadius: 8,
-                background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)",
+                background: "var(--bm-bg3)", border: "1px solid var(--bm-border)",
               }}>
-                <RotateCcw size={10} color="var(--bm-accent)" style={{ flexShrink: 0, marginTop: 1 }} />
+                <RotateCcw size={10} color="var(--bm-text3)" style={{ flexShrink: 0, marginTop: 1 }} />
                 <p style={{ fontSize: 11, color: "var(--bm-text2)", margin: 0, lineHeight: 1.55 }}>
                   {yesterdayCausal}
                 </p>
@@ -972,8 +965,8 @@ function TodayContent() {
           {project?.pendingMilestones?.slice(0, 2).map((m: string, i: number) => (
             <span key={i} style={{
               fontSize: 10, padding: "3px 8px", borderRadius: 99,
-              background: "var(--bm-accent-dim)", color: "var(--bm-accent)",
-              border: "1px solid var(--bm-accent-bd)", fontWeight: 600,
+              background: "var(--bm-bg2)", color: "var(--bm-text3)",
+              border: "1px solid var(--bm-border2)", fontWeight: 600,
             }}>
               ◎ {m}
             </span>
@@ -1009,9 +1002,7 @@ function TodayContent() {
         style={{
           padding: 1,
           borderRadius: 19,
-          background: actionData.isAI
-            ? "linear-gradient(135deg, var(--bm-accent-bd) 0%, rgba(74,184,176,0.18) 100%)"
-            : "var(--bm-border)",
+          background: "var(--bm-border)",
           marginBottom: 14,
           transition: "background 0.4s",
         }}
@@ -1029,8 +1020,8 @@ function TodayContent() {
               <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
                 <span style={{
                   fontSize: 10, padding: "3px 10px", borderRadius: 20,
-                  background: "rgba(167,139,250,0.10)", color: "#a78bfa",
-                  border: "1px solid rgba(167,139,250,0.25)", fontWeight: 700,
+                  background: "var(--bm-bg3)", color: "var(--bm-text3)",
+                  border: "1px solid var(--bm-border)", fontWeight: 700,
                   display: "flex", alignItems: "center", gap: 4,
                 }}>
                   <Brain size={9} /> 3-agent loop
@@ -1038,22 +1029,22 @@ function TodayContent() {
                 {actionData.reflexion?.criticPersona && (
                   <span style={{
                     fontSize: 10, padding: "3px 10px", borderRadius: 20,
-                    background: actionData.reflexion.passedCritic ? "rgba(74,184,176,0.08)" : "rgba(232,160,32,0.08)",
-                    color: actionData.reflexion.passedCritic ? "var(--bm-teal)" : "var(--bm-amber)",
-                    border: `1px solid ${actionData.reflexion.passedCritic ? "rgba(74,184,176,0.2)" : "rgba(232,160,32,0.2)"}`,
+                    background: "var(--bm-bg3)",
+                    color: "var(--bm-text3)",
+                    border: "1px solid var(--bm-border)",
                     fontWeight: 600,
                     display: "flex", alignItems: "center", gap: 4,
                   }}>
-                    {actionData.reflexion.passedCritic ? "✓" : "↻"} {actionData.reflexion.criticPersona}
+                    {actionData.reflexion.passedCritic ? "Checked" : "Revised"} by {actionData.reflexion.criticPersona}
                   </span>
                 )}
                 {actionData.reflexion?.lastReflectionUsed && (
                   <span style={{
                     fontSize: 10, padding: "3px 10px", borderRadius: 20,
-                    background: "rgba(139,92,246,0.08)", color: "var(--bm-purple)",
-                    border: "1px solid rgba(139,92,246,0.2)", fontWeight: 600,
+                    background: "var(--bm-bg3)", color: "var(--bm-text3)",
+                    border: "1px solid var(--bm-border)", fontWeight: 600,
                   }}>
-                    ↺ shaped by yesterday
+                    shaped by yesterday
                   </span>
                 )}
               </div>
@@ -1079,8 +1070,8 @@ function TodayContent() {
 
           {/* Primary action */}
           <div style={{
-            background: "var(--bm-accent-dim)",
-            border: "1px solid var(--bm-accent-bd)",
+            background: "var(--bm-bg3)",
+            border: "1px solid var(--bm-border2)",
             borderRadius: 12,
             padding: isMobile ? "14px 16px" : "12px 16px",
             marginBottom: 14,
@@ -1090,7 +1081,7 @@ function TodayContent() {
           }}>
             <div style={{
               width: 28, height: 28, borderRadius: "50%",
-              background: "var(--bm-accent)", color: "var(--bm-text-inv)",
+              background: "var(--bm-text)", color: "var(--bm-bg)",
               display: "flex", alignItems: "center", justifyContent: "center",
               fontSize: 13, fontWeight: 800, flexShrink: 0,
             }}>1</div>
@@ -1098,7 +1089,7 @@ function TodayContent() {
               <p style={{ fontSize: isMobile ? 17 : 15, fontWeight: 700, color: "var(--bm-text)", lineHeight: 1.45, margin: "0 0 4px", letterSpacing: "-0.01em" }}>
                 {actionData.action}
               </p>
-              <p style={{ fontSize: 12, color: "var(--bm-accent)", fontWeight: 600, margin: 0, lineHeight: 1.5 }}>
+              <p style={{ fontSize: 12, color: "var(--bm-text3)", fontWeight: 600, margin: 0, lineHeight: 1.5 }}>
                 {isOutreachAction
                   ? "This is today's move. Do this before email, Slack, or building anything."
                   : "This is the one task that moves your startup forward today. Everything else waits."}
@@ -1112,10 +1103,9 @@ function TodayContent() {
             padding: "8px 12px", borderRadius: 9,
             background: "var(--bm-bg3)", border: "1px solid var(--bm-border)",
           }}>
-            <span style={{ fontSize: 15 }}>{isOutreachAction ? "✏️" : "📋"}</span>
             <div>
               <p style={{ fontSize: 12, fontWeight: 700, color: "var(--bm-text)", margin: "0 0 1px" }}>
-                {isOutreachAction ? "👇 Edit this script — personalise the [brackets], then send" : "👇 Copy this script — then send it to at least 3 people today"}
+                {isOutreachAction ? "Edit the draft, then send it" : "Copy the script, then send it to at least 3 people today"}
               </p>
               <p style={{ fontSize: 11, color: "var(--bm-text3)", margin: 0 }}>
                 {isOutreachAction
@@ -1128,7 +1118,7 @@ function TodayContent() {
           {/* Why — with reflexion rationale */}
           <div style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: 12, padding: isMobile ? "16px" : "14px 16px", marginBottom: 18 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6, display: "flex", alignItems: "center", gap: 5 }}>
-              <Brain size={10} color="var(--bm-accent)" /> Why this, why today
+              <Brain size={10} color="var(--bm-text3)" /> Why this, why today
             </div>
             <p style={{ fontSize: isMobile ? 14 : 13, color: "var(--bm-text2)", margin: "0 0 10px", lineHeight: 1.6 }}>
               {actionData.reflexion?.rationale ?? actionData.why}
@@ -1144,9 +1134,9 @@ function TodayContent() {
                 </div>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                   {[
-                    { label: "A — Generator", desc: "Wrote the task from your founder data", color: "var(--bm-accent)" },
-                    { label: `B — ${actionData.reflexion.criticPersona}`, desc: actionData.reflexion.passedCritic ? "Approved ✓" : "Rejected → rebuilt", color: actionData.reflexion.passedCritic ? "var(--bm-teal)" : "var(--bm-amber)" },
-                    { label: "C — Refiner", desc: "Sharpened for your stage", color: "var(--bm-purple)" },
+                    { label: "Generator", desc: "Wrote the task from your founder data", color: "var(--bm-text2)" },
+                    { label: actionData.reflexion.criticPersona, desc: actionData.reflexion.passedCritic ? "Checked the task" : "Asked for a rebuild", color: "var(--bm-text2)" },
+                    { label: "Refiner", desc: "Sharpened for your stage", color: "var(--bm-text2)" },
                   ].map(agent => (
                     <div key={agent.label} style={{
                       flex: "1 1 120px", padding: "8px 10px", borderRadius: 8,
@@ -1160,8 +1150,7 @@ function TodayContent() {
                 </div>
                 {actionData.reflexion.lastReflectionUsed && (
                   <div style={{ fontSize: 11, color: "var(--bm-text3)", marginTop: 4, display: "flex", alignItems: "center", gap: 5 }}>
-                    <span style={{ color: "var(--bm-purple)" }}>↺</span>
-                    Your yesterday's reflection shaped what Agent A wrote first.
+                    Your yesterday's reflection shaped the first draft.
                   </div>
                 )}
               </div>
@@ -1170,19 +1159,19 @@ function TodayContent() {
 
           {/* ── Message template — pre-filled with real project values ── */}
           <div style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: 12, padding: isMobile ? "16px" : "14px 16px" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-              <span style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-accent)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                {isOutreachAction ? "✏️ Your outreach draft — ready to send" : "📋 Your outreach script — copy & send this"}
+            <div style={{ display: "flex", alignItems: isMobile ? "stretch" : "center", justifyContent: "space-between", marginBottom: 8, gap: 8, flexDirection: isMobile ? "column" : "row" }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                {isOutreachAction ? "Outreach draft" : "Outreach script"}
               </span>
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, width: isMobile ? "100%" : "auto" }}>
                 <button
                   onClick={() => void handleShareMessage()}
-                  style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 7, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}
+                  style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "4px 10px", borderRadius: 7, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", fontSize: 11, cursor: "pointer", fontFamily: "inherit", flex: isMobile ? 1 : "0 0 auto" }}
                 >
                   {shared ? <><Check size={11} color="var(--bm-accent)" /> Shared</> : <>↗ Share</>}
                 </button>
                 <button onClick={handleCopy}
-                  style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 7, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
+                  style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "4px 10px", borderRadius: 7, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", fontSize: 11, cursor: "pointer", fontFamily: "inherit", flex: isMobile ? 1 : "0 0 auto" }}>
                   {copied ? <><Check size={11} color="var(--bm-accent)" /> Copied</> : <><Copy size={11} /> Copy</>}
                 </button>
               </div>
@@ -1238,7 +1227,7 @@ function TodayContent() {
         style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 18, padding: isMobile ? "18px" : "20px 24px" }}>
 
         {/* Progress tracker */}
-        <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 20, overflow: "hidden" }}>
           {[
             { n: 1, label: "Read action", done: true },
             { n: 2, label: "Edit script", done: !!draftMessage },
@@ -1250,19 +1239,21 @@ function TodayContent() {
                 <div style={{
                   width: 24, height: 24, borderRadius: "50%", fontSize: 10, fontWeight: 700,
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  background: step.done ? "var(--bm-accent)" : step.active ? "var(--bm-bg4)" : "var(--bm-bg3)",
-                  color: step.done ? "var(--bm-text-inv)" : step.active ? "var(--bm-text)" : "var(--bm-text4)",
+                  background: step.done ? "var(--bm-text)" : step.active ? "var(--bm-bg4)" : "var(--bm-bg3)",
+                  color: step.done ? "var(--bm-bg)" : step.active ? "var(--bm-text)" : "var(--bm-text4)",
                   border: step.active ? "1px solid var(--bm-border3)" : "none",
                   transition: "all 0.2s",
                 }}>
                   {step.done ? "✓" : step.n}
                 </div>
-                <span style={{ fontSize: 9, color: step.done ? "var(--bm-accent)" : step.active ? "var(--bm-text3)" : "var(--bm-text4)", fontWeight: step.active ? 600 : 400, whiteSpace: "nowrap" }}>
-                  {step.label}
-                </span>
+                {!isMobile && (
+                  <span style={{ fontSize: 9, color: step.done ? "var(--bm-text3)" : step.active ? "var(--bm-text3)" : "var(--bm-text4)", fontWeight: step.active ? 600 : 400, whiteSpace: "nowrap" }}>
+                    {step.label}
+                  </span>
+                )}
               </div>
               {i < 3 && (
-                <div style={{ flex: 1, height: 1, background: step.done ? "var(--bm-accent-bd)" : "var(--bm-border)", margin: "0 4px", marginBottom: 14, transition: "background 0.3s" }} />
+                <div style={{ flex: 1, height: 1, background: step.done ? "var(--bm-border3)" : "var(--bm-border)", margin: "0 4px", marginBottom: isMobile ? 0 : 14, transition: "background 0.3s" }} />
               )}
             </div>
           ))}
@@ -1272,7 +1263,7 @@ function TodayContent() {
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 9, marginBottom: 18 }}>
           {OUTCOME_CHIPS.map(chip => (
             <button key={chip.id} onClick={() => setOutcome(chip.id)}
-              style={{ padding: isMobile ? "14px" : "12px 14px", borderRadius: 12, border: `1px solid ${outcome === chip.id ? chip.border : "var(--bm-border)"}`, background: outcome === chip.id ? chip.bg : "var(--bm-bg3)", color: outcome === chip.id ? chip.color : "var(--bm-text3)", fontSize: isMobile ? 14 : 13, fontWeight: outcome === chip.id ? 600 : 400, cursor: "pointer", fontFamily: "inherit", textAlign: "left", transition: "all 0.15s" }}>
+              style={{ padding: isMobile ? "14px" : "12px 14px", borderRadius: 10, border: `1px solid ${outcome === chip.id ? chip.border : "var(--bm-border)"}`, background: outcome === chip.id ? chip.bg : "var(--bm-bg3)", color: outcome === chip.id ? chip.color : "var(--bm-text3)", fontSize: isMobile ? 14 : 13, fontWeight: outcome === chip.id ? 600 : 400, cursor: "pointer", fontFamily: "inherit", textAlign: "left", transition: "all 0.15s" }}>
               {chip.label}
             </button>
           ))}
@@ -1298,9 +1289,9 @@ function TodayContent() {
                   onClick={() => setNote(prev => prev === reason.label ? "" : reason.label)}
                   style={{
                     padding: "6px 12px", borderRadius: 20, fontSize: 11,
-                    border: `1px solid ${note === reason.label ? "var(--bm-accent-bd)" : "var(--bm-border)"}`,
-                    background: note === reason.label ? "var(--bm-accent-dim)" : "var(--bm-bg3)",
-                    color: note === reason.label ? "var(--bm-accent)" : "var(--bm-text3)",
+                    border: `1px solid ${note === reason.label ? "var(--bm-border3)" : "var(--bm-border)"}`,
+                    background: note === reason.label ? "var(--bm-bg4)" : "var(--bm-bg3)",
+                    color: note === reason.label ? "var(--bm-text)" : "var(--bm-text3)",
                     cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s",
                   }}>
                   {reason.label}
@@ -1341,7 +1332,7 @@ function TodayContent() {
                 + Did this move the revenue needle?
               </button>
             ) : (
-              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", background: "rgba(74,222,128,0.05)", border: "1px solid rgba(74,222,128,0.15)", borderRadius: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: 10, flexWrap: "wrap" }}>
                 <span style={{ fontSize: 12, color: "var(--bm-text3)", whiteSpace: "nowrap" }}>Revenue added:</span>
                 <span style={{ fontSize: 13, color: "var(--bm-text2)", fontWeight: 600 }}>GHS</span>
                 <input
@@ -1351,7 +1342,7 @@ function TodayContent() {
                   value={revenueDelta}
                   onChange={e => setRevenueDelta(e.target.value)}
                   placeholder="0"
-                  style={{ width: 80, background: "transparent", border: "none", borderBottom: "1px solid rgba(74,222,128,0.3)", color: "var(--bm-text)", fontSize: 14, fontWeight: 700, fontFamily: "inherit", outline: "none", padding: "2px 0" }}
+                  style={{ width: 80, background: "transparent", border: "none", borderBottom: "1px solid var(--bm-border3)", color: "var(--bm-text)", fontSize: 14, fontWeight: 700, fontFamily: "inherit", outline: "none", padding: "2px 0" }}
                 />
                 <span style={{ fontSize: 11, color: "var(--bm-text3)" }}>/mo</span>
                 <button onClick={() => { setShowRevenueField(false); setRevenueDelta(""); }} style={{ background: "none", border: "none", color: "var(--bm-text3)", fontSize: 11, cursor: "pointer", padding: 0, fontFamily: "inherit", marginLeft: "auto" }}>✕</button>
@@ -1361,7 +1352,7 @@ function TodayContent() {
         )}
 
         <motion.button whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }} onClick={handleCheckIn} disabled={!outcome || submitting}
-          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", padding: "13px 0", borderRadius: 12, border: "none", background: !outcome ? "var(--bm-bg4)" : "var(--grad-primary)", color: !outcome ? "var(--bm-text3)" : "white", fontWeight: 700, fontSize: 14, cursor: !outcome ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", padding: "13px 0", borderRadius: 12, border: "none", background: !outcome ? "var(--bm-bg4)" : "var(--bm-text)", color: !outcome ? "var(--bm-text3)" : "var(--bm-bg)", fontWeight: 700, fontSize: 14, cursor: !outcome ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
           {submitting ? "Recording…" : <>Record check-in <ArrowRight size={16} /></>}
         </motion.button>
       </motion.div>

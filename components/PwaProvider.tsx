@@ -61,7 +61,12 @@ export default function PwaProvider({
   useEffect(() => {
     if (userIdProp) { setUserId(userIdProp); return; }
     createClient().auth.getUser()
-      .then(({ data }) => { if (data.user?.id) setUserId(data.user.id); })
+      .then(({ data }) => {
+        if (data.user?.id) {
+          storage.onSignIn(data.user.id);
+          setUserId(data.user.id);
+        }
+      })
       .catch(() => {});
   }, [userIdProp]);
 
@@ -72,11 +77,6 @@ export default function PwaProvider({
     const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
     const isStandalone = (window.navigator as { standalone?: boolean }).standalone === true;
     setIsIosNotInstalled(isIos && !isStandalone);
-    // Record first-seen date for persistent banner trigger
-    if (!localStorage.getItem(FIRST_SEEN_KEY)) {
-      localStorage.setItem(FIRST_SEEN_KEY, String(Date.now()));
-    }
-
     const onBeforeInstallPrompt = (event: Event) => {
       event.preventDefault();
       setInstallEvent(event as BeforeInstallPromptEvent);
@@ -97,6 +97,10 @@ export default function PwaProvider({
 
   useEffect(() => {
     if (!userId || typeof window === "undefined") return;
+    storage.onSignIn(userId);
+    if (!storage.get(FIRST_SEEN_KEY)) {
+      storage.set(FIRST_SEEN_KEY, String(Date.now()));
+    }
     const key = `${INSTALL_PROMPT_KEY_PREFIX}_${userId}`;
     if (localStorage.getItem(key) === "1") return;
 
@@ -147,13 +151,13 @@ export default function PwaProvider({
       push_banner_dismissed_date: string;
       first_seen_at: number;
     }>(["push_prompted_at", "push_banner_dismissed_date", "first_seen_at"]);
-    if (serverState.first_seen_at && !localStorage.getItem(FIRST_SEEN_KEY)) {
-      localStorage.setItem(FIRST_SEEN_KEY, String(serverState.first_seen_at));
+    if (serverState.first_seen_at && !storage.get(FIRST_SEEN_KEY)) {
+      storage.set(FIRST_SEEN_KEY, String(serverState.first_seen_at));
     } else if (!serverState.first_seen_at) {
-      persistBehaviorState({ first_seen_at: Number(localStorage.getItem(FIRST_SEEN_KEY) ?? Date.now()) });
+      persistBehaviorState({ first_seen_at: Number(storage.get(FIRST_SEEN_KEY) ?? Date.now()) });
     }
 
-    const lastPrompted = Number(serverState.push_prompted_at ?? localStorage.getItem(PROMPT_KEY) ?? "0");
+    const lastPrompted = Number(serverState.push_prompted_at ?? storage.get(PROMPT_KEY) ?? "0");
     const cooldownExpired = !lastPrompted || Date.now() - lastPrompted > PROMPT_COOLDOWN_MS;
 
     if (tasksDone >= 1 && cooldownExpired) {
@@ -161,11 +165,11 @@ export default function PwaProvider({
     }
 
     // Persistent banner: user has been around 3+ days and still no subscription
-    const firstSeen = Number(localStorage.getItem(FIRST_SEEN_KEY) ?? Date.now());
+    const firstSeen = Number(storage.get(FIRST_SEEN_KEY) ?? Date.now());
     const daysSinceFirst = (Date.now() - firstSeen) / 86400000;
     const today = new Date().toISOString().split("T")[0];
     const bannerDismissed =
-      sessionStorage.getItem(BANNER_DISMISSED_KEY) === "1" ||
+      sessionStorage.getItem(`${BANNER_DISMISSED_KEY}_${userId}`) === "1" ||
       serverState.push_banner_dismissed_date === today;
     if (daysSinceFirst >= 3 && !bannerDismissed && !showPrompt) {
       setShowPersistentBanner(true);
@@ -194,7 +198,7 @@ export default function PwaProvider({
   async function handleAccept() {
     if (!userId) return;
     const promptedAt = Date.now();
-    localStorage.setItem(PROMPT_KEY, String(promptedAt));
+    storage.set(PROMPT_KEY, String(promptedAt));
     persistBehaviorState({ push_prompted_at: promptedAt });
     setShowPrompt(false);
     setShowPersistentBanner(false);
@@ -208,13 +212,13 @@ export default function PwaProvider({
 
   function handleDecline() {
     const promptedAt = Date.now();
-    localStorage.setItem(PROMPT_KEY, String(promptedAt));
+    storage.set(PROMPT_KEY, String(promptedAt));
     persistBehaviorState({ push_prompted_at: promptedAt });
     setShowPrompt(false);
   }
 
   function handleDismissBanner() {
-    sessionStorage.setItem(BANNER_DISMISSED_KEY, "1");
+    if (userId) sessionStorage.setItem(`${BANNER_DISMISSED_KEY}_${userId}`, "1");
     persistBehaviorState({ push_banner_dismissed_date: new Date().toISOString().split("T")[0] });
     setShowPersistentBanner(false);
   }
@@ -309,30 +313,29 @@ export default function PwaProvider({
       {showPersistentBanner && !isIosNotInstalled && (
         <div style={{
           position: "fixed", top: 0, left: 0, right: 0, zIndex: 9990,
-          background: "linear-gradient(135deg, rgba(109,40,217,0.95), rgba(139,92,246,0.9))",
+          background: "var(--bm-bg2)",
           backdropFilter: "blur(12px)",
           padding: "10px 16px",
           display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
-          borderBottom: "1px solid rgba(196,181,253,0.2)",
+          borderBottom: "1px solid var(--bm-border)",
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-            <span style={{ fontSize: 18, flexShrink: 0 }}>🔔</span>
-            <span style={{ fontSize: 12, color: "#f5f3ff", lineHeight: 1.4 }}>
+            <span style={{ fontSize: 12, color: "var(--bm-text2)", lineHeight: 1.4 }}>
               <strong>Never miss your daily action</strong> — turn on notifications
             </span>
           </div>
           <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
             <button onClick={() => void handleAccept()} style={{
               padding: "6px 12px", borderRadius: 7, border: "none",
-              background: "rgba(255,255,255,0.2)", color: "#fff",
+              background: "var(--bm-text)", color: "var(--bm-bg)",
               fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
             }}>
               Enable
             </button>
             <button onClick={handleDismissBanner} style={{
               padding: "6px 10px", borderRadius: 7,
-              background: "transparent", border: "1px solid rgba(255,255,255,0.2)",
-              color: "rgba(255,255,255,0.7)", fontSize: 11, cursor: "pointer", fontFamily: "inherit",
+              background: "transparent", border: "1px solid var(--bm-border)",
+              color: "var(--bm-text3)", fontSize: 11, cursor: "pointer", fontFamily: "inherit",
             }}>
               ✕
             </button>
@@ -347,7 +350,7 @@ export default function PwaProvider({
           maxWidth: 420, margin: "0 auto",
           zIndex: 9999,
           background: "var(--bm-bg3)",
-          border: "1px solid rgba(139,92,246,0.3)",
+          border: "1px solid var(--bm-border)",
           borderRadius: 16, padding: "16px 18px",
           boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
         }}>
@@ -380,7 +383,6 @@ export default function PwaProvider({
           boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
         }}>
           <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-            <div style={{ fontSize: 24, flexShrink: 0 }}>🔔</div>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text)", marginBottom: 4 }}>
                 Stay on streak tomorrow?
@@ -391,7 +393,7 @@ export default function PwaProvider({
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={() => void handleAccept()} style={{
                   flex: 1, padding: "8px 0", borderRadius: 8, border: "none",
-                  background: "rgba(139,92,246,0.18)", color: "var(--bm-purple)",
+                  background: "var(--bm-text)", color: "var(--bm-bg)",
                   fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
                 }}>
                   Yes, remind me
@@ -423,7 +425,6 @@ export default function PwaProvider({
             boxShadow: "0 16px 48px rgba(0,0,0,0.5)",
           }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-              <span style={{ fontSize: 22 }}>🔒</span>
               <div style={{ fontSize: 14, fontWeight: 700, color: "var(--bm-text)" }}>
                 Notifications are blocked
               </div>
@@ -444,7 +445,7 @@ export default function PwaProvider({
               </button>
               <button onClick={() => void handleRecheckPermission()} style={{
                 flex: 1, padding: "9px 10px", borderRadius: 8, border: "none",
-                background: "rgba(139,92,246,0.22)", color: "var(--bm-purple)",
+                background: "var(--bm-text)", color: "var(--bm-bg)",
                 fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
               }}>
                 I've allowed it ✓

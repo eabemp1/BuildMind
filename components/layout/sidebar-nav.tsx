@@ -43,8 +43,8 @@ export function NotifBadge() {
     <span
       className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
       style={{
-        background: "rgba(240,108,108,0.12)",
-        color: "var(--bm-red)",
+        background: "var(--bm-bg4)",
+        color: "var(--bm-text2)",
         letterSpacing: "0.04em",
       }}
     >
@@ -80,9 +80,7 @@ export function SidebarLogo({ streakDays }: { streakDays: number }) {
         <div
           className="text-[9px] font-bold tracking-[0.12em] uppercase"
           style={{
-            background: "linear-gradient(90deg, var(--bm-accent), var(--bm-teal))",
-            WebkitBackgroundClip: "text",
-            WebkitTextFillColor: "transparent",
+            color: "var(--bm-text4)",
             lineHeight: 1,
           }}
         >
@@ -93,12 +91,12 @@ export function SidebarLogo({ streakDays }: { streakDays: number }) {
         <div
           className="ml-auto flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold"
           style={{
-            background: "rgba(240,180,41,0.10)",
-            border: "1px solid rgba(240,180,41,0.18)",
-            color: "var(--bm-amber)",
+            background: "var(--bm-bg3)",
+            border: "1px solid var(--bm-border)",
+            color: "var(--bm-text3)",
           }}
         >
-          🔥 {streakDays}
+          {streakDays}d
         </div>
       )}
     </div>
@@ -140,9 +138,9 @@ export function NavItem({
       style={
         active
           ? {
-              color: "var(--bm-accent)",
-              background: "var(--bm-accent-dim, rgba(0,255,135,0.08))",
-              borderLeft: "2px solid var(--bm-accent)",
+              color: "var(--bm-text)",
+              background: "var(--bm-bg3)",
+              borderLeft: "2px solid var(--bm-text3)",
               paddingLeft: "calc(0.75rem - 2px)",
               fontWeight: 500,
             }
@@ -156,8 +154,7 @@ export function NavItem({
           size={16}
           className="transition-colors group-hover:text-[var(--bm-text)]"
           style={{
-            color: active ? "var(--bm-accent)" : undefined,
-            filter: active ? "drop-shadow(0 0 4px rgba(0,255,135,0.4))" : undefined,
+            color: active ? "var(--bm-text)" : undefined,
           }}
         />
         {showNotifDot && (
@@ -166,7 +163,7 @@ export function NavItem({
             animate={{ scale: 1 }}
             transition={{ type: "spring", stiffness: 500, damping: 18 }}
             className="absolute -top-1 -left-1 w-1.5 h-1.5 rounded-full"
-            style={{ background: "var(--bm-amber)", boxShadow: "0 0 6px rgba(240,180,41,0.6)" }}
+            style={{ background: "var(--bm-text3)" }}
           />
         )}
       </div>
@@ -178,18 +175,18 @@ export function NavItem({
       {showNotifDot ? (
         <span
           className="text-[8px] font-bold px-1.5 py-0.5 rounded"
-          style={{ background: "rgba(240,180,41,0.12)", color: "var(--bm-amber)" }}
+          style={{ background: "var(--bm-bg4)", color: "var(--bm-text2)" }}
         >
           NOW
         </span>
       ) : showLock ? (
-        <span className="text-[10px] opacity-30">🔒</span>
+        <span className="text-[9px] opacity-40">Lock</span>
       ) : href === "/notifications" ? (
         <NotifBadge />
       ) : href === "/achievements" && (unseenBadges ?? 0) > 0 ? (
         <span
           className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
-          style={{ background: "rgba(240,180,41,0.12)", color: "var(--bm-amber)" }}
+          style={{ background: "var(--bm-bg4)", color: "var(--bm-text2)" }}
         >
           {unseenBadges} new
         </span>
@@ -197,10 +194,10 @@ export function NavItem({
         <span
           className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
           style={{
-            background: "rgba(0,255,135,0.10)",
-            color: "var(--bm-accent)",
+            background: "var(--bm-bg4)",
+            color: "var(--bm-text2)",
             letterSpacing: "0.04em",
-            border: "1px solid rgba(0,255,135,0.18)",
+            border: "1px solid var(--bm-border)",
           }}
         >
           {badge}

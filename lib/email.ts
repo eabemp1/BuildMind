@@ -160,18 +160,28 @@ function welcomeHTML(data: { name?: string }): string {
   const displayName = data.name ?? "Founder";
   return shell(`
     ${h1(`Welcome, ${displayName}.`)}
-    ${subhead("BuildMind is live and waiting for your first action.")}
-    ${body("Every morning, your AI co-founder selects the one task that moves your startup forward. Not a to-do list. Not a roadmap. One action, chosen by an AI that knows your stage, your users, and where you're actually stuck.")}
+    ${subhead("Your BuildMind workspace is ready.")}
+    ${body("Your first daily action is available now. Open your workspace when you're ready and BuildMind will show the next focused task for your current startup stage.")}
     <div style="text-align:left;margin-bottom:28px;">
-      ${cta("Start today's action →", `${APP_URL}/today`)}
+      ${cta("Open BuildMind", `${APP_URL}/today`)}
     </div>
     ${divider()}
-    <div style="background:#161618;border-left:3px solid #5CC88A33;padding:14px 16px;border-radius:0 8px 8px 0;margin-bottom:20px;">
-      <p style="margin:0;font-size:13px;color:#909096;line-height:1.6;font-style:italic;">"The biggest thing I wasted time on was building before I talked to users. BuildMind told me on day 3."</p>
-      <p style="margin:8px 0 0;font-size:11px;color:#3A3A42;">— Beta founder, Lagos</p>
-    </div>
-    ${body("You're on the free tier. You get 3 AI-powered actions per day. If you want the full Reflexion loop — unlimited AI, weekly strategy reports, and the Break My Startup stress-test — upgrade to Builder for $39/month.")}
+    ${body("This email confirms your account setup. You can manage your profile and email preferences from Settings at any time.")}
   `);
+}
+
+function welcomeText(data: { name?: string }): string {
+  const displayName = data.name ?? "Founder";
+  return [
+    `Welcome, ${displayName}.`,
+    "",
+    "Your BuildMind workspace is ready.",
+    "Your first daily action is available now.",
+    "",
+    `Open BuildMind: ${APP_URL}/today`,
+    "",
+    "This email confirms your account setup. You can manage your profile and email preferences from Settings.",
+  ].join("\n");
 }
 
 
@@ -288,7 +298,7 @@ function buildHTML<T extends EmailTemplate>(template: T, data: TemplateData[T]):
   switch (template) {
     case "welcome":
       return {
-        subject: "Welcome to BuildMind — your first action is ready",
+        subject: "Your BuildMind workspace is ready",
         html: welcomeHTML(data as TemplateData["welcome"]),
       };
     case "subscription_confirmed":
@@ -327,6 +337,7 @@ export interface SendEmailOptions<T extends EmailTemplate> {
   data?: TemplateData[T];
   subject?: string;
   html?: string;
+  text?: string;
   /** Override the auto-generated subject line */
   subjectOverride?: string;
 }
@@ -365,6 +376,10 @@ export async function sendEmail<T extends EmailTemplate>(
     const { html, subject } = options.template && options.data
       ? buildHTML(options.template, options.data)
       : { html: options.html ?? "", subject: options.subject ?? options.subjectOverride ?? "BuildMind" };
+    const text = options.text ??
+      (options.template === "welcome" && options.data
+        ? welcomeText(options.data as TemplateData["welcome"])
+        : undefined);
 
     const res = await fetch(RESEND_API_URL, {
       method: "POST",
@@ -377,6 +392,7 @@ export async function sendEmail<T extends EmailTemplate>(
         to: [options.to],
         subject: options.subjectOverride ?? options.subject ?? subject,
         html,
+        ...(text ? { text } : {}),
       }),
     });
 

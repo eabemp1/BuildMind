@@ -44,28 +44,30 @@ function DailyLoopStatusBar() {
   return (
     <div style={{
       borderBottom: "1px solid var(--bm-border)",
-      background: "rgba(255,255,255,0.015)",
-      padding: "5px 16px",
+      background: "var(--bm-bg)",
+      padding: "5px 12px",
       display: "flex",
       alignItems: "center",
-      gap: 16,
+      gap: 10,
       fontSize: 11,
       color: "var(--bm-text4)",
-      flexWrap: "wrap",
+      overflowX: "auto",
+      whiteSpace: "nowrap",
+      scrollbarWidth: "none",
     }}>
       <span style={{ color: "var(--bm-text3)", fontWeight: 600 }}>{dayLabel}</span>
       <span style={{ color: "var(--bm-border)" }}>·</span>
       <span>
         Task:{" "}
-        <span style={{ color: loopState.taskDone ? "#4ade80" : "var(--bm-text4)", fontWeight: loopState.taskDone ? 700 : 400 }}>
-          {loopState.taskDone ? "done ✓" : "not yet"}
+        <span style={{ color: loopState.taskDone ? "var(--bm-text2)" : "var(--bm-text4)", fontWeight: loopState.taskDone ? 700 : 400 }}>
+          {loopState.taskDone ? "done" : "not yet"}
         </span>
       </span>
       <span style={{ color: "var(--bm-border)" }}>·</span>
       <span>
         Reflection:{" "}
-        <span style={{ color: loopState.reflectionDone ? "#4ade80" : "var(--bm-text4)", fontWeight: loopState.reflectionDone ? 700 : 400 }}>
-          {loopState.reflectionDone ? "done ✓" : "pending"}
+        <span style={{ color: loopState.reflectionDone ? "var(--bm-text2)" : "var(--bm-text4)", fontWeight: loopState.reflectionDone ? 700 : 400 }}>
+          {loopState.reflectionDone ? "done" : "pending"}
         </span>
       </span>
       <span style={{ color: "var(--bm-border)" }}>·</span>
@@ -124,27 +126,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="relative flex h-screen overflow-hidden">
 
-      {/* ── Subtle noise texture ── */}
-      <div
-        className="pointer-events-none absolute inset-0 opacity-[0.03] mix-blend-soft-light"
-        style={{
-          backgroundImage:
-            "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200' viewBox='0 0 200 200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E\")",
-        }}
-      />
-
-      {/* ── Neon ambient glow — top-right matching inspiration ── */}
-      <div
-        className="pointer-events-none absolute"
-        style={{
-          top: -120, right: -80,
-          width: 480, height: 480,
-          borderRadius: "50%",
-          background: "radial-gradient(circle, rgba(92,200,138,0.05) 0%, transparent 65%)",
-          filter: "blur(1px)",
-        }}
-      />
-
       {/* ── Sidebar — desktop ── */}
       <aside className="sticky top-0 hidden h-screen w-[232px] shrink-0 md:flex"
              style={{ borderRight: "1px solid var(--bm-border)" }}>
@@ -182,9 +163,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <header
           className="sticky top-0 z-30"
           style={{
-            height: 56,
+            height: 52,
             borderBottom: "1px solid var(--bm-border)",
-            background: "color-mix(in srgb, var(--bm-bg) 88%, transparent)",
+            background: "color-mix(in srgb, var(--bm-bg) 96%, transparent)",
             backdropFilter: "blur(16px)",
           }}
         >
@@ -210,9 +191,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             animate={{ opacity: 1, y: 0 }}
             exit={reduceMotion ? { opacity: 1 } : { opacity: 0, y: -4 }}
             transition={reduceMotion ? { duration: 0 } : { duration: 0.18, ease: [0.4, 0, 0.2, 1] }}
-            className="flex-1 overflow-y-auto px-4 py-5 sm:px-8 sm:py-7"
+            className="flex-1 overflow-y-auto px-3 py-4 sm:px-8 sm:py-7"
           >
-            <div style={{ maxWidth: 1440, margin: "0 auto" }}>{children}</div>
+            <div style={{ maxWidth: 1040, margin: "0 auto", width: "100%" }}>{children}</div>
           </motion.main>
         </AnimatePresence>
       </div>

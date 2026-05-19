@@ -61,8 +61,8 @@ function SidebarUser({ onSignOut }: { onSignOut: () => void }) {
       style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)" }}
     >
       <div
-        className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
-        style={{ background: "var(--grad-primary, linear-gradient(135deg,#00ff87,#00e5cc))" }}
+        className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+        style={{ background: "var(--bm-bg4)", color: "var(--bm-text2)", border: "1px solid var(--bm-border)" }}
       >
         {initials}
       </div>
@@ -74,7 +74,7 @@ function SidebarUser({ onSignOut }: { onSignOut: () => void }) {
           className="inline-block text-[9px] font-bold px-1.5 py-0.5 rounded-full mt-0.5"
           style={
             plan === "builder"
-              ? { background: "linear-gradient(90deg, var(--bm-accent), var(--bm-teal))", color: "#000" }
+              ? { background: "var(--bm-bg4)", color: "var(--bm-text2)", border: "1px solid var(--bm-border)" }
               : { background: "var(--bm-bg)", color: "var(--bm-text4)" }
           }
         >
@@ -86,7 +86,7 @@ function SidebarUser({ onSignOut }: { onSignOut: () => void }) {
         className="p-1.5 rounded-lg transition-all"
         style={{ color: "var(--bm-text3)" }}
         title="Sign out"
-        onMouseEnter={(e) => { e.currentTarget.style.color = "var(--bm-red)"; e.currentTarget.style.background = "rgba(224,85,85,0.08)"; }}
+        onMouseEnter={(e) => { e.currentTarget.style.color = "var(--bm-text2)"; e.currentTarget.style.background = "var(--bm-bg4)"; }}
         onMouseLeave={(e) => { e.currentTarget.style.color = "var(--bm-text3)"; e.currentTarget.style.background = "transparent"; }}
       >
         <LogOut size={14} />
@@ -143,10 +143,6 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
 
   return (
     <div className="flex flex-col h-full" style={{ background: "var(--bm-bg2)" }}>
-      <div
-        className="pointer-events-none absolute top-[-60px] right-[-60px] w-40 h-40 rounded-full"
-        style={{ background: "radial-gradient(circle, rgba(0,255,135,0.06) 0%, transparent 70%)", filter: "blur(30px)", zIndex: 0 }}
-      />
       <SidebarLogo streakDays={streakDays} />
 
       <nav className="flex-1 overflow-y-auto py-2" style={{ scrollbarWidth: "none" }}>
@@ -170,12 +166,12 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
                     <item.icon size={15} />
                     <span className="flex-1 truncate" style={{ fontSize: 13 }}>{item.label}</span>
                     <span style={{ fontSize: 9, color: "var(--bm-text4)", whiteSpace: "nowrap" }}>
-                      🔒 {tasksNeeded} task{tasksNeeded !== 1 ? "s" : ""}
+                      {tasksNeeded} left
                     </span>
                   </div>
                   {/* Progress bar toward unlock */}
                   <div style={{ height: 2, background: "var(--bm-bg4)", borderRadius: 99, marginTop: 5, marginLeft: 24, overflow: "hidden" }}>
-                    <div style={{ height: "100%", width: `${progressPct}%`, background: "var(--bm-accent)", borderRadius: 99, transition: "width 0.4s" }} />
+                    <div style={{ height: "100%", width: `${progressPct}%`, background: "var(--bm-text3)", borderRadius: 99, transition: "width 0.4s" }} />
                   </div>
                 </div>
               </React.Fragment>
@@ -204,7 +200,7 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
               style={{ color: "var(--bm-text4)" }}
             >
               <div className="flex items-center gap-3"><Shield size={16} />Dashboard</div>
-              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(232,160,32,0.08)", color: "var(--bm-amber)" }}>Admin</span>
+              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "var(--bm-bg4)", color: "var(--bm-text3)" }}>Admin</span>
             </Link>
           </>
         )}
@@ -241,19 +237,19 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
             <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden flex flex-col gap-2">
               {plan === "free" ? (
                 <Link href="/upgrade" className="no-underline block px-2">
-                  <div className="px-3 py-2.5 rounded-xl cursor-pointer" style={{ border: "1px solid rgba(0,255,135,0.18)", background: "linear-gradient(135deg, rgba(0,255,135,0.07) 0%, rgba(0,229,204,0.03) 100%)" }}>
+                  <div className="px-3 py-2.5 rounded-xl cursor-pointer" style={{ border: "1px solid var(--bm-border)", background: "var(--bm-bg3)" }}>
                     <div className="flex justify-between items-center">
                       <div>
                         <div className="text-xs font-medium" style={{ color: "var(--bm-text2)" }}>Free plan</div>
                         <div className="text-[10px] mt-0.5" style={{ color: "var(--bm-text4)" }}>Unlock all features</div>
                       </div>
-                      <span className="text-xs font-bold" style={{ color: "var(--bm-accent)" }}>Upgrade</span>
+                      <span className="text-xs font-bold" style={{ color: "var(--bm-text2)" }}>Upgrade</span>
                     </div>
                   </div>
                 </Link>
               ) : (
                 <div className="px-3 py-2.5 mx-2 rounded-xl" style={{ border: "1px solid var(--bm-border)", background: "var(--bm-bg3)" }}>
-                  <div className="flex items-center gap-1.5"><Sparkles size={11} style={{ color: "var(--bm-accent)" }} /><span className="text-xs font-medium" style={{ color: "var(--bm-text2)" }}>Builder plan</span></div>
+                  <div className="flex items-center gap-1.5"><Sparkles size={11} style={{ color: "var(--bm-text3)" }} /><span className="text-xs font-medium" style={{ color: "var(--bm-text2)" }}>Builder plan</span></div>
                   <div className="text-[10px] mt-0.5" style={{ color: "var(--bm-text4)" }}>Unlimited · All features</div>
                 </div>
               )}

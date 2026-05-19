@@ -54,13 +54,6 @@ const DEFAULT_STATE: PlanState = {
 // page session. Invalidated on userId change.
 let cachedUserId: string | null = null;
 let cachedPlan: Plan = "free";
-let fetchPromise: Promise<{
-  plan: Plan;
-  userId: string | null;
-  trialActive: boolean;
-  trialExpired: boolean;
-  trialDaysRemaining: number;
-}> | null = null;
 
 async function fetchPlanFromServer(): Promise<{ plan: Plan; userId: string | null; trialActive: boolean; trialExpired: boolean; trialDaysRemaining: number }> {
   try {
@@ -134,21 +127,11 @@ export function usePlan(): PlanState {
       });
     };
 
-    if (fetchPromise) {
-      const result = await fetchPromise;
-      applyPlan(result);
-      return;
-    }
-
-    fetchPromise = fetchPlanFromServer();
-
     try {
-      const result = await fetchPromise;
+      const result = await fetchPlanFromServer();
       applyPlan(result);
     } catch {
       setState(s => ({ ...s, isLoading: false, trialActive: false, trialExpired: false, trialDaysRemaining: 0 }));
-    } finally {
-      fetchPromise = null;
     }
 
     return;

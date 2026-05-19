@@ -52,6 +52,23 @@ export default function Providers({ children, nonce }: { children: React.ReactNo
     // This must happen before any other code reads from localStorage.
     const supabase = createClient();
     const unsubscribeStorage = initStorageAuthSync(supabase);
+    let activeUserId: string | null = null;
+
+    supabase.auth.getUser().then(({ data }) => {
+      activeUserId = data.user?.id ?? null;
+    }).catch(() => {
+      activeUserId = null;
+      queryClient.clear();
+    });
+
+    const { data: { subscription: cacheSubscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      const nextUserId = session?.user?.id ?? null;
+      if (event === "SIGNED_OUT" || nextUserId !== activeUserId) {
+        queryClient.clear();
+        setShowBillingSynced(false);
+      }
+      activeUserId = nextUserId;
+    });
 
     // ── Notification checks ────────────────────────────────────────────────────
     try {
@@ -85,10 +102,11 @@ export default function Providers({ children, nonce }: { children: React.ReactNo
 
     return () => {
       unsubscribeStorage();
+      cacheSubscription.unsubscribe();
       window.removeEventListener("focus", handleFocus);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, []);
+  }, [queryClient]);
 
   return (
     <QueryClientProvider client={queryClient}>

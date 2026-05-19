@@ -3,10 +3,8 @@
 @tailwind utilities;
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   BUILDMIND DESIGN SYSTEM — v3 (Claude-inspired)
-   Theme: Warm Obsidian + Celadon Green
-   Font: Geist (body) + DM Serif Display (headings)
-   Accent: Celadon green — precise, calm, founder-energy
+   BUILDMIND DESIGN SYSTEM
+   Quiet, mobile-first product UI with one restrained accent.
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
 /* ── Google Font import ─────────────────────────────── */
@@ -35,11 +33,11 @@
   --bm-text4:   #3A3A42;
   --bm-text-inv: #0F0F10;
 
-  /* ── BRAND: Celadon green ─── */
-  --bm-accent:     #5CC88A;
-  --bm-accent2:    #44A86E;
-  --bm-accent-dim: rgba(92,200,138,0.08);
-  --bm-accent-bd:  rgba(92,200,138,0.22);
+  /* brand accent — used sparingly for primary action and focus only */
+  --bm-accent:     #10A37F;
+  --bm-accent2:    #0C7F63;
+  --bm-accent-dim: rgba(16,163,127,0.08);
+  --bm-accent-bd:  rgba(16,163,127,0.20);
 
   /* legacy aliases — nothing breaks */
   --bm-purple:  var(--bm-accent);
@@ -50,17 +48,17 @@
   --bm-violet:  var(--bm-accent);
 
   /* semantic */
-  --bm-green:   #5CC88A;
-  --bm-amber:   #E8A020;
-  --bm-red:     #E05555;
-  --bm-teal:    #4AB8B0;
-  --bm-blue:    #5A96E8;
+  --bm-green:   var(--bm-accent);
+  --bm-amber:   #B58B2A;
+  --bm-red:     #D04F4F;
+  --bm-teal:    var(--bm-accent);
+  --bm-blue:    var(--bm-accent);
 
   /* gradients */
-  --bm-grad-card: linear-gradient(160deg, #161618 0%, #1C1C1F 100%);
-  --bm-grad-hero: linear-gradient(135deg, rgba(92,200,138,0.05) 0%, rgba(74,184,176,0.03) 100%);
-  --bm-grad-green: linear-gradient(135deg, rgba(92,200,138,0.07) 0%, rgba(68,168,110,0.04) 100%);
-  --bm-grad-amber: linear-gradient(135deg, rgba(232,160,32,0.07) 0%, rgba(204,130,16,0.04) 100%);
+  --bm-grad-card: var(--bm-bg2);
+  --bm-grad-hero: var(--bm-bg);
+  --bm-grad-green: var(--bm-bg2);
+  --bm-grad-amber: var(--bm-bg2);
 
   /* radii */
   --r-sm: 6px;
@@ -72,7 +70,7 @@
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.35);
   --shadow-md: 0 4px 16px rgba(0,0,0,0.45);
   --shadow-lg: 0 12px 40px rgba(0,0,0,0.55);
-  --shadow-accent: 0 0 20px rgba(92,200,138,0.12);
+  --shadow-accent: none;
 }
 
 /* ── LIGHT mode ─────────────────────────────────────── */
@@ -95,10 +93,10 @@
   --bm-text4:   #8C8C98;
   --bm-text-inv: #F7F7F8;
 
-  --bm-accent:     #2E8A56;
-  --bm-accent2:    #236B42;
-  --bm-accent-dim: rgba(46,138,86,0.07);
-  --bm-accent-bd:  rgba(46,138,86,0.20);
+  --bm-accent:     #0F8F70;
+  --bm-accent2:    #0B6F56;
+  --bm-accent-dim: rgba(15,143,112,0.07);
+  --bm-accent-bd:  rgba(15,143,112,0.18);
 
   --bm-purple:  var(--bm-accent);
   --bm-purple2: var(--bm-accent2);
@@ -107,16 +105,16 @@
   --bm-indigo:  var(--bm-accent);
   --bm-violet:  var(--bm-accent);
 
-  --bm-green:   #2E8A56;
+  --bm-green:   var(--bm-accent);
   --bm-amber:   #A85C08;
   --bm-red:     #C42020;
-  --bm-teal:    #0D6E6A;
-  --bm-blue:    #1A5CB0;
+  --bm-teal:    var(--bm-accent);
+  --bm-blue:    var(--bm-accent);
 
-  --bm-grad-card: linear-gradient(160deg, #FFFFFF 0%, #F7F7F8 100%);
-  --bm-grad-hero: linear-gradient(135deg, rgba(46,138,86,0.05) 0%, rgba(13,110,106,0.03) 100%);
-  --bm-grad-green: linear-gradient(135deg, rgba(46,138,86,0.06) 0%, rgba(35,107,66,0.03) 100%);
-  --bm-grad-amber: linear-gradient(135deg, rgba(168,92,8,0.05) 0%, rgba(200,110,16,0.03) 100%);
+  --bm-grad-card: var(--bm-bg2);
+  --bm-grad-hero: var(--bm-bg);
+  --bm-grad-green: var(--bm-bg2);
+  --bm-grad-amber: var(--bm-bg2);
 
   --shadow-sm: 0 1px 3px rgba(17,17,20,0.07);
   --shadow-md: 0 4px 16px rgba(17,17,20,0.09);
@@ -138,6 +136,10 @@ body {
   letter-spacing: -0.01em;
   font-feature-settings: 'ss01' 1, 'cv01' 1;
 }
+
+* { box-sizing: border-box; }
+button, a, input, textarea, select { -webkit-tap-highlight-color: transparent; }
+p, h1, h2, h3, h4, h5, h6, span, button, a { overflow-wrap: anywhere; }
 
 .font-display {
   font-family: 'DM Serif Display', Georgia, serif;
@@ -300,7 +302,7 @@ input::placeholder, textarea::placeholder { color: var(--bm-text4); }
    BUILDMIND REDESIGN ADDITIONS — append after :root block
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 :root {
-  --grad-primary: linear-gradient(135deg, #5CC88A, #4AB8B0);
+  --grad-primary: linear-gradient(135deg, var(--bm-accent), var(--bm-accent2));
 }
 .gradient-text {
   background: var(--grad-primary);
@@ -321,6 +323,30 @@ input::placeholder, textarea::placeholder { color: var(--bm-text4); }
 @keyframes shimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
 .shimmer { background:linear-gradient(90deg,var(--bm-bg3,#1C1C1F) 25%,var(--bm-bg4,#232327) 50%,var(--bm-bg3,#1C1C1F) 75%); background-size:200% 100%; animation:shimmer 1.6s infinite; }
 select option { background:var(--bm-bg2,#161618); color:var(--bm-text,#ECECEC); }
+
+@media (max-width: 767px) {
+  html,
+  body {
+    width: 100%;
+    overflow-x: hidden;
+  }
+
+  body {
+    font-size: 14px;
+    letter-spacing: 0;
+  }
+
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+
+  button,
+  [role="button"] {
+    min-height: 42px;
+  }
+}
 
 @media print {
   @page {

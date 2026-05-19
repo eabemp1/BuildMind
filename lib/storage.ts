@@ -46,8 +46,6 @@ const GLOBAL_KEYS = new Set([
   "bm_dev_auth",
   "bm_dev_email",
   "bm_dev_project",
-  "bm_first_seen",
-  "bm_pwa_prompted",
 ]);
 
 // User-data keys that MUST be cleared on sign-out / scoped per user
@@ -75,7 +73,10 @@ const USER_DATA_KEYS = [
   "bm_tasks_done",
   "bm_plan",
   "bm_upgrade_shown",
+  "bm_push_prompted",
   "bm_push_prompt_shown",
+  "bm_push_banner_dismissed",
+  "bm_first_seen",
   "bm_domain",
   "bm_idea",
   "bm_active_project_id",
@@ -91,6 +92,7 @@ const USER_DATA_KEYS = [
   "bm_task_debt",
   "bm_tasks_completed_total",
   "bm_session_id",
+  "bm_funnel",
   "bm_funnel_events",
   "bm_page_views",
   "bm_session_events",
@@ -153,6 +155,9 @@ class UserScopedStorage {
     if (prev && prev !== userId) {
       // Different user signed in on this device — wipe their unscoped legacy keys
       // but keep their scoped data (it's already under bm_u:<prevUserId>:*)
+      this._wipeLegacyUnscopedKeys();
+    }
+    if (!prev) {
       this._wipeLegacyUnscopedKeys();
     }
     this._userId = userId;
@@ -218,11 +223,7 @@ class UserScopedStorage {
     if (GLOBAL_KEYS.has(key)) return localStorage.getItem(key);
     const uid = this._uid();
     if (!uid) return localStorage.getItem(key);
-    // Try scoped key first, fall back to legacy unscoped (migration path)
-    return (
-      localStorage.getItem(scopedKey(uid, key)) ??
-      localStorage.getItem(key) // legacy fallback — will be phased out
-    );
+    return localStorage.getItem(scopedKey(uid, key));
   }
 
   set(key: string, value: string): void {
@@ -320,8 +321,7 @@ class UserScopedStorage {
     const uid = this._uid();
     if (!uid || typeof globalThis.window === "undefined") return;
     localStorage.setItem(scopedKey(uid, "bm_plan"), plan);
-    // Keep generic key for legacy callers — overwritten on next sign-in
-    localStorage.setItem("bm_plan", plan);
+    localStorage.removeItem("bm_plan");
     localStorage.setItem("bm_active_user_id", uid);
   }
 }
@@ -343,14 +343,13 @@ export function initStorageAuthSync(supabase: {
   // Eagerly set userId from current session
   supabase.auth.getUser().then(({ data }) => {
     if (data.user?.id) storage.onSignIn(data.user.id);
+    else storage.onSignOut();
   });
 
   const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-    if (event === "SIGNED_IN" && session?.user?.id) {
-      storage.onSignIn(session.user.id);
-    } else if (event === "SIGNED_OUT") {
+    if (event === "SIGNED_OUT") {
       storage.onSignOut();
-    } else if (event === "USER_UPDATED" && session?.user?.id) {
+    } else if (session?.user?.id) {
       storage.onSignIn(session.user.id);
     }
   });
