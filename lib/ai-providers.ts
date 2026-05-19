@@ -136,9 +136,11 @@ export function hasAIProvider(): boolean {
   return Boolean(GROQ_API_KEY || CEREBRAS_API_KEY || GEMINI_API_KEY);
 }
 
-function sanitizeModelOutput(text: string): string {
+export function sanitizeModelOutput(text: string): string {
   return text
     .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .replace(/<think>[\s\S]*$/gi, "")
+    .replace(/^[\s\S]*<\/think>/gi, "")
     .replace(/^\s*```(?:json)?\s*/i, "")
     .replace(/```\s*$/i, "")
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")

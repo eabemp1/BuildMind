@@ -6,6 +6,7 @@ import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { logError, generateRequestId } from "@/lib/server/logger";
 import { fetchNotionContext, formatNotionContextForPrompt } from "@/lib/integrations/notion";
 import { fetchLinearContext, formatLinearContextForPrompt } from "@/lib/integrations/linear";
+import { sanitizeModelOutput } from "@/lib/ai-providers";
 
 export const runtime     = "nodejs";
 export const dynamic     = "force-dynamic";
@@ -23,6 +24,11 @@ type TodayAction = {
 };
 
 type ReflexionStatus = "ok" | "partial" | "failed";
+
+function cleanVisibleText(value: string | undefined, fallback: string): string {
+  const clean = sanitizeModelOutput(value ?? "");
+  return clean || fallback;
+}
 
 /** Build a project-specific fallback using real project data — never placeholder text */
 function buildContextualFallback(stage: string, targetUsers: string, problem: string, title: string): TodayAction {
@@ -410,16 +416,16 @@ INSTRUCTION: Use this to make today's action a direct causal response to yesterd
     } = {
       ...fallback,
       // FIX 1.1: Use the reflexion-generated action, not the fallback template
-      action: reflexionOutput?.output ?? fallback.action,
+      action: cleanVisibleText(reflexionOutput?.output, fallback.action),
       // If reflexion ran, its rationale becomes the task's why
-      why: reflexionOutput?.rationale ?? fallback.why,
+      why: cleanVisibleText(reflexionOutput?.rationale, fallback.why),
     };
 
     if (reflexionOutput) {
       finalResult.reflexion = {
         verdict: reflexionOutput.verdict ?? "pass",
         criticPersona: criticPersona.name,
-        rationale: reflexionOutput.rationale,
+        rationale: cleanVisibleText(reflexionOutput.rationale, fallback.why),
         loopRan: true,
         passedCritic: reflexionOutput.verdict !== "fail",
         lastReflectionUsed: Boolean(reflexionContext.lastReflection),

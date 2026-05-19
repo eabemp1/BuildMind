@@ -25,7 +25,7 @@ export const dynamic     = "force-dynamic";
 export const maxDuration = 30; // SSE reflexion stream — 3 sequential LLM calls ~15–25 s
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getWeeklyCriticPersona, groqCall } from "@/lib/reflexion";
-import { callModelJSON } from "@/lib/ai-providers";
+import { callModelJSON, sanitizeModelOutput } from "@/lib/ai-providers";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
 
 function sse(event: string, data: unknown): string {
@@ -40,6 +40,11 @@ type TodayAction = {
   why: string;
   time: string;
 };
+
+function cleanVisibleText(value: string | undefined, fallback: string): string {
+  const clean = sanitizeModelOutput(value ?? "");
+  return clean || fallback;
+}
 
 function buildFallback(stage: string, targetUsers: string, problem: string, title: string): TodayAction {
   const userType = targetUsers?.trim() || "potential users";
@@ -203,6 +208,7 @@ ${lastReflectionContext}`;
         } catch {
           agentAOutput = `${fallback.action} — ${fallback.why}`;
         }
+        agentAOutput = cleanVisibleText(agentAOutput, fallback.action);
 
         emit("agent_a", { status: "done", output: agentAOutput });
 
@@ -232,6 +238,7 @@ ${lastReflectionContext}`;
           criticVerdict = (parsed.verdict === "fail" ? "fail" : "pass") as "pass" | "fail";
           criticReason = parsed.reason ?? "OK";
           improvedVersion = parsed.improved_version ?? null;
+          improvedVersion = improvedVersion ? sanitizeModelOutput(improvedVersion) : null;
         } catch {
           // critic failed — default to pass
         }
@@ -273,6 +280,8 @@ ${lastReflectionContext}`;
         } catch {
           // refiner failed — use Agent A output
         }
+        refined = cleanVisibleText(refined, fallback.action);
+        rationale = cleanVisibleText(rationale, `Because you're at ${stage} stage and this is the highest-leverage move today.`);
 
         emit("agent_c", { status: "done", output: refined });
 

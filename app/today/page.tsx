@@ -61,11 +61,35 @@ function isActionData(value: unknown): value is ActionData {
   );
 }
 
+function sanitizeVisibleText(value: string): string {
+  return value
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .replace(/<think>[\s\S]*$/gi, "")
+    .replace(/^[\s\S]*<\/think>/gi, "")
+    .trim();
+}
+
+function sanitizeActionData(data: ActionData): ActionData | null {
+  const action = sanitizeVisibleText(data.action);
+  const message = sanitizeVisibleText(data.message);
+  const why = sanitizeVisibleText(data.why);
+  if (!action || !message || !why) return null;
+  return {
+    ...data,
+    action,
+    message,
+    why,
+    reflexion: data.reflexion
+      ? { ...data.reflexion, rationale: sanitizeVisibleText(data.reflexion.rationale) || why }
+      : data.reflexion,
+  };
+}
+
 function unwrapActionPayload(payload: unknown): ActionData | null {
   if (!payload || typeof payload !== "object") return null;
   const maybePayload = payload as { data?: unknown };
   const candidate = isActionData(maybePayload.data) ? maybePayload.data : payload;
-  return isActionData(candidate) ? { ...candidate, isAI: true } : null;
+  return isActionData(candidate) ? sanitizeActionData({ ...candidate, isAI: true }) : null;
 }
 
 // ── Stored reflection shape (from bm_today_action written by /reflect) ──────
