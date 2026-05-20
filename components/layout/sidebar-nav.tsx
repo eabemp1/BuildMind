@@ -41,11 +41,11 @@ export function NotifBadge() {
   if (count === 0) return null;
   return (
     <span
-      className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+      className="rounded px-1.5 py-0.5 font-mono text-[9px] font-normal"
       style={{
         background: "var(--bm-bg4)",
-        color: "var(--bm-text2)",
-        letterSpacing: "0.04em",
+        color: "var(--bm-text3)",
+        letterSpacing: "0.02em",
       }}
     >
       {count}
@@ -57,7 +57,7 @@ export function NotifBadge() {
 export function SectionLabel({ label }: { label: string }) {
   return (
     <div
-      className="px-3 pt-4 pb-1 text-[9px] font-bold tracking-[0.14em] uppercase"
+      className="px-5 pb-2 pt-5 font-mono text-[10px] font-normal uppercase tracking-[0.08em]"
       style={{ color: "var(--bm-text4)" }}
     >
       {label}
@@ -69,16 +69,16 @@ export function SectionLabel({ label }: { label: string }) {
 export function SidebarLogo({ streakDays }: { streakDays: number }) {
   return (
     <div
-      className="flex items-center gap-2.5 px-4 h-16 shrink-0"
+      className="flex h-[72px] shrink-0 items-center gap-3 px-5"
       style={{ borderBottom: "1px solid var(--bm-border)" }}
     >
-      <BrandMark size={32} href="/overview" />
+      <BrandMark size={28} href="/today" />
       <div>
-        <div className="text-sm font-semibold" style={{ color: "var(--bm-text)", letterSpacing: "-0.02em" }}>
+        <div className="text-[14px] font-semibold" style={{ color: "var(--bm-text)", letterSpacing: "-0.025em" }}>
           BuildMind
         </div>
         <div
-          className="text-[9px] font-bold tracking-[0.12em] uppercase"
+          className="font-mono text-[9px] font-normal uppercase tracking-[0.1em]"
           style={{
             color: "var(--bm-text4)",
             lineHeight: 1,
@@ -89,9 +89,9 @@ export function SidebarLogo({ streakDays }: { streakDays: number }) {
       </div>
       {streakDays > 0 && (
         <div
-          className="ml-auto flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold"
+          className="ml-auto flex items-center gap-1 rounded px-2 py-0.5 font-mono text-[10px] font-normal"
           style={{
-            background: "var(--bm-bg3)",
+            background: "var(--bm-bg2)",
             border: "1px solid var(--bm-border)",
             color: "var(--bm-text3)",
           }}
@@ -134,27 +134,29 @@ export function NavItem({
       href={href}
       onClick={onClick}
       data-tour={`nav-${href.replace("/", "")}`}
-      className="relative flex items-center gap-3 px-3 py-2.5 rounded-lg mx-2 text-sm transition-all duration-150 group"
+      className="group relative mx-2 flex items-center gap-3 rounded-md px-4 py-[9px] text-[13.5px] transition-colors duration-150"
       style={
         active
           ? {
               color: "var(--bm-text)",
-              background: "var(--bm-bg3)",
-              borderLeft: "2px solid var(--bm-text3)",
-              paddingLeft: "calc(0.75rem - 2px)",
+              background: "color-mix(in srgb, var(--bm-bg3) 64%, transparent)",
+              borderLeft: "2px solid var(--bm-accent)",
+              paddingLeft: "calc(1rem - 2px)",
               fontWeight: 500,
             }
           : {
-              color: "var(--bm-text2)",
+              color: "var(--bm-text3)",
             }
       }
     >
       <div className="relative shrink-0">
         <Icon
-          size={16}
-          className="transition-colors group-hover:text-[var(--bm-text)]"
+          size={15}
+          strokeWidth={1.7}
+          className="transition-colors group-hover:text-[var(--bm-text2)]"
           style={{
-            color: active ? "var(--bm-text)" : undefined,
+            color: active ? "var(--bm-accent)" : undefined,
+            opacity: active ? 0.9 : 0.42,
           }}
         />
         {showNotifDot && (
@@ -168,7 +170,7 @@ export function NavItem({
         )}
       </div>
 
-      <span className="truncate flex-1 transition-colors group-hover:text-[var(--bm-text)]">
+      <span className="flex-1 truncate transition-colors group-hover:text-[var(--bm-text2)]">
         {label}
       </span>
 
@@ -180,19 +182,19 @@ export function NavItem({
           NOW
         </span>
       ) : showLock ? (
-        <span className="text-[9px] opacity-40">Lock</span>
+        <span className="font-mono text-[9px] opacity-40">Lock</span>
       ) : href === "/notifications" ? (
         <NotifBadge />
       ) : href === "/achievements" && (unseenBadges ?? 0) > 0 ? (
         <span
-          className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+          className="rounded px-1.5 py-0.5 font-mono text-[9px] font-normal"
           style={{ background: "var(--bm-bg4)", color: "var(--bm-text2)" }}
         >
           {unseenBadges} new
         </span>
       ) : badge ? (
         <span
-          className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+          className="rounded px-1.5 py-0.5 font-mono text-[9px] font-normal"
           style={{
             background: "var(--bm-bg4)",
             color: "var(--bm-text2)",

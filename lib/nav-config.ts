@@ -12,13 +12,14 @@
  */
 
 import type { Plan } from "@/lib/plan";
-import type { ElementType } from "react";
+import type { CSSProperties, ElementType } from "react";
 import { storage } from "@/lib/storage";
+import { BarChart3, BriefcaseBusiness, CircleDot, FolderKanban, LineChart, Settings, Sparkles } from "lucide-react";
 
 export type NavItemConfig = {
   href: string;
   label: string;
-  icon: ElementType<{ size?: number }>;
+  icon: ElementType<{ size?: number; strokeWidth?: number; className?: string; style?: CSSProperties }>;
   enabled: boolean;
   hidden?: boolean;  // AUDIT v8: temporarily hidden from nav while simplifying product surface
   section: string | null;
@@ -28,33 +29,22 @@ export type NavItemConfig = {
   unlocksAt?: number;
 };
 
-const iconStub = (_name: string): ElementType<{ size?: number }> => function NavIcon() { return null; };
-
 export const NAV: readonly NavItemConfig[] = [
-  // ── TODAY ──────────────────────────────────────────────────────────────────
-  { href: "/today",            label: "Today",            icon: iconStub("Zap"),             enabled: true,  section: "TODAY",   badge: null,      showDot: false, unlocksAt: 0 },
-  { href: "/reflect",          label: "Reflect",          icon: iconStub("RefreshCw"),       enabled: true,  section: null,      badge: null,      showDot: true,  unlocksAt: 1 },
+  { href: "/today",            label: "Today",        icon: CircleDot,         enabled: true, section: null, badge: null, showDot: false, unlocksAt: 0 },
+  { href: "/projects",         label: "Projects",     icon: FolderKanban,      enabled: true, section: null, badge: null, showDot: false, unlocksAt: 0 },
+  { href: "/ai-coach",         label: "Intelligence", icon: Sparkles,          enabled: true, section: null, badge: null, showDot: false, unlocksAt: 3 },
+  { href: "/overview",         label: "Execution",    icon: BriefcaseBusiness, enabled: true, section: null, badge: null, showDot: false, unlocksAt: 3 },
+  { href: "/reports",          label: "Reports",      icon: LineChart,         enabled: true, section: null, badge: null, requiredPlan: "builder" as Plan, showDot: false, unlocksAt: 7 },
+  { href: "/settings",         label: "Settings",     icon: Settings,          enabled: true, section: null, badge: null, showDot: false, unlocksAt: 0 },
 
-  // ── ANALYZE ────────────────────────────────────────────────────────────────
-  { href: "/break-my-startup", label: "Break My Startup", icon: iconStub("Flame"),           enabled: true,  section: "ANALYZE", badge: null,      showDot: false, unlocksAt: 3 },
-  { href: "/overview",         label: "Overview",         icon: iconStub("LayoutDashboard"), enabled: true,  section: null,      badge: null,      showDot: false, unlocksAt: 3 },
-  // AUDIT v8 PROD #2: Hide Ventures from primary nav — founders overwhelmed by options
-  // AUDIT v8 PROD #10: Insights — behavioral mirror
-  { href: "/insights",         label: "Insights",         icon: iconStub("BarChart2"),       enabled: true,  section: null,      badge: null,      showDot: false, unlocksAt: 3 },
-  { href: "/ventures",         label: "Ventures",         icon: iconStub("Map"),             enabled: false, hidden: true,  section: null,      badge: "Builder", requiredPlan: "builder" as Plan, showDot: false, unlocksAt: 7 },
-  { href: "/reports",          label: "Reports",          icon: iconStub("LineChart"),       enabled: true,  section: null,      badge: "Builder", requiredPlan: "builder" as Plan, showDot: false, unlocksAt: 7 },
-  { href: "/startup-kit",      label: "Startup Kit",      icon: iconStub("Lightbulb"),       enabled: true,  section: null,      badge: "Builder", requiredPlan: "builder" as Plan, showDot: false, unlocksAt: 7 },
-
-  // ── COACH ──────────────────────────────────────────────────────────────────
-  { href: "/ai-coach",         label: "AI Coach",         icon: iconStub("Bot"),             enabled: true,  section: "COACH",   badge: null,      showDot: false, unlocksAt: 3 },
-  { href: "/projects",         label: "Projects",         icon: iconStub("FolderKanban"),    enabled: true,  section: null,      badge: null,      showDot: false, unlocksAt: 3 },
-
-  // ── MORE (bottom) ──────────────────────────────────────────────────────────
-  // AUDIT v8 PROD #2: Achievements hidden — gamification before core loop is proven distracts
-  { href: "/achievements",     label: "Achievements",     icon: iconStub("Trophy"),          enabled: false, hidden: true,  section: "MORE",    badge: null,      showDot: false, unlocksAt: 7 },
-  { href: "/invite",           label: "Invite & Earn",    icon: iconStub("Users"),           enabled: true,  section: null,      badge: "Free mo", showDot: false, unlocksAt: 7 },
-  { href: "/notifications",    label: "Notifications",    icon: iconStub("Bell"),            enabled: true,  section: null,      badge: null,      showDot: false, unlocksAt: 0 },
-  { href: "/settings",         label: "Settings",         icon: iconStub("Settings"),        enabled: true,  section: null,      badge: null,      showDot: false, unlocksAt: 0 },
+  { href: "/reflect",          label: "Reflect",          icon: CircleDot, enabled: false, hidden: true, section: null, badge: null, showDot: true, unlocksAt: 1 },
+  { href: "/break-my-startup", label: "Break My Startup", icon: BarChart3, enabled: false, hidden: true, section: null, badge: null, showDot: false, unlocksAt: 3 },
+  { href: "/insights",         label: "Insights",         icon: BarChart3, enabled: false, hidden: true, section: null, badge: null, showDot: false, unlocksAt: 3 },
+  { href: "/ventures",         label: "Ventures",         icon: BarChart3, enabled: false, hidden: true, section: null, badge: null, requiredPlan: "builder" as Plan, showDot: false, unlocksAt: 7 },
+  { href: "/startup-kit",      label: "Startup Kit",      icon: BarChart3, enabled: false, hidden: true, section: null, badge: null, requiredPlan: "builder" as Plan, showDot: false, unlocksAt: 7 },
+  { href: "/achievements",     label: "Achievements",     icon: BarChart3, enabled: false, hidden: true, section: null, badge: null, showDot: false, unlocksAt: 7 },
+  { href: "/invite",           label: "Invite",           icon: BarChart3, enabled: false, hidden: true, section: null, badge: null, showDot: false, unlocksAt: 7 },
+  { href: "/notifications",    label: "Notifications",    icon: BarChart3, enabled: false, hidden: true, section: null, badge: null, showDot: false, unlocksAt: 0 },
 ] as const;
 
 export function hasPlanAccess(current: Plan, required: Plan): boolean {

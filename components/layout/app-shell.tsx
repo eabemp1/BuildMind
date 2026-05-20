@@ -124,10 +124,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="relative flex h-dvh min-h-dvh overflow-hidden">
+    <div className="relative flex h-dvh min-h-dvh overflow-hidden" style={{ background: "var(--bm-bg)" }}>
 
       {/* ── Sidebar — desktop ── */}
-      <aside className="sticky top-0 hidden h-dvh w-[232px] shrink-0 md:flex"
+      <aside className="sticky top-0 hidden h-dvh w-[252px] shrink-0 md:flex"
              style={{ borderRight: "1px solid var(--bm-border)" }}>
         <Sidebar />
       </aside>
@@ -163,9 +163,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <header
           className="sticky top-0 z-30"
           style={{
-            height: 52,
+            height: 50,
             borderBottom: "1px solid var(--bm-border)",
-            background: "color-mix(in srgb, var(--bm-bg) 92%, transparent)",
+            background: "color-mix(in srgb, var(--bm-bg) 94%, transparent)",
             backdropFilter: "blur(20px)",
           }}
         >
@@ -191,9 +191,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             animate={{ opacity: 1, y: 0 }}
             exit={reduceMotion ? { opacity: 1 } : { opacity: 0, y: -4 }}
             transition={reduceMotion ? { duration: 0 } : { duration: 0.18, ease: [0.4, 0, 0.2, 1] }}
-            className="flex-1 overflow-y-auto px-3 py-4 sm:px-8 sm:py-7"
+            className="flex-1 overflow-y-auto px-3 py-5 sm:px-8 sm:py-8"
           >
-            <div style={{ maxWidth: 1040, margin: "0 auto", width: "100%" }}>{children}</div>
+            <div style={{ maxWidth: 1120, margin: "0 auto", width: "100%" }}>{children}</div>
           </motion.main>
         </AnimatePresence>
       </div>

@@ -27,7 +27,7 @@ export const Card = forwardRef<HTMLDivElement, CardProps>(
           ref={ref}
           className={base}
           whileHover={{ borderColor: "var(--bm-border2)" }}
-          transition={{ duration: 0.15 }}
+          transition={{ duration: 0.14 }}
           style={style}
           {...(rest as HTMLMotionProps<"div">)}
         >

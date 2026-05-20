@@ -57,11 +57,11 @@ function SidebarUser({ onSignOut }: { onSignOut: () => void }) {
 
   return (
     <div
-      className="flex items-center gap-2.5 px-4 py-3 mx-2 rounded-lg"
-      style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)" }}
+      className="mx-3 flex items-center gap-2.5 rounded-lg px-3 py-2.5"
+      style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)" }}
     >
       <div
-        className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-xs font-medium"
         style={{ background: "var(--bm-bg4)", color: "var(--bm-text2)", border: "1px solid var(--bm-border)" }}
       >
         {initials}
@@ -83,7 +83,7 @@ function SidebarUser({ onSignOut }: { onSignOut: () => void }) {
       </div>
       <button
         onClick={onSignOut}
-        className="p-1.5 rounded-md transition-colors"
+        className="rounded-md p-1.5 transition-colors"
         style={{ color: "var(--bm-text3)" }}
         title="Sign out"
         onMouseEnter={(e) => { e.currentTarget.style.color = "var(--bm-text2)"; e.currentTarget.style.background = "transparent"; }}
@@ -142,10 +142,10 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
   }, []);
 
   return (
-    <div className="flex flex-col h-full" style={{ background: "var(--bm-bg2)" }}>
+    <div className="flex h-full flex-col" style={{ background: "var(--bm-bg2)" }}>
       <SidebarLogo streakDays={streakDays} />
 
-      <nav className="flex-1 overflow-y-auto py-2" style={{ scrollbarWidth: "none" }}>
+      <nav className="flex-1 overflow-y-auto py-5" style={{ scrollbarWidth: "none" }}>
         {NAV.filter((i) => i.enabled && !i.hidden).map((item) => {
           const unlockedAt = item.unlocksAt ?? 0;
           const isProgressLocked = tasksCompleted < unlockedAt;
@@ -158,12 +158,12 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
               <React.Fragment key={item.href}>
                 {item.section && <SectionLabel label={item.section} />}
                 <div
-                  className="px-3 py-2 mx-2 rounded-md select-none"
+                  className="mx-2 rounded-md px-4 py-[9px] select-none"
                   title={`Complete ${tasksNeeded} more task${tasksNeeded !== 1 ? "s" : ""} to unlock ${item.label}`}
                   style={{ cursor: "default", opacity: 0.45 }}
                 >
                   <div className="flex items-center gap-3" style={{ color: "var(--bm-text4)" }}>
-                    <item.icon size={15} />
+                    <item.icon size={15} strokeWidth={1.7} />
                     <span className="flex-1 truncate" style={{ fontSize: 13 }}>{item.label}</span>
                     <span style={{ fontSize: 9, color: "var(--bm-text4)", whiteSpace: "nowrap" }}>
                       {tasksNeeded} left
@@ -196,7 +196,7 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
           <>
             <SectionLabel label="ADMIN" />
             <Link href="/admin"
-              className="flex items-center justify-between gap-2 px-3 py-2.5 mx-2 rounded-md text-sm transition-colors group"
+              className="group mx-2 flex items-center justify-between gap-2 rounded-md px-4 py-[9px] text-sm transition-colors"
               style={{ color: "var(--bm-text4)" }}
             >
               <div className="flex items-center gap-3"><Shield size={16} />Dashboard</div>
@@ -206,7 +206,7 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
         )}
       </nav>
 
-      <div className="shrink-0 flex flex-col gap-2 pt-2 pb-3" style={{ borderTop: "1px solid var(--bm-border)" }}>
+      <div className="flex shrink-0 flex-col gap-2 pb-4 pt-3" style={{ borderTop: "1px solid var(--bm-border)" }}>
         {canAccess("cofounderPulse", plan) && (
           <div className="px-2"><CofounderPulse /></div>
         )}
@@ -215,7 +215,7 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
         )}
 
         <button onClick={toggle}
-          className="flex items-center gap-2 px-3 py-2 mx-2 rounded-md text-sm transition-colors"
+          className="mx-2 flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors"
           style={{ border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", cursor: "pointer", fontFamily: "inherit" }}
           onMouseEnter={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--bm-text2)"; }}
           onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--bm-text3)"; }}
@@ -224,7 +224,7 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
         </button>
 
         <button onClick={() => setFounderMenuOpen((o) => !o)}
-          className="flex items-center gap-2 px-3 py-2.5 mx-2 rounded-md transition-colors"
+          className="mx-2 flex items-center gap-2 rounded-md px-3 py-2.5 transition-colors"
           style={{ border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", cursor: "pointer", fontFamily: "inherit" }}
         >
           <Sparkles size={13} strokeWidth={1.6} style={{ color: "var(--bm-text4)", flexShrink: 0 }} />
@@ -265,7 +265,7 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
           )}
         </AnimatePresence>
 
-        <div className="flex items-center justify-center gap-3 px-3 pb-1">
+        <div className="hidden items-center justify-center gap-3 px-3 pb-1">
           <Link href="/legal/terms" className="text-[10px] transition-colors hover:underline" style={{ color: "var(--bm-text4)" }}>Terms</Link>
           <span style={{ color: "var(--bm-border)" }}>·</span>
           <Link href="/legal/privacy" className="text-[10px] transition-colors hover:underline" style={{ color: "var(--bm-text4)" }}>Privacy</Link>
@@ -303,7 +303,7 @@ export default function Sidebar() {
         <Menu size={18} />
       </button>
 
-      <aside className="hidden md:flex flex-col h-full w-full relative overflow-hidden" style={{ background: "var(--bm-bg2)" }}>
+      <aside className="relative hidden h-full w-full flex-col overflow-hidden md:flex" style={{ background: "var(--bm-bg2)" }}>
         <SidebarContent onSignOut={handleSignOut} />
       </aside>
 

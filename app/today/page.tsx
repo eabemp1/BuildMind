@@ -792,7 +792,7 @@ function TodayContent() {
     : null;
 
   return (
-    <div style={{ maxWidth: 760, margin: "0 auto", padding: isMobile ? "0 0 24px" : "24px 8px" }}>
+    <div style={{ maxWidth: 920, margin: "0 auto", padding: isMobile ? "0 0 24px" : "20px 8px 48px" }}>
 
       {/* ── First-session banner ── */}
       {isFirstSession && (
@@ -800,7 +800,7 @@ function TodayContent() {
           style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 12, padding: isMobile ? "14px" : "14px 18px", marginBottom: 16, display: "flex", alignItems: "center", gap: 12 }}>
           <Sparkles size={16} color="var(--bm-text3)" style={{ flexShrink: 0 }} />
           <div style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.5 }}>
-            Your roadmap is ready. <strong style={{ color: "var(--bm-text)" }}>Here's your first action.</strong> Complete it before you do anything else — momentum starts now.
+            Your operating loop is ready. <strong style={{ color: "var(--bm-text)" }}>Start with the primary objective.</strong>
           </div>
         </motion.div>
       )}
@@ -863,7 +863,7 @@ function TodayContent() {
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
-        style={{ marginBottom: 20 }}
+        style={{ marginBottom: 22 }}
       >
         <div
           style={{
@@ -876,10 +876,10 @@ function TodayContent() {
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <div
               style={{
-                width: 28,
-                height: 28,
+                width: 26,
+                height: 26,
                 borderRadius: 7,
-                background: "var(--grad-primary)",
+                background: "var(--bm-accent)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -890,7 +890,7 @@ function TodayContent() {
             <span
               style={{
                 fontSize: 13,
-                fontWeight: 700,
+                fontWeight: 600,
                 color: "var(--bm-text3)",
                 letterSpacing: "-0.01em",
               }}
@@ -905,26 +905,26 @@ function TodayContent() {
                 display: "flex",
                 alignItems: "center",
                 gap: 5,
-                padding: "4px 10px",
-                borderRadius: 20,
+                padding: "4px 9px",
+                borderRadius: 5,
                 background: "var(--bm-bg2)",
                 border: "1px solid var(--bm-border)",
               }}
             >
               <Flame size={11} color="var(--bm-text3)" />
-              <span style={{ fontSize: 11, fontWeight: 700, color: "var(--bm-text3)" }}>
+              <span style={{ fontSize: 11, fontWeight: 400, color: "var(--bm-text3)", fontFamily: "'JetBrains Mono', monospace" }}>
                 {streak}d streak
               </span>
             </div>
           )}
         </div>
 
-        <div style={{ paddingBottom: 16, borderBottom: "1px solid var(--bm-border)" }}>
+        <div style={{ paddingBottom: 18, borderBottom: "1px solid var(--bm-border)" }}>
           <p
             style={{
               fontSize: 12,
               color: "var(--bm-text3)",
-              fontWeight: 600,
+              fontWeight: 500,
               textTransform: "uppercase",
               letterSpacing: "0.08em",
               margin: "0 0 6px",
@@ -935,21 +935,21 @@ function TodayContent() {
           <h1
             style={{
               fontSize: "clamp(22px, 4vw, 30px)",
-              fontWeight: 800,
+              fontWeight: 500,
               color: "var(--bm-text)",
               letterSpacing: "-0.03em",
-              lineHeight: 1.2,
+              lineHeight: 1.28,
               margin: "0 0 8px",
             }}
           >
             {productName
-              ? `Here's what moves ${productName} forward today.`
-              : "Here's your one move for today."}
+              ? `${productName}: today's operating focus`
+              : "Today's operating focus"}
           </h1>
           <p
             style={{
               fontSize: 13,
-              color: "var(--bm-text3)",
+              color: "var(--bm-text2)",
               margin: 0,
               lineHeight: 1.5,
             }}
@@ -985,7 +985,7 @@ function TodayContent() {
           style={{
             background: "var(--bm-bg2)",
             border: "1px solid var(--bm-border2)",
-            borderRadius: 14,
+            borderRadius: 10,
             padding: "14px 16px",
             marginBottom: 14,
           }}
@@ -1122,35 +1122,35 @@ function TodayContent() {
         transition={{ delay: 0.08 }}
         style={{
           padding: 1,
-          borderRadius: 19,
-          background: "var(--bm-border)",
-          marginBottom: 14,
-          transition: "background 0.4s",
-        }}
+            borderRadius: 12,
+            background: "var(--bm-border2)",
+            marginBottom: 14,
+            transition: "background 0.4s",
+          }}
       >
-        <div style={{ background: "var(--bm-bg2)", borderRadius: 18, padding: isMobile ? "20px" : "28px" }}>
+        <div style={{ background: "var(--bm-bg2)", borderRadius: 11, padding: isMobile ? "20px" : "28px 30px 24px" }}>
 
           {/* Meta row — simplified */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
             {project?.startup_stage && (
-              <span style={{ fontSize: 10, padding: "3px 10px", borderRadius: 20, background: "var(--bm-accent-dim)", color: "var(--bm-accent)", border: "1px solid var(--bm-accent-bd)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em" }}>
+              <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: "var(--bm-accent-dim)", color: "var(--bm-accent)", border: "1px solid var(--bm-accent-bd)", fontWeight: 400, textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: "'JetBrains Mono', monospace" }}>
                 {project.startup_stage} stage
               </span>
             )}
             {actionData.isAI && !actionLoading && (
-              <span style={{ fontSize: 10, padding: "3px 10px", borderRadius: 20, background: "var(--bm-bg3)", color: "var(--bm-text3)", border: "1px solid var(--bm-border)", fontWeight: 600 }}>
-                AI-personalised
+              <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: "var(--bm-bg3)", color: "var(--bm-text3)", border: "1px solid var(--bm-border)", fontWeight: 400, fontFamily: "'JetBrains Mono', monospace" }}>
+                Context calibrated
               </span>
             )}
             {actionLoading && (
               <span style={{ fontSize: 11, color: "var(--bm-text3)", display: "flex", alignItems: "center", gap: 6 }}>
                 <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "var(--bm-accent)", opacity: 0.6, animation: "bm-pulse 1.2s ease-in-out infinite" }} />
-                Personalising...
+                Calibrating...
               </span>
             )}
             {!actionData.isAI && !actionLoading && (
               <span style={{ fontSize: 10, color: "var(--bm-text4)", fontStyle: "italic" }}>
-                Fallback task — personalisation unavailable
+                Baseline objective
               </span>
             )}
             <span style={{ fontSize: 11, color: "var(--bm-text3)", display: "flex", alignItems: "center", gap: 4, marginLeft: "auto" }}>
@@ -1160,29 +1160,33 @@ function TodayContent() {
 
           {/* Primary action */}
           <div style={{
-            background: "var(--bm-bg3)",
-            border: "1px solid var(--bm-border2)",
-            borderRadius: 12,
-            padding: isMobile ? "14px 16px" : "12px 16px",
+            background: "var(--bm-bg)",
+            border: "1px solid var(--bm-border)",
+            borderRadius: 10,
+            padding: isMobile ? "16px" : "18px 18px",
             marginBottom: 14,
             display: "flex",
             alignItems: "flex-start",
             gap: 10,
           }}>
             <div style={{
-              width: 28, height: 28, borderRadius: "50%",
-              background: "var(--bm-text)", color: "var(--bm-bg)",
+              width: 26, height: 26, borderRadius: 6,
+              background: "var(--bm-accent)", color: "#fff",
               display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 13, fontWeight: 800, flexShrink: 0,
-            }}>1</div>
+              fontSize: 11, fontWeight: 500, flexShrink: 0,
+              fontFamily: "'JetBrains Mono', monospace",
+            }}>01</div>
             <div>
-              <p style={{ fontSize: isMobile ? 19 : 17, fontWeight: 700, color: "var(--bm-text)", lineHeight: 1.45, margin: "0 0 4px", letterSpacing: "-0.01em" }}>
+              <div style={{ fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'JetBrains Mono', monospace", marginBottom: 7 }}>
+                Primary Objective
+              </div>
+              <p style={{ fontSize: isMobile ? 20 : 22, fontWeight: 400, color: "var(--bm-text)", lineHeight: 1.42, margin: "0 0 8px", letterSpacing: "-0.025em" }}>
                 {actionData.action}
               </p>
-              <p style={{ fontSize: 12, color: "var(--bm-text3)", fontWeight: 600, margin: 0, lineHeight: 1.5 }}>
+              <p style={{ fontSize: 13, color: "var(--bm-text2)", fontWeight: 400, margin: 0, lineHeight: 1.55 }}>
                 {isOutreachAction
-                  ? "This is today's move. Do this before email, Slack, or building anything."
-                  : "This is the one task that moves your startup forward today. Everything else waits."}
+                  ? "Execute this before opening the rest of the day. The system will learn from the result."
+                  : "This is the highest-leverage operating move for the current stage. Everything else is secondary."}
               </p>
             </div>
           </div>
@@ -1195,20 +1199,20 @@ function TodayContent() {
           }}>
             <div>
               <p style={{ fontSize: 12, fontWeight: 700, color: "var(--bm-text)", margin: "0 0 1px" }}>
-                {isOutreachAction ? "Edit the draft, then send it" : "Copy the script, then send it to at least 3 people today"}
+                {isOutreachAction ? "Prepare the message" : "Prepare the script"}
               </p>
               <p style={{ fontSize: 11, color: "var(--bm-text3)", margin: 0 }}>
                 {isOutreachAction
-                  ? "We've pre-filled your product name and problem. Adjust the name and hit send."
-                  : "Don't overthink it. Imperfect and sent beats perfect and unsent."}
+                  ? "Project context is pre-filled. Adjust only what improves clarity."
+                  : "Use the script as written unless the context is wrong."}
               </p>
             </div>
           </div>
 
           {/* Why — with reflexion rationale */}
-          <div style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: 12, padding: isMobile ? "16px" : "14px 16px", marginBottom: 18 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6, display: "flex", alignItems: "center", gap: 5 }}>
-              <Brain size={10} color="var(--bm-text3)" /> Why this, why today
+          <div style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: 10, padding: isMobile ? "16px" : "14px 16px", marginBottom: 18 }}>
+            <div style={{ fontSize: 10, fontWeight: 400, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6, display: "flex", alignItems: "center", gap: 5, fontFamily: "'JetBrains Mono', monospace" }}>
+              <Brain size={10} color="var(--bm-text3)" /> Strategic rationale
             </div>
             <p style={{ fontSize: isMobile ? 14 : 13, color: "var(--bm-text2)", margin: "0 0 10px", lineHeight: 1.6 }}>
               {actionData.reflexion?.rationale ?? actionData.why}
@@ -1221,10 +1225,10 @@ function TodayContent() {
           </div>
 
           {/* ── Message template — pre-filled with real project values ── */}
-          <div style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: 12, padding: isMobile ? "16px" : "14px 16px" }}>
+          <div style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: 10, padding: isMobile ? "16px" : "14px 16px" }}>
             <div style={{ display: "flex", alignItems: isMobile ? "stretch" : "center", justifyContent: "space-between", marginBottom: 8, gap: 8, flexDirection: isMobile ? "column" : "row" }}>
               <span style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                {isOutreachAction ? "Outreach draft" : "Outreach script"}
+                {isOutreachAction ? "Execution draft" : "Execution script"}
               </span>
               <div style={{ display: "flex", alignItems: "center", gap: 6, width: isMobile ? "100%" : "auto" }}>
                 <button

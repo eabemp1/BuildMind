@@ -60,10 +60,10 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
       (item.keywords ? item.keywords.some(k => matches(k)) : false);
 
     const features = [
-      { label: "Dashboard",         href: "/overview",        keywords: ["overview", "stats", "execution"] },
-      { label: "Today's Action",    href: "/today",           keywords: ["action", "next step", "today"] },
+      { label: "Execution",         href: "/overview",        keywords: ["overview", "stats", "execution"] },
+      { label: "Today",             href: "/today",           keywords: ["action", "next step", "today"] },
       { label: "Projects",          href: "/projects",        keywords: ["workspace", "roadmap", "milestones"] },
-      { label: "AI Coach",          href: "/ai-coach",        keywords: ["ai coach", "chat", "advice"] },
+      { label: "Intelligence",      href: "/ai-coach",        keywords: ["ai coach", "chat", "advice", "intelligence"] },
       { label: "Break My Startup",  href: "/break-my-startup", keywords: ["break", "analysis", "risk"] },
       { label: "Progress",          href: "/reports",         keywords: ["reports", "weekly report"] },
       { label: "Settings",          href: "/settings",        keywords: ["profile", "preferences"] },
@@ -73,8 +73,8 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
 
     const recommendations = [
       { label: "Create Project",        href: "/projects",  keywords: ["new project", "start"] },
-      { label: "Open Today's Action",   href: "/today",     keywords: ["action", "commit"] },
-      { label: "Open AI Coach",         href: "/ai-coach",  keywords: ["ask coach"] },
+      { label: "Open Today",            href: "/today",     keywords: ["action", "commit"] },
+      { label: "Open Intelligence",     href: "/ai-coach",  keywords: ["ask coach"] },
       { label: "View Weekly Report",    href: "/reports",   keywords: ["weekly"] },
     ];
 
@@ -133,7 +133,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
 
   return (
     <div
-      className="flex h-full items-center gap-2 px-3 sm:gap-3 sm:px-5"
+      className="flex h-full items-center gap-2 px-3 sm:gap-3 sm:px-6"
       style={{
         background: "color-mix(in srgb, var(--bm-bg) 92%, transparent)",
         backdropFilter: "blur(20px)",
@@ -146,7 +146,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
         onClick={onToggleSidebar}
         style={{
           display: "grid", placeItems: "center",
-          width: 34, height: 34, borderRadius: 8,
+          width: 32, height: 32, borderRadius: 6,
           border: "1px solid var(--bm-border2)",
           background: "transparent", color: "var(--bm-text3)",
           cursor: "pointer", flexShrink: 0,
@@ -160,7 +160,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
 
       {/* Search */}
       <div className="relative hidden min-[440px]:block min-w-0 flex-1" ref={searchRef}>
-        <div style={{ position: "relative", maxWidth: 520 }}>
+        <div style={{ position: "relative", maxWidth: 460 }}>
           <Search
             size={13}
             style={{
@@ -178,8 +178,8 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
               if (e.key === "Escape") { setSearchOpen(false); setSearchQuery(""); setSearchError(null); }
             }}
             style={{
-              width: "100%", height: 34, paddingLeft: 32, paddingRight: 12,
-              background: "var(--bm-bg3)",
+              width: "100%", height: 32, paddingLeft: 32, paddingRight: 12,
+              background: "var(--bm-bg2)",
               border: "1px solid var(--bm-border2)",
               borderRadius: "var(--r-sm)", fontSize: 13,
               color: "var(--bm-text)", outline: "none",
@@ -202,7 +202,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
                 background: "var(--bm-bg2)",
                 border: "1px solid var(--bm-border2)",
                 borderRadius: 10, padding: 6,
-                boxShadow: "0 16px 48px rgba(0,0,0,0.4)",
+                boxShadow: "0 24px 70px rgba(0,0,0,0.48)",
                 scrollbarWidth: "none",
               }}
             >
@@ -257,9 +257,9 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
           <button
             onClick={() => setOpen(s => !s)}
             style={{
-              width: 34, height: 34, borderRadius: "50%",
+              width: 32, height: 32, borderRadius: 8,
               border: "1px solid var(--bm-border2)",
-              background: open ? "var(--bm-accent-dim)" : "var(--bm-bg3)",
+              background: open ? "var(--bm-accent-dim)" : "var(--bm-bg2)",
               color: "var(--bm-text)", fontSize: 12, fontWeight: 600,
               cursor: "pointer", display: "grid", placeItems: "center",
               overflow: "hidden", transition: "border-color 0.15s",
@@ -268,7 +268,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
             type="button"
           >
             {avatarUrl && !avatarBroken
-              ? <img src={avatarUrl} alt="Profile" style={{ width: 34, height: 34, objectFit: "cover" }} onError={() => setAvatarBroken(true)} />
+              ? <img src={avatarUrl} alt="Profile" style={{ width: 32, height: 32, objectFit: "cover" }} onError={() => setAvatarBroken(true)} />
               : initials
             }
           </button>

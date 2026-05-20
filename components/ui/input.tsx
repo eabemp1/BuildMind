@@ -31,7 +31,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         {label && (
           <label
             htmlFor={inputId}
-            className="text-xs font-medium text-[var(--bm-text2)] uppercase tracking-widest"
+            className="font-mono text-[11px] font-normal uppercase tracking-[0.06em] text-[var(--bm-text3)]"
           >
             {label}
           </label>
@@ -46,9 +46,9 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             ref={ref}
             id={inputId}
             className={[
-              "w-full h-10 rounded-lg border bg-[var(--bm-bg3)] text-[var(--bm-text)] text-sm",
+              "h-10 w-full rounded-md border bg-[var(--bm-bg2)] text-sm text-[var(--bm-text)]",
               "placeholder:text-[var(--bm-text3)] outline-none",
-              "transition-all duration-150",
+              "transition-colors duration-150",
               "focus:border-[var(--bm-accent)] focus:ring-1 focus:ring-[var(--bm-accent-bd)]",
               error
                 ? "border-[var(--bm-red)] focus:border-[var(--bm-red)] focus:ring-[rgba(224,85,85,0.2)]"
@@ -94,7 +94,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
         {label && (
           <label
             htmlFor={inputId}
-            className="text-xs font-medium text-[var(--bm-text2)] uppercase tracking-widest"
+            className="font-mono text-[11px] font-normal uppercase tracking-[0.06em] text-[var(--bm-text3)]"
           >
             {label}
           </label>
@@ -103,9 +103,9 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
           ref={ref}
           id={inputId}
           className={[
-            "w-full rounded-lg border bg-[var(--bm-bg3)] text-[var(--bm-text)] text-sm",
+            "w-full rounded-md border bg-[var(--bm-bg2)] text-sm text-[var(--bm-text)]",
             "placeholder:text-[var(--bm-text3)] outline-none p-3 resize-none",
-            "transition-all duration-150",
+            "transition-colors duration-150",
             "focus:border-[var(--bm-accent)] focus:ring-1 focus:ring-[var(--bm-accent-bd)]",
             error
               ? "border-[var(--bm-red)]"

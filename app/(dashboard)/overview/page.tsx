@@ -39,12 +39,12 @@ const STAGE_BADGE: Record<string, { variant: "neutral" | "warning" | "success" |
 
 // ── AI nudge map ──────────────────────────────────────────────────────────────
 const NUDGE: Record<string, { text: string; action: string }> = {
-  Idea: { text: "You haven't validated yet.", action: "Talk to 5 real people today →" },
-  Validation: { text: "Validation is about behavior, not opinions.", action: "Get someone to pre-pay or commit time →" },
-  MVP: { text: "Stop polishing. Someone needs to use it.", action: "Send your link to 3 people right now →" },
-  Launch: { text: "Visibility beats perfection.", action: "Post on Product Hunt this week →" },
-  Growth: { text: "Retention compounds. Acquisition doesn't.", action: "Call one churned user today →" },
-  Revenue: { text: "Revenue is signal. What is it telling you?", action: "Map your top 3 churned users →" },
+  Idea: { text: "Validation risk is the current constraint.", action: "Run one customer conversation before building." },
+  Validation: { text: "Commitment quality matters more than opinion volume.", action: "Secure one paid, time, or workflow commitment." },
+  MVP: { text: "Usage evidence is now more valuable than product polish.", action: "Put the working link in front of three real users." },
+  Launch: { text: "Distribution is the operational bottleneck.", action: "Publish one clear launch asset and measure response." },
+  Growth: { text: "Retention is the strongest signal in this stage.", action: "Interview one churned or inactive user." },
+  Revenue: { text: "Revenue is the operating signal.", action: "Map the largest leak in acquisition-to-payment." },
 };
 
 // ── Pentagon radar chart ──────────────────────────────────────────────────────
@@ -73,11 +73,10 @@ function Pentagon({ scores }: { scores: Record<string, number> }) {
         const end = getPoint(i, 100);
         return <line key={i} x1={cx} y1={cy} x2={end.x} y2={end.y} stroke="rgba(255,255,255,0.05)" strokeWidth="1" />;
       })}
-      <path d={dataPath} fill="rgba(92,200,138,0.1)" stroke="var(--bm-accent)" strokeWidth="1.5"
-        style={{ filter: "drop-shadow(0 0 5px rgba(92,200,138,0.25))" }} />
+      <path d={dataPath} fill="rgba(91,108,240,0.08)" stroke="var(--bm-accent)" strokeWidth="1.5" />
       {dataPoints.map((p, i) => (
         <circle key={i} cx={p.x} cy={p.y} r={3} fill="var(--bm-accent)"
-          style={{ filter: "drop-shadow(0 0 2px rgba(92,200,138,0.5))" }} />
+        />
       ))}
       {keys.map((k, i) => {
         const angle = -Math.PI / 2 + i * angleStep;
@@ -131,19 +130,19 @@ function MetricCard({
   return (
     <Card
       className={
-        "p-4 flex items-center gap-3 " +
+        "flex items-center gap-3 p-4 " +
         (accent
-          ? "border-[var(--bm-accent-bd)] bg-[rgba(92,200,138,0.06)]"
+          ? "border-[var(--bm-accent-bd)] bg-[var(--bm-accent-dim)]"
           : "border-[var(--bm-border)]")
       }
     >
-      <div className="h-9 w-9 rounded-lg flex items-center justify-center"
+      <div className="flex h-9 w-9 items-center justify-center rounded-md"
         style={{ background: "var(--bm-bg3)", color: "var(--bm-text2)" }}>
         {icon}
       </div>
       <div className="flex flex-col">
-        <span className="text-xs uppercase tracking-wide text-[var(--bm-text3)]">{label}</span>
-        <div className="text-lg font-semibold text-[var(--bm-text)]">{value}</div>
+        <span className="font-mono text-[11px] uppercase tracking-[0.06em] text-[var(--bm-text3)]">{label}</span>
+        <div className="text-[18px] font-medium text-[var(--bm-text)]">{value}</div>
       </div>
     </Card>
   );
@@ -272,13 +271,6 @@ export default function OverviewPage() {
     if (pending > 0) recordPendingTasks(pending);
   }, [score, summaries]);
 
-  const greeting = (() => {
-    const h = now.getHours();
-    if (h < 12) return "Good morning";
-    if (h < 17) return "Good afternoon";
-    return "Good evening";
-  })();
-
   const dateStr = now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
 
   if (isLoading || overviewLoading) {
@@ -297,7 +289,7 @@ export default function OverviewPage() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 flex flex-col gap-8">
+    <div className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8 sm:px-6">
 
       {/* ── Header ── */}
       <motion.div
@@ -306,8 +298,8 @@ export default function OverviewPage() {
         transition={{ duration: 0.2 }}
       >
         <PageHeader
-          title={greeting}
-          subtitle={dateStr}
+          title="Execution Command Center"
+          subtitle={`${dateStr} · Operating view across objectives, momentum, and constraints`}
           action={activeProject ? <Badge variant="neutral" size="md">Active: {activeProject.title}</Badge> : undefined}
         />
       </motion.div>
@@ -334,7 +326,7 @@ export default function OverviewPage() {
       >
         <MetricCard
           icon={<Zap size={14} />}
-          label="Startup Score"
+          label="Operating Score"
           value={
             activeProject ? (
               <div className="flex flex-col items-center gap-1">
@@ -353,7 +345,7 @@ export default function OverviewPage() {
         />
         <MetricCard
           icon={<Zap size={14} />}
-          label="Consistency"
+          label="Cadence"
           value={
             <div className="flex flex-col items-center gap-1">
               <span className="text-xl font-bold" style={{ color: consistencyBonus >= 8 ? "var(--bm-green)" : consistencyBonus >= 5 ? "var(--bm-amber)" : "var(--bm-text2)" }}>
@@ -366,17 +358,17 @@ export default function OverviewPage() {
         />
         <StatCard
           icon={FolderKanban}
-          label="Active Projects"
+          label="Projects"
           value={summaries.length > 0 ? summaries.length : "—"}
         />
         <StatCard
           icon={Target}
-          label="Milestones Completed"
+          label="Completed"
           value={milestonesCompleted > 0 ? milestonesCompleted : "—"}
         />
         <StatCard
           icon={Flame}
-          label="Founder Streak"
+          label="Streak"
           value={streak > 0 ? `${streak}d` : "—"}
         />
         {activeProject && (
@@ -398,8 +390,8 @@ export default function OverviewPage() {
       {summaries.length === 0 && (
         <EmptyState
           icon={FolderKanban}
-          title="No projects yet"
-          body="Create your first project and BuildMind will turn it into an executable plan."
+          title="No operating system yet"
+          body="Create a project so BuildMind can establish objectives, constraints, and execution cadence."
           action={
             <Button onClick={() => router.push("/projects")}>
               Create your first project <ArrowRight size={14} />
@@ -419,7 +411,7 @@ export default function OverviewPage() {
             className="flex flex-col gap-4"
           >
             <SectionHeader
-              label="Your Projects"
+              label="Operating Portfolio"
               action={
               <Link href="/projects">
                 <Button variant="ghost" size="sm">
@@ -496,7 +488,7 @@ export default function OverviewPage() {
             {/* Score breakdown */}
             <Card className="p-5 flex flex-col items-center gap-3">
               <div className="self-stretch">
-                <SectionHeader label="Score Breakdown" />
+                <SectionHeader label="System Signals" />
               </div>
               <Pentagon scores={pentagonScores} />
               {activeProject && (
@@ -521,8 +513,8 @@ export default function OverviewPage() {
             >
               <div className="flex items-center gap-1.5">
                 <Zap size={12} style={{ color: "var(--bm-accent)" }} />
-                <span className="text-[10px] font-semibold text-[var(--bm-accent)] uppercase tracking-widest">
-                  AI Coach
+                <span className="font-mono text-[10px] font-normal uppercase tracking-[0.08em] text-[var(--bm-accent)]">
+                  Strategic Intelligence
                 </span>
                 <Badge variant="neutral" size="sm">{stage}</Badge>
               </div>
