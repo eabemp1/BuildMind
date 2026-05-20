@@ -18,34 +18,34 @@ interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
 
 const variantStyles: Record<BadgeVariant, { bg: string; text: string; border: string }> = {
   success: {
-    bg: "rgba(92,200,138,0.10)",
-    text: "var(--bm-green)",
-    border: "rgba(92,200,138,0.22)",
+    bg: "rgba(56,137,106,0.1)",
+    text: "#38896A",
+    border: "rgba(56,137,106,0.2)",
   },
   warning: {
-    bg: "rgba(232,160,32,0.10)",
-    text: "var(--bm-amber)",
-    border: "rgba(232,160,32,0.22)",
+    bg: "rgba(181,131,58,0.1)",
+    text: "#B5833A",
+    border: "rgba(181,131,58,0.2)",
   },
   danger: {
-    bg: "rgba(224,85,85,0.10)",
-    text: "var(--bm-red)",
-    border: "rgba(224,85,85,0.22)",
+    bg: "rgba(176,72,72,0.1)",
+    text: "#B04848",
+    border: "rgba(176,72,72,0.2)",
   },
   neutral: {
     bg: "var(--bm-bg3)",
-    text: "var(--bm-text2)",
+    text: "var(--bm-text3)",
     border: "var(--bm-border2)",
   },
   info: {
-    bg: "rgba(90,150,232,0.10)",
-    text: "var(--bm-blue)",
-    border: "rgba(90,150,232,0.22)",
+    bg: "var(--bm-accent-dim)",
+    text: "var(--bm-accent)",
+    border: "var(--bm-accent-bd)",
   },
   gradient: {
-    bg: "transparent",
-    text: "white",
-    border: "transparent",
+    bg: "var(--bm-accent-dim)",
+    text: "var(--bm-accent)",
+    border: "var(--bm-accent-bd)",
   },
 };
 
@@ -64,23 +64,30 @@ export function Badge({
   return (
     <span
       className={[
-        "inline-flex items-center gap-1 font-medium rounded-full border",
-        size === "sm" ? "text-[10px] px-2 py-0.5" : "text-xs px-2.5 py-1",
+        "inline-flex items-center gap-1 border",
+        "font-mono text-[10px] font-normal rounded px-[7px] py-[2px]",
         className,
       ].join(" ")}
       style={
         isGradient
           ? {
-              background: "var(--grad-primary)",
-              border: "none",
-              letterSpacing: "0.04em",
+              background: v.bg,
+              color: v.text,
+              borderColor: v.border,
+              borderRadius: "4px",
+              fontFamily: "'JetBrains Mono', monospace",
+              fontWeight: 400,
+              letterSpacing: "0.02em",
               ...style,
             }
           : {
               background: v.bg,
               color: v.text,
               borderColor: v.border,
-              letterSpacing: "0.04em",
+              borderRadius: "4px",
+              fontFamily: "'JetBrains Mono', monospace",
+              fontWeight: 400,
+              letterSpacing: "0.02em",
               ...style,
             }
       }
@@ -89,7 +96,7 @@ export function Badge({
       {dot && (
         <span
           className="w-1.5 h-1.5 rounded-full shrink-0"
-          style={{ background: isGradient ? "white" : v.text }}
+          style={{ background: v.text }}
         />
       )}
       {children}
