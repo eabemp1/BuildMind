@@ -36,7 +36,7 @@ const nextConfig = {
   },
 };
 
-export default withSentryConfig(nextConfig, {
+const sentryWrappedConfig = withSentryConfig(nextConfig, {
   // For all available options, see:
   // https://www.npmjs.com/package/@sentry/webpack-plugin#options
 
@@ -76,3 +76,7 @@ export default withSentryConfig(nextConfig, {
     },
   },
 });
+
+export default process.env.SENTRY_UPLOAD_SOURCE_MAPS === "true"
+  ? sentryWrappedConfig
+  : nextConfig;

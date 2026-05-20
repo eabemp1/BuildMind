@@ -12,14 +12,14 @@
  */
 
 import type { Plan } from "@/lib/plan";
-import type { CSSProperties, ElementType } from "react";
+import type { LucideIcon } from "lucide-react";
 import { storage } from "@/lib/storage";
 import { BarChart3, BriefcaseBusiness, CircleDot, FolderKanban, LineChart, Settings, Sparkles } from "lucide-react";
 
 export type NavItemConfig = {
   href: string;
   label: string;
-  icon: ElementType<{ size?: number; strokeWidth?: number; className?: string; style?: CSSProperties }>;
+  icon: LucideIcon;
   enabled: boolean;
   hidden?: boolean;  // AUDIT v8: temporarily hidden from nav while simplifying product surface
   section: string | null;

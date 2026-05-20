@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "node -r ./scripts/disable-next-trace.js node_modules/next/dist/bin/next dev -p 3006",
-    "build": "next build",
+    "build": "node -r ./scripts/disable-next-trace.js node_modules/next/dist/bin/next build",
     "start": "next start",
     "lint": "tsc -p tsconfig.typecheck.json --noEmit --incremental false",
     "test": "vitest run",
