@@ -39,7 +39,7 @@ import { logError, logInfo } from "@/lib/server/logger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 20;
 
 let vapidConfigured = false;
 
@@ -134,6 +134,8 @@ function isBriefingDayForPlan(plan: string): boolean {
 }
 
 export async function POST(req: NextRequest) {
+  const start = Date.now();
+
   if (!process.env.CRON_SECRET && process.env.NODE_ENV === "production") {
     return NextResponse.json(
       { error: "CRON_SECRET is missing. Add it in Vercel Environment Variables so Vercel Cron can authenticate." },
@@ -185,6 +187,17 @@ export async function POST(req: NextRequest) {
 
   const dryRun = req.nextUrl.searchParams.get("dryRun") === "1";
 
+  // Early exit if no actionable records exist.
+  const { count: subscriptionCount, error: subscriptionCountError } = await supabase
+    .from("push_subscriptions")
+    .select("user_id", { count: "exact", head: true });
+  if (subscriptionCountError) {
+    return NextResponse.json({ error: subscriptionCountError.message, step: "count_subscriptions" }, { status: 500 });
+  }
+  if (!subscriptionCount) {
+    return NextResponse.json({ skipped: true, reason: "no records", processed: 0, durationMs: Date.now() - start });
+  }
+
   // Cursor-paginated fetch — prevents OOM crash at scale (fixes audit §3 critical issue).
   const PAGE_SIZE = 100;
   const allSubs: Array<{ user_id: string; subscription: webpush.PushSubscription }> = [];
@@ -211,7 +224,7 @@ export async function POST(req: NextRequest) {
   const subs = allSubs;
 
   if (!subs || subs.length === 0) {
-    return NextResponse.json({ sent: 0, failed: 0, total: 0, message: "No push subscribers yet" });
+    return NextResponse.json({ skipped: true, reason: "no records", processed: 0, durationMs: Date.now() - start, sent: 0, failed: 0, total: 0, message: "No push subscribers yet" });
   }
 
   // Fetch founder context for Recovery Mode detection (NEW IN V4)
@@ -298,6 +311,8 @@ export async function POST(req: NextRequest) {
       message: defaultMessage.title,
       recoveryMessage: recoveryMessage.title,
       briefingsAvailable: briefingMap.size,
+      processed: eligible,
+      durationMs: Date.now() - start,
     });
   }
 
@@ -410,6 +425,8 @@ export async function POST(req: NextRequest) {
     total: subs.length,
     message: defaultMessage.title,
     failedDetails,
+    processed: sent + skipped,
+    durationMs: Date.now() - start,
   });
 }
 

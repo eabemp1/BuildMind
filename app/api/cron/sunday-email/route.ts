@@ -28,7 +28,7 @@ import { logError, logInfo } from "@/lib/server/logger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 300; // up to 5 min — batches across all users
+export const maxDuration = 120; // batches across all users
 
 function isCronRequest(request: Request): boolean {
   const auth  = request.headers.get("authorization");
@@ -58,6 +58,8 @@ function getWeekNumber(): number {
 }
 
 export async function GET(request: Request) {
+  const start = Date.now();
+
   if (!isCronRequest(request) && process.env.NODE_ENV === "production") {
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   }
@@ -71,6 +73,22 @@ export async function GET(request: Request) {
   const supabase    = createAdminClient();
   const weekNumber  = getWeekNumber();
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const nowIso = new Date().toISOString();
+
+  // Early exit if no actionable records exist.
+  const { count: subscriptionCount } = await supabase
+    .from("subscriptions")
+    .select("user_id", { count: "exact", head: true })
+    .eq("plan", "builder")
+    .in("status", ["active", "grace"]);
+  const { count: trialCount } = await supabase
+    .from("founder_context")
+    .select("user_id", { count: "exact", head: true })
+    .gt("trial_ends_at", nowIso);
+
+  if (!subscriptionCount && !trialCount) {
+    return NextResponse.json({ skipped: true, reason: "no records", processed: 0, durationMs: Date.now() - start });
+  }
 
   // ── 1. Get all builder + trial users (paginated) ───────────────────────────
   const PAGE_SIZE = 200;
@@ -208,6 +226,7 @@ export async function GET(request: Request) {
   const BATCH = 10;
   let sent = 0;
   let failed = 0;
+  let processed = 0;
 
   for (let i = 0; i < weekData.length; i += BATCH) {
     const batch = weekData.slice(i, i + BATCH);
@@ -231,20 +250,23 @@ export async function GET(request: Request) {
           });
           if (result.ok) {
             sent++;
+            processed++;
             logInfo("sunday-email/sent", "Email sent", { userId: d.userId, weekNumber: d.weekNumber });
           } else {
             failed++;
+            processed++;
             logError("sunday-email/failed", result.error, { userId: d.userId });
           }
         } catch (err) {
           failed++;
+          processed++;
           logError("sunday-email/error", err, { userId: d.userId });
         }
       })
     );
     // Small delay between batches to stay within rate limits
     if (i + BATCH < weekData.length) {
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise(r => setTimeout(r, 100));
     }
   }
 
@@ -254,6 +276,8 @@ export async function GET(request: Request) {
     week_number:     weekNumber,
     builder_users:   builderUsers.length,
     eligible:        weekData.length,
+    processed,
+    durationMs:      Date.now() - start,
     emails_sent:     sent,
     emails_failed:   failed,
   });

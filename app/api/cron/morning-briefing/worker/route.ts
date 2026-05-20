@@ -47,6 +47,7 @@ async function verifyQStashSignature(req: NextRequest, rawBody: string): Promise
 }
 
 export async function POST(req: NextRequest) {
+  const start = Date.now();
   const rawBody = await req.text();
   if (!(await verifyQStashSignature(req, rawBody)) && process.env.NODE_ENV === "production") {
     return NextResponse.json({ ok: false, error: "Invalid QStash signature" }, { status: 401 });
@@ -69,6 +70,18 @@ export async function POST(req: NextRequest) {
   if (!userId) return NextResponse.json({ ok: false, error: "userId required" }, { status: 400 });
 
   const supabase = createClient(supabaseUrl, serviceKey);
+
+  // Early exit if no actionable records exist for this worker payload.
+  const { count: projectCount, error: projectCountError } = await supabase
+    .from("projects")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId);
+  if (projectCountError) {
+    return NextResponse.json({ ok: false, error: projectCountError.message, step: "count_projects" }, { status: 500 });
+  }
+  if (!projectCount) {
+    return NextResponse.json({ skipped: true, reason: "no records", processed: 0, durationMs: Date.now() - start });
+  }
 
   // Fetch today's briefing or generate a lightweight push nudge
   const { data: briefing } = await supabase
@@ -111,5 +124,5 @@ export async function POST(req: NextRequest) {
     is_read: false,
   }).then(() => {});
 
-  return NextResponse.json({ ok: true, userId, delivered: body });
+  return NextResponse.json({ ok: true, userId, delivered: body, processed: 1, durationMs: Date.now() - start });
 }

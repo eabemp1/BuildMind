@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { persistUserPlan } from "@/lib/billing/server";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const maxDuration = 20;
+
 type UserLike = {
   id: string;
   email?: string | null;
@@ -68,11 +72,29 @@ async function verifyPaystackSubscription(subscriptionCode: string): Promise<"bu
 }
 
 export async function POST(req: NextRequest) {
+  const start = Date.now();
+
   if (!isAuthorized(req)) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   const supabase = createAdminClient();
+  const staleBefore = new Date(Date.now() - 23 * 60 * 60 * 1000).toISOString();
+
+  // Early exit if no actionable records exist.
+  const { count: staleSubscriptionCount, error: staleSubscriptionError } = await supabase
+    .from("subscriptions")
+    .select("user_id", { count: "exact", head: true })
+    .eq("provider", "paystack")
+    .lt("updated_at", staleBefore);
+
+  if (staleSubscriptionError) {
+    return NextResponse.json({ ok: false, error: staleSubscriptionError.message, step: "count_stale_subscriptions" }, { status: 500 });
+  }
+  if (!staleSubscriptionCount) {
+    return NextResponse.json({ skipped: true, reason: "no records", processed: 0, durationMs: Date.now() - start });
+  }
+
   const perPage = 200;
   const maxPages = 3;
 
@@ -98,8 +120,12 @@ export async function POST(req: NextRequest) {
       const currentPlan = typeof meta.plan === "string" ? meta.plan : "free";
       const reference = typeof meta.billing_reference === "string" ? meta.billing_reference : "";
       const subscriptionCode = typeof meta.billing_subscription_id === "string" ? meta.billing_subscription_id : "";
+      const billingUpdatedAt = typeof meta.billing_updated_at === "string" ? meta.billing_updated_at : "";
 
       if (provider !== "paystack") continue;
+      if (billingUpdatedAt && new Date(billingUpdatedAt).getTime() > Date.now() - 23 * 60 * 60 * 1000) {
+        continue;
+      }
 
       try {
         let providerPlan: "builder" | "free" | "unknown" = "unknown";
@@ -149,6 +175,8 @@ export async function POST(req: NextRequest) {
     reconciled,
     upgraded,
     downgraded,
+    processed: reconciled,
+    durationMs: Date.now() - start,
     errors: errors.slice(0, 20),
   });
 }

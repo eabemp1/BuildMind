@@ -76,6 +76,7 @@ function eveningNudge(daysInactive: number): string {
 }
 
 export async function POST(req: NextRequest) {
+  const start = Date.now();
   const rawBody = await req.text();
 
   const isVerified = await verifyQStashSignature(req, rawBody);
@@ -117,6 +118,18 @@ export async function POST(req: NextRequest) {
   configureVapid();
   const supabase = createClient(supabaseUrl, serviceKey);
 
+  // Early exit if no actionable records exist for this worker payload.
+  const { count: projectCount, error: projectCountError } = await supabase
+    .from("projects")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId);
+  if (projectCountError) {
+    return NextResponse.json({ ok: false, error: projectCountError.message, step: "count_projects" }, { status: 500 });
+  }
+  if (!projectCount) {
+    return NextResponse.json({ skipped: true, reason: "no records", processed: 0, durationMs: Date.now() - start });
+  }
+
   const body = usePattern && patternMessage ? patternMessage : eveningNudge(daysInactive);
 
   try {
@@ -147,13 +160,13 @@ export async function POST(req: NextRequest) {
         .eq("user_id", userId),
     ]);
 
-    return NextResponse.json({ ok: true, userId, sent: true });
+    return NextResponse.json({ ok: true, userId, sent: true, processed: 1, durationMs: Date.now() - start });
   } catch (err) {
     const statusCode = (err as { statusCode?: number })?.statusCode;
     // Subscription expired — clean up so we don't retry dead endpoints
     if (statusCode === 410 || statusCode === 404) {
       await supabase.from("push_subscriptions").delete().eq("user_id", userId);
-      return NextResponse.json({ ok: true, userId, sent: false, reason: "subscription_expired" });
+      return NextResponse.json({ ok: true, userId, sent: false, reason: "subscription_expired", processed: 1, durationMs: Date.now() - start });
     }
     const message = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ ok: false, userId, error: message }, { status: 500 });

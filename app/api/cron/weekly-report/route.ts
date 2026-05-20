@@ -19,7 +19,7 @@ import { hasAdminEnv } from "@/app/api/ai/_utils";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 30;
 
 function getCronSecret(request: Request): string | undefined {
   const authorization = request.headers.get("authorization");
@@ -32,6 +32,8 @@ function isCronRequest(request: Request): boolean {
 }
 
 export async function GET(request: Request) {
+  const start = Date.now();
+
   if (!isCronRequest(request) && process.env.NODE_ENV === "production") {
     return NextResponse.json(
       { success: false, error: "Unauthorized", hint: "Vercel Cron must send Authorization: Bearer <CRON_SECRET>." },
@@ -48,6 +50,21 @@ export async function GET(request: Request) {
 
   const supabase = createAdminClient();
   const now = new Date();
+
+  // Early exit if no actionable records exist.
+  const { count: subscriptionCount } = await supabase
+    .from("subscriptions")
+    .select("user_id", { count: "exact", head: true })
+    .eq("plan", "builder")
+    .in("status", ["active", "grace"]);
+  const { count: trialCount } = await supabase
+    .from("founder_context")
+    .select("user_id", { count: "exact", head: true })
+    .gt("trial_ends_at", now.toISOString());
+
+  if (!subscriptionCount && !trialCount) {
+    return NextResponse.json({ skipped: true, reason: "no records", processed: 0, durationMs: Date.now() - start });
+  }
 
   // ── Fix 1: Paginated user fetch — no silent cap at 1,000 ───────────────────
   const PAGE_SIZE = 200;
@@ -141,6 +158,8 @@ export async function GET(request: Request) {
     cron: true,
     ran_at: now.toISOString(),
     users_scanned: allAuthUsers.length,
+    processed: builderUsers.length,
+    durationMs: Date.now() - start,
     builder_users: builderUsers.length,
     push_sent: pushed,
     push_skipped: skipped,

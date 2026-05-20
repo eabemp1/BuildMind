@@ -25,7 +25,7 @@ import { sendEmail } from "@/lib/email";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 20;
 
 function isCronRequest(req: Request): boolean {
   const authorization = req.headers.get("authorization");
@@ -35,6 +35,8 @@ function isCronRequest(req: Request): boolean {
 }
 
 export async function GET(req: NextRequest) {
+  const start = Date.now();
+
   if (!isCronRequest(req) && process.env.NODE_ENV === "production") {
     return NextResponse.json(
       { ok: false, error: "Unauthorized" },
@@ -50,6 +52,19 @@ export async function GET(req: NextRequest) {
 
   const supabase = createClient(supabaseUrl, serviceKey);
   const dryRun = req.nextUrl.searchParams.get("dryRun") === "1";
+
+  // Early exit if no actionable records exist.
+  const { count: actionableCount, error: countError } = await supabase
+    .from("founder_context")
+    .select("user_id", { count: "exact", head: true })
+    .or("and(days_inactive.gte.6,days_inactive.lte.8),and(days_inactive.gte.13,days_inactive.lte.15)");
+
+  if (countError) {
+    return NextResponse.json({ ok: false, error: countError.message, step: "count_actionable" }, { status: 500 });
+  }
+  if (!actionableCount) {
+    return NextResponse.json({ skipped: true, reason: "no records", durationMs: Date.now() - start });
+  }
 
   // ── Find users inactive for 7 or 14 days ─────────────────────────────────
   // We look at founder_context.days_inactive which is maintained by the
@@ -170,6 +185,8 @@ export async function GET(req: NextRequest) {
     ok: true,
     dryRun,
     totalEvaluated: totalRows,
+    processed: totalRows,
+    durationMs: Date.now() - start,
     sent,
     skipped,
     failed,

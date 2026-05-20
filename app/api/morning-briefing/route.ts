@@ -21,6 +21,7 @@ import { hasAdminEnv } from "@/app/api/ai/_utils";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 20;
 
 /** Mon=1, Wed=3, Fri=5 — free tier briefing days (playbook §6.1: 3 days/week) */
 const FREE_BRIEFING_DAYS = new Set([1, 3, 5]);
@@ -51,6 +52,8 @@ async function getPlanForUserId(admin: ReturnType<typeof createAdminClient>, use
 }
 
 export async function GET(req: Request) {
+  const start = Date.now();
+
   // ── Cron path: generate briefings for ALL users ─────────────────────────────
   // Vercel Cron sends GET with Authorization: Bearer <CRON_SECRET>.
   // Previously this just returned a 200 acknowledgement without doing anything.
@@ -58,14 +61,44 @@ export async function GET(req: Request) {
   if (isCronRequest(req)) {
     const admin = createAdminClient();
     const today = new Date().toISOString().split("T")[0];
+    const activeSince = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+
+    // Early exit if no actionable records exist.
+    const { count: activeCount, error: countErr } = await admin
+      .from("founder_context")
+      .select("user_id", { count: "exact", head: true })
+      .gte("last_active", activeSince);
+
+    if (countErr) {
+      return NextResponse.json({ ok: false, error: countErr.message, step: "count_actionable" }, { status: 500 });
+    }
+    if (!activeCount) {
+      return NextResponse.json({ skipped: true, reason: "no records", processed: 0, durationMs: Date.now() - start });
+    }
 
     // Fetch all founder contexts (one per user)
     const { data: contexts, error: ctxErr } = await admin
       .from("founder_context")
-      .select("user_id, startup_summary, current_stage, momentum_score, avoidance_signals, topics_mentioned_repeatedly, cognitive_load, timezone_offset");
+      .select("user_id, startup_summary, current_stage, momentum_score, avoidance_signals, topics_mentioned_repeatedly, cognitive_load, timezone_offset, last_active")
+      .gte("last_active", activeSince);
 
     if (ctxErr || !contexts?.length) {
-      return NextResponse.json({ ok: true, cron: true, generated: 0, message: "No founder contexts found" });
+      return NextResponse.json({ skipped: true, reason: "no records", processed: 0, durationMs: Date.now() - start });
+    }
+
+    const userIds = contexts.map((ctx: { user_id: string }) => ctx.user_id);
+    const usersWithProjects = new Set<string>();
+    for (let i = 0; i < userIds.length; i += 100) {
+      const batch = userIds.slice(i, i + 100);
+      const { data: projects } = await admin
+        .from("projects")
+        .select("user_id")
+        .in("user_id", batch);
+      (projects ?? []).forEach((row: { user_id: string }) => usersWithProjects.add(row.user_id));
+    }
+
+    if (usersWithProjects.size === 0) {
+      return NextResponse.json({ skipped: true, reason: "no records", processed: 0, durationMs: Date.now() - start });
     }
 
     let generated = 0;
@@ -74,6 +107,8 @@ export async function GET(req: Request) {
 
     for (const ctx of contexts) {
       try {
+        if (!usersWithProjects.has(ctx.user_id)) { skipped++; continue; }
+
         // ── Timezone-aware delivery window ──────────────────────────────────
         // founder_context.timezone_offset is populated by /api/user/geo.
         // We only generate a briefing when it's between 05:00-09:00 in the
@@ -138,6 +173,8 @@ export async function GET(req: Request) {
       skipped,
       errors: errors.slice(0, 5),
       total: contexts.length,
+      processed: generated + skipped,
+      durationMs: Date.now() - start,
     });
   }
 

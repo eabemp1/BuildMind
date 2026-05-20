@@ -31,7 +31,7 @@ import { createClient as createAdminClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 30;
 
 const COSINE_THRESHOLD = 0.85; // tags more similar than this are merged
 
@@ -101,6 +101,8 @@ function deduplicateWithEmbeddings(tags: string[], embeddings: number[][]): stri
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  const start = Date.now();
+
   const authHeader = req.headers.get("authorization");
   const cronSecret = process.env.CRON_SECRET;
   const isCron = cronSecret && authHeader === `Bearer ${cronSecret}`;
@@ -118,24 +120,44 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   // Determine which users to process
   let userIds: string[];
+  const staleBefore = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const staleOrMissingFilter = `personality_tags_embedding.is.null,avoidance_zones_embedding.is.null,updated_at.lt.${staleBefore}`;
 
   if (body.userId) {
     // Single-user call (triggered after a coach interaction)
-    userIds = [body.userId];
-  } else if (isCron) {
-    // Nightly sweep: rows missing embeddings
     const { data: rows } = await supabase
       .from("founder_memory")
       .select("user_id")
-      .is("personality_tags_embedding", null)
-      .limit(50); // batch 50 per run to stay within maxDuration
+      .eq("user_id", body.userId)
+      .or(staleOrMissingFilter)
+      .limit(1);
+    userIds = (rows ?? []).map((r: { user_id: string }) => r.user_id);
+  } else if (isCron) {
+    // Early exit if no actionable records exist.
+    const { count, error: countError } = await supabase
+      .from("founder_memory")
+      .select("user_id", { count: "exact", head: true })
+      .or(staleOrMissingFilter);
+    if (countError) {
+      return NextResponse.json({ ok: false, error: countError.message, step: "count_stale_embeddings" }, { status: 500 });
+    }
+    if (!count) {
+      return NextResponse.json({ skipped: true, reason: "no records", processed: 0, durationMs: Date.now() - start });
+    }
+
+    // Nightly sweep: rows missing or stale embeddings
+    const { data: rows } = await supabase
+      .from("founder_memory")
+      .select("user_id")
+      .or(staleOrMissingFilter)
+      .limit(20); // batch 20 per run to stay within maxDuration
     userIds = (rows ?? []).map((r: { user_id: string }) => r.user_id);
   } else {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   if (userIds.length === 0) {
-    return NextResponse.json({ ok: true, message: "Nothing to embed", processed: 0 });
+    return NextResponse.json({ skipped: true, reason: "no records", processed: 0, durationMs: Date.now() - start });
   }
 
   let processed = 0;
@@ -194,6 +216,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   return NextResponse.json({
     ok: true,
     processed,
+    durationMs: Date.now() - start,
     errors: errors.length > 0 ? errors : undefined,
   });
 }

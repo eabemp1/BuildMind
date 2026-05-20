@@ -18,7 +18,7 @@ import { createClient as createAdmin } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 30;
 
 const MIN_COHORT = 10; // never surface insights from cohorts smaller than this
 
@@ -76,6 +76,8 @@ Be specific and data-driven. Start with "Founders who..." or "At ${cohort.stage}
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  const start = Date.now();
+
   // Auth check
   const authHeader = req.headers.get("authorization");
   const cronSecret = process.env.CRON_SECRET;
@@ -93,6 +95,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   // Read all events from the last 90 days
   const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+
+  // Early exit if no actionable records exist.
+  const { count, error: countError } = await supabase
+    .from("benchmark_events")
+    .select("signal_type", { count: "exact", head: true })
+    .gte("created_at", since);
+
+  if (countError) {
+    console.error("[aggregate-benchmarks] count error", countError);
+    return NextResponse.json({ ok: false, error: countError.message }, { status: 500 });
+  }
+  if (!count) {
+    return NextResponse.json({ skipped: true, reason: "no records", processed: 0, durationMs: Date.now() - start });
+  }
+
   const { data: events, error: eventsError } = await supabase
     .from("benchmark_events")
     .select("signal_type, stage, category, momentum_bucket")
@@ -104,7 +121,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   if (!events || events.length === 0) {
-    return NextResponse.json({ ok: true, message: "No events to aggregate", cohorts_upserted: 0 });
+    return NextResponse.json({ ok: true, message: "No events to aggregate", cohorts_upserted: 0, processed: 0, durationMs: Date.now() - start });
   }
 
   // Group by (stage, signal_type, category)
@@ -168,7 +185,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   console.log(`[aggregate-benchmarks] processed ${events.length} events → ${cohortsUpserted} cohorts upserted`);
-  return NextResponse.json({ ok: true, events_processed: events.length, cohorts_upserted: cohortsUpserted });
+  return NextResponse.json({ ok: true, events_processed: events.length, processed: events.length, cohorts_upserted: cohortsUpserted, durationMs: Date.now() - start });
 }
 
 // Allow GET for manual trigger from admin dashboard

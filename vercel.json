@@ -19,16 +19,34 @@
       "maxDuration": 60
     },
     "app/api/cron/aggregate-benchmarks/route.ts": {
-      "maxDuration": 60
+      "maxDuration": 30
     },
     "app/api/ai/embed-tags/route.ts": {
-      "maxDuration": 60
+      "maxDuration": 30
     },
     "app/api/cron/meta-critic/route.ts": {
-      "maxDuration": 60
+      "maxDuration": 30
+    },
+    "app/api/cron/weekly-report/route.ts": {
+      "maxDuration": 30
+    },
+    "app/api/morning-briefing/route.ts": {
+      "maxDuration": 20
+    },
+    "app/api/push/send-daily/route.ts": {
+      "maxDuration": 20
+    },
+    "app/api/billing/reconcile/route.ts": {
+      "maxDuration": 20
+    },
+    "app/api/cron/evening-check/route.ts": {
+      "maxDuration": 20
+    },
+    "app/api/cron/re-engage/route.ts": {
+      "maxDuration": 20
     },
     "app/api/cron/sunday-email/route.ts": {
-      "maxDuration": 300
+      "maxDuration": 120
     }
   },
   "crons": [

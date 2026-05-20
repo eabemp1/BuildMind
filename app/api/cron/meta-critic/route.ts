@@ -22,7 +22,7 @@ import { logError, logInfo } from "@/lib/server/logger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 30;
 
 function isCronRequest(request: Request): boolean {
   const auth = request.headers.get("authorization");
@@ -32,6 +32,8 @@ function isCronRequest(request: Request): boolean {
 }
 
 export async function GET(request: Request) {
+  const start = Date.now();
+
   if (!isCronRequest(request) && process.env.NODE_ENV === "production") {
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   }
@@ -42,6 +44,21 @@ export async function GET(request: Request) {
   const supabase = createAdminClient();
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const weekOf = new Date().toISOString().split("T")[0];
+
+  // Early exit if no actionable records exist.
+  const { count, error: countError } = await supabase
+    .from("action_logs")
+    .select("user_id", { count: "exact", head: true })
+    .gte("created_at", sevenDaysAgo)
+    .not("reflexion_verdict", "is", null);
+
+  if (countError) {
+    logError("meta-critic/count", countError, { route: "/api/cron/meta-critic" });
+    return NextResponse.json({ success: false, error: countError.message }, { status: 500 });
+  }
+  if (!count) {
+    return NextResponse.json({ skipped: true, reason: "no records", processed: 0, durationMs: Date.now() - start });
+  }
 
   const { data: logs, error } = await supabase
     .from("action_logs")
@@ -97,5 +114,5 @@ export async function GET(request: Request) {
   }
 
   await Promise.allSettled(updates);
-  return NextResponse.json({ success: true, analyzed: byUser.size, framingGapsDetected: gapsDetected, weekOf });
+  return NextResponse.json({ success: true, analyzed: byUser.size, processed: count, framingGapsDetected: gapsDetected, weekOf, durationMs: Date.now() - start });
 }

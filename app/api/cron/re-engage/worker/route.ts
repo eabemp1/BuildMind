@@ -40,6 +40,7 @@ async function verifyQStashSignature(req: NextRequest, rawBody: string): Promise
 }
 
 export async function POST(req: NextRequest) {
+  const start = Date.now();
   const rawBody = await req.text();
 
   if (!(await verifyQStashSignature(req, rawBody)) && process.env.NODE_ENV === "production") {
@@ -67,6 +68,19 @@ export async function POST(req: NextRequest) {
   const supabase = createClient(supabaseUrl, serviceKey);
   const name = displayName.split(" ")[0] || "there";
 
+  // Early exit if no actionable records exist for this worker payload.
+  const { count: contextCount, error: contextCountError } = await supabase
+    .from("founder_context")
+    .select("user_id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .or("and(days_inactive.gte.6,days_inactive.lte.8),and(days_inactive.gte.13,days_inactive.lte.15)");
+  if (contextCountError) {
+    return NextResponse.json({ ok: false, error: contextCountError.message, step: "count_actionable" }, { status: 500 });
+  }
+  if (!contextCount) {
+    return NextResponse.json({ skipped: true, reason: "no records", processed: 0, durationMs: Date.now() - start });
+  }
+
   const subject = wave === "14d"
     ? `${name}, your startup hasn't moved in 2 weeks`
     : `${name}, it's been a week — what happened?`;
@@ -85,7 +99,7 @@ export async function POST(req: NextRequest) {
     await supabase.from("founder_context")
       .update({ last_re_engagement_email_at: new Date().toISOString() })
       .eq("user_id", userId);
-    return NextResponse.json({ ok: true, userId, wave, sent: true });
+    return NextResponse.json({ ok: true, userId, wave, sent: true, processed: 1, durationMs: Date.now() - start });
   } catch (err) {
     return NextResponse.json({
       ok: false, userId,

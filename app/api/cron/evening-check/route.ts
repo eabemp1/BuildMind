@@ -6,7 +6,7 @@ import { enqueueBatch } from "@/lib/queue";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 20;
 
 let vapidConfigured = false;
 
@@ -52,6 +52,8 @@ function callIfPresent<T extends object>(
 }
 
 export async function GET(req: NextRequest) {
+  const start = Date.now();
+
   if (!isCronRequest(req) && process.env.NODE_ENV === "production") {
     return NextResponse.json(
       { ok: false, error: "Unauthorized", hint: "Vercel Cron must send Authorization: Bearer <CRON_SECRET>." },
@@ -79,7 +81,19 @@ export async function GET(req: NextRequest) {
   );
 
   const today = new Date().toISOString().split("T")[0];
+  const activeSince = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
   const dryRun = req.nextUrl.searchParams.get("dryRun") === "1";
+
+  // Early exit if no actionable records exist.
+  const { count: subscriptionCount, error: subscriptionCountError } = await supabase
+    .from("push_subscriptions")
+    .select("user_id", { count: "exact", head: true });
+  if (subscriptionCountError) {
+    return NextResponse.json({ ok: false, error: subscriptionCountError.message, step: "count_subscriptions" }, { status: 500 });
+  }
+  if (!subscriptionCount) {
+    return NextResponse.json({ skipped: true, reason: "no records", processed: 0, durationMs: Date.now() - start });
+  }
 
   let eligible = 0;
   let skippedFree = 0;
@@ -124,12 +138,37 @@ export async function GET(req: NextRequest) {
     pageFrom += PAGE_SIZE;
   }
 
+  const uniqueUserIds = [...new Set(allUserIds)];
+  const activeUserIds = new Set<string>();
+  const usersWithProjects = new Set<string>();
+  for (let i = 0; i < uniqueUserIds.length; i += 100) {
+    const batch = uniqueUserIds.slice(i, i + 100);
+    const [{ data: contexts }, { data: projects }] = await Promise.all([
+      supabase
+        .from("founder_context")
+        .select("user_id")
+        .in("user_id", batch)
+        .gte("last_active", activeSince),
+      supabase
+        .from("projects")
+        .select("user_id")
+        .in("user_id", batch),
+    ]);
+    (contexts ?? []).forEach((row: { user_id: string }) => activeUserIds.add(row.user_id));
+    (projects ?? []).forEach((row: { user_id: string }) => usersWithProjects.add(row.user_id));
+  }
+  const actionableUserIds = uniqueUserIds.filter((userId) => activeUserIds.has(userId) && usersWithProjects.has(userId));
+
+  if (actionableUserIds.length === 0) {
+    return NextResponse.json({ skipped: true, reason: "no records", processed: 0, total: totalRows, durationMs: Date.now() - start });
+  }
+
   // If QStash is configured, fan out to per-user worker endpoints and return early.
   // This keeps the orchestrator function fast and lets each worker run within its own timeout.
-  if (process.env.QSTASH_TOKEN && allUserIds.length > 0) {
+  if (process.env.QSTASH_TOKEN && actionableUserIds.length > 0) {
     try {
-      await enqueueBatch("evening-check", allUserIds.map(userId => ({ userId })));
-      return NextResponse.json({ ok: true, queued: allUserIds.length, mode: "queue" });
+      await enqueueBatch("evening-check", actionableUserIds.map(userId => ({ userId })));
+      return NextResponse.json({ ok: true, queued: actionableUserIds.length, processed: actionableUserIds.length, mode: "queue", durationMs: Date.now() - start });
     } catch (queueErr) {
       console.error("[evening-check] QStash enqueue failed, falling back to inline:", queueErr);
       // Fall through to inline processing
@@ -152,6 +191,10 @@ export async function GET(req: NextRequest) {
     pageFrom2 += PAGE_SIZE;
 
   for (const row of rows) {
+    if (!activeUserIds.has(row.user_id) || !usersWithProjects.has(row.user_id)) {
+      continue;
+    }
+
     const { data: authUser } = await supabase.auth.admin.getUserById(row.user_id);
     const plan = planFromUserMetadata(authUser.user);
     if (plan !== "builder") {
@@ -294,6 +337,8 @@ export async function GET(req: NextRequest) {
     skippedReflected,
     sent,
     failed,
+    processed: eligible,
+    durationMs: Date.now() - start,
     failedDetails: failedDetails.slice(0, 5),
   });
 }
