@@ -15,12 +15,9 @@ export const Card = forwardRef<HTMLDivElement, CardProps>(
     ref
   ) => {
     const base = [
-      "rounded-xl border",
-      gradient
-        ? "bg-gradient-to-br from-[var(--bm-bg2)] to-[var(--bm-bg3)]"
-        : "bg-[var(--bm-bg2)]",
+      "rounded-[10px] border bg-[var(--bm-bg2)]",
       "border-[var(--bm-border)]",
-      hover ? "card-hover cursor-pointer" : "",
+      hover ? "cursor-pointer hover:border-[var(--bm-border2)]" : "",
       className,
     ].join(" ");
 
@@ -29,7 +26,7 @@ export const Card = forwardRef<HTMLDivElement, CardProps>(
         <motion.div
           ref={ref}
           className={base}
-          whileHover={{ y: -2, boxShadow: "0 8px 28px rgba(0,0,0,0.28)" }}
+          whileHover={{ borderColor: "var(--bm-border2)" }}
           transition={{ duration: 0.15 }}
           style={style}
           {...(rest as HTMLMotionProps<"div">)}
