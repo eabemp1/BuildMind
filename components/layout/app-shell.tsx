@@ -56,21 +56,21 @@ function DailyLoopStatusBar() {
       scrollbarWidth: "none",
     }}>
       <span style={{ color: "var(--bm-text3)", fontWeight: 600 }}>{dayLabel}</span>
-      <span style={{ color: "var(--bm-border)" }}>·</span>
+      <span style={{ color: "var(--bm-border2)" }}>·</span>
       <span>
         Task:{" "}
-        <span style={{ color: loopState.taskDone ? "var(--bm-text2)" : "var(--bm-text4)", fontWeight: loopState.taskDone ? 700 : 400 }}>
+        <span style={{ color: loopState.taskDone ? "var(--bm-accent)" : "var(--bm-text4)", fontWeight: loopState.taskDone ? 500 : 400 }}>
           {loopState.taskDone ? "done" : "not yet"}
         </span>
       </span>
-      <span style={{ color: "var(--bm-border)" }}>·</span>
+      <span style={{ color: "var(--bm-border2)" }}>·</span>
       <span>
         Reflection:{" "}
-        <span style={{ color: loopState.reflectionDone ? "var(--bm-text2)" : "var(--bm-text4)", fontWeight: loopState.reflectionDone ? 700 : 400 }}>
+        <span style={{ color: loopState.reflectionDone ? "var(--bm-accent)" : "var(--bm-text4)", fontWeight: loopState.reflectionDone ? 500 : 400 }}>
           {loopState.reflectionDone ? "done" : "pending"}
         </span>
       </span>
-      <span style={{ color: "var(--bm-border)" }}>·</span>
+      <span style={{ color: "var(--bm-border2)" }}>·</span>
       <span>{briefingNote}</span>
     </div>
   );
@@ -138,7 +138,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <div className="fixed inset-0 z-40 flex md:hidden">
             <motion.div
               className="absolute inset-0"
-              style={{ background: "rgba(12,13,15,0.7)", backdropFilter: "blur(4px)" }}
+              style={{ background: "rgba(7,8,10,0.75)", backdropFilter: "blur(6px)" }}
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               onClick={() => setMobileOpen(false)}
             />
@@ -165,8 +165,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           style={{
             height: 52,
             borderBottom: "1px solid var(--bm-border)",
-            background: "color-mix(in srgb, var(--bm-bg) 96%, transparent)",
-            backdropFilter: "blur(16px)",
+            background: "color-mix(in srgb, var(--bm-bg) 92%, transparent)",
+            backdropFilter: "blur(20px)",
           }}
         >
           <Topbar onToggleSidebar={() => setMobileOpen(p => !p)} />
