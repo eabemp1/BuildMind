@@ -132,7 +132,14 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
   };
 
   return (
-    <div className="flex h-full items-center gap-2 px-3 sm:gap-3 sm:px-5">
+    <div
+      className="flex h-full items-center gap-2 px-3 sm:gap-3 sm:px-5"
+      style={{
+        background: "color-mix(in srgb, var(--bm-bg) 92%, transparent)",
+        backdropFilter: "blur(20px)",
+        borderBottom: "1px solid var(--bm-border)",
+      }}
+    >
 
       {/* Mobile menu toggle */}
       <button
@@ -140,7 +147,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
         style={{
           display: "grid", placeItems: "center",
           width: 34, height: 34, borderRadius: 8,
-          border: "1px solid var(--bm-border)",
+          border: "1px solid var(--bm-border2)",
           background: "transparent", color: "var(--bm-text3)",
           cursor: "pointer", flexShrink: 0,
         }}
@@ -173,14 +180,14 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
             style={{
               width: "100%", height: 34, paddingLeft: 32, paddingRight: 12,
               background: "var(--bm-bg3)",
-              border: "1px solid var(--bm-border)",
-              borderRadius: 8, fontSize: 13,
+              border: "1px solid var(--bm-border2)",
+              borderRadius: "var(--r-sm)", fontSize: 13,
               color: "var(--bm-text)", outline: "none",
               transition: "border-color 0.15s",
               fontFamily: "inherit",
             }}
             onFocusCapture={e => e.currentTarget.style.borderColor = "var(--bm-accent-bd)"}
-            onBlurCapture={e => e.currentTarget.style.borderColor = "var(--bm-border)"}
+            onBlurCapture={e => e.currentTarget.style.borderColor = "var(--bm-border2)"}
           />
 
           {/* Search dropdown */}
@@ -194,7 +201,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
                 maxHeight: 320, overflowY: "auto",
                 background: "var(--bm-bg2)",
                 border: "1px solid var(--bm-border2)",
-                borderRadius: 12, padding: 6,
+                borderRadius: 10, padding: 6,
                 boxShadow: "0 16px 48px rgba(0,0,0,0.4)",
                 scrollbarWidth: "none",
               }}
@@ -210,7 +217,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
                 { key: "recommended",label:"Recommended",items: keywordResults.recommendations, onClick: (i: any) => goToFeature(i.href),  display: (i: any) => i.label },
               ].filter(g => g.items.length > 0).map(group => (
                 <div key={group.key} style={{ marginBottom: 4 }}>
-                  <div style={{ fontSize: 9, color: "var(--bm-text4)", letterSpacing: "0.12em", textTransform: "uppercase", padding: "6px 10px 3px", fontWeight: 600 }}>
+                  <div style={{ fontSize: 9, color: "var(--bm-text4)", letterSpacing: "0.12em", textTransform: "uppercase", padding: "6px 10px 3px", fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" }}>
                     {group.label}
                   </div>
                   {group.items.map((item: any, idx: number) => (
@@ -276,7 +283,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
                 width: 180, zIndex: 70,
                 background: "var(--bm-bg2)",
                 border: "1px solid var(--bm-border2)",
-                borderRadius: 12, padding: 5,
+                borderRadius: 10, padding: 5,
                 boxShadow: "0 16px 48px rgba(0,0,0,0.4)",
               }}
             >
@@ -287,7 +294,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
               </button>
               <div style={{ height: 1, background: "var(--bm-border)", margin: "4px 0" }} />
               <button type="button" onClick={() => void signOut()} style={{ ...dropBtn, color: "var(--bm-red)" }}
-                onMouseEnter={e => e.currentTarget.style.background = "rgba(240,108,108,0.06)"}
+                onMouseEnter={e => e.currentTarget.style.background = "rgba(176,72,72,0.08)"}
                 onMouseLeave={e => e.currentTarget.style.background = "none"}>
                 Logout
               </button>
