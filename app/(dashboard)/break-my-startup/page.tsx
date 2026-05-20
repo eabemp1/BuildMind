@@ -93,6 +93,24 @@ function overallColor(s: RiskSeverity) {
   return "var(--bm-green)";
 }
 
+function cleanAIText(value = ""): string {
+  return value
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .replace(/<think>[\s\S]*$/gi, "")
+    .replace(/^[\s\S]*<\/think>/gi, "")
+    .replace(/[•→⇒➜➔]/g, "-")
+    .replace(/[—–]/g, "-")
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/\u2026/g, "...")
+    .replace(/[^\S\r\n]+/g, " ")
+    .trim();
+}
+
+function cleanAIList(items?: string[]): string[] {
+  return (items ?? []).map(cleanAIText).filter(Boolean);
+}
+
 // ── Survival ring ─────────────────────────────────────────────────────────────
 function SurvivalRing({ value, size = 110 }: { value: number; size?: number }) {
   const stroke = 8;
@@ -162,25 +180,28 @@ export default function BreakMyStartupPage() {
 
   function mapApiResult(data: BreakApiData): BreakResult {
     const probability = typeof data.survival_probability === "number" ? data.survival_probability : undefined;
+    const killReasons = cleanAIList(data.kill_reasons);
+    const differentiationPlan = cleanAIList(data.differentiation_plan);
+    const brutalAdvice = cleanAIText(data.brutal_advice);
     const overallRisk: RiskSeverity =
       probability == null ? "High" :
       probability < 25 ? "Critical" :
       probability < 50 ? "High" :
       probability < 75 ? "Medium" : "Low";
 
-    const risks: RiskItem[] = (data.kill_reasons?.length ? data.kill_reasons : ["Execution risk not enough data yet"]).map((reason, index) => ({
+    const risks: RiskItem[] = (killReasons.length ? killReasons : ["Execution risk not enough data yet"]).map((reason, index) => ({
       category: ["Market Risk", "Execution Risk", "Moat Risk", "Revenue Risk"][index] ?? "Startup Risk",
       severity: index === 0 ? overallRisk : overallRisk === "Critical" ? "High" : overallRisk,
       description: reason,
-      mitigation: data.differentiation_plan?.[index] ?? data.brutal_advice ?? "Talk to 5 target users and validate the riskiest assumption before building more.",
+      mitigation: differentiationPlan[index] ?? brutalAdvice ?? "Talk to 5 target users and validate the riskiest assumption before building more.",
     }));
 
     if (data.competitor_summary) {
       risks.push({
         category: "Competitive Landscape",
         severity: "Medium",
-        description: data.competitor_summary,
-        mitigation: data.differentiation_plan?.[0] ?? "Pick one underserved niche and position around that pain instead of competing broadly.",
+        description: cleanAIText(data.competitor_summary),
+        mitigation: differentiationPlan[0] ?? "Pick one underserved niche and position around that pain instead of competing broadly.",
       });
     }
 
@@ -195,27 +216,41 @@ export default function BreakMyStartupPage() {
       return {
         name: name[0].toUpperCase() + name.slice(1),
         status: data.agent_statuses?.[name] ?? "complete",
-        summary: text || "Agent completed with structured analysis.",
+        summary: cleanAIText(text) || "Agent completed with structured analysis.",
         confidence: data.signal_summary?.overall_confidence,
       };
     });
 
     return {
       overallRisk,
-      summary: data.verdict ?? "Stress test complete. Review the risks before deciding what to build next.",
+      summary: cleanAIText(data.verdict) || "Stress test complete. Review the risks before deciding what to build next.",
       risks,
       survival_probability: probability,
-      brutal_advice: data.brutal_advice,
+      brutal_advice: brutalAdvice || undefined,
       gated: data.gated,
       score_note: data.gated
         ? "Free preview score: estimated from your written idea only."
-        : data.reasoning?.filter((item) =>
+        : cleanAIList(data.reasoning).filter((item) =>
             /focus areas|5-agent|viability score|competitor/i.test(item)
-          ).join(" · ") || "Calculated from execution data, validation signals, stage, and competitor context.",
+          ).join(" | ") || "Calculated from execution data, validation signals, stage, and competitor context.",
       agents,
-      focusAreas: data.focus_areas,
-      executionPlan: data.execution_plan ?? null,
-      reflexionAction: data.reflexion_action ?? null,
+      focusAreas: cleanAIList(data.focus_areas),
+      executionPlan: data.execution_plan
+        ? {
+            mvp_roadmap: cleanAIList(data.execution_plan.mvp_roadmap),
+            first_10_actions: cleanAIList(data.execution_plan.first_10_actions),
+            gtm_plan: cleanAIList(data.execution_plan.gtm_plan),
+          }
+        : null,
+      reflexionAction: data.reflexion_action
+        ? {
+            ...data.reflexion_action,
+            action: cleanAIText(data.reflexion_action.action),
+            rationale: cleanAIText(data.reflexion_action.rationale),
+            supporting_signals: cleanAIList(data.reflexion_action.supporting_signals),
+            risks: cleanAIList(data.reflexion_action.risks),
+          }
+        : null,
     };
   }
 

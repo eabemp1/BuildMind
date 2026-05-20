@@ -316,8 +316,8 @@ export async function POST(request: Request) {
     }
     const body = zodResult.data;
     const userId = String(body?.userId ?? "").trim();
-    const projectId = String(body?.projectId ?? "").trim();
-    const idea = String(body?.idea ?? "").trim().slice(0, 4000);
+    const projectId = typeof body.projectId === "string" ? body.projectId.trim() : "";
+    const idea = typeof body.idea === "string" ? body.idea.trim().slice(0, 4000) : "";
     const focusAreas = Array.isArray(body?.focusAreas)
       ? body.focusAreas.map(String).filter(Boolean).slice(0, 10)
       : [];

@@ -46,6 +46,7 @@ type ActionData = {
 type CachedTodayAction = {
   date?: string;
   projectId?: string;
+  stage?: string;
   data?: ActionData;
 };
 
@@ -65,6 +66,11 @@ function sanitizeVisibleText(value: string): string {
     .replace(/<think>[\s\S]*?<\/think>/gi, "")
     .replace(/<think>[\s\S]*$/gi, "")
     .replace(/^[\s\S]*<\/think>/gi, "")
+    .replace(/[•→⇒➜➔]/g, "-")
+    .replace(/[—–]/g, "-")
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/\u2026/g, "...")
     .trim();
 }
 
@@ -386,11 +392,13 @@ function TodayContent() {
     if (!userId || !projectId) return;
 
     const today = new Date().toISOString().split("T")[0];
+    const currentStage = project.startup_stage ?? "Idea";
     const cacheKey = `bm_today_action_cache_${userId}`;
     const serverCache = await fetchBehaviorState<{ today_action_cache: CachedTodayAction }>(["today_action_cache"]);
     if (
       serverCache.today_action_cache?.date === today &&
       serverCache.today_action_cache?.projectId === projectId &&
+      serverCache.today_action_cache?.stage === currentStage &&
       isActionData(serverCache.today_action_cache.data)
     ) {
       storage.setJSON(cacheKey, serverCache.today_action_cache);
@@ -399,7 +407,7 @@ function TodayContent() {
     }
     try {
       const cached = storage.getJSON<CachedTodayAction | null>(cacheKey, null);
-      if (cached?.date === today && cached?.projectId === projectId && isActionData(cached.data)) {
+      if (cached?.date === today && cached?.projectId === projectId && cached?.stage === currentStage && isActionData(cached.data)) {
         setAiAction({ ...cached.data, isAI: true });
         return;
       }
@@ -418,7 +426,7 @@ function TodayContent() {
     const requestBody = JSON.stringify({
       userId,
       projectId,
-      stage: project.startup_stage ?? "Idea",
+      stage: currentStage,
       pendingMilestones,
       pendingTasks,
       completionRate: project.completion_rate ?? 0,
@@ -463,7 +471,7 @@ function TodayContent() {
               if (!actionData) break outer;
               setAiAction(actionData);
               if (actionData.reflexion?.loopRan) {
-                const cacheValue = { date: today, projectId, data: actionData };
+                const cacheValue = { date: today, projectId, stage: currentStage, data: actionData };
                 storage.setJSON(cacheKey, cacheValue);
                 persistBehaviorState({ today_action_cache: cacheValue });
               }
@@ -489,7 +497,7 @@ function TodayContent() {
           if (json?.success && actionData) {
             setAiAction(actionData);
             if (actionData.reflexion?.loopRan) {
-              const cacheValue = { date: today, projectId, data: actionData };
+              const cacheValue = { date: today, projectId, stage: currentStage, data: actionData };
               storage.setJSON(cacheKey, cacheValue);
               persistBehaviorState({ today_action_cache: cacheValue });
             }

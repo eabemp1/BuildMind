@@ -168,14 +168,7 @@ export function NavItem({
         )}
       </div>
 
-      <span
-        className="truncate flex-1 transition-colors group-hover:text-[var(--bm-text)]"
-        style={{
-          fontSize: 11,
-          color: active ? "var(--bm-text)" : "var(--bm-text4)",
-          fontWeight: active ? 600 : 400,
-        }}
-      >
+      <span className="truncate flex-1 transition-colors group-hover:text-[var(--bm-text)]">
         {label}
       </span>
 

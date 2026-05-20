@@ -11,7 +11,7 @@ import { getStoredStreak } from "@/lib/plan";
 import { getXP, getScoreHistory, syncScoreHistory, syncXP, computeConsistencyBonus } from "@/lib/scoring";
 import {
   Zap, Flame, Target, ArrowRight, ChevronRight,
-  FolderKanban, Clock,
+  FolderKanban, BarChart3, Clock,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -325,50 +325,32 @@ export default function OverviewPage() {
         }}
       />
 
-      {/* ── Momentum hero ── */}
-      {activeProject && (
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.04 }}
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            padding: "28px 24px",
-            background: "var(--bm-bg2)",
-            border: "1px solid var(--bm-border)",
-            borderRadius: 18,
-            marginBottom: -16,
-            textAlign: "center",
-          }}
-        >
-          <ScoreRing value={score} color={scoreColor} size={88} />
-          <p style={{ fontSize: 13, color: "var(--bm-text3)", margin: "12px 0 0" }}>
-            Momentum Score
-          </p>
-          <p style={{ fontSize: 11, color: "var(--bm-text4)", margin: "4px 0 0" }}>
-            {score >= 70
-              ? "High execution. Keep the streak."
-              : score >= 40
-              ? "Building momentum. Daily tasks compound."
-              : "Start the streak. One task changes everything."}
-          </p>
-          {scoreDelta !== null && (
-            <span className="mt-2 text-[11px] font-semibold tracking-[0.02em]" style={{ color: scoreDelta > 0 ? "var(--bm-green)" : scoreDelta < 0 ? "var(--bm-red)" : "var(--bm-text3)" }}>
-              {scoreDelta > 0 ? `+${scoreDelta}` : scoreDelta < 0 ? `${scoreDelta}` : "→"} vs yesterday
-            </span>
-          )}
-        </motion.div>
-      )}
-
-      {/* ── Supporting metric row ── */}
+      {/* ── Metric row ── */}
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.06 }}
         className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4"
       >
+        <MetricCard
+          icon={<Zap size={14} />}
+          label="Startup Score"
+          value={
+            activeProject ? (
+              <div className="flex flex-col items-center gap-1">
+                <ScoreRing value={score} color={scoreColor} size={48} />
+                {scoreDelta !== null && (
+                  <span className="text-[11px] font-semibold tracking-[0.02em]" style={{ color: scoreDelta > 0 ? "var(--bm-green)" : scoreDelta < 0 ? "var(--bm-red)" : "var(--bm-text3)" }}>
+                    {scoreDelta > 0 ? `+${scoreDelta}` : scoreDelta < 0 ? `${scoreDelta}` : "→"} vs yesterday
+                  </span>
+                )}
+              </div>
+            ) : (
+              <span className="text-[var(--bm-text3)]">—</span>
+            )
+          }
+          accent={!!activeProject}
+        />
         <MetricCard
           icon={<Zap size={14} />}
           label="Consistency"
@@ -383,11 +365,6 @@ export default function OverviewPage() {
           accent={consistencyBonus >= 8}
         />
         <StatCard
-          icon={Flame}
-          label="Founder Streak"
-          value={streak > 0 ? `${streak}d` : "—"}
-        />
-        <StatCard
           icon={FolderKanban}
           label="Active Projects"
           value={summaries.length > 0 ? summaries.length : "—"}
@@ -396,6 +373,11 @@ export default function OverviewPage() {
           icon={Target}
           label="Milestones Completed"
           value={milestonesCompleted > 0 ? milestonesCompleted : "—"}
+        />
+        <StatCard
+          icon={Flame}
+          label="Founder Streak"
+          value={streak > 0 ? `${streak}d` : "—"}
         />
         {activeProject && (
           <MetricCard
@@ -511,14 +493,30 @@ export default function OverviewPage() {
             transition={{ delay: 0.18 }}
             className="flex flex-col gap-4"
           >
+            {/* Score breakdown */}
+            <Card className="p-5 flex flex-col items-center gap-3">
+              <div className="self-stretch">
+                <SectionHeader label="Score Breakdown" />
+              </div>
+              <Pentagon scores={pentagonScores} />
+              {activeProject && (
+                <ScoreBreakdown
+                  score={score}
+                  executionScore={completionRate}
+                  momentumScore={Math.min(100, streak * 10)}
+                  xp={getXP()}
+                  streak={streak}
+                  validationStrengths={validationStrengths}
+                />
+              )}
+            </Card>
+
             {/* AI nudge */}
             <Card
-              className="flex flex-col gap-2"
+              className="p-4 flex flex-col gap-2"
               style={{
-                border: "none",
-                borderLeft: "3px solid var(--bm-accent)",
-                background: "transparent",
-                paddingLeft: 16,
+                borderColor: "var(--bm-accent-bd)",
+                background: "linear-gradient(135deg, rgba(92,200,138,0.05) 0%, var(--bm-bg2) 100%)",
               }}
             >
               <div className="flex items-center gap-1.5">
@@ -533,40 +531,6 @@ export default function OverviewPage() {
                 {nudge.action}
               </p>
             </Card>
-
-            {/* Score breakdown */}
-            <details style={{ marginTop: 16 }}>
-              <summary style={{
-                fontSize: 12,
-                fontWeight: 600,
-                color: "var(--bm-text3)",
-                cursor: "pointer",
-                userSelect: "none",
-                listStyle: "none",
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "10px 0",
-                borderTop: "1px solid var(--bm-border)",
-              }}>
-                <ChevronRight size={12} color="var(--bm-text3)" /> Score breakdown
-              </summary>
-              <div style={{ marginTop: 12 }}>
-                <Card className="p-5 flex flex-col items-center gap-3">
-                  <Pentagon scores={pentagonScores} />
-                  {activeProject && (
-                    <ScoreBreakdown
-                      score={score}
-                      executionScore={completionRate}
-                      momentumScore={Math.min(100, streak * 10)}
-                      xp={getXP()}
-                      streak={streak}
-                      validationStrengths={validationStrengths}
-                    />
-                  )}
-                </Card>
-              </div>
-            </details>
           </motion.div>
         </div>
       )}
