@@ -8,36 +8,36 @@
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
 /* ── Google Font import ─────────────────────────────── */
-@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=DM+Serif+Display:ital@0;1&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@300;400&display=swap');
 
 /* ── DARK (default) ─────────────────────────────────── */
 :root {
   color-scheme: dark;
 
   /* backgrounds — warm obsidian scale */
-  --bm-bg:      #0F0F10;
-  --bm-bg2:     #161618;
-  --bm-bg3:     #1C1C1F;
-  --bm-bg4:     #232327;
-  --bm-bg5:     #2A2A2F;
+  --bm-bg:      #07080A;
+  --bm-bg2:     #0D0F12;
+  --bm-bg3:     #12151A;
+  --bm-bg4:     #171C23;
+  --bm-bg5:     #1D2330;
 
   /* borders — subtle warm slate */
-  --bm-border:  #222226;
-  --bm-border2: #2C2C31;
-  --bm-border3: #38383F;
+  --bm-border:  rgba(255,255,255,0.045);
+  --bm-border2: rgba(255,255,255,0.08);
+  --bm-border3: rgba(255,255,255,0.13);
 
   /* text — clean warm whites */
-  --bm-text:    #ECECEC;
-  --bm-text2:   #909096;
-  --bm-text3:   #56565E;
-  --bm-text4:   #3A3A42;
-  --bm-text-inv: #0F0F10;
+  --bm-text:    #EDF0F5;
+  --bm-text2:   #7E8899;
+  --bm-text3:   #434B59;
+  --bm-text4:   #2C333E;
+  --bm-text-inv: #07080A;
 
   /* brand accent — used sparingly for primary action and focus only */
-  --bm-accent:     #10A37F;
-  --bm-accent2:    #0C7F63;
-  --bm-accent-dim: rgba(16,163,127,0.08);
-  --bm-accent-bd:  rgba(16,163,127,0.20);
+  --bm-accent:     #5B6CF0;
+  --bm-accent2:    #4556D4;
+  --bm-accent-dim: rgba(91,108,240,0.09);
+  --bm-accent-bd:  rgba(91,108,240,0.22);
 
   /* legacy aliases — nothing breaks */
   --bm-purple:  var(--bm-accent);
@@ -77,26 +77,26 @@
 .light-mode {
   color-scheme: light;
 
-  --bm-bg:      #F7F7F8;
+  --bm-bg:      #F4F5F7;
   --bm-bg2:     #FFFFFF;
-  --bm-bg3:     #EEEEF0;
-  --bm-bg4:     #E3E3E7;
-  --bm-bg5:     #D8D8DE;
+  --bm-bg3:     #ECEDF1;
+  --bm-bg4:     #E0E2E8;
+  --bm-bg5:     #D3D6DF;
 
-  --bm-border:  #E0E0E5;
-  --bm-border2: #CCCCD4;
-  --bm-border3: #B8B8C2;
+  --bm-border:  rgba(0,0,0,0.07);
+  --bm-border2: rgba(0,0,0,0.11);
+  --bm-border3: rgba(0,0,0,0.17);
 
-  --bm-text:    #111114;
-  --bm-text2:   #3C3C44;
-  --bm-text3:   #5E5E68;
-  --bm-text4:   #8C8C98;
-  --bm-text-inv: #F7F7F8;
+  --bm-text:    #111318;
+  --bm-text2:   #3D4452;
+  --bm-text3:   #6B7280;
+  --bm-text4:   #9CA3AF;
+  --bm-text-inv: #F4F5F7;
 
-  --bm-accent:     #0F8F70;
-  --bm-accent2:    #0B6F56;
-  --bm-accent-dim: rgba(15,143,112,0.07);
-  --bm-accent-bd:  rgba(15,143,112,0.18);
+  --bm-accent:     #4A5CE8;
+  --bm-accent2:    #3448CC;
+  --bm-accent-dim: rgba(74,92,232,0.08);
+  --bm-accent-bd:  rgba(74,92,232,0.20);
 
   --bm-purple:  var(--bm-accent);
   --bm-purple2: var(--bm-accent2);
@@ -130,7 +130,7 @@ body {
   @apply antialiased;
   background: var(--bm-bg);
   color: var(--bm-text);
-  font-family: 'Geist', system-ui, -apple-system, sans-serif;
+  font-family: 'Instrument Sans', system-ui, -apple-system, sans-serif;
   font-size: 14px;
   line-height: 1.6;
   letter-spacing: -0.01em;
