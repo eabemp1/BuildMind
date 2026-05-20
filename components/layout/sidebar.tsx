@@ -57,7 +57,7 @@ function SidebarUser({ onSignOut }: { onSignOut: () => void }) {
 
   return (
     <div
-      className="flex items-center gap-2.5 px-4 py-3 mx-2 rounded-xl"
+      className="flex items-center gap-2.5 px-4 py-3 mx-2 rounded-lg"
       style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)" }}
     >
       <div
@@ -71,7 +71,7 @@ function SidebarUser({ onSignOut }: { onSignOut: () => void }) {
           {displayName}
         </p>
         <span
-          className="inline-block text-[9px] font-bold px-1.5 py-0.5 rounded-full mt-0.5"
+          className="inline-block text-[9px] font-normal px-1.5 py-0.5 rounded mt-0.5 font-mono"
           style={
             plan === "builder"
               ? { background: "var(--bm-bg4)", color: "var(--bm-text2)", border: "1px solid var(--bm-border)" }
@@ -83,10 +83,10 @@ function SidebarUser({ onSignOut }: { onSignOut: () => void }) {
       </div>
       <button
         onClick={onSignOut}
-        className="p-1.5 rounded-lg transition-all"
+        className="p-1.5 rounded-md transition-colors"
         style={{ color: "var(--bm-text3)" }}
         title="Sign out"
-        onMouseEnter={(e) => { e.currentTarget.style.color = "var(--bm-text2)"; e.currentTarget.style.background = "var(--bm-bg4)"; }}
+        onMouseEnter={(e) => { e.currentTarget.style.color = "var(--bm-text2)"; e.currentTarget.style.background = "transparent"; }}
         onMouseLeave={(e) => { e.currentTarget.style.color = "var(--bm-text3)"; e.currentTarget.style.background = "transparent"; }}
       >
         <LogOut size={14} />
@@ -158,7 +158,7 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
               <React.Fragment key={item.href}>
                 {item.section && <SectionLabel label={item.section} />}
                 <div
-                  className="px-3 py-2 mx-2 rounded-lg select-none"
+                  className="px-3 py-2 mx-2 rounded-md select-none"
                   title={`Complete ${tasksNeeded} more task${tasksNeeded !== 1 ? "s" : ""} to unlock ${item.label}`}
                   style={{ cursor: "default", opacity: 0.45 }}
                 >
@@ -196,11 +196,11 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
           <>
             <SectionLabel label="ADMIN" />
             <Link href="/admin"
-              className="flex items-center justify-between gap-2 px-3 py-2.5 mx-2 rounded-lg text-sm transition-colors group"
+              className="flex items-center justify-between gap-2 px-3 py-2.5 mx-2 rounded-md text-sm transition-colors group"
               style={{ color: "var(--bm-text4)" }}
             >
               <div className="flex items-center gap-3"><Shield size={16} />Dashboard</div>
-              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "var(--bm-bg4)", color: "var(--bm-text3)" }}>Admin</span>
+              <span className="text-[9px] font-normal px-1.5 py-0.5 rounded font-mono" style={{ background: "var(--bm-bg4)", color: "var(--bm-text3)" }}>Admin</span>
             </Link>
           </>
         )}
@@ -215,16 +215,16 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
         )}
 
         <button onClick={toggle}
-          className="flex items-center gap-2 px-3 py-2 mx-2 rounded-lg text-sm transition-all"
+          className="flex items-center gap-2 px-3 py-2 mx-2 rounded-md text-sm transition-colors"
           style={{ border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", cursor: "pointer", fontFamily: "inherit" }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bm-bg3)"; e.currentTarget.style.color = "var(--bm-text2)"; }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--bm-text2)"; }}
           onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--bm-text3)"; }}
         >
           {theme === "dark" ? <><Sun size={13} /><span>Light mode</span></> : <><Moon size={13} /><span>Dark mode</span></>}
         </button>
 
         <button onClick={() => setFounderMenuOpen((o) => !o)}
-          className="flex items-center gap-2 px-3 py-2.5 mx-2 rounded-lg transition-all"
+          className="flex items-center gap-2 px-3 py-2.5 mx-2 rounded-md transition-colors"
           style={{ border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", cursor: "pointer", fontFamily: "inherit" }}
         >
           <Sparkles size={13} strokeWidth={1.6} style={{ color: "var(--bm-text4)", flexShrink: 0 }} />
@@ -237,7 +237,7 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
             <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden flex flex-col gap-2">
               {plan === "free" ? (
                 <Link href="/upgrade" className="no-underline block px-2">
-                  <div className="px-3 py-2.5 rounded-xl cursor-pointer" style={{ border: "1px solid var(--bm-border)", background: "var(--bm-bg3)" }}>
+                  <div className="px-3 py-2.5 rounded-lg cursor-pointer" style={{ border: "1px solid var(--bm-border)", background: "var(--bm-bg3)" }}>
                     <div className="flex justify-between items-center">
                       <div>
                         <div className="text-xs font-medium" style={{ color: "var(--bm-text2)" }}>Free plan</div>
@@ -248,12 +248,12 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
                   </div>
                 </Link>
               ) : (
-                <div className="px-3 py-2.5 mx-2 rounded-xl" style={{ border: "1px solid var(--bm-border)", background: "var(--bm-bg3)" }}>
+                <div className="px-3 py-2.5 mx-2 rounded-lg" style={{ border: "1px solid var(--bm-border)", background: "var(--bm-bg3)" }}>
                   <div className="flex items-center gap-1.5"><Sparkles size={11} style={{ color: "var(--bm-text3)" }} /><span className="text-xs font-medium" style={{ color: "var(--bm-text2)" }}>Builder plan</span></div>
                   <div className="text-[10px] mt-0.5" style={{ color: "var(--bm-text4)" }}>Unlimited · All features</div>
                 </div>
               )}
-              <Link href="/invite" className="flex items-center gap-2 px-3 py-2.5 mx-2 rounded-lg transition-all no-underline" style={{ border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)" }}>
+              <Link href="/invite" className="flex items-center gap-2 px-3 py-2.5 mx-2 rounded-md transition-colors no-underline" style={{ border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)" }}>
                 <Users size={13} strokeWidth={1.6} style={{ color: "var(--bm-text4)", flexShrink: 0 }} />
                 <div className="flex-1">
                   <div className="text-xs font-medium leading-none" style={{ color: "var(--bm-text2)" }}>Invite a founder</div>
@@ -296,7 +296,7 @@ export default function Sidebar() {
   return (
     <>
       <button onClick={() => setMobileOpen(true)}
-        className="md:hidden fixed top-3.5 left-3.5 z-[200] p-2 rounded-lg transition-colors"
+        className="md:hidden fixed top-3.5 left-3.5 z-[200] p-2 rounded-md transition-colors"
         style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", color: "var(--bm-text2)" }}
         aria-label="Open menu"
       >
@@ -311,7 +311,7 @@ export default function Sidebar() {
         {mobileOpen && (
           <div className="fixed inset-0 z-[300] flex md:hidden">
             <motion.div className="absolute inset-0"
-              style={{ background: "rgba(0,0,0,0.65)", backdropFilter: "blur(4px)" }}
+              style={{ background: "rgba(7,8,10,0.75)", backdropFilter: "blur(6px)" }}
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               onClick={() => setMobileOpen(false)}
             />
@@ -322,7 +322,7 @@ export default function Sidebar() {
             >
               <SidebarContent onNavClick={() => setMobileOpen(false)} onSignOut={handleSignOut} />
             </motion.div>
-            <motion.button className="absolute top-4 right-4 z-20 p-2 rounded-lg text-white"
+            <motion.button className="absolute top-4 right-4 z-20 p-2 rounded-md text-[var(--bm-text)]"
               style={{ background: "var(--bm-bg3)" }}
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               onClick={() => setMobileOpen(false)} aria-label="Close menu"
