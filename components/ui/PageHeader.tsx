@@ -12,11 +12,11 @@ export function PageHeader({
   return (
     <header className="flex flex-col gap-4 border-b border-[var(--bm-border)] pb-6 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0">
-        <h1 className="text-[22px] font-bold tracking-tight text-[var(--bm-text)] sm:text-[26px]">
+        <h1 className="text-[18px] font-semibold tracking-[-0.025em] text-[var(--bm-text)]">
           {title}
         </h1>
         {subtitle ? (
-          <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-[var(--bm-text2)]">
+          <p className="mt-[3px] max-w-2xl text-[13px] leading-[1.5] text-[var(--bm-text3)]">
             {subtitle}
           </p>
         ) : null}
