@@ -90,6 +90,73 @@ const CRITIC_PERSONAS: Record<number, { name: string; prompt: string }> = {
   },
 };
 
+// ── Channel-native style examples (few-shot) ─────────────────────────────
+export const CHANNEL_STYLE_EXAMPLES: Record<string, { register: string; examples: string[] }> = {
+  "WhatsApp": {
+    register: "Voice-note casual. Short sentences. No punctuation theatre. Sounds like a text from a friend who has a genuine question, not a founder pitching. Max 3 sentences.",
+    examples: [
+      "Hey [Name], quick one — how do you currently handle [problem]? Trying to figure out if it's just us or a real pattern. 5 mins?",
+      "Hey — been thinking about [problem]. Is that actually painful for you day to day, or more of a minor thing? Honest answer appreciated",
+    ],
+  },
+  "LinkedIn": {
+    register: "Professional but warm. One short paragraph. No bullet points. No 'I'm excited to share'. No 'Hope this finds you well'. Sounds like a genuine DM from someone who read their profile and has a real question.",
+    examples: [
+      "Hi [Name] — saw your post on [topic] and it clicked with something we're researching. Curious: how does your team currently handle [problem]? We're talking to a few people in [role] before we build anything.",
+      "Hi [Name] — not a pitch, genuinely curious. You work in [space] — is [problem] something you've had to solve, or does it not come up that much in your role?",
+    ],
+  },
+  "Twitter/X": {
+    register: "One or two sentences maximum. Sounds like a reply or a thought you're putting out there. No hashtags. No call to action button language. Sounds like you're thinking out loud.",
+    examples: [
+      "Curious: if you work in [space], how annoying is [problem] on a scale of 'barely notice it' to 'ruins my week'?",
+      "Building something for [users] dealing with [problem]. Anyone actually living this — worth a DM?",
+    ],
+  },
+  "Reddit": {
+    register: "Confessional and honest. Leads with the problem, not your startup. Admits uncertainty. No self-promotion. Redditors will downvote a pitch disguised as a question.",
+    examples: [
+      "I've been trying to understand how [users] handle [problem] before building anything. Is this actually painful or am I overfitting to one person's complaint? Genuine question — early research mode.",
+      "We're looking at [problem] and I keep hearing it's a big deal but nobody I talk to seems to be paying for a solution. Either the pain isn't real or the timing is off — would love to hear from anyone who lives this.",
+    ],
+  },
+  "Product Hunt": {
+    register: "Founder voice. Honest about what it does and doesn't do. No adjectives like 'powerful' or 'seamless'. One sentence on the problem, one on what you built, one asking for specific feedback.",
+    examples: [
+      "Built [product] after [personal pain point]. It does [specific thing] for [specific user]. If you're in [space], would love to hear if this solves the right problem.",
+      "[Product] lets [users] [do specific thing] without [the painful alternative]. Launching today — looking for people who've tried the manual version and gave up.",
+    ],
+  },
+  "Indie Hackers": {
+    register: "Numbers-first when you have them. Honest about what's working and what isn't. The IH audience respects transparency about failures. One paragraph. Sounds like a real founder update.",
+    examples: [
+      "Three weeks in, talked to 12 [users], 9 said [problem] was real but only 3 said they'd pay. Trying to figure out if it's pricing, positioning, or the wrong segment.",
+      "Built [product] in [timeframe], launched to [number] people, got [result]. The surprising thing: [unexpected learning]. Still figuring out [open question] — any IH folks in [space] want to compare notes?",
+    ],
+  },
+  "Email": {
+    register: "Subject line that earns an open. Body is max 3 sentences. First sentence is about them, not you. One specific ask. Sounds human, not templated. No 'Hope this finds you well'.",
+    examples: [
+      "Subject: Quick question about [their specific thing]\n\nHi [Name] — saw [specific thing about them]. We're researching [problem] before building anything and your perspective would be worth more than a survey. 10 minutes this week?",
+    ],
+  },
+};
+
+export function getChannelStyleInstruction(generatedText: string): string {
+  const text = generatedText.toLowerCase();
+  let channel: string | null = null;
+  if (text.includes("whatsapp"))                                            channel = "WhatsApp";
+  else if (text.includes("linkedin"))                                       channel = "LinkedIn";
+  else if (text.includes("reddit"))                                         channel = "Reddit";
+  else if (text.includes("product hunt"))                                   channel = "Product Hunt";
+  else if (text.includes("indie hacker") || text.includes("indiehacker"))  channel = "Indie Hackers";
+  else if (text.includes("twitter") || text.includes("tweet"))             channel = "Twitter/X";
+  else if (text.includes("email"))                                          channel = "Email";
+  if (!channel || !CHANNEL_STYLE_EXAMPLES[channel]) return "";
+  const style = CHANNEL_STYLE_EXAMPLES[channel];
+  return `\n\nCHANNEL-SPECIFIC WRITING RULES for ${channel}:\n${style.register}\n\nReference examples — match the TONE and LENGTH, not the exact words:\n${style.examples.map((e, i) => `[${i + 1}] "${e}"`).join("\n")}\n\nThe execution draft must sound like those examples. A real person on ${channel}, not an AI assistant.`;
+}
+
 /**
  * getWeeklyCriticPersona — returns the rotating Agent B persona for this week.
  * Week derived from weekNumber (0-indexed ISO week mod 4) or current date if not provided.
@@ -317,6 +384,7 @@ ${generated}`;
   const baseForRefinement = critiqueData.verdict === "fail" && critiqueData.improved_version
     ? critiqueData.improved_version
     : generated;
+  const channelStyleInstruction = getChannelStyleInstruction(baseForRefinement);
 
   // ── Agent C — The Refiner / Rebuilder (with Emotional Language Layer) ──────
   const refinerMode = critiqueData.verdict === "fail"
@@ -331,7 +399,7 @@ Rules:
 - End with a single concrete action they can start in the next 30 minutes
 - No preamble, no "here's the refined version"
 - 3–5 sentences maximum
-${emotionalInstruction}${cofounderStyleInstruction}
+${emotionalInstruction}${cofounderStyleInstruction}${channelStyleInstruction}
 
 INPUT:
 ${baseForRefinement}
@@ -558,6 +626,7 @@ ${generated}`;
   const baseForVerification = stage4Output.verdict === "fail" && stage4Output.improved_version
     ? stage4Output.improved_version
     : generated;
+  const channelStyleInstruction = getChannelStyleInstruction(baseForVerification);
 
   const stage5VerifierPrompt = `You are the Verifier Agent in a startup intelligence pipeline.
 Your job: validate every claim in this action against the available signals.
@@ -637,7 +706,7 @@ RULES:
 - If confidence is low (${stage5Output.confidence_score < 0.5 ? "YES — it is low" : "no, confidence is adequate"}), acknowledge uncertainty directly
 - Cognitive state today: ${founderContext.cognitiveLoad ?? "fresh"} — adjust difficulty accordingly
 ${weakClaimsNote}
-${emotionalInstruction}${cofounderStyleInstruction}
+${emotionalInstruction}${cofounderStyleInstruction}${channelStyleInstruction}
 
 INPUT ACTION:
 ${baseForVerification}

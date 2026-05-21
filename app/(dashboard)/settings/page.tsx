@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useState, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import { ensureUserProfile } from "@/lib/buildmind";
@@ -13,18 +14,19 @@ import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorStat
 import PushNotificationToggle from "@/components/PushNotificationToggle";
 import AvatarUpload from "@/components/AvatarUpload";
 import { ProfileCompletenessBar } from "@/components/ProfileCompletenessBar";
-import { User, CreditCard, Bell, Bot, Shield, Check, Zap, Globe, type LucideIcon } from "lucide-react";
+import { User, CreditCard, Bell, Bot, Shield, Check, Zap, Globe, Plug2, type LucideIcon } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 
-type Tab = "profile" | "account" | "notifications" | "ai" | "billing" | "public";
+type Tab = "profile" | "account" | "notifications" | "ai" | "billing" | "integrations" | "public";
 
 const TABS: { id: Tab; label: string; icon: LucideIcon }[] = [
-  { id: "profile",       label: "Profile",       icon: User       },
-  { id: "account",       label: "Account",       icon: Shield     },
+  { id: "profile",        label: "Profile",        icon: User       },
+  { id: "account",        label: "Account",        icon: Shield     },
   ...(FEATURES.notifications ? [{ id: "notifications" as Tab, label: "Notifications", icon: Bell }] : []),
-  { id: "billing",       label: "Billing",       icon: CreditCard },
-  { id: "ai",            label: "AI Usage",      icon: Bot        },
-  { id: "public",        label: "Public Profile", icon: Globe     },
+  { id: "billing",        label: "Billing",        icon: CreditCard },
+  { id: "integrations",   label: "Integrations",   icon: Plug2      },
+  { id: "ai",             label: "AI Usage",       icon: Bot        },
+  { id: "public",         label: "Public Profile", icon: Globe      },
 ];
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
@@ -89,8 +91,214 @@ function SaveButton({ loading, onClick }: { loading: boolean; onClick: () => voi
   );
 }
 
+// ── Feature comparison data ───────────────────────────────────────────────────
+const PLAN_FEATURES = [
+  { label: "Daily AI action",              free: true,  builder: true  },
+  { label: "Reflexion loop (AI learns from outcomes)", free: false, builder: true },
+  { label: "Behavioral memory",            free: false, builder: true  },
+  { label: "Notion & Linear task sync",    free: false, builder: true  },
+  { label: "Unlimited AI Coach messages",  free: false, builder: true  },
+  { label: "Weekly performance reports",   free: false, builder: true  },
+  { label: "Break My Startup analysis",    free: true,  builder: true  },
+  { label: "Morning briefings",            free: false, builder: true  },
+];
+
+// ── Integrations Tab ───────────────────────────────────────────────────────────
+function IntegrationsTab({ initialStatus }: { initialStatus: string | null }) {
+  const isMobile = useIsMobile();
+  const [notionStatus, setNotionStatus] = useState<"idle" | "connected" | "error">("idle");
+  const [linearStatus, setLinearStatus] = useState<"idle" | "connected" | "error">("idle");
+  const [toast, setToast]               = useState<string | null>(null);
+  const [loading, setLoading]           = useState(true);
+
+  // Check current connection status from DB on load
+  useEffect(() => {
+    fetch("/api/integrations/status")
+      .then(r => r.ok ? r.json() : null)
+      .then((d: { notion?: boolean; linear?: boolean } | null) => {
+        if (!d) return;
+        if (d.notion) setNotionStatus("connected");
+        if (d.linear) setLinearStatus("connected");
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  // Handle OAuth callback query params: ?integration=notion&status=connected
+  useEffect(() => {
+    if (!initialStatus) return;
+    const params = new URLSearchParams(window.location.search);
+    const integration = params.get("integration");
+    const status      = params.get("status");
+    if (!integration || !status) return;
+
+    if (integration === "notion") {
+      setNotionStatus(status === "connected" ? "connected" : "error");
+      setToast(status === "connected" ? "Notion connected! Your tasks will now feed into your daily AI brief." : "Notion connection failed — try again.");
+    } else if (integration === "linear") {
+      setLinearStatus(status === "connected" ? "connected" : "error");
+      setToast(status === "connected" ? "Linear connected! Your assigned issues will now feed into your daily AI brief." : "Linear connection failed — try again.");
+    }
+
+    // Clean the URL so refresh doesn't re-trigger
+    const clean = window.location.pathname;
+    window.history.replaceState({}, "", `${clean}?tab=integrations`);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialStatus]);
+
+  // Auto-clear toast
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 5000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  const integrations = [
+    {
+      id: "notion",
+      name: "Notion",
+      desc: "Pulls incomplete tasks from your Notion database and feeds them into your daily AI brief. Prevents the AI from suggesting work you're already doing.",
+      status: notionStatus,
+      connectUrl: "/api/integrations/notion/connect",
+      logo: "N",
+      logoColor: "#000",
+      logoBg: "#f5f5f4",
+    },
+    {
+      id: "linear",
+      name: "Linear",
+      desc: "Syncs your assigned Linear issues into your daily brief. The AI knows what's already in your sprint before it suggests today's action.",
+      status: linearStatus,
+      connectUrl: "/api/integrations/linear/connect",
+      logo: "L",
+      logoColor: "#5e6ad2",
+      logoBg: "#ededf6",
+    },
+  ];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* Toast */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            style={{
+              padding: "10px 14px", borderRadius: 10,
+              background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)",
+              fontSize: 13, color: "var(--bm-accent)", fontWeight: 500,
+              display: "flex", alignItems: "center", gap: 8,
+            }}
+          >
+            <Check size={14} /> {toast}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Header explanation */}
+      <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: isMobile ? "18px" : "22px 24px" }}>
+        <div style={{ fontSize: isMobile ? 15 : 13, fontWeight: 700, color: "var(--bm-text)", marginBottom: 6 }}>
+          Task integrations
+        </div>
+        <div style={{ fontSize: isMobile ? 13 : 12, color: "var(--bm-text3)", lineHeight: 1.6, marginBottom: 0 }}>
+          Connect your task manager so BuildMind knows what you&apos;re already working on.
+          Your real tasks feed directly into the AI brief — no more generic suggestions.
+        </div>
+      </div>
+
+      {/* Integration cards */}
+      {integrations.map(intg => (
+        <div
+          key={intg.id}
+          style={{
+            background: "var(--bm-bg2)",
+            border: `1px solid ${intg.status === "connected" ? "var(--bm-accent-bd)" : "var(--bm-border)"}`,
+            borderRadius: 16,
+            padding: isMobile ? "18px" : "20px 22px",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 14, flexDirection: isMobile ? "column" : "row" }}>
+            {/* Logo */}
+            <div style={{
+              width: 40, height: 40, borderRadius: 10, flexShrink: 0,
+              background: intg.logoBg, border: "1px solid var(--bm-border)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 16, fontWeight: 800, color: intg.logoColor,
+            }}>
+              {intg.logo}
+            </div>
+
+            {/* Info */}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 14, fontWeight: 700, color: "var(--bm-text)" }}>{intg.name}</span>
+                {intg.status === "connected" && (
+                  <span style={{
+                    fontSize: 10, padding: "2px 8px", borderRadius: 20,
+                    background: "var(--bm-accent-dim)", color: "var(--bm-accent)",
+                    border: "1px solid var(--bm-accent-bd)", fontWeight: 700, letterSpacing: "0.06em",
+                  }}>
+                    CONNECTED
+                  </span>
+                )}
+                {intg.status === "error" && (
+                  <span style={{
+                    fontSize: 10, padding: "2px 8px", borderRadius: 20,
+                    background: "rgba(224,85,85,0.08)", color: "var(--bm-red)",
+                    border: "1px solid rgba(224,85,85,0.2)", fontWeight: 700,
+                  }}>
+                    CONNECTION FAILED
+                  </span>
+                )}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.6 }}>{intg.desc}</div>
+            </div>
+
+            {/* CTA */}
+            <div style={{ flexShrink: 0, width: isMobile ? "100%" : "auto" }}>
+              {intg.status === "connected" ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--bm-accent)" }}>
+                  <Check size={14} /> Active
+                </div>
+              ) : (
+                <a
+                  href={intg.connectUrl}
+                  style={{
+                    display: "block", padding: "9px 18px", borderRadius: 10,
+                    border: "1px solid var(--bm-border)",
+                    background: "var(--bm-bg3)",
+                    color: "var(--bm-text2)", fontSize: 12, fontWeight: 600,
+                    textDecoration: "none", textAlign: "center",
+                    width: isMobile ? "100%" : "auto",
+                    boxSizing: "border-box",
+                  }}
+                >
+                  Connect {intg.name}
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+      ))}
+
+      {loading && (
+        <div style={{ fontSize: 12, color: "var(--bm-text4)", textAlign: "center", padding: "8px 0" }}>
+          Checking connection status…
+        </div>
+      )}
+    </div>
+  );
+}
+
 type CancelStep = "idle" | "confirm" | "reason" | "final";
-const CANCEL_REASONS = ["Too expensive right now", "Not using it enough", "Missing a feature I need", "Switching to something else", "Just taking a break", "Other"];
+const CANCEL_REASONS = [
+  "Too expensive right now",
+  "Not using it enough",
+  "Missing a feature I need",
+  "Switching to something else",
+  "Just taking a break",
+  "Other",
+];
 
 function BillingTab() {
   const isMobile = useIsMobile();
@@ -130,11 +338,7 @@ function BillingTab() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div style={{
-        background: isPaid ? "var(--bm-accent-dim)" : "var(--bm-bg2)",
-        border: `1px solid ${isPaid ? "var(--bm-accent-bd)" : "var(--bm-border)"}`,
-        borderRadius: 16, padding: isMobile ? "18px" : "22px 24px",
-      }}>
+      <div style={{ background: isPaid ? "var(--bm-accent-dim)" : "var(--bm-bg2)", border: `1px solid ${isPaid ? "var(--bm-accent-bd)" : "var(--bm-border)"}`, borderRadius: 16, padding: isMobile ? "18px" : "22px 24px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexDirection: isMobile ? "column" : "row", gap: 16 }}>
           <div>
             <div style={{ fontSize: 10, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 700, marginBottom: 8 }}>Current Plan</div>
@@ -151,54 +355,54 @@ function BillingTab() {
         </div>
       </div>
 
-      {isPaid && (
-        <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: isMobile ? "18px" : "20px 22px" }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 4 }}>Manage subscription</div>
-          <div style={{ fontSize: 12, color: "var(--bm-text3)", marginBottom: 16 }}>Cancel or pause your Builder plan.</div>
-          {cancelStep === "idle" && (
-            <button onClick={() => setCancelStep("confirm")}
-              style={{ padding: "9px 18px", borderRadius: 10, border: "1px solid rgba(224,85,85,0.25)", background: "rgba(224,85,85,0.06)", color: "var(--bm-red)", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
-              Cancel subscription
-            </button>
-          )}
-          {cancelStep === "confirm" && (
-            <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "var(--bm-text)", marginBottom: 8 }}>Before you go…</div>
-              <p style={{ fontSize: 13, color: "var(--bm-text3)", marginBottom: 16, lineHeight: 1.6 }}>Cancelling will immediately end your Builder access.</p>
-              <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 8 }}>
-                <button onClick={() => setCancelStep("reason")} style={{ padding: "10px 18px", borderRadius: 10, border: "none", background: "var(--bm-red)", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Still cancel</button>
-                <button onClick={() => setCancelStep("idle")} style={{ padding: "10px 18px", borderRadius: 10, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text2)", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Keep Builder</button>
-              </div>
-            </motion.div>
-          )}
-          {cancelStep === "reason" && (
-            <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 12 }}>What's the main reason?</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 7, marginBottom: 16 }}>
-                {CANCEL_REASONS.map(r => (
-                  <button key={r} onClick={() => setCancelReason(r)}
-                    style={{ padding: "10px 14px", borderRadius: 10, border: `1px solid ${cancelReason === r ? "var(--bm-accent-bd)" : "var(--bm-border)"}`, background: cancelReason === r ? "var(--bm-accent-dim)" : "transparent", color: cancelReason === r ? "var(--bm-accent)" : "var(--bm-text2)", fontSize: 12, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
-                    {r}
-                  </button>
-                ))}
-              </div>
-              <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 8 }}>
-                <button onClick={confirmCancel} disabled={!cancelReason || cancelLoading}
-                  style={{ padding: "10px 18px", borderRadius: 10, border: "none", background: cancelReason ? "var(--bm-red)" : "var(--bm-bg4)", color: cancelReason ? "#fff" : "var(--bm-text3)", fontSize: 12, fontWeight: 700, cursor: cancelReason && !cancelLoading ? "pointer" : "not-allowed", fontFamily: "inherit", opacity: cancelLoading ? 0.7 : 1 }}>
-                  {cancelLoading ? "Cancelling..." : "Confirm cancel"}
+      <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: isMobile ? "18px" : "22px 24px" }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 4 }}>Manage subscription</div>
+        <div style={{ fontSize: 12, color: "var(--bm-text3)", marginBottom: 16 }}>Cancel or pause your Builder plan.</div>
+        {cancelStep === "idle" && (
+          <button onClick={() => setCancelStep("confirm")}
+            style={{ padding: "9px 18px", borderRadius: 10, border: "1px solid rgba(224,85,85,0.25)", background: "rgba(224,85,85,0.06)", color: "var(--bm-red)", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+            Cancel subscription
+          </button>
+        )}
+        {cancelStep === "confirm" && (
+          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--bm-text)", marginBottom: 8 }}>Before you go…</div>
+            <p style={{ fontSize: 13, color: "var(--bm-text3)", marginBottom: 16, lineHeight: 1.6 }}>Cancelling will immediately end your Builder access.</p>
+            <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 8 }}>
+              <button onClick={() => setCancelStep("reason")} style={{ padding: "10px 18px", borderRadius: 10, border: "none", background: "var(--bm-red)", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Still cancel</button>
+              <button onClick={() => setCancelStep("idle")} style={{ padding: "10px 18px", borderRadius: 10, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text2)", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Keep Builder</button>
+            </div>
+          </motion.div>
+        )}
+        {cancelStep === "reason" && (
+          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 12 }}>What's the main reason?</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 7, marginBottom: 16 }}>
+              {CANCEL_REASONS.map(r => (
+                <button key={r} onClick={() => setCancelReason(r)}
+                  style={{ padding: "10px 14px", borderRadius: 10, border: `1px solid ${cancelReason === r ? "var(--bm-accent-bd)" : "var(--bm-border)"}`, background: cancelReason === r ? "var(--bm-accent-dim)" : "transparent", color: cancelReason === r ? "var(--bm-accent)" : "var(--bm-text2)", fontSize: 12, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                  {r}
                 </button>
-                <button onClick={() => setCancelStep("idle")} style={{ padding: "10px 18px", borderRadius: 10, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text2)", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Go back</button>
-              </div>
-              {cancelError && <div style={{ fontSize: 11, color: "var(--bm-red)", marginTop: 10 }}>{cancelError}</div>}
-            </motion.div>
-          )}
-          {cancelStep === "final" && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-              <div style={{ fontSize: 13, color: "var(--bm-text3)", lineHeight: 1.6 }}>Your subscription has been cancelled. Your account is now on the free plan.</div>
-            </motion.div>
-          )}
-        </div>
-      )}
+              ))}
+            </div>
+            <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 8 }}>
+              <button onClick={confirmCancel} disabled={!cancelReason || cancelLoading}
+                style={{ padding: "10px 18px", borderRadius: 10, border: "none", background: cancelReason ? "var(--bm-red)" : "var(--bm-bg4)", color: cancelReason ? "#fff" : "var(--bm-text3)", fontSize: 12, fontWeight: 700, cursor: cancelReason && !cancelLoading ? "pointer" : "not-allowed", fontFamily: "inherit", opacity: cancelLoading ? 0.7 : 1 }}>
+                {cancelLoading ? "Cancelling..." : "Confirm cancel"}
+              </button>
+              <button onClick={() => setCancelStep("idle")} style={{ padding: "10px 18px", borderRadius: 10, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text2)", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Go back</button>
+            </div>
+            {cancelError && <div style={{ fontSize: 11, color: "var(--bm-red)", marginTop: 10 }}>{cancelError}</div>}
+          </motion.div>
+        )}
+        {cancelStep === "final" && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <div style={{ fontSize: 13, color: "var(--bm-text3)", lineHeight: 1.6 }}>Your subscription has been cancelled. Your account is now on the free plan.</div>
+          </motion.div>
+        )}
+      </div>
+
+      {loading && <div style={{ fontSize: 12, color: "var(--bm-text4)", textAlign: "center" }}>Loading billing status…</div>}
     </div>
   );
 }
@@ -206,7 +410,14 @@ function BillingTab() {
 export default function SettingsPage() {
   const isMobile = useIsMobile();
   const { plan } = usePlan();
-  const [tab, setTab] = useState<Tab>("profile");
+  const searchParams = useSearchParams();
+  // If redirected from OAuth callback, default to integrations tab
+  const initialIntegrationStatus = searchParams.get("integration");
+  const [tab, setTab] = useState<Tab>(() => {
+    if (typeof window !== "undefined" && searchParams.get("tab") === "integrations") return "integrations";
+    if (initialIntegrationStatus) return "integrations";
+    return "profile";
+  });
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
   const [bio, setBio] = useState("");
@@ -477,6 +688,10 @@ export default function SettingsPage() {
               )}
 
               {tab === "billing" && <BillingTab />}
+
+              {tab === "integrations" && (
+                <IntegrationsTab initialStatus={initialIntegrationStatus} />
+              )}
 
               {tab === "public" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
