@@ -90,6 +90,21 @@ export type DashboardOverview = {
   founderName?: string | null;
 };
 
+export type FounderMemory = {
+  user_id: string;
+  avoidance_zones?: string[] | null;
+  strengths?: string[] | null;
+  personality_tags?: string[] | null;
+  last_insight?: string | null;
+  last_week_summary: string | null;
+  initial_analysis: string | null;
+  pending_milestone_break: string | null;
+  intention_vs_execution_rate: number | null;
+  previous_intention_vs_execution_rate: number | null;
+  execution_trend: "up" | "down" | "flat";
+  avoidance_pattern: string | null;
+};
+
 export type WeeklyReportMetrics = {
   score: number;
   previousScore: number;
@@ -97,6 +112,10 @@ export type WeeklyReportMetrics = {
   taskData: number[];
   tasksCompletedThisWeek: number;
   tasksCompletedPreviousWeek: number;
+  intention_vs_execution_rate: number | null;
+  previous_intention_vs_execution_rate: number | null;
+  execution_trend: "up" | "down" | "flat";
+  avoidance_pattern: string | null;
   activeStreakDays: number;
   focusData: { label: string; value: number; color: string }[];
   wins: string[];

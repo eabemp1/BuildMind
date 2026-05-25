@@ -214,6 +214,21 @@ export default function ReportsPage() {
   const nextFocus = metrics?.nextFocus ?? [];
   const focusData = metrics?.focusData ?? [];
   const totalFocus = focusData.reduce((a,s) => a+s.value, 0);
+  const intentionRate = metrics?.intention_vs_execution_rate ?? null;
+  const prevIntentionRate = metrics?.previous_intention_vs_execution_rate ?? null;
+  const executionTrend = metrics?.execution_trend ?? "flat";
+  const avoidancePattern = metrics?.avoidance_pattern ?? null;
+  const executionRateColor = intentionRate == null ? "var(--bm-text3)"
+    : intentionRate >= 60 ? "var(--bm-green)"
+    : intentionRate >= 30 ? "var(--bm-amber)"
+    : "var(--bm-red)";
+  const executionRateTrendLabel = prevIntentionRate == null || intentionRate == null
+    ? null
+    : executionTrend === "up"
+      ? `+${intentionRate - prevIntentionRate} vs last week`
+      : executionTrend === "down"
+        ? `${intentionRate - prevIntentionRate} vs last week`
+        : `${intentionRate - prevIntentionRate} vs last week`;
 
   async function handleExport(fmt: ExportFmt) {
     setExporting(fmt);
@@ -383,9 +398,20 @@ export default function ReportsPage() {
           <Tile label="Active Streak" value={`${streak}d`}
             sub={streak>0?(streak>=7?"🔥 On fire":"Keep going"):"Complete a task"}
             trend={streak>0?"up":"flat"} color="var(--bm-amber)" icon={Flame}/>
-          <Tile label="Total XP" value={getXP()}
-            sub="Lifetime achievement points" trend="up"
-            spark={scoreHistory} color="#A78BFA" icon={Zap}/>
+          {intentionRate != null ? (
+            <Tile
+              label="Execution Rate"
+              value={`${intentionRate}%`}
+              sub={executionRateTrendLabel ?? "No previous week comparison"}
+              trend={executionTrend}
+              color={executionRateColor}
+              icon={BarChart3}
+            />
+          ) : (
+            <Tile label="Total XP" value={getXP()}
+              sub="Lifetime achievement points" trend="up"
+              spark={scoreHistory} color="#A78BFA" icon={Zap}/>
+          )}
         </div>
 
         {/* CHARTS */}
@@ -458,6 +484,22 @@ export default function ReportsPage() {
 
         {/* WINS & FOCUS */}
         <SectionHead>This Week</SectionHead>
+        {intentionRate != null && (
+          <motion.div initial={{ opacity:0, y:6 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.28 }}
+            style={{ background:"var(--bm-bg2)", border:"1px solid var(--bm-border)", borderRadius:"var(--r-xl)", padding:"20px", marginBottom:12 }}>
+            <div style={{ fontSize:12, fontWeight:600, color:"var(--bm-text2)", marginBottom:10 }}>Execution Rate This Week</div>
+            <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between", gap:16, flexWrap:"wrap" }}>
+              <div style={{ fontSize:44, fontWeight:900, lineHeight:1, letterSpacing:"-0.04em", color: executionRateColor }}>{intentionRate}%</div>
+              <div style={{ fontSize:12, color:"var(--bm-text3)", lineHeight:1.6, maxWidth: 340 }}>
+                {executionTrend === "up"
+                  ? `Up from ${prevIntentionRate ?? 0}% last week. The loop is getting tighter.`
+                  : executionTrend === "down"
+                    ? `Down from ${prevIntentionRate ?? 0}% last week. The work is slipping.`
+                    : `Flat versus last week. Same pattern, same result.`}
+              </div>
+            </div>
+          </motion.div>
+        )}
         <div style={{ display:"grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap:12, marginBottom:16 }}>
           <motion.div initial={{ opacity:0, x:-8 }} animate={{ opacity:1, x:0 }} transition={{ delay:0.3 }}
             style={{ background:"var(--bm-bg2)", border:"1px solid var(--bm-border)",
@@ -495,6 +537,13 @@ export default function ReportsPage() {
             ))}
           </motion.div>
         </div>
+
+          {avoidancePattern && (
+            <div style={{ background:"rgba(245,158,11,0.05)", borderLeft:"3px solid var(--bm-amber)", border:"1px solid rgba(245,158,11,0.16)", borderRadius:"var(--r-xl)", padding:"16px 18px", marginBottom:16 }}>
+              <div style={{ fontSize:12, color:"var(--bm-amber)", fontWeight:700, marginBottom:6 }}>Pattern detected: {avoidancePattern}. This is being written to your behavioral profile.</div>
+              <div style={{ fontSize:12, color:"var(--bm-text3)", lineHeight:1.6 }}>Monday&apos;s task will route around this pattern automatically.</div>
+            </div>
+          )}
 
         {/* PROJECT SNAPSHOT */}
         {project && (

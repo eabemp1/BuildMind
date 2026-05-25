@@ -51,6 +51,7 @@ export default function ReflectPage() {
   const [history, setHistory] = useState<any[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [streak, setStreak] = useState(0);
+  const [userId, setUserId] = useState<string | null>(null);
   const [startupStage, setStartupStage] = useState("Idea");
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [testimonialSource, setTestimonialSource] = useState<TestimonialSource | null>(null);
@@ -60,6 +61,16 @@ export default function ReflectPage() {
    * Null until loaded; empty string if the API returned nothing useful.
    */
   const [historySynthesis, setHistorySynthesis] = useState<string | null>(null);
+
+  const NEXT_ACTION_FALLBACK: Record<string, string> = {
+    Idea:       "Tomorrow: find one more person who has this problem and ask them about their current workaround.",
+    Validation: "Tomorrow: convert one opinion into a commitment — time, money, or workflow change.",
+    MVP:        "Tomorrow: put the working link in front of one person you haven't shown it to yet.",
+    Launch:     "Tomorrow: post once, measure the response, iterate the message.",
+    Growth:     "Tomorrow: talk to one churned user.",
+    Revenue:    "Tomorrow: map the biggest drop-off between awareness and payment.",
+  };
+  const displayNextAction = nextAction || NEXT_ACTION_FALLBACK[startupStage] || "Tomorrow: do the one thing that would most reduce your biggest current risk.";
 
   useEffect(() => {
     try {
@@ -82,6 +93,7 @@ export default function ReflectPage() {
         const supabase = createClient();
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
+          setUserId(user.id);
           const [summariesRes, reflectionsRes] = await Promise.allSettled([
             supabase
               .from("project_summaries")
@@ -120,7 +132,9 @@ export default function ReflectPage() {
             // Only fire when there's enough history to say something meaningful.
             // We send the last 10 reflections (enough for pattern recognition,
             // cheap enough to keep latency acceptable).
-            if (serverHistory.length >= 5) {
+            const reflectionCount = reflectionsRes.status === "fulfilled"
+              ? (reflectionsRes.value.data?.length ?? 0) : 0;
+            if (reflectionCount >= 5) {
               try {
                 const synthRes = await fetch("/api/ai/reflect-synthesis", {
                   method: "POST",
@@ -141,7 +155,14 @@ export default function ReflectPage() {
                 if (synthRes.ok) {
                   const synthData = await synthRes.json();
                   const synthesis = (synthData.data ?? synthData).synthesis ?? "";
-                  if (synthesis) setHistorySynthesis(synthesis);
+                  if (synthesis) {
+                    setHistorySynthesis(synthesis);
+                    fetch("/api/founder-context", {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ last_insight: synthesis }),
+                    }).catch(() => {});
+                  }
                 }
               } catch {
                 // Non-fatal — synthesis is additive, not required
@@ -180,16 +201,11 @@ export default function ReflectPage() {
       updateAchievementStats({ ...stats, reflectionsLogged: (stats.reflectionsLogged ?? 0) + 1 });
       checkAndUnlockAchievements();
 
-      // Increment streak only when the founder both completed today's action AND reflected.
-      // bm_checkin_done_date is set by today/page.tsx after a successful check-in.
-      const today = new Date().toISOString().split("T")[0];
-      const serverState = await fetchBehaviorState<{ checkin_done_date: string }>(["checkin_done_date"]);
-      const checkinDoneToday = (serverState.checkin_done_date ?? storage.get("bm_checkin_done_date")) === today;
-      if (checkinDoneToday) {
-        const newStreak = incrementDailyStreak();
-        updateAchievementStats({ ...getAchievementStats(), streak: newStreak });
-        notifyStreakMilestone(newStreak);
-      }
+      const currentStreakForAchievements = getStoredStreak();
+      updateAchievementStats({ ...getAchievementStats(), streak: currentStreakForAchievements });
+      notifyStreakMilestone(currentStreakForAchievements);
+
+      if (userId) storage.set(`bm_last_reflection_ts_${userId}`, Date.now().toString());
 
       trackFunnelStep("first_reflect");
       // Mark reflection done today for the daily loop status bar in app-shell
@@ -224,12 +240,10 @@ export default function ReflectPage() {
               <p style={{ fontSize: 14, color: "var(--bm-text)", lineHeight: 1.6, margin: 0, fontStyle: "italic" }}>&ldquo;{causality}&rdquo;</p>
             </div>
           )}
-          {nextAction && (
-            <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: "18px 20px", marginBottom: 20 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Tomorrow's Focus</div>
-              <p style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.6, margin: 0 }}>{nextAction}</p>
-            </div>
-          )}
+          <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: "18px 20px", marginBottom: 20 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Tomorrow's Focus</div>
+            <p style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.6, margin: 0 }}>{displayNextAction}</p>
+          </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <button onClick={() => router.push("/overview")} style={{ flex: 1, padding: "12px 0", borderRadius: 10, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text2)", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Back to dashboard</button>
             <button onClick={() => router.push("/today")} style={{ flex: 1, padding: "12px 0", borderRadius: 10, border: "none", background: "var(--grad-primary)", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>See tomorrow's action →</button>

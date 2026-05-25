@@ -46,7 +46,7 @@ export async function PATCH(req: Request) {
     "ai_messages_today","last_ai_date",
     "momentum_score","momentum_updated_at","last_active","days_inactive",
     "consecutive_tasks_completed","tasks_accepted_this_week","tasks_overridden_this_week",
-    "override_reasons",
+    "override_reasons","last_insight","pending_milestone_break",
   ] as const;
   const patch: Record<string, unknown> = {};
   for (const key of ALLOWED) { if (key in body) patch[key] = body[key]; }

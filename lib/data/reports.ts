@@ -46,6 +46,10 @@ export async function getWeeklyReportMetrics(): Promise<WeeklyReportMetrics> {
     taskData: [0, 0, 0, 0, 0, 0, 0],
     tasksCompletedThisWeek: 0,
     tasksCompletedPreviousWeek: 0,
+    intention_vs_execution_rate: null,
+    previous_intention_vs_execution_rate: null,
+    execution_trend: "flat",
+    avoidance_pattern: null,
     activeStreakDays: 0,
     focusData: [],
     wins: [],
@@ -107,10 +111,17 @@ export async function getWeeklyReportMetrics(): Promise<WeeklyReportMetrics> {
   previousStart.setDate(start.getDate() - 7);
   const taskData = [0, 0, 0, 0, 0, 0, 0];
   let tasksCompletedPreviousWeek = 0;
+  let totalTasksCreatedThisWeek = 0;
+  let totalTasksCreatedPreviousWeek = 0;
   const completedDates = new Set<string>();
   const focusCounts = new Map<string, number>();
+  const incompleteStageCounts = new Map<string, number>();
 
   (tasks ?? []).forEach((task) => {
+    const createdAt = new Date(task.created_at);
+    if (createdAt >= start) totalTasksCreatedThisWeek += 1;
+    if (createdAt >= previousStart && createdAt < start) totalTasksCreatedPreviousWeek += 1;
+
     if (!task.is_completed) return;
     const completedAt = task.updated_at ?? task.created_at;
     const completedDate = new Date(completedAt);
@@ -124,6 +135,25 @@ export async function getWeeklyReportMetrics(): Promise<WeeklyReportMetrics> {
     if (completedDate >= previousStart && completedDate < start) tasksCompletedPreviousWeek += 1;
   });
 
+  const completedViaLearningLog = await supabase
+    .from("reflexion_learning_log")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", user.id)
+    .eq("outcome", "completed")
+    .gte("created_at", start.toISOString());
+  const completedLearningCount = completedViaLearningLog.count ?? 0;
+
+  const taskCompletionCount = taskData.reduce((sum, count) => sum + count, 0);
+  const tasksCompletedThisWeek = Math.max(taskCompletionCount, completedLearningCount);
+
+  (tasks ?? []).forEach((task) => {
+    if (task.is_completed) return;
+    const projectId = milestoneToProject.get(task.milestone_id);
+    const project = summaries.find((s) => s.id === projectId);
+    const stage = project?.startup_stage ?? milestoneTitle.get(task.milestone_id) ?? "Execution";
+    incompleteStageCounts.set(stage, (incompleteStageCounts.get(stage) ?? 0) + 1);
+  });
+
   let activeStreakDays = 0;
   for (let i = 0; i < 90; i++) {
     const d = new Date();
@@ -132,7 +162,6 @@ export async function getWeeklyReportMetrics(): Promise<WeeklyReportMetrics> {
     else if (i > 0) break;
   }
 
-  const tasksCompletedThisWeek = taskData.reduce((sum, count) => sum + count, 0);
   const milestonesCompletedThisWeek = (allMilestones ?? []).filter((m) => {
     if (!m.is_completed) return false;
     const completedAt = new Date(m.updated_at ?? m.created_at);
@@ -163,9 +192,36 @@ export async function getWeeklyReportMetrics(): Promise<WeeklyReportMetrics> {
     .slice(0, 3)
     .map((task) => task.title || "Complete the next project task");
 
+  const intention_vs_execution_rate = totalTasksCreatedThisWeek > 0
+    ? Math.round((tasksCompletedThisWeek / totalTasksCreatedThisWeek) * 100)
+    : null;
+  const previous_intention_vs_execution_rate = totalTasksCreatedPreviousWeek > 0
+    ? Math.round((tasksCompletedPreviousWeek / totalTasksCreatedPreviousWeek) * 100)
+    : null;
+  const execution_trend =
+    intention_vs_execution_rate == null || previous_intention_vs_execution_rate == null
+      ? "flat"
+      : intention_vs_execution_rate > previous_intention_vs_execution_rate + 5
+        ? "up"
+        : intention_vs_execution_rate < previous_intention_vs_execution_rate - 5
+          ? "down"
+          : "flat";
+
+  let avoidance_pattern: string | null = null;
+  for (const [stage, count] of incompleteStageCounts.entries()) {
+    if (count >= 3) {
+      avoidance_pattern = `${count} incomplete ${stage}-stage tasks`;
+      break;
+    }
+  }
+
   return {
     score, previousScore, weeklyScores, taskData,
     tasksCompletedThisWeek, tasksCompletedPreviousWeek,
+    intention_vs_execution_rate,
+    previous_intention_vs_execution_rate,
+    execution_trend,
+    avoidance_pattern,
     activeStreakDays, focusData, wins, nextFocus,
   };
 }

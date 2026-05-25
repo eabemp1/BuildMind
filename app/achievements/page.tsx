@@ -19,7 +19,19 @@ function ProgressBar({ value, max }: { value: number; max: number }) {
   );
 }
 
-function AchievementCard({ a, unlocked }: { a: Achievement; unlocked: boolean }) {
+function formatTimeAgo(unlockedAt?: string): string | null {
+  if (!unlockedAt) return null;
+  const diffMs = Date.now() - new Date(unlockedAt).getTime();
+  const days = Math.floor(diffMs / (24 * 60 * 60 * 1000));
+  if (days <= 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 30) return `${days} days ago`;
+  const months = Math.floor(days / 30);
+  return months === 1 ? "1 month ago" : `${months} months ago`;
+}
+
+function AchievementCard({ a, unlocked, unlockedAt }: { a: Achievement; unlocked: boolean; unlockedAt?: string }) {
+  const timeAgo = formatTimeAgo(unlockedAt);
   return (
     <motion.div
       whileHover={{ y: -2 }}
@@ -92,6 +104,11 @@ function AchievementCard({ a, unlocked }: { a: Achievement; unlocked: boolean })
           }}>
             {a.description}
           </div>
+          {unlocked && timeAgo && (
+            <div style={{ marginTop: 8, fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+              Unlocked {timeAgo}
+            </div>
+          )}
         </div>
       </div>
     </motion.div>
@@ -112,11 +129,24 @@ const CATEGORIES = [
 export default function AchievementsPage() {
   const [all, setAll] = useState<Achievement[]>([]);
   const [unlocked, setUnlocked] = useState<Set<string>>(new Set());
+  const [unlockedTimestamps, setUnlockedTimestamps] = useState<Record<string, string>>({});
   const [filter, setFilter] = useState("all");
 
   useEffect(() => {
     setAll(ACHIEVEMENTS);
-    setUnlocked(new Set(getUnlocked().map((a) => a.id)));
+    const entries = getUnlocked();
+    setUnlocked(new Set(entries.map((a) => a.id)));
+    void fetch("/api/achievements")
+      .then((r) => r.json())
+      .then((d) => {
+        if (!d?.ok || !Array.isArray(d.data)) return;
+        const next: Record<string, string> = {};
+        for (const row of d.data as Array<{ achievement_id?: string; unlocked_at?: string }>) {
+          if (row.achievement_id && row.unlocked_at) next[row.achievement_id] = row.unlocked_at;
+        }
+        setUnlockedTimestamps(next);
+      })
+      .catch(() => {});
   }, []);
 
   const displayed = filter === "all" ? all : all.filter((a) => a.category === filter);
@@ -223,7 +253,7 @@ export default function AchievementsPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.04 }}
           >
-            <AchievementCard a={a} unlocked={unlocked.has(a.id)} />
+            <AchievementCard a={a} unlocked={unlocked.has(a.id)} unlockedAt={unlockedTimestamps[a.id]} />
           </motion.div>
         ))}
       </div>

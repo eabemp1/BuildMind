@@ -12,7 +12,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createProjectWithRoadmap, getCurrentUser, getOnboardingStatus } from "@/lib/buildmind";
 import { createClient } from "@/lib/supabase/client";
 import { identifyUser } from "@/lib/analytics";
@@ -21,7 +21,7 @@ import BuildMindLoader from "@/components/BuildMindLoader";
 import { ArrowRight, Loader2, Zap } from "lucide-react";
 import { Suspense } from "react";
 
-type Screen = "input" | "strike" | "depth" | "stage" | "identity" | "saving";
+type Screen = "input" | "strike" | "depth" | "stage" | "identity" | "integrations" | "saving";
 
 // ── Depth screen answers ──────────────────────────────────────────────────────
 interface DepthAnswers {
@@ -35,6 +35,8 @@ interface StrikeResult {
   firstTask: string;
   rationale: string;
 }
+
+const ONBOARDING_STATE_KEY = "bm_onboarding_state_v2";
 
 // ── Shared visual tokens ──────────────────────────────────────────────────────
 const VIZ = {
@@ -666,25 +668,144 @@ function IdentityScreen({ onComplete }: { onComplete: () => void }) {
   );
 }
 
+function IntegrationsScreen({
+  onContinue,
+  notionConnected,
+  linearConnected,
+}: {
+  onContinue: () => void;
+  notionConnected: boolean;
+  linearConnected: boolean;
+}) {
+  const router = useRouter();
+
+  function connect(provider: "notion" | "linear") {
+    const returnPath = encodeURIComponent("/onboarding");
+    window.location.href = `/api/integrations/${provider}/connect?return=${returnPath}`;
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -16 }}
+      transition={{ duration: 0.35, ease: "easeOut" }}
+      style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100dvh", padding: "24px", background: VIZ.bg }}
+    >
+      <div style={{ width: "100%", maxWidth: 560 }}>
+        <div style={{ marginBottom: 28, textAlign: "center" }}>
+          <h2 style={{ fontSize: "clamp(22px, 4vw, 30px)", fontWeight: 800, color: VIZ.text, letterSpacing: "-0.03em", lineHeight: 1.2, margin: "0 0 10px" }}>
+            Connect your operating tools.
+          </h2>
+          <p style={{ fontSize: 13, color: VIZ.text3, lineHeight: 1.5, margin: 0 }}>
+            Optional, but useful. BuildMind can route tasks and context better when your workspace is linked.
+          </p>
+        </div>
+
+        <div style={{ display: "grid", gap: 10, marginBottom: 22 }}>
+          {[
+            { id: "notion", label: "Notion", sub: "Sync project notes and docs.", connected: notionConnected },
+            { id: "linear", label: "Linear", sub: "Pull in issues and execution context.", connected: linearConnected },
+          ].map((integration) => (
+            <div key={integration.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "14px 16px", borderRadius: 12, border: `1px solid ${integration.connected ? VIZ.accent : VIZ.border}`, background: integration.connected ? `color-mix(in srgb, ${VIZ.accent} 6%, ${VIZ.panel})` : VIZ.panel }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: VIZ.text, marginBottom: 3 }}>{integration.label}</div>
+                <div style={{ fontSize: 12, color: VIZ.text3, lineHeight: 1.45 }}>{integration.sub}</div>
+              </div>
+              <button
+                onClick={() => connect(integration.id as "notion" | "linear")}
+                style={{ padding: "9px 12px", borderRadius: 10, border: "none", background: integration.connected ? VIZ.panel : VIZ.grad, color: integration.connected ? VIZ.text2 : "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}
+              >
+                {integration.connected ? "Connected" : `Connect ${integration.label}`}
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <motion.button
+          onClick={onContinue}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          style={{ width: "100%", padding: "14px 24px", background: VIZ.grad, color: "#fff", border: "none", borderRadius: 10, fontSize: 15, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: "inherit" }}
+        >
+          Continue to your first task <ArrowRight size={15} />
+        </motion.button>
+
+        <button
+          onClick={() => router.push("/today")}
+          style={{ width: "100%", marginTop: 12, background: "transparent", border: "none", color: VIZ.text3, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}
+        >
+          Skip for now, I&apos;ll connect later
+        </button>
+      </div>
+    </motion.div>
+  );
+}
+
 // ── Main Onboarding Component ─────────────────────────────────────────────────
 function OnboardingInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [screen, setScreen] = useState<Screen>("input");
   const [idea, setIdea] = useState("");
   const [strikeResult, setStrikeResult] = useState<StrikeResult | null>(null);
   const [depthAnswers, setDepthAnswers] = useState<DepthAnswers>({ avoidance: "", revenueModel: "", targetUsers: "" });
   const [startupStage, setStartupStage] = useState<string>("Idea");
   const [error, setError] = useState<string | null>(null);
+  const [notionConnected, setNotionConnected] = useState(false);
+  const [linearConnected, setLinearConnected] = useState(false);
 
   // Redirect if already onboarded
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = window.sessionStorage.getItem(ONBOARDING_STATE_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored) as {
+            screen?: Screen;
+            idea?: string;
+            strikeResult?: StrikeResult | null;
+            depthAnswers?: DepthAnswers;
+            startupStage?: string;
+            notionConnected?: boolean;
+            linearConnected?: boolean;
+          };
+          if (parsed.screen) setScreen(parsed.screen);
+          if (parsed.idea) setIdea(parsed.idea);
+          if (parsed.strikeResult) setStrikeResult(parsed.strikeResult);
+          if (parsed.depthAnswers) setDepthAnswers(parsed.depthAnswers);
+          if (parsed.startupStage) setStartupStage(parsed.startupStage);
+          setNotionConnected(!!parsed.notionConnected);
+          setLinearConnected(!!parsed.linearConnected);
+        }
+      } catch {}
+    }
+
+    const provider = searchParams.get("integration");
+    const status = searchParams.get("status");
+    if (status === "connected" && provider === "notion") setNotionConnected(true);
+    if (status === "connected" && provider === "linear") setLinearConnected(true);
+
     getCurrentUser().then(user => {
       if (!user) { router.replace("/auth"); return; }
       getOnboardingStatus(user.id).then(status => {
         if (status) router.replace("/today");
       });
     });
-  }, [router]);
+  }, [router, searchParams]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.sessionStorage.setItem(ONBOARDING_STATE_KEY, JSON.stringify({
+      screen,
+      idea,
+      strikeResult,
+      depthAnswers,
+      startupStage,
+      notionConnected,
+      linearConnected,
+    }));
+  }, [screen, idea, strikeResult, depthAnswers, startupStage, notionConnected, linearConnected]);
 
   const handleIdeaSubmit = async (submittedIdea: string) => {
     setIdea(submittedIdea);
@@ -735,22 +856,20 @@ function OnboardingInner() {
   };
 
   const handleIdentityComplete = async () => {
+    setScreen("integrations");
+    trackFunnelStep("identity_confirmed");
+  };
+
+  const handleIntegrationsContinue = async () => {
     setScreen("saving");
     try {
       const user = await getCurrentUser();
       if (!user) { router.replace("/auth"); return; }
 
-      // Map onboarding v2 fields to createProjectWithRoadmap's expected params.
-      // project_name: first ≤60 chars of the idea sentence, title-cased
-      // idea_description: the full one-sentence idea from screen 1
-      // problem: the market gap surfaced by the Reflexion Strike (screen 2)
-      // target_users: the AI will refine this via the coach; "founders" is the
-      //   default fallback so the context object is never empty on day 1
       const projectName = idea.slice(0, 60).replace(/[.!?]+$/, "").trim();
       await createProjectWithRoadmap({
         project_name: projectName,
         idea_description: idea,
-        // Use depth screen answer if provided, else sensible default
         target_users: depthAnswers.targetUsers.trim() || "founders",
         problem: strikeResult?.marketGap ?? idea,
         startup_stage: startupStage,
@@ -759,8 +878,6 @@ function OnboardingInner() {
       identifyUser(user.id, user.email ?? null);
       trackFunnelStep("onboarding_complete");
 
-      // Persist depth-screen answers into founder_memory.avoidance_zones
-      // and startup context (best-effort, non-blocking)
       if (depthAnswers.avoidance.trim() || depthAnswers.revenueModel.trim()) {
         fetch("/api/onboarding/depth-answers", {
           method: "POST",
@@ -769,18 +886,16 @@ function OnboardingInner() {
         }).catch(() => {});
       }
 
-      // Stamp onboarding_completed into JWT metadata so middleware never
-      // runs the slow DB project-count query again for this user (W6 fix).
       const supabase = createClient();
       await supabase.auth.updateUser({ data: { onboarding_completed: true } });
 
-      // Fire welcome email — best-effort, never blocks navigation
       fetch("/api/user/welcome-email", { method: "POST" }).catch(() => {});
 
+      window.sessionStorage.removeItem(ONBOARDING_STATE_KEY);
       router.push("/today?first_session=true");
     } catch {
       setError("Something went wrong saving your project. Please try again.");
-      setScreen("identity");
+      setScreen("integrations");
     }
   };
 
@@ -809,6 +924,14 @@ function OnboardingInner() {
       )}
       {screen === "identity" && (
         <IdentityScreen key="identity" onComplete={handleIdentityComplete} />
+      )}
+      {screen === "integrations" && (
+        <IntegrationsScreen
+          key="integrations"
+          onContinue={handleIntegrationsContinue}
+          notionConnected={notionConnected}
+          linearConnected={linearConnected}
+        />
       )}
     </AnimatePresence>
   );

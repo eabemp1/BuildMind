@@ -8,12 +8,14 @@ import { useProjectSummariesQuery, useDashboardOverviewQuery, queryKeys } from "
 import { useQueryClient } from "@tanstack/react-query";
 import { computeStartupScore } from "@/lib/buildmind";
 import { computeScoreDelta, applyScoreDelta, getXP, recordScore } from "@/lib/scoring";
-import { fetchAndSyncStoredPlanFromBillingStatus, getStoredStreak, recordTaskCompletion, syncStreakFromServer } from "@/lib/plan";
+import { fetchAndSyncStoredPlanFromBillingStatus, getStoredStreak, incrementDailyStreak, recordTaskCompletion, syncStreakFromServer } from "@/lib/plan";
 import { syncUrgencyFromServer } from "@/lib/urgency";
 import { updateAchievementStats, checkAndUnlockAchievements, getAchievementStats } from "@/lib/achievements";
 import { notifyReflectPending } from "@/lib/notifications";
 import { trackFunnelStep } from "@/lib/onboarding-analytics";
 import BuildMindLoader from "@/components/BuildMindLoader";
+import { ReflectSheet } from "@/components/ReflectSheet";
+import { LoopNarrative } from "@/components/LoopNarrative";
 import { PaywallMoment } from "@/components/PaywallMoment";
 import { Clock, CheckCircle2, Copy, Check, Flame, Brain, ArrowRight, Sparkles, AlertCircle, TrendingUp, RotateCcw, Zap } from "lucide-react";
 import { storage } from "@/lib/storage";
@@ -48,6 +50,25 @@ type CachedTodayAction = {
   projectId?: string;
   stage?: string;
   data?: ActionData;
+};
+
+type InitialAnalysis = {
+  transition_state: string;
+  key_risks: string[];
+  immediate_priorities: string[];
+  health_score: number;
+  founder_pattern: string;
+  operating_mode: string;
+  generated_at: string;
+  stage: string;
+};
+
+type MilestoneBreakResult = {
+  trigger: "milestone_complete" | "stage_transition";
+  triggerLabel: string;
+  brutal_points: string[];
+  recommended_action: string;
+  generated_at: string;
 };
 
 function isActionData(value: unknown): value is ActionData {
@@ -311,6 +332,9 @@ function TodayContent() {
   // Win attribution
   const [revenueDelta, setRevenueDelta] = useState<string>("");
   const [showRevenueField, setShowRevenueField] = useState(false);
+  const [showReflectSheet, setShowReflectSheet] = useState(false);
+  const [initialAnalysis, setInitialAnalysis] = useState<InitialAnalysis | null>(null);
+  const [pendingMilestoneBreak, setPendingMilestoneBreak] = useState<MilestoneBreakResult | null>(null);
 
   useEffect(() => {
     fetchAndSyncStoredPlanFromBillingStatus().then(p => setPlan(p)).catch(() => {});
@@ -394,6 +418,40 @@ function TodayContent() {
     const today = new Date().toISOString().split("T")[0];
     const currentStage = project.startup_stage ?? "Idea";
     const cacheKey = `bm_today_action_cache_${userId}`;
+    const cacheTsKey = `bm_today_action_cache_ts_${userId}`;
+    const lastReflectionTsKey = `bm_last_reflection_ts_${userId}`;
+    const lastReflectionTs = storage.get(lastReflectionTsKey);
+    const cacheTs = storage.get(cacheTsKey);
+    if (lastReflectionTs && (!cacheTs || lastReflectionTs > cacheTs)) {
+      storage.remove(cacheKey);
+      storage.remove(cacheTsKey);
+      persistBehaviorState({ today_action_cache: null });
+    }
+
+    void Promise.all([
+      fetch("/api/founder-context", { cache: "no-store" })
+        .then((response) => response.ok ? response.json() : null)
+        .then((body: { ok?: boolean; data?: { pending_milestone_break?: MilestoneBreakResult | string } } | null) => {
+          const raw = body?.data?.pending_milestone_break;
+          if (!raw) return null;
+          const parsed = typeof raw === "string" ? JSON.parse(raw) as MilestoneBreakResult : raw;
+          setPendingMilestoneBreak(parsed);
+          return parsed;
+        })
+        .catch(() => null),
+      fetch("/api/ai/initial-analysis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, stage: currentStage }),
+      })
+        .then((response) => response.ok ? response.json() : null)
+        .then((body: { ok?: boolean; data?: InitialAnalysis } | null) => {
+          if (body?.data) setInitialAnalysis(body.data);
+          return body?.data ?? null;
+        })
+        .catch(() => null),
+    ]);
+
     const serverCache = await fetchBehaviorState<{ today_action_cache: CachedTodayAction }>(["today_action_cache"]);
     if (
       serverCache.today_action_cache?.date === today &&
@@ -473,6 +531,7 @@ function TodayContent() {
               if (actionData.reflexion?.loopRan) {
                 const cacheValue = { date: today, projectId, stage: currentStage, data: actionData };
                 storage.setJSON(cacheKey, cacheValue);
+                storage.set(cacheTsKey, new Date().toISOString());
                 persistBehaviorState({ today_action_cache: cacheValue });
               }
               streamSucceeded = true;
@@ -499,6 +558,7 @@ function TodayContent() {
             if (actionData.reflexion?.loopRan) {
               const cacheValue = { date: today, projectId, stage: currentStage, data: actionData };
               storage.setJSON(cacheKey, cacheValue);
+              storage.set(cacheTsKey, new Date().toISOString());
               persistBehaviorState({ today_action_cache: cacheValue });
             }
           }
@@ -544,6 +604,21 @@ function TodayContent() {
           triggerType: "stage_transition",
         }),
       }).catch(() => {});
+      fetch("/api/ai/milestone-break", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: project.id,
+          previousStage: lastStage,
+          currentStage,
+          triggerType: "stage_transition",
+        }),
+      })
+        .then((response) => response.ok ? response.json() : null)
+        .then((body: { ok?: boolean; data?: MilestoneBreakResult } | null) => {
+          if (body?.data) setPendingMilestoneBreak(body.data);
+        })
+        .catch(() => {});
     }
     storage.set(storageKey, currentStage);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -589,6 +664,7 @@ function TodayContent() {
     setSubmitting(true);
     try {
       recordTaskCompletion();
+      incrementDailyStreak();
       if (!storage.get("bm_first_task_completed_tracked")) {
         trackFunnelStep("first_task_completed");
         storage.set("bm_first_task_completed_tracked", "1");
@@ -619,6 +695,7 @@ function TodayContent() {
       updateAchievementStats({
         ...stats,
         checkInsDone: (stats.checkInsDone ?? 0) + 1,
+        reflectionsLogged: (stats.reflectionsLogged ?? 0) + 1,
       });
       checkAndUnlockAchievements();
       notifyReflectPending();
@@ -663,6 +740,7 @@ function TodayContent() {
       }
 
       if (userId) {
+        storage.set(`bm_last_reflection_ts_${userId}`, new Date().toISOString());
         try {
           await fetch("/api/founder-context", {
             method: "PATCH",
@@ -760,7 +838,7 @@ function TodayContent() {
           )}
 
           <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 10, justifyContent: "center" }}>
-            <button onClick={() => router.push("/reflect")} style={{ padding: "12px 20px", borderRadius: 10, border: "none", background: "var(--grad-primary)", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Reflect on today →</button>
+            <button onClick={() => setShowReflectSheet(true)} style={{ padding: "12px 20px", borderRadius: 10, border: "none", background: "var(--grad-primary)", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Reflect on today →</button>
             <button onClick={() => router.push("/overview")} style={{ padding: "12px 20px", borderRadius: 10, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text2)", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>View full dashboard</button>
           </div>
         </motion.div>
@@ -776,6 +854,19 @@ function TodayContent() {
             </button>
           </div>
         </div>
+        <ReflectSheet
+          open={showReflectSheet}
+          onDone={() => setShowReflectSheet(false)}
+          onClose={() => setShowReflectSheet(false)}
+          projectStage={summaries[0]?.startup_stage ?? "Idea"}
+          taskAction={yesterdayReflection?.action ?? ""}
+        />
+        <LoopNarrative
+          reflectionCount={getAchievementStats().reflectionsLogged ?? 0}
+          tasksCompleted={overview?.completedTasks ?? 0}
+          avoidanceZones={[]}
+          completionRate={project?.completion_rate ?? 70}
+        />
       </div>
     );
   }
@@ -790,6 +881,24 @@ function TodayContent() {
   const yesterdayCausal = yesterdayReflection
     ? buildYesterdayCausalLine(yesterdayReflection)
     : null;
+  const reflectionCount = getAchievementStats().reflectionsLogged ?? 0;
+  const overlays = (
+    <>
+      <ReflectSheet
+        open={showReflectSheet}
+        onDone={() => setShowReflectSheet(false)}
+        onClose={() => setShowReflectSheet(false)}
+        projectStage={project?.startup_stage ?? "Idea"}
+        taskAction={actionData.action}
+      />
+      <LoopNarrative
+        reflectionCount={reflectionCount}
+        tasksCompleted={overview?.completedTasks ?? project?.tasksCompleted ?? 0}
+        avoidanceZones={[]}
+        completionRate={project?.completion_rate ?? 70}
+      />
+    </>
+  );
 
   return (
     <div style={{ maxWidth: 920, margin: "0 auto", padding: isMobile ? "0 0 24px" : "20px 8px 48px" }}>
@@ -855,6 +964,43 @@ function TodayContent() {
       {plan === "free" && briefingAvailable && (
         <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} style={{ marginBottom: 16 }}>
           <PaywallMoment trigger="morning_briefing" />
+        </motion.div>
+      )}
+
+      {pendingMilestoneBreak && (
+        <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} style={{ marginBottom: 16 }}>
+          <div style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)", borderLeft: "3px solid var(--bm-amber)", borderRadius: 14, padding: isMobile ? "14px" : "16px 18px" }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-amber)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
+              Milestone break · {pendingMilestoneBreak.triggerLabel}
+            </div>
+            <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
+              {pendingMilestoneBreak.brutal_points.map((point, index) => (
+                <div key={index} style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.6 }}>{point}</div>
+              ))}
+            </div>
+            <div style={{ fontSize: 12, color: "var(--bm-text3)", marginBottom: 12, lineHeight: 1.6 }}>
+              Recommended next move: {pendingMilestoneBreak.recommended_action}
+            </div>
+            <button onClick={() => setShowReflectSheet(true)} style={{ padding: "10px 14px", borderRadius: 10, border: "none", background: "var(--bm-text)", color: "var(--bm-bg)", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+              Reflect on this break
+            </button>
+          </div>
+        </motion.div>
+      )}
+
+      {initialAnalysis && (
+        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} style={{ marginBottom: 16 }}>
+          <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 14, padding: isMobile ? "14px" : "16px 18px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Initial Analysis</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "var(--bm-text)" }}>{initialAnalysis.operating_mode}</div>
+              </div>
+              <div style={{ fontSize: 28, fontWeight: 800, color: "var(--bm-accent)", letterSpacing: "-0.03em" }}>{initialAnalysis.health_score}</div>
+            </div>
+            <div style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.6, marginBottom: 10 }}>{initialAnalysis.transition_state}</div>
+            <div style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.6 }}>{initialAnalysis.founder_pattern}</div>
+          </div>
         </motion.div>
       )}
 

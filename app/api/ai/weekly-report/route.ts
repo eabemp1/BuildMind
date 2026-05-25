@@ -70,6 +70,7 @@ export async function POST(request: Request) {
       }
 
       // Get milestones and tasks for all user projects
+      const weekAgoISO = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
       const allProjectIds = (userProjects ?? []).map(p => p.id);
       if (allProjectIds.length > 0) {
         // Batch project IDs to avoid URL length limits
@@ -81,15 +82,15 @@ export async function POST(request: Request) {
         const milestoneResults = await Promise.all(projectBatches.map((batchIds) => {
           const milestonesQuery = supabase
             .from("milestones")
-            .select("id, status");
+            .select("id, status, updated_at");
           return batchIds.length === 1
             ? milestonesQuery.eq("project_id", batchIds[0])
             : milestonesQuery.in("project_id", batchIds);
         }));
-        const allMilestones: Array<{ id: string; status: string }> =
+        const allMilestones: Array<{ id: string; status: string; updated_at?: string | null }> =
           milestoneResults.flatMap((result) => result.data ?? []);
 
-        milestones = allMilestones.filter(m => m.status === 'completed').length;
+        milestones = allMilestones.filter(m => m.status === 'completed' && new Date(m.updated_at ?? 0) >= new Date(weekAgoISO)).length;
 
         const milestoneIds = allMilestones.map(m => m.id);
         if (milestoneIds.length > 0) {
@@ -101,15 +102,15 @@ export async function POST(request: Request) {
           const taskResults = await Promise.all(milestoneBatches.map((batchIds) => {
             const tasksQuery = supabase
               .from("tasks")
-              .select("is_completed");
+              .select("is_completed, updated_at");
             return batchIds.length === 1
               ? tasksQuery.eq("milestone_id", batchIds[0])
               : tasksQuery.in("milestone_id", batchIds);
           }));
-          const allUserTasks: Array<{ is_completed: boolean }> =
+          const allUserTasks: Array<{ is_completed: boolean; updated_at?: string | null }> =
             taskResults.flatMap((result) => result.data ?? []);
 
-          tasks = allUserTasks.filter(t => t.is_completed).length;
+          tasks = allUserTasks.filter(t => t.is_completed && new Date(t.updated_at ?? 0) >= new Date(weekAgoISO)).length;
         }
       }
     }

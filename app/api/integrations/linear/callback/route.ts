@@ -9,6 +9,10 @@ import { verifyOAuthState } from "@/lib/server/oauthState";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://buildmind.live";
 
+function safeReturnPath(value: string | null): string {
+  return value === "/onboarding" || value === "/settings" ? value : "/settings";
+}
+
 export async function GET(request: Request) {
   const url   = new URL(request.url);
   const code  = url.searchParams.get("code");
@@ -52,9 +56,16 @@ export async function GET(request: Request) {
       access_token: tokenData.access_token,
     }, { onConflict: "user_id,provider" });
 
-    return NextResponse.redirect(`${APP_URL}/settings?integration=linear&status=connected`);
+    const cookieValue = request.headers.get("cookie") ?? "";
+    const returnMatch = cookieValue.match(/(?:^|;\s*)bm_oauth_return=([^;]+)/);
+    const safeReturn = safeReturnPath(returnMatch ? decodeURIComponent(returnMatch[1]) : "/settings");
+    const response = NextResponse.redirect(`${APP_URL}${safeReturn}?integration=linear&status=connected`);
+    response.cookies.set("bm_oauth_return", "", { maxAge: 0, path: "/" });
+    return response;
   } catch (err) {
     logError("integrations/linear/callback", err);
-    return NextResponse.redirect(`${APP_URL}/settings?integration=linear&status=error`);
+    const response = NextResponse.redirect(`${APP_URL}/settings?integration=linear&status=error`);
+    response.cookies.set("bm_oauth_return", "", { maxAge: 0, path: "/" });
+    return response;
   }
 }

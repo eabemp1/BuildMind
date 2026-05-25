@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useProjectsQuery } from "@/lib/queries";
@@ -9,6 +10,7 @@ import { canAccess, incrementDailyStreak } from "@/lib/plan";
 import { usePlan } from "@/lib/usePlan";
 import { useLimitModal } from "@/components/LimitModal";
 import { updateAchievementStats, checkAndUnlockAchievements } from "@/lib/achievements";
+import { BuildMindCalibrating } from "@/components/BuildMindCalibrating";
 import {
   Shield, ChevronDown, AlertTriangle, CheckCircle2,
   RefreshCw, Save, X, Loader2,
@@ -151,6 +153,21 @@ export default function BreakMyStartupPage() {
   const { plan, isLoading: planLoading } = usePlan();
   const { showLimitModal } = useLimitModal();
   const { data: projects = [], isLoading: projectsLoading } = useProjectsQuery();
+  const [reflectionCount, setReflectionCount] = React.useState(0);
+
+  React.useEffect(() => {
+    async function fetchCount() {
+      try {
+        const { createClient: cc } = await import("@/lib/supabase/client");
+        const supabase = cc();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const { count } = await supabase.from("reflections").select("id", { count: "exact", head: true }).eq("user_id", user.id);
+        setReflectionCount(count ?? 0);
+      } catch { /* non-fatal */ }
+    }
+    fetchCount();
+  }, []);
 
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [customIdea, setCustomIdea] = useState("");
@@ -165,6 +182,10 @@ export default function BreakMyStartupPage() {
 
   // Pre-fill idea from selected project
   const selectedProject = projects.find((p) => p.id === selectedProjectId);
+
+  if (reflectionCount < 7) {
+    return <BuildMindCalibrating count={reflectionCount} surface="break-my-startup" />;
+  }
 
   useEffect(() => {
     if (!selectedProjectId) return;

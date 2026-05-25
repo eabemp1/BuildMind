@@ -20,6 +20,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { motion } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
+import { BuildMindCalibrating } from "@/components/BuildMindCalibrating";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface InsightData {
@@ -36,6 +37,8 @@ interface InsightData {
   totalTasksCompleted: number;
   totalTasksShown:     number;
 }
+
+type AiInsightItem = { type: "warning" | "positive" | "insight"; text: string };
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -135,6 +138,22 @@ export default function InsightsPage() {
   const [data,    setData]    = useState<InsightData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState<string | null>(null);
+  const [reflectionCount, setReflectionCount] = useState(0);
+  const [aiInsights, setAiInsights] = useState<AiInsightItem[]>([]);
+  const [aiLoading, setAiLoading] = useState(false);
+
+  useEffect(() => {
+    async function fetchCount() {
+      try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const { count } = await supabase.from("reflections").select("id", { count: "exact", head: true }).eq("user_id", user.id);
+        setReflectionCount(count ?? 0);
+      } catch { /* non-fatal */ }
+    }
+    fetchCount();
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -213,6 +232,52 @@ export default function InsightsPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    if (!data) return;
+    if (data.totalTasksCompleted < 3 && data.avoidanceZones.length === 0) return;
+    let cancelled = false;
+    setAiLoading(true);
+    setAiInsights([]);
+
+    (async () => {
+      try {
+        const response = await fetch("/api/ai/insights", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId: undefined }),
+        });
+        if (!response.ok || !response.body) return;
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        while (!cancelled) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split("\n\n");
+          buffer = parts.pop() ?? "";
+          for (const part of parts) {
+            const eventMatch = part.match(/^event:\s*(\S+)/m);
+            const dataMatch = part.match(/^data:\s*(.+)/m);
+            if (!eventMatch || !dataMatch) continue;
+            if (eventMatch[1] === "insight") {
+              try {
+                const payload = JSON.parse(dataMatch[1]) as { item?: AiInsightItem };
+                if (payload.item) setAiInsights((prev) => [...prev, payload.item]);
+              } catch { /* ignore malformed chunk */ }
+            }
+            if (eventMatch[1] === "done") {
+              cancelled = true;
+            }
+          }
+        }
+      } catch { /* non-fatal */ }
+      if (!cancelled) setAiLoading(false);
+    })();
+
+    return () => { cancelled = true; };
+  }, [data]);
+
   const completionRate = data && data.totalTasksShown > 0
     ? Math.round((data.totalTasksCompleted / data.totalTasksShown) * 100)
     : null;
@@ -226,6 +291,10 @@ export default function InsightsPage() {
         return (e.completed / e.total) < (we.completed / we.total) ? day : worst;
       }, "Mon")
     : null;
+
+  if (!loading && reflectionCount < 7) {
+    return <BuildMindCalibrating count={reflectionCount} surface="patterns" />;
+  }
 
   return (
     <div style={{ maxWidth: 700, margin: "0 auto", padding: "32px 20px" }}>
@@ -304,6 +373,24 @@ export default function InsightsPage() {
               <p style={{ fontSize: 12, color: "var(--bm-text3)", margin: 0, lineHeight: 1.6 }}>
                 BuildMind injects these signals into every task recommendation to route around your blind spots.
               </p>
+            </InsightCard>
+          )}
+
+          {(aiLoading || aiInsights.length > 0) && (
+            <InsightCard title="AI behavioral read" accent="var(--bm-accent)">
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {aiLoading && aiInsights.length === 0 && (
+                  <p style={{ fontSize: 12, color: "var(--bm-text3)", margin: 0 }}>Reading your patterns…</p>
+                )}
+                {aiInsights.map((insight, index) => (
+                  <div key={index} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: insight.type === "warning" ? "var(--bm-amber)" : insight.type === "positive" ? "var(--bm-accent)" : "var(--bm-text3)", flexShrink: 0, paddingTop: 1 }}>
+                      {insight.type === "warning" ? "!" : insight.type === "positive" ? "+" : "i"}
+                    </span>
+                    <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.6 }}>{insight.text}</p>
+                  </div>
+                ))}
+              </div>
             </InsightCard>
           )}
 

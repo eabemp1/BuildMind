@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion, useAnimation } from "framer-motion";
 import {
@@ -12,6 +12,8 @@ import { setActiveProjectId } from "@/lib/api";
 import { createClient } from "@/lib/supabase/client";
 import { storage } from "@/lib/storage";
 import { getTasksDone, getStoredStreak } from "@/lib/upgrade";
+import { syncStreakFromServer } from "@/lib/plan";
+import { STAGE_ORDER } from "@/lib/stages";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queries";
 import { ScoreBreakdown } from "@/components/ui/ScoreBreakdown";
@@ -394,8 +396,29 @@ export default function ProjectDetailPage() {
     currentStage: string; nextStage: string | null; reason: string;
   } | null>(null);
   const [stageTransitionDismissed, setStageTransitionDismissed] = useState(false);
+  const [liveStreak, setLiveStreak] = useState(() => getStoredStreak());
+  const [stagePickerOpen, setStagePickerOpen] = useState(false);
+  const [stageChanging, setStageChanging] = useState(false);
+  const stagePickerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => { if (id) setActiveProjectId(id); }, [id]);
+
+  useEffect(() => {
+    syncStreakFromServer().then((value) => setLiveStreak(value)).catch(() => {
+      setLiveStreak(getStoredStreak());
+    });
+  }, []);
+
+  useEffect(() => {
+    function handleOutsideClick(event: MouseEvent) {
+      if (!stagePickerOpen) return;
+      if (stagePickerRef.current && !stagePickerRef.current.contains(event.target as Node)) {
+        setStagePickerOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, [stagePickerOpen]);
 
   // REC 3.2: Load pending transition challenge and generate narrative on project load
   useEffect(() => {
@@ -535,6 +558,37 @@ export default function ProjectDetailPage() {
       updateMilestoneForCurrentUser(payload.id, { title: payload.title, stage: payload.stage }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: queryKeys.project(id) }),
   });
+
+  async function handleStageSelect(nextStage: string) {
+    if (!project || !id || !project.user_id) return;
+    const currentIndex = STAGE_ORDER.indexOf(String(project.startup_stage ?? "Idea"));
+    const nextIndex = STAGE_ORDER.indexOf(nextStage as (typeof STAGE_ORDER)[number]);
+    if (nextIndex === -1 || nextIndex === currentIndex) {
+      setStagePickerOpen(false);
+      return;
+    }
+
+    setStageChanging(true);
+    try {
+      const supabase = createClient();
+      await supabase.from("projects").update({ startup_stage: nextStage }).eq("id", id).eq("user_id", project.user_id);
+
+      const milestonesToComplete = milestones.filter((milestone) => {
+        const milestoneStage = String(milestone.stage ?? milestone.title ?? "Idea");
+        const milestoneIndex = STAGE_ORDER.indexOf(milestoneStage as (typeof STAGE_ORDER)[number]);
+        return milestoneIndex !== -1 && milestoneIndex < nextIndex;
+      });
+
+      await Promise.all(milestonesToComplete.map((milestone) =>
+        supabase.from("milestones").update({ status: "completed", updated_at: new Date().toISOString() }).eq("id", milestone.id)
+      ));
+
+      void qc.invalidateQueries({ queryKey: queryKeys.project(id) });
+    } finally {
+      setStageChanging(false);
+      setStagePickerOpen(false);
+    }
+  }
 
   const stage = String(project?.startup_stage ?? "MVP");
   const score = useMemo(() => {
@@ -697,16 +751,39 @@ export default function ProjectDetailPage() {
           title={String(project.title ?? "Untitled project")}
           subtitle={narrativeSentence ?? `${completedCount}/${tasks.length} tasks · ${progress}% complete`}
           action={
-            <button onClick={() => router.push("/today")}
-              className="w-full rounded-lg border-none bg-[var(--bm-text)] px-3.5 py-2 text-[12px] font-bold text-[var(--bm-bg)] sm:w-auto">
-              Today&apos;s action
-            </button>
+            <div ref={stagePickerRef} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+              <button
+                onClick={() => setStagePickerOpen((value) => !value)}
+                disabled={stageChanging}
+                style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", color: "var(--bm-text2)", borderRadius: 10, padding: "8px 10px", fontSize: 11, fontWeight: 600, cursor: stageChanging ? "not-allowed" : "pointer", fontFamily: "inherit" }}
+              >
+                {stageChanging ? "Updating…" : `Stage: ${project.startup_stage ?? "Idea"}`}
+              </button>
+              {stagePickerOpen && (
+                <div style={{ position: "absolute", marginTop: 42, background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 12, padding: 8, boxShadow: "0 16px 36px rgba(0,0,0,0.35)", zIndex: 20 }}>
+                  {STAGE_ORDER.map((stageOption) => (
+                    <button
+                      key={stageOption}
+                      onClick={() => void handleStageSelect(stageOption)}
+                      style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", border: "none", background: "transparent", color: "var(--bm-text2)", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}
+                    >
+                      {stageOption}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <button onClick={() => router.push("/today")}
+                className="w-full rounded-lg border-none bg-[var(--bm-text)] px-3.5 py-2 text-[12px] font-bold text-[var(--bm-bg)] sm:w-auto">
+                Today&apos;s action
+              </button>
+            </div>
           }
         />
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <span style={{ fontSize: 10, padding: "2px 9px", borderRadius: 20, background: "var(--bm-bg3)", color: "var(--bm-text3)", border: "1px solid var(--bm-border)", fontWeight: 700 }}>{String(stage)}</span>
           <ScoreBreakdown score={score} compact />
           <span className="text-[11px] text-[var(--bm-text3)]">{completedCount}/{tasks.length} tasks</span>
+          <span className="text-[11px] text-[var(--bm-text3)]">{liveStreak}d streak</span>
           <span className="text-[11px]" style={{ color: progress >= 60 ? "#4ade80" : progress >= 30 ? "#fbbf24" : "var(--bm-text3)" }}>{progress}% complete</span>
         </div>
       </div>

@@ -320,7 +320,16 @@ export function checkAndUnlockAchievements(): Achievement[] {
     }
   }
 
-  if (newlyUnlocked.length > 0) saveUnlocked(unlocked);
+  if (newlyUnlocked.length > 0) {
+    saveUnlocked(unlocked);
+    if (typeof window !== "undefined") {
+      fetch("/api/achievements", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: newlyUnlocked.map((a) => a.id) }),
+      }).catch(() => {});
+    }
+  }
   return newlyUnlocked;
 }
 

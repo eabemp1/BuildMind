@@ -94,7 +94,7 @@ export async function completeTask(taskId: string): Promise<{ newStage: string |
     .from("tasks").select("title, milestone_id").eq("id", taskId).single();
   if (!task) return { newStage: null };
 
-  await supabase.from("tasks").update({ is_completed: true }).eq("id", taskId);
+  await supabase.from("tasks").update({ is_completed: true, updated_at: new Date().toISOString() }).eq("id", taskId);
   observeTaskEvent(task.title ?? "task", "completed").catch((err) => console.warn("[buildmind] observeTaskEvent failed:", err)); // non-blocking memory update
 
   const { data: sibling } = await supabase
@@ -131,7 +131,7 @@ export async function updateTaskStatus(taskId: string, isCompleted: boolean, not
     (milestoneTasks ?? []).length > 0 && (milestoneTasks ?? []).every((t) => t.is_completed);
 
   const { error } = await supabase
-    .from("tasks").update({ is_completed: isCompleted, notes: notes ?? null }).eq("id", taskId);
+    .from("tasks").update({ is_completed: isCompleted, notes: notes ?? null, updated_at: new Date().toISOString() }).eq("id", taskId);
   if (error) throw error;
 
   const nowTasks = (milestoneTasks ?? []).map((t) =>

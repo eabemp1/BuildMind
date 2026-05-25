@@ -14,7 +14,7 @@
 import type { Plan } from "@/lib/plan";
 import type { LucideIcon } from "lucide-react";
 import { storage } from "@/lib/storage";
-import { BarChart3, BriefcaseBusiness, CircleDot, FolderKanban, LineChart, Settings, Sparkles } from "lucide-react";
+import { BarChart3, CircleDot, FolderKanban, Settings, TrendingUp } from "lucide-react";
 
 export type NavItemConfig = {
   href: string;
@@ -30,16 +30,19 @@ export type NavItemConfig = {
 };
 
 export const NAV: readonly NavItemConfig[] = [
-  { href: "/today",            label: "Today",        icon: CircleDot,         enabled: true, section: null, badge: null, showDot: false, unlocksAt: 0 },
-  { href: "/projects",         label: "Projects",     icon: FolderKanban,      enabled: true, section: null, badge: null, showDot: false, unlocksAt: 0 },
-  { href: "/ai-coach",         label: "Intelligence", icon: Sparkles,          enabled: true, section: null, badge: null, showDot: false, unlocksAt: 3 },
-  { href: "/overview",         label: "Execution",    icon: BriefcaseBusiness, enabled: true, section: null, badge: null, showDot: false, unlocksAt: 3 },
-  { href: "/reports",          label: "Reports",      icon: LineChart,         enabled: true, section: null, badge: null, requiredPlan: "builder" as Plan, showDot: false, unlocksAt: 7 },
-  { href: "/settings",         label: "Settings",     icon: Settings,          enabled: true, section: null, badge: null, showDot: false, unlocksAt: 0 },
+  // ── 4 primary destinations ────────────────────────────────────────────────
+  { href: "/today",    label: "Today",    icon: CircleDot,    enabled: true, section: null, badge: null, showDot: false, unlocksAt: 0 },
+  { href: "/progress", label: "Progress", icon: TrendingUp,   enabled: true, section: null, badge: null, showDot: false, unlocksAt: 1 },
+  { href: "/projects", label: "Projects", icon: FolderKanban, enabled: true, section: null, badge: null, showDot: false, unlocksAt: 0 },
+  { href: "/settings", label: "Settings", icon: Settings,     enabled: true, section: null, badge: null, showDot: false, unlocksAt: 0 },
 
-  { href: "/reflect",          label: "Reflect",          icon: CircleDot, enabled: false, hidden: true, section: null, badge: null, showDot: true, unlocksAt: 1 },
-  { href: "/break-my-startup", label: "Break My Startup", icon: BarChart3, enabled: false, hidden: true, section: null, badge: null, showDot: false, unlocksAt: 3 },
-  { href: "/insights",         label: "Insights",         icon: BarChart3, enabled: false, hidden: true, section: null, badge: null, showDot: false, unlocksAt: 3 },
+  // ── Hidden power-user routes (routable but not in sidebar) ────────────────
+  { href: "/ai-coach",         label: "AI Coach",         icon: BarChart3, enabled: true,  hidden: true, section: null, badge: null, showDot: false, unlocksAt: 3 },
+  { href: "/reflect",          label: "Reflect",          icon: CircleDot, enabled: true,  hidden: true, section: null, badge: null, showDot: true,  unlocksAt: 1 },
+  { href: "/overview",         label: "Execution",        icon: BarChart3, enabled: true,  hidden: true, section: null, badge: null, showDot: false, unlocksAt: 3 },
+  { href: "/reports",          label: "Reports",          icon: BarChart3, enabled: true,  hidden: true, section: null, badge: null, requiredPlan: "builder" as Plan, showDot: false, unlocksAt: 7 },
+  { href: "/break-my-startup", label: "Break My Startup", icon: BarChart3, enabled: true,  hidden: true, section: null, badge: null, showDot: false, unlocksAt: 3 },
+  { href: "/insights",         label: "Insights",         icon: BarChart3, enabled: true,  hidden: true, section: null, badge: null, showDot: false, unlocksAt: 3 },
   { href: "/ventures",         label: "Ventures",         icon: BarChart3, enabled: false, hidden: true, section: null, badge: null, requiredPlan: "builder" as Plan, showDot: false, unlocksAt: 7 },
   { href: "/startup-kit",      label: "Startup Kit",      icon: BarChart3, enabled: false, hidden: true, section: null, badge: null, requiredPlan: "builder" as Plan, showDot: false, unlocksAt: 7 },
   { href: "/achievements",     label: "Achievements",     icon: BarChart3, enabled: false, hidden: true, section: null, badge: null, showDot: false, unlocksAt: 7 },
