@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useEffect } from "react";
+import { Suspense, useState, useEffect, useRef, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
@@ -14,14 +14,15 @@ import { updateAchievementStats, checkAndUnlockAchievements, getAchievementStats
 import { notifyReflectPending } from "@/lib/notifications";
 import { trackFunnelStep } from "@/lib/onboarding-analytics";
 import BuildMindLoader from "@/components/BuildMindLoader";
-import { ReflectSheet } from "@/components/ReflectSheet";
-import { LoopNarrative } from "@/components/LoopNarrative";
 import { PaywallMoment } from "@/components/PaywallMoment";
 import { Clock, CheckCircle2, Copy, Check, Flame, Brain, ArrowRight, Sparkles, AlertCircle, TrendingUp, RotateCcw, Zap } from "lucide-react";
 import { storage } from "@/lib/storage";
 import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
 import { MobileCheckin } from "@/components/MobileCheckin";
 import { ProfileCompletenessBar } from "@/components/ProfileCompletenessBar";
+import { ReflectSheet } from "@/components/ReflectSheet";
+import { LoopNarrative } from "@/components/LoopNarrative";
+import { broadcastTabEvent, useTabSync } from "@/lib/tabSync";
 
 type Outcome = "completed" | "blocked" | "partial" | "learned";
 type ReflexionMeta = {
@@ -31,6 +32,27 @@ type ReflexionMeta = {
   loopRan: boolean;
   passedCritic: boolean;
   lastReflectionUsed: boolean;
+};
+
+// ── BuildMind Initial Analysis (shown on first task load) ────────────────────
+type InitialAnalysis = {
+  transition_state: string;
+  key_risks: [string, string, string];
+  immediate_priorities: [string, string, string];
+  health_score: number;
+  founder_pattern: string;
+  operating_mode: string;
+  generated_at: string;
+  stage: string;
+};
+
+// ── Milestone Break interstitial (fires after milestone/stage change) ────────
+type MilestoneBreakResult = {
+  trigger: "milestone_complete" | "stage_transition";
+  triggerLabel: string;
+  brutal_points: [string, string, string];
+  recommended_action: string;
+  generated_at: string;
 };
 
 type ActionData = {
@@ -50,25 +72,6 @@ type CachedTodayAction = {
   projectId?: string;
   stage?: string;
   data?: ActionData;
-};
-
-type InitialAnalysis = {
-  transition_state: string;
-  key_risks: string[];
-  immediate_priorities: string[];
-  health_score: number;
-  founder_pattern: string;
-  operating_mode: string;
-  generated_at: string;
-  stage: string;
-};
-
-type MilestoneBreakResult = {
-  trigger: "milestone_complete" | "stage_transition";
-  triggerLabel: string;
-  brutal_points: string[];
-  recommended_action: string;
-  generated_at: string;
 };
 
 function isActionData(value: unknown): value is ActionData {
@@ -192,6 +195,40 @@ const OUTCOME_CHIPS: { id: Outcome; label: string; color: string; bg: string; bo
 const CONFIDENCE_LABELS = ["", "Lost", "Uncertain", "Steady", "Confident", "Unstoppable"];
 const CONFIDENCE_COLORS = ["", "var(--bm-text3)", "var(--bm-text3)", "var(--bm-text2)", "var(--bm-text)", "var(--bm-text)"];
 
+// ── Week-one projections — shown in done state on first session ───────────────
+const WEEK_ONE_MILESTONES: Record<string, { day: number; milestone: string }[]> = {
+  idea: [
+    { day: 2, milestone: "You'll have talked to at least 2 real people about your idea — more signal than a week of research." },
+    { day: 4, milestone: "BuildMind will have detected your first avoidance pattern and started routing around it." },
+    { day: 7, milestone: "You'll have a validated problem statement or evidence it needs changing. Either outcome is the right one." },
+  ],
+  validation: [
+    { day: 2, milestone: "First user commitment recorded — time, money, or workflow change." },
+    { day: 4, milestone: "Pattern detected: which type of user responds faster." },
+    { day: 7, milestone: "Enough signal to decide whether to build or pivot the value proposition." },
+  ],
+  mvp: [
+    { day: 2, milestone: "Working link in front of at least one real user." },
+    { day: 4, milestone: "First friction point documented — the bug or confusion users hit first." },
+    { day: 7, milestone: "You'll know whether retention is possible at this quality level." },
+  ],
+  launch: [
+    { day: 2, milestone: "At least one distribution channel tested with real copy." },
+    { day: 4, milestone: "Conversion data from the first 10 visitors." },
+    { day: 7, milestone: "Enough CAC data to know if the channel is viable." },
+  ],
+  growth: [
+    { day: 2, milestone: "One churned user interviewed — more insight than 50 analytics dashboards." },
+    { day: 4, milestone: "Retention pattern surfaced: when users leave and why." },
+    { day: 7, milestone: "Single biggest lever identified. BuildMind will focus every task on it." },
+  ],
+  revenue: [
+    { day: 2, milestone: "Revenue leak mapped — where the biggest drop-off in acquisition-to-payment is." },
+    { day: 4, milestone: "One pricing conversation completed." },
+    { day: 7, milestone: "A testable hypothesis about the biggest revenue constraint." },
+  ],
+};
+
 // ── Outcome colour helpers ───────────────────────────────────────────────────
 const OUTCOME_META: Record<Outcome, { icon: string; label: string; color: string }> = {
   completed: { icon: "✓", label: "Completed",         color: "var(--bm-text2)" },
@@ -308,6 +345,19 @@ function TodayContent() {
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
   const [streak, setStreak] = useState(0);
+  // Ref guard — prevents iOS double-tap from firing handleCheckIn twice
+  const checkInFired = useRef(false);
+  // Product Improvement #2 — Task-first layout: context collapsed by default
+  const [isContextOpen, setIsContextOpen] = useState(false);
+  // Product Improvement #1 — Reflect as a bottom-sheet modal (not separate route)
+  const [showReflectSheet, setShowReflectSheet] = useState(false);
+  const [reflectionCount, setReflectionCount] = useState(() => {
+    // Persist across navigation — LoopNarrative uses this for progressive unlock
+    try {
+      const today = new Date().toISOString().split("T")[0];
+      return parseInt(storage.get(`bm_reflection_count_${today}`) ?? "0", 10);
+    } catch { return 0; }
+  });
   const [userId, setUserId] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState<string | null>(null);
 
@@ -315,6 +365,16 @@ function TodayContent() {
   const [aiAction, setAiAction] = useState<ActionData | null>(null);
   const [aiUsage, setAiUsage] = useState<{ monthlyUsed: number; monthlyLimit: number; unlimited: boolean } | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  // Progressive streaming label — shows which agent is currently running
+  const [streamLabel, setStreamLabel] = useState<string | null>(null);
+
+  // Initial Analysis — BuildMind first-impression card
+  const [initialAnalysis, setInitialAnalysis] = useState<InitialAnalysis | null>(null);
+  const [initialAnalysisDismissed, setInitialAnalysisDismissed] = useState(false);
+
+  // Milestone Break interstitial — fires after milestone/stage change
+  const [milestoneBreak, setMilestoneBreak] = useState<MilestoneBreakResult | null>(null);
+  const [milestoneBreakDismissed, setMilestoneBreakDismissed] = useState(false);
 
   // Editable draft — pre-filled with real project values
   const [draftMessage, setDraftMessage] = useState<string | null>(null);
@@ -332,9 +392,6 @@ function TodayContent() {
   // Win attribution
   const [revenueDelta, setRevenueDelta] = useState<string>("");
   const [showRevenueField, setShowRevenueField] = useState(false);
-  const [showReflectSheet, setShowReflectSheet] = useState(false);
-  const [initialAnalysis, setInitialAnalysis] = useState<InitialAnalysis | null>(null);
-  const [pendingMilestoneBreak, setPendingMilestoneBreak] = useState<MilestoneBreakResult | null>(null);
 
   useEffect(() => {
     fetchAndSyncStoredPlanFromBillingStatus().then(p => setPlan(p)).catch(() => {});
@@ -409,51 +466,54 @@ function TodayContent() {
 
   // Fetch personalised action from AI once we have project data
   useEffect(() => {
+    const abortController = new AbortController();
+    const { signal } = abortController;
+
     void (async () => {
     const project = summaries[0] ?? null;
     if (!project) return;
     const projectId = project.id;
     if (!userId || !projectId) return;
 
+    // ── Fetch pending milestone-break interstitial ──────────────────────────
+    // Stored by /api/ai/milestone-break when a milestone or stage transition fires
+    fetch("/api/founder-context", { cache: "no-store" })
+      .then(r => r.ok ? r.json() : null)
+      .then((ctx: { data?: { pending_milestone_break?: string } } | null) => {
+        if (!ctx?.data?.pending_milestone_break) return;
+        try {
+          const breakData = JSON.parse(ctx.data.pending_milestone_break) as MilestoneBreakResult;
+          // Only show if generated within the last 24 hours and not already dismissed
+          const age = Date.now() - new Date(breakData.generated_at).getTime();
+          const dismissKey = `bm_milestone_break_dismissed_${breakData.generated_at}`;
+          if (age < 24 * 60 * 60 * 1000 && !storage.get(dismissKey)) {
+            setMilestoneBreak(breakData);
+          }
+        } catch { /* malformed */ }
+      })
+      .catch(() => {});
+
     const today = new Date().toISOString().split("T")[0];
     const currentStage = project.startup_stage ?? "Idea";
     const cacheKey = `bm_today_action_cache_${userId}`;
-    const cacheTsKey = `bm_today_action_cache_ts_${userId}`;
-    const lastReflectionTsKey = `bm_last_reflection_ts_${userId}`;
-    const lastReflectionTs = storage.get(lastReflectionTsKey);
-    const cacheTs = storage.get(cacheTsKey);
-    if (lastReflectionTs && (!cacheTs || lastReflectionTs > cacheTs)) {
-      storage.remove(cacheKey);
-      storage.remove(cacheTsKey);
-      persistBehaviorState({ today_action_cache: null });
-    }
 
-    void Promise.all([
-      fetch("/api/founder-context", { cache: "no-store" })
-        .then((response) => response.ok ? response.json() : null)
-        .then((body: { ok?: boolean; data?: { pending_milestone_break?: MilestoneBreakResult | string } } | null) => {
-          const raw = body?.data?.pending_milestone_break;
-          if (!raw) return null;
-          const parsed = typeof raw === "string" ? JSON.parse(raw) as MilestoneBreakResult : raw;
-          setPendingMilestoneBreak(parsed);
-          return parsed;
-        })
-        .catch(() => null),
-      fetch("/api/ai/initial-analysis", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, stage: currentStage }),
-      })
-        .then((response) => response.ok ? response.json() : null)
-        .then((body: { ok?: boolean; data?: InitialAnalysis } | null) => {
-          if (body?.data) setInitialAnalysis(body.data);
-          return body?.data ?? null;
-        })
-        .catch(() => null),
-    ]);
+    // ── Reflection-aware cache busting ───────────────────────────────────────
+    // If the founder reflected after the cache was written, the task must be
+    // regenerated so it responds to that reflection. Without this, the same
+    // task repeats regardless of what the founder reported.
+    // Use parseInt to compare numerically — string comparison of "0" vs "0"
+    // is always false, which previously caused new users to never bust the cache.
+    const lastReflectionTime = parseInt(storage.get(`bm_last_reflection_ts_${userId}`) ?? "0", 10);
+    const cachedAt = parseInt(storage.get(`bm_today_action_cache_ts_${userId}`) ?? "0", 10);
+    // If either timestamp is missing/zero, treat as cache-miss so we always
+    // fetch fresh for new users or after storage is cleared.
+    const reflectionIsNewerThanCache = lastReflectionTime > 0 && cachedAt > 0
+      ? lastReflectionTime > cachedAt
+      : lastReflectionTime > 0;
 
     const serverCache = await fetchBehaviorState<{ today_action_cache: CachedTodayAction }>(["today_action_cache"]);
     if (
+      !reflectionIsNewerThanCache &&
       serverCache.today_action_cache?.date === today &&
       serverCache.today_action_cache?.projectId === projectId &&
       serverCache.today_action_cache?.stage === currentStage &&
@@ -465,18 +525,47 @@ function TodayContent() {
     }
     try {
       const cached = storage.getJSON<CachedTodayAction | null>(cacheKey, null);
-      if (cached?.date === today && cached?.projectId === projectId && cached?.stage === currentStage && isActionData(cached.data)) {
+      if (
+        !reflectionIsNewerThanCache &&
+        cached?.date === today &&
+        cached?.projectId === projectId &&
+        cached?.stage === currentStage &&
+        isActionData(cached.data)
+      ) {
         setAiAction({ ...cached.data, isAI: true });
         return;
       }
       if (cached?.date === today && cached?.projectId === projectId && cached?.data) {
         storage.remove(cacheKey);
+        storage.remove(`bm_today_action_cache_ts_${userId}`);
       }
     } catch {
       storage.remove(cacheKey);
     }
 
     setActionLoading(true);
+
+    // ── Fetch Initial Analysis in parallel with today's action ──────────────
+    // Shows the "BuildMind Initial Analysis" card on first task load
+    const analysisKey = `bm_initial_analysis_${projectId}`;
+    const cachedAnalysis = storage.getJSON<InitialAnalysis | null>(analysisKey, null);
+    if (cachedAnalysis && cachedAnalysis.stage === currentStage) {
+      setInitialAnalysis(cachedAnalysis);
+    } else {
+      fetch("/api/ai/initial-analysis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId }),
+      })
+        .then(r => r.ok ? r.json() : null)
+        .then((d: { ok?: boolean; data?: InitialAnalysis } | null) => {
+          if (d?.ok && d.data) {
+            setInitialAnalysis(d.data);
+            storage.setJSON(analysisKey, d.data);
+          }
+        })
+        .catch(() => {});
+    }
 
     const pendingMilestones = project.pendingMilestones ?? [];
     const pendingTasks = project.pendingTasks ?? [];
@@ -500,6 +589,7 @@ function TodayContent() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: requestBody,
+        signal,
       });
 
       if (streamRes.ok && streamRes.body) {
@@ -510,6 +600,7 @@ function TodayContent() {
         outer: while (true) {
           const { value, done } = await reader.read();
           if (done) break;
+          if (signal.aborted) { reader.cancel(); break; }
           buffer += decoder.decode(value, { stream: true });
 
           const parts = buffer.split("\n\n");
@@ -523,16 +614,28 @@ function TodayContent() {
             let payload: unknown;
             try { payload = JSON.parse(dataMatch[1]); } catch { continue; }
 
+            // Surface agent progress so the UI shows live step labels
+            if ((event === "agent_a" || event === "agent_b" || event === "agent_c") && payload && typeof payload === "object") {
+              const p = payload as { status?: string; label?: string };
+              if (p.status === "running" && p.label) {
+                setStreamLabel(p.label);
+              }
+            }
+
             if (event === "done" && payload && typeof payload === "object") {
               const p = payload as Record<string, unknown>;
               const actionData = unwrapActionPayload(p);
               if (!actionData) break outer;
-              setAiAction(actionData);
-              if (actionData.reflexion?.loopRan) {
-                const cacheValue = { date: today, projectId, stage: currentStage, data: actionData };
-                storage.setJSON(cacheKey, cacheValue);
-                storage.set(cacheTsKey, new Date().toISOString());
-                persistBehaviorState({ today_action_cache: cacheValue });
+              if (!signal.aborted) {
+                setAiAction(actionData);
+                setStreamLabel(null);
+                if (actionData.reflexion?.loopRan) {
+                  const cacheValue = { date: today, projectId, stage: currentStage, data: actionData };
+                  const nowTs = Date.now().toString();
+                  storage.setJSON(cacheKey, cacheValue);
+                  if (userId) storage.set(`bm_today_action_cache_ts_${userId}`, nowTs);
+                  persistBehaviorState({ today_action_cache: cacheValue });
+                }
               }
               streamSucceeded = true;
               break outer;
@@ -549,27 +652,32 @@ function TodayContent() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: requestBody,
+        signal,
       })
         .then(r => r.ok ? r.json() : Promise.reject())
         .then(json => {
+          if (signal.aborted) return;
           const actionData = unwrapActionPayload(json);
           if (json?.success && actionData) {
             setAiAction(actionData);
             if (actionData.reflexion?.loopRan) {
               const cacheValue = { date: today, projectId, stage: currentStage, data: actionData };
+              const nowTs = Date.now().toString();
               storage.setJSON(cacheKey, cacheValue);
-              storage.set(cacheTsKey, new Date().toISOString());
+              if (userId) storage.set(`bm_today_action_cache_ts_${userId}`, nowTs);
               persistBehaviorState({ today_action_cache: cacheValue });
             }
           }
         })
         .catch(() => {})
-        .finally(() => setActionLoading(false));
+        .finally(() => { if (!signal.aborted) setActionLoading(false); });
       return;
     }
 
-    setActionLoading(false);
+    if (!signal.aborted) setActionLoading(false);
     })();
+
+    return () => { abortController.abort(); };
   }, [summaries, userId]);
 
   const project = summaries[0] ?? null;
@@ -585,6 +693,28 @@ function TodayContent() {
   const targetUsers = project?.target_users ?? "";
   const problem = project?.problem ?? "";
   const projectDescription = project?.description ?? "";
+
+  // ── Multi-tab synchronization ─────────────────────────────────────────────
+  // React to state changes made in other open tabs so they don't submit
+  // a duplicate check-in after seeing a stale uncompleted form.
+  useTabSync((event) => {
+    if (event.type === "checkin_done") {
+      const today = new Date().toISOString().split("T")[0];
+      if (event.date === today) setDone(true);
+    }
+    if (event.type === "streak_updated") {
+      setStreak(event.streak);
+    }
+    if (event.type === "plan_updated") {
+      setPlan(event.plan);
+    }
+    if (event.type === "reflection_done") {
+      // Invalidate cache so the next visit to Today shows a fresh action
+      if (userId) {
+        storage.set(`bm_last_reflection_ts_${userId}`, Date.now().toString());
+      }
+    }
+  });
 
   // REC 2.4: stage transition challenge
   useEffect(() => {
@@ -604,6 +734,7 @@ function TodayContent() {
           triggerType: "stage_transition",
         }),
       }).catch(() => {});
+      // Also fire milestone-break on stage transition — stores result for Today page interstitial
       fetch("/api/ai/milestone-break", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -613,12 +744,7 @@ function TodayContent() {
           currentStage,
           triggerType: "stage_transition",
         }),
-      })
-        .then((response) => response.ok ? response.json() : null)
-        .then((body: { ok?: boolean; data?: MilestoneBreakResult } | null) => {
-          if (body?.data) setPendingMilestoneBreak(body.data);
-        })
-        .catch(() => {});
+      }).catch(() => {});
     }
     storage.set(storageKey, currentStage);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -627,6 +753,21 @@ function TodayContent() {
   const staticAction = buildContextualStaticAction(stageKey, productName, targetUsers, problem, projectDescription);
   const actionData = aiAction ?? { ...staticAction, isAI: false };
   const destinations = DESTINATIONS[aiAction?.destKey ?? stageKey] ?? DESTINATIONS.idea;
+
+  // Memoize MobileCheckin visibility — avoids calling storage.get() on every
+  // render (including each keystroke in the note textarea) and prevents the
+  // React Strict Mode double-invoke side-effect in the render phase.
+  const checkinSlot = useMemo(() => {
+    const h = new Date().getHours();
+    const morningKey = `bm_morning_checkin_${new Date().toDateString()}`;
+    const eveningKey = `bm_evening_checkin_${new Date().toDateString()}`;
+    if (h >= 6 && h < 10 && !storage.get(morningKey)) return { type: "morning" as const, key: morningKey };
+    if (h >= 18 && h < 22 && !storage.get(eveningKey)) return { type: "evening" as const, key: eveningKey };
+    return null;
+  // Re-evaluate once per hour is sufficient; userId dependency ensures it
+  // re-runs after storage namespace is initialized for the current user.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
 
   const OUTREACH_KEYWORDS = ["dm", "message", "send", "email", "outreach", "call", "text", "reach out", "post", "tweet", "share"];
   const isOutreachAction = OUTREACH_KEYWORDS.some(kw =>
@@ -661,10 +802,12 @@ function TodayContent() {
 
   async function handleCheckIn() {
     if (!outcome) return;
+    // Ref guard: prevents iOS double-tap from firing this twice before state updates
+    if (checkInFired.current) return;
+    checkInFired.current = true;
     setSubmitting(true);
     try {
       recordTaskCompletion();
-      incrementDailyStreak();
       if (!storage.get("bm_first_task_completed_tracked")) {
         trackFunnelStep("first_task_completed");
         storage.set("bm_first_task_completed_tracked", "1");
@@ -695,7 +838,6 @@ function TodayContent() {
       updateAchievementStats({
         ...stats,
         checkInsDone: (stats.checkInsDone ?? 0) + 1,
-        reflectionsLogged: (stats.reflectionsLogged ?? 0) + 1,
       });
       checkAndUnlockAchievements();
       notifyReflectPending();
@@ -740,7 +882,6 @@ function TodayContent() {
       }
 
       if (userId) {
-        storage.set(`bm_last_reflection_ts_${userId}`, new Date().toISOString());
         try {
           await fetch("/api/founder-context", {
             method: "PATCH",
@@ -779,8 +920,19 @@ function TodayContent() {
         }).catch(() => {}); // best-effort — never blocks the check-in
       }
 
+      // ── Increment daily streak ────────────────────────────────────────────
+      // Streak is earned here — on Today page action completion — not on Reflect
+      // or any other page. incrementDailyStreak() is idempotent for the same day.
+      const newStreak = incrementDailyStreak();
+      setStreak(newStreak);
+
+      // Notify other open tabs so they show the done state immediately
+      const todayBroadcast = new Date().toISOString().split("T")[0];
+      broadcastTabEvent({ type: "checkin_done", date: todayBroadcast });
+      broadcastTabEvent({ type: "streak_updated", streak: newStreak });
+
       setDone(true);
-    } finally { setSubmitting(false); }
+    } finally { setSubmitting(false); checkInFired.current = false; }
   }
 
   if (isLoading) return (
@@ -791,14 +943,93 @@ function TodayContent() {
         <div className="h-4 w-2/5 animate-pulse rounded-lg bg-[var(--bm-bg3)]" />
       </div>
       <div className="space-y-4">
-        <div className="h-48 animate-pulse rounded-xl border border-[var(--bm-border)] bg-[var(--bm-bg2)]" />
+        <div className="h-48 animate-pulse rounded-[var(--r-xl)] border border-[var(--bm-border)] bg-[var(--bm-bg2)]" />
         <div className="grid gap-3 sm:grid-cols-2">
-          <div className="h-28 animate-pulse rounded-xl border border-[var(--bm-border)] bg-[var(--bm-bg2)]" />
-          <div className="h-28 animate-pulse rounded-xl border border-[var(--bm-border)] bg-[var(--bm-bg2)]" />
+          <div className="h-28 animate-pulse rounded-[var(--r-xl)] border border-[var(--bm-border)] bg-[var(--bm-bg2)]" />
+          <div className="h-28 animate-pulse rounded-[var(--r-xl)] border border-[var(--bm-border)] bg-[var(--bm-bg2)]" />
         </div>
       </div>
     </div>
   );
+
+  // ── Milestone Break interstitial — mandatory checkpoint after milestone/stage change ──
+  if (milestoneBreak && !milestoneBreakDismissed) {
+    return (
+      <div style={{ maxWidth: 560, margin: "0 auto", padding: isMobile ? "40px 16px" : "80px 24px" }}>
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
+          {/* Header */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 28 }}>
+            <div style={{ width: 32, height: 32, borderRadius: 8, background: "var(--bm-red)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <AlertCircle size={16} color="#fff" />
+            </div>
+            <div>
+              <p style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", margin: 0 }}>Mandatory checkpoint</p>
+              <p style={{ fontSize: 14, fontWeight: 700, color: "var(--bm-text)", margin: 0, lineHeight: 1.3 }}>
+                You just completed: {milestoneBreak.triggerLabel}
+              </p>
+            </div>
+          </div>
+
+          <p style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.6, marginBottom: 24 }}>
+            Before you move to the next milestone, here's what could still kill this.
+          </p>
+
+          {/* 3 brutal points */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 24 }}>
+            {milestoneBreak.brutal_points.map((point, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, x: -8 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.1 + i * 0.08 }}
+                style={{
+                  borderLeft: "2px solid var(--bm-red)",
+                  paddingLeft: 14,
+                  paddingTop: 2,
+                  paddingBottom: 2,
+                }}
+              >
+                <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.6 }}>{point}</p>
+              </motion.div>
+            ))}
+          </div>
+
+          {/* Recommended action */}
+          <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 12, padding: "16px 18px", marginBottom: 24 }}>
+            <p style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 8px" }}>Recommended action before continuing</p>
+            <p style={{ fontSize: 13, color: "var(--bm-text)", fontWeight: 500, margin: 0, lineHeight: 1.6 }}>→ {milestoneBreak.recommended_action}</p>
+          </div>
+
+          {/* Acknowledge button */}
+          <button
+            onClick={() => {
+              const dismissKey = `bm_milestone_break_dismissed_${milestoneBreak.generated_at}`;
+              // Optimistically dismiss in UI, revert if server fails
+              setMilestoneBreakDismissed(true);
+              storage.set(dismissKey, "1");
+              fetch("/api/founder-context", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ pending_milestone_break: null }),
+              }).catch(() => {
+                // Server PATCH failed — keep the local dismiss flag so the
+                // interstitial doesn't reappear mid-session, but clear the
+                // storage key so it re-shows on hard reload (server is source of truth).
+                storage.remove(dismissKey);
+              });
+            }}
+            style={{
+              width: "100%", padding: "14px 0", borderRadius: 12, border: "none",
+              background: "var(--bm-text)", color: "var(--bm-bg)",
+              fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+            }}
+          >
+            I've acknowledged this — continue to today's task →
+          </button>
+        </motion.div>
+      </div>
+    );
+  }
 
   // ── Done state ────────────────────────────────────────────────────────────
   if (done) {
@@ -817,9 +1048,33 @@ function TodayContent() {
               ? "Progress counts. Tomorrow picks up here."
               : "Insight logged. BuildMind adapts."}
           </h2>
-          <p style={{ fontSize: 14, color: "var(--bm-text3)", marginBottom: 20, lineHeight: 1.6 }}>
+          <p style={{ fontSize: 14, color: "var(--bm-text3)", marginBottom: isFirstSession ? 16 : 20, lineHeight: 1.6 }}>
             {displayName ? `Come back tomorrow, ${displayName.split(" ")[0]}. Consistency compounds.` : "Come back tomorrow. Consistency compounds."}
           </p>
+
+          {/* ── First-session: 7-day projection ── */}
+          {isFirstSession && (() => {
+            const sk = (project?.startup_stage ?? "Idea").toLowerCase();
+            const milestones = WEEK_ONE_MILESTONES[sk] ?? WEEK_ONE_MILESTONES.idea;
+            return (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+                style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 14, padding: "18px 20px", marginBottom: 20, textAlign: "left" }}
+              >
+                <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 14 }}>
+                  If you do this every day — week 1 for a {project?.startup_stage ?? "Idea"} stage founder
+                </div>
+                {milestones.map((m, i) => (
+                  <div key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start", paddingBottom: i < milestones.length - 1 ? 10 : 0, marginBottom: i < milestones.length - 1 ? 10 : 0, borderBottom: i < milestones.length - 1 ? "1px solid var(--bm-border)" : "none" }}>
+                    <span style={{ fontSize: 11, color: "var(--bm-text4)", fontFamily: "monospace", paddingTop: 1, flexShrink: 0, minWidth: 36 }}>Day {m.day}</span>
+                    <span style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.5 }}>{m.milestone}</span>
+                  </div>
+                ))}
+              </motion.div>
+            );
+          })()}
 
           {activePattern && (
             <div style={{ marginBottom: 20, textAlign: "left" }}>
@@ -854,19 +1109,6 @@ function TodayContent() {
             </button>
           </div>
         </div>
-        <ReflectSheet
-          open={showReflectSheet}
-          onDone={() => setShowReflectSheet(false)}
-          onClose={() => setShowReflectSheet(false)}
-          projectStage={summaries[0]?.startup_stage ?? "Idea"}
-          taskAction={yesterdayReflection?.action ?? ""}
-        />
-        <LoopNarrative
-          reflectionCount={getAchievementStats().reflectionsLogged ?? 0}
-          tasksCompleted={overview?.completedTasks ?? 0}
-          avoidanceZones={[]}
-          completionRate={project?.completion_rate ?? 70}
-        />
       </div>
     );
   }
@@ -881,35 +1123,166 @@ function TodayContent() {
   const yesterdayCausal = yesterdayReflection
     ? buildYesterdayCausalLine(yesterdayReflection)
     : null;
-  const reflectionCount = getAchievementStats().reflectionsLogged ?? 0;
-  const overlays = (
-    <>
-      <ReflectSheet
-        open={showReflectSheet}
-        onDone={() => setShowReflectSheet(false)}
-        onClose={() => setShowReflectSheet(false)}
-        projectStage={project?.startup_stage ?? "Idea"}
-        taskAction={actionData.action}
-      />
-      <LoopNarrative
-        reflectionCount={reflectionCount}
-        tasksCompleted={overview?.completedTasks ?? project?.tasksCompleted ?? 0}
-        avoidanceZones={[]}
-        completionRate={project?.completion_rate ?? 70}
-      />
-    </>
-  );
 
   return (
     <div style={{ maxWidth: 920, margin: "0 auto", padding: isMobile ? "0 0 24px" : "20px 8px 48px" }}>
 
-      {/* ── First-session banner ── */}
-      {isFirstSession && (
-        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
-          style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 12, padding: isMobile ? "14px" : "14px 18px", marginBottom: 16, display: "flex", alignItems: "center", gap: 12 }}>
-          <Sparkles size={16} color="var(--bm-text3)" style={{ flexShrink: 0 }} />
-          <div style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.5 }}>
-            Your operating loop is ready. <strong style={{ color: "var(--bm-text)" }}>Start with the primary objective.</strong>
+      {/* ══ PRODUCT IMPROVEMENT #2 — TASK-FIRST LAYOUT ══
+          Project badge is 1 line, then ACTION CARD is the first full block.
+          All context (yesterday, analysis, check-ins) moves into a
+          collapsible drawer below the action card.
+      ══════════════════════════════════════════════════ */}
+
+      {/* Lightweight project + stage badge */}
+      {project && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text2)", letterSpacing: "-0.01em" }}>
+            {project.name ?? "Your startup"}
+          </span>
+          {project.startup_stage && (
+            <span style={{
+              fontFamily: "'DM Mono', monospace",
+              fontSize: 9,
+              padding: "2px 8px",
+              borderRadius: "var(--r-sm)",
+              background: "var(--bm-accent-dim)",
+              color: "var(--bm-accent)",
+              border: "1px solid var(--bm-accent-bd)",
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+            }}>
+              {project.startup_stage}
+            </span>
+          )}
+          {streak > 1 && (
+            <span style={{ marginLeft: "auto", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-text4)" }}>
+              {streak}d
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* ── Context drawer (collapsed by default) — everything below wraps here ── */}
+      {isContextOpen && (<>
+
+      {/* ── Reflexion Strike Replay — day one causal thread (same visual as yesterdayReflection) ── */}
+      {isFirstSession && !yesterdayReflection && (
+        <motion.div
+          initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
+          style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)", borderRadius: 10, padding: "14px 16px", marginBottom: 14 }}
+        >
+          <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+            {/* Left: icon + connector — identical to yesterdayReflection */}
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0, paddingTop: 2 }}>
+              <div style={{ width: 28, height: 28, borderRadius: "50%", background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "var(--bm-accent)", flexShrink: 0 }}>
+                ⚡
+              </div>
+              <div style={{ width: 1, flex: 1, minHeight: 16, background: "var(--bm-border2)", margin: "4px 0" }} />
+              <RotateCcw size={12} color="var(--bm-accent)" />
+            </div>
+            {/* Right: content */}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.08em" }}>From your Reflexion Strike</span>
+                <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 99, fontWeight: 600, color: "var(--bm-accent)", background: "var(--bm-bg3)", border: "1px solid var(--bm-border)" }}>
+                  Market gap identified
+                </span>
+              </div>
+              {project?.problem && (
+                <p style={{ fontSize: 12, color: "var(--bm-text3)", marginBottom: 6, lineHeight: 1.5, fontStyle: "italic" }}>
+                  &ldquo;{project.problem.slice(0, 100)}{project.problem.length > 100 ? "…" : ""}&rdquo;
+                </p>
+              )}
+              {/* Causal link inset — identical structure to yesterdayReflection */}
+              <div style={{ display: "flex", gap: 6, alignItems: "flex-start", padding: "8px 10px", borderRadius: 8, background: "var(--bm-bg3)", border: "1px solid var(--bm-border)" }}>
+                <RotateCcw size={10} color="var(--bm-text3)" style={{ flexShrink: 0, marginTop: 1 }} />
+                <p style={{ fontSize: 11, color: "var(--bm-text2)", margin: 0, lineHeight: 1.55 }}>
+                  This is your starting baseline. The system has no history on you yet — every reflection you log tonight makes tomorrow&apos;s task sharper.
+                </p>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
+      {/* ══ BUILDMIND INITIAL ANALYSIS CARD ══════════════════════════════════════
+          Shows perceived intelligence on first task load — creates emotional connection
+          and trust before the founder even reads their task.
+      ═══════════════════════════════════════════════════════════════════════════ */}
+      {initialAnalysis && !initialAnalysisDismissed && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.04, duration: 0.35 }}
+          style={{
+            background: "var(--bm-bg2)",
+            border: "1px solid var(--bm-border2)",
+            borderRadius: 14,
+            padding: isMobile ? "18px" : "20px 22px",
+            marginBottom: 16,
+            position: "relative",
+          }}
+        >
+          {/* Dismiss */}
+          <button
+            onClick={() => setInitialAnalysisDismissed(true)}
+            style={{ position: "absolute", top: 12, right: 14, background: "none", border: "none", color: "var(--bm-text4)", cursor: "pointer", padding: 4, fontSize: 16, lineHeight: 1 }}
+            aria-label="Dismiss"
+          >×</button>
+
+          {/* Header */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+            <div style={{ width: 24, height: 24, borderRadius: 6, background: "var(--bm-accent)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <Zap size={13} color="#fff" />
+            </div>
+            <div>
+              <p style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-accent)", textTransform: "uppercase", letterSpacing: "0.08em", margin: 0 }}>BuildMind Initial Analysis</p>
+              <p style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text)", margin: 0, lineHeight: 1.3 }}>
+                {initialAnalysis.transition_state.charAt(0).toUpperCase() + initialAnalysis.transition_state.slice(1)}
+              </p>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 14, marginBottom: 14 }}>
+            {/* Key Risks */}
+            <div>
+              <p style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 8px" }}>Key Risks</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                {initialAnalysis.key_risks.map((risk, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 7 }}>
+                    <div style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--bm-amber)", flexShrink: 0, marginTop: 5 }} />
+                    <p style={{ fontSize: 12, color: "var(--bm-text2)", margin: 0, lineHeight: 1.5 }}>{risk}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Immediate Priorities */}
+            <div>
+              <p style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 8px" }}>Immediate Priorities</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                {initialAnalysis.immediate_priorities.map((p, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 7 }}>
+                    <div style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--bm-accent)", flexShrink: 0, marginTop: 5 }} />
+                    <p style={{ fontSize: 12, color: "var(--bm-text2)", margin: 0, lineHeight: 1.5 }}>{p}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Bottom stats row */}
+          <div style={{ display: "flex", gap: 0, borderRadius: 10, border: "1px solid var(--bm-border)", overflow: "hidden" }}>
+            {[
+              { label: "Startup Health", value: `${initialAnalysis.health_score}/100` },
+              { label: "Founder Pattern", value: initialAnalysis.founder_pattern },
+              { label: "Suggested Mode", value: initialAnalysis.operating_mode },
+            ].map((stat, i, arr) => (
+              <div key={stat.label} style={{ flex: 1, padding: "10px 12px", borderRight: i < arr.length - 1 ? "1px solid var(--bm-border)" : "none" }}>
+                <p style={{ fontSize: 9, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 3px" }}>{stat.label}</p>
+                <p style={{ fontSize: 11, fontWeight: 600, color: "var(--bm-text)", margin: 0, lineHeight: 1.3 }}>{stat.value}</p>
+              </div>
+            ))}
           </div>
         </motion.div>
       )}
@@ -929,78 +1302,20 @@ function TodayContent() {
       />
 
       {/* ── Morning / evening mobile check-in ── */}
-      {(() => {
-        const h = new Date().getHours();
-        const isMorning = h >= 6 && h < 10;
-        const isEvening = h >= 18 && h < 22;
-        const morningKey = `bm_morning_checkin_${new Date().toDateString()}`;
-        const eveningKey = `bm_evening_checkin_${new Date().toDateString()}`;
-        const doneMorning = !!storage.get(morningKey);
-        const doneEvening = !!storage.get(eveningKey);
-        if (isMorning && !doneMorning) {
-          return (
-            <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 16 }}>
-              <MobileCheckin type="morning" onComplete={(note) => {
-                storage.set(morningKey, "1");
-                fetch("/api/morning-checkin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ note }) }).catch(() => {});
-              }} />
-            </motion.div>
-          );
-        }
-        if (isEvening && !doneEvening) {
-          return (
-            <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 16 }}>
-              <MobileCheckin type="evening" onComplete={(note) => {
-                storage.set(eveningKey, "1");
-                fetch("/api/evening-checkin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ note }) }).catch(() => {});
-              }} />
-            </motion.div>
-          );
-        }
-        return null;
-      })()}
+      {checkinSlot && (
+        <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 16 }}>
+          <MobileCheckin type={checkinSlot.type} onComplete={(note) => {
+            storage.set(checkinSlot.key, "1");
+            const endpoint = checkinSlot.type === "morning" ? "/api/morning-checkin" : "/api/evening-checkin";
+            fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ note }) }).catch(() => {});
+          }} />
+        </motion.div>
+      )}
 
       {/* ── Pre-check-in paywall ── */}
       {plan === "free" && briefingAvailable && (
         <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} style={{ marginBottom: 16 }}>
           <PaywallMoment trigger="morning_briefing" />
-        </motion.div>
-      )}
-
-      {pendingMilestoneBreak && (
-        <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} style={{ marginBottom: 16 }}>
-          <div style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)", borderLeft: "3px solid var(--bm-amber)", borderRadius: 14, padding: isMobile ? "14px" : "16px 18px" }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-amber)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
-              Milestone break · {pendingMilestoneBreak.triggerLabel}
-            </div>
-            <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
-              {pendingMilestoneBreak.brutal_points.map((point, index) => (
-                <div key={index} style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.6 }}>{point}</div>
-              ))}
-            </div>
-            <div style={{ fontSize: 12, color: "var(--bm-text3)", marginBottom: 12, lineHeight: 1.6 }}>
-              Recommended next move: {pendingMilestoneBreak.recommended_action}
-            </div>
-            <button onClick={() => setShowReflectSheet(true)} style={{ padding: "10px 14px", borderRadius: 10, border: "none", background: "var(--bm-text)", color: "var(--bm-bg)", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
-              Reflect on this break
-            </button>
-          </div>
-        </motion.div>
-      )}
-
-      {initialAnalysis && (
-        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} style={{ marginBottom: 16 }}>
-          <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 14, padding: isMobile ? "14px" : "16px 18px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
-              <div>
-                <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Initial Analysis</div>
-                <div style={{ fontSize: 14, fontWeight: 700, color: "var(--bm-text)" }}>{initialAnalysis.operating_mode}</div>
-              </div>
-              <div style={{ fontSize: 28, fontWeight: 800, color: "var(--bm-accent)", letterSpacing: "-0.03em" }}>{initialAnalysis.health_score}</div>
-            </div>
-            <div style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.6, marginBottom: 10 }}>{initialAnalysis.transition_state}</div>
-            <div style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.6 }}>{initialAnalysis.founder_pattern}</div>
-          </div>
         </motion.div>
       )}
 
@@ -1058,7 +1373,7 @@ function TodayContent() {
               }}
             >
               <Flame size={11} color="var(--bm-text3)" />
-              <span style={{ fontSize: 11, fontWeight: 400, color: "var(--bm-text3)", fontFamily: "'JetBrains Mono', monospace" }}>
+              <span style={{ fontSize: 11, fontWeight: 400, color: "var(--bm-text3)", fontFamily: "'DM Mono', monospace" }}>
                 {streak}d streak
               </span>
             </div>
@@ -1080,11 +1395,12 @@ function TodayContent() {
           </p>
           <h1
             style={{
-              fontSize: "clamp(22px, 4vw, 30px)",
-              fontWeight: 500,
+              fontFamily: "'Syne', sans-serif",
+              fontSize: "clamp(20px, 3.5vw, 26px)",
+              fontWeight: 700,
               color: "var(--bm-text)",
-              letterSpacing: "-0.03em",
-              lineHeight: 1.28,
+              letterSpacing: "-0.025em",
+              lineHeight: 1.2,
               margin: "0 0 8px",
             }}
           >
@@ -1196,21 +1512,24 @@ function TodayContent() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.05 }}
-          style={{
-            padding: "10px 14px",
-            borderRadius: 10,
-            marginBottom: 14,
-            background: "var(--bm-bg3)",
-            border: "1px solid var(--bm-border)",
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-          }}
+          style={{ padding: "10px 14px", borderRadius: 10, marginBottom: 14, background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", display: "flex", alignItems: "center", gap: 10 }}
         >
           <TrendingUp size={13} color="var(--bm-text3)" style={{ flexShrink: 0 }} />
-          <p style={{ fontSize: 12, color: "var(--bm-text3)", margin: 0, lineHeight: 1.5 }}>
-            BuildMind gives you <strong style={{ color: "var(--bm-text2)" }}>one action per day</strong> - calibrated to your stage, your roadmap, and what you did yesterday. Do it before anything else.
-          </p>
+          {isFirstSession ? (
+            <div>
+              <p style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text)", margin: "0 0 4px" }}>
+                Day one. No history yet — this is how BuildMind learns.
+              </p>
+              <p style={{ fontSize: 12, color: "var(--bm-text3)", margin: 0, lineHeight: 1.55 }}>
+                Complete today&apos;s action and reflect tonight. That reflection becomes the input for tomorrow&apos;s task.
+                After 3 sessions, you&apos;ll start seeing behavioral patterns specific to how <em>you</em> build.
+              </p>
+            </div>
+          ) : (
+            <p style={{ fontSize: 12, color: "var(--bm-text3)", margin: 0, lineHeight: 1.5 }}>
+              BuildMind gives you <strong style={{ color: "var(--bm-text2)" }}>one action per day</strong> - calibrated to your stage, your roadmap, and what you did yesterday. Do it before anything else.
+            </p>
+          )}
         </motion.div>
       )}
 
@@ -1259,8 +1578,23 @@ function TodayContent() {
         </motion.div>
       ) : null}
 
+      </>)}
+
+      {/* ── "Why this task?" disclosure toggle ── */}
+      <button
+        onClick={() => setIsContextOpen(o => !o)}
+        style={{
+          display: "flex", alignItems: "center", gap: 6, marginBottom: 14,
+          background: "none", border: "none", cursor: "pointer",
+          color: "var(--bm-text4)", fontSize: 11, fontFamily: "inherit", padding: 0,
+        }}
+      >
+        <span style={{ fontSize: 10, transform: isContextOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s", display: "inline-block" }}>▶</span>
+        {isContextOpen ? "Hide context" : "Why this task?"}
+      </button>
+
       {/* ══════════════════════════════════════════════════════════════════════
-          ACTION CARD
+          ACTION CARD — first real content block (task-first layout)
       ══════════════════════════════════════════════════════════════════════ */}
       <motion.div
         initial={{ opacity: 0, y: 10 }}
@@ -1279,19 +1613,19 @@ function TodayContent() {
           {/* Meta row — simplified */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
             {project?.startup_stage && (
-              <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: "var(--bm-accent-dim)", color: "var(--bm-accent)", border: "1px solid var(--bm-accent-bd)", fontWeight: 400, textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: "'JetBrains Mono', monospace" }}>
+              <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: "var(--bm-accent-dim)", color: "var(--bm-accent)", border: "1px solid var(--bm-accent-bd)", fontWeight: 400, textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: "'DM Mono', monospace" }}>
                 {project.startup_stage} stage
               </span>
             )}
             {actionData.isAI && !actionLoading && (
-              <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: "var(--bm-bg3)", color: "var(--bm-text3)", border: "1px solid var(--bm-border)", fontWeight: 400, fontFamily: "'JetBrains Mono', monospace" }}>
+              <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: "var(--bm-bg3)", color: "var(--bm-text3)", border: "1px solid var(--bm-border)", fontWeight: 400, fontFamily: "'DM Mono', monospace" }}>
                 Context calibrated
               </span>
             )}
             {actionLoading && (
               <span style={{ fontSize: 11, color: "var(--bm-text3)", display: "flex", alignItems: "center", gap: 6 }}>
                 <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "var(--bm-accent)", opacity: 0.6, animation: "bm-pulse 1.2s ease-in-out infinite" }} />
-                Calibrating...
+                {streamLabel ?? "Calibrating..."}
               </span>
             )}
             {!actionData.isAI && !actionLoading && (
@@ -1320,10 +1654,10 @@ function TodayContent() {
               background: "var(--bm-accent)", color: "#fff",
               display: "flex", alignItems: "center", justifyContent: "center",
               fontSize: 11, fontWeight: 500, flexShrink: 0,
-              fontFamily: "'JetBrains Mono', monospace",
+              fontFamily: "'DM Mono', monospace",
             }}>01</div>
             <div>
-              <div style={{ fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'JetBrains Mono', monospace", marginBottom: 7 }}>
+              <div style={{ fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'DM Mono', monospace", marginBottom: 7 }}>
                 Primary Objective
               </div>
               <p style={{ fontSize: isMobile ? 20 : 22, fontWeight: 400, color: "var(--bm-text)", lineHeight: 1.42, margin: "0 0 8px", letterSpacing: "-0.025em" }}>
@@ -1357,7 +1691,7 @@ function TodayContent() {
 
           {/* Why — with reflexion rationale */}
           <div style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: 10, padding: isMobile ? "16px" : "14px 16px", marginBottom: 18 }}>
-            <div style={{ fontSize: 10, fontWeight: 400, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6, display: "flex", alignItems: "center", gap: 5, fontFamily: "'JetBrains Mono', monospace" }}>
+            <div style={{ fontSize: 10, fontWeight: 400, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6, display: "flex", alignItems: "center", gap: 5, fontFamily: "'DM Mono', monospace" }}>
               <Brain size={10} color="var(--bm-text3)" /> Strategic rationale
             </div>
             <p style={{ fontSize: isMobile ? 14 : 13, color: "var(--bm-text2)", margin: "0 0 10px", lineHeight: 1.6 }}>
@@ -1592,6 +1926,36 @@ function TodayContent() {
           {submitting ? "Recording…" : <>Record check-in <ArrowRight size={16} /></>}
         </motion.button>
       </motion.div>
+      {/* Product Improvement #1 — Reflect bottom sheet */}
+      <ReflectSheet
+        open={showReflectSheet}
+        onClose={() => setShowReflectSheet(false)}
+        onDone={() => {
+          setShowReflectSheet(false);
+          // Write reflection timestamp so cache-bust logic sees it on this tab
+          if (userId) {
+            storage.set(`bm_last_reflection_ts_${userId}`, Date.now().toString());
+          }
+          // Notify other tabs so their cache is also busted
+          const todayStr = new Date().toISOString().split("T")[0];
+          broadcastTabEvent({ type: "reflection_done", date: todayStr });
+          setReflectionCount(c => {
+            const next = c + 1;
+            try {
+              storage.set(`bm_reflection_count_${todayStr}`, String(next));
+            } catch {}
+            return next;
+          });
+        }}
+        projectStage={project?.startup_stage ?? "Idea"}
+        taskAction={actionData?.action}
+      />
+
+      {/* Beyond the 3 changes — Loop Narrative (the 8.5 unlock) */}
+      <LoopNarrative
+        reflectionCount={reflectionCount}
+        tasksCompleted={project?.tasksCompleted ?? 0}
+      />
     </div>
   );
 }

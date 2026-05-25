@@ -103,7 +103,7 @@ export function BuildMindLogo({
             style={{
               fontSize: size * 0.45,
               fontWeight: 900,
-              background: "linear-gradient(135deg, #5CC88A, #4AB8B0, #A7F3D0)",
+              background: "var(--bm-accent)",
               WebkitBackgroundClip: "text",
               WebkitTextFillColor: "transparent",
               backgroundClip: "text",

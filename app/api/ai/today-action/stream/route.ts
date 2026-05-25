@@ -190,7 +190,7 @@ export async function POST(request: Request) {
           const [projectResult, memoryResult] = await Promise.allSettled([
             supabase.from("projects")
               .select("name, title, description, target_users, problem, startup_stage")
-              .eq("id", projectId).eq("user_id", userId).single(),
+              .eq("id", projectId).eq("user_id", userId).maybeSingle(),
             supabase.from("founder_memory")
               .select("avoidance_zones, strengths, last_insight")
               .eq("user_id", userId).maybeSingle(),
@@ -225,7 +225,9 @@ export async function POST(request: Request) {
 
           const { data: lastReflection } = await supabase.from("reflections")
             .select("outcome, note, confidence, today_action, created_at")
-            .eq("user_id", userId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+            .eq("user_id", userId)
+            .gte("created_at", new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString())
+            .order("created_at", { ascending: false }).limit(1).maybeSingle();
 
           if (lastReflection) {
             const reflectDate = new Date(lastReflection.created_at).toLocaleDateString();

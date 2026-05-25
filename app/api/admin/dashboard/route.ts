@@ -8,6 +8,7 @@
  */
 
 import { NextResponse } from "next/server";
+import type { User } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdminUser } from "@/lib/server/adminAuth";
 import { createServerClient } from "@supabase/ssr";
@@ -53,9 +54,17 @@ export async function GET() {
   const admin = createAdminClient();
 
   // ── 2. Users ──────────────────────────────────────────────────────────────
-  // Fetch all auth users (paginated Supabase admin API)
-  const { data: { users: authUsers }, error: usersErr } = await admin.auth.admin.listUsers({ perPage: 1000 });
-  if (usersErr) return NextResponse.json({ error: usersErr.message }, { status: 500 });
+  // Paginate through all auth users — listUsers caps at 1000 per page so a
+  // single call silently truncates at scale. Collect all pages.
+  let authUsers: User[] = [];
+  let usersPage = 1;
+  while (true) {
+    const { data, error: usersErr } = await admin.auth.admin.listUsers({ perPage: 1000, page: usersPage });
+    if (usersErr) return NextResponse.json({ error: usersErr.message }, { status: 500 });
+    authUsers = authUsers.concat(data.users);
+    if (data.users.length < 1000) break; // last page
+    usersPage++;
+  }
 
   // Fetch ai_usage for current month
   const currentMonth = monthKey();

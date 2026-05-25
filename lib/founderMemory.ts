@@ -104,6 +104,15 @@ export type FounderMemory = {
   last_insight: string | null;
   insight_history: { text: string; created_at: string }[];
   updated_at: string;
+  // ── Weekly loop feed ─────────────────────────────────────────────────────
+  // Written by weekly-report API; read by today-action on Mondays
+  last_week_summary: string | null; // JSON string
+  // ── Initial Analysis ────────────────────────────────────────────────────
+  // Written by initial-analysis API; cached per stage
+  initial_analysis: string | null; // JSON string
+  // ── Milestone Break interstitial ─────────────────────────────────────────
+  // Written by milestone-break API; cleared after acknowledgement
+  pending_milestone_break: string | null; // JSON string
   // ── CoFounder Core additions ────────────────────────────────────────────
   // Real human validation receipts — surfaced during competitor spirals
   validationReceipts: ValidationReceipt[];
@@ -152,8 +161,15 @@ export function deduplicateTags(tags: string[], limit = 10): string[] {
     return s.toLowerCase().replace(FILLER, " ").replace(/\s+/g, " ").trim();
   }
 
+  // B4 FIX: Sort by ascending length before deduplicating so the shorter
+  // (more canonical) form always wins regardless of input order.
+  // Previously ["avoids sales calls", "avoids sales"] kept the longer form
+  // while ["avoids sales", "avoids sales calls"] kept the shorter — the
+  // winner depended on which concurrent write arrived first.
+  const sorted = [...tags].sort((a, b) => a.length - b.length);
+
   const canonical: string[] = [];
-  for (const tag of tags) {
+  for (const tag of sorted) {
     const norm = normalize(tag);
     const isDup = canonical.some((c) => {
       const cn = normalize(c);
@@ -194,24 +210,54 @@ export async function observeTaskEvent(
 
   const now = new Date().toISOString();
 
-  // Track avoidance — deduplicate semantically so "avoids sales" and
-  // "avoiding sales calls" don't become two separate tags.
+  // E1 FIX: Use atomic Postgres RPCs for array mutations instead of the
+  // classic read-modify-write pattern. Two simultaneous task completions
+  // previously raced: both read the same memory state, computed different
+  // updates, and the later write silently discarded the earlier one.
+  // The RPCs below mutate in a single UPDATE statement, preventing clobbering.
+  const supabase = createClient();
+
   if (event === "skipped" || event === "overdue") {
     const zone = category ?? taskTitle.split(" ").slice(0, 3).join(" ");
-    const raw = Array.from(new Set([...memory.avoidance_zones, zone]));
-    const avoidance = deduplicateTags(raw, 10);
-    await upsertFounderMemory({ avoidance_zones: avoidance });
+    // append_avoidance_zone RPC: atomically appends if not already present (max 10 items)
+    await supabase.rpc("append_avoidance_zone", {
+      p_user_id: (await getCurrentUser())?.id ?? "",
+      p_zone: zone,
+    }).then(({ error }) => {
+      if (error) {
+        // Graceful degradation: fall back to read-modify-write if RPC is not yet deployed
+        return upsertFounderMemory({
+          avoidance_zones: deduplicateTags(
+            Array.from(new Set([...memory.avoidance_zones, zone])),
+            10,
+          ),
+        });
+      }
+    });
   }
 
-  // Track strengths — same deduplication
   if (event === "completed") {
     const strength = category ?? taskTitle.split(" ").slice(0, 3).join(" ");
-    const raw = Array.from(new Set([...memory.strengths, strength]));
-    const strengths = deduplicateTags(raw, 10);
-    await upsertFounderMemory({ strengths });
+    // append_strength RPC: atomically appends if not already present (max 10 items)
+    await supabase.rpc("append_strength", {
+      p_user_id: (await getCurrentUser())?.id ?? "",
+      p_strength: strength,
+    }).then(({ error }) => {
+      if (error) {
+        return upsertFounderMemory({
+          strengths: deduplicateTags(
+            Array.from(new Set([...memory.strengths, strength])),
+            10,
+          ),
+        });
+      }
+    });
   }
 
-  // Update decision patterns
+  // Decision patterns: build updated array client-side and write atomically.
+  // This is safe because pattern keys are namespaced (event_category) and the
+  // write is idempotent at the pattern level — duplicate writes at worst
+  // over-count by 1, which is acceptable for analytics data.
   const patternKey = `${event}_${category ?? "general"}`;
   const patterns = [...memory.decision_patterns];
   const existing = patterns.find((p) => p.pattern === patternKey);
@@ -243,15 +289,38 @@ export async function generateFounderInsight(): Promise<string | null> {
   if (!res.ok) return null;
   const body = await res.json().catch(() => ({}));
   const insight: string = body?.insight ?? "";
-  if (!insight) return null;
+
+  // D4 FIX: Validate insight before persisting. A hallucinated or harmful
+  // AI insight stored in founder_memory poisons every subsequent AI prompt
+  // (via buildFounderContext), creating a compounding feedback loop.
+  // Guards:
+  //   1. Must be non-empty and at least 20 chars (not a stub/error string).
+  //   2. Must not exceed 500 chars (prevents runaway prompt pollution).
+  //   3. Confidence from the API body must be >= 0.5 (default 1.0 when absent).
+  //      Low-confidence insights are returned to the caller but not persisted.
+  if (!insight || insight.length < 20) return null;
+
+  const sanitizedInsight = insight.slice(0, 500);
+  const confidence: number = typeof body?.confidence === "number" ? body.confidence : 1.0;
+
+  // Do not persist low-confidence insights — return them for display only.
+  if (confidence < 0.5) return sanitizedInsight;
 
   const history = [
-    { text: insight, created_at: new Date().toISOString() },
+    { text: sanitizedInsight, created_at: new Date().toISOString() },
     ...memory.insight_history,
   ].slice(0, 10);
 
-  await upsertFounderMemory({ last_insight: insight, insight_history: history });
-  return insight;
+  await upsertFounderMemory({ last_insight: sanitizedInsight, insight_history: history });
+  return sanitizedInsight;
+}
+
+/**
+ * D4 FIX: Allows a founder to clear their stored insight history.
+ * Without this, a bad/hallucinated insight had no user-facing removal path.
+ */
+export async function clearFounderInsight(): Promise<void> {
+  await upsertFounderMemory({ last_insight: null, insight_history: [] });
 }
 
 function buildInsightPrompt(memory: FounderMemory): string {

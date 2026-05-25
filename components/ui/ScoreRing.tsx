@@ -27,7 +27,7 @@ export function ScoreRing({
           cy={size / 2}
           r={r}
           fill="none"
-          stroke="rgba(255,255,255,0.05)"
+          stroke="var(--bm-border)"
           strokeWidth={stroke}
         />
         <motion.circle

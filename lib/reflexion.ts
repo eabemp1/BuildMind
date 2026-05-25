@@ -30,6 +30,37 @@ import { getBenchmarkInsights, buildBenchmarkPrompt } from "@/lib/benchmarks";
 
 interface GroqMessage { role: "system" | "user" | "assistant"; content: string; }
 
+// ── G1 FIX: Progressive timeout budget ───────────────────────────────────────
+// The route maxDuration is 30 s. Three sequential groqCall stages (Generator,
+// Critic/Verifier, Refiner) each had their own fixed 20 s AbortSignal in the
+// provider layer. In the worst case all three could each take 19.9 s = 59.7 s
+// before the route hard-times out with a 504, wasting the full budget.
+//
+// Fix: the pipeline receives a `deadlineMs` (absolute epoch ms). Each stage
+// wraps its call in `withDeadline()` which races the call against the
+// remaining time. If the stage times out it throws, triggering the existing
+// .catch() fallback. Later stages automatically get whatever time is left.
+//
+// The 30 s route budget is split:
+//   Stage 3 Generator  — up to 12 s
+//   Stage 4 Critic     — up to  8 s of remaining time
+//   Stage 5 Verifier   — up to  6 s of remaining time
+//   Stage 7 Refiner    — up to  5 s of remaining time
+//   Stage 8 Rationale  — up to  3 s of remaining time
+//   Supabase + overhead — 4 s (not under AI budget)
+//
+// If a stage's allotment is already exhausted when it starts, it immediately
+// returns its fallback value rather than making an outbound call at all.
+
+function withDeadline<T>(promise: Promise<T>, deadlineMs: number, fallback: T): Promise<T> {
+  const remaining = deadlineMs - Date.now();
+  if (remaining <= 0) return Promise.resolve(fallback);
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), remaining)),
+  ]);
+}
+
 // groqCall routes ALL reflexion text calls through the reasoning chain.
 // gpt-oss-120b (primary) handles both text and JSON on Groq; Cerebras fallback is
 // equally fast. Using "reasoning" here means every Reflexion stage (Generator,
@@ -67,6 +98,7 @@ export interface ReflexionContext {
   // v8 additions
   cofounderStyle?: "direct-challenger" | "strategic-partner" | "execution-coach" | "devil-advocate";
   sessionCount?: number;               // for new-user context injection
+  userId?: string;                     // D3 fix: per-user critic persona offset
 }
 
 // ── NEW IN V4: Agent Persona Rotation (Playbook §4.4) ─────────────────────
@@ -158,12 +190,31 @@ export function getChannelStyleInstruction(generatedText: string): string {
 }
 
 /**
- * getWeeklyCriticPersona — returns the rotating Agent B persona for this week.
- * Week derived from weekNumber (0-indexed ISO week mod 4) or current date if not provided.
+ * getWeeklyCriticPersona — returns the rotating Agent B persona for this user+week.
+ *
+ * D3 FIX: The original rotation used only the global ISO week number, meaning
+ * ALL users got the exact same persona every week. Power users could game the
+ * system by timing usage to their preferred critic, and the "prevent Llama drift"
+ * goal was undermined — every user drifted in the same direction simultaneously.
+ *
+ * Now accepts a userId and XOR-hashes it with the week number so each user's
+ * rotation is independent. Same week, different users → different personas.
+ * Same user, different weeks → still rotates through all 4 personas over time.
+ *
+ * @param weekNumber  Optional override (0-indexed ISO week). Defaults to current week.
+ * @param userId      Optional user ID string for per-user offset. Falls back to global if absent.
  */
-export function getWeeklyCriticPersona(weekNumber?: number): { name: string; prompt: string } {
+export function getWeeklyCriticPersona(
+  weekNumber?: number,
+  userId?: string,
+): { name: string; prompt: string } {
   const week = weekNumber ?? getISOWeekNumber(new Date());
-  return CRITIC_PERSONAS[week % 4];
+  // Derive a stable per-user offset from the userId by summing char codes mod 4.
+  // This is not cryptographic — it only needs to distribute users across the 4 slots.
+  const userOffset = userId
+    ? Array.from(userId).reduce((acc, ch) => acc + ch.charCodeAt(0), 0) % 4
+    : 0;
+  return CRITIC_PERSONAS[(week + userOffset) % 4];
 }
 
 export function getISOWeekNumber(date: Date): number {
@@ -338,7 +389,7 @@ Be specific to this founder's situation. Reference their actual stage, avoidance
   ], 0.6, 500).catch(() => "Unable to generate a response right now — please try again.");
 
   // ── NEW IN V4: Agent B — The Critic/Gatekeeper (Persona Rotation) ───────────
-  const criticPersona = getWeeklyCriticPersona(context.weekNumber);
+  const criticPersona = getWeeklyCriticPersona(context.weekNumber, context.userId);  // D3 fix
 
   const criticPrompt = `${criticPersona.prompt}
 
@@ -505,6 +556,10 @@ export interface FullReflexionOutput {
  */
 export async function runFullReflexionPipeline(
   input: FullReflexionInput,
+  /** G1 FIX: Absolute epoch ms deadline. Stages that exceed their slice fall back
+   *  immediately rather than running over the route maxDuration. Defaults to
+   *  26 s from now — safe margin under the 30 s route budget. */
+  deadlineMs = Date.now() + 26_000,
 ): Promise<FullReflexionOutput> {
   const { founderContext, agentPipeline, viabilityScore, task, executionMode, learnedPatternsPrompt = '' } = input;
   const signals = agentPipeline.signal_summary;
@@ -565,13 +620,18 @@ ${learnedPatternsPrompt ? learnedPatternsPrompt : ""}
 ${benchmarkPrompt ? `\n${benchmarkPrompt}` : ""}
 ${executionMode ? "\nEXECUTION MODE: Generate the first concrete step of the MVP roadmap, not a validation task." : ""}`;
 
-  const generated = await groqCall([
-    { role: "system", content: generatorSystemPrompt },
-    { role: "user", content: `Task: ${task}\n\nGenerate the single highest-leverage action. Direct, intelligent, specific.` },
-  ], 0.5, 500).catch(() => "Unable to generate action — please try again.");
+  // G1: Stage 3 gets up to 12 s of the 26 s budget
+  const generated = await withDeadline(
+    groqCall([
+      { role: "system", content: generatorSystemPrompt },
+      { role: "user", content: `Task: ${task}\n\nGenerate the single highest-leverage action. Direct, intelligent, specific.` },
+    ], 0.5, 500),
+    deadlineMs - 14_000, // leave 14 s for Critic + Verifier + Refiner + Rationale
+    "Unable to generate action — please try again.",
+  ).catch(() => "Unable to generate action — please try again.");
 
   // ── Stage 4: Critic (Agent B — Rotating Persona) ─────────────────────────
-  const criticPersona = getWeeklyCriticPersona(founderContext.weekNumber);
+  const criticPersona = getWeeklyCriticPersona(founderContext.weekNumber, founderContext.userId);  // D3 fix
 
   const stage4CriticPrompt = `${criticPersona.prompt}
 
@@ -611,12 +671,17 @@ ${generated}`;
   };
 
   try {
-    stage4Output = await callModelJSON<typeof stage4Output>(
-      [
-        { role: "system", content: stage4CriticPrompt },
-        { role: "user", content: "Evaluate and critique." },
-      ],
-      { role: "reasoning", temperature: 0.3, maxTokens: 350 },
+    // G1: Stage 4 gets up to 8 s of remaining budget
+    stage4Output = await withDeadline(
+      callModelJSON<typeof stage4Output>(
+        [
+          { role: "system", content: stage4CriticPrompt },
+          { role: "user", content: "Evaluate and critique." },
+        ],
+        { role: "reasoning", temperature: 0.3, maxTokens: 350 },
+      ),
+      deadlineMs - 9_000, // leave 9 s for Verifier + Refiner + Rationale
+      stage4Output,
     );
   } catch (err) { logError("reflexion/stage4-critic", err); /* non-fatal, use default */ }
 
@@ -662,12 +727,17 @@ ${baseForVerification}`;
 
   let stage5Output: VerifierOutput = verifierFallback;
   try {
-    const raw = await callModelJSON<VerifierOutput>(
-      [
-        { role: "system", content: stage5VerifierPrompt },
-        { role: "user", content: "Verify the claims." },
-      ],
-      { role: "reasoning", temperature: 0.2, maxTokens: 400 },
+    // G1: Stage 5 gets up to 6 s of remaining budget
+    const raw = await withDeadline(
+      callModelJSON<VerifierOutput>(
+        [
+          { role: "system", content: stage5VerifierPrompt },
+          { role: "user", content: "Verify the claims." },
+        ],
+        { role: "reasoning", temperature: 0.2, maxTokens: 400 },
+      ),
+      deadlineMs - 5_000, // leave 5 s for Refiner + Rationale
+      verifierFallback,
     );
     if (raw.verdict && raw.confidence_score !== undefined) {
       stage5Output = {
@@ -718,10 +788,15 @@ VERIFIER:
 Confidence: ${stage5Output.confidence_score} | Verdict: ${stage5Output.verdict}
 Valid: ${stage5Output.valid_claims.join(", ")}`;
 
-  const finalAction = await groqCall([
-    { role: "system", content: stage7RefinerPrompt },
-    { role: "user", content: "Write the final action." },
-  ], 0.3, 400).catch(() => baseForVerification);
+  // G1: Stage 7 Refiner gets up to 4 s of remaining budget
+  const finalAction = await withDeadline(
+    groqCall([
+      { role: "system", content: stage7RefinerPrompt },
+      { role: "user", content: "Write the final action." },
+    ], 0.3, 400),
+    deadlineMs - 3_000, // leave 3 s for Rationale
+    baseForVerification,
+  ).catch(() => baseForVerification);
 
   // Extract rationale
   const rationalePrompt = `One sentence (max 15 words): why is this action right for this founder right now?
@@ -729,10 +804,15 @@ Format: "Because [specific reason]."
 Context: Stage=${founderContext.stage}, Viability=${viabilityScore.viability_score}/100, Demand=${signals.demand_score}/100
 Action: ${finalAction}`;
 
-  const rationale = await groqCall([
-    { role: "system", content: rationalePrompt },
-    { role: "user", content: "One sentence rationale." },
-  ], 0.2, 60).catch(() => `Because you're at ${founderContext.stage} stage and this is the highest-leverage move right now.`);
+  // G1: Rationale gets whatever is left (up to 3 s)
+  const rationale = await withDeadline(
+    groqCall([
+      { role: "system", content: rationalePrompt },
+      { role: "user", content: "One sentence rationale." },
+    ], 0.2, 60),
+    deadlineMs,
+    `Because you're at ${founderContext.stage} stage and this is the highest-leverage move right now.`,
+  ).catch(() => `Because you're at ${founderContext.stage} stage and this is the highest-leverage move right now.`);
 
   // Execution risk: inverse of viability, adjusted by verifier confidence
   const execution_risk = Math.min(

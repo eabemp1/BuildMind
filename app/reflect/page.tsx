@@ -11,6 +11,7 @@ import { CheckCircle2, ChevronRight, Flame, Brain, ArrowRight } from "lucide-rea
 import { createClient } from "@/lib/supabase/client";
 import { storage } from "@/lib/storage";
 import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
+import { broadcastTabEvent } from "@/lib/tabSync";
 import TestimonialModal, {
   shouldShowTestimonialModal,
   markTestimonialAsked,
@@ -47,21 +48,9 @@ export default function ReflectPage() {
   const [done, setDone] = useState(false);
   const [causality, setCausality] = useState("");
   const [nextAction, setNextAction] = useState("");
-  const [todayAction, setTodayAction] = useState("");
-  const [history, setHistory] = useState<any[]>([]);
-  const [showHistory, setShowHistory] = useState(false);
-  const [streak, setStreak] = useState(0);
   const [userId, setUserId] = useState<string | null>(null);
-  const [startupStage, setStartupStage] = useState("Idea");
-  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
-  const [testimonialSource, setTestimonialSource] = useState<TestimonialSource | null>(null);
-  /**
-   * historySynthesis — AI interpretation of the founder's reflection
-   * history across time. Fetched on page load when ≥ 5 reflections exist.
-   * Null until loaded; empty string if the API returned nothing useful.
-   */
-  const [historySynthesis, setHistorySynthesis] = useState<string | null>(null);
 
+  // Gap C fix: fallback so Tomorrow's Focus always shows something meaningful
   const NEXT_ACTION_FALLBACK: Record<string, string> = {
     Idea:       "Tomorrow: find one more person who has this problem and ask them about their current workaround.",
     Validation: "Tomorrow: convert one opinion into a commitment — time, money, or workflow change.",
@@ -70,7 +59,20 @@ export default function ReflectPage() {
     Growth:     "Tomorrow: talk to one churned user.",
     Revenue:    "Tomorrow: map the biggest drop-off between awareness and payment.",
   };
+  const [todayAction, setTodayAction] = useState("");
+  const [history, setHistory] = useState<any[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [streak, setStreak] = useState(0);
+  const [startupStage, setStartupStage] = useState("Idea");
   const displayNextAction = nextAction || NEXT_ACTION_FALLBACK[startupStage] || "Tomorrow: do the one thing that would most reduce your biggest current risk.";
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [testimonialSource, setTestimonialSource] = useState<TestimonialSource | null>(null);
+  /**
+   * historySynthesis — AI interpretation of the founder's reflection
+   * history across time. Fetched on page load when ≥ 5 reflections exist.
+   * Null until loaded; empty string if the API returned nothing useful.
+   */
+  const [historySynthesis, setHistorySynthesis] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -130,10 +132,9 @@ export default function ReflectPage() {
 
             // ── Cross-time AI synthesis ──────────────────────────────────────
             // Only fire when there's enough history to say something meaningful.
-            // We send the last 10 reflections (enough for pattern recognition,
-            // cheap enough to keep latency acceptable).
             const reflectionCount = reflectionsRes.status === "fulfilled"
-              ? (reflectionsRes.value.data?.length ?? 0) : 0;
+              ? (reflectionsRes.value.data?.length ?? 0)
+              : 0;
             if (reflectionCount >= 5) {
               try {
                 const synthRes = await fetch("/api/ai/reflect-synthesis", {
@@ -157,6 +158,7 @@ export default function ReflectPage() {
                   const synthesis = (synthData.data ?? synthData).synthesis ?? "";
                   if (synthesis) {
                     setHistorySynthesis(synthesis);
+                    // Gap B fix: write synthesis back to founder_memory.last_insight
                     fetch("/api/founder-context", {
                       method: "PATCH",
                       headers: { "Content-Type": "application/json" },
@@ -201,16 +203,24 @@ export default function ReflectPage() {
       updateAchievementStats({ ...stats, reflectionsLogged: (stats.reflectionsLogged ?? 0) + 1 });
       checkAndUnlockAchievements();
 
+      // Increment streak only when the founder both completed today's action AND reflected.
+      // bm_checkin_done_date is set by today/page.tsx after a successful check-in.
+      const today = new Date().toISOString().split("T")[0];
+      // Streak is now incremented on Today page check-in, not here.
+      // We still update achievement stats with the current streak value.
       const currentStreakForAchievements = getStoredStreak();
       updateAchievementStats({ ...getAchievementStats(), streak: currentStreakForAchievements });
       notifyStreakMilestone(currentStreakForAchievements);
-
-      if (userId) storage.set(`bm_last_reflection_ts_${userId}`, Date.now().toString());
 
       trackFunnelStep("first_reflect");
       // Mark reflection done today for the daily loop status bar in app-shell
       const rfKey = `bm_reflect_done_${new Date().toISOString().slice(0, 10)}`;
       storage.set(rfKey, "1");
+      // Stamp the reflection time so the Today page cache busting logic knows
+      // a new reflection exists and must regenerate tomorrow's action.
+      if (userId) storage.set(`bm_last_reflection_ts_${userId}`, Date.now().toString());
+      // Notify other open tabs so their Today-page cache busts immediately
+      broadcastTabEvent({ type: "reflection_done", date: new Date().toISOString().slice(0, 10) });
 
       // Check if this session should trigger the testimonial modal
       const currentStreak = getStoredStreak();
@@ -240,10 +250,12 @@ export default function ReflectPage() {
               <p style={{ fontSize: 14, color: "var(--bm-text)", lineHeight: 1.6, margin: 0, fontStyle: "italic" }}>&ldquo;{causality}&rdquo;</p>
             </div>
           )}
+          {displayNextAction && (
           <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: "18px 20px", marginBottom: 20 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Tomorrow's Focus</div>
-            <p style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.6, margin: 0 }}>{displayNextAction}</p>
-          </div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Tomorrow's Focus</div>
+              <p style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.6, margin: 0 }}>{displayNextAction}</p>
+            </div>
+          )}
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <button onClick={() => router.push("/overview")} style={{ flex: 1, padding: "12px 0", borderRadius: 10, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text2)", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Back to dashboard</button>
             <button onClick={() => router.push("/today")} style={{ flex: 1, padding: "12px 0", borderRadius: 10, border: "none", background: "var(--grad-primary)", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>See tomorrow's action →</button>
@@ -274,7 +286,7 @@ export default function ReflectPage() {
           subtitle={todayAction ? `Today's action: ${todayAction}` : "Daily reflection"}
           action={
             streak > 0 ? (
-              <span className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-[var(--bm-border)] bg-[var(--bm-bg2)] px-3 text-[11px] font-bold text-[var(--bm-amber)]">
+              <span className="inline-flex h-9 items-center gap-1.5 rounded-[var(--r-xl)] border border-[var(--bm-border)] bg-[var(--bm-bg2)] px-3 text-[11px] font-bold text-[var(--bm-amber)]">
                 <Flame size={13} />
                 {streak}d
               </span>
@@ -315,8 +327,21 @@ export default function ReflectPage() {
       {/* Note */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.10 }}
         style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 14, padding: "18px clamp(14px, 4vw, 22px)", marginBottom: 12 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 10 }}>What actually happened? <span style={{ color: "var(--bm-text3)", fontWeight: 400 }}>(optional)</span></div>
+        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 10 }}>Most important learning today <span style={{ color: "var(--bm-text3)", fontWeight: 400 }}>(optional)</span></div>
         <textarea value={note} onChange={e => setNote(e.target.value)} rows={3} placeholder="Be specific. What did you do? What did you learn? What got in the way?"
+          style={{ width: "100%", background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: 10, padding: "11px 14px", fontSize: 13, color: "var(--bm-text)", outline: "none", fontFamily: "inherit", resize: "none", boxSizing: "border-box", lineHeight: 1.6, transition: "border-color 0.15s" }}
+          onFocus={e => { e.target.style.borderColor = "var(--bm-accent-bd)"; }}
+          onBlur={e => { e.target.style.borderColor = "var(--bm-border2)"; }} />
+      </motion.div>
+
+      {/* What to avoid tomorrow */}
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.13 }}
+        style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 14, padding: "18px clamp(14px, 4vw, 22px)", marginBottom: 12 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 4 }}>What will you avoid tomorrow? <span style={{ color: "var(--bm-text3)", fontWeight: 400 }}>(optional)</span></div>
+        <p style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.09em", color: "var(--bm-accent)", marginBottom: 10 }}>
+          BuildMind uses this to calibrate tomorrow&apos;s task. Be honest, not optimistic.
+        </p>
+        <textarea rows={2} placeholder="The task I keep postponing, the conversation I've been avoiding, the decision I'm rationalizing..."
           style={{ width: "100%", background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: 10, padding: "11px 14px", fontSize: 13, color: "var(--bm-text)", outline: "none", fontFamily: "inherit", resize: "none", boxSizing: "border-box", lineHeight: 1.6, transition: "border-color 0.15s" }}
           onFocus={e => { e.target.style.borderColor = "var(--bm-accent-bd)"; }}
           onBlur={e => { e.target.style.borderColor = "var(--bm-border2)"; }} />

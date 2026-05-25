@@ -72,7 +72,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "Invalid webhook signature." }, { status: 401 });
   }
 
-  const event = JSON.parse(rawBody) as PaystackEvent;
+  let event: PaystackEvent;
+  try {
+    event = JSON.parse(rawBody) as PaystackEvent;
+  } catch {
+    // Malformed body — Paystack will retry; return 400 so it doesn't retry forever.
+    console.error("[paystack-webhook] Failed to parse body as JSON");
+    return NextResponse.json({ ok: false, error: "Invalid JSON body" }, { status: 400 });
+  }
   const eventName = event.event?.toLowerCase() ?? "";
 
   // ── Idempotency guard ─────────────────────────────────────────────────────

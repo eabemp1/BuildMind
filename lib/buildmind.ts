@@ -91,10 +91,10 @@ export async function completeTask(taskId: string): Promise<{ newStage: string |
   const supabase = createClient();
 
   const { data: task } = await supabase
-    .from("tasks").select("title, milestone_id").eq("id", taskId).single();
+    .from("tasks").select("title, milestone_id").eq("id", taskId).maybeSingle();
   if (!task) return { newStage: null };
 
-  await supabase.from("tasks").update({ is_completed: true, updated_at: new Date().toISOString() }).eq("id", taskId);
+  await supabase.from("tasks").update({ is_completed: true }).eq("id", taskId);
   observeTaskEvent(task.title ?? "task", "completed").catch((err) => console.warn("[buildmind] observeTaskEvent failed:", err)); // non-blocking memory update
 
   const { data: sibling } = await supabase
@@ -104,7 +104,7 @@ export async function completeTask(taskId: string): Promise<{ newStage: string |
   if (allDone) {
     await supabase.from("milestones").update({ status: 'completed' }).eq("id", task.milestone_id);
     const { data: milestone } = await supabase
-      .from("milestones").select("project_id").eq("id", task.milestone_id).single();
+      .from("milestones").select("project_id").eq("id", task.milestone_id).maybeSingle();
     if (milestone) {
       const summaries = await getProjectSummaries();
       const updated = summaries.find((s) => s.id === milestone.project_id);
@@ -120,8 +120,9 @@ export async function completeTask(taskId: string): Promise<{ newStage: string |
 export async function updateTaskStatus(taskId: string, isCompleted: boolean, notes?: string) {
   const supabase = createClient();
   const { data: taskRow, error: taskError } = await supabase
-    .from("tasks").select("id, title, milestone_id, is_completed").eq("id", taskId).single();
+    .from("tasks").select("id, title, milestone_id, is_completed").eq("id", taskId).maybeSingle();
   if (taskError) throw taskError;
+  if (!taskRow) throw new Error("Task not found");
 
   const { data: milestoneTasks, error: milestoneError } = await supabase
     .from("tasks").select("id, is_completed").eq("milestone_id", taskRow.milestone_id);
@@ -131,7 +132,13 @@ export async function updateTaskStatus(taskId: string, isCompleted: boolean, not
     (milestoneTasks ?? []).length > 0 && (milestoneTasks ?? []).every((t) => t.is_completed);
 
   const { error } = await supabase
-    .from("tasks").update({ is_completed: isCompleted, notes: notes ?? null, updated_at: new Date().toISOString() }).eq("id", taskId);
+    .from("tasks").update({
+      is_completed: isCompleted,
+      notes: notes ?? null,
+      // Explicitly set updated_at so reports can use it as completion_date.
+      // Supabase doesn't auto-update this column unless a DB trigger exists.
+      updated_at: new Date().toISOString(),
+    }).eq("id", taskId);
   if (error) throw error;
 
   const nowTasks = (milestoneTasks ?? []).map((t) =>
@@ -161,7 +168,7 @@ export async function updateTaskStatus(taskId: string, isCompleted: boolean, not
 
   if (isMilestoneComplete && !wasMilestoneComplete) {
     const { data: milestone } = await supabase
-      .from("milestones").select("project_id").eq("id", taskRow.milestone_id).single();
+      .from("milestones").select("project_id").eq("id", taskRow.milestone_id).maybeSingle();
     if (milestone?.project_id) {
       const summaries = await getProjectSummaries();
       const updated = summaries.find((s) => s.id === milestone.project_id);
@@ -176,7 +183,7 @@ export async function updateMilestoneForCurrentUser(
 ) {
   const supabase = createClient();
   const { data, error } = await supabase
-    .from("milestones").update(payload).eq("id", milestoneId).select("*").single();
+    .from("milestones").update(payload).eq("id", milestoneId).select("*").maybeSingle();
   if (error) throw error;
   return data;
 }

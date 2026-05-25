@@ -3,7 +3,10 @@
 //          offline cache, background sync
 
 const CACHE_NAME = "buildmind-v3";
-const OFFLINE_URLS = ["/today", "/reflect", "/dashboard", "/offline.html"];
+// F4 FIX: Authenticated app pages (/today, /reflect, /dashboard, etc.) must
+// NOT be added to OFFLINE_URLS — caching them lets User A's private content
+// be served to User B on a shared device. Only cache the offline fallback.
+const OFFLINE_URLS = ["/offline.html"];
 
 // ── Install ─────────────────────────────────────────────────────────────────
 self.addEventListener("install", (event) => {
@@ -44,7 +47,12 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        if (response.ok && event.request.mode === "navigate") {
+        // F4 FIX: Never cache authenticated pages. Caching /today, /reflect,
+        // /dashboard etc. exposes one user's private AI content to the next
+        // user on a shared device. Only static assets (/_next/…) are safe to
+        // cache; those are already excluded above. Navigate requests must
+        // always come from the network.
+        if (response.ok && event.request.mode !== "navigate") {
           const clone = response.clone();
           caches.open(CACHE_NAME).then((c) => c.put(event.request, clone));
         }

@@ -104,12 +104,16 @@ export function computeStartupScore(summary: ScoringInput): number {
 export function computeConsistencyBonus(
   scoreHistory: { date: string; score: number }[],
 ): number {
-  const today = new Date();
+  // B5 FIX: Use UTC milliseconds for date arithmetic, not local wall-clock.
+  // `new Date().setDate(...)` mutates local time; combined with toISOString()
+  // (always UTC) this caused off-by-one day errors for founders in UTC+5..+12
+  // (e.g. a founder active at 11pm JST on Dec 31 had their activity recorded
+  // as Dec 30 UTC, losing a consistency day). All arithmetic now stays in UTC.
+  const nowMs = Date.now();
+  const MS_PER_DAY = 86_400_000;
   let activeDays = 0;
   for (let i = 0; i < 7; i++) {
-    const d = new Date(today);
-    d.setDate(today.getDate() - i);
-    const ds = d.toISOString().slice(0, 10);
+    const ds = new Date(nowMs - i * MS_PER_DAY).toISOString().slice(0, 10);
     if (scoreHistory.some(h => h.date === ds && h.score > 0)) activeDays++;
   }
   return Math.round((Math.min(activeDays, 5) / 5) * 10);

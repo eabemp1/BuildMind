@@ -1,7 +1,7 @@
 "use client";
-
 import React from "react";
-import { useEffect, useState } from "react";
+
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useProjectsQuery } from "@/lib/queries";
 import { createClient } from "@/lib/supabase/client";
@@ -10,12 +10,12 @@ import { canAccess, incrementDailyStreak } from "@/lib/plan";
 import { usePlan } from "@/lib/usePlan";
 import { useLimitModal } from "@/components/LimitModal";
 import { updateAchievementStats, checkAndUnlockAchievements } from "@/lib/achievements";
-import { BuildMindCalibrating } from "@/components/BuildMindCalibrating";
 import {
   Shield, ChevronDown, AlertTriangle, CheckCircle2,
   RefreshCw, Save, X, Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { BuildMindCalibrating } from "@/components/BuildMindCalibrating";
 import { Card } from "@/components/ui/card";
 import { Badge, BadgeVariant } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/input";
@@ -40,6 +40,7 @@ interface BreakResult {
   gated?: boolean;
   score_note?: string;
   agents?: Array<{ name: string; status: string; summary: string; confidence?: number }>;
+  isSynthetic?: boolean; // D2: true when all agents fell back to hardcoded defaults
   focusAreas?: string[];
   executionPlan?: { mvp_roadmap?: string[]; first_10_actions?: string[]; gtm_plan?: string[] } | null;
   reflexionAction?: {
@@ -122,7 +123,7 @@ function SurvivalRing({ value, size = 110 }: { value: number; size?: number }) {
   return (
     <div style={{ position: "relative", width: size, height: size, flexShrink: 0 }}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform: "rotate(-90deg)" }}>
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth={stroke} />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--bm-border)" strokeWidth={stroke} />
         <motion.circle
           cx={size / 2} cy={size / 2} r={r}
           fill="none" stroke={color} strokeWidth={stroke}
@@ -142,7 +143,7 @@ function SurvivalRing({ value, size = 110 }: { value: number; size?: number }) {
         >
           {value}%
         </motion.span>
-        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", marginTop: 2 }}>survive</span>
+        <span style={{ fontSize: 9, color: "var(--bm-text4)", marginTop: 2 }}>survive</span>
       </div>
     </div>
   );
@@ -150,9 +151,6 @@ function SurvivalRing({ value, size = 110 }: { value: number; size?: number }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function BreakMyStartupPage() {
-  const { plan, isLoading: planLoading } = usePlan();
-  const { showLimitModal } = useLimitModal();
-  const { data: projects = [], isLoading: projectsLoading } = useProjectsQuery();
   const [reflectionCount, setReflectionCount] = React.useState(0);
 
   React.useEffect(() => {
@@ -168,12 +166,18 @@ export default function BreakMyStartupPage() {
     }
     fetchCount();
   }, []);
+  const { plan, isLoading: planLoading } = usePlan();
+  const { showLimitModal } = useLimitModal();
+  const { data: projects = [], isLoading: projectsLoading } = useProjectsQuery();
 
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [customIdea, setCustomIdea] = useState("");
   const [focusAreas, setFocusAreas] = useState<FocusArea[]>([]);
   const [executionMode, setExecutionMode] = useState(false);
   const [loading, setLoading] = useState(false);
+  // G4 FIX: Track in-flight request so a network retry or component remount
+  // can abort the previous request rather than running two pipelines in parallel.
+  const abortRef = useRef<AbortController | null>(null);
   const [result, setResult] = useState<BreakResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -182,10 +186,6 @@ export default function BreakMyStartupPage() {
 
   // Pre-fill idea from selected project
   const selectedProject = projects.find((p) => p.id === selectedProjectId);
-
-  if (reflectionCount < 7) {
-    return <BuildMindCalibrating count={reflectionCount} surface="break-my-startup" />;
-  }
 
   useEffect(() => {
     if (!selectedProjectId) return;
@@ -226,6 +226,15 @@ export default function BreakMyStartupPage() {
       });
     }
 
+    // D2 FIX: Detect when all agents fell back (overall_confidence ≤ 0.3 and every
+    // agent_status is "fallback"). In that case the score is computed from hardcoded
+    // defaults — show a banner so founders don't make decisions on synthetic data.
+    const allStatuses = Object.values(data.agent_statuses ?? {});
+    const isSynthetic =
+      (data.signal_summary?.overall_confidence ?? 1) <= 0.35 &&
+      allStatuses.length > 0 &&
+      allStatuses.every((s) => s === "fallback");
+
     const agents = Object.entries(data.agent_outputs ?? {}).map(([name, output]) => {
       const text = output
         ? Object.values(output)
@@ -255,6 +264,7 @@ export default function BreakMyStartupPage() {
             /focus areas|5-agent|viability score|competitor/i.test(item)
           ).join(" | ") || "Calculated from execution data, validation signals, stage, and competitor context.",
       agents,
+      isSynthetic,
       focusAreas: cleanAIList(data.focus_areas),
       executionPlan: data.execution_plan
         ? {
@@ -288,6 +298,15 @@ export default function BreakMyStartupPage() {
       return;
     }
 
+    // G4 FIX: Cancel any in-flight request before starting a new one.
+    // This prevents a network-retry from running two full 5-agent pipelines
+    // simultaneously and double-charging the AI usage counter.
+    if (abortRef.current) {
+      abortRef.current.abort();
+    }
+    const abortController = new AbortController();
+    abortRef.current = abortController;
+
     setLoading(true);
     setResult(null);
     setError(null);
@@ -309,6 +328,7 @@ export default function BreakMyStartupPage() {
       const res = await fetch("/api/ai/break-my-startup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: abortController.signal, // G4 FIX: abort if a newer request starts
         body: JSON.stringify({
           userId: authData.user.id,
           projectId: selectedProjectId || undefined,
@@ -404,7 +424,7 @@ export default function BreakMyStartupPage() {
           title="Break My Startup"
           subtitle="Run a brutal, honest stress-test on your current project or any idea. No sugarcoating. The goal is to make you stronger, not scare you."
           action={
-            <span className="inline-flex h-9 items-center gap-2 rounded-xl border border-[var(--bm-border)] bg-[var(--bm-bg2)] px-3 text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--bm-red)]">
+            <span className="inline-flex h-9 items-center gap-2 rounded-[var(--r-xl)] border border-[var(--bm-border)] bg-[var(--bm-bg2)] px-3 text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--bm-red)]">
               <Shield size={15} />
               Stress test
             </span>
@@ -540,7 +560,7 @@ export default function BreakMyStartupPage() {
                 {[1, 2, 3].map((i) => (
                   <div
                     key={i}
-                    className="rounded-xl p-5 border border-[var(--bm-border)] bg-[var(--bm-bg2)] animate-pulse flex flex-col gap-2"
+                    className="rounded-[var(--r-xl)] p-5 border border-[var(--bm-border)] bg-[var(--bm-bg2)] animate-pulse flex flex-col gap-2"
                   >
                     <div className="h-4 w-36 rounded-full bg-[var(--bm-bg3)]" />
                     <div className="h-3 w-full rounded-full bg-[var(--bm-bg3)] opacity-70" />
@@ -583,7 +603,7 @@ export default function BreakMyStartupPage() {
               style={{
                 borderRadius: "var(--r-xl)",
                 padding: "clamp(16px, 4vw, 24px)",
-                background: `linear-gradient(135deg, ${overallColor(result.overallRisk)}12 0%, var(--bm-bg2) 100%)`,
+                background: "var(--bm-bg2)",
                 border: `1px solid ${overallColor(result.overallRisk)}40`,
                 boxShadow: `0 0 32px ${overallColor(result.overallRisk)}18`,
               }}
@@ -593,6 +613,12 @@ export default function BreakMyStartupPage() {
                   <SurvivalRing value={result.survival_probability} />
                 )}
                 <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+                  <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: "var(--bm-text3)", letterSpacing: "0.07em", marginBottom: 10 }}>
+                    Survival score · Moat strength · Market timing
+                  </div>
+                  <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: "var(--bm-text4)", letterSpacing: "0.06em", marginBottom: 12 }}>
+                    The uncomfortable ones are the useful ones.
+                  </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                     <span style={{
                       fontSize: 9, fontWeight: 700, letterSpacing: "0.12em",
@@ -659,6 +685,30 @@ export default function BreakMyStartupPage() {
                   {result.brutal_advice}
                 </p>
               </motion.div>
+            )}
+
+            {/* D2 FIX: Synthetic-analysis warning — shown when all 5 agents fell back */}
+            {result.isSynthetic && (
+              <div style={{
+                background: "var(--bm-amber-muted, rgba(245,158,11,0.12))",
+                border: "1px solid var(--bm-amber, #f59e0b)",
+                borderRadius: 10,
+                padding: "12px 16px",
+                display: "flex",
+                gap: 10,
+                alignItems: "flex-start",
+              }}>
+                <span style={{ fontSize: 16, flexShrink: 0 }}>⚠️</span>
+                <div>
+                  <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "var(--bm-amber, #f59e0b)" }}>
+                    Analysis unavailable — AI providers unreachable
+                  </p>
+                  <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.5 }}>
+                    All five analysis agents fell back to default values. The score shown is estimated, not
+                    computed from your actual idea. Try again in a few minutes when providers recover.
+                  </p>
+                </div>
+              </div>
             )}
 
             {/* Risk breakdown cards */}

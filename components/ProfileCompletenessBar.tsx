@@ -166,7 +166,7 @@ export function ProfileCompletenessBar({ fields, asBanner = false, className }: 
                   <span style={{ fontSize: "12px", color: "#9ca3af" }}>AI advice quality</span>
                   <span style={{ fontSize: "12px", fontWeight: 600, color: barColor }}>{score}%</span>
                 </div>
-                <div style={{ height: "4px", background: "rgba(255,255,255,0.08)", borderRadius: "2px", overflow: "hidden" }}>
+                <div style={{ height: "4px", background: "var(--bm-border2)", borderRadius: "2px", overflow: "hidden" }}>
                   <motion.div
                     initial={{ width: 0 }}
                     animate={{ width: `${score}%` }}
@@ -203,7 +203,7 @@ export function ProfileCompletenessBar({ fields, asBanner = false, className }: 
     <div
       style={{
         background: "#141414",
-        border: "1px solid rgba(255,255,255,0.07)",
+        border: "1px solid var(--bm-border)",
         borderRadius: "12px",
         padding: "16px 20px",
       }}
@@ -214,7 +214,7 @@ export function ProfileCompletenessBar({ fields, asBanner = false, className }: 
         <span style={{ fontSize: "20px", fontWeight: 600, color: barColor }}>{score}<span style={{ fontSize: "12px", color: "#6b7280" }}>/100</span></span>
       </div>
 
-      <div style={{ height: "6px", background: "rgba(255,255,255,0.06)", borderRadius: "3px", overflow: "hidden", marginBottom: "12px" }}>
+      <div style={{ height: "6px", background: "var(--bm-border)", borderRadius: "3px", overflow: "hidden", marginBottom: "12px" }}>
         <motion.div
           initial={{ width: 0 }}
           animate={{ width: `${score}%` }}

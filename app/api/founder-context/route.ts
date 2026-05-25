@@ -17,7 +17,7 @@ export async function GET() {
     .from("founder_context")
     .select("*")
     .eq("user_id", user.id)
-    .single();
+    .maybeSingle();
 
   if (dbErr && dbErr.code === "PGRST116") {
     // Row doesn't exist yet — create it
@@ -25,7 +25,7 @@ export async function GET() {
       .from("founder_context")
       .insert({ user_id: user.id })
       .select()
-      .single();
+      .maybeSingle();
     return NextResponse.json({ ok: true, data: created });
   }
   if (dbErr) return NextResponse.json({ ok: false, error: dbErr.message }, { status: 500 });
@@ -38,18 +38,31 @@ export async function PATCH(req: Request) {
   if (error || !user) return NextResponse.json({ ok: false }, { status: 401 });
 
   const body = await req.json().catch(() => ({}));
-  // Whitelist patchable fields
-  const ALLOWED = [
+
+  // Whitelist patchable fields with type coercion — prevents wrong Postgres types
+  // that cause silent upsert failures (e.g. momentum_score: "hello" → NaN).
+  const STRING_FIELDS = new Set([
     "startup_summary","current_stage","cognitive_load","timezone_offset",
-    "morning_briefing_hour","evening_check_hour","topics_mentioned_repeatedly",
-    "tasks_completed_today","last_task_date","daily_tasks_reset_at",
-    "ai_messages_today","last_ai_date",
-    "momentum_score","momentum_updated_at","last_active","days_inactive",
+    "last_task_date","daily_tasks_reset_at","last_ai_date",
+    "momentum_updated_at","last_active","last_insight",
+  ]);
+  const NUMBER_FIELDS = new Set([
+    "morning_briefing_hour","evening_check_hour","tasks_completed_today",
+    "ai_messages_today","momentum_score","days_inactive",
     "consecutive_tasks_completed","tasks_accepted_this_week","tasks_overridden_this_week",
-    "override_reasons","last_insight","pending_milestone_break",
-  ] as const;
+  ]);
+  const BOOL_FIELDS = new Set(["pending_milestone_break"]);
+  const ARRAY_FIELDS = new Set(["topics_mentioned_repeatedly","override_reasons"]);
+
   const patch: Record<string, unknown> = {};
-  for (const key of ALLOWED) { if (key in body) patch[key] = body[key]; }
+  for (const key of [...STRING_FIELDS, ...NUMBER_FIELDS, ...BOOL_FIELDS, ...ARRAY_FIELDS]) {
+    if (!(key in body)) continue;
+    const val = body[key];
+    if (STRING_FIELDS.has(key))  { patch[key] = typeof val === "string" ? val.slice(0, 5000) : null; continue; }
+    if (NUMBER_FIELDS.has(key))  { const n = Number(val); patch[key] = isFinite(n) ? n : null; continue; }
+    if (BOOL_FIELDS.has(key))    { patch[key] = Boolean(val); continue; }
+    if (ARRAY_FIELDS.has(key))   { patch[key] = Array.isArray(val) ? val.map(String).slice(0, 50) : null; continue; }
+  }
 
   const admin = createAdminClient();
   await admin.from("founder_context").upsert({ user_id: user.id, ...patch }, { onConflict: "user_id" });

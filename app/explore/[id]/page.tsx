@@ -38,14 +38,14 @@ export default function PublicProjectPage() {
   return (
     <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
       {loading ? <p className="text-sm text-zinc-400">Loading project...</p> : null}
-      {error ? <p className="text-sm text-rose-400">{error}</p> : null}
+      {error ? <p className="text-sm text-[var(--bm-red)]">{error}</p> : null}
       {project ? (
         <>
           <div>
             <h2 className="text-2xl font-semibold text-zinc-100">{project.title}</h2>
             <p className="text-body mt-1">{project.description || "Public founder build in progress."}</p>
             {project.founder_username ? (
-              <Link href={`/founder/${project.founder_username}`} className="text-sm text-indigo-300">
+              <Link href={`/founder/${project.founder_username}`} className="text-sm text-[var(--bm-accent)]">
                 @{project.founder_username}
               </Link>
             ) : null}
@@ -137,7 +137,7 @@ export default function PublicProjectPage() {
                 >
                   Post Comment
                 </Button>
-                {commentError ? <p className="text-sm text-rose-400">{commentError}</p> : null}
+                {commentError ? <p className="text-sm text-[var(--bm-red)]">{commentError}</p> : null}
               </div>
               {project.comments && project.comments.length > 0 ? (
                 project.comments.map((item) => (

@@ -16,11 +16,14 @@ const ACTIVE_PROJECT_ID_KEY = "buildmind_active_project_id";
 
 export function getStoredToken(): string | null {
   if (typeof window === "undefined") return null;
+  // TOKEN_KEY is intentionally raw localStorage — it's read before any user
+  // is authenticated, so the storage module's user-scoping cannot apply.
   return window.localStorage.getItem(TOKEN_KEY);
 }
 
 export function clearStoredToken(): void {
   if (typeof window === "undefined") return;
+  // Same rationale as above — pre-auth global key.
   window.localStorage.removeItem(TOKEN_KEY);
 }
 

@@ -1,91 +1,222 @@
+/**
+ * app/api/ai/initial-analysis/route.ts
+ *
+ * Generates the BuildMind Initial Analysis shown when a founder first
+ * lands on the Today page (or when explicitly requested).
+ *
+ * Returns a structured analysis with:
+ * - transition state label
+ * - key risks (3)
+ * - immediate priorities (3)
+ * - startup health score (0–100)
+ * - founder pattern label
+ * - suggested operating mode
+ *
+ * Stored in founder_memory.initial_analysis so subsequent loads don't
+ * re-generate. Invalidated when stage changes.
+ */
+
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { groqJSON, hasAdminEnv } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getRouteUser } from "@/app/api/ai/_planCheck";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 20;
 
-type InitialAnalysis = {
-  transition_state: string;
+export type InitialAnalysis = {
+  transition_state: string; // e.g. "validation-to-execution transition"
   key_risks: [string, string, string];
   immediate_priorities: [string, string, string];
-  health_score: number;
-  founder_pattern: string;
-  operating_mode: string;
+  health_score: number; // 0–100
+  founder_pattern: string; // e.g. "Vision-heavy / systems-light"
+  operating_mode: string; // e.g. "Execution Sprint"
   generated_at: string;
   stage: string;
 };
 
-function buildAnalysis(stage: string, projectName: string, problem: string): InitialAnalysis {
-  const base = stage || "Idea";
-  const riskSet: Record<string, [string, string, string]> = {
-    Idea: ["Problem definition is still broad.", "User interviews are likely too shallow.", "No proof yet that the pain is urgent."],
-    Validation: ["You may be over-trusting positive feedback.", "Commitment signals are weak.", "Follow-through on outreach needs to tighten."],
-    MVP: ["Delivery risk is now higher than idea risk.", "Product scope may be drifting.", "Early users need a tighter feedback loop."],
-    Launch: ["Visibility may be lagging the product.", "The message may be too generic.", "Retention signal needs monitoring."],
-    Growth: ["Acquisition and retention may be imbalanced.", "Channel fatigue can creep in quickly.", "The bottleneck may be onboarding, not reach."],
-    Revenue: ["Pricing confidence may be too low.", "Late-stage buyers need direct follow-up.", "Churn/expansion signals need attention."],
-  };
-  const prioritySet: Record<string, [string, string, string]> = {
-    Idea: ["Talk to 3 users today.", "Sharpen the exact problem statement.", "Write the smallest testable promise."],
-    Validation: ["Collect one hard commitment.", "Log the strongest objection.", "Run a follow-up ask within 24 hours."],
-    MVP: ["Ship the roughest version that teaches you something.", "Watch one user in real time.", "Trim every non-essential surface."],
-    Launch: ["Publish the product where your users already are.", "Measure response quality, not volume.", "Iterate the message after the first wave."],
-    Growth: ["Find the cheapest repeatable acquisition loop.", "Fix the first-step drop-off.", "Protect retention before scaling spend."],
-    Revenue: ["Ask for the money directly.", "Tighten pricing and packaging.", "Learn why people say no."],
-  };
-
-  return {
-    transition_state: `${projectName || "This project"} is operating at ${base.toLowerCase()} stage with BuildMind watching for execution drift.`,
-    key_risks: riskSet[base] ?? riskSet.Idea,
-    immediate_priorities: prioritySet[base] ?? prioritySet.Idea,
-    health_score: base === "Revenue" ? 72 : base === "Growth" ? 64 : base === "Launch" ? 60 : base === "MVP" ? 54 : base === "Validation" ? 46 : 38,
-    founder_pattern: problem ? `Behavior is clustering around ${problem}.` : `Behavior is clustering around the current stage constraints of ${base.toLowerCase()}.`,
-    operating_mode: base === "Revenue" ? "Direct-response closing mode" : base === "Growth" ? "Distribution pressure mode" : "Exploration and calibration mode",
-    generated_at: new Date().toISOString(),
-    stage: base,
-  };
-}
-
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient();
-    const { data: { user }, error } = await supabase.auth.getUser();
-    if (error || !user) return NextResponse.json({ ok: false }, { status: 401 });
+    const userResult = await getRouteUser();
+    if (!userResult?.user) {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    }
+    const userId = userResult.user.id;
 
     const body = await request.json().catch(() => ({}));
     const projectId = String(body?.projectId ?? "").trim();
-    if (!projectId) return NextResponse.json({ ok: false, error: "projectId required" }, { status: 400 });
+    const forceRefresh = Boolean(body?.forceRefresh);
 
-    const admin = createAdminClient();
-    const { data: project } = await admin
-      .from("projects")
-      .select("id, title, problem, startup_stage")
-      .eq("id", projectId)
-      .eq("user_id", user.id)
-      .maybeSingle();
-
-    const { data: memory } = await admin
-      .from("founder_memory")
-      .select("initial_analysis")
-      .eq("user_id", user.id)
-      .maybeSingle();
-
-    const currentStage = String(project?.startup_stage ?? body?.stage ?? "Idea");
-    const cached = memory?.initial_analysis ? (() => { try { return JSON.parse(memory.initial_analysis as string) as InitialAnalysis; } catch { return null; } })() : null;
-    if (cached && cached.stage === currentStage) {
-      return NextResponse.json({ ok: true, data: cached, cached: true });
+    if (!projectId) {
+      return NextResponse.json({ ok: false, error: "projectId required" }, { status: 400 });
     }
 
-    const analysis = buildAnalysis(currentStage, project?.title ?? "", project?.problem ?? "");
-    await admin.from("founder_memory").upsert({
-      user_id: user.id,
-      initial_analysis: JSON.stringify(analysis),
-    }, { onConflict: "user_id" });
+    if (!hasAdminEnv()) {
+      return NextResponse.json({ ok: false, error: "Admin env missing" }, { status: 500 });
+    }
 
-    return NextResponse.json({ ok: true, data: analysis });
+    const supabase = createAdminClient();
+
+    // Check if we already have a fresh analysis (same stage, generated < 7 days ago)
+    if (!forceRefresh) {
+      const { data: memory } = await supabase
+        .from("founder_memory")
+        .select("initial_analysis")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (memory?.initial_analysis) {
+        try {
+          const cached = JSON.parse(memory.initial_analysis) as InitialAnalysis;
+          const age = Date.now() - new Date(cached.generated_at).getTime();
+          const sevenDays = 7 * 24 * 60 * 60 * 1000;
+          if (age < sevenDays) {
+            return NextResponse.json({ ok: true, data: cached, cached: true });
+          }
+        } catch {
+          // malformed — regenerate
+        }
+      }
+    }
+
+    // Fetch project context
+    const { data: project } = await supabase
+      .from("projects")
+      .select("title, problem, description, target_users, startup_stage, execution_score, momentum_score, validation_strengths, validation_weaknesses")
+      .eq("id", projectId)
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (!project) {
+      return NextResponse.json({ ok: false, error: "Project not found" }, { status: 404 });
+    }
+
+    const stage = project.startup_stage ?? "Idea";
+
+    // Fetch recent reflections for behavioral context
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: reflections } = await supabase
+      .from("reflections")
+      .select("outcome, confidence, note")
+      .eq("user_id", userId)
+      .gte("created_at", weekAgo);
+
+    const avgConfidence =
+      reflections && reflections.length > 0
+        ? reflections.reduce((s, r) => s + (r.confidence ?? 3), 0) / reflections.length
+        : 3;
+    const completionRate =
+      reflections && reflections.length > 0
+        ? Math.round(
+            (reflections.filter((r) => r.outcome === "completed").length / reflections.length) * 100
+          )
+        : 0;
+
+    const systemPrompt = `You are BuildMind, an AI operating system for founders.
+A founder just opened their daily task. Generate a personalized startup analysis.
+Return ONLY valid JSON:
+{
+  "transition_state": "short phrase describing their current transition (e.g. 'idea-to-validation transition')",
+  "key_risks": ["risk 1", "risk 2", "risk 3"],
+  "immediate_priorities": ["priority 1", "priority 2", "priority 3"],
+  "health_score": <number 0-100>,
+  "founder_pattern": "short label for their pattern (e.g. 'Vision-heavy / systems-light')",
+  "operating_mode": "suggested mode (e.g. 'Validation Sprint', 'Execution Sprint', 'Focus Mode')"
+}
+Be specific to their startup. No generic advice. Each item max 12 words.
+No preamble. No markdown. Only JSON.`;
+
+    const userPrompt = [
+      `Startup: ${project.title}`,
+      project.problem ? `Problem: ${project.problem}` : "",
+      project.description ? `Description: ${project.description}` : "",
+      project.target_users ? `Target users: ${project.target_users}` : "",
+      `Stage: ${stage}`,
+      project.execution_score ? `Execution score: ${project.execution_score}` : "",
+      reflections?.length
+        ? `Recent reflections: ${reflections.length} this week, avg confidence ${avgConfidence.toFixed(1)}, completion rate ${completionRate}%`
+        : "",
+      project.validation_weaknesses?.length
+        ? `Known weaknesses: ${(project.validation_weaknesses as string[]).slice(0, 2).join(", ")}`
+        : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    // Fallback analysis
+    let analysis: InitialAnalysis = {
+      transition_state: `${stage.toLowerCase()}-to-execution transition`,
+      key_risks: [
+        "Overbuilding before distribution certainty",
+        "Lack of repeatable feedback loops",
+        "Founder context switching",
+      ],
+      immediate_priorities: [
+        "Tighten core ICP",
+        "Increase shipping velocity",
+        "Reduce execution fragmentation",
+      ],
+      health_score: Math.min(
+        95,
+        Math.max(
+          20,
+          50 + (project.execution_score ?? 0) * 0.3 + (project.momentum_score ?? 0) * 0.2
+        )
+      ),
+      founder_pattern: "Vision-heavy / systems-light",
+      operating_mode: stage === "Idea" || stage === "Validation" ? "Validation Sprint" : "Execution Sprint",
+      generated_at: new Date().toISOString(),
+      stage,
+    };
+
+    try {
+      const ai = await groqJSON<Omit<InitialAnalysis, "generated_at" | "stage">>(
+        systemPrompt,
+        userPrompt
+      );
+
+      if (
+        ai?.transition_state &&
+        Array.isArray(ai.key_risks) &&
+        ai.key_risks.length >= 3 &&
+        Array.isArray(ai.immediate_priorities) &&
+        ai.immediate_priorities.length >= 3 &&
+        typeof ai.health_score === "number" &&
+        ai.founder_pattern &&
+        ai.operating_mode
+      ) {
+        analysis = {
+          ...ai,
+          key_risks: [ai.key_risks[0], ai.key_risks[1], ai.key_risks[2]] as [string, string, string],
+          immediate_priorities: [
+            ai.immediate_priorities[0],
+            ai.immediate_priorities[1],
+            ai.immediate_priorities[2],
+          ] as [string, string, string],
+          health_score: Math.min(100, Math.max(0, Math.round(ai.health_score))),
+          generated_at: new Date().toISOString(),
+          stage,
+        };
+      }
+    } catch {
+      // use fallback
+    }
+
+    // Persist to founder_memory
+    await supabase
+      .from("founder_memory")
+      .upsert(
+        {
+          user_id: userId,
+          initial_analysis: JSON.stringify(analysis),
+        },
+        { onConflict: "user_id" }
+      );
+
+    return NextResponse.json({ ok: true, data: analysis, cached: false });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to build initial analysis";
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+    const msg = error instanceof Error ? error.message : "initial-analysis failed";
+    return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 }

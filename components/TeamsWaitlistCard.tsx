@@ -71,7 +71,7 @@ export function TeamsWaitlistCard({ email: initialEmail = "", asModal = false, o
       className={className}
       style={{
         background:   "#0e0e0e",
-        border:       "1px solid rgba(255,255,255,0.08)",
+        border:       "1px solid var(--bm-border2)",
         borderRadius: 16,
         padding:      "24px",
         width:        "100%",
@@ -142,13 +142,13 @@ export function TeamsWaitlistCard({ email: initialEmail = "", asModal = false, o
                 onChange={e => setEmail(e.target.value)}
                 placeholder="you@startup.com"
                 style={{
-                  width: "100%", background: "#141414", border: "1px solid rgba(255,255,255,0.08)",
+                  width: "100%", background: "#141414", border: "1px solid var(--bm-border2)",
                   borderRadius: 8, padding: "11px 14px", fontSize: 14, color: "#f9fafb",
                   outline: "none", fontFamily: "inherit", boxSizing: "border-box",
                   transition: "border-color 0.15s",
                 }}
                 onFocus={e => { e.target.style.borderColor = "#10b981"; }}
-                onBlur={e => { e.target.style.borderColor = "rgba(255,255,255,0.08)"; }}
+                onBlur={e => { e.target.style.borderColor = "var(--bm-border2)"; }}
               />
             </div>
 
@@ -161,7 +161,7 @@ export function TeamsWaitlistCard({ email: initialEmail = "", asModal = false, o
                 value={useCase}
                 onChange={e => setUseCase(e.target.value)}
                 style={{
-                  width: "100%", background: "#141414", border: "1px solid rgba(255,255,255,0.08)",
+                  width: "100%", background: "#141414", border: "1px solid var(--bm-border2)",
                   borderRadius: 8, padding: "11px 14px", fontSize: 14, color: "#f9fafb",
                   outline: "none", fontFamily: "inherit", boxSizing: "border-box", cursor: "pointer",
                 }}
@@ -185,13 +185,13 @@ export function TeamsWaitlistCard({ email: initialEmail = "", asModal = false, o
                 onChange={e => setTeamSize(e.target.value)}
                 placeholder="e.g. 3"
                 style={{
-                  width: "100%", background: "#141414", border: "1px solid rgba(255,255,255,0.08)",
+                  width: "100%", background: "#141414", border: "1px solid var(--bm-border2)",
                   borderRadius: 8, padding: "11px 14px", fontSize: 14, color: "#f9fafb",
                   outline: "none", fontFamily: "inherit", boxSizing: "border-box",
                   transition: "border-color 0.15s",
                 }}
                 onFocus={e => { e.target.style.borderColor = "#10b981"; }}
-                onBlur={e => { e.target.style.borderColor = "rgba(255,255,255,0.08)"; }}
+                onBlur={e => { e.target.style.borderColor = "var(--bm-border2)"; }}
               />
             </div>
 
@@ -206,7 +206,7 @@ export function TeamsWaitlistCard({ email: initialEmail = "", asModal = false, o
               disabled={!email.trim() || loading}
               style={{
                 width: "100%", padding: "12px 20px",
-                background: !email.trim() || loading ? "#1f2937" : "linear-gradient(135deg, #10b981, #059669)",
+                background: !email.trim() || loading ? "var(--bm-bg3)" : "var(--bm-accent)",
                 color: !email.trim() || loading ? "#6b7280" : "#fff",
                 border: "none", borderRadius: 10, fontSize: 14, fontWeight: 700,
                 cursor: !email.trim() || loading ? "not-allowed" : "pointer",

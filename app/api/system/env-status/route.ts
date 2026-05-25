@@ -32,7 +32,7 @@ export async function GET() {
     .from("profiles")
     .select("is_admin")
     .eq("id", user.id)
-    .single();
+    .maybeSingle();
 
   if (!adminProfile.data?.is_admin) {
     return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });

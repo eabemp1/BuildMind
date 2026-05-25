@@ -19,19 +19,16 @@ function ProgressBar({ value, max }: { value: number; max: number }) {
   );
 }
 
-function formatTimeAgo(unlockedAt?: string): string | null {
-  if (!unlockedAt) return null;
-  const diffMs = Date.now() - new Date(unlockedAt).getTime();
-  const days = Math.floor(diffMs / (24 * 60 * 60 * 1000));
-  if (days <= 0) return "today";
-  if (days === 1) return "yesterday";
-  if (days < 30) return `${days} days ago`;
-  const months = Math.floor(days / 30);
-  return months === 1 ? "1 month ago" : `${months} months ago`;
-}
-
 function AchievementCard({ a, unlocked, unlockedAt }: { a: Achievement; unlocked: boolean; unlockedAt?: string }) {
-  const timeAgo = formatTimeAgo(unlockedAt);
+  const timeAgo = unlockedAt ? (() => {
+    const diff = Date.now() - new Date(unlockedAt).getTime();
+    const d = Math.floor(diff / 86400000);
+    if (d === 0) return "today";
+    if (d === 1) return "yesterday";
+    if (d < 30) return `${d} days ago`;
+    const mo = Math.floor(d / 30);
+    return mo === 1 ? "1 month ago" : `${mo} months ago`;
+  })() : null;
   return (
     <motion.div
       whileHover={{ y: -2 }}
@@ -98,14 +95,12 @@ function AchievementCard({ a, unlocked, unlockedAt }: { a: Achievement; unlocked
             )}
           </div>
           {/* Description — always wraps, never hides */}
-          <div style={{
-            fontSize: 11, color: "var(--bm-text3)", lineHeight: 1.5,
-            wordBreak: "break-word",
-          }}>
+          <div style={{ fontSize: 11, color: "var(--bm-text3)", lineHeight: 1.5, wordBreak: "break-word" }}>
             {a.description}
           </div>
+          {/* Unlock timestamp */}
           {unlocked && timeAgo && (
-            <div style={{ marginTop: 8, fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+            <div style={{ fontSize: 10, color: "var(--bm-text4)", marginTop: 5 }}>
               Unlocked {timeAgo}
             </div>
           )}
@@ -134,17 +129,21 @@ export default function AchievementsPage() {
 
   useEffect(() => {
     setAll(ACHIEVEMENTS);
-    const entries = getUnlocked();
-    setUnlocked(new Set(entries.map((a) => a.id)));
-    void fetch("/api/achievements")
-      .then((r) => r.json())
-      .then((d) => {
-        if (!d?.ok || !Array.isArray(d.data)) return;
-        const next: Record<string, string> = {};
-        for (const row of d.data as Array<{ achievement_id?: string; unlocked_at?: string }>) {
-          if (row.achievement_id && row.unlocked_at) next[row.achievement_id] = row.unlocked_at;
-        }
-        setUnlockedTimestamps(next);
+    // 1. Load from localStorage immediately for instant render
+    const local = new Set(getUnlocked().map((a) => a.id));
+    setUnlocked(local);
+
+    // 2. Hydrate from server — cross-device truth
+    fetch("/api/achievements")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data: { ids?: string[]; records?: { achievement_id: string; unlocked_at: string }[] } | null) => {
+        if (!data?.ids) return;
+        const merged = new Set([...local, ...data.ids]);
+        setUnlocked(merged);
+        // Store timestamps for display
+        const ts: Record<string, string> = {};
+        (data.records ?? []).forEach((r) => { ts[r.achievement_id] = r.unlocked_at; });
+        setUnlockedTimestamps(ts);
       })
       .catch(() => {});
   }, []);

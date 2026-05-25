@@ -7,6 +7,21 @@ import { FEATURES } from "@/lib/features";
 import { callModelJSON } from "@/lib/ai-providers";
 import { logError } from "@/lib/server/logger";
 
+import { z } from "zod";
+
+// Runtime schema — mirrors the TypeScript interface but enforces types at the
+// network boundary. Prevents type confusion attacks on fields passed to AI prompts.
+const ReflectActionSchema = z.object({
+  outcome: z.enum(["completed", "blocked", "partial", "learned"]),
+  note: z.string().max(2000).default(""),
+  confidence: z.number().int().min(1).max(5),
+  stage: z.string().max(100).default("idea"),
+  todayAction: z.string().max(2000).default(""),
+  streak: z.number().int().min(0).max(9999).default(0),
+  userId: z.string().uuid().optional(),
+  projectId: z.string().uuid().optional(),
+});
+
 interface ReflectActionInput {
   outcome: "completed" | "blocked" | "partial" | "learned";
   note: string;
@@ -150,7 +165,15 @@ export async function POST(request: Request) {
   }
 
   try {
-    const body: ReflectActionInput = await request.json();
+    const rawBody = await request.json().catch(() => ({}));
+    const parseResult = ReflectActionSchema.safeParse(rawBody);
+    if (!parseResult.success) {
+      return NextResponse.json(
+        { ok: false, error: "Invalid request body", issues: parseResult.error.issues },
+        { status: 400 }
+      );
+    }
+    const body: ReflectActionInput = parseResult.data;
     const { outcome, note, confidence, stage, todayAction, streak, userId, projectId } = body;
 
     // Use the server-verified userId from auth, fall back to body for backwards compat
@@ -167,7 +190,7 @@ export async function POST(request: Request) {
           .select("name, title, description, target_users, problem, startup_stage")
           .eq("id", projectId)
           .eq("user_id", verifiedUserId)
-          .single();
+          .maybeSingle();
 
         if (project) {
           projectContext = `

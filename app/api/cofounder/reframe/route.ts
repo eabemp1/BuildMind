@@ -60,7 +60,7 @@ export async function POST(request: Request) {
           .eq("user_id", userId)
           .order("created_at", { ascending: false })
           .limit(1)
-          .single();
+          .maybeSingle();
 
         if (project) {
           projectContextStr = `${project.title}: ${project.description ?? ""}. Problem: ${project.problem ?? ""}. Target users: ${project.target_users ?? ""}. Stage: ${project.startup_stage ?? projectStage}.`;

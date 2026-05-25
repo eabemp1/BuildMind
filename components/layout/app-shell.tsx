@@ -127,7 +127,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     <div className="relative flex h-dvh min-h-dvh overflow-hidden" style={{ background: "var(--bm-bg)" }}>
 
       {/* ── Sidebar — desktop ── */}
-      <aside className="sticky top-0 hidden h-dvh w-[252px] shrink-0 md:flex"
+      <aside className="sticky top-0 hidden h-dvh w-[220px] shrink-0 md:flex"
              style={{ borderRight: "1px solid var(--bm-border)" }}>
         <Sidebar />
       </aside>
@@ -143,7 +143,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               onClick={() => setMobileOpen(false)}
             />
             <motion.div
-              className="relative h-full w-[270px] overflow-hidden"
+              className="relative h-full w-[220px] overflow-hidden"
               style={{ borderRight: "1px solid var(--bm-border)", background: "var(--bm-bg2)" }}
               initial={{ x: -270 }} animate={{ x: 0 }} exit={{ x: -270 }}
               transition={{ type: "spring", stiffness: 340, damping: 30 }}

@@ -61,7 +61,7 @@ export default function TermsPage() {
 
           <section>
             <h2 className="text-base font-semibold bm-text mb-2">9. Contact</h2>
-            <p>Questions? Email <a href="mailto:hello@buildmind.live" className="text-indigo-400 hover:text-indigo-300">hello@buildmind.live</a>.</p>
+            <p>Questions? Email <a href="mailto:hello@buildmind.live" className="text-[var(--bm-accent)] hover:text-[var(--bm-accent)]">hello@buildmind.live</a>.</p>
           </section>
         </div>
 

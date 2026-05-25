@@ -32,16 +32,16 @@ export default function DashboardPreview({ variant = "dashboard" }: DashboardPre
 
         {variant === "coach" ? (
           <div className="mt-5 grid gap-3">
-            <div className="rounded-2xl border border-[var(--bm-border2)] bg-white/5 p-4">
+            <div className="rounded-[var(--r-xl)] border border-[var(--bm-border2)] bg-white/5 p-4">
               <div className="flex items-center justify-between text-xs bm-text2">
                 <span>AI Coach Chat</span>
-                <MessageCircle className="h-4 w-4 text-indigo-300" />
+                <MessageCircle className="h-4 w-4 text-[var(--bm-accent)]" />
               </div>
               <div className="mt-3 space-y-2 text-sm bm-text">
                 <div className="rounded-lg border border-[var(--bm-border2)] bg-black/30 px-3 py-2">
                   User: How do we validate demand quickly?
                 </div>
-                <div className="rounded-lg border border-[var(--bm-border2)] bg-indigo-500/10 px-3 py-2">
+                <div className="rounded-lg border border-[var(--bm-border2)] bg-[var(--bm-accent-dim)]/10 px-3 py-2">
                   Coach: Interview 5 target users and measure willingness to pay.
                 </div>
               </div>
@@ -53,10 +53,10 @@ export default function DashboardPreview({ variant = "dashboard" }: DashboardPre
               ].map((card) => {
                 const Icon = card.icon;
                 return (
-                  <div key={card.label} className="rounded-2xl border border-[var(--bm-border2)] bg-white/5 p-4">
+                  <div key={card.label} className="rounded-[var(--r-xl)] border border-[var(--bm-border2)] bg-white/5 p-4">
                     <div className="flex items-center justify-between text-xs bm-text2">
                       <span>{card.label}</span>
-                      <Icon className="h-4 w-4 text-indigo-300" />
+                      <Icon className="h-4 w-4 text-[var(--bm-accent)]" />
                     </div>
                     <p className="mt-3 text-lg font-semibold bm-text">{card.value}</p>
                   </div>
@@ -66,17 +66,17 @@ export default function DashboardPreview({ variant = "dashboard" }: DashboardPre
           </div>
         ) : variant === "milestones" ? (
           <div className="mt-5 grid gap-3">
-            <div className="rounded-2xl border border-[var(--bm-border2)] bg-white/5 p-4">
+            <div className="rounded-[var(--r-xl)] border border-[var(--bm-border2)] bg-white/5 p-4">
               <div className="flex items-center justify-between text-xs bm-text2">
                 <span>Roadmap Progress</span>
-                <span className="text-emerald-300">58%</span>
+                <span className="text-[var(--bm-green)]">58%</span>
               </div>
               <div className="mt-3 space-y-3">
                 <ProgressBar value={58} />
                 <div className="grid gap-2 text-xs bm-text2">
                   {[
                     { label: "Validation", status: "Complete", tone: "bm-text" },
-                    { label: "MVP Build", status: "In Progress", tone: "text-indigo-200" },
+                    { label: "MVP Build", status: "In Progress", tone: "text-[var(--bm-accent)]" },
                     { label: "Launch", status: "Upcoming", tone: "bm-text3" },
                   ].map((item) => (
                     <div key={item.label} className="flex items-center justify-between">
@@ -94,10 +94,10 @@ export default function DashboardPreview({ variant = "dashboard" }: DashboardPre
               ].map((card) => {
                 const Icon = card.icon;
                 return (
-                  <div key={card.label} className="rounded-2xl border border-[var(--bm-border2)] bg-white/5 p-4">
+                  <div key={card.label} className="rounded-[var(--r-xl)] border border-[var(--bm-border2)] bg-white/5 p-4">
                     <div className="flex items-center justify-between text-xs bm-text2">
                       <span>{card.label}</span>
-                      <Icon className="h-4 w-4 text-indigo-300" />
+                      <Icon className="h-4 w-4 text-[var(--bm-accent)]" />
                     </div>
                     <p className="mt-3 text-lg font-semibold bm-text">{card.value}</p>
                   </div>
@@ -116,10 +116,10 @@ export default function DashboardPreview({ variant = "dashboard" }: DashboardPre
               ].map((card) => {
                 const Icon = card.icon;
                 return (
-                  <div key={card.label} className="rounded-2xl border border-[var(--bm-border2)] bg-white/5 p-4">
+                  <div key={card.label} className="rounded-[var(--r-xl)] border border-[var(--bm-border2)] bg-white/5 p-4">
                     <div className="flex items-center justify-between text-xs bm-text2">
                       <span>{card.label}</span>
-                      <Icon className="h-4 w-4 text-indigo-300" />
+                      <Icon className="h-4 w-4 text-[var(--bm-accent)]" />
                     </div>
                     <p className="mt-3 text-xl font-semibold bm-text">{card.value}</p>
                   </div>
@@ -128,10 +128,10 @@ export default function DashboardPreview({ variant = "dashboard" }: DashboardPre
             </div>
 
             <div className="mt-5 grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
-              <div className="rounded-2xl border border-[var(--bm-border2)] bg-white/5 p-4">
+              <div className="rounded-[var(--r-xl)] border border-[var(--bm-border2)] bg-white/5 p-4">
                 <div className="flex items-center justify-between text-xs bm-text2">
                   <span>Roadmap Progress</span>
-                  <span className="text-emerald-300">72%</span>
+                  <span className="text-[var(--bm-green)]">72%</span>
                 </div>
                 <div className="mt-3 space-y-3">
                   <ProgressBar value={72} />
@@ -151,7 +151,7 @@ export default function DashboardPreview({ variant = "dashboard" }: DashboardPre
                   </div>
                 </div>
               </div>
-              <div className="rounded-2xl border border-[var(--bm-border2)] bg-white/5 p-4">
+              <div className="rounded-[var(--r-xl)] border border-[var(--bm-border2)] bg-white/5 p-4">
                 <div className="flex items-center justify-between text-xs bm-text2">
                   <span>AI Coach</span>
                   <Sparkles className="h-4 w-4 text-purple-300" />
@@ -161,11 +161,11 @@ export default function DashboardPreview({ variant = "dashboard" }: DashboardPre
                 </p>
                 <div className="mt-4 space-y-2 text-xs bm-text2">
                   <div className="flex items-center gap-2 rounded-lg border border-[var(--bm-border2)] bg-black/30 px-2 py-1">
-                    <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                    <span className="h-2 w-2 rounded-full bg-[var(--bm-green-dim)]" />
                     Validation complete
                   </div>
                   <div className="flex items-center gap-2 rounded-lg border border-[var(--bm-border2)] bg-black/30 px-2 py-1">
-                    <span className="h-2 w-2 rounded-full bg-indigo-400" />
+                    <span className="h-2 w-2 rounded-full bg-[var(--bm-accent-dim)]" />
                     Next up: MVP sprint
                   </div>
                 </div>

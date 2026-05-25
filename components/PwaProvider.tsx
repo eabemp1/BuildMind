@@ -102,11 +102,11 @@ export default function PwaProvider({
       storage.set(FIRST_SEEN_KEY, String(Date.now()));
     }
     const key = `${INSTALL_PROMPT_KEY_PREFIX}_${userId}`;
-    if (localStorage.getItem(key) === "1") return;
+    if (storage.get(key) === "1") return;
 
     fetchBehaviorState<{ install_prompt_shown: boolean }>(["install_prompt_shown"]).then(values => {
       if (values.install_prompt_shown === true) {
-        localStorage.setItem(key, "1");
+        storage.set(key, "1");
         setShowInstallPrompt(false);
       }
     }).catch(() => {});
@@ -117,7 +117,7 @@ export default function PwaProvider({
 
     if (!isStandalone) {
       setShowInstallPrompt(true);
-      localStorage.setItem(key, "1");
+      storage.set(key, "1");
       persistBehaviorState({ install_prompt_shown: true });
     }
   }, [userId]);

@@ -52,7 +52,7 @@ const C = {
   green:     "#4ade80",
   amber:     "#fbbf24",
   red:       "#f87171",
-  indigo:    "#818cf8",
+  indigo:    "var(--bm-text2)",
 };
 
 function MomentumArc({ score, size = 130 }: { score: number; size?: number }) {
@@ -64,7 +64,7 @@ function MomentumArc({ score, size = 130 }: { score: number; size?: number }) {
   return (
     <div style={{ position: "relative", width: size, height: size }}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform: "rotate(-90deg)" }}>
-        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth={stroke} />
+        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="var(--bm-border)" strokeWidth={stroke} />
         <motion.circle
           cx={size/2} cy={size/2} r={r} fill="none"
           stroke={color} strokeWidth={stroke} strokeLinecap="round"
@@ -97,7 +97,7 @@ function StageBar({ stage }: { stage: string }) {
       {STAGE_ORDER.map((s, i) => {
         const done = i < idx;
         const active = i === idx;
-        const dot = done ? C.green : active ? C.celadon : "rgba(255,255,255,0.08)";
+        const dot = done ? C.green : active ? C.celadon : "var(--bm-border2)";
         return (
           <div key={s} style={{ display: "flex", alignItems: "center", gap: 4 }}>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
@@ -112,7 +112,7 @@ function StageBar({ stage }: { stage: string }) {
               </span>
             </div>
             {i < STAGE_ORDER.length - 1 && (
-              <div style={{ width: 22, height: 1, background: done ? C.green : "rgba(255,255,255,0.07)", marginBottom: 10, transition: "background 0.3s" }} />
+              <div style={{ width: 22, height: 1, background: done ? C.green : "var(--bm-border)", marginBottom: 10, transition: "background 0.3s" }} />
             )}
           </div>
         );
@@ -236,7 +236,7 @@ export default function WeeklyReportCard({
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
         style={{
-          background: "linear-gradient(145deg, #0d0d14 0%, #111118 60%, #0a0a10 100%)",
+          background: "var(--bm-bg2)",
           border: `1px solid ${C.celadonBd}`,
           borderRadius: 20,
           padding: "32px 36px",
@@ -247,7 +247,7 @@ export default function WeeklyReportCard({
         {/* Subtle grid texture */}
         <div style={{
           position: "absolute", inset: 0, opacity: 0.025,
-          backgroundImage: `linear-gradient(${C.celadon} 1px, transparent 1px), linear-gradient(90deg, ${C.celadon} 1px, transparent 1px)`,
+          backgroundImage: "none",
           backgroundSize: "36px 36px", pointerEvents: "none",
         }} />
 
@@ -255,7 +255,7 @@ export default function WeeklyReportCard({
         <div style={{
           position: "absolute", top: -60, right: -60,
           width: 200, height: 200, borderRadius: "50%",
-          background: `radial-gradient(circle, ${C.celadonDim} 0%, transparent 70%)`,
+          background: "transparent",
           pointerEvents: "none",
         }} />
 
@@ -290,7 +290,7 @@ export default function WeeklyReportCard({
         </div>
 
         {/* ── Stage progress ── */}
-        <div style={{ marginBottom: 24, padding: "14px 16px", background: "rgba(255,255,255,0.02)", borderRadius: 12, border: "1px solid rgba(255,255,255,0.05)" }}>
+        <div style={{ marginBottom: 24, padding: "14px 16px", background: "var(--bm-border)", borderRadius: 12, border: "1px solid var(--bm-border)" }}>
           <div style={{ fontSize: 9, color: C.text3, fontFamily: "monospace", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 10 }}>
             Stage Progress
           </div>
@@ -308,11 +308,11 @@ export default function WeeklyReportCard({
                 <span style={{ fontSize: 10, color: C.text3, fontFamily: "monospace", letterSpacing: "0.08em", textTransform: "uppercase" }}>Task Completion</span>
                 <span style={{ fontSize: 13, fontWeight: 800, color: pColor, fontFamily: "monospace" }}>{pct}%</span>
               </div>
-              <div style={{ height: 5, background: "rgba(255,255,255,0.05)", borderRadius: 3, overflow: "hidden" }}>
+              <div style={{ height: 5, background: "var(--bm-border)", borderRadius: 3, overflow: "hidden" }}>
                 <motion.div
                   initial={{ width: 0 }} animate={{ width: `${pct}%` }}
                   transition={{ duration: 1.1, ease: "easeOut", delay: 0.5 }}
-                  style={{ height: "100%", background: `linear-gradient(90deg, ${pColor} 0%, ${pColor}aa 100%)`, borderRadius: 3 }}
+                  style={{ height: "100%", background: pColor, borderRadius: 3 }}
                 />
               </div>
               <div style={{ fontSize: 10, color: C.text3, marginTop: 4, fontFamily: "monospace" }}>
@@ -344,8 +344,8 @@ export default function WeeklyReportCard({
             { label: "Next Week Focus", value: report.next_week_focus, color: C.green },
           ].map(item => (
             <div key={item.label} style={{
-              background: "rgba(255,255,255,0.025)",
-              border: "1px solid rgba(255,255,255,0.06)",
+              background: "var(--bm-border)",
+              border: "1px solid var(--bm-border)",
               borderRadius: 12, padding: "14px 15px",
             }}>
               <div style={{ fontSize: 9, color: item.color, fontFamily: "monospace", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 7, fontWeight: 700 }}>
@@ -387,7 +387,7 @@ export default function WeeklyReportCard({
       {/* ── Visual share card (Audit v8 PROD #5) ── */}
       <motion.div className="bm-no-print"
         initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}
-        style={{ marginTop: 14, background: "linear-gradient(135deg, #0F0F10 0%, #161618 100%)", border: "1px solid rgba(92,200,138,0.22)", borderRadius: 12, padding: "16px 20px", position: "relative", overflow: "hidden" }}>
+        style={{ marginTop: 14, background: "var(--bm-bg3)", border: "1px solid var(--bm-green-bd)", borderRadius: "var(--r-lg)", padding: "16px 20px", position: "relative", overflow: "hidden" }}>
         <div style={{ position: "absolute", top: -24, right: -24, width: 120, height: 120, borderRadius: "50%", background: "radial-gradient(circle, rgba(92,200,138,0.12) 0%, transparent 70%)", pointerEvents: "none" }} />
         <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.12em", color: "rgba(92,200,138,0.55)", marginBottom: 10, textTransform: "uppercase" }}>
           Week {weekNumber} · {projectTitle}
@@ -395,9 +395,9 @@ export default function WeeklyReportCard({
         <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: report.next_week_focus ? 10 : 0 }}>
           <div>
             <span style={{ fontSize: 28, fontWeight: 800, color: "#ECECEC", letterSpacing: "-0.04em" }}>{report.momentum_score}</span>
-            <span style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", marginLeft: 3 }}>/100</span>
+            <span style={{ fontSize: 11, color: "var(--bm-text4)", marginLeft: 3 }}>/100</span>
           </div>
-          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", lineHeight: 1.7 }}>
+          <div style={{ fontSize: 11, color: "var(--bm-text3)", lineHeight: 1.7 }}>
             {tasksCompleted}/{tasksTotal} tasks complete{streak > 0 && <><br /><span style={{ color: "#E8A020" }}>🔥 {streak}-day streak</span></>}
           </div>
         </div>
@@ -406,7 +406,7 @@ export default function WeeklyReportCard({
             Next: {report.next_week_focus.slice(0, 90)}{report.next_week_focus.length > 90 ? "…" : ""}
           </div>
         )}
-        <div style={{ position: "absolute", bottom: 8, right: 12, fontSize: 8, color: "rgba(255,255,255,0.12)", fontWeight: 700, letterSpacing: "0.08em" }}>BUILDMIND.LIVE</div>
+        <div style={{ position: "absolute", bottom: 8, right: 12, fontSize: 8, color: "var(--bm-border2)", fontWeight: 700, letterSpacing: "0.08em" }}>BUILDMIND.LIVE</div>
       </motion.div>
 
       {/* ── Action buttons (hidden on print) ── */}
@@ -421,7 +421,7 @@ export default function WeeklyReportCard({
         </button>
         <button onClick={handleX} style={{
           flex: 1, minWidth: 100, padding: "10px 0", borderRadius: 9,
-          background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)",
+          background: "var(--bm-border)", border: "1px solid var(--bm-border2)",
           color: C.text2, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
         }}>
           Share X ↗
@@ -438,7 +438,7 @@ export default function WeeklyReportCard({
           </button>
           <button onClick={handleCSV} style={{
             padding: "10px 16px", borderRadius: 9,
-            background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)",
+            background: "var(--bm-border)", border: "1px solid var(--bm-border2)",
             color: C.text2, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
           }}>
             Export CSV

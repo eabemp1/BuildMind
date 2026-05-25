@@ -241,7 +241,7 @@ export async function GET(req: Request) {
       .from("morning_briefings")
       .insert({ user_id: user.id, ...briefing, delivered_at: new Date().toISOString() })
       .select()
-      .single();
+      .maybeSingle();
     return NextResponse.json({ ok: true, data: saved });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String(e) }, { status: 500 });

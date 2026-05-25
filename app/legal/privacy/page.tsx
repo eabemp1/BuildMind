@@ -36,7 +36,7 @@ export default function PrivacyPage() {
 
           <section>
             <h2 className="text-base font-semibold bm-text mb-2">4. Data retention</h2>
-            <p>Your account and all associated data are retained until you request deletion. To delete your account and all data, email us at <a href="mailto:hello@buildmind.live" className="text-indigo-400 hover:text-indigo-300">hello@buildmind.live</a>. We will process the deletion within 7 business days.</p>
+            <p>Your account and all associated data are retained until you request deletion. To delete your account and all data, email us at <a href="mailto:hello@buildmind.live" className="text-[var(--bm-accent)] hover:text-[var(--bm-accent)]">hello@buildmind.live</a>. We will process the deletion within 7 business days.</p>
           </section>
 
           <section>
@@ -51,7 +51,7 @@ export default function PrivacyPage() {
 
           <section>
             <h2 className="text-base font-semibold bm-text mb-2">7. Contact</h2>
-            <p>Questions about this policy? Email <a href="mailto:hello@buildmind.live" className="text-indigo-400 hover:text-indigo-300">hello@buildmind.live</a>.</p>
+            <p>Questions about this policy? Email <a href="mailto:hello@buildmind.live" className="text-[var(--bm-accent)] hover:text-[var(--bm-accent)]">hello@buildmind.live</a>.</p>
           </section>
         </div>
 

@@ -110,7 +110,7 @@ function LiveLink({ label, url, compact = false }: { label: string; url: string;
   return (
     <a href={url} target="_blank" rel="noopener noreferrer"
       style={{
-        display: "inline-block", fontSize: compact ? 11 : 12, color: "#818cf8",
+        display: "inline-block", fontSize: compact ? 11 : 12, color: "var(--bm-text2)",
         textDecoration: "none", fontWeight: 500,
       }}>
       {label} →

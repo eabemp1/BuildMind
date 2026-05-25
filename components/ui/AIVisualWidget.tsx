@@ -117,8 +117,8 @@ export function AIVisualWidget({
     <div
       className={className}
       style={{
-        background: "rgba(255,255,255,0.02)",
-        border: "1px solid rgba(255,255,255,0.07)",
+        background: "var(--bm-border)",
+        border: "1px solid var(--bm-border)",
         borderRadius: 14,
         overflow: "hidden",
       }}
@@ -128,7 +128,7 @@ export function AIVisualWidget({
         style={{
           display: "flex", alignItems: "center", justifyContent: "space-between",
           padding: "10px 14px",
-          borderBottom: generated ? "1px solid rgba(255,255,255,0.06)" : "none",
+          borderBottom: generated ? "1px solid var(--bm-border)" : "none",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
@@ -157,7 +157,7 @@ export function AIVisualWidget({
               onClick={generate}
               style={{
                 fontSize: 11, color: "white",
-                background: "linear-gradient(135deg,var(--bm-accent),#8b5cf6)",
+                background: "var(--bm-accent)",
                 border: "none", borderRadius: 7,
                 padding: "5px 12px", cursor: "pointer",
                 fontFamily: "inherit", fontWeight: 600,

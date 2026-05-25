@@ -48,10 +48,6 @@ function createOAuthState(userId: string): string {
   return userId;
 }
 
-function safeReturnPath(value: string | null): string {
-  return value === "/onboarding" || value === "/settings" ? value : "/settings";
-}
-
 export async function GET(request: Request) {
   const supabase = await createClient();
   const { data: { user }, error } = await supabase.auth.getUser();
@@ -79,9 +75,11 @@ export async function GET(request: Request) {
     `&scope=read` +
     `&state=${encodeURIComponent(state)}`;
 
-  const url = new URL(request.url);
-  const returnPath = safeReturnPath(url.searchParams.get("return"));
+  const returnParam = (new URL(request.url)).searchParams.get("return") ?? "";
+  const safeReturn = ["/onboarding", "/settings"].includes(returnParam) ? returnParam : "/settings";
   const response = NextResponse.redirect(linearOAuthUrl);
-  response.cookies.set("bm_oauth_return", returnPath, { httpOnly: true, secure: true, sameSite: "lax", maxAge: 600, path: "/" });
+  response.cookies.set("bm_oauth_return", safeReturn, {
+    httpOnly: true, secure: true, sameSite: "lax", maxAge: 600, path: "/",
+  });
   return response;
 }

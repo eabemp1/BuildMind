@@ -200,7 +200,7 @@ export async function POST(request: Request) {
           .select("name, title, description, target_users, problem, startup_stage, biggest_blocker, created_at, current_mrr")
           .eq("id", projectId)
           .eq("user_id", userId)
-          .single(),
+          .maybeSingle(),
         supabase
           .from("founder_memory")
           .select("avoidance_zones, strengths, personality_tags, last_insight, cofounder_style")
@@ -209,8 +209,10 @@ export async function POST(request: Request) {
         supabase
           .from("reflections")
           .select("outcome, note, confidence, today_action, created_at")
-          .gte("created_at", new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString())
           .eq("user_id", userId)
+          // Only reflections from the last 48 hours — prevents stale reflection
+          // from repeating the same task type day after day.
+          .gte("created_at", new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString())
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle(),
@@ -346,24 +348,22 @@ Current MRR: ${project.current_mrr && project.current_mrr > 0 ? `GHS ${(project.
             const lastWeek = JSON.parse(lastWeekSummaryRaw) as {
               tasks_completed?: number; avg_confidence?: number;
               biggest_gap?: string; next_week_focus?: string;
-              intention_vs_execution_rate?: number;
-              execution_trend?: "up" | "down" | "flat";
-              override_count?: number;
-              avoidance_summary?: string;
+              intention_vs_execution_rate?: number; execution_trend?: string;
+              avoidance_summary?: string; override_count?: number;
             };
             lastReflectionContext += `\n\nLAST WEEK SUMMARY (Monday — use this to set today's direction):`;
             lastReflectionContext += `\nCompleted ${lastWeek.tasks_completed ?? 0} tasks. Avg confidence: ${lastWeek.avg_confidence ?? "?"}/5`;
-            if (lastWeek.biggest_gap) lastReflectionContext += `\nBiggest gap last week: "${lastWeek.biggest_gap}"`;
-            if (lastWeek.next_week_focus) lastReflectionContext += `\nFocused direction for this week: "${lastWeek.next_week_focus}"`;
-            if (typeof lastWeek.intention_vs_execution_rate === "number") {
+            if (lastWeek.intention_vs_execution_rate != null) {
               lastReflectionContext += `\nIntention vs execution rate: ${lastWeek.intention_vs_execution_rate}% (${lastWeek.execution_trend ?? "flat"} trend)`;
             }
-            if ((lastWeek.override_count ?? 0) > 0) {
+            if (lastWeek.override_count != null && lastWeek.override_count > 0) {
               lastReflectionContext += `\nOverrode/blocked ${lastWeek.override_count} tasks last week.`;
             }
             if (lastWeek.avoidance_summary) {
               lastReflectionContext += `\nAvoidance patterns detected: "${lastWeek.avoidance_summary}"`;
             }
+            if (lastWeek.biggest_gap) lastReflectionContext += `\nBiggest gap last week: "${lastWeek.biggest_gap}"`;
+            if (lastWeek.next_week_focus) lastReflectionContext += `\nFocused direction for this week: "${lastWeek.next_week_focus}"`;
             lastReflectionContext += `\nINSTRUCTION: Monday's first task must directly address the biggest gap from last week. If override rate was high last week (avg confidence <3 or intention_vs_execution_rate <50%), start with an easier confidence-building task that routes around the detected avoidance patterns.`;
           } catch { /* non-fatal — malformed JSON in last_week_summary */ }
         }

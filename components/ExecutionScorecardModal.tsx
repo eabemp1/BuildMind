@@ -62,9 +62,9 @@ export default function ExecutionScorecardModal({ daysActive, marketGap, onDismi
           ) : payload ? (
             <>
               {/* Scorecard visual */}
-              <div style={{ background: "linear-gradient(135deg, var(--bm-bg3) 0%, #181B21 100%)", border: "1px solid var(--bm-border)", borderRadius: 14, padding: 20, marginBottom: 16, position: "relative", overflow: "hidden" }}>
+              <div style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: 14, padding: 20, marginBottom: 16, position: "relative", overflow: "hidden" }}>
                 {/* Gradient top bar */}
-                <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: "linear-gradient(90deg, var(--bm-accent), #56C9C0, #6BA5F0)" }} />
+                <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: "var(--bm-accent)" }} />
                 <div style={{ fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>Execution Scorecard</div>
                 <div style={{ fontSize: 18, fontWeight: 700, color: "var(--bm-text)", marginBottom: 2 }}>{payload.card.startupCategory}</div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, margin: "14px 0" }}>
@@ -74,14 +74,14 @@ export default function ExecutionScorecardModal({ daysActive, marketGap, onDismi
                     { label: "Stage", value: payload.card.stage, color: "var(--bm-text)" },
                     { label: "Days Active", value: String(payload.card.daysActive), color: "var(--bm-text)" },
                   ].map(cell => (
-                    <div key={cell.label} style={{ background: "rgba(255,255,255,0.03)", borderRadius: 8, padding: "8px 10px" }}>
+                    <div key={cell.label} style={{ background: "var(--bm-border)", borderRadius: 8, padding: "8px 10px" }}>
                       <div style={{ fontSize: 9, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 3 }}>{cell.label}</div>
                       <div style={{ fontSize: 16, fontWeight: 700, color: cell.color }}>{cell.value}</div>
                     </div>
                   ))}
                 </div>
                 {payload.card.marketGap && (
-                  <div style={{ background: "rgba(255,255,255,0.02)", borderRadius: 8, padding: "8px 10px" }}>
+                  <div style={{ background: "var(--bm-border)", borderRadius: 8, padding: "8px 10px" }}>
                     <div style={{ fontSize: 9, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 3 }}>Market Gap</div>
                     <div style={{ fontSize: 12, color: "var(--bm-text2)", fontStyle: "italic", lineHeight: 1.4 }}>&ldquo;{payload.card.marketGap}&rdquo;</div>
                   </div>

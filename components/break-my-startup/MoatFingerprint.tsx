@@ -24,7 +24,7 @@ export function MoatFingerprint({ dimensions }: { dimensions: MoatDimension[] })
               {dim.score}/10
             </span>
           </div>
-          <div style={{ height: 3, background: "rgba(255,255,255,0.06)", borderRadius: 2, overflow: "hidden", marginBottom: 3 }}>
+          <div style={{ height: 3, background: "var(--bm-border)", borderRadius: 2, overflow: "hidden", marginBottom: 3 }}>
             <motion.div
               initial={{ width: 0 }}
               animate={{ width: `${dim.score * 10}%` }}

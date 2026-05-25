@@ -52,7 +52,7 @@ export async function GET() {
         .select("count")
         .eq("user_id", user.id)
         .eq("month", month)
-        .single();
+        .maybeSingle();
       monthlyUsed = usage?.count ?? 0;
     } catch {
       // ai_usage table may not exist — treat as 0

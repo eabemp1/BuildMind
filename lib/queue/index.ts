@@ -154,9 +154,15 @@ export async function verifyQStashSignature(req: Request): Promise<boolean> {
   const nextKey    = process.env.QSTASH_NEXT_SIGNING_KEY;
 
   if (!currentKey || !nextKey) {
-    // Not configured — allow through in dev
+    // A4 FIX: In production, missing signing keys must be a hard failure — not a
+    // silent pass-through. A misconfigured/rotated key would otherwise leave all
+    // worker endpoints completely unprotected (any HTTP client could trigger them).
+    // In development/test, we allow through so local dev works without QStash.
     if (process.env.NODE_ENV === "production") {
-      console.error("[queue] QSTASH signing keys missing in production — worker endpoint is unprotected!");
+      throw new Error(
+        "[queue] QSTASH_CURRENT_SIGNING_KEY / QSTASH_NEXT_SIGNING_KEY are missing in production. " +
+        "Worker endpoints are unprotected. Add the keys from your Upstash dashboard.",
+      );
     }
     return true;
   }

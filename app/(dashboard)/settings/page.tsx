@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState, useCallback } from "react";
+import { FormEvent, Suspense, useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
@@ -10,6 +10,7 @@ import { PLAN_NAMES, setStoredPlan, fetchAndSyncStoredPlanFromBillingStatus } fr
 import { PLAN_PRICE_LABEL } from "@/lib/pricing";
 import { usePlan } from "@/lib/usePlan";
 import { storage } from "@/lib/storage";
+import { clearFounderInsight } from "@/lib/founderMemory";
 import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
 import PushNotificationToggle from "@/components/PushNotificationToggle";
 import AvatarUpload from "@/components/AvatarUpload";
@@ -286,6 +287,80 @@ function IntegrationsTab({ initialStatus }: { initialStatus: string | null }) {
           Checking connection status…
         </div>
       )}
+
+      {/* Phase 2 integrations — GitHub + Stripe */}
+      <div style={{ marginTop: 8 }}>
+        <p style={{
+          fontFamily: "'DM Mono', monospace",
+          fontSize: 9,
+          textTransform: "uppercase",
+          letterSpacing: "0.10em",
+          color: "var(--bm-text3)",
+          marginBottom: 12,
+        }}>
+          Phase 2 — Q4 2026
+        </p>
+        {[
+          {
+            logo: "GH",
+            logoBg: "#24292e",
+            logoColor: "#fff",
+            name: "GitHub",
+            desc: "Shipping velocity signal. BuildMind reads your commit frequency, PR merges, and issue throughput to calibrate whether your execution is matching your stated priorities.",
+          },
+          {
+            logo: "$",
+            logoBg: "#635bff",
+            logoColor: "#fff",
+            name: "Stripe MRR",
+            desc: "Revenue reality check. Pulls your MRR automatically — replaces manual entry and collapses the distance between AI advice and revenue operating system. Available at 50 paying users.",
+          },
+        ].map((intg) => (
+          <div
+            key={intg.name}
+            style={{
+              background: "var(--bm-bg2)",
+              border: "1px solid var(--bm-border)",
+              borderRadius: "var(--r-lg)",
+              padding: "18px 20px",
+              opacity: 0.55,
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 14,
+              marginBottom: 10,
+            }}
+          >
+            <div style={{
+              width: 36, height: 36, borderRadius: "var(--r-md)", flexShrink: 0,
+              background: intg.logoBg, border: "1px solid var(--bm-border)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 13, fontWeight: 800, color: intg.logoColor,
+            }}>
+              {intg.logo}
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text2)" }}>{intg.name}</span>
+                <span style={{
+                  fontFamily: "'DM Mono', monospace",
+                  fontSize: 8,
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  padding: "2px 8px",
+                  border: "1px solid var(--bm-border2)",
+                  borderRadius: "var(--r-sm)",
+                  color: "var(--bm-text3)",
+                }}>
+                  Phase 2 · Q4 2026
+                </span>
+              </div>
+              <p style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.55, margin: 0 }}>
+                {intg.desc}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -407,7 +482,7 @@ function BillingTab() {
   );
 }
 
-export default function SettingsPage() {
+function SettingsContent() {
   const isMobile = useIsMobile();
   const { plan } = usePlan();
   const searchParams = useSearchParams();
@@ -428,6 +503,8 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [notifs, setNotifs] = useState({ streakReminder: true, weeklyReport: true, coachTips: false });
+  const [clearingMemory, setClearingMemory] = useState(false);
+  const [memoryCleared, setMemoryCleared] = useState(false);
   const [aiPersonality, setAiPersonality] = useState<"direct" | "supportive" | "challenger">("direct");
   const [userId, setUserId] = useState<string>("");
   // Public profile state
@@ -681,6 +758,39 @@ export default function SettingsPage() {
                       ))}
                     </div>
                   </div>
+                  {/* D4 FIX: Allow founders to clear stored AI insights (privacy + accuracy) */}
+                  <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: isMobile ? "18px" : "22px 24px" }}>
+                    <div style={{ fontSize: isMobile ? 15 : 13, fontWeight: 700, color: "var(--bm-text)", marginBottom: 6 }}>AI Memory</div>
+                    <div style={{ fontSize: isMobile ? 13 : 12, color: "var(--bm-text3)", lineHeight: 1.55, marginBottom: 16 }}>
+                      BuildMind stores behavioural patterns — avoidance signals, strengths, and coaching insights — to personalise future AI outputs.
+                      If the AI has developed an inaccurate model of you, clearing this resets it.
+                    </div>
+                    {memoryCleared ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--bm-green, #22c55e)", fontSize: 13 }}>
+                        <Check size={14} /> AI memory cleared.
+                      </div>
+                    ) : (
+                      <button
+                        onClick={async () => {
+                          if (!confirm("Clear all stored AI insights and behavioural patterns? This cannot be undone.")) return;
+                          setClearingMemory(true);
+                          try {
+                            await clearFounderInsight();
+                            setMemoryCleared(true);
+                          } catch {
+                            alert("Failed to clear memory — please try again.");
+                          } finally {
+                            setClearingMemory(false);
+                          }
+                        }}
+                        disabled={clearingMemory}
+                        style={{ padding: "9px 18px", borderRadius: 10, border: "1px solid var(--bm-red, #ef4444)", background: "transparent", color: "var(--bm-red, #ef4444)", fontSize: 13, fontWeight: 600, cursor: clearingMemory ? "not-allowed" : "pointer", opacity: clearingMemory ? 0.6 : 1, fontFamily: "inherit" }}
+                      >
+                        {clearingMemory ? "Clearing…" : "Clear AI Memory"}
+                      </button>
+                    )}
+                  </div>
+
                   <div style={{ display: "flex", justifyContent: "flex-end" }}>
                     <SaveButton loading={saving} onClick={handleSave} />
                   </div>
@@ -754,5 +864,13 @@ export default function SettingsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={null}>
+      <SettingsContent />
+    </Suspense>
   );
 }

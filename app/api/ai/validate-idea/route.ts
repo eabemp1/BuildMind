@@ -7,6 +7,7 @@ export const dynamic     = "force-dynamic";
 export const maxDuration = 60; // 5-agent pipeline can take up to ~45 s on provider fallback
 
 import { parseStartupIdea, runAgentPipeline, generatePivots } from "@/lib/agents";
+import { withAgentConcurrencyLimit } from "@/lib/server/concurrency";
 import { computeViabilityScore, computeViabilityBreakdown } from "@/lib/scoring";
 
 export async function POST(request: Request) {
@@ -45,14 +46,15 @@ export async function POST(request: Request) {
 
     // ── Stage 1: 5-Agent Pipeline ─────────────────────────────────────────
     // Run all agents in parallel using the parsed schema
-    const agentPipeline = await runAgentPipeline({
+    // C2 FIX: Concurrency limiter prevents 5-agent fan-out bursts
+    const agentPipeline = await withAgentConcurrencyLimit(() => runAgentPipeline({
       idea: idea || parsed.problem,
       problem: parsed.problem,
       targetUsers: parsed.target_customer || targetUsers,
       solution: parsed.solution,
       stage,
       competitors: [],  // No competitors for idea-only validation (no project context)
-    });
+    }));
 
     const signals = agentPipeline.signal_summary;
 

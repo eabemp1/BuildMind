@@ -26,7 +26,7 @@ export async function POST(req: Request) {
     .from("founder_context")
     .select("momentum_score, tasks_overridden_this_week, override_reasons, current_stage")
     .eq("user_id", user.id)
-    .single();
+    .maybeSingle();
 
   const current = ctx?.momentum_score ?? 50;
   const newMomentum = momentumOnOverride(current);

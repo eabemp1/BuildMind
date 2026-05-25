@@ -42,7 +42,7 @@ export async function POST(request: Request) {
       .select("startup_stage, name, title")
       .eq("id", projectId)
       .eq("user_id", userId)
-      .single();
+      .maybeSingle();
 
     if (!project) {
       return NextResponse.json({ success: false, error: "Project not found" }, { status: 404 });

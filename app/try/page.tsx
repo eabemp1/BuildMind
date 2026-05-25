@@ -66,9 +66,9 @@ export default function TryPage() {
                 key={s}
                 type="button"
                 onClick={() => setStage(s)}
-                className={`rounded-full border px-4 py-2 text-xs font-semibold transition ${
+                className={`rounded-[var(--r-lg)] border px-4 py-2 text-xs font-semibold transition ${
                   stage === s
-                    ? "border-indigo-400 bg-indigo-500/10 text-indigo-200"
+                    ? "border-indigo-400 bg-[var(--bm-accent-dim)]/10 text-[var(--bm-accent)]"
                     : "border-[var(--bm-border2)] bg-white/5 bm-text2 hover:bg-white/10"
                 }`}
               >
@@ -78,10 +78,10 @@ export default function TryPage() {
           </div>
         </div>
 
-        <section className="rounded-2xl border border-[var(--bm-border2)] bm-bg2 p-6">
+        <section className="rounded-[var(--r-xl)] border border-[var(--bm-border2)] bm-bg2 p-6">
           <div className="mb-4 text-xs uppercase tracking-[0.25em] bm-text3">Your action for today</div>
           <h2 className="text-lg font-semibold bm-text">{payload.action}</h2>
-          <div className="mt-4 flex items-start justify-between gap-3 rounded-xl border border-[var(--bm-border2)] bg-black/40 p-4 text-xs bm-text2">
+          <div className="mt-4 flex items-start justify-between gap-3 rounded-[var(--r-xl)] border border-[var(--bm-border2)] bg-black/40 p-4 text-xs bm-text2">
             <p>“{payload.message}”</p>
             <button
               onClick={copy}
@@ -91,7 +91,7 @@ export default function TryPage() {
             </button>
           </div>
 
-          <div className="mt-4 rounded-xl border border-[var(--bm-border2)] bg-white/5 p-4 text-center">
+          <div className="mt-4 rounded-[var(--r-xl)] border border-[var(--bm-border2)] bg-white/5 p-4 text-center">
             <p className="text-xs bm-text2">Save your progress + get daily actions</p>
             <Link
               href="/auth/login"

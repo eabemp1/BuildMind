@@ -110,7 +110,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
       </div>
       <div className={`flex min-w-0 flex-col gap-1.5 ${isUser ? "items-end max-w-[88%] sm:max-w-[75%]" : "items-start max-w-[92%] sm:max-w-[85%]"}`}>
         {!isUser && msg.reasoning && msg.reasoning.length > 0 && (
-          <div className="w-full rounded-xl border border-[var(--bm-border)] bg-[var(--bm-bg3)] px-3 py-2.5">
+          <div className="w-full rounded-[var(--r-xl)] border border-[var(--bm-border)] bg-[var(--bm-bg3)] px-3 py-2.5">
             <button onClick={() => setExpanded(v => !v)}
               className="flex cursor-pointer items-center gap-1.5 border-0 bg-transparent p-0 text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--bm-text3)]">
               <Brain size={10} color="var(--bm-text3)" />
@@ -132,7 +132,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
           </div>
         )}
         <div
-          className={`px-3.5 py-2.5 text-[13px] leading-relaxed ${isUser ? "rounded-2xl rounded-tr-sm border border-[var(--bm-border3)] bg-[var(--bm-bg4)]" : "rounded-2xl rounded-tl-sm border border-[var(--bm-border2)] bg-[var(--bm-bg3)]"}`}
+          className={`px-3.5 py-2.5 text-[13px] leading-relaxed ${isUser ? "rounded-[var(--r-xl)] rounded-tr-sm border border-[var(--bm-border3)] bg-[var(--bm-bg4)]" : "rounded-[var(--r-xl)] rounded-tl-sm border border-[var(--bm-border2)] bg-[var(--bm-bg3)]"}`}
           style={{ color: msg.error ? "var(--bm-red)" : "var(--bm-text2)" }}
         >
           {msg.phase === "thinking" ? <ThinkingDots /> : <span style={{ whiteSpace: "pre-wrap" }}>{msg.content}</span>}
@@ -292,7 +292,7 @@ function AICoachPageInner() {
 
         {/* Chat panel */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}
-          className="flex min-h-[72vh] flex-1 flex-col overflow-hidden rounded-2xl border border-[var(--bm-border)] bg-[var(--bm-bg2)] shadow-md lg:min-h-0">
+          className="flex min-h-[72vh] flex-1 flex-col overflow-hidden rounded-[var(--r-xl)] border border-[var(--bm-border)] bg-[var(--bm-bg2)] shadow-md lg:min-h-0">
           <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--bm-border)] px-4 py-4 sm:px-5">
             <div className="flex items-center gap-2">
               <div className="h-2 w-2 rounded-full bg-[var(--bm-accent)]" />
@@ -309,12 +309,12 @@ function AICoachPageInner() {
             {messages.length === 0 && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}
                 className="flex h-full flex-col items-center justify-center gap-4 text-center">
-              <div className="flex h-16 w-16 items-center justify-center rounded-full border border-[var(--bm-border)] bg-[var(--bm-bg3)] sm:h-14 sm:w-14">
-                  <Bot size={24} color="var(--bm-text3)" />
+              <div style={{width:48,height:48,borderRadius:"var(--r-md)",background:"var(--bm-accent-dim)",border:"1px solid var(--bm-accent-bd)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                  <Bot size={22} color="var(--bm-accent)" />
                 </div>
-                <div>
-                  <div className="mb-1.5 text-[16px] font-bold text-[var(--bm-text)] sm:text-[18px]">What's on your mind today?</div>
-                  <div className="text-[13px] text-[var(--bm-text3)]">Ask anything about your startup</div>
+                <div style={{maxWidth:400,textAlign:"center"}}>
+                  <div style={{fontFamily:"'Syne', sans-serif",fontSize:18,fontWeight:700,letterSpacing:"-0.02em",color:"var(--bm-text)",marginBottom:10,lineHeight:1.3}}>Your session is now set up.</div>
+                  <p style={{fontFamily:"'Inter', sans-serif",fontSize:12.5,color:"var(--bm-text2)",lineHeight:1.65,margin:0}}>I&apos;m not a generic AI assistant — I know your startup, your stage, your fears, and your Break My Startup result. I&apos;m closest to the expensive executive coach, the VC operating partner, and the founder therapist — available at 2am when the anxiety hits. What do you want to work through today?</p>
                 </div>
                 <div className="flex max-w-full gap-2 overflow-x-auto px-1 sm:flex-wrap sm:justify-center">
                   {QUICK_PROMPTS.map(p => (
@@ -332,7 +332,7 @@ function AICoachPageInner() {
 
           <div className="sticky bottom-0 shrink-0 border-t border-[var(--bm-border)] bg-[var(--bm-bg)]/90 p-3 backdrop-blur-sm sm:p-4">
             {plan === "free" && <div className="mb-2.5"><AIUsageBadge /></div>}
-            <div className="flex items-end gap-2.5 rounded-xl border border-[var(--bm-border2)] bg-[var(--bm-bg3)] px-3.5 py-3 transition-colors"
+            <div className="flex items-end gap-2.5 rounded-[var(--r-xl)] border border-[var(--bm-border2)] bg-[var(--bm-bg3)] px-3.5 py-3 transition-colors"
               onFocusCapture={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--bm-accent-bd)"; }}
               onBlurCapture={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--bm-border2)"; }}>
               <textarea ref={inputRef} value={input} onChange={e => setInput(e.target.value)}

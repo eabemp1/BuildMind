@@ -124,7 +124,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const staleOrMissingFilter = `personality_tags_embedding.is.null,avoidance_zones_embedding.is.null,updated_at.lt.${staleBefore}`;
 
   if (body.userId) {
-    // Single-user call (triggered after a coach interaction)
+    // Single-user call (triggered after a coach interaction).
+    // IDOR FIX: verify the session JWT and confirm it matches body.userId.
+    // Without this any authenticated user could trigger embedding for another
+    // user's founder_memory by passing an arbitrary UUID in the body.
+    const sessionToken = req.headers.get("authorization")?.replace(/^Bearer /, "");
+    if (!sessionToken) {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    }
+    const { data: { user: sessionUser }, error: sessionError } =
+      await supabase.auth.getUser(sessionToken);
+    if (sessionError || !sessionUser || sessionUser.id !== body.userId) {
+      return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
+    }
+
     const { data: rows } = await supabase
       .from("founder_memory")
       .select("user_id")

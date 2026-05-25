@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import Link from "next/link";
@@ -9,160 +9,33 @@ import { useProjectSummariesQuery, useDashboardOverviewQuery } from "@/lib/queri
 import { recordScore, markActiveToday, recordPendingTasks, syncUrgencyFromServer } from "@/lib/urgency";
 import { getStoredStreak } from "@/lib/plan";
 import { getXP, getScoreHistory, syncScoreHistory, syncXP, computeConsistencyBonus } from "@/lib/scoring";
-import {
-  Zap, Flame, Target, ArrowRight, ChevronRight,
-  FolderKanban, BarChart3, Clock,
-} from "lucide-react";
-import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { MrrWidget } from "@/components/MrrWidget";
-import { Button } from "@/components/ui/button";
-import { ScoreBreakdown } from "@/components/ui/ScoreBreakdown";
+import { ArrowRight, CheckCircle2 } from "lucide-react";
 import { ProfileCompletenessBar } from "@/components/ProfileCompletenessBar";
-import { PageHeader } from "@/components/ui/PageHeader";
-import { SectionHeader } from "@/components/ui/SectionHeader";
-import { ScoreRing } from "@/components/ui/ScoreRing";
-import { StatCard } from "@/components/ui/StatCard";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { FolderKanban } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { MrrWidget } from "@/components/MrrWidget";
+import { storage } from "@/lib/storage";
 
-// ── Stage config ───────────────────────────────────────────────────────────────
-const STAGES = ["Idea", "Validation", "MVP", "Launch", "Growth", "Revenue"];
-
-const STAGE_BADGE: Record<string, { variant: "neutral" | "warning" | "success" | "info" | "danger" | "gradient" }> = {
-  Idea: { variant: "neutral" },
-  Validation: { variant: "info" },
-  MVP: { variant: "warning" },
-  Launch: { variant: "success" },
-  Growth: { variant: "gradient" },
-  Revenue: { variant: "success" },
+// ── Stage badge colours ───────────────────────────────────────────────────────
+const STAGE_COLOUR: Record<string, string> = {
+  Idea:       "var(--bm-text3)",
+  Validation: "var(--bm-accent)",
+  MVP:        "var(--bm-amber)",
+  Launch:     "var(--bm-green)",
+  Growth:     "var(--bm-green)",
+  Revenue:    "var(--bm-green)",
 };
 
 // ── AI nudge map ──────────────────────────────────────────────────────────────
 const NUDGE: Record<string, { text: string; action: string }> = {
-  Idea: { text: "Validation risk is the current constraint.", action: "Run one customer conversation before building." },
-  Validation: { text: "Commitment quality matters more than opinion volume.", action: "Secure one paid, time, or workflow commitment." },
-  MVP: { text: "Usage evidence is now more valuable than product polish.", action: "Put the working link in front of three real users." },
-  Launch: { text: "Distribution is the operational bottleneck.", action: "Publish one clear launch asset and measure response." },
-  Growth: { text: "Retention is the strongest signal in this stage.", action: "Interview one churned or inactive user." },
-  Revenue: { text: "Revenue is the operating signal.", action: "Map the largest leak in acquisition-to-payment." },
+  Idea:       { text: "Validation risk is the current constraint.",                     action: "Run one customer conversation before building." },
+  Validation: { text: "Commitment quality matters more than opinion volume.",            action: "Secure one paid, time, or workflow commitment." },
+  MVP:        { text: "Usage evidence is now more valuable than product polish.",        action: "Put the working link in front of three real users." },
+  Launch:     { text: "Distribution is the operational bottleneck.",                    action: "Publish one clear launch asset and measure response." },
+  Growth:     { text: "Retention is the strongest signal in this stage.",               action: "Interview one churned or inactive user." },
+  Revenue:    { text: "Revenue is the operating signal.",                               action: "Map the largest leak in acquisition-to-payment." },
 };
-
-// ── Pentagon radar chart ──────────────────────────────────────────────────────
-function Pentagon({ scores }: { scores: Record<string, number> }) {
-  const keys = ["Execution", "Product", "Growth", "Team", "Startup"];
-  const cx = 100, cy = 100, r = 68;
-  const angleStep = (2 * Math.PI) / keys.length;
-  const getPoint = (i: number, val: number) => {
-    const angle = -Math.PI / 2 + i * angleStep;
-    const dist = (val / 100) * r;
-    return { x: cx + Math.cos(angle) * dist, y: cy + Math.sin(angle) * dist };
-  };
-  const gridLevels = [25, 50, 75, 100];
-  const dataPoints = keys.map((k, i) => getPoint(i, scores[k] ?? 50));
-  const dataPath = dataPoints.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ") + " Z";
-  const overall = scores.Overall ?? 0;
-
-  return (
-    <svg viewBox="0 0 200 200" width="180" height="180" style={{ overflow: "visible" }}>
-      {gridLevels.map(level => {
-        const pts = keys.map((_, i) => getPoint(i, level));
-        const path = pts.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ") + " Z";
-        return <path key={level} d={path} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="1" />;
-      })}
-      {keys.map((_, i) => {
-        const end = getPoint(i, 100);
-        return <line key={i} x1={cx} y1={cy} x2={end.x} y2={end.y} stroke="rgba(255,255,255,0.05)" strokeWidth="1" />;
-      })}
-      <path d={dataPath} fill="rgba(91,108,240,0.08)" stroke="var(--bm-accent)" strokeWidth="1.5" />
-      {dataPoints.map((p, i) => (
-        <circle key={i} cx={p.x} cy={p.y} r={3} fill="var(--bm-accent)"
-        />
-      ))}
-      {keys.map((k, i) => {
-        const angle = -Math.PI / 2 + i * angleStep;
-        const lx = cx + Math.cos(angle) * (r + 22);
-        const ly = cy + Math.sin(angle) * (r + 22);
-        return (
-          <text key={k} x={lx} y={ly} textAnchor="middle" dominantBaseline="middle"
-            style={{ fontSize: 8, fill: "rgba(255,255,255,0.35)", fontWeight: 600,
-              letterSpacing: "0.05em", textTransform: "uppercase", fontFamily: "inherit" }}>
-            {k}
-          </text>
-        );
-      })}
-      <text x={cx} y={cy - 9} textAnchor="middle"
-        style={{ fontSize: 21, fontWeight: 800, fill: "var(--bm-accent)", fontFamily: "inherit" }}>
-        {overall}
-      </text>
-      <text x={cx} y={cy + 10} textAnchor="middle"
-        style={{ fontSize: 8, fill: "rgba(255,255,255,0.3)", fontFamily: "inherit" }}>/100</text>
-    </svg>
-  );
-}
-
-// ── Progress bar ──────────────────────────────────────────────────────────────
-function ProgressBar({ value, max }: { value: number; max: number }) {
-  const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
-  return (
-    <div className="w-full h-1.5 rounded-full" style={{ background: "var(--bm-bg4)" }}>
-      <motion.div
-        className="h-full rounded-full"
-        style={{ background: "var(--grad-primary)" }}
-        initial={{ width: 0 }}
-        animate={{ width: `${pct}%` }}
-        transition={{ duration: 0.8, ease: "easeOut", delay: 0.3 }}
-      />
-    </div>
-  );
-}
-
-function MetricCard({
-  icon,
-  label,
-  value,
-  accent = false,
-}: {
-  icon: ReactNode;
-  label: string;
-  value: ReactNode;
-  accent?: boolean;
-}) {
-  return (
-    <Card
-      className={
-        "flex items-center gap-3 p-4 " +
-        (accent
-          ? "border-[var(--bm-accent-bd)] bg-[var(--bm-accent-dim)]"
-          : "border-[var(--bm-border)]")
-      }
-    >
-      <div className="flex h-9 w-9 items-center justify-center rounded-md"
-        style={{ background: "var(--bm-bg3)", color: "var(--bm-text2)" }}>
-        {icon}
-      </div>
-      <div className="flex flex-col">
-        <span className="font-mono text-[11px] uppercase tracking-[0.06em] text-[var(--bm-text3)]">{label}</span>
-        <div className="text-[18px] font-medium text-[var(--bm-text)]">{value}</div>
-      </div>
-    </Card>
-  );
-}
-
-function SkeletonRow() {
-  return (
-    <div className="h-16 rounded-xl bg-[var(--bm-bg3)] animate-pulse" />
-  );
-}
-
-function SkeletonGrid({ count = 4 }: { count?: number }) {
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-      {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="h-20 rounded-xl bg-[var(--bm-bg3)] animate-pulse" />
-      ))}
-    </div>
-  );
-}
 
 // ── Relative time ─────────────────────────────────────────────────────────────
 function relTime(ts: string) {
@@ -175,26 +48,74 @@ function relTime(ts: string) {
   return `${Math.floor(h / 24)}d ago`;
 }
 
+// ── Progress bar (2px height, Linear-like) ────────────────────────────────────
+function ProgressBar({ value, max }: { value: number; max: number }) {
+  const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
+  return (
+    <div style={{ width: "100%", height: 2, borderRadius: 99, background: "var(--bm-bg4)", overflow: "hidden" }}>
+      <motion.div
+        style={{ height: "100%", borderRadius: 99, background: "var(--grad-primary)" }}
+        initial={{ width: 0 }}
+        animate={{ width: `${pct}%` }}
+        transition={{ duration: 0.7, ease: "easeOut", delay: 0.2 }}
+      />
+    </div>
+  );
+}
+
+// ── 7-day sparkline ───────────────────────────────────────────────────────────
+function Sparkline({ history }: { history: { date: string; score: number }[] }) {
+  if (history.length < 2) return null;
+  const last7 = history.slice(-7);
+  const maxV = Math.max(...last7.map(h => h.score), 1);
+  const minV = Math.min(...last7.map(h => h.score));
+  const range = maxV - minV || 1;
+  const W = 240, H = 36, pad = 4;
+  const pts = last7.map((h, i) => {
+    const x = pad + (i / Math.max(last7.length - 1, 1)) * (W - pad * 2);
+    const y = pad + ((maxV - h.score) / range) * (H - pad * 2);
+    return `${x},${y}`;
+  }).join(" ");
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+      <span style={{ fontSize: 11, color: "var(--bm-text4)", minWidth: 24 }}>{last7[0]?.score}</span>
+      <svg width={W} height={H} style={{ flex: 1 }}>
+        <polyline points={pts} fill="none" stroke="var(--bm-accent)" strokeWidth="1.5" strokeLinejoin="round" />
+      </svg>
+      <span style={{ fontSize: 11, color: "var(--bm-text4)", minWidth: 24, textAlign: "right" }}>
+        {last7[last7.length - 1]?.score}
+      </span>
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function OverviewPage() {
   const router = useRouter();
   const { data: summaries = [], isLoading } = useProjectSummariesQuery();
   const { data: overview, isLoading: overviewLoading } = useDashboardOverviewQuery();
   const [localStreak, setLocalStreak] = useState(0);
+  const [scoreHistory, setScoreHistory] = useState<{ date: string; score: number }[]>([]);
   const [now, setNow] = useState(() => new Date());
+  const [currentMrr, setCurrentMrr] = useState<number>(0);
+  const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     const refresh = () => setLocalStreak(getStoredStreak());
     refresh();
+    setScoreHistory(getScoreHistory());
     window.addEventListener("storage", refresh);
     window.addEventListener("bm_streak_updated", refresh);
-    // Seed streak + lastActive from Supabase so urgency signals are correct
-    // on a fresh device — fires after the localStorage read so UI is instant
     syncUrgencyFromServer().then(refresh).catch(() => {});
-    // Sync score history and XP from server so delta and history are authoritative
-    void syncScoreHistory();
+    void syncScoreHistory().then(() => setScoreHistory(getScoreHistory()));
     void syncXP();
+    // Get userId for today-done check
+    import("@/lib/supabase/client").then(({ createClient }) => {
+      createClient().auth.getUser().then(({ data }) => {
+        if (data?.user?.id) setUserId(data.user.id);
+      });
+    });
     return () => {
       window.removeEventListener("storage", refresh);
       window.removeEventListener("bm_streak_updated", refresh);
@@ -215,13 +136,8 @@ export default function OverviewPage() {
     );
   }, [summaries]);
 
-  const score = activeProject ? computeStartupScore({
-    ...activeProject,
-    xp: getXP(),
-    streak,
-  }) : 0;
+  const score = activeProject ? computeStartupScore({ ...activeProject, xp: getXP(), streak }) : 0;
 
-  // Score delta: compare today vs yesterday from history
   const scoreDelta = useMemo(() => {
     const history = getScoreHistory();
     if (history.length < 2) return null;
@@ -230,81 +146,73 @@ export default function OverviewPage() {
     if (prev == null || score === 0) return null;
     return score - prev;
   }, [score]);
-  const validationStrengths = Array.isArray(activeProject?.validation_strengths)
-    ? activeProject.validation_strengths.length
-    : 0;
-  // Fix #9 — Consistency score: surface regularity metric (active days in last 7)
-  const consistencyBonus = useMemo(() => {
-    const history = getScoreHistory();
-    return computeConsistencyBonus(history);
-  }, [score]);
+
+  const consistencyBonus = useMemo(() => computeConsistencyBonus(getScoreHistory()), [score]);
   const consistencyPct = Math.round((consistencyBonus / 10) * 100);
-
-  const scoreColor = score >= 60 ? "var(--bm-green)" : score >= 30 ? "var(--bm-amber)" : "var(--bm-red)";
   const stage = activeProject?.startup_stage ?? "Idea";
-  const [currentMrr, setCurrentMrr] = useState<number>(
-    (activeProject as unknown as Record<string, number>)?.current_mrr ?? 0
-  );
   const milestonesCompleted = overview?.milestonesCompleted ?? 0;
-
   const totalTasks = summaries.reduce((a, s) => a + (s.tasksTotal ?? 0), 0);
   const doneTasks = summaries.reduce((a, s) => a + (s.tasksCompleted ?? 0), 0);
-  const completionRate = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
-
   const nudge = NUDGE[stage] ?? NUDGE.Idea;
 
-  const pentagonScores = useMemo(() => {
-    if (!activeProject) return { Execution: 50, Product: 50, Growth: 50, Team: 50, Startup: 50, Overall: 0 };
-    return {
-      Execution: Math.min(100, Math.round(40 + completionRate * 0.6)),
-      Product: Math.min(100, Math.round(30 + score * 0.8)),
-      Growth: Math.min(100, Math.round(20 + streak * 5)),
-      Team: Math.min(100, Math.round(60 + summaries.length * 5)),
-      Startup: Math.min(100, score),
-      Overall: score,
-    };
-  }, [activeProject, score, completionRate, streak, summaries.length]);
+  // Is today's check-in done?
+  const todayStr = now.toLocaleDateString("en-CA");
+  const todayDone = userId
+    ? storage.get(`bm_checkin_done_date_${userId}`) === todayStr
+    : false;
 
   useEffect(() => {
     if (score > 0) { recordScore(score); markActiveToday(); }
     const pending = summaries.reduce((a, s) => a + Math.max(0, (s.tasksTotal ?? 0) - (s.tasksCompleted ?? 0)), 0);
     if (pending > 0) recordPendingTasks(pending);
-  }, [score, summaries]);
+    const p = activeProject as unknown as Record<string, number> | null;
+    if (p?.current_mrr) setCurrentMrr(p.current_mrr);
+  }, [score, summaries, activeProject]);
 
   const dateStr = now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+  const founderFirst = overview?.founderName?.split(" ")[0] ?? null;
+
+  // Attention strip conditions
+  // Memoized so storage.get() isn't called on every render — depends on score
+  // which changes when check-ins are recorded.
+  const noReflectIn3Days = useMemo(() => {
+    for (let i = 1; i <= 3; i++) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      const key = `bm_reflect_done_${d.toLocaleDateString("en-CA")}`;
+      if (storage.get(key)) return false;
+    }
+    return true;
+  }, [score]);
+  const showAttention =
+    (scoreDelta != null && scoreDelta < -10) ||
+    (streak === 0 && totalTasks > 0 && doneTasks / totalTasks < 0.5) ||
+    noReflectIn3Days;
+
+  const attentionMessage = scoreDelta != null && scoreDelta < -10
+    ? `Score dropped ${Math.abs(scoreDelta)} points — check what's blocking progress.`
+    : noReflectIn3Days
+    ? "No reflection logged in 3 days — tomorrow's task will be less accurate."
+    : "Completion rate is below 50% — break your next task into smaller steps.";
+  const attentionRoute = noReflectIn3Days ? "/reflect" : "/today";
+  const attentionLabel = noReflectIn3Days ? "Reflect on today →" : "Go to today →";
 
   if (isLoading || overviewLoading) {
     return (
-      <div className="max-w-5xl mx-auto px-6 py-8 flex flex-col gap-8">
-        <div className="flex flex-col gap-1">
-          <div className="h-8 w-48 rounded-xl bg-[var(--bm-bg3)] animate-pulse" />
-          <div className="h-4 w-32 rounded-full bg-[var(--bm-bg3)] animate-pulse opacity-60" />
-        </div>
-        <SkeletonGrid count={4} />
-        <div className="flex flex-col gap-3">
-          {[1, 2, 3].map(i => <SkeletonRow key={i} />)}
-        </div>
+      <div style={{ maxWidth: 820, margin: "0 auto", padding: "36px 24px" }}>
+        <div style={{ height: 28, width: 200, borderRadius: 8, background: "var(--bm-bg3)", marginBottom: 8 }} className="animate-pulse" />
+        <div style={{ height: 14, width: 120, borderRadius: 6, background: "var(--bm-bg3)", marginBottom: 32 }} className="animate-pulse" />
+        <div style={{ display: "flex", gap: 0, borderRadius: 10, border: "1px solid var(--bm-border)", overflow: "hidden", marginBottom: 24, height: 64 }} className="animate-pulse" />
+        {[1, 2, 3].map(i => (
+          <div key={i} style={{ height: 72, borderRadius: 12, background: "var(--bm-bg3)", marginBottom: 10 }} className="animate-pulse" />
+        ))}
       </div>
     );
   }
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8 sm:px-6">
+    <div style={{ maxWidth: 820, margin: "0 auto", padding: "36px 24px 60px" }}>
 
-      {/* ── Header ── */}
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.2 }}
-      >
-        <PageHeader
-          title="Execution Command Center"
-          subtitle={`${dateStr} · Operating view across objectives, momentum, and constraints`}
-          action={activeProject ? <Badge variant="neutral" size="md">Active: {activeProject.title}</Badge> : undefined}
-        />
-      </motion.div>
-
-      {/* ── Profile completeness card (full card variant — shows when score < 80) ── */}
+      {/* ── Profile completeness (only shows when score < 80) ── */}
       <ProfileCompletenessBar
         fields={{
           startupSummary: activeProject?.description ?? activeProject?.startup_summary ?? "",
@@ -317,74 +225,77 @@ export default function OverviewPage() {
         }}
       />
 
-      {/* ── Metric row ── */}
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.06 }}
-        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4"
-      >
-        <MetricCard
-          icon={<Zap size={14} />}
-          label="Operating Score"
-          value={
-            activeProject ? (
-              <div className="flex flex-col items-center gap-1">
-                <ScoreRing value={score} color={scoreColor} size={48} />
-                {scoreDelta !== null && (
-                  <span className="text-[11px] font-semibold tracking-[0.02em]" style={{ color: scoreDelta > 0 ? "var(--bm-green)" : scoreDelta < 0 ? "var(--bm-red)" : "var(--bm-text3)" }}>
-                    {scoreDelta > 0 ? `+${scoreDelta}` : scoreDelta < 0 ? `${scoreDelta}` : "→"} vs yesterday
+      {/* ── Header ── */}
+      <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} style={{ marginBottom: 20 }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+          <div>
+            <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em", margin: 0, lineHeight: 1.2 }}>
+              {founderFirst ? `${founderFirst}'s workspace` : "Workspace"}
+            </h1>
+            <p style={{ fontSize: 13, color: "var(--bm-text3)", margin: "4px 0 0", lineHeight: 1 }}>
+              {dateStr}
+              {streak > 0 && <span style={{ marginLeft: 8, color: "var(--bm-amber)" }}>· {streak}d streak</span>}
+            </p>
+          </div>
+          {/* Today done chip */}
+          <div style={{
+            display: "flex", alignItems: "center", gap: 5, padding: "5px 12px",
+            borderRadius: 99, border: "1px solid var(--bm-border)",
+            background: todayDone ? "var(--bm-accent-dim)" : "var(--bm-bg2)",
+            fontSize: 12, fontWeight: 600,
+            color: todayDone ? "var(--bm-accent)" : "var(--bm-text3)",
+          }}>
+            {todayDone ? <CheckCircle2 size={12} /> : <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--bm-bg4)", display: "inline-block" }} />}
+            Today: {todayDone ? "Done ✓" : "Not done"}
+          </div>
+        </div>
+        {activeProject && (
+          <p style={{ fontSize: 12, color: "var(--bm-text4)", marginTop: 6 }}>
+            Active: <span style={{ color: "var(--bm-text3)", fontWeight: 500 }}>{activeProject.title}</span>
+            &nbsp;·&nbsp;
+            <span style={{ color: STAGE_COLOUR[stage] ?? "var(--bm-text3)" }}>{stage}</span>
+          </p>
+        )}
+      </motion.div>
+
+      {/* ── Attention strip ── */}
+      {showAttention && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.05 }}
+          style={{ borderLeft: "2px solid var(--bm-amber)", paddingLeft: 14, marginBottom: 20 }}>
+          <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: "0 0 8px", lineHeight: 1.5 }}>
+            {attentionMessage}
+          </p>
+          <button onClick={() => router.push(attentionRoute)}
+            style={{ fontSize: 12, color: "var(--bm-accent)", background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit" }}>
+            {attentionLabel}
+          </button>
+        </motion.div>
+      )}
+
+      {/* ── Metrics row — 4 flat stat chips ── */}
+      {summaries.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}
+          style={{ display: "flex", gap: 0, borderRadius: 10, border: "1px solid var(--bm-border)", overflow: "hidden", marginBottom: 20 }}>
+          {[
+            { label: "Score",     value: score > 0 ? `${score}` : "—", delta: scoreDelta },
+            { label: "Streak",    value: streak > 0 ? `${streak}d` : "—" },
+            { label: "Completed", value: milestonesCompleted > 0 ? milestonesCompleted : doneTasks > 0 ? doneTasks : "—" },
+            { label: "Cadence",   value: `${consistencyPct}%` },
+          ].map((stat, i, arr) => (
+            <div key={stat.label} style={{ flex: 1, padding: "14px 16px", borderRight: i < arr.length - 1 ? "1px solid var(--bm-border)" : "none" }}>
+              <div style={{ fontSize: 11, color: "var(--bm-text3)", marginBottom: 4 }}>{stat.label}</div>
+              <div style={{ fontSize: 20, fontWeight: 500, color: "var(--bm-text)", lineHeight: 1 }}>
+                {stat.value}
+                {stat.delta != null && (
+                  <span style={{ fontSize: 11, marginLeft: 5, color: stat.delta > 0 ? "var(--bm-green)" : "var(--bm-red)" }}>
+                    {stat.delta > 0 ? `+${stat.delta}` : stat.delta}
                   </span>
                 )}
               </div>
-            ) : (
-              <span className="text-[var(--bm-text3)]">—</span>
-            )
-          }
-          accent={!!activeProject}
-        />
-        <MetricCard
-          icon={<Zap size={14} />}
-          label="Cadence"
-          value={
-            <div className="flex flex-col items-center gap-1">
-              <span className="text-xl font-bold" style={{ color: consistencyBonus >= 8 ? "var(--bm-green)" : consistencyBonus >= 5 ? "var(--bm-amber)" : "var(--bm-text2)" }}>
-                {consistencyPct}%
-              </span>
-              <span className="text-[10px] text-[var(--bm-text3)]">last 7 days</span>
             </div>
-          }
-          accent={consistencyBonus >= 8}
-        />
-        <StatCard
-          icon={FolderKanban}
-          label="Projects"
-          value={summaries.length > 0 ? summaries.length : "—"}
-        />
-        <StatCard
-          icon={Target}
-          label="Completed"
-          value={milestonesCompleted > 0 ? milestonesCompleted : "—"}
-        />
-        <StatCard
-          icon={Flame}
-          label="Streak"
-          value={streak > 0 ? `${streak}d` : "—"}
-        />
-        {activeProject && (
-          <MetricCard
-            icon={<Target size={14} />}
-            label="Current MRR"
-            value={
-              <MrrWidget
-                projectId={activeProject.id}
-                currentMrr={currentMrr}
-                onUpdate={setCurrentMrr}
-              />
-            }
-          />
-        )}
-      </motion.div>
+          ))}
+        </motion.div>
+      )}
 
       {/* ── Empty state ── */}
       {summaries.length === 0 && (
@@ -400,131 +311,85 @@ export default function OverviewPage() {
         />
       )}
 
+      {/* ── Projects list ── */}
       {summaries.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_220px] gap-5 lg:gap-6">
+        <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Projects</span>
+            <Link href="/projects" style={{ fontSize: 12, color: "var(--bm-text3)", textDecoration: "none" }}>View all →</Link>
+          </div>
 
-          {/* ── Projects list ── */}
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.12 }}
-            className="flex flex-col gap-4"
-          >
-            <SectionHeader
-              label="Operating Portfolio"
-              action={
-              <Link href="/projects">
-                <Button variant="ghost" size="sm">
-                  View all <ChevronRight size={12} />
-                </Button>
-              </Link>
-              }
-            />
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {summaries.slice(0, 4).map((s, i) => {
+              const stageColor = STAGE_COLOUR[s.startup_stage ?? "Idea"] ?? "var(--bm-text3)";
+              const pCheckinDone = userId
+                ? storage.get(`bm_checkin_done_date_${userId}`) === todayStr
+                : false;
 
-            <div className="flex flex-col gap-3">
-              {summaries.slice(0, 3).map((s, i) => {
-                const pScore = computeStartupScore(s);
-                const pColor = pScore >= 60 ? "var(--bm-green)" : pScore >= 30 ? "var(--bm-amber)" : "var(--bm-red)";
-                const stageKey = s.startup_stage ?? "Idea";
-                const stageConf = STAGE_BADGE[stageKey] ?? { variant: "neutral" as const };
+              return (
+                <motion.div key={s.id} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.14 + i * 0.05 }}>
+                  <div style={{
+                    border: "1px solid var(--bm-border)", borderRadius: 12,
+                    padding: "14px 16px", background: "var(--bm-bg2)",
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                      {/* Name + stage */}
+                      <span style={{ fontSize: 14, fontWeight: 500, color: "var(--bm-text)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {s.title}
+                      </span>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: stageColor, flexShrink: 0, padding: "2px 7px", borderRadius: 99, border: "1px solid", borderColor: stageColor, opacity: 0.9 }}>
+                        {s.startup_stage ?? "Idea"}
+                      </span>
+                      {/* Last activity */}
+                      {s.lastActivity && (
+                        <span style={{ fontSize: 11, color: "var(--bm-text4)", flexShrink: 0 }}>
+                          {relTime(s.lastActivity)}
+                        </span>
+                      )}
+                      {/* Today done indicator */}
+                      <span style={{ fontSize: 11, color: pCheckinDone ? "var(--bm-accent)" : "var(--bm-text4)", flexShrink: 0 }}>
+                        {pCheckinDone ? "✓" : "·"}
+                      </span>
+                      {/* View button */}
+                      <Link href={`/projects/${s.id}`} style={{ flexShrink: 0 }}>
+                        <button style={{ fontSize: 11, color: "var(--bm-text3)", background: "none", border: "1px solid var(--bm-border)", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontFamily: "inherit" }}>
+                          View →
+                        </button>
+                      </Link>
+                    </div>
+                    {/* 2px progress bar */}
+                    <ProgressBar value={s.tasksCompleted ?? 0} max={s.tasksTotal ?? 0} />
+                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: 5 }}>
+                      <span style={{ fontSize: 11, color: "var(--bm-text4)" }}>{s.tasksCompleted ?? 0}/{s.tasksTotal ?? 0} tasks</span>
+                      {activeProject?.id === s.id && (
+                        <MrrWidget projectId={s.id} currentMrr={currentMrr} onUpdate={setCurrentMrr} />
+                      )}
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
 
-                return (
-                  <motion.div
-                    key={s.id}
-                    initial={{ opacity: 0, x: -6 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.15 + i * 0.06 }}
-                  >
-                    <Card hover className="p-4">
-                      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-                        {/* Score ring */}
-                        <ScoreRing value={pScore} color={pColor} size={44} />
-
-                        {/* Info */}
-                        <div className="flex-1 min-w-0 flex flex-col gap-2">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-sm font-medium text-[var(--bm-text)] truncate">
-                              {s.title}
-                            </span>
-                            <Badge variant={stageConf.variant} size="sm">
-                              {s.startup_stage}
-                            </Badge>
-                          </div>
-                          <ProgressBar value={s.tasksCompleted ?? 0} max={s.tasksTotal ?? 0} />
-                          <div className="flex items-center gap-3 text-xs text-[var(--bm-text3)]">
-                            <span>
-                              {s.tasksCompleted ?? 0}/{s.tasksTotal ?? 0} tasks
-                            </span>
-                            {s.lastActivity && (
-                              <span className="flex items-center gap-1">
-                                <Clock size={10} />
-                                {relTime(s.lastActivity)}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* View link */}
-                        <Link href={`/projects/${s.id}`} className="w-full shrink-0 sm:w-auto">
-                          <Button variant="ghost" size="sm">
-                            View <ArrowRight size={12} />
-                          </Button>
-                        </Link>
-                      </div>
-                    </Card>
-                  </motion.div>
-                );
-              })}
+          {/* ── 7-day sparkline ── */}
+          {scoreHistory.length >= 2 && (
+            <div style={{ marginTop: 20 }}>
+              <span style={{ fontSize: 11, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Score — last 7 days</span>
+              <Sparkline history={scoreHistory} />
             </div>
-          </motion.div>
+          )}
 
-          {/* ── Right column: pentagon + nudge ── */}
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.18 }}
-            className="flex flex-col gap-4"
-          >
-            {/* Score breakdown */}
-            <Card className="p-5 flex flex-col items-center gap-3">
-              <div className="self-stretch">
-                <SectionHeader label="System Signals" />
-              </div>
-              <Pentagon scores={pentagonScores} />
-              {activeProject && (
-                <ScoreBreakdown
-                  score={score}
-                  executionScore={completionRate}
-                  momentumScore={Math.min(100, streak * 10)}
-                  xp={getXP()}
-                  streak={streak}
-                  validationStrengths={validationStrengths}
-                />
-              )}
-            </Card>
-
-            {/* AI nudge */}
-            <Card
-              className="p-4 flex flex-col gap-2"
-              style={{
-                borderColor: "var(--bm-accent-bd)",
-                background: "linear-gradient(135deg, rgba(92,200,138,0.05) 0%, var(--bm-bg2) 100%)",
-              }}
-            >
-              <div className="flex items-center gap-1.5">
-                <Zap size={12} style={{ color: "var(--bm-accent)" }} />
-                <span className="font-mono text-[10px] font-normal uppercase tracking-[0.08em] text-[var(--bm-accent)]">
-                  Strategic Intelligence
-                </span>
-                <Badge variant="neutral" size="sm">{stage}</Badge>
-              </div>
-              <p className="text-xs text-[var(--bm-text2)] leading-relaxed">{nudge.text}</p>
-              <p className="text-xs font-medium" style={{ color: "var(--bm-accent)" }}>
-                {nudge.action}
-              </p>
-            </Card>
+          {/* ── AI nudge — borderLeft only, no card ── */}
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.22 }}
+            style={{ borderLeft: "2px solid var(--bm-accent)", paddingLeft: 14, marginTop: 24 }}>
+            <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: "0 0 6px", lineHeight: 1.55 }}>
+              {nudge.text}
+            </p>
+            <p style={{ fontSize: 13, color: "var(--bm-text)", fontWeight: 500, margin: 0 }}>
+              → {nudge.action}
+            </p>
           </motion.div>
-        </div>
+        </motion.div>
       )}
     </div>
   );

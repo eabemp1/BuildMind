@@ -46,7 +46,7 @@ export default function WeeklySharePage() {
       </div>
 
       {/* The shareable card preview */}
-      <motion.div style={{...card,background:"linear-gradient(135deg,rgba(99,102,241,.06),rgba(139,92,246,.04))",border:"1px solid rgba(99,102,241,.2)"}} initial={{opacity:0,y:10}} animate={{opacity:1,y:0}}>
+      <motion.div style={{...card,background:"var(--bm-accent-dim)",border:"1px solid var(--bm-accent-bd)"}} initial={{opacity:0,y:10}} animate={{opacity:1,y:0}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18}}>
           <div>
             <div style={{fontSize:11,color:"var(--bm-text3)",fontFamily:"monospace",marginBottom:3}}>{WEEK_DATA.week} · BuildMind</div>
@@ -90,7 +90,7 @@ export default function WeeklySharePage() {
       <div style={{display:"flex",flexDirection:"column",gap:8}}>
         <a href={`https://twitter.com/intent/tweet?text=${tweetText}`} target="_blank" rel="noopener noreferrer"
           onClick={()=>setShared(true)}
-          style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:13,background:"linear-gradient(135deg,#6366f1,#8b5cf6)",color:"#fff",fontWeight:700,fontSize:13,borderRadius:12,textDecoration:"none"}}>
+          style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:13,background:"var(--bm-accent)",color:"#fff",fontWeight:700,fontSize:13,borderRadius:12,textDecoration:"none"}}>
           <span>𝕏</span>
           {shared?"Shared! Keep building 🔥":"Share on X — #buildinpublic →"}
         </a>

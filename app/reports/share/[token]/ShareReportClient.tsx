@@ -100,7 +100,7 @@ export function ShareReportClient({ report }: Props) {
           width: "100%",
           maxWidth: "560px",
           background: "#141414",
-          border: "1px solid rgba(255,255,255,0.07)",
+          border: "1px solid var(--bm-border)",
           borderRadius: "20px",
           overflow: "hidden",
           boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
@@ -108,9 +108,9 @@ export function ShareReportClient({ report }: Props) {
       >
         {/* Header */}
         <div style={{
-          background: "linear-gradient(135deg, rgba(16,185,129,0.12) 0%, transparent 60%)",
+          background: "var(--bm-green-dim)",
           padding: "28px 28px 20px",
-          borderBottom: "1px solid rgba(255,255,255,0.06)",
+          borderBottom: "1px solid var(--bm-border)",
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "4px" }}>
             {report.avatar_url && (
@@ -190,8 +190,8 @@ export function ShareReportClient({ report }: Props) {
               onClick={handleCopy}
               style={{
                 padding: "9px 18px",
-                background: copied ? "rgba(16,185,129,0.15)" : "rgba(255,255,255,0.05)",
-                border: "1px solid rgba(255,255,255,0.1)",
+                background: copied ? "rgba(16,185,129,0.15)" : "var(--bm-border)",
+                border: "1px solid var(--bm-border2)",
                 borderRadius: "8px",
                 color: copied ? "#10b981" : "#9ca3af",
                 fontSize: "13px",
@@ -231,7 +231,7 @@ export function ShareReportClient({ report }: Props) {
 
         {/* CTA footer */}
         <div style={{
-          borderTop: "1px solid rgba(255,255,255,0.06)",
+          borderTop: "1px solid var(--bm-border)",
           padding: "16px 28px",
           display: "flex",
           alignItems: "center",

@@ -16,8 +16,8 @@ const SAMPLE_RESULT = {
   tagline: "The fastest way to turn an idea into a real startup.",
   positioning: "For solo founders who need structure, not complexity. BuildMind is the execution OS that replaces planning paralysis with one clear daily action.",
   colors: [
-    { name: "Indigo", hex: "#6366f1" },
-    { name: "Violet", hex: "#8b5cf6" },
+    { name: "Indigo", hex: "var(--bm-accent)" },
+    { name: "Violet", hex: "var(--bm-accent2)" },
     { name: "Teal", hex: "#14b8a6" },
   ],
   domains: [
@@ -108,7 +108,7 @@ function FreeTeaserView({ onUpgrade }: { onUpgrade: () => void }) {
       </div>
 
       <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
-        style={{ background: "rgba(99,102,241,0.07)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 12, padding: "14px 18px", marginBottom: 20, display: "flex", gap: 12, alignItems: "flex-start" }}>
+        style={{ background: "rgba(99,102,241,0.07)", border: "1px solid var(--bm-accent-bd)", borderRadius: 12, padding: "14px 18px", marginBottom: 20, display: "flex", gap: 12, alignItems: "flex-start" }}>
         <span style={{ fontSize: 20, flexShrink: 0 }}>💡</span>
         <div>
           <div style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text)", marginBottom: 4 }}>What Builder unlocks</div>
@@ -131,10 +131,10 @@ function FreeTeaserView({ onUpgrade }: { onUpgrade: () => void }) {
         <div style={{ pointerEvents: "none" }}>
           <KitResult result={SAMPLE_RESULT} blurred />
         </div>
-        <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, transparent 0%, var(--bm-bg) 70%)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", padding: "0 20px 28px" }}>
+        <div style={{ position: "absolute", inset: 0, background: "var(--bm-bg)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", padding: "0 20px 28px" }}>
           <div style={{ fontSize: 11, color: "#a78bfa", fontWeight: 600, marginBottom: 14, textAlign: "center" }}>↑ Sample output for &ldquo;BuildMind&rdquo; — your idea generates a custom version</div>
           <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} onClick={onUpgrade}
-            style={{ width: "100%", maxWidth: 360, padding: "14px 0", background: "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "#fff", fontWeight: 700, fontSize: 14, borderRadius: 12, border: "none", cursor: "pointer", fontFamily: "inherit", boxShadow: "0 4px 20px rgba(99,102,241,0.35)" }}>
+            style={{ width: "100%", maxWidth: 360, padding: "14px 0", background: "var(--bm-accent)", color: "#fff", fontWeight: 700, fontSize: 14, borderRadius: 12, border: "none", cursor: "pointer", fontFamily: "inherit", boxShadow: "0 4px 20px var(--bm-accent-bd)" }}>
             Unlock Startup Kit — $39/mo →
           </motion.button>
           <div style={{ fontSize: 11, color: "var(--bm-text4)", marginTop: 8 }}>Cancel anytime. Instant access.</div>
@@ -184,7 +184,7 @@ function StartupKitContent() {
       names: [`${cap}HQ`, `Get${cap}`, `${cap}OS`],
       tagline: "The fastest way to turn an idea into a real startup.",
       positioning: `For solo founders who need structure, not complexity. ${idea.split(" ").slice(0, 4).join(" ")} is the execution OS that replaces procrastination with one clear daily action.`,
-      colors: [{ name: "Indigo", hex: "#6366f1" }, { name: "Violet", hex: "#8b5cf6" }, { name: "Teal", hex: "#14b8a6" }],
+      colors: [{ name: "Indigo", hex: "var(--bm-accent)" }, { name: "Violet", hex: "var(--bm-accent2)" }, { name: "Teal", hex: "#14b8a6" }],
       domains: [{ name: `${base}hq.com`, available: true, price: "$12/yr" }, { name: `get${base}.io`, available: false, price: "—" }, { name: `${base}os.co`, available: true, price: "$28/yr" }],
       risks: ["No clear distribution channel", "Target audience too broad — narrow to one persona", "Competitive market — differentiation needed"],
     };
@@ -207,7 +207,7 @@ function StartupKitContent() {
           style={{ width: "100%", background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: 10, padding: "10px 12px", fontSize: 13, color: "var(--bm-text)", outline: "none", fontFamily: "monospace", resize: "none", lineHeight: 1.6, marginBottom: 12, boxSizing: "border-box" }} />
         <motion.button onClick={generate} disabled={loading || !idea.trim()}
           whileHover={!loading && idea.trim() ? { scale: 1.02 } : {}} whileTap={!loading && idea.trim() ? { scale: 0.97 } : {}}
-          style={{ width: "100%", padding: 12, background: loading || !idea.trim() ? "var(--bm-bg4)" : "linear-gradient(135deg,#6366f1,#8b5cf6)", color: loading || !idea.trim() ? "var(--bm-text3)" : "#fff", fontWeight: 700, fontSize: 13, borderRadius: 10, border: "none", cursor: loading || !idea.trim() ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+          style={{ width: "100%", padding: 12, background: loading || !idea.trim() ? "var(--bm-bg4)" : "var(--bm-accent)", color: loading || !idea.trim() ? "var(--bm-text3)" : "#fff", fontWeight: 700, fontSize: 13, borderRadius: 10, border: "none", cursor: loading || !idea.trim() ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
           {loading ? "Generating kit…" : "Generate startup kit →"}
         </motion.button>
       </div>
@@ -218,7 +218,7 @@ function StartupKitContent() {
             <motion.button initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}
               onClick={() => router.push("/landing-gen")}
               whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
-              style={{ width: "100%", padding: 13, background: "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "#fff", fontWeight: 700, fontSize: 13, borderRadius: 12, border: "none", cursor: "pointer", fontFamily: "inherit", marginBottom: 12 }}>
+              style={{ width: "100%", padding: 13, background: "var(--bm-accent)", color: "#fff", fontWeight: 700, fontSize: 13, borderRadius: 12, border: "none", cursor: "pointer", fontFamily: "inherit", marginBottom: 12 }}>
               Generate landing page from this kit →
             </motion.button>
           </>

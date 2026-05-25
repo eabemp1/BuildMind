@@ -34,6 +34,8 @@ export default function InvitePage() {
   useEffect(() => {
     const load = async () => {
       try {
+        // bm_dev_auth / bm_dev_email are intentionally raw localStorage — pre-auth
+        // dev-mode globals set by auth/login/page.tsx before a Supabase session exists.
         if (localStorage.getItem("bm_dev_auth") === "1") {
           const email = localStorage.getItem("bm_dev_email") ?? "test@buildmind.local";
           setUserId("local-dev-user");
@@ -86,7 +88,7 @@ export default function InvitePage() {
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           {[
             { step: "1", label: "Share your link", desc: "Copy your referral link and send it to a founder friend.", color: "#4ade80" },
-            { step: "2", label: "They join BuildMind", desc: "They sign up free and start their first project.", color: "#818cf8" },
+            { step: "2", label: "They join BuildMind", desc: "They sign up free and start their first project.", color: "var(--bm-text2)" },
             { step: "3", label: "They hit a 7-day streak", desc: "Once they complete 7 consecutive days of action, the reward unlocks.", color: "#fbbf24" },
             { step: "4", label: "Both get 1 free month", desc: "You both receive 1 month of Builder — automatically applied.", color: "#22d3ee" },
           ].map(({ step, label, desc, color }) => (
@@ -105,10 +107,10 @@ export default function InvitePage() {
 
       {/* Referral link */}
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.10 }}
-        style={{ background: "linear-gradient(135deg, rgba(74,222,128,0.07) 0%, rgba(34,211,238,0.03) 100%)", border: "1px solid rgba(74,222,128,0.20)", borderRadius: 18, padding: "24px", marginBottom: 16 }}>
+        style={{ background: "var(--bm-green-dim)", border: "1px solid var(--bm-green-bd)", borderRadius: "var(--r-lg)", padding: "24px", marginBottom: 16 }}>
         <div style={{ fontSize: 11, color: "#4ade80", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 700, marginBottom: 12 }}>Your Referral Link</div>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <div style={{ flex: 1, background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: "11px 14px", fontSize: 13, color: "var(--bm-text3)", fontFamily: "var(--font-mono, monospace)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <div style={{ flex: 1, background: "rgba(0,0,0,0.3)", border: "1px solid var(--bm-border2)", borderRadius: 10, padding: "11px 14px", fontSize: 13, color: "var(--bm-text3)", fontFamily: "var(--font-mono, monospace)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {refLink}
           </div>
           <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
@@ -135,7 +137,7 @@ export default function InvitePage() {
         </div>
         <AnimatePresence mode="wait">
           <motion.div key={msgIdx} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-            <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, padding: "14px 16px", marginBottom: 12 }}>
+            <div style={{ background: "var(--bm-border)", border: "1px solid var(--bm-border)", borderRadius: 10, padding: "14px 16px", marginBottom: 12 }}>
               <p style={{ fontSize: 13, color: "var(--bm-text3)", lineHeight: 1.65, margin: 0, fontStyle: "italic" }}>"{currentMsg}"</p>
             </div>
           </motion.div>

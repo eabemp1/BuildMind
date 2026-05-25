@@ -103,10 +103,24 @@ export default function NotificationBell() {
     const onAdded = () => refresh();
     window.addEventListener("storage", onStorage);
     window.addEventListener("bm_notification_added", onAdded);
-    const interval = setInterval(refresh, 15000);
+
+    // Pause polling when the tab is hidden — avoids stacking timers across
+    // multiple hidden tabs at production-scale traffic.
+    let interval = setInterval(refresh, 15000);
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        clearInterval(interval);
+      } else {
+        refresh();
+        interval = setInterval(refresh, 15000);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
     return () => {
       window.removeEventListener("storage", onStorage);
       window.removeEventListener("bm_notification_added", onAdded);
+      document.removeEventListener("visibilitychange", onVisibility);
       clearInterval(interval);
     };
   }, []);

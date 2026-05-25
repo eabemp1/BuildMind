@@ -477,5 +477,12 @@ export async function callModelJSON<T>(
   const start = clean.indexOf("{");
   const end = clean.lastIndexOf("}");
   const json = start >= 0 && end > start ? clean.slice(start, end + 1) : clean;
-  return sanitizeParsedValue(JSON.parse(json) as T);
+  try {
+    return sanitizeParsedValue(JSON.parse(json) as T);
+  } catch {
+    // Provider returned non-JSON despite json_mode — treat as exhausted chain.
+    throw new Error(
+      `callModelJSON: failed to parse provider response as JSON. Raw (truncated): ${clean.slice(0, 120)}`
+    );
+  }
 }

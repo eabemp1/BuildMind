@@ -218,17 +218,6 @@ export default function ReportsPage() {
   const prevIntentionRate = metrics?.previous_intention_vs_execution_rate ?? null;
   const executionTrend = metrics?.execution_trend ?? "flat";
   const avoidancePattern = metrics?.avoidance_pattern ?? null;
-  const executionRateColor = intentionRate == null ? "var(--bm-text3)"
-    : intentionRate >= 60 ? "var(--bm-green)"
-    : intentionRate >= 30 ? "var(--bm-amber)"
-    : "var(--bm-red)";
-  const executionRateTrendLabel = prevIntentionRate == null || intentionRate == null
-    ? null
-    : executionTrend === "up"
-      ? `+${intentionRate - prevIntentionRate} vs last week`
-      : executionTrend === "down"
-        ? `${intentionRate - prevIntentionRate} vs last week`
-        : `${intentionRate - prevIntentionRate} vs last week`;
 
   async function handleExport(fmt: ExportFmt) {
     setExporting(fmt);
@@ -296,10 +285,10 @@ export default function ReportsPage() {
       </div>
       <div className="grid gap-3 sm:grid-cols-4">
         {[0, 1, 2, 3].map((card) => (
-          <div key={card} className="h-28 animate-pulse rounded-xl border border-[var(--bm-border)] bg-[var(--bm-bg2)]" />
+          <div key={card} className="h-28 animate-pulse rounded-[var(--r-xl)] border border-[var(--bm-border)] bg-[var(--bm-bg2)]" />
         ))}
       </div>
-      <div className="mt-4 h-56 animate-pulse rounded-xl border border-[var(--bm-border)] bg-[var(--bm-bg2)]" />
+      <div className="mt-4 h-56 animate-pulse rounded-[var(--r-xl)] border border-[var(--bm-border)] bg-[var(--bm-bg2)]" />
     </div>
   );
 
@@ -310,6 +299,78 @@ export default function ReportsPage() {
     const fmt = (d:Date) => d.toLocaleDateString("en-GB",{day:"numeric",month:"short"});
     return `${fmt(start)} – ${fmt(end)}`;
   })();
+
+  // Empty state: fewer than 7 check-ins, no real data yet
+  const hasEnoughData = (metrics?.tasksCompletedThisWeek ?? 0) > 0 || tasksThisWeek > 0;
+  if (!hasEnoughData && !metricsLoading) {
+    return (
+      <div style={{ maxWidth: 920, margin: "0 auto", padding: "32px 24px 64px" }}>
+        <PageHeader
+          eyebrow="Weekly Report"
+          title="Behavioral synthesis"
+          subtitle="Generated after 7 days of check-ins."
+        />
+        <div style={{
+          marginTop: 48,
+          maxWidth: 560,
+          background: "var(--bm-bg2)",
+          border: "1px solid var(--bm-border)",
+          borderLeft: "2px solid var(--bm-accent)",
+          borderRadius: "var(--r-xl)",
+          padding: "28px 32px",
+        }}>
+          <p style={{
+            fontFamily: "'DM Mono', monospace", fontSize: 9,
+            textTransform: "uppercase" as const, letterSpacing: "0.10em",
+            color: "var(--bm-accent)", marginBottom: 10,
+          }}>Not yet unlocked</p>
+          <h2 style={{
+            fontFamily: "'Syne', sans-serif", fontSize: 22, fontWeight: 700,
+            letterSpacing: "-0.025em", color: "var(--bm-text)",
+            lineHeight: 1.25, marginBottom: 14,
+          }}>
+            First report generates after 7 days of check-ins.
+          </h2>
+          <p style={{
+            fontFamily: "'Inter', sans-serif", fontSize: 13,
+            color: "var(--bm-text2)", lineHeight: 1.65,
+          }}>
+            When it arrives, it&apos;s not just a summary — it&apos;s a behavioral synthesis. Patterns you haven&apos;t noticed. Avoidance you&apos;ve been rationalizing. The one thing you keep postponing.
+          </p>
+          <p style={{
+            fontFamily: "'Inter', sans-serif", fontSize: 13,
+            color: "var(--bm-text2)", lineHeight: 1.65, marginTop: 12,
+          }}>
+            That&apos;s what the weekly report is for.
+          </p>
+          <div style={{
+            marginTop: 24,
+            display: "flex",
+            flexDirection: "column" as const,
+            gap: 10,
+          }}>
+            {[
+              "Avoidance patterns you haven't noticed",
+              "The one thing you keep postponing",
+              "Execution vs. intention rate",
+              "What should change this week",
+            ].map((item, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{
+                  width: 6, height: 6, borderRadius: "50%",
+                  background: "var(--bm-border2)", flexShrink: 0,
+                }} />
+                <span style={{
+                  fontFamily: "'Inter', sans-serif", fontSize: 12.5,
+                  color: "var(--bm-text3)",
+                }}>{item}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <PaywallGate feature="weeklyReport">
@@ -377,7 +438,7 @@ export default function ReportsPage() {
               display:"flex", flexDirection:"column", alignItems:"center",
               justifyContent:"center", gap:10, minWidth:160, position:"relative", overflow:"hidden" }}>
             <div style={{ position:"absolute", inset:0,
-              background:`radial-gradient(circle at 50% 50%, ${score>=60?"var(--bm-green)":score>=30?"var(--bm-amber)":"var(--bm-red)"}10 0%, transparent 70%)`,
+              background:"transparent",
               pointerEvents:"none" }}/>
             <ScoreArc value={score} size={110}/>
             {scoreDelta !== 0 && (
@@ -399,14 +460,11 @@ export default function ReportsPage() {
             sub={streak>0?(streak>=7?"🔥 On fire":"Keep going"):"Complete a task"}
             trend={streak>0?"up":"flat"} color="var(--bm-amber)" icon={Flame}/>
           {intentionRate != null ? (
-            <Tile
-              label="Execution Rate"
-              value={`${intentionRate}%`}
-              sub={executionRateTrendLabel ?? "No previous week comparison"}
-              trend={executionTrend}
-              color={executionRateColor}
-              icon={BarChart3}
-            />
+            <Tile label="Execution Rate" value={`${intentionRate}%`}
+              sub={prevIntentionRate != null
+                ? `${intentionRate > prevIntentionRate ? "+" : ""}${intentionRate - prevIntentionRate}% vs last week`
+                : "Intention vs execution"}
+              trend={executionTrend} color={intentionRate >= 60 ? "var(--bm-green)" : intentionRate >= 30 ? "var(--bm-amber)" : "var(--bm-red)"} icon={TrendingUp}/>
           ) : (
             <Tile label="Total XP" value={getXP()}
               sub="Lifetime achievement points" trend="up"
@@ -484,22 +542,6 @@ export default function ReportsPage() {
 
         {/* WINS & FOCUS */}
         <SectionHead>This Week</SectionHead>
-        {intentionRate != null && (
-          <motion.div initial={{ opacity:0, y:6 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.28 }}
-            style={{ background:"var(--bm-bg2)", border:"1px solid var(--bm-border)", borderRadius:"var(--r-xl)", padding:"20px", marginBottom:12 }}>
-            <div style={{ fontSize:12, fontWeight:600, color:"var(--bm-text2)", marginBottom:10 }}>Execution Rate This Week</div>
-            <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between", gap:16, flexWrap:"wrap" }}>
-              <div style={{ fontSize:44, fontWeight:900, lineHeight:1, letterSpacing:"-0.04em", color: executionRateColor }}>{intentionRate}%</div>
-              <div style={{ fontSize:12, color:"var(--bm-text3)", lineHeight:1.6, maxWidth: 340 }}>
-                {executionTrend === "up"
-                  ? `Up from ${prevIntentionRate ?? 0}% last week. The loop is getting tighter.`
-                  : executionTrend === "down"
-                    ? `Down from ${prevIntentionRate ?? 0}% last week. The work is slipping.`
-                    : `Flat versus last week. Same pattern, same result.`}
-              </div>
-            </div>
-          </motion.div>
-        )}
         <div style={{ display:"grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap:12, marginBottom:16 }}>
           <motion.div initial={{ opacity:0, x:-8 }} animate={{ opacity:1, x:0 }} transition={{ delay:0.3 }}
             style={{ background:"var(--bm-bg2)", border:"1px solid var(--bm-border)",
@@ -538,13 +580,6 @@ export default function ReportsPage() {
           </motion.div>
         </div>
 
-          {avoidancePattern && (
-            <div style={{ background:"rgba(245,158,11,0.05)", borderLeft:"3px solid var(--bm-amber)", border:"1px solid rgba(245,158,11,0.16)", borderRadius:"var(--r-xl)", padding:"16px 18px", marginBottom:16 }}>
-              <div style={{ fontSize:12, color:"var(--bm-amber)", fontWeight:700, marginBottom:6 }}>Pattern detected: {avoidancePattern}. This is being written to your behavioral profile.</div>
-              <div style={{ fontSize:12, color:"var(--bm-text3)", lineHeight:1.6 }}>Monday&apos;s task will route around this pattern automatically.</div>
-            </div>
-          )}
-
         {/* PROJECT SNAPSHOT */}
         {project && (
           <>
@@ -573,9 +608,34 @@ export default function ReportsPage() {
         {/* AI INSIGHT */}
         <motion.div initial={{ opacity:0, y:6 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.45 }}
           style={{ background:"var(--bm-accent-dim)", border:"1px solid var(--bm-accent-bd)",
-            borderLeft:"3px solid var(--bm-accent)", borderRadius:"var(--r-xl)", padding:"18px 22px" }}>
+            borderLeft:"3px solid var(--bm-accent)", borderRadius:"var(--r-xl)", padding:"18px 22px",
+            marginBottom: avoidancePattern ? 12 : 0 }}>
           <div style={{ fontSize:9, fontWeight:700, color:"var(--bm-accent)",
             textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:8 }}>BuildMind Analysis</div>
+
+          {/* Intention vs execution rate — the one number that matters */}
+          {intentionRate != null && (
+            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12,
+              padding:"10px 14px", borderRadius:10,
+              background: intentionRate >= 60 ? "rgba(92,200,138,0.08)" : "rgba(255,170,0,0.08)",
+              border: `1px solid ${intentionRate >= 60 ? "rgba(92,200,138,0.2)" : "rgba(255,170,0,0.2)"}` }}>
+              <div>
+                <p style={{ fontSize:11, fontWeight:700, color:"var(--bm-text3)", textTransform:"uppercase",
+                  letterSpacing:"0.08em", margin:"0 0 2px" }}>Execution Rate This Week</p>
+                <p style={{ fontSize:24, fontWeight:900, color: intentionRate >= 60 ? "var(--bm-green)" : "var(--bm-amber)",
+                  margin:0, letterSpacing:"-0.03em", lineHeight:1 }}>
+                  {intentionRate}%
+                  {prevIntentionRate != null && (
+                    <span style={{ fontSize:11, fontWeight:600, marginLeft:8,
+                      color: intentionRate > prevIntentionRate ? "var(--bm-green)" : intentionRate < prevIntentionRate ? "var(--bm-red)" : "var(--bm-text3)" }}>
+                      {intentionRate > prevIntentionRate ? "↑" : intentionRate < prevIntentionRate ? "↓" : "→"} {Math.abs(intentionRate - prevIntentionRate)}% vs last week
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+          )}
+
           <p style={{ fontSize:14, color:"var(--bm-text)", lineHeight:1.65, margin:"0 0 8px", fontWeight:500 }}>
             {scoreDelta > 5
               ? `Strong week — your score climbed ${scoreDelta} points. ${tasksThisWeek > 0 ? `Completing ${tasksThisWeek} task${tasksThisWeek>1?"s":""} drove that momentum.` : ""} Maintain this cadence.`
@@ -592,6 +652,19 @@ export default function ReportsPage() {
             </p>
           )}
         </motion.div>
+
+        {/* Avoidance pattern callout */}
+        {avoidancePattern && (
+          <motion.div initial={{ opacity:0, y:4 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.5 }}
+            style={{ borderLeft:"2px solid var(--bm-amber)", paddingLeft:14, marginBottom:0 }}>
+            <p style={{ fontSize:13, color:"var(--bm-text2)", margin:"0 0 4px", lineHeight:1.5 }}>
+              Pattern detected: {avoidancePattern}. This is being written to your behavioral profile.
+            </p>
+            <p style={{ fontSize:12, color:"var(--bm-text3)", margin:0 }}>
+              Monday&apos;s task will route around this pattern automatically.
+            </p>
+          </motion.div>
+        )}
 
         {/* FOOTER */}
         <div style={{ marginTop:32, paddingTop:16, borderTop:"1px solid var(--bm-border)",

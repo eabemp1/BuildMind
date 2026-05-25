@@ -25,7 +25,7 @@ export function SurvivalBar({ score, prev }: { score: number; prev: number }) {
           </span>
         </div>
       </div>
-      <div style={{ height: 6, background: "rgba(255,255,255,0.08)", borderRadius: 3, overflow: "hidden" }}>
+      <div style={{ height: 6, background: "var(--bm-border2)", borderRadius: 3, overflow: "hidden" }}>
         <motion.div
           initial={{ width: `${prev}%` }}
           animate={{ width: `${score}%` }}
@@ -35,10 +35,10 @@ export function SurvivalBar({ score, prev }: { score: number; prev: number }) {
             borderRadius: 3,
             background:
               score > 60
-                ? "linear-gradient(90deg, #16a34a, #22c55e)"
+                ? "var(--bm-green)"
                 : score > 30
-                ? "linear-gradient(90deg, #d97706, #f59e0b)"
-                : "linear-gradient(90deg, #b91c1c, #ef4444)",
+                ? "var(--bm-accent)"
+                : "var(--bm-red)",
           }}
         />
       </div>

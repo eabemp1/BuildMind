@@ -286,7 +286,7 @@ function ReflexionPipelineDemo() {
               animate={{ opacity: 1, y: 0 }}
               style={{
                 padding: 1, borderRadius: 15,
-                background: "linear-gradient(135deg, var(--bm-accent-bd) 0%, rgba(74,184,176,0.2) 100%)",
+                background: "var(--bm-accent-dim)",
               }}
             >
               <div style={{ background: "var(--bm-bg2)", borderRadius: 14, padding: "18px" }}>
@@ -345,7 +345,7 @@ function HeroReflexionPipeline() {
         }
       `}</style>
       <div
-        className="html-panel relative overflow-hidden rounded-[20px] p-5 sm:p-6"
+        className="html-panel relative overflow-hidden rounded-[var(--r-xl)] p-5 sm:p-6"
         style={{
           background: "var(--bm-bg2)",
           border: "1px solid var(--bm-border2)",
@@ -369,7 +369,7 @@ function HeroReflexionPipeline() {
           ].map((agent, i, arr) => (
             <div key={agent.label} className="contents">
               <div
-                className="flex-1 rounded-[14px] border p-3.5"
+                className="flex-1 rounded-[var(--r-xl)] border p-3.5"
                 style={{
                   background: "var(--bm-bg3)",
                   borderColor: "var(--bm-border2)",
@@ -400,9 +400,9 @@ function HeroReflexionPipeline() {
         </div>
 
         <div
-          className="relative overflow-hidden rounded-[14px] border p-4"
+          className="relative overflow-hidden rounded-[var(--r-xl)] border p-4"
           style={{
-            background: "linear-gradient(135deg, rgba(92,200,138,0.08), var(--bm-bg3) 52%)",
+            background: "var(--bm-bg3)",
             borderColor: "var(--bm-accent-bd)",
             animation: "bm-output-appear .5s 1.2s ease both",
           }}
@@ -501,7 +501,7 @@ function DayTimeline() {
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -8 }}
           transition={{ duration: 0.25 }}
-          className="html-soft-panel relative h-fit overflow-hidden rounded-[18px] p-7 lg:sticky lg:top-28"
+          className="html-soft-panel relative h-fit overflow-hidden rounded-[var(--r-xl)] p-7 lg:sticky lg:top-28"
           style={{
             background: "var(--bm-bg2)",
             border: "1px solid var(--bm-border2)",
@@ -536,7 +536,7 @@ function HeroMockup() {
 
   return (
     <div
-      className="relative overflow-hidden rounded-xl border border-[var(--bm-border2)] shadow-[0_18px_48px_rgba(0,0,0,0.45)] sm:rounded-2xl sm:shadow-[0_32px_80px_rgba(0,0,0,0.6)]"
+      className="relative overflow-hidden rounded-[var(--r-xl)] border border-[var(--bm-border2)] shadow-[0_18px_48px_rgba(0,0,0,0.45)] sm:rounded-[var(--r-xl)] sm:shadow-[0_32px_80px_rgba(0,0,0,0.6)]"
       style={{ background: "var(--bm-bg2)" }}
     >
       {/* Topbar */}
@@ -619,7 +619,7 @@ function HeroMockup() {
               </span>
             </div>
             {/* Single action */}
-            <div style={{ padding: 1, borderRadius: 15, background: "linear-gradient(135deg, var(--bm-accent-bd), rgba(74,184,176,0.18))" }}>
+            <div style={{ padding: 0, borderRadius: "var(--r-xl)", border: "1px solid var(--bm-accent-bd)" }}>
               <div style={{ background: "var(--bm-bg2)", borderRadius: 14, padding: "14px 16px" }}>
                 <p style={{ fontSize: 14, fontWeight: 700, color: "var(--bm-text)", lineHeight: 1.45, margin: "0 0 8px" }}>
                   Record a 3-min Loom. Send to 5 founders. Today.
@@ -710,7 +710,7 @@ function DemoModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center px-3 py-5 sm:px-6" style={{ background: "rgba(0,0,0,0.72)", backdropFilter: "blur(8px)" }}>
-      <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-6xl max-h-[92vh] overflow-y-auto rounded-2xl" style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)" }}>
+      <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-6xl max-h-[92vh] overflow-y-auto rounded-[var(--r-xl)]" style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)" }}>
         <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: "1px solid var(--bm-border)" }}>
           <div>
             <div className="text-xs font-bold uppercase tracking-widest text-[var(--bm-accent)]">2-minute demo</div>
@@ -721,7 +721,7 @@ function DemoModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
         <div className="p-4 sm:p-6">
-          <div className="relative rounded-xl overflow-hidden" style={{ background: "var(--bm-bg)", border: "1px solid var(--bm-border)" }}>
+          <div className="relative rounded-[var(--r-xl)] overflow-hidden" style={{ background: "var(--bm-bg)", border: "1px solid var(--bm-border)" }}>
             <button
               type="button"
               onClick={handlePlay}
@@ -729,7 +729,7 @@ function DemoModal({ onClose }: { onClose: () => void }) {
               style={{ background: "rgba(0,0,0,0.28)" }}
               aria-label="Play demo video"
             >
-              <span className="flex h-16 w-16 sm:h-20 sm:w-20 items-center justify-center rounded-full text-white shadow-2xl transition-transform active:scale-95" style={{ background: "var(--grad-primary)" }}>
+              <span className="flex h-16 w-16 sm:h-20 sm:w-20 items-center justify-center rounded-[var(--r-xl)] active:scale-95" style={{ background: "var(--bm-accent)" }}>
                 <Play size={30} fill="currentColor" />
               </span>
             </button>
@@ -842,7 +842,7 @@ function BreakMyStartupSection() {
               value={idea}
               onChange={(e) => setIdea(e.target.value)}
               placeholder="Describe your startup idea or current model — what you're building, who it's for, how you make money..."
-              className="h-44 w-full resize-none rounded-xl p-4 text-base outline-none transition-all duration-150 focus:ring-1 sm:h-36 sm:text-sm"
+              className="h-44 w-full resize-none rounded-[var(--r-xl)] p-4 text-base outline-none transition-all duration-150 focus:ring-1 sm:h-36 sm:text-sm"
               style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", color: "var(--bm-text)", fontFamily: "inherit" }}
               onFocus={(e) => { e.currentTarget.style.borderColor = "var(--bm-accent)"; e.currentTarget.style.boxShadow = "0 0 0 1px var(--bm-accent-bd)"; }}
               onBlur={(e) => { e.currentTarget.style.borderColor = "var(--bm-border2)"; e.currentTarget.style.boxShadow = "none"; }}
@@ -854,7 +854,7 @@ function BreakMyStartupSection() {
           </div>
 
           {error && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2 text-sm p-4 rounded-xl" style={{ background: "rgba(224,85,85,0.08)", border: "1px solid rgba(224,85,85,0.2)", color: "var(--bm-red)" }}>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2 text-sm p-4 rounded-[var(--r-xl)]" style={{ background: "rgba(224,85,85,0.08)", border: "1px solid rgba(224,85,85,0.2)", color: "var(--bm-red)" }}>
               <AlertCircle size={16} />{error}
             </motion.div>
           )}
@@ -862,7 +862,7 @@ function BreakMyStartupSection() {
           {loading && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col gap-3">
               {[1, 2, 3].map((i) => (
-                <div key={i} className="rounded-xl p-4 border border-[var(--bm-border)] bg-[var(--bm-bg3)] animate-pulse flex flex-col gap-2">
+                <div key={i} className="rounded-[var(--r-xl)] p-4 border border-[var(--bm-border)] bg-[var(--bm-bg3)] animate-pulse flex flex-col gap-2">
                   <div className="h-4 w-32 rounded-full bg-[var(--bm-bg4)]" />
                   <div className="h-3 w-full rounded-full bg-[var(--bm-bg4)] opacity-70" />
                   <div className="h-3 w-5/6 rounded-full bg-[var(--bm-bg4)] opacity-50" />
@@ -921,7 +921,7 @@ function PricingSection() {
         <div className="mt-12 grid grid-cols-1 gap-4 md:grid-cols-2">
           {/* Free */}
           <motion.div initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.05 }}>
-            <Card className="html-soft-panel flex h-full flex-col gap-5 rounded-[18px] p-7">
+            <Card className="html-soft-panel flex h-full flex-col gap-5 rounded-[var(--r-xl)] p-7">
               <div>
                 <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Free</div>
                 <div style={{ fontSize: 32, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em" }}>$0</div>
@@ -954,7 +954,7 @@ function PricingSection() {
 
           {/* Builder */}
           <motion.div initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.1 }}>
-            <div style={{ padding: 1, borderRadius: 18, background: "linear-gradient(160deg, rgba(92,200,138,0.20), rgba(74,184,176,0.12))" }}>
+            <div style={{ padding: 0, borderRadius: "var(--r-xl)", border: "1px solid var(--bm-accent-bd)" }}>
               <Card className="flex h-full flex-col gap-5 p-7" style={{ borderRadius: 17, background: "linear-gradient(160deg, var(--bm-bg2) 0%, var(--bm-bg3) 100%)", border: "none" }}>
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
@@ -1000,7 +1000,7 @@ function PricingSection() {
       </div>
 
       {/* Founders already building — real week-one users */}
-      <div className="mt-14 border-t pt-12" style={{ borderColor: "rgba(255,255,255,0.028)" }}>
+      <div className="mt-14 border-t pt-12" style={{ borderColor: "var(--bm-border)" }}>
         <p className="text-[11px] font-bold uppercase tracking-widest mb-8" style={{ color: "var(--bm-text3)" }}>What founders say</p>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           {[
@@ -1008,7 +1008,7 @@ function PricingSection() {
             { quote: "The milestones made the next step obvious, so I spent less time guessing and more time shipping.", name: "Israel Akortia" },
             { quote: "It feels like having a calm operator beside me, keeping the work practical and measurable.", name: "Samuel Bempong" },
           ].map((t) => (
-            <blockquote key={t.name} className="m-0 rounded-xl p-5" style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)" }}>
+            <blockquote key={t.name} className="m-0 rounded-[var(--r-xl)] p-5" style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)" }}>
               <p className="text-sm font-medium leading-relaxed text-[var(--bm-text)]">"{t.quote}"</p>
               <footer className="mt-5 text-xs font-semibold text-[var(--bm-text3)]">{t.name}</footer>
             </blockquote>
@@ -1076,10 +1076,7 @@ function WorldCanvas() {
         {/* Drifting grid */}
         <div style={{
           position: "absolute", inset: -56,
-          backgroundImage: `
-            linear-gradient(rgba(92,200,138,0.010) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(92,200,138,0.010) 1px, transparent 1px)
-          `,
+          backgroundImage: "none",
           backgroundSize: "52px 52px",
           animation: "bm-grid-drift 22s linear infinite",
           maskImage: "radial-gradient(ellipse 82% 68% at 50% 38%, rgba(0,0,0,0.8) 12%, transparent 82%)",
@@ -1184,7 +1181,7 @@ const landingShellStyle = {
   position: "relative",
 } as CSSProperties;
 
-const subtleSectionBorder = "1px solid rgba(255,255,255,0.028)";
+const subtleSectionBorder = "1px solid var(--bm-border)";
 
 function LandingAestheticLayer() {
   return (
@@ -1193,7 +1190,7 @@ function LandingAestheticLayer() {
         -webkit-font-smoothing: antialiased;
       }
       .bm-landing-skin .gradient-text {
-        background: var(--grad-primary, linear-gradient(135deg,#5CC88A,#4AB8B0));
+        background: var(--bm-accent);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
@@ -1294,7 +1291,7 @@ export default function LandingPage() {
       {/* Navbar */}
       <nav
         className="sticky top-0 z-50 flex h-16 items-center justify-between gap-3 px-4 sm:px-6"
-        style={{ background: "rgba(12,12,13,0.82)", backdropFilter: "blur(16px)", borderBottom: "1px solid rgba(255,255,255,0.028)", position: "relative", zIndex: 50 }}
+        style={{ background: "rgba(12,12,13,0.82)", backdropFilter: "blur(16px)", borderBottom: "1px solid var(--bm-border)", position: "relative", zIndex: 50 }}
       >
         <div className="flex items-center gap-2">
           <BrandMark size={32} href="/" />
@@ -1362,7 +1359,7 @@ export default function LandingPage() {
               ].map((s) => (
                 <div
                   key={s.label}
-                  className="inline-flex w-fit items-center justify-start gap-1.5 rounded-full px-3 py-1.5 text-xs"
+                  className="inline-flex w-fit items-center justify-start gap-1.5 rounded-[var(--r-lg)] px-3 py-1.5 text-xs"
                   style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)" }}
                 >
                   <span className="font-semibold text-[var(--bm-text)]">{s.val.toLocaleString()}</span>
@@ -1372,7 +1369,7 @@ export default function LandingPage() {
               {/* Live weekly task count — updates every 60s via Supabase realtime */}
               {stats.weekly_tasks > 0 && (
                 <div
-                  className="inline-flex w-fit items-center justify-start gap-1.5 rounded-full px-3 py-1.5 text-xs"
+                  className="inline-flex w-fit items-center justify-start gap-1.5 rounded-[var(--r-lg)] px-3 py-1.5 text-xs"
                   style={{ background: "rgba(92,200,138,0.06)", border: "1px solid rgba(92,200,138,0.20)" }}
                 >
                   <span
@@ -1390,7 +1387,7 @@ export default function LandingPage() {
 
           {/* Right — Reflexion Loop agent pipeline */}
           <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.7, delay: 0.15 }} className="relative mt-2 md:mt-0">
-            <div className="absolute inset-0 -z-10" style={{ background: "radial-gradient(ellipse at center, rgba(92,200,138,0.12) 0%, transparent 70%)", filter: "blur(20px)", transform: "scale(1.2)" }} />
+            <div className="absolute inset-0 -z-10" style={{ background: "transparent", filter: "blur(20px)", transform: "scale(1.2)" }} />
             <HeroReflexionPipeline />
           </motion.div>
         </div>
@@ -1433,7 +1430,7 @@ export default function LandingPage() {
           </motion.div>
 
           <div
-            className="mt-14 grid grid-cols-1 overflow-hidden rounded-[20px] sm:grid-cols-2 lg:grid-cols-3"
+            className="mt-14 grid grid-cols-1 overflow-hidden rounded-[var(--r-xl)] sm:grid-cols-2 lg:grid-cols-3"
             style={{ gap: 2, background: "var(--bm-border)", border: "1px solid var(--bm-border)" }}
           >
             {FEATURES.map((f, i) => {
@@ -1452,7 +1449,7 @@ export default function LandingPage() {
                     style={{ background: "var(--bm-bg2)" }}
                   >
                     <div className="flex items-center justify-between">
-                      <div className="flex h-[38px] w-[38px] items-center justify-center rounded-[11px]" style={{ background: "var(--bm-bg3)", color: "var(--bm-accent)" }}>
+                      <div className="flex h-[38px] w-[38px] items-center justify-center rounded-[var(--r-lg)]" style={{ background: "var(--bm-bg3)", color: "var(--bm-accent)" }}>
                         <Icon size={20} />
                       </div>
                       <span style={{ fontSize: 9, fontWeight: 700, color: f.badgeColor, background: f.badgeColor + "18", border: `1px solid ${f.badgeColor}33`, padding: "2px 8px", borderRadius: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>
@@ -1478,12 +1475,12 @@ export default function LandingPage() {
       {/* Final CTA */}
       <section
         className="relative overflow-hidden px-5 py-[60px] text-center sm:px-8 sm:py-24"
-        style={{ borderTop: "1px solid rgba(255,255,255,0.028)" }}
+        style={{ borderTop: "1px solid var(--bm-border)" }}
       >
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0"
-          style={{ background: "radial-gradient(ellipse at 50% 0%, rgba(92,200,138,0.09) 0%, transparent 65%)" }}
+          style={{ background: "transparent" }}
         />
         <motion.div
           initial={{ opacity: 0, y: 12 }}
@@ -1505,7 +1502,7 @@ export default function LandingPage() {
           <div className="flex flex-wrap justify-center gap-3">
             <Link href="/auth/login">
               <button
-                className="inline-flex h-[46px] items-center gap-1.5 rounded-xl px-7 text-[15px] font-semibold transition-all hover:brightness-105 active:scale-95"
+                className="inline-flex h-[46px] items-center gap-1.5 rounded-[var(--r-xl)] px-7 text-[15px] font-semibold transition-all hover:brightness-105 active:scale-95"
                 style={{ background: "var(--grad-primary)", color: "#0C0C0D" }}
               >
                 Start Building Free <ArrowRight size={16} />
@@ -1516,7 +1513,7 @@ export default function LandingPage() {
       </section>
 
       {/* Footer */}
-      <footer className="py-8 px-6 text-center text-xs" style={{ borderTop: "1px solid rgba(255,255,255,0.028)", color: "var(--bm-text3)" }}>
+      <footer className="py-8 px-6 text-center text-xs" style={{ borderTop: "1px solid var(--bm-border)", color: "var(--bm-text3)" }}>
         © {new Date().getFullYear()} BuildMind. Built for founders who ship.
       </footer>
 

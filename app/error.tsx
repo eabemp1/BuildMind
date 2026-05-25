@@ -78,7 +78,7 @@ export default function GlobalError({ error, reset }: ErrorProps) {
             padding: "10px 20px",
             borderRadius: 8,
             border: "none",
-            background: "var(--grad-primary, linear-gradient(135deg, #6366f1, #8b5cf6))",
+            background: "var(--grad-primary, var(--bm-accent))",
             color: "#fff",
             fontSize: 14,
             fontWeight: 600,
@@ -94,7 +94,7 @@ export default function GlobalError({ error, reset }: ErrorProps) {
           style={{
             padding: "10px 20px",
             borderRadius: 8,
-            border: "1px solid var(--bm-border, rgba(255,255,255,0.08))",
+            border: "1px solid var(--bm-border, var(--bm-border2))",
             background: "transparent",
             color: "var(--bm-text2, #a1a1b5)",
             fontSize: 14,

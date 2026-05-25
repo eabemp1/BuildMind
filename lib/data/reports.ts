@@ -46,14 +46,14 @@ export async function getWeeklyReportMetrics(): Promise<WeeklyReportMetrics> {
     taskData: [0, 0, 0, 0, 0, 0, 0],
     tasksCompletedThisWeek: 0,
     tasksCompletedPreviousWeek: 0,
-    intention_vs_execution_rate: null,
-    previous_intention_vs_execution_rate: null,
-    execution_trend: "flat",
-    avoidance_pattern: null,
     activeStreakDays: 0,
     focusData: [],
     wins: [],
     nextFocus: [],
+    intention_vs_execution_rate: null,
+    previous_intention_vs_execution_rate: null,
+    execution_trend: "flat",
+    avoidance_pattern: null,
   };
   if (!user) return empty;
 
@@ -106,22 +106,29 @@ export async function getWeeklyReportMetrics(): Promise<WeeklyReportMetrics> {
   }
   const { data: tasks } = { data: allTasks };
 
+  // Also count completions from reflexion_learning_log (today-page check-ins).
+  // This is the primary way founders log "done" — it doesn't always map 1:1
+  // to a task row, so we count it as a separate signal and merge.
+  let reflexionCompletionsThisWeek = 0;
+  try {
+    const weekAgoISO = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: reflexionRows } = await supabase
+      .from("reflexion_learning_log")
+      .select("outcome_recorded_at")
+      .eq("outcome", "completed")
+      .gte("outcome_recorded_at", weekAgoISO);
+    reflexionCompletionsThisWeek = (reflexionRows ?? []).length;
+  } catch { /* non-fatal — table may not exist in all envs */ }
+
   const start = weekStart();
   const previousStart = new Date(start);
   previousStart.setDate(start.getDate() - 7);
   const taskData = [0, 0, 0, 0, 0, 0, 0];
   let tasksCompletedPreviousWeek = 0;
-  let totalTasksCreatedThisWeek = 0;
-  let totalTasksCreatedPreviousWeek = 0;
   const completedDates = new Set<string>();
   const focusCounts = new Map<string, number>();
-  const incompleteStageCounts = new Map<string, number>();
 
   (tasks ?? []).forEach((task) => {
-    const createdAt = new Date(task.created_at);
-    if (createdAt >= start) totalTasksCreatedThisWeek += 1;
-    if (createdAt >= previousStart && createdAt < start) totalTasksCreatedPreviousWeek += 1;
-
     if (!task.is_completed) return;
     const completedAt = task.updated_at ?? task.created_at;
     const completedDate = new Date(completedAt);
@@ -135,25 +142,6 @@ export async function getWeeklyReportMetrics(): Promise<WeeklyReportMetrics> {
     if (completedDate >= previousStart && completedDate < start) tasksCompletedPreviousWeek += 1;
   });
 
-  const completedViaLearningLog = await supabase
-    .from("reflexion_learning_log")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", user.id)
-    .eq("outcome", "completed")
-    .gte("created_at", start.toISOString());
-  const completedLearningCount = completedViaLearningLog.count ?? 0;
-
-  const taskCompletionCount = taskData.reduce((sum, count) => sum + count, 0);
-  const tasksCompletedThisWeek = Math.max(taskCompletionCount, completedLearningCount);
-
-  (tasks ?? []).forEach((task) => {
-    if (task.is_completed) return;
-    const projectId = milestoneToProject.get(task.milestone_id);
-    const project = summaries.find((s) => s.id === projectId);
-    const stage = project?.startup_stage ?? milestoneTitle.get(task.milestone_id) ?? "Execution";
-    incompleteStageCounts.set(stage, (incompleteStageCounts.get(stage) ?? 0) + 1);
-  });
-
   let activeStreakDays = 0;
   for (let i = 0; i < 90; i++) {
     const d = new Date();
@@ -162,6 +150,12 @@ export async function getWeeklyReportMetrics(): Promise<WeeklyReportMetrics> {
     else if (i > 0) break;
   }
 
+  // Merge task completions (from project tasks) with reflexion log completions (from today page).
+  // Use whichever is higher — they may overlap for users who complete tasks in both places.
+  const tasksCompletedThisWeek = Math.max(
+    taskData.reduce((sum, count) => sum + count, 0),
+    reflexionCompletionsThisWeek,
+  );
   const milestonesCompletedThisWeek = (allMilestones ?? []).filter((m) => {
     if (!m.is_completed) return false;
     const completedAt = new Date(m.updated_at ?? m.created_at);
@@ -192,37 +186,58 @@ export async function getWeeklyReportMetrics(): Promise<WeeklyReportMetrics> {
     .slice(0, 3)
     .map((task) => task.title || "Complete the next project task");
 
-  const intention_vs_execution_rate = totalTasksCreatedThisWeek > 0
-    ? Math.round((tasksCompletedThisWeek / totalTasksCreatedThisWeek) * 100)
-    : null;
-  const previous_intention_vs_execution_rate = totalTasksCreatedPreviousWeek > 0
-    ? Math.round((tasksCompletedPreviousWeek / totalTasksCreatedPreviousWeek) * 100)
-    : null;
-  const execution_trend =
-    intention_vs_execution_rate == null || previous_intention_vs_execution_rate == null
-      ? "flat"
-      : intention_vs_execution_rate > previous_intention_vs_execution_rate + 5
+  // ── Intention vs execution rate ─────────────────────────────────────────
+  // Total tasks shown (created) this week vs completed this week
+  const totalTasksCreatedThisWeek = (tasks ?? []).filter((task) => {
+    const created = new Date(task.created_at);
+    return created >= start;
+  }).length;
+  const intention_vs_execution_rate =
+    totalTasksCreatedThisWeek > 0
+      ? Math.round((tasksCompletedThisWeek / totalTasksCreatedThisWeek) * 100)
+      : null;
+
+  // Previous week rate for trend
+  const totalTasksCreatedPrevWeek = (tasks ?? []).filter((task) => {
+    const created = new Date(task.created_at);
+    return created >= previousStart && created < start;
+  }).length;
+  const previous_intention_vs_execution_rate =
+    totalTasksCreatedPrevWeek > 0
+      ? Math.round((tasksCompletedPreviousWeek / totalTasksCreatedPrevWeek) * 100)
+      : null;
+
+  const execution_trend: "up" | "down" | "flat" =
+    intention_vs_execution_rate != null && previous_intention_vs_execution_rate != null
+      ? intention_vs_execution_rate > previous_intention_vs_execution_rate + 5
         ? "up"
         : intention_vs_execution_rate < previous_intention_vs_execution_rate - 5
-          ? "down"
-          : "flat";
+        ? "down"
+        : "flat"
+      : "flat";
 
-  let avoidance_pattern: string | null = null;
-  for (const [stage, count] of incompleteStageCounts.entries()) {
-    if (count >= 3) {
-      avoidance_pattern = `${count} incomplete ${stage}-stage tasks`;
-      break;
-    }
-  }
+  // Avoidance pattern: detect if a stage type dominates incomplete tasks
+  const incompleteByStage = new Map<string, number>();
+  (tasks ?? []).filter((t) => !t.is_completed).forEach((t) => {
+    const projectId = milestoneToProject.get(t.milestone_id);
+    const project = summaries.find((s) => s.id === projectId);
+    const stage = project?.startup_stage ?? "unknown";
+    incompleteByStage.set(stage, (incompleteByStage.get(stage) ?? 0) + 1);
+  });
+  const topIncompleteStage = Array.from(incompleteByStage.entries()).sort((a, b) => b[1] - a[1])[0];
+  const avoidance_pattern =
+    topIncompleteStage && topIncompleteStage[1] >= 3
+      ? `${topIncompleteStage[1]} incomplete ${topIncompleteStage[0]}-stage tasks`
+      : null;
 
   return {
     score, previousScore, weeklyScores, taskData,
     tasksCompletedThisWeek, tasksCompletedPreviousWeek,
+    activeStreakDays, focusData, wins, nextFocus,
     intention_vs_execution_rate,
     previous_intention_vs_execution_rate,
     execution_trend,
     avoidance_pattern,
-    activeStreakDays, focusData, wins, nextFocus,
   };
 }
 

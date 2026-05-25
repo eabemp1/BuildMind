@@ -1,27 +1,35 @@
 /**
- * lib/nav-config.ts — Progressive nav unlock  (Product Improvement #1)
+ * lib/nav-config.ts — Collapsed nav (Product Improvement #1 — fully implemented)
  *
- * Restructured from 9 destinations to 3 primary sections:
- *   TODAY    — daily execution loop (Today, Reflect)
- *   ANALYZE  — strategic intelligence (Break My Startup, Ventures, Reports, Overview)
- *   COACH    — AI guidance (AI Coach, Projects)
+ * 4 primary destinations, all noise removed:
+ *   Today    — daily execution (the task)
+ *   Progress — two tabs: This Week + Patterns (weekly report + insights merged)
+ *   Projects — milestone visibility
+ *   Settings — everything else
  *
- * Secondary items (Achievements, Notifications, Settings, Invite) live at
- * the bottom, visually separated so they don't compete with the 3 primary
- * destinations.
+ * Reflect is NOT a nav item. It surfaces as a bottom-sheet modal from Today's
+ * done state. AI Coach stays as a power-user route, hidden from main nav.
+ *
+ * Secondary items (hidden: true) remain routable but won't appear in sidebar.
  */
 
 import type { Plan } from "@/lib/plan";
 import type { LucideIcon } from "lucide-react";
 import { storage } from "@/lib/storage";
-import { BarChart3, CircleDot, FolderKanban, Settings, TrendingUp } from "lucide-react";
+import {
+  BarChart3,
+  CircleDot,
+  FolderKanban,
+  Settings,
+  TrendingUp,
+} from "lucide-react";
 
 export type NavItemConfig = {
   href: string;
   label: string;
   icon: LucideIcon;
   enabled: boolean;
-  hidden?: boolean;  // AUDIT v8: temporarily hidden from nav while simplifying product surface
+  hidden?: boolean;
   section: string | null;
   badge: string | null;
   showDot: boolean;
@@ -36,18 +44,23 @@ export const NAV: readonly NavItemConfig[] = [
   { href: "/projects", label: "Projects", icon: FolderKanban, enabled: true, section: null, badge: null, showDot: false, unlocksAt: 0 },
   { href: "/settings", label: "Settings", icon: Settings,     enabled: true, section: null, badge: null, showDot: false, unlocksAt: 0 },
 
-  // ── Hidden power-user routes (routable but not in sidebar) ────────────────
-  { href: "/ai-coach",         label: "AI Coach",         icon: BarChart3, enabled: true,  hidden: true, section: null, badge: null, showDot: false, unlocksAt: 3 },
-  { href: "/reflect",          label: "Reflect",          icon: CircleDot, enabled: true,  hidden: true, section: null, badge: null, showDot: true,  unlocksAt: 1 },
-  { href: "/overview",         label: "Execution",        icon: BarChart3, enabled: true,  hidden: true, section: null, badge: null, showDot: false, unlocksAt: 3 },
-  { href: "/reports",          label: "Reports",          icon: BarChart3, enabled: true,  hidden: true, section: null, badge: null, requiredPlan: "builder" as Plan, showDot: false, unlocksAt: 7 },
-  { href: "/break-my-startup", label: "Break My Startup", icon: BarChart3, enabled: true,  hidden: true, section: null, badge: null, showDot: false, unlocksAt: 3 },
-  { href: "/insights",         label: "Insights",         icon: BarChart3, enabled: true,  hidden: true, section: null, badge: null, showDot: false, unlocksAt: 3 },
-  { href: "/ventures",         label: "Ventures",         icon: BarChart3, enabled: false, hidden: true, section: null, badge: null, requiredPlan: "builder" as Plan, showDot: false, unlocksAt: 7 },
-  { href: "/startup-kit",      label: "Startup Kit",      icon: BarChart3, enabled: false, hidden: true, section: null, badge: null, requiredPlan: "builder" as Plan, showDot: false, unlocksAt: 7 },
-  { href: "/achievements",     label: "Achievements",     icon: BarChart3, enabled: false, hidden: true, section: null, badge: null, showDot: false, unlocksAt: 7 },
-  { href: "/invite",           label: "Invite",           icon: BarChart3, enabled: false, hidden: true, section: null, badge: null, showDot: false, unlocksAt: 7 },
-  { href: "/notifications",    label: "Notifications",    icon: BarChart3, enabled: false, hidden: true, section: null, badge: null, showDot: false, unlocksAt: 0 },
+  // ── Intelligence section (visible in sidebar after unlock) ──────────────
+  { href: "/ai-coach",         label: "AI Coach",        icon: BarChart3, enabled: true,  hidden: false, section: "Intelligence", badge: null, showDot: false, unlocksAt: 3 },
+  { href: "/break-my-startup", label: "Break My Startup",icon: BarChart3, enabled: true,  hidden: false, section: "Intelligence", badge: null, showDot: false, unlocksAt: 3 },
+  { href: "/reports",          label: "Weekly Report",   icon: BarChart3, enabled: true,  hidden: false, section: "Intelligence", badge: null, requiredPlan: "builder" as Plan, showDot: false, unlocksAt: 7 },
+
+  // ── Settings section items ────────────────────────────────────────────────
+  { href: "/upgrade",          label: "Upgrade",         icon: BarChart3, enabled: true,  hidden: false, section: "Settings", badge: null, showDot: false, unlocksAt: 0 },
+
+  // ── Hidden / routable-only ────────────────────────────────────────────────
+  { href: "/reflect",          label: "Reflect",         icon: CircleDot, enabled: true,  hidden: true, section: null, badge: null, showDot: true,  unlocksAt: 1 },
+  { href: "/overview",         label: "Execution",       icon: BarChart3, enabled: true,  hidden: true, section: null, badge: null, showDot: false, unlocksAt: 3 },
+  { href: "/insights",         label: "Insights",        icon: BarChart3, enabled: true,  hidden: true, section: null, badge: null, showDot: false, unlocksAt: 3 },
+  { href: "/ventures",         label: "Ventures",        icon: BarChart3, enabled: false, hidden: true, section: null, badge: null, requiredPlan: "builder" as Plan, showDot: false, unlocksAt: 7 },
+  { href: "/startup-kit",      label: "Startup Kit",     icon: BarChart3, enabled: false, hidden: true, section: null, badge: null, requiredPlan: "builder" as Plan, showDot: false, unlocksAt: 7 },
+  { href: "/achievements",     label: "Achievements",    icon: BarChart3, enabled: false, hidden: true, section: null, badge: null, showDot: false, unlocksAt: 7 },
+  { href: "/invite",           label: "Invite",          icon: BarChart3, enabled: false, hidden: true, section: null, badge: null, showDot: false, unlocksAt: 7 },
+  { href: "/notifications",    label: "Notifications",   icon: BarChart3, enabled: false, hidden: true, section: null, badge: null, showDot: false, unlocksAt: 0 },
 ] as const;
 
 export function hasPlanAccess(current: Plan, required: Plan): boolean {

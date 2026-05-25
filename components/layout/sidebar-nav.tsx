@@ -31,10 +31,20 @@ export function NotifBadge() {
     refresh();
     window.addEventListener("bm_notification_added", refresh);
     window.addEventListener("storage", refresh);
-    const t = setInterval(refresh, 10000);
+    let t = setInterval(refresh, 10000);
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        clearInterval(t);
+      } else {
+        refresh();
+        t = setInterval(refresh, 10000);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       window.removeEventListener("bm_notification_added", refresh);
       window.removeEventListener("storage", refresh);
+      document.removeEventListener("visibilitychange", onVisibility);
       clearInterval(t);
     };
   }, []);
@@ -57,8 +67,14 @@ export function NotifBadge() {
 export function SectionLabel({ label }: { label: string }) {
   return (
     <div
-      className="px-5 pb-2 pt-5 font-mono text-[10px] font-normal uppercase tracking-[0.08em]"
-      style={{ color: "var(--bm-text4)" }}
+      style={{
+        fontFamily: "'DM Mono', monospace",
+        fontSize: 8,
+        textTransform: "uppercase" as const,
+        letterSpacing: "0.10em",
+        color: "var(--bm-text4)",
+        padding: "16px 20px 6px",
+      }}
     >
       {label}
     </div>
@@ -72,25 +88,65 @@ export function SidebarLogo({ streakDays }: { streakDays: number }) {
       className="flex h-[72px] shrink-0 items-center gap-3 px-5"
       style={{ borderBottom: "1px solid var(--bm-border)" }}
     >
-      <BrandMark size={28} href="/today" />
+      {/* 24px amber mark */}
+      <div
+        style={{
+          width: 24,
+          height: 24,
+          borderRadius: "var(--r-md)",
+          background: "var(--bm-accent)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+          position: "relative",
+        }}
+      >
+        <div
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: "var(--r-sm)",
+            background: "var(--bm-text-inv)",
+            opacity: 0.85,
+          }}
+        />
+      </div>
       <div>
-        <div className="text-[14px] font-semibold" style={{ color: "var(--bm-text)", letterSpacing: "-0.025em" }}>
+        <div
+          style={{
+            fontFamily: "'Syne', sans-serif",
+            fontWeight: 700,
+            fontSize: 16,
+            letterSpacing: "-0.025em",
+            color: "var(--bm-text)",
+            lineHeight: 1.1,
+          }}
+        >
           BuildMind
         </div>
         <div
-          className="font-mono text-[9px] font-normal uppercase tracking-[0.1em]"
           style={{
+            fontFamily: "'DM Mono', monospace",
+            fontSize: 8,
+            textTransform: "uppercase",
+            letterSpacing: "0.10em",
             color: "var(--bm-text4)",
             lineHeight: 1,
+            marginTop: 2,
           }}
         >
-          Chief of Staff
+          Execution OS
         </div>
       </div>
       {streakDays > 0 && (
         <div
-          className="ml-auto flex items-center gap-1 rounded px-2 py-0.5 font-mono text-[10px] font-normal"
+          className="ml-auto"
           style={{
+            fontFamily: "'DM Mono', monospace",
+            fontSize: 10,
+            padding: "2px 8px",
+            borderRadius: "var(--r-sm)",
             background: "var(--bm-bg2)",
             border: "1px solid var(--bm-border)",
             color: "var(--bm-text3)",

@@ -18,9 +18,9 @@
  */
 
 import { useEffect, useState, useCallback } from "react";
+import { BuildMindCalibrating } from "@/components/BuildMindCalibrating";
 import { motion } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
-import { BuildMindCalibrating } from "@/components/BuildMindCalibrating";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface InsightData {
@@ -38,9 +38,9 @@ interface InsightData {
   totalTasksShown:     number;
 }
 
-type AiInsightItem = { type: "warning" | "positive" | "insight"; text: string };
-
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+type AiInsightItem = { type: "warning" | "positive" | "insight"; text: string };
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 function InsightCard({ title, children, accent }: { title: string; children: React.ReactNode; accent?: string }) {
@@ -135,13 +135,16 @@ function DayHeatmap({ completionByDay }: { completionByDay: Record<string, { com
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function InsightsPage() {
+  const [reflectionCount, setReflectionCount] = useState(0);
   const [data,    setData]    = useState<InsightData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState<string | null>(null);
-  const [reflectionCount, setReflectionCount] = useState(0);
-  const [aiInsights, setAiInsights] = useState<AiInsightItem[]>([]);
-  const [aiLoading, setAiLoading] = useState(false);
 
+  // AI streaming insights
+  const [aiInsights, setAiInsights] = useState<AiInsightItem[]>([]);
+  const [aiLoading,  setAiLoading]  = useState(false);
+
+  // Fetch reflection count for BuildMindCalibrating gate
   useEffect(() => {
     async function fetchCount() {
       try {
@@ -165,17 +168,19 @@ export default function InsightsPage() {
 
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
-      const [memRes, ctxRes, reflRes, logRes] = await Promise.allSettled([
+      const [memRes, ctxRes, reflRes, logRes, projRes] = await Promise.allSettled([
         supabase.from("founder_memory").select("avoidance_zones, strengths, personality_tags, last_insight").eq("user_id", user.id).maybeSingle(),
         supabase.from("founder_context").select("momentum_score, streak, meta_critic_signal").eq("user_id", user.id).maybeSingle(),
         supabase.from("reflections").select("confidence, outcome, created_at").eq("user_id", user.id).gte("created_at", thirtyDaysAgo),
         supabase.from("action_logs").select("outcome, outcome_note, created_at").eq("user_id", user.id).gte("created_at", thirtyDaysAgo),
+        supabase.from("projects").select("startup_stage").eq("user_id", user.id).order("created_at", { ascending: false }).limit(1).maybeSingle(),
       ]);
 
-      const mem  = memRes.status  === "fulfilled" ? memRes.value.data  : null;
-      const ctx  = ctxRes.status  === "fulfilled" ? ctxRes.value.data  : null;
-      const refs = reflRes.status === "fulfilled" ? (reflRes.value.data ?? []) : [];
-      const logs = logRes.status  === "fulfilled" ? (logRes.value.data ?? []) : [];
+      const mem   = memRes.status  === "fulfilled" ? memRes.value.data  : null;
+      const ctx   = ctxRes.status  === "fulfilled" ? ctxRes.value.data  : null;
+      const refs  = reflRes.status === "fulfilled" ? (reflRes.value.data ?? []) : [];
+      const logs  = logRes.status  === "fulfilled" ? (logRes.value.data ?? []) : [];
+      const stage = projRes.status === "fulfilled" ? (projRes.value.data?.startup_stage ?? "Idea") : "Idea";
 
       // Completion by day of week
       const completionByDay: Record<string, { completed: number; total: number }> = {};
@@ -223,6 +228,54 @@ export default function InsightsPage() {
         totalTasksCompleted,
         totalTasksShown: logs.length,
       });
+
+      // Fire AI insights stream — progressive rendering, non-blocking
+      // Only if there's enough data to generate meaningful patterns
+      if (totalTasksCompleted >= 3 || (mem?.avoidance_zones ?? []).length > 0) {
+        setAiLoading(true);
+        const collected: AiInsightItem[] = [];
+        fetch("/api/ai/insights", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            avoidanceZones:          (mem?.avoidance_zones ?? []),
+            strengths:               (mem?.strengths ?? []),
+            completionByDay,
+            avgConfidenceByOutcome,
+            topOverrideReason,
+            totalTasksCompleted,
+            totalTasksShown:         logs.length,
+            metacriticSignal:        ctx?.meta_critic_signal,
+            stage: stage,
+          }),
+        })
+          .then(async (res) => {
+            if (!res.ok || !res.body) { setAiLoading(false); return; }
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = "";
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split("\n");
+              buffer = lines.pop() ?? "";
+              for (const line of lines) {
+                if (line.startsWith("data: ")) {
+                  try {
+                    const payload = JSON.parse(line.slice(6));
+                    if (payload?.text && payload?.type) {
+                      collected.push(payload as AiInsightItem);
+                      setAiInsights([...collected]);
+                    }
+                  } catch { /* skip */ }
+                }
+              }
+            }
+            setAiLoading(false);
+          })
+          .catch(() => setAiLoading(false));
+      }
     } catch (e) {
       setError(String(e));
     } finally {
@@ -231,52 +284,6 @@ export default function InsightsPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
-
-  useEffect(() => {
-    if (!data) return;
-    if (data.totalTasksCompleted < 3 && data.avoidanceZones.length === 0) return;
-    let cancelled = false;
-    setAiLoading(true);
-    setAiInsights([]);
-
-    (async () => {
-      try {
-        const response = await fetch("/api/ai/insights", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectId: undefined }),
-        });
-        if (!response.ok || !response.body) return;
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        while (!cancelled) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const parts = buffer.split("\n\n");
-          buffer = parts.pop() ?? "";
-          for (const part of parts) {
-            const eventMatch = part.match(/^event:\s*(\S+)/m);
-            const dataMatch = part.match(/^data:\s*(.+)/m);
-            if (!eventMatch || !dataMatch) continue;
-            if (eventMatch[1] === "insight") {
-              try {
-                const payload = JSON.parse(dataMatch[1]) as { item?: AiInsightItem };
-                if (payload.item) setAiInsights((prev) => [...prev, payload.item]);
-              } catch { /* ignore malformed chunk */ }
-            }
-            if (eventMatch[1] === "done") {
-              cancelled = true;
-            }
-          }
-        }
-      } catch { /* non-fatal */ }
-      if (!cancelled) setAiLoading(false);
-    })();
-
-    return () => { cancelled = true; };
-  }, [data]);
 
   const completionRate = data && data.totalTasksShown > 0
     ? Math.round((data.totalTasksCompleted / data.totalTasksShown) * 100)
@@ -291,10 +298,6 @@ export default function InsightsPage() {
         return (e.completed / e.total) < (we.completed / we.total) ? day : worst;
       }, "Mon")
     : null;
-
-  if (!loading && reflectionCount < 7) {
-    return <BuildMindCalibrating count={reflectionCount} surface="patterns" />;
-  }
 
   return (
     <div style={{ maxWidth: 700, margin: "0 auto", padding: "32px 20px" }}>
@@ -376,24 +379,6 @@ export default function InsightsPage() {
             </InsightCard>
           )}
 
-          {(aiLoading || aiInsights.length > 0) && (
-            <InsightCard title="AI behavioral read" accent="var(--bm-accent)">
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {aiLoading && aiInsights.length === 0 && (
-                  <p style={{ fontSize: 12, color: "var(--bm-text3)", margin: 0 }}>Reading your patterns…</p>
-                )}
-                {aiInsights.map((insight, index) => (
-                  <div key={index} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: insight.type === "warning" ? "var(--bm-amber)" : insight.type === "positive" ? "var(--bm-accent)" : "var(--bm-text3)", flexShrink: 0, paddingTop: 1 }}>
-                      {insight.type === "warning" ? "!" : insight.type === "positive" ? "+" : "i"}
-                    </span>
-                    <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.6 }}>{insight.text}</p>
-                  </div>
-                ))}
-              </div>
-            </InsightCard>
-          )}
-
           {/* Confidence by outcome */}
           {Object.keys(data.avgConfidenceByOutcome).length > 0 && (
             <InsightCard title="Confidence when you complete vs skip">
@@ -462,7 +447,61 @@ export default function InsightsPage() {
             </InsightCard>
           )}
 
-          {/* Meta-critic signal */}
+          {/* ══ AI PATTERN ANALYSIS — streams in progressively ══════════════════ */}
+          {(aiLoading || aiInsights.length > 0) && (
+            <InsightCard title="AI pattern analysis" accent="var(--bm-accent)">
+              {/* Streaming skeleton — shown while loading */}
+              {aiLoading && aiInsights.length === 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {[0, 1, 2].map((i) => (
+                    <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                      <div style={{ width: 2, alignSelf: "stretch", borderRadius: 2, background: "var(--bm-border2)", flexShrink: 0 }} />
+                      <div style={{ flex: 1 }}>
+                        <div style={{ height: 12, borderRadius: 6, background: "var(--bm-bg3)", width: `${70 + i * 10}%`, animation: "pulse 1.4s ease-in-out infinite", marginBottom: 6 }} />
+                        <div style={{ height: 10, borderRadius: 5, background: "var(--bm-bg3)", width: "50%", animation: "pulse 1.4s ease-in-out infinite" }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Streamed insights */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {aiInsights.map((insight, i) => (
+                  <motion.div
+                    key={i}
+                    initial={{ opacity: 0, x: -6 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.3 }}
+                    style={{
+                      borderLeft: `2px solid ${
+                        insight.type === "warning"
+                          ? "var(--bm-amber)"
+                          : insight.type === "positive"
+                          ? "var(--bm-accent)"
+                          : "var(--bm-text3)"
+                      }`,
+                      paddingLeft: 14,
+                    }}
+                  >
+                    <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.6 }}>
+                      {insight.text}
+                    </p>
+                  </motion.div>
+                ))}
+              </div>
+
+              {/* Loading indicator alongside streamed items */}
+              {aiLoading && aiInsights.length > 0 && (
+                <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 8 }}>
+                  <div style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--bm-accent)", animation: "pulse 1s ease-in-out infinite" }} />
+                  <span style={{ fontSize: 11, color: "var(--bm-text4)" }}>Analysing more patterns…</span>
+                </div>
+              )}
+            </InsightCard>
+          )}
+
+          {/* ── Existing data-driven insight cards ───────────────────────────── */}
           {data.metacriticSignal && (
             <InsightCard title="AI pattern diagnosis" accent="var(--bm-teal)">
               <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.65 }}>

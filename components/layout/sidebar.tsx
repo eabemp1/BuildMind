@@ -121,10 +121,20 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
     void syncTasksCompletedFromServer().then(checkPending);
     window.addEventListener("storage", checkPending);
     window.addEventListener("bm_streak_updated", checkPending);
-    const interval = setInterval(checkPending, 8000);
+    let interval = setInterval(checkPending, 8000);
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        clearInterval(interval);
+      } else {
+        checkPending();
+        interval = setInterval(checkPending, 8000);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       window.removeEventListener("storage", checkPending);
       window.removeEventListener("bm_streak_updated", checkPending);
+      document.removeEventListener("visibilitychange", onVisibility);
       clearInterval(interval);
     };
   }, []);
@@ -315,7 +325,7 @@ export default function Sidebar() {
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               onClick={() => setMobileOpen(false)}
             />
-            <motion.div className="relative z-10 w-[260px] h-full flex flex-col"
+            <motion.div className="relative z-10 w-[220px] h-full flex flex-col"
               style={{ borderRight: "1px solid var(--bm-border)" }}
               initial={{ x: -260 }} animate={{ x: 0 }} exit={{ x: -260 }}
               transition={{ type: "spring", stiffness: 300, damping: 30 }}

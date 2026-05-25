@@ -24,7 +24,7 @@ export async function GET() {
       .from("founder_context")
       .select("blueprint_first_used")
       .eq("user_id", user.id)
-      .single();
+      .maybeSingle();
 
     return NextResponse.json({ ok: true, used: data?.blueprint_first_used ?? false });
   } catch {

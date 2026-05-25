@@ -86,7 +86,7 @@ export async function POST(request: Request) {
         .select("name, title, description, problem, target_users, startup_stage")
         .eq("id", projectId)
         .eq("user_id", userId)
-        .single();
+        .maybeSingle();
 
       if (project) {
         projectContext = `Project: ${project.name ?? project.title}

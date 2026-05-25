@@ -62,7 +62,7 @@ function RecoveryModeCardInner({ onComplete }: Props) {
         animate={{ opacity: 1, scale: 1 }}
         transition={{ type: "spring", stiffness: 300, damping: 25 }}
         style={{
-          background: "linear-gradient(135deg, rgba(16,185,129,0.1) 0%, rgba(16,185,129,0.04) 100%)",
+          background: "var(--bm-green-dim)",
           border: "1px solid rgba(16,185,129,0.25)",
           borderRadius: 16,
           padding: "28px 24px",
@@ -105,7 +105,7 @@ function RecoveryModeCardInner({ onComplete }: Props) {
     >
       {/* Emotional header — this is the product's signature moment */}
       <div style={{
-        background: "linear-gradient(135deg, rgba(240,180,41,0.08) 0%, rgba(240,180,41,0.03) 100%)",
+        background: "var(--bm-accent-dim)",
         border: "1px solid rgba(240,180,41,0.22)",
         borderLeft: "3px solid #F0B429",
         borderRadius: "14px 14px 0 0",
@@ -164,7 +164,7 @@ function RecoveryModeCardInner({ onComplete }: Props) {
                 border: "none",
                 background: completing
                   ? "rgba(240,180,41,0.3)"
-                  : "linear-gradient(135deg, #F0B429 0%, #D4960D 100%)",
+                  : "var(--bm-accent)",
                 color: "#000",
                 fontWeight: 700,
                 fontSize: 15,
@@ -187,7 +187,7 @@ function RecoveryModeCardInner({ onComplete }: Props) {
               onClick={() => router.refresh()}
               style={{
                 background: "none",
-                border: "1px solid rgba(255,255,255,0.1)",
+                border: "1px solid var(--bm-border2)",
                 color: "var(--bm-text3)",
                 cursor: "pointer",
                 fontFamily: "inherit",

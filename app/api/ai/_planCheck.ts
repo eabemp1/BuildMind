@@ -11,6 +11,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { type Plan } from "@/lib/plan";
 import { getEffectivePlan } from "@/lib/server/plan";
+import type { User } from "@supabase/supabase-js";
 
 const PLAN_ORDER: Plan[] = ["free", "builder"];
 
@@ -73,15 +74,17 @@ export async function checkPlanAccess(requiredPlan: Plan): Promise<PlanCheckResu
 }
 
 /** For free-tier routes: just get the plan without gating */
-export async function getRouteUser(): Promise<{ plan: Plan; userId: string } | null> {
+export async function getRouteUser(): Promise<{ ok: true; plan: Plan; userId: string; user: User } | null> {
   try {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
     return {
+      ok: true,
       // FIX C1: use getEffectivePlan() so trial users get builder-level access
       plan: await getEffectivePlan(user.id),
       userId: user.id,
+      user,
     };
   } catch {
     return null;

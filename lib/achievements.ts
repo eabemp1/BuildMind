@@ -322,6 +322,7 @@ export function checkAndUnlockAchievements(): Achievement[] {
 
   if (newlyUnlocked.length > 0) {
     saveUnlocked(unlocked);
+    // Write to server for cross-device persistence — best-effort, never blocks
     if (typeof window !== "undefined") {
       fetch("/api/achievements", {
         method: "POST",

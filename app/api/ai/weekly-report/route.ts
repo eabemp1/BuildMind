@@ -69,8 +69,14 @@ export async function POST(request: Request) {
         weaknesses = activeProject.validation_weaknesses ?? [];
       }
 
+      // Fetch tasks, milestones AND reflections for this week only
+      // ─────────────────────────────────────────────────────────────
+      const now = new Date();
+      const weekAgo = new Date(now);
+      weekAgo.setDate(now.getDate() - 7);
+      const weekAgoISO = weekAgo.toISOString();
+
       // Get milestones and tasks for all user projects
-      const weekAgoISO = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
       const allProjectIds = (userProjects ?? []).map(p => p.id);
       if (allProjectIds.length > 0) {
         // Batch project IDs to avoid URL length limits
@@ -87,10 +93,15 @@ export async function POST(request: Request) {
             ? milestonesQuery.eq("project_id", batchIds[0])
             : milestonesQuery.in("project_id", batchIds);
         }));
-        const allMilestones: Array<{ id: string; status: string; updated_at?: string | null }> =
+        const allMilestones: Array<{ id: string; status: string; updated_at?: string }> =
           milestoneResults.flatMap((result) => result.data ?? []);
 
-        milestones = allMilestones.filter(m => m.status === 'completed' && new Date(m.updated_at ?? 0) >= new Date(weekAgoISO)).length;
+        // Only count milestones completed THIS WEEK (not all-time)
+        milestones = allMilestones.filter(m => {
+          if (m.status !== 'completed') return false;
+          const completedAt = m.updated_at ? new Date(m.updated_at) : null;
+          return completedAt ? completedAt >= weekAgo : false;
+        }).length;
 
         const milestoneIds = allMilestones.map(m => m.id);
         if (milestoneIds.length > 0) {
@@ -102,20 +113,63 @@ export async function POST(request: Request) {
           const taskResults = await Promise.all(milestoneBatches.map((batchIds) => {
             const tasksQuery = supabase
               .from("tasks")
-              .select("is_completed, updated_at");
+              .select("is_completed, updated_at")
+              .eq("is_completed", true)
+              .gte("updated_at", weekAgoISO); // Only tasks completed this week
             return batchIds.length === 1
               ? tasksQuery.eq("milestone_id", batchIds[0])
               : tasksQuery.in("milestone_id", batchIds);
           }));
-          const allUserTasks: Array<{ is_completed: boolean; updated_at?: string | null }> =
+          const allUserTasks: Array<{ is_completed: boolean; updated_at?: string }> =
             taskResults.flatMap((result) => result.data ?? []);
 
-          tasks = allUserTasks.filter(t => t.is_completed && new Date(t.updated_at ?? 0) >= new Date(weekAgoISO)).length;
+          tasks = allUserTasks.length; // All fetched tasks are already is_completed + this week
+
+          // Also count today-page completions from reflexion_learning_log
+          // (founders marking tasks "done" via the Today page check-in flow)
+          try {
+            // Source 1: reflexion_learning_log (outcome recorded via reflexion-outcome endpoint)
+            const { data: reflexionRows } = await supabase
+              .from("reflexion_learning_log")
+              .select("id")
+              .eq("user_id", userId)
+              .eq("outcome", "completed")
+              .gte("outcome_recorded_at", weekAgoISO);
+            const reflexionCount = (reflexionRows ?? []).length;
+
+            // Source 2: reflections table — written directly by /api/ai/reflect-action
+            // This is the primary write path when founders use the Today→Reflect flow
+            const { data: reflectionRows } = await supabase
+              .from("reflections")
+              .select("id")
+              .eq("user_id", userId)
+              .gte("created_at", weekAgoISO);
+            const reflectionCount = (reflectionRows ?? []).length;
+
+            // Source 3: behavior_state checkin_done_date — count unique days with a check-in
+            // founder_context stores last checkin date; check daily_stats for per-day history
+            const { data: dailyStats, error: dailyStatsError } = await supabase
+              .from("daily_stats")
+              .select("date")
+              .eq("user_id", userId)
+              .gte("date", weekAgoISO.split("T")[0])
+              .not("checkin_done_date", "is", null);
+            const dailyCheckinCount = dailyStatsError ? 0 : (dailyStats ?? []).length;
+
+            // Use the highest of all three counts — they can overlap but shouldn't undercount
+            tasks = Math.max(tasks, reflexionCount, reflectionCount, dailyCheckinCount);
+          } catch { /* non-fatal */ }
         }
       }
     }
 
     const momentumScore = clamp(15 + tasks * 7 + milestones * 10, 10, 95);
+
+    // reflectionCount is the most reliable signal for Today-page activity
+    // Re-derive it from tasks (which includes reflection rows) for the prompt
+    const activitySignal = tasks > 0
+      ? `${tasks} action${tasks !== 1 ? "s" : ""} completed or reflected on this week`
+      : "No completed actions recorded this week";
 
     const systemPrompt = `You are a brutally honest startup coach. Return ONLY valid JSON with exactly these keys:
 {
@@ -132,8 +186,9 @@ No preamble. No markdown. Only JSON.`;
 
     const userPrompt = `Weekly data for this founder:
 Projects: ${projects}
-Milestones completed total: ${milestones}
-Tasks completed total: ${tasks}
+Milestones completed this week: ${milestones}
+Tasks/actions completed this week: ${tasks}
+Activity summary: ${activitySignal}
 Momentum score (pre-computed): ${momentumScore}
 ${projectTitle ? `\nActive project: ${projectTitle}` : ""}
 ${projectStage ? `Stage: ${projectStage}` : ""}
@@ -146,11 +201,11 @@ Be specific. No generic startup advice. Reference what you actually see in the d
 
     let result: AIWeeklyReport = {
       summary: tasks === 0
-        ? "No tasks completed this week. The work isn't happening."
-        : `${tasks} task${tasks !== 1 ? "s" : ""} closed this week. ${milestones > 0 ? `${milestones} milestone${milestones !== 1 ? "s" : ""} complete.` : "No milestones closed yet."}`,
+        ? "No actions completed this week. The work isn't happening."
+        : `${tasks} action${tasks !== 1 ? "s" : ""} completed this week. ${milestones > 0 ? `${milestones} milestone${milestones !== 1 ? "s" : ""} closed.` : "Keep closing milestones to build compound progress."}`,
       intention_vs_action: tasks === 0
-        ? "You likely planned to make progress. You didn't complete any recorded tasks."
-        : `You completed ${tasks} task${tasks !== 1 ? "s" : ""}. Closing milestones consistently is the next level.`,
+        ? "You likely planned to make progress. No completed actions were recorded — either nothing happened or the check-in flow wasn't completed."
+        : `You completed ${tasks} action${tasks !== 1 ? "s" : ""} this week. ${milestones > 0 ? "Milestones are closing." : "Next level: close a full milestone."}`,
       biggest_gap: milestones === 0
         ? "No milestones closed. You're doing tasks but not finishing anything."
         : weaknesses.length > 0
@@ -224,6 +279,13 @@ Be specific. No generic startup advice. Reference what you actually see in the d
                 avg_confidence: Math.round(avgConfidence * 10) / 10,
                 biggest_gap: result.biggest_gap,
                 next_week_focus: result.next_week_focus,
+                // Intention vs execution rate — the single trend number for the founder
+                intention_vs_execution_rate: result.intention_vs_execution_rate ?? null,
+                execution_trend: result.execution_trend ?? "flat",
+                // Avoidance pattern summary for Monday's task calibration
+                avoidance_summary: newZones.slice(0, 3).join("; ") || null,
+                // Count of blocked/overridden tasks this week
+                override_count: blockedNotes.length,
                 generated_at: new Date().toISOString(),
               }),
             }, { onConflict: "user_id" });

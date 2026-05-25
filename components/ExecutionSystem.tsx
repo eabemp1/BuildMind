@@ -44,7 +44,7 @@ export type ExecutionSystem = {
 };
 
 const CATEGORY_META: Record<ExecutionSystem["category"], { label: string; icon: string; color: string }> = {
-  distribution:  { label: "Distribution", icon: "📡", color: "#818cf8" },
+  distribution:  { label: "Distribution", icon: "📡", color: "var(--bm-text2)" },
   validation:    { label: "Validation",   icon: "🧪", color: "#fbbf24" },
   revenue:       { label: "Revenue",      icon: "💰", color: "#4ade80" },
   retention:     { label: "Retention",    icon: "🔁", color: "#a78bfa" },
@@ -54,7 +54,7 @@ const CATEGORY_META: Record<ExecutionSystem["category"], { label: string; icon: 
 
 const STATUS_META: Record<SystemStatus, { label: string; color: string; pulse: boolean }> = {
   active:  { label: "Active",   color: "#4ade80", pulse: true  },
-  running: { label: "Running",  color: "#818cf8", pulse: true  },
+  running: { label: "Running",  color: "var(--bm-text2)", pulse: true  },
   paused:  { label: "Paused",   color: "#fbbf24", pulse: false },
   queued:  { label: "Queued",   color: "#9090a8", pulse: false },
 };
@@ -69,7 +69,7 @@ function ConfidenceDial({ value, color }: { value: number; color: string }) {
   return (
     <div style={{ position: "relative", width: size, height: size / 2 + stroke / 2 }}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ position: "absolute", top: 0 }}>
-        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth={stroke} />
+        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="var(--bm-border)" strokeWidth={stroke} />
         <circle
           cx={size/2} cy={size/2} r={r} fill="none"
           stroke={color} strokeWidth={stroke} strokeLinecap="round"
@@ -103,17 +103,17 @@ function PulsingDot({ color, pulse }: { color: string; pulse: boolean }) {
 function DecisionTreePreview({ node, color }: { node: DecisionNode; color: string }) {
   return (
     <div style={{ fontFamily: "monospace", fontSize: 10.5 }}>
-      <div style={{ color: "rgba(255,255,255,0.5)", marginBottom: 5 }}>
-        IF <span style={{ color: "rgba(255,255,255,0.8)" }}>{node.condition}</span>
+      <div style={{ color: "var(--bm-text2)", marginBottom: 5 }}>
+        IF <span style={{ color: "var(--bm-text)" }}>{node.condition}</span>
       </div>
       <div style={{ paddingLeft: 12, display: "flex", flexDirection: "column", gap: 3 }}>
         <div>
           <span style={{ color }}>✓ YES</span>
-          <span style={{ color: "rgba(255,255,255,0.55)", marginLeft: 6 }}>→ {node.yes}</span>
+          <span style={{ color: "var(--bm-text2)", marginLeft: 6 }}>→ {node.yes}</span>
         </div>
         <div>
           <span style={{ color: "#f87171" }}>✗ NO</span>
-          <span style={{ color: "rgba(255,255,255,0.55)", marginLeft: 8 }}>→ {node.no}</span>
+          <span style={{ color: "var(--bm-text2)", marginLeft: 8 }}>→ {node.no}</span>
         </div>
       </div>
     </div>
@@ -139,7 +139,7 @@ function SystemCard({ system, onRun, onToggle }: SystemCardProps) {
       animate={{ opacity: 1, y: 0 }}
       style={{
         background: "rgba(14,14,22,0.9)",
-        border: `1px solid ${expanded ? cat.color + "30" : "rgba(255,255,255,0.06)"}`,
+        border: `1px solid ${expanded ? cat.color + "30" : "var(--bm-border)"}`,
         borderRadius: 14,
         overflow: "hidden",
         transition: "border-color 0.2s",
@@ -169,7 +169,7 @@ function SystemCard({ system, onRun, onToggle }: SystemCardProps) {
               {cat.label}
             </span>
           </div>
-          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <div style={{ fontSize: 11, color: "var(--bm-text2)", fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             TRIGGER: {system.trigger}
           </div>
         </div>
@@ -197,32 +197,32 @@ function SystemCard({ system, onRun, onToggle }: SystemCardProps) {
             <div style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 14 }}>
               {/* Objective + KPI */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                <div style={{ padding: "10px 12px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)", borderRadius: 8 }}>
-                  <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", fontFamily: "monospace", letterSpacing: "0.08em", marginBottom: 4, textTransform: "uppercase" }}>Objective</div>
-                  <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)" }}>{system.objective}</div>
+                <div style={{ padding: "10px 12px", background: "var(--bm-border)", border: "1px solid var(--bm-border)", borderRadius: 8 }}>
+                  <div style={{ fontSize: 9, color: "var(--bm-text4)", fontFamily: "monospace", letterSpacing: "0.08em", marginBottom: 4, textTransform: "uppercase" }}>Objective</div>
+                  <div style={{ fontSize: 12, color: "var(--bm-text)" }}>{system.objective}</div>
                 </div>
-                <div style={{ padding: "10px 12px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)", borderRadius: 8 }}>
-                  <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", fontFamily: "monospace", letterSpacing: "0.08em", marginBottom: 4, textTransform: "uppercase" }}>KPI</div>
+                <div style={{ padding: "10px 12px", background: "var(--bm-border)", border: "1px solid var(--bm-border)", borderRadius: 8 }}>
+                  <div style={{ fontSize: 9, color: "var(--bm-text4)", fontFamily: "monospace", letterSpacing: "0.08em", marginBottom: 4, textTransform: "uppercase" }}>KPI</div>
                   <div style={{ fontSize: 12, color: cat.color, fontWeight: 600 }}>{system.kpi}</div>
                 </div>
               </div>
 
               {/* Decision tree */}
-              <div style={{ padding: "12px 14px", background: "rgba(0,0,0,0.25)", border: "1px solid rgba(255,255,255,0.04)", borderRadius: 8 }}>
-                <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", fontFamily: "monospace", letterSpacing: "0.08em", marginBottom: 8, textTransform: "uppercase" }}>Decision Gate</div>
+              <div style={{ padding: "12px 14px", background: "rgba(0,0,0,0.25)", border: "1px solid var(--bm-border)", borderRadius: 8 }}>
+                <div style={{ fontSize: 9, color: "var(--bm-text4)", fontFamily: "monospace", letterSpacing: "0.08em", marginBottom: 8, textTransform: "uppercase" }}>Decision Gate</div>
                 <DecisionTreePreview node={system.decisionTree} color={cat.color} />
               </div>
 
               {/* Execution steps */}
               <div>
-                <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", fontFamily: "monospace", letterSpacing: "0.08em", marginBottom: 8, textTransform: "uppercase" }}>Execution Steps</div>
+                <div style={{ fontSize: 9, color: "var(--bm-text4)", fontFamily: "monospace", letterSpacing: "0.08em", marginBottom: 8, textTransform: "uppercase" }}>Execution Steps</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                   {system.steps.map((step, i) => (
                     <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
                       <span style={{ fontSize: 9, color: cat.color, fontFamily: "monospace", fontWeight: 700, flexShrink: 0, marginTop: 1 }}>
                         {String(i + 1).padStart(2, "0")}
                       </span>
-                      <span style={{ fontSize: 12, color: "rgba(255,255,255,0.6)", lineHeight: 1.5 }}>{step}</span>
+                      <span style={{ fontSize: 12, color: "var(--bm-text2)", lineHeight: 1.5 }}>{step}</span>
                     </div>
                   ))}
                 </div>
@@ -230,7 +230,7 @@ function SystemCard({ system, onRun, onToggle }: SystemCardProps) {
 
               {/* Footer: frequency + action buttons */}
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 4 }}>
-                <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", fontFamily: "monospace" }}>
+                <div style={{ fontSize: 10, color: "var(--bm-text4)", fontFamily: "monospace" }}>
                   {system.frequency === "trigger-based" ? "⚡ Trigger-based" : `🔄 ${system.frequency}`}
                   {system.lastRun && <span style={{ marginLeft: 10 }}>Last: {system.lastRun}</span>}
                 </div>
@@ -239,8 +239,8 @@ function SystemCard({ system, onRun, onToggle }: SystemCardProps) {
                     onClick={(e) => { e.stopPropagation(); onToggle(system.id); }}
                     style={{
                       padding: "6px 12px", borderRadius: 7,
-                      background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)",
-                      color: "rgba(255,255,255,0.4)", fontSize: 11, fontWeight: 600,
+                      background: "var(--bm-border)", border: "1px solid var(--bm-border2)",
+                      color: "var(--bm-text2)", fontSize: 11, fontWeight: 600,
                       cursor: "pointer", fontFamily: "inherit",
                     }}
                   >
@@ -251,9 +251,9 @@ function SystemCard({ system, onRun, onToggle }: SystemCardProps) {
                     disabled={!isRunnable}
                     style={{
                       padding: "6px 14px", borderRadius: 7,
-                      background: isRunnable ? `${cat.color}18` : "rgba(255,255,255,0.03)",
-                      border: `1px solid ${isRunnable ? cat.color + "35" : "rgba(255,255,255,0.06)"}`,
-                      color: isRunnable ? cat.color : "rgba(255,255,255,0.2)",
+                      background: isRunnable ? `${cat.color}18` : "var(--bm-border)",
+                      border: `1px solid ${isRunnable ? cat.color + "35" : "var(--bm-border)"}`,
+                      color: isRunnable ? cat.color : "var(--bm-border3)",
                       fontSize: 11, fontWeight: 700, cursor: isRunnable ? "pointer" : "default",
                       fontFamily: "inherit",
                     }}
@@ -284,7 +284,7 @@ function MissionControlHeader({ systems }: { systems: ExecutionSystem[] }) {
           <h2 style={{ fontSize: 20, fontWeight: 800, color: "#f0f0f6", letterSpacing: "-0.03em", margin: 0 }}>
             Execution Systems
           </h2>
-          <p style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", margin: "4px 0 0", lineHeight: 1.5 }}>
+          <p style={{ fontSize: 12, color: "var(--bm-text3)", margin: "4px 0 0", lineHeight: 1.5 }}>
             Automated operational playbooks — not tasks. Each system is a decision engine.
           </p>
         </div>
@@ -293,11 +293,11 @@ function MissionControlHeader({ systems }: { systems: ExecutionSystem[] }) {
           {[
             { label: "Active", value: active, color: "#4ade80" },
             { label: "Paused", value: paused, color: "#fbbf24" },
-            { label: "Total",  value: systems.length, color: "rgba(255,255,255,0.4)" },
+            { label: "Total",  value: systems.length, color: "var(--bm-text2)" },
           ].map(({ label, value, color }) => (
-            <div key={label} style={{ padding: "8px 14px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10, textAlign: "center" }}>
+            <div key={label} style={{ padding: "8px 14px", background: "var(--bm-border)", border: "1px solid var(--bm-border)", borderRadius: 10, textAlign: "center" }}>
               <div style={{ fontSize: 18, fontWeight: 800, color, fontFamily: "monospace", lineHeight: 1 }}>{value}</div>
-              <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", marginTop: 3, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</div>
+              <div style={{ fontSize: 9, color: "var(--bm-text4)", marginTop: 3, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</div>
             </div>
           ))}
         </div>
@@ -330,7 +330,7 @@ export default function ExecutionSystems({
       <div style={{ padding: "40px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
         <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
           style={{ width: 28, height: 28, borderRadius: "50%", border: "2px solid rgba(168,213,186,0.2)", borderTopColor: "rgba(168,213,186,0.8)" }} />
-        <span style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", fontFamily: "monospace" }}>Booting systems…</span>
+        <span style={{ fontSize: 12, color: "var(--bm-text4)", fontFamily: "monospace" }}>Booting systems…</span>
       </div>
     );
   }
@@ -340,7 +340,7 @@ export default function ExecutionSystems({
       <div style={{ padding: "48px 0", textAlign: "center" }}>
         <div style={{ fontSize: 36, marginBottom: 14 }}>⚙️</div>
         <div style={{ fontSize: 14, fontWeight: 700, color: "#f0f0f6", marginBottom: 6 }}>No systems deployed</div>
-        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", maxWidth: 340, margin: "0 auto" }}>
+        <div style={{ fontSize: 12, color: "var(--bm-text3)", maxWidth: 340, margin: "0 auto" }}>
           Generate your execution systems from your venture blueprint. Each system is an automated decision engine, not a task list.
         </div>
       </div>
@@ -363,8 +363,8 @@ export default function ExecutionSystems({
                 onClick={() => setFilter(cat as typeof filter)}
                 style={{
                   padding: "5px 12px", borderRadius: 7, border: "none",
-                  background: isActive ? (meta ? `${meta.color}18` : "rgba(168,213,186,0.12)") : "rgba(255,255,255,0.03)",
-                  color: isActive ? (meta?.color ?? "rgba(168,213,186,1)") : "rgba(255,255,255,0.35)",
+                  background: isActive ? (meta ? `${meta.color}18` : "rgba(168,213,186,0.12)") : "var(--bm-border)",
+                  color: isActive ? (meta?.color ?? "rgba(168,213,186,1)") : "var(--bm-text3)",
                   fontSize: 11, fontWeight: isActive ? 700 : 400, cursor: "pointer", fontFamily: "inherit",
                   outline: isActive ? `1px solid ${meta?.color ?? "rgba(168,213,186,0.3)"}` : "none",
                   transition: "all 0.15s",

@@ -18,7 +18,8 @@ import {
   type BuildMindTask,
 } from "@/lib/buildmind";
 import { observeTaskEvent } from "@/lib/founderMemory";
-import { fetchFounderContext, momentumOnTaskComplete, updateFounderContext } from "@/lib/founderContext";
+// A5 FIX: founderContext imports removed — momentumOnTaskComplete/updateFounderContext were the
+// client-side momentum writers that raced with the server. Server is now sole authority.
 
 export const queryKeys = {
   projects: ["projects"] as const,
@@ -151,23 +152,19 @@ export function useUpdateTaskMutation(projectId: string) {
             ?.tasks.find(t => t.id === variables.taskId)?.title ?? "task",
           "completed"
         );
-        const ctx = await fetchFounderContext();
-        if (ctx) {
-          const newScore = momentumOnTaskComplete(ctx.momentum_score);
-          void updateFounderContext({ momentum_score: newScore });
-          const projectData = qc.getQueryData<{ project?: { id?: string } }>(
-            queryKeys.project(projectId),
-          );
-          const dbProjectId = projectData?.project?.id ?? projectId;
-          if (dbProjectId) {
-            const { createClient } = await import("@/lib/supabase/client");
-            const supabase = createClient();
-            await supabase
-              .from("projects")
-              .update({ momentum_score: newScore })
-              .eq("id", dbProjectId);
-          }
-        }
+        // A5 FIX: Remove the client-side momentum write. Previously the client
+        // read ctx.momentum_score, computed a new value, and wrote it to BOTH
+        // founder_context AND projects — racing with the server-side
+        // task-complete endpoint doing the same thing. Last TCP packet won,
+        // silently discarding whichever write arrived earlier.
+        //
+        // Server is now the single authority for momentum_score:
+        // /api/founder-context/task-complete reads the DB-fresh score and
+        // writes the authoritative new value. The client must NOT write momentum
+        // — it only invalidates its cache so it re-fetches the server value.
+        //
+        // observeTaskEvent() above still runs client-side (behavioral signals
+        // only; it does NOT touch momentum_score).
         void fetch("/api/founder-context/task-complete", {
           method: "POST",
           headers: { "Content-Type": "application/json" },

@@ -9,6 +9,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme>("dark");
 
   useEffect(() => {
+    // bm_theme is intentionally raw localStorage — it's a device-level UI preference
+    // with no user identity requirement. Reading it before auth is both correct and
+    // necessary to avoid a flash of the wrong theme on mount.
     const saved = (localStorage.getItem("bm_theme") as Theme | null) ?? "dark";
     setTheme(saved);
     document.documentElement.classList.toggle("light-mode", saved === "light");
@@ -17,7 +20,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const toggle = () => {
     setTheme(prev => {
       const next: Theme = prev === "dark" ? "light" : "dark";
-      localStorage.setItem("bm_theme", next);
+      localStorage.setItem("bm_theme", next); // intentionally raw — see comment above
       document.documentElement.classList.toggle("light-mode", next === "light");
       return next;
     });

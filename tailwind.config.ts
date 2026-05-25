@@ -9,6 +9,11 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        syne: ["'Syne'", "sans-serif"],
+        inter: ["'Inter'", "sans-serif"],
+        mono: ["'DM Mono'", "monospace"],
+      },
       colors: {
         brand: {
           50: "#ecf9f4",

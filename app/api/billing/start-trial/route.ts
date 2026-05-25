@@ -20,13 +20,12 @@ export async function POST(req: Request) {
   const { data: { user }, error } = await supabase.auth.getUser();
   if (error || !user) return NextResponse.json({ ok: false }, { status: 401 });
 
-  let trialStartedAt: string;
-  try {
-    const body = await req.json().catch(() => ({})) as { trialStartedAt?: string };
-    trialStartedAt = body.trialStartedAt ?? new Date().toISOString();
-  } catch {
-    trialStartedAt = new Date().toISOString();
-  }
+  // F1/A1 FIX: Server always generates the trial start timestamp.
+  // The client-supplied body value is intentionally ignored — accepting a
+  // caller-controlled timestamp would allow permanent free-plan exploits.
+  // Consume and discard the request body so the connection closes cleanly.
+  await req.json().catch(() => {});
+  const trialStartedAt: string = new Date().toISOString();
 
   const trialEndsAt = new Date(
     new Date(trialStartedAt).getTime() + TRIAL_DURATION_DAYS * 24 * 60 * 60 * 1000,

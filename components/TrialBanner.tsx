@@ -23,6 +23,7 @@
 import { useState, useEffect } from "react";
 import { X, Zap, Lock, Check } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { storage } from "@/lib/storage";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -202,13 +203,13 @@ export function TrialWelcomeCard({ daysRemaining }: TrialWelcomeCardProps) {
 
   useEffect(() => {
     try {
-      const dismissed = localStorage.getItem(WELCOME_DISMISSED_KEY);
+      const dismissed = storage.get(WELCOME_DISMISSED_KEY);
       if (!dismissed && daysRemaining > 0) setVisible(true);
     } catch {}
   }, [daysRemaining]);
 
   function dismiss() {
-    try { localStorage.setItem(WELCOME_DISMISSED_KEY, "1"); } catch {}
+    try { storage.set(WELCOME_DISMISSED_KEY, "1"); } catch {}
     setVisible(false);
   }
 

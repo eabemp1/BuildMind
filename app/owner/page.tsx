@@ -195,7 +195,7 @@ export default function OwnerPanel() {
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {(["free", "builder"] as Plan[]).map(p => (
                 <button key={p} onClick={() => applyPlan(p)}
-                  style={BTN(plan === p, p === "builder" ? "#6366f1" : "#555")}>
+                  style={BTN(plan === p, p === "builder" ? "var(--bm-accent)" : "#555")}>
                   {p.charAt(0).toUpperCase() + p.slice(1)}
                   {plan === p && " active"}
                 </button>

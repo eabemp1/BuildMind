@@ -50,11 +50,11 @@ export default function ProjectCard({
     <GlowCard className="group flex h-full flex-col gap-4 p-6" interactive>
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs uppercase tracking-[0.2em] text-indigo-200/80">Project</p>
+          <p className="text-xs uppercase tracking-[0.2em] text-[var(--bm-accent)]/80">Project</p>
           <h3 className="mt-2 text-lg font-semibold bm-text">{title}</h3>
           <p className="text-body mt-2">{description || "No description yet."}</p>
         </div>
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--bm-border2)] bg-white/5 bm-text">
+        <div className="flex h-10 w-10 items-center justify-center rounded-[var(--r-xl)] border border-[var(--bm-border2)] bg-white/5 bm-text">
           <Target size={18} />
         </div>
       </div>
@@ -95,7 +95,7 @@ export default function ProjectCard({
           <button
             type="button"
             onClick={() => onDelete(id)}
-            className="flex w-full items-center justify-center gap-2 rounded-lg border border-rose-400/30 bg-rose-500/10 px-4 py-2 text-sm text-rose-200 transition duration-200 hover:scale-105 hover:bg-rose-500/20 hover:shadow-lg"
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-rose-400/30 bg-[var(--bm-red-dim)]/10 px-4 py-2 text-sm text-[var(--bm-red)] transition duration-200 hover:scale-105 hover:bg-[var(--bm-red-dim)]/20 hover:shadow-lg"
             disabled={deleting}
           >
             <Trash2 className="h-4 w-4" />

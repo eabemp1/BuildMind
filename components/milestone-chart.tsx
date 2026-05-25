@@ -21,7 +21,7 @@ export default function MilestoneChart({ data }: MilestoneChartProps) {
             <XAxis dataKey="milestone" stroke="#71717a" tickLine={false} axisLine={false} />
             <YAxis stroke="#71717a" tickLine={false} axisLine={false} unit="%" />
             <Tooltip />
-            <Bar dataKey="completion" fill="#818cf8" radius={[6, 6, 0, 0]} />
+            <Bar dataKey="completion" fill="var(--bm-text2)" radius={[6, 6, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </CardContent>

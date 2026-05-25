@@ -104,7 +104,7 @@ export function ScoreBreakdown(props: ScoreBreakdownProps) {
               style={{
                 position: "absolute", top: "calc(100% + 10px)", left: "50%", transform: "translateX(-50%)",
                 zIndex: 50, width: 280,
-                background: "rgba(14,14,22,0.97)", border: "1px solid rgba(255,255,255,0.09)",
+                background: "rgba(14,14,22,0.97)", border: "1px solid var(--bm-border2)",
                 borderRadius: 14, padding: "16px 18px", boxShadow: "0 16px 40px rgba(0,0,0,0.6)",
               }}
             >
@@ -133,7 +133,7 @@ export function ScoreBreakdown(props: ScoreBreakdownProps) {
                 </div>
               ))}
 
-              <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.06)", fontSize: 11, color: "#444" }}>
+              <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--bm-border)", fontSize: 11, color: "#444" }}>
                 Score updates from execution quality, momentum, validation, XP, and streak.
               </div>
             </motion.div>

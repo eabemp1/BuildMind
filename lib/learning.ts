@@ -460,7 +460,7 @@ export async function getLearnedPatterns(userId: string): Promise<LearnedPattern
       .from("founder_context")
       .select("learned_patterns")
       .eq("user_id", userId)
-      .single();
+      .maybeSingle();
 
     if (ctx?.learned_patterns && (ctx.learned_patterns as LearnedPatterns).total_logged > 0) {
       return ctx.learned_patterns as LearnedPatterns;
@@ -569,7 +569,7 @@ export async function recordActionShown(params: {
         outcome: "pending",
       })
       .select("id")
-      .single();
+      .maybeSingle();
 
     if (error || !data) return null;
     return data.id as string;

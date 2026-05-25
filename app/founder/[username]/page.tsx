@@ -32,7 +32,7 @@ export default function FounderProfilePage() {
   return (
     <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
       {loading ? <p className="text-sm text-zinc-400">Loading founder...</p> : null}
-      {error ? <p className="text-sm text-rose-400">{error}</p> : null}
+      {error ? <p className="text-sm text-[var(--bm-red)]">{error}</p> : null}
 
       {profile ? (
         <>

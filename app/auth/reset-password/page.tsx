@@ -114,10 +114,7 @@ export default function ResetPasswordPage() {
         aria-hidden
         className="pointer-events-none absolute inset-[-60px]"
         style={{
-          backgroundImage: `
-            linear-gradient(rgba(92,200,138,0.012) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(92,200,138,0.012) 1px, transparent 1px)
-          `,
+          backgroundImage: "none",
           backgroundSize: "52px 52px",
           maskImage: "radial-gradient(ellipse 80% 70% at 50% 42%, black 12%, transparent 82%)",
           WebkitMaskImage: "radial-gradient(ellipse 80% 70% at 50% 42%, black 12%, transparent 82%)",
@@ -126,10 +123,10 @@ export default function ResetPasswordPage() {
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0"
-        style={{ background: "radial-gradient(ellipse at 50% 0%, rgba(92,200,138,0.075) 0%, transparent 65%)" }}
+        style={{ background: "transparent" }}
       />
       <div
-        className="relative z-10 w-full max-w-md rounded-[18px] p-8"
+        className="relative z-10 w-full max-w-md rounded-[var(--r-xl)] p-8"
         style={{
           background: "var(--bm-bg2)",
           border: "1px solid var(--bm-border2)",
@@ -155,8 +152,8 @@ export default function ResetPasswordPage() {
             <Button className="w-full" disabled={loading}>
               {loading ? "Sending..." : "Send reset link"}
             </Button>
-            {error ? <p className="text-sm text-rose-400">{error}</p> : null}
-            {notice ? <p className="text-sm text-emerald-300">{notice}</p> : null}
+            {error ? <p className="text-sm text-[var(--bm-red)]">{error}</p> : null}
+            {notice ? <p className="text-sm text-[var(--bm-green)]">{notice}</p> : null}
             <p className="text-xs bm-text3">
               You will receive an email with a secure link. Open it to set a new password.
             </p>
@@ -180,8 +177,8 @@ export default function ResetPasswordPage() {
             <Button className="w-full" disabled={loading}>
               {loading ? "Updating..." : "Update password"}
             </Button>
-            {error ? <p className="text-sm text-rose-400">{error}</p> : null}
-            {notice ? <p className="text-sm text-emerald-300">{notice}</p> : null}
+            {error ? <p className="text-sm text-[var(--bm-red)]">{error}</p> : null}
+            {notice ? <p className="text-sm text-[var(--bm-green)]">{notice}</p> : null}
           </form>
         )}
       </div>

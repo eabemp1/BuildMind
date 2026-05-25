@@ -72,14 +72,14 @@ export async function POST(req: Request) {
     rating,
     is_public,
     source,
-  }).select("id").single();
+  }).select("id").maybeSingle();
 
   if (error) {
     console.error("[testimonials] insert error:", error.message);
     return NextResponse.json({ error: "Failed to save." }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, id: data.id });
+  return NextResponse.json({ ok: true, id: data?.id ?? null });
 }
 
 /**

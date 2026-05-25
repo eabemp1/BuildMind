@@ -33,6 +33,21 @@ import { groqJSON, enforceAndTrackAIUsage } from "@/app/api/ai/_utils";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { logError } from "@/lib/server/logger";
 
+import { z } from "zod";
+
+const HistoryEntrySchema = z.object({
+  outcome: z.enum(["completed", "blocked", "partial", "learned"]),
+  note: z.string().max(2000).default(""),
+  confidence: z.number().min(0).max(5),
+  daysAgo: z.number().int().min(0).max(365),
+});
+
+const SynthesisInputSchema = z.object({
+  history: z.array(HistoryEntrySchema).max(90),
+  stage: z.string().max(100).default("idea"),
+  streak: z.number().int().min(0).max(9999).default(0),
+});
+
 interface HistoryEntry {
   outcome: "completed" | "blocked" | "partial" | "learned";
   note: string;
@@ -130,7 +145,15 @@ export async function POST(request: Request) {
   }
 
   try {
-    const body: SynthesisInput = await request.json();
+    const rawBody = await request.json().catch(() => ({}));
+    const parseResult = SynthesisInputSchema.safeParse(rawBody);
+    if (!parseResult.success) {
+      return NextResponse.json(
+        { success: false, error: "Invalid request body", issues: parseResult.error.issues },
+        { status: 400 }
+      );
+    }
+    const body: SynthesisInput = parseResult.data;
     const { history, stage, streak } = body;
 
     if (!history || history.length < 5) {

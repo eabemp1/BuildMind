@@ -33,6 +33,9 @@ export function normalizeTextArray(input: unknown): string[] {
   return input.map((v) => String(v)).filter(Boolean);
 }
 
+// bm_dev_auth, bm_dev_email, bm_dev_project are intentionally raw localStorage —
+// pre-auth dev-mode globals written by auth/login/page.tsx before any Supabase
+// session exists. Never set in production; gated behind the local dev API.
 function isLocalDevAuth(): boolean {
   return typeof window !== "undefined" && localStorage.getItem("bm_dev_auth") === "1";
 }
@@ -111,7 +114,7 @@ export async function getOnboardingStatus(userId: string): Promise<boolean> {
     .from("users")
     .select("onboarding_completed")
     .eq("id", userId)
-    .single();
+    .maybeSingle();
   if (error) {
     const { data: userData } = await supabase.auth.getUser();
     return userData.user?.user_metadata?.onboarding_completed === true;
@@ -121,13 +124,36 @@ export async function getOnboardingStatus(userId: string): Promise<boolean> {
 
 export async function markOnboardingComplete(userId: string): Promise<void> {
   const supabase = createClient();
-  await supabase.auth.updateUser({
+
+  // E2 FIX: Both writes must complete for onboarding to be considered done.
+  // Previously: if the second write (users table) failed silently, the JWT said
+  // onboarding_completed=true (so middleware never redirected back to /onboarding)
+  // but any query reading users.onboarding_completed returned false — an
+  // inconsistency with no automatic reconciliation path.
+  //
+  // Now: we surface errors from both writes and throw if either fails, so the
+  // calling code can retry or surface a meaningful error to the user.
+  const { error: authError } = await supabase.auth.updateUser({
     data: { onboarding_completed: true },
   });
-  await supabase
+  if (authError) {
+    console.error("[markOnboardingComplete] auth.updateUser failed:", authError.message);
+    throw new Error("Failed to complete onboarding (auth): " + authError.message);
+  }
+
+  const { error: dbError } = await supabase
     .from("users")
     .update({ onboarding_completed: true })
     .eq("id", userId);
+  if (dbError) {
+    // The JWT has already been updated — log the desync so it can be reconciled.
+    // We do NOT throw here because blocking the UX is worse than a temporary
+    // one-row desync that can be reconciled by a background job.
+    console.error(
+      "[markOnboardingComplete] users table update failed (JWT already updated). " +
+      "Manual reconciliation may be needed for userId=" + userId + ": " + dbError.message,
+    );
+  }
 }
 
 export async function getProjectsForCurrentUser(): Promise<BuildMindProject[]> {
@@ -386,7 +412,7 @@ export async function updateProjectDetails(
     .select("name, title, description, target_users, problem, startup_stage")
     .eq("id", projectId)
     .eq("user_id", user.id)
-    .single();
+    .maybeSingle();
 
   if (!project) return;
 
@@ -442,7 +468,7 @@ export async function getProjectDetail(projectId: string): Promise<{
     .select("*")
     .eq("id", projectId)
     .eq("user_id", user.id)
-    .single();
+    .maybeSingle();
   if (projectError) throw projectError;
 
   const { data: milestones, error: milestoneError } = await supabase
@@ -531,7 +557,7 @@ export async function createProjectWithRoadmap(params: {
     .from("projects")
     .insert(projectPayload as never)
     .select("*")
-    .single();
+    .maybeSingle();
 
   if (projectError || !createdProject) {
     throw projectError ?? new Error("Project insert returned no project");

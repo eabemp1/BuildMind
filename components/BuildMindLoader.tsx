@@ -39,7 +39,7 @@ function AnimatedMark({ size = 72 }: { size?: number }) {
         transition={{ duration: 2.6, repeat: Infinity, ease: "easeInOut" }}
         style={{
           position: "absolute", inset: -size * 0.2, borderRadius: "50%",
-          background: "radial-gradient(circle, rgba(111,207,151,0.3) 0%, transparent 70%)",
+          background: "transparent",
           pointerEvents: "none",
         }}
       />
@@ -49,7 +49,7 @@ function AnimatedMark({ size = 72 }: { size?: number }) {
         transition={{ duration: 2.6, repeat: Infinity, ease: "easeInOut", delay: 0.7 }}
         style={{
           position: "absolute", inset: -size * 0.08, borderRadius: "50%",
-          background: "radial-gradient(circle, rgba(111,207,151,0.2) 0%, transparent 65%)",
+          background: "transparent",
           pointerEvents: "none",
         }}
       />

@@ -47,8 +47,26 @@ export default function AchievementToast() {
       setQueue(prev => [...prev, ...items]);
     };
     check();
-    const interval = setInterval(check, 4000);
-    return () => clearInterval(interval);
+    // Use a longer interval and pause when hidden — 4s on all tabs at once
+    // generates ~15 storage reads/second across 5 tabs.
+    let interval = setInterval(check, 4000);
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        clearInterval(interval);
+      } else {
+        check();
+        interval = setInterval(check, 4000);
+      }
+    };
+    // Also check immediately when a check-in fires so toast appears instantly
+    const onCheckin = () => check();
+    window.addEventListener("bm_checkin_done", onCheckin);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("bm_checkin_done", onCheckin);
+    };
   }, []);
 
   // When queue gets items and nothing is showing, show first
@@ -128,7 +146,7 @@ export default function AchievementToast() {
             <motion.div
               style={{
                 position: "absolute", top: 0, left: "-100%", right: 0, height: 2,
-                background: `linear-gradient(90deg, transparent, ${colors.text}, transparent)`,
+                background: "var(--bm-border)",
               }}
               animate={{ left: ["−100%", "200%"] }}
               transition={{ duration: 1.5, delay: 0.3, repeat: 2 }}

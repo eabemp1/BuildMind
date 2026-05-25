@@ -217,7 +217,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
                 { key: "recommended",label:"Recommended",items: keywordResults.recommendations, onClick: (i: any) => goToFeature(i.href),  display: (i: any) => i.label },
               ].filter(g => g.items.length > 0).map(group => (
                 <div key={group.key} style={{ marginBottom: 4 }}>
-                  <div style={{ fontSize: 9, color: "var(--bm-text4)", letterSpacing: "0.12em", textTransform: "uppercase", padding: "6px 10px 3px", fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" }}>
+                  <div style={{ fontSize: 9, color: "var(--bm-text4)", letterSpacing: "0.12em", textTransform: "uppercase", padding: "6px 10px 3px", fontWeight: 600, fontFamily: "'DM Mono', monospace" }}>
                     {group.label}
                   </div>
                   {group.items.map((item: any, idx: number) => (

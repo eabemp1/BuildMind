@@ -52,13 +52,15 @@ export async function getFreshPlanForUser(user: UserLike): Promise<Plan> {
 /**
  * getEffectivePlan — trial-aware plan resolution.
  *
- * Returns "builder" if the user has an active free trial, regardless of
- * what is stored in user_metadata. Falls back to getFreshPlanForUser()
- * for all other cases.
+ * A2 FIX: subscriptions table is now the canonical source of truth.
+ * Read order:
+ *   1. founder_context.trial_ends_at  — active trial → "builder" immediately
+ *   2. subscriptions.plan + status    — paid subscription canonical record
+ *   3. user_metadata (JWT cache)      — fallback if subscriptions row absent
+ *      (e.g. legacy accounts that predated the subscriptions table)
  *
- * This is the function that should be called in every plan guard path.
- * getFreshPlanForUser() should only be called directly when you explicitly
- * want the paid-plan check without trial consideration.
+ * This eliminates the desync window where a webhook failure left
+ * user_metadata on "free" while subscriptions had "builder".
  */
 export async function getEffectivePlan(userId: string): Promise<Plan> {
   if (!hasAdminPlanLookupEnv()) return "free";
@@ -66,22 +68,34 @@ export async function getEffectivePlan(userId: string): Promise<Plan> {
   try {
     const admin = createAdminClient();
 
-    // Check trial status first — runs a single indexed lookup on user_id
+    // 1. Active trial check — single indexed lookup, fast path
     const { data: ctx } = await admin
       .from("founder_context")
       .select("trial_ends_at")
       .eq("user_id", userId)
-      .single();
+      .maybeSingle();
 
-    if (ctx?.trial_ends_at) {
-      const trialEnd = new Date(ctx.trial_ends_at);
-      if (trialEnd > new Date()) {
-        // Active trial — treat as builder
-        return "builder";
-      }
+    if (ctx?.trial_ends_at && new Date(ctx.trial_ends_at) > new Date()) {
+      return "builder";
     }
 
-    // No active trial — fall back to metadata plan
+    // 2. Canonical plan from subscriptions table (A2 fix — primary source)
+    const { data: sub } = await admin
+      .from("subscriptions")
+      .select("plan, status")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (sub?.plan) {
+      // Only grant builder if the subscription is in an active/grace state
+      const activeStatuses = ["active", "grace", "trialing"];
+      if (sub.plan === "builder" && !activeStatuses.includes(sub.status ?? "")) {
+        return "free";
+      }
+      return sub.plan as Plan;
+    }
+
+    // 3. Legacy fallback — user_metadata JWT cache (pre-subscriptions accounts)
     const { data: authUser } = await admin.auth.admin.getUserById(userId);
     return planFromUserMetadata(authUser?.user);
   } catch {

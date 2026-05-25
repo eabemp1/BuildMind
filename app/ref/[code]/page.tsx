@@ -16,6 +16,8 @@ export default function RefPage() {
   useEffect(() => {
     if (code) {
       try {
+        // bm_ref_code is read on the login page before any user is authenticated —
+        // intentionally raw localStorage (no user scope available yet).
         localStorage.setItem("bm_ref_code", code);
       } catch {}
     }

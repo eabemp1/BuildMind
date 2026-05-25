@@ -67,7 +67,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ success: false, error: "Missing admin env" }, { status: 500 });
   }
   if (!process.env.RESEND_API_KEY) {
-    return NextResponse.json({ success: false, error: "RESEND_API_KEY not set — skipping email sends" }, { status: 200 });
+    return NextResponse.json({ success: false, error: "RESEND_API_KEY not set — skipping email sends" }, { status: 503 });
   }
 
   const supabase    = createAdminClient();

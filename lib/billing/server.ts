@@ -87,51 +87,63 @@ export async function persistUserPlan(userId: string, plan: PublicPlan, update: 
   });
   if (updateError) throw new Error(updateError.message);
 
-  // ── Dual-write to subscriptions table (Audit v8 ENG #1) ─────────────────
-  // The subscriptions table is the target architecture — user_metadata is kept
-  // in sync during the transition but is not the source of truth going forward.
+  // ── A2 FIX: subscriptions is now the canonical source of truth ────────────
+  // Previous behaviour: three silent writes to user_metadata (primary),
+  // subscriptions (silently swallowed on failure), and profiles (guaranteed
+  // silent .then(undefined, undefined)). Any write failure left the stores
+  // inconsistent with no reconciliation path.
+  //
+  // New behaviour:
+  //   1. subscriptions table: PRIMARY write — throws on failure so the caller
+  //      (webhook handler) can return a 500 and Paystack will retry.
+  //   2. user_metadata: SECONDARY sync — kept for the JWT fast-path used by
+  //      the client SDK. A failure here is logged but non-fatal: getEffectivePlan()
+  //      will still read the correct plan from subscriptions on next server call.
+  //   3. profiles: REMOVED — admin dashboard now reads from subscriptions directly.
+  //
+  // getEffectivePlan() in lib/server/plan.ts reads subscriptions first (see below).
+
   const subscriptionRow = {
-    user_id:                 userId,
+    user_id:                  userId,
     plan,
-    status:                  (update.status ?? (plan === "builder" ? "active" : "free")) as string,
-    provider:                update.provider ?? null,
+    status:                   (update.status ?? (plan === "builder" ? "active" : "free")) as string,
+    provider:                 update.provider ?? null,
     provider_subscription_id: update.subscriptionId ?? null,
-    provider_customer_id:    update.customerId ?? null,
-    provider_reference:      update.reference ?? null,
-    current_period_start:    update.periodStart ?? null,
-    current_period_end:      update.periodEnd ?? null,
-    grace_period_ends_at:    update.gracePeriodEndsAt ?? (update.meta?.grace_period_ends_at as string | null) ?? null,
-    canceled_at:             update.status === "canceled" ? new Date().toISOString() : null,
-    customer_email:          update.customerEmail ?? null,
-    amount_minor:            update.amountMinor ?? null,
-    currency:                update.currency ?? "GHS",
+    provider_customer_id:     update.customerId ?? null,
+    provider_reference:       update.reference ?? null,
+    current_period_start:     update.periodStart ?? null,
+    current_period_end:       update.periodEnd ?? null,
+    grace_period_ends_at:     update.gracePeriodEndsAt ?? (update.meta?.grace_period_ends_at as string | null) ?? null,
+    canceled_at:              update.status === "canceled" ? new Date().toISOString() : null,
+    customer_email:           update.customerEmail ?? null,
+    amount_minor:             update.amountMinor ?? null,
+    currency:                 update.currency ?? "GHS",
+    updated_at:               new Date().toISOString(),
   };
 
-  try {
-    const subscriptions = supabase.from("subscriptions") as {
-      upsert?: (
-        row: typeof subscriptionRow,
-        options: { onConflict: string },
-      ) => PromiseLike<unknown>;
-    };
-
-    if (typeof subscriptions.upsert === "function") {
-      await Promise.resolve(subscriptions.upsert(subscriptionRow, { onConflict: "user_id" }))
-        .then(() => undefined, (err) => {
-          // Non-fatal: user_metadata was already updated. Log and continue.
-          console.warn("[billing/persistUserPlan] subscriptions upsert failed:", err?.message ?? err);
-        });
-    }
-  } catch (err) {
-    console.warn("[billing/persistUserPlan] subscriptions upsert unavailable:", err instanceof Error ? err.message : err);
+  // PRIMARY write — must succeed or the whole operation fails (webhook will retry)
+  const { error: subError } = await supabase
+    .from("subscriptions")
+    .upsert(subscriptionRow, { onConflict: "user_id" });
+  if (subError) {
+    throw new Error(`[billing/persistUserPlan] subscriptions upsert failed: ${subError.message}`);
   }
 
-  // Also sync to profiles for any UI that reads from there
-  await supabase
-    .from("profiles")
-    .update({ plan })
-    .eq("id", userId)
-    .then(() => undefined, () => undefined);
+  // SECONDARY sync — user_metadata JWT cache. Non-fatal: a stale JWT is
+  // corrected on the next getEffectivePlan() server read from subscriptions.
+  try {
+    const { error: metaError } = await supabase.auth.admin.updateUserById(userId, {
+      user_metadata: nextMetadata,
+    });
+    if (metaError) {
+      console.warn("[billing/persistUserPlan] user_metadata sync failed (non-fatal):", metaError.message);
+    }
+  } catch (err) {
+    console.warn("[billing/persistUserPlan] user_metadata sync threw (non-fatal):", err instanceof Error ? err.message : err);
+  }
+
+  // profiles sync REMOVED (A2 fix) — was always silent and created desync.
+  // Admin dashboard reads plan from subscriptions table directly.
 
   return {
     plan,

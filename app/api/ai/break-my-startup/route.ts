@@ -4,6 +4,7 @@ import { enforceAndTrackAIUsage, groqJSON, groqReasoningJSON, hasAdminEnv, logRe
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { logError } from "@/lib/server/logger";
+import { withAgentConcurrencyLimit } from "@/lib/server/concurrency";
 
 export const runtime    = "nodejs";
 export const dynamic    = "force-dynamic";
@@ -409,7 +410,8 @@ export async function POST(request: Request) {
       };
 
       // Run 5-agent pipeline
-      const agentPipeline = await runAgentPipeline(startupCtx);
+      // C2 FIX: Gate the 5-agent fan-out behind a concurrency limiter
+      const agentPipeline = await withAgentConcurrencyLimit(() => runAgentPipeline(startupCtx));
       const signals = agentPipeline.signal_summary;
 
       // Viability score
@@ -441,14 +443,19 @@ export async function POST(request: Request) {
       let learningLogId: string | null = null;
       let reflexionStatus: ReflexionStatus = "partial";
       try {
-        reflexionAction = await runFullReflexionPipeline({
-          founderContext,
-          agentPipeline,
-          viabilityScore: viabilityResult,
-          task: `What is the single highest-leverage next action for this founder?${focusAreaPrompt}`,
-          executionMode: requestExecutionMode,
-          learnedPatternsPrompt: `${learnedPatternsPrompt}${focusAreaPrompt}`,
-        });
+        reflexionAction = await runFullReflexionPipeline(
+          {
+            founderContext,
+            agentPipeline,
+            viabilityScore: viabilityResult,
+            task: `What is the single highest-leverage next action for this founder?${focusAreaPrompt}`,
+            executionMode: requestExecutionMode,
+            learnedPatternsPrompt: `${learnedPatternsPrompt}${focusAreaPrompt}`,
+          },
+          // G1 FIX: Give reflexion 26 s from now (route maxDuration is 60 s; agent
+          // pipeline already consumed ~25 s, leaving ~35 s; 26 s is a safe budget).
+          Date.now() + 26_000,
+        );
 
         // Record action shown — starts the learning loop for this run
         if (reflexionAction?.action) {
@@ -574,7 +581,7 @@ export async function POST(request: Request) {
         .select("name,title,description,target_users,problem,startup_stage,validation_strengths,validation_weaknesses,validation_score,execution_score")
         .eq("id", projectId)
         .eq("user_id", userId)
-        .single(),
+        .maybeSingle(),
       supabase
         .from("milestones")
         .select("id,title,is_completed")
@@ -583,7 +590,7 @@ export async function POST(request: Request) {
         .from("founder_context")
         .select("momentum_score,cognitive_load,consecutive_tasks_completed,days_inactive,avoidance_signals,topics_repeated")
         .eq("user_id", userId)
-        .single(),
+        .maybeSingle(),
     ]);
 
     if (projectResult.status === "rejected" || projectResult.value.error) {
@@ -670,7 +677,8 @@ export async function POST(request: Request) {
     };
 
     // Run 5-agent pipeline with full project context
-    const agentPipeline = await runAgentPipeline(startupCtx);
+    // C2 FIX: Gate the 5-agent fan-out behind a concurrency limiter
+    const agentPipeline = await withAgentConcurrencyLimit(() => runAgentPipeline(startupCtx));
     const signals = agentPipeline.signal_summary;
 
     // Viability score — blend agent signals with execution data
@@ -747,7 +755,7 @@ export async function POST(request: Request) {
         .from("founder_context")
         .select("last_break_analysis")
         .eq("user_id", userId)
-        .single();
+        .maybeSingle();
 
       if (prevAnalysis?.last_break_analysis) {
         const prev = prevAnalysis.last_break_analysis as IterationRecord;

@@ -82,7 +82,7 @@ function ProgressBar({
 
 function SkeletonRow() {
   return (
-    <div className="h-16 rounded-xl bg-[var(--bm-bg3)] animate-pulse" />
+    <div className="h-16 rounded-[var(--r-xl)] bg-[var(--bm-bg3)] animate-pulse" />
   );
 }
 
@@ -132,7 +132,7 @@ function CreateModal({
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96 }}
         transition={{ duration: 0.18 }}
-        className="w-full max-w-md rounded-2xl p-5 sm:p-7 flex flex-col gap-5"
+        className="w-full max-w-md rounded-[var(--r-xl)] p-5 sm:p-7 flex flex-col gap-5"
         style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)" }}
       >
         <div className="flex items-start justify-between">
@@ -479,7 +479,7 @@ export default function ProjectsPage() {
               animate={{ opacity: 1 }}
               transition={{ delay: 0.4 }}
               onClick={() => setShowCreate(true)}
-              className="w-full py-5 rounded-xl text-sm flex items-center justify-center gap-2 transition-all duration-150"
+              className="w-full py-5 rounded-[var(--r-xl)] text-sm flex items-center justify-center gap-2 transition-all duration-150"
               style={{
                 border: "2px dashed var(--bm-border)",
                 background: "transparent",

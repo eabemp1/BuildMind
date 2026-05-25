@@ -1,36 +1,58 @@
-import type { LucideIcon } from "lucide-react";
 import { Card } from "@/components/ui/card";
 
 export function StatCard({
-  icon: Icon,
   label,
   value,
   delta,
   color = "var(--bm-accent)",
 }: {
-  icon: LucideIcon;
   label: string;
   value: string | number;
   delta?: string;
   color?: string;
 }) {
   return (
-    <Card className="p-4 rounded-[10px] border border-[var(--bm-border)] bg-[var(--bm-bg2)] shadow-none">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-md border border-[var(--bm-border)] bg-[var(--bm-bg3)]">
-          <Icon size={20} style={{ color }} />
+    <Card style={{ padding: "12px 14px", borderRadius: "var(--r-lg)" }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
+        <div
+          style={{
+            fontFamily: "'Syne', sans-serif",
+            fontSize: 22,
+            fontWeight: 700,
+            letterSpacing: "-0.03em",
+            color: color !== "var(--bm-accent)" ? color : "var(--bm-text)",
+            lineHeight: 1,
+          }}
+        >
+          {value}
         </div>
         {delta ? (
-          <span className="rounded border border-[var(--bm-border)] bg-[var(--bm-bg3)] px-2 py-1 font-mono text-[11px] text-[var(--bm-text3)]">
+          <span
+            style={{
+              fontFamily: "'DM Mono', monospace",
+              fontSize: 9,
+              color: "var(--bm-text3)",
+              padding: "2px 6px",
+              border: "1px solid var(--bm-border)",
+              borderRadius: "var(--r-sm)",
+              flexShrink: 0,
+            }}
+          >
             {delta}
           </span>
         ) : null}
       </div>
-      <div className="mt-4 text-[11px] font-normal uppercase tracking-[0.05em] text-[var(--bm-text3)]">
+      <div
+        style={{
+          fontFamily: "'DM Mono', monospace",
+          fontSize: 9,
+          textTransform: "uppercase",
+          letterSpacing: "0.10em",
+          color: "var(--bm-text3)",
+          marginTop: 8,
+        }}
+      >
         {label}
-      </div>
-      <div className="mt-1 text-[26px] font-light leading-none tracking-[-0.04em] text-[var(--bm-text)] [font-variant-numeric:tabular-nums]">
-        {value}
       </div>
     </Card>
   );

@@ -22,12 +22,12 @@ interface MrrWidgetProps {
 
 const VIZ = {
   bg: "rgba(12,12,18,0.98)",
-  border: "rgba(255,255,255,0.06)",
+  border: "var(--bm-border)",
   borderFocus: "rgba(99,102,241,0.5)",
   text1: "#f0f0f5",
   text2: "#9494a8",
   text3: "#4a4a5a",
-  indigo: "#6366f1",
+  indigo: "var(--bm-accent)",
   green: "#4ade80",
   amber: "#fbbf24",
 };

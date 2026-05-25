@@ -4,7 +4,7 @@ const cardStyle = {
   border: "1px solid var(--bm-border2)",
   borderRadius: "14px",
   padding: "16px",
-  background: "rgba(255,255,255,0.02)",
+  background: "var(--bm-border)",
 };
 
 export default function LegalHomePage() {

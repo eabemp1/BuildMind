@@ -87,19 +87,16 @@ function AuthWorldCanvas() {
         <div
           className="absolute inset-[-56px]"
           style={{
-            backgroundImage: `
-              linear-gradient(rgba(92,200,138,0.010) 1px, transparent 1px),
-              linear-gradient(90deg, rgba(92,200,138,0.010) 1px, transparent 1px)
-            `,
+            backgroundImage: "none",
             backgroundSize: "52px 52px",
             animation: "auth-grid-drift 22s linear infinite",
             maskImage: "radial-gradient(ellipse 82% 68% at 50% 38%, rgba(0,0,0,0.82) 12%, transparent 82%)",
             WebkitMaskImage: "radial-gradient(ellipse 82% 68% at 50% 38%, rgba(0,0,0,0.82) 12%, transparent 82%)",
           }}
         />
-        <div style={{ position: "absolute", width: 700, height: 500, top: -80, left: "50%", transform: "translateX(-50%)", background: "radial-gradient(ellipse, rgba(92,200,138,0.07) 0%, rgba(74,184,176,0.03) 40%, transparent 70%)" }} />
-        <div style={{ position: "absolute", width: 500, height: 400, top: "50%", left: "62%", transform: "translate(-50%,-50%)", background: "radial-gradient(ellipse, rgba(74,184,176,0.04) 0%, transparent 65%)" }} />
-        <div style={{ position: "absolute", width: 400, height: 300, bottom: "12%", left: "12%", background: "radial-gradient(ellipse, rgba(155,127,232,0.03) 0%, transparent 65%)" }} />
+        <div style={{ position: "absolute", width: 700, height: 500, top: -80, left: "50%", transform: "translateX(-50%)", background: "transparent" }} />
+        <div style={{ position: "absolute", width: 500, height: 400, top: "50%", left: "62%", transform: "translate(-50%,-50%)", background: "transparent" }} />
+        <div style={{ position: "absolute", width: 400, height: 300, bottom: "12%", left: "12%", background: "transparent" }} />
         <div ref={starsRef} className="absolute inset-0" />
         <svg
           className="absolute inset-0 h-full w-full"
@@ -351,7 +348,7 @@ function AnimatedWordmark() {
           fontFamily: "'DM Serif Display', serif",
           fontStyle: "italic",
           fontSize: "1.8rem",
-          background: "linear-gradient(135deg,#6EDA9C,#4AB8B0)",
+          background: "var(--bm-accent)",
           WebkitBackgroundClip: "text",
           WebkitTextFillColor: "transparent",
           backgroundClip: "text",
@@ -412,11 +409,11 @@ interface StatCardProps {
 function StatCard({ label, dot, value, sub, style, animDuration, animDelay }: StatCardProps) {
   return (
     <div
-      className="absolute rounded-xl px-3.5 py-2.5 whitespace-nowrap backdrop-blur-sm"
+      className="absolute rounded-[var(--r-xl)] px-3.5 py-2.5 whitespace-nowrap backdrop-blur-sm"
       style={{
         ...style,
         background: "rgba(19,19,21,.78)",
-        border: "1px solid rgba(255,255,255,.035)",
+        border: "1px solid var(--bm-border)",
         boxShadow: "0 18px 48px rgba(0,0,0,.34)",
         animation: `float ${animDuration} ease-in-out infinite, fade-in .5s ${animDelay} ease forwards`,
         opacity: 0,
@@ -424,7 +421,7 @@ function StatCard({ label, dot, value, sub, style, animDuration, animDelay }: St
       }}
     >
       <div style={{ position: "absolute", top: 0, left: "12%", right: "12%", height: 1,
-        background: "linear-gradient(90deg,transparent,rgba(92,200,138,.2),transparent)" }} />
+        background: "var(--bm-border)" }} />
       <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".1em",
         color: "var(--bm-text3, #44445A)", marginBottom: 3, display: "flex", alignItems: "center", gap: 4 }}>
         <span style={{ width: 4, height: 4, borderRadius: "50%", background: dot,
@@ -447,7 +444,7 @@ function LeftPanel() {
       animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.7 }}
       className="hidden lg:flex w-[52%] relative z-10 flex-col items-center justify-center overflow-hidden"
-      style={{ background: "rgba(12,12,13,0.72)", minHeight: "100vh", borderRight: "1px solid rgba(255,255,255,0.028)", backdropFilter: "blur(1px)" }}
+      style={{ background: "rgba(12,12,13,0.72)", minHeight: "100vh", borderRight: "1px solid var(--bm-border)", backdropFilter: "blur(1px)" }}
     >
       <style>{`
         @keyframes signature-draw {
@@ -466,10 +463,7 @@ function LeftPanel() {
       `}</style>
 
       <div className="absolute inset-0 pointer-events-none" style={{
-        backgroundImage: `
-          linear-gradient(rgba(92,200,138,0.006) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(92,200,138,0.006) 1px, transparent 1px)
-        `,
+        backgroundImage: "none",
         backgroundSize: "52px 52px",
         maskImage: "radial-gradient(ellipse at 50% 50%, black 0%, transparent 72%)",
       }} />
@@ -477,7 +471,7 @@ function LeftPanel() {
       <div className="absolute pointer-events-none" style={{
         top: "50%", left: "50%",
         width: 600, height: 600,
-        background: "radial-gradient(ellipse, rgba(92,200,138,0.065) 0%, rgba(74,184,176,0.025) 40%, transparent 70%)",
+        background: "transparent",
         borderRadius: "50%",
         animation: "breathe 20s ease-in-out infinite",
         transform: "translate(-50%,-50%)",
@@ -489,7 +483,7 @@ function LeftPanel() {
 
       <div className="absolute left-0 right-0 pointer-events-none" style={{
         height: 1,
-        background: "linear-gradient(90deg,transparent,rgba(92,200,138,0.16),transparent)",
+        background: "var(--bm-border)",
         animation: "auth-scan-line 7s linear infinite",
       }} />
 
@@ -544,7 +538,7 @@ function LeftPanel() {
           {(["Agents running", "Momentum tracked", "Loop active"] as const).map((label, i) => (
             <div
               key={label}
-              className="inline-flex items-center gap-1.5 rounded-full border border-[var(--bm-border2)] bg-[var(--bm-bg2)] px-3 py-1.5 text-[11px] font-semibold text-[var(--bm-text3)]"
+              className="inline-flex items-center gap-1.5 rounded-[var(--r-lg)] border border-[var(--bm-border2)] bg-[var(--bm-bg2)] px-3 py-1.5 text-[11px] font-semibold text-[var(--bm-text3)]"
               style={{ animation: `tag-pop .4s ${3.1 + i * 0.15}s ease forwards`, opacity: 0 }}
             >
               <span className="h-1.5 w-1.5 rounded-full animate-pulse" style={{ background: (["#5CC88A", "#4AB8B0", "#9B7FE8"] as const)[i] }} />
@@ -597,6 +591,9 @@ function LoginContent() {
           body: JSON.stringify({ email, password }),
         }).catch(() => null);
         if (devAuth?.ok) {
+          // bm_dev_auth / bm_dev_email are intentionally raw localStorage — written before
+          // any Supabase session exists, so no user ID is available for scoping.
+          // Read by lib/data/projects.ts and invite/page.tsx to simulate auth in dev.
           localStorage.setItem("bm_dev_auth", "1");
           localStorage.setItem("bm_dev_email", email.trim().toLowerCase());
           router.replace("/onboarding");
@@ -661,7 +658,7 @@ function LoginContent() {
       {/* Vertical divider */}
       <div
         className="hidden lg:block w-px self-stretch flex-shrink-0 relative z-10"
-        style={{ background: "linear-gradient(to bottom, transparent, rgba(255,255,255,0.028) 28%, rgba(255,255,255,0.028) 72%, transparent)" }}
+        style={{ background: "var(--bm-border)" }}
       />
 
       {/* Right panel */}
@@ -790,12 +787,12 @@ function LoginContent() {
 
           {/* Divider */}
           <div className="flex items-center gap-2.5 my-4">
-            <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.045)" }} />
+            <div className="flex-1 h-px" style={{ background: "var(--bm-border)" }} />
             <span style={{ fontSize: 9.5, color: "var(--bm-text4, #28283A)", fontWeight: 700,
               letterSpacing: ".09em", textTransform: "uppercase" }}>
               or continue with email
             </span>
-            <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.045)" }} />
+            <div className="flex-1 h-px" style={{ background: "var(--bm-border)" }} />
           </div>
 
           {/* Form */}
@@ -837,7 +834,7 @@ function LoginContent() {
 
             <Button
               type="submit" fullWidth loading={loading} className="mt-1"
-              style={{ background: "var(--grad-primary, linear-gradient(135deg,#5CC88A,#4AB8B0))", color: "#04060A" }}
+              style={{ background: "var(--bm-accent)", color: "var(--bm-text-inv)" }}
             >
               {tab === "signin" ? "Sign In" : "Create Account"}
               {!loading && <ArrowRight size={14} />}
@@ -846,7 +843,7 @@ function LoginContent() {
 
           {/* Security badges */}
           <div className="flex items-center justify-center gap-3.5 pt-3.5 mt-4"
-            style={{ borderTop: "1px solid rgba(255,255,255,0.045)" }}>
+            style={{ borderTop: "1px solid var(--bm-border)" }}>
             {[
               { icon: <ShieldSVG />,      label: "256-bit SSL" },
               { icon: <LockSVG />,        label: "End-to-end encrypted" },

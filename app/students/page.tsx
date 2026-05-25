@@ -124,13 +124,13 @@ export default function StudentsPage() {
 
           <section style={{ background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.14)", borderRadius: 14, padding: "28px 32px", marginBottom: 64 }}>
             <h2 style={{ fontSize: 16, fontWeight: 600, color: "var(--bm-text)", margin: "0 0 16px" }}>The honest truth about student startups</h2>
-            {["Most student startup ideas die because the founder tries to build everything before talking to a single user. BuildMind&apos;s first action for every idea-stage founder: talk to 5 people today.",
-              "The gap between students who ship and those who don&apos;t is not intelligence — it&apos;s daily consistency. A 30-day streak beats a brilliant idea with no execution every time.",
-              "You don&apos;t need a co-founder, funding, or a perfect idea. You need to do one thing today. Reflect on it tonight. Do the next thing tomorrow.",
-              "The best time to build is at university — time, potential users nearby, and failure costs almost nothing. Most people wait until they have a salary to protect. Don&apos;t."].map((t, i) => (
+            {["Most student startup ideas die because the founder tries to build everything before talking to a single user. BuildMind's first action for every idea-stage founder: talk to 5 people today.",
+              "The gap between students who ship and those who don't is not intelligence — it&apos;s daily consistency. A 30-day streak beats a brilliant idea with no execution every time.",
+              "You don't need a co-founder, funding, or a perfect idea. You need to do one thing today. Reflect on it tonight. Do the next thing tomorrow.",
+              "The best time to build is at university — time, potential users nearby, and failure costs almost nothing. Most people wait until they have a salary to protect. Don't."].map((t, i) => (
               <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start", marginBottom: i < 3 ? 10 : 0 }}>
                 <span style={{ color: "var(--bm-purple)", flexShrink: 0, marginTop: 2 }}>→</span>
-                <p style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.7, margin: 0 }} dangerouslySetInnerHTML={{ __html: t }} />
+                <p style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.7, margin: 0 }}>{t}</p>
               </div>
             ))}
           </section>

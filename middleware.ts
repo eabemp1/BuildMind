@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { FEATURES } from "@/lib/features";
+import { isAdminUser } from "@/lib/server/adminAuth";
 
 export async function middleware(request: NextRequest) {
   // Generate a per-request nonce for CSP (W5 fix — replaces static unsafe-inline)
@@ -11,10 +12,18 @@ export async function middleware(request: NextRequest) {
   const csp = [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${devScriptSources}`,
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    // F5 FIX: Replace 'unsafe-inline' for styles with a per-request nonce.
+    // 'unsafe-inline' allows CSS injection attacks even when script-src is locked
+    // down — CSS attribute selectors can exfiltrate data via timing attacks.
+    // Using the same nonce as script-src locks inline styles to server-generated
+    // pages only. Google Fonts is still allowed as an external stylesheet source.
+    // Note: Next.js may still inject some critical CSS without a nonce attribute —
+    // 'unsafe-inline' is kept as a FALLBACK only for browsers that don't support
+    // nonces in style-src (all modern browsers do). The nonce takes precedence.
+    `style-src 'self' 'nonce-${nonce}' 'unsafe-inline' https://fonts.googleapis.com`,
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data: https:",
-    `connect-src 'self' https://*.supabase.co https://api.groq.com https://api.cerebras.ai https://generativelanguage.googleapis.com${devConnectSources}`,
+    `connect-src 'self' https://*.supabase.co https://api.groq.com https://api.cerebras.ai https://generativelanguage.googleapis.com https://api.anthropic.com${devConnectSources}`,
     "frame-ancestors 'none'",
   ].join("; ");
 
@@ -116,13 +125,11 @@ export async function middleware(request: NextRequest) {
 
     if (user) {
       try {
-        const res = await fetch(new URL("/api/system/admin-check", request.url), {
-          headers: { cookie: request.headers.get("cookie") ?? "" },
-        });
-        if (res.ok) {
-          const json = await res.json();
-          isAdmin = json.isAdmin === true;
-        }
+        // A3 FIX: Call isAdminUser() directly instead of making an HTTP
+        // self-request back through the public internet. The self-fetch doubled
+        // latency, risked cold-start loops, and leaked session cookies through
+        // the network stack into logs.
+        isAdmin = await isAdminUser(user.id);
       } catch {}
     }
 
@@ -160,25 +167,19 @@ export async function middleware(request: NextRequest) {
   }
 
   if ((user || isDevAuthed) && !isApiRoute) {
-    const metadataCompleted = user?.user_metadata?.onboarding_completed === true;
-
-    // Fast path: if the JWT metadata already confirms onboarding, skip the
-    // database project-count query. This removes a live DB call on every
-    // page request for the vast majority of returning users.
-    // The slow path (DB query) only runs for new users who haven't yet had
-    // their metadata stamped, or for dev-auth sessions.
+    // Always verify via DB project count — the JWT onboarding_completed flag
+    // can become stale if the user deletes all their projects, which would
+    // permanently block them from re-entering onboarding. The DB query is
+    // fast (indexed on user_id, head-only count) and runs on every page
+    // request only for authenticated users, which is acceptable.
     let onboardingCompleted: boolean;
-    if (metadataCompleted) {
-      onboardingCompleted = true;
-    } else {
-      const { count: projectCount } = user
-        ? await supabase!
-            .from("projects")
-            .select("id", { count: "exact", head: true })
-            .eq("user_id", user.id)
-        : { count: isDevOnboarded ? 1 : 0 };
-      onboardingCompleted = (projectCount ?? 0) > 0;
-    }
+    const { count: projectCount } = user
+      ? await supabase!
+          .from("projects")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", user.id)
+      : { count: isDevOnboarded ? 1 : 0 };
+    onboardingCompleted = (projectCount ?? 0) > 0;
 
     if (!onboardingCompleted && !isOnboardingRoute) {
       const redirectUrl = request.nextUrl.clone();
@@ -194,7 +195,12 @@ export async function middleware(request: NextRequest) {
 
     const isPrivateRoute = !isPublicRoute && !isApiRoute;
     const hasSeenToday = request.cookies.get("bm_today_seen")?.value === todayKey;
-    if (onboardingCompleted && isPrivateRoute && pathname !== "/today" && !hasSeenToday) {
+    // Only redirect to /today when the user arrives at the root path ("/") or
+    // navigates directly to a non-specific entry point. Do NOT redirect mid-session
+    // from pages like /settings or /projects/[id] — this would destroy unsaved
+    // form state at midnight when the bm_today_seen cookie expires.
+    const isEntryNavigation = pathname === "/" || pathname === "/overview";
+    if (onboardingCompleted && isPrivateRoute && isEntryNavigation && !hasSeenToday) {
       const redirectUrl = request.nextUrl.clone();
       redirectUrl.pathname = "/today";
       redirectUrl.searchParams.set("next", pathname);
@@ -215,9 +221,15 @@ export async function middleware(request: NextRequest) {
   }
 
   if ((user || isDevAuthed) && pathname === "/today") {
+    // B3 FIX: Add secure flag so the cookie is not transmitted over plain HTTP
+    // on staging/preview deployments. Without it the cookie is readable by
+    // adjacent scripts (XSS) and surveyable on any non-TLS connection.
+    // httpOnly: true prevents JS access (this cookie has no client-side purpose).
     response.cookies.set("bm_today_seen", todayKey, {
       path: "/",
       sameSite: "lax",
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
       maxAge: 60 * 60 * 24,
     });
   }

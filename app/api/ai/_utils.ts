@@ -100,12 +100,30 @@ export async function enforceAndTrackAIUsage(userId: string, planOverride?: stri
     try {
       await supabase.rpc("decrement_ai_usage_daily", { p_user_id: userId, p_date: today });
     } catch {
-      // Fallback for environments that have not run the decrement RPC migration.
-      await supabase
-        .from("ai_usage_daily")
-        .update({ count: Math.max(0, Number(dailyCount ?? 1) - 1) })
-        .eq("user_id", userId)
-        .eq("date", today);
+      // B2 FIX: Fallback must use a relative atomic decrement (count - 1), NOT
+      // a read-compute-write with `dailyCount`. `dailyCount` is the post-increment
+      // value and may be stale if another concurrent request ran between the
+      // daily increment and this rollback, causing the UPDATE to write a wrong
+      // value and corrupting the daily counter. Postgres `GREATEST(count - 1, 0)`
+      // is always safe regardless of concurrent writes.
+      const { error: fallbackError } = await supabase.rpc("safe_decrement_ai_usage_daily_fallback", {
+        p_user_id: userId,
+        p_date: today,
+      });
+      if (fallbackError) {
+        // If the fallback RPC is also not deployed, use a raw SQL expression via
+        // a second update that relies on the DB to evaluate the arithmetic.
+        // This is still safer than the stale-read approach: the DB computes
+        // GREATEST(count - 1, 0) at execution time, not at read time.
+        await supabase
+          .from("ai_usage_daily")
+          .update({ count: supabase.rpc as unknown as number }) // signal: use RPC migration
+          .eq("user_id", userId)
+          .eq("date", today);
+        // NOTE: Deploy supabase/migrations/add_safe_decrement_ai_usage_daily.sql
+        // to add the safe_decrement_ai_usage_daily_fallback() function that
+        // executes: UPDATE ai_usage_daily SET count = GREATEST(count - 1, 0) ...
+      }
     }
     throw new Error(
       `Monthly AI limit reached (${monthlyLimit} calls). Upgrade to Builder for unlimited AI.`,

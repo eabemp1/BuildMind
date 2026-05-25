@@ -12,6 +12,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { storage } from "@/lib/storage";
 import {
   BarChart2, Users, DollarSign, Brain, Activity, Shield, AlertTriangle,
   Webhook, RefreshCw, ChevronUp, ChevronDown, TrendingUp, CheckCircle2,
@@ -837,14 +838,14 @@ function VenturesTab() {
   const [done, setDone] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    try { const r = localStorage.getItem("bm_admin_ventures_done"); if (r) setDone(JSON.parse(r)); } catch {}
+    try { const r = storage.get("bm_admin_ventures_done"); if (r) setDone(JSON.parse(r)); } catch {}
   }, []);
 
   function toggle(vid: string, mid: string) {
     const key = `${vid}::${mid}`;
     setDone(prev => {
       const next = { ...prev, [key]: !prev[key] };
-      try { localStorage.setItem("bm_admin_ventures_done", JSON.stringify(next)); } catch {}
+      try { storage.set("bm_admin_ventures_done", JSON.stringify(next)); } catch {}
       return next;
     });
   }

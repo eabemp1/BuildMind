@@ -49,7 +49,7 @@ export async function GET(request: Request) {
           .select("startup_stage, title")
           .eq("id", projectId)
           .eq("user_id", userId)
-          .single(),
+          .maybeSingle(),
         supabase
           .from("milestones")
           .select("id, title, status, is_completed")

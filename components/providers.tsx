@@ -25,6 +25,7 @@ import { syncAchievementsFromServer } from "@/lib/achievements";
 import { fetchAndSyncStoredPlanFromBillingStatus } from "@/lib/plan";
 import { initStorageAuthSync } from "@/lib/storage";
 import { createClient } from "@/lib/supabase/client";
+import { broadcastTabEvent } from "@/lib/tabSync";
 
 /**
  * AUDIT FIX M1: Accepts nonce prop and stores it on window for any dynamically
@@ -64,7 +65,12 @@ export default function Providers({ children, nonce }: { children: React.ReactNo
     const { data: { subscription: cacheSubscription } } = supabase.auth.onAuthStateChange((event, session) => {
       const nextUserId = session?.user?.id ?? null;
       if (event === "SIGNED_OUT" || nextUserId !== activeUserId) {
-        queryClient.clear();
+        // Cancel any in-flight queries before clearing — otherwise a resolving
+        // fetch can call setQueryData after the clear and populate User B's UI
+        // with User A's data during the brief sign-out window.
+        void queryClient.cancelQueries().then(() => {
+          queryClient.clear();
+        });
         setShowBillingSynced(false);
       }
       activeUserId = nextUserId;
@@ -82,6 +88,8 @@ export default function Providers({ children, nonce }: { children: React.ReactNo
     // ── Plan sync ─────────────────────────────────────────────────────────────
     const syncPlan = async () => {
       const syncedPlan = await fetchAndSyncStoredPlanFromBillingStatus();
+      // Notify other open tabs of the plan change regardless of which tier
+      broadcastTabEvent({ type: "plan_updated", plan: syncedPlan });
       if (syncedPlan !== "builder") return;
       const shownKey = "bm_builder_sync_indicator_shown";
       if (sessionStorage.getItem(shownKey)) return;

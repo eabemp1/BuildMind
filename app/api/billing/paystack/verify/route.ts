@@ -31,8 +31,12 @@ type PaystackVerifyResponse = {
 
 export async function POST(req: NextRequest) {
   try {
-    const limit = await rateLimitAsync(`paystack-verify:${getClientIp(req)}`, 20, 15 * 60 * 1000, { failClosed: true });
-    if (!limit.ok) {
+    // F2 FIX: For authenticated routes, use user ID as the rate-limit key,
+    // not IP. IP can be trivially spoofed via X-Forwarded-For. We also keep
+    // a secondary IP bucket (failClosed: false — fail-open for availability)
+    // to catch pre-auth abuse. The userId bucket is set after auth below.
+    const ipLimit = await rateLimitAsync(`paystack-verify:ip:${getClientIp(req)}`, 30, 15 * 60 * 1000, { failClosed: true });
+    if (!ipLimit.ok) {
       return NextResponse.json(
         { ok: false, error: "Too many verification attempts. Try again shortly." },
         { status: 429 },
@@ -64,6 +68,11 @@ export async function POST(req: NextRequest) {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user?.id || !user.email) {
       return NextResponse.json({ ok: false, error: "Not authenticated" }, { status: 401 });
+    }
+    // F2 FIX: Now that we have the userId, enforce per-user rate limit
+    const userLimit = await rateLimitAsync(`paystack-verify:user:${user.id}`, 10, 15 * 60 * 1000, { failClosed: true });
+    if (!userLimit.ok) {
+      return NextResponse.json({ ok: false, error: "Too many verification attempts. Try again shortly." }, { status: 429 });
     }
 
     const paidAmount = data.data?.amount ?? 0;

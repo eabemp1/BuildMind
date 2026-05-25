@@ -21,7 +21,7 @@ export default function MilestoneCard({ title, status, progress, tasks }: Milest
         <ul className="space-y-2 text-sm bm-text2">
           {tasks.map((task) => (
             <li key={task.id} className="flex items-center gap-2 rounded-md border border-[var(--bm-border2)] bg-white/5 px-2 py-1">
-              <span className={task.done ? "text-emerald-400" : "bm-text3"}>{task.done ? "●" : "○"}</span>
+              <span className={task.done ? "text-[var(--bm-green)]" : "bm-text3"}>{task.done ? "●" : "○"}</span>
               <span>{task.title}</span>
             </li>
           ))}

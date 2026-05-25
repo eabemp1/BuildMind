@@ -36,9 +36,9 @@ const V = {
   cardHover:     "rgba(22,22,38,0.95)",
   border:        "rgba(99,102,241,0.12)",
   borderActive:  "rgba(99,102,241,0.45)",
-  borderSubtle:  "rgba(255,255,255,0.06)",
-  indigo:        "#6366f1",
-  violet:        "#8b5cf6",
+  borderSubtle:  "var(--bm-border)",
+  indigo:        "var(--bm-accent)",
+  violet:        "var(--bm-accent2)",
   indigoDim:     "rgba(99,102,241,0.08)",
   indigoBd:      "rgba(99,102,241,0.22)",
   text1:         "#f0f0f6",
@@ -55,7 +55,7 @@ interface UserPath     { id: string; label: string; weeks: string; goal: string;
 interface UserTrack    { id: string; name: string; description: string; industry: string; stage: string; color: string; createdAt: number; paths: UserPath[]; }
 
 const INDUSTRY_COLORS: Record<string, string> = {
-  SaaS: "#6366f1", Marketplace: "#8b5cf6", Mobile: "#a78bfa",
+  SaaS: "var(--bm-accent)", Marketplace: "var(--bm-accent2)", Mobile: "#a78bfa",
   Service: "#7c3aed", Custom: "#4f46e5",
 };
 const INDUSTRIES = ["SaaS", "Marketplace", "Mobile", "Service", "Custom"];
@@ -666,8 +666,8 @@ function BlueprintGenerator({ plan, planLoading = false }: { plan: string; planL
             style={{
               padding: "10px 22px", borderRadius: 10, border: "none",
               background: input.trim() && !loading
-                ? `linear-gradient(135deg, ${V.indigo}, ${V.violet})`
-                : "rgba(255,255,255,0.04)",
+                ? "var(--bm-accent)"
+                : "var(--bm-border)",
               color: input.trim() && !loading ? "#fff" : V.text3,
               fontSize: 13, fontWeight: 700,
               cursor: input.trim() && !loading ? "pointer" : "not-allowed",
@@ -791,11 +791,11 @@ function TrackTimeline({ track, onBack, onUpdate }: { track: UserTrack; onBack: 
       </div>
 
       {/* Progress bar */}
-      <div style={{ height: 4, background: "rgba(255,255,255,0.05)", borderRadius: 2, marginBottom: 28, overflow: "hidden" }}>
+      <div style={{ height: 4, background: "var(--bm-border)", borderRadius: 2, marginBottom: 28, overflow: "hidden" }}>
         <motion.div
           initial={{ width: 0 }} animate={{ width: `${pct}%` }}
           transition={{ duration: 0.8, ease: "easeOut" }}
-          style={{ height: "100%", background: `linear-gradient(90deg, ${V.indigo}, ${V.violet})`, borderRadius: 2 }}
+          style={{ height: "100%", background: "var(--bm-accent)", borderRadius: 2 }}
         />
       </div>
 
@@ -911,17 +911,17 @@ function NewSystemWizard({ onSave, onCancel }: { onSave: (t: UserTrack) => void;
           <div style={{ marginBottom: 14 }}>
             <div style={{ fontSize: 11, color: V.text2, marginBottom: 5, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600 }}>System name</div>
             <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. SafeRemit, HealthTrack, CreatorOS…"
-              style={{ width: "100%", background: "rgba(255,255,255,0.03)", border: `1px solid ${V.border}`, borderRadius: 8, padding: "10px 12px", fontSize: 13, color: V.text1, outline: "none", fontFamily: "inherit", boxSizing: "border-box" }} />
+              style={{ width: "100%", background: "var(--bm-border)", border: `1px solid ${V.border}`, borderRadius: 8, padding: "10px 12px", fontSize: 13, color: V.text1, outline: "none", fontFamily: "inherit", boxSizing: "border-box" }} />
           </div>
           <div style={{ marginBottom: 18 }}>
             <div style={{ fontSize: 11, color: V.text2, marginBottom: 5, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600 }}>One-line description</div>
             <input value={desc} onChange={e => setDesc(e.target.value)} placeholder="e.g. Mobile remittance for migrant workers in Ghana"
-              style={{ width: "100%", background: "rgba(255,255,255,0.03)", border: `1px solid ${V.border}`, borderRadius: 8, padding: "10px 12px", fontSize: 13, color: V.text1, outline: "none", fontFamily: "inherit", boxSizing: "border-box" }} />
+              style={{ width: "100%", background: "var(--bm-border)", border: `1px solid ${V.border}`, borderRadius: 8, padding: "10px 12px", fontSize: 13, color: V.text1, outline: "none", fontFamily: "inherit", boxSizing: "border-box" }} />
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={() => setStep("industry")} style={{ flex: 1, padding: 11, borderRadius: 8, border: `1px solid ${V.border}`, background: "transparent", color: V.text2, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>← Back</button>
             <button onClick={create} disabled={!name.trim()}
-              style={{ flex: 2, padding: 11, borderRadius: 8, border: "none", background: name.trim() ? `linear-gradient(135deg,${V.indigo},${V.violet})` : "rgba(255,255,255,0.04)", color: name.trim() ? "#fff" : V.text3, fontSize: 12, fontWeight: 700, cursor: name.trim() ? "pointer" : "not-allowed", fontFamily: "inherit" }}>
+              style={{ flex: 2, padding: 11, borderRadius: 8, border: "none", background: name.trim() ? `linear-gradient(135deg,${V.indigo},${V.violet})` : "var(--bm-border)", color: name.trim() ? "#fff" : V.text3, fontSize: 12, fontWeight: 700, cursor: name.trim() ? "pointer" : "not-allowed", fontFamily: "inherit" }}>
               Create system →
             </button>
           </div>
@@ -1021,7 +1021,7 @@ function VenturesContent() {
       {/* Tab switcher */}
       <div style={{
         display: "flex", gap: 4, marginBottom: 28,
-        background: "rgba(255,255,255,0.02)", borderRadius: 12,
+        background: "var(--bm-border)", borderRadius: 12,
         padding: 4, border: `1px solid ${V.borderSubtle}`,
       }}>
         {([
@@ -1032,7 +1032,7 @@ function VenturesContent() {
             style={{
               flex: 1, padding: "9px 0", borderRadius: 9, border: "none",
               background: tab === t.id
-                ? `linear-gradient(135deg, ${V.indigo}, ${V.violet})`
+                ? "var(--bm-accent)"
                 : "transparent",
               color: tab === t.id ? "#fff" : V.text2,
               fontSize: 12, fontWeight: 700, cursor: "pointer",

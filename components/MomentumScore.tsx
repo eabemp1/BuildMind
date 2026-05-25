@@ -42,7 +42,7 @@ export default function MomentumScore({
       {/* Ring */}
       <div style={{ position: "relative", width: s.ring, height: s.ring, flexShrink: 0 }}>
         <svg width={s.ring} height={s.ring} viewBox={`0 0 ${s.ring} ${s.ring}`} style={{ transform: "rotate(-90deg)" }}>
-          <circle cx={s.ring / 2} cy={s.ring / 2} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={s.strokeW} />
+          <circle cx={s.ring / 2} cy={s.ring / 2} r={r} fill="none" stroke="var(--bm-border)" strokeWidth={s.strokeW} />
           <motion.circle
             cx={s.ring / 2} cy={s.ring / 2} r={r} fill="none"
             stroke={color} strokeWidth={s.strokeW} strokeLinecap="round"
@@ -85,8 +85,8 @@ export default function MomentumScore({
           style={{
             fontSize: 10, fontWeight: 600,
             color: delta > 0 ? "#4ade80" : "#f87171",
-            background: delta > 0 ? "rgba(74,222,128,0.1)" : "rgba(248,113,113,0.1)",
-            border: `1px solid ${delta > 0 ? "rgba(74,222,128,0.25)" : "rgba(248,113,113,0.25)"}`,
+            background: delta > 0 ? "var(--bm-green-dim)" : "var(--bm-red-dim)",
+            border: `1px solid ${delta > 0 ? "var(--bm-green-bd)" : "var(--bm-red-bd)"}`,
             borderRadius: 6, padding: "2px 7px",
           }}
         >
@@ -101,8 +101,8 @@ export default function MomentumScore({
           animate={{ opacity: 1 }}
           style={{
             fontSize: 10, color: "#fb923c",
-            background: "rgba(251,146,60,0.08)",
-            border: "1px solid rgba(251,146,60,0.2)",
+            background: "var(--bm-accent-dim)",
+            border: "1px solid var(--bm-accent-bd)",
             borderRadius: 8, padding: "6px 10px", textAlign: "center", maxWidth: 180,
           }}
         >

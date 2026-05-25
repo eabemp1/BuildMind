@@ -58,7 +58,7 @@ const STYLE_META: Record<CofounderStyle, {
   "strategic-partner": {
     name: "Strategist",
     tagline: "Thinking three moves ahead.",
-    color: "#818cf8",
+    color: "var(--bm-text2)",
     observingText: "Running the long game in the background.",
   },
   "execution-coach": {
@@ -90,7 +90,7 @@ function CofounderAvatar({
   const modeColors: Record<PulseMode, string> = {
     observing: "#444",
     alert: "#ef4444",
-    insight: "#818cf8",
+    insight: "var(--bm-text2)",
     challenge: "#f59e0b",
     celebrate: "#22c55e",
   };
@@ -402,7 +402,7 @@ export default function CofounderPulse() {
         <div style={{
           padding: "0 14px 10px",
           fontSize: 11,
-          color: mode === "alert" ? "#ef4444" : mode === "insight" ? "#818cf8" : mode === "challenge" ? "#f59e0b" : "#22c55e",
+          color: mode === "alert" ? "#ef4444" : mode === "insight" ? "var(--bm-text2)" : mode === "challenge" ? "#f59e0b" : "#22c55e",
           fontFamily: "monospace",
         }}>
           {currentMessage?.text?.slice(0, 80)}{currentMessage && currentMessage.text.length > 80 ? "..." : ""}

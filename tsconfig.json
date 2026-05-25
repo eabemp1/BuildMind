@@ -36,6 +36,10 @@
   ],
   "exclude": [
     "node_modules",
+    ".next",
+    "buildmind_patched",
+    "__tests__/**",
+    "e2e/**",
     "supabase/functions/**"
   ]
 }

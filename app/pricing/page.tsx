@@ -65,8 +65,8 @@ export default function PricingPage() {
 
       {/* Ambient glows */}
       <div style={{ position: "fixed", inset: 0, pointerEvents: "none", overflow: "hidden" }}>
-        <div style={{ position: "absolute", top: "15%", left: "25%", width: 400, height: 400, background: "radial-gradient(circle, var(--bm-accent-dim) 0%, transparent 70%)", filter: "blur(80px)" }} />
-        <div style={{ position: "absolute", bottom: "15%", right: "20%", width: 300, height: 300, background: "radial-gradient(circle, rgba(124,58,237,0.06) 0%, transparent 70%)", filter: "blur(80px)" }} />
+        <div style={{ position: "absolute", top: "15%", left: "25%", width: 400, height: 400, background: "transparent" }} />
+        <div style={{ position: "absolute", bottom: "15%", right: "20%", width: 300, height: 300, background: "transparent" }} />
       </div>
 
       <div style={{ maxWidth: 880, margin: "0 auto", padding: "72px 24px 80px", position: "relative" }}>

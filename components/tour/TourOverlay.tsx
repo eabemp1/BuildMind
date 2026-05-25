@@ -8,6 +8,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { storage } from "@/lib/storage";
 
 export type TourStep = {
   selector: string;
@@ -86,13 +87,13 @@ export const TOUR_STEPS: TourStep[] = [
 const STORAGE_KEY = "bm_tour_done_v2";
 
 export function markTourDone() {
-  try { localStorage.setItem(STORAGE_KEY, "1"); } catch { }
+  try { storage.set(STORAGE_KEY, "1"); } catch { }
 }
 export function isTourDone(): boolean {
-  try { return localStorage.getItem(STORAGE_KEY) === "1"; } catch { return true; }
+  try { return storage.get(STORAGE_KEY) === "1"; } catch { return true; }
 }
 export function resetTour() {
-  try { localStorage.removeItem(STORAGE_KEY); } catch { }
+  try { storage.remove(STORAGE_KEY); } catch { }
 }
 export function useTour() {
   const [active, setActive] = useState(false);
@@ -239,7 +240,7 @@ export function TourOverlay({ forceShow = false, onDone }: { forceShow?: boolean
           >
             {/* Drag handle for bottom sheet */}
             {useBottomSheet && (
-              <div style={{ width: 36, height: 4, borderRadius: 99, background: "rgba(255,255,255,0.15)", margin: "0 auto 16px" }} />
+              <div style={{ width: 36, height: 4, borderRadius: 99, background: "var(--bm-border3)", margin: "0 auto 16px" }} />
             )}
 
             <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 10 }}>
@@ -253,7 +254,7 @@ export function TourOverlay({ forceShow = false, onDone }: { forceShow?: boolean
             {/* Progress dots */}
             <div style={{ display: "flex", gap: 4, marginBottom: 14, justifyContent: "center" }}>
               {Array.from({ length: total }).map((_, i) => (
-                <div key={i} style={{ width: i === step ? 16 : 6, height: 6, borderRadius: 99, background: i === step ? "#6366f1" : "rgba(255,255,255,0.12)", transition: "all 0.2s" }} />
+                <div key={i} style={{ width: i === step ? 16 : 6, height: 6, borderRadius: 99, background: i === step ? "var(--bm-accent)" : "var(--bm-border2)", transition: "all 0.2s" }} />
               ))}
             </div>
 
@@ -265,7 +266,7 @@ export function TourOverlay({ forceShow = false, onDone }: { forceShow?: boolean
                 </button>
               )}
               <button onClick={next}
-                style={{ flex: 2, padding: "10px 0", borderRadius: 9, border: "none", background: "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                style={{ flex: 2, padding: "10px 0", borderRadius: 9, border: "none", background: "var(--bm-accent)", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
                 {step === total - 1 ? "Start building →" : "Next →"}
               </button>
               <button onClick={finish}

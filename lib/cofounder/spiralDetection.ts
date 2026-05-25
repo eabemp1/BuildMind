@@ -123,7 +123,14 @@ Examples:
     if (!res.ok) throw new Error(`Groq ${res.status}`);
     const data = await res.json() as { choices?: { message?: { content?: string } }[] };
     const text = data.choices?.[0]?.message?.content ?? "{}";
-    const parsed = JSON.parse(text) as { spiral?: boolean; signal?: string | null };
+    let parsed: { spiral?: boolean; signal?: string | null };
+    try {
+      parsed = JSON.parse(text) as { spiral?: boolean; signal?: string | null };
+    } catch {
+      // Malformed LLM response — treat as no spiral detected rather than crashing
+      // the evening-check worker and dropping the user's notification entirely.
+      return { detected: false, signal: null, suggestedAction: null, detectedBy: "llm" };
+    }
 
     if (!parsed.spiral) {
       return { detected: false, signal: null, suggestedAction: null, detectedBy: "llm" };

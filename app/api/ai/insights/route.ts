@@ -1,85 +1,157 @@
+/**
+ * app/api/ai/insights/route.ts
+ *
+ * SSE streaming endpoint — generates 3–5 AI insight sentences from behavioral
+ * data and streams them as server-sent events. Same streaming pattern as
+ * today-action/stream/route.ts.
+ *
+ * On completion, writes the synthesised insights back to
+ * founder_memory.last_insight so the insights page and reflect page can share
+ * the same insight state.
+ *
+ * Event format:
+ *   event: insight  — { index, type, text } for each insight as it's ready
+ *   event: done     — { ok: true, count }
+ *   event: error    — { message }
+ */
+
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { groqJSON, hasAdminEnv } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getRouteUser } from "@/app/api/ai/_planCheck";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 25;
 
-type InsightItem = { type: "warning" | "positive" | "insight"; text: string };
-
-function toSse(event: string, payload: unknown): string {
-  return `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
+function sse(event: string, data: unknown): string {
+  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }
 
+type InsightItem = {
+  type: "warning" | "positive" | "insight";
+  text: string;
+};
+
 export async function POST(request: Request) {
-  try {
-    const supabase = await createClient();
-    const { data: { user }, error } = await supabase.auth.getUser();
-    if (error || !user) return NextResponse.json({ ok: false }, { status: 401 });
+  const encoder = new TextEncoder();
+  const body = await request.json().catch(() => ({}));
 
-    const body = await request.json().catch(() => ({}));
-    const projectId = String(body?.projectId ?? "").trim();
+  const stream = new ReadableStream({
+    async start(controller) {
+      try {
+        const userResult = await getRouteUser();
+        if (!userResult?.user) {
+          controller.enqueue(encoder.encode(sse("error", { message: "Unauthorized" })));
+          controller.close();
+          return;
+        }
+        const userId = userResult.user.id;
 
-    const admin = createAdminClient();
-    const { data: memory } = await admin
-      .from("founder_memory")
-      .select("avoidance_zones, strengths, personality_tags, last_insight, last_week_summary")
-      .eq("user_id", user.id)
-      .maybeSingle();
+        const {
+          avoidanceZones = [],
+          strengths = [],
+          completionByDay = {},
+          avgConfidenceByOutcome = {},
+          topOverrideReason,
+          totalTasksCompleted = 0,
+          totalTasksShown = 0,
+          metacriticSignal,
+          stage = "Idea",
+        } = body as {
+          avoidanceZones?: string[];
+          strengths?: string[];
+          completionByDay?: Record<string, { completed: number; total: number }>;
+          avgConfidenceByOutcome?: Record<string, number>;
+          topOverrideReason?: string;
+          totalTasksCompleted?: number;
+          totalTasksShown?: number;
+          metacriticSignal?: string;
+          stage?: string;
+        };
 
-    const { data: reflections } = await admin
-      .from("reflections")
-      .select("outcome, note, confidence, created_at")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(20);
+        const systemPrompt = `You are a startup execution analyst reviewing a founder's behavioral data from the last 30 days.
+Your job is to surface 3-5 specific, named patterns — not generic advice.
+Each insight must name WHAT is happening, WHY it matters for this stage, and WHAT to do about it.
+Severity: "warning" for risks, "positive" for strong signals, "insight" for neutral observations.
+Return ONLY a valid JSON array:
+[
+  { "type": "warning"|"positive"|"insight", "text": "specific observation max 30 words" },
+  ...
+]
+No preamble. No markdown. Only the JSON array.`;
 
-    const { data: project } = projectId
-      ? await admin.from("projects").select("title, startup_stage").eq("id", projectId).eq("user_id", user.id).maybeSingle()
-      : { data: null };
+        const executionRate = totalTasksShown > 0
+          ? Math.round((totalTasksCompleted / totalTasksShown) * 100)
+          : null;
 
-    const avoidanceZones = Array.isArray(memory?.avoidance_zones) ? memory.avoidance_zones as string[] : [];
-    const strengths = Array.isArray(memory?.strengths) ? memory.strengths as string[] : [];
-    const insights: InsightItem[] = [];
+        const userPrompt = [
+          `Stage: ${stage}`,
+          avoidanceZones.length ? `Avoidance zones: ${avoidanceZones.join(", ")}` : "",
+          strengths.length ? `Strengths: ${strengths.join(", ")}` : "",
+          executionRate != null ? `Execution rate: ${executionRate}%` : "",
+          topOverrideReason ? `Most common override reason: "${topOverrideReason}"` : "",
+          metacriticSignal ? `Metacritic signal: "${metacriticSignal}"` : "",
+          Object.keys(avgConfidenceByOutcome).length
+            ? `Confidence by outcome: ${JSON.stringify(avgConfidenceByOutcome)}`
+            : "",
+        ].filter(Boolean).join("\n");
 
-    if (avoidanceZones.length) {
-      insights.push({ type: "warning", text: `You keep circling ${avoidanceZones[0]}. That is your current drag.` });
-    }
-    if (strengths.length) {
-      insights.push({ type: "positive", text: `Your strongest mode is still around ${strengths[0]}. Lean into that when motivation is low.` });
-    }
-    const confidenceAvg = (reflections ?? []).reduce((sum, row) => sum + (row.confidence ?? 3), 0) / Math.max((reflections ?? []).length, 1);
-    if (confidenceAvg >= 4) {
-      insights.push({ type: "positive", text: `Confidence is high across recent reflections. You are likely underestimating your momentum.` });
-    } else if (confidenceAvg <= 2.6) {
-      insights.push({ type: "warning", text: `Confidence is sagging. The next task should reduce ambiguity, not increase it.` });
-    }
-    insights.push({ type: "insight", text: project?.startup_stage ? `Current stage: ${project.startup_stage}. This should shape the next task deeply.` : "Stage data is missing, so analysis is based on recent behavior only." });
-    if (memory?.last_insight) {
-      insights.push({ type: "insight", text: String(memory.last_insight) });
-    }
+        // Fallback insights if AI fails
+        const fallback: InsightItem[] = [
+          { type: "insight", text: "Complete your first task reflection tonight to unlock pattern analysis." },
+          { type: "insight", text: "BuildMind needs at least 5 reflections to surface behavioral patterns." },
+        ];
 
-    const stream = new ReadableStream({
-      start(controller) {
-        const encoder = new TextEncoder();
-        controller.enqueue(encoder.encode("retry: 1000\n\n"));
-        insights.forEach((item, index) => {
-          controller.enqueue(encoder.encode(toSse("insight", { index, item })));
-        });
-        controller.enqueue(encoder.encode(toSse("done", { items: insights })));
+        let insights: InsightItem[] = fallback;
+
+        try {
+          const ai = await groqJSON<InsightItem[]>(systemPrompt, userPrompt);
+          if (Array.isArray(ai) && ai.length >= 1) {
+            insights = ai.slice(0, 5).map((item) => ({
+              type: ["warning", "positive", "insight"].includes(item.type) ? item.type : "insight",
+              text: String(item.text ?? "").slice(0, 200),
+            })) as InsightItem[];
+          }
+        } catch {
+          // use fallback
+        }
+
+        // Stream each insight as it "arrives" — small delays for progressive feel
+        for (let i = 0; i < insights.length; i++) {
+          controller.enqueue(encoder.encode(sse("insight", { index: i, ...insights[i] })));
+          // Small stagger so the UI can animate them in
+          await new Promise((r) => setTimeout(r, 120));
+        }
+
+        // Write synthesised insights back to founder_memory.last_insight
+        if (hasAdminEnv() && insights.length > 0) {
+          const synthesisText = insights.map((ins) => ins.text).join(" ");
+          try {
+            const supabase = createAdminClient();
+            await supabase
+              .from("founder_memory")
+              .upsert({ user_id: userId, last_insight: synthesisText }, { onConflict: "user_id" });
+          } catch {
+            // Non-fatal — streaming is the primary deliverable
+          }
+        }
+
+        controller.enqueue(encoder.encode(sse("done", { ok: true, count: insights.length })));
         controller.close();
-      },
-    });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "insights stream failed";
+        controller.enqueue(encoder.encode(sse("error", { message: msg })));
+        controller.close();
+      }
+    },
+  });
 
-    return new NextResponse(stream, {
-      headers: {
-        "Content-Type": "text/event-stream; charset=utf-8",
-        "Cache-Control": "no-cache, no-transform",
-        Connection: "keep-alive",
-      },
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to generate insights";
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
-  }
+  return new NextResponse(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    },
+  });
 }

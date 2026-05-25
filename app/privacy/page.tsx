@@ -83,6 +83,7 @@ export default function PrivacyPage() {
             <p>BuildMind uses AI models (provided by Anthropic) to generate daily actions, coaching responses, weekly reports, and other AI Content. To do this, we send relevant context — including your startup stage, task history, and reflection notes — to the AI provider as part of each request.</p>
             <p>This data is transmitted over encrypted connections and is governed by Anthropic's data usage policies. We do not share your name, email, or payment information with AI providers.</p>
             <p>AI responses are not stored beyond what is necessary to display them to you in the session.</p>
+            <p><strong>Competitor research:</strong> When you use the &ldquo;Break My Startup&rdquo; feature, BuildMind submits your startup idea (name, description, and target market) as a query to third-party search services (DuckDuckGo and Brave Search) to identify competitor information. This means your startup idea text is sent to these external search providers as part of the analysis. The competitor names and summaries found are stored in your founder profile and used to personalise future AI outputs. You can clear this stored data at any time from <strong>Settings → Clear AI Memory</strong>.</p>
           </Section>
 
           <Section title="5. Sharing Your Information">

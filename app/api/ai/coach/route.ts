@@ -216,7 +216,7 @@ export async function POST(request: Request) {
             .select("name, title, description, target_users, problem, startup_stage, validation_strengths, validation_weaknesses")
             .eq("id", projectId)
             .eq("user_id", userId)
-            .single(),
+            .maybeSingle(),
           supabase.from("founder_memory").select("*").eq("user_id", userId).maybeSingle(),
           supabase.from("milestones").select("id, title, status").eq("project_id", projectId),
           // Task 5: fetch recent_interactions to extract today's morning note

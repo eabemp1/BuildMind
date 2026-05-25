@@ -10,18 +10,14 @@
  *   6. Redirect to /settings?integration=notion&status=connected
  */
 
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logError } from "@/lib/server/logger";
 import { verifyOAuthState } from "@/lib/server/oauthState";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://buildmind.live";
 
-function safeReturnPath(value: string | null): string {
-  return value === "/onboarding" || value === "/settings" ? value : "/settings";
-}
-
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   const url     = new URL(request.url);
   const code    = url.searchParams.get("code");
   const state   = url.searchParams.get("state");
@@ -96,16 +92,16 @@ export async function GET(request: Request) {
       metadata:     { workspace_name: tokenData.workspace_name },
     }, { onConflict: "user_id,provider" });
 
-    const cookieValue = request.headers.get("cookie") ?? "";
-    const returnMatch = cookieValue.match(/(?:^|;\s*)bm_oauth_return=([^;]+)/);
-    const safeReturn = safeReturnPath(returnMatch ? decodeURIComponent(returnMatch[1]) : "/settings");
-    const response = NextResponse.redirect(`${APP_URL}${safeReturn}?integration=notion&status=connected`);
+    // Read return path from cookie (set by connect route). Defaults to /settings.
+    const returnPath = request.cookies.get("bm_oauth_return")?.value ?? "/settings";
+    const safeReturn = ["/onboarding", "/settings"].includes(returnPath) ? returnPath : "/settings";
+    const redirectUrl = `${APP_URL}${safeReturn}?integration=notion&status=connected`;
+    const response = NextResponse.redirect(redirectUrl);
+    // Clear the return cookie
     response.cookies.set("bm_oauth_return", "", { maxAge: 0, path: "/" });
     return response;
   } catch (err) {
     logError("integrations/notion/callback", err);
-    const response = NextResponse.redirect(`${APP_URL}/settings?integration=notion&status=error`);
-    response.cookies.set("bm_oauth_return", "", { maxAge: 0, path: "/" });
-    return response;
+    return NextResponse.redirect(`${APP_URL}/settings?integration=notion&status=error`);
   }
 }

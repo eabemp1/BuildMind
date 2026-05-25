@@ -175,9 +175,48 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // ── C1 FIX: Budget-aware inline processing with cursor checkpoint ────────
+  // maxDuration = 20 s. Without a time guard, a 500-user run starting at user
+  // 400 would hit the hard timeout and silently drop users 401–500 every night.
+  //
+  // Fix: before processing each user, check whether fewer than INLINE_BUDGET_MS
+  // remain. If budget is exhausted, persist a cursor ("cron_cursor:evening-check")
+  // to app_config and return a 202 so the caller (cron scheduler) can re-invoke.
+  // The next invocation reads the cursor and skips already-processed users.
+  // Cursor is deleted once the full list is exhausted or QStash is available.
+  //
+  // At >500 users set QSTASH_TOKEN to fan out instead — the inline path is
+  // intentionally a best-effort fallback, not a production scaling solution.
+
+  const INLINE_BUDGET_MS = 14_000; // leave 6 s for DB writes and response overhead
+  const CURSOR_KEY = `cron_cursor:evening-check:${today}`;
+
+  // Resume from cursor if present (previous run was time-cut)
+  let resumeFromUserId: string | null = null;
+  try {
+    const { data: cursorRow } = await supabase
+      .from("app_config")
+      .select("value")
+      .eq("key", CURSOR_KEY)
+      .maybeSingle();
+    resumeFromUserId = (cursorRow?.value as string | null) ?? null;
+    if (resumeFromUserId) {
+      console.info("[evening-check] Resuming from cursor userId:", resumeFromUserId);
+    }
+  } catch { /* non-fatal — process from start */ }
+
+  // Flatten actionable IDs for in-memory cursor (already paged above)
+  let userQueue = actionableUserIds;
+  if (resumeFromUserId) {
+    const resumeIdx = userQueue.indexOf(resumeFromUserId);
+    if (resumeIdx !== -1) userQueue = userQueue.slice(resumeIdx);
+  }
+
   // Inline processing path (no QStash, or QStash unavailable)
   let pageFrom2 = 0;
   hasMore = true;
+  let budgetExhausted = false;
+  let lastProcessedUserId: string | null = null;
 
   while (hasMore) {
     const { data: subs, error } = await fetchSubscriptionPage(pageFrom2);
@@ -194,6 +233,30 @@ export async function GET(req: NextRequest) {
     if (!activeUserIds.has(row.user_id) || !usersWithProjects.has(row.user_id)) {
       continue;
     }
+
+    // C1 FIX: Skip users before the resume cursor
+    if (!userQueue.includes(row.user_id)) {
+      continue;
+    }
+
+    // C1 FIX: Check budget before each user — each can take 200–800 ms
+    if (Date.now() - start > INLINE_BUDGET_MS) {
+      budgetExhausted = true;
+      // Persist cursor so the next cron invocation resumes here
+      try {
+        await supabase.from("app_config").upsert(
+          { key: CURSOR_KEY, value: row.user_id, updated_at: new Date().toISOString() },
+          { onConflict: "key" }
+        );
+        console.warn("[evening-check] Budget exhausted at user", row.user_id, "— cursor saved for next run");
+      } catch (cursorErr) {
+        console.error("[evening-check] Failed to save cursor:", cursorErr);
+      }
+      hasMore = false; // break outer while
+      break;
+    }
+
+    lastProcessedUserId = row.user_id;
 
     const { data: authUser } = await supabase.auth.admin.getUserById(row.user_id);
     const plan = planFromUserMetadata(authUser.user);
@@ -327,6 +390,13 @@ export async function GET(req: NextRequest) {
 
   } // end while (pagination)
 
+  // C1 FIX: Clear cursor on full completion so next run starts fresh
+  if (!budgetExhausted) {
+    try {
+      await supabase.from("app_config").delete().eq("key", CURSOR_KEY);
+    } catch { /* non-fatal */ }
+  }
+
   return NextResponse.json({
     ok: true,
     cron: true,
@@ -340,6 +410,9 @@ export async function GET(req: NextRequest) {
     processed: eligible,
     durationMs: Date.now() - start,
     failedDetails: failedDetails.slice(0, 5),
+    // C1: present in response so monitoring can detect partial runs
+    budgetExhausted: budgetExhausted ?? false,
+    resumeUserId: budgetExhausted ? lastProcessedUserId : null,
   });
 }
 

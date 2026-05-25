@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion, useAnimation } from "framer-motion";
 import {
@@ -73,19 +73,19 @@ function ReadinessPrompt({
 const VIZ = {
   panel: "rgba(12,12,18,0.98)",
   panelHover: "rgba(16,16,24,0.98)",
-  border: "rgba(255,255,255,0.06)",
+  border: "var(--bm-border)",
   text1: "#f0f0f5",
   text2: "#9494a8",
   text3: "#4a4a5a",
-  indigo: "#6366f1",
-  violet: "#8b5cf6",
-  emerald: "#4ade80",
+  indigo: "var(--bm-accent)",
+  violet: "var(--bm-accent2)",
+  emerald: "var(--bm-green)",
   amber: "#fbbf24",
   rose: "#f87171",
 };
 
 type MilestoneType = "action"|"research"|"legal"|"money"|"security";
-const TYPE_COLORS: Record<MilestoneType,string> = { action:"#6366f1",research:"#8b5cf6",legal:"#f59e0b",money:"#10b981",security:"#ef4444" };
+const TYPE_COLORS: Record<MilestoneType,string> = { action:"var(--bm-accent)",research:"var(--bm-accent2)",legal:"var(--bm-accent)",money:"var(--bm-green)",security:"var(--bm-red)" };
 const TYPE_LABELS: Record<MilestoneType,string> = { action:"⚡ Action",research:"📚 Research",legal:"⚖️ Legal",money:"💰 Revenue",security:"🔒 Security" };
 
 function inferMilestoneType(title:string): MilestoneType {
@@ -182,11 +182,11 @@ function Panel({ accent, title, children, delay=0, noPad=false }: { accent?:stri
 // ─── Arc ring ───────────────────────────────────────────────────────────────
 function ArcRing({ score, size=72 }: { score:number; size?:number }) {
   const r=(size-6)/2; const circ=2*Math.PI*r;
-  const color=score>=60?VIZ.emerald:score>=30?VIZ.amber:VIZ.rose;
+  const color=score>=60?"var(--bm-green)":score>=30?VIZ.amber:VIZ.rose;
   return (
     <div style={{ position:"relative",width:size,height:size,flexShrink:0 }}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform:"rotate(-90deg)" }}>
-        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,0.04)" strokeWidth={5.5} />
+        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="var(--bm-border)" strokeWidth={5.5} />
         <motion.circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={5.5}
           strokeLinecap="round" strokeDasharray={circ}
           initial={{ strokeDashoffset:circ }} animate={{ strokeDashoffset:circ-(score/100)*circ }}
@@ -207,7 +207,7 @@ function TaskCheckbox({ checked, onChange, size=16 }: { checked:boolean; onChang
   const handleClick=async()=>{ if(!checked) await controls.start({ scale:[1,1.35,0.9,1.1,1],transition:{ duration:0.35 } }); onChange(); };
   return (
     <motion.button animate={controls} onClick={handleClick}
-      style={{ width:size,height:size,borderRadius:4,border:checked?"none":"1px solid rgba(255,255,255,0.1)",background:checked?VIZ.emerald:"transparent",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,transition:"background 0.2s" }}>
+      style={{ width:size,height:size,borderRadius:4,border:checked?"none":"1px solid var(--bm-border2)",background:checked?"var(--bm-green)":"transparent",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,transition:"background 0.2s" }}>
       {checked&&<span style={{ fontSize:size*0.6,color:"#000",lineHeight:1 }}>✓</span>}
     </motion.button>
   );
@@ -228,10 +228,10 @@ function MilestoneCard({ milestone, tasks, index, onToggleTask }: { milestone:Bu
 
   return (
     <motion.div initial={{ opacity:0,y:6 }} animate={{ opacity:1,y:0 }} transition={{ delay:index*0.06 }}
-      style={{ background:isComplete?"rgba(74,222,128,0.03)":VIZ.panel, border:`1px solid ${isComplete?"rgba(74,222,128,0.2)":VIZ.border}`, borderLeft:`3px solid ${isComplete?VIZ.emerald:typeColor}`, borderRadius:12, overflow:"hidden", transition:"border-color 0.3s" }}>
+      style={{ background:isComplete?"rgba(74,222,128,0.03)":VIZ.panel, border:`1px solid ${isComplete?"rgba(74,222,128,0.2)":VIZ.border}`, borderLeft:`3px solid ${isComplete?"var(--bm-green)":typeColor}`, borderRadius:12, overflow:"hidden", transition:"border-color 0.3s" }}>
       <div style={{ padding:"14px 16px",cursor:"pointer" }} onClick={()=>setExpanded(!expanded)}>
         <div style={{ display:"flex",alignItems:"flex-start",gap:12 }}>
-          <div style={{ width:20,height:20,borderRadius:"50%",flexShrink:0,marginTop:1,background:isComplete?VIZ.emerald:"transparent",border:isComplete?"none":"1.5px solid rgba(255,255,255,0.1)",display:"flex",alignItems:"center",justifyContent:"center" }}>
+          <div style={{ width:20,height:20,borderRadius:"50%",flexShrink:0,marginTop:1,background:isComplete?"var(--bm-green)":"transparent",border:isComplete?"none":"1.5px solid var(--bm-border2)",display:"flex",alignItems:"center",justifyContent:"center" }}>
             {isComplete&&<span style={{ fontSize:10,color:"#000",lineHeight:1 }}>✓</span>}
           </div>
           <div style={{ flex:1,minWidth:0 }}>
@@ -239,12 +239,12 @@ function MilestoneCard({ milestone, tasks, index, onToggleTask }: { milestone:Bu
               <span style={{ fontSize:10,padding:"2px 8px",borderRadius:99,fontFamily:"monospace",background:`${typeColor}18`,color:typeColor,fontWeight:500 }}>{typeLabel}</span>
               <span style={{ fontSize:10,color:VIZ.text3,fontFamily:"monospace" }}>{week}</span>
             </div>
-            <div style={{ fontSize:13,fontWeight:600,lineHeight:1.4,color:isComplete?VIZ.emerald:VIZ.text1,textDecoration:isComplete?"line-through":"none" }}>{milestone.title}</div>
+            <div style={{ fontSize:13,fontWeight:600,lineHeight:1.4,color:isComplete?"var(--bm-green)":VIZ.text1,textDecoration:isComplete?"line-through":"none" }}>{milestone.title}</div>
             {total>0&&(
               <div style={{ display:"flex",alignItems:"center",gap:8,marginTop:7 }}>
-                <div style={{ width:80,height:2.5,background:"rgba(255,255,255,0.04)",borderRadius:999,overflow:"hidden" }}>
+                <div style={{ width:80,height:2.5,background:"var(--bm-border)",borderRadius:999,overflow:"hidden" }}>
                   <motion.div initial={{ width:0 }} animate={{ width:`${pct}%` }} transition={{ duration:0.7,ease:"easeOut" }}
-                    style={{ height:"100%",background:isComplete?VIZ.emerald:typeColor,borderRadius:999 }} />
+                    style={{ height:"100%",background:isComplete?"var(--bm-green)":typeColor,borderRadius:999 }} />
                 </div>
                 <span style={{ fontSize:10,color:VIZ.text3,fontFamily:"monospace" }}>{done}/{total} · {pct}%</span>
               </div>
@@ -321,7 +321,7 @@ function ValidationTab({ projectId,strengths,weaknesses,suggestions,router }: {
             onClick={runAnalysis}
             disabled={running || !projectId}
             style={{
-              background: running ? "rgba(255,255,255,0.08)" : "var(--grad-primary)",
+              background: running ? "var(--bm-border2)" : "var(--grad-primary)",
               color: running ? VIZ.text3 : "#fff",
               fontSize: 11,
               fontWeight: 700,
@@ -383,6 +383,11 @@ export default function ProjectDetailPage() {
   const [newNoteDraft, setNewNoteDraft] = useState<Record<string, string>>({});
   const [regenerating, setRegenerating] = useState(false);
   const [showUpgrade, setShowUpgrade] = useState(false);
+  // Streak — synced from server on mount so it reflects Today page completions
+  const [liveStreak, setLiveStreak] = useState(() => getStoredStreak());
+  // Stage selector — lets founder manually set stage, waiving prior stages automatically
+  const [stagePickerOpen, setStagePickerOpen] = useState(false);
+  const [stageChanging, setStageChanging] = useState(false);
   // REC 3.2 + 2.3 + 3.1: narrative sentence, transition challenge, readiness prompt
   const [narrativeSentence, setNarrativeSentence] = useState<string | null>(null);
   const [transitionChallenge, setTransitionChallenge] = useState<{
@@ -396,29 +401,125 @@ export default function ProjectDetailPage() {
     currentStage: string; nextStage: string | null; reason: string;
   } | null>(null);
   const [stageTransitionDismissed, setStageTransitionDismissed] = useState(false);
-  const [liveStreak, setLiveStreak] = useState(() => getStoredStreak());
-  const [stagePickerOpen, setStagePickerOpen] = useState(false);
-  const [stageChanging, setStageChanging] = useState(false);
-  const stagePickerRef = useRef<HTMLDivElement | null>(null);
+
+  // Close stage picker when clicking outside
+  useEffect(() => {
+    if (!stagePickerOpen) return;
+    const handler = () => setStagePickerOpen(false);
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [stagePickerOpen]);
 
   useEffect(() => { if (id) setActiveProjectId(id); }, [id]);
 
+  // Sync streak from server — Today page is where streaks are earned; projects page
+  // must read the same source, not a stale localStorage snapshot.
   useEffect(() => {
-    syncStreakFromServer().then((value) => setLiveStreak(value)).catch(() => {
-      setLiveStreak(getStoredStreak());
-    });
+    syncStreakFromServer()
+      .then(s => setLiveStreak(s))
+      .catch(() => { /* keep initialised value from getStoredStreak */ });
   }, []);
 
-  useEffect(() => {
-    function handleOutsideClick(event: MouseEvent) {
-      if (!stagePickerOpen) return;
-      if (stagePickerRef.current && !stagePickerRef.current.contains(event.target as Node)) {
-        setStagePickerOpen(false);
+  /**
+   * handleStageSelect — founder manually picks a stage.
+   *
+   * When a stage is selected that is AHEAD of the current one, all milestones
+   * belonging to prior stages are automatically marked completed ("waived").
+   * This reflects reality: if you're at MVP, you don't need to re-do Idea work.
+   *
+   * When a stage is selected that is BEHIND the current one, we just update
+   * the stage without touching milestones (no un-waiving).
+   */
+  async function handleStageSelect(newStage: string) {
+    if (!project || !id || stageChanging) return;
+    setStagePickerOpen(false);
+    if (newStage === project.startup_stage) return;
+
+    setStageChanging(true);
+    try {
+      const supabase = createClient();
+
+      const currentIdx = STAGE_ORDER.indexOf(newStage as typeof STAGE_ORDER[number]);
+      const prevIdx    = STAGE_ORDER.indexOf((project.startup_stage ?? "Idea") as typeof STAGE_ORDER[number]);
+
+      // Moving forward: waive all milestones from prior stages
+      if (currentIdx > prevIdx && milestones.length > 0) {
+        const stagesToWaive = STAGE_ORDER.slice(0, currentIdx);
+        const milestonesToWaive = milestones.filter(m => {
+          // Priority 1: use the stage column written by generate-roadmap
+          const dbStage = m.stage ? normalizeStageLocal(m.stage) : null;
+          if (dbStage) return stagesToWaive.includes(dbStage as typeof STAGE_ORDER[number]);
+          // Priority 2: keyword inference from title (fallback for older milestones)
+          const milestoneStage = inferMilestoneStageFromTitle(m.title);
+          return stagesToWaive.includes(milestoneStage as typeof STAGE_ORDER[number]);
+        });
+
+        // Batch-complete all waived milestones + their tasks
+        await Promise.all(
+          milestonesToWaive
+            .filter(m => m.status !== "completed")
+            .map(async (m) => {
+              // Mark all tasks in this milestone complete
+              const milestoneTasks = tasks.filter(t => t.milestone_id === m.id && !t.is_completed);
+              await Promise.all(
+                milestoneTasks.map(t =>
+                  supabase.from("tasks").update({
+                    is_completed: true,
+                    updated_at: new Date().toISOString(),
+                  }).eq("id", t.id)
+                )
+              );
+              // Mark milestone complete
+              await supabase.from("milestones").update({
+                status: "completed",
+                updated_at: new Date().toISOString(),
+              }).eq("id", m.id);
+            })
+        );
       }
+
+      // Update project stage
+      await supabase.from("projects").update({
+        startup_stage: newStage,
+        updated_at: new Date().toISOString(),
+      }).eq("id", id);
+
+      // Refresh all project data
+      void qc.invalidateQueries({ queryKey: queryKeys.project(id) });
+      void qc.invalidateQueries({ queryKey: queryKeys.projects });
+    } catch (err) {
+      console.error("[projects] stage select failed:", err);
+    } finally {
+      setStageChanging(false);
     }
-    document.addEventListener("mousedown", handleOutsideClick);
-    return () => document.removeEventListener("mousedown", handleOutsideClick);
-  }, [stagePickerOpen]);
+  }
+
+  /** Normalize a raw stage string to STAGE_ORDER value, or null if unrecognizable */
+  function normalizeStageLocal(raw: string): string | null {
+    const v = raw.trim();
+    // Exact match first (handles "Idea", "MVP" etc. from DB)
+    const exact = STAGE_ORDER.find(s => s.toLowerCase() === v.toLowerCase());
+    if (exact) return exact;
+    // Partial match
+    if (/(valid|discover)/.test(v.toLowerCase())) return "Validation";
+    if (/(mvp|proto)/.test(v.toLowerCase())) return "MVP";
+    if (/launch/.test(v.toLowerCase())) return "Launch";
+    if (/growth/.test(v.toLowerCase())) return "Growth";
+    if (/revenue/.test(v.toLowerCase())) return "Revenue";
+    if (/idea/.test(v.toLowerCase())) return "Idea";
+    return null;
+  }
+
+  /** Infer which stage a milestone belongs to from its title keywords */
+  function inferMilestoneStageFromTitle(title: string): string {
+    const t = title.toLowerCase();
+    if (/(validate|validation|problem.*fit|customer.*interview|survey|hypothesis)/.test(t)) return "Validation";
+    if (/(mvp|prototype|build|ship|v1|version 1|working.*product)/.test(t)) return "MVP";
+    if (/(launch|announce|go.live|product.*hunt|beta)/.test(t)) return "Launch";
+    if (/(growth|scale|retention|churn|referral|acquisition)/.test(t)) return "Growth";
+    if (/(revenue|monetize|pricing|subscription|mrr|arr)/.test(t)) return "Revenue";
+    return "Idea"; // default — safest to waive Idea-stage work
+  }
 
   // REC 3.2: Load pending transition challenge and generate narrative on project load
   useEffect(() => {
@@ -537,6 +638,7 @@ export default function ProjectDetailPage() {
   const triggerMilestoneChallenge = async (milestoneTitle: string) => {
     if (!project || !id) return;
     try {
+      // Fire stage-transition-challenge (existing)
       await fetch("/api/ai/stage-transition-challenge", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -548,6 +650,17 @@ export default function ProjectDetailPage() {
           currentStage: project.startup_stage ?? "Idea",
         }),
       });
+      // Fire milestone-break in background — stores result for Today page interstitial
+      fetch("/api/ai/milestone-break", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: id,
+          milestoneTitle,
+          triggerType: "milestone_complete",
+          currentStage: project.startup_stage ?? "Idea",
+        }),
+      }).catch(() => {}); // best-effort, never blocks
       // Invalidate to reload the pending_transition_challenge from project
       void qc.invalidateQueries({ queryKey: queryKeys.project(id) });
     } catch { /* non-fatal — background only */ }
@@ -559,37 +672,6 @@ export default function ProjectDetailPage() {
     onSuccess: () => void qc.invalidateQueries({ queryKey: queryKeys.project(id) }),
   });
 
-  async function handleStageSelect(nextStage: string) {
-    if (!project || !id || !project.user_id) return;
-    const currentIndex = STAGE_ORDER.indexOf(String(project.startup_stage ?? "Idea"));
-    const nextIndex = STAGE_ORDER.indexOf(nextStage as (typeof STAGE_ORDER)[number]);
-    if (nextIndex === -1 || nextIndex === currentIndex) {
-      setStagePickerOpen(false);
-      return;
-    }
-
-    setStageChanging(true);
-    try {
-      const supabase = createClient();
-      await supabase.from("projects").update({ startup_stage: nextStage }).eq("id", id).eq("user_id", project.user_id);
-
-      const milestonesToComplete = milestones.filter((milestone) => {
-        const milestoneStage = String(milestone.stage ?? milestone.title ?? "Idea");
-        const milestoneIndex = STAGE_ORDER.indexOf(milestoneStage as (typeof STAGE_ORDER)[number]);
-        return milestoneIndex !== -1 && milestoneIndex < nextIndex;
-      });
-
-      await Promise.all(milestonesToComplete.map((milestone) =>
-        supabase.from("milestones").update({ status: "completed", updated_at: new Date().toISOString() }).eq("id", milestone.id)
-      ));
-
-      void qc.invalidateQueries({ queryKey: queryKeys.project(id) });
-    } finally {
-      setStageChanging(false);
-      setStagePickerOpen(false);
-    }
-  }
-
   const stage = String(project?.startup_stage ?? "MVP");
   const score = useMemo(() => {
     if (!project) return 0;
@@ -599,10 +681,10 @@ export default function ProjectDetailPage() {
       validation_strengths: project.validation_strengths,
       execution_score: project.execution_score,
       momentum_score: project.momentum_score,
-      streak: getStoredStreak(),
+      streak: liveStreak,
       xp,
     });
-  }, [project, tasks]);
+  }, [project, tasks, liveStreak]);
   const validationStrengths = Array.isArray(project?.validation_strengths)
     ? project.validation_strengths.length
     : 0;
@@ -665,7 +747,7 @@ export default function ProjectDetailPage() {
       </div>
       <div className="grid gap-4">
         {[0, 1, 2, 3].map((row) => (
-          <div key={row} className="h-24 animate-pulse rounded-xl border border-[var(--bm-border)] bg-[var(--bm-bg2)]" />
+          <div key={row} className="h-24 animate-pulse rounded-[var(--r-xl)] border border-[var(--bm-border)] bg-[var(--bm-bg2)]" />
         ))}
       </div>
     </div>
@@ -751,39 +833,73 @@ export default function ProjectDetailPage() {
           title={String(project.title ?? "Untitled project")}
           subtitle={narrativeSentence ?? `${completedCount}/${tasks.length} tasks · ${progress}% complete`}
           action={
-            <div ref={stagePickerRef} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
-              <button
-                onClick={() => setStagePickerOpen((value) => !value)}
-                disabled={stageChanging}
-                style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", color: "var(--bm-text2)", borderRadius: 10, padding: "8px 10px", fontSize: 11, fontWeight: 600, cursor: stageChanging ? "not-allowed" : "pointer", fontFamily: "inherit" }}
-              >
-                {stageChanging ? "Updating…" : `Stage: ${project.startup_stage ?? "Idea"}`}
-              </button>
-              {stagePickerOpen && (
-                <div style={{ position: "absolute", marginTop: 42, background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 12, padding: 8, boxShadow: "0 16px 36px rgba(0,0,0,0.35)", zIndex: 20 }}>
-                  {STAGE_ORDER.map((stageOption) => (
-                    <button
-                      key={stageOption}
-                      onClick={() => void handleStageSelect(stageOption)}
-                      style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", border: "none", background: "transparent", color: "var(--bm-text2)", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}
-                    >
-                      {stageOption}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <button onClick={() => router.push("/today")}
-                className="w-full rounded-lg border-none bg-[var(--bm-text)] px-3.5 py-2 text-[12px] font-bold text-[var(--bm-bg)] sm:w-auto">
-                Today&apos;s action
-              </button>
-            </div>
+            <button onClick={() => router.push("/today")}
+              className="w-full rounded-lg border-none bg-[var(--bm-text)] px-3.5 py-2 text-[12px] font-bold text-[var(--bm-bg)] sm:w-auto">
+              Today&apos;s action
+            </button>
           }
         />
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <span style={{ fontSize: 10, padding: "2px 9px", borderRadius: 20, background: "var(--bm-bg3)", color: "var(--bm-text3)", border: "1px solid var(--bm-border)", fontWeight: 700 }}>{String(stage)}</span>
+          {/* Stage selector — click to change stage, auto-waives prior milestones */}
+          <div style={{ position: "relative" }}>
+            <button
+              onClick={() => setStagePickerOpen(p => !p)}
+              disabled={stageChanging}
+              style={{
+                fontSize: 10, padding: "2px 9px", borderRadius: 20,
+                background: "var(--bm-bg3)", color: "var(--bm-text3)",
+                border: "1px solid var(--bm-border)", fontWeight: 700,
+                cursor: stageChanging ? "wait" : "pointer",
+                fontFamily: "inherit", display: "flex", alignItems: "center", gap: 5,
+                transition: "background 0.15s",
+              }}
+            >
+              {stageChanging ? "Updating…" : String(stage)}
+              <span style={{ fontSize: 8, opacity: 0.6 }}>▼</span>
+            </button>
+            {stagePickerOpen && (
+              <div style={{
+                position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 50,
+                background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)",
+                borderRadius: 10, padding: "6px 0", minWidth: 160,
+                boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+              }}>
+                {STAGE_ORDER.map(s => {
+                  const isCurrent = s === stage;
+                  const idx = STAGE_ORDER.indexOf(s);
+                  const currentIdx = STAGE_ORDER.indexOf(stage as typeof STAGE_ORDER[number]);
+                  const isAhead = idx > currentIdx;
+                  return (
+                    <button
+                      key={s}
+                      onClick={() => void handleStageSelect(s)}
+                      style={{
+                        width: "100%", padding: "8px 14px", background: "none",
+                        border: "none", textAlign: "left", cursor: "pointer",
+                        fontSize: 12, fontFamily: "inherit",
+                        color: isCurrent ? "var(--bm-accent)" : "var(--bm-text2)",
+                        fontWeight: isCurrent ? 700 : 400,
+                        display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+                      }}
+                    >
+                      <span>{s}</span>
+                      {isCurrent && <span style={{ fontSize: 10, color: "var(--bm-accent)" }}>current</span>}
+                      {isAhead && !isCurrent && (
+                        <span style={{ fontSize: 9, color: "var(--bm-text4)" }}>waives prior</span>
+                      )}
+                    </button>
+                  );
+                })}
+                <div style={{ borderTop: "1px solid var(--bm-border)", margin: "6px 14px 2px", padding: "6px 0 0" }}>
+                  <p style={{ fontSize: 10, color: "var(--bm-text4)", margin: 0, lineHeight: 1.4 }}>
+                    Selecting a later stage marks prior milestones complete.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
           <ScoreBreakdown score={score} compact />
           <span className="text-[11px] text-[var(--bm-text3)]">{completedCount}/{tasks.length} tasks</span>
-          <span className="text-[11px] text-[var(--bm-text3)]">{liveStreak}d streak</span>
           <span className="text-[11px]" style={{ color: progress >= 60 ? "#4ade80" : progress >= 30 ? "#fbbf24" : "var(--bm-text3)" }}>{progress}% complete</span>
         </div>
       </div>
