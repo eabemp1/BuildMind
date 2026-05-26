@@ -8,12 +8,14 @@ import { useProjectSummariesQuery, useDashboardOverviewQuery, queryKeys } from "
 import { useQueryClient } from "@tanstack/react-query";
 import { computeStartupScore } from "@/lib/buildmind";
 import { computeScoreDelta, applyScoreDelta, getXP, recordScore } from "@/lib/scoring";
-import { fetchAndSyncStoredPlanFromBillingStatus, getStoredStreak, incrementDailyStreak, recordTaskCompletion, syncStreakFromServer } from "@/lib/plan";
+import { getStoredStreak, incrementDailyStreak, recordTaskCompletion, syncStreakFromServer } from "@/lib/plan";
+import { usePlan } from "@/lib/usePlan";
 import { syncUrgencyFromServer } from "@/lib/urgency";
 import { updateAchievementStats, checkAndUnlockAchievements, getAchievementStats } from "@/lib/achievements";
 import { notifyReflectPending } from "@/lib/notifications";
 import { trackFunnelStep } from "@/lib/onboarding-analytics";
 import BuildMindLoader from "@/components/BuildMindLoader";
+import MorningBriefingCard from "@/components/MorningBriefingCard";
 import { PaywallMoment } from "@/components/PaywallMoment";
 import { Clock, CheckCircle2, Copy, Check, Flame, Brain, ArrowRight, Sparkles, AlertCircle, TrendingUp, RotateCcw, Zap } from "lucide-react";
 import { storage } from "@/lib/storage";
@@ -23,6 +25,7 @@ import { ProfileCompletenessBar } from "@/components/ProfileCompletenessBar";
 import { ReflectSheet } from "@/components/ReflectSheet";
 import { LoopNarrative } from "@/components/LoopNarrative";
 import { broadcastTabEvent, useTabSync } from "@/lib/tabSync";
+import type { MorningBriefing } from "@/lib/founderContext";
 
 type Outcome = "completed" | "blocked" | "partial" | "learned";
 type ReflexionMeta = {
@@ -335,6 +338,7 @@ function TodayContent() {
   const searchParams = useSearchParams();
   const isFirstSession = searchParams.get("first_session") === "true";
   const queryClient = useQueryClient();
+  const { plan } = usePlan();
   const { data: summaries = [], isLoading } = useProjectSummariesQuery();
   const { data: overview } = useDashboardOverviewQuery();
   const [copied, setCopied] = useState(false);
@@ -385,17 +389,15 @@ function TodayContent() {
   // Pattern detection — surfaces after check-in
   const [activePattern, setActivePattern] = useState<{ signal: string; message: string; severity: string } | null>(null);
 
-  // Paywall
-  const [plan, setPlan] = useState<string>("free");
+  // Morning briefing
   const [briefingAvailable, setBriefingAvailable] = useState(false);
+  const [morningBriefing, setMorningBriefing] = useState<MorningBriefing | null>(null);
 
   // Win attribution
   const [revenueDelta, setRevenueDelta] = useState<string>("");
   const [showRevenueField, setShowRevenueField] = useState(false);
 
   useEffect(() => {
-    fetchAndSyncStoredPlanFromBillingStatus().then(p => setPlan(p)).catch(() => {});
-
     fetch("/api/ai/usage-status", { cache: "no-store" })
       .then(r => r.ok ? r.json() : null)
       .then((d: { monthlyUsed?: number; monthlyLimit?: number; unlimited?: boolean } | null) => {
@@ -404,9 +406,10 @@ function TodayContent() {
       .catch(() => {});
 
     fetch("/api/morning-briefing", { cache: "no-store" })
-      .then(r => r.json().then((body: { ok?: boolean; data?: unknown; upgradePrompt?: boolean }) => ({ status: r.status, body })))
+      .then(r => r.json().then((body: { ok?: boolean; data?: MorningBriefing; upgradePrompt?: boolean }) => ({ status: r.status, body })))
       .then(({ status, body }) => {
         if (status === 200 && body?.ok && body?.data) {
+          setMorningBriefing(body.data);
           setBriefingAvailable(true);
         } else if (status === 403 && body?.upgradePrompt === true) {
           setBriefingAvailable(true);
@@ -706,7 +709,7 @@ function TodayContent() {
       setStreak(event.streak);
     }
     if (event.type === "plan_updated") {
-      setPlan(event.plan);
+      window.dispatchEvent(new Event("bm_plan_changed"));
     }
     if (event.type === "reflection_done") {
       // Invalidate cache so the next visit to Today shows a fresh action
@@ -1092,6 +1095,12 @@ function TodayContent() {
             </div>
           )}
 
+          {plan !== "free" && morningBriefing && !activePattern && (
+            <div style={{ marginBottom: 20, textAlign: "left" }}>
+              <MorningBriefingCard initialBriefing={morningBriefing} />
+            </div>
+          )}
+
           <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 10, justifyContent: "center" }}>
             <button onClick={() => setShowReflectSheet(true)} style={{ padding: "12px 20px", borderRadius: 10, border: "none", background: "var(--grad-primary)", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Reflect on today →</button>
             <button onClick={() => router.push("/overview")} style={{ padding: "12px 20px", borderRadius: 10, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text2)", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>View full dashboard</button>
@@ -1316,6 +1325,12 @@ function TodayContent() {
       {plan === "free" && briefingAvailable && (
         <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} style={{ marginBottom: 16 }}>
           <PaywallMoment trigger="morning_briefing" />
+        </motion.div>
+      )}
+
+      {plan !== "free" && morningBriefing && (
+        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} style={{ marginBottom: 16 }}>
+          <MorningBriefingCard initialBriefing={morningBriefing} />
         </motion.div>
       )}
 

@@ -16,15 +16,20 @@ import { fetchMorningBriefing, type MorningBriefing } from "@/lib/founderContext
 import { usePlan } from "@/lib/usePlan";
 import { AIErrorBoundary } from "./AIErrorBoundary";
 
-function MorningBriefingCardInner() {
-  const [briefing, setBriefing] = useState<MorningBriefing | null>(null);
-  const [loading, setLoading] = useState(true);
+function MorningBriefingCardInner({ initialBriefing }: { initialBriefing?: MorningBriefing | null }) {
+  const [briefing, setBriefing] = useState<MorningBriefing | null>(initialBriefing ?? null);
+  const [loading, setLoading] = useState(initialBriefing === undefined);
   const [open, setOpen] = useState(true);
   const { plan } = usePlan();
 
   useEffect(() => {
+    if (initialBriefing !== undefined) {
+      setBriefing(initialBriefing);
+      setLoading(false);
+      return;
+    }
     fetchMorningBriefing().then(b => { setBriefing(b); setLoading(false); }).catch(() => setLoading(false));
-  }, []);
+  }, [initialBriefing]);
 
   if (loading || !briefing || !open) return null;
 
@@ -102,10 +107,10 @@ function MorningBriefingCardInner() {
   );
 }
 
-export default function MorningBriefingCard() {
+export default function MorningBriefingCard({ initialBriefing }: { initialBriefing?: MorningBriefing | null }) {
   return (
     <AIErrorBoundary feature="Morning Briefing">
-      <MorningBriefingCardInner />
+      <MorningBriefingCardInner initialBriefing={initialBriefing} />
     </AIErrorBoundary>
   );
 }

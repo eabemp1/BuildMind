@@ -157,7 +157,9 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
 
       <nav className="flex-1 overflow-y-auto py-5" style={{ scrollbarWidth: "none" }}>
         {NAV.filter((i) => i.enabled && !i.hidden).map((item) => {
+          // Hide the "Upgrade" nav item for users already on a paid plan.
           if (item.href === "/upgrade" && plan !== "free") return null;
+
           const unlockedAt = item.unlocksAt ?? 0;
           const isProgressLocked = tasksCompleted < unlockedAt;
           if (isProgressLocked) {

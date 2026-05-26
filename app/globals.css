@@ -1,3 +1,4 @@
+/* Import fonts FIRST -- before Tailwind directives to avoid render-blocking issues */
 @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&family=DM+Serif+Display:ital@0;1&family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 
 @tailwind base;
@@ -98,6 +99,11 @@
 /* ── Base Resets ─────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 
+/* No-flash: hide body until the theme script marks the document ready. */
+html:not(.bm-ready) body {
+  visibility: hidden;
+}
+
 body {
   background: var(--bm-bg);
   color: var(--bm-text);
@@ -106,10 +112,6 @@ body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-html:not(.bm-ready) body {
-  visibility: hidden;
 }
 
 /* ── Typography utilities ────────────────────────────── */
@@ -121,13 +123,6 @@ html:not(.bm-ready) body {
 .bm-text2 { color: var(--bm-text2); }
 .bm-text3 { color: var(--bm-text3); }
 .bm-text4 { color: var(--bm-text4); }
-
-.gradient-text {
-  background: linear-gradient(90deg, #5CC88A, #4AB8B0);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
 
 .eyebrow {
   font-family: 'DM Mono', monospace;
@@ -157,3 +152,11 @@ html:not(.bm-ready) body {
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--bm-border2); border-radius: 2px; }
+
+/* Used on auth and landing pages for the brand tagline. */
+.gradient-text {
+  background: linear-gradient(90deg, #5CC88A, #4AB8B0);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}

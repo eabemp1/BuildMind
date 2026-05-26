@@ -545,9 +545,32 @@ export async function fetchAndSyncStoredPlanFromBillingStatus(): Promise<Plan> {
       headers: { "Cache-Control": "no-cache" },
     });
     if (!res.ok) return getPlan();
-    const payload = await res.json().catch(() => null) as { ok?: boolean; plan?: string } | null;
+    const payload = await res.json().catch(() => null) as {
+      ok?: boolean;
+      plan?: string;
+      trial?: {
+        active?: boolean;
+        expired?: boolean;
+        endsAt?: string | null;
+      };
+    } | null;
     const plan = normalizePlan(payload?.ok ? (payload.plan ?? null) : null);
     setStoredPlan(plan);
+
+    if (payload?.ok && payload.trial) {
+      const { active, expired, endsAt } = payload.trial;
+
+      if (active && endsAt && !storage.get(TRIAL_KEY)) {
+        const startedAt = new Date(new Date(endsAt).getTime() - TRIAL_MS).toISOString();
+        storage.set(TRIAL_KEY, startedAt);
+        storage.remove(TRIAL_EXPIRED_KEY);
+      }
+
+      if (expired) {
+        storage.set(TRIAL_EXPIRED_KEY, "1");
+      }
+    }
+
     return plan;
   } catch {
     return getPlan();

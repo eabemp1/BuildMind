@@ -212,13 +212,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           nonce={nonce}
           dangerouslySetInnerHTML={{
             __html:
-              "try{var d=document.documentElement;var t=localStorage.getItem('bm_theme');if(t==='light')d.classList.add('light-mode');else d.classList.remove('light-mode');d.classList.add('bm-ready')}catch(e){document.documentElement.classList.add('bm-ready')}",
+              "try{var t=localStorage.getItem('bm_theme');if(t==='light')document.documentElement.classList.add('light-mode');else document.documentElement.classList.remove('light-mode')}catch(e){}finally{document.documentElement.classList.add('bm-ready')}",
           }}
         />
         {/* Per-page canonical tags are set via metadata.alternates.canonical in each page */}
-        {/* Performance */}
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        {/* Fonts are loaded via globals.css @import -- no duplicate link tags needed */}
         {/* Icons */}
         <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=3" />
         <link rel="shortcut icon" href="/favicon.svg?v=3" />
