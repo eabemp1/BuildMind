@@ -9,6 +9,9 @@ import { createClient } from "@/lib/supabase/client";
 import { clearStoredToken, searchGlobal, type SearchResultsData } from "@/lib/api";
 import { FEATURES } from "@/lib/features";
 import NotificationBell from "@/components/NotificationBell";
+import { NAV, hasPlanAccess } from "@/components/layout/sidebar-nav";
+import { getTasksCompleted, syncTasksCompletedFromServer } from "@/lib/nav-config";
+import { usePlan } from "@/lib/usePlan";
 
 type TopbarProps = { onToggleSidebar?: () => void };
 
@@ -18,6 +21,8 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
   const [email, setEmail] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [avatarBroken, setAvatarBroken] = useState(false);
+  const { plan } = usePlan();
+  const [tasksCompleted, setTasksCompleted] = useState(0);
 
   // Load user email + avatar from profile on mount
   useEffect(() => {
@@ -40,6 +45,18 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
       setAvatarUrl(profile?.avatar_url ?? authAvatar);
     });
   }, []);
+
+  useEffect(() => {
+    setTasksCompleted(getTasksCompleted());
+    void syncTasksCompletedFromServer().finally(() => setTasksCompleted(getTasksCompleted()));
+    const refresh = () => setTasksCompleted(getTasksCompleted());
+    window.addEventListener("storage", refresh);
+    window.addEventListener("bm_tasks_completed_updated", refresh);
+    return () => {
+      window.removeEventListener("storage", refresh);
+      window.removeEventListener("bm_tasks_completed_updated", refresh);
+    };
+  }, []);
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResultsData | null>(null);
@@ -58,6 +75,16 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
       matches(item.label) ||
       (item.description ? matches(item.description) : false) ||
       (item.keywords ? item.keywords.some(k => matches(k)) : false);
+    const navAccessibleHrefs = new Set(
+      NAV.filter(navItem => {
+        if (!navItem.enabled) return false;
+        if (tasksCompleted < (navItem.unlocksAt ?? 0)) return false;
+        if (navItem.requiredPlan && !hasPlanAccess(plan, navItem.requiredPlan)) return false;
+        if (navItem.href === "/upgrade" && plan !== "free") return false;
+        return true;
+      }).map(i => i.href)
+    );
+    const isAccessible = (href: string) => navAccessibleHrefs.has(href);
 
     const features = [
       { label: "Execution",         href: "/overview",        keywords: ["overview", "stats", "execution"] },
@@ -79,11 +106,11 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
     ];
 
     return {
-      features: features.filter(hasAnyMatch),
+      features: features.filter((item) => isAccessible(item.href)).filter(hasAnyMatch),
       widgets: [] as { label: string }[],
-      recommendations: recommendations.filter(hasAnyMatch),
+      recommendations: recommendations.filter((item) => isAccessible(item.href)).filter(hasAnyMatch),
     };
-  }, [searchQuery]);
+  }, [plan, searchQuery, tasksCompleted]);
 
   const signOut = async () => {
     setOpen(false); setSearchOpen(false);

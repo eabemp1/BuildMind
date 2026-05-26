@@ -70,11 +70,15 @@ const TIERS = [
 
 export default function UpgradePage() {
   const router = useRouter();
-  const { plan } = usePlan();
+  const { plan, isLoading } = usePlan();
   const [loading, setLoading] = useState(false);
   const [loadingTier, setLoadingTier] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [showTeamsWaitlist, setShowTeamsWaitlist] = useState(false);
+
+  useEffect(() => {
+    if (!isLoading && plan === "builder") router.replace("/overview");
+  }, [plan, isLoading, router]);
 
   useEffect(() => {
     const reference = new URLSearchParams(window.location.search).get("reference");
@@ -350,36 +354,6 @@ export default function UpgradePage() {
               {text}
             </div>
           ))}
-        </div>
-
-        {/* Bottom positioning statement */}
-        <div style={{
-          marginTop: 56,
-          padding: "24px 28px",
-          background: "var(--bm-bg2)",
-          border: "1px solid var(--bm-border)",
-          borderRadius: "var(--r-xl)",
-          borderLeft: "2px solid var(--bm-accent)",
-        }}>
-          <p style={{
-            fontFamily: "'DM Mono', monospace",
-            fontSize: 9,
-            textTransform: "uppercase",
-            letterSpacing: "0.10em",
-            color: "var(--bm-accent)",
-            marginBottom: 8,
-          }}>
-            The pricing insight
-          </p>
-          <p style={{
-            fontFamily: "'Inter', sans-serif",
-            fontSize: 13,
-            color: "var(--bm-text2)",
-            lineHeight: 1.6,
-            maxWidth: 640,
-          }}>
-            BuildMind is not competing with Notion or Linear. It&apos;s competing with the expensive executive coach, the VC operating partner, and the founder therapist — all three — at a fraction of the cost and available at 2am when the anxiety hits. Builder gets you in. The reflexion loop keeps you. Raise to $39 when D30 retention crosses 40%.
-          </p>
         </div>
       </div>
     </div>

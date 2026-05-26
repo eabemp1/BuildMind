@@ -13,6 +13,8 @@ const config: Config = {
         syne: ["'Syne'", "sans-serif"],
         inter: ["'Inter'", "sans-serif"],
         mono: ["'DM Mono'", "monospace"],
+        display: ["'DM Serif Display'", "serif"],
+        serif: ["'DM Serif Display'", "serif"],
       },
       colors: {
         brand: {

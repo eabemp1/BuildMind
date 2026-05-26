@@ -1,8 +1,8 @@
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&family=DM+Serif+Display:ital@0;1&family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&family=DM+Serif+Display:ital@0;1&family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 
 /* ── DARK (default) ─────────────────────────────────── */
 :root {
@@ -108,6 +108,10 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+html:not(.bm-ready) body {
+  visibility: hidden;
+}
+
 /* ── Typography utilities ────────────────────────────── */
 .font-syne   { font-family: 'Syne', sans-serif; }
 .font-inter  { font-family: 'Inter', sans-serif; }
@@ -117,6 +121,13 @@ body {
 .bm-text2 { color: var(--bm-text2); }
 .bm-text3 { color: var(--bm-text3); }
 .bm-text4 { color: var(--bm-text4); }
+
+.gradient-text {
+  background: linear-gradient(90deg, #5CC88A, #4AB8B0);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
 
 .eyebrow {
   font-family: 'DM Mono', monospace;
