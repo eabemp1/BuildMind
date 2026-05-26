@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePlan } from "@/lib/usePlan";
 import { Check, Loader2, ArrowRight, Shield } from "lucide-react";
+import TeamsWaitlistCard from "@/components/TeamsWaitlistCard";
+import { PLAN_PRICE_MONTHLY } from "@/lib/pricing";
 
 const TIERS = [
   {
@@ -28,8 +30,8 @@ const TIERS = [
   {
     id: "builder",
     name: "Builder",
-    price: "$29",
-    priceSub: "/mo · launch price",
+    price: `$${PLAN_PRICE_MONTHLY.builder}`,
+    priceSub: "/mo",
     desc: "For founders building seriously. Full intelligence layer, unlimited AI, deep integrations, and the weekly synthesis report that shows you your own patterns.",
     featured: true,
     badge: "Most popular",
@@ -48,9 +50,9 @@ const TIERS = [
   {
     id: "team",
     name: "Team",
-    price: "$79",
-    priceSub: "/mo · up to 3 seats",
-    desc: "For cofounding teams. The Team tier is the real product for 2026. When two founders use the same execution OS, the switching cost doubles.",
+    price: "Waitlist",
+    priceSub: "early access",
+    desc: "For cofounding teams. Teams is opening through early access instead of a second paid tier.",
     featured: false,
     features: [
       "Everything in Builder × 3 seats",
@@ -72,6 +74,7 @@ export default function UpgradePage() {
   const [loading, setLoading] = useState(false);
   const [loadingTier, setLoadingTier] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [showTeamsWaitlist, setShowTeamsWaitlist] = useState(false);
 
   useEffect(() => {
     const reference = new URLSearchParams(window.location.search).get("reference");
@@ -97,7 +100,8 @@ export default function UpgradePage() {
   async function handleUpgrade(planKey: string | null) {
     if (!planKey) { router.push("/auth/signup"); return; }
     if (planKey === "team") {
-      router.push("/api/waitlist/teams"); return;
+      setShowTeamsWaitlist(true);
+      return;
     }
     setLoadingTier(planKey);
     setError("");
@@ -117,6 +121,9 @@ export default function UpgradePage() {
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--bm-bg)", padding: "60px 24px 80px" }}>
+      {showTeamsWaitlist && (
+        <TeamsWaitlistCard asModal onClose={() => setShowTeamsWaitlist(false)} />
+      )}
       <div style={{ maxWidth: 920, margin: "0 auto" }}>
 
         {/* Header */}

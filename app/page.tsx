@@ -1164,18 +1164,6 @@ function WorldCanvas() {
 }
 
 const landingShellStyle = {
-  "--bm-bg": "#0C0C0D",
-  "--bm-bg2": "#131315",
-  "--bm-bg3": "#1A1A1D",
-  "--bm-bg4": "#222226",
-  "--bm-bg5": "#2A2A2F",
-  "--bm-border": "#1E1E22",
-  "--bm-border2": "#282830",
-  "--bm-border3": "#343440",
-  "--bm-text": "#E8E8E8",
-  "--bm-text2": "#888892",
-  "--bm-text3": "#50505C",
-  "--bm-text4": "#34343E",
   background: "var(--bm-bg)",
   color: "var(--bm-text)",
   position: "relative",
@@ -1291,7 +1279,7 @@ export default function LandingPage() {
       {/* Navbar */}
       <nav
         className="sticky top-0 z-50 flex h-16 items-center justify-between gap-3 px-4 sm:px-6"
-        style={{ background: "rgba(12,12,13,0.82)", backdropFilter: "blur(16px)", borderBottom: "1px solid var(--bm-border)", position: "relative", zIndex: 50 }}
+        style={{ background: "color-mix(in srgb, var(--bm-bg) 88%, transparent)", backdropFilter: "blur(16px)", borderBottom: "1px solid var(--bm-border)", position: "relative", zIndex: 50 }}
       >
         <div className="flex items-center gap-2">
           <BrandMark size={32} href="/" />

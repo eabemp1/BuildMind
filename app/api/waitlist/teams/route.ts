@@ -60,7 +60,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ ok: false, error: "Database error" }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, message: "You're on the early access list." });
+  const { count } = await supabase
+    .from("teams_waitlist")
+    .select("*", { count: "exact", head: true });
+
+  return NextResponse.json({
+    ok: true,
+    message: "You're on the early access list.",
+    position: count ?? undefined,
+  });
 }
 
 export async function GET(req: NextRequest): Promise<NextResponse> {

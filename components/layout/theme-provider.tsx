@@ -6,7 +6,10 @@ interface ThemeCtx { theme: Theme; toggle: () => void; }
 const Ctx = createContext<ThemeCtx>({ theme: "dark", toggle: () => {} });
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState<Theme>("dark");
+  const [theme, setTheme] = useState<Theme>(() => {
+    if (typeof document !== "undefined" && document.documentElement.classList.contains("light-mode")) return "light";
+    return "dark";
+  });
 
   useEffect(() => {
     // bm_theme is intentionally raw localStorage — it's a device-level UI preference

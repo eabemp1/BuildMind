@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&family=Inter:wght@300;400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&family=DM+Serif+Display:ital@0;1&family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 
 /* ── DARK (default) ─────────────────────────────────── */
 :root {
@@ -112,6 +112,11 @@ body {
 .font-syne   { font-family: 'Syne', sans-serif; }
 .font-inter  { font-family: 'Inter', sans-serif; }
 .font-mono   { font-family: 'DM Mono', monospace; }
+.font-display { font-family: 'DM Serif Display', serif; }
+.bm-text { color: var(--bm-text); }
+.bm-text2 { color: var(--bm-text2); }
+.bm-text3 { color: var(--bm-text3); }
+.bm-text4 { color: var(--bm-text4); }
 
 .eyebrow {
   font-family: 'DM Mono', monospace;

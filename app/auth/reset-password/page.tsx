@@ -97,17 +97,8 @@ export default function ResetPasswordPage() {
     <div
       className="relative grid min-h-screen place-items-center overflow-hidden p-6"
       style={{
-        background: "#0C0C0D",
-        color: "#E8E8E8",
-        ["--bm-bg" as string]: "#0C0C0D",
-        ["--bm-bg2" as string]: "#131315",
-        ["--bm-bg3" as string]: "#1A1A1D",
-        ["--bm-border" as string]: "#1E1E22",
-        ["--bm-border2" as string]: "#282830",
-        ["--bm-text" as string]: "#E8E8E8",
-        ["--bm-text2" as string]: "#888892",
-        ["--bm-text3" as string]: "#50505C",
-        ["--bm-text4" as string]: "#34343E",
+        background: "var(--bm-bg)",
+        color: "var(--bm-text)",
       }}
     >
       <div
@@ -143,7 +134,7 @@ export default function ResetPasswordPage() {
         {!hasSession ? (
           <form className="mt-5 space-y-4" onSubmit={sendResetEmail}>
             <Input
-              className="border-[var(--bm-border2)] bg-black/20 bm-text placeholder:text-zinc-500"
+              className="border-[var(--bm-border2)] bg-[var(--bm-bg3)] bm-text placeholder:text-[var(--bm-text4)]"
               type="email"
               placeholder="Email address"
               value={email}
@@ -161,14 +152,14 @@ export default function ResetPasswordPage() {
         ) : (
           <form className="mt-5 space-y-4" onSubmit={onSubmit}>
           <Input
-            className="border-[var(--bm-border2)] bg-black/20 bm-text placeholder:text-zinc-500"
+            className="border-[var(--bm-border2)] bg-[var(--bm-bg3)] bm-text placeholder:text-[var(--bm-text4)]"
             type="password"
             placeholder="New password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
           <Input
-            className="border-[var(--bm-border2)] bg-black/20 bm-text placeholder:text-zinc-500"
+            className="border-[var(--bm-border2)] bg-[var(--bm-bg3)] bm-text placeholder:text-[var(--bm-text4)]"
             type="password"
             placeholder="Confirm password"
             value={confirm}

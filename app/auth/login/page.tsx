@@ -14,17 +14,6 @@ function AuthAestheticLayer() {
   return (
     <style>{`
       .bm-auth-skin {
-        --bm-bg: #0C0C0D;
-        --bm-bg2: #131315;
-        --bm-bg3: #1A1A1D;
-        --bm-bg4: #222226;
-        --bm-border: #1E1E22;
-        --bm-border2: #282830;
-        --bm-border3: #343440;
-        --bm-text: #E8E8E8;
-        --bm-text2: #888892;
-        --bm-text3: #50505C;
-        --bm-text4: #34343E;
         -webkit-font-smoothing: antialiased;
       }
       .bm-auth-skin input {
@@ -444,7 +433,7 @@ function LeftPanel() {
       animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.7 }}
       className="hidden lg:flex w-[52%] relative z-10 flex-col items-center justify-center overflow-hidden"
-      style={{ background: "rgba(12,12,13,0.72)", minHeight: "100vh", borderRight: "1px solid var(--bm-border)", backdropFilter: "blur(1px)" }}
+      style={{ background: "color-mix(in srgb, var(--bm-bg) 72%, transparent)", minHeight: "100vh", borderRight: "1px solid var(--bm-border)", backdropFilter: "blur(1px)" }}
     >
       <style>{`
         @keyframes signature-draw {
@@ -650,7 +639,7 @@ function LoginContent() {
   }
 
   return (
-    <div className="bm-auth-skin relative min-h-screen flex overflow-hidden" style={{ background: "#0C0C0D" }}>
+    <div className="bm-auth-skin relative min-h-screen flex overflow-hidden" style={{ background: "var(--bm-bg)" }}>
       <AuthAestheticLayer />
       <AuthWorldCanvas />
       <LeftPanel />
@@ -664,7 +653,7 @@ function LoginContent() {
       {/* Right panel */}
       <div
         className="flex-1 flex items-center justify-center p-8 relative z-10 overflow-hidden min-h-screen"
-        style={{ background: "rgba(12,12,13,0.58)", backdropFilter: "blur(1px)" }}
+        style={{ background: "color-mix(in srgb, var(--bm-bg) 58%, transparent)", backdropFilter: "blur(1px)" }}
       >
         {/* Floating stat cards — overflow:hidden on parent prevents bleed */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden" style={{ zIndex: 0 }}>

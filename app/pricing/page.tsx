@@ -38,7 +38,7 @@ export default function PricingPage() {
     <main style={{ minHeight: "100vh", background: "var(--bm-bg)", fontFamily: "inherit" }}>
 
       {/* Nav */}
-      <nav style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 32px", height: 56, borderBottom: "1px solid var(--bm-border)", position: "sticky", top: 0, background: "rgba(15,15,16,0.92)", backdropFilter: "blur(10px)", zIndex: 10 }}>
+      <nav style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 32px", height: 56, borderBottom: "1px solid var(--bm-border)", position: "sticky", top: 0, background: "color-mix(in srgb, var(--bm-bg) 92%, transparent)", backdropFilter: "blur(10px)", zIndex: 10 }}>
         <Link href="/" style={{ display: "flex", alignItems: "center", gap: 9, textDecoration: "none" }}>
           <div
             style={{
