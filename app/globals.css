@@ -101,7 +101,7 @@
 
 /* No-flash: hide body until the theme script marks the document ready. */
 html:not(.bm-ready) body {
-  visibility: hidden;
+  visibility: visible;
 }
 
 body {
