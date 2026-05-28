@@ -1591,11 +1591,71 @@ function OnboardingInner() {
     trackFunnelStep("reflexion_strike_accepted");
   };
 
+  async function saveOnboarding(options?: { worries?: string[]; avoidanceNote?: string }) {
+    setScreen("saving");
+    try {
+      const user = await getCurrentUser();
+      if (!user) { router.replace("/auth"); return; }
+
+      const resolvedWorries = options?.worries ?? founderWorries;
+      const resolvedDepthAnswers = {
+        ...depthAnswers,
+        avoidance: options?.avoidanceNote || depthAnswers.avoidance,
+      };
+
+      // Map onboarding v2 fields to createProjectWithRoadmap's expected params.
+      const projectName = (startupName || idea).slice(0, 60).replace(/[.!?]+$/, "").trim();
+      await createProjectWithRoadmap({
+        project_name: projectName,
+        idea_description: idea,
+        target_users: resolvedDepthAnswers.targetUsers.trim() || "founders",
+        problem: strikeResult?.marketGap ?? idea,
+        startup_stage: startupStage,
+      });
+
+      // Persist founder name into user metadata
+      if (founderName) {
+        const supabaseForMeta = createClient();
+        supabaseForMeta.auth.updateUser({ data: { full_name: founderName } }).catch(() => {});
+      }
+
+      // Persist founder worries into founder_memory
+      if (resolvedWorries.length > 0) {
+        fetch("/api/onboarding/founder-state", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ worries: resolvedWorries }),
+        }).catch(() => {});
+      }
+
+      identifyUser(user.id, user.email ?? null);
+      trackFunnelStep("onboarding_complete");
+
+      // Persist any answers we still collected before this shorter flow.
+      if (resolvedDepthAnswers.avoidance.trim() || resolvedDepthAnswers.revenueModel.trim()) {
+        fetch("/api/onboarding/depth-answers", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(resolvedDepthAnswers),
+        }).catch(() => {});
+      }
+
+      const supabase = createClient();
+      await supabase.auth.updateUser({ data: { onboarding_completed: true } });
+      fetch("/api/user/welcome-email", { method: "POST" }).catch(() => {});
+
+      router.push("/today?first_session=true");
+    } catch {
+      setError("Something went wrong saving your project. Please try again.");
+      setScreen("founder_state");
+    }
+  }
+
   const handleFounderState = (worries: string[], note: string) => {
     setFounderWorries(worries);
     setDepthAnswers(prev => ({ ...prev, avoidance: note || prev.avoidance }));
-    setScreen("depth");
     trackFunnelStep("founder_state_complete");
+    void saveOnboarding({ worries, avoidanceNote: note });
   };
 
   const handleDepthComplete = (answers: DepthAnswers) => {
@@ -1611,66 +1671,12 @@ function OnboardingInner() {
   };
 
   const handleIdentityComplete = async () => {
-    // Go to integrations screen first — saving happens after
-    setScreen("integrations");
     trackFunnelStep("identity_complete");
+    await saveOnboarding();
   };
 
   const handleIntegrationsComplete = async () => {
-    setScreen("saving");
-    try {
-      const user = await getCurrentUser();
-      if (!user) { router.replace("/auth"); return; }
-
-      // Map onboarding v2 fields to createProjectWithRoadmap's expected params.
-      const projectName = (startupName || idea).slice(0, 60).replace(/[.!?]+$/, "").trim();
-      await createProjectWithRoadmap({
-        project_name: projectName,
-        idea_description: idea,
-        target_users: depthAnswers.targetUsers.trim() || "founders",
-        problem: strikeResult?.marketGap ?? idea,
-        startup_stage: startupStage,
-      });
-
-      // Persist founder name into user metadata
-      if (founderName) {
-        const supabaseForMeta = createClient();
-        supabaseForMeta.auth.updateUser({ data: { full_name: founderName } }).catch(() => {});
-      }
-
-      // Persist founder worries into founder_memory
-      if (founderWorries.length > 0) {
-        fetch("/api/onboarding/founder-state", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ worries: founderWorries }),
-        }).catch(() => {});
-      }
-
-      identifyUser(user.id, user.email ?? null);
-      trackFunnelStep("onboarding_complete");
-
-      // Persist depth-screen answers into founder_memory.avoidance_zones
-      if (depthAnswers.avoidance.trim() || depthAnswers.revenueModel.trim()) {
-        fetch("/api/onboarding/depth-answers", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(depthAnswers),
-        }).catch(() => {});
-      }
-
-      // Stamp onboarding_completed into JWT metadata
-      const supabase = createClient();
-      await supabase.auth.updateUser({ data: { onboarding_completed: true } });
-
-      // Fire welcome email — best-effort
-      fetch("/api/user/welcome-email", { method: "POST" }).catch(() => {});
-
-      router.push("/today?first_session=true");
-    } catch {
-      setError("Something went wrong saving your project. Please try again.");
-      setScreen("integrations");
-    }
+    await saveOnboarding();
   };
 
   if (screen === "saving") {
