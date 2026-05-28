@@ -32,12 +32,29 @@ export async function middleware(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   const supabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
+  const pathname = request.nextUrl.pathname;
+  const todayKey = new Date().toISOString().slice(0, 10);
 
   if (!supabaseConfigured && process.env.NODE_ENV === "production") {
     return NextResponse.json(
       { error: "Supabase public environment is not configured." },
       { status: 500 },
     );
+  }
+
+  if (pathname === "/" && request.nextUrl.searchParams.has("code") && !isDevAuthed) {
+    const redirectUrl = request.nextUrl.clone();
+    redirectUrl.pathname = "/auth/callback";
+    if (!redirectUrl.searchParams.has("next")) {
+      redirectUrl.searchParams.set("next", "/onboarding");
+    }
+    const redirectResponse = NextResponse.redirect(redirectUrl);
+    redirectResponse.headers.set("Content-Security-Policy", csp);
+    return redirectResponse;
+  }
+
+  if (pathname === "/auth/callback") {
+    return response;
   }
 
   const supabase = supabaseConfigured
@@ -72,18 +89,6 @@ export async function middleware(request: NextRequest) {
         response.cookies.delete(cookie.name);
       }
     }
-  }
-
-  const pathname = request.nextUrl.pathname;
-  const todayKey = new Date().toISOString().slice(0, 10);
-
-  if (pathname === "/" && request.nextUrl.searchParams.has("code") && !user && !isDevAuthed) {
-    const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = "/auth/callback";
-    if (!redirectUrl.searchParams.has("next")) {
-      redirectUrl.searchParams.set("next", "/onboarding");
-    }
-    return NextResponse.redirect(redirectUrl);
   }
 
   const isAuthRoute = pathname.startsWith("/auth");
