@@ -30,7 +30,8 @@ import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { buildArchetypeSystemContext } from "@/lib/founderArchetype";
 import { buildDebtPromptInjection, computeExecutionDebt, debtSuppressesTask, markDebtSurfaced } from "@/lib/executionDebt";
 import { recordActivity } from "@/lib/server/activityLog";
-import { buildLongTodayDraft } from "@/lib/todayDrafts";
+import { buildPersonalizedTodayDraft } from "@/lib/todayDrafts";
+import { buildKnowledgeBaseContext, searchFounderKnowledgeBase, type FounderKnowledgeMatch } from "@/lib/founderKnowledgeBase";
 
 function sse(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -190,6 +191,8 @@ export async function POST(request: Request) {
         let projectContext = "";
         let lastReflectionContext = "";
         let debtContext = "";
+        let founderArchetype: string | undefined;
+        let knowledgeMatches: FounderKnowledgeMatch[] = [];
 
         if (hasAdminEnv()) {
           const supabase = createAdminClient();
@@ -227,6 +230,9 @@ export async function POST(request: Request) {
 
           if (memory) {
             const avoidance = (memory.avoidance_zones ?? []) as string[];
+            founderArchetype = ((memory.personality_tags ?? []) as string[])
+              .find((tag) => tag.startsWith("archetype:"))
+              ?.replace("archetype:", "");
             if (avoidance.length) {
               lastReflectionContext += `\nAvoidance zones: ${avoidance.join(", ")} — name the pattern and assign it anyway.`;
             }
@@ -289,8 +295,19 @@ export async function POST(request: Request) {
 
           if (lastReflection) {
             const reflectDate = new Date(lastReflection.created_at).toLocaleDateString();
-            lastReflectionContext = `\nLAST REFLECTION (${reflectDate}):\nYesterday: "${lastReflection.today_action ?? "Not recorded"}"\nOutcome: ${lastReflection.outcome}\nConfidence: ${lastReflection.confidence}/5\nNote: "${lastReflection.note ?? "None"}"` + lastReflectionContext;
+            lastReflectionContext = `\nLAST REFLECTION (${reflectDate}):\nYesterday: "${lastReflection.today_action ?? "Not recorded"}"\nOutcome: ${lastReflection.outcome}\nConfidence: ${lastReflection.confidence}/5\nNote: "${lastReflection.note ?? "None"}"\nInstruction: if yesterday was completed, stay within the same stage and thread, but refine the next task from the reflection note instead of repeating the same action or message.` + lastReflectionContext;
           }
+        }
+
+        if (hasAdminEnv() && (title || problem || targetUsers)) {
+          knowledgeMatches = await searchFounderKnowledgeBase(
+            `${title}. ${problem}. ${targetUsers}. ${projectContext}`.trim(),
+            stage,
+            founderArchetype,
+            0,
+          );
+          const knowledgeContext = buildKnowledgeBaseContext(knowledgeMatches, founderArchetype);
+          if (knowledgeContext) lastReflectionContext += `\n\n${knowledgeContext}`;
         }
 
         const fallback = buildFallback(stage, targetUsers, problem, title, description);
@@ -394,7 +411,14 @@ ${debtContext}`;
         const finalData = {
           ...fallback,
           action: refined || fallback.action,
-          message: buildLongTodayDraft(refined || fallback.action, fallback, { title, targetUsers, problem, stage }),
+          message: buildPersonalizedTodayDraft(refined || fallback.action, fallback, {
+            title,
+            targetUsers,
+            problem,
+            stage,
+            archetypeStyle: founderArchetype,
+            knowledgeMatches,
+          }),
           why: rationale,
           stage,
           isAI: true,

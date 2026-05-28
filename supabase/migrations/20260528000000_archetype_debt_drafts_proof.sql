@@ -20,7 +20,7 @@ ALTER TABLE projects
 
 CREATE TABLE IF NOT EXISTS founder_knowledge_base (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  stage text NOT NULL CHECK (stage IN ('Idea', 'Validation', 'MVP', 'Launch', 'Growth')),
+  stage text NOT NULL CHECK (stage IN ('Idea', 'Validation', 'MVP', 'Launch', 'Growth', 'Revenue')),
   company_type text NOT NULL,
   founder_archetype text,
   what_stalled_them text NOT NULL,

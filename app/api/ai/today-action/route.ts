@@ -10,7 +10,8 @@ import { sanitizeModelOutput } from "@/lib/ai-providers";
 import { buildArchetypeSystemContext } from "@/lib/founderArchetype";
 import { buildDebtPromptInjection, computeExecutionDebt, debtSuppressesTask, markDebtSurfaced } from "@/lib/executionDebt";
 import { recordActivity } from "@/lib/server/activityLog";
-import { buildLongTodayDraft } from "@/lib/todayDrafts";
+import { buildPersonalizedTodayDraft } from "@/lib/todayDrafts";
+import { buildKnowledgeBaseContext, searchFounderKnowledgeBase, type FounderKnowledgeMatch } from "@/lib/founderKnowledgeBase";
 
 export const runtime     = "nodejs";
 export const dynamic     = "force-dynamic";
@@ -188,6 +189,8 @@ export async function POST(request: Request) {
     let problem = "";
     let title = "";
     let lastReflectionContext = "";
+    let founderArchetype: string | undefined;
+    let knowledgeMatches: FounderKnowledgeMatch[] = [];
     let supabase: ReturnType<typeof createAdminClient> | null = null;
     let hoistedReflection: { outcome?: string | null; note?: string | null; confidence?: number | null; today_action?: string | null; created_at?: string | null } | null = null;
     // FIX 1.3: Hoist memoryResult to outer scope so it can be reused later
@@ -338,6 +341,9 @@ Current MRR: ${project.current_mrr && project.current_mrr > 0 ? `GHS ${(project.
         const strengths = (memory.strengths ?? []) as string[];
         const lastInsight = memory.last_insight as string | null;
         const lastWeekSummaryRaw = (memory as Record<string, unknown>).last_week_summary as string | null;
+        founderArchetype = ((memory.personality_tags ?? []) as string[])
+          .find((tag) => tag.startsWith("archetype:"))
+          ?.replace("archetype:", "");
 
         if (avoidance.length || strengths.length || lastInsight) {
           lastReflectionContext += `\n\nFOUNDER MEMORY (behavioral profile — use to shape the task):`;
@@ -399,10 +405,22 @@ Their note: "${lastReflection.note ?? "No note"}"
 
 INSTRUCTION: Use this to make today's action a direct causal response to yesterday.
 - blocked outcome -> remove that specific blocker first
-- completed outcome -> go one level deeper on the same thread
+- completed outcome -> go one level deeper on the same thread, but do not repeat the same action or message
 - confidence 1-2 -> give an easier, confidence-building first step
-- learned outcome -> apply the insight to one real person today` + lastReflectionContext;
+- learned outcome -> apply the insight to one real person today
+- if the prior action was completed, preserve the stage and target area while refining the next task from their reflection note` + lastReflectionContext;
       }
+    }
+
+    if (hasAdminEnv() && (title || problem || targetUsers)) {
+      knowledgeMatches = await searchFounderKnowledgeBase(
+        `${title}. ${problem}. ${targetUsers}. ${projectContext}`.trim(),
+        stage,
+        founderArchetype,
+        0,
+      );
+      const knowledgeContext = buildKnowledgeBaseContext(knowledgeMatches, founderArchetype);
+      if (knowledgeContext) lastReflectionContext += `\n\n${knowledgeContext}`;
     }
 
     // Build contextual fallback using real project data (never placeholder text)
@@ -537,7 +555,14 @@ INSTRUCTION: Use this to make today's action a direct causal response to yesterd
       // If reflexion ran, its rationale becomes the task's why
       why: cleanVisibleText(reflexionOutput?.rationale, fallback.why),
     };
-    finalResult.message = buildLongTodayDraft(finalResult.action, fallback, { title, targetUsers, problem, stage });
+    finalResult.message = buildPersonalizedTodayDraft(finalResult.action, fallback, {
+      title,
+      targetUsers,
+      problem,
+      stage,
+      archetypeStyle: founderArchetype,
+      knowledgeMatches,
+    });
 
     if (reflexionOutput) {
       finalResult.reflexion = {

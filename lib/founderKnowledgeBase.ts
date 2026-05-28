@@ -15,16 +15,18 @@ export interface FounderKnowledgeMatch {
   draft_angle?: string | null;
   draft_template?: string | null;
   draft_channel?: string | null;
+  draft_intent?: string | null;
+  draft_style?: string | null;
   draft_goal?: string | null;
   similarity: number;
 }
 
-const ARCHETYPE_DRAFT_STYLE: Record<string, string> = {
-  "technical-overbuilder": "ask for workflow truth before features; avoid technical language unless the recipient uses it first",
-  "vision-heavy-executor": "turn the vision into one narrow ask with a concrete reply path",
-  "validation-avoider": "make the ask low-pressure, human, and easy to answer",
-  "chaotic-high-energy": "include exactly one ask and no extra side quests",
-  "methodical-slow-mover": "remove preparation requirements and make imperfect outreach acceptable today",
+const ARCHETYPE_DRAFT_STYLE: Record<string, string[]> = {
+  "technical-overbuilder": ["curious", "observation-led"],
+  "vision-heavy-executor": ["direct", "peer"],
+  "validation-avoider": ["warm", "referral"],
+  "chaotic-high-energy": ["direct"],
+  "methodical-slow-mover": ["peer", "curious"],
 };
 
 async function embedQuery(text: string): Promise<number[]> {
@@ -101,9 +103,20 @@ export function buildKnowledgeBaseContext(
 ): string {
   if (matches.length === 0) return "";
 
-  const style = founderArchetype && ARCHETYPE_DRAFT_STYLE[founderArchetype]
-    ? ARCHETYPE_DRAFT_STYLE[founderArchetype]
-    : null;
+  const preferredStyles = founderArchetype ? ARCHETYPE_DRAFT_STYLE[founderArchetype] ?? [] : [];
+  const draftMatch = matches.find((match) =>
+    match.draft_template &&
+    (preferredStyles.length === 0 || preferredStyles.includes(match.draft_style ?? ""))
+  ) ?? matches.find((match) => match.draft_template);
+
+  const draftBlock = draftMatch?.draft_template
+    ? `
+
+DRAFT STARTING POINT (${draftMatch.draft_channel ?? "unknown channel"}, ${draftMatch.draft_style ?? "specific"} style):
+${draftMatch.draft_template}
+
+INSTRUCTION: Use this as a structural starting point only. Replace every placeholder with specific details from this founder's actual startup, target user, and problem. Keep the opening structure, but make the content entirely specific to them.`
+    : "";
 
   const matchBlock = matches
     .slice(0, 3)
@@ -111,13 +124,12 @@ export function buildKnowledgeBaseContext(
 - Stalled because: ${match.what_stalled_them}
 - Broke the stall by: ${match.what_broke_the_stall}
 - First 10 days: ${match.first_10_days_advice}
-- Draft angle: ${match.draft_angle ?? "Use a specific founder-to-founder ask."}
-- Channel goal: ${match.draft_channel ?? "DM"} / ${match.draft_goal ?? "conversation"}`)
+- Draft angle: ${match.draft_angle ?? match.draft_style ?? "Use a specific founder-to-founder ask."}
+- Channel goal: ${match.draft_channel ?? "DM"} / ${match.draft_intent ?? match.draft_goal ?? "conversation"}`)
     .join("\n\n");
 
   return `REAL FOUNDER PRECEDENTS:
-${matchBlock}
-${style ? `\nARCHETYPE DRAFT STYLE: ${style}` : ""}
+${matchBlock}${draftBlock}
 
 Instruction: use these as precedent anchors. Make the task and draft specific to this founder, not a generic productivity suggestion.`;
 }

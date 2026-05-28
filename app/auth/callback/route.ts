@@ -8,17 +8,29 @@ function safeNextPath(value: string | null): string {
   return value;
 }
 
+function appOrigin(requestUrl: URL): string {
+  return (process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_URL ?? requestUrl.origin).replace(/\/$/, "");
+}
+
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get("code");
   const next = safeNextPath(requestUrl.searchParams.get("next"));
+  const origin = appOrigin(requestUrl);
 
   if (code) {
     const supabase = await createClient();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
 
     if (error) {
-      const redirectUrl = new URL(requestUrl.origin);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const redirectUrl = new URL(origin);
+        redirectUrl.pathname = next;
+        return NextResponse.redirect(redirectUrl);
+      }
+
+      const redirectUrl = new URL(origin);
       redirectUrl.pathname = "/auth/login";
       redirectUrl.searchParams.set("error", "auth_callback_failed");
       return NextResponse.redirect(redirectUrl);
@@ -71,7 +83,7 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  const redirectUrl = new URL(requestUrl.origin);
+  const redirectUrl = new URL(origin);
   redirectUrl.pathname = next;
   return NextResponse.redirect(redirectUrl);
 }

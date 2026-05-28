@@ -336,17 +336,7 @@ function buildPersonalizedDraftFromAction(action: string, message: string, produ
   const base = !isGenericDraft(hydrated)
     ? hydrated
     : `Hi [Name], quick question - I'm researching ${topic} for ${audience}. How are you handling this today, and what is the most frustrating part? I'd value 10 minutes of honest context.`;
-  if (base.length >= 500) return base;
-  return `${base}
-
-For context, I am not asking for encouragement or a polite "sounds interesting." I am trying to understand the real workflow before I build more around assumptions. What do you do today, where does it slow down, what workaround have you accepted as normal, and what would make you care enough to change it?
-
-If a call is too much, reply with three bullets:
-1. what you do now
-2. the most annoying part
-3. whether this is painful enough to solve soon
-
-If you are not the right person, one referral would help too.`.trim();
+  return base;
 }
 
 function useIsMobile() {
@@ -367,6 +357,13 @@ function getGreeting(): string {
   if (h < 12) return "Good morning";
   if (h < 17) return "Good afternoon";
   return "Good evening";
+}
+
+function localDayKey(date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function TodayContent() {
@@ -395,7 +392,7 @@ function TodayContent() {
   const [reflectionCount, setReflectionCount] = useState(() => {
     // Persist across navigation — LoopNarrative uses this for progressive unlock
     try {
-      const today = new Date().toISOString().split("T")[0];
+      const today = localDayKey();
       return parseInt(storage.get(`bm_reflection_count_${today}`) ?? "0", 10);
     } catch { return 0; }
   });
@@ -474,7 +471,7 @@ function TodayContent() {
 
       if (uid) {
         storage.onSignIn(uid);
-        const today = new Date().toISOString().split("T")[0];
+        const today = localDayKey();
         const checkinKey = `bm_checkin_done_date_${uid}`;
         const cachedDoneDate = storage.get(checkinKey);
         if (cachedDoneDate === today) setDone(true);
@@ -534,7 +531,7 @@ function TodayContent() {
       })
       .catch(() => {});
 
-    const today = new Date().toISOString().split("T")[0];
+    const today = localDayKey();
     const currentStage = project.startup_stage ?? "Idea";
     const cacheKey = `bm_today_action_cache_${userId}`;
 
@@ -755,7 +752,7 @@ function TodayContent() {
   // a duplicate check-in after seeing a stale uncompleted form.
   useTabSync((event) => {
     if (event.type === "checkin_done") {
-      const today = new Date().toISOString().split("T")[0];
+      const today = localDayKey();
       if (event.date === today) setDone(true);
     }
     if (event.type === "streak_updated") {
@@ -823,8 +820,9 @@ function TodayContent() {
   // React Strict Mode double-invoke side-effect in the render phase.
   const checkinSlot = useMemo(() => {
     const h = new Date().getHours();
-    const morningKey = `bm_morning_checkin_${new Date().toDateString()}`;
-    const eveningKey = `bm_evening_checkin_${new Date().toDateString()}`;
+    const today = localDayKey();
+    const morningKey = `bm_morning_checkin_${today}`;
+    const eveningKey = `bm_evening_checkin_${today}`;
     if (h >= 6 && h < 10 && !storage.get(morningKey)) return { type: "morning" as const, key: morningKey };
     if (h >= 18 && h < 22 && !storage.get(eveningKey)) return { type: "evening" as const, key: eveningKey };
     return null;
@@ -906,7 +904,7 @@ function TodayContent() {
         trackFunnelStep("first_task_completed");
         storage.set("bm_first_task_completed_tracked", "1");
       }
-      const todayKey = `bm_task_done_${new Date().toISOString().slice(0, 10)}`;
+      const todayKey = `bm_task_done_${localDayKey()}`;
       storage.set(todayKey, "1");
 
       try {
@@ -936,19 +934,25 @@ function TodayContent() {
       checkAndUnlockAchievements();
       notifyReflectPending();
 
-      const todayDate = new Date().toISOString().split("T")[0];
+      const todayDate = localDayKey();
       const todayActionState = { action: actionData.action, outcome, note, confidence };
       storage.setJSON("bm_today_action", todayActionState);
+      if (userId) {
+        storage.set(`bm_last_reflection_ts_${userId}`, Date.now().toString());
+        storage.remove(`bm_today_action_cache_${userId}`);
+        storage.remove(`bm_today_action_cache_ts_${userId}`);
+      }
       persistBehaviorState({
         today_action: todayActionState,
         checkin_done_date: todayDate,
+        today_action_cache: null,
       });
 
       if (revenueDelta && parseFloat(revenueDelta) > 0) {
         storage.setJSON("bm_today_revenue_delta", {
           amount: Math.round(parseFloat(revenueDelta) * 100),
           note: actionData.action.slice(0, 120),
-          date: new Date().toISOString().split("T")[0],
+          date: localDayKey(),
         });
       }
 
@@ -983,7 +987,7 @@ function TodayContent() {
             body: JSON.stringify({
               tasks_accepted_this_week_increment: 1,
               days_inactive: 0,
-              last_active: new Date().toISOString().split("T")[0],
+              last_active: localDayKey(),
             }),
           });
         } catch {}
@@ -1021,7 +1025,7 @@ function TodayContent() {
       setStreak(newStreak);
 
       // Notify other open tabs so they show the done state immediately
-      const todayBroadcast = new Date().toISOString().split("T")[0];
+      const todayBroadcast = localDayKey();
       broadcastTabEvent({ type: "checkin_done", date: todayBroadcast });
       broadcastTabEvent({ type: "streak_updated", streak: newStreak });
 
@@ -2090,7 +2094,7 @@ function TodayContent() {
             storage.set(`bm_last_reflection_ts_${userId}`, Date.now().toString());
           }
           // Notify other tabs so their cache is also busted
-          const todayStr = new Date().toISOString().split("T")[0];
+          const todayStr = localDayKey();
           broadcastTabEvent({ type: "reflection_done", date: todayStr });
           setReflectionCount(c => {
             const next = c + 1;
