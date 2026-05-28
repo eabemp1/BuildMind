@@ -21,10 +21,10 @@
   --bm-text3:    #5E5E5A;
   --bm-text4:    #383835;
   --bm-text-inv: #09090A;
-  --bm-accent:     #E8C547;
-  --bm-accent2:    #C9A82E;
-  --bm-accent-dim: rgba(232,197,71,0.08);
-  --bm-accent-bd:  rgba(232,197,71,0.22);
+  --bm-accent:     #8B5CF6;
+  --bm-accent2:    #A78BFA;
+  --bm-accent-dim: rgba(139,92,246,0.10);
+  --bm-accent-bd:  rgba(139,92,246,0.28);
   --bm-green:      #4CAF7D;
   --bm-green-dim:  rgba(76,175,125,0.10);
   --bm-green-bd:   rgba(76,175,125,0.25);
@@ -74,10 +74,10 @@
   --bm-text3:    #7A7A76;
   --bm-text4:    #ABABAB;
   --bm-text-inv: #F5F5F3;
-  --bm-accent:     #B5920A;
-  --bm-accent2:    #8F7008;
-  --bm-accent-dim: rgba(181,146,10,0.08);
-  --bm-accent-bd:  rgba(181,146,10,0.22);
+  --bm-accent:     #7C3AED;
+  --bm-accent2:    #6D28D9;
+  --bm-accent-dim: rgba(124,58,237,0.08);
+  --bm-accent-bd:  rgba(124,58,237,0.22);
   --bm-green:     #1A7A4A;
   --bm-green-dim: rgba(26,122,74,0.08);
   --bm-green-bd:  rgba(26,122,74,0.22);
@@ -87,7 +87,13 @@
   --bm-blue:      #1A5FAA;
   --bm-blue-dim:  rgba(26,95,170,0.08);
   --bm-blue-bd:   rgba(26,95,170,0.22);
-  --bm-amber:     var(--bm-accent);
+  --bm-amber:     #B5920A;
+  --bm-purple:    var(--bm-accent);
+  --bm-purple2:   var(--bm-accent2);
+  --bm-pdim:      var(--bm-accent-dim);
+  --bm-pbd:       var(--bm-accent-bd);
+  --bm-indigo:    var(--bm-accent);
+  --bm-violet:    var(--bm-accent);
   --bm-teal:      var(--bm-green);
   --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
   --shadow-md: none;
@@ -155,7 +161,7 @@ body {
 
 /* Used on auth and landing pages for the brand tagline. */
 .gradient-text {
-  background: linear-gradient(90deg, #5CC88A, #4AB8B0);
+  background: linear-gradient(90deg, #C4B5FD, #8B5CF6);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;

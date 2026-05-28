@@ -7,7 +7,7 @@
  * - Print CSS for PDF export (beautiful in print, not a debug dump)
  * - CSV export option
  * - LinkedIn / X share
- * - Celadon brand palette
+ * - Purple brand palette
  * - Clean data hierarchy
  */
 
@@ -38,11 +38,11 @@ type Props = {
 
 const STAGE_ORDER = ["Idea", "Validation", "MVP", "Launch", "Growth", "Revenue"];
 
-// Celadon-aligned palette
+// Purple-aligned palette
 const C = {
-  celadon:   "#A8D5BA",
-  celadonDim: "rgba(168,213,186,0.12)",
-  celadonBd:  "rgba(168,213,186,0.22)",
+  celadon:   "#C4B5FD",
+  celadonDim: "rgba(139,92,246,0.12)",
+  celadonBd:  "rgba(139,92,246,0.28)",
   bg:        "#0d0d14",
   bg2:       "#111118",
   card:      "rgba(18,18,26,0.97)",
@@ -251,7 +251,7 @@ export default function WeeklyReportCard({
           backgroundSize: "36px 36px", pointerEvents: "none",
         }} />
 
-        {/* Celadon glow top-right */}
+        {/* Purple glow top-right */}
         <div style={{
           position: "absolute", top: -60, right: -60,
           width: 200, height: 200, borderRadius: "50%",
@@ -329,7 +329,7 @@ export default function WeeklyReportCard({
 
         {/* ── Intention vs Action ── */}
         {report.intention_vs_action && (
-          <div style={{ marginBottom: 14, padding: "14px 16px", background: "rgba(168,213,186,0.04)", border: `1px solid ${C.celadonBd}`, borderRadius: 12 }}>
+          <div style={{ marginBottom: 14, padding: "14px 16px", background: "rgba(139,92,246,0.05)", border: `1px solid ${C.celadonBd}`, borderRadius: 12 }}>
             <div style={{ fontSize: 9, color: C.celadon, fontFamily: "monospace", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6, fontWeight: 700 }}>
               Intention vs Reality
             </div>
@@ -387,9 +387,9 @@ export default function WeeklyReportCard({
       {/* ── Visual share card (Audit v8 PROD #5) ── */}
       <motion.div className="bm-no-print"
         initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}
-        style={{ marginTop: 14, background: "var(--bm-bg3)", border: "1px solid var(--bm-green-bd)", borderRadius: "var(--r-lg)", padding: "16px 20px", position: "relative", overflow: "hidden" }}>
-        <div style={{ position: "absolute", top: -24, right: -24, width: 120, height: 120, borderRadius: "50%", background: "radial-gradient(circle, rgba(92,200,138,0.12) 0%, transparent 70%)", pointerEvents: "none" }} />
-        <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.12em", color: "rgba(92,200,138,0.55)", marginBottom: 10, textTransform: "uppercase" }}>
+        style={{ marginTop: 14, background: "var(--bm-bg3)", border: "1px solid var(--bm-accent-bd)", borderRadius: "var(--r-lg)", padding: "16px 20px", position: "relative", overflow: "hidden" }}>
+        <div style={{ position: "absolute", top: -24, right: -24, width: 120, height: 120, borderRadius: "50%", background: "radial-gradient(circle, rgba(139,92,246,0.12) 0%, transparent 70%)", pointerEvents: "none" }} />
+        <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.12em", color: "rgba(167,139,250,0.62)", marginBottom: 10, textTransform: "uppercase" }}>
           Week {weekNumber} · {projectTitle}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: report.next_week_focus ? 10 : 0 }}>
@@ -402,7 +402,7 @@ export default function WeeklyReportCard({
           </div>
         </div>
         {report.next_week_focus && (
-          <div style={{ fontSize: 10, color: "rgba(92,200,138,0.65)", borderTop: "1px solid rgba(92,200,138,0.1)", paddingTop: 8 }}>
+          <div style={{ fontSize: 10, color: "rgba(167,139,250,0.70)", borderTop: "1px solid rgba(139,92,246,0.12)", paddingTop: 8 }}>
             Next: {report.next_week_focus.slice(0, 90)}{report.next_week_focus.length > 90 ? "…" : ""}
           </div>
         )}

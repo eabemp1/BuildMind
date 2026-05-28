@@ -36,12 +36,12 @@ export const ARCHETYPE_WATCH: Record<FounderArchetype, string> = {
   "methodical-slow-mover": "planning instead of shipping",
 };
 
-export const ARCHETYPE_DRAFT_STYLE: Record<FounderArchetype, string> = {
-  "technical-overbuilder": "drafts should ask for concrete workflow truth before mentioning features; avoid technical language unless the recipient uses it first",
-  "vision-heavy-executor": "drafts should convert vision into one narrow ask with a concrete next step and a clear reply path",
-  "validation-avoider": "drafts should feel low-pressure, human, and easy to answer; make the ask about the recipient's current behavior, not the founder's idea",
-  "chaotic-high-energy": "drafts should be short in structure but rich in context, with exactly one ask and no extra side quests",
-  "methodical-slow-mover": "drafts should remove preparation requirements and make imperfect outreach acceptable today",
+export const ARCHETYPE_DRAFT_STYLE: Record<FounderArchetype, string[]> = {
+  "technical-overbuilder": ["curious", "observation-led"],
+  "vision-heavy-executor": ["direct", "peer"],
+  "validation-avoider": ["warm", "referral"],
+  "chaotic-high-energy": ["direct"],
+  "methodical-slow-mover": ["peer", "curious"],
 };
 
 const FALLBACK: ArchetypeResult = {
@@ -151,7 +151,7 @@ export function buildArchetypeSystemContext(personalityTags: string[] = []): str
     `FOUNDER ARCHETYPE: ${archetype}`,
     `Tone directive: ${ARCHETYPE_TONE[archetype]}`,
     `Watch for: ${ARCHETYPE_WATCH[archetype]}`,
-    `Draft style: ${ARCHETYPE_DRAFT_STYLE[archetype]}`,
+    `Preferred draft styles: ${ARCHETYPE_DRAFT_STYLE[archetype].join(", ")}`,
   ].join("\n");
 }
 

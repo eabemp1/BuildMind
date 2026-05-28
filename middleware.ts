@@ -87,6 +87,7 @@ export async function middleware(request: NextRequest) {
   }
 
   const isAuthRoute = pathname.startsWith("/auth");
+  const isAuthCallbackRoute = pathname === "/auth/callback";
   const isConversionRoute =
     pathname === "/try" ||
     pathname.startsWith("/try/") ||
@@ -209,7 +210,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(redirectUrl);
   }
 
-  if ((user || isDevAuthed) && (pathname === "/" || isAuthRoute)) {
+  if ((user || isDevAuthed) && (pathname === "/" || (isAuthRoute && !isAuthCallbackRoute))) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = isDevAuthed && !isDevOnboarded ? "/onboarding" : "/today";
     return NextResponse.redirect(redirectUrl);

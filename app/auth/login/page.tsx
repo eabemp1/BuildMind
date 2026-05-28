@@ -21,8 +21,8 @@ function AuthAestheticLayer() {
         border-color: var(--bm-border2) !important;
       }
       .bm-auth-skin input:focus {
-        border-color: rgba(92,200,138,0.35) !important;
-        box-shadow: 0 0 0 3px rgba(92,200,138,0.07) !important;
+        border-color: rgba(139,92,246,0.35) !important;
+        box-shadow: 0 0 0 3px rgba(139,92,246,0.07) !important;
       }
     `}</style>
   );
@@ -97,14 +97,14 @@ function AuthWorldCanvas() {
           <defs>
             <linearGradient id="auth-tg1" x1="0%" y1="0%" x2="100%" y2="0%">
               <stop offset="0%" stopColor="transparent" />
-              <stop offset="20%" stopColor="rgba(92,200,138,0.18)" />
-              <stop offset="80%" stopColor="rgba(92,200,138,0.18)" />
+              <stop offset="20%" stopColor="rgba(139,92,246,0.18)" />
+              <stop offset="80%" stopColor="rgba(139,92,246,0.18)" />
               <stop offset="100%" stopColor="transparent" />
             </linearGradient>
             <linearGradient id="auth-tg2" x1="0%" y1="0%" x2="100%" y2="0%">
               <stop offset="0%" stopColor="transparent" />
-              <stop offset="25%" stopColor="rgba(74,184,176,0.12)" />
-              <stop offset="75%" stopColor="rgba(74,184,176,0.12)" />
+              <stop offset="25%" stopColor="rgba(167,139,250,0.12)" />
+              <stop offset="75%" stopColor="rgba(167,139,250,0.12)" />
               <stop offset="100%" stopColor="transparent" />
             </linearGradient>
             <linearGradient id="auth-tg3" x1="0%" y1="0%" x2="100%" y2="0%">
@@ -121,16 +121,16 @@ function AuthWorldCanvas() {
           <path id="auth-tp1" d="M -40 720 C 160 660 320 440 520 380 C 720 320 900 460 1080 300 C 1220 180 1340 130 1480 90" stroke="url(#auth-tg1)" strokeWidth="0.75" strokeDasharray="5 8" />
           <path id="auth-tp2" d="M 60 820 C 240 760 420 580 620 500 C 820 420 1020 520 1200 360 C 1320 260 1400 200 1480 160" stroke="url(#auth-tg2)" strokeWidth="0.6" strokeDasharray="3 10" opacity="0.62" />
           <path id="auth-tp3" d="M 300 880 C 500 820 680 660 880 580 C 1080 500 1240 580 1440 420" stroke="url(#auth-tg3)" strokeWidth="0.45" strokeDasharray="2 12" opacity="0.35" />
-          <circle r="3.5" fill="#5CC88A" opacity="0.85" filter="url(#auth-gf)">
+          <circle r="3.5" fill="#C4B5FD" opacity="0.85" filter="url(#auth-gf)">
             <animateMotion dur="9s" repeatCount="indefinite" begin="0s"><mpath href="#auth-tp1" /></animateMotion>
           </circle>
-          <circle r="2.5" fill="#5CC88A" opacity="0.55">
+          <circle r="2.5" fill="#A78BFA" opacity="0.55">
             <animateMotion dur="9s" repeatCount="indefinite" begin="3s"><mpath href="#auth-tp1" /></animateMotion>
           </circle>
-          <circle r="2" fill="#4AB8B0" opacity="0.5">
+          <circle r="2" fill="#8B5CF6" opacity="0.5">
             <animateMotion dur="9s" repeatCount="indefinite" begin="6s"><mpath href="#auth-tp1" /></animateMotion>
           </circle>
-          <circle r="2.5" fill="#4AB8B0" opacity="0.4">
+          <circle r="2.5" fill="#8B5CF6" opacity="0.4">
             <animateMotion dur="12s" repeatCount="indefinite" begin="1.5s"><mpath href="#auth-tp2" /></animateMotion>
           </circle>
           <circle r="1.8" fill="#9B7FE8" opacity="0.35">
@@ -246,8 +246,8 @@ function BrainCanvas() {
         const by = cy + nodes[b].cy;
 
         const grad = ctx.createLinearGradient(ax, ay, bx, by);
-        grad.addColorStop(0, "rgba(92,200,138,0.25)");
-        grad.addColorStop(1, "rgba(74,184,176,0.08)");
+        grad.addColorStop(0, "rgba(139,92,246,0.25)");
+        grad.addColorStop(1, "rgba(167,139,250,0.08)");
         ctx.beginPath();
         ctx.moveTo(ax, ay);
         ctx.lineTo(bx, by);
@@ -261,7 +261,7 @@ function BrainCanvas() {
         const py = ay + (by - ay) * progress;
         ctx.beginPath();
         ctx.arc(px, py, 2, 0, Math.PI * 2);
-        ctx.fillStyle = "rgba(92,200,138,0.75)";
+        ctx.fillStyle = "rgba(196,181,253,0.75)";
         ctx.fill();
       });
 
@@ -273,7 +273,7 @@ function BrainCanvas() {
 
         // Glow
         const glow = ctx.createRadialGradient(nx, ny, 0, nx, ny, 22);
-        glow.addColorStop(0, "rgba(92,200,138,0.12)");
+        glow.addColorStop(0, "rgba(139,92,246,0.12)");
         glow.addColorStop(1, "transparent");
         ctx.beginPath();
         ctx.arc(nx, ny, 22, 0, Math.PI * 2);
@@ -286,14 +286,14 @@ function BrainCanvas() {
         const pa = (1 - pulsePhase) * 0.4;
         ctx.beginPath();
         ctx.arc(nx, ny, pr, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(92,200,138,${pa.toFixed(2)})`;
+        ctx.strokeStyle = `rgba(139,92,246,${pa.toFixed(2)})`;
         ctx.lineWidth = 1;
         ctx.stroke();
 
         // Node fill
         ctx.beginPath();
         ctx.arc(nx, ny, 5, 0, Math.PI * 2);
-        ctx.fillStyle = isCentre ? "rgba(92,200,138,0.9)" : "rgba(92,200,138,0.55)";
+        ctx.fillStyle = isCentre ? "rgba(196,181,253,0.9)" : "rgba(139,92,246,0.55)";
         ctx.fill();
       });
 
@@ -326,7 +326,7 @@ function AnimatedWordmark() {
           fontStyle: "italic",
           fontSize: "2.35rem",
           lineHeight: 0.92,
-          background: "linear-gradient(90deg, #A8D5BA 0%, #E8C547 88%)",
+          background: "linear-gradient(90deg, #C4B5FD 0%, #8B5CF6 88%)",
           WebkitBackgroundClip: "text",
           WebkitTextFillColor: "transparent",
           backgroundClip: "text",
@@ -451,13 +451,13 @@ function LeftPanel() {
           <svg viewBox="0 0 320 110" xmlns="http://www.w3.org/2000/svg" className="h-full w-full overflow-visible">
             <defs>
               <linearGradient id="sig-grad-auth" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="#5CC88A" />
-                <stop offset="100%" stopColor="#4AB8B0" />
+                <stop offset="0%" stopColor="#C4B5FD" />
+                <stop offset="100%" stopColor="#8B5CF6" />
               </linearGradient>
             </defs>
             <path
               d="M 28 72 C 28 72, 32 30, 50 28 C 68 26, 72 48, 68 58 C 64 68, 52 70, 52 70 C 52 70, 62 68, 70 74 C 78 80, 78 90, 72 92 C 66 94, 54 88, 54 80 C 54 72, 62 66, 70 64 M 86 28 C 86 28, 84 72, 86 78 M 86 44 C 86 44, 96 32, 108 32 C 120 32, 124 44, 118 56 C 112 68, 96 70, 96 70 C 96 70, 116 68, 124 80 C 132 90, 126 100, 114 98 C 102 96, 96 86, 100 78 M 140 28 L 140 98 C 140 98, 146 62, 162 50 C 174 40, 184 52, 186 64 C 188 78, 178 88, 170 88 M 200 50 C 200 50, 196 88, 202 92 C 208 96, 218 88, 226 78 C 234 68, 238 54, 234 46 C 230 38, 218 40, 212 50 C 206 60, 206 76, 212 84 C 218 92, 230 94, 238 88 M 252 50 C 252 50, 248 88, 260 92 C 270 96, 282 84, 284 70 C 286 56, 278 44, 268 46 C 258 48, 252 62, 256 76 C 260 88, 272 94, 284 88 L 292 80"
-              stroke="#5CC88A"
+              stroke="#C4B5FD"
               strokeWidth="1.6"
               fill="none"
               strokeLinecap="round"
@@ -466,7 +466,7 @@ function LeftPanel() {
                 strokeDasharray: 1800,
                 strokeDashoffset: 1800,
                 animation: "signature-draw 2.4s .8s cubic-bezier(.4,0,.2,1) forwards",
-                filter: "drop-shadow(0 0 6px rgba(92,200,138,.35))",
+                filter: "drop-shadow(0 0 6px rgba(139,92,246,.35))",
               }}
             />
             <path
@@ -487,7 +487,7 @@ function LeftPanel() {
               className="inline-flex items-center gap-1.5 rounded-[var(--r-lg)] border border-[var(--bm-border2)] bg-[var(--bm-bg2)] px-3 py-1.5 text-[11px] font-semibold text-[var(--bm-text3)]"
               style={{ animation: `tag-pop .4s ${3.1 + i * 0.15}s ease forwards`, opacity: 0 }}
             >
-              <span className="h-1.5 w-1.5 rounded-full animate-pulse" style={{ background: (["#5CC88A", "#4AB8B0", "#9B7FE8"] as const)[i] }} />
+              <span className="h-1.5 w-1.5 rounded-full animate-pulse" style={{ background: (["#C4B5FD", "#8B5CF6", "#A78BFA"] as const)[i] }} />
               {label}
             </div>
           ))}
@@ -521,8 +521,13 @@ function LoginContent() {
   useEffect(() => { setError(null); setSuccessMsg(null); setPassword(""); }, [tab]);
 
   useEffect(() => {
-    if (searchParams.get("error") === "auth_callback_failed") {
-      setError("That sign-in link expired or was already used. Please sign in again.");
+    const errorCode = searchParams.get("error");
+    if (errorCode === "auth_callback_failed") {
+      const reason = searchParams.get("reason");
+      setError(reason ? `Google sign-in could not finish: ${reason}` : "Google sign-in could not finish. Please try again.");
+    } else if (errorCode === "oauth_provider_failed") {
+      const reason = searchParams.get("reason");
+      setError(reason ? `Google sign-in was cancelled or blocked: ${reason}` : "Google sign-in was cancelled or blocked. Please try again.");
     }
   }, [searchParams]);
 
@@ -619,9 +624,9 @@ function LoginContent() {
       >
         {/* Floating stat cards — overflow:hidden on parent prevents bleed */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden" style={{ zIndex: 0 }}>
-          <StatCard style={{ top: "8%", right: "6%" }}   label="Momentum"   dot="#5CC88A" value="81"  sub="↑ +7 today"      animDuration="7s"   animDelay=".2s" />
+          <StatCard style={{ top: "8%", right: "6%" }}   label="Momentum"   dot="#C4B5FD" value="81"  sub="↑ +7 today"      animDuration="7s"   animDelay=".2s" />
           <StatCard style={{ bottom: "12%", left: "4%" }} label="Streak"     dot="#E8A020" value="14d" sub="Personal best"    animDuration="8.5s" animDelay=".6s" />
-          <StatCard style={{ bottom: "10%", right: "5%" }} label="Confidence" dot="#4AB8B0" value="4/5" sub="Reflexion done"  animDuration="6.5s" animDelay="1s"  />
+          <StatCard style={{ bottom: "10%", right: "5%" }} label="Confidence" dot="#8B5CF6" value="4/5" sub="Reflexion done"  animDuration="6.5s" animDelay="1s"  />
         </div>
 
         {/* Auth card */}
@@ -652,14 +657,14 @@ function LoginContent() {
                 background: "var(--bm-bg3)",
                 border: "1px solid var(--bm-border2)",
                 borderRadius: 7, display: "flex", alignItems: "center",
-                justifyContent: "center", boxShadow: "0 0 8px rgba(92,200,138,.1)",
+                justifyContent: "center", boxShadow: "0 0 8px rgba(139,92,246,.1)",
               }}>
                 <svg viewBox="0 0 64 64" width="12" height="12" fill="none">
-                  <circle cx="14" cy="32" r="3.5" fill="#A8D5BA"/>
-                  <circle cx="32" cy="27" r="4"   fill="#A8D5BA"/>
-                  <circle cx="50" cy="32" r="3.5" fill="#A8D5BA"/>
-                  <line x1="17.5" y1="32" x2="28.5" y2="27" stroke="#A8D5BA" strokeWidth="1.4" opacity=".9"/>
-                  <line x1="35.5" y1="27" x2="46.5" y2="32" stroke="#A8D5BA" strokeWidth="1.4" opacity=".9"/>
+                  <circle cx="14" cy="32" r="3.5" fill="#C4B5FD"/>
+                  <circle cx="32" cy="27" r="4"   fill="#C4B5FD"/>
+                  <circle cx="50" cy="32" r="3.5" fill="#C4B5FD"/>
+                  <line x1="17.5" y1="32" x2="28.5" y2="27" stroke="#C4B5FD" strokeWidth="1.4" opacity=".9"/>
+                  <line x1="35.5" y1="27" x2="46.5" y2="32" stroke="#C4B5FD" strokeWidth="1.4" opacity=".9"/>
                 </svg>
               </div>
               <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: ".1em",
@@ -693,7 +698,7 @@ function LoginContent() {
             {successMsg && (
               <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
                 className="text-sm p-3 rounded-lg mb-4"
-                style={{ background: "rgba(92,200,138,0.08)", border: "1px solid var(--bm-accent-bd)", color: "var(--bm-green)" }}>
+                style={{ background: "rgba(139,92,246,0.08)", border: "1px solid var(--bm-accent-bd)", color: "var(--bm-accent2)" }}>
                 {successMsg}
               </motion.div>
             )}

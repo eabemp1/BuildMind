@@ -5,6 +5,7 @@
  */
 import type { Metadata } from "next";
 import Link from "next/link";
+import { BrandMark } from "@/components/layout/logo";
 
 export const metadata: Metadata = {
   title: "BuildMind for Students — Free Builder Plan | Build Your Startup While Studying",
@@ -53,7 +54,10 @@ export default function StudentsPage() {
       <main style={{ minHeight: "100vh", background: "var(--bm-bg)", color: "var(--bm-text)", fontFamily: "system-ui,-apple-system,sans-serif" }}>
 
         <nav style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 24px", borderBottom: "1px solid var(--bm-border)", maxWidth: 900, margin: "0 auto" }}>
-          <Link href="/" style={{ textDecoration: "none", fontSize: 15, fontWeight: 600, color: "var(--bm-text)", letterSpacing: "-0.02em" }}>BuildMind</Link>
+          <Link href="/" style={{ textDecoration: "none", fontSize: 15, fontWeight: 600, color: "var(--bm-text)", letterSpacing: "-0.02em", display: "flex", alignItems: "center", gap: 8 }}>
+            <BrandMark size={24} href={undefined} />
+            BuildMind
+          </Link>
           <div style={{ display: "flex", gap: 12 }}>
             <Link href="/auth/login" style={{ textDecoration: "none", fontSize: 13, color: "var(--bm-text3)", padding: "7px 14px" }}>Sign in</Link>
             <Link href="/auth/login" style={{ textDecoration: "none", fontSize: 13, fontWeight: 600, color: "black", background: "white", borderRadius: 8, padding: "7px 16px" }}>Get free access →</Link>

@@ -3,12 +3,8 @@
 /**
  * components/layout/logo.tsx — v2
  *
- * Fix #10: All logo nodes/lines now use celadon (#A8D5BA) as the single
- * brand colour. Removed the mixed teal (#4AB8B0) and multi-green palette.
- *
- * Celadon = #A8D5BA (primary brand)
- * Dark celadon = #6BAF8A (secondary nodes)
- * Dim celadon = rgba(168,213,186,*) (lines and glows)
+ * Shared BuildMind mark.
+ * Purple palette matches public/logo/buildmind-mark.svg and favicon.svg.
  */
 
 import Link from "next/link";
@@ -20,12 +16,11 @@ type BrandMarkProps = {
 };
 
 export function BrandMark({ size = 28, href = "/", className }: BrandMarkProps) {
-  // Unified celadon palette — no teal, no blue-green
-  const C1 = "#A8D5BA"; // bright celadon (hero nodes)
-  const C2 = "#7BBFA0"; // mid celadon (secondary nodes)
-  const C3 = "#5CA882"; // dark celadon (tertiary nodes)
-  const L1 = "rgba(168,213,186,0.55)"; // line primary
-  const L2 = "rgba(168,213,186,0.28)"; // line secondary
+  const C1 = "#C4B5FD";
+  const C2 = "#A78BFA";
+  const C3 = "#7C3AED";
+  const L1 = "rgba(167,139,250,0.55)";
+  const L2 = "rgba(139,92,246,0.28)";
 
   const mark = (
     <svg
@@ -53,7 +48,7 @@ export function BrandMark({ size = 28, href = "/", className }: BrandMarkProps) 
 
       {/* Background */}
       <rect width="64" height="64" rx="14" fill="url(#bm-bg)" />
-      <rect width="64" height="64" rx="14" fill="none" stroke={`rgba(168,213,186,0.18)`} strokeWidth="1" />
+      <rect width="64" height="64" rx="14" fill="none" stroke="rgba(139,92,246,0.30)" strokeWidth="1" />
 
       {/* Left column */}
       <circle cx="14" cy="22" r="3.5" fill={C3} opacity="0.65" />

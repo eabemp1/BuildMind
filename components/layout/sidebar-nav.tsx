@@ -88,30 +88,7 @@ export function SidebarLogo({ streakDays }: { streakDays: number }) {
       className="flex h-[72px] shrink-0 items-center gap-3 px-5"
       style={{ borderBottom: "1px solid var(--bm-border)" }}
     >
-      {/* 24px amber mark */}
-      <div
-        style={{
-          width: 24,
-          height: 24,
-          borderRadius: "var(--r-md)",
-          background: "var(--bm-accent)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          flexShrink: 0,
-          position: "relative",
-        }}
-      >
-        <div
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: "var(--r-sm)",
-            background: "var(--bm-text-inv)",
-            opacity: 0.85,
-          }}
-        />
-      </div>
+      <BrandMark size={28} href="/" />
       <div>
         <div
           style={{

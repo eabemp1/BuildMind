@@ -12,12 +12,10 @@ export interface FounderKnowledgeMatch {
   what_stalled_them: string;
   what_broke_the_stall: string;
   first_10_days_advice: string;
-  draft_angle?: string | null;
   draft_template?: string | null;
   draft_channel?: string | null;
   draft_intent?: string | null;
   draft_style?: string | null;
-  draft_goal?: string | null;
   similarity: number;
 }
 
@@ -115,23 +113,19 @@ export function buildKnowledgeBaseContext(
 DRAFT STARTING POINT (${draftMatch.draft_channel ?? "unknown channel"}, ${draftMatch.draft_style ?? "specific"} style):
 ${draftMatch.draft_template}
 
-INSTRUCTION: Use this as a structural starting point only. Replace every placeholder with specific details from this founder's actual startup, target user, and problem. Keep the opening structure, but make the content entirely specific to them.`
+INSTRUCTION: Use this as a structural starting point only. Replace every placeholder with specific details from this founder's actual startup, target user, and problem. Adjust the tone to match their archetype. The structure (what it leads with, how it opens) should stay; the content must be entirely specific to them. Do not produce something that could have been written for any founder.`
     : "";
 
   const matchBlock = matches
     .slice(0, 3)
-    .map((match, index) => `Precedent ${index + 1} (${match.company_type}, ${match.stage}, similarity ${(match.similarity * 100).toFixed(0)}%):
-- Stalled because: ${match.what_stalled_them}
-- Broke the stall by: ${match.what_broke_the_stall}
-- First 10 days: ${match.first_10_days_advice}
-- Draft angle: ${match.draft_angle ?? match.draft_style ?? "Use a specific founder-to-founder ask."}
-- Channel goal: ${match.draft_channel ?? "DM"} / ${match.draft_intent ?? match.draft_goal ?? "conversation"}`)
+    .map((match, index) => `Precedent ${index + 1} (${match.company_type}, ${match.stage} stage):
+- What stalled them: ${match.what_stalled_them}
+- What broke it: ${match.what_broke_the_stall}
+- First 10 days: ${match.first_10_days_advice}`)
     .join("\n\n");
 
   return `REAL FOUNDER PRECEDENTS:
-${matchBlock}${draftBlock}
-
-Instruction: use these as precedent anchors. Make the task and draft specific to this founder, not a generic productivity suggestion.`;
+${matchBlock}${draftBlock}`;
 }
 
 export function buildInsightHistorySeeds(matches: FounderKnowledgeMatch[]): Array<{ text: string; created_at: string }> {

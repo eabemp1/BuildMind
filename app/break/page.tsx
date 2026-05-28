@@ -8,6 +8,7 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
+import { BrandMark } from "@/components/layout/logo";
 
 type Phase = "input" | "loading" | "result";
 
@@ -128,11 +129,7 @@ export default function BreakPublicPage() {
       {/* Nav */}
       <div style={{ maxWidth:680, margin:"0 auto", padding:"20px 20px 0", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
         <Link href="/" style={{ display:"flex", alignItems:"center", gap:8, textDecoration:"none" }}>
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width={24} height={24}>
-            <rect width="32" height="32" rx="7" fill="#09090B"/>
-            <rect width="32" height="32" rx="7" fill="none" stroke="rgba(139,92,246,0.4)" strokeWidth="0.8"/>
-            <circle cx="6" cy="16" r="2.2" fill="#C4B5FD"/><circle cx="16" cy="14" r="2.4" fill="#A78BFA"/><circle cx="26" cy="16" r="2.2" fill="#C4B5FD"/>
-          </svg>
+          <BrandMark size={24} href={undefined} />
           <span style={{ fontSize:14, fontWeight:600, color:"#f0f0f5" }}>BuildMind</span>
         </Link>
         <div style={{ display:"flex", gap:8, alignItems:"center" }}>

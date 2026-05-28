@@ -9,7 +9,10 @@ function safeNextPath(value: string | null): string {
 }
 
 function appOrigin(requestUrl: URL): string {
-  return (process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_URL ?? requestUrl.origin).replace(/\/$/, "");
+  // OAuth PKCE stores the verifier against the browser origin that started the
+  // sign-in. Redirecting to a different configured host after callback can make
+  // mobile browsers look logged out even when the exchange succeeded.
+  return requestUrl.origin.replace(/\/$/, "");
 }
 
 export async function GET(request: NextRequest) {
@@ -17,6 +20,16 @@ export async function GET(request: NextRequest) {
   const code = requestUrl.searchParams.get("code");
   const next = safeNextPath(requestUrl.searchParams.get("next"));
   const origin = appOrigin(requestUrl);
+  const providerError = requestUrl.searchParams.get("error");
+  const providerErrorDescription = requestUrl.searchParams.get("error_description");
+
+  if (providerError) {
+    const redirectUrl = new URL(origin);
+    redirectUrl.pathname = "/auth/login";
+    redirectUrl.searchParams.set("error", "oauth_provider_failed");
+    redirectUrl.searchParams.set("reason", providerErrorDescription || providerError);
+    return NextResponse.redirect(redirectUrl);
+  }
 
   if (code) {
     const supabase = await createClient();
@@ -33,6 +46,7 @@ export async function GET(request: NextRequest) {
       const redirectUrl = new URL(origin);
       redirectUrl.pathname = "/auth/login";
       redirectUrl.searchParams.set("error", "auth_callback_failed");
+      redirectUrl.searchParams.set("reason", error.message);
       return NextResponse.redirect(redirectUrl);
     }
 

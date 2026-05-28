@@ -18,6 +18,7 @@ import { createClient } from "@/lib/supabase/client";
 import { identifyUser } from "@/lib/analytics";
 import { trackFunnelStep } from "@/lib/onboarding-analytics";
 import BuildMindLoader from "@/components/BuildMindLoader";
+import { BrandMark } from "@/components/layout/logo";
 import { ArrowRight, Loader2, Zap } from "lucide-react";
 import { Suspense } from "react";
 
@@ -117,10 +118,7 @@ function IntegrationsScreen({ onComplete }: { onComplete: () => void }) {
     >
       {/* Logo */}
       <div style={{ marginBottom: 40, display: "flex", alignItems: "center", gap: 10 }}>
-        <div style={{ width: 32, height: 32, borderRadius: 8, background: VIZ.grad,
-          display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <Zap size={16} color="#fff" />
-        </div>
+        <BrandMark size={32} href="/" />
         <span style={{ fontWeight: 700, fontSize: 18, color: VIZ.text, letterSpacing: "-0.02em" }}>BuildMind</span>
       </div>
 
@@ -221,24 +219,7 @@ function OnboardingShell({
     }}>
       {/* Logo mark */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 36 }}>
-        <div style={{
-          width: 28,
-          height: 28,
-          borderRadius: "var(--r-md)",
-          background: "var(--bm-accent)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          flexShrink: 0,
-        }}>
-          <div style={{
-            width: 9,
-            height: 9,
-            borderRadius: "var(--r-sm)",
-            background: "var(--bm-text-inv)",
-            opacity: 0.85,
-          }} />
-        </div>
+        <BrandMark size={28} href="/" />
         <span style={{
           fontFamily: "'Syne', sans-serif",
           fontWeight: 700,

@@ -19,6 +19,7 @@ import {
   Target, BarChart3, XCircle, MessageSquare, Map, Globe, EyeOff, Copy,
   Check, Star, Search, ArrowUpDown, Zap, Flame, Clock,
 } from "lucide-react";
+import { BrandMark } from "@/components/layout/logo";
 import { VENTURE_TRACKS, type VentureTrack } from "@/lib/ventures";
 
 // ─── Tokens ───────────────────────────────────────────────────────────────────
@@ -1078,6 +1079,7 @@ export default function AdminPage() {
         <div style={{ maxWidth: 1300, margin: "0 auto", padding: "0 24px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", height: 52 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <BrandMark size={26} href="/" />
               <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.t4, background: C.bg4, border: `1px solid ${C.b}`, padding: "3px 8px", borderRadius: C.rSm }}>Admin</span>
               <span style={{ fontSize: 16, fontWeight: 700, color: C.t }}>BuildMind</span>
             </div>

@@ -60,8 +60,8 @@ function AnimatedMark({ size = 72 }: { size?: number }) {
             <stop offset="100%" stopColor="#0C0D0F" />
           </linearGradient>
           <linearGradient id="bml-node" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#6FCF97" />
-            <stop offset="100%" stopColor="#52B87A" />
+            <stop offset="0%" stopColor="#C4B5FD" />
+            <stop offset="100%" stopColor="#8B5CF6" />
           </linearGradient>
           <filter id="bml-glow">
             <feGaussianBlur stdDeviation="1.5" result="blur" />
@@ -69,25 +69,25 @@ function AnimatedMark({ size = 72 }: { size?: number }) {
           </filter>
         </defs>
         <rect width="64" height="64" rx="14" fill="url(#bml-bg)" />
-        <rect width="64" height="64" rx="14" fill="none" stroke="rgba(111,207,151,0.2)" strokeWidth="1" />
+        <rect width="64" height="64" rx="14" fill="none" stroke="rgba(139,92,246,0.30)" strokeWidth="1" />
 
         {edges.map((e, i) => (
           <motion.line key={i} x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2}
-            stroke={`rgba(111,207,151,${e.o})`} strokeWidth="0.8"
+            stroke={`rgba(167,139,250,${e.o})`} strokeWidth="0.8"
             animate={{ opacity: [e.o * 0.3, e.o, e.o * 0.3] }}
             transition={{ duration: 2.2, repeat: Infinity, delay: i * 0.07, ease: "easeInOut" }}
           />
         ))}
 
         {/* Highlight edges */}
-        <motion.line x1="17.5" y1="32" x2="28.5" y2="27" stroke="#6FCF97" strokeWidth="1.4"
+        <motion.line x1="17.5" y1="32" x2="28.5" y2="27" stroke="#A78BFA" strokeWidth="1.4"
           animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 1.8, repeat: Infinity }} />
-        <motion.line x1="35.5" y1="27" x2="46.5" y2="32" stroke="#6FCF97" strokeWidth="1.4"
+        <motion.line x1="35.5" y1="27" x2="46.5" y2="32" stroke="#A78BFA" strokeWidth="1.4"
           animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 1.8, repeat: Infinity, delay: 0.3 }} />
 
         {/* Dim nodes */}
         {nodes.filter((_, i) => i !== 4 && i !== 1 && i !== 8).map((n, i) => (
-          <motion.circle key={i} cx={n.cx} cy={n.cy} r={n.r} fill="#6FCF97" opacity={0.35}
+          <motion.circle key={i} cx={n.cx} cy={n.cy} r={n.r} fill="#8B5CF6" opacity={0.35}
             animate={{ opacity: [0.3, 0.65, 0.3] }}
             transition={{ duration: 2.2, repeat: Infinity, delay: n.delay }}
           />
@@ -97,7 +97,7 @@ function AnimatedMark({ size = 72 }: { size?: number }) {
         <motion.circle cx="14" cy="32" r="3.2" fill="url(#bml-node)" filter="url(#bml-glow)"
           animate={{ opacity: [0.7, 1, 0.7] }}
           transition={{ duration: 1.6, repeat: Infinity }} />
-        <motion.circle cx="32" cy="27" r="3.8" fill="#6FCF97" filter="url(#bml-glow)"
+        <motion.circle cx="32" cy="27" r="3.8" fill="#C4B5FD" filter="url(#bml-glow)"
           animate={{ opacity: [0.8, 1, 0.8] }}
           transition={{ duration: 1.4, repeat: Infinity, delay: 0.2 }} />
         <motion.circle cx="50" cy="32" r="3.2" fill="url(#bml-node)" filter="url(#bml-glow)"
