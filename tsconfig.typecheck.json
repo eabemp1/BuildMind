@@ -8,6 +8,7 @@
   "exclude": [
     "node_modules",
     ".next",
+    "buildmind_patched",
     "__tests__/**",
     "supabase/functions/**"
   ]

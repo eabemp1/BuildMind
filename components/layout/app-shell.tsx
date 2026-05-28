@@ -1,6 +1,6 @@
 "use client";
 
-import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { useState, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Sidebar, { SidebarContent } from "@/components/layout/sidebar";
@@ -86,7 +86,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
-  const reduceMotion = useReducedMotion();
 
   // ── 7-Day Free Trial state ────────────────────────────────────────────────
   const [trialDaysRemaining, setTrialDaysRemaining] = useState(0);
@@ -184,18 +183,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <TrialPaywall expired={trialExpired} />
 
         {/* Page */}
-        <AnimatePresence mode="wait">
-          <motion.main
-            key={pathname}
-            initial={reduceMotion ? false : { opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={reduceMotion ? { opacity: 1 } : { opacity: 0, y: -4 }}
-            transition={reduceMotion ? { duration: 0 } : { duration: 0.18, ease: [0.4, 0, 0.2, 1] }}
-            className="flex-1 overflow-y-auto px-3 py-5 sm:px-8 sm:py-8"
-          >
-            <div style={{ maxWidth: 1120, margin: "0 auto", width: "100%" }}>{children}</div>
-          </motion.main>
-        </AnimatePresence>
+        <main className="flex-1 overflow-y-auto px-3 py-5 sm:px-8 sm:py-8">
+          <div style={{ maxWidth: 1120, margin: "0 auto", width: "100%" }}>{children}</div>
+        </main>
       </div>
     </div>
   );

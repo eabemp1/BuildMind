@@ -151,6 +151,8 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
     void check();
   }, []);
 
+  const renderedSections = new Set<string>();
+
   return (
     <div className="flex h-full flex-col" style={{ background: "var(--bm-bg2)" }}>
       <SidebarLogo streakDays={streakDays} />
@@ -159,6 +161,9 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
         {NAV.filter((i) => i.enabled && !i.hidden).map((item) => {
           // Hide the "Upgrade" nav item for users already on a paid plan.
           if (item.href === "/upgrade" && plan !== "free") return null;
+          const sectionLabel = item.section && !renderedSections.has(item.section)
+            ? (renderedSections.add(item.section), item.section)
+            : null;
 
           const unlockedAt = item.unlocksAt ?? 0;
           const isProgressLocked = tasksCompleted < unlockedAt;
@@ -169,7 +174,7 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
             const progressPct = Math.min(100, Math.round((tasksCompleted / unlockedAt) * 100));
             return (
               <React.Fragment key={item.href}>
-                {item.section && <SectionLabel label={item.section} />}
+                {sectionLabel && <SectionLabel label={sectionLabel} />}
                 <div
                   className="mx-2 rounded-md px-4 py-[9px] select-none"
                   title={`Complete ${tasksNeeded} more task${tasksNeeded !== 1 ? "s" : ""} to unlock ${item.label}`}
@@ -194,7 +199,7 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
           const showLock = !!item.requiredPlan && !hasPlanAccess(plan, item.requiredPlan as Plan);
           return (
             <React.Fragment key={item.href}>
-              {item.section && <SectionLabel label={item.section} />}
+              {sectionLabel && <SectionLabel label={sectionLabel} />}
               <NavItem
                 href={item.href} label={item.label} icon={item.icon as React.ElementType}
                 active={active} badge={item.badge} showLock={showLock}

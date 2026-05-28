@@ -12,15 +12,10 @@ export async function middleware(request: NextRequest) {
   const csp = [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${devScriptSources}`,
-    // F5 FIX: Replace 'unsafe-inline' for styles with a per-request nonce.
-    // 'unsafe-inline' allows CSS injection attacks even when script-src is locked
-    // down — CSS attribute selectors can exfiltrate data via timing attacks.
-    // Using the same nonce as script-src locks inline styles to server-generated
-    // pages only. Google Fonts is still allowed as an external stylesheet source.
-    // Note: Next.js may still inject some critical CSS without a nonce attribute —
-    // 'unsafe-inline' is kept as a FALLBACK only for browsers that don't support
-    // nonces in style-src (all modern browsers do). The nonce takes precedence.
-    `style-src 'self' 'nonce-${nonce}' 'unsafe-inline' https://fonts.googleapis.com`,
+    // This app intentionally uses React style attributes throughout the UI.
+    // Do not pair a style nonce with 'unsafe-inline': CSP3 browsers ignore
+    // 'unsafe-inline' when a nonce is present, which breaks those style attrs.
+    `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com`,
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data: https:",
     `connect-src 'self' https://*.supabase.co https://api.groq.com https://api.cerebras.ai https://generativelanguage.googleapis.com https://api.anthropic.com${devConnectSources}`,

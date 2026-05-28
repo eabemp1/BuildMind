@@ -315,69 +315,26 @@ function BrainCanvas() {
 // ── Animated Wordmark ──────────────────────────────────────────────────────────
 
 function AnimatedWordmark() {
-  const [mindLetters, setMindLetters] = useState<string[]>([]);
-
-  useEffect(() => {
-    const letters = "Mind".split("");
-    setMindLetters([]);
-
-    const timers = letters.map((_, i) =>
-      window.setTimeout(() => {
-        setMindLetters(letters.slice(0, i + 1));
-      }, 800 + i * 110)
-    );
-
-    return () => timers.forEach(window.clearTimeout);
-  }, []);
-
   return (
-    <div style={{ display: "flex", alignItems: "baseline", gap: 2 }}>
+    <div
+      aria-label="BuildMind"
+      style={{ display: "flex", alignItems: "baseline", gap: 2 }}
+    >
       <span
         style={{
           fontFamily: "'DM Serif Display', serif",
           fontStyle: "italic",
-          fontSize: "1.8rem",
-          background: "var(--bm-accent)",
+          fontSize: "2.35rem",
+          lineHeight: 0.92,
+          background: "linear-gradient(90deg, #A8D5BA 0%, #E8C547 88%)",
           WebkitBackgroundClip: "text",
           WebkitTextFillColor: "transparent",
           backgroundClip: "text",
           display: "inline-block",
-          animation: "build-reveal 2s cubic-bezier(.16,1,.3,1) .3s both",
+          animation: "build-reveal .8s cubic-bezier(.16,1,.3,1) .1s both",
         }}
       >
-        Build
-      </span>
-      <span
-        style={{
-          fontFamily: "'Geist Mono', monospace",
-          fontSize: "1.8rem",
-          color: "var(--bm-text, #E8E8EA)",
-          display: "inline-flex",
-          alignItems: "baseline",
-        }}
-      >
-        {mindLetters.map((ch, i) => (
-          <span
-            key={i}
-            style={{
-              display: "inline-block",
-              animation: "letter-drop .42s cubic-bezier(.34,1.56,.64,1) both",
-            }}
-          >
-            {ch}
-          </span>
-        ))}
-        <span
-          style={{
-            display: "inline-block",
-            width: 2.5,
-            height: "1.5rem",
-            background: "var(--bm-accent, #5CC88A)",
-            marginLeft: 2,
-            verticalAlign: "middle",
-            animation: "blink 1.1s step-end infinite",
-          }}
-        />
+        BuildMind
       </span>
     </div>
   );
