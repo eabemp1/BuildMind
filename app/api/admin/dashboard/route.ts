@@ -247,14 +247,34 @@ export async function GET() {
   });
 
   // ── 8. DAU / WAU activity ─────────────────────────────────────────────────
-  // Reads from founder_context.updated_at as a proxy for DAU
-  // Replace with PostHog API call via POSTHOG_PERSONAL_API_KEY + project ID
+  // Reads from activity_log. Falls back to founder_context.updated_at if the
+  // proof migration has not been applied yet.
   const activityMap: Record<string, Set<string>> = {};
-  for (const ctx of contextRows ?? []) {
-    if (!ctx.updated_at) continue;
-    const day = ctx.updated_at.slice(0, 10);
-    if (!activityMap[day]) activityMap[day] = new Set();
-    activityMap[day].add(ctx.user_id);
+  let usedActivityLog = false;
+  try {
+    const { data: activityRows, error: activityErr } = await admin
+      .from("activity_log")
+      .select("user_id, occurred_at")
+      .gte("occurred_at", daysAgo(30));
+    if (!activityErr && activityRows?.length) {
+      usedActivityLog = true;
+      for (const row of activityRows) {
+        if (!row.occurred_at) continue;
+        const day = row.occurred_at.slice(0, 10);
+        if (!activityMap[day]) activityMap[day] = new Set();
+        activityMap[day].add(row.user_id);
+      }
+    }
+  } catch {
+    usedActivityLog = false;
+  }
+  if (!usedActivityLog) {
+    for (const ctx of contextRows ?? []) {
+      if (!ctx.updated_at) continue;
+      const day = ctx.updated_at.slice(0, 10);
+      if (!activityMap[day]) activityMap[day] = new Set();
+      activityMap[day].add(ctx.user_id);
+    }
   }
 
   const activity = Array.from({ length: 30 }, (_, i) => {

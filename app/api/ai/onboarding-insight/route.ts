@@ -13,12 +13,16 @@
 import { NextResponse } from "next/server";
 import { groqJSON, enforceAndTrackAIUsage } from "@/app/api/ai/_utils";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
+import { classifyFounderArchetype } from "@/lib/founderArchetype";
+import { buildKnowledgeBaseContext, searchFounderKnowledgeBase } from "@/lib/founderKnowledgeBase";
+import { findMatchingPatterns } from "@/lib/founderPatternLibrary";
 
 type Insight = {
   headline: string;
   risk: string;
   action: string;
   why: string;
+  tags?: string[];
 };
 
 const BLOCKER_CONTEXT: Record<string, string> = {
@@ -59,6 +63,19 @@ export async function POST(request: Request) {
     if (!idea) return NextResponse.json({ success: false, error: "Missing idea" }, { status: 400 });
 
     const blockerContext = BLOCKER_CONTEXT[blocker] ?? "The founder needs clear direction.";
+    const roughTags = Array.from(new Set(
+      idea
+        .toLowerCase()
+        .split(/[^a-z0-9]+/)
+        .filter((word) => word.length > 3)
+        .slice(0, 8),
+    ));
+    const matchedPatterns = findMatchingPatterns(idea, stage, blocker, roughTags);
+    const patternContext = matchedPatterns.length
+      ? `\nKnown founder patterns:\n${matchedPatterns.map((pattern) => `- ${pattern.pattern}: ${pattern.lesson}`).join("\n")}`
+      : "";
+    const kbMatches = await searchFounderKnowledgeBase(idea, stage, undefined, 0);
+    const knowledgeContext = buildKnowledgeBaseContext(kbMatches);
 
     const systemPrompt = `You are a brutally honest startup advisor doing a first-session assessment of a new founder. 
 Return ONLY valid JSON with exactly these keys:
@@ -66,7 +83,8 @@ Return ONLY valid JSON with exactly these keys:
   "headline": "One sharp sentence (max 10 words) that names their real problem — not their stated blocker",
   "risk": "1-2 sentences on the specific risk this startup faces RIGHT NOW at this stage. Be concrete.",
   "action": "The single most important thing to do in the next 48 hours. Be specific to their idea.",
-  "why": "1 sentence explaining why this action is the right move now, not something else."
+  "why": "1 sentence explaining why this action is the right move now, not something else.",
+  "tags": ["3-6 canonical lowercase tags describing domain, stage risk, and behaviour"]
 }
 
 Rules:
@@ -79,10 +97,16 @@ No preamble. No markdown. Only JSON.`;
 Startup idea: ${idea}
 Current stage: ${stage}
 Blocker context: ${blockerContext}
+${patternContext}
+${knowledgeContext}
 
 Give them their honest first assessment. Make it specific to "${idea.slice(0, 100)}".`;
 
     const result = await groqJSON<Insight>(systemPrompt, userPrompt);
+    const tags = Array.isArray(result.tags) ? result.tags.filter((tag) => typeof tag === "string").slice(0, 6) : roughTags.slice(0, 6);
+    classifyFounderArchetype(idea, stage, blocker, routeUser.userId, tags).catch((err) => {
+      console.error("[onboarding-insight] archetype classification failed:", err);
+    });
 
     return NextResponse.json({
       success: true,
@@ -91,6 +115,7 @@ Give them their honest first assessment. Make it specific to "${idea.slice(0, 10
         risk:     result.risk     ?? "Every day without user feedback is a day building on assumptions.",
         action:   result.action   ?? "Talk to one person who has this problem in the next 24 hours.",
         why:      result.why      ?? "Real conversations are worth more than a week of planning.",
+        tags,
       },
     });
   } catch (error) {

@@ -478,11 +478,28 @@ export default function ProjectDetailPage() {
         );
       }
 
+      const { data: existingProject } = await supabase
+        .from("projects")
+        .select("stage_history")
+        .eq("id", id)
+        .maybeSingle();
+      const previousHistory = Array.isArray((existingProject as { stage_history?: unknown })?.stage_history)
+        ? (existingProject as { stage_history: unknown[] }).stage_history
+        : [];
+
       // Update project stage
       await supabase.from("projects").update({
         startup_stage: newStage,
+        stage_history: [
+          ...previousHistory,
+          { from: project.startup_stage ?? "Idea", to: newStage, set_at: new Date().toISOString(), source: "manual" },
+        ],
         updated_at: new Date().toISOString(),
       }).eq("id", id);
+
+      await supabase.from("founder_context").update({
+        pending_stage_transition: null,
+      }).eq("user_id", project.user_id);
 
       // Refresh all project data
       void qc.invalidateQueries({ queryKey: queryKeys.project(id) });
@@ -595,42 +612,43 @@ export default function ProjectDetailPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project?.id]);
 
-  // REC 3.1: Three-signal stage transition readiness check on project load
+  // REC 3.1: Read cached stage transition readiness from founder_context
   useEffect(() => {
-    if (!id || !project?.id) return;
+    if (!id || !project?.id || !project.user_id) return;
     const dismissKey = `bm_transition_dismissed_${id}_${project.startup_stage}`;
     if (storage.get(dismissKey)) {
       setReadinessDismissed(true);
       return;
     }
-    // Fire in background — non-blocking
-    fetch(`/api/ai/stage-transition-readiness?projectId=${id}`)
-      .then(r => r.json())
-      .then((data: {
-        success?: boolean;
-        data?: {
-          shouldPrompt?: boolean;
-          transitionMessage?: string;
-          currentStage?: string;
-          nextStage?: string | null;
-          signals?: { milestonesComplete?: boolean; avgConfidence?: number | null; recentOverrides?: number };
-        };
-      }) => {
-        if (data?.success && data.data?.shouldPrompt) {
+    void (async () => {
+      try {
+        const supabase = createClient();
+        const { data } = await supabase
+          .from("founder_context")
+          .select("pending_stage_transition")
+          .eq("user_id", project.user_id)
+          .maybeSingle();
+        const pending = (data?.pending_stage_transition ?? null) as {
+          project_id?: string;
+          current_stage?: string;
+          recommended_stage?: string | null;
+          reason?: string;
+        } | null;
+        if (pending?.project_id === id && pending.recommended_stage) {
           setTransitionReadiness({
-            shouldPrompt: data.data.shouldPrompt,
-            transitionMessage: data.data.transitionMessage ?? "",
-            currentStage: data.data.currentStage ?? project.startup_stage ?? "Idea",
-            nextStage: data.data.nextStage ?? null,
+            shouldPrompt: true,
+            transitionMessage: pending.reason ?? "",
+            currentStage: pending.current_stage ?? project.startup_stage ?? "Idea",
+            nextStage: pending.recommended_stage ?? null,
             signals: {
-              milestonesComplete: data.data.signals?.milestonesComplete ?? false,
-              avgConfidence: data.data.signals?.avgConfidence ?? null,
-              recentOverrides: data.data.signals?.recentOverrides ?? 0,
+              milestonesComplete: true,
+              avgConfidence: null,
+              recentOverrides: 0,
             },
           });
         }
-      })
-      .catch(() => { /* non-fatal */ });
+      } catch { /* non-fatal */ }
+    })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 

@@ -7,6 +7,10 @@ import { logError, generateRequestId } from "@/lib/server/logger";
 import { fetchNotionContext, formatNotionContextForPrompt } from "@/lib/integrations/notion";
 import { fetchLinearContext, formatLinearContextForPrompt } from "@/lib/integrations/linear";
 import { sanitizeModelOutput } from "@/lib/ai-providers";
+import { buildArchetypeSystemContext } from "@/lib/founderArchetype";
+import { buildDebtPromptInjection, computeExecutionDebt, debtSuppressesTask, markDebtSurfaced } from "@/lib/executionDebt";
+import { recordActivity } from "@/lib/server/activityLog";
+import { buildLongTodayDraft } from "@/lib/todayDrafts";
 
 export const runtime     = "nodejs";
 export const dynamic     = "force-dynamic";
@@ -151,6 +155,7 @@ export async function POST(request: Request) {
       pendingMilestones: z.array(z.string().max(100)).max(5).optional(),
       pendingTasks:      z.array(z.string().max(100)).max(5).optional(),
       completionRate:    z.number().min(0).max(100).optional(),
+      acknowledgeDebt:   z.boolean().optional(),
     });
     const parsedBody = bodySchema.safeParse(rawBody);
     if (!parsedBody.success) {
@@ -188,13 +193,14 @@ export async function POST(request: Request) {
     // FIX 1.3: Hoist memoryResult to outer scope so it can be reused later
     // without a second DB round-trip to founder_memory
     let memoryResult: PromiseSettledResult<{ data: Record<string, unknown> | null; error: unknown }> | null = null;
+    let contextResult: PromiseSettledResult<{ data: Record<string, unknown> | null; error: unknown }> | null = null;
 
     if (hasAdminEnv()) {
       supabase = createAdminClient();
 
       // Fetch project, founder_memory, and last reflection in one parallel round-trip
       // (eliminates the second reflections fetch that was happening 80 lines below)
-      const [projectResult, _memoryResult, reflectionResult] = await Promise.allSettled([
+      const [projectResult, _memoryResult, reflectionResult, _contextResult] = await Promise.allSettled([
         supabase
           .from("projects")
           .select("name, title, description, target_users, problem, startup_stage, biggest_blocker, created_at, current_mrr")
@@ -203,7 +209,7 @@ export async function POST(request: Request) {
           .maybeSingle(),
         supabase
           .from("founder_memory")
-          .select("avoidance_zones, strengths, personality_tags, last_insight, cofounder_style")
+          .select("avoidance_zones, strengths, personality_tags, last_insight, cofounder_style, decision_patterns, last_debt_surfaced, archetype_confidence")
           .eq("user_id", userId)
           .maybeSingle(),
         supabase
@@ -216,9 +222,15 @@ export async function POST(request: Request) {
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle(),
+        supabase
+          .from("founder_context")
+          .select("avoidance_signals, override_reasons, tasks_overridden_this_week, topics_mentioned_repeatedly, days_inactive")
+          .eq("user_id", userId)
+          .maybeSingle(),
       ]);
 
       memoryResult = _memoryResult;
+      contextResult = _contextResult;
       const project = projectResult.status === "fulfilled" ? projectResult.value.data : null;
       const memory = memoryResult.status === "fulfilled" ? memoryResult.value.data : null;
       hoistedReflection = reflectionResult.status === "fulfilled" ? reflectionResult.value.data : null;
@@ -339,6 +351,8 @@ Current MRR: ${project.current_mrr && project.current_mrr > 0 ? `GHS ${(project.
           if (lastInsight) {
             lastReflectionContext += `\nLast observed pattern: "${lastInsight}"`;
           }
+          const archetypeContext = buildArchetypeSystemContext((memory.personality_tags ?? []) as string[]);
+          if (archetypeContext) lastReflectionContext += `\n\n${archetypeContext}`;
         }
 
         // REC 2.1: On Mondays, inject last week's summary as causal context for today's task
@@ -394,6 +408,52 @@ INSTRUCTION: Use this to make today's action a direct causal response to yesterd
     // Build contextual fallback using real project data (never placeholder text)
     const fallback = buildContextualFallback(stage, targetUsers, problem, title, projectContext);
 
+    let debtContext = "";
+    if (hasAdminEnv() && memoryResult?.status === "fulfilled" && contextResult?.status === "fulfilled") {
+      const memory = (memoryResult.value.data ?? {}) as {
+        avoidance_zones?: string[];
+        decision_patterns?: unknown[];
+        personality_tags?: string[];
+        last_debt_surfaced?: Record<string, string> | null;
+      };
+      const context = (contextResult.value.data ?? {}) as {
+        avoidance_signals?: string[];
+        override_reasons?: string[];
+        tasks_overridden_this_week?: number;
+        topics_mentioned_repeatedly?: string[];
+        days_inactive?: number;
+      };
+      const debt = computeExecutionDebt({
+        avoidance_signals: context.avoidance_signals ?? [],
+        override_reasons: context.override_reasons ?? [],
+        tasks_overridden_this_week: context.tasks_overridden_this_week ?? 0,
+        topics_mentioned_repeatedly: context.topics_mentioned_repeatedly ?? [],
+        days_inactive: context.days_inactive ?? 0,
+      }, {
+        avoidance_zones: memory.avoidance_zones ?? [],
+        decision_patterns: [],
+        personality_tags: memory.personality_tags ?? [],
+        last_debt_surfaced: memory.last_debt_surfaced ?? null,
+      });
+      debtContext = buildDebtPromptInjection(debt);
+      if (debtSuppressesTask(debt) && !body.acknowledgeDebt) {
+        await markDebtSurfaced(userId, debt);
+        return NextResponse.json({
+          success: true,
+          data: {
+            debtSuppressed: true,
+            debtCategory: debt.category,
+            debtMessage: debt.message,
+            interventionHint: debt.interventionHint,
+            stage,
+          },
+        });
+      }
+      if (body.acknowledgeDebt) {
+        recordActivity(userId, "task_overridden", { projectId, debtCategory: debt.category }).catch(() => {});
+      }
+    }
+
     // Fix #3: Removed pre-call groqJSON — was wasting 1-2 extra Groq calls per load.
     // Context is fed directly into Agent A as the seed. Reflexion loop (Gen→Crit→Refine)
     // runs once. This cuts 4-6 calls/load down to 2-3, more than doubling free-tier endurance.
@@ -406,6 +466,7 @@ INSTRUCTION: Use this to make today's action a direct causal response to yesterd
       momentumScore: 50,
       avoidanceSignals: [],
       cognitiveLoad: "fresh",
+      debtContext,
     };
 
     // Populate reflexionContext from data already fetched in the parallel round-trip above.
@@ -476,7 +537,7 @@ INSTRUCTION: Use this to make today's action a direct causal response to yesterd
       // If reflexion ran, its rationale becomes the task's why
       why: cleanVisibleText(reflexionOutput?.rationale, fallback.why),
     };
-    finalResult.message = buildPersonalizedDraft(finalResult.action, fallback, { title, targetUsers, problem });
+    finalResult.message = buildLongTodayDraft(finalResult.action, fallback, { title, targetUsers, problem, stage });
 
     if (reflexionOutput) {
       finalResult.reflexion = {
@@ -506,6 +567,7 @@ INSTRUCTION: Use this to make today's action a direct causal response to yesterd
     // has data from every check-in, not just break-my-startup sessions.
     // Fire-and-forget — never blocks the response.
     if (hasAdminEnv() && finalResult.action && userId) {
+      recordActivity(userId, "task_accepted", { projectId, stage, action: finalResult.action }).catch(() => {});
       const learningSessionId = `today_action:${projectId ?? "none"}:${Date.now()}`;
       recordActionShown({
         userId,

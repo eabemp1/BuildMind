@@ -77,6 +77,14 @@ type CachedTodayAction = {
   data?: ActionData;
 };
 
+type DebtSuppression = {
+  debtSuppressed: true;
+  debtCategory?: string | null;
+  debtMessage: string;
+  interventionHint?: string;
+  stage?: string;
+};
+
 function isActionData(value: unknown): value is ActionData {
   if (!value || typeof value !== "object") return false;
   const data = value as Partial<ActionData>;
@@ -122,6 +130,23 @@ function unwrapActionPayload(payload: unknown): ActionData | null {
   const maybePayload = payload as { data?: unknown };
   const candidate = isActionData(maybePayload.data) ? maybePayload.data : payload;
   return isActionData(candidate) ? sanitizeActionData({ ...candidate, isAI: true }) : null;
+}
+
+function unwrapDebtPayload(payload: unknown): DebtSuppression | null {
+  if (!payload || typeof payload !== "object") return null;
+  const maybePayload = payload as { data?: unknown };
+  const candidate = (maybePayload.data && typeof maybePayload.data === "object") ? maybePayload.data : payload;
+  const data = candidate as Partial<DebtSuppression>;
+  if (data.debtSuppressed === true && typeof data.debtMessage === "string") {
+    return {
+      debtSuppressed: true,
+      debtCategory: data.debtCategory ?? null,
+      debtMessage: sanitizeVisibleText(data.debtMessage),
+      interventionHint: typeof data.interventionHint === "string" ? sanitizeVisibleText(data.interventionHint) : undefined,
+      stage: typeof data.stage === "string" ? data.stage : undefined,
+    };
+  }
+  return null;
 }
 
 // ── Stored reflection shape (from bm_today_action written by /reflect) ──────
@@ -306,10 +331,22 @@ function isGenericDraft(message: string): boolean {
 
 function buildPersonalizedDraftFromAction(action: string, message: string, productName: string, targetUsers: string, problem: string): string {
   const hydrated = hydrateScript(message, productName, targetUsers, problem);
-  if (!isGenericDraft(hydrated)) return hydrated;
   const audience = inferAudienceFromAction(action, targetUsers);
   const topic = inferTopicFromAction(action, problem, productName);
-  return `Hi [Name], quick question - I'm researching ${topic} for ${audience}. How are you handling this today, and what is the most frustrating part? I'd value 10 minutes of honest context.`;
+  const base = !isGenericDraft(hydrated)
+    ? hydrated
+    : `Hi [Name], quick question - I'm researching ${topic} for ${audience}. How are you handling this today, and what is the most frustrating part? I'd value 10 minutes of honest context.`;
+  if (base.length >= 500) return base;
+  return `${base}
+
+For context, I am not asking for encouragement or a polite "sounds interesting." I am trying to understand the real workflow before I build more around assumptions. What do you do today, where does it slow down, what workaround have you accepted as normal, and what would make you care enough to change it?
+
+If a call is too much, reply with three bullets:
+1. what you do now
+2. the most annoying part
+3. whether this is painful enough to solve soon
+
+If you are not the right person, one referral would help too.`.trim();
 }
 
 function useIsMobile() {
@@ -367,6 +404,7 @@ function TodayContent() {
 
   // AI-personalised action state
   const [aiAction, setAiAction] = useState<ActionData | null>(null);
+  const [debtSuppression, setDebtSuppression] = useState<DebtSuppression | null>(null);
   const [aiUsage, setAiUsage] = useState<{ monthlyUsed: number; monthlyLimit: number; unlimited: boolean } | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   // Progressive streaming label — shows which agent is currently running
@@ -627,6 +665,14 @@ function TodayContent() {
 
             if (event === "done" && payload && typeof payload === "object") {
               const p = payload as Record<string, unknown>;
+              const debtData = unwrapDebtPayload(p);
+              if (debtData) {
+                setDebtSuppression(debtData);
+                setAiAction(null);
+                setStreamLabel(null);
+                streamSucceeded = true;
+                break outer;
+              }
               const actionData = unwrapActionPayload(p);
               if (!actionData) break outer;
               if (!signal.aborted) {
@@ -661,7 +707,14 @@ function TodayContent() {
         .then(json => {
           if (signal.aborted) return;
           const actionData = unwrapActionPayload(json);
+          const debtData = unwrapDebtPayload(json);
+          if (json?.success && debtData) {
+            setDebtSuppression(debtData);
+            setAiAction(null);
+            return;
+          }
           if (json?.success && actionData) {
+            setDebtSuppression(null);
             setAiAction(actionData);
             if (actionData.reflexion?.loopRan) {
               const cacheValue = { date: today, projectId, stage: currentStage, data: actionData };
@@ -754,7 +807,15 @@ function TodayContent() {
   }, [project?.id, project?.startup_stage]);
 
   const staticAction = buildContextualStaticAction(stageKey, productName, targetUsers, problem, projectDescription);
-  const actionData = aiAction ?? { ...staticAction, isAI: false };
+  const actionData = debtSuppression && !aiAction
+    ? {
+        action: "Name the execution debt before taking another task.",
+        message: `${debtSuppression.debtMessage}\n\n${debtSuppression.interventionHint ?? "Answer the direct question honestly, then decide whether to continue or change the plan."}`,
+        why: "Because the repeated avoidance pattern now matters more than another generic task.",
+        time: "10 minutes",
+        isAI: true,
+      }
+    : aiAction ?? { ...staticAction, isAI: false };
   const destinations = DESTINATIONS[aiAction?.destKey ?? stageKey] ?? DESTINATIONS.idea;
 
   // Memoize MobileCheckin visibility — avoids calling storage.get() on every
@@ -803,6 +864,36 @@ function TodayContent() {
     } catch {}
   }
 
+  async function handleAcknowledgeDebt() {
+    if (!project?.id || !userId) return;
+    setActionLoading(true);
+    try {
+      const response = await fetch("/api/ai/today-action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          projectId: project.id,
+          stage: project.startup_stage ?? "Idea",
+          pendingMilestones: project.pendingMilestones ?? [],
+          pendingTasks: project.pendingTasks ?? [],
+          completionRate: project.completion_rate ?? 0,
+          acknowledgeDebt: true,
+        }),
+      });
+      const json = await response.json();
+      const nextAction = unwrapActionPayload(json);
+      if (json?.success && nextAction) {
+        setDebtSuppression(null);
+        setAiAction(nextAction);
+      }
+    } catch {
+      // Keep the debt card visible if generation fails.
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
   async function handleCheckIn() {
     if (!outcome) return;
     // Ref guard: prevents iOS double-tap from firing this twice before state updates
@@ -822,7 +913,7 @@ function TodayContent() {
         const tcRes = await fetch("/api/founder-context/task-complete", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ stage: project?.startup_stage ?? "Idea" }),
+          body: JSON.stringify({ stage: project?.startup_stage ?? "Idea", projectId: project?.id }),
         });
         if (tcRes.ok) {
           const tcData = await tcRes.json();
@@ -1607,6 +1698,53 @@ function TodayContent() {
         <span style={{ fontSize: 10, transform: isContextOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s", display: "inline-block" }}>▶</span>
         {isContextOpen ? "Hide context" : "Why this task?"}
       </button>
+
+      {debtSuppression && !aiAction && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          style={{
+            background: "var(--bm-bg2)",
+            border: "1px solid var(--bm-border2)",
+            borderRadius: 12,
+            padding: isMobile ? 18 : 22,
+            marginBottom: 14,
+          }}
+        >
+          <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+            <AlertCircle size={20} color="var(--bm-accent)" style={{ flexShrink: 0, marginTop: 2 }} />
+            <div>
+              <div style={{ fontSize: 10, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'DM Mono', monospace", marginBottom: 8 }}>
+                Execution debt
+              </div>
+              <p style={{ color: "var(--bm-text)", fontSize: isMobile ? 17 : 18, lineHeight: 1.45, margin: "0 0 10px" }}>
+                {debtSuppression.debtMessage}
+              </p>
+              {debtSuppression.interventionHint && (
+                <p style={{ color: "var(--bm-text2)", fontSize: 13, lineHeight: 1.55, margin: "0 0 14px" }}>
+                  {debtSuppression.interventionHint}
+                </p>
+              )}
+              <button
+                onClick={() => void handleAcknowledgeDebt()}
+                disabled={actionLoading}
+                style={{
+                  border: "1px solid var(--bm-accent-bd)",
+                  background: "var(--bm-accent-dim)",
+                  color: "var(--bm-accent)",
+                  borderRadius: 8,
+                  padding: "9px 12px",
+                  cursor: actionLoading ? "default" : "pointer",
+                  fontSize: 13,
+                  fontFamily: "inherit",
+                }}
+              >
+                {actionLoading ? "Generating..." : "I understand - give me today's task"}
+              </button>
+            </div>
+          </div>
+        </motion.div>
+      )}
 
       {/* ══════════════════════════════════════════════════════════════════════
           ACTION CARD — first real content block (task-first layout)

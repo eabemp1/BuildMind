@@ -99,6 +99,9 @@ export interface ReflexionContext {
   cofounderStyle?: "direct-challenger" | "strategic-partner" | "execution-coach" | "devil-advocate";
   sessionCount?: number;               // for new-user context injection
   userId?: string;                     // D3 fix: per-user critic persona offset
+  archetypeContext?: string;           // founder archetype prompt block
+  knowledgeBaseContext?: string;       // onboarding precedent prompt block
+  debtContext?: string;                // execution debt prompt block
 }
 
 // ── NEW IN V4: Agent Persona Rotation (Playbook §4.4) ─────────────────────
@@ -379,6 +382,9 @@ export async function runReflexionLoop(
   const generatorPrompt = `You are a world-class startup execution consultant with behavioral intelligence about this specific founder.
 You know how they operate, what they avoid, and what their execution patterns look like. Your advice is not generic — it is calibrated to this person's context, stage, and behavioral profile.
 ${contextBlock}
+${context.archetypeContext ? `\n${context.archetypeContext}` : ""}
+${context.knowledgeBaseContext ? `\n${context.knowledgeBaseContext}` : ""}
+${context.debtContext ? `\n${context.debtContext}` : ""}
 ${additionalInstruction}${newUserInstruction}
 TASK: ${task}
 Be specific to this founder's situation. Reference their actual stage, avoidance patterns, and behavioral history. No generic startup advice.`;
@@ -599,6 +605,9 @@ export async function runFullReflexionPipeline(
 
   const generatorSystemPrompt = `You are an advanced startup intelligence engine operating as a decisive operator — not a consultant.
 ${contextBlock}${newUserInstruction}
+${founderContext.archetypeContext ? `\n${founderContext.archetypeContext}` : ""}
+${founderContext.knowledgeBaseContext ? `\n${founderContext.knowledgeBaseContext}` : ""}
+${founderContext.debtContext ? `\n${founderContext.debtContext}` : ""}
 
 VERIFIED MARKET SIGNALS:
 ${structuredSignals.map((s, i) => `${i + 1}. ${s}`).join("\n")}
@@ -998,6 +1007,7 @@ function buildContextBlock(ctx: ReflexionContext): string {
   if (ctx.avoidanceSignals?.length) lines.push(`Avoidance signals: ${ctx.avoidanceSignals.join(", ")}`);
   if (ctx.overrideReasons?.length) lines.push(`Recent override reasons: ${ctx.overrideReasons.join(", ")}`);
   if (ctx.topicsRepeated?.length) lines.push(`Topics mentioned repeatedly: ${ctx.topicsRepeated.join(", ")}`);
+  if (ctx.debtContext) lines.push(ctx.debtContext);
   if (ctx.lastReflection) {
     lines.push(`Last reflection: outcome=${ctx.lastReflection.outcome}, confidence=${ctx.lastReflection.confidence}/5`);
     if (ctx.lastReflection.note) lines.push(`Their note: "${ctx.lastReflection.note}"`);

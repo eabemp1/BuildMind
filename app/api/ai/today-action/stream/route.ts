@@ -27,6 +27,10 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getWeeklyCriticPersona, groqCall } from "@/lib/reflexion";
 import { callModelJSON, sanitizeModelOutput } from "@/lib/ai-providers";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
+import { buildArchetypeSystemContext } from "@/lib/founderArchetype";
+import { buildDebtPromptInjection, computeExecutionDebt, debtSuppressesTask, markDebtSurfaced } from "@/lib/executionDebt";
+import { recordActivity } from "@/lib/server/activityLog";
+import { buildLongTodayDraft } from "@/lib/todayDrafts";
 
 function sse(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -167,6 +171,7 @@ export async function POST(request: Request) {
         const userId = String(body?.userId ?? routeUser.userId).trim();
         const projectId = String(body?.projectId ?? "").trim();
         const providedStage = String(body?.stage ?? "").trim().slice(0, 50);
+        const acknowledgeDebt = Boolean(body?.acknowledgeDebt);
 
         if (userId !== routeUser.userId || !userId || !projectId) {
           emit("error", { message: "Invalid request" });
@@ -184,15 +189,19 @@ export async function POST(request: Request) {
         let description = "";
         let projectContext = "";
         let lastReflectionContext = "";
+        let debtContext = "";
 
         if (hasAdminEnv()) {
           const supabase = createAdminClient();
-          const [projectResult, memoryResult] = await Promise.allSettled([
+          const [projectResult, memoryResult, contextResult] = await Promise.allSettled([
             supabase.from("projects")
               .select("name, title, description, target_users, problem, startup_stage")
               .eq("id", projectId).eq("user_id", userId).maybeSingle(),
             supabase.from("founder_memory")
-              .select("avoidance_zones, strengths, last_insight")
+              .select("avoidance_zones, strengths, last_insight, personality_tags, decision_patterns, last_debt_surfaced")
+              .eq("user_id", userId).maybeSingle(),
+            supabase.from("founder_context")
+              .select("avoidance_signals, override_reasons, tasks_overridden_this_week, topics_mentioned_repeatedly, days_inactive")
               .eq("user_id", userId).maybeSingle(),
           ]);
 
@@ -221,6 +230,55 @@ export async function POST(request: Request) {
             if (avoidance.length) {
               lastReflectionContext += `\nAvoidance zones: ${avoidance.join(", ")} — name the pattern and assign it anyway.`;
             }
+            const archetypeContext = buildArchetypeSystemContext((memory.personality_tags ?? []) as string[]);
+            if (archetypeContext) lastReflectionContext += `\n\n${archetypeContext}`;
+          }
+
+          if (memoryResult.status === "fulfilled" && contextResult.status === "fulfilled") {
+            const m = (memoryResult.value.data ?? {}) as {
+              avoidance_zones?: string[];
+              decision_patterns?: unknown[];
+              personality_tags?: string[];
+              last_debt_surfaced?: Record<string, string> | null;
+            };
+            const c = (contextResult.value.data ?? {}) as {
+              avoidance_signals?: string[];
+              override_reasons?: string[];
+              tasks_overridden_this_week?: number;
+              topics_mentioned_repeatedly?: string[];
+              days_inactive?: number;
+            };
+            const debt = computeExecutionDebt({
+              avoidance_signals: c.avoidance_signals ?? [],
+              override_reasons: c.override_reasons ?? [],
+              tasks_overridden_this_week: c.tasks_overridden_this_week ?? 0,
+              topics_mentioned_repeatedly: c.topics_mentioned_repeatedly ?? [],
+              days_inactive: c.days_inactive ?? 0,
+            }, {
+              avoidance_zones: m.avoidance_zones ?? [],
+              decision_patterns: [],
+              personality_tags: m.personality_tags ?? [],
+              last_debt_surfaced: m.last_debt_surfaced ?? null,
+            });
+            debtContext = buildDebtPromptInjection(debt);
+            if (debtSuppressesTask(debt) && !acknowledgeDebt) {
+              await markDebtSurfaced(userId, debt);
+              emit("done", {
+                success: true,
+                data: {
+                  debtSuppressed: true,
+                  debtCategory: debt.category,
+                  debtMessage: debt.message,
+                  interventionHint: debt.interventionHint,
+                  stage,
+                },
+              });
+              controller.close();
+              return;
+            }
+            if (acknowledgeDebt) {
+              recordActivity(userId, "task_overridden", { projectId, debtCategory: debt.category }).catch(() => {});
+            }
           }
 
           const { data: lastReflection } = await supabase.from("reflections")
@@ -243,7 +301,8 @@ export async function POST(request: Request) {
 Return a single concrete task for today. Must include: specific number of people, exact platform, exact user type.
 Bad: "message some users". Good: "Message 3 fintech founders on LinkedIn today — ask about their workflow, not your idea."
 ${projectContext ? `\nFOUNDER DATA:\n${projectContext}` : ""}
-${lastReflectionContext}`;
+${lastReflectionContext}
+${debtContext}`;
 
         let agentAOutput = "";
         try {
@@ -335,7 +394,7 @@ ${lastReflectionContext}`;
         const finalData = {
           ...fallback,
           action: refined || fallback.action,
-          message: buildPersonalizedDraft(refined || fallback.action, fallback, { title, targetUsers, problem }),
+          message: buildLongTodayDraft(refined || fallback.action, fallback, { title, targetUsers, problem, stage }),
           why: rationale,
           stage,
           isAI: true,
@@ -351,6 +410,7 @@ ${lastReflectionContext}`;
 
         // Quality log (fire-and-forget)
         if (hasAdminEnv() && finalData.action) {
+          recordActivity(userId, "task_accepted", { projectId, stage, action: finalData.action }).catch(() => {});
           logReflexionQuality({
             userId, projectId,
             context: "today_action_stream",

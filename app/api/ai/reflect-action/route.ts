@@ -6,6 +6,8 @@ import { generateFounderInsight } from "@/lib/founderMemory";
 import { FEATURES } from "@/lib/features";
 import { callModelJSON } from "@/lib/ai-providers";
 import { logError } from "@/lib/server/logger";
+import { recordActivity } from "@/lib/server/activityLog";
+import { checkAndCacheStageTransition } from "@/lib/server/stageTransitionCache";
 
 import { z } from "zod";
 
@@ -213,6 +215,8 @@ Target users: ${project.target_users ?? "Not specified"}`;
 
         // ── Fire-and-forget: close both learning loops ────────────────────────
         extractAndWritePatterns(supabase, verifiedUserId).catch((err) => logError("reflect-action/extractPatterns", err));
+        recordActivity(verifiedUserId, "reflection_done", { projectId, outcome, confidence }).catch(() => {});
+        checkAndCacheStageTransition(verifiedUserId, projectId).catch(() => {});
 
         // Trigger full synthesis after every reflection (fire-and-forget)
         fetch(`${process.env.NEXT_PUBLIC_APP_URL ?? ""}/api/ai/founder-insight`, {

@@ -103,6 +103,9 @@ export type FounderMemory = {
   cofounder_style: CofounderStyle;
   last_insight: string | null;
   insight_history: { text: string; created_at: string }[];
+  archetype_classified_at: string | null;
+  archetype_confidence: number | null;
+  last_debt_surfaced: Record<string, string> | null;
   updated_at: string;
   // ── Weekly loop feed ─────────────────────────────────────────────────────
   // Written by weekly-report API; read by today-action on Mondays

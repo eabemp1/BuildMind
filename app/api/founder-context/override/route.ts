@@ -6,6 +6,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { momentumOnOverride } from "@/lib/founderContext";
+import { recordActivity } from "@/lib/server/activityLog";
 
 export async function POST(req: Request) {
   const supabase = await createClient();
@@ -53,6 +54,8 @@ export async function POST(req: Request) {
   } catch {
     // Non-blocking — table may not exist yet
   }
+
+  recordActivity(user.id, "task_overridden", { reason, taskText, stage: ctx?.current_stage ?? null }).catch(() => {});
 
   return NextResponse.json({ ok: true, momentum: newMomentum });
 }

@@ -8,13 +8,15 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { momentumOnTaskComplete } from "@/lib/founderContext";
 import { detectPattern, shouldSurfacePattern } from "@/lib/patternDetection";
+import { recordActivity } from "@/lib/server/activityLog";
+import { checkAndCacheStageTransition } from "@/lib/server/stageTransitionCache";
 
 export async function POST(req: Request) {
   const supabase = await createClient();
   const { data: { user }, error } = await supabase.auth.getUser();
   if (error || !user) return NextResponse.json({ ok: false }, { status: 401 });
 
-  const { stage = "" } = await req.json().catch(() => ({}));
+  const { stage = "", projectId = "" } = await req.json().catch(() => ({}));
   const admin = createAdminClient();
 
   // Fetch context + founder_memory + recent task titles in parallel for pattern detection
@@ -111,6 +113,9 @@ export async function POST(req: Request) {
     tasks_completed_total: (ctx?.tasks_completed_total ?? 0) + 1,
     ...(stage ? { current_stage: stage } : {}),
   }, { onConflict: "user_id" });
+
+  recordActivity(user.id, "task_completed", { stage, projectId }).catch(() => {});
+  if (projectId) checkAndCacheStageTransition(user.id, projectId).catch(() => {});
 
   return NextResponse.json({
     ok: true,

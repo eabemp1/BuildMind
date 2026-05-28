@@ -37,7 +37,7 @@ type Plan = "free" | "builder";
 type BillingStatus = "active" | "canceled" | "processing" | "free";
 type MetricStatus = "on_track" | "watch" | "below_target" | "no_data";
 type DoneMap = Record<string, boolean>;
-type Tab = "overview" | "users" | "revenue" | "ai" | "engagement" | "growth" | "testimonials" | "ventures";
+type Tab = "overview" | "users" | "revenue" | "ai" | "engagement" | "growth" | "proof" | "testimonials" | "ventures";
 
 interface AdminUser { id: string; email: string; plan: Plan; billing_status: BillingStatus; billing_reference: string | null; subscription_id: string | null; streak: number; last_seen: string | null; created_at: string; projects_count: number; ai_calls_this_month: number; }
 interface MRRData { mrr: number; active_builders: number; new_this_month: number; churned_this_month: number; trend: { date: string; mrr: number }[]; }
@@ -121,6 +121,7 @@ const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "ai",           label: "AI & Quality",  icon: Brain },
   { id: "engagement",   label: "Engagement",    icon: Activity },
   { id: "growth",       label: "Growth",        icon: TrendingUp },
+  { id: "proof",        label: "Proof",         icon: Shield },
   { id: "testimonials", label: "Testimonials",  icon: MessageSquare },
   { id: "ventures",     label: "My Ventures",   icon: Map },
 ];
@@ -717,6 +718,52 @@ function GrowthTab() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// SECTION: PROOF
+// ═══════════════════════════════════════════════════════════════════════════════
+function ProofTab() {
+  const [data, setData] = useState<{
+    retention?: unknown[];
+    stage_advancement?: unknown[];
+    behaviour_trajectory?: unknown[];
+    recent_activity?: Array<{ event_type?: string; occurred_at?: string }>;
+  } | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/admin/proof", { cache: "no-store" })
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(j => setData(j.data ?? null))
+      .catch(() => setData(null))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <Card style={{ padding: 24, color: C.t3 }}><Spin /> Loading proof metrics...</Card>;
+  if (!data) return <Card style={{ padding: 24, color: C.t3 }}>Proof metrics are unavailable until the migration is applied.</Card>;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
+        <Stat label="Retention proof" value={data.retention?.length ?? 0} sub="W1/W4 cohort rows" icon={Shield} color={C.a} />
+        <Stat label="Stage proof" value={data.stage_advancement?.length ?? 0} sub="advancement cohorts" icon={TrendingUp} color={C.teal} />
+        <Stat label="Behaviour proof" value={data.behaviour_trajectory?.length ?? 0} sub="execution trajectory rows" icon={Activity} color={C.blue} />
+      </div>
+      <Card style={{ padding: 18 }}>
+        <Label>Recent activity events</Label>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {(data.recent_activity ?? []).slice(0, 20).map((row, i) => (
+            <div key={`${row.event_type}-${row.occurred_at}-${i}`} style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 12, color: C.t2, borderBottom: `1px solid ${C.b}`, paddingBottom: 8 }}>
+              <span>{row.event_type ?? "event"}</span>
+              <span style={{ color: C.t3 }}>{row.occurred_at ? fmtDT(row.occurred_at) : "unknown"}</span>
+            </div>
+          ))}
+          {!(data.recent_activity ?? []).length && <div style={{ fontSize: 12, color: C.t3 }}>No activity recorded yet.</div>}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // SECTION: TESTIMONIALS
 // ═══════════════════════════════════════════════════════════════════════════════
 const SRC_LABELS: Record<string, string> = { streak_7: "🔥 7d streak", streak_14: "⚔️ 14d", streak_30: "💎 30d", high_confidence: "💪 High confidence", manual: "Manual", admin: "Admin" };
@@ -976,7 +1023,7 @@ async function fetchDashboard(): Promise<DashboardPayload> {
   return r.json();
 }
 
-const VALID_TABS = new Set<string>(["overview","users","revenue","ai","engagement","growth","testimonials","ventures"]);
+const VALID_TABS = new Set<string>(["overview","users","revenue","ai","engagement","growth","proof","testimonials","ventures"]);
 
 /**
  * Fix #2 — Page decomposition (audit P0.2)
@@ -1021,7 +1068,7 @@ export default function AdminPage() {
   }
 
   // These tabs load their own data
-  const selfLoadingTabs: Tab[] = ["testimonials", "ventures", "growth"];
+  const selfLoadingTabs: Tab[] = ["testimonials", "ventures", "growth", "proof"];
 
   return (
     <div style={{ minHeight: "100vh", background: C.bg, color: C.t, fontFamily: "Geist, system-ui, sans-serif" }}>
@@ -1074,6 +1121,7 @@ export default function AdminPage() {
         {tab === "testimonials" && <TestimonialsTab key="testimonials" />}
         {tab === "ventures"     && <VenturesTab key="ventures" />}
         {tab === "growth"       && <GrowthTab key="growth" />}
+        {tab === "proof"        && <ProofTab key="proof" />}
 
         {/* Dashboard-data tabs */}
         {!selfLoadingTabs.includes(tab) && (
