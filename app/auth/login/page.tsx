@@ -573,14 +573,13 @@ function LoginContent() {
   async function handleGoogleOAuth() {
     setOauthLoading(true); setError(null);
     try {
-      const callbackUrl = new URL("/auth/callback", window.location.origin);
+      const callbackUrl = new URL("/auth/implicit-callback", window.location.origin);
       callbackUrl.searchParams.set("next", "/today");
       const { error: err } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
           redirectTo: callbackUrl.toString(),
           queryParams: { prompt: "select_account" },
-          skipBrowserRedirect: false,
         },
       });
       if (err) throw err;
