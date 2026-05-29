@@ -580,6 +580,7 @@ function LoginContent() {
         options: {
           redirectTo: callbackUrl.toString(),
           queryParams: { prompt: "select_account" },
+          skipBrowserRedirect: false,
         },
       });
       if (err) throw err;

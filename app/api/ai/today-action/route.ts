@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { enforceAndTrackAIUsage, hasAdminEnv, logReflexionQuality } from "@/app/api/ai/_utils";
+import { enforceAndTrackAIUsage, hasAdminEnv } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { runReflexionLoop, getWeeklyCriticPersona, type ReflexionContext } from "@/lib/reflexion";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
@@ -12,6 +12,9 @@ import { buildDebtPromptInjection, computeExecutionDebt, debtSuppressesTask, mar
 import { recordActivity } from "@/lib/server/activityLog";
 import { buildPersonalizedTodayDraft } from "@/lib/todayDrafts";
 import { buildKnowledgeBaseContext, searchFounderKnowledgeBase, type FounderKnowledgeMatch } from "@/lib/founderKnowledgeBase";
+import { loadCognitionInput, synthesizeFounderCognition, buildCognitionPromptBlock } from "@/lib/founderCognition";
+import { evaluateAIOutput } from "@/lib/aiEvaluator";
+import { getPromptForRequest, loadActivePrompts } from "@/lib/promptRegistry";
 
 export const runtime     = "nodejs";
 export const dynamic     = "force-dynamic";
@@ -139,6 +142,7 @@ function buildContextualFallback(stage: string, targetUsers: string, problem: st
 
 export async function POST(request: Request) {
   try {
+    void loadActivePrompts();
     // Authenticate session first — userId in body must match the session user
     const routeUser = await getRouteUser();
     if (!routeUser) {
@@ -193,6 +197,10 @@ export async function POST(request: Request) {
     let knowledgeMatches: FounderKnowledgeMatch[] = [];
     let supabase: ReturnType<typeof createAdminClient> | null = null;
     let hoistedReflection: { outcome?: string | null; note?: string | null; confidence?: number | null; today_action?: string | null; created_at?: string | null } | null = null;
+    let cognitionBlock = "";
+    let cognitionMomentumScore = 50;
+    let cognitionAvoidanceSignals: string[] = [];
+    let cognitionCognitiveLoad: ReflexionContext["cognitiveLoad"] = "fresh";
     // FIX 1.3: Hoist memoryResult to outer scope so it can be reused later
     // without a second DB round-trip to founder_memory
     let memoryResult: PromiseSettledResult<{ data: Record<string, unknown> | null; error: unknown }> | null = null;
@@ -412,6 +420,17 @@ INSTRUCTION: Use this to make today's action a direct causal response to yesterd
       }
     }
 
+    if (hasAdminEnv() && (title || projectContext)) {
+      const cognitionInput = await loadCognitionInput(userId, stage, title);
+      const cognitionState = await synthesizeFounderCognition(userId, cognitionInput);
+      cognitionBlock = buildCognitionPromptBlock(cognitionState);
+      cognitionMomentumScore = cognitionState.signal_confidence > 0.3
+        ? (cognitionInput.context?.momentum_score ?? 50)
+        : 50;
+      cognitionAvoidanceSignals = cognitionInput.memory?.avoidance_zones ?? [];
+      cognitionCognitiveLoad = cognitionInput.context?.cognitive_load ?? "fresh";
+    }
+
     if (hasAdminEnv() && (title || problem || targetUsers)) {
       knowledgeMatches = await searchFounderKnowledgeBase(
         `${title}. ${problem}. ${targetUsers}. ${projectContext}`.trim(),
@@ -481,9 +500,10 @@ INSTRUCTION: Use this to make today's action a direct causal response to yesterd
       stage,
       problem: problem || undefined,
       targetUsers: targetUsers || undefined,
-      momentumScore: 50,
-      avoidanceSignals: [],
-      cognitiveLoad: "fresh",
+      momentumScore: cognitionMomentumScore,
+      avoidanceSignals: cognitionAvoidanceSignals,
+      cognitiveLoad: cognitionCognitiveLoad,
+      archetypeContext: cognitionBlock,
       debtContext,
     };
 
@@ -493,7 +513,9 @@ INSTRUCTION: Use this to make today's action a direct causal response to yesterd
       // Avoidance signals + cofounder style — from already-fetched memoryResult
       if (memoryResult && memoryResult.status === "fulfilled" && memoryResult.value.data) {
         const m = memoryResult.value.data;
-        reflexionContext.avoidanceSignals = (m.avoidance_zones ?? []) as string[];
+        if (!cognitionAvoidanceSignals.length) {
+          reflexionContext.avoidanceSignals = (m.avoidance_zones ?? []) as string[];
+        }
         // Wire cofounder_style so Stage 7 Refiner adjusts its communication tone
         if (m.cofounder_style) {
           reflexionContext.cofounderStyle = m.cofounder_style as ReflexionContext["cofounderStyle"];
@@ -577,14 +599,25 @@ INSTRUCTION: Use this to make today's action a direct causal response to yesterd
 
     // ── Gatekeeper quality log ──────────────────────────────────────────────
     if (hasAdminEnv() && finalResult.action) {
-      logReflexionQuality({
+      const { version: promptVersion, variant } = getPromptForRequest("reflexion_generator", userId);
+      void evaluateAIOutput({
         userId,
         projectId,
         context: "today_action",
-        finalOutput: finalResult.action,
-        stage,
-        targetUsers,
-      }).catch((err) => logError("today-action/logReflexionQuality", err));
+        promptId: "reflexion_generator",
+        promptVersion,
+        variant,
+        output: finalResult.action,
+        originalOutput: reflexionOutput?.critique ?? undefined,
+        founderContext: {
+          stage,
+          targetUsers,
+          archetype: founderArchetype,
+          lastReflection: hoistedReflection?.note ?? undefined,
+          avoidanceZones: reflexionContext.avoidanceSignals,
+          momentumScore: reflexionContext.momentumScore,
+        },
+      });
     }
 
     // ── Learning loop — record action shown (Playbook §5, Month 2) ───────────

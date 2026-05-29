@@ -60,7 +60,19 @@ function getWeekNumber(): number {
 export async function GET(request: Request) {
   const start = Date.now();
 
+  if (!process.env.CRON_SECRET && process.env.NODE_ENV === "production") {
+    console.error(
+      "[buildmind] CRON_SECRET is not set. Sunday behavioral email cron is blocked. " +
+      "Set CRON_SECRET in Vercel Environment Variables."
+    );
+    return NextResponse.json(
+      { success: false, error: "CRON_SECRET not configured. Set it in Vercel to enable Sunday email cron." },
+      { status: 500 },
+    );
+  }
+
   if (!isCronRequest(request) && process.env.NODE_ENV === "production") {
+    console.error("[buildmind] Sunday behavioral email cron blocked: invalid or missing CRON_SECRET.");
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   }
   if (!hasAdminEnv()) {

@@ -10,6 +10,7 @@ import { momentumOnTaskComplete } from "@/lib/founderContext";
 import { detectPattern, shouldSurfacePattern } from "@/lib/patternDetection";
 import { recordActivity } from "@/lib/server/activityLog";
 import { checkAndCacheStageTransition } from "@/lib/server/stageTransitionCache";
+import { invalidateCognitionCache } from "@/lib/founderCognition";
 
 export async function POST(req: Request) {
   const supabase = await createClient();
@@ -115,6 +116,7 @@ export async function POST(req: Request) {
   }, { onConflict: "user_id" });
 
   recordActivity(user.id, "task_completed", { stage, projectId }).catch(() => {});
+  invalidateCognitionCache(user.id);
   if (projectId) checkAndCacheStageTransition(user.id, projectId).catch(() => {});
 
   return NextResponse.json({

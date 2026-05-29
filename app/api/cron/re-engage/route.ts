@@ -37,7 +37,19 @@ function isCronRequest(req: Request): boolean {
 export async function GET(req: NextRequest) {
   const start = Date.now();
 
+  if (!process.env.CRON_SECRET && process.env.NODE_ENV === "production") {
+    console.error(
+      "[buildmind] CRON_SECRET is not set. Re-engagement email cron is blocked. " +
+      "Set CRON_SECRET in Vercel Environment Variables."
+    );
+    return NextResponse.json(
+      { ok: false, error: "CRON_SECRET not configured. Set it in Vercel to enable re-engagement cron." },
+      { status: 500 },
+    );
+  }
+
   if (!isCronRequest(req) && process.env.NODE_ENV === "production") {
+    console.error("[buildmind] Re-engagement cron blocked: invalid or missing CRON_SECRET.");
     return NextResponse.json(
       { ok: false, error: "Unauthorized" },
       { status: 401 },

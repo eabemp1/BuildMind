@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { createUserNotification, enforceAndTrackAIUsage, groqJSON, hasAdminEnv, logReflexionQuality } from "@/app/api/ai/_utils";
+import { createUserNotification, enforceAndTrackAIUsage, groqJSON, hasAdminEnv } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { logError } from "@/lib/server/logger";
@@ -12,6 +12,8 @@ export const maxDuration = 30; // single JSON LLM call with context assembly ~5�
 import { inferStage } from "@/lib/stages";
 import { detectSpiralFull } from "@/lib/cofounder/spiralDetection";
 import { injectContinuityIntoSystemPrompt, recordInteractionServer, type RecentInteraction } from "@/lib/conversationContinuity";
+import { evaluateAIOutput } from "@/lib/aiEvaluator";
+import { getPromptForRequest, loadActivePrompts } from "@/lib/promptRegistry";
 
 const FREE_COACH_MESSAGES_PER_DAY = 3;
 
@@ -163,6 +165,7 @@ const CoachBodySchema = z.object({
 
 export async function POST(request: Request) {
   try {
+    void loadActivePrompts();
     const routeUser = await getRouteUser();
     if (!routeUser) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
@@ -379,14 +382,21 @@ Return ONLY the JSON object. No preamble. No markdown.`;
     await createUserNotification(userId, "BuildMind has a new coaching response for you.", "ai_recommendation");
 
     // Log quality — enables tracking whether coach responses are specific enough
-    logReflexionQuality({
+    const { version: promptVersion, variant } = getPromptForRequest("coach_system", userId);
+    void evaluateAIOutput({
       userId,
       projectId,
       context: "coach",
-      finalOutput: answer,
-      stage,
-      targetUsers: body?.targetUsers as string | undefined,
-    }).catch((err) => logError("coach/logReflexionQuality", err));
+      promptId: "coach_system",
+      promptVersion,
+      variant,
+      output: answer,
+      founderContext: {
+        stage,
+        targetUsers: body?.targetUsers as string | undefined,
+        archetype: memory?.personality_tags?.find((tag) => tag.startsWith("archetype:"))?.replace("archetype:", ""),
+      },
+    });
 
     // AI Improvement #2: record this interaction for cross-feature continuity
     const interactionSummary = answer.slice(0, 120) + (answer.length > 120 ? "…" : "");

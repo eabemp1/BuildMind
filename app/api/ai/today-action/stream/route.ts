@@ -17,7 +17,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { enforceAndTrackAIUsage, hasAdminEnv, logReflexionQuality } from "@/app/api/ai/_utils";
+import { enforceAndTrackAIUsage, hasAdminEnv } from "@/app/api/ai/_utils";
 import { logError } from "@/lib/server/logger";
 
 export const runtime     = "nodejs";
@@ -32,6 +32,9 @@ import { buildDebtPromptInjection, computeExecutionDebt, debtSuppressesTask, mar
 import { recordActivity } from "@/lib/server/activityLog";
 import { buildPersonalizedTodayDraft } from "@/lib/todayDrafts";
 import { buildKnowledgeBaseContext, searchFounderKnowledgeBase, type FounderKnowledgeMatch } from "@/lib/founderKnowledgeBase";
+import { loadCognitionInput, synthesizeFounderCognition, buildCognitionPromptBlock } from "@/lib/founderCognition";
+import { evaluateAIOutput } from "@/lib/aiEvaluator";
+import { getPromptForRequest, loadActivePrompts } from "@/lib/promptRegistry";
 
 function sse(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -160,6 +163,7 @@ export async function POST(request: Request) {
       }
 
       try {
+        void loadActivePrompts();
         // ── Auth ──────────────────────────────────────────────────────────
         const routeUser = await getRouteUser();
         if (!routeUser) {
@@ -193,6 +197,10 @@ export async function POST(request: Request) {
         let debtContext = "";
         let founderArchetype: string | undefined;
         let knowledgeMatches: FounderKnowledgeMatch[] = [];
+        let cognitionBlock = "";
+        let cognitionMomentumScore = 50;
+        let cognitionAvoidanceSignals: string[] = [];
+        let lastReflectionNote: string | undefined;
 
         if (hasAdminEnv()) {
           const supabase = createAdminClient();
@@ -295,8 +303,19 @@ export async function POST(request: Request) {
 
           if (lastReflection) {
             const reflectDate = new Date(lastReflection.created_at).toLocaleDateString();
+            lastReflectionNote = lastReflection.note ?? undefined;
             lastReflectionContext = `\nLAST REFLECTION (${reflectDate}):\nYesterday: "${lastReflection.today_action ?? "Not recorded"}"\nOutcome: ${lastReflection.outcome}\nConfidence: ${lastReflection.confidence}/5\nNote: "${lastReflection.note ?? "None"}"\nInstruction: if yesterday was completed, stay within the same stage and thread, but refine the next task from the reflection note instead of repeating the same action or message.` + lastReflectionContext;
           }
+        }
+
+        if (hasAdminEnv() && (title || projectContext)) {
+          const cognitionInput = await loadCognitionInput(userId, stage, title);
+          const cognitionState = await synthesizeFounderCognition(userId, cognitionInput);
+          cognitionBlock = buildCognitionPromptBlock(cognitionState);
+          cognitionMomentumScore = cognitionState.signal_confidence > 0.3
+            ? (cognitionInput.context?.momentum_score ?? 50)
+            : 50;
+          cognitionAvoidanceSignals = cognitionInput.memory?.avoidance_zones ?? [];
         }
 
         if (hasAdminEnv() && (title || problem || targetUsers)) {
@@ -318,6 +337,7 @@ export async function POST(request: Request) {
 Return a single concrete task for today. Must include: specific number of people, exact platform, exact user type.
 Bad: "message some users". Good: "Message 3 fintech founders on LinkedIn today — ask about their workflow, not your idea."
 ${projectContext ? `\nFOUNDER DATA:\n${projectContext}` : ""}
+${cognitionBlock ? `\n${cognitionBlock}` : ""}
 ${lastReflectionContext}
 ${debtContext}`;
 
@@ -435,12 +455,25 @@ ${debtContext}`;
         // Quality log (fire-and-forget)
         if (hasAdminEnv() && finalData.action) {
           recordActivity(userId, "task_accepted", { projectId, stage, action: finalData.action }).catch(() => {});
-          logReflexionQuality({
-            userId, projectId,
+          const { version: promptVersion, variant } = getPromptForRequest("reflexion_generator", userId);
+          void evaluateAIOutput({
+            userId,
+            projectId,
             context: "today_action_stream",
-            finalOutput: finalData.action,
-            stage, targetUsers,
-          }).catch((err) => logError("today-action/stream/logReflexionQuality", err));
+            promptId: "reflexion_generator",
+            promptVersion,
+            variant,
+            output: finalData.action,
+            originalOutput: criticReason,
+            founderContext: {
+              stage,
+              targetUsers,
+              archetype: founderArchetype,
+              lastReflection: lastReflectionNote,
+              avoidanceZones: cognitionAvoidanceSignals,
+              momentumScore: cognitionMomentumScore,
+            },
+          });
         }
 
         emit("done", { success: true, data: finalData });

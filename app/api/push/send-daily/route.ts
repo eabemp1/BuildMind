@@ -137,10 +137,23 @@ export async function POST(req: NextRequest) {
   const start = Date.now();
 
   if (!process.env.CRON_SECRET && process.env.NODE_ENV === "production") {
+    console.error(
+      "[buildmind] CRON_SECRET is not set. All cron jobs (morning briefing, " +
+      "evening check, re-engagement, weekly report) are non-functional. " +
+      "Set CRON_SECRET in Vercel Environment Variables."
+    );
     return NextResponse.json(
-      { error: "CRON_SECRET is missing. Add it in Vercel Environment Variables so Vercel Cron can authenticate." },
+      { error: "CRON_SECRET not configured. Set it in Vercel to enable cron jobs." },
       { status: 500 },
     );
+  }
+
+  if (!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) {
+    console.error(
+      "[buildmind] VAPID keys not set. Push notifications are disabled. " +
+      "Run: npx web-push generate-vapid-keys and add both keys to Vercel."
+    );
+    return NextResponse.json({ ok: false, error: "Push not configured" }, { status: 503 });
   }
 
   // Accept Vercel's native cron auth (Authorization: Bearer) OR custom header

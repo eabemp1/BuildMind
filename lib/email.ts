@@ -367,7 +367,10 @@ export async function sendEmail<T extends EmailTemplate>(
     if (process.env.NODE_ENV !== "production") {
       console.log(`[email] SKIPPED (no RESEND_API_KEY) — would send "${options.template}" to ${options.to}`);
     } else {
-      console.warn(`[email] RESEND_API_KEY not set in production — email to ${options.to} not sent`);
+      console.error(
+        `[email] CRITICAL: RESEND_API_KEY not set — "${options.template}" email to ${options.to} was NOT sent. ` +
+        `Users will not receive billing confirmations. Set RESEND_API_KEY in Vercel immediately.`
+      );
     }
     return { ok: true, skipped: true };
   }

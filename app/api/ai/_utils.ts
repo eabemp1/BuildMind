@@ -21,7 +21,18 @@ const PLAN_DAILY_LIMITS: Record<string, number> = {
 };
 
 export function hasAdminEnv(): boolean {
-  return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+  const has = Boolean(
+    process.env.NEXT_PUBLIC_SUPABASE_URL &&
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  );
+  if (!has && process.env.NODE_ENV === "production") {
+    console.error(
+      "[buildmind] SUPABASE_SERVICE_ROLE_KEY is not set. " +
+      "Memory writes, quality logging, and personalization are disabled. " +
+      "Set this env var in Vercel to enable full AI intelligence."
+    );
+  }
+  return has;
 }
 
 export function hasGroqKey(): boolean {

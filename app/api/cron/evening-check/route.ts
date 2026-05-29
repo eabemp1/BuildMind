@@ -54,7 +54,19 @@ function callIfPresent<T extends object>(
 export async function GET(req: NextRequest) {
   const start = Date.now();
 
+  if (!process.env.CRON_SECRET && process.env.NODE_ENV === "production") {
+    console.error(
+      "[buildmind] CRON_SECRET is not set. Evening check cron is blocked. " +
+      "Set CRON_SECRET in Vercel Environment Variables."
+    );
+    return NextResponse.json(
+      { ok: false, error: "CRON_SECRET not configured. Set it in Vercel to enable evening check cron." },
+      { status: 500 },
+    );
+  }
+
   if (!isCronRequest(req) && process.env.NODE_ENV === "production") {
+    console.error("[buildmind] Evening check cron blocked: invalid or missing CRON_SECRET.");
     return NextResponse.json(
       { ok: false, error: "Unauthorized", hint: "Vercel Cron must send Authorization: Bearer <CRON_SECRET>." },
       { status: 401 },

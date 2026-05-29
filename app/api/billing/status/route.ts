@@ -39,7 +39,8 @@ export async function GET() {
       .maybeSingle();
 
     let trialRow = ctx;
-    if (!trialRow?.trial_started_at && basePlan !== "builder" && !freshUser.user_metadata?.billing_status) {
+    const metaEndsAt = freshUser.user_metadata?.trial_ends_at;
+    if (!trialRow?.trial_started_at && !metaEndsAt && basePlan !== "builder" && !freshUser.user_metadata?.billing_status) {
       const trialStartedAt = new Date().toISOString();
       const trialEndsAtNew = new Date(
         new Date(trialStartedAt).getTime() + TRIAL_DURATION_DAYS * 24 * 60 * 60 * 1000,
@@ -47,23 +48,25 @@ export async function GET() {
 
       const { data: inserted } = await admin
         .from("founder_context")
-        .upsert(
-          {
-            user_id: user.id,
-            trial_started_at: trialStartedAt,
-            trial_ends_at: trialEndsAtNew,
-            trial_expired: false,
-          },
-          { onConflict: "user_id" },
-        )
+        .insert({
+          user_id: user.id,
+          trial_started_at: trialStartedAt,
+          trial_ends_at: trialEndsAtNew,
+          trial_expired: false,
+        })
         .select("trial_started_at, trial_ends_at, trial_expired")
         .maybeSingle();
 
-      trialRow = inserted ?? {
-        trial_started_at: trialStartedAt,
-        trial_ends_at: trialEndsAtNew,
-        trial_expired: false,
-      };
+      if (inserted) {
+        trialRow = inserted;
+      } else {
+        const { data: existing } = await admin
+          .from("founder_context")
+          .select("trial_started_at, trial_ends_at, trial_expired")
+          .eq("user_id", user.id)
+          .maybeSingle();
+        trialRow = existing;
+      }
 
       await admin.auth.admin.updateUserById(user.id, {
         user_metadata: {
@@ -72,17 +75,38 @@ export async function GET() {
           trial_ends_at: trialEndsAtNew,
         },
       });
+    } else if (!trialRow?.trial_ends_at && metaEndsAt) {
+      const trialStartedAt = freshUser.user_metadata?.trial_started_at ?? new Date(
+        new Date(metaEndsAt).getTime() - TRIAL_DURATION_DAYS * 24 * 60 * 60 * 1000,
+      ).toISOString();
+
+      await admin
+        .from("founder_context")
+        .update({
+          trial_started_at: trialStartedAt,
+          trial_ends_at: metaEndsAt,
+          trial_expired: false,
+        })
+        .eq("user_id", user.id)
+        .is("trial_ends_at", null);
+
+      trialRow = {
+        trial_started_at: trialStartedAt,
+        trial_ends_at: metaEndsAt,
+        trial_expired: false,
+      };
     }
 
-    if (trialRow?.trial_ends_at) {
-      trialEndsAt = trialRow.trial_ends_at;
+    const effectiveEndsAt = trialRow?.trial_ends_at ?? metaEndsAt;
+    if (effectiveEndsAt) {
+      trialEndsAt = effectiveEndsAt;
       const now = new Date();
-      const ends = new Date(trialRow.trial_ends_at);
+      const ends = new Date(effectiveEndsAt);
 
-      if (trialRow.trial_expired || ends <= now) {
+      if (trialRow?.trial_expired || ends <= now) {
         // Trial has expired — enforce hard paywall
         trialExpired = true;
-        if (!trialRow.trial_expired) {
+        if (!trialRow?.trial_expired) {
           // Mark expired server-side (best-effort)
           await admin
             .from("founder_context")

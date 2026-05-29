@@ -34,7 +34,19 @@ function isCronRequest(request: Request): boolean {
 export async function GET(request: Request) {
   const start = Date.now();
 
+  if (!process.env.CRON_SECRET && process.env.NODE_ENV === "production") {
+    console.error(
+      "[buildmind] CRON_SECRET is not set. Weekly report cron is blocked. " +
+      "Set CRON_SECRET in Vercel Environment Variables."
+    );
+    return NextResponse.json(
+      { success: false, error: "CRON_SECRET not configured. Set it in Vercel to enable weekly report cron." },
+      { status: 500 },
+    );
+  }
+
   if (!isCronRequest(request) && process.env.NODE_ENV === "production") {
+    console.error("[buildmind] Weekly report cron blocked: invalid or missing CRON_SECRET.");
     return NextResponse.json(
       { success: false, error: "Unauthorized", hint: "Vercel Cron must send Authorization: Bearer <CRON_SECRET>." },
       { status: 401 },
