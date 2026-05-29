@@ -15,11 +15,20 @@ export function createClient() {
         "[supabase] NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY is missing. Using safe fallback values."
       );
     }
-    return createBrowserClient(FALLBACK_SUPABASE_URL, FALLBACK_SUPABASE_ANON_KEY);
+    return createBrowserClient(FALLBACK_SUPABASE_URL, FALLBACK_SUPABASE_ANON_KEY, {
+      auth: {
+        flowType: "implicit",
+      },
+    });
   }
 
   return createBrowserClient(
     url,
-    anonKey
+    anonKey,
+    {
+      auth: {
+        flowType: "implicit",
+      },
+    }
   );
 }
