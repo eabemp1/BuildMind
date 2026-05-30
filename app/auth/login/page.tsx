@@ -570,23 +570,13 @@ function LoginContent() {
     }
   }
 
-  async function handleGoogleOAuth() {
-    setOauthLoading(true); setError(null);
-    try {
-      const callbackUrl = new URL("/auth/callback", window.location.origin);
-      callbackUrl.searchParams.set("next", "/today");
-      const { error: err } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: {
-          redirectTo: callbackUrl.toString(),
-          queryParams: { prompt: "select_account" },
-        },
-      });
-      if (err) throw err;
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Google sign-in failed.");
-      setOauthLoading(false);
-    }
+  function handleGoogleOAuth() {
+    setOauthLoading(true);
+    setError(null);
+    // Navigate to the server-side OAuth route.
+    // The server writes the PKCE verifier into a Set-Cookie header so it
+    // survives the Chrome Android Custom Tab isolation that broke document.cookie.
+    window.location.href = "/api/auth/google";
   }
 
   async function handleForgotPassword() {
