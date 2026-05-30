@@ -25,6 +25,7 @@ export async function GET(request: NextRequest) {
               sameSite: "lax",
               path: "/",
               maxAge: 60 * 10,
+              domain: ".buildmind.live",
             });
           });
         },
@@ -45,4 +46,4 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
   return NextResponse.redirect(data.url);
-}
+                            }      
