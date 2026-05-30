@@ -54,9 +54,9 @@ export async function middleware(request: NextRequest) {
   }
 
   if (
-  pathname === "/auth/callback" ||
-  pathname === "/auth/implicit-callback" ||
-  pathname === "/api/auth/google"
+    pathname === "/auth/callback" ||
+    pathname === "/auth/implicit-callback" ||
+    pathname === "/api/auth/google"
   ) {
   return response;
   }
