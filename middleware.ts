@@ -53,7 +53,11 @@ export async function middleware(request: NextRequest) {
     return redirectResponse;
   }
 
-  if (pathname === "/auth/callback" || pathname === "/auth/implicit-callback") {
+  if (
+  pathname === "/auth/callback" ||
+  pathname === "/auth/implicit-callback" ||
+  pathname === "/api/auth/google"
+  ) {
   return response;
   }
 
@@ -95,7 +99,8 @@ export async function middleware(request: NextRequest) {
   const isAuthRoute = pathname.startsWith("/auth");
   const isAuthCallbackRoute =
     pathname === "/auth/callback" ||
-    pathname === "/auth/implicit-callback";
+    pathname === "/auth/implicit-callback" ||
+    pathname === "/api/auth/google";
   const isConversionRoute =
     pathname === "/try" ||
     pathname.startsWith("/try/") ||
