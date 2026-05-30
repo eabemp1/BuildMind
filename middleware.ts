@@ -53,8 +53,8 @@ export async function middleware(request: NextRequest) {
     return redirectResponse;
   }
 
-  if (pathname === "/auth/callback") {
-    return response;
+  if (pathname === "/auth/callback" || pathname === "/auth/implicit-callback") {
+  return response;
   }
 
   const supabase = supabaseConfigured
@@ -93,7 +93,9 @@ export async function middleware(request: NextRequest) {
   }
 
   const isAuthRoute = pathname.startsWith("/auth");
-  const isAuthCallbackRoute = pathname === "/auth/callback";
+  const isAuthCallbackRoute =
+    pathname === "/auth/callback" ||
+    pathname === "/auth/implicit-callback";
   const isConversionRoute =
     pathname === "/try" ||
     pathname.startsWith("/try/") ||
