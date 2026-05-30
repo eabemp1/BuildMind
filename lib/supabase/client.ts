@@ -11,11 +11,14 @@ function makeCookieStorage() {
     },
     setItem(key: string, value: string): void {
       if (typeof document === "undefined") return;
-      document.cookie = `${key}=${encodeURIComponent(value)};path=/;max-age=3600;SameSite=Lax`;
+      // SameSite=None;Secure is required so this cookie is sent back when
+      // Google redirects to /auth/callback — that redirect is a cross-site
+      // navigation and SameSite=Lax cookies are blocked on it.
+      document.cookie = `${key}=${encodeURIComponent(value)};path=/;max-age=3600;SameSite=None;Secure`;
     },
     removeItem(key: string): void {
       if (typeof document === "undefined") return;
-      document.cookie = `${key}=;path=/;max-age=0`;
+      document.cookie = `${key}=;path=/;max-age=0;SameSite=None;Secure`;
     },
   };
 }
@@ -35,4 +38,5 @@ export function createClient() {
     },
   );
   return client;
+          }  return client;
         }
