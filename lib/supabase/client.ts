@@ -1,34 +1,38 @@
 import { createBrowserClient } from "@supabase/ssr";
 
-const FALLBACK_SUPABASE_URL = "https://example.supabase.co";
-const FALLBACK_SUPABASE_ANON_KEY = "public-anon-key-placeholder";
+function makeCookieStorage() {
+  return {
+    getItem(key: string): string | null {
+      if (typeof document === "undefined") return null;
+      const match = document.cookie
+        .split("; ")
+        .find((row) => row.startsWith(`${key}=`));
+      return match ? decodeURIComponent(match.split("=")[1]) : null;
+    },
+    setItem(key: string, value: string): void {
+      if (typeof document === "undefined") return;
+      document.cookie = `${key}=${encodeURIComponent(value)};path=/;max-age=3600;SameSite=Lax`;
+    },
+    removeItem(key: string): void {
+      if (typeof document === "undefined") return;
+      document.cookie = `${key}=;path=/;max-age=0`;
+    },
+  };
+}
+
+let client: ReturnType<typeof createBrowserClient> | null = null;
 
 export function createClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  // Avoid crashing during prerender/build when NEXT_PUBLIC_* vars are absent.
-  // Runtime auth calls will fail gracefully until real env values are provided.
-  if (!url || !anonKey) {
-    if (process.env.NODE_ENV !== "production") {
-      console.warn(
-        "[supabase] NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY is missing. Using safe fallback values."
-      );
-    }
-    return createBrowserClient(FALLBACK_SUPABASE_URL, FALLBACK_SUPABASE_ANON_KEY, {
-      auth: {
-        flowType: "implicit",
-      },
-    });
-  }
-
-  return createBrowserClient(
-    url,
-    anonKey,
+  if (client) return client;
+  client = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       auth: {
-        flowType: "implicit",
+        flowType: "pkce",
+        storage: makeCookieStorage(),
       },
-    }
+    },
   );
-}
+  return client;
+        }
