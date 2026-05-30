@@ -38,5 +38,9 @@ export function createClient() {
     },
   );
   return client;
+    }      },
+    },
+  );
+  return client;
           }  return client;
         }
