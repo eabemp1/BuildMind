@@ -4,13 +4,10 @@ import { cookies } from "next/headers";
 
 export async function GET(request: NextRequest) {
   const cookieStore = await cookies();
-
   const next = request.nextUrl.searchParams.get("next") ?? "/today";
   const origin = "https://www.buildmind.live";
-
   const callbackUrl = new URL("/auth/callback", origin);
   callbackUrl.searchParams.set("next", next);
-
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -34,7 +31,6 @@ export async function GET(request: NextRequest) {
       },
     },
   );
-
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",
     options: {
@@ -42,41 +38,11 @@ export async function GET(request: NextRequest) {
       queryParams: { prompt: "select_account" },
     },
   });
-
   if (error || !data.url) {
     const loginUrl = new URL("/auth/login", origin);
     loginUrl.searchParams.set("error", "oauth_provider_failed");
-    loginUrl.searchParams.set(
-      "reason",
-      error?.message ?? "Could not start Google sign-in.",
-    );
+    loginUrl.searchParams.set("reason", error?.message ?? "Could not start Google sign-in.");
     return NextResponse.redirect(loginUrl);
   }
-
   return NextResponse.redirect(data.url);
-}          });
-        },
-      },
-    },
-  );
-
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: "google",
-    options: {
-      redirectTo: callbackUrl.toString(),
-      queryParams: { prompt: "select_account" },
-    },
-  });
-
-  if (error || !data.url) {
-    const loginUrl = new URL("/auth/login", origin);
-    loginUrl.searchParams.set("error", "oauth_provider_failed");
-    loginUrl.searchParams.set(
-      "reason",
-      error?.message ?? "Could not start Google sign-in.",
-    );
-    return NextResponse.redirect(loginUrl);
-  }
-
-  return NextResponse.redirect(data.url);
-        }
+}
