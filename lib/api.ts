@@ -11,6 +11,7 @@ const TOUR_SEEN_KEY         = "buildmind_tour_seen";
 // User-scoped keys — accessed via storage module (namespaced per user)
 const ONBOARDED_KEY         = "buildmind_onboarded";
 const ACTIVE_PROJECT_ID_KEY = "buildmind_active_project_id";
+export const ACTIVE_PROJECT_CHANGED_EVENT = "bm_active_project_changed";
 
 // ─── localStorage helpers ─────────────────────────────────────────────────────
 
@@ -56,6 +57,7 @@ export function getActiveProjectId(): string | null {
 export function setActiveProjectId(projectId: string): void {
   if (typeof window === "undefined") return;
   storage.set(ACTIVE_PROJECT_ID_KEY, projectId);
+  window.dispatchEvent(new CustomEvent(ACTIVE_PROJECT_CHANGED_EVENT, { detail: { projectId } }));
 }
 
 /** Call after first successful login to trigger the product tour on next open. */

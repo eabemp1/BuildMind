@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useProjectSummariesQuery, useWeeklyReportMetricsQuery } from "@/lib/queries";
+import { selectActiveProject, useActiveProjectId, useProjectSummariesQuery, useWeeklyReportMetricsQuery } from "@/lib/queries";
 import { computeStartupScore } from "@/lib/buildmind";
 import { getScoreHistory, getXP } from "@/lib/scoring";
 import { getStoredStreak } from "@/lib/plan";
@@ -185,8 +185,9 @@ export default function ReportsPage() {
   const [exported, setExported] = useState<string|null>(null);
 
   const { data: summaries = [], isLoading } = useProjectSummariesQuery();
-  const { data: metrics, isLoading: metricsLoading } = useWeeklyReportMetricsQuery();
-  const project = summaries[0] ?? null;
+  const activeProjectId = useActiveProjectId();
+  const project = useMemo(() => selectActiveProject(summaries, activeProjectId), [summaries, activeProjectId]);
+  const { data: metrics, isLoading: metricsLoading } = useWeeklyReportMetricsQuery(project?.id);
 
   const liveScore = useMemo(() => {
     if (!project) return 0;

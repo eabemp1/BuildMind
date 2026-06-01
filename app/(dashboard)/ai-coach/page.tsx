@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useProjectSummariesQuery, useDashboardOverviewQuery } from "@/lib/queries";
+import { selectActiveProject, useActiveProjectId, useProjectSummariesQuery, useDashboardOverviewQuery } from "@/lib/queries";
 import { computeStartupScore } from "@/lib/buildmind";
 import { fetchAndSyncStoredPlanFromBillingStatus, getLimits, incrementDailyStreak } from "@/lib/plan";
 import { usePlan } from "@/lib/usePlan";
@@ -18,6 +18,7 @@ import { Send, Bot, Brain, Sparkles, Zap, User, Clock, ChevronRight } from "luci
 import { withAIErrorBoundary } from "@/components/AIErrorBoundary";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/card";
+import { sanitizeOutput } from "@/lib/sanitizeOutput";
 
 type ChatMessage = {
   id: string;
@@ -123,7 +124,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
                   {msg.reasoning.map((step, i) => (
                     <div key={i} className="mb-1 flex items-start gap-2 text-[11px] text-[var(--bm-text3)]">
                       <span style={{ color: "var(--bm-text4)", flexShrink: 0 }}>›</span>
-                      {step}
+                      {sanitizeOutput(step)}
                     </div>
                   ))}
                 </motion.div>
@@ -135,7 +136,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
           className={`px-3.5 py-2.5 text-[13px] leading-relaxed ${isUser ? "rounded-[var(--r-xl)] rounded-tr-sm border border-[var(--bm-border3)] bg-[var(--bm-bg4)]" : "rounded-[var(--r-xl)] rounded-tl-sm border border-[var(--bm-border2)] bg-[var(--bm-bg3)]"}`}
           style={{ color: msg.error ? "var(--bm-red)" : "var(--bm-text2)" }}
         >
-          {msg.phase === "thinking" ? <ThinkingDots /> : <span style={{ whiteSpace: "pre-wrap" }}>{msg.content}</span>}
+          {msg.phase === "thinking" ? <ThinkingDots /> : <span style={{ whiteSpace: "pre-wrap" }}>{sanitizeOutput(msg.content)}</span>}
         </div>
         <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-[var(--bm-text3)]">
           <Clock size={9} />
@@ -154,7 +155,9 @@ function AICoachPageInner() {
   const { plan, isLoading: planLoading } = usePlan();
   const { showLimitModal } = useLimitModal();
   const { data: summaries = [] } = useProjectSummariesQuery();
-  const { data: overview } = useDashboardOverviewQuery();
+  const activeProjectId = useActiveProjectId();
+  const activeProject = selectActiveProject(summaries, activeProjectId);
+  const { data: overview } = useDashboardOverviewQuery(activeProject?.id);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -165,7 +168,6 @@ function AICoachPageInner() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  const activeProject = summaries[0] ?? null;
   const score = activeProject ? computeStartupScore(activeProject) : 0;
   const limits = getLimits(plan);
   const coachLimit = plan === "free" ? FREE_COACH_MESSAGES_PER_WEEK : limits.aiMessagesPerDay;
@@ -182,11 +184,16 @@ function AICoachPageInner() {
     supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
     fetchBehaviorState<{
       coach_memory: string[];
+      coach_streak_date: string;
       ai_personality: "direct" | "supportive" | "challenger";
-    }>(["coach_memory", "ai_personality"]).then(values => {
+    }>(["coach_memory", "coach_streak_date", "ai_personality"]).then(values => {
       if (Array.isArray(values.coach_memory)) {
         storage.setJSON("bm_coach_memory", values.coach_memory);
         setMemory(values.coach_memory);
+      }
+      const today = new Date().toISOString().split("T")[0];
+      if (values.coach_streak_date === today) {
+        storage.set("bm_coach_streak_date", today);
       }
       if (values.ai_personality === "direct" || values.ai_personality === "supportive" || values.ai_personality === "challenger") {
         setPersonality(values.ai_personality);
@@ -246,6 +253,7 @@ function AICoachPageInner() {
       if (storage.get("bm_coach_streak_date") !== todayKey) {
         incrementDailyStreak();
         storage.set("bm_coach_streak_date", todayKey);
+        persistBehaviorState({ coach_streak_date: todayKey });
       }
       trackEvent("ai_coach_message", { plan });
     } catch (error) {
@@ -363,7 +371,7 @@ function AICoachPageInner() {
             ) : memory.slice(-4).map((m, i) => (
               <div key={i} className="mb-2 flex items-start gap-2">
                 <div className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--bm-accent)] opacity-60" />
-                <span className="text-[11px] leading-relaxed text-[var(--bm-text3)]">{m.slice(0, 55)}{m.length > 55 ? "…" : ""}</span>
+                <span className="text-[11px] leading-relaxed text-[var(--bm-text3)]">{sanitizeOutput(m).slice(0, 55)}{sanitizeOutput(m).length > 55 ? "…" : ""}</span>
               </div>
             ))}
           </Card>

@@ -19,6 +19,7 @@ import ReportsPage from "@/app/reports/page";
 import InsightsPage from "@/app/insights/page";
 import { createClient } from "@/lib/supabase/client";
 import { BuildMindCalibrating } from "@/components/BuildMindCalibrating";
+import { useActiveProjectId } from "@/lib/queries";
 
 // ── Lazy-loaded tab content ───────────────────────────────────────────────────
 // We import the existing page components directly to avoid duplication.
@@ -45,6 +46,7 @@ export default function ProgressPage() {
   const [activeTab, setActiveTab] = useState<Tab>("week");
   const [reflectionCount, setReflectionCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const activeProjectId = useActiveProjectId();
 
   useEffect(() => {
     async function load() {
@@ -52,10 +54,12 @@ export default function ProgressPage() {
         const supabase = createClient();
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) { setLoading(false); return; }
-        const { count } = await supabase
+        let reflectionQuery = supabase
           .from("reflections")
           .select("id", { count: "exact", head: true })
           .eq("user_id", user.id);
+        if (activeProjectId) reflectionQuery = reflectionQuery.eq("project_id", activeProjectId);
+        const { count } = await reflectionQuery;
         setReflectionCount(count ?? 0);
       } catch {
         // Non-fatal
@@ -64,7 +68,7 @@ export default function ProgressPage() {
       }
     }
     load();
-  }, []);
+  }, [activeProjectId]);
 
   const TABS: { id: Tab; label: string; desc: string }[] = [
     { id: "week",     label: "This Week",  desc: "Performance and momentum" },

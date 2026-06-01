@@ -4,7 +4,7 @@ import { Suspense, useState, useEffect, useRef, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
-import { useProjectSummariesQuery, useDashboardOverviewQuery, queryKeys } from "@/lib/queries";
+import { selectActiveProject, useActiveProjectId, useProjectSummariesQuery, queryKeys } from "@/lib/queries";
 import { useQueryClient } from "@tanstack/react-query";
 import { computeStartupScore } from "@/lib/buildmind";
 import { computeScoreDelta, applyScoreDelta, getXP, recordScore } from "@/lib/scoring";
@@ -374,7 +374,8 @@ function TodayContent() {
   const queryClient = useQueryClient();
   const { plan } = usePlan();
   const { data: summaries = [], isLoading } = useProjectSummariesQuery();
-  const { data: overview } = useDashboardOverviewQuery();
+  const activeProjectId = useActiveProjectId();
+  const project = useMemo(() => selectActiveProject(summaries, activeProjectId), [summaries, activeProjectId]);
   const [copied, setCopied] = useState(false);
   const [shared, setShared] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
@@ -499,7 +500,6 @@ function TodayContent() {
     const { signal } = abortController;
 
     void (async () => {
-    const project = summaries[0] ?? null;
     if (!project) return;
     const projectId = project.id;
     if (!userId || !projectId) return;
@@ -722,9 +722,8 @@ function TodayContent() {
     })();
 
     return () => { abortController.abort(); };
-  }, [summaries, userId]);
+  }, [project, userId]);
 
-  const project = summaries[0] ?? null;
   const score = project ? computeStartupScore({
     ...project,
     xp: getXP(),
@@ -966,7 +965,7 @@ function TodayContent() {
           const newComputedScore = Math.min(100, Math.max(0, newScore));
           recordScore(newComputedScore);
           void queryClient.invalidateQueries({ queryKey: queryKeys.projectSummaries });
-          void queryClient.invalidateQueries({ queryKey: queryKeys.overview });
+          void queryClient.invalidateQueries({ queryKey: queryKeys.overviewRoot });
         } catch {}
       }
 

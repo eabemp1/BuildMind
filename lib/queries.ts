@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createProjectWithRoadmap,
@@ -15,8 +16,10 @@ import {
   markNotificationAsRead,
   updateTaskStatus,
   type BuildMindNotification,
+  type ProjectSummary,
   type BuildMindTask,
 } from "@/lib/buildmind";
+import { ACTIVE_PROJECT_CHANGED_EVENT, getActiveProjectId } from "@/lib/api";
 import { observeTaskEvent } from "@/lib/founderMemory";
 // A5 FIX: founderContext imports removed — momentumOnTaskComplete/updateFounderContext were the
 // client-side momentum writers that raced with the server. Server is now sole authority.
@@ -24,12 +27,47 @@ import { observeTaskEvent } from "@/lib/founderMemory";
 export const queryKeys = {
   projects: ["projects"] as const,
   project: (id: string) => ["project", id] as const,
-  overview: ["dashboard-overview"] as const,
-  weeklyReport: ["weekly-report"] as const,
+  overviewRoot: ["dashboard-overview"] as const,
+  overview: (projectId?: string | null) => ["dashboard-overview", projectId ?? "all"] as const,
+  weeklyReportRoot: ["weekly-report"] as const,
+  weeklyReport: (projectId?: string | null) => ["weekly-report", projectId ?? "all"] as const,
   notifications: ["notifications"] as const,
   coach: (projectId: string) => ["coach", projectId] as const,
   projectSummaries: ["project-summaries"] as const,
 };
+
+export function selectActiveProject(summaries: ProjectSummary[], activeProjectId?: string | null) {
+  if (!summaries.length) return null;
+  const storedProject = activeProjectId
+    ? summaries.find((project) => project.id === activeProjectId)
+    : null;
+  if (storedProject) return storedProject;
+  return summaries.reduce((a, b) =>
+    new Date(b.lastActivity).getTime() > new Date(a.lastActivity).getTime() ? b : a
+  );
+}
+
+export function useActiveProjectId() {
+  const [activeProjectId, setActiveProjectIdState] = useState<string | null>(() => getActiveProjectId());
+
+  useEffect(() => {
+    const refresh = () => setActiveProjectIdState(getActiveProjectId());
+    refresh();
+    window.addEventListener("storage", refresh);
+    window.addEventListener(ACTIVE_PROJECT_CHANGED_EVENT, refresh);
+    return () => {
+      window.removeEventListener("storage", refresh);
+      window.removeEventListener(ACTIVE_PROJECT_CHANGED_EVENT, refresh);
+    };
+  }, []);
+
+  return activeProjectId;
+}
+
+export function useActiveProject(summaries: ProjectSummary[]) {
+  const activeProjectId = useActiveProjectId();
+  return useMemo(() => selectActiveProject(summaries, activeProjectId), [summaries, activeProjectId]);
+}
 
 export function useProjectsQuery() {
   return useQuery({ queryKey: queryKeys.projects, queryFn: getProjectsForCurrentUser });
@@ -52,12 +90,18 @@ export function useProjectSummariesQuery() {
   });
 }
 
-export function useDashboardOverviewQuery() {
-  return useQuery({ queryKey: queryKeys.overview, queryFn: getDashboardOverview });
+export function useDashboardOverviewQuery(projectId?: string | null) {
+  return useQuery({
+    queryKey: queryKeys.overview(projectId),
+    queryFn: () => getDashboardOverview(projectId ?? undefined),
+  });
 }
 
-export function useWeeklyReportMetricsQuery() {
-  return useQuery({ queryKey: queryKeys.weeklyReport, queryFn: getWeeklyReportMetrics });
+export function useWeeklyReportMetricsQuery(projectId?: string | null) {
+  return useQuery({
+    queryKey: queryKeys.weeklyReport(projectId),
+    queryFn: () => getWeeklyReportMetrics(projectId ?? undefined),
+  });
 }
 
 export function useNotificationsQuery() {
@@ -71,7 +115,7 @@ export function useCreateProjectMutation() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: queryKeys.projects });
       void qc.invalidateQueries({ queryKey: queryKeys.projectSummaries });
-      void qc.invalidateQueries({ queryKey: queryKeys.overview });
+      void qc.invalidateQueries({ queryKey: queryKeys.overviewRoot });
       void qc.invalidateQueries({ queryKey: queryKeys.notifications });
     },
   });
@@ -84,7 +128,7 @@ export function useDeleteProjectMutation() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: queryKeys.projects });
       void qc.invalidateQueries({ queryKey: queryKeys.projectSummaries });
-      void qc.invalidateQueries({ queryKey: queryKeys.overview });
+      void qc.invalidateQueries({ queryKey: queryKeys.overviewRoot });
     },
   });
 }
@@ -177,7 +221,7 @@ export function useUpdateTaskMutation(projectId: string) {
       // Invalidate everything so stage recomputes everywhere
       void qc.invalidateQueries({ queryKey: queryKeys.project(projectId) });
       void qc.invalidateQueries({ queryKey: queryKeys.projectSummaries });
-      void qc.invalidateQueries({ queryKey: queryKeys.overview });
+      void qc.invalidateQueries({ queryKey: queryKeys.overviewRoot });
     },
   });
 }

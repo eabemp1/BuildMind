@@ -37,7 +37,7 @@ function dayIndexFromIso(iso: string) {
   return (new Date(iso).getDay() + 6) % 7;
 }
 
-export async function getWeeklyReportMetrics(): Promise<WeeklyReportMetrics> {
+export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<WeeklyReportMetrics> {
   const user = await getCurrentUser();
   const empty: WeeklyReportMetrics = {
     score: 0,
@@ -58,7 +58,10 @@ export async function getWeeklyReportMetrics(): Promise<WeeklyReportMetrics> {
   if (!user) return empty;
 
   const supabase = createClient();
-  const summaries = await getProjectSummaries();
+  const allSummaries = await getProjectSummaries();
+  const summaries = activeProjectId
+    ? allSummaries.filter((project) => project.id === activeProjectId)
+    : allSummaries;
   if (!summaries.length) return empty;
 
   const projectIds = summaries.map((p) => p.id);
@@ -112,11 +115,13 @@ export async function getWeeklyReportMetrics(): Promise<WeeklyReportMetrics> {
   let reflexionCompletionsThisWeek = 0;
   try {
     const weekAgoISO = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    const { data: reflexionRows } = await supabase
+    let reflexionQuery = supabase
       .from("reflexion_learning_log")
       .select("outcome_recorded_at")
       .eq("outcome", "completed")
       .gte("outcome_recorded_at", weekAgoISO);
+    if (activeProjectId) reflexionQuery = reflexionQuery.eq("project_id", activeProjectId);
+    const { data: reflexionRows } = await reflexionQuery;
     reflexionCompletionsThisWeek = (reflexionRows ?? []).length;
   } catch { /* non-fatal — table may not exist in all envs */ }
 
@@ -241,14 +246,16 @@ export async function getWeeklyReportMetrics(): Promise<WeeklyReportMetrics> {
   };
 }
 
-export async function getDashboardOverview(): Promise<DashboardOverview> {
+export async function getDashboardOverview(activeProjectId?: string): Promise<DashboardOverview> {
   const user = await getCurrentUser();
   if (!user)
     return { activeProjects: 0, completedTasks: 0, milestonesCompleted: 0, aiUsage: 0, recentActivity: [], founderStreakDays: 0 };
   const supabase = createClient();
 
-  const { data: projects } = await supabase
+  let projectsQuery = supabase
     .from("projects").select("id").eq("user_id", user.id);
+  if (activeProjectId) projectsQuery = projectsQuery.eq("id", activeProjectId);
+  const { data: projects } = await projectsQuery;
   const projectIds = (projects ?? []).map((p) => p.id);
 
   // Batch project IDs to avoid URL length limits
@@ -317,10 +324,13 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
     .select("streak")
     .eq("user_id", user.id)
     .maybeSingle();
-  const serverStreak = Number(
-    (founderContext as { streak?: number } | null)?.streak
-      ?? streak,
-  );
+  const dbStreak = (founderContext as { streak?: number } | null)?.streak;
+  const serverStreak = activeProjectId
+    ? streak
+    : Math.max(
+        typeof dbStreak === "number" ? dbStreak : 0,
+        streak,
+      );
 
   const { data: notifications } = await supabase
     .from("notifications").select("message").eq("user_id", user.id)

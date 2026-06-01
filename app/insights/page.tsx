@@ -21,6 +21,8 @@ import { useEffect, useState, useCallback } from "react";
 import { BuildMindCalibrating } from "@/components/BuildMindCalibrating";
 import { motion } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
+import { sanitizeOutput } from "@/lib/sanitizeOutput";
+import { useActiveProjectId } from "@/lib/queries";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface InsightData {
@@ -143,6 +145,7 @@ export default function InsightsPage() {
   // AI streaming insights
   const [aiInsights, setAiInsights] = useState<AiInsightItem[]>([]);
   const [aiLoading,  setAiLoading]  = useState(false);
+  const activeProjectId = useActiveProjectId();
 
   // Fetch reflection count for BuildMindCalibrating gate
   useEffect(() => {
@@ -151,12 +154,14 @@ export default function InsightsPage() {
         const supabase = createClient();
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
-        const { count } = await supabase.from("reflections").select("id", { count: "exact", head: true }).eq("user_id", user.id);
+        let countQuery = supabase.from("reflections").select("id", { count: "exact", head: true }).eq("user_id", user.id);
+        if (activeProjectId) countQuery = countQuery.eq("project_id", activeProjectId);
+        const { count } = await countQuery;
         setReflectionCount(count ?? 0);
       } catch { /* non-fatal */ }
     }
     fetchCount();
-  }, []);
+  }, [activeProjectId]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -168,12 +173,19 @@ export default function InsightsPage() {
 
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
+      let reflectionsQuery = supabase.from("reflections").select("confidence, outcome, created_at").eq("user_id", user.id).gte("created_at", thirtyDaysAgo);
+      if (activeProjectId) reflectionsQuery = reflectionsQuery.eq("project_id", activeProjectId);
+      let projectQuery = supabase.from("projects").select("startup_stage").eq("user_id", user.id);
+      projectQuery = activeProjectId
+        ? projectQuery.eq("id", activeProjectId)
+        : projectQuery.order("created_at", { ascending: false }).limit(1);
+
       const [memRes, ctxRes, reflRes, logRes, projRes] = await Promise.allSettled([
         supabase.from("founder_memory").select("avoidance_zones, strengths, personality_tags, last_insight").eq("user_id", user.id).maybeSingle(),
         supabase.from("founder_context").select("momentum_score, streak, meta_critic_signal").eq("user_id", user.id).maybeSingle(),
-        supabase.from("reflections").select("confidence, outcome, created_at").eq("user_id", user.id).gte("created_at", thirtyDaysAgo),
+        reflectionsQuery,
         supabase.from("action_logs").select("outcome, outcome_note, created_at").eq("user_id", user.id).gte("created_at", thirtyDaysAgo),
-        supabase.from("projects").select("startup_stage").eq("user_id", user.id).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+        projectQuery.maybeSingle(),
       ]);
 
       const mem   = memRes.status  === "fulfilled" ? memRes.value.data  : null;
@@ -281,7 +293,7 @@ export default function InsightsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [activeProjectId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -485,7 +497,7 @@ export default function InsightsPage() {
                     }}
                   >
                     <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.6 }}>
-                      {insight.text}
+                      {sanitizeOutput(insight.text)}
                     </p>
                   </motion.div>
                 ))}
@@ -505,7 +517,7 @@ export default function InsightsPage() {
           {data.metacriticSignal && (
             <InsightCard title="AI pattern diagnosis" accent="var(--bm-teal)">
               <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.65 }}>
-                {data.metacriticSignal}
+                {sanitizeOutput(data.metacriticSignal)}
               </p>
             </InsightCard>
           )}
@@ -514,7 +526,7 @@ export default function InsightsPage() {
           {data.lastInsight && (
             <InsightCard title="Last AI insight">
               <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.65, fontStyle: "italic" }}>
-                "{data.lastInsight}"
+                "{sanitizeOutput(data.lastInsight)}"
               </p>
             </InsightCard>
           )}

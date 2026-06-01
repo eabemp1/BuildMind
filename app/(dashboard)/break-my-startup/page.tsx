@@ -3,9 +3,11 @@ import React from "react";
 
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useProjectsQuery } from "@/lib/queries";
+import { useActiveProjectId, useProjectsQuery } from "@/lib/queries";
+import { setActiveProjectId } from "@/lib/api";
 import { createClient } from "@/lib/supabase/client";
 import { storage } from "@/lib/storage";
+import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
 import { canAccess, incrementDailyStreak } from "@/lib/plan";
 import { usePlan } from "@/lib/usePlan";
 import { useLimitModal } from "@/components/LimitModal";
@@ -20,6 +22,7 @@ import { Card } from "@/components/ui/card";
 import { Badge, BadgeVariant } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { sanitizeOutput } from "@/lib/sanitizeOutput";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 type RiskSeverity = "Critical" | "High" | "Medium" | "Low";
@@ -165,10 +168,18 @@ export default function BreakMyStartupPage() {
       } catch { /* non-fatal */ }
     }
     fetchCount();
+
+    fetchBehaviorState<{ break_streak_date: string }>(["break_streak_date"]).then(values => {
+      const today = new Date().toISOString().split("T")[0];
+      if (values.break_streak_date === today) {
+        storage.set("bm_break_streak_date", today);
+      }
+    }).catch(() => {});
   }, []);
   const { plan, isLoading: planLoading } = usePlan();
   const { showLimitModal } = useLimitModal();
   const { data: projects = [], isLoading: projectsLoading } = useProjectsQuery();
+  const activeProjectId = useActiveProjectId();
 
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [customIdea, setCustomIdea] = useState("");
@@ -186,6 +197,11 @@ export default function BreakMyStartupPage() {
 
   // Pre-fill idea from selected project
   const selectedProject = projects.find((p) => p.id === selectedProjectId);
+
+  useEffect(() => {
+    if (!activeProjectId || selectedProjectId) return;
+    if (projects.some((p) => p.id === activeProjectId)) setSelectedProjectId(activeProjectId);
+  }, [activeProjectId, projects, selectedProjectId]);
 
   useEffect(() => {
     if (!selectedProjectId) return;
@@ -354,6 +370,7 @@ export default function BreakMyStartupPage() {
         if (storage.get("bm_break_streak_date") !== todayKey) {
           incrementDailyStreak();
           storage.set("bm_break_streak_date", todayKey);
+          persistBehaviorState({ break_streak_date: todayKey });
         }
       } catch {}
     } catch {
@@ -453,6 +470,7 @@ export default function BreakMyStartupPage() {
                     value={selectedProjectId}
                     onChange={(e) => {
                       setSelectedProjectId(e.target.value);
+                      if (e.target.value) setActiveProjectId(e.target.value);
                       if (!e.target.value) setCustomIdea("");
                     }}
                     className="w-full h-10 rounded-lg pl-3 pr-8 text-sm outline-none appearance-none cursor-pointer"
@@ -632,12 +650,12 @@ export default function BreakMyStartupPage() {
                   </div>
                   {result.summary && (
                     <p style={{ fontSize: 15, fontWeight: 600, color: "var(--bm-text)", lineHeight: 1.55, marginBottom: 0 }}>
-                      {result.summary}
+                      {sanitizeOutput(result.summary)}
                     </p>
                   )}
                   {result.score_note && (
                     <p style={{ fontSize: 12, color: "var(--bm-text3)", marginTop: 6, lineHeight: 1.5 }}>
-                      {result.score_note}
+                      {sanitizeOutput(result.score_note)}
                     </p>
                   )}
                   {result.gated && (
@@ -682,7 +700,7 @@ export default function BreakMyStartupPage() {
                   </span>
                 </div>
                 <p style={{ fontSize: 14, color: "var(--bm-text)", lineHeight: 1.6, fontWeight: 500, margin: 0 }}>
-                  {result.brutal_advice}
+                  {sanitizeOutput(result.brutal_advice)}
                 </p>
               </motion.div>
             )}
@@ -722,7 +740,7 @@ export default function BreakMyStartupPage() {
                         <span className="text-xs font-semibold text-[var(--bm-text)]">{agent.name}</span>
                         <span className="text-[10px] uppercase tracking-widest text-[var(--bm-text4)]">{agent.status}</span>
                       </div>
-                      <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-[var(--bm-text3)]">{agent.summary}</p>
+                      <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-[var(--bm-text3)]">{sanitizeOutput(agent.summary)}</p>
                     </div>
                   ))}
                 </div>
@@ -741,7 +759,7 @@ export default function BreakMyStartupPage() {
                     <div key={title as string} className="flex flex-col gap-2">
                       <span className="text-xs font-semibold text-[var(--bm-text2)]">{title as string}</span>
                       {(items as string[] | undefined)?.slice(0, 4).map((item) => (
-                        <p key={item} className="text-xs leading-relaxed text-[var(--bm-text3)]">{item}</p>
+                        <p key={item} className="text-xs leading-relaxed text-[var(--bm-text3)]">{sanitizeOutput(item)}</p>
                       ))}
                     </div>
                   ))}
@@ -757,9 +775,9 @@ export default function BreakMyStartupPage() {
                     <span className="text-xs text-[var(--bm-text3)]">{Math.round(result.reflexionAction.confidence * 100)}% confidence</span>
                   )}
                 </div>
-                <p className="text-sm leading-relaxed text-[var(--bm-text2)]">{result.reflexionAction.action}</p>
+                <p className="text-sm leading-relaxed text-[var(--bm-text2)]">{sanitizeOutput(result.reflexionAction.action)}</p>
                 {result.reflexionAction.rationale && (
-                  <p className="text-xs leading-relaxed text-[var(--bm-text3)]">{result.reflexionAction.rationale}</p>
+                  <p className="text-xs leading-relaxed text-[var(--bm-text3)]">{sanitizeOutput(result.reflexionAction.rationale)}</p>
                 )}
                 {result.reflexionAction.log_row_id && (
                   <div className="flex flex-wrap gap-2">
@@ -818,14 +836,14 @@ export default function BreakMyStartupPage() {
                       </Badge>
                     </div>
                     <p style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.55, margin: "0 0 10px 0" }}>
-                      {risk.description}
+                      {sanitizeOutput(risk.description)}
                     </p>
                     <div style={{
                       display: "flex", alignItems: "flex-start", gap: 8,
                       background: "var(--bm-bg3)", borderRadius: "var(--r-sm)", padding: "8px 10px",
                     }}>
                       <CheckCircle2 size={12} style={{ color: "var(--bm-accent)", flexShrink: 0, marginTop: 1 }} />
-                      <span style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.5 }}>{risk.mitigation}</span>
+                      <span style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.5 }}>{sanitizeOutput(risk.mitigation)}</span>
                     </div>
                   </div>
                 </motion.div>

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { computeStartupScore } from "@/lib/buildmind";
-import { useProjectSummariesQuery, useDashboardOverviewQuery } from "@/lib/queries";
+import { selectActiveProject, useActiveProjectId, useProjectSummariesQuery, useDashboardOverviewQuery } from "@/lib/queries";
 import { recordScore, markActiveToday, recordPendingTasks, syncUrgencyFromServer } from "@/lib/urgency";
 import { getStoredStreak, syncStreakFromServer } from "@/lib/plan";
 import { getXP, getScoreHistory, syncScoreHistory, syncXP, computeConsistencyBonus } from "@/lib/scoring";
@@ -118,7 +118,9 @@ function Sparkline({ history }: { history: { date: string; score: number }[] }) 
 export default function OverviewPage() {
   const router = useRouter();
   const { data: summaries = [], isLoading } = useProjectSummariesQuery();
-  const { data: overview, isLoading: overviewLoading } = useDashboardOverviewQuery();
+  const activeProjectId = useActiveProjectId();
+  const activeProject = useMemo(() => selectActiveProject(summaries, activeProjectId), [summaries, activeProjectId]);
+  const { data: overview, isLoading: overviewLoading } = useDashboardOverviewQuery(activeProject?.id);
   const [localStreak, setLocalStreak] = useState(0);
   const [scoreHistory, setScoreHistory] = useState<{ date: string; score: number }[]>([]);
   const [now, setNow] = useState(() => new Date());
@@ -162,12 +164,6 @@ export default function OverviewPage() {
 
   const streak = overview?.founderStreakDays ?? localStreak;
 
-  const activeProject = useMemo(() => {
-    if (!summaries.length) return null;
-    return summaries.reduce((a, b) =>
-      new Date(b.lastActivity).getTime() > new Date(a.lastActivity).getTime() ? b : a
-    );
-  }, [summaries]);
   const score = activeProject ? computeStartupScore({ ...activeProject, xp: getXP(), streak }) : 0;
 
   const scoreDelta = useMemo(() => {
@@ -183,8 +179,8 @@ export default function OverviewPage() {
   const consistencyPct = Math.round((consistencyBonus / 10) * 100);
   const stage = activeProject?.startup_stage ?? "Idea";
   const milestonesCompleted = overview?.milestonesCompleted ?? 0;
-  const totalTasks = summaries.reduce((a, s) => a + (s.tasksTotal ?? 0), 0);
-  const doneTasks = summaries.reduce((a, s) => a + (s.tasksCompleted ?? 0), 0);
+  const totalTasks = activeProject?.tasksTotal ?? 0;
+  const doneTasks = activeProject?.tasksCompleted ?? 0;
   const nudge = NUDGE[stage] ?? NUDGE.Idea;
 
   // Is today's check-in done?
@@ -195,11 +191,11 @@ export default function OverviewPage() {
 
   useEffect(() => {
     if (score > 0) { recordScore(score); markActiveToday(); }
-    const pending = summaries.reduce((a, s) => a + Math.max(0, (s.tasksTotal ?? 0) - (s.tasksCompleted ?? 0)), 0);
+    const pending = activeProject ? Math.max(0, (activeProject.tasksTotal ?? 0) - (activeProject.tasksCompleted ?? 0)) : 0;
     if (pending > 0) recordPendingTasks(pending);
     const p = activeProject as unknown as Record<string, number> | null;
-    if (p?.current_mrr) setCurrentMrr(p.current_mrr);
-  }, [score, summaries, activeProject]);
+    setCurrentMrr(p?.current_mrr ?? 0);
+  }, [score, activeProject]);
 
   const dateStr = now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
   const founderFirst = overview?.founderName?.split(" ")[0] ?? null;
@@ -317,7 +313,7 @@ export default function OverviewPage() {
             },
             {
               label: "Streak",
-              value: (!overviewLoading && streak === 0) ? "0d" : (streak > 0) ? `${streak}d` : "—",
+              value: (streak > 0) ? `${streak}d` : (overviewLoading) ? "—" : "0d",
               tooltip: "Consecutive days you've completed at least one task or reflection. Breaks if you miss a day. Used to unlock advanced features.",
             },
             { label: "Completed", value: milestonesCompleted > 0 ? milestonesCompleted : doneTasks > 0 ? doneTasks : "—" },
