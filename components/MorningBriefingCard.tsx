@@ -12,7 +12,10 @@
 
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { fetchMorningBriefing, type MorningBriefing } from "@/lib/founderContext";
+import { fetchMorningBriefing, type MorningBriefing, type BriefingGap } from "@/lib/founderContext";
+
+// BriefingGap used for gap display rendering
+type _BriefingGap = BriefingGap;
 import { usePlan } from "@/lib/usePlan";
 import { AIErrorBoundary } from "./AIErrorBoundary";
 
@@ -100,6 +103,23 @@ function MorningBriefingCardInner({ initialBriefing }: { initialBriefing?: Morni
               <span style={{ fontSize: 10, color: "var(--bm-accent)", fontWeight: 700, minWidth: 38, paddingTop: 1 }}>NOW</span>
               <span style={{ fontSize: 12, color: "var(--bm-text)", fontWeight: 600, lineHeight: 1.55 }}>{briefing.action}</span>
             </div>
+            {briefing.gaps && briefing.gaps.length > 0 && (
+              <div style={{
+                marginTop: 8,
+                borderTop: "1px solid var(--bm-border)",
+                paddingTop: 10,
+                display: "flex",
+                flexDirection: "column",
+                gap: 6,
+              }}>
+                {briefing.gaps.map((gap, i) => (
+                  <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                    <span style={{ fontSize: 10, color: "var(--bm-red, #f87171)", fontWeight: 700, minWidth: 38, paddingTop: 1, flexShrink: 0 }}>GAP</span>
+                    <span style={{ fontSize: 12, color: "var(--bm-text2)", lineHeight: 1.55, fontStyle: "italic" }}>{gap.question}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </motion.div>

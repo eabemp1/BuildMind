@@ -14,25 +14,34 @@ import { z } from "zod";
 // Runtime schema — mirrors the TypeScript interface but enforces types at the
 // network boundary. Prevents type confusion attacks on fields passed to AI prompts.
 const ReflectActionSchema = z.object({
-  outcome: z.enum(["completed", "blocked", "partial", "learned"]),
-  note: z.string().max(2000).default(""),
-  confidence: z.number().int().min(1).max(5),
-  stage: z.string().max(100).default("idea"),
-  todayAction: z.string().max(2000).default(""),
-  streak: z.number().int().min(0).max(9999).default(0),
-  userId: z.string().uuid().optional(),
-  projectId: z.string().uuid().optional(),
+  outcome:       z.enum(["completed", "blocked", "partial", "learned"]),
+  note:          z.string().max(2000).default(""),
+  // Rich separated fields — the real learning signal
+  what_tried:    z.string().max(500).optional(),
+  what_happened: z.string().max(500).optional(),
+  what_learned:  z.string().max(500).optional(),
+  blocker:       z.string().max(300).optional(),
+  confidence:    z.number().int().min(1).max(5),
+  stage:         z.string().max(100).default("idea"),
+  todayAction:   z.string().max(2000).default(""),
+  streak:        z.number().int().min(0).max(9999).default(0),
+  userId:        z.string().uuid().optional(),
+  projectId:     z.string().uuid().optional(),
 });
 
 interface ReflectActionInput {
-  outcome: "completed" | "blocked" | "partial" | "learned";
-  note: string;
-  confidence: number; // 1-5
-  stage: string;
-  todayAction: string;
-  streak: number;
-  userId?: string;
-  projectId?: string;
+  outcome:       "completed" | "blocked" | "partial" | "learned";
+  note:          string;
+  what_tried?:   string;
+  what_happened?: string;
+  what_learned?: string;
+  blocker?:      string;
+  confidence:    number; // 1-5
+  stage:         string;
+  todayAction:   string;
+  streak:        number;
+  userId?:       string;
+  projectId?:    string;
 }
 
 interface ReflectActionOutput {
@@ -103,9 +112,22 @@ async function extractAndWritePatterns(
   }
   const overrides = overridesData;
 
-  const reflectionSummary = recentReflections.map((r, i) =>
-    `${i + 1}. Action: "${r.today_action ?? "none"}" | Outcome: ${r.outcome} | Confidence: ${r.confidence}/5 | Note: "${r.note ?? "none"}"`
-  ).join("\n");
+  const reflectionSummary = recentReflections.map((r, i) => {
+    // Parse rich fields from note if stored as "Tried: X | Result: Y | Learned: Z"
+    const note = r.note ?? "";
+    const tried    = note.match(/Tried: ([^|]+)/)?.[1]?.trim()    ?? r.today_action ?? "none";
+    const happened = note.match(/Result: ([^|]+)/)?.[1]?.trim()   ?? "";
+    const learned  = note.match(/Learned: ([^|]+)/)?.[1]?.trim()  ?? "";
+    const blocked  = note.match(/Blocker: ([^|]+)/)?.[1]?.trim()  ?? "";
+
+    return [
+      `${i + 1}. Tried: "${tried}"`,
+      `   Outcome: ${r.outcome} | Confidence: ${r.confidence}/5`,
+      happened ? `   Result: "${happened}"` : "",
+      learned  ? `   Learned: "${learned}"` : "",
+      blocked  ? `   Blocker: "${blocked}"` : "",
+    ].filter(Boolean).join("\n");
+  }).join("\n\n");
 
   const overrideSummary = (overrides ?? []).length > 0
     ? `\nTask overrides/skips:\n${(overrides ?? []).map((o: { reason?: string }) => `- ${o.reason ?? "no reason given"}`).join("\n")}`
@@ -176,7 +198,7 @@ export async function POST(request: Request) {
       );
     }
     const body: ReflectActionInput = parseResult.data;
-    const { outcome, note, confidence, stage, todayAction, streak, userId, projectId } = body;
+    const { outcome, note, what_tried, what_happened, what_learned, blocker, confidence, stage, todayAction, streak, userId, projectId } = body;
 
     // Use the server-verified userId from auth, fall back to body for backwards compat
     const verifiedUserId = routeUser.userId ?? userId;
@@ -204,13 +226,18 @@ Target users: ${project.target_users ?? "Not specified"}`;
 
         // Write reflection to Supabase for future personalisation
         await supabase.from("reflections").insert({
-          user_id: verifiedUserId,
-          project_id: projectId,
+          user_id:      verifiedUserId,
+          project_id:   projectId,
           outcome,
           note,
+          // Rich separated fields for aggressive personalisation
+          what_tried:    what_tried    ?? null,
+          what_happened: what_happened ?? null,
+          what_learned:  what_learned  ?? null,
+          blocker:       blocker       ?? null,
           confidence,
-          today_action: todayAction,
-          created_at: new Date().toISOString(),
+          today_action:  todayAction,
+          created_at:    new Date().toISOString(),
         });
 
         // ── Fire-and-forget: close both learning loops ────────────────────────

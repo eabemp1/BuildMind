@@ -30,10 +30,13 @@ interface Props {
 const CONFIG = {
   morning: {
     eyebrow:     "Morning check-in",
-    heading:     "What's the one thing today?",
-    sub:         "Name the task you'll regret not doing. One sentence.",
-    placeholder: "Today I'm shipping…",
+    heading:     "What’s the one thing today?",
+    sub:         "Name the task you’ll regret not doing. One sentence.",
+    placeholder: "Today I’m shipping…",
     cta:         "Lock it in",
+    signalLabel:       "What external signal changed since yesterday?",
+    signalSub:         "A user reply, a metric shift, a deadline, a support issue — anything outside your own head.",
+    signalPlaceholder: "A user told me… / signups dropped… / deadline moved to…",
   },
   evening: {
     eyebrow:     "Evening check-in",
@@ -41,12 +44,16 @@ const CONFIG = {
     sub:         "One honest sentence. No judgment.",
     placeholder: "Today I…",
     cta:         "Log it",
+    signalLabel:       null,
+    signalSub:         null,
+    signalPlaceholder: null,
   },
 };
 
 export function MobileCheckin({ type, onComplete, fullScreen = false }: Props) {
-  const [note, setNote]         = useState("");
-  const [submitted, setSubmitted] = useState(false);
+  const [note, setNote]           = useState("");
+  const [externalSignal, setExternalSignal] = useState("");
+  const [submitted, setSubmitted]   = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const textareaRef             = useRef<HTMLTextAreaElement>(null);
   const cfg                     = CONFIG[type];
@@ -70,7 +77,7 @@ export function MobileCheckin({ type, onComplete, fullScreen = false }: Props) {
       await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ note: note.trim(), via: "mobile_widget" }),
+        body: JSON.stringify({ note: note.trim(), external_signal: externalSignal.trim() || undefined, via: "mobile_widget" }),
       });
     } catch {
       // Non-critical — still show completion
@@ -203,6 +210,45 @@ export function MobileCheckin({ type, onComplete, fullScreen = false }: Props) {
       <div style={{ textAlign: "right", fontSize: 11, color: "var(--bm-text4)", marginBottom: 16 }}>
         {note.length}/300
       </div>
+
+      {/* External signal field — Jim Jeffers Layer 1 */}
+      {cfg.signalLabel && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--bm-text4)", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6 }}>
+            {cfg.signalLabel}
+          </div>
+          <div style={{ fontSize: 12, color: "var(--bm-text3)", marginBottom: 8, lineHeight: 1.5 }}>
+            {cfg.signalSub}
+          </div>
+          <textarea
+            value={externalSignal}
+            onChange={e => setExternalSignal(e.target.value)}
+            placeholder={cfg.signalPlaceholder ?? ""}
+            maxLength={200}
+            rows={2}
+            style={{
+              width: "100%",
+              padding: "14px 16px",
+              background: "var(--bm-bg3)",
+              border: `1px solid ${externalSignal.trim() ? "var(--bm-border3)" : "var(--bm-border)"}`,
+              borderRadius: 12,
+              color: "var(--bm-text)",
+              fontSize: 15,
+              lineHeight: 1.6,
+              fontFamily: "inherit",
+              resize: "none",
+              outline: "none",
+              transition: "border-color 0.2s",
+              boxSizing: "border-box",
+            }}
+          />
+          {!externalSignal.trim() && (
+            <div style={{ fontSize: 11, color: "var(--bm-text4)", marginTop: 4, fontStyle: "italic" }}>
+              Optional — but skipping this every day is itself a signal.
+            </div>
+          )}
+        </div>
+      )}
 
       {/* CTA button — large touch target */}
       <motion.button

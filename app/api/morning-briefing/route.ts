@@ -134,12 +134,37 @@ export async function GET(req: Request) {
         const plan = await getPlanForUserId(admin, ctx.user_id);
         if (!isBriefingDayForPlan(plan)) { skipped++; continue; }
 
-        // Fetch last reflection for context
-        const { data: lastReflection } = await admin
+        // Fetch last 5 reflections for richer pattern context
+        const { data: recentReflections } = await admin
           .from("reflections")
-          .select("outcome, note, confidence, today_action")
+          .select("outcome, note, confidence, today_action, what_tried, what_happened, what_learned, blocker, created_at")
           .eq("user_id", ctx.user_id)
           .order("created_at", { ascending: false })
+          .limit(5);
+
+        const lastReflection = recentReflections?.[0] ?? null;
+
+        // Build pattern summary from last 5 reflections
+        const reflectionHistory = (recentReflections ?? []).map((r, i) => {
+          const tried    = r.what_tried    ?? r.today_action ?? "unknown";
+          const happened = r.what_happened ?? "";
+          const learned  = r.what_learned  ?? "";
+          const blocked  = r.blocker       ?? "";
+          const daysAgo  = Math.floor((Date.now() - new Date(r.created_at).getTime()) / 86400000);
+          return [
+            `${i + 1}. [${daysAgo}d ago] Tried: "${tried}" → ${r.outcome}`,
+            happened ? `   Result: ${happened}` : "",
+            learned  ? `   Learned: ${learned}` : "",
+            blocked  ? `   Blocker: ${blocked}` : "",
+          ].filter(Boolean).join("\n");
+        }).join("\n\n");
+
+        // Fetch active project for gap detection (weaknesses + stage)
+        const { data: activeProject } = await admin
+          .from("projects")
+          .select("validation_weaknesses, startup_stage")
+          .eq("user_id", ctx.user_id)
+          .order("updated_at", { ascending: false })
           .limit(1)
           .maybeSingle();
 
@@ -152,6 +177,11 @@ export async function GET(req: Request) {
           cognitiveLoad: ctx.cognitive_load ?? "fresh",
           yesterdayTask: lastReflection?.today_action ?? undefined,
           completedYesterday: lastReflection?.outcome === "completed",
+          reflectionHistory: reflectionHistory || undefined,
+          // Gap detection fields
+          userId: ctx.user_id,
+          projectWeaknesses: activeProject?.validation_weaknesses ?? [],
+          projectStage: activeProject?.startup_stage ?? ctx.current_stage ?? "Idea",
         };
 
         const briefing = await generateMorningBriefing(reflexionCtx);
@@ -216,11 +246,37 @@ export async function GET(req: Request) {
     .eq("user_id", user.id)
     .maybeSingle();
 
-  const { data: lastReflection } = await admin
+  // Read last 5 reflections for richer pattern context
+  const { data: recentReflections } = await admin
     .from("reflections")
-    .select("outcome, note, confidence, today_action")
+    .select("outcome, note, confidence, today_action, what_tried, what_happened, what_learned, blocker, created_at")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false })
+    .limit(5);
+
+  const lastReflection = recentReflections?.[0] ?? null;
+
+  // Build a pattern summary from last 5 reflections
+  const reflectionHistory = (recentReflections ?? []).map((r, i) => {
+    const tried    = r.what_tried    ?? r.today_action ?? "unknown";
+    const happened = r.what_happened ?? "";
+    const learned  = r.what_learned  ?? "";
+    const blocked  = r.blocker       ?? "";
+    const daysAgo  = Math.floor((Date.now() - new Date(r.created_at).getTime()) / 86400000);
+    return [
+      `${i + 1}. [${daysAgo}d ago] Tried: "${tried}" → ${r.outcome}`,
+      happened ? `   Result: ${happened}` : "",
+      learned  ? `   Learned: ${learned}` : "",
+      blocked  ? `   Blocker: ${blocked}` : "",
+    ].filter(Boolean).join("\n");
+  }).join("\n\n");
+
+  // Fetch active project for gap detection
+  const { data: activeProject } = await admin
+    .from("projects")
+    .select("validation_weaknesses, startup_stage")
+    .eq("user_id", user.id)
+    .order("updated_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
@@ -233,6 +289,11 @@ export async function GET(req: Request) {
     cognitiveLoad: ctx?.cognitive_load ?? "fresh",
     yesterdayTask: lastReflection?.today_action ?? undefined,
     completedYesterday: lastReflection?.outcome === "completed",
+    reflectionHistory: reflectionHistory || undefined,
+    // Gap detection fields
+    userId: user.id,
+    projectWeaknesses: activeProject?.validation_weaknesses ?? [],
+    projectStage: activeProject?.startup_stage ?? ctx?.current_stage ?? "Idea",
   };
 
   try {

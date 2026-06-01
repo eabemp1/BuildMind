@@ -63,6 +63,31 @@ function ProgressBar({ value, max }: { value: number; max: number }) {
   );
 }
 
+function MetricTooltip({ text }: { text: string }) {
+  return (
+    <span
+      title={text}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: 14,
+        height: 14,
+        borderRadius: "50%",
+        border: "1px solid var(--bm-border2)",
+        color: "var(--bm-text4)",
+        fontSize: 9,
+        fontWeight: 700,
+        cursor: "help",
+        marginLeft: 4,
+        flexShrink: 0,
+      }}
+    >
+      ?
+    </span>
+  );
+}
+
 // ── 7-day sparkline ───────────────────────────────────────────────────────────
 function Sparkline({ history }: { history: { date: string; score: number }[] }) {
   if (history.length < 2) return null;
@@ -277,13 +302,29 @@ export default function OverviewPage() {
         <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}
           style={{ display: "flex", gap: 0, borderRadius: 10, border: "1px solid var(--bm-border)", overflow: "hidden", marginBottom: 20 }}>
           {[
-            { label: "Score",     value: score > 0 ? `${score}` : "—", delta: scoreDelta },
-            { label: "Streak",    value: streak > 0 ? `${streak}d` : "—" },
+            {
+              label: "Momentum Score",
+              value: score > 0 ? `${score}` : "—",
+              delta: scoreDelta,
+              tooltip: "How consistently you're executing. Built from task completion, reflection quality, and time between actions. Decays slowly if you go inactive.",
+            },
+            {
+              label: "Streak",
+              value: streak > 0 ? `${streak}d` : "—",
+              tooltip: "Consecutive days you've completed at least one task or reflection. Breaks if you miss a day. Used to unlock advanced features.",
+            },
             { label: "Completed", value: milestonesCompleted > 0 ? milestonesCompleted : doneTasks > 0 ? doneTasks : "—" },
-            { label: "Cadence",   value: `${consistencyPct}%` },
+            {
+              label: "AI Advice Quality",
+              value: `${consistencyPct}%`,
+              tooltip: "How much context BuildMind has about you. Higher = more specific, personalised advice. Improve it by filling in your startup summary, target users, and logging daily reflections.",
+            },
           ].map((stat, i, arr) => (
             <div key={stat.label} style={{ flex: 1, padding: "14px 16px", borderRight: i < arr.length - 1 ? "1px solid var(--bm-border)" : "none" }}>
-              <div style={{ fontSize: 11, color: "var(--bm-text3)", marginBottom: 4 }}>{stat.label}</div>
+              <div style={{ display: "flex", alignItems: "center", fontSize: 11, color: "var(--bm-text3)", marginBottom: 4 }}>
+                {stat.label}
+                {"tooltip" in stat && stat.tooltip && <MetricTooltip text={stat.tooltip} />}
+              </div>
               <div style={{ fontSize: 20, fontWeight: 500, color: "var(--bm-text)", lineHeight: 1 }}>
                 {stat.value}
                 {stat.delta != null && (

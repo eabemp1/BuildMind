@@ -90,6 +90,7 @@ export interface ReflexionContext {
   topicsRepeated?: string[];
   lastReflection?: { outcome: string; note: string; confidence: number };
   cognitiveLoad?: "fresh" | "drained" | "autopilot";
+  reflectionHistory?: string; // last 5 reflections as a structured summary
   // v4 additions
   consecutiveTasksCompleted?: number;  // for Emotional Language Layer
   daysInactive?: number;               // for Recovery Mode detection
@@ -934,28 +935,225 @@ Domain: ${domain || "not specified"}`;
  * generateMorningBriefing — for the 7am scheduled job (Playbook §3.2 Stage 1)
  * Returns: win (yesterday), risk (today), action (right now)
  */
+
+// ── Gap Detection (Jim Jeffers feedback) ─────────────────────────────────────
+// Tracks what HASN'T happened — not just what has.
+// Surfaces uncomfortable truths about direction, not just pace.
+// Injected into the morning briefing prompt so the AI asks pointed questions
+// rather than displaying dashboard metrics.
+
+export interface FounderGap {
+  type: "user_conversations" | "assumption_untested" | "busywork_pattern" | "revenue_avoided";
+  daysSince?: number;       // how long since this last happened
+  detail: string;           // specific, actionable description
+  question: string;         // the uncomfortable question to surface
+}
+
+export async function detectFounderGaps(
+  userId: string,
+  projectWeaknesses: string[] = [],
+  projectStage: string = "Idea",
+): Promise<FounderGap[]> {
+  const gaps: FounderGap[] = [];
+
+  try {
+    const { createClient: createAdminSb } = await import("@supabase/supabase-js");
+    const sb = createAdminSb(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    );
+
+    const now = new Date();
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString();
+
+    // ── Gap 1: User conversations ────────────────────────────────────────────
+    // Check reflections and check-ins for any mention of talking to users.
+    // Keywords: "user", "customer", "interview", "feedback", "talked to", "called"
+    const { data: recentReflections } = await sb
+      .from("reflections")
+      .select("note, today_action, created_at")
+      .eq("user_id", userId)
+      .gte("created_at", fourteenDaysAgo)
+      .order("created_at", { ascending: false });
+
+    // Also check recent_interactions for external_signal from morning check-ins
+    const { data: founderCtx } = await sb
+      .from("founder_context")
+      .select("recent_interactions")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    const recentCheckIns: Array<{ type: string; external_signal?: string | null; timestamp: string }> =
+      Array.isArray(founderCtx?.recent_interactions) ? founderCtx.recent_interactions : [];
+
+    // An external_signal from check-in counts as user contact evidence
+    const recentExternalSignal = recentCheckIns.find(i => {
+      if (i.type !== "morning_checkin" || !i.external_signal) return false;
+      const ageMs = now.getTime() - new Date(i.timestamp).getTime();
+      return ageMs < 7 * 24 * 60 * 60 * 1000; // within 7 days
+    });
+
+    const userConvoKeywords = ["user", "customer", "interview", "feedback", "talked to", "called", "met with", "spoke to"];
+    const lastUserConvo = recentExternalSignal
+      ? { created_at: recentExternalSignal.timestamp } // external signal counts
+      : (recentReflections ?? []).find(r => {
+          const text = `${r.note ?? ""} ${r.today_action ?? ""}`.toLowerCase();
+          return userConvoKeywords.some(kw => text.includes(kw));
+        });
+
+    if (!lastUserConvo) {
+      // No user conversation found in 14 days
+      gaps.push({
+        type: "user_conversations",
+        daysSince: 14,
+        detail: "No user conversation recorded in the last 14 days.",
+        question: "You haven't talked to a real user in 14 days. Are you building for yourself or for them?",
+      });
+    } else {
+      const daysSince = Math.floor((now.getTime() - new Date(lastUserConvo.created_at).getTime()) / (1000 * 60 * 60 * 24));
+      if (daysSince > 7) {
+        gaps.push({
+          type: "user_conversations",
+          daysSince,
+          detail: `Last user conversation was ${daysSince} days ago.`,
+          question: `It's been ${daysSince} days since you talked to a user. What assumption are you building on right now?`,
+        });
+      }
+    }
+
+    // ── Gap 2: Core assumption untested ──────────────────────────────────────
+    // Pull from project weaknesses — these are the unvalidated assumptions.
+    // If weaknesses exist and no recent reflection addresses them, flag it.
+    if (projectWeaknesses.length > 0) {
+      const topWeakness = projectWeaknesses[0];
+      const weaknessAddressed = (recentReflections ?? []).some(r => {
+        const text = `${r.note ?? ""} ${r.today_action ?? ""}`.toLowerCase();
+        // Check if any word from the weakness appears in recent reflections
+        const weaknessWords = topWeakness.toLowerCase().split(" ").filter(w => w.length > 4);
+        return weaknessWords.some(w => text.includes(w));
+      });
+
+      if (!weaknessAddressed) {
+        gaps.push({
+          type: "assumption_untested",
+          detail: `Unvalidated assumption: "${topWeakness}"`,
+          question: `Your biggest known weakness is "${topWeakness}" — what evidence do you have that this isn't fatal?`,
+        });
+      }
+    }
+
+    // ── Gap 3: Busywork pattern ───────────────────────────────────────────────
+    // If recent tasks are all internal (no user/revenue/distribution keywords),
+    // flag that the founder may be busy but not moving toward what matters.
+    const { data: recentTasks } = await sb
+      .from("reflections")
+      .select("today_action, outcome")
+      .eq("user_id", userId)
+      .eq("outcome", "completed")
+      .gte("created_at", sevenDaysAgo);
+
+    const externalKeywords = ["user", "customer", "revenue", "sale", "launch", "publish", "distribute", "market", "post", "pitch", "email", "reach out"];
+    const completedTasks = recentTasks ?? [];
+    const externalTaskCount = completedTasks.filter(t => {
+      const text = (t.today_action ?? "").toLowerCase();
+      return externalKeywords.some(kw => text.includes(kw));
+    }).length;
+
+    if (completedTasks.length >= 3 && externalTaskCount === 0) {
+      gaps.push({
+        type: "busywork_pattern",
+        detail: `${completedTasks.length} tasks completed this week, none involving users, revenue, or distribution.`,
+        question: `You completed ${completedTasks.length} tasks this week but none touched users or revenue. What are you actually building toward?`,
+      });
+    }
+
+    // ── Gap 4: Revenue avoidance (post-MVP stages) ───────────────────────────
+    // If the founder is past Idea/Validation stage but hasn't mentioned
+    // revenue, pricing, or sales in recent reflections, flag it.
+    const revenueStages = ["mvp", "launch", "growth", "revenue"];
+    const isRevenueStage = revenueStages.some(s => projectStage.toLowerCase().includes(s));
+
+    if (isRevenueStage) {
+      const revenueKeywords = ["revenue", "pricing", "sale", "paid", "charge", "money", "mrr", "arr", "customer paid"];
+      const revenueActivity = (recentReflections ?? []).some(r => {
+        const text = `${r.note ?? ""} ${r.today_action ?? ""}`.toLowerCase();
+        return revenueKeywords.some(kw => text.includes(kw));
+      });
+
+      if (!revenueActivity) {
+        gaps.push({
+          type: "revenue_avoided",
+          detail: `No revenue-related activity recorded in the last 14 days despite being at ${projectStage} stage.`,
+          question: `You're at ${projectStage} stage but haven't mentioned revenue or pricing in 2 weeks. Are you avoiding the money conversation?`,
+        });
+      }
+    }
+  } catch {
+    // Non-fatal — gap detection failure should never break the briefing
+  }
+
+  return gaps;
+}
+
+function buildGapBlock(gaps: FounderGap[]): string {
+  if (gaps.length === 0) return "";
+  const lines = gaps.map(g => `- ${g.question}`);
+  return `\nGAPS DETECTED (what hasn't happened — prioritise these over task completion):\n${lines.join("\n")}`;
+}
+
 export async function generateMorningBriefing(
-  context: ReflexionContext & { yesterdayTask?: string; completedYesterday?: boolean }
-): Promise<{ win: string; risk: string; action: string }> {
+  context: ReflexionContext & {
+    yesterdayTask?: string;
+    completedYesterday?: boolean;
+    userId?: string;
+    projectWeaknesses?: string[];
+    projectStage?: string;
+  }
+): Promise<{ win: string; risk: string; action: string; gaps: FounderGap[] }> {
+
+  // Detect gaps first — what hasn't happened is more important than what has
+  const gaps = context.userId
+    ? await detectFounderGaps(context.userId, context.projectWeaknesses ?? [], context.projectStage ?? context.stage)
+    : [];
+
+  const gapBlock = buildGapBlock(gaps);
+
+  // If gaps exist, the most critical one becomes the risk — not a generic stage risk
+  const gapRiskInstruction = gaps.length > 0
+    ? `IMPORTANT: At least one critical gap was detected (see GAPS DETECTED below). The "risk" field MUST address the most serious gap, not a generic startup risk. Ask the uncomfortable question directly.`
+    : "";
+
   const prompt = `You are BuildMind's morning briefing engine. Generate a 3-line morning briefing for a solo founder.
+
 Rules:
-- win: One specific win from their recent work (look at momentum and stage — make it feel real)
-- risk: The single biggest risk they face TODAY at their current stage
-- action: One concrete action they must do in the next 2 hours
-Each line: max 20 words. No emojis. No fluff. Brutally specific to this founder.
+- win: One SPECIFIC win referencing what they actually tried recently — not generic praise
+- risk: The single biggest risk TODAY — if gaps detected below, use those directly, not generic startup advice
+- action: One concrete action for the next 2 hours — specific to their current blocker or next step
+Each line: max 20 words. No emojis. No fluff. Must reference their actual situation, not a template.
+
+If you cannot find specific context to reference, say so honestly rather than generating generic output.
+${gapRiskInstruction}
 ${buildContextBlock(context)}
 ${context.yesterdayTask ? `Yesterday's task: "${context.yesterdayTask}"` : ""}
-${context.completedYesterday !== undefined ? `Completed: ${context.completedYesterday}` : ""}`;
+${context.completedYesterday !== undefined ? `Completed yesterday: ${context.completedYesterday}` : ""}${gapBlock}`;
 
   const parsed = await callModelJSON<Record<string, string>>([
     { role: "system", content: prompt },
     { role: "user", content: "Generate the morning briefing." },
   ], { role: "fast", temperature: 0.4, maxTokens: 200 })
     .catch(() => ({} as Record<string, string>));
+
+  // If AI didn't use the gap, surface it directly as the risk
+  const fallbackRisk = gaps.length > 0
+    ? gaps[0].question
+    : "Inertia: every hour without action makes the next action harder.";
+
   return {
     win: parsed.win ?? "You're still here — that already puts you ahead of 90% of founders.",
-    risk: parsed.risk ?? "Inertia: every hour without action makes the next action harder.",
+    risk: parsed.risk ?? fallbackRisk,
     action: parsed.action ?? "Open your task list and do the first thing before checking anything else.",
+    gaps,
   };
 }
 
@@ -1011,6 +1209,9 @@ function buildContextBlock(ctx: ReflexionContext): string {
   if (ctx.lastReflection) {
     lines.push(`Last reflection: outcome=${ctx.lastReflection.outcome}, confidence=${ctx.lastReflection.confidence}/5`);
     if (ctx.lastReflection.note) lines.push(`Their note: "${ctx.lastReflection.note}"`);
+  }
+  if (ctx.reflectionHistory) {
+    lines.push(`\nRECENT ACTIVITY PATTERN (last 5 sessions):\n${ctx.reflectionHistory}`);
   }
   return lines.join("\n");
 }

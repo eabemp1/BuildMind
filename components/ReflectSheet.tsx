@@ -47,36 +47,86 @@ interface Props {
 }
 
 export function ReflectSheet({ open, onDone, onClose, projectStage = "Idea", taskAction }: Props) {
-  const [outcome, setOutcome] = useState<Outcome | null>(null);
-  const [note, setNote] = useState("");
-  const [confidence, setConfidence] = useState(3);
-  const [submitting, setSubmitting] = useState(false);
+  const [outcome, setOutcome]         = useState<Outcome | null>(null);
+  const [whatTried, setWhatTried]     = useState("");   // specific action attempted
+  const [whatHappened, setWhatHappened] = useState(""); // concrete result/metric
+  const [whatLearned, setWhatLearned] = useState("");   // insight extracted
+  const [blocker, setBlocker]         = useState("");   // exact blocker if blocked
+  const [confidence, setConfidence]   = useState(3);
+  const [submitting, setSubmitting]   = useState(false);
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [extracting, setExtracting]   = useState(false);
 
   // Reset on open
   useEffect(() => {
     if (open) {
       setOutcome(null);
-      setNote("");
+      setWhatTried("");
+      setWhatHappened("");
+      setWhatLearned("");
+      setBlocker("");
       setConfidence(3);
       setSubmitting(false);
+      setUploadedFile(null);
+      setExtracting(false);
     }
   }, [open]);
 
-  const canSubmit = outcome !== null;
+  const canSubmit = outcome !== null && whatTried.trim().length > 0;
+
+  // ── File upload extraction ────────────────────────────────────────────────
+  // Founder drops a screenshot, markdown, or CSV — AI extracts structured data
+  async function handleFileExtract(file: File) {
+    setExtracting(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/reflect/extract", { method: "POST", body: formData });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.what_tried)    setWhatTried(prev    => prev || data.what_tried);
+        if (data.what_happened) setWhatHappened(prev => prev || data.what_happened);
+        if (data.what_learned)  setWhatLearned(prev  => prev || data.what_learned);
+        if (data.blocker)       setBlocker(prev       => prev || data.blocker);
+        if (data.outcome)       setOutcome(prev       => prev || data.outcome);
+      }
+    } catch {
+      // Non-fatal — founder can fill manually
+    }
+    setExtracting(false);
+  }
 
   async function handleSubmit() {
     if (!canSubmit || submitting) return;
     setSubmitting(true);
+    // Compose rich note for backward compat with AI prompt
+    const richNote = [
+      whatTried    ? `Tried: ${whatTried}`         : "",
+      whatHappened ? `Result: ${whatHappened}`      : "",
+      whatLearned  ? `Learned: ${whatLearned}`      : "",
+      blocker      ? `Blocker: ${blocker}`          : "",
+    ].filter(Boolean).join(" | ");
     try {
-      await fetch("/api/reflect", {
+      await fetch("/api/ai/reflect-action", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ outcome, note, confidence, stage: projectStage }),
+        body: JSON.stringify({
+          outcome,
+          note: richNote,
+          what_tried:    whatTried,
+          what_happened: whatHappened,
+          what_learned:  whatLearned,
+          blocker:       blocker || undefined,
+          confidence,
+          stage: projectStage,
+          todayAction: taskAction ?? "",
+          streak: 0,
+        }),
       });
     } catch {
       // Non-fatal — local state still updates
     }
-    onDone(outcome!, note, confidence);
+    onDone(outcome!, richNote, confidence);
   }
 
   return (
@@ -190,30 +240,85 @@ export function ReflectSheet({ open, onDone, onClose, projectStage = "Idea", tas
               ))}
             </div>
 
-            {/* Note */}
-            <p style={{ fontSize: 11, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 8px" }}>
-              What happened? <span style={{ opacity: 0.5, textTransform: "none", letterSpacing: 0, fontWeight: 400 }}>(optional)</span>
-            </p>
-            <textarea
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="Blockers, insights, or what you'd do differently..."
-              rows={3}
+            {/* ── File upload — screenshot / markdown / CSV ─────────────────── */}
+            <div
               style={{
-                width: "100%",
-                background: "var(--bm-bg3)",
-                border: "1px solid var(--bm-border)",
+                border: "1px dashed var(--bm-border2)",
                 borderRadius: 10,
-                padding: "11px 13px",
-                color: "var(--bm-text)",
-                fontSize: 14,
-                fontFamily: "inherit",
-                resize: "none",
-                outline: "none",
-                boxSizing: "border-box",
-                marginBottom: 20,
+                padding: "12px 14px",
+                marginBottom: 16,
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                cursor: "pointer",
+                background: uploadedFile ? "var(--bm-bg3)" : "transparent",
+              }}
+              onClick={() => document.getElementById("reflect-file-input")?.click()}
+            >
+              <span style={{ fontSize: 18 }}>📎</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)" }}>
+                  {extracting ? "Extracting data from file…" : uploadedFile ? uploadedFile.name : "Upload markdown, CSV, or text log"}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--bm-text4)", marginTop: 2 }}>
+                  AI will extract your data points automatically
+                </div>
+              </div>
+              {uploadedFile && !extracting && (
+                <span style={{ fontSize: 11, color: "var(--bm-green)", fontWeight: 700 }}>✓ Done</span>
+              )}
+            </div>
+            <input
+              id="reflect-file-input"
+              type="file"
+              accept=".md,.csv,.txt"
+              style={{ display: "none" }}
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                setUploadedFile(file);
+                await handleFileExtract(file);
               }}
             />
+
+            {/* ── Rich data capture fields ──────────────────────────────────── */}
+            {(["what_tried", "what_happened", "what_learned", ...(outcome === "blocked" ? ["blocker"] : [])] as const).map((field) => {
+              const cfg = {
+                what_tried:    { label: "What did you actually try?", required: true,  placeholder: "Specific action: posted on Reddit r/indiehackers, cold-emailed 5 founders…", value: whatTried,    set: setWhatTried },
+                what_happened: { label: "What concretely happened?",  required: false, placeholder: "Numbers if possible: 3 replies, 0 signups, 1 interested DM, post got 47 upvotes…", value: whatHappened, set: setWhatHappened },
+                what_learned:  { label: "What did you learn?",        required: false, placeholder: "Insight you can act on tomorrow: founders want X not Y, the problem is actually Z…", value: whatLearned,  set: setWhatLearned },
+                blocker:       { label: "What exactly is blocking you?", required: false, placeholder: "Specific blocker — not 'motivation', but: can't find users, auth keeps failing, no reply from…", value: blocker, set: setBlocker },
+              }[field];
+              if (!cfg) return null;
+              return (
+                <div key={field} style={{ marginBottom: 14 }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 6px" }}>
+                    {cfg.label}
+                    {cfg.required && <span style={{ color: "var(--bm-accent)", marginLeft: 4 }}>*</span>}
+                  </p>
+                  <textarea
+                    value={cfg.value}
+                    onChange={(e) => cfg.set(e.target.value)}
+                    placeholder={cfg.placeholder}
+                    rows={2}
+                    style={{
+                      width: "100%",
+                      background: "var(--bm-bg3)",
+                      border: `1px solid ${cfg.value.trim() ? "var(--bm-border3)" : "var(--bm-border)"}`,
+                      borderRadius: 10,
+                      padding: "11px 13px",
+                      color: "var(--bm-text)",
+                      fontSize: 14,
+                      fontFamily: "inherit",
+                      resize: "none",
+                      outline: "none",
+                      boxSizing: "border-box",
+                      transition: "border-color 0.2s",
+                    }}
+                  />
+                </div>
+              );
+            })}
 
             {/* Confidence slider */}
             <p style={{ fontSize: 11, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 10px" }}>

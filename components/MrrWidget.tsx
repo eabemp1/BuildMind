@@ -12,7 +12,6 @@
  */
 
 import { useState } from "react";
-import { createClient } from "@/lib/supabase/client";
 
 interface MrrWidgetProps {
   projectId: string;
@@ -32,10 +31,36 @@ const VIZ = {
   amber: "#fbbf24",
 };
 
+function MetricTooltip({ text }: { text: string }) {
+  return (
+    <span
+      title={text}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: 14,
+        height: 14,
+        borderRadius: "50%",
+        border: "1px solid var(--bm-border2)",
+        color: "var(--bm-text4)",
+        fontSize: 9,
+        fontWeight: 700,
+        cursor: "help",
+        marginLeft: 4,
+        flexShrink: 0,
+      }}
+    >
+      ?
+    </span>
+  );
+}
+
 export function MrrWidget({ projectId, currentMrr, onUpdate }: MrrWidgetProps) {
   const [editing, setEditing] = useState(false);
   const [inputVal, setInputVal] = useState("");
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(false);
 
   const mrrGhs = currentMrr > 0 ? (currentMrr / 100).toFixed(0) : null;
 
@@ -44,19 +69,23 @@ export function MrrWidget({ projectId, currentMrr, onUpdate }: MrrWidgetProps) {
     if (isNaN(parsed) || parsed < 0) { setEditing(false); return; }
     const pesewas = Math.round(parsed * 100);
     setSaving(true);
+    setSaveError(false);
     try {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      await supabase
-        .from("projects")
-        .update({ current_mrr: pesewas, mrr_updated_at: new Date().toISOString() })
-        .eq("id", projectId)
-        .eq("user_id", user.id);
+      const res = await fetch("/api/project/mrr", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, mrr: pesewas }),
+      });
+      if (!res.ok) {
+        setSaveError(true);
+        return;
+      }
       onUpdate?.(pesewas);
+      setEditing(false);
+    } catch {
+      setSaveError(true);
     } finally {
       setSaving(false);
-      setEditing(false);
     }
   }
 
@@ -73,8 +102,9 @@ export function MrrWidget({ projectId, currentMrr, onUpdate }: MrrWidgetProps) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <div style={{ fontSize: 11, color: VIZ.text3, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>
+      <div style={{ display: "flex", alignItems: "center", fontSize: 11, color: VIZ.text3, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>
         Current MRR
+        <MetricTooltip text="Your Monthly Recurring Revenue in GHS. Telling BuildMind your MRR makes every task revenue-aware — tasks shift from growth to retention once you have paying customers." />
       </div>
 
       {editing ? (
@@ -163,6 +193,11 @@ export function MrrWidget({ projectId, currentMrr, onUpdate }: MrrWidgetProps) {
           ? "Add your MRR so your daily tasks target revenue, not just progress."
           : "Your tasks are revenue-aware. Update anytime."}
       </div>
+      {saveError && (
+        <div style={{ fontSize: 11, color: "var(--bm-red, #f87171)", marginTop: 4 }}>
+          Couldn't save — try again
+        </div>
+      )}
     </div>
   );
 }

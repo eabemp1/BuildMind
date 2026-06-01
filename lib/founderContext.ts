@@ -41,12 +41,20 @@ export interface FounderContext {
   updated_at: string;
 }
 
+export interface BriefingGap {
+  type: "user_conversations" | "assumption_untested" | "busywork_pattern" | "revenue_avoided";
+  daysSince?: number;
+  detail: string;
+  question: string;
+}
+
 export interface MorningBriefing {
   id: string;
   win: string;
   risk: string;
   action: string;
   created_at: string;
+  gaps?: BriefingGap[];
 }
 
 // ── Momentum Score logic ────────────────────────────────────────────────────

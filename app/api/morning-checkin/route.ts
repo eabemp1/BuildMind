@@ -17,7 +17,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const schema = z.object({
-  note: z.string().min(1).max(400).trim(),
+  note:            z.string().min(1).max(400).trim(),
+  external_signal: z.string().max(200).trim().optional(),
 });
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
@@ -30,15 +31,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const parsed = schema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ ok: false, error: "Invalid input" }, { status: 422 });
 
-    const { note } = parsed.data;
+    const { note, external_signal } = parsed.data;
     const admin = createAdminClient();
     const now = new Date().toISOString();
 
     // Store in recent_interactions for cross-session continuity (AI Coach uses this)
     const interaction = {
-      type:       "morning_checkin",
+      type:            "morning_checkin",
       note,
-      timestamp:  now,
+      external_signal: external_signal ?? null,
+      timestamp:       now,
     };
 
     const { data: existing } = await admin

@@ -116,11 +116,19 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
       } catch {}
       syncStreakFromServer().then(s => setStreakDays(s)).catch(() => {});
     };
+    const handleStreakUpdated = (e: Event) => {
+      const detail = (e as CustomEvent<{ streak: number }>).detail;
+      if (typeof detail?.streak === "number") {
+        setStreakDays(detail.streak);
+      } else {
+        syncStreakFromServer().then(s => setStreakDays(s)).catch(() => {});
+      }
+    };
     checkPending();
     // Sync tasks_completed_total from Supabase so progressive unlock survives device switches
     void syncTasksCompletedFromServer().then(checkPending);
     window.addEventListener("storage", checkPending);
-    window.addEventListener("bm_streak_updated", checkPending);
+    window.addEventListener("bm_streak_updated", handleStreakUpdated);
     let interval = setInterval(checkPending, 8000);
     const onVisibility = () => {
       if (document.visibilityState === "hidden") {
@@ -133,7 +141,7 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
       window.removeEventListener("storage", checkPending);
-      window.removeEventListener("bm_streak_updated", checkPending);
+      window.removeEventListener("bm_streak_updated", handleStreakUpdated);
       document.removeEventListener("visibilitychange", onVisibility);
       clearInterval(interval);
     };

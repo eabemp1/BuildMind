@@ -499,6 +499,8 @@ const TASK_KEY    = "bm_tasks_done";
 export function recordTaskCompletion(): void {
   if (typeof window === "undefined") return;
   storage.set(TASK_KEY, String(getTasksDone() + 1));
+  const current = parseInt(storage.get("bm_tasks_completed_total") ?? "0", 10) || 0;
+  storage.set("bm_tasks_completed_total", String(current + 1));
   recordWeeklyAction();
   window.dispatchEvent(new CustomEvent("bm_task_completed"));
 }
