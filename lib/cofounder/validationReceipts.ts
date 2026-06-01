@@ -17,6 +17,7 @@
 import { ValidationReceipt } from "./competitorReframe";
 import { getLimits } from "@/lib/plan";
 import { storage } from "@/lib/storage";
+import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -45,6 +46,16 @@ export function getValidationReceipts(): ValidationReceipt[] {
   return storage.getJSON<ValidationReceipt[]>(RECEIPTS_KEY, []);
 }
 
+export async function syncValidationReceiptsFromServer(): Promise<ValidationReceipt[]> {
+  if (typeof window === "undefined") return [];
+  const values = await fetchBehaviorState<{ validation_receipts: ValidationReceipt[] }>(["validation_receipts"]);
+  if (Array.isArray(values.validation_receipts)) {
+    storage.setJSON(RECEIPTS_KEY, values.validation_receipts);
+    return values.validation_receipts;
+  }
+  return getValidationReceipts();
+}
+
 export function saveValidationReceipt(receipt: Omit<ValidationReceipt, "id">): ValidationReceipt {
   const full: ValidationReceipt = {
     ...receipt,
@@ -54,13 +65,16 @@ export function saveValidationReceipt(receipt: Omit<ValidationReceipt, "id">): V
   existing.unshift(full); // newest first
   if (typeof window !== "undefined") {
     storage.setJSON(RECEIPTS_KEY, existing);
+    persistBehaviorState({ validation_receipts: existing });
   }
   return full;
 }
 
 export function deleteValidationReceipt(id: string): void {
   if (typeof window === "undefined") return;
-  storage.setJSON(RECEIPTS_KEY, getValidationReceipts().filter(r => r.id !== id));
+  const next = getValidationReceipts().filter(r => r.id !== id);
+  storage.setJSON(RECEIPTS_KEY, next);
+  persistBehaviorState({ validation_receipts: next });
 }
 
 /** Returns receipts where a human confirmed the problem exists */

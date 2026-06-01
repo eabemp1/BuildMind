@@ -8,8 +8,9 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { checkIdleStatus, recordActivity } from "@/lib/cofounder/idleDetection";
+import { checkIdleStatus, recordActivity, syncIdleDetectionStateFromServer } from "@/lib/cofounder/idleDetection";
 import { getLimits } from "@/lib/plan";
+import { sanitizeOutput } from "@/lib/sanitizeOutput";
 
 interface IdleToast { message: string; lastGoal?: string; }
 
@@ -29,7 +30,7 @@ export default function IdleDetectionProvider({ children }: { children: React.Re
   const handleActivity = useCallback(() => { recordActivity(); }, []);
 
   useEffect(() => {
-    runIdleCheck();
+    syncIdleDetectionStateFromServer().finally(runIdleCheck);
     const handleVisibility = () => { if (document.visibilityState === "visible") runIdleCheck(); };
     const events = ["click", "keydown", "scroll"] as const;
     events.forEach(e => document.addEventListener(e, handleActivity, { passive: true }));
@@ -61,8 +62,8 @@ export default function IdleDetectionProvider({ children }: { children: React.Re
               <div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--bm-accent)", flexShrink: 0, marginTop: 4, boxShadow: "0 0 8px var(--bm-accent)" }} />
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: "var(--bm-accent)", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>CoFounder</div>
-                <div style={{ fontSize: 13, color: "#d0d0e0", lineHeight: 1.5 }}>{toast.message}</div>
-                {toast.lastGoal && <div style={{ fontSize: 11, color: "#555", marginTop: 6, fontStyle: "italic" }}>Last goal: &ldquo;{toast.lastGoal}&rdquo;</div>}
+                <div style={{ fontSize: 13, color: "#d0d0e0", lineHeight: 1.5 }}>{sanitizeOutput(toast.message)}</div>
+                {toast.lastGoal && <div style={{ fontSize: 11, color: "#555", marginTop: 6, fontStyle: "italic" }}>Last goal: &ldquo;{sanitizeOutput(toast.lastGoal)}&rdquo;</div>}
               </div>
               <button onClick={() => setToast(null)} style={{ background: "transparent", border: "none", color: "#444", cursor: "pointer", fontSize: 14, padding: 0, lineHeight: 1, flexShrink: 0 }}>✕</button>
             </div>

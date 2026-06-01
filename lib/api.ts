@@ -1,6 +1,7 @@
 "use client";
 
 import { storage } from "@/lib/storage";
+import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
 
 // ─── localStorage keys ────────────────────────────────────────────────────────
 const TOKEN_KEY             = "buildmind_jwt";
@@ -57,7 +58,19 @@ export function getActiveProjectId(): string | null {
 export function setActiveProjectId(projectId: string): void {
   if (typeof window === "undefined") return;
   storage.set(ACTIVE_PROJECT_ID_KEY, projectId);
+  persistBehaviorState({ active_project_id: projectId });
   window.dispatchEvent(new CustomEvent(ACTIVE_PROJECT_CHANGED_EVENT, { detail: { projectId } }));
+}
+
+export async function syncActiveProjectIdFromServer(): Promise<string | null> {
+  if (typeof window === "undefined") return null;
+  const values = await fetchBehaviorState<{ active_project_id: string }>(["active_project_id"]);
+  if (typeof values.active_project_id === "string" && values.active_project_id) {
+    storage.set(ACTIVE_PROJECT_ID_KEY, values.active_project_id);
+    window.dispatchEvent(new CustomEvent(ACTIVE_PROJECT_CHANGED_EVENT, { detail: { projectId: values.active_project_id } }));
+    return values.active_project_id;
+  }
+  return getActiveProjectId();
 }
 
 /** Call after first successful login to trigger the product tour on next open. */

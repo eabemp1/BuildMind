@@ -14,6 +14,7 @@
 
 import { getLimits } from "@/lib/plan";
 import { storage } from "@/lib/storage";
+import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -43,15 +44,29 @@ export interface BlueprintModeResult {
 // ─── Free plan usage tracking ─────────────────────────────────────────────────
 
 const BLUEPRINT_USAGE_KEY = "bm_blueprint_uses"; // { projectId: number }
+type BlueprintUses = Record<string, number>;
+
+function getBlueprintUses(): BlueprintUses {
+  try {
+    return JSON.parse(storage.get(BLUEPRINT_USAGE_KEY) ?? "{}") as BlueprintUses;
+  } catch {
+    return {};
+  }
+}
+
+export async function syncBlueprintUsesFromServer(): Promise<BlueprintUses> {
+  if (typeof window === "undefined") return {};
+  const values = await fetchBehaviorState<{ blueprint_uses: BlueprintUses }>(["blueprint_uses"]);
+  if (values.blueprint_uses && typeof values.blueprint_uses === "object") {
+    storage.set(BLUEPRINT_USAGE_KEY, JSON.stringify(values.blueprint_uses));
+    return values.blueprint_uses;
+  }
+  return getBlueprintUses();
+}
 
 export function getBlueprintUsesForProject(projectId: string): number {
   if (typeof window === "undefined") return 0;
-  try {
-    const stored = JSON.parse(storage.get(BLUEPRINT_USAGE_KEY) ?? "{}");
-    return stored[projectId] ?? 0;
-  } catch {
-    return 0;
-  }
+  return getBlueprintUses()[projectId] ?? 0;
 }
 
 export function canUseBlueprintMode(projectId: string): boolean {
@@ -62,13 +77,10 @@ export function canUseBlueprintMode(projectId: string): boolean {
 
 function incrementBlueprintUse(projectId: string): void {
   if (typeof window === "undefined") return;
-  try {
-    const stored = JSON.parse(storage.get(BLUEPRINT_USAGE_KEY) ?? "{}");
-    stored[projectId] = (stored[projectId] ?? 0) + 1;
-    storage.set(BLUEPRINT_USAGE_KEY, JSON.stringify(stored));
-  } catch {
-    // silently fail
-  }
+  const stored = getBlueprintUses();
+  stored[projectId] = (stored[projectId] ?? 0) + 1;
+  storage.set(BLUEPRINT_USAGE_KEY, JSON.stringify(stored));
+  persistBehaviorState({ blueprint_uses: stored });
 }
 
 // ─── Core transformer ─────────────────────────────────────────────────────────
@@ -85,6 +97,7 @@ export async function runBlueprintMode(
   projectDescription: string,
   projectStage: string,
 ): Promise<BlueprintModeResult & { gated?: true }> {
+  await syncBlueprintUsesFromServer();
   if (!canUseBlueprintMode(projectId)) {
     return {
       blueprints: [],

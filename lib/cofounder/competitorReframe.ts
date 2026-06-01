@@ -16,6 +16,7 @@
 
 import { getLimits } from "@/lib/plan";
 import { storage } from "@/lib/storage";
+import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -70,6 +71,21 @@ function getCompetitorHistory(): CompetitorHistoryEntry[] {
 function saveCompetitorHistory(history: CompetitorHistoryEntry[]): void {
   if (typeof window === "undefined") return;
   storage.setJSON(COMPETITOR_HISTORY_KEY, history);
+  persistBehaviorState({ competitor_history: history });
+}
+
+export async function syncCompetitorReframeStateFromServer(): Promise<void> {
+  if (typeof window === "undefined") return;
+  const values = await fetchBehaviorState<{
+    competitor_history: CompetitorHistoryEntry[];
+    reframe_usage: { week?: string; count?: number };
+  }>(["competitor_history", "reframe_usage"]);
+  if (Array.isArray(values.competitor_history)) {
+    storage.setJSON(COMPETITOR_HISTORY_KEY, values.competitor_history);
+  }
+  if (values.reframe_usage && typeof values.reframe_usage === "object") {
+    storage.setJSON(REFRAME_USAGE_KEY, values.reframe_usage);
+  }
 }
 
 function getISOWeek(date: Date): string {
@@ -127,7 +143,9 @@ function incrementReframeUsage(): void {
   const thisWeek = getISOWeek(new Date());
   const stored = storage.getJSON<{ week?: string; count?: number }>(REFRAME_USAGE_KEY, {});
   const currentCount = stored.week === thisWeek ? (stored.count ?? 0) : 0;
-  storage.setJSON(REFRAME_USAGE_KEY, { week: thisWeek, count: currentCount + 1 });
+  const next = { week: thisWeek, count: currentCount + 1 };
+  storage.setJSON(REFRAME_USAGE_KEY, next);
+  persistBehaviorState({ reframe_usage: next });
 }
 
 // ─── Main reframe call ────────────────────────────────────────────────────────
@@ -139,6 +157,7 @@ function incrementReframeUsage(): void {
 export async function runCompetitorReframe(
   input: CompetitorReframeInput
 ): Promise<CompetitorReframeOutput & { gated?: true; usageExhausted?: true }> {
+  await syncCompetitorReframeStateFromServer();
   const { canUse } = getReframeUsageThisWeek();
   if (!canUse) {
     return {

@@ -11,11 +11,14 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 const ALLOWED_KEYS = new Set([
   "ai_personality",
+  "active_project_id",
   "coach_memory",
+  "coach_streak_date",
   "today_action",
   "today_action_cache",
   "checkin_done_date",
   "reflect_done_date",
+  "break_streak_date",
   "push_prompted_at",
   "push_prompt_shown",
   "push_banner_dismissed_date",
@@ -25,6 +28,14 @@ const ALLOWED_KEYS = new Set([
   "achievements_unlocked",
   "achievement_stats",
   "notifications",
+  "blueprint_uses",
+  "competitor_history",
+  "reframe_usage",
+  "validation_receipts",
+  "work_window",
+  "last_declared_goal",
+  "idle_alerted_date",
+  "avoidance_signals",
 ]);
 
 function isAllowedKey(key: unknown): key is string {

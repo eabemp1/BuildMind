@@ -18,6 +18,7 @@
 
 import { getLimits } from "@/lib/plan";
 import { storage } from "@/lib/storage";
+import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
 
 // ─── Regex fast-path (16 high-confidence patterns) ───────────────────────────
 
@@ -226,6 +227,16 @@ interface AvoidanceSignal {
   lastSeen: string;
 }
 
+export async function syncAvoidanceSignalsFromServer(): Promise<AvoidanceSignal[]> {
+  if (typeof window === "undefined") return [];
+  const values = await fetchBehaviorState<{ avoidance_signals: AvoidanceSignal[] }>(["avoidance_signals"]);
+  if (Array.isArray(values.avoidance_signals)) {
+    storage.setJSON(AVOIDANCE_TRACK_KEY, values.avoidance_signals);
+    return values.avoidance_signals;
+  }
+  return getAvoidanceSignals();
+}
+
 export function recordAvoidanceSignal(task: string): void {
   if (typeof window === "undefined") return;
   try {
@@ -239,6 +250,7 @@ export function recordAvoidanceSignal(task: string): void {
       signals.push({ task, count: 1, firstSeen: now, lastSeen: now });
     }
     storage.setJSON(AVOIDANCE_TRACK_KEY, signals);
+    persistBehaviorState({ avoidance_signals: signals });
   } catch {
     // silently fail — non-critical
   }
@@ -254,4 +266,3 @@ export function getChronicAvoidanceTasks(taskList: { task: string; daysSinceAdde
     .filter(t => t.daysSinceAdded >= 3)
     .map(t => t.task);
 }
-

@@ -14,6 +14,7 @@
 
 import { getLimits } from "@/lib/plan";
 import { storage } from "@/lib/storage";
+import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -46,14 +47,34 @@ export function getWorkWindow(): WorkWindow {
   return storage.getJSON<WorkWindow>(WORK_WINDOW_KEY, { startHour: 9, endHour: 18, timezone: "Africa/Accra" });
 }
 
+export async function syncIdleDetectionStateFromServer(): Promise<void> {
+  if (typeof window === "undefined") return;
+  const values = await fetchBehaviorState<{
+    work_window: WorkWindow;
+    last_declared_goal: string;
+    idle_alerted_date: string;
+  }>(["work_window", "last_declared_goal", "idle_alerted_date"]);
+  if (values.work_window && typeof values.work_window === "object") {
+    storage.setJSON(WORK_WINDOW_KEY, values.work_window);
+  }
+  if (typeof values.last_declared_goal === "string") {
+    storage.set(LAST_GOAL_KEY, values.last_declared_goal);
+  }
+  if (typeof values.idle_alerted_date === "string") {
+    storage.set(IDLE_ALERTED_KEY, values.idle_alerted_date);
+  }
+}
+
 export function setWorkWindow(w: WorkWindow): void {
   if (typeof w === "undefined") return;
   storage.setJSON(WORK_WINDOW_KEY, w);
+  persistBehaviorState({ work_window: w });
 }
 
 export function setLastDeclaredGoal(goal: string): void {
   if (typeof window === "undefined") return;
   storage.set(LAST_GOAL_KEY, goal);
+  persistBehaviorState({ last_declared_goal: goal });
 }
 
 export function getLastDeclaredGoal(): string | null {
@@ -112,6 +133,7 @@ export function checkIdleStatus(): IdleCheckResult {
     : `It's been ${hoursStr} hours since you last touched BuildMind and you're in your work window. Still building today?`;
 
   storage.set(IDLE_ALERTED_KEY, todayKey);
+  persistBehaviorState({ idle_alerted_date: todayKey });
 
   return {
     isIdle: true,

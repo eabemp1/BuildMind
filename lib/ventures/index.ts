@@ -26,7 +26,7 @@
  */
 
 import { getLimits } from "@/lib/plan";
-import { getValidationReceipts, formatReceiptsForAIContext } from "@/lib/cofounder/validationReceipts";
+import { getValidationReceipts, syncValidationReceiptsFromServer, formatReceiptsForAIContext } from "@/lib/cofounder/validationReceipts";
 import { generateValidationAction } from "@/lib/cofounder/validationReceipts";
 import { storage } from "@/lib/storage";
 
@@ -272,6 +272,7 @@ export async function generateBlueprint(
   onProgress?.("Parsing your idea...");
 
   // Build API payload — include receipts for CoFounder handoff layer
+  await syncValidationReceiptsFromServer();
   const receipts = getValidationReceipts();
   const receiptContext = formatReceiptsForAIContext(receipts);
 

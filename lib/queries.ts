@@ -19,7 +19,7 @@ import {
   type ProjectSummary,
   type BuildMindTask,
 } from "@/lib/buildmind";
-import { ACTIVE_PROJECT_CHANGED_EVENT, getActiveProjectId } from "@/lib/api";
+import { ACTIVE_PROJECT_CHANGED_EVENT, getActiveProjectId, syncActiveProjectIdFromServer } from "@/lib/api";
 import { observeTaskEvent } from "@/lib/founderMemory";
 // A5 FIX: founderContext imports removed — momentumOnTaskComplete/updateFounderContext were the
 // client-side momentum writers that raced with the server. Server is now sole authority.
@@ -53,6 +53,7 @@ export function useActiveProjectId() {
   useEffect(() => {
     const refresh = () => setActiveProjectIdState(getActiveProjectId());
     refresh();
+    syncActiveProjectIdFromServer().then(setActiveProjectIdState).catch(() => {});
     window.addEventListener("storage", refresh);
     window.addEventListener(ACTIVE_PROJECT_CHANGED_EVENT, refresh);
     return () => {
