@@ -168,7 +168,6 @@ export default function OverviewPage() {
       new Date(b.lastActivity).getTime() > new Date(a.lastActivity).getTime() ? b : a
     );
   }, [summaries]);
-              value: (!overviewLoading && streak === 0) ? "0d" : (streak > 0) ? `${streak}d` : "—",
   const score = activeProject ? computeStartupScore({ ...activeProject, xp: getXP(), streak }) : 0;
 
   const scoreDelta = useMemo(() => {
@@ -318,7 +317,7 @@ export default function OverviewPage() {
             },
             {
               label: "Streak",
-              value: streak > 0 ? `${streak}d` : "—",
+              value: (!overviewLoading && streak === 0) ? "0d" : (streak > 0) ? `${streak}d` : "—",
               tooltip: "Consecutive days you've completed at least one task or reflection. Breaks if you miss a day. Used to unlock advanced features.",
             },
             { label: "Completed", value: milestonesCompleted > 0 ? milestonesCompleted : doneTasks > 0 ? doneTasks : "—" },
