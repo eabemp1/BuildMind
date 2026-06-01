@@ -53,7 +53,6 @@ export const NAV: readonly NavItemConfig[] = [
   { href: "/upgrade",          label: "Upgrade",         icon: BarChart3, enabled: true,  hidden: false, section: "Settings", badge: null, showDot: false, unlocksAt: 0 },
 
   // ── Hidden / routable-only ────────────────────────────────────────────────
-  { href: "/reflect",          label: "Reflect",         icon: CircleDot, enabled: true,  hidden: true, section: null, badge: null, showDot: true,  unlocksAt: 1 },
   { href: "/overview",         label: "Execution",       icon: BarChart3, enabled: true,  hidden: true, section: null, badge: null, showDot: false, unlocksAt: 3 },
   { href: "/insights",         label: "Insights",        icon: BarChart3, enabled: true,  hidden: true, section: null, badge: null, showDot: false, unlocksAt: 3 },
   { href: "/ventures",         label: "Ventures",        icon: BarChart3, enabled: false, hidden: true, section: null, badge: null, requiredPlan: "builder" as Plan, showDot: false, unlocksAt: 7 },

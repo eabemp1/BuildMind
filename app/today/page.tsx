@@ -2108,15 +2108,6 @@ function TodayContent() {
           {submitting ? "Recording…" : <>Record check-in <ArrowRight size={16} /></>}
         </motion.button>
       </motion.div>
-      {/* Product Improvement #1 — Reflect bottom sheet */}
-      <ReflectSheet
-        open={showReflectSheet}
-        onClose={() => setShowReflectSheet(false)}
-        onDone={handleReflectionDone}
-        projectStage={project?.startup_stage ?? "Idea"}
-        taskAction={actionData?.action}
-      />
-
       {/* Beyond the 3 changes — Loop Narrative (the 8.5 unlock) */}
       <LoopNarrative
         reflectionCount={reflectionCount}

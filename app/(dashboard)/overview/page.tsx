@@ -218,7 +218,7 @@ export default function OverviewPage() {
     : noReflectIn3Days
     ? "No reflection logged in 3 days — tomorrow's task will be less accurate."
     : "Completion rate is below 50% — break your next task into smaller steps.";
-  const attentionRoute = noReflectIn3Days ? "/reflect" : "/today";
+  const attentionRoute = "/today";
   const attentionLabel = noReflectIn3Days ? "Reflect on today →" : "Go to today →";
 
   if (isLoading || overviewLoading) {

@@ -82,7 +82,7 @@ export function computeCompleteness(fields: ProfileFields): {
       label: "Avoidance zones",
       points: 10,
       complete: (fields.avoidanceZones?.length ?? 0) > 0,
-      action: "/reflect",
+      action: "/today",
       actionLabel: "Complete a reflection",
     },
     {

@@ -382,7 +382,6 @@ export default function OwnerPanel() {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 8 }}>
               {[
                 { href: "/today", label: "⚡ Today" },
-                { href: "/reflect", label: "🧠 Reflect" },
                 { href: "/overview", label: "🗺️ Overview" },
                 { href: "/projects", label: "📁 Projects" },
                 { href: "/ventures", label: "🏛️ Ventures" },
