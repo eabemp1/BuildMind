@@ -7,7 +7,7 @@ import Link from "next/link";
 import { computeStartupScore } from "@/lib/buildmind";
 import { useProjectSummariesQuery, useDashboardOverviewQuery } from "@/lib/queries";
 import { recordScore, markActiveToday, recordPendingTasks, syncUrgencyFromServer } from "@/lib/urgency";
-import { getStoredStreak } from "@/lib/plan";
+import { getStoredStreak, syncStreakFromServer } from "@/lib/plan";
 import { getXP, getScoreHistory, syncScoreHistory, syncXP, computeConsistencyBonus } from "@/lib/scoring";
 import { ArrowRight, CheckCircle2 } from "lucide-react";
 import { ProfileCompletenessBar } from "@/components/ProfileCompletenessBar";
@@ -138,7 +138,12 @@ export default function OverviewPage() {
     // Get userId for today-done check
     import("@/lib/supabase/client").then(({ createClient }) => {
       createClient().auth.getUser().then(({ data }) => {
-        if (data?.user?.id) setUserId(data.user.id);
+        const uid = data?.user?.id ?? null;
+        if (uid) {
+          setUserId(uid);
+          storage.onSignIn(uid);
+          syncStreakFromServer().then(refresh).catch(refresh);
+        }
       });
     });
     return () => {
