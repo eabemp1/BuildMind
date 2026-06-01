@@ -90,10 +90,14 @@ export default function ReflectPage() {
       setTodayAction(action?.action ?? "");
       setStreak(getStoredStreak());
     } catch {}
-    fetchBehaviorState<{ today_action: { action?: string } }>(["today_action"]).then(values => {
+    fetchBehaviorState<{ today_action: { action?: string }; reflect_done_date: string }>(["today_action", "reflect_done_date"]).then(values => {
       if (values.today_action?.action) {
         storage.setJSON("bm_today_action", values.today_action);
         setTodayAction(values.today_action.action);
+      }
+      const today = new Date().toISOString().slice(0, 10);
+      if (values.reflect_done_date === today) {
+        setDone(true);
       }
     }).catch(() => {});
     (async () => {
@@ -234,6 +238,7 @@ export default function ReflectPage() {
       storage.setJSON("bm_reflect_history", newHistory);
       persistBehaviorState({
         today_action: { action: todayAction, outcome, note: richNote, confidence },
+        reflect_done_date: new Date().toISOString().slice(0, 10),
       });
       const stats = getAchievementStats();
       updateAchievementStats({ ...stats, reflectionsLogged: (stats.reflectionsLogged ?? 0) + 1 });

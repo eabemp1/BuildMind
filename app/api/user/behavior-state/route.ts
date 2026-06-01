@@ -15,6 +15,7 @@ const ALLOWED_KEYS = new Set([
   "today_action",
   "today_action_cache",
   "checkin_done_date",
+  "reflect_done_date",
   "push_prompted_at",
   "push_prompt_shown",
   "push_banner_dismissed_date",

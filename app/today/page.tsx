@@ -445,11 +445,6 @@ function TodayContent() {
   }, []);
 
   useEffect(() => {
-    syncStreakFromServer().then(s => setStreak(s)).catch(() => {
-      try { setStreak(getStoredStreak()); } catch {}
-    });
-    syncUrgencyFromServer().catch(() => {});
-
     const supabase = createClient();
     supabase.auth.getUser().then(({ data }) => {
       const uid = data.user?.id ?? null;
@@ -462,6 +457,11 @@ function TodayContent() {
 
       if (uid) {
         storage.onSignIn(uid);
+        syncStreakFromServer().then(s => setStreak(s)).catch(() => {
+          try { setStreak(getStoredStreak()); } catch {}
+        });
+        syncUrgencyFromServer().catch(() => {});
+
         const today = localDayKey();
         const checkinKey = `bm_checkin_done_date_${uid}`;
         const cachedDoneDate = storage.get(checkinKey);
@@ -1249,7 +1249,7 @@ function TodayContent() {
               {project.startup_stage}
             </span>
           )}
-          {streak > 1 && (
+          {streak > 0 && (
             <span style={{ marginLeft: "auto", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-text4)" }}>
               {streak}d
             </span>
@@ -1461,7 +1461,7 @@ function TodayContent() {
             </span>
           </div>
 
-          {streak > 1 && (
+          {streak > 0 && (
             <div
               style={{
                 display: "flex",
