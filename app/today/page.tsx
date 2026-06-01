@@ -1033,6 +1033,24 @@ function TodayContent() {
     } finally { setSubmitting(false); checkInFired.current = false; }
   }
 
+  function handleReflectionDone() {
+    setShowReflectSheet(false);
+    // Write reflection timestamp so cache-bust logic sees it on this tab
+    if (userId) {
+      storage.set(`bm_last_reflection_ts_${userId}`, Date.now().toString());
+    }
+    // Notify other tabs so their cache is also busted
+    const todayStr = localDayKey();
+    broadcastTabEvent({ type: "reflection_done", date: todayStr });
+    setReflectionCount(c => {
+      const next = c + 1;
+      try {
+        storage.set(`bm_reflection_count_${todayStr}`, String(next));
+      } catch {}
+      return next;
+    });
+  }
+
   if (isLoading) return (
     <div className="mx-auto max-w-[820px] px-6 py-7">
       <div className="mb-6 space-y-3 border-b border-[var(--bm-border)] pb-5">
@@ -1213,6 +1231,13 @@ function TodayContent() {
             </button>
           </div>
         </div>
+        <ReflectSheet
+          open={showReflectSheet}
+          onClose={() => setShowReflectSheet(false)}
+          onDone={handleReflectionDone}
+          projectStage={project?.startup_stage ?? "Idea"}
+          taskAction={actionData?.action}
+        />
       </div>
     );
   }
@@ -2087,23 +2112,7 @@ function TodayContent() {
       <ReflectSheet
         open={showReflectSheet}
         onClose={() => setShowReflectSheet(false)}
-        onDone={() => {
-          setShowReflectSheet(false);
-          // Write reflection timestamp so cache-bust logic sees it on this tab
-          if (userId) {
-            storage.set(`bm_last_reflection_ts_${userId}`, Date.now().toString());
-          }
-          // Notify other tabs so their cache is also busted
-          const todayStr = localDayKey();
-          broadcastTabEvent({ type: "reflection_done", date: todayStr });
-          setReflectionCount(c => {
-            const next = c + 1;
-            try {
-              storage.set(`bm_reflection_count_${todayStr}`, String(next));
-            } catch {}
-            return next;
-          });
-        }}
+        onDone={handleReflectionDone}
         projectStage={project?.startup_stage ?? "Idea"}
         taskAction={actionData?.action}
       />
