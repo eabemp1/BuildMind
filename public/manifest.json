@@ -29,9 +29,9 @@
   ],
   "screenshots": [
     {
-      "src": "/logo/buildmind-og-image.svg",
+      "src": "/logo/buildmind-og-image.png",
       "sizes": "1200x630",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "form_factor": "wide"
     }
   ],

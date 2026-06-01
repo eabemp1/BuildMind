@@ -5,8 +5,23 @@ import { Check, Zap, Star, Shield } from "lucide-react";
 import { PLAN_PRICE_LABEL } from "@/lib/pricing";
 
 export const metadata: Metadata = {
-  title: "Pricing | BuildMind — The next move, already decided",
-  description: "BuildMind removes the decision of what to do next. Free to try. Builder plan gives you the system every day.",
+  title: "Pricing | BuildMind — Free & Builder Plan",
+  description:
+    "BuildMind is free to start. Builder plan ($39/month) gives you unlimited daily actions, AI coaching, weekly reports, and full Break My Startup stress tests.",
+  alternates: { canonical: "https://buildmind.live/pricing" },
+  openGraph: {
+    title: "BuildMind Pricing — Free & Builder Plan",
+    description:
+      "Start free. Upgrade when you're ready. Builder plan gives you the full AI execution system.",
+    url: "https://buildmind.live/pricing",
+    images: [{ url: "/logo/buildmind-og-image.png", width: 1200, height: 630 }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "BuildMind Pricing",
+    description: "Free to start. $39/month for the full system.",
+    images: ["/logo/buildmind-og-image.png"],
+  },
 };
 
 const FREE_FEATURES = [

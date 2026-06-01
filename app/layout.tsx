@@ -71,7 +71,7 @@ export const metadata: Metadata = {
       "BuildMind watches your startup context and tells you the one highest-leverage thing to do next. No lists. No frameworks. Just the next move.",
     images: [
       {
-        url: "/logo/buildmind-og-image.svg",
+        url: "/logo/buildmind-og-image.png",
         width: 1200,
         height: 630,
         alt: "BuildMind — The next move, already decided",
@@ -83,7 +83,7 @@ export const metadata: Metadata = {
     title: "BuildMind — AI Chief of Staff for Stuck Founders",
     description:
       "BuildMind decides the next execution move, stress-tests weak ideas, and keeps founder momentum honest.",
-    images: ["/logo/buildmind-og-image.svg"],
+    images: [{ url: "/logo/buildmind-og-image.png", width: 1200, height: 630 }],
     creator: "@buildmind_os",
   },
   // canonical is set per-page via metadata.alternates in each page file
@@ -133,15 +133,13 @@ const jsonLd = [
         description: "Unlimited actions, AI Coach, weekly reports, and full Break My Startup analysis",
       },
     ],
-    aggregateRating: {
-      "@type": "AggregateRating",
-      ratingValue: "4.9",
-      reviewCount: "12",
-    },
+    applicationSubCategory: "ProductivityApplication",
+    screenshot: "https://buildmind.live/logo/buildmind-og-image.png",
     creator: {
-      "@type": "Person",
-      name: "BuildMind Team",
-      sameAs: "https://x.com/buildmind_os",
+      "@type": "Organization",
+      name: "BuildMind",
+      url: "https://buildmind.live",
+      sameAs: ["https://x.com/buildmind_os"],
     },
   },
   {
@@ -221,6 +219,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=3" />
         <link rel="shortcut icon" href="/favicon.svg?v=3" />
         <link rel="apple-touch-icon" href="/logo/apple-touch-icon.png" />
+        <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
         {/* Theme */}
         <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f2f3f9" />
         <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0C0D0F" />

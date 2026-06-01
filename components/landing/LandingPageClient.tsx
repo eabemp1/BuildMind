@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { BrandMark } from "@/components/layout/logo";
+import { sanitizeOutput } from "@/lib/sanitizeOutput";
 
 // ── "A Day With BuildMind" timeline data ──────────────────────────────────────
 const DAY_TIMELINE = [
@@ -740,7 +741,7 @@ function DemoModal({ onClose }: { onClose: () => void }) {
               controls
               playsInline
               preload="metadata"
-              poster="/logo/buildmind-og-image.svg"
+              poster="/logo/buildmind-og-image.png"
               onPlay={() => setPlaying(true)}
               onPause={() => setPlaying(false)}
               onEnded={() => setPlaying(false)}
@@ -877,7 +878,7 @@ function BreakMyStartupSection() {
                 <span className="text-sm font-medium text-[var(--bm-text2)]">Overall Risk Level:</span>
                 <Badge variant={severityVariant(result.overallRisk)} size="md" dot>{result.overallRisk}</Badge>
               </div>
-              {result.summary && <p className="text-sm text-[var(--bm-text2)] leading-relaxed">{result.summary}</p>}
+              {result.summary && <p className="text-sm text-[var(--bm-text2)] leading-relaxed">{sanitizeOutput(result.summary)}</p>}
               {(result.risks ?? []).map((risk, i) => (
                 <motion.div key={i} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}>
                   <Card className="p-4 flex flex-col gap-2">
@@ -885,10 +886,10 @@ function BreakMyStartupSection() {
                       <span className="text-sm font-semibold text-[var(--bm-text)]">{risk.category}</span>
                       <Badge variant={severityVariant(risk.severity)} dot>{risk.severity}</Badge>
                     </div>
-                    <p className="text-sm text-[var(--bm-text2)] leading-relaxed">{risk.description}</p>
+                    <p className="text-sm text-[var(--bm-text2)] leading-relaxed">{sanitizeOutput(risk.description)}</p>
                     <div className="flex items-start gap-2 text-xs p-2.5 rounded-lg mt-1" style={{ background: "var(--bm-bg3)", color: "var(--bm-text3)" }}>
                       <Shield size={12} className="shrink-0 mt-0.5" style={{ color: "var(--bm-accent)" }} />
-                      <span>{risk.mitigation}</span>
+                      <span>{sanitizeOutput(risk.mitigation)}</span>
                     </div>
                   </Card>
                 </motion.div>
