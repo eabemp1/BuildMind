@@ -7,7 +7,7 @@ import { updateAchievementStats, checkAndUnlockAchievements, getAchievementStats
 import { incrementDailyStreak, getStoredStreak } from "@/lib/plan";
 import { notifyStreakMilestone } from "@/lib/notifications";
 import { trackFunnelStep } from "@/lib/onboarding-analytics";
-import { CheckCircle2, ChevronRight, Flame, Brain, ArrowRight } from "lucide-react";
+import { CheckCircle2, ChevronRight, Flame, Brain, ArrowRight, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { storage } from "@/lib/storage";
 import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
@@ -18,8 +18,16 @@ import TestimonialModal, {
   type TestimonialSource,
 } from "@/components/TestimonialModal";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { sanitizeOutput } from "@/lib/sanitizeOutput";
 
 type Outcome = "completed" | "blocked" | "partial" | "learned";
+type ReflectionHistoryEntry = {
+  date: number;
+  outcome: string;
+  note: string;
+  confidence: number;
+  causality: string;
+};
 
 const OUTCOME_CHIPS: { id: Outcome; label: string; sublabel: string; color: string; bg: string; border: string; icon: string }[] = [
   { id: "completed", label: "Nailed it",         sublabel: "Made real progress",  color: "var(--bm-green)", bg: "var(--bm-accent-dim)",   border: "var(--bm-accent-bd)",         icon: "✓" },
@@ -42,7 +50,12 @@ function buildFallbackCausality(o: Outcome, n: string, c: number): string {
 export default function ReflectPage() {
   const router = useRouter();
   const [outcome, setOutcome] = useState<Outcome | null>(null);
-  const [note, setNote] = useState("");
+  const [whatTried, setWhatTried] = useState("");
+  const [whatHappened, setWhatHappened] = useState("");
+  const [whatLearned, setWhatLearned] = useState("");
+  const [blocker, setBlocker] = useState("");
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [extracting, setExtracting] = useState(false);
   const [confidence, setConfidence] = useState(3);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
@@ -59,7 +72,7 @@ export default function ReflectPage() {
     Revenue:    "Tomorrow: map the biggest drop-off between awareness and payment.",
   };
   const [todayAction, setTodayAction] = useState("");
-  const [history, setHistory] = useState<any[]>([]);
+  const [history, setHistory] = useState<ReflectionHistoryEntry[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [streak, setStreak] = useState(0);
   const [startupStage, setStartupStage] = useState("Idea");
@@ -67,6 +80,7 @@ export default function ReflectPage() {
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [testimonialSource, setTestimonialSource] = useState<TestimonialSource | null>(null);
   const [historySynthesis, setHistorySynthesis] = useState<string | null>(null);
+  const canSubmit = outcome !== null && whatTried.trim().length > 0;
 
   useEffect(() => {
     try {
@@ -162,28 +176,64 @@ export default function ReflectPage() {
     })();
   }, []);
 
+  async function handleFileExtract(file: File) {
+    setExtracting(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/reflect/extract", { method: "POST", body: formData });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.what_tried)    setWhatTried(prev    => prev || data.what_tried);
+        if (data.what_happened) setWhatHappened(prev => prev || data.what_happened);
+        if (data.what_learned)  setWhatLearned(prev  => prev || data.what_learned);
+        if (data.blocker)       setBlocker(prev       => prev || data.blocker);
+        if (data.outcome)       setOutcome(prev       => prev || data.outcome);
+      }
+    } catch {}
+    setExtracting(false);
+  }
+
   async function handleSubmit() {
-    if (!outcome) return;
+    if (!canSubmit) return;
     setSubmitting(true);
     try {
-      const fallback = buildFallbackCausality(outcome, note, confidence);
-      let caus = fallback;
+      const richNote = [
+        whatTried    ? `Tried: ${whatTried}` : "",
+        whatHappened ? `Result: ${whatHappened}` : "",
+        whatLearned  ? `Learned: ${whatLearned}` : "",
+        blocker      ? `Blocker: ${blocker}` : "",
+      ].filter(Boolean).join(" | ");
+
+      let caus = buildFallbackCausality(outcome, richNote, confidence);
       let next = "";
       try {
         const res = await fetch("/api/ai/reflect-action", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ outcome, note, confidence, todayAction, stage: startupStage, streak, projectId: activeProjectId }),
+          body: JSON.stringify({
+            outcome,
+            note: richNote,
+            what_tried: whatTried,
+            what_happened: whatHappened,
+            what_learned: whatLearned,
+            blocker: blocker || undefined,
+            confidence,
+            stage: startupStage,
+            todayAction,
+            streak,
+            projectId: activeProjectId,
+          }),
         });
-        if (res.ok) { const d = await res.json(); const payload = d.data ?? d; caus = payload.causality || fallback; next = payload.nextAction || ""; }
+        if (res.ok) { const d = await res.json(); const payload = d.data ?? d; caus = payload.causality || caus; next = payload.nextAction || ""; }
       } catch {}
       setCausality(caus);
       setNextAction(next);
-      const entry = { date: Date.now(), outcome, note, confidence, causality: caus };
+      const entry = { date: Date.now(), outcome, note: richNote, confidence, causality: caus };
       const newHistory = [...history, entry].slice(-30);
       setHistory(newHistory);
       storage.setJSON("bm_reflect_history", newHistory);
       persistBehaviorState({
-        today_action: { action: todayAction, outcome, note, confidence },
+        today_action: { action: todayAction, outcome, note: richNote, confidence },
       });
       const stats = getAchievementStats();
       updateAchievementStats({ ...stats, reflectionsLogged: (stats.reflectionsLogged ?? 0) + 1 });
@@ -196,6 +246,11 @@ export default function ReflectPage() {
       trackFunnelStep("first_reflect");
       const rfKey = `bm_reflect_done_${new Date().toISOString().slice(0, 10)}`;
       storage.set(rfKey, "1");
+      const todayStr = new Date().toISOString().slice(0, 10);
+      try {
+        const prev = parseInt(storage.get(`bm_reflection_count_${todayStr}`) ?? "0", 10);
+        storage.set(`bm_reflection_count_${todayStr}`, String(prev + 1));
+      } catch {}
       if (userId) storage.set(`bm_last_reflection_ts_${userId}`, Date.now().toString());
       broadcastTabEvent({ type: "reflection_done", date: new Date().toISOString().slice(0, 10) });
 
@@ -223,13 +278,13 @@ export default function ReflectPage() {
               <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-accent)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10, display: "flex", alignItems: "center", gap: 5 }}>
                 <Brain size={10} /> AI Causality
               </div>
-              <p style={{ fontSize: 14, color: "var(--bm-text)", lineHeight: 1.6, margin: 0, fontStyle: "italic" }}>&ldquo;{causality}&rdquo;</p>
+              <p style={{ fontSize: 14, color: "var(--bm-text)", lineHeight: 1.6, margin: 0, fontStyle: "italic" }}>&ldquo;{sanitizeOutput(causality)}&rdquo;</p>
             </div>
           )}
           {displayNextAction && (
             <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: "18px 20px", marginBottom: 20 }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Tomorrow's Focus</div>
-              <p style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.6, margin: 0 }}>{displayNextAction}</p>
+              <p style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.6, margin: 0 }}>{sanitizeOutput(displayNextAction)}</p>
             </div>
           )}
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -276,7 +331,7 @@ export default function ReflectPage() {
           <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-accent)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8, display: "flex", alignItems: "center", gap: 5 }}>
             <Brain size={10} /> Pattern across your reflections
           </div>
-          <p style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.6, margin: 0 }}>{historySynthesis}</p>
+          <p style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.6, margin: 0 }}>{sanitizeOutput(historySynthesis)}</p>
         </motion.div>
       )}
 
@@ -298,25 +353,41 @@ export default function ReflectPage() {
       </motion.div>
 
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.10 }}
-        style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 14, padding: "18px clamp(14px, 4vw, 22px)", marginBottom: 12 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 10 }}>Most important learning today <span style={{ color: "var(--bm-text3)", fontWeight: 400 }}>(optional)</span></div>
-        <textarea value={note} onChange={e => setNote(e.target.value)} rows={3} placeholder="Be specific. What did you do? What did you learn? What got in the way?"
-          style={{ width: "100%", background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: 10, padding: "11px 14px", fontSize: 13, color: "var(--bm-text)", outline: "none", fontFamily: "inherit", resize: "none", boxSizing: "border-box", lineHeight: 1.6, transition: "border-color 0.15s" }}
-          onFocus={e => { e.target.style.borderColor = "var(--bm-accent-bd)"; }}
-          onBlur={e => { e.target.style.borderColor = "var(--bm-border2)"; }} />
+        style={{ border: "1px dashed var(--bm-border2)", borderRadius: 12, padding: "12px 16px", marginBottom: 12, display: "flex", alignItems: "center", gap: 10, cursor: "pointer", background: uploadedFile ? "var(--bm-bg2)" : "transparent" }}
+        onClick={() => document.getElementById("reflect-file-input")?.click()}>
+        <span style={{ fontSize: 18 }}>📎</span>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)" }}>
+            {extracting ? "Extracting data from file…" : uploadedFile ? uploadedFile.name : "Upload markdown, CSV, or text log"}
+          </div>
+          <div style={{ fontSize: 11, color: "var(--bm-text4)", marginTop: 2 }}>AI will extract your data points automatically</div>
+        </div>
+        {uploadedFile && !extracting && <span style={{ fontSize: 11, color: "var(--bm-green)", fontWeight: 700 }}>✓ Done</span>}
       </motion.div>
 
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.13 }}
-        style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 14, padding: "18px clamp(14px, 4vw, 22px)", marginBottom: 12 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 4 }}>What will you avoid tomorrow? <span style={{ color: "var(--bm-text3)", fontWeight: 400 }}>(optional)</span></div>
-        <p style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.09em", color: "var(--bm-accent)", marginBottom: 10 }}>
-          BuildMind uses this to calibrate tomorrow&apos;s task. Be honest, not optimistic.
-        </p>
-        <textarea rows={2} placeholder="The task I keep postponing, the conversation I've been avoiding, the decision I'm rationalizing..."
-          style={{ width: "100%", background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: 10, padding: "11px 14px", fontSize: 13, color: "var(--bm-text)", outline: "none", fontFamily: "inherit", resize: "none", boxSizing: "border-box", lineHeight: 1.6, transition: "border-color 0.15s" }}
-          onFocus={e => { e.target.style.borderColor = "var(--bm-accent-bd)"; }}
-          onBlur={e => { e.target.style.borderColor = "var(--bm-border2)"; }} />
-      </motion.div>
+      <input id="reflect-file-input" type="file" accept=".md,.csv,.txt" style={{ display: "none" }}
+        onChange={async (e) => { const file = e.target.files?.[0]; if (!file) return; setUploadedFile(file); await handleFileExtract(file); }} />
+
+      {(["what_tried", "what_happened", "what_learned", ...(outcome === "blocked" ? ["blocker"] : [])] as const).map((field) => {
+        const cfg = {
+          what_tried:    { label: "What did you actually try?",     required: true,  placeholder: "Specific action: posted on Reddit r/indiehackers, cold-emailed 5 founders…", value: whatTried,     set: setWhatTried },
+          what_happened: { label: "What concretely happened?",      required: false, placeholder: "Numbers if possible: 3 replies, 0 signups, 1 interested DM, post got 47 upvotes…", value: whatHappened,  set: setWhatHappened },
+          what_learned:  { label: "What did you learn?",            required: false, placeholder: "Insight you can act on tomorrow: founders want X not Y, the problem is actually Z…", value: whatLearned,   set: setWhatLearned },
+          blocker:       { label: "What exactly is blocking you?",  required: false, placeholder: "Specific blocker — not 'motivation', but: can't find users, auth keeps failing…", value: blocker,       set: setBlocker },
+        }[field];
+        if (!cfg) return null;
+        return (
+          <motion.div key={field} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.10 }}
+            style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 14, padding: "18px clamp(14px, 4vw, 22px)", marginBottom: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 10 }}>
+              {cfg.label}
+              {cfg.required && <span style={{ color: "var(--bm-accent)", marginLeft: 4 }}>*</span>}
+            </div>
+            <textarea value={cfg.value} onChange={e => cfg.set(e.target.value)} placeholder={cfg.placeholder} rows={2}
+              style={{ width: "100%", background: "var(--bm-bg3)", border: `1px solid ${cfg.value.trim() ? "var(--bm-border3)" : "var(--bm-border2)"}`, borderRadius: 10, padding: "11px 14px", fontSize: 13, color: "var(--bm-text)", outline: "none", fontFamily: "inherit", resize: "none", boxSizing: "border-box", lineHeight: 1.6, transition: "border-color 0.15s" }} />
+          </motion.div>
+        );
+      })}
 
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.14 }}
         style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 14, padding: "18px clamp(14px, 4vw, 22px)", marginBottom: 20 }}>
@@ -332,7 +403,7 @@ export default function ReflectPage() {
         </div>
       </motion.div>
 
-      <motion.button whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }} onClick={handleSubmit} disabled={!outcome || submitting}
+      <motion.button whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }} onClick={handleSubmit} disabled={!canSubmit || submitting}
         style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", padding: "14px 0", borderRadius: 12, border: "none", background: !outcome ? "var(--bm-bg4)" : "var(--grad-primary)", color: !outcome ? "var(--bm-text3)" : "white", fontWeight: 700, fontSize: 14, cursor: !outcome ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
         {submitting ? "Saving…" : <>Save reflection <ArrowRight size={16} /></>}
       </motion.button>
