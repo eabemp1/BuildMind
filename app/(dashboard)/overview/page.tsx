@@ -155,7 +155,6 @@ export default function OverviewPage() {
       window.removeEventListener("bm_streak_updated", refresh);
     };
   }, []);
-              value: (!overviewLoading && streak === 0) ? "0d" : (streak > 0) ? `${streak}d` : "—",
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 60000);
     return () => clearInterval(t);
@@ -169,7 +168,7 @@ export default function OverviewPage() {
       new Date(b.lastActivity).getTime() > new Date(a.lastActivity).getTime() ? b : a
     );
   }, [summaries]);
-
+              value: (!overviewLoading && streak === 0) ? "0d" : (streak > 0) ? `${streak}d` : "—",
   const score = activeProject ? computeStartupScore({ ...activeProject, xp: getXP(), streak }) : 0;
 
   const scoreDelta = useMemo(() => {
