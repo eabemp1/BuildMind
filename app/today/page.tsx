@@ -22,9 +22,9 @@ import { storage } from "@/lib/storage";
 import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
 import { MobileCheckin } from "@/components/MobileCheckin";
 import { ProfileCompletenessBar } from "@/components/ProfileCompletenessBar";
-import { ReflectSheet } from "@/components/ReflectSheet";
 import { LoopNarrative } from "@/components/LoopNarrative";
 import { broadcastTabEvent, useTabSync } from "@/lib/tabSync";
+import { sanitizeOutput } from "@/lib/sanitizeOutput";
 import type { MorningBriefing } from "@/lib/founderContext";
 
 type Outcome = "completed" | "blocked" | "partial" | "learned";
@@ -387,15 +387,6 @@ function TodayContent() {
   const checkInFired = useRef(false);
   // Product Improvement #2 — Task-first layout: context collapsed by default
   const [isContextOpen, setIsContextOpen] = useState(false);
-  // Product Improvement #1 — Reflect as a bottom-sheet modal (not separate route)
-  const [showReflectSheet, setShowReflectSheet] = useState(false);
-  const [reflectionCount, setReflectionCount] = useState(() => {
-    // Persist across navigation — LoopNarrative uses this for progressive unlock
-    try {
-      const today = localDayKey();
-      return parseInt(storage.get(`bm_reflection_count_${today}`) ?? "0", 10);
-    } catch { return 0; }
-  });
   const [userId, setUserId] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState<string | null>(null);
 
@@ -1033,24 +1024,6 @@ function TodayContent() {
     } finally { setSubmitting(false); checkInFired.current = false; }
   }
 
-  function handleReflectionDone() {
-    setShowReflectSheet(false);
-    // Write reflection timestamp so cache-bust logic sees it on this tab
-    if (userId) {
-      storage.set(`bm_last_reflection_ts_${userId}`, Date.now().toString());
-    }
-    // Notify other tabs so their cache is also busted
-    const todayStr = localDayKey();
-    broadcastTabEvent({ type: "reflection_done", date: todayStr });
-    setReflectionCount(c => {
-      const next = c + 1;
-      try {
-        storage.set(`bm_reflection_count_${todayStr}`, String(next));
-      } catch {}
-      return next;
-    });
-  }
-
   if (isLoading) return (
     <div className="mx-auto max-w-[820px] px-6 py-7">
       <div className="mb-6 space-y-3 border-b border-[var(--bm-border)] pb-5">
@@ -1081,7 +1054,7 @@ function TodayContent() {
             <div>
               <p style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", margin: 0 }}>Mandatory checkpoint</p>
               <p style={{ fontSize: 14, fontWeight: 700, color: "var(--bm-text)", margin: 0, lineHeight: 1.3 }}>
-                You just completed: {milestoneBreak.triggerLabel}
+                You just completed: {sanitizeOutput(milestoneBreak.triggerLabel)}
               </p>
             </div>
           </div>
@@ -1105,7 +1078,7 @@ function TodayContent() {
                   paddingBottom: 2,
                 }}
               >
-                <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.6 }}>{point}</p>
+                <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.6 }}>{sanitizeOutput(point)}</p>
               </motion.div>
             ))}
           </div>
@@ -1113,7 +1086,7 @@ function TodayContent() {
           {/* Recommended action */}
           <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 12, padding: "16px 18px", marginBottom: 24 }}>
             <p style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 8px" }}>Recommended action before continuing</p>
-            <p style={{ fontSize: 13, color: "var(--bm-text)", fontWeight: 500, margin: 0, lineHeight: 1.6 }}>→ {milestoneBreak.recommended_action}</p>
+            <p style={{ fontSize: 13, color: "var(--bm-text)", fontWeight: 500, margin: 0, lineHeight: 1.6 }}>→ {sanitizeOutput(milestoneBreak.recommended_action)}</p>
           </div>
 
           {/* Acknowledge button */}
@@ -1215,7 +1188,7 @@ function TodayContent() {
           )}
 
           <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 10, justifyContent: "center" }}>
-            <button onClick={() => setShowReflectSheet(true)} style={{ padding: "12px 20px", borderRadius: 10, border: "none", background: "var(--grad-primary)", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Reflect on today →</button>
+            <button onClick={() => router.push("/reflect")} style={{ padding: "12px 20px", borderRadius: 10, border: "none", background: "var(--grad-primary)", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Reflect on today →</button>
             <button onClick={() => router.push("/overview")} style={{ padding: "12px 20px", borderRadius: 10, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text2)", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>View full dashboard</button>
           </div>
         </motion.div>
@@ -1231,13 +1204,6 @@ function TodayContent() {
             </button>
           </div>
         </div>
-        <ReflectSheet
-          open={showReflectSheet}
-          onClose={() => setShowReflectSheet(false)}
-          onDone={handleReflectionDone}
-          projectStage={project?.startup_stage ?? "Idea"}
-          taskAction={actionData?.action}
-        />
       </div>
     );
   }
@@ -1319,7 +1285,7 @@ function TodayContent() {
               </div>
               {project?.problem && (
                 <p style={{ fontSize: 12, color: "var(--bm-text3)", marginBottom: 6, lineHeight: 1.5, fontStyle: "italic" }}>
-                  &ldquo;{project.problem.slice(0, 100)}{project.problem.length > 100 ? "…" : ""}&rdquo;
+                  &ldquo;{sanitizeOutput(project.problem).slice(0, 100)}{sanitizeOutput(project.problem).length > 100 ? "…" : ""}&rdquo;
                 </p>
               )}
               {/* Causal link inset — identical structure to yesterdayReflection */}
@@ -1380,7 +1346,7 @@ function TodayContent() {
                 {initialAnalysis.key_risks.map((risk, i) => (
                   <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 7 }}>
                     <div style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--bm-amber)", flexShrink: 0, marginTop: 5 }} />
-                    <p style={{ fontSize: 12, color: "var(--bm-text2)", margin: 0, lineHeight: 1.5 }}>{risk}</p>
+                    <p style={{ fontSize: 12, color: "var(--bm-text2)", margin: 0, lineHeight: 1.5 }}>{sanitizeOutput(risk)}</p>
                   </div>
                 ))}
               </div>
@@ -1393,7 +1359,7 @@ function TodayContent() {
                 {initialAnalysis.immediate_priorities.map((p, i) => (
                   <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 7 }}>
                     <div style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--bm-accent)", flexShrink: 0, marginTop: 5 }} />
-                    <p style={{ fontSize: 12, color: "var(--bm-text2)", margin: 0, lineHeight: 1.5 }}>{p}</p>
+                    <p style={{ fontSize: 12, color: "var(--bm-text2)", margin: 0, lineHeight: 1.5 }}>{sanitizeOutput(p)}</p>
                   </div>
                 ))}
               </div>
@@ -1409,7 +1375,7 @@ function TodayContent() {
             ].map((stat, i, arr) => (
               <div key={stat.label} style={{ flex: 1, padding: "10px 12px", borderRight: i < arr.length - 1 ? "1px solid var(--bm-border)" : "none" }}>
                 <p style={{ fontSize: 9, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 3px" }}>{stat.label}</p>
-                <p style={{ fontSize: 11, fontWeight: 600, color: "var(--bm-text)", margin: 0, lineHeight: 1.3 }}>{stat.value}</p>
+                <p style={{ fontSize: 11, fontWeight: 600, color: "var(--bm-text)", margin: 0, lineHeight: 1.3 }}>{sanitizeOutput(stat.value)}</p>
               </div>
             ))}
           </div>
@@ -1621,7 +1587,7 @@ function TodayContent() {
 
               {yesterdayReflection.action && (
                 <p style={{ fontSize: 12, color: "var(--bm-text3)", marginBottom: 6, lineHeight: 1.5, fontStyle: "italic" }}>
-                  "{yesterdayReflection.action.slice(0, 100)}{yesterdayReflection.action.length > 100 ? "…" : ""}"
+                  "{sanitizeOutput(yesterdayReflection.action).slice(0, 100)}{sanitizeOutput(yesterdayReflection.action).length > 100 ? "…" : ""}"
                 </p>
               )}
 
@@ -1633,7 +1599,7 @@ function TodayContent() {
               }}>
                 <RotateCcw size={10} color="var(--bm-text3)" style={{ flexShrink: 0, marginTop: 1 }} />
                 <p style={{ fontSize: 11, color: "var(--bm-text2)", margin: 0, lineHeight: 1.55 }}>
-                  {yesterdayCausal}
+                  {sanitizeOutput(yesterdayCausal)}
                 </p>
               </div>
             </div>
@@ -1747,7 +1713,7 @@ function TodayContent() {
                 Execution debt
               </div>
               <p style={{ color: "var(--bm-text)", fontSize: isMobile ? 17 : 18, lineHeight: 1.45, margin: "0 0 10px" }}>
-                {debtSuppression.debtMessage}
+                {sanitizeOutput(debtSuppression.debtMessage)}
               </p>
               {debtSuppression.interventionHint && (
                 <p style={{ color: "var(--bm-text2)", fontSize: 13, lineHeight: 1.55, margin: "0 0 14px" }}>
@@ -1807,7 +1773,7 @@ function TodayContent() {
             {actionLoading && (
               <span style={{ fontSize: 11, color: "var(--bm-text3)", display: "flex", alignItems: "center", gap: 6 }}>
                 <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "var(--bm-accent)", opacity: 0.6, animation: "bm-pulse 1.2s ease-in-out infinite" }} />
-                {streamLabel ?? "Calibrating..."}
+                {sanitizeOutput(streamLabel ?? "Calibrating...")}
               </span>
             )}
             {!actionData.isAI && !actionLoading && (
@@ -1843,7 +1809,7 @@ function TodayContent() {
                 Primary Objective
               </div>
               <p style={{ fontSize: isMobile ? 20 : 22, fontWeight: 400, color: "var(--bm-text)", lineHeight: 1.42, margin: "0 0 8px", letterSpacing: "-0.025em" }}>
-                {actionData.action}
+                {sanitizeOutput(actionData.action)}
               </p>
               <p style={{ fontSize: 13, color: "var(--bm-text2)", fontWeight: 400, margin: 0, lineHeight: 1.55 }}>
                 {isOutreachAction
@@ -1877,7 +1843,7 @@ function TodayContent() {
               <Brain size={10} color="var(--bm-text3)" /> Strategic rationale
             </div>
             <p style={{ fontSize: isMobile ? 14 : 13, color: "var(--bm-text2)", margin: "0 0 10px", lineHeight: 1.6 }}>
-              {actionData.reflexion?.rationale ?? actionData.why}
+              {sanitizeOutput(actionData.reflexion?.rationale ?? actionData.why)}
             </p>
             {actionData.reflexion?.lastReflectionUsed && (
               <div style={{ fontSize: 11, color: "var(--bm-text3)", borderTop: "1px solid var(--bm-border)", paddingTop: 10 }}>
@@ -1915,7 +1881,7 @@ function TodayContent() {
                 onBlur={e => { e.target.style.borderColor = "var(--bm-border2)"; }}
               />
             ) : (
-              <p style={{ fontSize: isMobile ? 14 : 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.6, fontStyle: "italic" }}>&ldquo;{draftMessage ?? actionData.message}&rdquo;</p>
+              <p style={{ fontSize: isMobile ? 14 : 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.6, fontStyle: "italic" }}>&ldquo;{sanitizeOutput(draftMessage ?? actionData.message)}&rdquo;</p>
             )}
           </div>
         </div>
@@ -2110,7 +2076,13 @@ function TodayContent() {
       </motion.div>
       {/* Beyond the 3 changes — Loop Narrative (the 8.5 unlock) */}
       <LoopNarrative
-        reflectionCount={reflectionCount}
+        reflectionCount={(() => {
+          try {
+            return parseInt(storage.get(`bm_reflection_count_${localDayKey()}`) ?? "0", 10);
+          } catch {
+            return 0;
+          }
+        })()}
         tasksCompleted={project?.tasksCompleted ?? 0}
       />
     </div>
