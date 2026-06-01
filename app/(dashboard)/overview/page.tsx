@@ -133,6 +133,10 @@ export default function OverviewPage() {
     window.addEventListener("storage", refresh);
     window.addEventListener("bm_streak_updated", refresh);
     syncUrgencyFromServer().then(refresh).catch(() => {});
+    import("@/lib/plan")
+      .then(({ syncStreakFromServer }) => syncStreakFromServer())
+      .then(refresh)
+      .catch(() => {});
     void syncScoreHistory().then(() => setScoreHistory(getScoreHistory()));
     void syncXP();
     // Get userId for today-done check
@@ -151,7 +155,7 @@ export default function OverviewPage() {
       window.removeEventListener("bm_streak_updated", refresh);
     };
   }, []);
-
+              value: (!overviewLoading && streak === 0) ? "0d" : (streak > 0) ? `${streak}d` : "—",
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 60000);
     return () => clearInterval(t);
