@@ -113,16 +113,21 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
   // This is the primary way founders log "done" — it doesn't always map 1:1
   // to a task row, so we count it as a separate signal and merge.
   let reflexionCompletionsThisWeek = 0;
+  let reflexionCompletedTitles: string[] = [];
   try {
     const weekAgoISO = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     let reflexionQuery = supabase
       .from("reflexion_learning_log")
-      .select("outcome_recorded_at")
+      .select("action_shown, outcome_recorded_at")
       .eq("outcome", "completed")
       .gte("outcome_recorded_at", weekAgoISO);
     if (activeProjectId) reflexionQuery = reflexionQuery.eq("project_id", activeProjectId);
     const { data: reflexionRows } = await reflexionQuery;
     reflexionCompletionsThisWeek = (reflexionRows ?? []).length;
+    reflexionCompletedTitles = (reflexionRows ?? [])
+      .map((row) => row.action_shown)
+      .filter(Boolean)
+      .slice(0, 3);
   } catch { /* non-fatal — table may not exist in all envs */ }
 
   const start = weekStart();
@@ -179,11 +184,31 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
     color: REPORT_COLORS[index % REPORT_COLORS.length],
   }));
 
+  // Use real completed task titles instead of just counts.
+  const completedTaskTitles = (tasks ?? [])
+    .filter((task) => {
+      if (!task.is_completed) return false;
+      const completedAt = new Date(task.updated_at ?? task.created_at);
+      return completedAt >= start;
+    })
+    .map((task) => task.title)
+    .filter(Boolean)
+    .slice(0, 3);
+
+  const realCompletedTitles = [...completedTaskTitles, ...reflexionCompletedTitles]
+    .filter(Boolean)
+    .slice(0, 3);
+
   const wins = [
-    tasksCompletedThisWeek > 0 ? `Completed ${tasksCompletedThisWeek} task${tasksCompletedThisWeek === 1 ? "" : "s"}` : null,
-    milestonesCompletedThisWeek > 0 ? `Completed ${milestonesCompletedThisWeek} milestone${milestonesCompletedThisWeek === 1 ? "" : "s"}` : null,
-    activeStreakDays > 0 ? `${activeStreakDays}-day activity streak` : null,
-    score > previousScore ? `Startup score up by ${score - previousScore}` : null,
+    ...realCompletedTitles,
+    realCompletedTitles.length === 0 && tasksCompletedThisWeek > 0
+      ? `Completed ${tasksCompletedThisWeek} action${tasksCompletedThisWeek !== 1 ? "s" : ""} this week`
+      : null,
+    milestonesCompletedThisWeek > 0
+      ? `Closed ${milestonesCompletedThisWeek} milestone${milestonesCompletedThisWeek !== 1 ? "s" : ""}`
+      : null,
+    activeStreakDays > 0 ? `${activeStreakDays}-day streak` : null,
+    score > previousScore ? `Score up ${score - previousScore} pts` : null,
   ].filter(Boolean) as string[];
 
   const nextFocus = (tasks ?? [])

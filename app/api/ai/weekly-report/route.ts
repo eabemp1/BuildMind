@@ -46,6 +46,11 @@ export async function POST(request: Request) {
     let tasks = 0, milestones = 0, projects = 0;
     let projectTitle = "", projectProblem = "", projectStage = "", projectDescription = "";
     let strengths: string[] = [], weaknesses: string[] = [];
+    let completedActionsBlock = "TASKS COMPLETED THIS WEEK: None recorded via Today page check-ins.";
+    let reflectionsBlock = "REFLECTIONS: No reflections submitted this week.";
+    let blockersLine = "";
+    let prevWeekFocusLine = "";
+    let avoidanceZonesLine = "";
 
     if (hasAdminEnv()) {
       const supabase = createAdminClient();
@@ -53,7 +58,7 @@ export async function POST(request: Request) {
       // Count user's projects
       const { data: userProjects } = await supabase
         .from("projects")
-        .select("id, title, problem, startup_stage, description, validation_strengths, validation_weaknesses")
+        .select("id, name, title, problem, startup_stage, description, validation_strengths, validation_weaknesses")
         .eq("user_id", userId);
 
       projects = userProjects?.length ?? 0;
@@ -61,7 +66,7 @@ export async function POST(request: Request) {
       // Use the specified project or first one
       const activeProject = userProjects?.find(p => p.id === projectId) ?? userProjects?.[0];
       if (activeProject) {
-        projectTitle = activeProject.title ?? "";
+        projectTitle = (activeProject.name ?? activeProject.title) ?? "";
         projectProblem = activeProject.problem ?? "";
         projectStage = activeProject.startup_stage ?? "";
         projectDescription = activeProject.description ?? "";
@@ -161,6 +166,112 @@ export async function POST(request: Request) {
           } catch { /* non-fatal */ }
         }
       }
+
+      const [completedActionsResult, reflectionsResult, prevWeekMemoryResult] =
+        await Promise.allSettled([
+          supabase
+            .from("reflexion_learning_log")
+            .select("action_shown, action_type, created_at")
+            .eq("user_id", userId)
+            .eq("outcome", "completed")
+            .gte("outcome_recorded_at", weekAgoISO)
+            .order("outcome_recorded_at", { ascending: false })
+            .limit(10),
+
+          supabase
+            .from("reflections")
+            .select("outcome, confidence, note, what_tried, what_happened, what_learned, blocker, created_at")
+            .eq("user_id", userId)
+            .gte("created_at", weekAgoISO)
+            .order("created_at", { ascending: false })
+            .limit(7),
+
+          supabase
+            .from("founder_memory")
+            .select("last_week_summary, avoidance_zones, last_insight")
+            .eq("user_id", userId)
+            .maybeSingle(),
+        ]);
+
+      const completedActions =
+        completedActionsResult.status === "fulfilled"
+          ? (completedActionsResult.value.data ?? [])
+          : [];
+
+      const weekReflections =
+        reflectionsResult.status === "fulfilled"
+          ? (reflectionsResult.value.data ?? [])
+          : [];
+
+      const founderMemory =
+        prevWeekMemoryResult.status === "fulfilled"
+          ? prevWeekMemoryResult.value.data
+          : null;
+
+      completedActionsBlock =
+        completedActions.length > 0
+          ? [
+              "TASKS ACTUALLY COMPLETED THIS WEEK:",
+              ...completedActions.map(
+                (a, i) =>
+                  `${i + 1}. "${a.action_shown}" (${a.action_type ?? "general"}, ${new Date(a.created_at).toLocaleDateString()})`,
+              ),
+            ].join("\n")
+          : completedActionsBlock;
+
+      reflectionsBlock =
+        weekReflections.length > 0
+          ? [
+              "REFLECTIONS FROM THIS WEEK (rich data - use this for behavioral analysis):",
+              ...weekReflections.map((r, i) => {
+                const date = new Date(r.created_at).toLocaleDateString();
+                const lines = [
+                  `[${i + 1}] ${date} - Outcome: ${r.outcome ?? "?"}, Confidence: ${r.confidence ?? "?"}/5`,
+                ];
+                if (r.what_tried) lines.push(`  Tried: "${r.what_tried}"`);
+                if (r.what_happened) lines.push(`  Happened: "${r.what_happened}"`);
+                if (r.what_learned) lines.push(`  Learned: "${r.what_learned}"`);
+                if (r.blocker) lines.push(`  Blocker: "${r.blocker}"`);
+                if (r.note && !r.what_tried) lines.push(`  Note: "${r.note}"`);
+                return lines.join("\n");
+              }),
+            ].join("\n")
+          : reflectionsBlock;
+
+      const blockersThisWeek = weekReflections
+        .map((r) => r.blocker)
+        .filter((b): b is string => Boolean(b?.trim()));
+
+      blockersLine =
+        blockersThisWeek.length > 0
+          ? `\nRECURRING BLOCKERS THIS WEEK:\n${blockersThisWeek.map((b) => `- "${b}"`).join("\n")}`
+          : "";
+
+      if (founderMemory?.last_week_summary) {
+        try {
+          const prev = JSON.parse(founderMemory.last_week_summary) as {
+            next_week_focus?: string;
+            biggest_gap?: string;
+            tasks_completed?: number;
+            intention_vs_execution_rate?: number;
+          };
+          if (prev.next_week_focus) {
+            prevWeekFocusLine = `\nLAST WEEK'S STATED FOCUS: "${prev.next_week_focus}"`;
+            if (prev.tasks_completed !== undefined) {
+              prevWeekFocusLine += `\nLast week's task count: ${prev.tasks_completed}`;
+            }
+            if (prev.biggest_gap) {
+              prevWeekFocusLine += `\nLast week's biggest gap: "${prev.biggest_gap}"`;
+            }
+          }
+        } catch { /* non-fatal */ }
+      }
+
+      const avoidanceZones = (founderMemory?.avoidance_zones ?? []) as string[];
+      avoidanceZonesLine =
+        avoidanceZones.length > 0
+          ? `\nKNOWN AVOIDANCE ZONES: ${avoidanceZones.join(", ")}`
+          : "";
     }
 
     const momentumScore = clamp(15 + tasks * 7 + milestones * 10, 10, 95);
@@ -184,20 +295,35 @@ export async function POST(request: Request) {
 }
 No preamble. No markdown. Only JSON.`;
 
-    const userPrompt = `Weekly data for this founder:
-Projects: ${projects}
-Milestones completed this week: ${milestones}
-Tasks/actions completed this week: ${tasks}
-Activity summary: ${activitySignal}
-Momentum score (pre-computed): ${momentumScore}
-${projectTitle ? `\nActive project: ${projectTitle}` : ""}
-${projectStage ? `Stage: ${projectStage}` : ""}
-${projectProblem ? `Problem being solved: ${projectProblem}` : ""}
-${projectDescription ? `Description: ${projectDescription}` : ""}
-${strengths.length ? `Strengths: ${strengths.join(", ")}` : ""}
-${weaknesses.length ? `Weaknesses: ${weaknesses.join(", ")}` : ""}
+    const userPrompt = `Weekly behavioral data for this founder:
 
-Be specific. No generic startup advice. Reference what you actually see in the data.`;
+STARTUP: ${projectTitle || "Not set"} - ${projectStage || "Idea"} stage
+PROBLEM BEING SOLVED: ${projectProblem || "Not specified"}
+${projectDescription ? `DESCRIPTION: ${projectDescription}` : ""}
+${strengths.length ? `STRENGTHS: ${strengths.join(", ")}` : ""}
+${weaknesses.length ? `WEAKNESSES: ${weaknesses.join(", ")}` : ""}
+
+HARD NUMBERS:
+- Projects: ${projects}
+- Milestones completed this week: ${milestones}
+- Tasks/actions completed this week: ${tasks}
+- Activity summary: ${activitySignal}
+- Momentum score: ${momentumScore}/100
+
+${completedActionsBlock}
+
+${reflectionsBlock}
+${blockersLine}
+${prevWeekFocusLine}
+${avoidanceZonesLine}
+
+INSTRUCTION:
+- Write intention_vs_action by comparing last week's stated focus above against what was actually done this week.
+- Write biggest_gap based on what blockers recurred or what reflections show wasn't done despite being important.
+- Write honest_assessment by looking at the pattern across all reflections - is the founder avoiding a particular type of work? Is confidence dropping? Are they shipping or rationalizing?
+- Write next_week_focus as one concrete task the founder should do first on Monday, naming the product and user type.
+- Be specific. Reference the actual tasks shown above. Do NOT write generic startup advice.
+- If no reflections were submitted, say so directly in honest_assessment.`;
 
     let result: AIWeeklyReport = {
       summary: tasks === 0

@@ -141,6 +141,16 @@ function SectionHead({ children }: { children: React.ReactNode }) {
 
 type ExportFmt = "pdf"|"png"|"csv"|"json";
 
+type AIWeeklyReportView = {
+  summary: string;
+  intention_vs_action: string;
+  biggest_gap: string;
+  next_week_focus: string;
+  honest_assessment: string;
+  intention_vs_execution_rate?: number;
+  execution_trend?: "up" | "down" | "flat";
+};
+
 function ExportMenu({ onSelect, onClose }: { onSelect:(f:ExportFmt)=>void; onClose:()=>void }) {
   const opts: { fmt:ExportFmt; label:string; sub:string; icon:LucideIcon }[] = [
     { fmt:"pdf",  label:"PDF Document",  sub:"Print-quality report",        icon:FileText },
@@ -183,11 +193,38 @@ export default function ReportsPage() {
   const [exporting, setExporting] = useState<ExportFmt|null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [exported, setExported] = useState<string|null>(null);
+  const [aiReport, setAiReport] = useState<AIWeeklyReportView | null>(null);
+  const [aiReportLoading, setAiReportLoading] = useState(false);
 
   const { data: summaries = [], isLoading } = useProjectSummariesQuery();
   const activeProjectId = useActiveProjectId();
   const project = useMemo(() => selectActiveProject(summaries, activeProjectId), [summaries, activeProjectId]);
   const { data: metrics, isLoading: metricsLoading } = useWeeklyReportMetricsQuery(project?.id);
+
+  useEffect(() => {
+    if (!project?.id) return;
+    let cancelled = false;
+    setAiReport(null);
+    setAiReportLoading(true);
+    fetch("/api/ai/weekly-report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId: project.id }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!cancelled && d?.success && d.data?.summary) {
+          setAiReport(d.data);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setAiReportLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [project?.id]);
 
   const liveScore = useMemo(() => {
     if (!project) return 0;
@@ -212,6 +249,7 @@ export default function ReportsPage() {
   }, []);
 
   const wins = metrics?.wins ?? [];
+  const displayWins = aiReport ? [...wins].slice(0, 4) : wins;
   const nextFocus = metrics?.nextFocus ?? [];
   const focusData = metrics?.focusData ?? [];
   const totalFocus = focusData.reduce((a,s) => a+s.value, 0);
@@ -243,7 +281,7 @@ export default function ReportsPage() {
           ...["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map((d,i) => [d, taskData[i]]),
           ["",""],
           ["Wins",""],
-          ...wins.map(w => ["", w]),
+          ...displayWins.map(w => ["", w]),
           ["",""],
           ["Next Focus",""],
           ...nextFocus.map(f => ["", f]),
@@ -262,7 +300,7 @@ export default function ReportsPage() {
           score, scoreDelta, streak, tasksThisWeek, taskDelta,
           taskData: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].reduce<Record<string,number>>(
             (acc,d,i) => { acc[d]=taskData[i]; return acc; }, {}),
-          weeklyScores, wins, nextFocus,
+          weeklyScores, wins: displayWins, nextFocus,
           focusBreakdown: focusData, plan,
         };
         const blob = new Blob([JSON.stringify(data, null, 2)], { type:"application/json" });
@@ -300,78 +338,6 @@ export default function ReportsPage() {
     const fmt = (d:Date) => d.toLocaleDateString("en-GB",{day:"numeric",month:"short"});
     return `${fmt(start)} – ${fmt(end)}`;
   })();
-
-  // Empty state: fewer than 7 check-ins, no real data yet
-  const hasEnoughData = (metrics?.tasksCompletedThisWeek ?? 0) > 0 || tasksThisWeek > 0;
-  if (!hasEnoughData && !metricsLoading) {
-    return (
-      <div style={{ maxWidth: 920, margin: "0 auto", padding: "32px 24px 64px" }}>
-        <PageHeader
-          eyebrow="Weekly Report"
-          title="Behavioral synthesis"
-          subtitle="Generated after 7 days of check-ins."
-        />
-        <div style={{
-          marginTop: 48,
-          maxWidth: 560,
-          background: "var(--bm-bg2)",
-          border: "1px solid var(--bm-border)",
-          borderLeft: "2px solid var(--bm-accent)",
-          borderRadius: "var(--r-xl)",
-          padding: "28px 32px",
-        }}>
-          <p style={{
-            fontFamily: "'DM Mono', monospace", fontSize: 9,
-            textTransform: "uppercase" as const, letterSpacing: "0.10em",
-            color: "var(--bm-accent)", marginBottom: 10,
-          }}>Not yet unlocked</p>
-          <h2 style={{
-            fontFamily: "'Syne', sans-serif", fontSize: 22, fontWeight: 700,
-            letterSpacing: "-0.025em", color: "var(--bm-text)",
-            lineHeight: 1.25, marginBottom: 14,
-          }}>
-            First report generates after 7 days of check-ins.
-          </h2>
-          <p style={{
-            fontFamily: "'Inter', sans-serif", fontSize: 13,
-            color: "var(--bm-text2)", lineHeight: 1.65,
-          }}>
-            When it arrives, it&apos;s not just a summary — it&apos;s a behavioral synthesis. Patterns you haven&apos;t noticed. Avoidance you&apos;ve been rationalizing. The one thing you keep postponing.
-          </p>
-          <p style={{
-            fontFamily: "'Inter', sans-serif", fontSize: 13,
-            color: "var(--bm-text2)", lineHeight: 1.65, marginTop: 12,
-          }}>
-            That&apos;s what the weekly report is for.
-          </p>
-          <div style={{
-            marginTop: 24,
-            display: "flex",
-            flexDirection: "column" as const,
-            gap: 10,
-          }}>
-            {[
-              "Avoidance patterns you haven't noticed",
-              "The one thing you keep postponing",
-              "Execution vs. intention rate",
-              "What should change this week",
-            ].map((item, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <div style={{
-                  width: 6, height: 6, borderRadius: "50%",
-                  background: "var(--bm-border2)", flexShrink: 0,
-                }} />
-                <span style={{
-                  fontFamily: "'Inter', sans-serif", fontSize: 12.5,
-                  color: "var(--bm-text3)",
-                }}>{item}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <PaywallGate feature="weeklyReport">
@@ -551,11 +517,11 @@ export default function ReportsPage() {
               <Star size={12} color="var(--bm-green)"/>
               <span style={{ fontSize:12, fontWeight:700, color:"var(--bm-text)" }}>Wins</span>
             </div>
-            {wins.length === 0 ? (
+            {displayWins.length === 0 ? (
               <div style={{ fontSize:12, color:"var(--bm-text3)", lineHeight:1.6 }}>Complete tasks or milestones to log wins.</div>
-            ) : wins.map((w,i) => (
+            ) : displayWins.map((w,i) => (
               <div key={i} style={{ display:"flex", gap:10, alignItems:"flex-start",
-                padding:"9px 0", borderBottom: i<wins.length-1 ? "1px solid var(--bm-border)" : "none" }}>
+                padding:"9px 0", borderBottom: i<displayWins.length-1 ? "1px solid var(--bm-border)" : "none" }}>
                 <CheckCircle2 size={13} color="var(--bm-green)" style={{ flexShrink:0, marginTop:1 }}/>
                 <span style={{ fontSize:13, color:"var(--bm-text2)", lineHeight:1.5 }}>{w}</span>
               </div>
@@ -637,21 +603,69 @@ export default function ReportsPage() {
             </div>
           )}
 
-          <p style={{ fontSize:14, color:"var(--bm-text)", lineHeight:1.65, margin:"0 0 8px", fontWeight:500 }}>
-            {scoreDelta > 5
-              ? `Strong week — your score climbed ${scoreDelta} points. ${tasksThisWeek > 0 ? `Completing ${tasksThisWeek} task${tasksThisWeek>1?"s":""} drove that momentum.` : ""} Maintain this cadence.`
-              : scoreDelta > 0
-              ? `Slight progress this week (+${scoreDelta} pts). Keep shipping — consistency compounds over time.`
-              : tasksThisWeek > 0
-              ? `${tasksThisWeek} task${tasksThisWeek>1?"s":""} completed but score is flat. Run "Break My Startup" — AI analysis is what moves execution_score most.`
-              : `No activity this week. One task today starts the momentum loop. Pick the smallest possible win.`
-            }
-          </p>
-          {nextFocus.length > 0 && (
-            <p style={{ fontSize:12, color:"var(--bm-accent)", fontWeight:600, margin:0 }}>
-              → Top priority next week: {nextFocus[0]}
-            </p>
+          {aiReportLoading && (
+            <div style={{ height: 60, background: "var(--bm-bg3)", borderRadius: 8,
+              animation: "pulse 1.5s ease-in-out infinite" }} />
           )}
+
+          {aiReport && !aiReportLoading ? (
+            <>
+              <p style={{ fontSize:14, color:"var(--bm-text)", lineHeight:1.65,
+                margin:"0 0 12px", fontWeight:500 }}>
+                {aiReport.summary}
+              </p>
+              {aiReport.intention_vs_action && (
+                <div style={{ marginBottom:12, padding:"12px 14px",
+                  background:"rgba(168,213,186,0.04)",
+                  border:"1px solid rgba(168,213,186,0.15)", borderRadius:10 }}>
+                  <p style={{ fontSize:9, fontWeight:700, color:"var(--bm-accent)",
+                    textTransform:"uppercase", letterSpacing:"0.1em", margin:"0 0 6px" }}>
+                    Intention vs Reality
+                  </p>
+                  <p style={{ fontSize:13, color:"var(--bm-text2)", lineHeight:1.6, margin:0 }}>
+                    {aiReport.intention_vs_action}
+                  </p>
+                </div>
+              )}
+              {aiReport.honest_assessment && (
+                <div style={{ padding:"12px 14px",
+                  background:"rgba(248,113,113,0.05)",
+                  border:"1px solid rgba(248,113,113,0.15)", borderRadius:10,
+                  marginBottom: aiReport.next_week_focus ? 10 : 0 }}>
+                  <p style={{ fontSize:9, fontWeight:700, color:"var(--bm-red)",
+                    textTransform:"uppercase", letterSpacing:"0.1em", margin:"0 0 6px" }}>
+                    Honest Assessment
+                  </p>
+                  <p style={{ fontSize:13, color:"var(--bm-text2)", lineHeight:1.6,
+                    margin:0, fontStyle:"italic" }}>
+                    &quot;{aiReport.honest_assessment}&quot;
+                  </p>
+                </div>
+              )}
+              {aiReport.next_week_focus && (
+                <p style={{ fontSize:12, color:"var(--bm-accent)", fontWeight:600,
+                  margin:"10px 0 0" }}>
+                  → Monday priority: {aiReport.next_week_focus}
+                </p>
+              )}
+            </>
+          ) : !aiReportLoading ? (
+            <>
+              <p style={{ fontSize:14, color:"var(--bm-text)", lineHeight:1.65,
+                margin:"0 0 8px", fontWeight:500 }}>
+                {scoreDelta > 5
+                  ? `Strong week - score climbed ${scoreDelta} points.`
+                  : tasksThisWeek > 0
+                  ? `${tasksThisWeek} task${tasksThisWeek > 1 ? "s" : ""} completed this week.`
+                  : `No activity recorded this week.`}
+              </p>
+              {nextFocus.length > 0 && (
+                <p style={{ fontSize:12, color:"var(--bm-accent)", fontWeight:600, margin:0 }}>
+                  → Top priority next week: {nextFocus[0]}
+                </p>
+              )}
+            </>
+          ) : null}
         </motion.div>
 
         {/* Avoidance pattern callout */}
