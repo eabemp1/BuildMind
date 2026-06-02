@@ -16,6 +16,7 @@ import { FolderKanban } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MrrWidget } from "@/components/MrrWidget";
 import { storage } from "@/lib/storage";
+import { fetchBehaviorState } from "@/lib/userBehaviorState";
 
 // ── Stage badge colours ───────────────────────────────────────────────────────
 const STAGE_COLOUR: Record<string, string> = {
@@ -126,6 +127,7 @@ export default function OverviewPage() {
   const [now, setNow] = useState(() => new Date());
   const [currentMrr, setCurrentMrr] = useState<number>(0);
   const [userId, setUserId] = useState<string | null>(null);
+  const [serverTodayDone, setServerTodayDone] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -149,6 +151,15 @@ export default function OverviewPage() {
           setUserId(uid);
           storage.onSignIn(uid);
           syncStreakFromServer().then(refresh).catch(refresh);
+          fetchBehaviorState<{ checkin_done_date: string }>(["checkin_done_date"])
+            .then((values) => {
+              const today = new Date().toLocaleDateString("en-CA");
+              setServerTodayDone(values.checkin_done_date === today);
+              if (values.checkin_done_date === today) {
+                storage.set(`bm_checkin_done_date_${uid}`, today);
+              }
+            })
+            .catch(() => {});
         }
       });
     });
@@ -186,7 +197,7 @@ export default function OverviewPage() {
   // Is today's check-in done?
   const todayStr = now.toLocaleDateString("en-CA");
   const todayDone = userId
-    ? storage.get(`bm_checkin_done_date_${userId}`) === todayStr
+    ? serverTodayDone || storage.get(`bm_checkin_done_date_${userId}`) === todayStr
     : false;
 
   useEffect(() => {

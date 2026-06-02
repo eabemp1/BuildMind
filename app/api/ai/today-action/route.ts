@@ -15,6 +15,8 @@ import { buildKnowledgeBaseContext, searchFounderKnowledgeBase, type FounderKnow
 import { loadCognitionInput, synthesizeFounderCognition, buildCognitionPromptBlock } from "@/lib/founderCognition";
 import { evaluateAIOutput } from "@/lib/aiEvaluator";
 import { getPromptForRequest, loadActivePrompts } from "@/lib/promptRegistry";
+import { upsertTodayActionCache } from "@/lib/todayActionCache";
+import { buildTodayPersonalisationContext } from "@/lib/todayPersonalisationContext";
 
 export const runtime     = "nodejs";
 export const dynamic     = "force-dynamic";
@@ -197,6 +199,7 @@ export async function POST(request: Request) {
     let knowledgeMatches: FounderKnowledgeMatch[] = [];
     let supabase: ReturnType<typeof createAdminClient> | null = null;
     let hoistedReflection: { outcome?: string | null; note?: string | null; confidence?: number | null; today_action?: string | null; created_at?: string | null } | null = null;
+    let recentActionHistory = "";
     let cognitionBlock = "";
     let cognitionMomentumScore = 50;
     let cognitionAvoidanceSignals: string[] = [];
@@ -418,6 +421,28 @@ INSTRUCTION: Use this to make today's action a direct causal response to yesterd
 - learned outcome -> apply the insight to one real person today
 - if the prior action was completed, preserve the stage and target area while refining the next task from their reflection note` + lastReflectionContext;
       }
+
+      try {
+        const { data: recentRows } = await supabase
+          .from("reflections")
+          .select("outcome, note, today_action, created_at")
+          .eq("user_id", userId)
+          .not("today_action", "is", null)
+          .order("created_at", { ascending: false })
+          .limit(8);
+
+        const lines = (recentRows ?? [])
+          .filter((r) => r.today_action)
+          .map((r, i) => {
+            const note = r.note ? ` | note: ${String(r.note).slice(0, 120)}` : "";
+            return `${i + 1}. "${r.today_action}" -> ${r.outcome ?? "unknown"}${note}`;
+          });
+
+        if (lines.length) {
+          recentActionHistory = `\n\nRECENT ACTION HISTORY (do not repeat these task shapes or messages):\n${lines.join("\n")}`;
+          lastReflectionContext += `${recentActionHistory}\nINSTRUCTION: Today's action must be a genuinely new next move. It may continue the same strategic thread, but it must change the person, channel, ask, experiment, or success criterion. Never reuse the previous outreach copy.`;
+        }
+      } catch { /* non-fatal — generation can continue without history */ }
     }
 
     if (hasAdminEnv() && (title || projectContext)) {
@@ -440,6 +465,29 @@ INSTRUCTION: Use this to make today's action a direct causal response to yesterd
       );
       const knowledgeContext = buildKnowledgeBaseContext(knowledgeMatches, founderArchetype);
       if (knowledgeContext) lastReflectionContext += `\n\n${knowledgeContext}`;
+    }
+
+    let personalisationCtx = {
+      recentActionsBlock: "",
+      recentReflectionsBlock: "",
+      recurringBlockers: [] as string[],
+      activeGoals: [] as string[],
+    };
+    if (hasAdminEnv() && projectId) {
+      personalisationCtx = await buildTodayPersonalisationContext(userId, projectId);
+    }
+
+    if (personalisationCtx.recentActionsBlock) {
+      lastReflectionContext += `\n\n${personalisationCtx.recentActionsBlock}`;
+    }
+    if (personalisationCtx.recentReflectionsBlock) {
+      lastReflectionContext += `\n\n${personalisationCtx.recentReflectionsBlock}`;
+    }
+    if (personalisationCtx.recurringBlockers.length > 0) {
+      lastReflectionContext += `\n\nRECURRING BLOCKERS:\n${personalisationCtx.recurringBlockers.map((b) => `- "${b}"`).join("\n")}\n-> Today's task must address or route around at least one of these.`;
+    }
+    if (personalisationCtx.activeGoals.length > 0) {
+      lastReflectionContext += `\n\nACTIVE GOALS (advance one today):\n${personalisationCtx.activeGoals.map((g, i) => `${i + 1}. ${g}`).join("\n")}`;
     }
 
     // Build contextual fallback using real project data (never placeholder text)
@@ -505,6 +553,8 @@ INSTRUCTION: Use this to make today's action a direct causal response to yesterd
       cognitiveLoad: cognitionCognitiveLoad,
       archetypeContext: cognitionBlock,
       debtContext,
+      reflectionHistory: recentActionHistory || undefined,
+      recentActionsBlock: personalisationCtx.recentActionsBlock || undefined,
     };
 
     // Populate reflexionContext from data already fetched in the parallel round-trip above.
@@ -547,6 +597,7 @@ INSTRUCTION: Use this to make today's action a direct causal response to yesterd
       `Problem: ${problem || "Not specified"}`,
       `Target users: ${targetUsers || "Not specified"}`,
       lastReflectionContext ? `Last reflection: ${lastReflectionContext}` : "",
+      recentActionHistory ? `Anti-repetition guard: ${recentActionHistory}` : "",
     ].filter(Boolean).join("\n");
 
     let reflexionOutput: Awaited<ReturnType<typeof runReflexionLoop>> | null = null;
@@ -627,7 +678,7 @@ INSTRUCTION: Use this to make today's action a direct causal response to yesterd
     if (hasAdminEnv() && finalResult.action && userId) {
       recordActivity(userId, "task_accepted", { projectId, stage, action: finalResult.action }).catch(() => {});
       const learningSessionId = `today_action:${projectId ?? "none"}:${Date.now()}`;
-      recordActionShown({
+      const logRowId = await recordActionShown({
         userId,
         projectId: projectId ?? "",
         sessionId: learningSessionId,
@@ -637,6 +688,20 @@ INSTRUCTION: Use this to make today's action a direct causal response to yesterd
         viabilityScore: undefined,
         confidence: undefined,
       }).catch((err) => logError("today-action/recordActionShown", err));
+      if (logRowId) {
+        (finalResult as TodayAction & { log_row_id?: string }).log_row_id = logRowId;
+      }
+
+      if (supabase) {
+        upsertTodayActionCache(supabase, userId, {
+          date: new Date().toISOString().slice(0, 10),
+          projectId,
+          stage,
+          data: { ...finalResult, stage, isAI: true, reflexion_status: reflexionStatus },
+          generatedAt: new Date().toISOString(),
+          source: "today-action",
+        }).catch((err) => logError("today-action/cache", err, { route: "/api/ai/today-action", userId, requestId }));
+      }
     }
 
     return NextResponse.json({ success: true, data: { ...finalResult, stage, reflexion_status: reflexionStatus } });

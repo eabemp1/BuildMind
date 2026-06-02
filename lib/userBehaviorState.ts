@@ -17,9 +17,9 @@ export async function fetchBehaviorState<T extends BehaviorValues>(keys: string[
   }
 }
 
-export function persistBehaviorState(values: BehaviorValues): void {
+export async function persistBehaviorState(values: BehaviorValues): Promise<void> {
   if (typeof window === "undefined") return;
-  fetch("/api/user/behavior-state", {
+  await fetch("/api/user/behavior-state", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ values }),

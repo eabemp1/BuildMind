@@ -103,6 +103,7 @@ export interface ReflexionContext {
   archetypeContext?: string;           // founder archetype prompt block
   knowledgeBaseContext?: string;       // onboarding precedent prompt block
   debtContext?: string;                // execution debt prompt block
+  recentActionsBlock?: string;         // recent tasks shown for anti-repeat enforcement
 }
 
 // ── NEW IN V4: Agent Persona Rotation (Playbook §4.4) ─────────────────────
@@ -388,7 +389,8 @@ ${context.knowledgeBaseContext ? `\n${context.knowledgeBaseContext}` : ""}
 ${context.debtContext ? `\n${context.debtContext}` : ""}
 ${additionalInstruction}${newUserInstruction}
 TASK: ${task}
-Be specific to this founder's situation. Reference their actual stage, avoidance patterns, and behavioral history. No generic startup advice.`;
+Be specific to this founder's situation. Reference their actual stage, avoidance patterns, and behavioral history. No generic startup advice.
+If recent action history is present, do not repeat the same task shape, outreach copy, target, or channel. Continue the strategic thread by changing the experiment, ask, user segment, or success criterion.`;
 
   const generated = await groqCall([
     { role: "system", content: generatorPrompt },
@@ -409,6 +411,10 @@ REJECT this task if ANY of the following are true:
 4. The action cannot be completed in under 30 minutes
 5. The advice could apply to any founder at any stage (generic)
 6. The advice does not address the founder's current stage or last reflection outcome
+7. The action repeats a recent action shape, target, channel, or outreach message instead of advancing the thread
+8. The action is semantically equivalent to any task listed in the RECENT TASKS block below (if provided)
+
+${context.recentActionsBlock ? `\n${context.recentActionsBlock}` : ""}
 
 Respond in JSON ONLY:
 {
@@ -1212,6 +1218,9 @@ function buildContextBlock(ctx: ReflexionContext): string {
   }
   if (ctx.reflectionHistory) {
     lines.push(`\nRECENT ACTIVITY PATTERN (last 5 sessions):\n${ctx.reflectionHistory}`);
+  }
+  if (ctx.recentActionsBlock) {
+    lines.push(`\n${ctx.recentActionsBlock}`);
   }
   return lines.join("\n");
 }

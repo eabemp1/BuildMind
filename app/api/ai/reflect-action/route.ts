@@ -8,6 +8,7 @@ import { callModelJSON } from "@/lib/ai-providers";
 import { logError } from "@/lib/server/logger";
 import { recordActivity } from "@/lib/server/activityLog";
 import { checkAndCacheStageTransition } from "@/lib/server/stageTransitionCache";
+import { recordActionOutcome } from "@/lib/learning";
 
 import { z } from "zod";
 
@@ -239,6 +240,93 @@ Target users: ${project.target_users ?? "Not specified"}`;
           today_action:  todayAction,
           created_at:    new Date().toISOString(),
         });
+
+        const todayDate = new Date().toISOString().slice(0, 10);
+        const { data: existingContext } = await supabase
+          .from("founder_context")
+          .select("streak, last_checkin_date")
+          .eq("user_id", verifiedUserId)
+          .maybeSingle();
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayDate = yesterday.toISOString().slice(0, 10);
+        const lastCheckinDate = existingContext?.last_checkin_date ?? null;
+        const previousStreak = existingContext?.streak ?? 0;
+        const nextStreak = lastCheckinDate === todayDate
+          ? previousStreak
+          : lastCheckinDate === yesterdayDate
+            ? previousStreak + 1
+            : 1;
+
+        await supabase
+          .from("founder_context")
+          .upsert({
+            user_id: verifiedUserId,
+            streak: nextStreak,
+            last_checkin_date: todayDate,
+            last_active: todayDate,
+            days_inactive: 0,
+          }, { onConflict: "user_id" });
+
+        await supabase
+          .from("user_behavior_state")
+          .upsert([
+            {
+              user_id: verifiedUserId,
+              key: "today_action",
+              value: { action: todayAction, outcome, note, confidence },
+              updated_at: new Date().toISOString(),
+            },
+            {
+              user_id: verifiedUserId,
+              key: "checkin_done_date",
+              value: todayDate,
+              updated_at: new Date().toISOString(),
+            },
+            {
+              user_id: verifiedUserId,
+              key: "reflect_done_date",
+              value: todayDate,
+              updated_at: new Date().toISOString(),
+            },
+          ], { onConflict: "user_id,key" });
+
+        try {
+          const { data: pendingLog } = await supabase
+            .from("reflexion_learning_log")
+            .select("id")
+            .eq("user_id", verifiedUserId)
+            .eq("outcome", "pending")
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (pendingLog?.id) {
+            const mappedOutcome =
+              outcome === "completed" ? "completed" :
+              outcome === "blocked" ? "overridden" :
+              "partial";
+            await recordActionOutcome({
+              logRowId: pendingLog.id,
+              userId: verifiedUserId,
+              outcome: mappedOutcome,
+              outcomeNote: note || blocker || undefined,
+            });
+          }
+        } catch {
+          // Learning-log closure is best-effort; reflection is already saved.
+        }
+
+        // Bust the today_action_cache so the next page load regenerates with fresh reflection data.
+        try {
+          await supabase
+            .from("user_behavior_state")
+            .update({ value: null, updated_at: new Date().toISOString() })
+            .eq("user_id", verifiedUserId)
+            .eq("key", "today_action_cache");
+        } catch {
+          // Cache bust is best-effort; reflection save should still succeed.
+        }
 
         // ── Fire-and-forget: close both learning loops ────────────────────────
         extractAndWritePatterns(supabase, verifiedUserId).catch((err) => logError("reflect-action/extractPatterns", err));

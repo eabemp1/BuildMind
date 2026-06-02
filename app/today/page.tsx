@@ -540,15 +540,22 @@ function TodayContent() {
       ? lastReflectionTime > cachedAt
       : lastReflectionTime > 0;
 
-    const serverCache = await fetchBehaviorState<{ today_action_cache: CachedTodayAction }>(["today_action_cache"]);
+    const serverCache = await fetchBehaviorState<{ today_action_cache: CachedTodayAction & { generatedAt?: string } }>(["today_action_cache"]);
+    const serverCacheTs = serverCache.today_action_cache?.generatedAt
+      ? new Date(serverCache.today_action_cache.generatedAt).getTime()
+      : cachedAt;
+    const serverReflectionIsNewerThanCache = lastReflectionTime > 0 && serverCacheTs > 0
+      ? lastReflectionTime > serverCacheTs
+      : reflectionIsNewerThanCache;
     if (
-      !reflectionIsNewerThanCache &&
+      !serverReflectionIsNewerThanCache &&
       serverCache.today_action_cache?.date === today &&
       serverCache.today_action_cache?.projectId === projectId &&
       serverCache.today_action_cache?.stage === currentStage &&
       isActionData(serverCache.today_action_cache.data)
     ) {
       storage.setJSON(cacheKey, serverCache.today_action_cache);
+      if (userId && serverCacheTs > 0) storage.set(`bm_today_action_cache_ts_${userId}`, String(serverCacheTs));
       setAiAction({ ...serverCache.today_action_cache.data, isAI: true });
       return;
     }
@@ -897,6 +904,7 @@ function TodayContent() {
       const todayKey = `bm_task_done_${localDayKey()}`;
       storage.set(todayKey, "1");
 
+      let serverStreak: number | null = null;
       try {
         const tcRes = await fetch("/api/founder-context/task-complete", {
           method: "POST",
@@ -909,6 +917,11 @@ function TodayContent() {
             const localTotal = parseInt(storage.get("bm_tasks_completed_total") ?? "0", 10) || 0;
             const resolved = Math.max(tcData.tasksCompletedTotal, localTotal);
             storage.set("bm_tasks_completed_total", String(resolved));
+          }
+          if (typeof tcData.streak === "number") {
+            serverStreak = tcData.streak;
+            storage.setStreak(tcData.streak);
+            if (tcData.lastCheckinDate) storage.setLastCheckinDate(tcData.lastCheckinDate);
           }
           if (tcData.pattern?.signal) {
             setActivePattern(tcData.pattern);
@@ -932,7 +945,7 @@ function TodayContent() {
         storage.remove(`bm_today_action_cache_${userId}`);
         storage.remove(`bm_today_action_cache_ts_${userId}`);
       }
-      persistBehaviorState({
+      await persistBehaviorState({
         today_action: todayActionState,
         checkin_done_date: todayDate,
         today_action_cache: null,
@@ -1011,7 +1024,7 @@ function TodayContent() {
       // ── Increment daily streak ────────────────────────────────────────────
       // Streak is earned here — on Today page action completion — not on Reflect
       // or any other page. incrementDailyStreak() is idempotent for the same day.
-      const newStreak = incrementDailyStreak();
+      const newStreak = serverStreak ?? incrementDailyStreak();
       setStreak(newStreak);
 
       // Notify other open tabs so they show the done state immediately

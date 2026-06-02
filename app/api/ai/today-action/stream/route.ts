@@ -35,6 +35,9 @@ import { buildKnowledgeBaseContext, searchFounderKnowledgeBase, type FounderKnow
 import { loadCognitionInput, synthesizeFounderCognition, buildCognitionPromptBlock } from "@/lib/founderCognition";
 import { evaluateAIOutput } from "@/lib/aiEvaluator";
 import { getPromptForRequest, loadActivePrompts } from "@/lib/promptRegistry";
+import { upsertTodayActionCache } from "@/lib/todayActionCache";
+import { buildTodayPersonalisationContext } from "@/lib/todayPersonalisationContext";
+import { recordActionShown } from "@/lib/learning";
 
 function sse(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -201,9 +204,12 @@ export async function POST(request: Request) {
         let cognitionMomentumScore = 50;
         let cognitionAvoidanceSignals: string[] = [];
         let lastReflectionNote: string | undefined;
+        let recentActionHistory = "";
+        let adminForCache: ReturnType<typeof createAdminClient> | null = null;
 
         if (hasAdminEnv()) {
           const supabase = createAdminClient();
+          adminForCache = supabase;
           const [projectResult, memoryResult, contextResult] = await Promise.allSettled([
             supabase.from("projects")
               .select("name, title, description, target_users, problem, startup_stage")
@@ -306,6 +312,27 @@ export async function POST(request: Request) {
             lastReflectionNote = lastReflection.note ?? undefined;
             lastReflectionContext = `\nLAST REFLECTION (${reflectDate}):\nYesterday: "${lastReflection.today_action ?? "Not recorded"}"\nOutcome: ${lastReflection.outcome}\nConfidence: ${lastReflection.confidence}/5\nNote: "${lastReflection.note ?? "None"}"\nInstruction: if yesterday was completed, stay within the same stage and thread, but refine the next task from the reflection note instead of repeating the same action or message.` + lastReflectionContext;
           }
+
+          try {
+            const { data: recentRows } = await supabase.from("reflections")
+              .select("outcome, note, today_action, created_at")
+              .eq("user_id", userId)
+              .not("today_action", "is", null)
+              .order("created_at", { ascending: false })
+              .limit(8);
+
+            const lines = (recentRows ?? [])
+              .filter((r) => r.today_action)
+              .map((r, i) => {
+                const note = r.note ? ` | note: ${String(r.note).slice(0, 120)}` : "";
+                return `${i + 1}. "${r.today_action}" -> ${r.outcome ?? "unknown"}${note}`;
+              });
+
+            if (lines.length) {
+              recentActionHistory = `\n\nRECENT ACTION HISTORY (do not repeat these task shapes or messages):\n${lines.join("\n")}`;
+              lastReflectionContext += `${recentActionHistory}\nInstruction: today's action must be a new next move. Change the person, channel, ask, experiment, or success criterion. Never reuse previous outreach copy.`;
+            }
+          } catch { /* non-fatal */ }
         }
 
         if (hasAdminEnv() && (title || projectContext)) {
@@ -329,17 +356,49 @@ export async function POST(request: Request) {
           if (knowledgeContext) lastReflectionContext += `\n\n${knowledgeContext}`;
         }
 
+        // ── Deep personalisation context ─────────────────────────────────
+        let personalisationCtx = {
+          recentActionsBlock: "",
+          recentReflectionsBlock: "",
+          recurringBlockers: [] as string[],
+          activeGoals: [] as string[],
+        };
+        if (hasAdminEnv() && projectId) {
+          personalisationCtx = await buildTodayPersonalisationContext(userId, projectId);
+        }
+
         const fallback = buildFallback(stage, targetUsers, problem, title, description);
         // ── Agent A — Generator ───────────────────────────────────────────
         emit("agent_a", { status: "running", label: "Agent A generating your task…" });
 
+        const activeGoalsLine =
+          personalisationCtx.activeGoals.length > 0
+            ? `\nACTIVE GOALS (pick one to advance today):\n${personalisationCtx.activeGoals.map((g, i) => `${i + 1}. ${g}`).join("\n")}`
+            : "";
+
+        const blockersLine =
+          personalisationCtx.recurringBlockers.length > 0
+            ? `\nRECURRING BLOCKERS DETECTED:\n${personalisationCtx.recurringBlockers.map((b) => `- "${b}"`).join("\n")}\n-> Today's task must either directly address one of these blockers or explicitly route around it.`
+            : "";
+
         const systemA = `You are BuildMind, a brutally honest execution coach for solo founders.
 Return a single concrete task for today. Must include: specific number of people, exact platform, exact user type.
 Bad: "message some users". Good: "Message 3 fintech founders on LinkedIn today — ask about their workflow, not your idea."
-${projectContext ? `\nFOUNDER DATA:\n${projectContext}` : ""}
+
+${projectContext ? `FOUNDER DATA:\n${projectContext}` : ""}
+${activeGoalsLine}
+${personalisationCtx.recentReflectionsBlock}
+${personalisationCtx.recentActionsBlock}
+${blockersLine}
 ${cognitionBlock ? `\n${cognitionBlock}` : ""}
 ${lastReflectionContext}
-${debtContext}`;
+${debtContext}
+
+HARD RULES:
+1. The task must NOT be semantically equivalent to any task in RECENT TASKS SHOWN above.
+2. The execution draft must use the actual product name and target user type - never "[Your Product]" or "[Target Audience]".
+3. If active goals are listed, the task must advance one of them (name it).
+4. If blockers are listed, address or route around at least one.`;
 
         let agentAOutput = "";
         try {
@@ -371,7 +430,20 @@ ${debtContext}`;
             [
               {
                 role: "system",
-                content: `${criticPersona.prompt}\nReject if ANY: no specific platform, no number, no named user type, too vague, applies to any founder.\nJSON: { "verdict": "pass"|"fail", "reason": "one sentence", "improved_version": "better task if fail else null" }\nContext: Stage=${stage}, Target users=${targetUsers || "unknown"}`,
+                content: `${criticPersona.prompt}
+
+You are a GATEKEEPER. Reject the task if ANY of the following are true:
+1. No specific platform (e.g. "social media" instead of "LinkedIn" or "WhatsApp")
+2. No named user type from the founder's context
+3. No number of people or actions
+4. Semantically equivalent to any task in the RECENT TASKS list below
+5. Contains placeholder text like "[Your Product]", "[Target Audience]", "[Name your startup]"
+6. The task does not advance any of the stated active goals (if goals were provided)
+
+${personalisationCtx.recentActionsBlock}
+
+JSON only: { "verdict": "pass"|"fail", "reason": "one sentence", "improved_version": "better task if fail else null" }
+Context: Stage=${stage}, Target users=${targetUsers || "unknown"}, Product=${title || "unknown"}`,
               },
               { role: "user", content: `Evaluate: "${agentAOutput}"` },
             ],
@@ -474,6 +546,35 @@ ${debtContext}`;
               momentumScore: cognitionMomentumScore,
             },
           });
+
+          if (adminForCache) {
+            const learningSessionId = `today_action:${projectId ?? "none"}:${Date.now()}`;
+            const logRowId = await recordActionShown({
+              userId,
+              projectId: projectId ?? "",
+              sessionId: learningSessionId,
+              stage,
+              actionShown: finalData.action,
+              criticPersona: criticPersona.name,
+              viabilityScore: undefined,
+              confidence: undefined,
+            }).catch((err) => {
+              logError("today-action-stream/recordActionShown", err);
+              return null;
+            });
+            if (logRowId) {
+              (finalData as typeof finalData & { log_row_id?: string }).log_row_id = logRowId;
+            }
+
+            upsertTodayActionCache(adminForCache, userId, {
+              date: new Date().toISOString().slice(0, 10),
+              projectId,
+              stage,
+              data: { ...finalData, reflexion_status: "ok" },
+              generatedAt: new Date().toISOString(),
+              source: "today-action",
+            }).catch((err) => logError("today-action-stream/cache", err, { route: "/api/ai/today-action/stream", userId }));
+          }
         }
 
         emit("done", { success: true, data: finalData });

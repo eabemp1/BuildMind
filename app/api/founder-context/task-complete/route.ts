@@ -25,7 +25,7 @@ export async function POST(req: Request) {
   const [ctxResult, memoryResult, recentTasksResult] = await Promise.allSettled([
     admin
       .from("founder_context")
-      .select("momentum_score, tasks_accepted_this_week, tasks_overridden_this_week, current_stage, consecutive_tasks_completed, last_active, tasks_completed_today, last_task_date, tasks_completed_total, override_reasons, topics_mentioned_repeatedly, days_inactive, last_pattern_shown_at, momentum_last_week")
+      .select("momentum_score, tasks_accepted_this_week, tasks_overridden_this_week, current_stage, consecutive_tasks_completed, last_active, tasks_completed_today, last_task_date, tasks_completed_total, override_reasons, topics_mentioned_repeatedly, days_inactive, last_pattern_shown_at, momentum_last_week, streak, last_checkin_date")
       .eq("user_id", user.id)
       .maybeSingle(),
     admin
@@ -61,6 +61,16 @@ export async function POST(req: Request) {
 
   // Consecutive task tracking — powers the Emotional Language Layer in reflexion.ts
   const today = new Date().toISOString().slice(0, 10);
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayKey = yesterday.toISOString().slice(0, 10);
+  const lastCheckinDate = ctx?.last_checkin_date ?? null;
+  const previousStreak = ctx?.streak ?? 0;
+  const newStreak = lastCheckinDate === today
+    ? previousStreak
+    : lastCheckinDate === yesterdayKey
+      ? previousStreak + 1
+      : 1;
   const previousTodayCount = ctx?.last_task_date === today ? (ctx?.tasks_completed_today ?? 0) : 0;
   const isReturningAfterGap = (ctx?.last_active ?? "") < today;
   const prevConsecutive = ctx?.consecutive_tasks_completed ?? 0;
@@ -112,6 +122,8 @@ export async function POST(req: Request) {
     last_task_date: today,
     daily_tasks_reset_at: new Date().toISOString(),
     tasks_completed_total: (ctx?.tasks_completed_total ?? 0) + 1,
+    streak: newStreak,
+    last_checkin_date: today,
     ...(stage ? { current_stage: stage } : {}),
   }, { onConflict: "user_id" });
 
@@ -125,6 +137,8 @@ export async function POST(req: Request) {
     isFirstTask,
     consecutiveTasksCompleted: newConsecutive,
     tasksCompletedTotal: (ctx?.tasks_completed_total ?? 0) + 1,
+    streak: newStreak,
+    lastCheckinDate: today,
     // Surface detected pattern to the client so the today page can show it
     pattern: activePattern ? {
       signal: activePattern.signal,

@@ -316,7 +316,40 @@ export async function getDashboardOverview(activeProjectId?: string): Promise<Da
   }
   const { data: tasks } = { data: allTasks };
 
-  const completedTasks = (tasks ?? []).filter((t) => t.is_completed).length;
+  const toLocalDateStr = (iso: string) => new Date(iso).toLocaleDateString("en-CA");
+  const projectCompletedTasks = (tasks ?? []).filter((t) => t.is_completed).length;
+  let todayCompletedTasks = 0;
+  let todayCompletedDates: string[] = [];
+  try {
+    const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+    let learningQuery = supabase
+      .from("reflexion_learning_log")
+      .select("outcome_recorded_at")
+      .eq("user_id", user.id)
+      .eq("outcome", "completed")
+      .gte("outcome_recorded_at", fourteenDaysAgo);
+    if (activeProjectId) learningQuery = learningQuery.eq("project_id", activeProjectId);
+    const { data: learningRows } = await learningQuery;
+
+    let reflectionsQuery = supabase
+      .from("reflections")
+      .select("created_at")
+      .eq("user_id", user.id)
+      .eq("outcome", "completed")
+      .gte("created_at", fourteenDaysAgo);
+    if (activeProjectId) reflectionsQuery = reflectionsQuery.eq("project_id", activeProjectId);
+    const { data: completedReflections } = await reflectionsQuery;
+
+    todayCompletedDates = [
+      ...(learningRows ?? []).map((row) => row.outcome_recorded_at).filter(Boolean),
+      ...(completedReflections ?? []).map((row) => row.created_at).filter(Boolean),
+    ];
+    todayCompletedTasks = new Set(todayCompletedDates.map((date) => toLocalDateStr(date))).size;
+  } catch {
+    // Non-fatal: dashboard can still render project-task counts.
+  }
+
+  const completedTasks = Math.max(projectCompletedTasks, todayCompletedTasks);
   const tasksByMilestone = new Map<string, Array<{ is_completed: boolean }>>();
   (tasks ?? []).forEach((task) => {
     const list = tasksByMilestone.get(task.milestone_id) ?? [];
@@ -329,11 +362,13 @@ export async function getDashboardOverview(activeProjectId?: string): Promise<Da
     return milestoneTasks.length > 0 && milestoneTasks.every((task) => task.is_completed);
   }).length;
 
-  const toLocalDateStr = (iso: string) => new Date(iso).toLocaleDateString("en-CA");
   const completedDates = new Set(
-    (tasks ?? [])
+    [
+      ...(tasks ?? [])
       .filter((t) => t.is_completed && (t.updated_at || t.created_at))
-      .map((t) => toLocalDateStr(t.updated_at ?? t.created_at)),
+        .map((t) => toLocalDateStr(t.updated_at ?? t.created_at)),
+      ...todayCompletedDates.map((date) => toLocalDateStr(date)),
+    ],
   );
 
   let streak = 0;
