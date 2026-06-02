@@ -7,7 +7,7 @@ import Sidebar, { SidebarContent } from "@/components/layout/sidebar";
 import Topbar from "@/components/layout/topbar";
 import { trackPageView, trackFunnelStep } from "@/lib/onboarding-analytics";
 import { createClient } from "@/lib/supabase/client";
-import { TrialBanner, TrialPaywall } from "@/components/TrialBanner";
+import { TrialBanner } from "@/components/TrialBanner";
 import { storage } from "@/lib/storage";
 
 // REC 4.2: Persistent daily loop status bar
@@ -87,9 +87,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
 
-  // ── 7-Day Free Trial state ────────────────────────────────────────────────
+  // ── 14-Day Free Trial state ───────────────────────────────────────────────
   const [trialDaysRemaining, setTrialDaysRemaining] = useState(0);
-  const [trialExpired, setTrialExpired] = useState(false);
 
   useEffect(() => {
     // Fetch authoritative trial state from billing/status once per page.
@@ -97,10 +96,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       .then(r => r.ok ? r.json() : null)
       .then((d: { trial?: { active?: boolean; expired?: boolean; daysRemaining?: number } } | null) => {
         if (!d?.trial) return;
-        if (d.trial.expired) {
-          setTrialExpired(true);
-        } else if (d.trial.active) {
+        if (d.trial.active) {
           setTrialDaysRemaining(d.trial.daysRemaining ?? 0);
+        } else {
+          setTrialDaysRemaining(0);
         }
       })
       .catch(() => {});
@@ -174,13 +173,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         {/* REC 4.2: Persistent daily loop status bar — visible from every dashboard page */}
         <DailyLoopStatusBar />
 
-        {/* ── 7-Day Free Trial banner (active trial) + hard paywall (expired) ── */}
+        {/* ── 14-Day Free Trial banner (active trial) ── */}
         {trialDaysRemaining > 0 && (
           <div style={{ padding: "8px 16px 0" }}>
             <TrialBanner daysRemaining={trialDaysRemaining} />
           </div>
         )}
-        <TrialPaywall expired={trialExpired} />
 
         {/* Page */}
         <main className="flex-1 overflow-y-auto px-3 py-5 sm:px-8 sm:py-8">

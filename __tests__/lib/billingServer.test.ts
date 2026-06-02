@@ -20,6 +20,7 @@ const mockGetUserById     = vi.fn();
 const mockUpdateUserById  = vi.fn();
 const mockProfileUpdate   = vi.fn();
 const mockEmailLookup     = vi.fn();
+const mockSubscriptionUpsert = vi.fn();
 
 vi.mock("../../lib/supabase/admin", () => ({
   createAdminClient: vi.fn(() => ({
@@ -42,6 +43,11 @@ vi.mock("../../lib/supabase/admin", () => ({
           update: vi.fn().mockReturnThis(),
           eq:     vi.fn().mockReturnThis(),
           then:   (cb: (v: unknown) => unknown) => Promise.resolve().then(() => cb(undefined)),
+        };
+      }
+      if (table === "subscriptions") {
+        return {
+          upsert: (...a: unknown[]) => mockSubscriptionUpsert(...a),
         };
       }
       return {};
@@ -187,6 +193,7 @@ describe("persistUserPlan", () => {
     });
     mockUpdateUserById.mockResolvedValue({ error: null });
     mockProfileUpdate.mockResolvedValue(undefined);
+    mockSubscriptionUpsert.mockResolvedValue({ error: null });
   });
 
   it("persists builder plan to user_metadata", async () => {
@@ -237,6 +244,29 @@ describe("persistUserPlan", () => {
     expect(typeof payload.user_metadata.billing_updated_at).toBe("string");
     // Should be a valid ISO date
     expect(new Date(payload.user_metadata.billing_updated_at as string).getTime()).toBeGreaterThan(0);
+  });
+
+  it("writes monthly period dates when upgrading to active builder", async () => {
+    await persistUserPlan("user-123", "builder");
+
+    const [row] = mockSubscriptionUpsert.mock.calls[0] as [Record<string, unknown>];
+    expect(row.current_period_start).toEqual(expect.any(String));
+    expect(row.current_period_end).toEqual(expect.any(String));
+
+    const start = new Date(row.current_period_start as string).getTime();
+    const end = new Date(row.current_period_end as string).getTime();
+    expect(end - start).toBe(30 * 24 * 60 * 60 * 1000);
+  });
+
+  it("honors explicit period dates from the billing provider", async () => {
+    await persistUserPlan("user-123", "builder", {
+      periodStart: "2026-06-01T00:00:00.000Z",
+      periodEnd: "2026-07-01T00:00:00.000Z",
+    });
+
+    const [row] = mockSubscriptionUpsert.mock.calls[0] as [Record<string, unknown>];
+    expect(row.current_period_start).toBe("2026-06-01T00:00:00.000Z");
+    expect(row.current_period_end).toBe("2026-07-01T00:00:00.000Z");
   });
 
   it("throws when getUserById fails", async () => {

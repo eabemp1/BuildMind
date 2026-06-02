@@ -19,8 +19,14 @@ type BillingUpdate = {
   meta?: Record<string, unknown>;
 };
 
+const MONTHLY_PERIOD_MS = 30 * 24 * 60 * 60 * 1000;
+
 function sanitizePlan(value: unknown): PublicPlan {
   return normalizePlan(typeof value === "string" ? value : null) === "builder" ? "builder" : "free";
+}
+
+function addMonthlyPeriod(startIso: string): string {
+  return new Date(new Date(startIso).getTime() + MONTHLY_PERIOD_MS).toISOString();
 }
 
 export function getBillingEnvStatus() {
@@ -64,13 +70,16 @@ export async function persistUserPlan(userId: string, plan: PublicPlan, update: 
   if (error) throw new Error(error.message);
 
   const existingMetadata = (data.user?.user_metadata ?? {}) as Record<string, unknown>;
+  const status = update.status ?? (plan === "builder" ? "active" : "free");
+  const nowIso = new Date().toISOString();
+  const billingPeriodStart = update.periodStart ?? (plan === "builder" && status === "active" ? nowIso : null);
+  const billingPeriodEnd = update.periodEnd ?? (billingPeriodStart ? addMonthlyPeriod(billingPeriodStart) : null);
   const nextMetadata: Record<string, unknown> = {
     ...existingMetadata,
     ...(update.meta ?? {}),
     plan,
     billing_provider: update.provider ?? existingMetadata.billing_provider ?? null,
-    billing_status:
-      update.status ?? (plan === "builder" ? "active" : "free"),
+    billing_status: status,
     billing_reference:
       update.reference !== undefined ? update.reference : existingMetadata.billing_reference ?? null,
     billing_transaction_id:
@@ -79,7 +88,9 @@ export async function persistUserPlan(userId: string, plan: PublicPlan, update: 
       update.subscriptionId !== undefined ? update.subscriptionId : existingMetadata.billing_subscription_id ?? null,
     billing_customer_email:
       update.customerEmail !== undefined ? update.customerEmail : existingMetadata.billing_customer_email ?? null,
-    billing_updated_at: new Date().toISOString(),
+    billing_current_period_start: billingPeriodStart,
+    billing_current_period_end: billingPeriodEnd,
+    billing_updated_at: nowIso,
   };
 
   const { error: updateError } = await supabase.auth.admin.updateUserById(userId, {
@@ -106,19 +117,19 @@ export async function persistUserPlan(userId: string, plan: PublicPlan, update: 
   const subscriptionRow = {
     user_id:                  userId,
     plan,
-    status:                   (update.status ?? (plan === "builder" ? "active" : "free")) as string,
+    status,
     provider:                 update.provider ?? null,
     provider_subscription_id: update.subscriptionId ?? null,
     provider_customer_id:     update.customerId ?? null,
     provider_reference:       update.reference ?? null,
-    current_period_start:     update.periodStart ?? null,
-    current_period_end:       update.periodEnd ?? null,
+    current_period_start:     billingPeriodStart,
+    current_period_end:       billingPeriodEnd,
     grace_period_ends_at:     update.gracePeriodEndsAt ?? (update.meta?.grace_period_ends_at as string | null) ?? null,
     canceled_at:              update.status === "canceled" ? new Date().toISOString() : null,
     customer_email:           update.customerEmail ?? null,
     amount_minor:             update.amountMinor ?? null,
     currency:                 update.currency ?? "GHS",
-    updated_at:               new Date().toISOString(),
+    updated_at:               nowIso,
   };
 
   // PRIMARY write — must succeed or the whole operation fails (webhook will retry)

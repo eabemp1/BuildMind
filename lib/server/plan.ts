@@ -67,6 +67,7 @@ export async function getEffectivePlan(userId: string): Promise<Plan> {
 
   try {
     const admin = createAdminClient();
+    const now = new Date();
 
     // 1. Active trial check — single indexed lookup, fast path
     const { data: ctx } = await admin
@@ -75,24 +76,44 @@ export async function getEffectivePlan(userId: string): Promise<Plan> {
       .eq("user_id", userId)
       .maybeSingle();
 
-    if (ctx?.trial_ends_at && new Date(ctx.trial_ends_at) > new Date()) {
+    if (ctx?.trial_ends_at && new Date(ctx.trial_ends_at) > now) {
       return "builder";
     }
 
     // 2. Canonical plan from subscriptions table (A2 fix — primary source)
     const { data: sub } = await admin
       .from("subscriptions")
-      .select("plan, status")
+      .select("plan, status, current_period_end, grace_period_ends_at")
       .eq("user_id", userId)
       .maybeSingle();
 
     if (sub?.plan) {
-      // Only grant builder if the subscription is in an active/grace state
-      const activeStatuses = ["active", "grace", "trialing"];
-      if (sub.plan === "builder" && !activeStatuses.includes(sub.status ?? "")) {
+      if (sub.plan !== "builder") return "free";
+
+      const status = String(sub.status ?? "").toLowerCase();
+      const currentPeriodEnd = typeof sub.current_period_end === "string"
+        ? new Date(sub.current_period_end)
+        : null;
+      const gracePeriodEnd = typeof sub.grace_period_ends_at === "string"
+        ? new Date(sub.grace_period_ends_at)
+        : null;
+
+      if (status === "grace") {
+        return gracePeriodEnd && gracePeriodEnd > now ? "builder" : "free";
+      }
+
+      if (!["active", "trialing"].includes(status)) {
         return "free";
       }
-      return sub.plan as Plan;
+
+      // New Builder writes are monthly and date-based. Legacy rows without a
+      // period end remain active until the next webhook/reconcile refresh writes
+      // one, avoiding accidental lockouts during rollout.
+      if (currentPeriodEnd && currentPeriodEnd <= now) {
+        return "free";
+      }
+
+      return "builder";
     }
 
     // 3. Legacy fallback — user_metadata JWT cache (pre-subscriptions accounts)

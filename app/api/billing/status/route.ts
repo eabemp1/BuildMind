@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { planFromUserMetadata, TRIAL_DURATION_DAYS } from "@/lib/plan";
-import { getFreshAuthUser } from "@/lib/server/plan";
+import { getEffectivePlan, getFreshAuthUser } from "@/lib/server/plan";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export async function GET() {
@@ -21,6 +21,9 @@ export async function GET() {
 
   const freshUser = await getFreshAuthUser(user);
   const basePlan = planFromUserMetadata(freshUser);
+  let subscriptionStatus: string | null = null;
+  let subscriptionProvider: string | null = null;
+  let subscriptionPeriodEnd: string | null = null;
 
   // ── Free Trial: read from founder_context (server-authoritative) ──────────
   // If the auth callback missed trial creation, bootstrap it here so a new
@@ -32,6 +35,16 @@ export async function GET() {
 
   try {
     const admin = createAdminClient();
+    const { data: sub } = await admin
+      .from("subscriptions")
+      .select("status, provider, current_period_end")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    subscriptionStatus = typeof sub?.status === "string" ? sub.status : null;
+    subscriptionProvider = typeof sub?.provider === "string" ? sub.provider : null;
+    subscriptionPeriodEnd = typeof sub?.current_period_end === "string" ? sub.current_period_end : null;
+
     const { data: ctx } = await admin
       .from("founder_context")
       .select("trial_started_at, trial_ends_at, trial_expired")
@@ -104,7 +117,8 @@ export async function GET() {
       const ends = new Date(effectiveEndsAt);
 
       if (trialRow?.trial_expired || ends <= now) {
-        // Trial has expired — enforce hard paywall
+        // Trial has expired. Freemium users fall back to the Free plan; Builder
+        // access is decided independently by the subscription lookup below.
         trialExpired = true;
         if (!trialRow?.trial_expired) {
           // Mark expired server-side (best-effort)
@@ -123,12 +137,9 @@ export async function GET() {
     // Non-fatal — fall through with trial fields as false
   }
 
-  // Effective plan: trial grants builder; expired trial hard-gates back to free
-  const effectivePlan = basePlan === "builder"
-    ? "builder"
-    : trialActive
-      ? "builder"
-      : "free";
+  // Effective plan: active trial grants Builder; otherwise use canonical
+  // subscription state. Expired trial never creates a global hard paywall.
+  const effectivePlan = await getEffectivePlan(user.id);
 
   return NextResponse.json({
     ok: true,
@@ -143,8 +154,9 @@ export async function GET() {
       endsAt: trialEndsAt,
       durationDays: TRIAL_DURATION_DAYS,
     },
-    billingProvider: freshUser.user_metadata?.billing_provider ?? null,
-    billingStatus: freshUser.user_metadata?.billing_status ?? null,
+    billingProvider: subscriptionProvider ?? freshUser.user_metadata?.billing_provider ?? null,
+    billingStatus: subscriptionStatus ?? freshUser.user_metadata?.billing_status ?? null,
+    currentPeriodEnd: subscriptionPeriodEnd ?? freshUser.user_metadata?.billing_current_period_end ?? null,
     updatedAt: freshUser.user_metadata?.billing_updated_at ?? null,
   });
 }
