@@ -18,6 +18,7 @@ import { generateMorningBriefing } from "@/lib/reflexion";
 import { planFromUserMetadata } from "@/lib/plan";
 import { getFreshPlanForUser } from "@/lib/server/plan";
 import { hasAdminEnv } from "@/app/api/ai/_utils";
+import { buildTodayActionCacheFromBriefing, upsertTodayActionCache } from "@/lib/todayActionCache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -162,7 +163,7 @@ export async function GET(req: Request) {
         // Fetch active project for gap detection (weaknesses + stage)
         const { data: activeProject } = await admin
           .from("projects")
-          .select("validation_weaknesses, startup_stage")
+          .select("id, name, title, description, target_users, problem, validation_weaknesses, startup_stage")
           .eq("user_id", ctx.user_id)
           .order("updated_at", { ascending: false })
           .limit(1)
@@ -190,6 +191,19 @@ export async function GET(req: Request) {
           ...briefing,
           delivered_at: new Date().toISOString(),
         });
+
+        if (activeProject?.id) {
+          await upsertTodayActionCache(
+            admin,
+            ctx.user_id,
+            buildTodayActionCacheFromBriefing({
+              briefing,
+              project: activeProject,
+              stage: activeProject.startup_stage ?? ctx.current_stage ?? "Idea",
+              timezoneOffset: tzOffset,
+            }),
+          );
+        }
         generated++;
       } catch (e) {
         errors.push(`${ctx.user_id}: ${String(e).slice(0, 80)}`);
@@ -274,7 +288,7 @@ export async function GET(req: Request) {
   // Fetch active project for gap detection
   const { data: activeProject } = await admin
     .from("projects")
-    .select("validation_weaknesses, startup_stage")
+    .select("id, name, title, description, target_users, problem, validation_weaknesses, startup_stage")
     .eq("user_id", user.id)
     .order("updated_at", { ascending: false })
     .limit(1)
@@ -303,6 +317,19 @@ export async function GET(req: Request) {
       .insert({ user_id: user.id, ...briefing, delivered_at: new Date().toISOString() })
       .select()
       .maybeSingle();
+
+    if (activeProject?.id) {
+      await upsertTodayActionCache(
+        admin,
+        user.id,
+        buildTodayActionCacheFromBriefing({
+          briefing,
+          project: activeProject,
+          stage: activeProject.startup_stage ?? ctx?.current_stage ?? "Idea",
+        }),
+      );
+    }
+
     return NextResponse.json({ ok: true, data: saved });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String(e) }, { status: 500 });
