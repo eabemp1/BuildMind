@@ -218,7 +218,7 @@ export async function POST(request: Request) {
               .select("avoidance_zones, strengths, last_insight, personality_tags, decision_patterns, last_debt_surfaced")
               .eq("user_id", userId).maybeSingle(),
             supabase.from("founder_context")
-              .select("avoidance_signals, override_reasons, tasks_overridden_this_week, topics_mentioned_repeatedly, days_inactive")
+              .select("avoidance_signals, override_reasons, tasks_overridden_this_week, topics_mentioned_repeatedly, days_inactive, streak, last_checkin_date, tasks_completed_total, consecutive_tasks_completed")
               .eq("user_id", userId).maybeSingle(),
           ]);
 
