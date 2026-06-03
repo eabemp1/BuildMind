@@ -1026,6 +1026,11 @@ function TodayContent() {
       // or any other page. incrementDailyStreak() is idempotent for the same day.
       const newStreak = serverStreak ?? incrementDailyStreak();
       setStreak(newStreak);
+      fetch("/api/founder-context/streak", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ streak: newStreak, lastCheckinDate: localDayKey() }),
+      }).catch(() => {});
 
       // Notify other open tabs so they show the done state immediately
       const todayBroadcast = localDayKey();

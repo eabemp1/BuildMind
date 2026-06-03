@@ -23,5 +23,7 @@ export async function persistBehaviorState(values: BehaviorValues): Promise<void
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ values }),
-  }).catch(() => {});
+  }).catch((err) => {
+    console.error("Failed to persist behavior state", err);
+  });
 }
