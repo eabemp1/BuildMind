@@ -366,6 +366,19 @@ function localDayKey(date = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
+function daysSince(date?: string | null): number {
+  if (!date) return 0;
+  const created = new Date(date).getTime();
+  if (!Number.isFinite(created)) return 0;
+  return Math.max(0, Math.floor((Date.now() - created) / (24 * 60 * 60 * 1000)));
+}
+
+function addDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
 function TodayContent() {
   const isMobile = useIsMobile();
   const router = useRouter();
@@ -390,6 +403,9 @@ function TodayContent() {
   const [isContextOpen, setIsContextOpen] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState<string | null>(null);
+  const [accountAgeDays, setAccountAgeDays] = useState(0);
+  const [accountCreatedAt, setAccountCreatedAt] = useState<string | null>(null);
+  const [isFirstRun, setIsFirstRun] = useState(false);
 
   // AI-personalised action state
   const [aiAction, setAiAction] = useState<ActionData | null>(null);
@@ -455,6 +471,8 @@ function TodayContent() {
       const meta = data.user?.user_metadata ?? {};
       const name = (meta.full_name as string) || (meta.name as string) || data.user?.email?.split("@")[0] || null;
       setDisplayName(name);
+      setAccountCreatedAt(data.user?.created_at ?? null);
+      setAccountAgeDays(daysSince(data.user?.created_at));
 
       if (uid) {
         storage.onSignIn(uid);
@@ -493,6 +511,32 @@ function TodayContent() {
       }
     } catch {}
   }, []);
+
+  useEffect(() => {
+    if (!userId || !project?.id) return;
+    const seenKey = `bm_has_seen_today_${userId}`;
+    const firstSeenKey = `bm_today_first_seen_at_${userId}`;
+    const seen = storage.get(seenKey);
+    if (seen) {
+      setInitialAnalysisDismissed(true);
+      setIsFirstRun(false);
+      return;
+    }
+
+    const firstSeenAt = parseInt(storage.get(firstSeenKey) ?? "0", 10);
+    if (firstSeenAt > 0 && Date.now() - firstSeenAt >= 24 * 60 * 60 * 1000) {
+      storage.set(seenKey, "1");
+      setInitialAnalysisDismissed(true);
+      setIsFirstRun(false);
+      return;
+    }
+
+    if (!firstSeenAt) storage.set(firstSeenKey, String(Date.now()));
+
+    const hasPriorCheckin = done || streak > 0 || Boolean(storage.get(`bm_checkin_done_date_${userId}`) || storage.get("bm_checkin_done_date"));
+    setIsFirstRun(!hasPriorCheckin);
+    setInitialAnalysisDismissed(false);
+  }, [done, project?.id, streak, userId]);
 
   // Fetch personalised action from AI once we have project data
   useEffect(() => {
@@ -961,6 +1005,7 @@ function TodayContent() {
 
       if (userId) {
         storage.set(`bm_checkin_done_date_${userId}`, todayDate);
+        storage.set(`bm_has_seen_today_${userId}`, "1");
       }
       storage.set("bm_checkin_done_date", todayDate);
 
@@ -1235,6 +1280,22 @@ function TodayContent() {
   const yesterdayCausal = yesterdayReflection
     ? buildYesterdayCausalLine(yesterdayReflection)
     : null;
+  const isDayOneColdStart = accountAgeDays <= 1 && streak === 0 && !done;
+  const shouldShowInitialAnalysis = Boolean(isFirstRun && initialAnalysis && !initialAnalysisDismissed);
+  const weekOneStageKey = (project?.startup_stage ?? "Idea").toLowerCase();
+  const weekOneMilestones = WEEK_ONE_MILESTONES[weekOneStageKey] ?? WEEK_ONE_MILESTONES.idea;
+  const weekOneTarget = weekOneMilestones[weekOneMilestones.length - 1]?.milestone ?? WEEK_ONE_MILESTONES.idea[2].milestone;
+  const weekOneStartDate = accountCreatedAt ? new Date(accountCreatedAt) : new Date();
+  const weekOneDays = Array.from({ length: 7 }, (_, index) => {
+    const date = addDays(weekOneStartDate, index);
+    const key = localDayKey(date);
+    const completed = Boolean(storage.get(`bm_task_done_${key}`) || storage.get(`bm_checkin_done_date_${userId}`) === key || storage.get("bm_checkin_done_date") === key);
+    return {
+      day: index + 1,
+      completed,
+      active: index === Math.min(6, Math.max(0, accountAgeDays)),
+    };
+  });
 
   return (
     <div style={{ maxWidth: 920, margin: "0 auto", padding: isMobile ? "0 0 24px" : "20px 8px 48px" }}>
@@ -1266,12 +1327,112 @@ function TodayContent() {
               {project.startup_stage}
             </span>
           )}
-          {streak > 0 && (
+          {isDayOneColdStart ? (
+            <span style={{ marginLeft: "auto", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-accent)" }}>
+              Start your streak today
+            </span>
+          ) : streak > 0 && (
             <span style={{ marginLeft: "auto", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-text4)" }}>
               {streak}d
             </span>
           )}
         </div>
+      )}
+
+      {shouldShowInitialAnalysis && initialAnalysis && (
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+          style={{
+            background: "var(--bm-accent-dim)",
+            border: "1px solid var(--bm-accent-bd)",
+            borderRadius: 14,
+            padding: isMobile ? "18px" : "22px 24px",
+            marginBottom: 16,
+            fontFamily: "'DM Mono', monospace",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 18 }}>
+            <div style={{ fontSize: 10, color: "var(--bm-accent)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+              ⚡ BuildMind Initial Analysis
+            </div>
+            <div style={{ fontSize: 10, color: "var(--bm-text3)", textAlign: "right" }}>
+              {project?.name ?? productName ?? "Your startup"}
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "140px 1fr", gap: isMobile ? 10 : 16, alignItems: "center", marginBottom: 18 }}>
+            <div style={{ fontSize: 11, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Health score</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ flex: 1, height: 9, borderRadius: 99, background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", overflow: "hidden" }}>
+                <div style={{ width: `${Math.max(0, Math.min(100, initialAnalysis.health_score))}%`, height: "100%", background: "var(--bm-accent)" }} />
+              </div>
+              <span style={{ fontSize: 12, color: "var(--bm-text)", fontWeight: 700, minWidth: 48, textAlign: "right" }}>
+                {initialAnalysis.health_score}/100
+              </span>
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 18 }}>
+            <div style={{ fontSize: 11, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 7 }}>
+              Your founder pattern
+            </div>
+            <p style={{ fontSize: isMobile ? 13 : 14, color: "var(--bm-text)", lineHeight: 1.65, margin: 0 }}>
+              "{sanitizeOutput(initialAnalysis.founder_pattern)}"
+            </p>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16, marginBottom: 18 }}>
+            <div>
+              <div style={{ fontSize: 11, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
+                Top 3 risks right now
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {initialAnalysis.key_risks.map((risk, index) => (
+                  <div key={risk} style={{ display: "flex", gap: 8, color: "var(--bm-text2)", fontSize: 12, lineHeight: 1.55 }}>
+                    <span style={{ color: "var(--bm-accent)", flexShrink: 0 }}>{index + 1}</span>
+                    <span>{sanitizeOutput(risk)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
+                Where to focus first
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {initialAnalysis.immediate_priorities.map((priority) => (
+                  <div key={priority} style={{ display: "flex", gap: 8, color: "var(--bm-text2)", fontSize: 12, lineHeight: 1.55 }}>
+                    <span style={{ color: "var(--bm-accent)", flexShrink: 0 }}>→</span>
+                    <span>{sanitizeOutput(priority)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <button
+            onClick={() => {
+              setInitialAnalysisDismissed(true);
+              if (userId) storage.set(`bm_has_seen_today_${userId}`, "1");
+            }}
+            style={{
+              width: "100%",
+              padding: "12px 14px",
+              borderRadius: 10,
+              border: "1px solid var(--bm-accent-bd)",
+              background: "var(--bm-accent)",
+              color: "var(--bm-bg)",
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            Got it - show me today's action →
+          </button>
+        </motion.div>
       )}
 
       {/* ── Context drawer (collapsed by default) — everything below wraps here ── */}
@@ -1321,7 +1482,7 @@ function TodayContent() {
           Shows perceived intelligence on first task load — creates emotional connection
           and trust before the founder even reads their task.
       ═══════════════════════════════════════════════════════════════════════════ */}
-      {initialAnalysis && !initialAnalysisDismissed && (
+      {initialAnalysis && !initialAnalysisDismissed && !shouldShowInitialAnalysis && (
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -1478,7 +1639,24 @@ function TodayContent() {
             </span>
           </div>
 
-          {streak > 0 && (
+          {isDayOneColdStart ? (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+                padding: "4px 9px",
+                borderRadius: 5,
+                background: "var(--bm-accent-dim)",
+                border: "1px solid var(--bm-accent-bd)",
+              }}
+            >
+              <Flame size={11} color="var(--bm-accent)" />
+              <span style={{ fontSize: 11, fontWeight: 400, color: "var(--bm-accent)", fontFamily: "'DM Mono', monospace" }}>
+                Start your streak today
+              </span>
+            </div>
+          ) : streak > 0 && (
             <div
               style={{
                 display: "flex",
@@ -1903,6 +2081,53 @@ function TodayContent() {
           </div>
         </div>
       </motion.div>
+
+      {accountAgeDays < 7 && (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          style={{
+            background: "var(--bm-bg2)",
+            border: "1px solid var(--bm-border)",
+            borderRadius: 14,
+            padding: isMobile ? "14px" : "14px 16px",
+            marginBottom: 14,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
+            <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              Week 1 journey
+            </span>
+            <div style={{ display: "flex", alignItems: "center", flex: 1, minWidth: isMobile ? "100%" : 260 }}>
+              {weekOneDays.map((day, index) => (
+                <div key={day.day} style={{ display: "flex", alignItems: "center", flex: index < 6 ? 1 : "0 0 auto" }}>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                    <div
+                      style={{
+                        width: 13,
+                        height: 13,
+                        borderRadius: "50%",
+                        background: day.completed ? "var(--bm-accent)" : day.active ? "var(--bm-bg4)" : "var(--bm-bg3)",
+                        border: day.completed ? "1px solid var(--bm-accent-bd)" : "1px solid var(--bm-border2)",
+                      }}
+                    />
+                    <span style={{ fontSize: 9, color: day.active ? "var(--bm-text2)" : "var(--bm-text4)", fontFamily: "'DM Mono', monospace" }}>
+                      D{day.day}
+                    </span>
+                  </div>
+                  {index < 6 && (
+                    <div style={{ flex: 1, height: 1, background: weekOneDays[index + 1]?.completed ? "var(--bm-accent-bd)" : "var(--bm-border)", margin: "0 5px 13px" }} />
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+          <p style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.55, margin: 0 }}>
+            By Day 7 you'll have {sanitizeOutput(weekOneTarget)}
+          </p>
+        </motion.div>
+      )}
 
       {/* ── Destinations ── */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}
