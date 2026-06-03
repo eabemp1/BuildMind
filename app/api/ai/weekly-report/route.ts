@@ -130,39 +130,26 @@ export async function POST(request: Request) {
 
           tasks = allUserTasks.length; // All fetched tasks are already is_completed + this week
 
-          // Also count today-page completions from reflexion_learning_log
-          // (founders marking tasks "done" via the Today page check-in flow)
+          // Also count Today-page activity. Reflections are the primary source
+          // because they are written on every Today->Reflect flow.
           try {
-            // Source 1: reflexion_learning_log (outcome recorded via reflexion-outcome endpoint)
-            const { data: reflexionRows } = await supabase
-              .from("reflexion_learning_log")
-              .select("id")
-              .eq("user_id", userId)
-              .eq("outcome", "completed")
-              .gte("outcome_recorded_at", weekAgoISO);
-            const reflexionCount = (reflexionRows ?? []).length;
-
-            // Source 2: reflections table — written directly by /api/ai/reflect-action
-            // This is the primary write path when founders use the Today→Reflect flow
             const { data: reflectionRows } = await supabase
               .from("reflections")
-              .select("id")
+              .select("id, created_at, outcome")
               .eq("user_id", userId)
               .gte("created_at", weekAgoISO);
             const reflectionCount = (reflectionRows ?? []).length;
 
-            // Source 3: behavior_state checkin_done_date — count unique days with a check-in
-            // founder_context stores last checkin date; check daily_stats for per-day history
-            const { data: dailyStats, error: dailyStatsError } = await supabase
-              .from("daily_stats")
-              .select("date")
+            const { data: reflexionRows } = await supabase
+              .from("reflexion_learning_log")
+              .select("id, created_at, outcome")
               .eq("user_id", userId)
-              .gte("date", weekAgoISO.split("T")[0])
-              .not("checkin_done_date", "is", null);
-            const dailyCheckinCount = dailyStatsError ? 0 : (dailyStats ?? []).length;
+              .neq("outcome", "pending")
+              .gte("created_at", weekAgoISO);
+            const reflexionCount = (reflexionRows ?? []).length;
 
-            // Use the highest of all three counts — they can overlap but shouldn't undercount
-            tasks = Math.max(tasks, reflexionCount, reflectionCount, dailyCheckinCount);
+            // Use the highest count — they overlap but should never undercount.
+            tasks = Math.max(tasks, reflexionCount, reflectionCount);
           } catch { /* non-fatal */ }
         }
       }
@@ -217,7 +204,9 @@ export async function POST(request: Request) {
                   `${i + 1}. "${a.action_shown}" (${a.action_type ?? "general"}, ${new Date(a.created_at).toLocaleDateString()})`,
               ),
             ].join("\n")
-          : completedActionsBlock;
+          : tasks > 0
+            ? `TASKS COMPLETED THIS WEEK: ${tasks} check-ins recorded.`
+            : "TASKS COMPLETED THIS WEEK: None recorded.";
 
       reflectionsBlock =
         weekReflections.length > 0

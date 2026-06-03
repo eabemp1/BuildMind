@@ -152,6 +152,25 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
     if (completedDate >= previousStart && completedDate < start) tasksCompletedPreviousWeek += 1;
   });
 
+  // Also get reflection dates for the chart — these represent actual active days.
+  try {
+    const weekAgoDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: weekReflections } = await supabase
+      .from("reflections")
+      .select("created_at")
+      .eq("user_id", user.id)
+      .gte("created_at", weekAgoDate);
+
+    (weekReflections ?? []).forEach((r) => {
+      const dayIdx = dayIndexFromIso(r.created_at);
+      if (dayIdx >= 0 && dayIdx < 7) {
+        taskData[dayIdx] = Math.max(taskData[dayIdx] ?? 0, 1);
+      }
+    });
+  } catch {
+    // Non-fatal: reports still render from task rows.
+  }
+
   let activeStreakDays = 0;
   for (let i = 0; i < 90; i++) {
     const d = new Date();
