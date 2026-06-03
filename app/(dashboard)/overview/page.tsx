@@ -332,7 +332,17 @@ export default function OverviewPage() {
               value: (streak > 0) ? `${streak}d` : (overviewLoading) ? "—" : "0d",
               tooltip: "Consecutive days you've completed at least one task or reflection. Breaks if you miss a day. Used to unlock advanced features.",
             },
-            { label: "Completed", value: milestonesCompleted > 0 ? milestonesCompleted : doneTasks > 0 ? doneTasks : "—" },
+            {
+              label: milestonesCompleted > 0 ? "Milestones" : "Tasks Done",
+              value: milestonesCompleted > 0
+                ? `${milestonesCompleted}`
+                : doneTasks > 0
+                ? `${doneTasks}`
+                : "—",
+              tooltip: milestonesCompleted > 0
+                ? `${milestonesCompleted} milestone${milestonesCompleted !== 1 ? "s" : ""} completed across all your projects. A milestone is a stage-level objective — completing one moves your startup forward on the roadmap.`
+                : `Tasks completed across your active project. Each task maps to a milestone — completing tasks is how milestones unlock. This counts check-ins recorded on the Today page.`,
+            },
             {
               label: "Cadence",
               value: `${aiAdviceQuality}%`,
