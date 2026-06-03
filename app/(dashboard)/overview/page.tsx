@@ -131,6 +131,8 @@ export default function OverviewPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    const cachedUid = localStorage.getItem("bm_active_user_id");
+    if (cachedUid) storage.onSignIn(cachedUid);
     const refresh = () => setLocalStreak(getStoredStreak());
     refresh();
     setScoreHistory(getScoreHistory());

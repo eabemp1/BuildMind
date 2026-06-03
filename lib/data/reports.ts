@@ -356,9 +356,7 @@ export async function getDashboardOverview(activeProjectId?: string): Promise<Da
       .from("reflections")
       .select("created_at")
       .eq("user_id", user.id)
-      .eq("outcome", "completed")
       .gte("created_at", fourteenDaysAgo);
-    if (activeProjectId) reflectionsQuery = reflectionsQuery.eq("project_id", activeProjectId);
     const { data: completedReflections } = await reflectionsQuery;
 
     todayCompletedDates = [
