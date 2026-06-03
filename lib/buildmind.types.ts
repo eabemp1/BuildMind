@@ -88,6 +88,10 @@ export type DashboardOverview = {
   founderStreakDays: number;
   avoidanceZones?: string[];
   founderName?: string | null;
+  aiAdviceQuality?: number;
+  todayDone?: boolean;
+  reflectionDoneToday?: boolean;
+  daysSinceLastReflection?: number | null;
 };
 
 export type WeeklyReportMetrics = {

@@ -9,6 +9,7 @@ import { trackPageView, trackFunnelStep } from "@/lib/onboarding-analytics";
 import { createClient } from "@/lib/supabase/client";
 import { TrialBanner } from "@/components/TrialBanner";
 import { storage } from "@/lib/storage";
+import { fetchBehaviorState } from "@/lib/userBehaviorState";
 
 // REC 4.2: Persistent daily loop status bar
 function DailyLoopStatusBar() {
@@ -31,6 +32,17 @@ function DailyLoopStatusBar() {
     const reflectionDone = storage.get(`bm_reflect_done_${today}`) === "1";
 
     setLoopState({ dayOfWeek, taskDone, reflectionDone, hoursUntilBriefing });
+    fetchBehaviorState<{ checkin_done_date: string; reflect_done_date: string }>([
+      "checkin_done_date",
+      "reflect_done_date",
+    ]).then((values) => {
+      setLoopState({
+        dayOfWeek,
+        taskDone: values.checkin_done_date === today || taskDone,
+        reflectionDone: values.reflect_done_date === today || reflectionDone,
+        hoursUntilBriefing,
+      });
+    }).catch(() => {});
   }, []);
 
   if (!loopState) return null;

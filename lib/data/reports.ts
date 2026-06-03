@@ -278,7 +278,9 @@ export async function getDashboardOverview(activeProjectId?: string): Promise<Da
   const supabase = createClient();
 
   let projectsQuery = supabase
-    .from("projects").select("id").eq("user_id", user.id);
+    .from("projects")
+    .select("id, description, startup_stage, target_users")
+    .eq("user_id", user.id);
   if (activeProjectId) projectsQuery = projectsQuery.eq("id", activeProjectId);
   const { data: projects } = await projectsQuery;
   const projectIds = (projects ?? []).map((p) => p.id);
@@ -381,16 +383,53 @@ export async function getDashboardOverview(activeProjectId?: string): Promise<Da
 
   const { data: founderContext } = await supabase
     .from("founder_context")
-    .select("streak")
+    .select("streak, avoidance_zones")
     .eq("user_id", user.id)
     .maybeSingle();
-  const dbStreak = (founderContext as { streak?: number } | null)?.streak;
-  const serverStreak = activeProjectId
-    ? streak
-    : Math.max(
-        typeof dbStreak === "number" ? dbStreak : 0,
-        streak,
-      );
+  const contextRow = founderContext as { streak?: number | null; avoidance_zones?: string[] | null } | null;
+  const dbStreak = contextRow?.streak;
+  const serverStreak = Math.max(
+    typeof dbStreak === "number" ? dbStreak : 0,
+    streak,
+  );
+
+  const today = new Date().toLocaleDateString("en-CA");
+  const { data: behaviorRows } = await supabase
+    .from("user_behavior_state")
+    .select("key, value")
+    .eq("user_id", user.id)
+    .in("key", ["checkin_done_date", "reflect_done_date"]);
+  const behavior = Object.fromEntries((behaviorRows ?? []).map((row) => [row.key, row.value])) as {
+    checkin_done_date?: string;
+    reflect_done_date?: string;
+  };
+  const todayDone = behavior.checkin_done_date === today;
+  const reflectionDoneToday = behavior.reflect_done_date === today;
+
+  let daysSinceLastReflection: number | null = null;
+  const { data: lastReflection } = await supabase
+    .from("reflections")
+    .select("created_at")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (lastReflection?.created_at) {
+    daysSinceLastReflection = Math.floor(
+      (Date.now() - new Date(lastReflection.created_at).getTime()) / 86400000,
+    );
+  }
+
+  const activeProject = (projects ?? []).find((project) => project.id === activeProjectId) ?? (projects ?? [])[0];
+  const aiAdviceQuality = Math.min(100, [
+    activeProject?.description && activeProject.description.trim().length > 20 ? 25 : 0,
+    activeProject?.startup_stage && activeProject.startup_stage !== "Idea" ? 15 : 0,
+    activeProject?.target_users && activeProject.target_users.trim().length > 5 ? 15 : 0,
+    (contextRow?.avoidance_zones?.length ?? 0) > 0 ? 10 : 0,
+    completedTasks > 0 ? 10 : 0,
+    daysSinceLastReflection != null ? 15 : 0,
+    serverStreak > 0 ? 10 : 0,
+  ].reduce((sum, value) => sum + value, 0));
 
   const { data: notifications } = await supabase
     .from("notifications").select("message").eq("user_id", user.id)
@@ -398,7 +437,14 @@ export async function getDashboardOverview(activeProjectId?: string): Promise<Da
 
   return {
     activeProjects: projectIds.length, completedTasks, milestonesCompleted: completedMilestones,
-    aiUsage: 0, recentActivity: (notifications ?? []).map((n) => n.message), founderStreakDays: serverStreak,
+    aiUsage: 0,
+    recentActivity: (notifications ?? []).map((n) => n.message),
+    founderStreakDays: serverStreak,
+    avoidanceZones: contextRow?.avoidance_zones ?? [],
+    aiAdviceQuality,
+    todayDone,
+    reflectionDoneToday,
+    daysSinceLastReflection,
   };
 }
 

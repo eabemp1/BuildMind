@@ -187,17 +187,18 @@ export default function OverviewPage() {
   }, [score]);
 
   const consistencyBonus = useMemo(() => computeConsistencyBonus(getScoreHistory()), [score]);
-  const consistencyPct = Math.round((consistencyBonus / 10) * 100);
+  const localConsistencyPct = Math.round((consistencyBonus / 10) * 100);
+  const aiAdviceQuality = overview?.aiAdviceQuality ?? localConsistencyPct;
   const stage = activeProject?.startup_stage ?? "Idea";
   const milestonesCompleted = overview?.milestonesCompleted ?? 0;
   const totalTasks = activeProject?.tasksTotal ?? 0;
-  const doneTasks = activeProject?.tasksCompleted ?? 0;
+  const doneTasks = overview?.completedTasks ?? activeProject?.tasksCompleted ?? 0;
   const nudge = NUDGE[stage] ?? NUDGE.Idea;
 
   // Is today's check-in done?
   const todayStr = now.toLocaleDateString("en-CA");
   const todayDone = userId
-    ? serverTodayDone || storage.get(`bm_checkin_done_date_${userId}`) === todayStr
+    ? overview?.todayDone || serverTodayDone || storage.get(`bm_checkin_done_date_${userId}`) === todayStr
     : false;
 
   useEffect(() => {
@@ -215,13 +216,15 @@ export default function OverviewPage() {
   // Memoized so storage.get() isn't called on every render — depends on score
   // which changes when check-ins are recorded.
   const noReflectIn3Days = useMemo(() => {
+    if (overview?.daysSinceLastReflection != null) return overview.daysSinceLastReflection >= 3;
+    if (overview?.reflectionDoneToday) return false;
     for (let i = 1; i <= 3; i++) {
       const d = new Date(); d.setDate(d.getDate() - i);
       const key = `bm_reflect_done_${d.toLocaleDateString("en-CA")}`;
       if (storage.get(key)) return false;
     }
     return true;
-  }, [score]);
+  }, [score, overview?.daysSinceLastReflection, overview?.reflectionDoneToday]);
   const showAttention =
     (scoreDelta != null && scoreDelta < -10) ||
     (streak === 0 && totalTasks > 0 && doneTasks / totalTasks < 0.5) ||
@@ -260,7 +263,7 @@ export default function OverviewPage() {
           avoidanceZones: overview?.avoidanceZones ?? [],
           mrr:            activeProject?.mrr ?? 0,
           displayName:    overview?.founderName ?? "",
-          tasksCompleted: activeProject?.tasksCompleted ?? 0,
+          tasksCompleted: doneTasks,
         }}
       />
 
@@ -330,7 +333,7 @@ export default function OverviewPage() {
             { label: "Completed", value: milestonesCompleted > 0 ? milestonesCompleted : doneTasks > 0 ? doneTasks : "—" },
             {
               label: "AI Advice Quality",
-              value: `${consistencyPct}%`,
+              value: `${aiAdviceQuality}%`,
               tooltip: "How much context BuildMind has about you. Higher = more specific, personalised advice. Improve it by filling in your startup summary, target users, and logging daily reflections.",
             },
           ].map((stat, i, arr) => (
@@ -378,7 +381,7 @@ export default function OverviewPage() {
             {summaries.slice(0, 4).map((s, i) => {
               const stageColor = STAGE_COLOUR[s.startup_stage ?? "Idea"] ?? "var(--bm-text3)";
               const pCheckinDone = userId
-                ? storage.get(`bm_checkin_done_date_${userId}`) === todayStr
+                ? todayDone
                 : false;
 
               return (
