@@ -29,6 +29,11 @@ type FounderContextResponse = {
   } | null;
 };
 
+type StreakResponse = {
+  ok?: boolean;
+  streak?: number;
+};
+
 type WeeklyReportResponse = {
   success?: boolean;
   data?: {
@@ -114,10 +119,16 @@ export default function WeeklySharePage() {
       };
 
       try {
-        const contextRes = await fetch("/api/founder-context", { cache: "no-store" });
-        if (contextRes.ok) {
-          const context = (await contextRes.json()) as FounderContextResponse;
-          if (typeof context.data?.streak === "number") base.streak = context.data.streak;
+        const streakRes = await fetch("/api/founder-context/streak", { cache: "no-store" });
+        if (streakRes.ok) {
+          const streakData = (await streakRes.json()) as StreakResponse;
+          if (typeof streakData.streak === "number") base.streak = streakData.streak;
+        } else {
+          const contextRes = await fetch("/api/founder-context", { cache: "no-store" });
+          if (contextRes.ok) {
+            const context = (await contextRes.json()) as FounderContextResponse;
+            if (typeof context.data?.streak === "number") base.streak = context.data.streak;
+          }
         }
       } catch {}
 

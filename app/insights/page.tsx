@@ -33,6 +33,10 @@ interface InsightData {
   streak:            number;
   metacriticSignal?: string;
   lastInsight?:      string;
+  activePatternSignal:  string | null;
+  activePatternMessage: string | null;
+  activePatternSubject: string | null;
+  lastPatternShownAt:   string | null;
   completionByDay:   Record<string, { completed: number; total: number }>;
   avgConfidenceByOutcome: Record<string, number>;
   topOverrideReason?: string;
@@ -182,7 +186,15 @@ export default function InsightsPage() {
 
       const [memRes, ctxRes, reflRes, logRes, projRes] = await Promise.allSettled([
         supabase.from("founder_memory").select("avoidance_zones, strengths, personality_tags, last_insight").eq("user_id", user.id).maybeSingle(),
-        supabase.from("founder_context").select("momentum_score, streak, meta_critic_signal").eq("user_id", user.id).maybeSingle(),
+        supabase
+          .from("founder_context")
+          .select(
+            "momentum_score, streak, meta_critic_signal, " +
+            "active_pattern_signal, active_pattern_message, active_pattern_subject, " +
+            "last_pattern_shown_at"
+          )
+          .eq("user_id", user.id)
+          .maybeSingle(),
         reflectionsQuery,
         supabase.from("action_logs").select("outcome, outcome_note, created_at").eq("user_id", user.id).gte("created_at", thirtyDaysAgo),
         projectQuery.maybeSingle(),
@@ -234,6 +246,10 @@ export default function InsightsPage() {
         streak:                  ctx?.streak ?? 0,
         metacriticSignal:        ctx?.meta_critic_signal ?? undefined,
         lastInsight:             mem?.last_insight ?? undefined,
+        activePatternSignal:     ctx?.active_pattern_signal ?? null,
+        activePatternMessage:    ctx?.active_pattern_message ?? null,
+        activePatternSubject:    ctx?.active_pattern_subject ?? null,
+        lastPatternShownAt:      ctx?.last_pattern_shown_at ?? null,
         completionByDay,
         avgConfidenceByOutcome,
         topOverrideReason,
@@ -363,6 +379,41 @@ export default function InsightsPage() {
             </div>
             <MomentumBar value={data.momentumScore} />
           </InsightCard>
+
+          {data.activePatternMessage && (
+            <InsightCard
+              title={`Behavioural Pattern Detected · ${
+                data.activePatternSignal?.replace(/_/g, " ").toUpperCase() ?? "SIGNAL"
+              }`}
+              accent={
+                data.activePatternSignal === "momentum_decay" ? "var(--bm-red)" :
+                data.activePatternSignal === "override_cluster" ? "var(--bm-amber)" :
+                "var(--bm-accent)"
+              }
+            >
+              <p style={{ fontSize: 14, color: "var(--bm-text2)", lineHeight: 1.65, margin: 0 }}>
+                {sanitizeOutput(data.activePatternMessage)}
+              </p>
+              {data.activePatternSubject && (
+                <div style={{ marginTop: 10 }}>
+                  <Tag
+                    label={sanitizeOutput(data.activePatternSubject)}
+                    color={
+                      data.activePatternSignal === "momentum_decay" ? "var(--bm-red)" : "var(--bm-amber)"
+                    }
+                  />
+                </div>
+              )}
+              {data.lastPatternShownAt && (
+                <p style={{ fontSize: 11, color: "var(--bm-text3)", marginTop: 10, marginBottom: 0 }}>
+                  First detected{" "}
+                  {new Date(data.lastPatternShownAt).toLocaleDateString("en-GB", {
+                    day: "numeric", month: "short",
+                  })}
+                </p>
+              )}
+            </InsightCard>
+          )}
 
           {/* Day-of-week heatmap */}
           {data.totalTasksShown > 0 && (

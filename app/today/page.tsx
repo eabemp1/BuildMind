@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useEffect, useRef, useMemo } from "react";
+import { Suspense, useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
@@ -25,6 +25,7 @@ import { ProfileCompletenessBar } from "@/components/ProfileCompletenessBar";
 import { LoopNarrative } from "@/components/LoopNarrative";
 import { broadcastTabEvent, useTabSync } from "@/lib/tabSync";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
+import { recordOverride } from "@/lib/founderContext";
 import type { MorningBriefing } from "@/lib/founderContext";
 
 type Outcome = "completed" | "blocked" | "partial" | "learned";
@@ -412,6 +413,8 @@ function TodayContent() {
   const [debtSuppression, setDebtSuppression] = useState<DebtSuppression | null>(null);
   const [aiUsage, setAiUsage] = useState<{ monthlyUsed: number; monthlyLimit: number; unlimited: boolean } | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [replacingTask, setReplacingTask] = useState(false);
+  const [forceActionRefresh, setForceActionRefresh] = useState(0);
   // Progressive streaming label — shows which agent is currently running
   const [streamLabel, setStreamLabel] = useState<string | null>(null);
 
@@ -591,36 +594,43 @@ function TodayContent() {
     const serverReflectionIsNewerThanCache = lastReflectionTime > 0 && serverCacheTs > 0
       ? lastReflectionTime > serverCacheTs
       : reflectionIsNewerThanCache;
-    if (
-      !serverReflectionIsNewerThanCache &&
-      serverCache.today_action_cache?.date === today &&
-      serverCache.today_action_cache?.projectId === projectId &&
-      serverCache.today_action_cache?.stage === currentStage &&
-      isActionData(serverCache.today_action_cache.data)
-    ) {
-      storage.setJSON(cacheKey, serverCache.today_action_cache);
-      if (userId && serverCacheTs > 0) storage.set(`bm_today_action_cache_ts_${userId}`, String(serverCacheTs));
-      setAiAction({ ...serverCache.today_action_cache.data, isAI: true });
-      return;
-    }
-    try {
-      const cached = storage.getJSON<CachedTodayAction | null>(cacheKey, null);
+    const forceRefresh = forceActionRefresh > 0;
+    if (!forceRefresh) {
       if (
-        !reflectionIsNewerThanCache &&
-        cached?.date === today &&
-        cached?.projectId === projectId &&
-        cached?.stage === currentStage &&
-        isActionData(cached.data)
+        !serverReflectionIsNewerThanCache &&
+        serverCache.today_action_cache?.date === today &&
+        serverCache.today_action_cache?.projectId === projectId &&
+        serverCache.today_action_cache?.stage === currentStage &&
+        isActionData(serverCache.today_action_cache.data)
       ) {
-        setAiAction({ ...cached.data, isAI: true });
+        storage.setJSON(cacheKey, serverCache.today_action_cache);
+        if (userId && serverCacheTs > 0) storage.set(`bm_today_action_cache_ts_${userId}`, String(serverCacheTs));
+        setAiAction({ ...serverCache.today_action_cache.data, isAI: true });
         return;
       }
-      if (cached?.date === today && cached?.projectId === projectId && cached?.data) {
+      try {
+        const cached = storage.getJSON<CachedTodayAction | null>(cacheKey, null);
+        if (
+          !reflectionIsNewerThanCache &&
+          cached?.date === today &&
+          cached?.projectId === projectId &&
+          cached?.stage === currentStage &&
+          isActionData(cached.data)
+        ) {
+          setAiAction({ ...cached.data, isAI: true });
+          return;
+        }
+        if (cached?.date === today && cached?.projectId === projectId && cached?.data) {
+          storage.remove(cacheKey);
+          storage.remove(`bm_today_action_cache_ts_${userId}`);
+        }
+      } catch {
         storage.remove(cacheKey);
-        storage.remove(`bm_today_action_cache_ts_${userId}`);
       }
-    } catch {
+    } else {
       storage.remove(cacheKey);
+      storage.remove(`bm_today_action_cache_ts_${userId}`);
+      await persistBehaviorState({ today_action_cache: null });
     }
 
     setActionLoading(true);
@@ -773,7 +783,13 @@ function TodayContent() {
     })();
 
     return () => { abortController.abort(); };
-  }, [project, userId]);
+  }, [project, userId, forceActionRefresh]);
+
+  useEffect(() => {
+    if (replacingTask && !actionLoading && (aiAction || debtSuppression)) {
+      setReplacingTask(false);
+    }
+  }, [actionLoading, aiAction, debtSuppression, replacingTask]);
 
   const score = project ? computeStartupScore({
     ...project,
@@ -902,6 +918,24 @@ function TodayContent() {
       setTimeout(() => setShared(false), 2000);
     } catch {}
   }
+
+  const handlePreTaskReplace = useCallback(async () => {
+    if (!userId) return;
+    setReplacingTask(true);
+    try {
+      await recordOverride("Not the right task right now");
+      setAiAction(null);
+      setDebtSuppression(null);
+      setStreamLabel("Fetching a better-fit task...");
+      storage.remove(`bm_today_action_cache_${userId}`);
+      storage.remove(`bm_today_action_cache_ts_${userId}`);
+      await persistBehaviorState({ today_action_cache: null });
+      setForceActionRefresh((value) => value + 1);
+    } catch {
+      // Non-fatal: keep the current task available.
+      setReplacingTask(false);
+    }
+  }, [userId]);
 
   async function handleAcknowledgeDebt() {
     if (!project?.id || !userId) return;
@@ -2013,6 +2047,35 @@ function TodayContent() {
               </p>
             </div>
           </div>
+
+          {!done && !outcome && !actionLoading && (
+            <button
+              onClick={() => void handlePreTaskReplace()}
+              disabled={replacingTask}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                background: "transparent",
+                border: "1px solid var(--bm-border)",
+                borderRadius: 8,
+                padding: "7px 13px",
+                fontSize: 12,
+                fontWeight: 500,
+                color: "var(--bm-text3)",
+                cursor: replacingTask ? "not-allowed" : "pointer",
+                opacity: replacingTask ? 0.5 : 1,
+                transition: "all 0.15s",
+                marginBottom: 12,
+                fontFamily: "inherit",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.color = "var(--bm-text2)"; }}
+              onMouseLeave={e => { e.currentTarget.style.color = "var(--bm-text3)"; }}
+            >
+              <RotateCcw size={11} />
+              {replacingTask ? "Fetching new task..." : "Replace this task →"}
+            </button>
+          )}
 
           {/* Script instruction */}
           <div style={{

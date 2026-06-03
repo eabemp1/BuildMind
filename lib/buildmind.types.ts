@@ -102,6 +102,7 @@ export type WeeklyReportMetrics = {
   tasksCompletedThisWeek: number;
   tasksCompletedPreviousWeek: number;
   activeStreakDays: number;
+  momentumScore: number | null;
   focusData: { label: string; value: number; color: string }[];
   wins: string[];
   nextFocus: string[];

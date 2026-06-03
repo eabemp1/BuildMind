@@ -4,8 +4,8 @@ import { useEffect, useRef, useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { selectActiveProject, useActiveProjectId, useProjectSummariesQuery, useWeeklyReportMetricsQuery } from "@/lib/queries";
 import { computeStartupScore } from "@/lib/buildmind";
-import { getScoreHistory, getXP } from "@/lib/scoring";
-import { getStoredStreak } from "@/lib/plan";
+import { getScoreHistory, getXP, syncScoreHistory, syncXP } from "@/lib/scoring";
+import { getStoredStreak, syncStreakFromServer } from "@/lib/plan";
 import PaywallGate from "@/components/PaywallGate";
 import { usePlan } from "@/lib/usePlan";
 import {
@@ -195,11 +195,18 @@ export default function ReportsPage() {
   const [exported, setExported] = useState<string|null>(null);
   const [aiReport, setAiReport] = useState<AIWeeklyReportView | null>(null);
   const [aiReportLoading, setAiReportLoading] = useState(false);
+  const [xpSynced, setXpSynced] = useState(false);
 
   const { data: summaries = [], isLoading } = useProjectSummariesQuery();
   const activeProjectId = useActiveProjectId();
   const project = useMemo(() => selectActiveProject(summaries, activeProjectId), [summaries, activeProjectId]);
   const { data: metrics, isLoading: metricsLoading } = useWeeklyReportMetricsQuery(project?.id);
+
+  useEffect(() => {
+    void syncStreakFromServer().catch(() => {});
+    void syncScoreHistory().catch(() => {});
+    void syncXP().then(() => setXpSynced(true)).catch(() => setXpSynced(true));
+  }, []);
 
   useEffect(() => {
     if (!project?.id) return;
@@ -231,7 +238,7 @@ export default function ReportsPage() {
     let streak = 0; try { streak = getStoredStreak(); } catch { /* ok */ }
     let xp = 0; try { xp = getXP(); } catch { /* ok */ }
     return computeStartupScore({ ...project, streak, xp });
-  }, [project]);
+  }, [project, xpSynced]);
 
   const score = metrics?.score ?? liveScore;
   const weeklyScores = metrics?.weeklyScores ?? Array(7).fill(0).map((_,i) => i===6 ? score : 0);
@@ -246,7 +253,7 @@ export default function ReportsPage() {
     const vals = hist.slice(-7).map(h => h.score);
     while (vals.length < 7) vals.unshift(0);
     return vals;
-  }, []);
+  }, [xpSynced]);
 
   const wins = metrics?.wins ?? [];
   const displayWins = aiReport ? [...wins].slice(0, 4) : wins;
@@ -560,7 +567,7 @@ export default function ReportsPage() {
                 { label:"Stage",         value: project.startup_stage ?? "—",         color:"var(--bm-text)" },
                 { label:"Tasks Done",    value:`${project.tasksCompleted??0} / ${project.tasksTotal??0}`, color:"var(--bm-accent)" },
                 { label:"Exec Score",    value: project.execution_score ?? 0,          color:"var(--bm-amber)" },
-                { label:"Momentum",      value: project.momentum_score ?? 0,           color:"#A78BFA" },
+                { label:"Momentum",      value: metrics?.momentumScore ?? project.momentum_score ?? 0, color:"#A78BFA" },
               ] as const).map(({ label, value, color }) => (
                 <div key={label}>
                   <div style={{ fontSize:9, fontWeight:700, color:"var(--bm-text3)",

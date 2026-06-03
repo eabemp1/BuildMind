@@ -47,6 +47,7 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
     tasksCompletedThisWeek: 0,
     tasksCompletedPreviousWeek: 0,
     activeStreakDays: 0,
+    momentumScore: null,
     focusData: [],
     wins: [],
     nextFocus: [],
@@ -58,6 +59,31 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
   if (!user) return empty;
 
   const supabase = createClient();
+  let founderContextRow: { streak?: number | null; momentum_score?: number | null } | null = null;
+  try {
+    const { data } = await supabase
+      .from("founder_context")
+      .select("streak, momentum_score")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    founderContextRow = data;
+  } catch { /* non-fatal */ }
+  const serverMomentumScore: number | null =
+    typeof founderContextRow?.momentum_score === "number"
+      ? founderContextRow.momentum_score
+      : null;
+
+  let scoreHistoryRows: Array<{ score: number; recorded_at: string }> = [];
+  try {
+    const { data } = await supabase
+      .from("score_history")
+      .select("score, recorded_at")
+      .eq("user_id", user.id)
+      .order("recorded_at", { ascending: false })
+      .limit(7);
+    scoreHistoryRows = data ?? [];
+  } catch { /* non-fatal */ }
+
   const allSummaries = await getProjectSummaries();
   const summaries = activeProjectId
     ? allSummaries.filter((project) => project.id === activeProjectId)
@@ -109,34 +135,35 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
   }
   const { data: tasks } = { data: allTasks };
 
+  const start = weekStart();
+  const previousStart = new Date(start);
+  previousStart.setDate(start.getDate() - 7);
+
   // Also count completions from reflexion_learning_log (today-page check-ins).
   // This is the primary way founders log "done" — it doesn't always map 1:1
   // to a task row, so we count it as a separate signal and merge.
-  let reflexionCompletionsThisWeek = 0;
+  let reflexionRows: Array<{ action_shown?: string | null; outcome_recorded_at?: string | null }> = [];
   let reflexionCompletedTitles: string[] = [];
   try {
-    const weekAgoISO = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     let reflexionQuery = supabase
       .from("reflexion_learning_log")
       .select("action_shown, outcome_recorded_at")
       .eq("outcome", "completed")
-      .gte("outcome_recorded_at", weekAgoISO);
+      .gte("outcome_recorded_at", previousStart.toISOString());
     if (activeProjectId) reflexionQuery = reflexionQuery.eq("project_id", activeProjectId);
-    const { data: reflexionRows } = await reflexionQuery;
-    reflexionCompletionsThisWeek = (reflexionRows ?? []).length;
-    reflexionCompletedTitles = (reflexionRows ?? [])
+    const { data } = await reflexionQuery;
+    reflexionRows = data ?? [];
+    reflexionCompletedTitles = reflexionRows
       .map((row) => row.action_shown)
-      .filter(Boolean)
+      .filter((title): title is string => Boolean(title))
       .slice(0, 3);
   } catch { /* non-fatal — table may not exist in all envs */ }
 
-  const start = weekStart();
-  const previousStart = new Date(start);
-  previousStart.setDate(start.getDate() - 7);
   const taskData = [0, 0, 0, 0, 0, 0, 0];
   let tasksCompletedPreviousWeek = 0;
   const completedDates = new Set<string>();
   const focusCounts = new Map<string, number>();
+  const reflexionCompletionsByDay: number[] = [0, 0, 0, 0, 0, 0, 0];
 
   (tasks ?? []).forEach((task) => {
     if (!task.is_completed) return;
@@ -150,6 +177,22 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
 
     if (completedDate >= start) taskData[dayIndexFromIso(completedAt)] += 1;
     if (completedDate >= previousStart && completedDate < start) tasksCompletedPreviousWeek += 1;
+  });
+
+  reflexionRows.forEach((row) => {
+    if (!row.outcome_recorded_at) return;
+    const completedDate = new Date(row.outcome_recorded_at);
+    if (completedDate >= start) {
+      reflexionCompletionsByDay[dayIndexFromIso(row.outcome_recorded_at)] += 1;
+    }
+    if (completedDate >= previousStart && completedDate < start) {
+      tasksCompletedPreviousWeek += 1;
+    }
+    completedDates.add(completedDate.toLocaleDateString("en-CA"));
+  });
+
+  reflexionCompletionsByDay.forEach((count, i) => {
+    taskData[i] += count;
   });
 
   // Also get reflection dates for the chart — these represent actual active days.
@@ -171,31 +214,37 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
     // Non-fatal: reports still render from task rows.
   }
 
-  let activeStreakDays = 0;
+  let computedStreakFromDates = 0;
   for (let i = 0; i < 90; i++) {
     const d = new Date();
     d.setDate(d.getDate() - i);
-    if (completedDates.has(d.toLocaleDateString("en-CA"))) activeStreakDays += 1;
+    if (completedDates.has(d.toLocaleDateString("en-CA"))) computedStreakFromDates += 1;
     else if (i > 0) break;
   }
+  const dbStreak = typeof founderContextRow?.streak === "number" ? founderContextRow.streak : 0;
+  const activeStreakDays = Math.max(dbStreak, computedStreakFromDates);
 
-  // Merge task completions (from project tasks) with reflexion log completions (from today page).
-  // Use whichever is higher — they may overlap for users who complete tasks in both places.
-  const tasksCompletedThisWeek = Math.max(
-    taskData.reduce((sum, count) => sum + count, 0),
-    reflexionCompletionsThisWeek,
-  );
+  const tasksCompletedThisWeek = taskData.reduce((sum, count) => sum + count, 0);
   const milestonesCompletedThisWeek = (allMilestones ?? []).filter((m) => {
     if (!m.is_completed) return false;
     const completedAt = new Date(m.updated_at ?? m.created_at);
     return completedAt >= start;
   }).length;
   const previousScore = Math.max(0, score - tasksCompletedThisWeek - milestonesCompletedThisWeek * 2);
-  const weeklyScores = taskData.reduce<number[]>((scores, count, index) => {
-    const base = index === 0 ? previousScore : scores[index - 1];
-    scores.push(Math.min(100, base + count + (index === 6 ? milestonesCompletedThisWeek * 2 : 0)));
-    return scores;
-  }, []);
+  const historyByDate = new Map<string, number>();
+  scoreHistoryRows.forEach((row) => {
+    const dateKey = new Date(row.recorded_at).toLocaleDateString("en-CA");
+    if (!historyByDate.has(dateKey)) {
+      historyByDate.set(dateKey, row.score);
+    }
+  });
+
+  const weeklyScores: number[] = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    const key = d.toLocaleDateString("en-CA");
+    return historyByDate.get(key) ?? (i === 6 ? score : previousScore);
+  });
 
   const focusData = Array.from(focusCounts.entries()).map(([label, value], index) => ({
     label,
@@ -282,7 +331,8 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
   return {
     score, previousScore, weeklyScores, taskData,
     tasksCompletedThisWeek, tasksCompletedPreviousWeek,
-    activeStreakDays, focusData, wins, nextFocus,
+    activeStreakDays, momentumScore: serverMomentumScore,
+    focusData, wins, nextFocus,
     intention_vs_execution_rate,
     previous_intention_vs_execution_rate,
     execution_trend,
