@@ -334,9 +334,9 @@ export default function OverviewPage() {
             },
             { label: "Completed", value: milestonesCompleted > 0 ? milestonesCompleted : doneTasks > 0 ? doneTasks : "—" },
             {
-              label: "AI Advice Quality",
+              label: "Cadence",
               value: `${aiAdviceQuality}%`,
-              tooltip: "How much context BuildMind has about you. Higher = more specific, personalised advice. Improve it by filling in your startup summary, target users, and logging daily reflections.",
+              tooltip: "How consistently and deeply you're executing right now — last 14 days only. Built from active days, reflection depth, confidence scores, and whether BuildMind has detected your behavioural patterns. Goes down when you go quiet.",
             },
           ].map((stat, i, arr) => (
             <div key={stat.label} style={{ flex: 1, padding: "14px 16px", borderRight: i < arr.length - 1 ? "1px solid var(--bm-border)" : "none" }}>

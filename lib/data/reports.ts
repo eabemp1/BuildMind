@@ -400,9 +400,22 @@ export async function getDashboardOverview(activeProjectId?: string): Promise<Da
 
   const { data: founderContext } = await supabase
     .from("founder_context")
-    .select("streak, avoidance_zones")
+    .select("streak, avoidance_zones, learned_patterns, consecutive_tasks_completed, tasks_completed_total, days_inactive, consecutive_tasks_completed")
     .eq("user_id", user.id)
     .maybeSingle();
+  const { data: founderMemory } = await supabase
+    .from("founder_memory")
+    .select("avoidance_zones, archetype_confidence, last_insight, archetype")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+  const { data: recentReflections } = await supabase
+    .from("reflections")
+    .select("confidence, outcome, what_tried, what_happened, what_learned, created_at")
+    .eq("user_id", user.id)
+    .gte("created_at", fourteenDaysAgo)
+    .order("created_at", { ascending: false })
+    .limit(14);
   const contextRow = founderContext as { streak?: number | null; avoidance_zones?: string[] | null } | null;
   const dbStreak = contextRow?.streak;
   const serverStreak = Math.max(
@@ -437,16 +450,89 @@ export async function getDashboardOverview(activeProjectId?: string): Promise<Da
     );
   }
 
-  const activeProject = (projects ?? []).find((project) => project.id === activeProjectId) ?? (projects ?? [])[0];
-  const aiAdviceQuality = Math.min(100, [
-    activeProject?.description && activeProject.description.trim().length > 20 ? 25 : 0,
-    activeProject?.startup_stage && activeProject.startup_stage !== "Idea" ? 15 : 0,
-    activeProject?.target_users && activeProject.target_users.trim().length > 5 ? 15 : 0,
-    (contextRow?.avoidance_zones?.length ?? 0) > 0 ? 10 : 0,
-    completedTasks > 0 ? 10 : 0,
-    daysSinceLastReflection != null ? 15 : 0,
-    serverStreak > 0 ? 10 : 0,
-  ].reduce((sum, value) => sum + value, 0));
+  // ── Cadence Score (0–100) ─────────────────────────────────────────────────
+  // Measures execution quality over the last 14 days.
+  // Every signal is time-gated — going inactive drops the score.
+  // Profile completeness is NOT rewarded here; only behaviour counts.
+
+  const contextData = contextRow as {
+    streak?: number | null;
+    avoidance_zones?: string[] | null;
+    learned_patterns?: Record<string, unknown> | null;
+    consecutive_tasks_completed?: number | null;
+    tasks_completed_total?: number | null;
+    days_inactive?: number | null;
+  } | null;
+
+  // Signal 1 — Active days in last 14 (max 30pts)
+  // Count unique days that have a reflection in the last 14 days.
+  // Uses recentReflections already fetched above.
+  const activeDaysLast14 = new Set(
+    (recentReflections ?? []).map((r) =>
+      new Date(r.created_at).toLocaleDateString("en-CA")
+    )
+  ).size;
+  const activeDaysScore = Math.round((Math.min(activeDaysLast14, 7) / 7) * 30);
+
+  // Signal 2 — Reflection depth in last 14 days (max 25pts)
+  // A reflection with what_tried + what_happened filled = deep (2pts each)
+  // A reflection with just a note = shallow (1pt each)
+  // Max 25pts across all recent reflections.
+  const reflectionDepthScore = Math.min(25, (recentReflections ?? []).reduce((sum, r) => {
+    const hasDeepFields = (r.what_tried && r.what_tried.trim().length > 10) ||
+                          (r.what_happened && r.what_happened.trim().length > 10);
+    return sum + (hasDeepFields ? 2 : 1);
+  }, 0));
+
+  // Signal 3 — Average confidence in last 14 days (max 20pts)
+  // Confidence 1-5 from today-page check-ins. Avg >= 3.5 = full points.
+  const confidenceValues = (recentReflections ?? [])
+    .map((r) => r.confidence)
+    .filter((c): c is number => typeof c === "number" && c > 0);
+  const avgConfidence = confidenceValues.length > 0
+    ? confidenceValues.reduce((a, b) => a + b, 0) / confidenceValues.length
+    : 0;
+  const confidenceScore = confidenceValues.length > 0
+    ? Math.round((Math.min(avgConfidence, 5) / 5) * 20)
+    : 0;
+
+  // Signal 4 — Behavioural patterns detected (max 15pts)
+  // founder_memory.avoidance_zones = BuildMind has enough data to identify patterns
+  // founder_memory.archetype set = deep enough behavioural model exists
+  // founder_context.learned_patterns non-empty = learning loop has fired
+  const memoryData = founderMemory as {
+    avoidance_zones?: string[] | null;
+    archetype_confidence?: number | null;
+    last_insight?: string | null;
+    archetype?: string | null;
+  } | null;
+  const hasAvoidanceZones = (memoryData?.avoidance_zones?.length ?? 0) > 0;
+  const hasArchetype = !!(memoryData?.archetype && memoryData.archetype.trim().length > 0);
+  const hasLearnedPatterns = !!(
+    contextData?.learned_patterns &&
+    typeof contextData.learned_patterns === "object" &&
+    Object.keys(contextData.learned_patterns).length > 0
+  );
+  const patternScore =
+    (hasAvoidanceZones ? 6 : 0) +
+    (hasArchetype ? 5 : 0) +
+    (hasLearnedPatterns ? 4 : 0);
+
+  // Signal 5 — Inactivity penalty (subtracts up to 20pts)
+  // days_inactive > 3 starts reducing the score.
+  // This is the critical signal: the score decays when you go quiet.
+  const daysInactive = contextData?.days_inactive ?? 0;
+  const inactivityPenalty = daysInactive <= 3
+    ? 0
+    : daysInactive <= 7
+    ? 10
+    : daysInactive <= 14
+    ? 20
+    : 30; // Can push below 0, clamped at end
+
+  const cadenceScore = Math.min(100, Math.max(0,
+    activeDaysScore + reflectionDepthScore + confidenceScore + patternScore - inactivityPenalty
+  ));
 
   const { data: notifications } = await supabase
     .from("notifications").select("message").eq("user_id", user.id)
@@ -458,7 +544,7 @@ export async function getDashboardOverview(activeProjectId?: string): Promise<Da
     recentActivity: (notifications ?? []).map((n) => n.message),
     founderStreakDays: serverStreak,
     avoidanceZones: contextRow?.avoidance_zones ?? [],
-    aiAdviceQuality,
+    aiAdviceQuality: cadenceScore,
     todayDone,
     reflectionDoneToday,
     daysSinceLastReflection,
