@@ -7,6 +7,7 @@ import html2canvas from "html2canvas";
 import { motion } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import { selectActiveProject, useActiveProjectId, useProjectSummariesQuery } from "@/lib/queries";
+import { computeStartupScore } from "@/lib/buildmind";
 
 type WeekData = {
   name: string;
@@ -132,6 +133,19 @@ export default function WeeklySharePage() {
         }
       } catch {}
 
+      if (user?.id && (base.streak === null || base.streak === 0)) {
+        try {
+          const { data: ctxDirect } = await supabase
+            .from("founder_context")
+            .select("streak")
+            .eq("user_id", user.id)
+            .maybeSingle();
+          if (typeof ctxDirect?.streak === "number" && ctxDirect.streak > 0) {
+            base.streak = ctxDirect.streak;
+          }
+        } catch { /* non-fatal */ }
+      }
+
       let next = base;
       if (activeProject?.id) {
         try {
@@ -157,7 +171,9 @@ export default function WeeklySharePage() {
 
             next = {
               ...base,
-              score: typeof data?.momentum_score === "number" ? Math.round(data.momentum_score) : null,
+              score: activeProject
+                ? Math.round(computeStartupScore({ ...activeProject, xp: 0, streak: base.streak ?? 0 }))
+                : null,
               tasksCommitted,
               tasksDone,
               milestone: data?.reportData?.ai_summary ?? data?.summary ?? PLACEHOLDER,

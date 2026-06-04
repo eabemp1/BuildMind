@@ -213,6 +213,18 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
     taskData[i] += count;
   });
 
+  try {
+    const { data: reflDates } = await supabase
+      .from("reflections")
+      .select("created_at")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(90);
+    (reflDates ?? []).forEach((r) => {
+      completedDates.add(new Date(r.created_at).toLocaleDateString("en-CA"));
+    });
+  } catch { /* non-fatal */ }
+
   // Also get reflection dates for the chart — these represent actual active days.
   try {
     const weekAgoDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
