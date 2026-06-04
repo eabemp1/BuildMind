@@ -9,6 +9,7 @@ import { logError } from "@/lib/server/logger";
 import { recordActivity } from "@/lib/server/activityLog";
 import { checkAndCacheStageTransition } from "@/lib/server/stageTransitionCache";
 import { recordActionOutcome } from "@/lib/learning";
+import { invalidateCognitionCache } from "@/lib/founderCognition";
 
 import { z } from "zod";
 
@@ -77,7 +78,7 @@ const FALLBACKS: Record<string, ReflectActionOutput> = {
 /**
  * extractAndWritePatterns — closes the learning loop.
  *
- * Reads the last 5 reflections and writes back avoidance_signals +
+ * Reads the last 5 reflections and writes back avoidance_zones +
  * topics_mentioned_repeatedly to founder_context. This is what populates
  * the fields that every prompt reads — without this, the context feed is empty.
  *
@@ -135,17 +136,17 @@ async function extractAndWritePatterns(
     : "";
 
   const patterns = await callModelJSON<{
-    avoidance_signals?: string[];
+    avoidance_zones?: string[];
     topics_mentioned_repeatedly?: string[];
   }>([
     {
       role: "system",
       content: `You are a behavioral pattern extractor for a startup execution app.
 Analyze this founder's recent reflections and identify:
-1. avoidance_signals: Tasks or activities they keep blocking on, skipping, or reporting as "blocked" (max 3 items, specific action types e.g. "cold outreach", "pricing conversations")
+1. avoidance_zones: Tasks or activities they keep blocking on, skipping, or reporting as "blocked" (max 3 items, specific action types e.g. "cold outreach", "pricing conversations")
 2. topics_mentioned_repeatedly: Themes or topics that appear in multiple notes (max 3 items, e.g. "payment integration", "user interviews", "co-founder search")
 
-Return JSON ONLY: { "avoidance_signals": [], "topics_mentioned_repeatedly": [] }
+Return JSON ONLY: { "avoidance_zones": [], "topics_mentioned_repeatedly": [] }
 If there are no clear patterns yet, return empty arrays. Do not guess.`,
     },
     {
@@ -154,7 +155,7 @@ If there are no clear patterns yet, return empty arrays. Do not guess.`,
     },
   ], { role: "reasoning", temperature: 0.2, maxTokens: 200 });
 
-  if (!patterns.avoidance_signals && !patterns.topics_mentioned_repeatedly) return;
+  if (!patterns.avoidance_zones && !patterns.topics_mentioned_repeatedly) return;
 
   // Write patterns back to founder_context
   await supabase
@@ -162,7 +163,7 @@ If there are no clear patterns yet, return empty arrays. Do not guess.`,
     .upsert(
       {
         user_id: userId,
-        ...(patterns.avoidance_signals?.length ? { avoidance_signals: patterns.avoidance_signals } : {}),
+        ...(patterns.avoidance_zones?.length ? { avoidance_zones: patterns.avoidance_zones } : {}),
         ...(patterns.topics_mentioned_repeatedly?.length ? { topics_mentioned_repeatedly: patterns.topics_mentioned_repeatedly } : {}),
       },
       { onConflict: "user_id" }
@@ -329,6 +330,7 @@ Target users: ${project.target_users ?? "Not specified"}`;
         }
 
         // ── Fire-and-forget: close both learning loops ────────────────────────
+        try { invalidateCognitionCache(verifiedUserId); } catch { /* non-fatal */ }
         extractAndWritePatterns(supabase, verifiedUserId).catch((err) => logError("reflect-action/extractPatterns", err));
         recordActivity(verifiedUserId, "reflection_done", { projectId, outcome, confidence }).catch(() => {});
         checkAndCacheStageTransition(verifiedUserId, projectId).catch(() => {});

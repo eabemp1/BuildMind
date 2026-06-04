@@ -14,6 +14,7 @@ import {
   getAllNotifications, getUnreadCount, markRead, markAllRead, deleteNotification,
   type AppNotification, type NotifPriority,
 } from "@/lib/notifications";
+import { sanitizeOutput } from "@/lib/sanitizeOutput";
 
 const PRIORITY_COLOR: Record<NotifPriority, string> = {
   low: "#555", medium: "#a78bfa", high: "#fbbf24", urgent: "#f87171",
@@ -62,15 +63,15 @@ function NotifItem({ n, onAction, onDelete }: {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, marginBottom: 2 }}>
           <div style={{ fontSize: 12, fontWeight: isUnread ? 600 : 400, color: isUnread ? "#fff" : "#aaa", lineHeight: 1.3 }}>
-            {n.title}
+            {sanitizeOutput(n.title)}
           </div>
           <div style={{ fontSize: 10, color: "#444", flexShrink: 0 }}>{timeAgo(n.createdAt)}</div>
         </div>
         <div style={{ fontSize: 11, color: "#666", lineHeight: 1.5, marginBottom: n.actionLabel ? 6 : 0 }}>
-          {n.body}
+          {sanitizeOutput(n.body)}
         </div>
         {n.actionLabel && (
-          <div style={{ fontSize: 10, color: "#a78bfa", fontWeight: 600 }}>{n.actionLabel}</div>
+          <div style={{ fontSize: 10, color: "#a78bfa", fontWeight: 600 }}>{sanitizeOutput(n.actionLabel)}</div>
         )}
       </div>
 

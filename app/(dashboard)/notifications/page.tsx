@@ -7,6 +7,7 @@ import { getAllNotifications, markRead, markAllRead, deleteNotification, type Ap
 import { Bell, Check, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { sanitizeOutput } from "@/lib/sanitizeOutput";
 
 const PRIORITY_STYLES: Record<NotifPriority, { text: string; bg: string; border: string; dot: string }> = {
   low:    { text: "var(--bm-text3)", bg: "transparent",           border: "var(--bm-border)",                dot: "var(--bm-text3)" },
@@ -62,16 +63,16 @@ function NotifRow({ n, onRead, onDelete }: { n: AppNotification; onRead: (id: st
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, marginBottom: 4 }}>
           <div style={{ fontSize: 13, fontWeight: isUnread ? 600 : 400, color: isUnread ? "var(--bm-text)" : "var(--bm-text3)", lineHeight: 1.3 }}>
-            {n.title}
+            {sanitizeOutput(n.title)}
           </div>
           <span style={{ fontSize: 10, color: "var(--bm-text3)", flexShrink: 0, marginTop: 1 }}>{timeAgo(n.createdAt)}</span>
         </div>
         <div style={{ fontSize: 12, color: isUnread ? "var(--bm-text2)" : "var(--bm-text3)", lineHeight: 1.6, marginBottom: n.actionLabel ? 8 : 0 }}>
-          {n.body}
+          {sanitizeOutput(n.body)}
         </div>
         {n.actionLabel && (
           <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: s.text, fontWeight: 600, padding: "3px 8px", borderRadius: 6, background: `${s.border}` }}>
-            {n.actionLabel}
+            {sanitizeOutput(n.actionLabel)}
           </span>
         )}
       </div>

@@ -18,6 +18,7 @@
  */
 
 import { useState } from "react";
+import { sanitizeOutput } from "@/lib/sanitizeOutput";
 
 interface Props {
   /** 0–1 confidence score from Reflexion pipeline */
@@ -68,7 +69,7 @@ export function ConfidenceBadge({ score, missingData = [], label }: Props) {
         }}
       >
         <span style={{ fontSize: "9px" }}>◉</span>
-        {displayLabel} · {pct}%
+        {sanitizeOutput(displayLabel)} · {pct}%
         {missingData.length > 0 && (
           <span style={{ fontSize: "9px", opacity: 0.7 }}>▾</span>
         )}
@@ -102,7 +103,7 @@ export function ConfidenceBadge({ score, missingData = [], label }: Props) {
           <ul style={{ margin: 0, padding: "0 0 0 14px", listStyle: "disc" }}>
             {missingData.slice(0, 4).map((item, i) => (
               <li key={i} style={{ fontSize: "11px", color: "#9ca3af", lineHeight: 1.5 }}>
-                {item}
+                {sanitizeOutput(item)}
               </li>
             ))}
           </ul>

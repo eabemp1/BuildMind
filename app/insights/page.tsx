@@ -380,7 +380,7 @@ export default function InsightsPage() {
             <MomentumBar value={data.momentumScore} />
           </InsightCard>
 
-          {data.activePatternMessage && (
+          {data.activePatternSignal && data.activePatternMessage && (
             <InsightCard
               title={`Behavioural Pattern Detected · ${
                 data.activePatternSignal?.replace(/_/g, " ").toUpperCase() ?? "SIGNAL"

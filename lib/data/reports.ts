@@ -83,6 +83,24 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
       .limit(7);
     scoreHistoryRows = data ?? [];
   } catch { /* non-fatal */ }
+  // If score_history table has no rows, fall back to the JSONB column in founder_context
+  if (scoreHistoryRows.length === 0 && founderContextRow) {
+    try {
+      const { data: jsonbCtx } = await supabase
+        .from("founder_context")
+        .select("score_history")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      const jsonbHistory = (jsonbCtx as { score_history?: Array<{ date: string; score: number }> } | null)
+        ?.score_history ?? [];
+      if (jsonbHistory.length > 0) {
+        scoreHistoryRows = jsonbHistory.map((entry) => ({
+          score: entry.score,
+          recorded_at: entry.date,
+        }));
+      }
+    } catch { /* non-fatal */ }
+  }
 
   const allSummaries = await getProjectSummaries();
   const summaries = activeProjectId
@@ -448,11 +466,22 @@ export async function getDashboardOverview(activeProjectId?: string): Promise<Da
     else if (i > 0) break;
   }
 
+  // Primary query — columns that exist in all deployments
   const { data: founderContext } = await supabase
     .from("founder_context")
-    .select("streak, avoidance_zones, learned_patterns, consecutive_tasks_completed, tasks_completed_total, days_inactive, consecutive_tasks_completed")
+    .select("streak, avoidance_zones, consecutive_tasks_completed, tasks_completed_total, days_inactive")
     .eq("user_id", user.id)
     .maybeSingle();
+  // Extended query — columns added by this migration; non-fatal if they don't exist yet
+  let learnedPatterns: Record<string, unknown> = {};
+  try {
+    const { data: extCtx } = await supabase
+      .from("founder_context")
+      .select("learned_patterns")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    learnedPatterns = (extCtx as { learned_patterns?: Record<string, unknown> } | null)?.learned_patterns ?? {};
+  } catch { /* column not yet migrated — non-fatal */ }
   const { data: founderMemory } = await supabase
     .from("founder_memory")
     .select("avoidance_zones, archetype_confidence, last_insight, archetype")
@@ -508,7 +537,6 @@ export async function getDashboardOverview(activeProjectId?: string): Promise<Da
   const contextData = contextRow as {
     streak?: number | null;
     avoidance_zones?: string[] | null;
-    learned_patterns?: Record<string, unknown> | null;
     consecutive_tasks_completed?: number | null;
     tasks_completed_total?: number | null;
     days_inactive?: number | null;
@@ -559,9 +587,9 @@ export async function getDashboardOverview(activeProjectId?: string): Promise<Da
   const hasAvoidanceZones = (memoryData?.avoidance_zones?.length ?? 0) > 0;
   const hasArchetype = !!(memoryData?.archetype && memoryData.archetype.trim().length > 0);
   const hasLearnedPatterns = !!(
-    contextData?.learned_patterns &&
-    typeof contextData.learned_patterns === "object" &&
-    Object.keys(contextData.learned_patterns).length > 0
+    learnedPatterns &&
+    typeof learnedPatterns === "object" &&
+    Object.keys(learnedPatterns).length > 0
   );
   const patternScore =
     (hasAvoidanceZones ? 6 : 0) +

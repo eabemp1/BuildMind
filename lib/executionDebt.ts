@@ -92,14 +92,14 @@ function applyCooldown(debt: ExecutionDebt, lastDebtSurfaced?: Record<string, st
 }
 
 export function computeExecutionDebt(
-  context: Pick<FounderContext, "avoidance_signals" | "override_reasons" | "tasks_overridden_this_week" | "topics_mentioned_repeatedly" | "days_inactive">,
+  context: Pick<FounderContext, "avoidance_zones" | "override_reasons" | "tasks_overridden_this_week" | "topics_mentioned_repeatedly" | "days_inactive">,
   memory: Pick<FounderMemory, "avoidance_zones" | "decision_patterns" | "personality_tags" | "last_debt_surfaced">,
   options?: { lastCustomerConversationDate?: string },
 ): ExecutionDebt {
-  const overrideFreq = categoryFrequency([...(context.override_reasons ?? []), ...(context.avoidance_signals ?? [])]);
+  const overrideFreq = categoryFrequency([...(context.override_reasons ?? []), ...(context.avoidance_zones ?? [])]);
   const highOverrideCategory = Object.entries(overrideFreq).filter(([, count]) => count >= 3).sort(([, a], [, b]) => b - a)[0];
 
-  const persistentAvoidFreq = categoryFrequency([...(context.avoidance_signals ?? []), ...(memory.avoidance_zones ?? [])]);
+  const persistentAvoidFreq = categoryFrequency([...(context.avoidance_zones ?? []), ...(memory.avoidance_zones ?? [])]);
   const persistentAvoidCategory = Object.entries(persistentAvoidFreq).filter(([, count]) => count >= 2).sort(([, a], [, b]) => b - a)[0];
 
   let daysSinceCustomerConvo: number | null = null;

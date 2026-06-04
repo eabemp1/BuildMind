@@ -218,7 +218,7 @@ export async function POST(request: Request) {
               .select("avoidance_zones, strengths, last_insight, personality_tags, decision_patterns, last_debt_surfaced")
               .eq("user_id", userId).maybeSingle(),
             supabase.from("founder_context")
-              .select("avoidance_signals, override_reasons, tasks_overridden_this_week, topics_mentioned_repeatedly, days_inactive, streak, last_checkin_date, tasks_completed_total, consecutive_tasks_completed")
+              .select("avoidance_zones, override_reasons, tasks_overridden_this_week, topics_mentioned_repeatedly, days_inactive, streak, last_checkin_date, tasks_completed_total, consecutive_tasks_completed")
               .eq("user_id", userId).maybeSingle(),
           ]);
 
@@ -262,14 +262,14 @@ export async function POST(request: Request) {
               last_debt_surfaced?: Record<string, string> | null;
             };
             const c = (contextResult.value.data ?? {}) as {
-              avoidance_signals?: string[];
+              avoidance_zones?: string[];
               override_reasons?: string[];
               tasks_overridden_this_week?: number;
               topics_mentioned_repeatedly?: string[];
               days_inactive?: number;
             };
             const debt = computeExecutionDebt({
-              avoidance_signals: c.avoidance_signals ?? [],
+              avoidance_zones: c.avoidance_zones ?? [],
               override_reasons: c.override_reasons ?? [],
               tasks_overridden_this_week: c.tasks_overridden_this_week ?? 0,
               topics_mentioned_repeatedly: c.topics_mentioned_repeatedly ?? [],

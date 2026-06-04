@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import type { MoatDimension } from "./types";
+import { sanitizeOutput } from "@/lib/sanitizeOutput";
 
 export function MoatFingerprint({ dimensions }: { dimensions: MoatDimension[] }) {
   const allFromAgent = dimensions.every((d) => d.source === "agent");
@@ -19,7 +20,7 @@ export function MoatFingerprint({ dimensions }: { dimensions: MoatDimension[] })
       {dimensions.map((dim, i) => (
         <div key={i} style={{ marginBottom: 10 }}>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-            <span style={{ fontSize: 12, color: "var(--bm-text)", fontWeight: 500 }}>{dim.label}</span>
+            <span style={{ fontSize: 12, color: "var(--bm-text)", fontWeight: 500 }}>{sanitizeOutput(dim.label)}</span>
             <span style={{ fontSize: 12, color: dim.score >= 7 ? "#22c55e" : dim.score >= 4 ? "#f59e0b" : "#ef4444", fontFamily: "monospace" }}>
               {dim.score}/10
             </span>
@@ -35,7 +36,7 @@ export function MoatFingerprint({ dimensions }: { dimensions: MoatDimension[] })
               }}
             />
           </div>
-          <p style={{ fontSize: 11, color: "var(--bm-text3)", margin: 0, lineHeight: 1.5 }}>{dim.note}</p>
+          <p style={{ fontSize: 11, color: "var(--bm-text3)", margin: 0, lineHeight: 1.5 }}>{sanitizeOutput(dim.note)}</p>
         </div>
       ))}
       {!allFromAgent && (

@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { sanitizeOutput } from "@/lib/sanitizeOutput";
 
 function safeNextPath(value: string | null): string {
   if (!value || !value.startsWith("/") || value.startsWith("//")) return "/today";
@@ -119,7 +120,7 @@ function ImplicitCallbackContent() {
         fontFamily: "'Inter', sans-serif",
       }}
     >
-      <p style={{ fontSize: 14, color: "var(--bm-text2, #9D9DA8)" }}>{message}</p>
+      <p style={{ fontSize: 14, color: "var(--bm-text2, #9D9DA8)" }}>{sanitizeOutput(message)}</p>
     </main>
   );
 }

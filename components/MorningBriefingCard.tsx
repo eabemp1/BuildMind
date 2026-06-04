@@ -13,6 +13,7 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { fetchMorningBriefing, type MorningBriefing, type BriefingGap } from "@/lib/founderContext";
+import { sanitizeOutput } from "@/lib/sanitizeOutput";
 
 // BriefingGap used for gap display rendering
 type _BriefingGap = BriefingGap;
@@ -74,7 +75,7 @@ function MorningBriefingCardInner({ initialBriefing }: { initialBriefing?: Morni
           <div>
             <div style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.6, marginBottom: 10 }}>
               <span style={{ color: "var(--bm-green)", fontWeight: 600 }}>Win:</span>{" "}
-              {briefing.win.slice(0, 40)}…
+              {sanitizeOutput(briefing.win).slice(0, 40)}…
             </div>
             <div style={{ fontSize: 11, color: "var(--bm-text3)", fontStyle: "italic", marginBottom: 10 }}>
               Your risk and today&apos;s action are in Builder.
@@ -93,15 +94,15 @@ function MorningBriefingCardInner({ initialBriefing }: { initialBriefing?: Morni
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
               <span style={{ fontSize: 10, color: "var(--bm-green)", fontWeight: 700, minWidth: 38, paddingTop: 1 }}>WIN</span>
-              <span style={{ fontSize: 12, color: "var(--bm-text2)", lineHeight: 1.55 }}>{briefing.win}</span>
+              <span style={{ fontSize: 12, color: "var(--bm-text2)", lineHeight: 1.55 }}>{sanitizeOutput(briefing.win)}</span>
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
               <span style={{ fontSize: 10, color: "var(--bm-amber)", fontWeight: 700, minWidth: 38, paddingTop: 1 }}>RISK</span>
-              <span style={{ fontSize: 12, color: "var(--bm-text2)", lineHeight: 1.55 }}>{briefing.risk}</span>
+              <span style={{ fontSize: 12, color: "var(--bm-text2)", lineHeight: 1.55 }}>{sanitizeOutput(briefing.risk)}</span>
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
               <span style={{ fontSize: 10, color: "var(--bm-accent)", fontWeight: 700, minWidth: 38, paddingTop: 1 }}>NOW</span>
-              <span style={{ fontSize: 12, color: "var(--bm-text)", fontWeight: 600, lineHeight: 1.55 }}>{briefing.action}</span>
+              <span style={{ fontSize: 12, color: "var(--bm-text)", fontWeight: 600, lineHeight: 1.55 }}>{sanitizeOutput(briefing.action)}</span>
             </div>
             {briefing.gaps && briefing.gaps.length > 0 && (
               <div style={{
@@ -115,7 +116,7 @@ function MorningBriefingCardInner({ initialBriefing }: { initialBriefing?: Morni
                 {briefing.gaps.map((gap, i) => (
                   <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
                     <span style={{ fontSize: 10, color: "var(--bm-red, #f87171)", fontWeight: 700, minWidth: 38, paddingTop: 1, flexShrink: 0 }}>GAP</span>
-                    <span style={{ fontSize: 12, color: "var(--bm-text2)", lineHeight: 1.55, fontStyle: "italic" }}>{gap.question}</span>
+                    <span style={{ fontSize: 12, color: "var(--bm-text2)", lineHeight: 1.55, fontStyle: "italic" }}>{sanitizeOutput(gap.question)}</span>
                   </div>
                 ))}
               </div>

@@ -167,7 +167,7 @@ export async function reclassifyFounderArchetypeIfEligible(
   const behaviour = [
     ...(memory.avoidance_zones ?? []),
     ...(memory.strengths ?? []),
-    ...(context.avoidance_signals ?? []),
+    ...(context.avoidance_zones ?? []),
     ...(context.override_reasons ?? []),
     ...(context.topics_mentioned_repeatedly ?? []),
   ].join("; ");

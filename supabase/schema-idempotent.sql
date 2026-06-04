@@ -151,7 +151,7 @@ CREATE TABLE founder_context (
   current_stage text,
   momentum_score int2 NOT NULL DEFAULT 50 CHECK (momentum_score >= 0 AND momentum_score <= 100),
   momentum_updated_at timestamptz NOT NULL DEFAULT now(),
-  avoidance_signals text[] NOT NULL DEFAULT '{}',
+  avoidance_zones text[] NOT NULL DEFAULT '{}',
   topics_mentioned_repeatedly text[] NOT NULL DEFAULT '{}',
   override_reasons text[] NOT NULL DEFAULT '{}',
   breakthrough_moments text[] NOT NULL DEFAULT '{}',
@@ -162,6 +162,21 @@ CREATE TABLE founder_context (
   consecutive_tasks_completed int2 NOT NULL DEFAULT 0,
   cognitive_load text NOT NULL DEFAULT 'fresh' CHECK (cognitive_load IN ('fresh','drained','autopilot')),
   cognitive_pattern text,
+  -- Pattern detection persistence (written by task-complete API, read by insights page)
+  active_pattern_signal   text,
+  active_pattern_message  text,
+  active_pattern_subject  text,
+  last_pattern_shown_at   timestamptz,
+
+  -- Task counters (written by task-complete API, read by pattern detection + reports)
+  tasks_completed_total   int4 NOT NULL DEFAULT 0,
+  last_task_date          date,
+
+  -- AI learning state (written by learning loop, read by Generator context)
+  learned_patterns        jsonb NOT NULL DEFAULT '{}'::jsonb,
+
+  -- Momentum baseline for week-over-week comparison (written by evening cron before decay)
+  momentum_last_week      int2,
   competitor_context jsonb NOT NULL DEFAULT '{}'::jsonb,
   pattern_flags jsonb NOT NULL DEFAULT '{}'::jsonb,
   timezone_offset int2 NOT NULL DEFAULT 0,
@@ -182,6 +197,28 @@ CREATE POLICY founder_context_own_data ON founder_context FOR SELECT USING (auth
 CREATE POLICY founder_context_update_own ON founder_context FOR UPDATE USING (auth.uid() = user_id);
 CREATE POLICY founder_context_insert_own ON founder_context FOR INSERT WITH CHECK (auth.uid() = user_id);
 CREATE TRIGGER founder_context_updated_at BEFORE UPDATE ON founder_context FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE INDEX founder_context_pattern_idx
+  ON founder_context (user_id, last_pattern_shown_at DESC NULLS LAST)
+  WHERE active_pattern_signal IS NOT NULL;
+
+-- ============================================================================
+-- TABLE: score_history (per-day score snapshots — feeds Progress page trend chart)
+-- Written by task-complete route. Read by getWeeklyReportMetrics.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS score_history (
+  id           uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id      uuid        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  score        int2        NOT NULL CHECK (score >= 0 AND score <= 100),
+  recorded_at  timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE score_history ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "score_history_self_only" ON score_history
+  FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE UNIQUE INDEX score_history_user_day_uniq
+  ON score_history (user_id, (recorded_at::date));
+CREATE INDEX score_history_user_date_idx
+  ON score_history (user_id, recorded_at DESC);
 
 -- ============================================================================
 -- TABLE: morning_briefings (scheduled job output — morning insights)

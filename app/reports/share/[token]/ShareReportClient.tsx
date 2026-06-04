@@ -10,6 +10,7 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
+import { sanitizeOutput } from "@/lib/sanitizeOutput";
 
 interface ReportData {
   week_start_date: string;
@@ -139,7 +140,7 @@ export function ShareReportClient({ report }: Props) {
           </div>
           {report.startup_summary && (
             <p style={{ fontSize: "12px", color: "#4b5563", margin: "8px 0 0", lineHeight: 1.5 }}>
-              {report.startup_summary.slice(0, 80)}
+              {sanitizeOutput(report.startup_summary).slice(0, 80)}
             </p>
           )}
         </div>
@@ -165,7 +166,7 @@ export function ShareReportClient({ report }: Props) {
                 AI weekly read
               </div>
               <p style={{ fontSize: "14px", color: "#d1d5db", lineHeight: 1.6, margin: 0 }}>
-                {report.ai_summary.slice(0, 280)}
+                {sanitizeOutput(report.ai_summary).slice(0, 280)}
               </p>
             </div>
           )}
@@ -179,7 +180,7 @@ export function ShareReportClient({ report }: Props) {
             }}>
               <div style={{ fontSize: "10px", color: "#6b7280", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.06em" }}>Next week</div>
               <p style={{ fontSize: "13px", color: "#9ca3af", margin: 0, lineHeight: 1.5 }}>
-                {rd.ai_suggestions.slice(0, 140)}
+                {sanitizeOutput(rd.ai_suggestions).slice(0, 140)}
               </p>
             </div>
           )}

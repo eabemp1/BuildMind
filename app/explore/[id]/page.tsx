@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { addProjectComment, getPublicProject, type PublicProjectDetailData } from "@/lib/api";
+import { sanitizeOutput } from "@/lib/sanitizeOutput";
 
 export default function PublicProjectPage() {
   const params = useParams<{ id: string }>();
@@ -84,7 +85,7 @@ export default function PublicProjectPage() {
               ) : (
                 project.updates.map((update) => (
                   <div key={update.id} className="rounded-lg border border-white/10 bg-white/5 p-3">
-                    <p>{update.content}</p>
+                    <p>{sanitizeOutput(update.content)}</p>
                     <p className="mt-2 text-xs text-zinc-500">{new Date(update.created_at).toLocaleString()}</p>
                   </div>
                 ))
@@ -143,7 +144,7 @@ export default function PublicProjectPage() {
                 project.comments.map((item) => (
                   <div key={item.id} className="rounded-lg border border-white/10 bg-white/5 p-3">
                     <p className="text-zinc-100">{item.author_name || "Founder"}</p>
-                    <p className="mt-1">{item.content}</p>
+                    <p className="mt-1">{sanitizeOutput(item.content)}</p>
                     <p className="mt-2 text-xs text-zinc-500">{new Date(item.created_at).toLocaleString()}</p>
                   </div>
                 ))

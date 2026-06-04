@@ -17,7 +17,7 @@ import { trackFunnelStep } from "@/lib/onboarding-analytics";
 import BuildMindLoader from "@/components/BuildMindLoader";
 import MorningBriefingCard from "@/components/MorningBriefingCard";
 import { PaywallMoment } from "@/components/PaywallMoment";
-import { Clock, CheckCircle2, Copy, Check, Flame, Brain, ArrowRight, Sparkles, AlertCircle, TrendingUp, RotateCcw, Zap } from "lucide-react";
+import { Clock, CheckCircle2, Copy, Check, Flame, Brain, Sparkles, AlertCircle, TrendingUp, RotateCcw, Zap } from "lucide-react";
 import { storage } from "@/lib/storage";
 import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
 import { MobileCheckin } from "@/components/MobileCheckin";
@@ -221,8 +221,6 @@ const OUTCOME_CHIPS: { id: Outcome; label: string; color: string; bg: string; bo
   { id: "learned",   label: "Learned something", color: "var(--bm-text)",  bg: "var(--bm-bg4)", border: "var(--bm-border3)" },
 ];
 
-const CONFIDENCE_LABELS = ["", "Lost", "Uncertain", "Steady", "Confident", "Unstoppable"];
-const CONFIDENCE_COLORS = ["", "var(--bm-text3)", "var(--bm-text3)", "var(--bm-text2)", "var(--bm-text)", "var(--bm-text)"];
 
 // ── Week-one projections — shown in done state on first session ───────────────
 const WEEK_ONE_MILESTONES: Record<string, { day: number; milestone: string }[]> = {
@@ -392,9 +390,6 @@ function TodayContent() {
   const project = useMemo(() => selectActiveProject(summaries, activeProjectId), [summaries, activeProjectId]);
   const [copied, setCopied] = useState(false);
   const [shared, setShared] = useState(false);
-  const [outcome, setOutcome] = useState<Outcome | null>(null);
-  const [confidence, setConfidence] = useState(3);
-  const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
   const [streak, setStreak] = useState(0);
@@ -440,8 +435,6 @@ function TodayContent() {
   const [morningBriefing, setMorningBriefing] = useState<MorningBriefing | null>(null);
 
   // Win attribution
-  const [revenueDelta, setRevenueDelta] = useState<string>("");
-  const [showRevenueField, setShowRevenueField] = useState(false);
 
   useEffect(() => {
     fetch("/api/ai/usage-status", { cache: "no-store" })
@@ -922,19 +915,19 @@ function TodayContent() {
   const handlePreTaskReplace = useCallback(async () => {
     if (!userId) return;
     setReplacingTask(true);
+    // Fire override signal best-effort — do NOT block the task refresh on it
+    recordOverride("Not the right task right now").catch(() => {});
+    // Always clear cache and fetch a new task regardless of plan or API response
+    setAiAction(null);
+    setDebtSuppression(null);
+    setStreamLabel("Fetching a better-fit task...");
+    storage.remove(`bm_today_action_cache_${userId}`);
+    storage.remove(`bm_today_action_cache_ts_${userId}`);
     try {
-      await recordOverride("Not the right task right now");
-      setAiAction(null);
-      setDebtSuppression(null);
-      setStreamLabel("Fetching a better-fit task...");
-      storage.remove(`bm_today_action_cache_${userId}`);
-      storage.remove(`bm_today_action_cache_ts_${userId}`);
       await persistBehaviorState({ today_action_cache: null });
-      setForceActionRefresh((value) => value + 1);
-    } catch {
-      // Non-fatal: keep the current task available.
-      setReplacingTask(false);
-    }
+    } catch { /* non-fatal */ }
+    setForceActionRefresh((value) => value + 1);
+    // Note: setReplacingTask(false) is handled by the action fetch completion
   }, [userId]);
 
   async function handleAcknowledgeDebt() {
@@ -967,8 +960,7 @@ function TodayContent() {
     }
   }
 
-  async function handleCheckIn() {
-    if (!outcome) return;
+  async function handleCheckIn(selectedOutcome: Outcome) {
     // Ref guard: prevents iOS double-tap from firing this twice before state updates
     if (checkInFired.current) return;
     checkInFired.current = true;
@@ -1016,7 +1008,7 @@ function TodayContent() {
       notifyReflectPending();
 
       const todayDate = localDayKey();
-      const todayActionState = { action: actionData.action, outcome, note, confidence };
+      const todayActionState = { action: actionData.action, outcome: selectedOutcome, note: "", confidence: 3 };
       storage.setJSON("bm_today_action", todayActionState);
       if (userId) {
         storage.set(`bm_last_reflection_ts_${userId}`, Date.now().toString());
@@ -1029,14 +1021,6 @@ function TodayContent() {
         today_action_cache: null,
       });
 
-      if (revenueDelta && parseFloat(revenueDelta) > 0) {
-        storage.setJSON("bm_today_revenue_delta", {
-          amount: Math.round(parseFloat(revenueDelta) * 100),
-          note: actionData.action.slice(0, 120),
-          date: localDayKey(),
-        });
-      }
-
       if (userId) {
         storage.set(`bm_checkin_done_date_${userId}`, todayDate);
         storage.set(`bm_has_seen_today_${userId}`, "1");
@@ -1045,7 +1029,7 @@ function TodayContent() {
 
       if (userId && project) {
         try {
-          const delta = computeScoreDelta(outcome, confidence);
+          const delta = computeScoreDelta(selectedOutcome, 3);
           const currentScore = project.execution_score ?? score;
           const newScore = applyScoreDelta(currentScore, delta);
           const supabase = createClient();
@@ -1088,14 +1072,14 @@ function TodayContent() {
           blocked:   "overridden",
           learned:   "partial",
         };
-        const mappedOutcome = outcomeMap[outcome as string] ?? "partial";
+        const mappedOutcome = outcomeMap[selectedOutcome as string] ?? "partial";
         fetch("/api/ai/reflexion-outcome", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             log_row_id:   aiAction.log_row_id,
             outcome:      mappedOutcome,
-            outcome_note: note?.trim() || undefined,
+            outcome_note: undefined,
           }),
         }).catch(() => {}); // best-effort — never blocks the check-in
       }
@@ -1116,7 +1100,6 @@ function TodayContent() {
       broadcastTabEvent({ type: "checkin_done", date: todayBroadcast });
       broadcastTabEvent({ type: "streak_updated", streak: newStreak });
 
-      setDone(true);
     } finally { setSubmitting(false); checkInFired.current = false; }
   }
 
@@ -1225,13 +1208,7 @@ function TodayContent() {
             <CheckCircle2 size={28} color="var(--bm-accent)" />
           </div>
           <h2 style={{ fontSize: 24, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em", marginBottom: 10 }}>
-            {outcome === "completed"
-              ? "Task done. BuildMind is learning."
-              : outcome === "blocked"
-              ? "Noted. Tomorrow's task will remove the blocker."
-              : outcome === "partial"
-              ? "Progress counts. Tomorrow picks up here."
-              : "Insight logged. BuildMind adapts."}
+            Insight logged. BuildMind adapts.
           </h2>
           <p style={{ fontSize: 14, color: "var(--bm-text3)", marginBottom: isFirstSession ? 16 : 20, lineHeight: 1.6 }}>
             {displayName ? `Come back tomorrow, ${displayName.split(" ")[0]}. Consistency compounds.` : "Come back tomorrow. Consistency compounds."}
@@ -2048,7 +2025,7 @@ function TodayContent() {
             </div>
           </div>
 
-          {!done && !outcome && !actionLoading && (
+          {!done && !actionLoading && (
             <button
               onClick={() => void handlePreTaskReplace()}
               disabled={replacingTask}
@@ -2282,102 +2259,48 @@ function TodayContent() {
           ))}
         </div>
 
-        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 14 }}>How did it go?</div>
-        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 9, marginBottom: 18 }}>
+        <div style={{ fontSize: 13, color: "var(--bm-text2)", marginBottom: 16, lineHeight: 1.6 }}>
+          How did it go? Tap your outcome to log today's reflection.
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 9, marginBottom: 4 }}>
           {OUTCOME_CHIPS.map(chip => (
-            <button key={chip.id} onClick={() => setOutcome(chip.id)}
-              style={{ padding: isMobile ? "14px" : "12px 14px", borderRadius: 10, border: `1px solid ${outcome === chip.id ? chip.border : "var(--bm-border)"}`, background: outcome === chip.id ? chip.bg : "var(--bm-bg3)", color: outcome === chip.id ? chip.color : "var(--bm-text3)", fontSize: isMobile ? 14 : 13, fontWeight: outcome === chip.id ? 600 : 400, cursor: "pointer", fontFamily: "inherit", textAlign: "left", transition: "all 0.15s" }}>
-              {chip.label}
+            <button
+              key={chip.id}
+              disabled={submitting}
+              onClick={() => {
+                if (submitting) return;
+                setSubmitting(true);
+                // Fire task-complete, streak and score updates, then navigate
+                void handleCheckIn(chip.id).then(() => {
+                  router.push(`/reflect?outcome=${chip.id}`);
+                }).catch(() => {
+                  setSubmitting(false);
+                });
+              }}
+              style={{
+                padding: isMobile ? "14px" : "12px 14px",
+                borderRadius: 10,
+                border: `1px solid var(--bm-border)`,
+                background: "var(--bm-bg3)",
+                color: "var(--bm-text3)",
+                fontSize: isMobile ? 14 : 13,
+                fontWeight: 400,
+                cursor: submitting ? "not-allowed" : "pointer",
+                fontFamily: "inherit",
+                textAlign: "left" as const,
+                transition: "all 0.15s",
+                opacity: submitting ? 0.6 : 1,
+              }}
+              onMouseEnter={e => { if (!submitting) { e.currentTarget.style.borderColor = "var(--bm-border3)"; e.currentTarget.style.color = "var(--bm-text)"; } }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--bm-border)"; e.currentTarget.style.color = "var(--bm-text3)"; }}
+            >
+              {submitting ? "Recording..." : chip.label}
             </button>
           ))}
         </div>
-
-        {/* Structured skip reasons: shown when blocked/partial, feeds the learning loop */}
-        {(outcome === "blocked" || outcome === "partial") && (
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 11, color: "var(--bm-text3)", marginBottom: 8, fontWeight: 500 }}>
-              What got in the way? <span style={{ fontWeight: 400, opacity: 0.7 }}>(helps BuildMind learn)</span>
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
-              {[
-                { label: "Not the right time", value: "timing" },
-                { label: "Wrong platform", value: "platform" },
-                { label: "Too hard today", value: "difficulty" },
-                { label: "I already did this", value: "duplicate" },
-                { label: "Missing context / info", value: "missing_context" },
-                { label: "Lost motivation", value: "motivation" },
-              ].map(reason => (
-                <button
-                  key={reason.value}
-                  onClick={() => setNote(prev => prev === reason.label ? "" : reason.label)}
-                  style={{
-                    padding: "6px 12px", borderRadius: 20, fontSize: 11,
-                    border: `1px solid ${note === reason.label ? "var(--bm-border3)" : "var(--bm-border)"}`,
-                    background: note === reason.label ? "var(--bm-bg4)" : "var(--bm-bg3)",
-                    color: note === reason.label ? "var(--bm-text)" : "var(--bm-text3)",
-                    cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s",
-                  }}>
-                  {reason.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Confidence */}
-        <div style={{ marginBottom: 18 }}>
-          <div style={{ fontSize: 11, color: "var(--bm-text3)", marginBottom: 10 }}>
-            Confidence level: <span style={{ color: CONFIDENCE_COLORS[confidence], fontWeight: 600 }}>{CONFIDENCE_LABELS[confidence]}</span>
-          </div>
-          <div style={{ display: "flex", gap: 7 }}>
-            {[1,2,3,4,5].map(v => (
-              <button key={v} onClick={() => setConfidence(v)}
-                style={{ flex: 1, height: 32, borderRadius: 9, border: `1px solid ${confidence === v ? CONFIDENCE_COLORS[v] : "var(--bm-border)"}`, background: confidence === v ? `${CONFIDENCE_COLORS[v]}15` : "var(--bm-bg3)", color: confidence === v ? CONFIDENCE_COLORS[v] : "var(--bm-text3)", fontSize: 12, fontWeight: confidence === v ? 700 : 400, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}>
-                {v}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <textarea value={note} onChange={e => setNote(e.target.value)} rows={2} placeholder="What happened? (optional)"
-          style={{ width: "100%", background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: 10, padding: isMobile ? "13px 14px" : "10px 14px", fontSize: isMobile ? 16 : 13, color: "var(--bm-text)", outline: "none", fontFamily: "inherit", resize: "none", boxSizing: "border-box", lineHeight: 1.55, transition: "border-color 0.15s", marginBottom: 14 }}
-          onFocus={e => { e.target.style.borderColor = "var(--bm-accent-bd)"; }}
-          onBlur={e => { e.target.style.borderColor = "var(--bm-border2)"; }} />
-
-        {/* Win attribution */}
-        {outcome === "completed" && (
-          <div style={{ marginBottom: 14 }}>
-            {!showRevenueField ? (
-              <button
-                onClick={() => setShowRevenueField(true)}
-                style={{ background: "none", border: "none", padding: 0, color: "var(--bm-text3)", fontSize: 12, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline", textDecorationStyle: "dotted" }}
-              >
-                + Did this move the revenue needle?
-              </button>
-            ) : (
-              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: 10, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 12, color: "var(--bm-text3)", whiteSpace: "nowrap" }}>Revenue added:</span>
-                <span style={{ fontSize: 13, color: "var(--bm-text2)", fontWeight: 600 }}>GHS</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={revenueDelta}
-                  onChange={e => setRevenueDelta(e.target.value)}
-                  placeholder="0"
-                  style={{ width: 80, background: "transparent", border: "none", borderBottom: "1px solid var(--bm-border3)", color: "var(--bm-text)", fontSize: 14, fontWeight: 700, fontFamily: "inherit", outline: "none", padding: "2px 0" }}
-                />
-                <span style={{ fontSize: 11, color: "var(--bm-text3)" }}>/mo</span>
-                <button onClick={() => { setShowRevenueField(false); setRevenueDelta(""); }} style={{ background: "none", border: "none", color: "var(--bm-text3)", fontSize: 11, cursor: "pointer", padding: 0, fontFamily: "inherit", marginLeft: "auto" }}>✕</button>
-              </div>
-            )}
-          </div>
-        )}
-
-        <motion.button whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }} onClick={handleCheckIn} disabled={!outcome || submitting}
-          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", padding: "13px 0", borderRadius: 12, border: "none", background: !outcome ? "var(--bm-bg4)" : "var(--bm-text)", color: !outcome ? "var(--bm-text3)" : "var(--bm-bg)", fontWeight: 700, fontSize: 14, cursor: !outcome ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
-          {submitting ? "Recording…" : <>Record check-in <ArrowRight size={16} /></>}
-        </motion.button>
+        <p style={{ fontSize: 11, color: "var(--bm-text4)", margin: "8px 0 0", lineHeight: 1.5 }}>
+          You'll complete your reflection on the next screen.
+        </p>
       </motion.div>
       {/* Beyond the 3 changes — Loop Narrative (the 8.5 unlock) */}
       <LoopNarrative

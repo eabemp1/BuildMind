@@ -24,6 +24,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { X, Zap, ArrowRight } from "lucide-react";
+import { sanitizeOutput } from "@/lib/sanitizeOutput";
 
 export type PaywallTrigger =
   | "morning_briefing"   // Free user whose briefing is ready but gated
@@ -119,7 +120,7 @@ export function PaywallMoment({ trigger, patternMessage, onDismiss, onUpgrade }:
           {/* Pattern message if provided */}
           {trigger === "pattern" && patternMessage && (
             <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: "0 0 8px", lineHeight: 1.45, fontStyle: "italic" }}>
-              "{patternMessage}"
+              "{sanitizeOutput(patternMessage)}"
             </p>
           )}
 

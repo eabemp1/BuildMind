@@ -40,7 +40,7 @@ export interface CognitionSynthesisInput {
 }
 
 const cache = new Map<string, { state: FounderCognitionState; at: number }>();
-const CACHE_TTL_MS = 4 * 60 * 60 * 1000;
+const CACHE_TTL_MS = 45 * 60 * 1000; // 45 min — avoids cross-session stale synthesis
 
 function aggregateSignals(input: CognitionSynthesisInput): { text: string; confidence: number } {
   const signals: string[] = [];
@@ -61,7 +61,7 @@ function aggregateSignals(input: CognitionSynthesisInput): { text: string; confi
     signals.push(`Tasks accepted this week: ${input.context.tasks_accepted_this_week}`);
     signals.push(`Tasks overridden this week: ${input.context.tasks_overridden_this_week}`);
     signals.push(`Cognitive load: ${input.context.cognitive_load}`);
-    if (input.context.avoidance_signals?.length) signals.push(`Avoidance signals: ${input.context.avoidance_signals.join(", ")}`);
+    if (input.context.avoidance_zones?.length) signals.push(`Avoidance zones: ${input.context.avoidance_zones.join(", ")}`);
     if (input.context.topics_mentioned_repeatedly?.length) signals.push(`Repeated topics: ${input.context.topics_mentioned_repeatedly.join(", ")}`);
   }
   if (input.archetype) {

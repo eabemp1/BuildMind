@@ -18,6 +18,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queries";
 import { ScoreBreakdown } from "@/components/ui/ScoreBreakdown";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { sanitizeOutput } from "@/lib/sanitizeOutput";
 
 type Tab = "milestones" | "tasks" | "validation" | "roadmap";
 
@@ -351,7 +352,7 @@ function ValidationTab({ projectId,strengths,weaknesses,suggestions,router }: {
         {analysis && (
           <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
             <div style={{ fontSize:12,color:VIZ.text2 }}>
-              <span style={{ color: VIZ.text1, fontWeight: 600 }}>Verdict:</span> {analysis.verdict}
+              <span style={{ color: VIZ.text1, fontWeight: 600 }}>Verdict:</span> {sanitizeOutput(analysis.verdict)}
             </div>
             {typeof analysis.survival_probability === "number" && (
               <div style={{ fontSize:12,color:VIZ.text2 }}>
@@ -360,7 +361,7 @@ function ValidationTab({ projectId,strengths,weaknesses,suggestions,router }: {
             )}
             {analysis.brutal_advice && (
               <div style={{ fontSize:12,color:VIZ.text2, lineHeight: 1.6 }}>
-                <span style={{ color: VIZ.text1, fontWeight: 600 }}>Brutal advice:</span> {analysis.brutal_advice}
+                <span style={{ color: VIZ.text1, fontWeight: 600 }}>Brutal advice:</span> {sanitizeOutput(analysis.brutal_advice)}
               </div>
             )}
           </div>
@@ -804,7 +805,7 @@ export default function ProjectDetailPage() {
               <div style={{ fontSize: 12, fontWeight: 800, color: "var(--bm-text)", marginBottom: 6 }}>
                 Stage check: {stageTransitionPrompt.currentStage} → {stageTransitionPrompt.nextStage ?? "next stage"}
               </div>
-              <div style={{ fontSize: 12, color: "var(--bm-text2)", lineHeight: 1.55 }}>{stageTransitionPrompt.reason}</div>
+              <div style={{ fontSize: 12, color: "var(--bm-text2)", lineHeight: 1.55 }}>{sanitizeOutput(stageTransitionPrompt.reason)}</div>
             </div>
             <button
               onClick={() => {

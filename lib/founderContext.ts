@@ -26,7 +26,7 @@ export interface FounderContext {
   topics_mentioned_repeatedly: string[];
   cognitive_load: CognitiveLoad;
   cognitive_pattern: string | null;
-  avoidance_signals: string[];
+  avoidance_zones: string[];
   breakthrough_moments: string[];
   competitor_context: Record<string, unknown>;
   pattern_flags: {

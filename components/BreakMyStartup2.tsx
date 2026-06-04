@@ -23,6 +23,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { breakMyStartup, type BreakMyStartupResult } from "@/lib/api";
+import { sanitizeOutput } from "@/lib/sanitizeOutput";
 import { getFounderMemory, type FounderMemory } from "@/lib/founderMemory";
 import { trackEvent } from "@/lib/analytics";
 import { useProjectsQuery } from "@/lib/queries";
@@ -254,7 +255,7 @@ function BreakMyStartup2Inner({ projectId }: { projectId?: number }) {
                   )}
                 </div>
                 <p style={{ fontSize: 13, color: "var(--bm-text)", lineHeight: 1.65, margin: "0 0 12px" }}>
-                  {result.analysis.closingStatement}
+                  {sanitizeOutput(result.analysis.closingStatement)}
                 </p>
                 {(result.competitor_data_source === "ai_synthesised" || (!result.competitors_scraped && result.competitor_data_source !== "none")) && (
                   <p style={{ fontSize: 11, color: "var(--bm-text3)", margin: "0 0 12px", lineHeight: 1.5 }}>

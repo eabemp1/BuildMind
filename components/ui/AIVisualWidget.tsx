@@ -17,6 +17,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { sanitizeOutput } from "@/lib/sanitizeOutput";
 
 interface AIVisualWidgetProps {
   page: string;
@@ -227,7 +228,7 @@ export function AIVisualWidget({
             style={{ padding: "8px 16px 14px" }}
           >
             <div style={{ fontSize: 11, color: "#475569", lineHeight: 1.5 }}>
-              {intent}
+              {sanitizeOutput(intent)}
             </div>
           </motion.div>
         )}

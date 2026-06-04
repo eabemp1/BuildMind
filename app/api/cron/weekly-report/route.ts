@@ -146,6 +146,50 @@ export async function GET(request: Request) {
                   tag: "weekly-report",
                 }),
               );
+
+              // Write last_week_summary for each builder user — no AI call needed, deterministic
+              try {
+                const userId = row.user_id;
+                const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+                const [reflRes, ctxRes] = await Promise.all([
+                  supabase.from("reflections")
+                    .select("outcome, confidence, note, what_tried, what_learned, blocker, created_at")
+                    .eq("user_id", userId)
+                    .gte("created_at", weekAgo)
+                    .order("created_at", { ascending: false }),
+                  supabase.from("founder_context")
+                    .select("tasks_accepted_this_week, tasks_overridden_this_week, momentum_score")
+                    .eq("user_id", userId).maybeSingle(),
+                ]);
+
+                const refs = reflRes.data ?? [];
+                if (refs.length >= 2) {
+                  const completedCount = refs.filter(r => r.outcome === "completed").length;
+                  const blockedCount = refs.filter(r => r.outcome === "blocked").length;
+                  const avgConf = refs.reduce((s, r) => s + (r.confidence ?? 3), 0) / refs.length;
+                  const keyLearnings = refs.filter(r => r.what_learned).map(r => r.what_learned).join("; ") || null;
+                  const topBlocker = refs.filter(r => r.blocker).map(r => r.blocker).join("; ") || null;
+                  const ctx = ctxRes.data;
+
+                  const summary = JSON.stringify({
+                    tasks_completed: completedCount,
+                    tasks_blocked: blockedCount,
+                    avg_confidence: Math.round(avgConf * 10) / 10,
+                    override_count: ctx?.tasks_overridden_this_week ?? 0,
+                    biggest_blocker: topBlocker,
+                    key_learnings: keyLearnings,
+                    momentum_score: ctx?.momentum_score ?? null,
+                    next_week_recommendation: blockedCount > completedCount
+                      ? "Rebuild momentum: start with smallest-possible confidence win"
+                      : "Continue current thread and go one level deeper",
+                  });
+
+                  await supabase.from("founder_memory")
+                    .update({ last_week_summary: summary })
+                    .eq("user_id", userId);
+                }
+              } catch { /* non-fatal — never blocks push delivery */ }
+
               pushed++;
             } catch (err: unknown) {
               if (err && typeof err === "object" && "statusCode" in err) {

@@ -78,7 +78,7 @@ async function handleAgenticSynthesis(userId: string) {
       .limit(10),
     supabase
       .from("founder_context")
-      .select("startup_summary, current_stage, avoidance_signals, topics_mentioned_repeatedly, cognitive_load, consecutive_tasks_completed")
+      .select("startup_summary, current_stage, avoidance_zones, topics_mentioned_repeatedly, cognitive_load, consecutive_tasks_completed")
       .eq("user_id", userId)
       .maybeSingle(),
     supabase

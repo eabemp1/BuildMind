@@ -9,6 +9,7 @@ import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { BrandMark } from "@/components/layout/logo";
+import { sanitizeOutput } from "@/lib/sanitizeOutput";
 
 type Phase = "input" | "loading" | "result";
 
@@ -206,7 +207,7 @@ export default function BreakPublicPage() {
                 <div style={{ fontSize:11, color:"var(--bm-text4)", fontFamily:"monospace", letterSpacing:"0.12em", textTransform:"uppercase", marginBottom:20 }}>survival probability</div>
                 <SurvivalArc score={result.survival_probability} />
                 <motion.p initial={{ opacity:0 }} animate={{ opacity:1 }} transition={{ delay:1.2 }}
-                  style={{ fontSize:14, color:"var(--bm-text2)", maxWidth:480, margin:"20px auto 0", lineHeight:1.65 }}>{result.verdict}</motion.p>
+                  style={{ fontSize:14, color:"var(--bm-text2)", maxWidth:480, margin:"20px auto 0", lineHeight:1.65 }}>{sanitizeOutput(result.verdict)}</motion.p>
               </div>
 
               {/* Kill reasons */}
@@ -216,7 +217,7 @@ export default function BreakPublicPage() {
                   <motion.div key={i} initial={{ opacity:0, x:-12 }} animate={{ opacity:1, x:0 }} transition={{ delay:0.1*i+0.3 }}
                     style={{ display:"flex", gap:10, alignItems:"flex-start", padding:"11px 14px", background:"rgba(239,68,68,0.05)", border:"1px solid rgba(239,68,68,0.12)", borderLeft:"3px solid #ef4444", borderRadius:8, marginBottom:8 }}>
                     <span style={{ color:"#ef4444", fontSize:12, flexShrink:0, marginTop:1 }}>✕</span>
-                    <span style={{ fontSize:13, color:"var(--bm-text)", lineHeight:1.55 }}>{r}</span>
+                    <span style={{ fontSize:13, color:"var(--bm-text)", lineHeight:1.55 }}>{sanitizeOutput(r)}</span>
                   </motion.div>
                 ))}
               </div>
@@ -229,7 +230,7 @@ export default function BreakPublicPage() {
                     <motion.div key={i} initial={{ opacity:0, x:-12 }} animate={{ opacity:1, x:0 }} transition={{ delay:0.1*i+0.5 }}
                       style={{ display:"flex", gap:10, alignItems:"flex-start", padding:"11px 14px", background:"rgba(74,222,128,0.05)", border:"1px solid rgba(74,222,128,0.12)", borderLeft:"3px solid #4ade80", borderRadius:8, marginBottom:8 }}>
                       <span style={{ color:"#4ade80", fontSize:12, flexShrink:0, marginTop:1 }}>✓</span>
-                      <span style={{ fontSize:13, color:"var(--bm-text)", lineHeight:1.55 }}>{r}</span>
+                      <span style={{ fontSize:13, color:"var(--bm-text)", lineHeight:1.55 }}>{sanitizeOutput(r)}</span>
                     </motion.div>
                   ))}
                 </div>
@@ -239,7 +240,7 @@ export default function BreakPublicPage() {
               <motion.div initial={{ opacity:0, y:8 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.6 }}
                 style={{ background:"rgba(129,140,248,0.06)", border:"1px solid var(--bm-accent-bd)", borderRadius:12, padding:"16px 18px", marginBottom:24 }}>
                 <div style={{ fontSize:11, color:"var(--bm-text2)", fontFamily:"monospace", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:8, fontWeight:600 }}>The one thing to do now</div>
-                <p style={{ fontSize:14, color:"var(--bm-text)", lineHeight:1.65, margin:0 }}>{result.brutal_advice}</p>
+                <p style={{ fontSize:14, color:"var(--bm-text)", lineHeight:1.65, margin:0 }}>{sanitizeOutput(result.brutal_advice)}</p>
               </motion.div>
 
               {/* Differentiation */}
@@ -250,7 +251,7 @@ export default function BreakPublicPage() {
                   {result.differentiation_plan.map((item,i)=>(
                     <div key={i} style={{ display:"flex", gap:10, marginBottom:i<result.differentiation_plan.length-1?8:0 }}>
                       <span style={{ color:"#fbbf24", fontSize:12, flexShrink:0, marginTop:2 }}>→</span>
-                      <span style={{ fontSize:13, color:"var(--bm-text2)", lineHeight:1.55 }}>{item}</span>
+                      <span style={{ fontSize:13, color:"var(--bm-text2)", lineHeight:1.55 }}>{sanitizeOutput(item)}</span>
                     </div>
                   ))}
                 </motion.div>

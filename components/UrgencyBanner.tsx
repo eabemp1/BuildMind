@@ -20,6 +20,7 @@ import { useRouter } from "next/navigation";
 import { computeUrgencySignal, type UrgencySignal, type UrgencyLevel } from "@/lib/urgency";
 import { storage } from "@/lib/storage";
 import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
+import { sanitizeOutput } from "@/lib/sanitizeOutput";
 
 const LEVEL_STYLES: Record<UrgencyLevel, { bg: string; border: string; dot: string; text: string }> = {
   none:     { bg: "transparent", border: "transparent", dot: "#555", text: "var(--bm-text2)" },
@@ -110,11 +111,11 @@ export default function UrgencyBanner({ currentScore }: { currentScore: number }
           {/* Text */}
           <div style={{ flex: 1, minWidth: 0 }}>
             <span style={{ fontSize: 13, fontWeight: 600, color: style.text }}>
-              {signal.headline}
+              {sanitizeOutput(signal.headline)}
             </span>
             {signal.subtext && (
               <span style={{ fontSize: 12, color: "var(--bm-text2)", marginLeft: 8 }}>
-                {signal.subtext}
+                {sanitizeOutput(signal.subtext)}
               </span>
             )}
           </div>

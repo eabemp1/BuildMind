@@ -7,7 +7,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { momentumOnTaskComplete } from "@/lib/founderContext";
-import { detectPattern, shouldSurfacePattern } from "@/lib/patternDetection";
+import { detectPattern, shouldSurfacePattern, type PatternResult } from "@/lib/patternDetection";
 import { recordActivity } from "@/lib/server/activityLog";
 import { checkAndCacheStageTransition } from "@/lib/server/stageTransitionCache";
 import { invalidateCognitionCache } from "@/lib/founderCognition";
@@ -79,7 +79,7 @@ export async function POST(req: Request) {
   // ── Pattern Detection (Playbook §3.2) ────────────────────────────────────
   // Run after every task completion — surfaces behavioural signals to the
   // next AI response rather than waiting for the evening cron.
-  let activePattern = null;
+  let activePattern: PatternResult | null = null;
   try {
     const pattern = detectPattern({
       avoidance_zones: (memory?.avoidance_zones ?? []) as string[],
@@ -98,13 +98,6 @@ export async function POST(req: Request) {
       shouldSurfacePattern(ctx?.last_pattern_shown_at, pattern.severity)
     ) {
       activePattern = pattern;
-      // Write the detected pattern back to context so the next AI call sees it
-      await admin.from("founder_context").update({
-        active_pattern_signal: pattern.signal,
-        active_pattern_message: pattern.message,
-        active_pattern_subject: pattern.subject,
-        last_pattern_shown_at: new Date().toISOString(),
-      }).eq("user_id", user.id);
     }
   } catch {
     // Pattern detection is non-fatal — never block task completion
@@ -124,8 +117,29 @@ export async function POST(req: Request) {
     tasks_completed_total: (ctx?.tasks_completed_total ?? 0) + 1,
     streak: newStreak,
     last_checkin_date: today,
+    ...(activePattern?.signal
+      ? {
+          active_pattern_signal: activePattern.signal,
+          active_pattern_message: activePattern.message,
+          active_pattern_subject: activePattern.subject,
+          last_pattern_shown_at: new Date().toISOString(),
+        }
+      : {}),
     ...(stage ? { current_stage: stage } : {}),
   }, { onConflict: "user_id" });
+
+  const computedScore = newMomentum;
+  // Non-blocking score history snapshot — feeds the Progress page 7-day trend
+  if (typeof computedScore === "number") {
+    Promise.resolve(
+      admin
+        .from("score_history")
+        .upsert(
+          { user_id: user.id, score: computedScore, recorded_at: new Date().toISOString() },
+          { onConflict: "user_id,recorded_at::date" }
+        )
+    ).then(() => {}).catch(() => {});
+  }
 
   recordActivity(user.id, "task_completed", { stage, projectId }).catch(() => {});
   invalidateCognitionCache(user.id);

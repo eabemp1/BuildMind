@@ -8,6 +8,7 @@ import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { AIErrorBoundary } from "./AIErrorBoundary";
+import { sanitizeOutput } from "@/lib/sanitizeOutput";
 
 export interface ResetMission {
   task: string;
@@ -147,10 +148,10 @@ function RecoveryModeCardInner({ onComplete }: Props) {
               Reset Mission · {mission.estimatedMinutes} min
             </div>
             <div style={{ fontSize: 17, fontWeight: 700, color: "var(--bm-text)", lineHeight: 1.35, marginBottom: 8 }}>
-              {mission.task}
+              {sanitizeOutput(mission.task)}
             </div>
             <div style={{ fontSize: 12, color: "var(--bm-text3)", marginBottom: 20, lineHeight: 1.6, fontStyle: "italic", borderLeft: "2px solid rgba(240,180,41,0.3)", paddingLeft: 10 }}>
-              {mission.rationale}
+              {sanitizeOutput(mission.rationale)}
             </div>
             <motion.button
               whileHover={{ scale: 1.01 }}

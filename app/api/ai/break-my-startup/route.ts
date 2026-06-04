@@ -588,7 +588,7 @@ export async function POST(request: Request) {
         .eq("project_id", projectId),
       supabase
         .from("founder_context")
-        .select("momentum_score,cognitive_load,consecutive_tasks_completed,days_inactive,avoidance_signals,topics_repeated")
+        .select("momentum_score,cognitive_load,consecutive_tasks_completed,days_inactive,avoidance_zones,topics_repeated")
         .eq("user_id", userId)
         .maybeSingle(),
     ]);
@@ -709,7 +709,7 @@ export async function POST(request: Request) {
       cognitiveLoad: (founderCtxRow?.cognitive_load as "fresh" | "drained" | "autopilot") ?? "fresh",
       consecutiveTasksCompleted: founderCtxRow?.consecutive_tasks_completed ?? 0,
       daysInactive: founderCtxRow?.days_inactive ?? 0,
-      avoidanceSignals: founderCtxRow?.avoidance_signals ?? [],
+      avoidanceSignals: founderCtxRow?.avoidance_zones ?? [],
       topicsRepeated: founderCtxRow?.topics_repeated ?? [],
       domainDataPoints: competitors.length + strengths.length + totalTasks,
     };

@@ -23,6 +23,7 @@ import {
   type CofounderStyle,
 } from "@/lib/founderMemory";
 import { getDashboardOverview } from "@/lib/buildmind";
+import { sanitizeOutput } from "@/lib/sanitizeOutput";
 import { trackEvent } from "@/lib/analytics";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -333,7 +334,7 @@ export default function CofounderPulse() {
               {currentMessage ? (
                 <>
                   <p style={{ fontSize: 13, color: "var(--bm-text)", lineHeight: 1.65, margin: "0 0 12px" }}>
-                    {currentMessage.text}
+                    {sanitizeOutput(currentMessage.text)}
                   </p>
                   {currentMessage.action && (
                     <button
@@ -346,13 +347,13 @@ export default function CofounderPulse() {
                         fontWeight: 500,
                       }}
                     >
-                      {currentMessage.action.label} →
+                      {sanitizeOutput(currentMessage.action.label)} →
                     </button>
                   )}
                 </>
               ) : (
                 <p style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.65, margin: 0 }}>
-                  {meta.observingText}
+                  {sanitizeOutput(meta.observingText)}
                 </p>
               )}
 
@@ -405,7 +406,7 @@ export default function CofounderPulse() {
           color: mode === "alert" ? "#ef4444" : mode === "insight" ? "var(--bm-text2)" : mode === "challenge" ? "#f59e0b" : "#22c55e",
           fontFamily: "monospace",
         }}>
-          {currentMessage?.text?.slice(0, 80)}{currentMessage && currentMessage.text.length > 80 ? "..." : ""}
+          {sanitizeOutput(currentMessage?.text).slice(0, 80)}{currentMessage && sanitizeOutput(currentMessage.text).length > 80 ? "..." : ""}
         </div>
       )}
     </div>

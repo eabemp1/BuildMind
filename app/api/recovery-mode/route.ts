@@ -95,7 +95,7 @@ export async function POST() {
     startupSummary: ctx.startup_summary ?? "",
     stage: ctx.current_stage ?? "Idea",
     momentumScore: ctx.momentum_score ?? 50,
-    avoidanceSignals: ctx.avoidance_signals ?? [],
+    avoidanceSignals: ctx.avoidance_zones ?? [],
     overrideReasons: ctx.override_reasons ?? [],
     topicsRepeated: ctx.topics_mentioned_repeatedly ?? [],
     cognitiveLoad: ctx.cognitive_load ?? "drained",

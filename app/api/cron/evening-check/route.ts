@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import webpush from "web-push";
 import { planFromUserMetadata } from "@/lib/plan";
 import { enqueueBatch } from "@/lib/queue";
+import { reclassifyFounderArchetypeIfEligible } from "@/lib/founderArchetype";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -384,7 +385,10 @@ export async function GET(req: NextRequest) {
 
       await supabase
         .from("founder_context")
-        .update({ days_inactive: daysInactive })
+        .update({
+          days_inactive: daysInactive,
+          momentum_last_week: ctx?.momentum_score ?? 50,
+        })
         .eq("user_id", row.user_id);
 
       sent += 1;
@@ -407,6 +411,35 @@ export async function GET(req: NextRequest) {
     try {
       await supabase.from("app_config").delete().eq("key", CURSOR_KEY);
     } catch { /* non-fatal */ }
+  }
+
+  // After main loop — reclassify archetypes for recently active users
+  // Capped at 30 per cron run; the internal 7-day gate prevents over-calling
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const { data: activeUserIdsForArchetype } = await supabase
+    .from("founder_context")
+    .select("user_id")
+    .gte("last_active", sevenDaysAgo)
+    .limit(30);
+
+  if (activeUserIdsForArchetype?.length) {
+    await Promise.allSettled(
+      activeUserIdsForArchetype.map(async ({ user_id }: { user_id: string }) => {
+        try {
+          const [memRow, ctxRow] = await Promise.all([
+            supabase.from("founder_memory")
+              .select("avoidance_zones, strengths, personality_tags, archetype_classified_at")
+              .eq("user_id", user_id).maybeSingle(),
+            supabase.from("founder_context")
+              .select("avoidance_zones, override_reasons, topics_mentioned_repeatedly")
+              .eq("user_id", user_id).maybeSingle(),
+          ]);
+          if (memRow.data && ctxRow.data) {
+            await reclassifyFounderArchetypeIfEligible(user_id, memRow.data, ctxRow.data);
+          }
+        } catch { /* non-fatal per user */ }
+      })
+    );
   }
 
   return NextResponse.json({

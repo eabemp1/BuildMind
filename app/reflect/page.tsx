@@ -83,6 +83,14 @@ export default function ReflectPage() {
   const canSubmit = outcome !== null && whatTried.trim().length > 0;
 
   useEffect(() => {
+    // Pre-fill outcome from today page redirect
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const preOutcome = params.get("outcome") as Outcome | null;
+      if (preOutcome && ["completed", "partial", "blocked", "learned"].includes(preOutcome)) {
+        setOutcome(preOutcome);
+      }
+    }
     try {
       const saved = storage.getJSON("bm_reflect_history", []);
       setHistory(saved);
@@ -294,7 +302,7 @@ export default function ReflectPage() {
           )}
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <button onClick={() => router.push("/overview")} style={{ flex: 1, padding: "12px 0", borderRadius: 10, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text2)", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Back to dashboard</button>
-            <button onClick={() => router.push("/today")} style={{ flex: 1, padding: "12px 0", borderRadius: 10, border: "none", background: "var(--grad-primary)", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>See tomorrow's action →</button>
+            <button onClick={() => router.push("/today")} style={{ flex: 1, padding: "12px 0", borderRadius: 10, border: "none", background: "var(--grad-primary)", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Done - back to today →</button>
           </div>
         </motion.div>
 

@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import { ROLE_META, SEVERITY_COLORS, type AttackRound } from "./types";
+import { sanitizeOutput } from "@/lib/sanitizeOutput";
 
 export function AttackCard({
   round,
@@ -45,8 +46,8 @@ export function AttackCard({
         </div>
       </div>
 
-      <h4 style={{ fontSize: 14, fontWeight: 600, color: "var(--bm-text)", margin: "0 0 8px" }}>{round.title}</h4>
-      <p style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.65, margin: 0 }}>{round.body}</p>
+      <h4 style={{ fontSize: 14, fontWeight: 600, color: "var(--bm-text)", margin: "0 0 8px" }}>{sanitizeOutput(round.title)}</h4>
+      <p style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.65, margin: 0 }}>{sanitizeOutput(round.body)}</p>
 
       {/* Rebuttal block — shows founder defense + score + adversary counter */}
       {round.rebuttal && (
@@ -60,7 +61,7 @@ export function AttackCard({
             <div style={{ fontSize: 10, color: "#22c55e", fontFamily: "monospace", letterSpacing: "0.08em", marginBottom: 6 }}>
               YOUR DEFENSE — {round.rebuttalScore ?? 0}/100
             </div>
-            <p style={{ fontSize: 12, color: "var(--bm-text2)", lineHeight: 1.6, margin: 0 }}>{round.rebuttal}</p>
+            <p style={{ fontSize: 12, color: "var(--bm-text2)", lineHeight: 1.6, margin: 0 }}>{sanitizeOutput(round.rebuttal)}</p>
           </div>
 
           {/* Adversary counter-response */}
@@ -70,7 +71,7 @@ export function AttackCard({
                 {meta.label.toUpperCase()} RESPONDS
               </div>
               <p style={{ fontSize: 12, color: "var(--bm-text2)", lineHeight: 1.6, margin: 0, fontStyle: "italic" }}>
-                &ldquo;{round.adversaryCounter}&rdquo;
+                &ldquo;{sanitizeOutput(round.adversaryCounter)}&rdquo;
               </p>
             </div>
           )}

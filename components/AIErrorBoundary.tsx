@@ -17,6 +17,7 @@
  */
 
 import React, { Component, ReactNode } from "react";
+import { sanitizeOutput } from "@/lib/sanitizeOutput";
 
 interface Props {
   children: ReactNode;
@@ -125,9 +126,9 @@ export class AIErrorBoundary extends Component<Props, State> {
               marginTop: "6px", fontSize: "10px", color: "#f87171",
               whiteSpace: "pre-wrap", wordBreak: "break-all", maxHeight: "120px", overflow: "auto",
             }}>
-              {this.state.error.message}
+              {sanitizeOutput(this.state.error.message)}
               {"\n"}
-              {this.state.error.stack}
+              {sanitizeOutput(this.state.error.stack)}
             </pre>
           </details>
         )}

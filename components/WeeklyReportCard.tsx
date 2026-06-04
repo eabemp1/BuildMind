@@ -13,6 +13,7 @@
 
 import { useRef } from "react";
 import { motion } from "framer-motion";
+import { sanitizeOutput } from "@/lib/sanitizeOutput";
 
 type ReportData = {
   summary: string;
@@ -322,7 +323,7 @@ export default function WeeklyReportCard({
 
             {/* Summary */}
             <p style={{ fontSize: 12.5, color: C.text2, lineHeight: 1.65, margin: 0 }}>
-              {report.summary}
+              {sanitizeOutput(report.summary)}
             </p>
           </div>
         </div>
@@ -333,7 +334,7 @@ export default function WeeklyReportCard({
             <div style={{ fontSize: 9, color: C.celadon, fontFamily: "monospace", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6, fontWeight: 700 }}>
               Intention vs Reality
             </div>
-            <p style={{ fontSize: 12.5, color: C.text2, lineHeight: 1.6, margin: 0 }}>{report.intention_vs_action}</p>
+            <p style={{ fontSize: 12.5, color: C.text2, lineHeight: 1.6, margin: 0 }}>{sanitizeOutput(report.intention_vs_action)}</p>
           </div>
         )}
 
@@ -352,7 +353,7 @@ export default function WeeklyReportCard({
                 {item.label}
               </div>
               <p style={{ fontSize: 12, color: C.text2, lineHeight: 1.6, margin: 0 }}>
-                {item.value.slice(0, 140)}{item.value.length > 140 ? "…" : ""}
+                {sanitizeOutput(item.value).slice(0, 140)}{sanitizeOutput(item.value).length > 140 ? "…" : ""}
               </p>
             </div>
           ))}
@@ -369,7 +370,7 @@ export default function WeeklyReportCard({
             Honest Assessment
           </div>
           <p style={{ fontSize: 13.5, color: C.text1, lineHeight: 1.7, margin: 0, fontStyle: "italic", fontWeight: 400 }}>
-            "{report.honest_assessment}"
+            "{sanitizeOutput(report.honest_assessment)}"
           </p>
         </div>
 
@@ -403,7 +404,7 @@ export default function WeeklyReportCard({
         </div>
         {report.next_week_focus && (
           <div style={{ fontSize: 10, color: "rgba(92,200,138,0.65)", borderTop: "1px solid rgba(92,200,138,0.1)", paddingTop: 8 }}>
-            Next: {report.next_week_focus.slice(0, 90)}{report.next_week_focus.length > 90 ? "…" : ""}
+            Next: {sanitizeOutput(report.next_week_focus).slice(0, 90)}{sanitizeOutput(report.next_week_focus).length > 90 ? "…" : ""}
           </div>
         )}
         <div style={{ position: "absolute", bottom: 8, right: 12, fontSize: 8, color: "var(--bm-border2)", fontWeight: 700, letterSpacing: "0.08em" }}>BUILDMIND.LIVE</div>

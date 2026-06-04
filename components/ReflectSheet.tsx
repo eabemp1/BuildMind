@@ -17,6 +17,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, ChevronRight } from "lucide-react";
+import { sanitizeOutput } from "@/lib/sanitizeOutput";
 
 type Outcome = "completed" | "blocked" | "partial" | "learned";
 
@@ -204,7 +205,7 @@ export function ReflectSheet({ open, onDone, onClose, projectStage = "Idea", tas
             {taskAction && (
               <div style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: 8, padding: "10px 12px", marginBottom: 18 }}>
                 <p style={{ fontSize: 11, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.06em", margin: "0 0 4px", fontWeight: 700 }}>Today's task</p>
-                <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.5 }}>{taskAction}</p>
+                <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.5 }}>{sanitizeOutput(taskAction)}</p>
               </div>
             )}
 

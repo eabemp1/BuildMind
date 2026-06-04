@@ -80,7 +80,7 @@ export async function GET(req: Request) {
     // Fetch all founder contexts (one per user)
     const { data: contexts, error: ctxErr } = await admin
       .from("founder_context")
-      .select("user_id, startup_summary, current_stage, momentum_score, avoidance_signals, topics_mentioned_repeatedly, cognitive_load, timezone_offset, last_active")
+      .select("user_id, startup_summary, current_stage, momentum_score, avoidance_zones, topics_mentioned_repeatedly, cognitive_load, timezone_offset, last_active")
       .gte("last_active", activeSince);
 
     if (ctxErr || !contexts?.length) {
@@ -173,7 +173,7 @@ export async function GET(req: Request) {
           startupSummary: ctx.startup_summary ?? "",
           stage: ctx.current_stage ?? "Idea",
           momentumScore: ctx.momentum_score ?? 50,
-          avoidanceSignals: ctx.avoidance_signals ?? [],
+          avoidanceSignals: ctx.avoidance_zones ?? [],
           topicsRepeated: ctx.topics_mentioned_repeatedly ?? [],
           cognitiveLoad: ctx.cognitive_load ?? "fresh",
           yesterdayTask: lastReflection?.today_action ?? undefined,
@@ -298,7 +298,7 @@ export async function GET(req: Request) {
     startupSummary: ctx?.startup_summary ?? "",
     stage: ctx?.current_stage ?? "Idea",
     momentumScore: ctx?.momentum_score ?? 50,
-    avoidanceSignals: ctx?.avoidance_signals ?? [],
+    avoidanceSignals: ctx?.avoidance_zones ?? [],
     topicsRepeated: ctx?.topics_mentioned_repeatedly ?? [],
     cognitiveLoad: ctx?.cognitive_load ?? "fresh",
     yesterdayTask: lastReflection?.today_action ?? undefined,

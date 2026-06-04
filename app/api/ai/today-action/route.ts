@@ -238,7 +238,7 @@ export async function POST(request: Request) {
           .maybeSingle(),
         supabase
           .from("founder_context")
-          .select("avoidance_signals, override_reasons, tasks_overridden_this_week, topics_mentioned_repeatedly, days_inactive")
+          .select("avoidance_zones, override_reasons, tasks_overridden_this_week, topics_mentioned_repeatedly, days_inactive, consecutive_tasks_completed, cognitive_load, momentum_score, streak, pattern_flags")
           .eq("user_id", userId)
           .maybeSingle(),
       ]);
@@ -502,14 +502,14 @@ INSTRUCTION: Use this to make today's action a direct causal response to yesterd
         last_debt_surfaced?: Record<string, string> | null;
       };
       const context = (contextResult.value.data ?? {}) as {
-        avoidance_signals?: string[];
+        avoidance_zones?: string[];
         override_reasons?: string[];
         tasks_overridden_this_week?: number;
         topics_mentioned_repeatedly?: string[];
         days_inactive?: number;
       };
       const debt = computeExecutionDebt({
-        avoidance_signals: context.avoidance_signals ?? [],
+        avoidance_zones: context.avoidance_zones ?? [],
         override_reasons: context.override_reasons ?? [],
         tasks_overridden_this_week: context.tasks_overridden_this_week ?? 0,
         topics_mentioned_repeatedly: context.topics_mentioned_repeatedly ?? [],
@@ -588,6 +588,27 @@ INSTRUCTION: Use this to make today's action a direct causal response to yesterd
           note: hoistedReflection.note ?? "",
           confidence: hoistedReflection.confidence ?? 3,
         };
+      }
+      // Wire founder_context behavioral signals — fetched above but previously discarded
+      if (contextResult?.status === "fulfilled" && contextResult.value.data) {
+        const ctx = contextResult.value.data as {
+          override_reasons?: string[];
+          topics_mentioned_repeatedly?: string[];
+          days_inactive?: number;
+          consecutive_tasks_completed?: number;
+        };
+        if (!reflexionContext.overrideReasons?.length) {
+          reflexionContext.overrideReasons = ctx.override_reasons ?? [];
+        }
+        if (!reflexionContext.topicsRepeated?.length) {
+          reflexionContext.topicsRepeated = ctx.topics_mentioned_repeatedly ?? [];
+        }
+        if (reflexionContext.daysInactive === undefined || reflexionContext.daysInactive === 0) {
+          reflexionContext.daysInactive = ctx.days_inactive ?? 0;
+        }
+        if (!reflexionContext.consecutiveTasksCompleted) {
+          reflexionContext.consecutiveTasksCompleted = ctx.consecutive_tasks_completed ?? 0;
+        }
       }
     }
 

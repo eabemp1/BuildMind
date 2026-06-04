@@ -648,7 +648,7 @@ export async function createProjectWithRoadmap(params: {
     momentum_score:    50,
     last_active:       new Date().toISOString().slice(0, 10),
     days_inactive:     0,
-    avoidance_signals: initialAvoidance,
+    avoidance_zones: initialAvoidance,
     topics_mentioned_repeatedly: [],
     consecutive_tasks_completed: 0,
     tasks_accepted_this_week:    0,

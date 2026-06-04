@@ -116,6 +116,14 @@ export async function middleware(request: NextRequest) {
     pathname === "/" ||
     pathname === "/landing" ||
     pathname === "/welcome" ||
+    pathname === "/terms" ||
+    pathname.startsWith("/terms/") ||
+    pathname === "/privacy" ||
+    pathname.startsWith("/privacy/") ||
+    pathname === "/refund" ||
+    pathname.startsWith("/refund/") ||
+    pathname === "/legal" ||
+    pathname.startsWith("/legal/") ||
     isAuthRoute ||
     isExploreRoute ||
     isFounderRoute ||

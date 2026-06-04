@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getFounderProfile, type FounderProfileData } from "@/lib/api";
+import { sanitizeOutput } from "@/lib/sanitizeOutput";
 
 export default function FounderProfilePage() {
   const params = useParams<{ username: string }>();
@@ -80,7 +81,7 @@ export default function FounderProfilePage() {
               ) : (
                 profile.recent_updates.map((update) => (
                   <div key={update.id} className="rounded-lg border border-white/10 bg-white/5 p-3">
-                    <p>{update.content}</p>
+                    <p>{sanitizeOutput(update.content)}</p>
                     <p className="mt-2 text-xs text-zinc-500">{new Date(update.created_at).toLocaleString()}</p>
                   </div>
                 ))
