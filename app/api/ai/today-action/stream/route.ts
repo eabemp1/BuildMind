@@ -302,7 +302,7 @@ export async function POST(request: Request) {
           }
 
           const { data: lastReflection } = await supabase.from("reflections")
-            .select("outcome, note, confidence, today_action, created_at")
+            .select("outcome, note, confidence, today_action, created_at, what_tried, what_happened, what_learned, blocker")
             .eq("user_id", userId)
             .gte("created_at", new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString())
             .order("created_at", { ascending: false }).limit(1).maybeSingle();
@@ -310,7 +310,7 @@ export async function POST(request: Request) {
           if (lastReflection) {
             const reflectDate = new Date(lastReflection.created_at).toLocaleDateString();
             lastReflectionNote = lastReflection.note ?? undefined;
-            lastReflectionContext = `\nLAST REFLECTION (${reflectDate}):\nYesterday: "${lastReflection.today_action ?? "Not recorded"}"\nOutcome: ${lastReflection.outcome}\nConfidence: ${lastReflection.confidence}/5\nNote: "${lastReflection.note ?? "None"}"\nInstruction: if yesterday was completed, stay within the same stage and thread, but refine the next task from the reflection note instead of repeating the same action or message.` + lastReflectionContext;
+            lastReflectionContext = `\nLAST REFLECTION (${reflectDate}):\nYesterday: "${lastReflection.today_action ?? "Not recorded"}"\nOutcome: ${lastReflection.outcome}\nConfidence: ${lastReflection.confidence}/5\nNote: "${lastReflection.note ?? "None"}"\n${lastReflection.what_tried ? `What they actually tried: "${lastReflection.what_tried}"` : ""}\n${lastReflection.what_happened ? `What concretely happened: "${lastReflection.what_happened}"` : ""}\n${lastReflection.what_learned ? `What they learned: "${lastReflection.what_learned}"` : ""}\n${lastReflection.blocker ? `Specific blocker: "${lastReflection.blocker}"` : ""}\nINSTRUCTION: Use what_tried and what_happened as the PRIMARY signal. If what_tried is set, today must be a direct causal response. blocked+blocker -> remove the specific blocker first. what_learned -> apply to one real person today.` + lastReflectionContext;
           }
 
           try {
@@ -414,7 +414,7 @@ HARD RULES:
         emit("agent_a", { status: "done", output: agentAOutput });
 
         // ── Agent B — Critic ──────────────────────────────────────────────
-        const criticPersona = getWeeklyCriticPersona();
+        const criticPersona = getWeeklyCriticPersona(undefined, userId);
         emit("agent_b", { status: "running", label: `Agent B (${criticPersona.name}) critiquing…` });
 
         let criticVerdict: "pass" | "fail" = "pass";

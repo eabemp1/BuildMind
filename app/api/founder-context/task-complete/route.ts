@@ -175,6 +175,17 @@ export async function POST(req: Request) {
   invalidateCognitionCache(user.id);
   if (projectId) checkAndCacheStageTransition(user.id, projectId).catch(() => {});
 
+  // Write checkin_done_date to user_behavior_state server-side so mobile can read it
+// without depending on the client-side persistBehaviorState call completing.
+  admin.from("user_behavior_state")
+    .upsert([{
+      user_id: user.id,
+      key: "checkin_done_date",
+      value: today,
+      updated_at: new Date().toISOString(),
+    }], { onConflict: "user_id,key" })
+    .then(() => {}).catch(() => {});
+
   return NextResponse.json({
     ok: true,
     momentum: newMomentum,

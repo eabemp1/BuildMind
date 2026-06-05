@@ -9,6 +9,7 @@ import { createClient } from "@/lib/supabase/client";
 import { selectActiveProject, useActiveProjectId, useProjectSummariesQuery } from "@/lib/queries";
 import { computeStartupScore } from "@/lib/buildmind";
 import { getStoredStreak } from "@/lib/plan";
+import { storage } from "@/lib/storage";
 
 type WeekData = {
   name: string;
@@ -103,6 +104,7 @@ export default function WeeklySharePage() {
       const supabase = createClient();
       const { data: authData } = await supabase.auth.getUser();
       const user = authData.user;
+      if (user?.id) storage.onSignIn(user.id); // scope localStorage namespace before getStoredStreak()
       const meta = user?.user_metadata ?? {};
       const weekNumber = getWeekNumber(user?.created_at);
 
