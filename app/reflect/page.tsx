@@ -105,6 +105,9 @@ export default function ReflectPage() {
       }
       const today = new Date().toISOString().slice(0, 10);
       if (values.reflect_done_date === today) {
+        const rfKey = `bm_reflect_done_${today}`;
+        storage.set(rfKey, "1");
+        storage.set("bm_reflect_pending", "false");
         setDone(true);
       }
     }).catch(() => {});

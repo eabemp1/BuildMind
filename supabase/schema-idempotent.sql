@@ -141,6 +141,32 @@ CREATE POLICY founder_memory_update_own ON founder_memory FOR UPDATE USING (auth
 CREATE POLICY founder_memory_insert_own ON founder_memory FOR INSERT WITH CHECK (auth.uid() = user_id);
 CREATE TRIGGER founder_memory_updated_at BEFORE UPDATE ON founder_memory FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+CREATE OR REPLACE FUNCTION append_avoidance_zone(p_user_id uuid, p_zone text)
+RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+  UPDATE founder_memory
+  SET avoidance_zones = CASE
+    WHEN p_zone = ANY(avoidance_zones) THEN avoidance_zones
+    WHEN array_length(avoidance_zones, 1) >= 10 THEN avoidance_zones
+    ELSE array_append(avoidance_zones, p_zone)
+  END
+  WHERE user_id = p_user_id;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION append_strength(p_user_id uuid, p_strength text)
+RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+  UPDATE founder_memory
+  SET strengths = CASE
+    WHEN p_strength = ANY(strengths) THEN strengths
+    WHEN array_length(strengths, 1) >= 10 THEN strengths
+    ELSE array_append(strengths, p_strength)
+  END
+  WHERE user_id = p_user_id;
+END;
+$$;
+
 -- ============================================================================
 -- TABLE: founder_context (momentum engine — context for decisions)
 -- ============================================================================

@@ -114,7 +114,13 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
         setUnseenBadges(getUnseenCount());
         setTasksCompleted(getTasksCompleted());
       } catch {}
-      syncStreakFromServer().then(s => setStreakDays(s)).catch(() => {});
+      const supabase = createClient();
+      supabase.auth.getUser().then(({ data }) => {
+        if (data.user?.id) {
+          storage.onSignIn(data.user.id);
+          syncStreakFromServer().then(s => setStreakDays(s)).catch(() => {});
+        }
+      }).catch(() => {});
     };
     const handleStreakUpdated = (e: Event) => {
       const detail = (e as CustomEvent<{ streak: number }>).detail;

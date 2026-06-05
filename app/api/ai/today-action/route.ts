@@ -198,7 +198,17 @@ export async function POST(request: Request) {
     let founderArchetype: string | undefined;
     let knowledgeMatches: FounderKnowledgeMatch[] = [];
     let supabase: ReturnType<typeof createAdminClient> | null = null;
-    let hoistedReflection: { outcome?: string | null; note?: string | null; confidence?: number | null; today_action?: string | null; created_at?: string | null } | null = null;
+    let hoistedReflection: {
+      outcome?: string | null;
+      note?: string | null;
+      confidence?: number | null;
+      today_action?: string | null;
+      created_at?: string | null;
+      what_tried?: string | null;
+      what_happened?: string | null;
+      what_learned?: string | null;
+      blocker?: string | null;
+    } | null = null;
     let recentActionHistory = "";
     let cognitionBlock = "";
     let cognitionMomentumScore = 50;
@@ -228,7 +238,7 @@ export async function POST(request: Request) {
           .maybeSingle(),
         supabase
           .from("reflections")
-          .select("outcome, note, confidence, today_action, created_at")
+          .select("outcome, note, confidence, today_action, created_at, what_tried, what_happened, what_learned, blocker")
           .eq("user_id", userId)
           // Only reflections from the last 48 hours — prevents stale reflection
           // from repeating the same task type day after day.
@@ -413,12 +423,17 @@ Yesterday's action: "${lastReflection.today_action ?? "Not recorded"}"
 Outcome: ${lastReflection.outcome}
 Confidence (1-5): ${lastReflection.confidence}
 Their note: "${lastReflection.note ?? "No note"}"
+${lastReflection.what_tried ? `What they actually tried: "${lastReflection.what_tried}"` : ""}
+${lastReflection.what_happened ? `What concretely happened: "${lastReflection.what_happened}"` : ""}
+${lastReflection.what_learned ? `What they learned: "${lastReflection.what_learned}"` : ""}
+${lastReflection.blocker ? `Specific blocker: "${lastReflection.blocker}"` : ""}
 
-INSTRUCTION: Use this to make today's action a direct causal response to yesterday.
-- blocked outcome -> remove that specific blocker first
+INSTRUCTION: Use what_tried and what_happened as the primary signal for today's task direction.
+- If what_tried is populated, today's task must be a direct causal response to it
+- blocked outcome + blocker -> today's task must remove that specific blocker
 - completed outcome -> go one level deeper on the same thread, but do not repeat the same action or message
 - confidence 1-2 -> give an easier, confidence-building first step
-- learned outcome -> apply the insight to one real person today
+- what_learned -> apply the insight to one concrete action today
 - if the prior action was completed, preserve the stage and target area while refining the next task from their reflection note` + lastReflectionContext;
       }
 

@@ -92,7 +92,7 @@ async function extractAndWritePatterns(
   // Pull last 5 reflections
   const { data: recentReflections } = await supabase
     .from("reflections")
-    .select("outcome, note, today_action, confidence, created_at")
+    .select("outcome, note, today_action, confidence, created_at, what_tried, what_happened, what_learned, blocker")
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
     .limit(5);
@@ -115,19 +115,13 @@ async function extractAndWritePatterns(
   const overrides = overridesData;
 
   const reflectionSummary = recentReflections.map((r, i) => {
-    // Parse rich fields from note if stored as "Tried: X | Result: Y | Learned: Z"
-    const note = r.note ?? "";
-    const tried    = note.match(/Tried: ([^|]+)/)?.[1]?.trim()    ?? r.today_action ?? "none";
-    const happened = note.match(/Result: ([^|]+)/)?.[1]?.trim()   ?? "";
-    const learned  = note.match(/Learned: ([^|]+)/)?.[1]?.trim()  ?? "";
-    const blocked  = note.match(/Blocker: ([^|]+)/)?.[1]?.trim()  ?? "";
-
     return [
-      `${i + 1}. Tried: "${tried}"`,
+      `${i + 1}. Action: "${r.today_action ?? r.note ?? "none"}"`,
       `   Outcome: ${r.outcome} | Confidence: ${r.confidence}/5`,
-      happened ? `   Result: "${happened}"` : "",
-      learned  ? `   Learned: "${learned}"` : "",
-      blocked  ? `   Blocker: "${blocked}"` : "",
+      r.what_tried ? `   What they tried: "${r.what_tried}"` : "",
+      r.what_happened ? `   What happened: "${r.what_happened}"` : "",
+      r.what_learned ? `   What they learned: "${r.what_learned}"` : "",
+      r.blocker ? `   Blocker: "${r.blocker}"` : "",
     ].filter(Boolean).join("\n");
   }).join("\n\n");
 

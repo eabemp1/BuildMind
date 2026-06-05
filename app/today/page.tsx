@@ -485,15 +485,24 @@ function TodayContent() {
         fetchBehaviorState<{
           checkin_done_date: string;
           today_action: StoredReflection;
-        }>(["checkin_done_date", "today_action"]).then(values => {
+          today_action_cache: CachedTodayAction;
+        }>(["checkin_done_date", "today_action", "today_action_cache"]).then(values => {
           if (values.checkin_done_date === today) {
             storage.set(checkinKey, today);
             storage.set("bm_checkin_done_date", today);
             setDone(true);
+            return;
           }
           if (values.today_action?.outcome) {
             storage.setJSON("bm_today_action", values.today_action);
             setYesterdayReflection(values.today_action);
+          }
+          if (
+            values.today_action_cache?.date === today &&
+            values.today_action_cache?.projectId &&
+            isActionData(values.today_action_cache.data)
+          ) {
+            storage.setJSON(`bm_today_action_cache_${uid}`, values.today_action_cache);
           }
         }).catch(() => {});
       }
@@ -979,7 +988,12 @@ function TodayContent() {
         const tcRes = await fetch("/api/founder-context/task-complete", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ stage: project?.startup_stage ?? "Idea", projectId: project?.id }),
+          body: JSON.stringify({
+            stage: project?.startup_stage ?? "Idea",
+            projectId: project?.id,
+            taskTitle: actionData.action,
+            outcome: selectedOutcome,
+          }),
         });
         if (tcRes.ok) {
           const tcData = await tcRes.json();
@@ -996,6 +1010,9 @@ function TodayContent() {
           if (tcData.pattern?.signal) {
             setActivePattern(tcData.pattern);
           }
+          if (tcData.xp != null) {
+            storage.set("bm_xp", String(tcData.xp));
+          }
         }
       } catch {}
 
@@ -1011,7 +1028,6 @@ function TodayContent() {
       const todayActionState = { action: actionData.action, outcome: selectedOutcome, note: "", confidence: 3 };
       storage.setJSON("bm_today_action", todayActionState);
       if (userId) {
-        storage.set(`bm_last_reflection_ts_${userId}`, Date.now().toString());
         storage.remove(`bm_today_action_cache_${userId}`);
         storage.remove(`bm_today_action_cache_ts_${userId}`);
       }
@@ -1020,6 +1036,7 @@ function TodayContent() {
         checkin_done_date: todayDate,
         today_action_cache: null,
       });
+      setDone(true);
 
       if (userId) {
         storage.set(`bm_checkin_done_date_${userId}`, todayDate);

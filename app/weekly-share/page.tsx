@@ -8,6 +8,7 @@ import { motion } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import { selectActiveProject, useActiveProjectId, useProjectSummariesQuery } from "@/lib/queries";
 import { computeStartupScore } from "@/lib/buildmind";
+import { getStoredStreak } from "@/lib/plan";
 
 type WeekData = {
   name: string;
@@ -123,15 +124,24 @@ export default function WeeklySharePage() {
         const streakRes = await fetch("/api/founder-context/streak", { cache: "no-store" });
         if (streakRes.ok) {
           const streakData = (await streakRes.json()) as StreakResponse;
-          if (typeof streakData.streak === "number") base.streak = streakData.streak;
+          if (typeof streakData.streak === "number" && streakData.streak > 0) {
+            base.streak = streakData.streak;
+          }
         } else {
+          const local = getStoredStreak();
+          if (local > 0) base.streak = local;
           const contextRes = await fetch("/api/founder-context", { cache: "no-store" });
           if (contextRes.ok) {
             const context = (await contextRes.json()) as FounderContextResponse;
-            if (typeof context.data?.streak === "number") base.streak = context.data.streak;
+            if (typeof context.data?.streak === "number" && context.data.streak > 0) {
+              base.streak = context.data.streak;
+            }
           }
         }
-      } catch {}
+      } catch {
+        const local = getStoredStreak();
+        if (local > 0) base.streak = local;
+      }
 
       if (user?.id && (base.streak === null || base.streak === 0)) {
         try {
@@ -196,7 +206,7 @@ export default function WeeklySharePage() {
   const tweetText = encodeURIComponent(
     `${weekData.week} building ${weekData.project} with @buildmind_os\n\n` +
     `✓ ${statValue(weekData.tasksDone)}/${statValue(weekData.tasksCommitted)} tasks done\n` +
-    `🔥 ${statValue(weekData.streak)} day streak\n` +
+    `🔥 ${weekData.streak != null && weekData.streak > 0 ? `${weekData.streak}d` : PLACEHOLDER} streak\n` +
     `📈 Execution score: ${statValue(weekData.score, "/100")}\n` +
     `🎯 Milestone: ${weekData.milestone}\n\n` +
     `Next week: ${weekData.nextFocus}\n\n` +
@@ -240,7 +250,7 @@ export default function WeeklySharePage() {
             <div style={{fontSize:12,color:"var(--bm-purple)",marginTop:2}}>{loading ? <span style={{...shimmer,display:"inline-block",width:160,height:14}} /> : `${weekData.project} · ${weekData.stage}`}</div>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:6,fontSize:13,color:"var(--bm-amber)",background:"var(--bm-bg3)",border:"1px solid var(--bm-border)",padding:"5px 10px",borderRadius:20}}>
-            🔥 {loading ? PLACEHOLDER : statValue(weekData.streak)}d
+            🔥 {loading ? PLACEHOLDER : (weekData.streak != null && weekData.streak > 0 ? `${weekData.streak}d` : PLACEHOLDER)}
           </div>
         </div>
 

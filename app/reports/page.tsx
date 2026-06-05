@@ -190,6 +190,7 @@ export default function ReportsPage() {
   const isMobile = useIsMobile();
   const { plan } = usePlan();
   const reportRef = useRef<HTMLDivElement>(null);
+  const reportCardRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState<ExportFmt|null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [exported, setExported] = useState<string|null>(null);
@@ -268,9 +269,27 @@ export default function ReportsPage() {
   async function handleExport(fmt: ExportFmt) {
     setExporting(fmt);
     try {
-      if (fmt === "pdf" || fmt === "png") {
+      if (fmt === "png") {
+        const html2canvas = (await import("html2canvas")).default;
+        const el = reportCardRef.current;
+        if (!el) return;
+        const canvas = await html2canvas(el, {
+          backgroundColor:
+            getComputedStyle(document.documentElement)
+              .getPropertyValue("--bm-bg")
+              .trim() || "#0a0a0a",
+          scale: 2,
+          useCORS: true,
+          logging: false,
+        });
+        const link = document.createElement("a");
+        link.download = `buildmind-report-${new Date().toISOString().slice(0, 10)}.png`;
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+        setExported("Report downloaded ✓");
+      } else if (fmt === "pdf") {
         window.print();
-        setExported(fmt === "pdf" ? "PDF sent to print dialog" : "Use browser print → Save as Image");
+        setExported("PDF sent to print dialog");
       } else if (fmt === "csv") {
         const rows = [
           ["Metric","Value"],
@@ -401,6 +420,7 @@ export default function ReportsPage() {
           )}
         </AnimatePresence>
 
+        <div ref={reportCardRef} style={{ background:"var(--bm-bg)", padding: isMobile ? 0 : 8 }}>
         {/* HERO ROW */}
         <div style={{ display:"grid",
           gridTemplateColumns: isMobile ? "1fr" : "auto 1fr 1fr 1fr",
@@ -687,6 +707,7 @@ export default function ReportsPage() {
             </p>
           </motion.div>
         )}
+        </div>
 
         {/* FOOTER */}
         <div style={{ marginTop:32, paddingTop:16, borderTop:"1px solid var(--bm-border)",

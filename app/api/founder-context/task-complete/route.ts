@@ -17,7 +17,7 @@ export async function POST(req: Request) {
   const { data: { user }, error } = await supabase.auth.getUser();
   if (error || !user) return NextResponse.json({ ok: false }, { status: 401 });
 
-  const { stage = "", projectId = "" } = await req.json().catch(() => ({}));
+  const { stage = "", projectId = "", taskTitle = "", outcome = "completed" } = await req.json().catch(() => ({}));
   const admin = createAdminClient();
 
   // Fetch context + founder_memory + recent task titles in parallel for pattern detection
@@ -25,7 +25,7 @@ export async function POST(req: Request) {
   const [ctxResult, memoryResult, recentTasksResult] = await Promise.allSettled([
     admin
       .from("founder_context")
-      .select("momentum_score, tasks_accepted_this_week, tasks_overridden_this_week, current_stage, consecutive_tasks_completed, last_active, tasks_completed_today, last_task_date, tasks_completed_total, override_reasons, topics_mentioned_repeatedly, days_inactive, last_pattern_shown_at, momentum_last_week, streak, last_checkin_date")
+      .select("momentum_score, tasks_accepted_this_week, tasks_overridden_this_week, current_stage, consecutive_tasks_completed, last_active, tasks_completed_today, last_task_date, tasks_completed_total, override_reasons, topics_mentioned_repeatedly, days_inactive, last_pattern_shown_at, momentum_last_week, streak, last_checkin_date, xp")
       .eq("user_id", user.id)
       .maybeSingle(),
     admin
@@ -75,6 +75,10 @@ export async function POST(req: Request) {
   const isReturningAfterGap = (ctx?.last_active ?? "") < today;
   const prevConsecutive = ctx?.consecutive_tasks_completed ?? 0;
   const newConsecutive = isReturningAfterGap ? 1 : prevConsecutive + 1;
+  const baseXP = 10;
+  const streakBonus = newStreak >= 7 ? 5 : 0;
+  const xpEarned = baseXP + streakBonus;
+  const newXP = (ctx?.xp ?? 0) + xpEarned;
 
   // ── Pattern Detection (Playbook §3.2) ────────────────────────────────────
   // Run after every task completion — surfaces behavioural signals to the
@@ -115,6 +119,7 @@ export async function POST(req: Request) {
     last_task_date: today,
     daily_tasks_reset_at: new Date().toISOString(),
     tasks_completed_total: (ctx?.tasks_completed_total ?? 0) + 1,
+    xp: newXP,
     streak: newStreak,
     last_checkin_date: today,
     ...(activePattern?.signal
@@ -141,6 +146,31 @@ export async function POST(req: Request) {
     ).then(() => {}).catch(() => {});
   }
 
+  if (taskTitle) {
+    const zone = String(taskTitle).slice(0, 80);
+    const field = outcome === "blocked" || outcome === "skipped" ? "avoidance_zones" : "strengths";
+    void (async () => {
+      const { data: mem } = await admin
+        .from("founder_memory")
+        .select(field)
+        .eq("user_id", user.id)
+        .maybeSingle();
+      const memoryRow = mem as { avoidance_zones?: string[]; strengths?: string[] } | null;
+      const current = ((memoryRow?.[field] as string[] | undefined) ?? []).filter(Boolean);
+      if (current.length >= 10 || current.includes(zone)) return;
+      if (memoryRow) {
+        await admin
+          .from("founder_memory")
+          .update({ [field]: [...current, zone] })
+          .eq("user_id", user.id);
+      } else {
+        await admin
+          .from("founder_memory")
+          .insert({ user_id: user.id, [field]: [zone] });
+      }
+    })().catch(() => {});
+  }
+
   recordActivity(user.id, "task_completed", { stage, projectId }).catch(() => {});
   invalidateCognitionCache(user.id);
   if (projectId) checkAndCacheStageTransition(user.id, projectId).catch(() => {});
@@ -151,6 +181,8 @@ export async function POST(req: Request) {
     isFirstTask,
     consecutiveTasksCompleted: newConsecutive,
     tasksCompletedTotal: (ctx?.tasks_completed_total ?? 0) + 1,
+    xpEarned,
+    xp: newXP,
     streak: newStreak,
     lastCheckinDate: today,
     // Surface detected pattern to the client so the today page can show it
