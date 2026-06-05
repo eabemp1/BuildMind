@@ -177,6 +177,7 @@ export async function POST(req: Request) {
 
   // Write checkin_done_date to user_behavior_state server-side so mobile can read it
 // without depending on the client-side persistBehaviorState call completing.
+  Promise.resolve(
   admin.from("user_behavior_state")
     .upsert([{
       user_id: user.id,
@@ -184,7 +185,7 @@ export async function POST(req: Request) {
       value: today,
       updated_at: new Date().toISOString(),
     }], { onConflict: "user_id,key" })
-    .then(() => {}).catch(() => {});
+).then(() => {}).catch(() => {});
 
   return NextResponse.json({
     ok: true,
