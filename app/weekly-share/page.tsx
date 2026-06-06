@@ -1,6 +1,13 @@
 "use client";
 /**
  * /weekly-share — shareable weekly progress card.
+ *
+ * PATCHES APPLIED (June 2026):
+ *  1. Streak now fetched from /api/data/overview — the same endpoint overview page uses,
+ *     so weekly-share and overview always show identical streak values.
+ *  2. Removed the `> 0` guard from the streak badge render so `0d` shows instead of `—`
+ *     when the founder genuinely has a 0-day streak.
+ *  3. localDayKey uses UTC (toISOString().slice(0,10)) to match server-side today value.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import html2canvas from "html2canvas";
@@ -25,18 +32,6 @@ type WeekData = {
   weekNumber: number;
 };
 
-type FounderContextResponse = {
-  ok?: boolean;
-  data?: {
-    streak?: number | null;
-  } | null;
-};
-
-type StreakResponse = {
-  ok?: boolean;
-  streak?: number;
-};
-
 type WeeklyReportResponse = {
   success?: boolean;
   data?: {
@@ -51,6 +46,11 @@ type WeeklyReportResponse = {
       ai_suggestions?: string;
     };
   };
+};
+
+// Overview API response shape — same endpoint the overview page uses
+type OverviewResponse = {
+  founderStreakDays?: number;
 };
 
 const PLACEHOLDER = "—";
@@ -122,40 +122,38 @@ export default function WeeklySharePage() {
         weekNumber,
       };
 
+      // ── PATCH 1: Use the same overview endpoint that overview page uses ────
+      // This guarantees weekly-share and overview always show the same streak.
+      // The overview endpoint computes Math.max(dbStreak, computedStreakFromDates)
+      // which is the most authoritative value in the system.
       try {
-        const streakRes = await fetch("/api/founder-context/streak", { cache: "no-store" });
-        if (streakRes.ok) {
-          const streakData = (await streakRes.json()) as StreakResponse;
-          if (typeof streakData.streak === "number" && streakData.streak > 0) {
-            base.streak = streakData.streak;
-          }
-        } else {
-          const local = getStoredStreak();
-          if (local > 0) base.streak = local;
-          const contextRes = await fetch("/api/founder-context", { cache: "no-store" });
-          if (contextRes.ok) {
-            const context = (await contextRes.json()) as FounderContextResponse;
-            if (typeof context.data?.streak === "number" && context.data.streak > 0) {
-              base.streak = context.data.streak;
-            }
+        const overviewRes = await fetch("/api/data/overview", { cache: "no-store" });
+        if (overviewRes.ok) {
+          const ov = (await overviewRes.json()) as OverviewResponse;
+          if (typeof ov.founderStreakDays === "number") {
+            base.streak = ov.founderStreakDays; // includes 0 — we show it honestly
           }
         }
       } catch {
-        const local = getStoredStreak();
-        if (local > 0) base.streak = local;
-      }
-
-      if (user?.id && (base.streak === null || base.streak === 0)) {
+        // Fallback chain: localStorage → direct Supabase query
         try {
-          const { data: ctxDirect } = await supabase
-            .from("founder_context")
-            .select("streak")
-            .eq("user_id", user.id)
-            .maybeSingle();
-          if (typeof ctxDirect?.streak === "number" && ctxDirect.streak > 0) {
-            base.streak = ctxDirect.streak;
-          }
-        } catch { /* non-fatal */ }
+          const local = getStoredStreak();
+          base.streak = local; // may be 0
+        } catch {
+          // last resort — leave streak as null (renders as —)
+        }
+        if (user?.id && base.streak === null) {
+          try {
+            const { data: ctxDirect } = await supabase
+              .from("founder_context")
+              .select("streak")
+              .eq("user_id", user.id)
+              .maybeSingle();
+            if (typeof ctxDirect?.streak === "number") {
+              base.streak = ctxDirect.streak;
+            }
+          } catch { /* non-fatal */ }
+        }
       }
 
       let next = base;
@@ -205,10 +203,19 @@ export default function WeeklySharePage() {
     return () => { cancelled = true; };
   }, [activeProject]);
 
+  // ── PATCH 2: streak badge — show 0d honestly, only use PLACEHOLDER when null ──
+  // Previously: weekData.streak != null && weekData.streak > 0 ? `${weekData.streak}d` : PLACEHOLDER
+  // The > 0 guard made a real 0 streak show as "—" instead of "0d".
+  const streakDisplay = loading
+    ? PLACEHOLDER
+    : weekData.streak != null
+      ? `${weekData.streak}d`
+      : PLACEHOLDER;
+
   const tweetText = encodeURIComponent(
     `${weekData.week} building ${weekData.project} with @buildmind_os\n\n` +
     `✓ ${statValue(weekData.tasksDone)}/${statValue(weekData.tasksCommitted)} tasks done\n` +
-    `🔥 ${weekData.streak != null && weekData.streak > 0 ? `${weekData.streak}d` : PLACEHOLDER} streak\n` +
+    `🔥 ${streakDisplay} streak\n` +
     `📈 Execution score: ${statValue(weekData.score, "/100")}\n` +
     `🎯 Milestone: ${weekData.milestone}\n\n` +
     `Next week: ${weekData.nextFocus}\n\n` +
@@ -251,8 +258,9 @@ export default function WeeklySharePage() {
             <div style={{fontSize:16,fontWeight:700,color:"var(--bm-text)"}}>{loading ? <span style={{...shimmer,display:"inline-block",width:92,height:18}} /> : weekData.name}</div>
             <div style={{fontSize:12,color:"var(--bm-purple)",marginTop:2}}>{loading ? <span style={{...shimmer,display:"inline-block",width:160,height:14}} /> : `${weekData.project} · ${weekData.stage}`}</div>
           </div>
+          {/* PATCH 2 applied here — streakDisplay variable used instead of inline ternary */}
           <div style={{display:"flex",alignItems:"center",gap:6,fontSize:13,color:"var(--bm-amber)",background:"var(--bm-bg3)",border:"1px solid var(--bm-border)",padding:"5px 10px",borderRadius:20}}>
-            🔥 {loading ? PLACEHOLDER : (weekData.streak != null && weekData.streak > 0 ? `${weekData.streak}d` : PLACEHOLDER)}
+            🔥 {loading ? <span style={{...shimmer,display:"inline-block",width:28,height:14}} /> : streakDisplay}
           </div>
         </div>
 
@@ -270,7 +278,7 @@ export default function WeeklySharePage() {
         </div>
 
         <div style={{background:"var(--bm-bg3)",border:"1px solid var(--bm-border)",borderRadius:10,padding:12,marginBottom:12}}>
-          <div style={{fontSize:10,color:"var(--bm-green)",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>This week's milestone</div>
+          <div style={{fontSize:10,color:"var(--bm-green)",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>This week&apos;s milestone</div>
           <div style={{fontSize:12,color:"var(--bm-text2)",fontFamily:"monospace"}}>{loading ? <span style={{...shimmer,display:"block",width:"82%",height:14}} /> : weekData.milestone}</div>
         </div>
 
@@ -309,9 +317,9 @@ export default function WeeklySharePage() {
       <div style={{marginTop:16,background:"var(--bm-bg2)",border:"1px solid var(--bm-border)",borderRadius:10,padding:12}}>
         <div style={{fontSize:11,color:"var(--bm-purple)",marginBottom:4,fontWeight:500}}>Why share publicly?</div>
         <div style={{fontSize:12,color:"var(--bm-text3)",lineHeight:1.7,fontFamily:"monospace"}}>
-          Public accountability doubles follow-through rates. Every post attracts potential users, partners, and investors who find your early journey compelling. It's free marketing for your startup — and for BuildMind.
+          Public accountability doubles follow-through rates. Every post attracts potential users, partners, and investors who find your early journey compelling. It&apos;s free marketing for your startup — and for BuildMind.
         </div>
       </div>
     </div>
   );
-}
+             }
