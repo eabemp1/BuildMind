@@ -113,7 +113,10 @@ export type WeeklyReportMetrics = {
   execution_trend: "up" | "down" | "flat";
   // Avoidance pattern detected this week (if any)
   avoidance_pattern: string | null;
-};
+//   // ISO date strings (YYYY-MM-DD) of every active day in the last 4 weeks.
+//   // Powers the DotCalendar on the Reports page.
+   activeDays: string[];
+ };
 
 export type BuildMindNotification = {
   id: string;
