@@ -2,6 +2,12 @@
  * app/api/founder-context/task-complete/route.ts
  * POST → records task completion, boosts momentum, updates last_active,
  *        and runs pattern detection (Playbook §3.2) to surface behavioural signals.
+ *
+ * PATCHES APPLIED (June 2026):
+ *  1. checkin_done_date upsert is now AWAITED (was fire-and-forget) so cross-device
+ *     done-state is visible before the client navigates away.
+ *  2. reflexion_learning_log insert added so Reports page task counts are always correct,
+ *     regardless of whether log_row_id was set by the stream route.
  */
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
@@ -60,7 +66,7 @@ export async function POST(req: Request) {
   const newMomentum = momentumOnTaskComplete(current, isHardTask);
 
   // Consecutive task tracking — powers the Emotional Language Layer in reflexion.ts
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10); // UTC — matches fetchBehaviorState comparison
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
   const yesterdayKey = yesterday.toISOString().slice(0, 10);
@@ -175,17 +181,40 @@ export async function POST(req: Request) {
   invalidateCognitionCache(user.id);
   if (projectId) checkAndCacheStageTransition(user.id, projectId).catch(() => {});
 
-  // Write checkin_done_date to user_behavior_state server-side so mobile can read it
-// without depending on the client-side persistBehaviorState call completing.
-  Promise.resolve(
-  admin.from("user_behavior_state")
-    .upsert([{
+  // ── PATCH 1: Write completion to reflexion_learning_log (AWAITED) ─────────
+  // Ensures Reports page task counts are always correct regardless of whether
+  // the stream route's log_row_id path ran. Non-fatal — a failure here must
+  // never block the task completion response.
+  try {
+    await admin.from("reflexion_learning_log").insert({
       user_id: user.id,
-      key: "checkin_done_date",
-      value: today,
-      updated_at: new Date().toISOString(),
-    }], { onConflict: "user_id,key" })
-).then(() => {}).catch(() => {});
+      project_id: projectId || null,
+      stage: stage || ctx?.current_stage || null,
+      action_shown: taskTitle || null,
+      outcome: outcome === "blocked" || outcome === "skipped" ? outcome : "completed",
+      outcome_recorded_at: new Date().toISOString(),
+      session_id: `task_complete:${user.id}:${Date.now()}`,
+    });
+  } catch {
+    // Non-fatal — table may not exist in all envs, or row already inserted by stream route
+  }
+
+  // ── PATCH 2: Write checkin_done_date to user_behavior_state (AWAITED) ────
+  // This was previously fire-and-forget. Awaiting it guarantees that by the time
+  // the client receives this 200 response and navigates to /reflect, any other
+  // device querying fetchBehaviorState will already see the done state in Supabase.
+  // Cross-device check-in sync depends entirely on this write completing first.
+  try {
+    await admin.from("user_behavior_state")
+      .upsert([{
+        user_id: user.id,
+        key: "checkin_done_date",
+        value: today,
+        updated_at: new Date().toISOString(),
+      }], { onConflict: "user_id,key" });
+  } catch {
+    // Non-fatal — state will re-sync on next fetchBehaviorState call
+  }
 
   return NextResponse.json({
     ok: true,
@@ -204,4 +233,4 @@ export async function POST(req: Request) {
       severity: activePattern.severity,
     } : null,
   });
-}
+    }
