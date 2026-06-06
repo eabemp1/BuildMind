@@ -1,19 +1,15 @@
 /**
  * app/api/ai/today-action/stream/route.ts
  *
- * Server-Sent Events endpoint that streams the 3-agent Reflexion Loop
- * progressively so the Today page shows live progress instead of a
- * 3–6 second blank wait.
- *
- * Event stream format (ndjson lines):
- *   event: agent_a   — Agent A (Generator) output ready
- *   event: agent_b   — Agent B (Critic) verdict ready
- *   event: agent_c   — Agent C (Refiner) output ready
- *   event: done      — Full result payload (same shape as /today-action JSON)
- *   event: error     — Fatal error — client falls back to static action
- *
- * The client upgrades to this endpoint and degrades gracefully to the
- * existing /api/ai/today-action JSON route if SSE is unavailable.
+ * PATCHES APPLIED (June 2026):
+ *  1. systemA — now requests TASK / RATIONALE / DRAFT structured output with concrete
+ *     examples showing what "personalised" actually means. Token limit raised 300→600.
+ *  2. Agent C — system prompt updated to PRESERVE the TASK/RATIONALE/DRAFT structure
+ *     instead of collapsing it to 2-3 sentences. Token limit raised 250→600.
+ *  3. parseAgentOutput() — new function that extracts TASK, RATIONALE, DRAFT from the
+ *     structured agent output. Replaces buildPersonalizedTodayDraft entirely so the
+ *     message field comes from the AI-written draft, not a hardcoded template.
+ *  4. localDayKey uses UTC (toISOString().slice(0,10)) to match server-side today.
  */
 
 import { NextResponse } from "next/server";
@@ -22,7 +18,7 @@ import { logError } from "@/lib/server/logger";
 
 export const runtime     = "nodejs";
 export const dynamic     = "force-dynamic";
-export const maxDuration = 30; // SSE reflexion stream — 3 sequential LLM calls ~15–25 s
+export const maxDuration = 30;
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getWeeklyCriticPersona, groqCall } from "@/lib/reflexion";
 import { callModelJSON, sanitizeModelOutput } from "@/lib/ai-providers";
@@ -30,7 +26,6 @@ import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { buildArchetypeSystemContext } from "@/lib/founderArchetype";
 import { buildDebtPromptInjection, computeExecutionDebt, debtSuppressesTask, markDebtSurfaced } from "@/lib/executionDebt";
 import { recordActivity } from "@/lib/server/activityLog";
-import { buildPersonalizedTodayDraft } from "@/lib/todayDrafts";
 import { buildKnowledgeBaseContext, searchFounderKnowledgeBase, type FounderKnowledgeMatch } from "@/lib/founderKnowledgeBase";
 import { loadCognitionInput, synthesizeFounderCognition, buildCognitionPromptBlock } from "@/lib/founderCognition";
 import { evaluateAIOutput } from "@/lib/aiEvaluator";
@@ -68,16 +63,6 @@ function inferTopic(action: string, explicit: string, title: string): string {
   const about = action.match(/\b(?:about|around|with)\s+(.+?)(?:[.,]|[—-]|\s+today|\s+before|\s+after|$)/i);
   if (about?.[1]?.trim()) return about[1].trim();
   return title.trim() ? `${title.trim()} and the problem it solves` : "this workflow";
-}
-
-function buildPersonalizedDraft(action: string, fallback: TodayAction, context: { title: string; targetUsers: string; problem: string }): string {
-  const audience = inferAudience(action, context.targetUsers);
-  const topic = inferTopic(action, context.problem, context.title);
-  const product = context.title.trim();
-  if (product) {
-    return `Hi [Name], quick question - I'm researching ${topic} for ${audience}. How are you handling this today, and what is the most frustrating part? I'd value 10 minutes of honest context.`;
-  }
-  return cleanVisibleText(fallback.message, `Hi [Name], quick question - how are you handling ${topic} today, and what is the most frustrating part? I'd value 10 minutes of honest context.`);
 }
 
 function inferProjectAudience(targetUsers: string, title: string, description = "", problem = ""): string {
@@ -156,6 +141,27 @@ function buildFallback(stage: string, targetUsers: string, problem: string, titl
   return fallbacks[stage] ?? fallbacks["Idea"];
 }
 
+// ── PATCH 3: parseAgentOutput ────────────────────────────────────────────────
+// Extracts TASK, RATIONALE, DRAFT from the structured agent output.
+// Replaces buildPersonalizedTodayDraft — the AI draft is used directly.
+function parseAgentOutput(
+  raw: string,
+  fallbackAction: string,
+  fallbackMessage: string,
+): { action: string; rationale: string; draft: string } {
+  // Support both labeled (TASK: ...) and unlabeled output (graceful degradation)
+  const taskMatch = raw.match(/TASK:\s*(.+?)(?:\n|RATIONALE:|$)/s);
+  const rationaleMatch = raw.match(/RATIONALE:\s*(.+?)(?:\n|DRAFT:|$)/s);
+  const draftMatch = raw.match(/DRAFT:\s*([\s\S]+?)$/s);
+
+  const action = taskMatch?.[1]?.trim() || fallbackAction;
+  const rationale = rationaleMatch?.[1]?.trim() || "";
+  // DRAFT may span multiple lines — trim but preserve line breaks within it
+  const draft = draftMatch?.[1]?.trim() || fallbackMessage;
+
+  return { action, rationale, draft };
+}
+
 export async function POST(request: Request) {
   const encoder = new TextEncoder();
 
@@ -167,7 +173,6 @@ export async function POST(request: Request) {
 
       try {
         void loadActivePrompts();
-        // ── Auth ──────────────────────────────────────────────────────────
         const routeUser = await getRouteUser();
         if (!routeUser) {
           emit("error", { message: "Unauthorized" });
@@ -189,7 +194,6 @@ export async function POST(request: Request) {
 
         await enforceAndTrackAIUsage(userId, routeUser.plan);
 
-        // ── Project context ───────────────────────────────────────────────
         let stage = providedStage || "Idea";
         let targetUsers = "";
         let problem = "";
@@ -204,7 +208,6 @@ export async function POST(request: Request) {
         let cognitionMomentumScore = 50;
         let cognitionAvoidanceSignals: string[] = [];
         let lastReflectionNote: string | undefined;
-        let recentActionHistory = "";
         let adminForCache: ReturnType<typeof createAdminClient> | null = null;
 
         if (hasAdminEnv()) {
@@ -329,8 +332,7 @@ export async function POST(request: Request) {
               });
 
             if (lines.length) {
-              recentActionHistory = `\n\nRECENT ACTION HISTORY (do not repeat these task shapes or messages):\n${lines.join("\n")}`;
-              lastReflectionContext += `${recentActionHistory}\nInstruction: today's action must be a new next move. Change the person, channel, ask, experiment, or success criterion. Never reuse previous outreach copy.`;
+              lastReflectionContext += `\n\nRECENT ACTION HISTORY (do not repeat these task shapes or messages):\n${lines.join("\n")}\nInstruction: today's action must be a new next move. Change the person, channel, ask, experiment, or success criterion. Never reuse previous outreach copy.`;
             }
           } catch { /* non-fatal */ }
         }
@@ -356,7 +358,6 @@ export async function POST(request: Request) {
           if (knowledgeContext) lastReflectionContext += `\n\n${knowledgeContext}`;
         }
 
-        // ── Deep personalisation context ─────────────────────────────────
         let personalisationCtx = {
           recentActionsBlock: "",
           recentReflectionsBlock: "",
@@ -368,7 +369,7 @@ export async function POST(request: Request) {
         }
 
         const fallback = buildFallback(stage, targetUsers, problem, title, description);
-        // ── Agent A — Generator ───────────────────────────────────────────
+
         emit("agent_a", { status: "running", label: "Agent A generating your task…" });
 
         const activeGoalsLine =
@@ -381,9 +382,12 @@ export async function POST(request: Request) {
             ? `\nRECURRING BLOCKERS DETECTED:\n${personalisationCtx.recurringBlockers.map((b) => `- "${b}"`).join("\n")}\n-> Today's task must either directly address one of these blockers or explicitly route around it.`
             : "";
 
-        const systemA = `You are BuildMind, a brutally honest execution coach for solo founders.
-Return a single concrete task for today. Must include: specific number of people, exact platform, exact user type.
-Bad: "message some users". Good: "Message 3 fintech founders on LinkedIn today — ask about their workflow, not your idea."
+        // ── PATCH 1: systemA — structured TASK/RATIONALE/DRAFT output ────────
+        // Old prompt: "Return a single concrete task" → model returns one headline, stops.
+        // New prompt: structured output with a real paste-ready draft using actual
+        // product name and target user. Avoidance pattern named explicitly in RATIONALE.
+        // Token limit raised from 300 to 600 to give space for DRAFT.
+        const systemA = `You are BuildMind — a brutally honest execution coach for solo founders. You know this founder's behavioral patterns and avoidance zones.
 
 ${projectContext ? `FOUNDER DATA:\n${projectContext}` : ""}
 ${activeGoalsLine}
@@ -394,22 +398,38 @@ ${cognitionBlock ? `\n${cognitionBlock}` : ""}
 ${lastReflectionContext}
 ${debtContext}
 
+Output EXACTLY this structure — no preamble, no extra text:
+
+TASK: [One sentence. Specific number, exact platform, exact user type. Completable in under 1 hour. No generics like "some users" or "relevant communities".]
+RATIONALE: [One sentence starting with "Because". Name the specific avoidance pattern, blocker, or reflection outcome this directly addresses.]
+DRAFT: [A 2–3 sentence paste-ready message the founder can send TODAY. Use the actual product name (${title || "their product"}) and actual target user type (${targetUsers || "their users"}). No placeholder brackets like [Name], [Company], [Your Product]. Address the recipient's specific context.]
+
+EXAMPLE OF BAD OUTPUT:
+TASK: Message some users today about your product.
+RATIONALE: Because you need validation.
+DRAFT: Hi [Name], I wanted to reach out about my startup and get your thoughts.
+
+EXAMPLE OF GOOD OUTPUT (if product is BuildMind, targeting solo founders):
+TASK: Message 3 solo SaaS founders on LinkedIn today — ask if they track their daily execution pattern, not about BuildMind.
+RATIONALE: Because you've avoided cold outreach for 4 days and every insight in your DB came from a conversation, not a dashboard.
+DRAFT: Hi [Name], quick question — do you have any system for tracking whether you're actually following through on daily priorities, or does it just live in your head? Building something in this space and trying to understand how founders currently handle it.
+
 HARD RULES:
-1. The task must NOT be semantically equivalent to any task in RECENT TASKS SHOWN above.
-2. The execution draft must use the actual product name and target user type - never "[Your Product]" or "[Target Audience]".
-3. If active goals are listed, the task must advance one of them (name it).
-4. If blockers are listed, address or route around at least one.`;
+1. TASK must NOT be semantically equivalent to any task in the RECENT ACTION HISTORY above.
+2. DRAFT must use the actual product name and actual target user — never placeholder brackets.
+3. If a blocker or avoidance zone is present, TASK or RATIONALE must name it explicitly.
+4. DRAFT must not contain [Name], [Company], [Your Product], [Target Audience].`;
 
         let agentAOutput = "";
         try {
           agentAOutput = await groqCall(
             [{ role: "system", content: systemA }, { role: "user", content: "Give me today's single most important task." }],
-            0.6, 300
+            0.6, 600  // PATCH: raised from 300 to 600 to accommodate DRAFT
           );
         } catch {
-          agentAOutput = `${fallback.action} — ${fallback.why}`;
+          agentAOutput = `TASK: ${fallback.action}\nRATIONALE: Because you're at ${stage} stage and this is the highest-leverage move today.\nDRAFT: ${fallback.message}`;
         }
-        agentAOutput = cleanVisibleText(agentAOutput, fallback.action);
+        agentAOutput = cleanVisibleText(agentAOutput, `TASK: ${fallback.action}\nRATIONALE: Because this is the highest-leverage move today.\nDRAFT: ${fallback.message}`);
 
         emit("agent_a", { status: "done", output: agentAOutput });
 
@@ -437,15 +457,16 @@ You are a GATEKEEPER. Reject the task if ANY of the following are true:
 2. No named user type from the founder's context
 3. No number of people or actions
 4. Semantically equivalent to any task in the RECENT TASKS list below
-5. Contains placeholder text like "[Your Product]", "[Target Audience]", "[Name your startup]"
+5. DRAFT contains placeholder text like "[Your Product]", "[Target Audience]", "[Name]", "[Company]"
 6. The task does not advance any of the stated active goals (if goals were provided)
+7. The DRAFT is not paste-ready (too generic, no specific context)
 
 ${personalisationCtx.recentActionsBlock}
 
-JSON only: { "verdict": "pass"|"fail", "reason": "one sentence", "improved_version": "better task if fail else null" }
+JSON only: { "verdict": "pass"|"fail", "reason": "one sentence", "improved_version": "improved TASK line only if fail, else null" }
 Context: Stage=${stage}, Target users=${targetUsers || "unknown"}, Product=${title || "unknown"}`,
               },
-              { role: "user", content: `Evaluate: "${agentAOutput}"` },
+              { role: "user", content: `Evaluate:\n${agentAOutput}` },
             ],
             { role: "reasoning", temperature: 0.3, maxTokens: 300 },
           );
@@ -467,50 +488,78 @@ Context: Stage=${stage}, Target users=${targetUsers || "unknown"}, Product=${tit
         // ── Agent C — Refiner ─────────────────────────────────────────────
         emit("agent_c", { status: "running", label: "Agent C refining final version…" });
 
-        const baseForC = criticVerdict === "fail" && improvedVersion ? improvedVersion : agentAOutput;
+        const baseForC = criticVerdict === "fail" && improvedVersion
+          ? `${agentAOutput}\n\n[CRITIC SUGGESTED IMPROVED TASK: ${improvedVersion}]`
+          : agentAOutput;
         const refineMode = criticVerdict === "fail"
-          ? "REBUILD: The original was rejected. Make it sharper and more specific."
+          ? "REBUILD: The original task was rejected. Rewrite the TASK line to be sharper and more specific. Keep RATIONALE and DRAFT if they are good, or rewrite them to match the new task."
           : "POLISH: Tighten wording only — do not change substance.";
 
         let refined = baseForC;
-        let rationale = `Because you're at ${stage} stage and this is the highest-leverage move today.`;
 
         try {
+          // ── PATCH 2: Agent C preserves TASK/RATIONALE/DRAFT structure ────
+          // Old prompt: "2-3 sentences max" — collapsed the structure.
+          // New prompt: explicit instruction to output all three sections.
+          // Token limit raised from 250 to 600.
           refined = await groqCall(
             [{
               role: "system",
-              content: `BuildMind execution engine. ${refineMode}\nRules: exact platform, exact user type, a number, completable in 30 min, 2–3 sentences max.\nInput: ${baseForC}\nCritique: ${criticReason}\nStage: ${stage} | Target: ${targetUsers || "not set"}`,
-            }, { role: "user", content: "Write the refined task." }],
-            0.3, 250
-          );
+              // ── PATCH 2 applied here ──────────────────────────────────────
+              content: `BuildMind execution engine. ${refineMode}
 
-          rationale = await groqCall(
-            [{
-              role: "system",
-              content: `One sentence (max 15 words) explaining WHY this is right for this founder NOW. Start with "Because".`,
-            }, { role: "user", content: refined }],
-            0.2, 60
-          ).catch(() => rationale);
+CRITICAL: Output EXACTLY this structure, no preamble:
+
+TASK: [refined task — specific number, exact platform, exact user type, completable in 30 min]
+RATIONALE: [one sentence starting with "Because" — name the avoidance zone or blocker this addresses]
+DRAFT: [2–3 sentence paste-ready message — use actual product name (${title || "their product"}) and actual target user (${targetUsers || "their users"}), no placeholder brackets]
+
+Rules:
+- Never use [Name], [Company], [Your Product], [Target Audience] in DRAFT
+- TASK must name the exact platform and a specific number
+- DRAFT must be something the founder can literally copy-paste right now
+
+Stage: ${stage} | Target: ${targetUsers || "not set"} | Product: ${title || "not set"}
+Critique: ${criticReason}
+
+Input to refine:
+${baseForC}`,
+            }, { role: "user", content: "Refine the output." }],
+            0.3, 600  // PATCH: raised from 250 to 600
+          );
         } catch {
-          // refiner failed — use Agent A output
+          // refiner failed — use Agent A output as-is
         }
-        refined = cleanVisibleText(refined, fallback.action);
-        rationale = cleanVisibleText(rationale, `Because you're at ${stage} stage and this is the highest-leverage move today.`);
+        refined = cleanVisibleText(refined, baseForC);
 
         emit("agent_c", { status: "done", output: refined });
 
-        // ── Merge into TodayAction shape ──────────────────────────────────
+        // ── PATCH 3: parseAgentOutput replaces buildPersonalizedTodayDraft ──
+        // Old code: called buildPersonalizedTodayDraft which picked a hardcoded
+        // template variant and ignored everything Agent A/C produced.
+        // New code: extracts TASK, RATIONALE, DRAFT from the structured output
+        // so the message field comes from the AI-written draft.
+        const parsed = parseAgentOutput(
+          refined || agentAOutput,
+          fallback.action,
+          fallback.message,
+        );
+
+        // rationale — use from parsed output, fall back to a generic sentence
+        const rationale = parsed.rationale ||
+          cleanVisibleText(
+            await groqCall(
+              [{ role: "system", content: `One sentence (max 15 words) explaining WHY this is right for this founder NOW. Start with "Because".` },
+               { role: "user", content: parsed.action }],
+              0.2, 60
+            ).catch(() => ""),
+            `Because you're at ${stage} stage and this is the highest-leverage move today.`
+          );
+
         const finalData = {
           ...fallback,
-          action: refined || fallback.action,
-          message: buildPersonalizedTodayDraft(refined || fallback.action, fallback, {
-            title,
-            targetUsers,
-            problem,
-            stage,
-            archetypeStyle: founderArchetype,
-            knowledgeMatches,
-          }),
+          action: parsed.action,
+          message: parsed.draft,  // ← AI-written DRAFT, not hardcoded template
           why: rationale,
           stage,
           isAI: true,
@@ -567,7 +616,7 @@ Context: Stage=${stage}, Target users=${targetUsers || "unknown"}, Product=${tit
             }
 
             upsertTodayActionCache(adminForCache, userId, {
-              date: new Date().toISOString().slice(0, 10),
+              date: new Date().toISOString().slice(0, 10), // UTC — matches task-complete today
               projectId,
               stage,
               data: { ...finalData, reflexion_status: "ok" },
@@ -600,7 +649,6 @@ Context: Stage=${stage}, Target users=${targetUsers || "unknown"}, Product=${tit
   });
 }
 
-// GET not supported — SSE requires POST (body carries auth context)
 export async function GET() {
   return NextResponse.json({ error: "Use POST" }, { status: 405 });
-}
+                    }
