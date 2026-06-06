@@ -1,13 +1,18 @@
 /**
  * lib/data/reports.ts
  *
- * Report and dashboard metrics queries — extracted from lib/data/projects.ts
- * to bring that file below 600 lines.
- *
- * Exports:
- *   getWeeklyReportMetrics
- *   getDashboardOverview
- *   calculateDashboardStats
+ * PATCHES APPLIED (June 2026):
+ *  1. previousScore — now computed from score_history for the prior week instead
+ *     of fabricated via `score - taskCount`. Fake deltas are gone.
+ *  2. intention_vs_execution_rate — now counts rows in reflexion_learning_log
+ *     (AI check-ins from Today page) instead of `tasks` table rows, which are
+ *     structural milestones, not daily intentions.
+ *  3. weeklyScores gap fill changed from `previousScore` to `0` so the sparkline
+ *     only draws on days where a real score snapshot exists.
+ *  4. activeDays array added to return value — array of ISO date strings of every
+ *     day the founder had any activity in the last 4 weeks. Powers the dot calendar.
+ *  5. outcome column added to reflexion_learning_log select so blocked/skipped
+ *     rows are excluded from the execution rate numerator.
  */
 
 "use client";
@@ -55,10 +60,12 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
     previous_intention_vs_execution_rate: null,
     execution_trend: "flat",
     avoidance_pattern: null,
+    activeDays: [],
   };
   if (!user) return empty;
 
   const supabase = createClient();
+
   let founderContextRow: { streak?: number | null; momentum_score?: number | null } | null = null;
   try {
     const { data } = await supabase
@@ -68,11 +75,13 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
       .maybeSingle();
     founderContextRow = data;
   } catch { /* non-fatal */ }
+
   const serverMomentumScore: number | null =
     typeof founderContextRow?.momentum_score === "number"
       ? founderContextRow.momentum_score
       : null;
 
+  // ── Score history — last 14 days to cover both this and previous week ─────
   let scoreHistoryRows: Array<{ score: number; recorded_at: string }> = [];
   try {
     const { data } = await supabase
@@ -80,10 +89,10 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
       .select("score, recorded_at")
       .eq("user_id", user.id)
       .order("recorded_at", { ascending: false })
-      .limit(7);
+      .limit(14);
     scoreHistoryRows = data ?? [];
   } catch { /* non-fatal */ }
-  // If score_history table has no rows, fall back to the JSONB column in founder_context
+
   if (scoreHistoryRows.length === 0 && founderContextRow) {
     try {
       const { data: jsonbCtx } = await supabase
@@ -113,10 +122,9 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
     summaries.reduce((sum, project) => sum + computeStartupScore(project), 0) / summaries.length,
   );
 
-  // Batch project IDs to avoid URL length limits
-  let allMilestones: Array<{ id: string; project_id: string; title: string; is_completed?: boolean; updated_at?: string; created_at: string }> = [];
   const BATCH_SIZE = 20;
-  
+  let allMilestones: Array<{ id: string; project_id: string; title: string; is_completed?: boolean; updated_at?: string; created_at: string }> = [];
+
   for (let i = 0; i < projectIds.length; i += BATCH_SIZE) {
     const batchIds = projectIds.slice(i, i + BATCH_SIZE);
     const milestonesQuery = supabase
@@ -136,9 +144,8 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
     milestoneTitle.set(m.id, m.title);
   });
 
-  // Batch milestone IDs to avoid URL length limits
   let allTasks: Array<{ id: string; title: string; milestone_id: string; is_completed: boolean; created_at: string; updated_at: string }> = [];
-  
+
   if (milestoneIds.length > 0) {
     for (let i = 0; i < milestoneIds.length; i += BATCH_SIZE) {
       const batchIds = milestoneIds.slice(i, i + BATCH_SIZE);
@@ -151,31 +158,35 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
       if (tasks) allTasks = allTasks.concat(tasks);
     }
   }
-  const { data: tasks } = { data: allTasks };
 
   const start = weekStart();
   const previousStart = new Date(start);
   previousStart.setDate(start.getDate() - 7);
+  // For the 4-week dot calendar
+  const fourWeeksAgo = new Date(start);
+  fourWeeksAgo.setDate(start.getDate() - 28);
 
-  // Also count completions from reflexion_learning_log (today-page check-ins).
-  // This is the primary way founders log "done" — it doesn't always map 1:1
-  // to a task row, so we count it as a separate signal and merge.
-  let reflexionRows: Array<{ action_shown?: string | null; outcome_recorded_at?: string | null }> = [];
-  let reflexionCompletedTitles: string[] = [];
+  // ── PATCH 2: reflexion_learning_log with outcome column ───────────────────
+  // We now select `outcome` so we can correctly count only "completed" rows in
+  // the execution rate, and exclude "blocked"/"skipped" from the numerator.
+  // The old query filtered by outcome = "completed" before fetching, which
+  // meant we had no denominator (total check-ins). We now fetch ALL outcomes
+  // and compute the rate client-side.
+  let reflexionRows: Array<{
+    action_shown?: string | null;
+    outcome_recorded_at?: string | null;
+    outcome?: string | null;
+  }> = [];
   try {
     let reflexionQuery = supabase
       .from("reflexion_learning_log")
-      .select("action_shown, outcome_recorded_at")
-      .eq("outcome", "completed")
+      .select("action_shown, outcome_recorded_at, outcome")
+      .eq("user_id", user.id)
       .gte("outcome_recorded_at", previousStart.toISOString());
     if (activeProjectId) reflexionQuery = reflexionQuery.eq("project_id", activeProjectId);
     const { data } = await reflexionQuery;
     reflexionRows = data ?? [];
-    reflexionCompletedTitles = reflexionRows
-      .map((row) => row.action_shown)
-      .filter((title): title is string => Boolean(title))
-      .slice(0, 3);
-  } catch { /* non-fatal — table may not exist in all envs */ }
+  } catch { /* non-fatal */ }
 
   const taskData = [0, 0, 0, 0, 0, 0, 0];
   let tasksCompletedPreviousWeek = 0;
@@ -183,7 +194,7 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
   const focusCounts = new Map<string, number>();
   const reflexionCompletionsByDay: number[] = [0, 0, 0, 0, 0, 0, 0];
 
-  (tasks ?? []).forEach((task) => {
+  (allTasks ?? []).forEach((task) => {
     if (!task.is_completed) return;
     const completedAt = task.updated_at ?? task.created_at;
     const completedDate = new Date(completedAt);
@@ -192,18 +203,19 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
     const focusLabel = project?.startup_stage ?? milestoneTitle.get(task.milestone_id) ?? "Execution";
     focusCounts.set(focusLabel, (focusCounts.get(focusLabel) ?? 0) + 1);
     completedDates.add(completedDate.toLocaleDateString("en-CA"));
-
     if (completedDate >= start) taskData[dayIndexFromIso(completedAt)] += 1;
     if (completedDate >= previousStart && completedDate < start) tasksCompletedPreviousWeek += 1;
   });
 
+  // Only count "completed" reflexion rows for taskData (not blocked/skipped)
   reflexionRows.forEach((row) => {
     if (!row.outcome_recorded_at) return;
     const completedDate = new Date(row.outcome_recorded_at);
-    if (completedDate >= start) {
+    const isCompleted = !row.outcome || row.outcome === "completed";
+    if (completedDate >= start && isCompleted) {
       reflexionCompletionsByDay[dayIndexFromIso(row.outcome_recorded_at)] += 1;
     }
-    if (completedDate >= previousStart && completedDate < start) {
+    if (completedDate >= previousStart && completedDate < start && isCompleted) {
       tasksCompletedPreviousWeek += 1;
     }
     completedDates.add(completedDate.toLocaleDateString("en-CA"));
@@ -213,11 +225,13 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
     taskData[i] += count;
   });
 
+  // Pull reflection dates for streak and dot calendar
   try {
     const { data: reflDates } = await supabase
       .from("reflections")
       .select("created_at")
       .eq("user_id", user.id)
+      .gte("created_at", fourWeeksAgo.toISOString())
       .order("created_at", { ascending: false })
       .limit(90);
     (reflDates ?? []).forEach((r) => {
@@ -225,7 +239,6 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
     });
   } catch { /* non-fatal */ }
 
-  // Also get reflection dates for the chart — these represent actual active days.
   try {
     const weekAgoDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const { data: weekReflections } = await supabase
@@ -233,16 +246,13 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
       .select("created_at")
       .eq("user_id", user.id)
       .gte("created_at", weekAgoDate);
-
     (weekReflections ?? []).forEach((r) => {
       const dayIdx = dayIndexFromIso(r.created_at);
       if (dayIdx >= 0 && dayIdx < 7) {
         taskData[dayIdx] = Math.max(taskData[dayIdx] ?? 0, 1);
       }
     });
-  } catch {
-    // Non-fatal: reports still render from task rows.
-  }
+  } catch { /* non-fatal */ }
 
   let computedStreakFromDates = 0;
   for (let i = 0; i < 90; i++) {
@@ -260,7 +270,12 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
     const completedAt = new Date(m.updated_at ?? m.created_at);
     return completedAt >= start;
   }).length;
-  const previousScore = Math.max(0, score - tasksCompletedThisWeek - milestonesCompletedThisWeek * 2);
+
+  // ── PATCH 1: Real previousScore from score_history ────────────────────────
+  // Old code: `Math.max(0, score - tasksCompletedThisWeek - milestonesCompletedThisWeek * 2)`
+  // This always produced a fake positive delta. Now we average actual score
+  // snapshots from the prior week. If no history exists, previousScore = score
+  // (delta = 0, neutral) rather than a made-up number.
   const historyByDate = new Map<string, number>();
   scoreHistoryRows.forEach((row) => {
     const dateKey = new Date(row.recorded_at).toLocaleDateString("en-CA");
@@ -269,12 +284,30 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
     }
   });
 
+  const previousWeekScoreRows = scoreHistoryRows.filter((row) => {
+    const d = new Date(row.recorded_at);
+    return d >= previousStart && d < start;
+  });
+  const previousScore = previousWeekScoreRows.length > 0
+    ? Math.round(previousWeekScoreRows.reduce((s, r) => s + r.score, 0) / previousWeekScoreRows.length)
+    : score; // no history = 0 delta, not a fake positive
+
+  // ── PATCH 3: weeklyScores gap fill is 0, not previousScore ───────────────
+  // Filling with previousScore drew a flat line at the old score on inactive days,
+  // making it look like the founder was consistently at that score all week.
+  // Using 0 means the sparkline only shows a point on days with real data.
   const weeklyScores: number[] = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(start);
     d.setDate(start.getDate() + i);
     const key = d.toLocaleDateString("en-CA");
-    return historyByDate.get(key) ?? (i === 6 ? score : previousScore);
+    return historyByDate.get(key) ?? 0;
   });
+  // Always show today's live score on the current day
+  const todayKey = new Date().toLocaleDateString("en-CA");
+  const todayIdx = dayIndexFromIso(new Date().toISOString());
+  if (!historyByDate.has(todayKey) && todayIdx >= 0 && todayIdx < 7) {
+    weeklyScores[todayIdx] = score;
+  }
 
   const focusData = Array.from(focusCounts.entries()).map(([label, value], index) => ({
     label,
@@ -282,8 +315,7 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
     color: REPORT_COLORS[index % REPORT_COLORS.length],
   }));
 
-  // Use real completed task titles instead of just counts.
-  const completedTaskTitles = (tasks ?? [])
+  const completedTaskTitles = (allTasks ?? [])
     .filter((task) => {
       if (!task.is_completed) return false;
       const completedAt = new Date(task.updated_at ?? task.created_at);
@@ -291,6 +323,15 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
     })
     .map((task) => task.title)
     .filter(Boolean)
+    .slice(0, 3);
+
+  const reflexionCompletedTitles = reflexionRows
+    .filter((r) => {
+      if (!r.outcome_recorded_at || !r.action_shown) return false;
+      const d = new Date(r.outcome_recorded_at);
+      return d >= start && (!r.outcome || r.outcome === "completed");
+    })
+    .map((r) => r.action_shown as string)
     .slice(0, 3);
 
   const realCompletedTitles = [...completedTaskTitles, ...reflexionCompletedTitles]
@@ -309,31 +350,38 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
     score > previousScore ? `Score up ${score - previousScore} pts` : null,
   ].filter(Boolean) as string[];
 
-  const nextFocus = (tasks ?? [])
+  const nextFocus = (allTasks ?? [])
     .filter((task) => !task.is_completed)
     .slice(0, 3)
     .map((task) => task.title || "Complete the next project task");
 
-  // ── Intention vs execution rate ─────────────────────────────────────────
-  // Total tasks shown (created) this week vs completed this week
-  const totalTasksCreatedThisWeek = (tasks ?? []).filter((task) => {
-    const created = new Date(task.created_at);
-    return created >= start;
-  }).length;
-  const intention_vs_execution_rate =
-    totalTasksCreatedThisWeek > 0
-      ? Math.round((tasksCompletedThisWeek / totalTasksCreatedThisWeek) * 100)
-      : null;
+  // ── PATCH 2 (continued): Correct intention vs execution rate ─────────────
+  // Old code counted tasks.created_at this week vs tasks.is_completed.
+  // Tasks are structural milestones created weeks/months ago — not daily intentions.
+  // The actual "intention" in BuildMind is the AI daily task on the Today page,
+  // recorded in reflexion_learning_log. We now count:
+  //   numerator   = rows with outcome = "completed" this week
+  //   denominator = ALL rows this week (including blocked/skipped)
+  // This gives a real picture of follow-through.
+  const reflexionThisWeek = reflexionRows.filter((r) => {
+    if (!r.outcome_recorded_at) return false;
+    return new Date(r.outcome_recorded_at) >= start;
+  });
+  const reflexionPrevWeek = reflexionRows.filter((r) => {
+    if (!r.outcome_recorded_at) return false;
+    const d = new Date(r.outcome_recorded_at);
+    return d >= previousStart && d < start;
+  });
 
-  // Previous week rate for trend
-  const totalTasksCreatedPrevWeek = (tasks ?? []).filter((task) => {
-    const created = new Date(task.created_at);
-    return created >= previousStart && created < start;
-  }).length;
-  const previous_intention_vs_execution_rate =
-    totalTasksCreatedPrevWeek > 0
-      ? Math.round((tasksCompletedPreviousWeek / totalTasksCreatedPrevWeek) * 100)
-      : null;
+  const completedThisWeek = reflexionThisWeek.filter((r) => !r.outcome || r.outcome === "completed").length;
+  const completedPrevWeek = reflexionPrevWeek.filter((r) => !r.outcome || r.outcome === "completed").length;
+
+  const intention_vs_execution_rate = reflexionThisWeek.length > 0
+    ? Math.round((completedThisWeek / reflexionThisWeek.length) * 100)
+    : null;
+  const previous_intention_vs_execution_rate = reflexionPrevWeek.length > 0
+    ? Math.round((completedPrevWeek / reflexionPrevWeek.length) * 100)
+    : null;
 
   const execution_trend: "up" | "down" | "flat" =
     intention_vs_execution_rate != null && previous_intention_vs_execution_rate != null
@@ -346,7 +394,7 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
 
   // Avoidance pattern: detect if a stage type dominates incomplete tasks
   const incompleteByStage = new Map<string, number>();
-  (tasks ?? []).filter((t) => !t.is_completed).forEach((t) => {
+  (allTasks ?? []).filter((t) => !t.is_completed).forEach((t) => {
     const projectId = milestoneToProject.get(t.milestone_id);
     const project = summaries.find((s) => s.id === projectId);
     const stage = project?.startup_stage ?? "unknown";
@@ -358,6 +406,15 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
       ? `${topIncompleteStage[1]} incomplete ${topIncompleteStage[0]}-stage tasks`
       : null;
 
+  // ── PATCH 4: activeDays for dot calendar (last 4 weeks) ──────────────────
+  // Array of ISO date strings (YYYY-MM-DD) for every day the founder was active.
+  const activeDays = Array.from(completedDates)
+    .filter((d) => {
+      const date = new Date(d);
+      return date >= fourWeeksAgo;
+    })
+    .sort();
+
   return {
     score, previousScore, weeklyScores, taskData,
     tasksCompletedThisWeek, tasksCompletedPreviousWeek,
@@ -367,6 +424,7 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
     previous_intention_vs_execution_rate,
     execution_trend,
     avoidance_pattern,
+    activeDays,
   };
 }
 
@@ -384,10 +442,9 @@ export async function getDashboardOverview(activeProjectId?: string): Promise<Da
   const { data: projects } = await projectsQuery;
   const projectIds = (projects ?? []).map((p) => p.id);
 
-  // Batch project IDs to avoid URL length limits
-  let allMilestones: Array<{ id: string; project_id: string; status: string }> = [];
   const BATCH_SIZE = 20;
-  
+  let allMilestones: Array<{ id: string; project_id: string; status: string }> = [];
+
   if (projectIds.length > 0) {
     for (let i = 0; i < projectIds.length; i += BATCH_SIZE) {
       const batchIds = projectIds.slice(i, i + BATCH_SIZE);
@@ -398,13 +455,10 @@ export async function getDashboardOverview(activeProjectId?: string): Promise<Da
       if (milestones) allMilestones = allMilestones.concat(milestones);
     }
   }
-  const { data: milestones } = { data: allMilestones };
 
-  const milestoneIds = (milestones ?? []).map((m) => m.id);
-  
-  // Batch milestone IDs to avoid URL length limits
+  const milestoneIds = (allMilestones ?? []).map((m) => m.id);
   let allTasks: Array<{ id: string; milestone_id: string; is_completed: boolean; created_at: string; updated_at: string }> = [];
-  
+
   if (milestoneIds.length > 0) {
     for (let i = 0; i < milestoneIds.length; i += BATCH_SIZE) {
       const batchIds = milestoneIds.slice(i, i + BATCH_SIZE);
@@ -415,10 +469,9 @@ export async function getDashboardOverview(activeProjectId?: string): Promise<Da
       if (tasks) allTasks = allTasks.concat(tasks);
     }
   }
-  const { data: tasks } = { data: allTasks };
 
   const toLocalDateStr = (iso: string) => new Date(iso).toLocaleDateString("en-CA");
-  const projectCompletedTasks = (tasks ?? []).filter((t) => t.is_completed).length;
+  const projectCompletedTasks = (allTasks ?? []).filter((t) => t.is_completed).length;
   let todayCompletedTasks = 0;
   let todayCompletedDates: string[] = [];
   try {
@@ -432,7 +485,7 @@ export async function getDashboardOverview(activeProjectId?: string): Promise<Da
     if (activeProjectId) learningQuery = learningQuery.eq("project_id", activeProjectId);
     const { data: learningRows } = await learningQuery;
 
-    let reflectionsQuery = supabase
+    const reflectionsQuery = supabase
       .from("reflections")
       .select("created_at")
       .eq("user_id", user.id)
@@ -444,27 +497,25 @@ export async function getDashboardOverview(activeProjectId?: string): Promise<Da
       ...(completedReflections ?? []).map((row) => row.created_at).filter(Boolean),
     ];
     todayCompletedTasks = new Set(todayCompletedDates.map((date) => toLocalDateStr(date))).size;
-  } catch {
-    // Non-fatal: dashboard can still render project-task counts.
-  }
+  } catch { /* non-fatal */ }
 
   const completedTasks = Math.max(projectCompletedTasks, todayCompletedTasks);
   const tasksByMilestone = new Map<string, Array<{ is_completed: boolean }>>();
-  (tasks ?? []).forEach((task) => {
+  (allTasks ?? []).forEach((task) => {
     const list = tasksByMilestone.get(task.milestone_id) ?? [];
     list.push(task);
     tasksByMilestone.set(task.milestone_id, list);
   });
-  const completedMilestones = (milestones ?? []).filter((milestone) => {
-    if (milestone.status === 'completed') return true;
+  const completedMilestones = (allMilestones ?? []).filter((milestone) => {
+    if (milestone.status === "completed") return true;
     const milestoneTasks = tasksByMilestone.get(milestone.id) ?? [];
     return milestoneTasks.length > 0 && milestoneTasks.every((task) => task.is_completed);
   }).length;
 
   const completedDates = new Set(
     [
-      ...(tasks ?? [])
-      .filter((t) => t.is_completed && (t.updated_at || t.created_at))
+      ...(allTasks ?? [])
+        .filter((t) => t.is_completed && (t.updated_at || t.created_at))
         .map((t) => toLocalDateStr(t.updated_at ?? t.created_at)),
       ...todayCompletedDates.map((date) => toLocalDateStr(date)),
     ],
@@ -478,13 +529,12 @@ export async function getDashboardOverview(activeProjectId?: string): Promise<Da
     else if (i > 0) break;
   }
 
-  // Primary query — columns that exist in all deployments
   const { data: founderContext } = await supabase
     .from("founder_context")
     .select("streak, avoidance_zones, consecutive_tasks_completed, tasks_completed_total, days_inactive")
     .eq("user_id", user.id)
     .maybeSingle();
-  // Extended query — columns added by this migration; non-fatal if they don't exist yet
+
   let learnedPatterns: Record<string, unknown> = {};
   try {
     const { data: extCtx } = await supabase
@@ -493,12 +543,14 @@ export async function getDashboardOverview(activeProjectId?: string): Promise<Da
       .eq("user_id", user.id)
       .maybeSingle();
     learnedPatterns = (extCtx as { learned_patterns?: Record<string, unknown> } | null)?.learned_patterns ?? {};
-  } catch { /* column not yet migrated — non-fatal */ }
+  } catch { /* non-fatal */ }
+
   const { data: founderMemory } = await supabase
     .from("founder_memory")
     .select("avoidance_zones, archetype_confidence, last_insight, archetype")
     .eq("user_id", user.id)
     .maybeSingle();
+
   const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
   const { data: recentReflections } = await supabase
     .from("reflections")
@@ -507,6 +559,7 @@ export async function getDashboardOverview(activeProjectId?: string): Promise<Da
     .gte("created_at", fourteenDaysAgo)
     .order("created_at", { ascending: false })
     .limit(14);
+
   const contextRow = founderContext as { streak?: number | null; avoidance_zones?: string[] | null } | null;
   const dbStreak = contextRow?.streak;
   const serverStreak = Math.max(
@@ -541,12 +594,7 @@ export async function getDashboardOverview(activeProjectId?: string): Promise<Da
     );
   }
 
-  // ── Cadence Score (0–100) ─────────────────────────────────────────────────
-  // Measures execution quality over the last 14 days.
-  // Every signal is time-gated — going inactive drops the score.
-  // Profile completeness is NOT rewarded here; only behaviour counts.
-
-  const contextData = contextRow as {
+  const contextData = founderContext as {
     streak?: number | null;
     avoidance_zones?: string[] | null;
     consecutive_tasks_completed?: number | null;
@@ -554,9 +602,6 @@ export async function getDashboardOverview(activeProjectId?: string): Promise<Da
     days_inactive?: number | null;
   } | null;
 
-  // Signal 1 — Active days in last 14 (max 30pts)
-  // Count unique days that have a reflection in the last 14 days.
-  // Uses recentReflections already fetched above.
   const activeDaysLast14 = new Set(
     (recentReflections ?? []).map((r) =>
       new Date(r.created_at).toLocaleDateString("en-CA")
@@ -564,18 +609,12 @@ export async function getDashboardOverview(activeProjectId?: string): Promise<Da
   ).size;
   const activeDaysScore = Math.round((Math.min(activeDaysLast14, 7) / 7) * 30);
 
-  // Signal 2 — Reflection depth in last 14 days (max 25pts)
-  // A reflection with what_tried + what_happened filled = deep (2pts each)
-  // A reflection with just a note = shallow (1pt each)
-  // Max 25pts across all recent reflections.
   const reflectionDepthScore = Math.min(25, (recentReflections ?? []).reduce((sum, r) => {
     const hasDeepFields = (r.what_tried && r.what_tried.trim().length > 10) ||
                           (r.what_happened && r.what_happened.trim().length > 10);
     return sum + (hasDeepFields ? 2 : 1);
   }, 0));
 
-  // Signal 3 — Average confidence in last 14 days (max 20pts)
-  // Confidence 1-5 from today-page check-ins. Avg >= 3.5 = full points.
   const confidenceValues = (recentReflections ?? [])
     .map((r) => r.confidence)
     .filter((c): c is number => typeof c === "number" && c > 0);
@@ -586,10 +625,6 @@ export async function getDashboardOverview(activeProjectId?: string): Promise<Da
     ? Math.round((Math.min(avgConfidence, 5) / 5) * 20)
     : 0;
 
-  // Signal 4 — Behavioural patterns detected (max 15pts)
-  // founder_memory.avoidance_zones = BuildMind has enough data to identify patterns
-  // founder_memory.archetype set = deep enough behavioural model exists
-  // founder_context.learned_patterns non-empty = learning loop has fired
   const memoryData = founderMemory as {
     avoidance_zones?: string[] | null;
     archetype_confidence?: number | null;
@@ -608,9 +643,6 @@ export async function getDashboardOverview(activeProjectId?: string): Promise<Da
     (hasArchetype ? 5 : 0) +
     (hasLearnedPatterns ? 4 : 0);
 
-  // Signal 5 — Inactivity penalty (subtracts up to 20pts)
-  // days_inactive > 3 starts reducing the score.
-  // This is the critical signal: the score decays when you go quiet.
   const daysInactive = contextData?.days_inactive ?? 0;
   const inactivityPenalty = daysInactive <= 3
     ? 0
@@ -618,7 +650,7 @@ export async function getDashboardOverview(activeProjectId?: string): Promise<Da
     ? 10
     : daysInactive <= 14
     ? 20
-    : 30; // Can push below 0, clamped at end
+    : 30;
 
   const cadenceScore = Math.min(100, Math.max(0,
     activeDaysScore + reflectionDepthScore + confidenceScore + patternScore - inactivityPenalty
