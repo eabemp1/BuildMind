@@ -150,10 +150,9 @@ function parseAgentOutput(
   fallbackMessage: string,
 ): { action: string; rationale: string; draft: string } {
   // Support both labeled (TASK: ...) and unlabeled output (graceful degradation)
-  const taskMatch = raw.match(/TASK:\s*(.+?)(?:\n|RATIONALE:|$)/s);
-  const rationaleMatch = raw.match(/RATIONALE:\s*(.+?)(?:\n|DRAFT:|$)/s);
-  const draftMatch = raw.match(/DRAFT:\s*([\s\S]+?)$/s);
-
+  const taskMatch = raw.match(/TASK:\s*([\s\S]+?)(?:\n|RATIONALE:|$)/);
+  const rationaleMatch = raw.match(/RATIONALE:\s*([\s\S]+?)(?:\n|DRAFT:|$)/);
+  const draftMatch = raw.match(/DRAFT:\s*([\s\S]+?)$/);
   const action = taskMatch?.[1]?.trim() || fallbackAction;
   const rationale = rationaleMatch?.[1]?.trim() || "";
   // DRAFT may span multiple lines — trim but preserve line breaks within it
