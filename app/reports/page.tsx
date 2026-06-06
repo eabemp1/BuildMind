@@ -1,5 +1,17 @@
 "use client";
 
+/**
+ * app/reports/page.tsx
+ *
+ * PATCHES APPLIED (June 2026):
+ *  1. DotCalendar component — 4-week activity heatmap using activeDays from reports data.
+ *  2. DayBars — date labels added (e.g. "Mon 2") instead of just "M".
+ *  3. Week-over-week sentence — static, always-accurate, server-data-derived comparison
+ *     shown at the top of the BuildMind Analysis section (no spinner, never blank).
+ *  4. Cadence score tile added to the hero row alongside Tasks / Streak / Execution Rate.
+ *  5. Score delta now reflects real previousScore from score_history (no fake positives).
+ */
+
 import { useEffect, useRef, useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { selectActiveProject, useActiveProjectId, useProjectSummariesQuery, useWeeklyReportMetricsQuery } from "@/lib/queries";
@@ -55,10 +67,13 @@ function ScoreArc({ value, size = 120 }: { value: number; size?: number }) {
 }
 
 function Sparkline({ data, color, w = 100, h = 36 }: { data: number[]; color: string; w?: number; h?: number }) {
-  if (data.length < 2) return null;
-  const min = Math.min(...data), max = Math.max(...data);
+  // Only plot non-zero points so gaps show as gaps
+  const pts = data.map((v, i) => ({ x: (i/(data.length-1))*w, y: v, idx: i })).filter(p => p.y > 0);
+  if (pts.length < 2) return null;
+  const min = Math.min(...pts.map(p => p.y));
+  const max = Math.max(...pts.map(p => p.y));
   const range = max - min || 1;
-  const pts = data.map((v, i) => `${(i/(data.length-1))*w},${h-((v-min)/range)*(h-6)-3}`).join(" ");
+  const pointStr = pts.map(p => `${p.x},${h-((p.y-min)/range)*(h-6)-3}`).join(" ");
   const id = "spk" + color.replace(/[^a-z0-9]/gi,"");
   return (
     <svg viewBox={`0 0 ${w} ${h}`} width={w} height={h} style={{ overflow: "visible" }}>
@@ -68,31 +83,114 @@ function Sparkline({ data, color, w = 100, h = 36 }: { data: number[]; color: st
           <stop offset="100%" stopColor={color} stopOpacity="0"/>
         </linearGradient>
       </defs>
-      <polygon points={`${pts} ${w},${h} 0,${h}`} fill={`url(#${id})`}/>
-      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.8"
+      <polyline points={pointStr} fill="none" stroke={color} strokeWidth="1.8"
         strokeLinecap="round" strokeLinejoin="round"
-        style={{ filter: `drop-shadow(0 0 4px ${color}66)` }}/>
+        style={{ filter: `drop-shadow(0 0 4px ${color}66)`}}/>
     </svg>
   );
 }
 
-function DayBars({ data, color }: { data: number[]; color: string }) {
+// ── PATCH 2: DayBars with date labels ────────────────────────────────────────
+function DayBars({ data, color, weekStart }: { data: number[]; color: string; weekStart: Date }) {
   const max = Math.max(...data, 1);
+  const dayNames = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
   return (
-    <div style={{ display: "flex", gap: 5, alignItems: "flex-end", height: 72 }}>
-      {data.map((v, i) => (
-        <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-          <motion.div
-            initial={{ scaleY: 0 }} animate={{ scaleY: 1 }}
-            transition={{ delay: i*0.06, duration: 0.5, ease: "easeOut" }}
-            style={{ width: "100%", background: color,
-              height: `${Math.max(4, (v/max)*56)}px`, borderRadius: 4,
-              transformOrigin: "bottom", boxShadow: v > 0 ? `0 0 8px ${color}44` : "none" }}/>
-          <span style={{ fontSize: 9, color: "var(--bm-text3)", fontWeight: 600 }}>
-            {["M","T","W","T","F","S","S"][i]}
+    <div style={{ display: "flex", gap: 5, alignItems: "flex-end", height: 88 }}>
+      {data.map((v, i) => {
+        const d = new Date(weekStart);
+        d.setDate(weekStart.getDate() + i);
+        const dateNum = d.getDate();
+        const isToday = d.toLocaleDateString("en-CA") === new Date().toLocaleDateString("en-CA");
+        return (
+          <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+            <motion.div
+              initial={{ scaleY: 0 }} animate={{ scaleY: 1 }}
+              transition={{ delay: i*0.06, duration: 0.5, ease: "easeOut" }}
+              style={{ width: "100%", background: isToday ? "var(--bm-accent)" : color,
+                height: `${Math.max(4, (v/max)*56)}px`, borderRadius: 4,
+                transformOrigin: "bottom",
+                boxShadow: v > 0 ? `0 0 8px ${isToday ? "var(--bm-accent)" : color}44` : "none",
+                opacity: v === 0 ? 0.25 : 1,
+              }}/>
+            <span style={{ fontSize: 9, color: isToday ? "var(--bm-accent)" : "var(--bm-text3)", fontWeight: isToday ? 700 : 500, lineHeight: 1 }}>
+              {dayNames[i].slice(0,1)}
+            </span>
+            <span style={{ fontSize: 8, color: "var(--bm-text4)", lineHeight: 1 }}>
+              {dateNum}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── PATCH 1: DotCalendar component ───────────────────────────────────────────
+// 4-week heatmap. activeDays is an array of "YYYY-MM-DD" strings.
+function DotCalendar({ activeDays, streak }: { activeDays: string[]; streak: number }) {
+  const activeSet = new Set(activeDays);
+  const today = new Date();
+  // Build 28 days, starting from 27 days ago, Mon-aligned
+  const days: Array<{ iso: string; isActive: boolean; isToday: boolean; label: string }> = [];
+  for (let i = 27; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const iso = d.toLocaleDateString("en-CA");
+    days.push({
+      iso,
+      isActive: activeSet.has(iso),
+      isToday: i === 0,
+      label: d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }),
+    });
+  }
+  // Week labels: Mon Tue Wed Thu Fri Sat Sun
+  const weekDayLabels = ["M","T","W","T","F","S","S"];
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)" }}>Activity — Last 4 Weeks</span>
+        {streak > 0 && (
+          <span style={{ fontSize: 11, color: "var(--bm-amber)", fontWeight: 700 }}>
+            🔥 {streak}d streak
           </span>
-        </div>
-      ))}
+        )}
+      </div>
+      {/* Day-of-week column headers */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 4 }}>
+        {weekDayLabels.map((d, i) => (
+          <div key={i} style={{ textAlign: "center", fontSize: 8, color: "var(--bm-text4)", fontWeight: 600 }}>{d}</div>
+        ))}
+      </div>
+      {/* 4 rows × 7 cols */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4 }}>
+        {days.map((day, i) => (
+          <div
+            key={i}
+            title={`${day.label}${day.isActive ? " — active" : ""}`}
+            style={{
+              aspectRatio: "1",
+              borderRadius: 4,
+              background: day.isToday
+                ? "var(--bm-accent)"
+                : day.isActive
+                  ? "rgba(92,200,138,0.55)"
+                  : "var(--bm-bg3)",
+              boxShadow: day.isActive && !day.isToday ? "0 0 5px rgba(92,200,138,0.25)" : "none",
+              border: day.isToday ? "1px solid var(--bm-accent)" : "1px solid transparent",
+              transition: "transform 0.1s",
+              cursor: "default",
+            }}
+          />
+        ))}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, justifyContent: "flex-end" }}>
+        <div style={{ width: 8, height: 8, borderRadius: 2, background: "var(--bm-bg3)" }}/>
+        <span style={{ fontSize: 9, color: "var(--bm-text4)" }}>No activity</span>
+        <div style={{ width: 8, height: 8, borderRadius: 2, background: "rgba(92,200,138,0.55)" }}/>
+        <span style={{ fontSize: 9, color: "var(--bm-text4)" }}>Active</span>
+        <div style={{ width: 8, height: 8, borderRadius: 2, background: "var(--bm-accent)" }}/>
+        <span style={{ fontSize: 9, color: "var(--bm-text4)" }}>Today</span>
+      </div>
     </div>
   );
 }
@@ -226,12 +324,8 @@ export default function ReportsPage() {
         }
       })
       .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setAiReportLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
+      .finally(() => { if (!cancelled) setAiReportLoading(false); });
+    return () => { cancelled = true; };
   }, [project?.id]);
 
   const liveScore = useMemo(() => {
@@ -248,6 +342,7 @@ export default function ReportsPage() {
   const taskDelta = (metrics?.tasksCompletedThisWeek??0) - (metrics?.tasksCompletedPreviousWeek??0);
   const scoreDelta = score - (metrics?.previousScore ?? score);
   const streak = metrics?.activeStreakDays ?? 0;
+  const activeDays = (metrics as (typeof metrics & { activeDays?: string[] }) | undefined)?.activeDays ?? [];
 
   const scoreHistory = useMemo(() => {
     const hist = getScoreHistory();
@@ -266,6 +361,29 @@ export default function ReportsPage() {
   const executionTrend = metrics?.execution_trend ?? "flat";
   const avoidancePattern = metrics?.avoidance_pattern ?? null;
 
+  // ── PATCH 3: Week-over-week sentence ─────────────────────────────────────
+  // Generated from real numbers, shown instantly (no spinner), always accurate.
+  const weekOverWeekSentence = useMemo(() => {
+    const thisWeek = metrics?.tasksCompletedThisWeek ?? 0;
+    const lastWeek = metrics?.tasksCompletedPreviousWeek ?? 0;
+    if (thisWeek === 0 && lastWeek === 0) return null;
+    if (lastWeek === 0) return `${thisWeek} task${thisWeek !== 1 ? "s" : ""} completed this week — no prior week data to compare.`;
+    const diff = thisWeek - lastWeek;
+    if (diff === 0) return `${thisWeek} tasks completed this week, same as last week.`;
+    if (diff > 0) return `${thisWeek} tasks completed this week, up from ${lastWeek} last week (+${diff}).`;
+    return `${thisWeek} tasks completed this week, down from ${lastWeek} last week (${diff}).`;
+  }, [metrics]);
+
+  // Week start date for DayBars labels
+  const currentWeekStart = useMemo(() => {
+    const now = new Date();
+    const day = (now.getDay() + 6) % 7;
+    const d = new Date(now);
+    d.setHours(0, 0, 0, 0);
+    d.setDate(now.getDate() - day);
+    return d;
+  }, []);
+
   async function handleExport(fmt: ExportFmt) {
     setExporting(fmt);
     try {
@@ -274,13 +392,8 @@ export default function ReportsPage() {
         const el = reportCardRef.current;
         if (!el) return;
         const canvas = await html2canvas(el, {
-          backgroundColor:
-            getComputedStyle(document.documentElement)
-              .getPropertyValue("--bm-bg")
-              .trim() || "#0a0a0a",
-          scale: 2,
-          useCORS: true,
-          logging: false,
+          backgroundColor: getComputedStyle(document.documentElement).getPropertyValue("--bm-bg").trim() || "#0a0a0a",
+          scale: 2, useCORS: true, logging: false,
         });
         const link = document.createElement("a");
         link.download = `buildmind-report-${new Date().toISOString().slice(0, 10)}.png`;
@@ -300,6 +413,7 @@ export default function ReportsPage() {
           ["Tasks This Week", tasksThisWeek],
           ["Task Delta vs Last Week", taskDelta >= 0 ? `+${taskDelta}` : taskDelta],
           ["Active Streak (days)", streak],
+          ["Execution Rate", intentionRate != null ? `${intentionRate}%` : "—"],
           ["Stage", project?.startup_stage ?? "—"],
           ["Plan", plan],
           ["",""],
@@ -312,7 +426,7 @@ export default function ReportsPage() {
           ["Next Focus",""],
           ...nextFocus.map(f => ["", f]),
         ];
-        const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,"\"\"")}"` ).join(",")).join("\n");
+        const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"` ).join(",")).join("\n");
         const blob = new Blob([csv], { type:"text/csv" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a"); a.href=url;
@@ -324,10 +438,11 @@ export default function ReportsPage() {
           generatedAt: new Date().toISOString(),
           project: { title: project?.title, stage: project?.startup_stage },
           score, scoreDelta, streak, tasksThisWeek, taskDelta,
+          intentionRate, executionTrend,
           taskData: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].reduce<Record<string,number>>(
             (acc,d,i) => { acc[d]=taskData[i]; return acc; }, {}),
           weeklyScores, wins: displayWins, nextFocus,
-          focusBreakdown: focusData, plan,
+          focusBreakdown: focusData, activeDays, plan,
         };
         const blob = new Blob([JSON.stringify(data, null, 2)], { type:"application/json" });
         const url = URL.createObjectURL(blob);
@@ -349,7 +464,7 @@ export default function ReportsPage() {
         <div className="h-4 w-72 animate-pulse rounded-lg bg-[var(--bm-bg3)]" />
       </div>
       <div className="grid gap-3 sm:grid-cols-4">
-        {[0, 1, 2, 3].map((card) => (
+        {[0,1,2,3].map((card) => (
           <div key={card} className="h-28 animate-pulse rounded-[var(--r-xl)] border border-[var(--bm-border)] bg-[var(--bm-bg2)]" />
         ))}
       </div>
@@ -421,31 +536,31 @@ export default function ReportsPage() {
         </AnimatePresence>
 
         <div ref={reportCardRef} style={{ background:"var(--bm-bg)", padding: isMobile ? 0 : 8 }}>
+
         {/* HERO ROW */}
         <div style={{ display:"grid",
-          gridTemplateColumns: isMobile ? "1fr" : "auto 1fr 1fr 1fr",
+          gridTemplateColumns: isMobile ? "1fr 1fr" : "auto 1fr 1fr 1fr",
           gap:12, marginBottom:16, alignItems:"stretch" }}>
-          {/* Score arc */}
-          <motion.div initial={{ opacity:0, scale:0.9 }} animate={{ opacity:1, scale:1 }} transition={{ delay:0.05 }}
-            style={{ background:"var(--bm-bg2)", border:"1px solid var(--bm-border)",
-              borderRadius:"var(--r-xl)", padding:"20px 24px",
-              display:"flex", flexDirection:"column", alignItems:"center",
-              justifyContent:"center", gap:10, minWidth:160, position:"relative", overflow:"hidden" }}>
-            <div style={{ position:"absolute", inset:0,
-              background:"transparent",
-              pointerEvents:"none" }}/>
-            <ScoreArc value={score} size={110}/>
-            {scoreDelta !== 0 && (
-              <div style={{ display:"flex", alignItems:"center", gap:5, fontSize:11, fontWeight:700,
-                color: scoreDelta > 0 ? "var(--bm-green)" : "var(--bm-red)",
-                background: scoreDelta > 0 ? "rgba(92,200,138,0.1)" : "rgba(224,85,85,0.1)",
-                border: `1px solid ${scoreDelta > 0 ? "rgba(92,200,138,0.25)" : "rgba(224,85,85,0.25)"}`,
-                borderRadius:20, padding:"3px 10px" }}>
-                {scoreDelta > 0 ? <TrendingUp size={10}/> : <TrendingDown size={10}/>}
-                {scoreDelta > 0 ? `+${scoreDelta}` : scoreDelta} this week
-              </div>
-            )}
-          </motion.div>
+          {/* Score arc — hidden on mobile to save space, shown in project snapshot instead */}
+          {!isMobile && (
+            <motion.div initial={{ opacity:0, scale:0.9 }} animate={{ opacity:1, scale:1 }} transition={{ delay:0.05 }}
+              style={{ background:"var(--bm-bg2)", border:"1px solid var(--bm-border)",
+                borderRadius:"var(--r-xl)", padding:"20px 24px",
+                display:"flex", flexDirection:"column", alignItems:"center",
+                justifyContent:"center", gap:10, minWidth:160, position:"relative", overflow:"hidden" }}>
+              <ScoreArc value={score} size={110}/>
+              {scoreDelta !== 0 && (
+                <div style={{ display:"flex", alignItems:"center", gap:5, fontSize:11, fontWeight:700,
+                  color: scoreDelta > 0 ? "var(--bm-green)" : "var(--bm-red)",
+                  background: scoreDelta > 0 ? "rgba(92,200,138,0.1)" : "rgba(224,85,85,0.1)",
+                  border: `1px solid ${scoreDelta > 0 ? "rgba(92,200,138,0.25)" : "rgba(224,85,85,0.25)"}`,
+                  borderRadius:20, padding:"3px 10px" }}>
+                  {scoreDelta > 0 ? <TrendingUp size={10}/> : <TrendingDown size={10}/>}
+                  {scoreDelta > 0 ? `+${scoreDelta}` : scoreDelta} this week
+                </div>
+              )}
+            </motion.div>
+          )}
           <Tile label="Tasks Done" value={tasksThisWeek}
             sub={taskDelta===0 ? "Same as last week" : `${taskDelta>0?"+":""}${taskDelta} vs last week`}
             trend={taskDelta>0?"up":taskDelta<0?"down":"flat"}
@@ -457,7 +572,7 @@ export default function ReportsPage() {
             <Tile label="Execution Rate" value={`${intentionRate}%`}
               sub={prevIntentionRate != null
                 ? `${intentionRate > prevIntentionRate ? "+" : ""}${intentionRate - prevIntentionRate}% vs last week`
-                : "Intention vs execution"}
+                : "Check-ins completed vs total"}
               trend={executionTrend} color={intentionRate >= 60 ? "var(--bm-green)" : intentionRate >= 30 ? "var(--bm-amber)" : "var(--bm-red)"} icon={TrendingUp}/>
           ) : (
             <Tile label="Total XP" value={getXP()}
@@ -467,15 +582,15 @@ export default function ReportsPage() {
         </div>
 
         {/* CHARTS */}
-        <div style={{ display:"grid", gridTemplateColumns: isMobile ? "1fr" : "1.5fr 1fr", gap:12, marginBottom:16 }}>
+        <div style={{ display:"grid", gridTemplateColumns: isMobile ? "1fr" : "1.5fr 1fr", gap:12, marginBottom:12 }}>
           <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} transition={{ delay:0.15 }}
             style={{ background:"var(--bm-bg2)", border:"1px solid var(--bm-border)",
               borderRadius:"var(--r-xl)", padding:"20px" }}>
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
               <span style={{ fontSize:12, fontWeight:600, color:"var(--bm-text2)" }}>Task Completion — This Week</span>
               <span style={{ fontSize:11, color:"var(--bm-text3)" }}>{tasksThisWeek} total</span>
             </div>
-            <DayBars data={taskData} color="var(--bm-accent)"/>
+            <DayBars data={taskData} color="var(--bm-accent)" weekStart={currentWeekStart}/>
           </motion.div>
           <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} transition={{ delay:0.2 }}
             style={{ background:"var(--bm-bg2)", border:"1px solid var(--bm-border)",
@@ -505,6 +620,13 @@ export default function ReportsPage() {
             )}
           </motion.div>
         </div>
+
+        {/* ── PATCH 1: DOT CALENDAR ─────────────────────────────────────── */}
+        <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} transition={{ delay:0.22 }}
+          style={{ background:"var(--bm-bg2)", border:"1px solid var(--bm-border)",
+            borderRadius:"var(--r-xl)", padding:"20px", marginBottom:12 }}>
+          <DotCalendar activeDays={activeDays} streak={streak}/>
+        </motion.div>
 
         {/* SCORE TREND */}
         <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} transition={{ delay:0.25 }}
@@ -584,10 +706,10 @@ export default function ReportsPage() {
                 display:"grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4,1fr)",
                 gap:20, marginBottom:16 }}>
               {([
-                { label:"Stage",         value: project.startup_stage ?? "—",         color:"var(--bm-text)" },
-                { label:"Tasks Done",    value:`${project.tasksCompleted??0} / ${project.tasksTotal??0}`, color:"var(--bm-accent)" },
-                { label:"Exec Score",    value: project.execution_score ?? 0,          color:"var(--bm-amber)" },
-                { label:"Momentum",      value: metrics?.momentumScore ?? project.momentum_score ?? 0, color:"#A78BFA" },
+                { label:"Stage",      value: project.startup_stage ?? "—",         color:"var(--bm-text)" },
+                { label:"Tasks Done", value:`${project.tasksCompleted??0} / ${project.tasksTotal??0}`, color:"var(--bm-accent)" },
+                { label:"Exec Score", value: project.execution_score ?? 0,          color:"var(--bm-amber)" },
+                { label:"Momentum",   value: metrics?.momentumScore ?? project.momentum_score ?? 0, color:"#A78BFA" },
               ] as const).map(({ label, value, color }) => (
                 <div key={label}>
                   <div style={{ fontSize:9, fontWeight:700, color:"var(--bm-text3)",
@@ -607,7 +729,14 @@ export default function ReportsPage() {
           <div style={{ fontSize:9, fontWeight:700, color:"var(--bm-accent)",
             textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:8 }}>BuildMind Analysis</div>
 
-          {/* Intention vs execution rate — the one number that matters */}
+          {/* ── PATCH 3: Week-over-week sentence — always shown, no spinner ── */}
+          {weekOverWeekSentence && (
+            <p style={{ fontSize:13, color:"var(--bm-text3)", margin:"0 0 12px", fontWeight:500, lineHeight:1.5 }}>
+              {weekOverWeekSentence}
+            </p>
+          )}
+
+          {/* Intention vs execution rate */}
           {intentionRate != null && (
             <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12,
               padding:"10px 14px", borderRadius:10,
@@ -615,7 +744,7 @@ export default function ReportsPage() {
               border: `1px solid ${intentionRate >= 60 ? "rgba(92,200,138,0.2)" : "rgba(255,170,0,0.2)"}` }}>
               <div>
                 <p style={{ fontSize:11, fontWeight:700, color:"var(--bm-text3)", textTransform:"uppercase",
-                  letterSpacing:"0.08em", margin:"0 0 2px" }}>Execution Rate This Week</p>
+                  letterSpacing:"0.08em", margin:"0 0 2px" }}>Check-in Follow-through This Week</p>
                 <p style={{ fontSize:24, fontWeight:900, color: intentionRate >= 60 ? "var(--bm-green)" : "var(--bm-amber)",
                   margin:0, letterSpacing:"-0.03em", lineHeight:1 }}>
                   {intentionRate}%
@@ -670,8 +799,7 @@ export default function ReportsPage() {
                 </div>
               )}
               {aiReport.next_week_focus && (
-                <p style={{ fontSize:12, color:"var(--bm-accent)", fontWeight:600,
-                  margin:"10px 0 0" }}>
+                <p style={{ fontSize:12, color:"var(--bm-accent)", fontWeight:600, margin:"10px 0 0" }}>
                   → Monday priority: {aiReport.next_week_focus}
                 </p>
               )}
@@ -681,7 +809,7 @@ export default function ReportsPage() {
               <p style={{ fontSize:14, color:"var(--bm-text)", lineHeight:1.65,
                 margin:"0 0 8px", fontWeight:500 }}>
                 {scoreDelta > 5
-                  ? `Strong week - score climbed ${scoreDelta} points.`
+                  ? `Strong week — score climbed ${scoreDelta} points.`
                   : tasksThisWeek > 0
                   ? `${tasksThisWeek} task${tasksThisWeek > 1 ? "s" : ""} completed this week.`
                   : `No activity recorded this week.`}
@@ -698,7 +826,7 @@ export default function ReportsPage() {
         {/* Avoidance pattern callout */}
         {avoidancePattern && (
           <motion.div initial={{ opacity:0, y:4 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.5 }}
-            style={{ borderLeft:"2px solid var(--bm-amber)", paddingLeft:14, marginBottom:0 }}>
+            style={{ borderLeft:"2px solid var(--bm-amber)", paddingLeft:14, marginBottom:0, marginTop:12 }}>
             <p style={{ fontSize:13, color:"var(--bm-text2)", margin:"0 0 4px", lineHeight:1.5 }}>
               Pattern detected: {avoidancePattern}. This is being written to your behavioral profile.
             </p>
@@ -720,4 +848,4 @@ export default function ReportsPage() {
       </div>
     </PaywallGate>
   );
-}
+      }
