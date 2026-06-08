@@ -593,9 +593,14 @@ function TodayContent() {
     const serverCacheTs = serverCache.today_action_cache?.generatedAt
       ? new Date(serverCache.today_action_cache.generatedAt).getTime()
       : cachedAt;
-    const serverReflectionIsNewerThanCache = lastReflectionTime > 0 && serverCacheTs > 0
-      ? lastReflectionTime > serverCacheTs
-      : reflectionIsNewerThanCache;
+    // AFTER — also bust cache when cache is older than 20 hours regardless of reflection
+    const CACHE_MAX_AGE_MS = 20 * 60 * 60 * 1000; // 20 hours
+    const cacheIsStale = serverCacheTs > 0 && (Date.now() - serverCacheTs) > CACHE_MAX_AGE_MS;
+    const serverReflectionIsNewerThanCache = cacheIsStale || (
+      lastReflectionTime > 0 && serverCacheTs > 0
+        ? lastReflectionTime > serverCacheTs
+        : reflectionIsNewerThanCache
+    );
     const forceRefresh = forceActionRefresh > 0;
     if (!forceRefresh) {
       if (
