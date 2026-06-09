@@ -17,6 +17,7 @@ import { evaluateAIOutput } from "@/lib/aiEvaluator";
 import { getPromptForRequest, loadActivePrompts } from "@/lib/promptRegistry";
 import { upsertTodayActionCache } from "@/lib/todayActionCache";
 import { buildTodayPersonalisationContext } from "@/lib/todayPersonalisationContext";
+import { loadBehavioralContext } from "@/lib/behavioralLayers";
 
 export const runtime     = "nodejs";
 export const dynamic     = "force-dynamic";
@@ -627,6 +628,22 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
       }
     }
 
+    // ── Seven-Layer Behavioral Context ──────────────────────────────────────
+    // Load all 7 behavioral layers in parallel — non-fatal, best-effort.
+    let behavioralPromptBlock = "";
+    if (hasAdminEnv() && supabase && userId) {
+      try {
+        const behavioralCtx = await loadBehavioralContext(
+          supabase,
+          userId,
+          cognitionMomentumScore,
+          null,
+          null,
+        );
+        behavioralPromptBlock = behavioralCtx.promptBlock;
+      } catch { /* non-fatal — behavioral layers are enhancement only */ }
+    }
+
     // Build seed from founder context directly — no pre-call needed
     const taskSeed = [
       `Stage: ${stage}`,
@@ -634,6 +651,7 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
       `Target users: ${targetUsers || "Not specified"}`,
       lastReflectionContext ? `Last reflection: ${lastReflectionContext}` : "",
       recentActionHistory ? `Anti-repetition guard: ${recentActionHistory}` : "",
+      behavioralPromptBlock || "",
     ].filter(Boolean).join("\n");
 
     let reflexionOutput: Awaited<ReturnType<typeof runReflexionLoop>> | null = null;
