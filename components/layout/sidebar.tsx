@@ -105,14 +105,16 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
   const [unseenBadges, setUnseenBadges] = useState(0);
   const [streakDays, setStreakDays] = useState(0);
   const [founderMenuOpen, setFounderMenuOpen] = useState(false);
-  const [tasksCompleted, setTasksCompleted] = useState(0);
+  // Init to 99 so nav items render unlocked immediately on new devices.
+  // syncTasksCompletedFromServer() overwrites with the real server value on mount.
+  const [tasksCompleted, setTasksCompleted] = useState(99);
 
   useEffect(() => {
     const checkPending = () => {
       try {
         setReflectPending(storage.get("bm_reflect_pending") === "true");
         setUnseenBadges(getUnseenCount());
-        setTasksCompleted(getTasksCompleted());
+        setTasksCompleted(prev => Math.max(prev, getTasksCompleted()));
       } catch {}
       const supabase = createClient();
       supabase.auth.getUser().then(({ data }) => {
