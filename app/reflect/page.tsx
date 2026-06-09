@@ -117,7 +117,7 @@ export default function ReflectPage() {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
           setUserId(user.id);
-          const [summariesRes, reflectionsRes] = await Promise.allSettled([
+          const [summariesRes, reflectionsRes, founderCtxRes] = await Promise.allSettled([
             supabase
               .from("project_summaries")
               .select("id, startup_stage")
@@ -130,7 +130,19 @@ export default function ReflectPage() {
               .eq("user_id", user.id)
               .order("created_at", { ascending: false })
               .limit(30),
+            supabase
+              .from("founder_context")
+              .select("streak")
+              .eq("user_id", user.id)
+              .maybeSingle(),
           ]);
+
+          // Sync server streak so reflect-synthesis receives accurate data across devices
+          let resolvedStreak = getStoredStreak();
+          if (founderCtxRes.status === "fulfilled" && typeof founderCtxRes.value.data?.streak === "number") {
+            resolvedStreak = Math.max(founderCtxRes.value.data.streak, resolvedStreak);
+            setStreak(resolvedStreak);
+          }
 
           if (summariesRes.status === "fulfilled" && summariesRes.value.data?.[0]?.startup_stage) {
             setStartupStage(summariesRes.value.data[0].startup_stage);
@@ -168,7 +180,7 @@ export default function ReflectPage() {
                     stage: summariesRes.status === "fulfilled"
                       ? summariesRes.value.data?.[0]?.startup_stage ?? "Idea"
                       : "Idea",
-                    streak: getStoredStreak(),
+                    streak: resolvedStreak,
                   }),
                 });
                 if (synthRes.ok) {
