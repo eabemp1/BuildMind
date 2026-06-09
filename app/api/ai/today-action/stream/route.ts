@@ -152,7 +152,7 @@ function parseAgentOutput(
   // Support both labeled (TASK: ...) and unlabeled output (graceful degradation)
   const taskMatch = raw.match(/TASK:\s*([\s\S]+?)(?:\n|RATIONALE:|$)/);
   const rationaleMatch = raw.match(/RATIONALE:\s*([\s\S]+?)(?:\n|DRAFT:|$)/);
-  const draftMatch = raw.match(/DRAFT:\s*([\s\S]+?)$/);
+  const draftMatch = raw.match(/DRAFT:\s*([\s\S]+)$/);
   const action = taskMatch?.[1]?.trim() || fallbackAction;
   const rationale = rationaleMatch?.[1]?.trim() || "";
   // DRAFT may span multiple lines — trim but preserve line breaks within it
@@ -423,7 +423,7 @@ HARD RULES:
         try {
           agentAOutput = await groqCall(
             [{ role: "system", content: systemA }, { role: "user", content: "Give me today's single most important task." }],
-            0.6, 600  // PATCH: raised from 300 to 600 to accommodate DRAFT
+            0.6, 1000  // Raised to 1000 — gives DRAFT enough room to complete
           );
         } catch {
           agentAOutput = `TASK: ${fallback.action}\nRATIONALE: Because you're at ${stage} stage and this is the highest-leverage move today.\nDRAFT: ${fallback.message}`;
@@ -524,7 +524,7 @@ Critique: ${criticReason}
 Input to refine:
 ${baseForC}`,
             }, { role: "user", content: "Refine the output." }],
-            0.3, 600  // PATCH: raised from 250 to 600
+            0.3, 1000  // Raised to 1000 — gives DRAFT enough room to complete
           );
         } catch {
           // refiner failed — use Agent A output as-is
