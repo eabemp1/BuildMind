@@ -128,10 +128,10 @@ export async function loadBehavioralContext(
       // A) Activity log for temporal analysis
       supabase
         .from("activity_log")
-        .select("event_type, created_at, metadata")
+        .select("event_type, occurred_at, metadata")
         .eq("user_id", userId)
-        .gte("created_at", thirtyDaysAgo)
-        .order("created_at", { ascending: false })
+        .gte("occurred_at", thirtyDaysAgo)
+        .order("occurred_at", { ascending: false })
         .limit(500),
 
       // B) Reflections for linguistic + outcome + mirror
@@ -141,8 +141,8 @@ export async function loadBehavioralContext(
           "today_action, note, blocker, confidence, outcome, created_at, what_tried, what_happened, what_learned",
         )
         .eq("user_id", userId)
-        .gte("created_at", thirtyDaysAgo)
-        .order("created_at", { ascending: false })
+        .gte("occurred_at", thirtyDaysAgo)
+        .order("occurred_at", { ascending: false })
         .limit(60),
 
       // C) Founder context for external anchors
