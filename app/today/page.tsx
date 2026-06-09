@@ -583,38 +583,27 @@ function TodayContent() {
     // is always false, which previously caused new users to never bust the cache.
     const lastReflectionTime = parseInt(storage.get(`bm_last_reflection_ts_${userId}`) ?? "0", 10);
     const cachedAt = parseInt(storage.get(`bm_today_action_cache_ts_${userId}`) ?? "0", 10);
-    // If either timestamp is missing/zero, treat as cache-miss so we always
-    // fetch fresh for new users or after storage is cleared.
-    const reflectionIsNewerThanCache = lastReflectionTime > 0 && cachedAt > 0
-      ? lastReflectionTime > cachedAt
-      : lastReflectionTime > 0;
 
-    const serverCache = await fetchBehaviorState<{ today_action_cache: CachedTodayAction & { generatedAt?: string } }>(["today_action_cache"]);
-    const serverCacheTs = serverCache.today_action_cache?.generatedAt
-      ? new Date(serverCache.today_action_cache.generatedAt).getTime()
-      : cachedAt;
-    // AFTER — also bust cache when cache is older than 20 hours regardless of reflection
-    const CACHE_MAX_AGE_MS = 20 * 60 * 60 * 1000; // 20 hours
-    const cacheIsStale = serverCacheTs > 0 && (Date.now() - serverCacheTs) > CACHE_MAX_AGE_MS;
-    const serverReflectionIsNewerThanCache = cacheIsStale || (
-      lastReflectionTime > 0 && serverCacheTs > 0
-        ? lastReflectionTime > serverCacheTs
-        : reflectionIsNewerThanCache
-    );
+    // A reflection only busts the cache if it happened TODAY and AFTER the cache
+    // was written. Yesterday's reflection (or any reflection from before today's
+    // cache was generated overnight) must never force a live AI call — that's the
+    // whole point of pre-generation. We compare date strings so timezone is respected.
+    const reflectionDateKey = lastReflectionTime > 0
+      ? new Date(lastReflectionTime).toISOString().slice(0, 10)
+      : null;
+    const reflectionIsNewerThanCache =
+      lastReflectionTime > 0 &&
+      cachedAt > 0 &&
+      reflectionDateKey === today &&       // reflection must be from today
+      lastReflectionTime > cachedAt;       // and after the cache was written
+
     const forceRefresh = forceActionRefresh > 0;
+
+    // ── Step 1: localStorage (synchronous, instant) ─────────────────────────
+    // Check this BEFORE the server round-trip so returning founders see their
+    // task immediately on open — the overnight cache is already here from the
+    // previous session's server-sync or the cron job's push.
     if (!forceRefresh) {
-      if (
-        !serverReflectionIsNewerThanCache &&
-        serverCache.today_action_cache?.date === today &&
-        serverCache.today_action_cache?.projectId === projectId &&
-        serverCache.today_action_cache?.stage === currentStage &&
-        isActionData(serverCache.today_action_cache.data)
-      ) {
-        storage.setJSON(cacheKey, serverCache.today_action_cache);
-        if (userId && serverCacheTs > 0) storage.set(`bm_today_action_cache_ts_${userId}`, String(serverCacheTs));
-        setAiAction({ ...serverCache.today_action_cache.data, isAI: true });
-        return;
-      }
       try {
         const cached = storage.getJSON<CachedTodayAction | null>(cacheKey, null);
         if (
@@ -625,8 +614,29 @@ function TodayContent() {
           isActionData(cached.data)
         ) {
           setAiAction({ ...cached.data, isAI: true });
+          // Still sync server cache in background — non-blocking
+          void fetchBehaviorState<{ today_action_cache: CachedTodayAction & { generatedAt?: string } }>(["today_action_cache"])
+            .then((serverCache) => {
+              const serverTs = serverCache.today_action_cache?.generatedAt
+                ? new Date(serverCache.today_action_cache.generatedAt).getTime()
+                : 0;
+              // If server has a newer overnight cache, upgrade silently
+              if (
+                serverTs > cachedAt &&
+                serverCache.today_action_cache?.date === today &&
+                serverCache.today_action_cache?.projectId === projectId &&
+                serverCache.today_action_cache?.stage === currentStage &&
+                isActionData(serverCache.today_action_cache.data)
+              ) {
+                storage.setJSON(cacheKey, serverCache.today_action_cache);
+                storage.set(`bm_today_action_cache_ts_${userId}`, String(serverTs));
+                setAiAction({ ...serverCache.today_action_cache.data, isAI: true });
+              }
+            })
+            .catch(() => {});
           return;
         }
+        // Stale localStorage entry — remove it before server check
         if (cached?.date === today && cached?.projectId === projectId && cached?.data) {
           storage.remove(cacheKey);
           storage.remove(`bm_today_action_cache_ts_${userId}`);
@@ -637,7 +647,41 @@ function TodayContent() {
     } else {
       storage.remove(cacheKey);
       storage.remove(`bm_today_action_cache_ts_${userId}`);
-      await persistBehaviorState({ today_action_cache: null });
+    }
+
+    // ── Step 2: Server cache (network round-trip) ───────────────────────────
+    // Only reached if localStorage had no valid entry. Checks Supabase for the
+    // overnight-generated task before falling through to a live AI call.
+    const serverCache = await fetchBehaviorState<{ today_action_cache: CachedTodayAction & { generatedAt?: string } }>(["today_action_cache"]);
+    const serverCacheTs = serverCache.today_action_cache?.generatedAt
+      ? new Date(serverCache.today_action_cache.generatedAt).getTime()
+      : 0;
+    const serverReflectionIsNewerThanCache =
+      lastReflectionTime > 0 &&
+      serverCacheTs > 0 &&
+      reflectionDateKey === today &&
+      lastReflectionTime > serverCacheTs;
+
+    if (!forceRefresh) {
+      if (
+        !serverReflectionIsNewerThanCache &&
+        serverCache.today_action_cache?.date === today &&
+        serverCache.today_action_cache?.projectId === projectId &&
+        serverCache.today_action_cache?.stage === currentStage &&
+        isActionData(serverCache.today_action_cache.data)
+      ) {
+        // Sync to localStorage so next open is instant
+        storage.setJSON(cacheKey, serverCache.today_action_cache);
+        if (serverCacheTs > 0) storage.set(`bm_today_action_cache_ts_${userId}`, String(serverCacheTs));
+        setAiAction({ ...serverCache.today_action_cache.data, isAI: true });
+        return;
+      }
+      // Server cache exists but is stale — clear it so cron can rewrite cleanly
+      if (!forceRefresh) {
+        await persistBehaviorState({ today_action_cache: null }).catch(() => {});
+      }
+    } else {
+      await persistBehaviorState({ today_action_cache: null }).catch(() => {});
     }
 
     setActionLoading(true);
@@ -876,7 +920,9 @@ function TodayContent() {
         time: "10 minutes",
         isAI: true,
       }
-    : aiAction ?? { ...staticAction, isAI: false };
+    : actionLoading && !aiAction
+      ? null  // never show static fallback while AI is fetching
+      : aiAction ?? { ...staticAction, isAI: false };
   const destinations = DESTINATIONS[aiAction?.destKey ?? stageKey] ?? DESTINATIONS.idea;
 
   // Memoize MobileCheckin visibility — avoids calling storage.get() on every
@@ -896,20 +942,23 @@ function TodayContent() {
   }, [userId]);
 
   const OUTREACH_KEYWORDS = ["dm", "message", "send", "email", "outreach", "call", "text", "reach out", "post", "tweet", "share"];
-  const isOutreachAction = OUTREACH_KEYWORDS.some(kw =>
+  const isOutreachAction = actionData ? OUTREACH_KEYWORDS.some(kw =>
     actionData.action.toLowerCase().includes(kw) || actionData.message.toLowerCase().includes(kw)
-  );
+  ) : false;
 
   // Hydrate draft with real project values on action change
   useEffect(() => {
+    if (!actionData) return;
     setDraftMessage(buildPersonalizedDraftFromAction(actionData.action, actionData.message, productName, targetUsers, problem));
-  }, [actionData.action, actionData.message, productName, targetUsers, problem]);
+  }, [actionData?.action, actionData?.message, productName, targetUsers, problem]);
 
   function handleCopy() {
+    if (!actionData) return;
     navigator.clipboard.writeText(draftMessage ?? actionData.message).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
   }
 
   async function handleShareMessage() {
+    if (!actionData) return;
     const text = draftMessage ?? actionData.message;
     const nav = window.navigator as {
       share?: (data: ShareData) => Promise<void>;
@@ -996,7 +1045,7 @@ function TodayContent() {
           body: JSON.stringify({
             stage: project?.startup_stage ?? "Idea",
             projectId: project?.id,
-            taskTitle: actionData.action,
+            taskTitle: actionData?.action ?? "",
             outcome: selectedOutcome,
           }),
         });
@@ -1030,7 +1079,7 @@ function TodayContent() {
       notifyReflectPending();
 
       const todayDate = localDayKey();
-      const todayActionState = { action: actionData.action, outcome: selectedOutcome, note: "", confidence: 3 };
+      const todayActionState = { action: actionData?.action ?? "", outcome: selectedOutcome, note: "", confidence: 3 };
       storage.setJSON("bm_today_action", todayActionState);
       if (userId) {
         storage.remove(`bm_today_action_cache_${userId}`);
@@ -1972,7 +2021,57 @@ function TodayContent() {
       {/* ══════════════════════════════════════════════════════════════════════
           ACTION CARD — first real content block (task-first layout)
       ══════════════════════════════════════════════════════════════════════ */}
-      <motion.div
+      {!actionData ? (
+        /* Loading skeleton — shown while AI fetch is in flight */
+        /* Never shows generic task; waits for the real personalised task */
+        <div
+          style={{
+            padding: 1,
+            borderRadius: 12,
+            background: "var(--bm-border2)",
+            marginBottom: 14,
+          }}
+        >
+          <div style={{ background: "var(--bm-bg2)", borderRadius: 11, padding: isMobile ? "20px" : "28px 30px 24px" }}>
+            {/* Meta row skeleton */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+              <div style={{ height: 22, width: 90, borderRadius: 4, background: "var(--bm-bg3)", animation: "bm-pulse 1.4s ease-in-out infinite" }} />
+              <div style={{ height: 22, width: 120, borderRadius: 4, background: "var(--bm-bg3)", animation: "bm-pulse 1.4s ease-in-out infinite 0.1s" }} />
+              <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: "50%", background: "var(--bm-accent)", opacity: 0.7, animation: "bm-pulse 1.2s ease-in-out infinite" }} />
+                <span style={{ fontSize: 11, color: "var(--bm-text3)" }}>{streamLabel ?? "Calibrating task..."}</span>
+              </div>
+            </div>
+
+            {/* Primary action skeleton */}
+            <div style={{ background: "var(--bm-bg)", border: "1px solid var(--bm-border)", borderRadius: 10, padding: isMobile ? "16px" : "18px", marginBottom: 14 }}>
+              <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                <div style={{ width: 26, height: 26, borderRadius: 6, background: "var(--bm-bg3)", flexShrink: 0, animation: "bm-pulse 1.4s ease-in-out infinite" }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ height: 10, width: 100, borderRadius: 4, background: "var(--bm-bg3)", marginBottom: 12, animation: "bm-pulse 1.4s ease-in-out infinite" }} />
+                  <div style={{ height: 28, width: "90%", borderRadius: 6, background: "var(--bm-bg3)", marginBottom: 8, animation: "bm-pulse 1.4s ease-in-out infinite 0.05s" }} />
+                  <div style={{ height: 28, width: "70%", borderRadius: 6, background: "var(--bm-bg3)", marginBottom: 10, animation: "bm-pulse 1.4s ease-in-out infinite 0.1s" }} />
+                  <div style={{ height: 14, width: "80%", borderRadius: 4, background: "var(--bm-bg3)", animation: "bm-pulse 1.4s ease-in-out infinite 0.15s" }} />
+                </div>
+              </div>
+            </div>
+
+            {/* Rationale skeleton */}
+            <div style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: 10, padding: "14px 16px", marginBottom: 18 }}>
+              <div style={{ height: 10, width: 120, borderRadius: 4, background: "var(--bm-bg4)", marginBottom: 10, animation: "bm-pulse 1.4s ease-in-out infinite" }} />
+              <div style={{ height: 14, width: "95%", borderRadius: 4, background: "var(--bm-bg4)", marginBottom: 6, animation: "bm-pulse 1.4s ease-in-out infinite 0.05s" }} />
+              <div style={{ height: 14, width: "80%", borderRadius: 4, background: "var(--bm-bg4)", animation: "bm-pulse 1.4s ease-in-out infinite 0.1s" }} />
+            </div>
+
+            {/* Draft skeleton */}
+            <div style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: 10, padding: "14px 16px" }}>
+              <div style={{ height: 10, width: 110, borderRadius: 4, background: "var(--bm-bg4)", marginBottom: 12, animation: "bm-pulse 1.4s ease-in-out infinite" }} />
+              <div style={{ height: 80, borderRadius: 9, background: "var(--bm-bg4)", animation: "bm-pulse 1.4s ease-in-out infinite 0.1s" }} />
+            </div>
+          </div>
+        </div>
+      ) : (
+        <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.08 }}
@@ -2143,6 +2242,7 @@ function TodayContent() {
           </div>
         </div>
       </motion.div>
+      )}
 
       {accountAgeDays < 7 && (
         <motion.div
