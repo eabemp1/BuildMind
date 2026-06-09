@@ -778,13 +778,11 @@ function TodayContent() {
               if (!signal.aborted) {
                 setAiAction(actionData);
                 setStreamLabel(null);
-                if (actionData.reflexion?.loopRan) {
-                  const cacheValue = { date: today, projectId, stage: currentStage, data: actionData };
-                  const nowTs = Date.now().toString();
-                  storage.setJSON(cacheKey, cacheValue);
-                  if (userId) storage.set(`bm_today_action_cache_ts_${userId}`, nowTs);
-                  persistBehaviorState({ today_action_cache: cacheValue });
-                }
+                const cacheValue = { date: today, projectId, stage: currentStage, data: actionData };
+                const nowTs = Date.now().toString();
+                storage.setJSON(cacheKey, cacheValue);
+                if (userId) storage.set(`bm_today_action_cache_ts_${userId}`, nowTs);
+                persistBehaviorState({ today_action_cache: cacheValue });
               }
               streamSucceeded = true;
               break outer;
@@ -816,13 +814,11 @@ function TodayContent() {
           if (json?.success && actionData) {
             setDebtSuppression(null);
             setAiAction(actionData);
-            if (actionData.reflexion?.loopRan) {
-              const cacheValue = { date: today, projectId, stage: currentStage, data: actionData };
-              const nowTs = Date.now().toString();
-              storage.setJSON(cacheKey, cacheValue);
-              if (userId) storage.set(`bm_today_action_cache_ts_${userId}`, nowTs);
-              persistBehaviorState({ today_action_cache: cacheValue });
-            }
+            const cacheValue = { date: today, projectId, stage: currentStage, data: actionData };
+            const nowTs = Date.now().toString();
+            storage.setJSON(cacheKey, cacheValue);
+            if (userId) storage.set(`bm_today_action_cache_ts_${userId}`, nowTs);
+            persistBehaviorState({ today_action_cache: cacheValue });
           }
         })
         .catch(() => {})
