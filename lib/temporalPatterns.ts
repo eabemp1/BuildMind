@@ -15,7 +15,7 @@
 
 export interface SessionEvent {
   event_type: string;
-  created_at: string; // ISO timestamp
+  occurred_at: string; // ISO timestamp — matches activity_log.occurred_at
   metadata?: Record<string, unknown>;
 }
 
@@ -73,9 +73,9 @@ export function buildTemporalProfile(
   // Adjust timestamps for founder timezone
   const adjusted = events.map((e) => ({
     ...e,
-    localHour: (parseHour(e.created_at) + tzOffset + 24) % 24,
-    localDay: parseDay(e.created_at),
-    dateKey: parseDateKey(e.created_at),
+    localHour: (parseHour(e.occurred_at) + tzOffset + 24) % 24,
+    localDay: parseDay(e.occurred_at),
+    dateKey: parseDateKey(e.occurred_at),
   }));
 
   // ── Peak productivity hour ──────────────────────────────────────────────
@@ -134,7 +134,7 @@ export function buildTemporalProfile(
   const eventsByDay: Record<string, number[]> = {};
   for (const e of adjusted) {
     if (!eventsByDay[e.dateKey]) eventsByDay[e.dateKey] = [];
-    eventsByDay[e.dateKey].push(new Date(e.created_at).getTime());
+    eventsByDay[e.dateKey].push(new Date(e.occurred_at).getTime());
   }
 
   const sessionDurations: number[] = [];
@@ -155,13 +155,13 @@ export function buildTemporalProfile(
   const sevenDays = 7 * 24 * 60 * 60 * 1000;
   const thisWeekKeys = new Set(
     adjusted
-      .filter((e) => now - new Date(e.created_at).getTime() < sevenDays)
+      .filter((e) => now - new Date(e.occurred_at).getTime() < sevenDays)
       .map((e) => e.dateKey),
   );
   const lastWeekKeys = new Set(
     adjusted
       .filter((e) => {
-        const age = now - new Date(e.created_at).getTime();
+        const age = now - new Date(e.occurred_at).getTime();
         return age >= sevenDays && age < 2 * sevenDays;
       })
       .map((e) => e.dateKey),
@@ -212,7 +212,7 @@ export function buildTemporalProfile(
   // ── Days since last activity ───────────────────────────────────────────
   const lastEvent = events[0]; // already sorted desc
   const daysSinceLastActivity = lastEvent
-    ? Math.floor((Date.now() - new Date(lastEvent.created_at).getTime()) / 86400000)
+    ? Math.floor((Date.now() - new Date(lastEvent.occurred_at).getTime()) / 86400000)
     : 999;
 
   // ── Human-readable insight ─────────────────────────────────────────────
