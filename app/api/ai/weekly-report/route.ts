@@ -274,10 +274,10 @@ export async function POST(request: Request) {
     const systemPrompt = `You are a brutally honest startup coach. Return ONLY valid JSON with exactly these keys:
 {
   "summary": "2-sentence momentum assessment",
-  "intention_vs_action": "what they committed vs what they actually did this week",
+  "intention_vs_action": "what you committed vs what you actually did this week",
   "biggest_gap": "the single biggest execution gap right now",
   "next_week_focus": "one specific thing to prioritize next week. This will become Monday's first task — make it concrete and actionable.",
-  "honest_assessment": "a direct, uncomfortable truth about where this founder is headed",
+  "honest_assessment": "a direct, uncomfortable truth about where you are headed",
   "momentum_score": <number 0-100>,
   "intention_vs_execution_rate": <number 0-100 — tasks completed / tasks committed this week>,
   "execution_trend": "up" | "down" | "flat"
@@ -309,7 +309,8 @@ ${avoidanceZonesLine}
 INSTRUCTION:
 - Write intention_vs_action by comparing last week's stated focus above against what was actually done this week.
 - Write biggest_gap based on what blockers recurred or what reflections show wasn't done despite being important.
-- Write honest_assessment by looking at the pattern across all reflections - is the founder avoiding a particular type of work? Is confidence dropping? Are they shipping or rationalizing?
+- Write honest_assessment by looking at the pattern across all reflections - are you avoiding a particular type of work? Is your confidence dropping? Are you shipping or rationalizing?
+- CRITICAL: Write entirely in second person throughout all fields. Address the founder as "you"/"your". Never write "the founder", "they", or "their".
 - Write next_week_focus as one concrete task the founder should do first on Monday, naming the product and user type.
 - Be specific. Reference the actual tasks shown above. Do NOT write generic startup advice.
 - If no reflections were submitted, say so directly in honest_assessment.`;
