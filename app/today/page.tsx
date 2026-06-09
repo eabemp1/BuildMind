@@ -636,8 +636,14 @@ function TodayContent() {
             .catch(() => {});
           return;
         }
-        // Stale localStorage entry — remove it before server check
-        if (cached?.date === today && cached?.projectId === projectId && cached?.data) {
+        // Stale localStorage entry — only remove if stage also matches (genuine bad data),
+        // not if stage simply differs (that means server cache was written before project loaded).
+        if (
+          cached?.date === today &&
+          cached?.projectId === projectId &&
+          cached?.stage === currentStage &&
+          !isActionData(cached.data)
+        ) {
           storage.remove(cacheKey);
           storage.remove(`bm_today_action_cache_ts_${userId}`);
         }
