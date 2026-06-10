@@ -31,7 +31,19 @@ function inferAudience(action: string, explicit: string): string {
 }
 
 function inferTopic(action: string, explicit: string, title: string): string {
-  if (explicit.trim()) return explicit.trim();
+  if (explicit.trim()) {
+    // Truncate long problem descriptions to a short, usable phrase.
+    // If the problem field is a full paragraph (e.g. the product pitch copy),
+    // using it raw produces drafts like "Saw you work close to [entire pitch]".
+    // Cap at 80 chars and stop at the first sentence boundary.
+    const raw = explicit.trim();
+    if (raw.length <= 80) return raw;
+    const firstSentence = raw.match(/^(.{10,80}?[.!?])\s/);
+    if (firstSentence?.[1]) return firstSentence[1].replace(/[.!?]$/, "").trim();
+    // No sentence boundary — truncate at last word before 80 chars
+    const truncated = raw.slice(0, 80).replace(/\s+\S*$/, "").trim();
+    return truncated || raw.slice(0, 60).trim();
+  }
   const about = action.match(/\b(?:about|around|with)\s+(.+?)(?:[.,]|\s+[,-]|\s+today|\s+before|\s+after|$)/i);
   if (about?.[1]?.trim()) return about[1].trim();
   return title.trim() ? `${title.trim()} and the workflow it improves` : "this workflow";
