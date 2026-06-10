@@ -27,6 +27,8 @@ export type TodayActionCache = {
   data: TodayActionData;
   generatedAt: string;
   source: "overnight" | "today-action";
+  /** How many times this exact task has been served without a matching reflection. */
+  shown_count?: number;
 };
 
 type ProjectLike = {
@@ -126,13 +128,37 @@ export async function upsertTodayActionCache(
   userId: string,
   cache: TodayActionCache,
 ): Promise<void> {
+  // Read existing cache to increment shown_count if the task is the same
+  let shownCount = 1;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const existing = await (admin as any)
+      .from("user_behavior_state")
+      .select("value")
+      .eq("user_id", userId)
+      .eq("key", "today_action_cache")
+      .maybeSingle();
+    const prev = existing?.data?.value as TodayActionCache | null;
+    if (prev?.data?.action) {
+      const prevTitle = prev.data.action.toLowerCase().slice(0, 60);
+      const newTitle = (cache.data.action ?? "").toLowerCase().slice(0, 60);
+      // Substantial similarity: share 3+ words or one is a substring of the other
+      const prevWords = new Set(prevTitle.split(/\s+/).filter((w: string) => w.length > 4));
+      const newWords = newTitle.split(/\s+/).filter((w: string) => w.length > 4);
+      const overlap = newWords.filter((w: string) => prevWords.has(w)).length;
+      if (overlap >= 3 || prevTitle.includes(newTitle.slice(0, 30)) || newTitle.includes(prevTitle.slice(0, 30))) {
+        shownCount = (prev.shown_count ?? 1) + 1;
+      }
+    }
+  } catch { /* non-fatal — default shown_count=1 */ }
+
   const { error } = await admin
     .from("user_behavior_state")
     .upsert(
       {
         user_id: userId,
         key: "today_action_cache",
-        value: cache,
+        value: { ...cache, shown_count: shownCount },
         updated_at: new Date().toISOString(),
       },
       { onConflict: "user_id,key" },
