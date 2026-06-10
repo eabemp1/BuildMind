@@ -146,7 +146,7 @@ export async function GET(req: Request) {
         const lastReflection = recentReflections?.[0] ?? null;
 
         // Build pattern summary from last 5 reflections
-        const reflectionHistory = (recentReflections ?? []).map((r, i) => {
+        const reflectionLines = (recentReflections ?? []).map((r, i) => {
           const tried    = r.what_tried    ?? r.today_action ?? "unknown";
           const happened = r.what_happened ?? "";
           const learned  = r.what_learned  ?? "";
@@ -158,7 +158,28 @@ export async function GET(req: Request) {
             learned  ? `   Learned: ${learned}` : "",
             blocked  ? `   Blocker: ${blocked}` : "",
           ].filter(Boolean).join("\n");
-        }).join("\n\n");
+        });
+
+        // FIX: Inject the current cached task so the briefing AI knows not to repeat it.
+        // Replaced tasks never produce a reflection — without this the briefing
+        // regenerates the same task every night (the stale-task loop bug).
+        try {
+          const { data: cacheRow } = await admin
+            .from("user_behavior_state")
+            .select("value")
+            .eq("user_id", ctx.user_id)
+            .eq("key", "today_action_cache")
+            .maybeSingle();
+          const cachedTask = cacheRow?.value as { data?: { action?: string }; shown_count?: number } | null;
+          if (cachedTask?.data?.action) {
+            const shownCount = cachedTask.shown_count ?? 1;
+            reflectionLines.push(
+              `[TASK SHOWN ${shownCount}x WITHOUT COMPLETION — do not regenerate this or similar tasks]: "${cachedTask.data.action}"`
+            );
+          }
+        } catch { /* non-fatal */ }
+
+        const reflectionHistory = reflectionLines.join("\n\n");
 
         // Fetch active project for gap detection (weaknesses + stage)
         const { data: activeProject } = await admin
@@ -271,7 +292,7 @@ export async function GET(req: Request) {
   const lastReflection = recentReflections?.[0] ?? null;
 
   // Build a pattern summary from last 5 reflections
-  const reflectionHistory = (recentReflections ?? []).map((r, i) => {
+  const reflectionLines = (recentReflections ?? []).map((r, i) => {
     const tried    = r.what_tried    ?? r.today_action ?? "unknown";
     const happened = r.what_happened ?? "";
     const learned  = r.what_learned  ?? "";
@@ -283,7 +304,26 @@ export async function GET(req: Request) {
       learned  ? `   Learned: ${learned}` : "",
       blocked  ? `   Blocker: ${blocked}` : "",
     ].filter(Boolean).join("\n");
-  }).join("\n\n");
+  });
+
+  // FIX: Inject current cached task so user-triggered briefing also avoids repeating it
+  try {
+    const { data: cacheRow } = await admin
+      .from("user_behavior_state")
+      .select("value")
+      .eq("user_id", user.id)
+      .eq("key", "today_action_cache")
+      .maybeSingle();
+    const cachedTask = cacheRow?.value as { data?: { action?: string }; shown_count?: number } | null;
+    if (cachedTask?.data?.action) {
+      const shownCount = cachedTask.shown_count ?? 1;
+      reflectionLines.push(
+        `[TASK SHOWN ${shownCount}x WITHOUT COMPLETION — do not regenerate this or similar tasks]: "${cachedTask.data.action}"`
+      );
+    }
+  } catch { /* non-fatal */ }
+
+  const reflectionHistory = reflectionLines.join("\n\n");
 
   // Fetch active project for gap detection
   const { data: activeProject } = await admin
