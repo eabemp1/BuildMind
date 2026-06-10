@@ -1088,11 +1088,48 @@ export async function detectFounderGaps(
       });
 
       if (!revenueActivity) {
-        gaps.push({
-          type: "revenue_avoided",
-          detail: `No revenue-related activity recorded in the last 14 days despite being at ${projectStage} stage.`,
-          question: `You're at ${projectStage} stage but haven't mentioned revenue or pricing in 2 weeks. Are you avoiding the money conversation?`,
-        });
+        // Anti-repetition guard: if a pricing/revenue task has already been
+        // assigned 2+ times in the last 14 days without the user completing it
+        // (i.e. no revenue keyword appears in their reflections), do NOT keep
+        // regenerating the same gap task. The user is either stuck or avoiding —
+        // in both cases, a different task category will be more useful today.
+        const revenueTasksShown = (recentReflections ?? []).filter(r => {
+          const action = (r.today_action ?? "").toLowerCase();
+          return revenueKeywords.some(kw => action.includes(kw)) ||
+            /pricing|revenue|monetis|charge|payment/.test(action);
+        }).length;
+
+        // Also count from user_behavior_state today_action_cache shown_count if available
+        let cachedPricingShownCount = 0;
+        try {
+          const { data: behaviorRow } = await sb
+            .from("user_behavior_state")
+            .select("value")
+            .eq("user_id", userId)
+            .eq("key", "today_action_cache")
+            .maybeSingle();
+          if (behaviorRow?.value) {
+            const cache = behaviorRow.value as { data?: { action?: string }; shown_count?: number };
+            const cachedAction = (cache?.data?.action ?? "").toLowerCase();
+            if (/pricing|revenue|monetis|charge|payment/.test(cachedAction)) {
+              cachedPricingShownCount = cache?.shown_count ?? 1;
+            }
+          }
+        } catch { /* non-fatal */ }
+
+        const totalPricingShown = revenueTasksShown + cachedPricingShownCount;
+
+        if (totalPricingShown < 2) {
+          // First or second time — safe to surface the gap
+          gaps.push({
+            type: "revenue_avoided",
+            detail: `No revenue-related activity recorded in the last 14 days despite being at ${projectStage} stage.`,
+            question: `You're at ${projectStage} stage but haven't mentioned revenue or pricing in 2 weeks. Are you avoiding the money conversation?`,
+          });
+        }
+        // If totalPricingShown >= 2: suppress the gap entirely.
+        // The user has seen this task and not engaged — pushing it again creates
+        // the stale-task loop. Let the regular reflexion loop pick a different angle.
       }
     }
   } catch {
