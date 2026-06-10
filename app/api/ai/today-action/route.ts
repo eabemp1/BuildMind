@@ -454,6 +454,25 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
             return `${i + 1}. "${r.today_action}" -> ${r.outcome ?? "unknown"}${note}`;
           });
 
+        // FIX: Also inject the current cached task as a "replaced" history entry.
+        // When the user replaces a task without completing it, no reflection is written,
+        // so the AI has no memory of having shown that task before. This creates the
+        // stale-task loop (same task repeating for 2+ weeks). By explicitly telling the
+        // AI about replaced tasks, the anti-repetition guard fires correctly.
+        try {
+          const { data: cacheRow } = await supabase
+            .from("user_behavior_state")
+            .select("value")
+            .eq("user_id", userId)
+            .eq("key", "today_action_cache")
+            .maybeSingle();
+          const cachedTask = (cacheRow?.value as { data?: { action?: string }; shown_count?: number } | null);
+          if (cachedTask?.data?.action) {
+            const shownCount = cachedTask.shown_count ?? 1;
+            lines.push(`[REPLACED/SKIPPED ${shownCount}x without completion]: "${cachedTask.data.action}" -> replaced`);
+          }
+        } catch { /* non-fatal */ }
+
         if (lines.length) {
           recentActionHistory = `\n\nRECENT ACTION HISTORY (do not repeat these task shapes or messages):\n${lines.join("\n")}`;
           lastReflectionContext += `${recentActionHistory}\nINSTRUCTION: Today's action must be a genuinely new next move. It may continue the same strategic thread, but it must change the person, channel, ask, experiment, or success criterion. Never reuse the previous outreach copy.`;
