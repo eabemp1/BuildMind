@@ -346,12 +346,8 @@ function HeroReflexionPipeline() {
         }
       `}</style>
       <div
-        className="html-panel relative overflow-hidden rounded-[var(--r-xl)] p-5 sm:p-6"
-        style={{
-          background: "var(--bm-bg2)",
-          border: "1px solid var(--bm-border2)",
-          boxShadow: "0 0 0 1px rgba(92,200,138,0.06), 0 24px 64px rgba(0,0,0,0.5)",
-        }}
+        className="bm-glass-gold relative overflow-hidden"
+        style={{ borderRadius: 20 }}
       >
         <div className="absolute left-0 right-0 top-0 h-px bg-gradient-to-r from-transparent via-[rgba(92,200,138,0.45)] to-transparent" />
         <div className="mb-5 flex items-center gap-2 border-b border-[var(--bm-border)] pb-4">
@@ -364,16 +360,20 @@ function HeroReflexionPipeline() {
 
         <div className="mb-5 flex items-stretch gap-0">
           {[
-            { label: "Agent A", name: "Generator", status: "Reading context...", color: "var(--bm-accent)", bg: "rgba(92,200,138,0.12)", delay: "0s" },
-            { label: "Agent B", name: "YC Critic", status: "Reviewing...", color: "var(--bm-amber)", bg: "rgba(232,160,32,0.1)", delay: ".8s" },
-            { label: "Agent C", name: "Refiner", status: "Queued", color: "#9B7FE8", bg: "rgba(155,127,232,0.1)", delay: "1.6s" },
+            { label: "Agent A", name: "Generator", status: "Reading context...", color: "var(--bm-accent)", bg: "rgba(232,197,71,0.10)", glow: "rgba(232,197,71,0.12)", delay: "0s" },
+            { label: "Agent B", name: "YC Critic", status: "Reviewing...", color: "var(--bm-amber)", bg: "rgba(232,160,32,0.10)", glow: "rgba(232,160,32,0.10)", delay: ".8s" },
+            { label: "Agent C", name: "Refiner", status: "Queued", color: "#9B7FE8", bg: "rgba(155,127,232,0.10)", glow: "rgba(155,127,232,0.08)", delay: "1.6s" },
           ].map((agent, i, arr) => (
             <div key={agent.label} className="contents">
               <div
                 className="flex-1 rounded-[var(--r-xl)] border p-3.5"
                 style={{
-                  background: "var(--bm-bg3)",
-                  borderColor: "var(--bm-border2)",
+                  background: "rgba(255,255,255,0.025)",
+                  borderColor: "rgba(255,255,255,0.07)",
+                  backdropFilter: "blur(16px)",
+                  WebkitBackdropFilter: "blur(16px)",
+                  ["--node-color" as string]: agent.color + "55",
+                  ["--node-glow" as string]: agent.glow,
                   animation: `bm-agent-active 2.5s ${agent.delay} ease-in-out infinite`,
                 }}
               >
@@ -472,7 +472,7 @@ function DayTimeline() {
                       style={{
                         background: isActive ? "var(--bm-accent)" : "var(--bm-bg4)",
                         border: `1px solid ${isActive ? "var(--bm-accent)" : "var(--bm-border3)"}`,
-                        boxShadow: isActive ? "0 0 12px rgba(92,200,138,0.55)" : "none",
+                        boxShadow: isActive ? "0 0 12px rgba(232,197,71,0.55), 0 0 4px rgba(232,197,71,0.8)" : "none",
                       }}
                     />
                   </span>
@@ -502,20 +502,21 @@ function DayTimeline() {
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -8 }}
           transition={{ duration: 0.25 }}
-          className="html-soft-panel relative h-fit overflow-hidden rounded-[var(--r-xl)] p-7 lg:sticky lg:top-28"
+          className="bm-glass relative h-fit overflow-hidden lg:sticky lg:top-28"
           style={{
-            background: "var(--bm-bg2)",
-            border: "1px solid var(--bm-border2)",
-            boxShadow: "0 24px 80px rgba(0,0,0,0.28)",
+            borderRadius: 20,
+            padding: 28,
+            boxShadow: "0 24px 80px rgba(0,0,0,0.42), 0 1px 0 rgba(255,255,255,0.06) inset",
           }}
         >
-          <div className="absolute left-0 right-0 top-0 h-0.5 bg-[var(--grad-primary)]" />
-          <div className="mb-2 text-[11px] font-bold uppercase tracking-widest text-[var(--bm-accent)]">{selected.time}</div>
-          <h3 className="mb-3 text-xl font-bold leading-snug text-[var(--bm-text)]">{selected.title}</h3>
-          <p className="mb-5 text-sm leading-7 text-[var(--bm-text3)]">{selected.body}</p>
-          <div className="flex flex-wrap gap-2">
+          {/* Gold top accent line */}
+          <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: `linear-gradient(90deg, transparent 0%, ${selected.color} 40%, ${selected.color} 60%, transparent 100%)`, opacity: 0.7 }} />
+          <div style={{ marginBottom: 8, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.12em", color: selected.color }}>{selected.time}</div>
+          <h3 style={{ marginBottom: 12, fontSize: 20, fontWeight: 700, lineHeight: 1.3, color: "var(--bm-text)" }}>{selected.title}</h3>
+          <p style={{ marginBottom: 20, fontSize: 13, lineHeight: 1.75, color: "var(--bm-text3)" }}>{selected.body}</p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             {selected.chips.map((chip) => (
-              <span key={chip} className="rounded-lg border border-[var(--bm-border2)] bg-[var(--bm-bg3)] px-3 py-1.5 text-[11px] text-[var(--bm-text2)]">
+              <span key={chip} className="bm-chip">
                 {chip}
               </span>
             ))}
@@ -843,10 +844,10 @@ function BreakMyStartupSection() {
               value={idea}
               onChange={(e) => setIdea(e.target.value)}
               placeholder="Describe your startup idea or current model — what you're building, who it's for, how you make money..."
-              className="h-44 w-full resize-none rounded-[var(--r-xl)] p-4 text-base outline-none transition-all duration-150 focus:ring-1 sm:h-36 sm:text-sm"
-              style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", color: "var(--bm-text)", fontFamily: "inherit" }}
-              onFocus={(e) => { e.currentTarget.style.borderColor = "var(--bm-accent)"; e.currentTarget.style.boxShadow = "0 0 0 1px var(--bm-accent-bd)"; }}
-              onBlur={(e) => { e.currentTarget.style.borderColor = "var(--bm-border2)"; e.currentTarget.style.boxShadow = "none"; }}
+              className="h-44 w-full resize-none rounded-[var(--r-xl)] p-4 text-base outline-none transition-all duration-150 sm:h-36 sm:text-sm"
+              style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.10)", color: "var(--bm-text)", fontFamily: "inherit", backdropFilter: "blur(8px)" }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = "rgba(232,197,71,0.45)"; e.currentTarget.style.boxShadow = "0 0 0 1px rgba(232,197,71,0.18), 0 0 20px rgba(232,197,71,0.07)"; }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.10)"; e.currentTarget.style.boxShadow = "none"; }}
             />
             <Button onClick={handleBreak} loading={loading} disabled={!idea.trim()} size="lg" className="w-full self-start sm:w-auto">
               {!loading && <AlertTriangle size={16} />}
@@ -922,7 +923,7 @@ function PricingSection() {
         <div className="mt-12 grid grid-cols-1 gap-4 md:grid-cols-2">
           {/* Free */}
           <motion.div initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.05 }}>
-            <Card className="html-soft-panel flex h-full flex-col gap-5 rounded-[var(--r-xl)] p-7">
+            <div className="bm-glass bm-glass-hover" style={{ borderRadius: 20, padding: 28, display: "flex", flexDirection: "column", gap: 20, height: "100%" }}>
               <div>
                 <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Free</div>
                 <div style={{ fontSize: 32, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em" }}>$0</div>
@@ -946,55 +947,53 @@ function PricingSection() {
                 ))}
               </ul>
               <Link href="/auth/login">
-                <Button variant="secondary" size="md" className="w-full">
+                <Button variant="secondary" size="md" className="w-full html-btn-secondary">
                   Start Free
                 </Button>
               </Link>
-            </Card>
+            </div>
           </motion.div>
 
           {/* Builder */}
           <motion.div initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.1 }}>
-            <div style={{ padding: 0, borderRadius: "var(--r-xl)", border: "1px solid var(--bm-accent-bd)" }}>
-              <Card className="flex h-full flex-col gap-5 p-7" style={{ borderRadius: 17, background: "linear-gradient(160deg, var(--bm-bg2) 0%, var(--bm-bg3) 100%)", border: "none" }}>
-                <div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                    <span style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text-inv)", textTransform: "uppercase", letterSpacing: "0.08em", background: "var(--bm-accent)", padding: "2px 8px", borderRadius: 10 }}>Builder</span>
-                    <span style={{ fontSize: 10, color: "var(--bm-text3)" }}>Most popular</span>
-                  </div>
-                  <div style={{ fontSize: 32, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em" }}>$39 <span style={{ fontSize: 14, fontWeight: 400, color: "var(--bm-text3)" }}>/month</span></div>
-                  <p className="text-sm text-[var(--bm-text2)] mt-2 leading-relaxed">
-                    The system reads your context overnight and tells you the one move that matters. You open it and execute.
-                  </p>
+            <div className="bm-pricing-featured" style={{ padding: 28, display: "flex", flexDirection: "column", gap: 20 }}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: "#09090A", textTransform: "uppercase", letterSpacing: "0.08em", background: "var(--bm-accent)", padding: "3px 10px", borderRadius: 10 }}>Builder</span>
+                  <span style={{ fontSize: 10, color: "var(--bm-text3)" }}>Most popular</span>
                 </div>
-                <ul className="flex flex-col gap-3 flex-1">
-                  {[
-                    "Daily Morning Briefing - every day",
-                    "Full Reflexion Loop (3-agent chain)",
-                    "Unlimited AI tasks + messages",
-                    "Rotating Critic Personas (4 weekly)",
-                    "Full Momentum Score with decay warnings",
-                    "Recovery Mode - when confidence drops",
-                    "Emotional language layer at trigger moments",
-                    "Evening check nudges",
-                    "Founder memory - AI remembers your history",
-                    "Unlimited projects",
-                  ].map((f) => (
-                    <li key={f} className="flex items-start gap-2 text-sm text-[var(--bm-text)]">
-                      <ChevronRight size={14} className="shrink-0 mt-0.5" style={{ color: "var(--bm-accent)" }} />
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                <Link href="/auth/login">
-                  <Button size="md" className="w-full">
-                    Start Builder — $39/mo <ArrowRight size={14} />
-                  </Button>
-                </Link>
-                <p style={{ fontSize: 11, color: "var(--bm-text4)", textAlign: "center" }}>
-                  BuildMind notices what you avoid — and calls it out.
+                <div style={{ fontSize: 32, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em" }}>$39 <span style={{ fontSize: 14, fontWeight: 400, color: "var(--bm-text3)" }}>/month</span></div>
+                <p className="text-sm text-[var(--bm-text2)] mt-2 leading-relaxed">
+                  The system reads your context overnight and tells you the one move that matters. You open it and execute.
                 </p>
-              </Card>
+              </div>
+              <ul className="flex flex-col gap-3 flex-1">
+                {[
+                  "Daily Morning Briefing - every day",
+                  "Full Reflexion Loop (3-agent chain)",
+                  "Unlimited AI tasks + messages",
+                  "Rotating Critic Personas (4 weekly)",
+                  "Full Momentum Score with decay warnings",
+                  "Recovery Mode - when confidence drops",
+                  "Emotional language layer at trigger moments",
+                  "Evening check nudges",
+                  "Founder memory - AI remembers your history",
+                  "Unlimited projects",
+                ].map((f) => (
+                  <li key={f} className="flex items-start gap-2 text-sm text-[var(--bm-text)]">
+                    <ChevronRight size={14} className="shrink-0 mt-0.5" style={{ color: "var(--bm-accent)" }} />
+                    {f}
+                  </li>
+                ))}
+              </ul>
+              <Link href="/auth/login">
+                <Button size="md" className="w-full">
+                  Start Builder — $39/mo <ArrowRight size={14} />
+                </Button>
+              </Link>
+              <p style={{ fontSize: 11, color: "var(--bm-text4)", textAlign: "center" }}>
+                BuildMind notices what you avoid — and calls it out.
+              </p>
             </div>
           </motion.div>
         </div>
@@ -1179,51 +1178,281 @@ const landingShellStyle = {
   position: "relative",
 } as CSSProperties;
 
-const subtleSectionBorder = "1px solid var(--bm-border)";
+const subtleSectionBorder = "1px solid rgba(255,255,255,0.06)";
 
 function LandingAestheticLayer() {
   return (
     <style>{`
+      /* ── Base ──────────────────────────────────────────────────────────────── */
       .bm-landing-skin {
         -webkit-font-smoothing: antialiased;
+        --glass-bg:      rgba(255,255,255,0.030);
+        --glass-border:  rgba(255,255,255,0.082);
+        --glass-shine:   rgba(255,255,255,0.055);
+        --glass-shadow:  0 8px 32px rgba(0,0,0,0.52), 0 1px 0 rgba(255,255,255,0.05) inset;
+        --accent-glow:   rgba(232,197,71,0.18);
+        --accent-glow-lg:rgba(232,197,71,0.10);
+        --gold: #E8C547;
+        --gold-dim: rgba(232,197,71,0.12);
+        --gold-border: rgba(232,197,71,0.25);
       }
+
+      /* ── Typography ────────────────────────────────────────────────────────── */
       .bm-landing-skin .gradient-text {
-        background: var(--bm-accent);
+        background: linear-gradient(135deg, #E8C547 0%, #F5D97A 45%, #C9A82E 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
       }
+      .bm-landing-skin .gradient-text-subtle {
+        background: linear-gradient(135deg, var(--bm-text) 0%, rgba(240,240,238,0.7) 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+
+      /* ── Transition base ───────────────────────────────────────────────────── */
       .bm-landing-skin button,
       .bm-landing-skin a {
-        transition: color .18s ease, background .18s ease, border-color .18s ease, filter .18s ease, transform .18s ease;
+        transition: color .18s ease, background .18s ease, border-color .18s ease,
+                    box-shadow .18s ease, transform .15s ease, opacity .18s ease;
       }
-      .bm-landing-skin button:hover,
-      .bm-landing-skin a:hover {
-        filter: brightness(1.04);
+
+      /* ── Glass card — the signature surface ─────────────────────────────────
+         Used for hero panel, feature cards, pricing, any "floating" element.
+         Layered: dark base + glass overlay + top-edge shine + luminous border. */
+      .bm-landing-skin .bm-glass {
+        background: var(--glass-bg);
+        border: 1px solid var(--glass-border);
+        box-shadow: var(--glass-shadow);
+        backdrop-filter: blur(24px) saturate(140%);
+        -webkit-backdrop-filter: blur(24px) saturate(140%);
+        position: relative;
+        overflow: hidden;
       }
-      .bm-landing-skin .html-panel {
-        background: var(--bm-bg2);
-        border: 1px solid var(--bm-border2);
-        box-shadow: 0 0 0 1px rgba(92,200,138,0.045), 0 24px 64px rgba(0,0,0,0.46);
+      /* Top-edge shine — the one element that makes flat look premium */
+      .bm-landing-skin .bm-glass::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        height: 1px;
+        background: linear-gradient(90deg, transparent 0%, var(--glass-shine) 30%, rgba(255,255,255,0.10) 50%, var(--glass-shine) 70%, transparent 100%);
+        pointer-events: none;
+        z-index: 1;
       }
-      .bm-landing-skin .html-soft-panel {
-        background: var(--bm-bg2);
-        border: 1px solid var(--bm-border2);
+
+      /* Gold-accented glass — for hero panel and featured elements */
+      .bm-landing-skin .bm-glass-gold {
+        background: linear-gradient(135deg, rgba(232,197,71,0.055) 0%, rgba(255,255,255,0.018) 60%, rgba(232,197,71,0.025) 100%);
+        border: 1px solid var(--gold-border);
+        box-shadow: 0 0 0 1px rgba(232,197,71,0.08), 0 24px 64px rgba(0,0,0,0.56), 0 1px 0 rgba(232,197,71,0.18) inset;
+        backdrop-filter: blur(32px) saturate(160%);
+        -webkit-backdrop-filter: blur(32px) saturate(160%);
+        position: relative;
+        overflow: hidden;
       }
+      .bm-landing-skin .bm-glass-gold::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        height: 1px;
+        background: linear-gradient(90deg, transparent 0%, rgba(232,197,71,0.5) 30%, rgba(232,197,71,0.7) 50%, rgba(232,197,71,0.5) 70%, transparent 100%);
+        pointer-events: none;
+        z-index: 1;
+      }
+
+      /* Deep glass — for code/terminal blocks, secondary panels */
+      .bm-landing-skin .bm-glass-deep {
+        background: rgba(9,9,10,0.72);
+        border: 1px solid rgba(255,255,255,0.07);
+        box-shadow: 0 4px 24px rgba(0,0,0,0.48), 0 1px 0 rgba(255,255,255,0.04) inset;
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+      }
+
+      /* ── Hover states on glass cards ────────────────────────────────────────── */
+      .bm-landing-skin .bm-glass-hover {
+        transition: border-color .22s ease, box-shadow .22s ease, transform .18s ease;
+      }
+      .bm-landing-skin .bm-glass-hover:hover {
+        border-color: rgba(255,255,255,0.13);
+        box-shadow: 0 12px 48px rgba(0,0,0,0.58), 0 1px 0 rgba(255,255,255,0.08) inset;
+        transform: translateY(-2px);
+      }
+
+      /* ── Section layout ──────────────────────────────────────────────────────── */
       .bm-landing-skin .html-section {
         position: relative;
         z-index: 1;
       }
+      .bm-landing-skin .html-panel {
+        background: var(--bm-bg2);
+        border: 1px solid var(--bm-border2);
+        box-shadow: 0 0 0 1px rgba(232,197,71,0.06), 0 24px 64px rgba(0,0,0,0.5);
+      }
+
+      /* ── Secondary button override ───────────────────────────────────────────── */
       .bm-landing-skin .html-btn-secondary {
-        background: var(--bm-bg3) !important;
+        background: rgba(255,255,255,0.045) !important;
         color: var(--bm-text2) !important;
-        border-color: var(--bm-border2) !important;
-        box-shadow: none !important;
+        border-color: var(--glass-border) !important;
+        backdrop-filter: blur(8px);
+        box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset !important;
       }
       .bm-landing-skin .html-btn-secondary:hover {
-        background: var(--bm-bg4) !important;
+        background: rgba(255,255,255,0.075) !important;
         color: var(--bm-text) !important;
-        border-color: var(--bm-border3) !important;
+        border-color: rgba(255,255,255,0.14) !important;
+      }
+
+      /* ── Feature chips / pill badges ─────────────────────────────────────────── */
+      .bm-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 3px 10px;
+        border-radius: 999px;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        border: 1px solid rgba(255,255,255,0.09);
+        background: rgba(255,255,255,0.05);
+        color: var(--bm-text3);
+        backdrop-filter: blur(8px);
+      }
+      .bm-chip-gold {
+        border-color: var(--gold-border);
+        background: var(--gold-dim);
+        color: var(--gold);
+      }
+
+      /* ── Glow dot (live indicator) ───────────────────────────────────────────── */
+      .bm-live-dot {
+        width: 6px; height: 6px;
+        border-radius: 50%;
+        background: var(--bm-accent);
+        box-shadow: 0 0 0 3px rgba(232,197,71,0.18), 0 0 12px rgba(232,197,71,0.4);
+        animation: bm-pulse-gold 2s ease-in-out infinite;
+        display: inline-block; flex-shrink: 0;
+      }
+      @keyframes bm-pulse-gold {
+        0%,100% { box-shadow: 0 0 0 3px rgba(232,197,71,0.18), 0 0 12px rgba(232,197,71,0.4); }
+        50%      { box-shadow: 0 0 0 5px rgba(232,197,71,0.08), 0 0 20px rgba(232,197,71,0.55); }
+      }
+
+      /* ── Stat counter cards ──────────────────────────────────────────────────── */
+      .bm-stat-card {
+        padding: 20px 22px;
+        border-radius: 16px;
+        background: rgba(255,255,255,0.028);
+        border: 1px solid rgba(255,255,255,0.08);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        position: relative;
+        overflow: hidden;
+      }
+      .bm-stat-card::after {
+        content: '';
+        position: absolute;
+        bottom: 0; left: 0; right: 0;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(232,197,71,0.25), transparent);
+      }
+
+      /* ── Section divider gradient ────────────────────────────────────────────── */
+      .bm-divider {
+        height: 1px;
+        background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.08) 30%, rgba(232,197,71,0.15) 50%, rgba(255,255,255,0.08) 70%, transparent 100%);
+        margin: 0;
+        border: none;
+      }
+
+      /* ── Agent pipeline node ─────────────────────────────────────────────────── */
+      @keyframes bm-agent-active {
+        0%,100% { border-color: rgba(255,255,255,0.08); box-shadow: none; }
+        50% { border-color: var(--node-color, rgba(232,197,71,0.4)); box-shadow: 0 0 20px var(--node-glow, rgba(232,197,71,0.10)); }
+      }
+      @keyframes bm-travel-h {
+        0% { left: -8px; opacity: 0; }
+        10%,90% { opacity: 1; }
+        100% { left: calc(100% + 8px); opacity: 0; }
+      }
+      @keyframes bm-travel-v {
+        0% { top: -8px; opacity: 0; }
+        10%,90% { opacity: 1; }
+        100% { top: calc(100% + 8px); opacity: 0; }
+      }
+      @keyframes bm-output-appear {
+        from { opacity: 0; transform: translateY(10px) scale(.98); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+      }
+
+      /* ── Scroll-reveal base (handled by framer-motion) ───────────────────────── */
+      .bm-landing-skin .html-soft-panel {
+        background: rgba(255,255,255,0.025);
+        border: 1px solid rgba(255,255,255,0.07);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+      }
+
+      /* ── Timeline connector ─────────────────────────────────────────────────── */
+      .bm-timeline-line {
+        position: absolute;
+        left: 19px; top: 44px; bottom: 0;
+        width: 1px;
+        background: linear-gradient(to bottom, rgba(232,197,71,0.25) 0%, rgba(255,255,255,0.05) 60%, transparent 100%);
+      }
+
+      /* ── Noise texture overlay (hero depth) ─────────────────────────────────── */
+      .bm-noise {
+        position: absolute; inset: 0;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+        pointer-events: none;
+        z-index: 0;
+        opacity: 0.6;
+        mix-blend-mode: overlay;
+      }
+
+      /* ── Pricing card ring ──────────────────────────────────────────────────── */
+      .bm-pricing-featured {
+        background: linear-gradient(135deg, rgba(232,197,71,0.08) 0%, rgba(232,197,71,0.03) 50%, rgba(255,255,255,0.02) 100%);
+        border: 1px solid rgba(232,197,71,0.28);
+        box-shadow: 0 0 0 1px rgba(232,197,71,0.08), 0 24px 64px rgba(0,0,0,0.56), 0 0 80px rgba(232,197,71,0.07);
+        backdrop-filter: blur(32px) saturate(150%);
+        -webkit-backdrop-filter: blur(32px) saturate(150%);
+        position: relative;
+        overflow: hidden;
+        border-radius: 20px;
+      }
+      .bm-pricing-featured::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        height: 1px;
+        background: linear-gradient(90deg, transparent 0%, rgba(232,197,71,0.6) 40%, rgba(232,197,71,0.8) 50%, rgba(232,197,71,0.6) 60%, transparent 100%);
+        z-index: 1;
+      }
+
+      /* ── Ambient glow behind hero panel ─────────────────────────────────────── */
+      .bm-hero-glow {
+        position: absolute;
+        border-radius: 50%;
+        pointer-events: none;
+        filter: blur(60px);
+      }
+
+      /* ── Star keyframes (kept from original) ────────────────────────────────── */
+      @keyframes bm-star-twinkle {
+        0%,100% { opacity: var(--op, .2); transform: scale(1); }
+        50% { opacity: calc(var(--op, .2) * 3); transform: scale(1.5); }
+      }
+      @keyframes bm-grid-drift {
+        0%   { transform: translateY(0); }
+        100% { transform: translateY(56px); }
+      }
+      @keyframes bm-pulse {
+        0%,100% { opacity: 0.6; }
+        50% { opacity: 1; }
       }
     `}</style>
   );
@@ -1282,7 +1511,15 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
       {/* Navbar */}
       <nav
         className="sticky top-0 z-50 flex h-16 items-center justify-between gap-3 px-4 sm:px-6"
-        style={{ background: "color-mix(in srgb, var(--bm-bg) 88%, transparent)", backdropFilter: "blur(16px)", borderBottom: "1px solid var(--bm-border)", position: "relative", zIndex: 50 }}
+        style={{
+          background: "rgba(9,9,10,0.75)",
+          backdropFilter: "blur(20px) saturate(150%)",
+          WebkitBackdropFilter: "blur(20px) saturate(150%)",
+          borderBottom: "1px solid rgba(255,255,255,0.07)",
+          boxShadow: "0 1px 0 rgba(232,197,71,0.06)",
+          position: "relative",
+          zIndex: 50,
+        }}
       >
         <div className="flex items-center gap-2">
           <BrandMark size={32} href="/" />
@@ -1311,21 +1548,26 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
 
       {/* Hero */}
       <section className="html-section flex min-h-[calc(100vh-64px)] items-center px-5 pb-16 pt-14 sm:px-8 sm:pb-20 sm:pt-20 lg:pb-24">
+        {/* Ambient glow behind the right panel */}
+        <div className="bm-hero-glow" style={{ width: 600, height: 600, top: "5%", right: "-8%", background: "radial-gradient(ellipse, rgba(232,197,71,0.07) 0%, transparent 70%)" }} />
+        <div className="bm-hero-glow" style={{ width: 400, height: 400, bottom: "10%", left: "30%", background: "radial-gradient(ellipse, rgba(74,144,217,0.05) 0%, transparent 70%)" }} />
+
         <div className="mx-auto grid w-full max-w-[1100px] items-center gap-12 md:grid-cols-2 lg:gap-16">
           {/* Left */}
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }} className="flex flex-col gap-5 sm:gap-6">
-            <span style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)", color: "var(--bm-text3)", borderRadius: 999, padding: "5px 14px", fontSize: 11, fontWeight: 500, display: "inline-flex", alignItems: "center", width: "fit-content" }}>
-              <span className="mr-2 h-1.5 w-1.5 rounded-full bg-[var(--bm-accent)] shadow-[0_0_6px_var(--bm-accent)] animate-pulse" />
+            {/* Live pill */}
+            <span style={{ background: "rgba(232,197,71,0.08)", border: "1px solid rgba(232,197,71,0.22)", color: "rgba(232,197,71,0.85)", borderRadius: 999, padding: "5px 14px", fontSize: 11, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 8, width: "fit-content", backdropFilter: "blur(8px)", letterSpacing: "0.03em" }}>
+              <span className="bm-live-dot" />
               The next move, already decided
             </span>
 
-            <h1 className="text-[clamp(2.6rem,4.5vw,4rem)] font-bold leading-[1.06] tracking-tight text-[var(--bm-text)]">
+            <h1 style={{ fontSize: "clamp(2.6rem,4.5vw,4rem)", fontWeight: 800, lineHeight: 1.06, letterSpacing: "-0.03em", color: "var(--bm-text)" }}>
               The next move is
               <br />
               <span className="font-display italic gradient-text">already decided.</span>
             </h1>
 
-            <p className="max-w-[400px] text-[15px] leading-[1.7] text-[var(--bm-text2)]">
+            <p style={{ maxWidth: 400, fontSize: 15, lineHeight: 1.75, color: "var(--bm-text2)" }}>
               BuildMind watches your startup context and tells you the one highest-leverage thing to do next. No lists. No frameworks. Just the next move — generated overnight, waiting when you wake up.
             </p>
 
@@ -1341,7 +1583,7 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
               </Button>
             </div>
 
-            {/* Social proof pills — live momentum ticker (Audit v8 PROD #9) */}
+            {/* Social proof pills — live momentum ticker */}
             <div className="flex flex-wrap gap-2 pt-1 sm:pt-2">
               {[
                 { label: "Founders building", val: stats.founders },
@@ -1350,27 +1592,23 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
               ].map((s) => (
                 <div
                   key={s.label}
-                  className="inline-flex w-fit items-center justify-start gap-1.5 rounded-[var(--r-lg)] px-3 py-1.5 text-xs"
-                  style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)" }}
+                  className="inline-flex w-fit items-center justify-start gap-1.5 rounded-xl px-3 py-1.5 text-xs"
+                  style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", backdropFilter: "blur(10px)" }}
                 >
-                  <span className="font-semibold text-[var(--bm-text)]">{s.val.toLocaleString()}</span>
-                  <span className="text-[var(--bm-text3)]">{s.label}</span>
+                  <span style={{ fontWeight: 600, color: "var(--bm-text)" }}>{s.val.toLocaleString()}</span>
+                  <span style={{ color: "var(--bm-text3)" }}>{s.label}</span>
                 </div>
               ))}
-              {/* Live weekly task count — updates every 60s via Supabase realtime */}
               {stats.weekly_tasks > 0 && (
                 <div
-                  className="inline-flex w-fit items-center justify-start gap-1.5 rounded-[var(--r-lg)] px-3 py-1.5 text-xs"
-                  style={{ background: "rgba(92,200,138,0.06)", border: "1px solid rgba(92,200,138,0.20)" }}
+                  className="inline-flex w-fit items-center justify-start gap-1.5 rounded-xl px-3 py-1.5 text-xs"
+                  style={{ background: "rgba(232,197,71,0.07)", border: "1px solid rgba(232,197,71,0.22)", backdropFilter: "blur(10px)" }}
                 >
-                  <span
-                    className="inline-block w-1.5 h-1.5 rounded-full"
-                    style={{ background: "var(--bm-accent)", animation: "pulse 2s ease-in-out infinite" }}
-                  />
-                  <span className="font-semibold" style={{ color: "var(--bm-accent)" }}>
+                  <span className="bm-live-dot" style={{ width: 5, height: 5 }} />
+                  <span style={{ fontWeight: 600, color: "var(--bm-accent)" }}>
                     {stats.weekly_tasks.toLocaleString()}
                   </span>
-                  <span className="text-[var(--bm-text3)]">daily tasks this week</span>
+                  <span style={{ color: "var(--bm-text3)" }}>daily tasks this week</span>
                 </div>
               )}
             </div>
@@ -1421,8 +1659,8 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
           </motion.div>
 
           <div
-            className="mt-14 grid grid-cols-1 overflow-hidden rounded-[var(--r-xl)] sm:grid-cols-2 lg:grid-cols-3"
-            style={{ gap: 2, background: "var(--bm-border)", border: "1px solid var(--bm-border)" }}
+            className="mt-14 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+            style={{ gap: 12 }}
           >
             {FEATURES.map((f, i) => {
               const Icon = f.icon;
@@ -1433,23 +1671,19 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true }}
                   transition={{ delay: i * 0.07 }}
+                  className="bm-glass bm-glass-hover"
+                  style={{ borderRadius: 16, padding: "24px", display: "flex", flexDirection: "column", gap: 12 }}
                 >
-                  <Card
-                    hover
-                    className="flex h-full flex-col gap-3 rounded-none border-0 p-6 transition-colors hover:bg-[var(--bm-bg3)]"
-                    style={{ background: "var(--bm-bg2)" }}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex h-[38px] w-[38px] items-center justify-center rounded-[var(--r-lg)]" style={{ background: "var(--bm-bg3)", color: "var(--bm-accent)" }}>
-                        <Icon size={20} />
-                      </div>
-                      <span style={{ fontSize: 9, fontWeight: 700, color: f.badgeColor, background: f.badgeColor + "18", border: `1px solid ${f.badgeColor}33`, padding: "2px 8px", borderRadius: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  <div className="flex items-center justify-between">
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: 10, background: "rgba(232,197,71,0.10)", border: "1px solid rgba(232,197,71,0.20)", color: "var(--bm-accent)" }}>
+                      <Icon size={20} />
+                    </div>
+                      <span style={{ fontSize: 9, fontWeight: 700, color: f.badgeColor, background: f.badgeColor + "18", border: `1px solid ${f.badgeColor}40`, padding: "2px 8px", borderRadius: 10, textTransform: "uppercase", letterSpacing: "0.06em", backdropFilter: "blur(4px)" }}>
                         {f.badge}
                       </span>
                     </div>
-                    <h3 className="text-sm font-semibold tracking-[-0.01em] text-[var(--bm-text)]">{f.title}</h3>
-                    <p className="text-xs leading-[1.6] text-[var(--bm-text3)]">{f.desc}</p>
-                  </Card>
+                    <h3 style={{ fontSize: 13, fontWeight: 600, letterSpacing: "-0.01em", color: "var(--bm-text)", margin: 0 }}>{f.title}</h3>
+                    <p style={{ fontSize: 12, lineHeight: 1.65, color: "var(--bm-text3)", margin: 0 }}>{f.desc}</p>
                 </motion.div>
               );
             })}
@@ -1504,7 +1738,7 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
       </section>
 
       {/* Footer */}
-      <footer className="py-8 px-6 text-center text-xs" style={{ borderTop: "1px solid var(--bm-border)", color: "var(--bm-text3)" }}>
+      <footer className="py-8 px-6 text-center text-xs" style={{ borderTop: "1px solid rgba(255,255,255,0.06)", color: "var(--bm-text3)", background: "rgba(9,9,10,0.6)", backdropFilter: "blur(8px)" }}>
         © {new Date().getFullYear()} BuildMind. Built for founders who ship.
       </footer>
 
