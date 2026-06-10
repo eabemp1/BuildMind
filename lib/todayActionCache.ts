@@ -2,6 +2,8 @@ import { buildPersonalizedTodayDraft } from "@/lib/todayDrafts";
 
 export type TodayActionData = {
   action: string;
+  /** Full reflexion output body — 3-5 sentences. Separate from the short card title. */
+  body?: string;
   platform: string;
   target_user: string;
   message: string;
