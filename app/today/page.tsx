@@ -61,8 +61,6 @@ type MilestoneBreakResult = {
 
 type ActionData = {
   action: string;
-  /** Full reflexion body (3-5 sentences). Separate from the short card title. */
-  body?: string;
   message: string;
   why: string;
   time: string;
@@ -670,6 +668,17 @@ function TodayContent() {
       reflectionDateKey === today &&
       lastReflectionTime > serverCacheTs;
 
+    // ── Gap fix: server says nothing is there — nuke localStorage too ────────
+    // Previously, clearing the server-side cache row left localStorage untouched.
+    // On the next page load, Step 1 found the stale localStorage entry and
+    // returned early — the live AI call never ran. Fix: whenever the server
+    // confirms the cache is absent (null/undefined), evict the localStorage
+    // entry immediately so Step 1 can't resurrect it.
+    if (!serverCache.today_action_cache) {
+      storage.remove(cacheKey);
+      storage.remove(`bm_today_action_cache_ts_${userId}`);
+    }
+
     if (!forceRefresh) {
       if (
         !serverReflectionIsNewerThanCache &&
@@ -684,11 +693,16 @@ function TodayContent() {
         setAiAction({ ...serverCache.today_action_cache.data, isAI: true });
         return;
       }
-      // Server cache exists but is stale — clear it so cron can rewrite cleanly
+      // Server cache exists but is stale — clear both server and localStorage
+      // so the cron can rewrite cleanly and Step 1 can't serve the old entry.
       if (!forceRefresh) {
+        storage.remove(cacheKey);
+        storage.remove(`bm_today_action_cache_ts_${userId}`);
         await persistBehaviorState({ today_action_cache: null }).catch(() => {});
       }
     } else {
+      storage.remove(cacheKey);
+      storage.remove(`bm_today_action_cache_ts_${userId}`);
       await persistBehaviorState({ today_action_cache: null }).catch(() => {});
     }
 
@@ -2142,11 +2156,6 @@ function TodayContent() {
               <p style={{ fontSize: isMobile ? 20 : 22, fontWeight: 400, color: "var(--bm-text)", lineHeight: 1.42, margin: "0 0 8px", letterSpacing: "-0.025em" }}>
                 {sanitizeOutput(actionData.action)}
               </p>
-              {actionData.body && actionData.body !== actionData.action && (
-                <p style={{ fontSize: 13, color: "var(--bm-text2)", fontWeight: 400, margin: "0 0 6px", lineHeight: 1.6 }}>
-                  {sanitizeOutput(actionData.body)}
-                </p>
-              )}
               <p style={{ fontSize: 13, color: "var(--bm-text2)", fontWeight: 400, margin: 0, lineHeight: 1.55 }}>
                 {isOutreachAction
                   ? "Execute this before opening the rest of the day. The system will learn from the result."
