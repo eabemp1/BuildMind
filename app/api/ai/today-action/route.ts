@@ -685,6 +685,19 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
     }
 
     // ── Merge reflexion output back into TodayAction shape ─────────────────
+    // Extract a short imperative title from the reflexion output.
+    // The refiner returns 3–5 sentences. The card title should be the first
+    // sentence only — capped at 12 words — so it reads as a clear directive,
+    // not a paragraph dumped into a headline slot.
+    function extractActionTitle(output: string, fallbackAction: string): string {
+      if (!output?.trim()) return fallbackAction;
+      // Take the first sentence (ends at . or — or newline), cap at 12 words
+      const firstSentence = output.trim().match(/^([^.\n\u2014]+[.\u2014]?\s*)/)?.[1]?.trim() ?? output.trim();
+      const words = firstSentence.split(/\s+/);
+      const title = words.slice(0, 12).join(" ").replace(/[.\u2014,]$/, "").trim();
+      return title || fallbackAction;
+    }
+
     const finalResult: TodayAction & {
       reflexion?: {
         verdict: string;
@@ -694,10 +707,13 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
         passedCritic: boolean;
         lastReflectionUsed: boolean;
       };
+      body?: string; // full reflexion output, stored separately from the card title
     } = {
       ...fallback,
-      // FIX 1.1: Use the reflexion-generated action, not the fallback template
-      action: cleanVisibleText(reflexionOutput?.output, fallback.action),
+      // Card title: short imperative extracted from reflexion output
+      action: extractActionTitle(reflexionOutput?.output ?? "", fallback.action),
+      // Full body stored separately so the UI can show detail if needed
+      ...(reflexionOutput?.output ? { body: cleanVisibleText(reflexionOutput.output, "") } : {}),
       // If reflexion ran, its rationale becomes the task's why
       why: cleanVisibleText(reflexionOutput?.rationale, fallback.why),
     };
