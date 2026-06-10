@@ -61,6 +61,8 @@ type MilestoneBreakResult = {
 
 type ActionData = {
   action: string;
+  /** Full reflexion body (3-5 sentences). Separate from the short card title. */
+  body?: string;
   message: string;
   why: string;
   time: string;
@@ -2140,6 +2142,11 @@ function TodayContent() {
               <p style={{ fontSize: isMobile ? 20 : 22, fontWeight: 400, color: "var(--bm-text)", lineHeight: 1.42, margin: "0 0 8px", letterSpacing: "-0.025em" }}>
                 {sanitizeOutput(actionData.action)}
               </p>
+              {actionData.body && actionData.body !== actionData.action && (
+                <p style={{ fontSize: 13, color: "var(--bm-text2)", fontWeight: 400, margin: "0 0 6px", lineHeight: 1.6 }}>
+                  {sanitizeOutput(actionData.body)}
+                </p>
+              )}
               <p style={{ fontSize: 13, color: "var(--bm-text2)", fontWeight: 400, margin: 0, lineHeight: 1.55 }}>
                 {isOutreachAction
                   ? "Execute this before opening the rest of the day. The system will learn from the result."
