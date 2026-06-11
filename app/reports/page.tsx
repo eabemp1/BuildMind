@@ -95,7 +95,7 @@ function DayBars({ data, color, weekStart }: { data: number[]; color: string; we
   const max = Math.max(...data, 1);
   const dayNames = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
   return (
-    <div style={{ display: "flex", gap: 5, alignItems: "flex-end", height: 88 }}>
+    <div style={{ display: "flex", gap: 5, alignItems: "flex-end", height: 68 }}>
       {data.map((v, i) => {
         const d = new Date(weekStart);
         d.setDate(weekStart.getDate() + i);
@@ -107,7 +107,7 @@ function DayBars({ data, color, weekStart }: { data: number[]; color: string; we
               initial={{ scaleY: 0 }} animate={{ scaleY: 1 }}
               transition={{ delay: i*0.06, duration: 0.5, ease: "easeOut" }}
               style={{ width: "100%", background: isToday ? "var(--bm-accent)" : color,
-                height: `${Math.max(4, (v/max)*56)}px`, borderRadius: 4,
+                height: `${Math.max(3, (v/max)*40)}px`, borderRadius: 4,
                 transformOrigin: "bottom",
                 boxShadow: v > 0 ? `0 0 8px ${isToday ? "var(--bm-accent)" : color}44` : "none",
                 opacity: v === 0 ? 0.25 : 1,
