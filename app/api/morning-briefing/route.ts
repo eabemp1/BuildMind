@@ -229,9 +229,11 @@ export async function GET(req: Request) {
 
           // ── Write execution_score + momentum_score back to projects ────────
           // Same logic as the single-user GET path — keeps both paths in sync.
-          const batchMomentum = typeof briefing.risk_score === "number"
-            ? Math.min(100, Math.max(10, Math.round(100 - briefing.risk_score)))
-            : ctx.momentum_score ?? 50;
+          // briefing.risk is a string label, not a number — use the existing
+          // momentum_score from founder_context as the authoritative value.
+          // The morning briefing updates it via task-complete writes; we preserve
+          // the current value here and only update execution_score from the verdict.
+          const batchMomentum = ctx.momentum_score ?? 50;
           const batchVerdict = (briefing as Record<string, unknown>).reflexion_verdict as string | undefined;
           const batchExecution =
             batchVerdict === "pass"    ? 75 :
@@ -402,11 +404,11 @@ export async function GET(req: Request) {
       // execution quality — this is the only place that runs daily with both
       // values available.
       //
-      // momentum: inverted risk_score (high risk = low momentum).
+      // momentum: sourced from reflexionCtx.momentumScore (= founder_context.momentum_score).
       // execution: reflexion verdict → pass=75, partial=45, fail=20.
-      const newMomentum = typeof briefing.risk_score === "number"
-        ? Math.min(100, Math.max(10, Math.round(100 - briefing.risk_score)))
-        : reflexionCtx.momentumScore ?? 50;
+      // briefing.risk is a string label, not a number — use reflexionCtx.momentumScore
+      // which is already sourced from founder_context.momentum_score.
+      const newMomentum = reflexionCtx.momentumScore ?? 50;
 
       const reflexionVerdict = (briefing as Record<string, unknown>).reflexion_verdict as string | undefined;
       const newExecution =
