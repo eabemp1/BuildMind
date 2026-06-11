@@ -156,26 +156,27 @@ function DotCalendar({ activeDays, streak }: { activeDays: string[]; streak: num
         )}
       </div>
       {/* Day-of-week column headers */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 4 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 16px)", gap: 3, marginBottom: 4 }}>
         {weekDayLabels.map((d, i) => (
-          <div key={i} style={{ textAlign: "center", fontSize: 8, color: "var(--bm-text4)", fontWeight: 600 }}>{d}</div>
+          <div key={i} style={{ textAlign: "center", fontSize: 8, color: "var(--bm-text4)", fontWeight: 600, width: 16 }}>{d}</div>
         ))}
       </div>
-      {/* 4 rows × 7 cols */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4 }}>
+      {/* 4 rows x 7 cols — compact 16px cells so grid never stretches on wide screens */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 16px)", gap: 3 }}>
         {days.map((day, i) => (
           <div
             key={i}
             title={`${day.label}${day.isActive ? " — active" : ""}`}
             style={{
-              aspectRatio: "1",
-              borderRadius: 4,
+              width: 16,
+              height: 16,
+              borderRadius: 3,
               background: day.isToday
                 ? "var(--bm-accent)"
                 : day.isActive
-                  ? "rgba(92,200,138,0.55)"
+                  ? "rgba(92,200,138,0.75)"
                   : "var(--bm-bg3)",
-              boxShadow: day.isActive && !day.isToday ? "0 0 5px rgba(92,200,138,0.25)" : "none",
+              boxShadow: day.isActive && !day.isToday ? "0 0 4px rgba(92,200,138,0.3)" : "none",
               border: day.isToday ? "1px solid var(--bm-accent)" : "1px solid transparent",
               transition: "transform 0.1s",
               cursor: "default",
@@ -625,7 +626,9 @@ export default function ReportsPage() {
         <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} transition={{ delay:0.22 }}
           style={{ background:"var(--bm-bg2)", border:"1px solid var(--bm-border)",
             borderRadius:"var(--r-xl)", padding:"20px", marginBottom:12 }}>
-          <DotCalendar activeDays={activeDays} streak={streak}/>
+          <div style={{ display:"flex", justifyContent:"flex-start" }}>
+            <DotCalendar activeDays={activeDays} streak={streak}/>
+          </div>
         </motion.div>
 
         {/* SCORE TREND */}
