@@ -184,14 +184,16 @@ export async function GET(req: Request) {
         // Fetch active project for gap detection (weaknesses + stage)
         const { data: activeProject } = await admin
           .from("projects")
-          .select("id, name, title, description, target_users, problem, validation_weaknesses, startup_stage")
+          .select("id, name, title, description, target_users, problem, validation_weaknesses, startup_stage, startup_summary")
           .eq("user_id", ctx.user_id)
           .order("updated_at", { ascending: false })
           .limit(1)
           .maybeSingle();
 
         const reflexionCtx = {
-          startupSummary: ctx.startup_summary ?? "",
+          // Prefer project-level startup_summary (kept up-to-date when project fields change).
+          // founder_context.startup_summary is never written by the app and will always be NULL.
+          startupSummary: activeProject?.startup_summary ?? ctx.startup_summary ?? "",
           stage: ctx.current_stage ?? "Idea",
           momentumScore: ctx.momentum_score ?? 50,
           avoidanceSignals: ctx.avoidance_zones ?? [],
@@ -224,6 +226,26 @@ export async function GET(req: Request) {
               timezoneOffset: tzOffset,
             }),
           );
+
+          // ── Write execution_score + momentum_score back to projects ────────
+          // Same logic as the single-user GET path — keeps both paths in sync.
+          const batchMomentum = typeof briefing.risk_score === "number"
+            ? Math.min(100, Math.max(10, Math.round(100 - briefing.risk_score)))
+            : ctx.momentum_score ?? 50;
+          const batchVerdict = (briefing as Record<string, unknown>).reflexion_verdict as string | undefined;
+          const batchExecution =
+            batchVerdict === "pass"    ? 75 :
+            batchVerdict === "partial" ? 45 :
+            batchVerdict === "fail"    ? 20 :
+            (activeProject as Record<string, unknown>).execution_score != null
+              ? (activeProject as Record<string, unknown>).execution_score as number
+              : 50;
+
+          await admin
+            .from("projects")
+            .update({ momentum_score: batchMomentum, execution_score: batchExecution })
+            .eq("id", activeProject.id)
+            .eq("user_id", ctx.user_id);
         }
         generated++;
       } catch (e) {
@@ -328,14 +350,16 @@ export async function GET(req: Request) {
   // Fetch active project for gap detection
   const { data: activeProject } = await admin
     .from("projects")
-    .select("id, name, title, description, target_users, problem, validation_weaknesses, startup_stage")
+    .select("id, name, title, description, target_users, problem, validation_weaknesses, startup_stage, startup_summary")
     .eq("user_id", user.id)
     .order("updated_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
   const reflexionCtx = {
-    startupSummary: ctx?.startup_summary ?? "",
+    // Prefer project-level startup_summary (kept up-to-date when project fields change).
+    // founder_context.startup_summary is never written by the app and will always be NULL.
+    startupSummary: activeProject?.startup_summary ?? ctx?.startup_summary ?? "",
     stage: ctx?.current_stage ?? "Idea",
     momentumScore: ctx?.momentum_score ?? 50,
     avoidanceSignals: ctx?.avoidance_zones ?? [],
@@ -368,6 +392,36 @@ export async function GET(req: Request) {
           stage: activeProject.startup_stage ?? ctx?.current_stage ?? "Idea",
         }),
       );
+
+      // ── Write execution_score + momentum_score back to projects ──────────
+      // These two columns drive computeStartupScore, the score arc, score trend
+      // sparkline, exec score tile, and weekly-share card. The sync-project-score
+      // queue job that was supposed to write them is never enqueued anywhere, so
+      // both columns are permanently NULL. We write them here since the morning
+      // briefing already computes momentum and the reflexion output encodes
+      // execution quality — this is the only place that runs daily with both
+      // values available.
+      //
+      // momentum: inverted risk_score (high risk = low momentum).
+      // execution: reflexion verdict → pass=75, partial=45, fail=20.
+      const newMomentum = typeof briefing.risk_score === "number"
+        ? Math.min(100, Math.max(10, Math.round(100 - briefing.risk_score)))
+        : reflexionCtx.momentumScore ?? 50;
+
+      const reflexionVerdict = (briefing as Record<string, unknown>).reflexion_verdict as string | undefined;
+      const newExecution =
+        reflexionVerdict === "pass"    ? 75 :
+        reflexionVerdict === "partial" ? 45 :
+        reflexionVerdict === "fail"    ? 20 :
+        (activeProject as Record<string, unknown>).execution_score != null
+          ? (activeProject as Record<string, unknown>).execution_score as number
+          : 50;
+
+      await admin
+        .from("projects")
+        .update({ momentum_score: newMomentum, execution_score: newExecution })
+        .eq("id", activeProject.id)
+        .eq("user_id", user.id);
     }
 
     return NextResponse.json({ ok: true, data: saved });
