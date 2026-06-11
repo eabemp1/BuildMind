@@ -32,14 +32,14 @@ const REPORT_COLORS = [
 
 function weekStart(date = new Date()) {
   const d = new Date(date);
-  const day = (d.getDay() + 6) % 7;
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() - day);
+  const day = (d.getUTCDay() + 6) % 7; // Monday = 0
+  d.setUTCHours(0, 0, 0, 0);
+  d.setUTCDate(d.getUTCDate() - day);
   return d;
 }
 
 function dayIndexFromIso(iso: string) {
-  return (new Date(iso).getDay() + 6) % 7;
+  return (new Date(iso).getUTCDay() + 6) % 7; // Monday = 0
 }
 
 export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<WeeklyReportMetrics> {
@@ -278,7 +278,11 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
   // (delta = 0, neutral) rather than a made-up number.
   const historyByDate = new Map<string, number>();
   scoreHistoryRows.forEach((row) => {
-    const dateKey = new Date(row.recorded_at).toLocaleDateString("en-CA");
+    // Use UTC date to avoid timezone shifts pushing the score to the wrong weekday.
+    // recorded_at is a timestamptz stored in UTC — parsing with toLocaleDateString
+    // on the server can shift it by ±1 day depending on the runner's locale.
+    const d = new Date(row.recorded_at);
+    const dateKey = `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}-${String(d.getUTCDate()).padStart(2,"0")}`;
     if (!historyByDate.has(dateKey)) {
       historyByDate.set(dateKey, row.score);
     }
@@ -298,12 +302,13 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
   // Using 0 means the sparkline only shows a point on days with real data.
   const weeklyScores: number[] = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(start);
-    d.setDate(start.getDate() + i);
-    const key = d.toLocaleDateString("en-CA");
+    d.setUTCDate(start.getUTCDate() + i);
+    const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}-${String(d.getUTCDate()).padStart(2,"0")}`;
     return historyByDate.get(key) ?? 0;
   });
   // Always show today's live score on the current day
-  const todayKey = new Date().toLocaleDateString("en-CA");
+  const now = new Date();
+  const todayKey = `${now.getUTCFullYear()}-${String(now.getUTCMonth()+1).padStart(2,"0")}-${String(now.getUTCDate()).padStart(2,"0")}`;
   const todayIdx = dayIndexFromIso(new Date().toISOString());
   if (!historyByDate.has(todayKey) && todayIdx >= 0 && todayIdx < 7) {
     weeklyScores[todayIdx] = score;
