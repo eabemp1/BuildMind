@@ -352,7 +352,7 @@ function HeroReflexionPipeline() {
         <div className="absolute left-0 right-0 top-0 h-px bg-gradient-to-r from-transparent via-[rgba(92,200,138,0.45)] to-transparent" />
         <div className="mb-5 flex items-center gap-2 border-b border-[var(--bm-border)] pb-4">
           <span className="flex-1 text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--bm-text4)]">Reflexion Loop: running now</span>
-          <span className="flex items-center gap-1.5 text-[10px] font-semibold text-[var(--bm-accent)]">
+          <span className="flex shrink-0 items-center gap-1.5 text-[10px] font-semibold text-[var(--bm-accent)]">
             <span className="h-1.5 w-1.5 rounded-full bg-[var(--bm-accent)] shadow-[0_0_8px_rgba(92,200,138,0.8)] animate-pulse" />
             Live
           </span>
@@ -375,7 +375,7 @@ function HeroReflexionPipeline() {
                   ["--node-color" as string]: agent.color + "55",
                   ["--node-glow" as string]: agent.glow,
                   ["--float-delay" as string]: `${0.1 + i * 0.12}s`,
-                  animation: `bm-float-in 0.7s ${0.1 + i * 0.12}s cubic-bezier(0.16, 1, 0.3, 1) both, bm-agent-active 2.5s ${agent.delay} ease-in-out infinite ${0.1 + i * 0.12 + 0.7}s`,
+                  animation: `bm-float-in 0.7s ${0.1 + i * 0.12}s cubic-bezier(0.16, 1, 0.3, 1) both, bm-agent-active 2.5s ${agent.delay} ease-in-out infinite ${0.1 + i * 0.12 + 0.7}s, bm-card-drift ${5.5 + i * 0.7}s ease-in-out infinite ${0.8 + i * 0.3}s`,
                 }}
               >
                 <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg text-sm" style={{ background: agent.bg }}>
@@ -407,7 +407,7 @@ function HeroReflexionPipeline() {
             background: "var(--bm-bg3)",
             borderColor: "var(--bm-accent-bd)",
             ["--float-delay" as string]: "0.55s",
-            animation: "bm-float-in 0.7s 0.55s cubic-bezier(0.16, 1, 0.3, 1) both, bm-output-appear .5s 1.2s ease both",
+            animation: "bm-float-in 0.7s 0.55s cubic-bezier(0.16, 1, 0.3, 1) both, bm-output-appear .5s 1.2s ease both, bm-card-drift 7s ease-in-out infinite 1.7s",
           }}
         >
           <div className="mb-2.5 flex items-center justify-between">
@@ -1455,27 +1455,27 @@ function LandingAestheticLayer() {
       }
       .bm-hero-burst {
         position: absolute;
-        top: -20%;
+        top: -28%;
         left: 50%;
         transform: translateX(-50%);
-        width: 900px;
-        height: 500px;
-        background: radial-gradient(ellipse 50% 50% at 50% 0%, rgba(232,197,71,0.35) 0%, rgba(232,197,71,0.12) 35%, transparent 70%);
+        width: 700px;
+        height: 380px;
+        background: radial-gradient(ellipse 50% 50% at 50% 0%, rgba(232,197,71,0.22) 0%, rgba(232,197,71,0.06) 35%, transparent 70%);
         filter: blur(70px);
         pointer-events: none;
         z-index: 0;
         animation: bm-burst-breathe 8s ease-in-out infinite;
       }
       @keyframes bm-burst-breathe {
-        0%,100% { opacity: 0.7; transform: translateX(-50%) scale(1); }
-        50%     { opacity: 1;   transform: translateX(-50%) scale(1.08); }
+        0%,100% { opacity: 0.6; transform: translateX(-50%) scale(1); }
+        50%     { opacity: 0.9; transform: translateX(-50%) scale(1.06); }
       }
       .bm-hero-window-glow-line {
         position: absolute;
         top: 0; left: 10%; right: 10%;
         height: 1px;
-        background: linear-gradient(90deg, transparent 0%, rgba(232,197,71,0.7) 50%, transparent 100%);
-        z-index: 1;
+        background: linear-gradient(90deg, transparent 0%, rgba(232,197,71,0.5) 50%, transparent 100%);
+        z-index: 0;
         pointer-events: none;
       }
 
