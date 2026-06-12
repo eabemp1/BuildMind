@@ -366,7 +366,7 @@ function HeroReflexionPipeline() {
           ].map((agent, i, arr) => (
             <div key={agent.label} className="contents">
               <div
-                className="flex-1 rounded-[var(--r-xl)] border p-3.5"
+                className="bm-float-card flex-1 rounded-[var(--r-xl)] border p-3.5"
                 style={{
                   background: "rgba(255,255,255,0.025)",
                   borderColor: "rgba(255,255,255,0.07)",
@@ -374,7 +374,8 @@ function HeroReflexionPipeline() {
                   WebkitBackdropFilter: "blur(16px)",
                   ["--node-color" as string]: agent.color + "55",
                   ["--node-glow" as string]: agent.glow,
-                  animation: `bm-agent-active 2.5s ${agent.delay} ease-in-out infinite`,
+                  ["--float-delay" as string]: `${0.1 + i * 0.12}s`,
+                  animation: `bm-float-in 0.7s ${0.1 + i * 0.12}s cubic-bezier(0.16, 1, 0.3, 1) both, bm-agent-active 2.5s ${agent.delay} ease-in-out infinite ${0.1 + i * 0.12 + 0.7}s`,
                 }}
               >
                 <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg text-sm" style={{ background: agent.bg }}>
@@ -401,11 +402,12 @@ function HeroReflexionPipeline() {
         </div>
 
         <div
-          className="relative overflow-hidden rounded-[var(--r-xl)] border p-4"
+          className="bm-float-card relative overflow-hidden rounded-[var(--r-xl)] border p-4"
           style={{
             background: "var(--bm-bg3)",
             borderColor: "var(--bm-accent-bd)",
-            animation: "bm-output-appear .5s 1.2s ease both",
+            ["--float-delay" as string]: "0.55s",
+            animation: "bm-float-in 0.7s 0.55s cubic-bezier(0.16, 1, 0.3, 1) both, bm-output-appear .5s 1.2s ease both",
           }}
         >
           <div className="mb-2.5 flex items-center justify-between">
@@ -1441,6 +1443,65 @@ function LandingAestheticLayer() {
         filter: blur(60px);
       }
 
+      /* ── Dribbble-style hero: rounded glass "window" + dramatic burst glow ──── */
+      .bm-hero-window {
+        position: relative;
+        border-radius: 28px;
+        overflow: hidden;
+        background: radial-gradient(ellipse 140% 90% at 50% 0%, rgba(232,197,71,0.10) 0%, rgba(232,197,71,0.025) 35%, transparent 65%),
+                    var(--bm-bg2);
+        border: 1px solid var(--glass-border);
+        box-shadow: 0 24px 80px rgba(0,0,0,0.55), 0 1px 0 rgba(255,255,255,0.04) inset;
+      }
+      .bm-hero-burst {
+        position: absolute;
+        top: -20%;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 900px;
+        height: 500px;
+        background: radial-gradient(ellipse 50% 50% at 50% 0%, rgba(232,197,71,0.35) 0%, rgba(232,197,71,0.12) 35%, transparent 70%);
+        filter: blur(70px);
+        pointer-events: none;
+        z-index: 0;
+        animation: bm-burst-breathe 8s ease-in-out infinite;
+      }
+      @keyframes bm-burst-breathe {
+        0%,100% { opacity: 0.7; transform: translateX(-50%) scale(1); }
+        50%     { opacity: 1;   transform: translateX(-50%) scale(1.08); }
+      }
+      .bm-hero-window-glow-line {
+        position: absolute;
+        top: 0; left: 10%; right: 10%;
+        height: 1px;
+        background: linear-gradient(90deg, transparent 0%, rgba(232,197,71,0.7) 50%, transparent 100%);
+        z-index: 1;
+        pointer-events: none;
+      }
+
+      /* ── Staggered float-in for hero cards ───────────────────────────────────
+         Each card fades in, slides up slightly, with a configurable delay via
+         the --float-delay custom property. Applied on mount only (no loop). */
+      @keyframes bm-float-in {
+        from { opacity: 0; transform: translateY(24px) scale(0.97); }
+        to   { opacity: 1; transform: translateY(0) scale(1); }
+      }
+      .bm-float-card {
+        animation: bm-float-in 0.7s var(--float-delay, 0s) cubic-bezier(0.16, 1, 0.3, 1) both;
+      }
+
+      /* ── Gentle ambient drift for floating glass cards (post entrance) ──────
+         Subtle vertical bob, like the cards are weightless. Different periods
+         per card (via --drift-duration) avoid them moving in sync. */
+      @keyframes bm-card-drift {
+        0%,100% { transform: translateY(0px); }
+        50%     { transform: translateY(-6px); }
+      }
+      .bm-drift {
+        animation: bm-card-drift var(--drift-duration, 6s) ease-in-out infinite;
+        animation-delay: var(--float-delay, 0s);
+      }
+
       /* ── Star keyframes (kept from original) ────────────────────────────────── */
       @keyframes bm-star-twinkle {
         0%,100% { opacity: var(--op, .2); transform: scale(1); }
@@ -1552,7 +1613,11 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
         <div className="bm-hero-glow" style={{ width: 600, height: 600, top: "5%", right: "-8%", background: "radial-gradient(ellipse, rgba(232,197,71,0.07) 0%, transparent 70%)" }} />
         <div className="bm-hero-glow" style={{ width: 400, height: 400, bottom: "10%", left: "30%", background: "radial-gradient(ellipse, rgba(74,144,217,0.05) 0%, transparent 70%)" }} />
 
-        <div className="mx-auto grid w-full max-w-[1100px] items-center gap-12 md:grid-cols-2 lg:gap-16">
+        <div className="bm-hero-window mx-auto w-full max-w-[1180px] px-5 py-12 sm:px-10 sm:py-16 lg:px-14 lg:py-20">
+          <div className="bm-hero-window-glow-line" />
+          <div className="bm-hero-burst" />
+
+          <div className="relative z-[1] grid w-full items-center gap-12 md:grid-cols-2 lg:gap-16">
           {/* Left */}
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }} className="flex flex-col gap-5 sm:gap-6">
             {/* Live pill */}
@@ -1619,6 +1684,7 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
             <div className="absolute inset-0 -z-10" style={{ background: "transparent", filter: "blur(20px)", transform: "scale(1.2)" }} />
             <HeroReflexionPipeline />
           </motion.div>
+          </div>
         </div>
       </section>
 
