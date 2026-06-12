@@ -347,7 +347,7 @@ function HeroReflexionPipeline() {
       `}</style>
       <div
         className="bm-glass-gold relative overflow-hidden"
-        style={{ borderRadius: 20 }}
+        style={{ borderRadius: 20, padding: "18px 18px 18px" }}
       >
         <div className="absolute left-0 right-0 top-0 h-px bg-gradient-to-r from-transparent via-[rgba(92,200,138,0.45)] to-transparent" />
         <div className="mb-5 flex items-center gap-2 border-b border-[var(--bm-border)] pb-4">
@@ -500,15 +500,15 @@ function DayTimeline() {
       <AnimatePresence mode="wait">
         <motion.div
           key={selected.time}
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -8 }}
-          transition={{ duration: 0.25 }}
+          initial={{ opacity: 0, y: 16, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -10, scale: 0.98 }}
+          transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
           className="bm-glass relative h-fit overflow-hidden lg:sticky lg:top-28"
           style={{
-            borderRadius: 20,
+            borderRadius: 22,
             padding: 28,
-            boxShadow: "0 24px 80px rgba(0,0,0,0.42), 0 1px 0 rgba(255,255,255,0.06) inset",
+            boxShadow: "0 32px 100px rgba(0,0,0,0.55), 0 2px 0 rgba(255,255,255,0.08) inset, 0 0 0 1px rgba(232,197,71,0.06), inset 0 0 60px rgba(232,197,71,0.025)",
           }}
         >
           {/* Gold top accent line */}
@@ -830,7 +830,7 @@ function BreakMyStartupSection() {
   return (
     <section className="html-section px-5 py-[60px] sm:px-8 sm:py-24" style={{ borderTop: subtleSectionBorder }}>
       <div className="max-w-3xl mx-auto">
-        <motion.div initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }} className="flex flex-col gap-6">
+        <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: "-60px" }} transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }} className="flex flex-col gap-6">
           <div>
             <Badge variant="danger" dot className="mb-4">Stress-Test Your Idea — Free, No Sign-Up</Badge>
             <h2 className="mb-3 text-3xl font-bold tracking-tight text-[var(--bm-text)] sm:text-4xl">
@@ -846,10 +846,8 @@ function BreakMyStartupSection() {
               value={idea}
               onChange={(e) => setIdea(e.target.value)}
               placeholder="Describe your startup idea or current model — what you're building, who it's for, how you make money..."
-              className="h-44 w-full resize-none rounded-[var(--r-xl)] p-4 text-base outline-none transition-all duration-150 sm:h-36 sm:text-sm"
+              className="bm-break-textarea h-44 w-full resize-none rounded-[var(--r-xl)] p-4 text-base outline-none transition-all duration-150 sm:h-36 sm:text-sm"
               style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.10)", color: "var(--bm-text)", fontFamily: "inherit", backdropFilter: "blur(8px)" }}
-              onFocus={(e) => { e.currentTarget.style.borderColor = "rgba(232,197,71,0.45)"; e.currentTarget.style.boxShadow = "0 0 0 1px rgba(232,197,71,0.18), 0 0 20px rgba(232,197,71,0.07)"; }}
-              onBlur={(e) => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.10)"; e.currentTarget.style.boxShadow = "none"; }}
             />
             <Button onClick={handleBreak} loading={loading} disabled={!idea.trim()} size="lg" className="w-full self-start sm:w-auto">
               {!loading && <AlertTriangle size={16} />}
@@ -1086,18 +1084,25 @@ function WorldCanvas() {
       >
         {/* Drifting grid */}
         <div style={{
-          position: "absolute", inset: -56,
-          backgroundImage: "none",
+          position: "absolute", inset: -60,
+          backgroundImage: "linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px)",
           backgroundSize: "52px 52px",
-          animation: "bm-grid-drift 22s linear infinite",
-          maskImage: "radial-gradient(ellipse 82% 68% at 50% 38%, rgba(0,0,0,0.8) 12%, transparent 82%)",
-          WebkitMaskImage: "radial-gradient(ellipse 82% 68% at 50% 38%, rgba(0,0,0,0.8) 12%, transparent 82%)",
+          animation: "bm-grid-drift 28s linear infinite",
+          maskImage: "radial-gradient(ellipse 80% 65% at 50% 35%, rgba(0,0,0,0.6) 0%, transparent 80%)",
+          WebkitMaskImage: "radial-gradient(ellipse 80% 65% at 50% 35%, rgba(0,0,0,0.6) 0%, transparent 80%)",
         }} />
 
-        {/* Glow orbs */}
-        <div style={{ position:"absolute", width:700, height:500, top:-80, left:"50%", transform:"translateX(-50%)", background:"radial-gradient(ellipse, rgba(92,200,138,0.07) 0%, rgba(74,184,176,0.03) 40%, transparent 70%)", pointerEvents:"none" }} />
-        <div style={{ position:"absolute", width:500, height:400, top:"50%", left:"62%", transform:"translate(-50%,-50%)", background:"radial-gradient(ellipse, rgba(74,184,176,0.04) 0%, transparent 65%)", pointerEvents:"none" }} />
-        <div style={{ position:"absolute", width:400, height:300, bottom:"12%", left:"12%", background:"radial-gradient(ellipse, rgba(155,127,232,0.03) 0%, transparent 65%)", pointerEvents:"none" }} />
+        {/* Primary volumetric glow — gold crown */}
+        <div style={{ position:"absolute", width:900, height:600, top:-120, left:"50%", transform:"translateX(-50%)", background:"radial-gradient(ellipse 55% 55% at 50% 0%, rgba(232,197,71,0.11) 0%, rgba(74,184,176,0.04) 45%, transparent 70%)", pointerEvents:"none", animation:"bm-burst-breathe 10s ease-in-out infinite" }} />
+
+        {/* Aurora — teal right */}
+        <div style={{ position:"absolute", width:600, height:500, top:"30%", right:"-5%", background:"radial-gradient(ellipse, rgba(74,184,176,0.07) 0%, rgba(91,108,240,0.04) 45%, transparent 70%)", pointerEvents:"none", animation:"bm-aurora-shift 14s ease-in-out infinite 2s" }} />
+
+        {/* Aurora — indigo left */}
+        <div style={{ position:"absolute", width:500, height:400, top:"40%", left:"-8%", background:"radial-gradient(ellipse, rgba(91,108,240,0.06) 0%, rgba(155,127,232,0.03) 50%, transparent 70%)", pointerEvents:"none", animation:"bm-aurora-shift 16s ease-in-out infinite 5s" }} />
+
+        {/* Bottom violet glow */}
+        <div style={{ position:"absolute", width:500, height:350, bottom:"8%", left:"15%", background:"radial-gradient(ellipse, rgba(155,127,232,0.05) 0%, transparent 65%)", pointerEvents:"none" }} />
 
         {/* Stars */}
         <div ref={starsRef} style={{ position:"absolute", inset:0 }} />
@@ -1185,142 +1190,409 @@ const subtleSectionBorder = "1px solid rgba(255,255,255,0.06)";
 function LandingAestheticLayer() {
   return (
     <style>{`
-      /* ── Base ──────────────────────────────────────────────────────────────── */
+      /* ══════════════════════════════════════════════════════════════════════
+         BUILDMIND — PREMIUM FINTECH VISUAL SYSTEM v3
+         Reference: High-end Dribbble fintech / crypto aesthetic
+         Aurora lighting · Advanced glassmorphism · Volumetric depth
+      ══════════════════════════════════════════════════════════════════════ */
+
+      /* ── Motion tokens — respect prefers-reduced-motion ──────────────────── */
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
+        }
+      }
+
+      /* ── Design token extensions ──────────────────────────────────────────── */
       .bm-landing-skin {
         -webkit-font-smoothing: antialiased;
-        --glass-bg:      rgba(255,255,255,0.030);
-        --glass-border:  rgba(255,255,255,0.082);
-        --glass-shine:   rgba(255,255,255,0.055);
-        --glass-shadow:  0 8px 32px rgba(0,0,0,0.52), 0 1px 0 rgba(255,255,255,0.05) inset;
-        --accent-glow:   rgba(232,197,71,0.18);
-        --accent-glow-lg:rgba(232,197,71,0.10);
-        --gold: #E8C547;
-        --gold-dim: rgba(232,197,71,0.12);
-        --gold-border: rgba(232,197,71,0.25);
+        -moz-osx-font-smoothing: grayscale;
+
+        /* Glass system */
+        --glass-bg:       rgba(12,12,16,0.55);
+        --glass-bg-light: rgba(255,255,255,0.038);
+        --glass-border:   rgba(255,255,255,0.092);
+        --glass-border-hi:rgba(255,255,255,0.14);
+        --glass-shine:    rgba(255,255,255,0.065);
+        --glass-shadow:   0 8px 40px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.06) inset, 0 -1px 0 rgba(0,0,0,0.3) inset;
+        --glass-shadow-lg:0 24px 80px rgba(0,0,0,0.7), 0 2px 0 rgba(255,255,255,0.07) inset;
+
+        /* Aurora/volumetric light system */
+        --aurora-gold:    rgba(232,197,71,0.22);
+        --aurora-teal:    rgba(74,184,176,0.14);
+        --aurora-indigo:  rgba(91,108,240,0.12);
+        --aurora-violet:  rgba(155,127,232,0.10);
+
+        /* Accent glow levels */
+        --glow-gold-sm:   0 0 12px rgba(232,197,71,0.45), 0 0 4px rgba(232,197,71,0.7);
+        --glow-gold-md:   0 0 24px rgba(232,197,71,0.35), 0 0 48px rgba(232,197,71,0.15);
+        --glow-gold-lg:   0 0 60px rgba(232,197,71,0.25), 0 0 120px rgba(232,197,71,0.10);
+        --glow-teal-sm:   0 0 12px rgba(74,184,176,0.5), 0 0 4px rgba(74,184,176,0.7);
+
+        /* Color aliases */
+        --gold:           #E8C547;
+        --gold-bright:    #F5D97A;
+        --gold-dim:       rgba(232,197,71,0.12);
+        --gold-border:    rgba(232,197,71,0.28);
+        --gold-glow:      rgba(232,197,71,0.18);
+
+        /* Spring motion */
+        --spring-fast:    cubic-bezier(0.16, 1, 0.3, 1);
+        --spring-med:     cubic-bezier(0.34, 1.56, 0.64, 1);
+        --ease-out-expo:  cubic-bezier(0.19, 1, 0.22, 1);
       }
 
-      /* ── Typography ────────────────────────────────────────────────────────── */
-      .bm-landing-skin .gradient-text {
-        background: linear-gradient(135deg, #E8C547 0%, #F5D97A 45%, #C9A82E 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-      }
-      .bm-landing-skin .gradient-text-subtle {
-        background: linear-gradient(135deg, var(--bm-text) 0%, rgba(240,240,238,0.7) 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-      }
-
-      /* ── Transition base ───────────────────────────────────────────────────── */
+      /* ── Global transition base ───────────────────────────────────────────── */
       .bm-landing-skin button,
       .bm-landing-skin a {
-        transition: color .18s ease, background .18s ease, border-color .18s ease,
-                    box-shadow .18s ease, transform .15s ease, opacity .18s ease;
+        transition: color .2s var(--ease-out-expo),
+                    background .2s var(--ease-out-expo),
+                    border-color .2s var(--ease-out-expo),
+                    box-shadow .25s var(--ease-out-expo),
+                    transform .18s var(--spring-fast),
+                    opacity .2s ease;
       }
 
-      /* ── Glass card — the signature surface ─────────────────────────────────
-         Used for hero panel, feature cards, pricing, any "floating" element.
-         Layered: dark base + glass overlay + top-edge shine + luminous border. */
+      /* ── Typography ───────────────────────────────────────────────────────── */
+      .bm-landing-skin .gradient-text {
+        background: linear-gradient(135deg, #E8C547 0%, #F5D97A 40%, #E8C547 70%, #C9A82E 100%);
+        background-size: 200% auto;
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        animation: bm-text-shimmer 6s linear infinite;
+      }
+      @keyframes bm-text-shimmer {
+        0%   { background-position: 0% center; }
+        100% { background-position: 200% center; }
+      }
+      .bm-landing-skin .gradient-text-subtle {
+        background: linear-gradient(135deg, var(--bm-text) 0%, rgba(240,240,238,0.65) 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+
+      /* ══════════════════════════════════════════════════════════════════════
+         GLASS CARD SYSTEM — 4 levels of depth
+      ══════════════════════════════════════════════════════════════════════ */
+
+      /* Level 1 — Standard glass surface */
       .bm-landing-skin .bm-glass {
-        background: var(--glass-bg);
+        background: var(--glass-bg-light);
         border: 1px solid var(--glass-border);
         box-shadow: var(--glass-shadow);
-        backdrop-filter: blur(24px) saturate(140%);
-        -webkit-backdrop-filter: blur(24px) saturate(140%);
+        backdrop-filter: blur(28px) saturate(160%) brightness(1.04);
+        -webkit-backdrop-filter: blur(28px) saturate(160%) brightness(1.04);
         position: relative;
         overflow: hidden;
+        isolation: isolate;
       }
-      /* Top-edge shine — the one element that makes flat look premium */
+      /* Top-edge prismatic shine — premium fintech signature */
       .bm-landing-skin .bm-glass::before {
         content: '';
         position: absolute;
         top: 0; left: 0; right: 0;
         height: 1px;
-        background: linear-gradient(90deg, transparent 0%, var(--glass-shine) 30%, rgba(255,255,255,0.10) 50%, var(--glass-shine) 70%, transparent 100%);
+        background: linear-gradient(90deg,
+          transparent 0%,
+          var(--glass-shine) 25%,
+          rgba(255,255,255,0.12) 50%,
+          var(--glass-shine) 75%,
+          transparent 100%);
         pointer-events: none;
-        z-index: 1;
+        z-index: 2;
+      }
+      /* Subtle inner light reflection on bottom */
+      .bm-landing-skin .bm-glass::after {
+        content: '';
+        position: absolute;
+        bottom: 0; left: 20%; right: 20%;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.03), transparent);
+        pointer-events: none;
+        z-index: 2;
       }
 
-      /* Gold-accented glass — for hero panel and featured elements */
+      /* Level 2 — Gold-accented glass (hero + featured) */
       .bm-landing-skin .bm-glass-gold {
-        background: linear-gradient(135deg, rgba(232,197,71,0.055) 0%, rgba(255,255,255,0.018) 60%, rgba(232,197,71,0.025) 100%);
+        background:
+          radial-gradient(ellipse 120% 60% at 50% -10%, rgba(232,197,71,0.10) 0%, transparent 65%),
+          linear-gradient(145deg, rgba(232,197,71,0.048) 0%, rgba(255,255,255,0.015) 50%, rgba(74,184,176,0.025) 100%);
         border: 1px solid var(--gold-border);
-        box-shadow: 0 0 0 1px rgba(232,197,71,0.08), 0 24px 64px rgba(0,0,0,0.56), 0 1px 0 rgba(232,197,71,0.18) inset;
-        backdrop-filter: blur(32px) saturate(160%);
-        -webkit-backdrop-filter: blur(32px) saturate(160%);
+        box-shadow:
+          0 0 0 1px rgba(232,197,71,0.06),
+          0 32px 80px rgba(0,0,0,0.65),
+          0 1px 0 rgba(232,197,71,0.22) inset,
+          0 0 80px rgba(232,197,71,0.06);
+        backdrop-filter: blur(36px) saturate(175%) brightness(1.05);
+        -webkit-backdrop-filter: blur(36px) saturate(175%) brightness(1.05);
         position: relative;
         overflow: hidden;
+        isolation: isolate;
       }
       .bm-landing-skin .bm-glass-gold::before {
         content: '';
         position: absolute;
         top: 0; left: 0; right: 0;
         height: 1px;
-        background: linear-gradient(90deg, transparent 0%, rgba(232,197,71,0.5) 30%, rgba(232,197,71,0.7) 50%, rgba(232,197,71,0.5) 70%, transparent 100%);
+        background: linear-gradient(90deg,
+          transparent 0%,
+          rgba(232,197,71,0.40) 20%,
+          rgba(232,197,71,0.75) 50%,
+          rgba(232,197,71,0.40) 80%,
+          transparent 100%);
         pointer-events: none;
-        z-index: 1;
+        z-index: 3;
       }
 
-      /* Deep glass — for code/terminal blocks, secondary panels */
+      /* Level 3 — Deep dark glass (code/terminal/secondary) */
       .bm-landing-skin .bm-glass-deep {
-        background: rgba(9,9,10,0.72);
+        background: rgba(6,6,8,0.80);
         border: 1px solid rgba(255,255,255,0.07);
-        box-shadow: 0 4px 24px rgba(0,0,0,0.48), 0 1px 0 rgba(255,255,255,0.04) inset;
-        backdrop-filter: blur(16px);
-        -webkit-backdrop-filter: blur(16px);
+        box-shadow: 0 4px 24px rgba(0,0,0,0.55), 0 1px 0 rgba(255,255,255,0.04) inset;
+        backdrop-filter: blur(20px) saturate(130%);
+        -webkit-backdrop-filter: blur(20px) saturate(130%);
       }
 
-      /* ── Hover states on glass cards ────────────────────────────────────────── */
+      /* Level 4 — Frosted panel (inputs / interactive zones) */
+      .bm-landing-skin .html-soft-panel {
+        background: rgba(16,16,22,0.50);
+        border: 1px solid rgba(255,255,255,0.085);
+        backdrop-filter: blur(24px) saturate(150%);
+        -webkit-backdrop-filter: blur(24px) saturate(150%);
+        box-shadow: 0 2px 20px rgba(0,0,0,0.35), 0 1px 0 rgba(255,255,255,0.04) inset;
+      }
+
+      /* ── Glass hover — magnetic lift ──────────────────────────────────────── */
       .bm-landing-skin .bm-glass-hover {
-        transition: border-color .22s ease, box-shadow .22s ease, transform .18s ease;
+        transition:
+          border-color .25s var(--spring-fast),
+          box-shadow .28s var(--spring-fast),
+          transform .22s var(--spring-fast);
+        will-change: transform, box-shadow;
       }
       .bm-landing-skin .bm-glass-hover:hover {
-        border-color: rgba(255,255,255,0.13);
-        box-shadow: 0 12px 48px rgba(0,0,0,0.58), 0 1px 0 rgba(255,255,255,0.08) inset;
-        transform: translateY(-2px);
+        border-color: rgba(255,255,255,0.16);
+        box-shadow:
+          0 20px 60px rgba(0,0,0,0.65),
+          0 1px 0 rgba(255,255,255,0.10) inset,
+          0 0 0 1px rgba(232,197,71,0.08),
+          inset 0 0 40px rgba(255,255,255,0.015);
+        transform: translateY(-4px) scale(1.005);
+      }
+      .bm-landing-skin .bm-glass-hover:active {
+        transform: translateY(-1px) scale(0.998);
+        transition-duration: 0.08s;
       }
 
-      /* ── Section layout ──────────────────────────────────────────────────────── */
+      /* ══════════════════════════════════════════════════════════════════════
+         AMBIENT GLOW / LIGHTING SYSTEM
+      ══════════════════════════════════════════════════════════════════════ */
+
+      .bm-hero-glow {
+        position: absolute;
+        border-radius: 50%;
+        pointer-events: none;
+        filter: blur(80px);
+        will-change: opacity, transform;
+      }
+
+      /* Signature hero window — cinematic glass frame */
+      .bm-hero-window {
+        position: relative;
+        border-radius: 32px;
+        overflow: hidden;
+        background:
+          radial-gradient(ellipse 160% 80% at 50% -5%, rgba(232,197,71,0.12) 0%, rgba(232,197,71,0.03) 40%, transparent 60%),
+          radial-gradient(ellipse 60% 50% at 80% 60%, rgba(74,184,176,0.05) 0%, transparent 60%),
+          var(--bm-bg2);
+        border: 1px solid rgba(255,255,255,0.095);
+        box-shadow:
+          0 40px 120px rgba(0,0,0,0.70),
+          0 1px 0 rgba(255,255,255,0.06) inset,
+          0 0 0 1px rgba(232,197,71,0.05),
+          inset 0 0 120px rgba(232,197,71,0.025);
+      }
+
+      /* Volumetric burst behind hero content */
+      .bm-hero-burst {
+        position: absolute;
+        top: -35%;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 800px;
+        height: 420px;
+        background: radial-gradient(ellipse 55% 55% at 50% 0%,
+          rgba(232,197,71,0.28) 0%,
+          rgba(232,197,71,0.10) 30%,
+          rgba(74,184,176,0.05) 55%,
+          transparent 75%);
+        filter: blur(80px);
+        pointer-events: none;
+        z-index: 0;
+        animation: bm-burst-breathe 9s ease-in-out infinite;
+        will-change: opacity, transform;
+      }
+      @keyframes bm-burst-breathe {
+        0%,100% { opacity: 0.55; transform: translateX(-50%) scale(1) rotate(-1deg); }
+        33%     { opacity: 0.85; transform: translateX(-50%) scale(1.08) rotate(0deg); }
+        66%     { opacity: 0.70; transform: translateX(-50%) scale(1.03) rotate(1deg); }
+      }
+
+      /* Aurora side-light — teal/indigo accent */
+      .bm-hero-aurora {
+        position: absolute;
+        pointer-events: none;
+        will-change: opacity;
+      }
+
+      .bm-hero-window-glow-line {
+        position: absolute;
+        top: 0; left: 8%; right: 8%;
+        height: 1px;
+        background: linear-gradient(90deg,
+          transparent 0%,
+          rgba(232,197,71,0.4) 40%,
+          rgba(232,197,71,0.65) 50%,
+          rgba(232,197,71,0.4) 60%,
+          transparent 100%);
+        z-index: 1;
+        pointer-events: none;
+      }
+
+      /* ══════════════════════════════════════════════════════════════════════
+         MOTION SYSTEM — entrance, drift, particles
+      ══════════════════════════════════════════════════════════════════════ */
+
+      /* Card entrance with spring physics */
+      @keyframes bm-float-in {
+        0%   { opacity: 0; transform: translateY(28px) scale(0.96) rotateX(4deg); filter: blur(4px); }
+        60%  { filter: blur(0px); }
+        100% { opacity: 1; transform: translateY(0) scale(1) rotateX(0deg); filter: blur(0px); }
+      }
+      .bm-float-card {
+        animation: bm-float-in 0.8s var(--float-delay, 0s) var(--spring-fast) both;
+        will-change: transform, opacity;
+      }
+
+      /* Ambient card drift — weightless floating */
+      @keyframes bm-card-drift {
+        0%,100% { transform: translateY(0px) rotate(0deg); }
+        33%     { transform: translateY(-5px) rotate(0.2deg); }
+        66%     { transform: translateY(-3px) rotate(-0.15deg); }
+      }
+      .bm-drift {
+        animation: bm-card-drift var(--drift-duration, 6.5s) ease-in-out infinite;
+        animation-delay: var(--float-delay, 0s);
+        will-change: transform;
+      }
+
+      /* Agent pipeline traversal */
+      @keyframes bm-agent-active {
+        0%,100% { border-color: rgba(255,255,255,0.08); box-shadow: none; }
+        50% {
+          border-color: var(--node-color, rgba(232,197,71,0.45));
+          box-shadow: 0 0 28px var(--node-glow, rgba(232,197,71,0.12)), inset 0 0 20px var(--node-glow, rgba(232,197,71,0.04));
+        }
+      }
+      @keyframes bm-travel-h {
+        0%           { left: -8px; opacity: 0; }
+        8%, 92%      { opacity: 1; }
+        100%         { left: calc(100% + 8px); opacity: 0; }
+      }
+      @keyframes bm-travel-v {
+        0%           { top: -8px; opacity: 0; }
+        8%, 92%      { opacity: 1; }
+        100%         { top: calc(100% + 8px); opacity: 0; }
+      }
+      @keyframes bm-output-appear {
+        from { opacity: 0; transform: translateY(12px) scale(0.975); filter: blur(3px); }
+        to   { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+      }
+
+      /* Star field */
+      @keyframes bm-star-twinkle {
+        0%,100% { opacity: var(--op, .15); transform: scale(1); }
+        50%     { opacity: calc(var(--op, .15) * 3.5); transform: scale(1.8); }
+      }
+      @keyframes bm-grid-drift {
+        0%   { transform: translateY(0); }
+        100% { transform: translateY(60px); }
+      }
+
+      /* Text shimmer is defined above with .gradient-text */
+
+      /* Pulse animations */
+      @keyframes bm-pulse {
+        0%,100% { opacity: 0.55; }
+        50%      { opacity: 1; }
+      }
+      @keyframes bm-pulse-gold {
+        0%,100% { box-shadow: 0 0 0 3px rgba(232,197,71,0.16), 0 0 14px rgba(232,197,71,0.42); }
+        50%     { box-shadow: 0 0 0 6px rgba(232,197,71,0.07), 0 0 24px rgba(232,197,71,0.58); }
+      }
+      @keyframes bm-aurora-shift {
+        0%,100% { opacity: 0.6; transform: scale(1) skew(0deg); }
+        50%     { opacity: 1;   transform: scale(1.04) skew(-0.5deg); }
+      }
+
+      /* ══════════════════════════════════════════════════════════════════════
+         COMPONENT STYLES
+      ══════════════════════════════════════════════════════════════════════ */
+
+      /* Sections */
       .bm-landing-skin .html-section {
         position: relative;
         z-index: 1;
       }
       .bm-landing-skin .html-panel {
-        background: var(--bm-bg2);
-        border: 1px solid var(--bm-border2);
-        box-shadow: 0 0 0 1px rgba(232,197,71,0.06), 0 24px 64px rgba(0,0,0,0.5);
+        background: rgba(12,12,18,0.65);
+        border: 1px solid rgba(255,255,255,0.085);
+        box-shadow: 0 0 0 1px rgba(232,197,71,0.05), 0 32px 80px rgba(0,0,0,0.55);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
       }
 
-      /* ── Secondary button override ───────────────────────────────────────────── */
+      /* Secondary button — liquid glass */
       .bm-landing-skin .html-btn-secondary {
-        background: rgba(255,255,255,0.045) !important;
+        background: rgba(255,255,255,0.048) !important;
         color: var(--bm-text2) !important;
         border-color: var(--glass-border) !important;
-        backdrop-filter: blur(8px);
-        box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset !important;
+        backdrop-filter: blur(12px) saturate(140%);
+        -webkit-backdrop-filter: blur(12px) saturate(140%);
+        box-shadow: 0 1px 0 rgba(255,255,255,0.05) inset, 0 2px 12px rgba(0,0,0,0.25) !important;
       }
       .bm-landing-skin .html-btn-secondary:hover {
-        background: rgba(255,255,255,0.075) !important;
+        background: rgba(255,255,255,0.082) !important;
         color: var(--bm-text) !important;
-        border-color: rgba(255,255,255,0.14) !important;
+        border-color: rgba(255,255,255,0.16) !important;
+        box-shadow: 0 1px 0 rgba(255,255,255,0.08) inset, 0 4px 16px rgba(0,0,0,0.3) !important;
+        transform: translateY(-1px);
       }
 
-      /* ── Feature chips / pill badges ─────────────────────────────────────────── */
+      /* Chip badges */
       .bm-chip {
         display: inline-flex;
         align-items: center;
         gap: 5px;
-        padding: 3px 10px;
+        padding: 4px 11px;
         border-radius: 999px;
         font-size: 10px;
         font-weight: 600;
         letter-spacing: 0.04em;
         border: 1px solid rgba(255,255,255,0.09);
-        background: rgba(255,255,255,0.05);
+        background: rgba(255,255,255,0.045);
         color: var(--bm-text3);
-        backdrop-filter: blur(8px);
+        backdrop-filter: blur(10px);
+        transition: border-color .2s ease, background .2s ease, color .2s ease;
+      }
+      .bm-chip:hover {
+        border-color: rgba(255,255,255,0.15);
+        background: rgba(255,255,255,0.07);
+        color: var(--bm-text2);
       }
       .bm-chip-gold {
         border-color: var(--gold-border);
@@ -1328,192 +1600,279 @@ function LandingAestheticLayer() {
         color: var(--gold);
       }
 
-      /* ── Glow dot (live indicator) ───────────────────────────────────────────── */
+      /* Live pulse dot */
       .bm-live-dot {
         width: 6px; height: 6px;
         border-radius: 50%;
         background: var(--bm-accent);
-        box-shadow: 0 0 0 3px rgba(232,197,71,0.18), 0 0 12px rgba(232,197,71,0.4);
-        animation: bm-pulse-gold 2s ease-in-out infinite;
+        box-shadow: 0 0 0 3px rgba(232,197,71,0.18), 0 0 14px rgba(232,197,71,0.45);
+        animation: bm-pulse-gold 2.2s ease-in-out infinite;
         display: inline-block; flex-shrink: 0;
       }
-      @keyframes bm-pulse-gold {
-        0%,100% { box-shadow: 0 0 0 3px rgba(232,197,71,0.18), 0 0 12px rgba(232,197,71,0.4); }
-        50%      { box-shadow: 0 0 0 5px rgba(232,197,71,0.08), 0 0 20px rgba(232,197,71,0.55); }
-      }
 
-      /* ── Stat counter cards ──────────────────────────────────────────────────── */
+      /* Stat cards — volumetric depth */
       .bm-stat-card {
         padding: 20px 22px;
-        border-radius: 16px;
-        background: rgba(255,255,255,0.028);
-        border: 1px solid rgba(255,255,255,0.08);
-        backdrop-filter: blur(20px);
-        -webkit-backdrop-filter: blur(20px);
+        border-radius: 18px;
+        background: rgba(255,255,255,0.026);
+        border: 1px solid rgba(255,255,255,0.085);
+        backdrop-filter: blur(24px) saturate(150%);
+        -webkit-backdrop-filter: blur(24px) saturate(150%);
         position: relative;
         overflow: hidden;
+        transition: border-color .25s ease, box-shadow .25s ease, transform .2s var(--spring-fast);
+      }
+      .bm-stat-card:hover {
+        border-color: rgba(255,255,255,0.14);
+        transform: translateY(-2px);
+        box-shadow: 0 12px 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(232,197,71,0.07);
       }
       .bm-stat-card::after {
         content: '';
         position: absolute;
         bottom: 0; left: 0; right: 0;
         height: 1px;
-        background: linear-gradient(90deg, transparent, rgba(232,197,71,0.25), transparent);
+        background: linear-gradient(90deg, transparent, rgba(232,197,71,0.28), transparent);
       }
 
-      /* ── Section divider gradient ────────────────────────────────────────────── */
+      /* Dividers */
       .bm-divider {
         height: 1px;
-        background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.08) 30%, rgba(232,197,71,0.15) 50%, rgba(255,255,255,0.08) 70%, transparent 100%);
-        margin: 0;
-        border: none;
+        background: linear-gradient(90deg,
+          transparent 0%,
+          rgba(255,255,255,0.07) 25%,
+          rgba(232,197,71,0.18) 50%,
+          rgba(255,255,255,0.07) 75%,
+          transparent 100%);
+        margin: 0; border: none;
       }
 
-      /* ── Agent pipeline node ─────────────────────────────────────────────────── */
-      @keyframes bm-agent-active {
-        0%,100% { border-color: rgba(255,255,255,0.08); box-shadow: none; }
-        50% { border-color: var(--node-color, rgba(232,197,71,0.4)); box-shadow: 0 0 20px var(--node-glow, rgba(232,197,71,0.10)); }
-      }
-      @keyframes bm-travel-h {
-        0% { left: -8px; opacity: 0; }
-        10%,90% { opacity: 1; }
-        100% { left: calc(100% + 8px); opacity: 0; }
-      }
-      @keyframes bm-travel-v {
-        0% { top: -8px; opacity: 0; }
-        10%,90% { opacity: 1; }
-        100% { top: calc(100% + 8px); opacity: 0; }
-      }
-      @keyframes bm-output-appear {
-        from { opacity: 0; transform: translateY(10px) scale(.98); }
-        to { opacity: 1; transform: translateY(0) scale(1); }
-      }
-
-      /* ── Scroll-reveal base (handled by framer-motion) ───────────────────────── */
-      .bm-landing-skin .html-soft-panel {
-        background: rgba(255,255,255,0.025);
-        border: 1px solid rgba(255,255,255,0.07);
-        backdrop-filter: blur(16px);
-        -webkit-backdrop-filter: blur(16px);
-      }
-
-      /* ── Timeline connector ─────────────────────────────────────────────────── */
+      /* Timeline line */
       .bm-timeline-line {
         position: absolute;
         left: 19px; top: 44px; bottom: 0;
         width: 1px;
-        background: linear-gradient(to bottom, rgba(232,197,71,0.25) 0%, rgba(255,255,255,0.05) 60%, transparent 100%);
+        background: linear-gradient(to bottom,
+          rgba(232,197,71,0.30) 0%,
+          rgba(74,184,176,0.15) 50%,
+          rgba(255,255,255,0.04) 70%,
+          transparent 100%);
       }
 
-      /* ── Noise texture overlay (hero depth) ─────────────────────────────────── */
+      /* Noise texture (hero depth layer) */
       .bm-noise {
         position: absolute; inset: 0;
-        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
-        pointer-events: none;
-        z-index: 0;
-        opacity: 0.6;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+        pointer-events: none; z-index: 0; opacity: 0.55;
         mix-blend-mode: overlay;
       }
 
-      /* ── Pricing card ring ──────────────────────────────────────────────────── */
+      /* ── Pricing featured card — aurora ring ──────────────────────────────── */
       .bm-pricing-featured {
-        background: linear-gradient(135deg, rgba(232,197,71,0.08) 0%, rgba(232,197,71,0.03) 50%, rgba(255,255,255,0.02) 100%);
-        border: 1px solid rgba(232,197,71,0.28);
-        box-shadow: 0 0 0 1px rgba(232,197,71,0.08), 0 24px 64px rgba(0,0,0,0.56), 0 0 80px rgba(232,197,71,0.07);
-        backdrop-filter: blur(32px) saturate(150%);
-        -webkit-backdrop-filter: blur(32px) saturate(150%);
+        background:
+          radial-gradient(ellipse 110% 60% at 50% -10%, rgba(232,197,71,0.12) 0%, transparent 60%),
+          linear-gradient(145deg, rgba(232,197,71,0.072) 0%, rgba(232,197,71,0.028) 50%, rgba(255,255,255,0.018) 100%);
+        border: 1px solid rgba(232,197,71,0.30);
+        box-shadow:
+          0 0 0 1px rgba(232,197,71,0.08),
+          0 32px 80px rgba(0,0,0,0.62),
+          0 0 100px rgba(232,197,71,0.09),
+          0 1px 0 rgba(232,197,71,0.35) inset;
+        backdrop-filter: blur(36px) saturate(160%);
+        -webkit-backdrop-filter: blur(36px) saturate(160%);
         position: relative;
         overflow: hidden;
-        border-radius: 20px;
+        border-radius: 22px;
       }
       .bm-pricing-featured::before {
         content: '';
         position: absolute;
         top: 0; left: 0; right: 0;
         height: 1px;
-        background: linear-gradient(90deg, transparent 0%, rgba(232,197,71,0.6) 40%, rgba(232,197,71,0.8) 50%, rgba(232,197,71,0.6) 60%, transparent 100%);
-        z-index: 1;
+        background: linear-gradient(90deg,
+          transparent 0%,
+          rgba(232,197,71,0.55) 35%,
+          rgba(245,217,122,0.9) 50%,
+          rgba(232,197,71,0.55) 65%,
+          transparent 100%);
+        z-index: 2;
       }
-
-      /* ── Ambient glow behind hero panel ─────────────────────────────────────── */
-      .bm-hero-glow {
+      /* Ambient corner glow on pricing card */
+      .bm-pricing-featured::after {
+        content: '';
         position: absolute;
-        border-radius: 50%;
-        pointer-events: none;
-        filter: blur(60px);
-      }
-
-      /* ── Dribbble-style hero: rounded glass "window" + dramatic burst glow ──── */
-      .bm-hero-window {
-        position: relative;
-        border-radius: 28px;
-        overflow: hidden;
-        background: radial-gradient(ellipse 140% 90% at 50% 0%, rgba(232,197,71,0.10) 0%, rgba(232,197,71,0.025) 35%, transparent 65%),
-                    var(--bm-bg2);
-        border: 1px solid var(--glass-border);
-        box-shadow: 0 24px 80px rgba(0,0,0,0.55), 0 1px 0 rgba(255,255,255,0.04) inset;
-      }
-      .bm-hero-burst {
-        position: absolute;
-        top: -28%;
-        left: 50%;
+        top: -60px; left: 50%;
         transform: translateX(-50%);
-        width: 700px;
-        height: 380px;
-        background: radial-gradient(ellipse 50% 50% at 50% 0%, rgba(232,197,71,0.22) 0%, rgba(232,197,71,0.06) 35%, transparent 70%);
-        filter: blur(70px);
+        width: 300px; height: 120px;
+        background: radial-gradient(ellipse, rgba(232,197,71,0.14) 0%, transparent 70%);
+        filter: blur(20px);
         pointer-events: none;
         z-index: 0;
-        animation: bm-burst-breathe 8s ease-in-out infinite;
       }
-      @keyframes bm-burst-breathe {
-        0%,100% { opacity: 0.6; transform: translateX(-50%) scale(1); }
-        50%     { opacity: 0.9; transform: translateX(-50%) scale(1.06); }
+
+      /* ── Navbar scroll enhancement ────────────────────────────────────────── */
+      .bm-nav-scrolled {
+        background: rgba(6,6,9,0.88) !important;
+        box-shadow: 0 1px 0 rgba(232,197,71,0.08), 0 4px 24px rgba(0,0,0,0.4) !important;
       }
-      .bm-hero-window-glow-line {
+
+      /* ── Nav link hover — underline glow ──────────────────────────────────── */
+      .bm-landing-skin nav a {
+        position: relative;
+      }
+      .bm-landing-skin nav a::after {
+        content: '';
         position: absolute;
-        top: 0; left: 10%; right: 10%;
+        bottom: -2px; left: 0; right: 0;
         height: 1px;
-        background: linear-gradient(90deg, transparent 0%, rgba(232,197,71,0.5) 50%, transparent 100%);
-        z-index: 0;
+        background: var(--gold);
+        transform: scaleX(0);
+        transform-origin: center;
+        transition: transform .25s var(--spring-fast), box-shadow .25s ease;
+        box-shadow: 0 0 8px rgba(232,197,71,0);
+      }
+      .bm-landing-skin nav a:hover::after {
+        transform: scaleX(1);
+        box-shadow: var(--glow-gold-sm);
+      }
+
+      /* ── Hero left content glow ───────────────────────────────────────────── */
+      .bm-hero-badge {
+        background: rgba(232,197,71,0.08);
+        border: 1px solid rgba(232,197,71,0.24);
+        color: rgba(232,197,71,0.88);
+        border-radius: 999px;
+        padding: 5px 14px;
+        font-size: 11px;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        width: fit-content;
+        backdrop-filter: blur(12px);
+        letter-spacing: 0.03em;
+        box-shadow: 0 0 20px rgba(232,197,71,0.08), inset 0 1px 0 rgba(255,255,255,0.06);
+        transition: box-shadow .3s ease, border-color .3s ease;
+        animation: bm-badge-breathe 4s ease-in-out infinite;
+      }
+      @keyframes bm-badge-breathe {
+        0%,100% { box-shadow: 0 0 20px rgba(232,197,71,0.08), inset 0 1px 0 rgba(255,255,255,0.06); }
+        50%     { box-shadow: 0 0 32px rgba(232,197,71,0.16), inset 0 1px 0 rgba(255,255,255,0.06); }
+      }
+
+      /* ── CTA button premium state ─────────────────────────────────────────── */
+      .bm-cta-primary {
+        position: relative;
+        overflow: hidden;
+      }
+      .bm-cta-primary::before {
+        content: '';
+        position: absolute;
+        top: -50%; left: -50%;
+        width: 200%; height: 200%;
+        background: linear-gradient(45deg, transparent 30%, rgba(255,255,255,0.15) 50%, transparent 70%);
+        transform: translateX(-100%);
+        transition: transform 0.6s var(--ease-out-expo);
+      }
+      .bm-cta-primary:hover::before {
+        transform: translateX(100%);
+      }
+
+      /* ── Social proof pills ───────────────────────────────────────────────── */
+      .bm-proof-pill {
+        display: inline-flex;
+        width: fit-content;
+        align-items: center;
+        justify-content: start;
+        gap: 6px;
+        border-radius: 12px;
+        padding: 6px 12px;
+        font-size: 12px;
+        background: rgba(255,255,255,0.038);
+        border: 1px solid rgba(255,255,255,0.09);
+        backdrop-filter: blur(12px) saturate(140%);
+        transition: border-color .22s ease, background .22s ease, transform .2s var(--spring-fast);
+      }
+      .bm-proof-pill:hover {
+        border-color: rgba(255,255,255,0.14);
+        background: rgba(255,255,255,0.055);
+        transform: translateY(-1px);
+      }
+
+      /* ── Section entry animations ─────────────────────────────────────────── */
+      @keyframes bm-section-reveal {
+        from { opacity: 0; transform: translateY(20px); filter: blur(2px); }
+        to   { opacity: 1; transform: translateY(0); filter: blur(0); }
+      }
+
+      /* ── Testimonial card hover ───────────────────────────────────────────── */
+      .bm-landing-skin blockquote {
+        transition: border-color .25s ease, box-shadow .25s ease, transform .2s var(--spring-fast);
+      }
+      .bm-landing-skin blockquote:hover {
+        border-color: rgba(255,255,255,0.13) !important;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.45), 0 0 0 1px rgba(232,197,71,0.06);
+        transform: translateY(-3px);
+      }
+
+      /* ── Feature grid card icons — accent ring ────────────────────────────── */
+      .bm-feature-icon-wrap {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 42px; height: 42px;
+        border-radius: 11px;
+        background: rgba(232,197,71,0.09);
+        border: 1px solid rgba(232,197,71,0.20);
+        color: var(--bm-accent);
+        position: relative;
+        overflow: hidden;
+        transition: background .25s ease, border-color .25s ease, box-shadow .25s ease;
+      }
+      .bm-feature-icon-wrap::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(ellipse at 50% 0%, rgba(232,197,71,0.25) 0%, transparent 65%);
+        opacity: 0;
+        transition: opacity .25s ease;
+      }
+      .bm-glass-hover:hover .bm-feature-icon-wrap {
+        background: rgba(232,197,71,0.15);
+        border-color: rgba(232,197,71,0.35);
+        box-shadow: 0 0 18px rgba(232,197,71,0.20);
+      }
+      .bm-glass-hover:hover .bm-feature-icon-wrap::after {
+        opacity: 1;
+      }
+
+      /* ── Scroll progress indicator (decorative top bar) ──────────────────── */
+      .bm-scroll-indicator {
+        position: fixed;
+        top: 0; left: 0;
+        height: 2px;
+        background: linear-gradient(90deg, #E8C547, #4AB8B0, #9B7FE8);
+        z-index: 100;
+        transform-origin: left;
+        box-shadow: 0 0 10px rgba(232,197,71,0.5);
+      }
+
+      /* ── Break My Startup — textarea focus ring ───────────────────────────── */
+      .bm-break-textarea:focus {
+        border-color: rgba(232,197,71,0.45) !important;
+        box-shadow: 0 0 0 1px rgba(232,197,71,0.18), 0 0 28px rgba(232,197,71,0.08) !important;
+        outline: none;
+      }
+
+      /* ── Final CTA section — aurora background ────────────────────────────── */
+      .bm-cta-section-bg {
+        position: absolute; inset: 0;
+        background:
+          radial-gradient(ellipse 80% 60% at 50% 100%, rgba(232,197,71,0.07) 0%, transparent 65%),
+          radial-gradient(ellipse 40% 40% at 20% 50%, rgba(74,184,176,0.04) 0%, transparent 65%),
+          radial-gradient(ellipse 40% 40% at 80% 50%, rgba(155,127,232,0.04) 0%, transparent 65%);
         pointer-events: none;
-      }
-
-      /* ── Staggered float-in for hero cards ───────────────────────────────────
-         Each card fades in, slides up slightly, with a configurable delay via
-         the --float-delay custom property. Applied on mount only (no loop). */
-      @keyframes bm-float-in {
-        from { opacity: 0; transform: translateY(24px) scale(0.97); }
-        to   { opacity: 1; transform: translateY(0) scale(1); }
-      }
-      .bm-float-card {
-        animation: bm-float-in 0.7s var(--float-delay, 0s) cubic-bezier(0.16, 1, 0.3, 1) both;
-      }
-
-      /* ── Gentle ambient drift for floating glass cards (post entrance) ──────
-         Subtle vertical bob, like the cards are weightless. Different periods
-         per card (via --drift-duration) avoid them moving in sync. */
-      @keyframes bm-card-drift {
-        0%,100% { transform: translateY(0px); }
-        50%     { transform: translateY(-6px); }
-      }
-      .bm-drift {
-        animation: bm-card-drift var(--drift-duration, 6s) ease-in-out infinite;
-        animation-delay: var(--float-delay, 0s);
-      }
-
-      /* ── Star keyframes (kept from original) ────────────────────────────────── */
-      @keyframes bm-star-twinkle {
-        0%,100% { opacity: var(--op, .2); transform: scale(1); }
-        50% { opacity: calc(var(--op, .2) * 3); transform: scale(1.5); }
-      }
-      @keyframes bm-grid-drift {
-        0%   { transform: translateY(0); }
-        100% { transform: translateY(56px); }
-      }
-      @keyframes bm-pulse {
-        0%,100% { opacity: 0.6; }
-        50% { opacity: 1; }
+        animation: bm-aurora-shift 12s ease-in-out infinite;
       }
     `}</style>
   );
@@ -1522,6 +1881,19 @@ function LandingAestheticLayer() {
 export default function LandingPageClient({ initialStats }: { initialStats?: PublicStats }) {
   const [stats, setStats] = useState(() => normalizePublicStats(initialStats));
   const [demoOpen, setDemoOpen] = useState(false);
+  const [scrollProgress, setScrollProgress] = useState(0);
+  const [navScrolled, setNavScrolled] = useState(false);
+
+  useEffect(() => {
+    function handleScroll() {
+      const scrollTop = window.scrollY;
+      const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+      setScrollProgress(docHeight > 0 ? scrollTop / docHeight : 0);
+      setNavScrolled(scrollTop > 32);
+    }
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
 
   // Fix #9: Fetch stats immediately on mount (no stale module-level promise),
   // then subscribe to Supabase realtime for instant live updates.
@@ -1566,12 +1938,19 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
   return (
     <div className="bm-landing-skin min-h-screen flex flex-col" style={landingShellStyle}>
       <LandingAestheticLayer />
+
+      {/* Scroll progress bar */}
+      <div
+        className="bm-scroll-indicator"
+        style={{ width: `${scrollProgress * 100}%`, transition: "width 0.1s linear" }}
+      />
+
       {/* ── World Canvas: ambient atmosphere ── */}
       <WorldCanvas />
 
       {/* Navbar */}
       <nav
-        className="sticky top-0 z-50 flex h-16 items-center justify-between gap-3 px-4 sm:px-6"
+        className={`sticky top-0 z-50 flex h-16 items-center justify-between gap-3 px-4 sm:px-6${navScrolled ? " bm-nav-scrolled" : ""}`}
         style={{
           background: "rgba(9,9,10,0.75)",
           backdropFilter: "blur(20px) saturate(150%)",
@@ -1610,8 +1989,9 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
       {/* Hero */}
       <section className="html-section flex min-h-[calc(100vh-64px)] items-center px-5 pb-16 pt-14 sm:px-8 sm:pb-20 sm:pt-20 lg:pb-24">
         {/* Ambient glow behind the right panel */}
-        <div className="bm-hero-glow" style={{ width: 600, height: 600, top: "5%", right: "-8%", background: "radial-gradient(ellipse, rgba(232,197,71,0.07) 0%, transparent 70%)" }} />
-        <div className="bm-hero-glow" style={{ width: 400, height: 400, bottom: "10%", left: "30%", background: "radial-gradient(ellipse, rgba(74,144,217,0.05) 0%, transparent 70%)" }} />
+        <div className="bm-hero-glow" style={{ width: 700, height: 700, top: "0%", right: "-12%", background: "radial-gradient(ellipse, rgba(232,197,71,0.09) 0%, rgba(74,184,176,0.04) 45%, transparent 70%)" }} />
+        <div className="bm-hero-glow" style={{ width: 450, height: 450, bottom: "5%", left: "25%", background: "radial-gradient(ellipse, rgba(91,108,240,0.06) 0%, transparent 70%)" }} />
+        <div className="bm-hero-glow" style={{ width: 300, height: 300, top: "20%", left: "-5%", background: "radial-gradient(ellipse, rgba(155,127,232,0.05) 0%, transparent 70%)" }} />
 
         <div className="bm-hero-window mx-auto w-full max-w-[1180px] px-5 py-12 sm:px-10 sm:py-16 lg:px-14 lg:py-20">
           <div className="bm-hero-window-glow-line" />
@@ -1621,7 +2001,7 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
           {/* Left */}
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }} className="flex flex-col gap-5 sm:gap-6">
             {/* Live pill */}
-            <span style={{ background: "rgba(232,197,71,0.08)", border: "1px solid rgba(232,197,71,0.22)", color: "rgba(232,197,71,0.85)", borderRadius: 999, padding: "5px 14px", fontSize: 11, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 8, width: "fit-content", backdropFilter: "blur(8px)", letterSpacing: "0.03em" }}>
+            <span className="bm-hero-badge">
               <span className="bm-live-dot" />
               The next move, already decided
             </span>
@@ -1657,8 +2037,7 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
               ].map((s) => (
                 <div
                   key={s.label}
-                  className="inline-flex w-fit items-center justify-start gap-1.5 rounded-xl px-3 py-1.5 text-xs"
-                  style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", backdropFilter: "blur(10px)" }}
+                  className="bm-proof-pill"
                 >
                   <span style={{ fontWeight: 600, color: "var(--bm-text)" }}>{s.val.toLocaleString()}</span>
                   <span style={{ color: "var(--bm-text3)" }}>{s.label}</span>
@@ -1666,8 +2045,8 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
               ))}
               {stats.weekly_tasks > 0 && (
                 <div
-                  className="inline-flex w-fit items-center justify-start gap-1.5 rounded-xl px-3 py-1.5 text-xs"
-                  style={{ background: "rgba(232,197,71,0.07)", border: "1px solid rgba(232,197,71,0.22)", backdropFilter: "blur(10px)" }}
+                  className="bm-proof-pill"
+                  style={{ background: "rgba(232,197,71,0.07)", border: "1px solid rgba(232,197,71,0.22)" }}
                 >
                   <span className="bm-live-dot" style={{ width: 5, height: 5 }} />
                   <span style={{ fontWeight: 600, color: "var(--bm-accent)" }}>
@@ -1733,15 +2112,16 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
               return (
                 <motion.div
                   key={f.title}
-                  initial={{ opacity: 0, y: 12 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: i * 0.07 }}
+                  initial={{ opacity: 0, y: 16, scale: 0.97 }}
+                  whileInView={{ opacity: 1, y: 0, scale: 1 }}
+                  viewport={{ once: true, margin: "-40px" }}
+                  transition={{ delay: i * 0.07, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+                  whileHover={{ y: -4, transition: { duration: 0.2 } }}
                   className="bm-glass bm-glass-hover"
                   style={{ borderRadius: 16, padding: "24px", display: "flex", flexDirection: "column", gap: 12 }}
                 >
                   <div className="flex items-center justify-between">
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: 10, background: "rgba(232,197,71,0.10)", border: "1px solid rgba(232,197,71,0.20)", color: "var(--bm-accent)" }}>
+                    <div className="bm-feature-icon-wrap">
                       <Icon size={20} />
                     </div>
                       <span style={{ fontSize: 9, fontWeight: 700, color: f.badgeColor, background: f.badgeColor + "18", border: `1px solid ${f.badgeColor}40`, padding: "2px 8px", borderRadius: 10, textTransform: "uppercase", letterSpacing: "0.06em", backdropFilter: "blur(4px)" }}>
@@ -1770,8 +2150,7 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
       >
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0"
-          style={{ background: "transparent" }}
+          className="bm-cta-section-bg pointer-events-none"
         />
         <motion.div
           initial={{ opacity: 0, y: 12 }}
@@ -1793,7 +2172,7 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
           <div className="flex flex-wrap justify-center gap-3">
             <Link href="/auth/login">
               <button
-                className="inline-flex h-[46px] items-center gap-1.5 rounded-[var(--r-xl)] px-7 text-[15px] font-semibold transition-all hover:brightness-105 active:scale-95"
+                className="bm-cta-primary inline-flex h-[46px] items-center gap-1.5 rounded-[var(--r-xl)] px-7 text-[15px] font-semibold transition-all hover:brightness-108 active:scale-95"
                 style={{ background: "var(--grad-primary)", color: "#0C0C0D" }}
               >
                 Start Building Free <ArrowRight size={16} />
