@@ -56,9 +56,9 @@ export async function POST() {
     return NextResponse.json({ ok: false }, { status: 401 });
   }
 
-  // Recovery Mode is a Builder-only feature
-  const { getFreshPlanForUser } = await import("@/lib/server/plan");
-  const userPlan = await getFreshPlanForUser(user);
+  // Recovery Mode is a Builder-only feature (trial users get full access)
+  const { getEffectivePlan } = await import("@/lib/server/plan");
+  const userPlan = await getEffectivePlan(user.id);
   if (userPlan !== "builder") {
     return NextResponse.json({ ok: false, error: "Builder plan required", upgradeUrl: "/upgrade" }, { status: 403 });
   }
@@ -159,4 +159,4 @@ export async function PATCH() {
     momentumScore: newScore,
     momentumDelta: newScore - currentScore,
   });
-}
+                              }
