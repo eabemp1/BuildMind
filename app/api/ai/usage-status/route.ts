@@ -10,7 +10,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { PLAN_LIMITS } from "@/lib/plan";
-import { getFreshPlanForUser } from "@/lib/server/plan";
+import { getEffectivePlan } from "@/lib/server/plan";
 
 const FREE_MONTHLY_LIMIT = 50;
 
@@ -23,8 +23,8 @@ export async function GET() {
       return NextResponse.json({ ok: false, error: "Unauthenticated" }, { status: 401 });
     }
 
-    // Plan is read from Supabase user_metadata — NOT localStorage
-    const plan = await getFreshPlanForUser(user);
+    // Plan is read from Supabase — trial-aware (getEffectivePlan checks trial_ends_at)
+    const plan = await getEffectivePlan(user.id);
     const limits = PLAN_LIMITS[plan];
 
     // Builder plan = unlimited AI
@@ -72,4 +72,4 @@ export async function GET() {
     const msg = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
-}
+                                                    }
