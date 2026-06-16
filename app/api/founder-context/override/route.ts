@@ -13,9 +13,9 @@ export async function POST(req: Request) {
   const { data: { user }, error } = await supabase.auth.getUser();
   if (error || !user) return NextResponse.json({ ok: false }, { status: 401 });
 
-  // HITL override is a Builder-only feature
-  const { getFreshPlanForUser } = await import("@/lib/server/plan");
-  const userPlan = await getFreshPlanForUser(user);
+  // HITL override is a Builder-only feature (trial users get full access)
+  const { getEffectivePlan } = await import("@/lib/server/plan");
+  const userPlan = await getEffectivePlan(user.id);
   if (userPlan !== "builder") {
     return NextResponse.json({ ok: false, error: "Builder plan required", upgradeUrl: "/upgrade" }, { status: 403 });
   }
