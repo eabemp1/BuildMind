@@ -16,7 +16,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { generateMorningBriefing } from "@/lib/reflexion";
 import { planFromUserMetadata } from "@/lib/plan";
-import { getFreshPlanForUser } from "@/lib/server/plan";
+import { getEffectivePlan, getFreshPlanForUser } from "@/lib/server/plan";
 import { hasAdminEnv } from "@/app/api/ai/_utils";
 import { buildTodayActionCacheFromBriefing, upsertTodayActionCache } from "@/lib/todayActionCache";
 
@@ -271,7 +271,7 @@ export async function GET(req: Request) {
   const { data: { user }, error } = await supabase.auth.getUser();
   if (error || !user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
-  const plan = await getFreshPlanForUser(user);
+  const plan = await getEffectivePlan(user.id);
 
   // Free-tier day-of-week gate
   if (!isBriefingDayForPlan(plan)) {
@@ -455,4 +455,4 @@ export async function POST(req: Request) {
   }
 
   return GET(req);
-}
+      }
