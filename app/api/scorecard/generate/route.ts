@@ -37,9 +37,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
-  // Execution Scorecard is a Builder-only feature
-  const { getFreshPlanForUser } = await import("@/lib/server/plan");
-  const userPlan = await getFreshPlanForUser(user);
+  // Execution Scorecard is a Builder-only feature (trial users get full access)
+  const { getEffectivePlan } = await import("@/lib/server/plan");
+  const userPlan = await getEffectivePlan(user.id);
   if (userPlan !== "builder") {
     return NextResponse.json({ ok: false, error: "Builder plan required", upgradeUrl: "/upgrade" }, { status: 403 });
   }
@@ -149,4 +149,4 @@ export async function PATCH(req: Request) {
     .is("shared_at", null);
 
   return NextResponse.json({ ok: true });
-}
+                              }
