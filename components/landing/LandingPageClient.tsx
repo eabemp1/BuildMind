@@ -358,7 +358,7 @@ function HeroReflexionPipeline() {
           </span>
         </div>
 
-        <div className="mb-5 flex items-stretch gap-0">
+        <div className="mb-5 flex items-stretch gap-0 min-w-0">
           {[
             { label: "Agent A", name: "Generator", status: "Reading context...", color: "var(--bm-accent)", bg: "rgba(232,197,71,0.10)", glow: "rgba(232,197,71,0.12)", delay: "0s" },
             { label: "Agent B", name: "YC Critic", status: "Reviewing...", color: "var(--bm-amber)", bg: "rgba(232,160,32,0.10)", glow: "rgba(232,160,32,0.10)", delay: ".8s" },
@@ -366,7 +366,7 @@ function HeroReflexionPipeline() {
           ].map((agent, i, arr) => (
             <div key={agent.label} className="contents">
               <div
-                className="bm-float-card flex-1 rounded-[var(--r-xl)] border p-3.5"
+                className="bm-float-card min-w-0 flex-1 rounded-[var(--r-xl)] border p-2.5 sm:p-3.5"
                 style={{
                   background: "rgba(255,255,255,0.025)",
                   borderColor: "rgba(255,255,255,0.07)",
@@ -378,15 +378,15 @@ function HeroReflexionPipeline() {
                   animation: `bm-float-in 0.7s ${0.1 + i * 0.12}s cubic-bezier(0.16, 1, 0.3, 1) both, bm-agent-active 2.5s ${agent.delay} ease-in-out infinite ${0.1 + i * 0.12 + 0.7}s, bm-card-drift ${5.5 + i * 0.7}s ease-in-out infinite ${0.8 + i * 0.3}s`,
                 }}
               >
-                <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg text-sm" style={{ background: agent.bg }}>
+                <div className="mb-1.5 flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-lg text-sm" style={{ background: agent.bg }}>
                   {i === 0 ? "A" : i === 1 ? "B" : "C"}
                 </div>
-                <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-[var(--bm-text3)]">{agent.label}</div>
-                <div className="text-xs font-semibold leading-snug text-[var(--bm-text2)]">{agent.name}</div>
-                <div className="mt-1.5 text-[10px]" style={{ color: i === 2 ? "var(--bm-text4)" : agent.color }}>{agent.status}</div>
+                <div className="mb-0.5 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-[var(--bm-text3)]">{agent.label}</div>
+                <div className="text-[11px] sm:text-xs font-semibold leading-snug text-[var(--bm-text2)]">{agent.name}</div>
+                <div className="mt-1 text-[9px] sm:text-[10px]" style={{ color: i === 2 ? "var(--bm-text4)" : agent.color }}>{agent.status}</div>
               </div>
               {i < arr.length - 1 && (
-                <div className="relative mt-16 h-px w-7 shrink-0 overflow-hidden bg-[var(--bm-border2)]">
+                <div className="relative mt-14 h-px w-4 sm:w-7 shrink-0 overflow-hidden bg-[var(--bm-border2)]">
                   <span
                     className="absolute top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full"
                     style={{ background: agent.color, boxShadow: `0 0 8px ${agent.color}`, animation: `bm-travel-h 2.2s ${agent.delay} linear infinite` }}
@@ -1209,6 +1209,7 @@ function LandingAestheticLayer() {
       .bm-landing-skin {
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
+        overflow-x: hidden;
 
         /* Glass system */
         --glass-bg:       rgba(12,12,16,0.55);
@@ -1405,6 +1406,7 @@ function LandingAestheticLayer() {
         position: relative;
         border-radius: 32px;
         overflow: hidden;
+        overflow-x: hidden;
         background:
           radial-gradient(ellipse 160% 80% at 50% -5%, rgba(232,197,71,0.12) 0%, rgba(232,197,71,0.03) 40%, transparent 60%),
           radial-gradient(ellipse 60% 50% at 80% 60%, rgba(74,184,176,0.05) 0%, transparent 60%),
@@ -1415,6 +1417,13 @@ function LandingAestheticLayer() {
           0 1px 0 rgba(255,255,255,0.06) inset,
           0 0 0 1px rgba(232,197,71,0.05),
           inset 0 0 120px rgba(232,197,71,0.025);
+        /* Prevent the hero window itself from scrolling horizontally */
+        max-width: 100%;
+      }
+      @media (max-width: 639px) {
+        .bm-hero-window {
+          border-radius: 20px;
+        }
       }
 
       /* Volumetric burst behind hero content */
@@ -1547,6 +1556,7 @@ function LandingAestheticLayer() {
       .bm-landing-skin .html-section {
         position: relative;
         z-index: 1;
+        overflow-x: clip;
       }
       .bm-landing-skin .html-panel {
         background: rgba(12,12,18,0.65);
@@ -1987,17 +1997,17 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
       </nav>
 
       {/* Hero */}
-      <section className="html-section flex min-h-[calc(100vh-64px)] items-center px-5 pb-16 pt-14 sm:px-8 sm:pb-20 sm:pt-20 lg:pb-24">
-        {/* Ambient glow behind the right panel */}
-        <div className="bm-hero-glow" style={{ width: 700, height: 700, top: "0%", right: "-12%", background: "radial-gradient(ellipse, rgba(232,197,71,0.09) 0%, rgba(74,184,176,0.04) 45%, transparent 70%)" }} />
-        <div className="bm-hero-glow" style={{ width: 450, height: 450, bottom: "5%", left: "25%", background: "radial-gradient(ellipse, rgba(91,108,240,0.06) 0%, transparent 70%)" }} />
-        <div className="bm-hero-glow" style={{ width: 300, height: 300, top: "20%", left: "-5%", background: "radial-gradient(ellipse, rgba(155,127,232,0.05) 0%, transparent 70%)" }} />
+      <section className="html-section flex min-h-[calc(100vh-64px)] items-center px-4 pb-12 pt-10 sm:px-8 sm:pb-20 sm:pt-20 lg:pb-24">
+        {/* Ambient glow — hidden on mobile via max-width to prevent overflow */}
+        <div className="bm-hero-glow hidden sm:block" style={{ width: 700, height: 700, top: "0%", right: "-12%", background: "radial-gradient(ellipse, rgba(232,197,71,0.09) 0%, rgba(74,184,176,0.04) 45%, transparent 70%)" }} />
+        <div className="bm-hero-glow hidden sm:block" style={{ width: 450, height: 450, bottom: "5%", left: "25%", background: "radial-gradient(ellipse, rgba(91,108,240,0.06) 0%, transparent 70%)" }} />
+        <div className="bm-hero-glow hidden sm:block" style={{ width: 300, height: 300, top: "20%", left: "-5%", background: "radial-gradient(ellipse, rgba(155,127,232,0.05) 0%, transparent 70%)" }} />
 
-        <div className="bm-hero-window mx-auto w-full max-w-[1180px] px-5 py-12 sm:px-10 sm:py-16 lg:px-14 lg:py-20">
+        <div className="bm-hero-window mx-auto w-full max-w-[1180px] px-4 py-8 sm:px-10 sm:py-16 lg:px-14 lg:py-20">
           <div className="bm-hero-window-glow-line" />
           <div className="bm-hero-burst" />
 
-          <div className="relative z-[1] grid w-full items-center gap-12 md:grid-cols-2 lg:gap-16">
+          <div className="relative z-[1] grid w-full items-center gap-8 sm:gap-12 md:grid-cols-2 lg:gap-16">
           {/* Left */}
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }} className="flex flex-col gap-5 sm:gap-6">
             {/* Live pill */}
@@ -2006,7 +2016,7 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
               The next move, already decided
             </span>
 
-            <h1 style={{ fontSize: "clamp(2.6rem,4.5vw,4rem)", fontWeight: 800, lineHeight: 1.06, letterSpacing: "-0.03em", color: "var(--bm-text)" }}>
+            <h1 style={{ fontSize: "clamp(2rem,4.5vw,4rem)", fontWeight: 800, lineHeight: 1.06, letterSpacing: "-0.03em", color: "var(--bm-text)" }}>
               The next move is
               <br />
               <span className="font-display italic gradient-text">already decided.</span>
@@ -2190,4 +2200,4 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
       {demoOpen && <DemoModal onClose={() => setDemoOpen(false)} />}
     </div>
   );
-}
+    }
