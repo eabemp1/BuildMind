@@ -1,14 +1,15 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getFreshPlanForUser } from "@/lib/server/plan";
+import { getEffectivePlan } from "@/lib/server/plan";
 
 export async function GET() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ ok: false }, { status: 401 });
 
-  const plan = await getFreshPlanForUser(user);
+  // Trial-aware plan check — trial users get builder-level unlimited access
+  const plan = await getEffectivePlan(user.id);
   if (plan === "builder") {
     return NextResponse.json({ ok: true, plan: "builder", unlimited: true });
   }
