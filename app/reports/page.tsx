@@ -710,9 +710,12 @@ export default function ReportsPage() {
                 gap:20, marginBottom:16 }}>
               {([
                 { label:"Stage",      value: project.startup_stage ?? "—",         color:"var(--bm-text)" },
-                { label:"Tasks Done", value:`${project.tasksCompleted??0} / ${project.tasksTotal??0}`, color:"var(--bm-accent)" },
-                { label:"Exec Score", value: project.execution_score ?? 0,          color:"var(--bm-amber)" },
-                { label:"Momentum",   value: metrics?.momentumScore ?? project.momentum_score ?? 0, color:"#A78BFA" },
+                // Tasks Done: weekly check-ins completed (from reflexion_learning_log), not milestone tasks
+                { label:"Check-ins",  value:`${tasksThisWeek} this week`,           color:"var(--bm-accent)" },
+                // Exec Score: use liveScore (computed) — execution_score in DB can be stale/null
+                { label:"Exec Score", value: project.execution_score != null ? project.execution_score : liveScore, color:"var(--bm-amber)" },
+                // Momentum: server value from founder_context.momentum_score only — never fall back to stale project column
+                { label:"Momentum",   value: metrics?.momentumScore != null ? metrics.momentumScore : "—", color:"#A78BFA" },
               ] as const).map(({ label, value, color }) => (
                 <div key={label}>
                   <div style={{ fontSize:9, fontWeight:700, color:"var(--bm-text3)",
@@ -851,4 +854,4 @@ export default function ReportsPage() {
       </div>
     </PaywallGate>
   );
-      }
+  }
