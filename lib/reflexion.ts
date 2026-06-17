@@ -104,6 +104,7 @@ export interface ReflexionContext {
   knowledgeBaseContext?: string;       // onboarding precedent prompt block
   debtContext?: string;                // execution debt prompt block
   recentActionsBlock?: string;         // recent tasks shown for anti-repeat enforcement
+  goalAnchor?: string;                 // immutable north-star goal — survives bad reflections
 }
 
 // ── NEW IN V4: Agent Persona Rotation (Playbook §4.4) ─────────────────────
@@ -413,6 +414,7 @@ REJECT this task if ANY of the following are true:
 6. The advice does not address the founder's current stage or last reflection outcome
 7. The action repeats a recent action shape, target, channel, or outreach message instead of advancing the thread
 8. The action is semantically equivalent to any task listed in the RECENT TASKS block below (if provided)
+9. The action drifts away from the PRIMARY GOAL stated in the founder context — a negative reflection is NOT permission to pivot to a different objective; it is permission only to try a different approach toward the same goal
 
 ${context.recentActionsBlock ? `\n${context.recentActionsBlock}` : ""}
 
@@ -1249,6 +1251,15 @@ function buildContextBlock(ctx: ReflexionContext): string {
   if (ctx.overrideReasons?.length) lines.push(`Recent override reasons: ${ctx.overrideReasons.join(", ")}`);
   if (ctx.topicsRepeated?.length) lines.push(`Topics mentioned repeatedly: ${ctx.topicsRepeated.join(", ")}`);
   if (ctx.debtContext) lines.push(ctx.debtContext);
+  // ── Goal Anchor — injected before reflection so bad reflections can't override it ──
+  if (ctx.goalAnchor) {
+    lines.push(
+      `\nPRIMARY GOAL (immutable — survives bad reflections, low confidence, and missed tasks):\n${ctx.goalAnchor}\n` +
+      `RULE: Every task today must advance this goal. ` +
+      `If the last reflection was a failure or skip, today's task must diagnose WHY it failed and propose a smaller or different experiment toward the same goal — NOT pivot to a different goal entirely. ` +
+      `A bad day is not permission to abandon the north star.`
+    );
+  }
   if (ctx.lastReflection) {
     lines.push(`Last reflection: outcome=${ctx.lastReflection.outcome}, confidence=${ctx.lastReflection.confidence}/5`);
     if (ctx.lastReflection.note) lines.push(`Their note: "${ctx.lastReflection.note}"`);
@@ -1268,4 +1279,4 @@ function extractAction(text: string): string {
     /\b(do|send|call|write|post|reach out|open|find|talk|test|launch|build|contact)\b/i.test(s)
   );
   return actionSentence ?? sentences[sentences.length - 1] ?? "";
-}
+  }
