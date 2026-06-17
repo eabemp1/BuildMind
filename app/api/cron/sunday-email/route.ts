@@ -25,6 +25,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { hasAdminEnv } from "@/app/api/ai/_utils";
 import { sendEmail } from "@/lib/email";
 import { logError, logInfo } from "@/lib/server/logger";
+import { generateSundayEmailNarrative } from "@/lib/cron/aiContent";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -245,6 +246,19 @@ export async function GET(request: Request) {
     await Promise.allSettled(
       batch.map(async (d) => {
         try {
+        // Generate AI-written diagnosis + directive for this founder
+        const aiNarrative = await generateSundayEmailNarrative({
+          name:           d.name,
+          startupName:    d.startupName,
+          stage:          undefined,    // add stage to FounderWeekData if you want it here
+          tasksCompleted: d.tasksCompleted,
+          momentumStart:  d.momentumStart,
+          momentumEnd:    d.momentumEnd,
+          streak:         d.streak,
+          avoidanceZone:  d.avoidancePattern,
+          lastInsight:    d.nextWeekFocus,
+        });
+
           const result = await sendEmail({
             to: d.email,
             template: "weekly_behavioral_review",
@@ -255,8 +269,8 @@ export async function GET(request: Request) {
               momentumStart:   d.momentumStart,
               momentumEnd:     d.momentumEnd,
               streak:          d.streak,
-              avoidancePattern: d.avoidancePattern,
-              nextWeekFocus:   d.nextWeekFocus,
+              avoidancePattern: aiNarrative.diagnosis,
+              nextWeekFocus:   aiNarrative.nextWeekDirective,
               weekNumber:      d.weekNumber,
             },
           });
@@ -293,4 +307,4 @@ export async function GET(request: Request) {
     emails_sent:     sent,
     emails_failed:   failed,
   });
-}
+                              }
