@@ -93,6 +93,7 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
       { label: "Intelligence",      href: "/ai-coach",        keywords: ["ai coach", "chat", "advice", "intelligence"] },
       { label: "Break My Startup",  href: "/break-my-startup", keywords: ["break", "analysis", "risk"] },
       { label: "Progress",          href: "/reports",         keywords: ["reports", "weekly report"] },
+      { label: "My Profile",        href: "/memory",          keywords: ["memory", "profile", "avoidance", "what buildmind knows"] },
       { label: "Settings",          href: "/settings",        keywords: ["profile", "preferences"] },
       ...(FEATURES.publicProjects ? [{ label: "Explore", href: "/explore", keywords: ["community"] }] : []),
       ...(FEATURES.notifications   ? [{ label: "Notifications", href: "/notifications", keywords: ["alerts"] }] : []),
