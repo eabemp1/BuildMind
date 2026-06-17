@@ -159,6 +159,19 @@ export default function WeeklySharePage() {
       let next = base;
       if (activeProject?.id) {
         try {
+          // Fetch real momentum from founder_context — not the AI-generated project column
+          const supabase = createClient();
+          const { data: { user } } = await supabase.auth.getUser();
+          let liveMomentum: number | null = null;
+          if (user) {
+            const { data: ctx } = await supabase
+              .from("founder_context")
+              .select("momentum_score")
+              .eq("user_id", user.id)
+              .maybeSingle();
+            liveMomentum = typeof ctx?.momentum_score === "number" ? ctx.momentum_score : null;
+          }
+
           const reportRes = await fetch("/api/ai/weekly-report", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -182,8 +195,14 @@ export default function WeeklySharePage() {
             next = {
               ...base,
               score: activeProject
-                ? Math.round(computeStartupScore({ ...activeProject, xp: 0, streak: base.streak ?? 0 }))
+                ? Math.round(computeStartupScore({
+                    ...activeProject,
+                    momentum_score: liveMomentum ?? activeProject.momentum_score,
+                    xp: 0,
+                    streak: base.streak ?? 0
+                  }))
                 : null,
+              momentum_score: liveMomentum ?? activeProject.momentum_score ?? null,
               tasksCommitted,
               tasksDone,
               milestone: data?.reportData?.ai_summary ?? data?.summary ?? PLACEHOLDER,
@@ -268,6 +287,7 @@ export default function WeeklySharePage() {
           {[
             {label:"Tasks done",value:loading ? PLACEHOLDER : `${statValue(weekData.tasksDone)}/${statValue(weekData.tasksCommitted)}`,color:"var(--bm-text)"},
             {label:"Exec score",value:loading ? PLACEHOLDER : statValue(weekData.score, "/100"),color:"var(--bm-green)"},
+            {label:"Momentum",  value:loading ? PLACEHOLDER : weekData.momentum_score != null ? `${weekData.momentum_score}` : "—", color:"#A78BFA"},
             {label:"Accountability",value:loading ? PLACEHOLDER : pct(weekData.tasksDone, weekData.tasksCommitted),color:"var(--bm-amber)"},
           ].map(s=>(
             <div key={s.label} style={{background:"var(--bm-bg3)",borderRadius:10,padding:"10px 12px",textAlign:"center"}}>
