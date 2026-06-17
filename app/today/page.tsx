@@ -1190,6 +1190,8 @@ function TodayContent() {
       if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "default") {
         setTimeout(() => setShowPushPrompt(true), 1500);
       }
+
+      if (userId) {
         storage.set(`bm_checkin_done_date_${userId}`, todayDate);
         storage.set(`bm_has_seen_today_${userId}`, "1");
       }
@@ -2844,4 +2846,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-}
+  }
