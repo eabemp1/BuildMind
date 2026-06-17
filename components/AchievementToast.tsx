@@ -90,12 +90,13 @@ export default function AchievementToast() {
         transition={{ type: "spring", stiffness: 380, damping: 22 }}
         style={{
           position: "fixed",
-          top: 20,
+          top: "env(safe-area-inset-top, 16px)",
           left: "50%",
           transform: "translateX(-50%)",
           zIndex: 9999,
           pointerEvents: "auto",
           fontFamily: "system-ui, sans-serif",
+          width: "min(360px, calc(100vw - 32px))",
         }}
         onClick={() => { setCurrent(null); setTimeout(advance, 300); }}
       >
@@ -134,12 +135,12 @@ export default function AchievementToast() {
           display: "flex",
           alignItems: "center",
           gap: 14,
-          minWidth: 280,
-          maxWidth: 360,
+          width: "100%",
           boxShadow: `0 8px 32px ${colors.glow}, 0 2px 8px rgba(0,0,0,0.5)`,
           position: "relative",
           overflow: "hidden",
           cursor: "pointer",
+          boxSizing: "border-box",
         }}>
           {/* Shimmer line for legendary */}
           {isLegendary && (
@@ -201,4 +202,4 @@ export default function AchievementToast() {
       </motion.div>
     </AnimatePresence>
   );
-}
+                              }
