@@ -308,10 +308,14 @@ export async function GET(req: NextRequest) {
 
     const { data: authUser } = await supabase.auth.admin.getUserById(row.user_id);
     // Use effective plan — trial users should get builder nudges
-    const userMeta = authUser.user?.user_metadata ?? {};
-    const rawPlan  = planFromUserMetadata(authUser.user);
-    // Check trial via founder_context.trial_ends_at (already fetched in ctx above)
-    const trialEndsAt = (ctx as Record<string, unknown>)?.trial_ends_at as string | undefined;
+    const rawPlan = planFromUserMetadata(authUser.user);
+    // Check trial status directly — ctx is fetched later in this loop
+    const { data: trialRow } = await supabase
+      .from("founder_context")
+      .select("trial_ends_at")
+      .eq("user_id", row.user_id)
+      .maybeSingle();
+    const trialEndsAt = trialRow?.trial_ends_at as string | undefined;
     const isTrialActive = trialEndsAt ? new Date(trialEndsAt) > new Date() : false;
     const plan = rawPlan === "builder" || isTrialActive ? "builder" : rawPlan;
 
