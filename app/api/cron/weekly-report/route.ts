@@ -135,15 +135,42 @@ export async function GET(request: Request) {
         await Promise.allSettled(
           subs.map(async (row) => {
             try {
+              // Fetch this user's week data for personalised push body
+              const weekAgoIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+              const [ctxRes, logsRes] = await Promise.allSettled([
+                supabase.from("founder_context").select("momentum_score, streak").eq("user_id", row.user_id).maybeSingle(),
+                supabase.from("action_logs").select("outcome").eq("user_id", row.user_id).gte("created_at", weekAgoIso),
+              ]);
+
+              const ctx  = ctxRes.status  === "fulfilled" ? ctxRes.value.data  : null;
+              const logs = logsRes.status === "fulfilled" ? (logsRes.value.data ?? []) : [];
+              const tasksCompleted = logs.filter((l: { outcome?: string }) => l.outcome === "completed").length;
+              const momentum = (ctx?.momentum_score as number | undefined) ?? 50;
+              const streak   = (ctx?.streak as number | undefined) ?? 0;
+
+              // Deterministic body — always references real numbers, testable, instant
+              let pushBody: string;
+              if (tasksCompleted === 0) {
+                pushBody = "Your weekly report is ready. See what the data says about this week.";
+              } else if (streak >= 7) {
+                pushBody = `${tasksCompleted} tasks logged · ${streak}-day streak · Your week in full → /reports`;
+              } else if (momentum >= 70) {
+                pushBody = `${tasksCompleted} tasks done, momentum at ${momentum}. Strong week — see the breakdown.`;
+              } else if (momentum < 45) {
+                pushBody = `${tasksCompleted} tasks, momentum at ${momentum}. See what pulled it down and what's next.`;
+              } else {
+                pushBody = `${tasksCompleted} task${tasksCompleted !== 1 ? "s" : ""} logged this week. Your report + next move are ready.`;
+              }
+
               await webpush.sendNotification(
                 row.subscription,
                 JSON.stringify({
-                  title: "📋 Your weekly startup report is ready",
-                  body: "See what you built this week vs what you planned. Your Monday move is already decided.",
-                  icon: "/logo/icon-192.png",
+                  title: "📋 Weekly report ready",
+                  body:  pushBody,
+                  icon:  "/logo/icon-192.png",
                   badge: "/logo/icon-96.png",
-                  url: "/reports",
-                  tag: "weekly-report",
+                  url:   "/reports",
+                  tag:   "weekly-report",
                 }),
               );
 
