@@ -16,8 +16,9 @@ import { notifyReflectPending } from "@/lib/notifications";
 import { trackFunnelStep } from "@/lib/onboarding-analytics";
 import BuildMindLoader from "@/components/BuildMindLoader";
 import MorningBriefingCard from "@/components/MorningBriefingCard";
+import RecoveryModeCard from "@/components/RecoveryModeCard";
 import { PaywallMoment } from "@/components/PaywallMoment";
-import { Clock, CheckCircle2, Copy, Check, Flame, Brain, Sparkles, AlertCircle, TrendingUp, RotateCcw, Zap } from "lucide-react";
+import { Clock, CheckCircle2, Copy, Check, Flame, Brain, Sparkles, AlertCircle, TrendingUp, RotateCcw, Zap, ArrowRight } from "lucide-react";
 import { storage } from "@/lib/storage";
 import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
 import { MobileCheckin } from "@/components/MobileCheckin";
@@ -27,6 +28,7 @@ import { broadcastTabEvent, useTabSync } from "@/lib/tabSync";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
 import { recordOverride } from "@/lib/founderContext";
 import type { MorningBriefing } from "@/lib/founderContext";
+import GhostGoalBanner from "@/components/GhostGoalBanner";
 
 type Outcome = "completed" | "blocked" | "partial" | "learned";
 type ReflexionMeta = {
@@ -384,7 +386,7 @@ function TodayContent() {
   const searchParams = useSearchParams();
   const isFirstSession = searchParams.get("first_session") === "true";
   const queryClient = useQueryClient();
-  const { plan } = usePlan();
+  const { plan, isLoading: planLoading } = usePlan();
   const { data: summaries = [], isLoading } = useProjectSummariesQuery();
   const activeProjectId = useActiveProjectId();
   const project = useMemo(() => selectActiveProject(summaries, activeProjectId), [summaries, activeProjectId]);
@@ -421,6 +423,10 @@ function TodayContent() {
   const [milestoneBreak, setMilestoneBreak] = useState<MilestoneBreakResult | null>(null);
   const [milestoneBreakDismissed, setMilestoneBreakDismissed] = useState(false);
 
+  // Auto level-up — fires when founder earns a stage promotion
+  const [leveledUp, setLeveledUp] = useState<{ old_stage: string; new_stage: string } | null>(null);
+  const [levelUpDismissed, setLevelUpDismissed] = useState(false);
+
   // Editable draft — pre-filled with real project values
   const [draftMessage, setDraftMessage] = useState<string | null>(null);
 
@@ -433,6 +439,21 @@ function TodayContent() {
   // Morning briefing
   const [briefingAvailable, setBriefingAvailable] = useState(false);
   const [morningBriefing, setMorningBriefing] = useState<MorningBriefing | null>(null);
+
+  // Recovery Mode — shown when founder has 3+ days of momentum decay
+  const [recoveryActive, setRecoveryActive] = useState(false);
+  const [recoveryChecked, setRecoveryChecked] = useState(false);
+
+  // Momentum decay banner — shown when score dropped 5+ pts this week
+  const [decayDrop, setDecayDrop] = useState<number | null>(null);
+  const [decayDismissed, setDecayDismissed] = useState(false);
+
+  // Cognitive load — founder reports their capacity today
+  const [cogLoad, setCogLoad] = useState<"low" | "normal" | "high" | null>(null);
+  const [cogLoadSaved, setCogLoadSaved] = useState(false);
+
+  // Push permission prompt — shown once after first check-in complete
+  const [showPushPrompt, setShowPushPrompt] = useState(false);
 
   // Win attribution
 
@@ -455,6 +476,26 @@ function TodayContent() {
         }
       })
       .catch(() => {});
+
+    // ── Recovery Mode check ─────────────────────────────────────────────────
+    fetch("/api/recovery-mode", { cache: "no-store" })
+      .then(r => r.ok ? r.json() : null)
+      .then((d: { recoveryActive?: boolean; momentumScore?: number; daysInactive?: number } | null) => {
+        if (d?.recoveryActive) setRecoveryActive(true);
+        // Decay banner: if momentum < 50 and days_inactive > 0
+        if (d && !d.recoveryActive && typeof d.momentumScore === "number" && d.momentumScore < 50) {
+          setDecayDrop(50 - d.momentumScore);
+        }
+        setRecoveryChecked(true);
+      })
+      .catch(() => { setRecoveryChecked(true); });
+
+    // ── Restore saved cognitive load from today ─────────────────────────────
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const savedCogLoad = typeof localStorage !== "undefined"
+      ? localStorage.getItem(`bm_cog_load_${todayKey}`) as "low" | "normal" | "high" | null
+      : null;
+    if (savedCogLoad) { setCogLoad(savedCogLoad); setCogLoadSaved(true); }
   }, []);
 
   useEffect(() => {
@@ -993,8 +1034,43 @@ function TodayContent() {
     } catch {}
   }
 
+  // ── Cognitive load save ────────────────────────────────────────────────────
+  const handleCogLoad = useCallback((level: "low" | "normal" | "high") => {
+    setCogLoad(level);
+    setCogLoadSaved(true);
+    const todayKey = new Date().toISOString().slice(0, 10);
+    try { localStorage.setItem(`bm_cog_load_${todayKey}`, level); } catch {}
+    fetch("/api/founder-context", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cognitive_load: level }),
+    }).catch(() => {});
+  }, []);
+
+  // ── Push permission request ────────────────────────────────────────────────
+  const requestPushPermission = useCallback(async () => {
+    setShowPushPrompt(false);
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm === "granted" && "serviceWorker" in navigator) {
+        const reg = await navigator.serviceWorker.ready;
+        const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+        if (!vapidKey) return;
+        const sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: vapidKey,
+        });
+        await fetch("/api/push/subscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ subscription: sub }),
+        });
+      }
+    } catch { /* non-fatal */ }
+  }, []);
+
   const handlePreTaskReplace = useCallback(async () => {
-    if (!userId) return;
     setReplacingTask(true);
     // Fire override signal best-effort — do NOT block the task refresh on it
     recordOverride("Not the right task right now").catch(() => {});
@@ -1110,7 +1186,10 @@ function TodayContent() {
       });
       setDone(true);
 
-      if (userId) {
+      // Show push permission prompt if not already granted
+      if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "default") {
+        setTimeout(() => setShowPushPrompt(true), 1500);
+      }
         storage.set(`bm_checkin_done_date_${userId}`, todayDate);
         storage.set(`bm_has_seen_today_${userId}`, "1");
       }
@@ -1131,6 +1210,30 @@ function TodayContent() {
           recordScore(newComputedScore);
           void queryClient.invalidateQueries({ queryKey: queryKeys.projectSummaries });
           void queryClient.invalidateQueries({ queryKey: queryKeys.overviewRoot });
+
+          // ── Auto level-up check ─────────────────────────────────────────────
+          fetch("/api/project/level-up", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ project_id: project.id, new_execution_score: newComputedScore }),
+          }).then(r => r.ok ? r.json() : null)
+            .then((d: { leveled_up?: boolean; old_stage?: string; new_stage?: string } | null) => {
+              if (d?.leveled_up && d.old_stage && d.new_stage) {
+                setLeveledUp({ old_stage: d.old_stage, new_stage: d.new_stage });
+                setLevelUpDismissed(false);
+                void queryClient.invalidateQueries({ queryKey: queryKeys.projectSummaries });
+              }
+            }).catch(() => {});
+
+          // ── Update ghost goal progress ──────────────────────────────────────
+          fetch("/api/weekly-goal", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              project_id:    project.id,
+              current_score: newComputedScore,
+            }),
+          }).catch(() => {});
         } catch {}
       }
 
@@ -1337,7 +1440,7 @@ function TodayContent() {
             </div>
           )}
 
-          {plan === "free" && briefingAvailable && !activePattern && (
+          {!planLoading && plan === "free" && briefingAvailable && !activePattern && (
             <div style={{ marginBottom: 20, textAlign: "left" }}>
               <PaywallMoment trigger="morning_briefing" />
             </div>
@@ -1438,6 +1541,206 @@ function TodayContent() {
           )}
         </div>
       )}
+
+      {/* ── Recovery Mode ──────────────────────────────────────────────────── */}
+      {recoveryChecked && recoveryActive && plan !== "free" && (
+        <RecoveryModeCard
+          onComplete={(newScore) => {
+            setRecoveryActive(false);
+            setDecayDrop(null);
+            // Optimistically update the score display
+            void queryClient.invalidateQueries({ queryKey: queryKeys.projectSummaries });
+            void queryClient.invalidateQueries({ queryKey: queryKeys.overviewRoot });
+            void newScore;
+          }}
+        />
+      )}
+
+      {/* ── Momentum Decay Banner ──────────────────────────────────────────── */}
+      <AnimatePresence>
+        {!recoveryActive && decayDrop !== null && decayDrop > 0 && !decayDismissed && plan !== "free" && (
+          <motion.div
+            key="decay-banner"
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+            transition={{ duration: 0.3 }}
+            style={{
+              marginBottom: 14,
+              borderRadius: 12,
+              border: "1px solid rgba(255,170,0,0.3)",
+              borderLeft: "3px solid var(--bm-amber)",
+              background: "rgba(255,170,0,0.05)",
+              padding: "12px 16px",
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 10,
+            }}
+          >
+            <span style={{ fontSize: 14, flexShrink: 0, marginTop: 1 }}>⚡</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-amber)", textTransform: "uppercase", letterSpacing: "0.09em", marginBottom: 3 }}>
+                Momentum decay detected
+              </div>
+              <p style={{ fontSize: 12, color: "var(--bm-text2)", margin: 0, lineHeight: 1.55 }}>
+                Your score has dropped <strong style={{ color: "var(--bm-amber)" }}>{decayDrop} points</strong> below baseline. Today&apos;s task is calibrated for recovery — completing it stops the slide.
+              </p>
+            </div>
+            <button
+              onClick={() => setDecayDismissed(true)}
+              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--bm-text4)", padding: "2px 4px", flexShrink: 0, fontSize: 16, lineHeight: 1 }}
+            >
+              ×
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Cognitive Load selector ────────────────────────────────────────── */}
+      <AnimatePresence>
+        {!cogLoadSaved && !done && (
+          <motion.div
+            key="cog-load"
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+            transition={{ duration: 0.3 }}
+            style={{
+              marginBottom: 14,
+              borderRadius: 12,
+              border: "1px solid var(--bm-border)",
+              background: "var(--bm-bg2)",
+              padding: "12px 16px",
+            }}
+          >
+            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.09em", marginBottom: 10 }}>
+              Capacity check — how&apos;s your energy today?
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              {(["low", "normal", "high"] as const).map((level) => {
+                const labels = { low: "🪫 Low", normal: "⚡ Normal", high: "🔥 High" };
+                const colors = { low: "rgba(224,85,85,0.15)", normal: "rgba(255,170,0,0.12)", high: "rgba(74,184,176,0.12)" };
+                const borders = { low: "rgba(224,85,85,0.35)", normal: "rgba(255,170,0,0.3)", high: "rgba(74,184,176,0.3)" };
+                return (
+                  <button
+                    key={level}
+                    onClick={() => handleCogLoad(level)}
+                    style={{
+                      flex: 1,
+                      padding: "9px 6px",
+                      borderRadius: 9,
+                      border: `1px solid ${cogLoad === level ? borders[level] : "var(--bm-border2)"}`,
+                      background: cogLoad === level ? colors[level] : "var(--bm-bg3)",
+                      color: "var(--bm-text2)",
+                      fontSize: 12,
+                      fontWeight: cogLoad === level ? 700 : 500,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      transition: "all 0.15s",
+                    }}
+                  >
+                    {labels[level]}
+                  </button>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Ghost Goal Banner ─────────────────────────────────────────────── */}
+      {project && (
+        <GhostGoalBanner
+          projectId={project.id}
+          currentScore={score}
+          stage={project.startup_stage ?? "Idea"}
+          executionScore={project.execution_score ?? 0}
+          streak={streak}
+          startupSummary={(project as unknown as Record<string, unknown>).startup_summary as string | undefined}
+          projectName={project.name ?? project.title ?? ""}
+        />
+      )}
+
+      {/* ── Auto Level-Up celebration card ───────────────────────────────── */}
+      <AnimatePresence>
+        {leveledUp && !levelUpDismissed && (
+          <motion.div
+            key="level-up-card"
+            initial={{ opacity: 0, scale: 0.97, y: -8 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.97, y: -4 }}
+            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+            style={{
+              marginBottom: 16,
+              borderRadius: 14,
+              border: "1px solid rgba(74,184,176,0.4)",
+              background: "linear-gradient(135deg, rgba(74,184,176,0.08) 0%, rgba(232,197,71,0.06) 100%)",
+              padding: isMobile ? "18px" : "20px 24px",
+              position: "relative",
+              overflow: "hidden",
+            }}
+          >
+            {/* Glow */}
+            <div style={{
+              position: "absolute", top: -40, right: -40,
+              width: 200, height: 200,
+              borderRadius: "50%",
+              background: "radial-gradient(ellipse, rgba(74,184,176,0.15) 0%, transparent 70%)",
+              pointerEvents: "none",
+            }} />
+
+            <button
+              onClick={() => setLevelUpDismissed(true)}
+              style={{
+                position: "absolute", top: 12, right: 12,
+                background: "none", border: "none", cursor: "pointer",
+                color: "var(--bm-text4)", padding: 4,
+              }}
+            >
+              ×
+            </button>
+
+            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-teal, #4AB8B0)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>
+              ✦ Stage unlocked
+            </div>
+            <div style={{ fontSize: isMobile ? 18 : 20, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.02em", marginBottom: 4 }}>
+              {leveledUp.old_stage} → {leveledUp.new_stage}
+            </div>
+            <p style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.6, margin: "0 0 16px" }}>
+              Your execution score and consistency unlocked the next stage. BuildMind will recalibrate your tasks for <strong>{leveledUp.new_stage}</strong> stage priorities.
+            </p>
+
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <a
+                href="/break"
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 5,
+                  padding: "9px 14px", borderRadius: 9,
+                  background: "rgba(74,184,176,0.15)", border: "1px solid rgba(74,184,176,0.35)",
+                  color: "var(--bm-teal, #4AB8B0)", fontSize: 12, fontWeight: 700,
+                  textDecoration: "none",
+                }}
+              >
+                Break My Startup at {leveledUp.new_stage}
+                <ArrowRight size={12} />
+              </a>
+              <a
+                href="/reports"
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 5,
+                  padding: "9px 14px", borderRadius: 9,
+                  background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)",
+                  color: "var(--bm-text2)", fontSize: 12, fontWeight: 600,
+                  textDecoration: "none",
+                }}
+              >
+                Weekly Report
+                <ArrowRight size={12} />
+              </a>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {shouldShowInitialAnalysis && initialAnalysis && (
         <motion.div
@@ -1686,13 +1989,13 @@ function TodayContent() {
       )}
 
       {/* ── Pre-check-in paywall ── */}
-      {plan === "free" && briefingAvailable && (
+      {!planLoading && plan === "free" && briefingAvailable && (
         <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} style={{ marginBottom: 16 }}>
           <PaywallMoment trigger="morning_briefing" />
         </motion.div>
       )}
 
-      {plan !== "free" && morningBriefing && (
+      {!planLoading && plan !== "free" && morningBriefing && (
         <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} style={{ marginBottom: 16 }}>
           <MorningBriefingCard initialBriefing={morningBriefing} />
         </motion.div>
@@ -2453,6 +2756,84 @@ function TodayContent() {
         })()}
         tasksCompleted={project?.tasksCompleted ?? 0}
       />
+
+      {/* ── Push permission prompt ─────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showPushPrompt && (
+          <motion.div
+            key="push-prompt"
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 16 }}
+            transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+            style={{
+              position: "fixed",
+              bottom: isMobile ? 80 : 32,
+              left: "50%",
+              transform: "translateX(-50%)",
+              width: isMobile ? "calc(100% - 32px)" : 380,
+              zIndex: 999,
+              borderRadius: 16,
+              border: "1px solid var(--bm-border)",
+              background: "var(--bm-bg2)",
+              backdropFilter: "blur(20px)",
+              WebkitBackdropFilter: "blur(20px)",
+              boxShadow: "0 16px 48px rgba(0,0,0,0.6)",
+              padding: "18px 20px",
+              display: "flex",
+              flexDirection: "column",
+              gap: 12,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+              <span style={{ fontSize: 20, flexShrink: 0 }}>🔔</span>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--bm-text)", marginBottom: 4 }}>
+                  Get your evening nudge
+                </div>
+                <p style={{ fontSize: 12, color: "var(--bm-text3)", margin: 0, lineHeight: 1.55 }}>
+                  BuildMind checks in at 8pm to see if you followed through. One tap to enable — you can turn it off anytime.
+                </p>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                onClick={() => void requestPushPermission()}
+                style={{
+                  flex: 1,
+                  padding: "10px 0",
+                  borderRadius: 10,
+                  border: "none",
+                  background: "var(--bm-accent)",
+                  color: "#000",
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                Enable evening check-in
+              </button>
+              <button
+                onClick={() => setShowPushPrompt(false)}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 10,
+                  border: "1px solid var(--bm-border2)",
+                  background: "var(--bm-bg3)",
+                  color: "var(--bm-text4)",
+                  fontWeight: 600,
+                  fontSize: 12,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                Not now
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
