@@ -487,9 +487,18 @@ export default function ReportsPage() {
         @media print {
           body * { visibility: hidden; }
           .bm-report-print, .bm-report-print * { visibility: visible; }
-          .bm-report-print { position: absolute; top: 0; left: 0; width: 100%; }
+          .bm-report-print {
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            max-width: 100%;
+            padding: 0;
+            margin: 0;
+            background: #fff;
+            color: #000;
+          }
           .bm-no-print { display: none !important; }
-          @page { margin: 18mm; }
+          @page { margin: 12mm; size: A4 portrait; }
         }
       `}</style>
 
@@ -854,4 +863,4 @@ export default function ReportsPage() {
       </div>
     </PaywallGate>
   );
-  }
+}
