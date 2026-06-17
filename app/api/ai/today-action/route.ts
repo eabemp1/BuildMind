@@ -590,6 +590,26 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
       debtContext,
       reflectionHistory: recentActionHistory || undefined,
       recentActionsBlock: personalisationCtx.recentActionsBlock || undefined,
+      // ── Goal Anchor — prevents task drift when reflections are negative ────────
+      // A bad reflection ("I didn't do it", "it failed") becomes the dominant signal
+      // if no north-star goal is present, causing the AI to abandon the startup's
+      // core objective. goalAnchor pins every task to what actually matters.
+      goalAnchor: (() => {
+        const stageNorthStar: Record<string, string> = {
+          Idea:       "Validate the core problem with real people — talk to 5 potential users before building anything.",
+          Validation: "Get 3 genuine commitment signals (time, money, or workflow change) from people outside your network.",
+          MVP:        "Ship a working version to at least 2 real users and watch them use it without guidance.",
+          Launch:     "Drive 10+ qualified visitors or sign-ups through one repeatable channel.",
+          Growth:     "Retain at least 60% of users week-over-week while adding new ones.",
+          Revenue:    "Close or upsell one paying customer and document exactly what made them say yes.",
+        };
+        const northStar = stageNorthStar[stage] ?? stageNorthStar.Idea;
+        const parts: string[] = [];
+        if (problem) parts.push(`Core problem: ${problem}`);
+        if (targetUsers) parts.push(`For: ${targetUsers}`);
+        parts.push(`Stage objective: ${northStar}`);
+        return parts.join("\n");
+      })(),
     };
 
     // Populate reflexionContext from data already fetched in the parallel round-trip above.
@@ -798,4 +818,4 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
     const message = error instanceof Error ? error.message : "Today action failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+  }
