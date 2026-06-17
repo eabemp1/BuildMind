@@ -5,6 +5,51 @@ import { planFromUserMetadata } from "@/lib/plan";
 import { enqueueBatch } from "@/lib/queue";
 import { reclassifyFounderArchetypeIfEligible } from "@/lib/founderArchetype";
 
+// ── Deterministic evening nudge variants ──────────────────────────────────────
+// Segmented by context so the message is always relevant.
+// Deterministic = fast, testable, zero cost, no latency added per user.
+// AI writing is reserved for emails (re-engagement, Sunday review).
+
+function eveningNudge(opts: {
+  name?: string;
+  daysInactive: number;
+  avoidanceZone?: string;
+  lastTask?: string;
+  patternSignal?: string;
+}): string {
+  const { name, daysInactive, avoidanceZone, lastTask, patternSignal } = opts;
+  const hey = name ? `${name}` : "Hey";
+
+  // Pattern-specific overrides
+  if (patternSignal === "avoidance_cluster" && avoidanceZone) {
+    return `${hey} — you've deferred "${avoidanceZone}" three times this week. Log what actually stopped you.`;
+  }
+  if (patternSignal === "momentum_decay") {
+    return `${hey} — momentum has dropped 3 days running. Log today honestly and tomorrow resets.`;
+  }
+  if (patternSignal === "override_cluster") {
+    return `${hey} — you've swapped the task 3 times this week. What's actually blocking you?`;
+  }
+
+  // Inactive segments
+  if (daysInactive >= 5) {
+    return `${hey} — ${daysInactive} days quiet. One log resets the clock. That's all.`;
+  }
+  if (daysInactive >= 3) {
+    return `${hey} — still building? Log what happened. No pressure, just data.`;
+  }
+  if (daysInactive >= 1) {
+    return lastTask
+      ? `${hey} — did "${lastTask.slice(0, 60)}" move anything today? Log it.`
+      : `${hey} — log what happened today before the day closes.`;
+  }
+
+  // Active — checked in today, just a reflection prompt
+  return lastTask
+    ? `${hey} — how did "${lastTask.slice(0, 60)}" go? Reflect before you sleep.`
+    : `${hey} — did you make progress today? Log it so tomorrow's action gets sharper.`;
+}
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 20;
@@ -26,16 +71,6 @@ function isCronRequest(req: Request): boolean {
   const bearer = authorization?.match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
   const secret = req.headers.get("x-cron-secret") ?? bearer;
   return Boolean(process.env.CRON_SECRET && secret === process.env.CRON_SECRET);
-}
-
-function eveningNudge(daysInactive: number): string {
-  if (daysInactive >= 3) {
-    return "No pressure. Just log one honest reflection and reset tomorrow.";
-  }
-  if (daysInactive >= 1) {
-    return "Still building today? Log what happened before the day closes.";
-  }
-  return "Did you make progress today? Log it so tomorrow's action gets sharper.";
 }
 
 type SupabaseThenable<T> = PromiseLike<{ data?: T | null; error?: { message?: string } | null }>;
@@ -272,7 +307,14 @@ export async function GET(req: NextRequest) {
     lastProcessedUserId = row.user_id;
 
     const { data: authUser } = await supabase.auth.admin.getUserById(row.user_id);
-    const plan = planFromUserMetadata(authUser.user);
+    // Use effective plan — trial users should get builder nudges
+    const userMeta = authUser.user?.user_metadata ?? {};
+    const rawPlan  = planFromUserMetadata(authUser.user);
+    // Check trial via founder_context.trial_ends_at (already fetched in ctx above)
+    const trialEndsAt = (ctx as Record<string, unknown>)?.trial_ends_at as string | undefined;
+    const isTrialActive = trialEndsAt ? new Date(trialEndsAt) > new Date() : false;
+    const plan = rawPlan === "builder" || isTrialActive ? "builder" : rawPlan;
+
     if (plan !== "builder") {
       skippedFree += 1;
       continue;
@@ -347,14 +389,21 @@ export async function GET(req: NextRequest) {
     let body: string;
     if (usePattern) {
       body = pattern.message;
-      // Persist so we do not repeat tomorrow
       await supabase.from("founder_context").update({
         active_pattern_signal: pattern.signal,
         active_pattern_message: pattern.message,
         last_pattern_shown_at: new Date().toISOString(),
       }).eq("user_id", row.user_id);
     } else {
-      body = eveningNudge(daysInactive);
+      // Deterministic variant — fast, testable, zero cost
+      const founderName = (authUser.user?.user_metadata?.full_name as string | undefined)?.split(" ")[0];
+      body = eveningNudge({
+        name:          founderName,
+        daysInactive,
+        avoidanceZone: (memory?.avoidance_zones as string[] | undefined)?.[0],
+        lastTask:      recentTaskTitles[0] ?? undefined,
+        patternSignal: pattern.signal ?? undefined,
+      });
     }
 
     if (dryRun) continue;
