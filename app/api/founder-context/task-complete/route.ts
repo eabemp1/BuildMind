@@ -199,6 +199,20 @@ export async function POST(req: Request) {
     // Non-fatal — table may not exist in all envs, or row already inserted by stream route
   }
 
+  // Also write to action_logs — the source crons (sunday-email, meta-critic, weekly-report) read.
+  try {
+    await admin.from("action_logs").insert({
+      user_id:   user.id,
+      project_id: projectId || null,
+      stage:     stage || ctx?.current_stage || null,
+      action_shown: taskTitle || null,
+      outcome:   outcome === "blocked" || outcome === "skipped" ? outcome : "completed",
+      created_at: new Date().toISOString(),
+    });
+  } catch {
+    // Non-fatal — backfilled from reflexion_learning_log if missing
+  }
+
   // ── PATCH 2: Write checkin_done_date to user_behavior_state (AWAITED) ────
   // This was previously fire-and-forget. Awaiting it guarantees that by the time
   // the client receives this 200 response and navigates to /reflect, any other
@@ -233,4 +247,4 @@ export async function POST(req: Request) {
       severity: activePattern.severity,
     } : null,
   });
-    }
+                                   }
