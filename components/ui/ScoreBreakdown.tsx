@@ -102,10 +102,18 @@ export function ScoreBreakdown(props: ScoreBreakdownProps) {
               exit={{ opacity: 0, y: -8, scale: 0.97 }}
               transition={{ type: "spring", stiffness: 400, damping: 30 }}
               style={{
-                position: "absolute", top: "calc(100% + 10px)", left: "50%", transform: "translateX(-50%)",
-                zIndex: 50, width: 280,
-                background: "rgba(14,14,22,0.97)", border: "1px solid var(--bm-border2)",
-                borderRadius: 14, padding: "16px 18px", boxShadow: "0 16px 40px rgba(0,0,0,0.6)",
+                position: "fixed",
+                top: "auto",
+                bottom: 80,
+                left: "50%",
+                transform: "translateX(-50%)",
+                zIndex: 50,
+                width: "min(280px, calc(100vw - 32px))",
+                background: "rgba(14,14,22,0.97)",
+                border: "1px solid var(--bm-border2)",
+                borderRadius: 14,
+                padding: "16px 18px",
+                boxShadow: "0 16px 40px rgba(0,0,0,0.6)",
               }}
             >
               <div style={{ fontSize: 11, fontWeight: 700, color: "#666", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>
@@ -142,4 +150,4 @@ export function ScoreBreakdown(props: ScoreBreakdownProps) {
       </AnimatePresence>
     </div>
   );
-}
+    }
