@@ -48,6 +48,8 @@ export const NAV: readonly NavItemConfig[] = [
   { href: "/ai-coach",         label: "AI Coach",        icon: BarChart3, enabled: true,  hidden: false, section: "Intelligence", badge: null, showDot: false, unlocksAt: 3 },
   { href: "/break-my-startup", label: "Break My Startup",icon: BarChart3, enabled: true,  hidden: false, section: "Intelligence", badge: null, showDot: false, unlocksAt: 3 },
   { href: "/reports",          label: "Weekly Report",   icon: BarChart3, enabled: true,  hidden: false, section: "Intelligence", badge: null, requiredPlan: "builder" as Plan, showDot: false, unlocksAt: 7 },
+  { href: "/achievements",     label: "Achievements",    icon: BarChart3, enabled: true,  hidden: false, section: "Intelligence", badge: null, showDot: true,  unlocksAt: 1 },
+  { href: "/memory",           label: "My Profile",      icon: BarChart3, enabled: true,  hidden: false, section: "Intelligence", badge: null, showDot: false, unlocksAt: 1 },
 
   // ── Settings section items ────────────────────────────────────────────────
   { href: "/upgrade",          label: "Upgrade",         icon: BarChart3, enabled: true,  hidden: false, section: "Settings", badge: null, showDot: false, unlocksAt: 0 },
@@ -57,7 +59,6 @@ export const NAV: readonly NavItemConfig[] = [
   { href: "/insights",         label: "Insights",        icon: BarChart3, enabled: true,  hidden: true, section: null, badge: null, showDot: false, unlocksAt: 3 },
   { href: "/ventures",         label: "Ventures",        icon: BarChart3, enabled: false, hidden: true, section: null, badge: null, requiredPlan: "builder" as Plan, showDot: false, unlocksAt: 7 },
   { href: "/startup-kit",      label: "Startup Kit",     icon: BarChart3, enabled: false, hidden: true, section: null, badge: null, requiredPlan: "builder" as Plan, showDot: false, unlocksAt: 7 },
-  { href: "/achievements",     label: "Achievements",    icon: BarChart3, enabled: false, hidden: true, section: null, badge: null, showDot: false, unlocksAt: 7 },
   { href: "/invite",           label: "Invite",          icon: BarChart3, enabled: false, hidden: true, section: null, badge: null, showDot: false, unlocksAt: 7 },
   { href: "/notifications",    label: "Notifications",   icon: BarChart3, enabled: false, hidden: true, section: null, badge: null, showDot: false, unlocksAt: 0 },
 ] as const;
@@ -99,4 +100,4 @@ export async function syncTasksCompletedFromServer(): Promise<void> {
   } catch {
     // Non-fatal
   }
-}
+   }
