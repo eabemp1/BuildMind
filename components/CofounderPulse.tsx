@@ -422,11 +422,26 @@ async function deriveCofounderMessage(memory: FounderMemory): Promise<PulseMessa
   let liveSignals: { momentumScore?: number; streak?: number; daysInactive?: number } = {};
   try {
     const overview = await getDashboardOverview();
+    // DashboardOverview doesn't expose momentumScore directly — read streak and inactivity
     liveSignals = {
-      momentumScore: overview?.momentumScore ?? undefined,
-      streak:        overview?.streak ?? undefined,
+      momentumScore: undefined,  // fetched separately below
+      streak:        overview?.founderStreakDays ?? undefined,
       daysInactive:  overview?.daysSinceLastReflection ?? undefined,
     };
+    // Fetch momentum from founder_context directly
+    const { createClient } = await import("@/lib/supabase/client");
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data: ctx } = await supabase
+        .from("founder_context")
+        .select("momentum_score")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (typeof ctx?.momentum_score === "number") {
+        liveSignals.momentumScore = ctx.momentum_score;
+      }
+    }
   } catch { /* non-fatal */ }
 
   const mode = pickModeFromMemory(memory, liveSignals);
@@ -514,4 +529,4 @@ function pickAction(memory: FounderMemory): PulseMessage["action"] | undefined {
     label: "What's my one thing today?",
     prompt: "Given everything you know about my startup and my patterns, what is the single most important thing I should do today?",
   };
-}
+                         }
