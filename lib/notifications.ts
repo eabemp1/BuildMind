@@ -293,20 +293,29 @@ export function seedMorningBriefing(): void {
   if (typeof window === "undefined") return;
   const today = new Date().toISOString().slice(0, 10);
   if (storage.get(MORNING_SEED_KEY) === today) return;
+  storage.set(MORNING_SEED_KEY, today);
 
   const hour = new Date().getHours();
-  if (hour < 5 || hour >= 11) return;
+  const isMorning = hour >= 5 && hour < 12;
+  const isAfternoon = hour >= 12 && hour < 17;
 
-  storage.set(MORNING_SEED_KEY, today);
+  // Show the briefing notification all day — not just in the 5-11am window
+  // The label adapts based on time so it doesn't feel out of place at 3pm
+  const body = isMorning
+    ? "Your win, biggest risk, and one action for today are waiting."
+    : isAfternoon
+    ? "Your morning briefing is ready — it adapts to what you logged yesterday."
+    : "Catch up on your briefing before tomorrow's session is generated.";
+
   addNotification({
-    type: "reflect_pending", // reuse existing type for bell display
+    type: "reflect_pending",
     emoji: "🌅",
-    title: "Morning briefing ready",
-    body: "Your win, biggest risk, and one action for today are waiting.",
+    title: isMorning ? "Morning briefing ready" : "Today's briefing",
+    body,
     priority: "high",
-    actionLabel: "Read briefing →",
+    actionLabel: "Open briefing →",
     actionHref: "/today",
-    expiresAt: Date.now() + 8 * 60 * 60 * 1000, // expires after 8h
+    expiresAt: Date.now() + 20 * 60 * 60 * 1000, // expires in 20h (well into next day)
   });
 }
 
