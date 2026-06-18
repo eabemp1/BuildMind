@@ -22,7 +22,7 @@ import { BrandMark } from "@/components/layout/logo";
 import { ArrowRight, Loader2, Zap } from "lucide-react";
 import { Suspense } from "react";
 
-type Screen = "identity_input" | "input" | "strike" | "founder_state" | "depth" | "stage" | "identity" | "integrations" | "saving";
+type Screen = "identity_input" | "input" | "strike" | "founder_state" | "depth" | "stage" | "identity" | "promise" | "integrations" | "saving";
 
 // ── IntegrationCard sub-component ────────────────────────────────────────────
 function IntegrationCard({
@@ -74,6 +74,124 @@ function IntegrationCard({
 }
 
 // ── IntegrationsScreen ────────────────────────────────────────────────────────
+// ── Promise Screen — what happens in your first 7 days ────────────────────────
+// Shown after the Strike result. Sets the arc so the product feels intentional.
+function PromiseScreen({ onComplete, startupName, stage }: {
+  onComplete: () => void;
+  startupName?: string;
+  stage?: string;
+}) {
+  const stageLabel = stage ?? "Idea";
+  const days = [
+    {
+      day: "Today",
+      color: "var(--bm-accent)",
+      bg: "rgba(232,197,71,0.08)",
+      bd: "rgba(232,197,71,0.2)",
+      headline: "Your first calibrated task",
+      sub: "Generated overnight from your startup context. Not generic advice — a specific move for your stage.",
+    },
+    {
+      day: "Day 3",
+      color: "var(--bm-teal, #4AB8B0)",
+      bg: "rgba(74,184,176,0.07)",
+      bd: "rgba(74,184,176,0.2)",
+      headline: "Your first behavioral pattern",
+      sub: "BuildMind notices what you avoid, what you execute well, and what slows you down. It tells you.",
+    },
+    {
+      day: "Day 7",
+      color: "#9B7FE8",
+      bg: "rgba(155,127,232,0.07)",
+      bd: "rgba(155,127,232,0.2)",
+      headline: "Your first weekly synthesis",
+      sub: "A behavioral report: what you shipped vs planned, your momentum trajectory, and what to fix next week.",
+    },
+  ];
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }}
+      transition={{ duration: 0.4, ease: "easeOut" }}
+      style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+        minHeight: "100dvh", padding: "clamp(20px, 5vw, 40px) clamp(16px, 5vw, 32px)", background: VIZ.bg }}
+    >
+      <div style={{ width: "100%", maxWidth: 480 }}>
+        {/* Header */}
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}
+          style={{ marginBottom: "clamp(20px, 4vw, 32px)" }}>
+          <p style={{ fontFamily: "'DM Mono', monospace", fontSize: 9,
+            textTransform: "uppercase" as const, letterSpacing: "0.10em",
+            color: "var(--bm-text3)", marginBottom: 8 }}>
+            Your execution system is ready
+          </p>
+          <h1 style={{ fontFamily: "'Syne', sans-serif",
+            fontSize: "clamp(22px, 5vw, 30px)", fontWeight: 800,
+            letterSpacing: "-0.03em", color: "var(--bm-text)", lineHeight: 1.15,
+            margin: "0 0 10px" }}>
+            Here&apos;s what happens next{startupName ? ` for ${startupName}` : ""}
+          </h1>
+          <p style={{ fontSize: 13, color: "var(--bm-text3)", lineHeight: 1.6, margin: 0 }}>
+            BuildMind runs overnight. Every morning you wake up to one task — calibrated to your {stageLabel} stage and what you did yesterday.
+          </p>
+        </motion.div>
+
+        {/* 7-day arc */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: "clamp(20px, 4vw, 28px)" }}>
+          {days.map(({ day, color, bg, bd, headline, sub }, i) => (
+            <motion.div key={day}
+              initial={{ opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.2 + i * 0.1 }}
+              style={{ display: "flex", gap: 14, padding: "clamp(12px, 3vw, 16px)", borderRadius: 12,
+                border: `1px solid ${bd}`, background: bg }}>
+              <div style={{ flexShrink: 0, paddingTop: 2 }}>
+                <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, fontWeight: 700,
+                  color, padding: "3px 8px", borderRadius: 6,
+                  border: `1px solid ${bd}`, background: "rgba(0,0,0,0.2)",
+                  whiteSpace: "nowrap" as const }}>
+                  {day}
+                </span>
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--bm-text)", marginBottom: 4 }}>
+                  {headline}
+                </div>
+                <div style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.55 }}>
+                  {sub}
+                </div>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+
+        {/* The compound effect line */}
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.55 }}
+          style={{ padding: "clamp(12px, 3vw, 16px)", borderRadius: 12,
+            border: "1px solid var(--bm-border)", background: "var(--bm-bg2)", marginBottom: "clamp(20px, 4vw, 28px)" }}>
+          <p style={{ fontSize: 12, color: "var(--bm-text2)", lineHeight: 1.65, margin: 0 }}>
+            <strong style={{ color: "var(--bm-text)" }}>After 30 days</strong> of daily use, BuildMind knows your avoidance patterns, your working style, your execution strengths, and your startup&apos;s survival risks — and every task it gives you is calibrated against all of that. That&apos;s not a tool. That&apos;s an unfair advantage.
+          </p>
+        </motion.div>
+
+        {/* CTA */}
+        <motion.button
+          initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.65 }}
+          onClick={onComplete}
+          style={{ width: "100%", padding: "clamp(13px, 3vw, 16px) 0",
+            borderRadius: 12, border: "none", background: "var(--bm-accent)",
+            color: "#000", fontFamily: "'Inter', sans-serif",
+            fontSize: "clamp(13px, 3vw, 15px)", fontWeight: 700,
+            cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+          Start day one →
+        </motion.button>
+        <p style={{ textAlign: "center", fontSize: 11, color: "var(--bm-text4)", marginTop: 10 }}>
+          Free to start. No card required.
+        </p>
+      </div>
+    </motion.div>
+  );
+}
+
 function IntegrationsScreen({ onComplete }: { onComplete: () => void }) {
   const [notionStatus, setNotionStatus] = useState<"idle" | "connecting" | "connected">("idle");
   const [linearStatus, setLinearStatus] = useState<"idle" | "connecting" | "connected">("idle");
@@ -1681,10 +1799,49 @@ function OnboardingInner() {
 
   if (screen === "saving") {
     return (
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100dvh", background: VIZ.bg }}>
-        <BuildMindLoader />
-        <p style={{ color: VIZ.text2, marginTop: 16, fontSize: 14 }}>Setting up your execution system...</p>
-      </div>
+      <motion.div
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+        style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+          minHeight: "100dvh", background: VIZ.bg, padding: "clamp(24px, 6vw, 48px) clamp(16px, 5vw, 32px)" }}
+      >
+        <div style={{ width: "100%", maxWidth: 420, textAlign: "center" }}>
+          <BuildMindLoader />
+          <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: "clamp(18px, 4vw, 24px)",
+            fontWeight: 800, color: VIZ.text, letterSpacing: "-0.03em",
+            margin: "clamp(16px, 3vw, 24px) 0 8px" }}>
+            Building your founder profile
+          </h2>
+          <p style={{ fontSize: 13, color: VIZ.text3, lineHeight: 1.6, marginBottom: "clamp(24px, 4vw, 36px)" }}>
+            Your startup context, stage, and avoidance patterns are being wired into the reflexion loop.
+          </p>
+
+          {/* What's being set up */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, textAlign: "left" }}>
+            {[
+              { icon: "⚡", label: "Reflexion Loop calibrated to your stage" },
+              { icon: "🧠", label: "Founder memory initialised" },
+              { icon: "📊", label: "Momentum baseline set" },
+              { icon: "🌅", label: "First morning briefing scheduled" },
+            ].map(({ icon, label }, i) => (
+              <motion.div key={label}
+                initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.3 + i * 0.15 }}
+                style={{ display: "flex", alignItems: "center", gap: 10,
+                  padding: "10px 14px", borderRadius: 10,
+                  border: "1px solid var(--bm-border)", background: "var(--bm-bg2)" }}>
+                <span style={{ fontSize: 14, flexShrink: 0 }}>{icon}</span>
+                <span style={{ fontSize: 12, color: "var(--bm-text2)" }}>{label}</span>
+                <motion.span
+                  initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                  transition={{ delay: 0.6 + i * 0.15 }}
+                  style={{ marginLeft: "auto", fontSize: 11, color: "var(--bm-accent)", fontWeight: 700 }}>
+                  ✓
+                </motion.span>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </motion.div>
     );
   }
 
@@ -1721,7 +1878,15 @@ function OnboardingInner() {
         />
       )}
       {screen === "integrations" && (
-        <IntegrationsScreen key="integrations" onComplete={handleIntegrationsComplete} />
+        <IntegrationsScreen key="integrations" onComplete={() => setScreen("promise")} />
+      )}
+      {screen === "promise" && (
+        <PromiseScreen
+          key="promise"
+          onComplete={handleIntegrationsComplete}
+          startupName={idea?.split(" ").slice(0, 3).join(" ")}
+          stage={startupStage}
+        />
       )}
     </AnimatePresence>
   );
