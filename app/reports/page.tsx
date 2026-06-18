@@ -250,38 +250,68 @@ type AIWeeklyReportView = {
   execution_trend?: "up" | "down" | "flat";
 };
 
-function ExportMenu({ onSelect, onClose }: { onSelect:(f:ExportFmt)=>void; onClose:()=>void }) {
+function ExportMenu({ onSelect, onClose, isMobile }: { onSelect:(f:ExportFmt)=>void; onClose:()=>void; isMobile?: boolean }) {
   const opts: { fmt:ExportFmt; label:string; sub:string; icon:LucideIcon }[] = [
-    { fmt:"pdf",  label:"PDF Document",  sub:"Print-quality report",        icon:FileText },
-    { fmt:"png",  label:"PNG Image",     sub:"Screenshot for sharing",      icon:ImageIcon },
-    { fmt:"csv",  label:"CSV Spreadsheet", sub:"Raw data for Excel / Sheets", icon:Table2 },
-    { fmt:"json", label:"JSON Export",   sub:"Full structured report data", icon:BarChart3 },
+    { fmt:"pdf",  label:"PDF Document",    sub:"Print-quality report",         icon:FileText },
+    { fmt:"png",  label:"PNG Image",       sub:"Screenshot for sharing",       icon:ImageIcon },
+    { fmt:"csv",  label:"CSV Spreadsheet", sub:"Raw data for Excel / Sheets",  icon:Table2 },
+    { fmt:"json", label:"JSON Export",     sub:"Full structured report data",  icon:BarChart3 },
   ];
+
+  const mobileStyle: React.CSSProperties = {
+    position: "fixed", bottom: 80, left: "50%", transform: "translateX(-50%)",
+    zIndex: 200, width: "calc(100vw - 32px)", maxWidth: 340,
+    background: "var(--bm-bg2)", border: "1px solid var(--bm-border)",
+    borderRadius: "var(--r-xl)", padding: 8,
+    boxShadow: "0 16px 48px rgba(0,0,0,0.55)",
+  };
+  const desktopStyle: React.CSSProperties = {
+    position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 50,
+    background: "var(--bm-bg2)", border: "1px solid var(--bm-border)",
+    borderRadius: "var(--r-xl)", padding: 8, minWidth: 230,
+    boxShadow: "0 16px 48px rgba(0,0,0,0.35)",
+  };
+
   return (
-    <motion.div initial={{ opacity:0, scale:0.95, y:-4 }} animate={{ opacity:1, scale:1, y:0 }}
-      exit={{ opacity:0, scale:0.95, y:-4 }}
-      style={{ position:"absolute", top:"calc(100% + 6px)", right:0, zIndex:50,
-        background:"var(--bm-bg2)", border:"1px solid var(--bm-border)",
-        borderRadius:"var(--r-xl)", padding:8, minWidth:230,
-        boxShadow:"0 16px 48px rgba(0,0,0,0.35)" }}>
-      {opts.map(({ fmt, label, sub, icon:Icon }) => (
-        <button key={fmt} onClick={() => { onSelect(fmt); onClose(); }}
-          style={{ display:"flex", alignItems:"center", gap:12, width:"100%",
-            padding:"10px 12px", borderRadius:"var(--r-md)", border:"none",
-            background:"transparent", cursor:"pointer", textAlign:"left", transition:"background 0.12s" }}
-          onMouseEnter={e => { e.currentTarget.style.background = "var(--bm-bg3)"; }}
-          onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
-          <div style={{ width:32, height:32, borderRadius:8, background:"var(--bm-bg3)",
-            display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-            <Icon size={14}/>
+    <>
+      {isMobile && (
+        <div onClick={onClose}
+          style={{ position:"fixed", inset:0, zIndex:199, background:"rgba(0,0,0,0.4)" }} />
+      )}
+      <motion.div
+        initial={{ opacity:0, scale:0.95, y: isMobile ? 8 : -4 }}
+        animate={{ opacity:1, scale:1, y:0 }}
+        exit={{ opacity:0, scale:0.95, y: isMobile ? 8 : -4 }}
+        style={isMobile ? mobileStyle : desktopStyle}
+      >
+        {isMobile && (
+          <div style={{ padding:"8px 12px 12px", borderBottom:"1px solid var(--bm-border)", marginBottom:4 }}>
+            <div style={{ fontSize:11, fontWeight:700, color:"var(--bm-text3)", textTransform:"uppercase", letterSpacing:"0.08em" }}>
+              Export report as
+            </div>
           </div>
-          <div>
-            <div style={{ fontSize:13, fontWeight:600, color:"var(--bm-text)" }}>{label}</div>
-            <div style={{ fontSize:11, color:"var(--bm-text3)" }}>{sub}</div>
-          </div>
-        </button>
-      ))}
-    </motion.div>
+        )}
+        {opts.map(({ fmt, label, sub, icon:Icon }) => (
+          <button key={fmt} onClick={() => { onSelect(fmt); onClose(); }}
+            style={{ display:"flex", alignItems:"center", gap:12, width:"100%",
+              padding: isMobile ? "12px 14px" : "10px 12px",
+              borderRadius:"var(--r-md)", border:"none",
+              background:"transparent", cursor:"pointer", textAlign:"left", transition:"background 0.12s" }}
+            onMouseEnter={e => { e.currentTarget.style.background = "var(--bm-bg3)"; }}
+            onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
+            <div style={{ width: isMobile ? 38 : 32, height: isMobile ? 38 : 32,
+              borderRadius: isMobile ? 10 : 8, background:"var(--bm-bg3)",
+              display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+              <Icon size={isMobile ? 16 : 14}/>
+            </div>
+            <div>
+              <div style={{ fontSize: isMobile ? 14 : 13, fontWeight:600, color:"var(--bm-text)" }}>{label}</div>
+              <div style={{ fontSize: isMobile ? 12 : 11, color:"var(--bm-text3)" }}>{sub}</div>
+            </div>
+          </button>
+        ))}
+      </motion.div>
+    </>
   );
 }
 
@@ -296,6 +326,7 @@ export default function ReportsPage() {
   const [aiReport, setAiReport] = useState<AIWeeklyReportView | null>(null);
   const [aiReportLoading, setAiReportLoading] = useState(false);
   const [xpSynced, setXpSynced] = useState(false);
+  const [recentActions, setRecentActions] = useState<{ action_shown: string; outcome: string; created_at: string }[]>([]);
 
   const { data: summaries = [], isLoading } = useProjectSummariesQuery();
   const activeProjectId = useActiveProjectId();
@@ -306,6 +337,22 @@ export default function ReportsPage() {
     void syncStreakFromServer().catch(() => {});
     void syncScoreHistory().catch(() => {});
     void syncXP().then(() => setXpSynced(true)).catch(() => setXpSynced(true));
+    // Fetch recent completed actions for export
+    import("@/lib/supabase/client").then(({ createClient }) => {
+      const supabase = createClient();
+      supabase.auth.getUser().then(({ data: { user } }) => {
+        if (!user) return;
+        const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+        supabase.from("action_logs")
+          .select("action_shown, outcome, created_at")
+          .eq("user_id", user.id)
+          .gte("created_at", weekAgo)
+          .order("created_at", { ascending: false })
+          .then(({ data }) => {
+            if (data) setRecentActions(data as { action_shown: string; outcome: string; created_at: string }[]);
+          });
+      });
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -420,12 +467,12 @@ export default function ReportsPage() {
           ["",""],
           ["Day","Tasks Completed"],
           ...["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map((d,i) => [d, taskData[i]]),
-          ["",""],
-          ["Wins",""],
-          ...displayWins.map(w => ["", w]),
-          ["",""],
-          ["Next Focus",""],
-          ...nextFocus.map(f => ["", f]),
+          [""],
+          ["Actions This Week", "Outcome"],
+          ...recentActions.map(a => [
+            a.action_shown ?? "—",
+            a.outcome ?? "—",
+          ]),
         ];
         const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"` ).join(",")).join("\n");
         const blob = new Blob([csv], { type:"text/csv" });
@@ -523,7 +570,7 @@ export default function ReportsPage() {
                     <ChevronDown size={10} style={{ transform: menuOpen ? "rotate(180deg)" : "none", transition:"transform 0.15s" }}/>
                   </button>
                   <AnimatePresence>
-                    {menuOpen && <ExportMenu onSelect={handleExport} onClose={() => setMenuOpen(false)}/>}
+                    {menuOpen && <ExportMenu onSelect={handleExport} onClose={() => setMenuOpen(false)} isMobile={isMobile}/>}
                   </AnimatePresence>
                 </div>
               </div>
@@ -863,4 +910,4 @@ export default function ReportsPage() {
       </div>
     </PaywallGate>
   );
-}
+  }
