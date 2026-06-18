@@ -418,45 +418,68 @@ export default function CofounderPulse() {
 async function deriveCofounderMessage(memory: FounderMemory): Promise<PulseMessage> {
   const now = new Date().toISOString();
 
-  // Use existing last_insight if fresh (< 24h)
+  // Fetch live signals from getDashboardOverview to power dynamic mode selection
+  let liveSignals: { momentumScore?: number; streak?: number; daysInactive?: number } = {};
+  try {
+    const overview = await getDashboardOverview();
+    liveSignals = {
+      momentumScore: overview?.momentumScore ?? undefined,
+      streak:        overview?.streak ?? undefined,
+      daysInactive:  overview?.daysSinceLastReflection ?? undefined,
+    };
+  } catch { /* non-fatal */ }
+
+  const mode = pickModeFromMemory(memory, liveSignals);
+
+  // Dynamic alert messages for live signals — don't use stale insight for these
+  if (mode === "alert") {
+    const { daysInactive = 0, momentumScore = 50 } = liveSignals;
+    const alertText = daysInactive >= 3
+      ? `${daysInactive} days without a check-in. That's not a break — that's drift. What's actually blocking you?`
+      : momentumScore < 35
+      ? `Momentum is at ${momentumScore}. That's not a plateau — it's a slide. Today's task is the only thing that reverses it.`
+      : `Something's off. Come back and log it before it compounds.`;
+    return { mode: "alert", text: alertText, action: pickAction(memory), timestamp: now };
+  }
+
+  // Use existing last_insight if fresh (< 24h) and mode is non-alert
   if (memory.last_insight) {
     const lastUpdate = new Date(memory.updated_at);
     const ageHours = (Date.now() - lastUpdate.getTime()) / (1000 * 60 * 60);
-
     if (ageHours < 24) {
-      return {
-        mode: pickModeFromMemory(memory),
-        text: memory.last_insight,
-        action: pickAction(memory),
-        timestamp: now,
-      };
+      return { mode, text: memory.last_insight, action: pickAction(memory), timestamp: now };
     }
   }
 
   // Generate fresh insight
   const freshInsight = await generateFounderInsight();
   if (freshInsight) {
-    return {
-      mode: pickModeFromMemory(memory),
-      text: freshInsight,
-      action: pickAction(memory),
-      timestamp: now,
-    };
+    return { mode, text: freshInsight, action: pickAction(memory), timestamp: now };
   }
 
-  // Fallback: use memory patterns directly
+  // Fallback
+  const { momentumScore = 50 } = liveSignals;
   return {
     mode: "observing",
-    text: `Still watching. ${memory.avoidance_zones.length > 0
-      ? `You've been avoiding ${memory.avoidance_zones[0]} — we should talk about that.`
-      : "Keep building."}`,
+    text: memory.avoidance_zones.length > 0
+      ? `Still watching. You've been avoiding ${memory.avoidance_zones[0]} — momentum is at ${momentumScore}. We should address that.`
+      : `Watching. Momentum at ${momentumScore}. Keep building.`,
     timestamp: now,
   };
 }
 
-function pickModeFromMemory(memory: FounderMemory): PulseMode {
+function pickModeFromMemory(memory: FounderMemory, overview?: { momentumScore?: number; streak?: number; daysInactive?: number }): PulseMode {
+  const momentum    = overview?.momentumScore ?? 50;
+  const streak      = overview?.streak ?? 0;
+  const daysInactive = overview?.daysInactive ?? 0;
+
+  // Live signals take priority over memory patterns
+  if (daysInactive >= 3) return "alert";
+  if (momentum < 35) return "alert";
+  if (momentum < 50 && streak === 0) return "challenge";
   if (memory.avoidance_zones.length >= 3) return "challenge";
-  if (memory.strengths.length >= 3) return "celebrate";
+  if (streak >= 7 && momentum >= 65) return "celebrate";
+  if (memory.strengths.length >= 3 && momentum >= 60) return "celebrate";
   if (memory.decision_patterns.some((p) => p.count >= 5 && p.pattern.includes("overdue"))) return "alert";
   if (memory.last_insight) return "insight";
   return "observing";
