@@ -3,359 +3,237 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePlan } from "@/lib/usePlan";
-import { Check, Loader2, ArrowRight, Shield } from "lucide-react";
-import TeamsWaitlistCard from "@/components/TeamsWaitlistCard";
+import { Check, Loader2, ArrowRight, Zap, Shield } from "lucide-react";
 import { PLAN_PRICE_MONTHLY } from "@/lib/pricing";
 
-const TIERS = [
+const VALUE_MOMENTS = [
   {
-    id: "founder",
-    name: "Founder",
-    price: "Free",
-    priceSub: "forever",
-    desc: "Hook into the daily loop. Generous enough to be genuinely useful. Upgrade feels obvious, not forced.",
-    featured: false,
-    features: [
-      "1 project, unlimited task execution days",
-      "5 AI coaching messages/day",
-      "Daily task generation (reflexion loop)",
-      "Morning brief + Reflect sheet",
-      "Momentum Score & streak",
-      "Break My Startup — 2 runs/month",
-      "1 integration (Notion or Linear)",
-    ],
-    cta: "Get started free",
-    planKey: null,
+    day: "Day 1",
+    color: "var(--bm-accent)",
+    text: "First task calibrated to your exact stage and startup context. Not generic. Not a template.",
   },
   {
-    id: "builder",
-    name: "Builder",
-    price: `$${PLAN_PRICE_MONTHLY.builder}`,
-    priceSub: "/mo",
-    desc: "For founders building seriously. Full intelligence layer, unlimited AI, deep integrations, and the weekly synthesis report that shows you your own patterns.",
-    featured: true,
-    badge: "Most popular",
-    features: [
-      "Unlimited projects & AI messages",
-      "Full founder memory & personality model",
-      "Weekly AI synthesis report",
-      "Break My Startup — unlimited + shareable report",
-      "All integrations (Notion, Linear, GitHub, Stripe)",
-      "Execution Scorecard & Moat Fingerprint",
-      "Priority reflexion model (deeper critique)",
-    ],
-    cta: "Upgrade to Builder",
-    planKey: "builder",
+    day: "Day 3",
+    color: "var(--bm-teal, #4AB8B0)",
+    text: "Your first behavioral pattern surfaces. The system tells you what you keep avoiding.",
   },
   {
-    id: "team",
-    name: "Team",
-    price: "Waitlist",
-    priceSub: "early access",
-    desc: "For cofounding teams. Teams is opening through early access instead of a second paid tier.",
-    featured: false,
-    features: [
-      "Everything in Builder × 3 seats",
-      "Cofounder Pulse — shared check-ins",
-      "Team Execution Scorecard",
-      "Spiral alerts to cofounders",
-      "Shared milestones & project board",
-      "Team weekly synthesis report",
-      "Slack integration for team nudges",
-    ],
-    cta: "Join Team waitlist",
-    planKey: "team",
+    day: "Day 7",
+    color: "#9B7FE8",
+    text: "Weekly behavioral synthesis. Momentum delta, what you shipped vs planned, next week directive.",
   },
+  {
+    day: "Day 30",
+    color: "var(--bm-amber)",
+    text: "Full founder profile built. Every task now calibrated to your avoidance zones, strengths, and working style.",
+  },
+];
+
+const BUILDER_FEATURES = [
+  { label: "Daily Morning Briefing", note: "3-agent reflexion loop runs overnight. Waits for you in the morning." },
+  { label: "Founder Memory", note: "Tracks your avoidance patterns, strengths, and execution style across sessions." },
+  { label: "Full Momentum Score + decay alerts", note: "Behavioral momentum — not just task completion. Alerts before you fully stall." },
+  { label: "Recovery Mode", note: "After 3+ missed days, the system adapts. Lighter tasks. Direct re-engagement." },
+  { label: "Evening check-in nudges", note: "Personalised 8pm push — references your last task and what you're avoiding." },
+  { label: "Weekly behavioral synthesis email", note: "Every Sunday: real numbers, honest diagnosis, next week directive." },
+  { label: "Rotating Critic Personas", note: "4 adversarial AI voices rotate weekly to pressure-test your thinking." },
+  { label: "Stage auto-progression", note: "Hit the execution threshold and you level up automatically." },
+  { label: "Unlimited AI tasks + coaching", note: "No daily or monthly caps." },
+  { label: "Unlimited projects", note: "Track multiple ideas simultaneously." },
 ];
 
 export default function UpgradePage() {
   const router = useRouter();
-  const { plan, isLoading } = usePlan();
+  const { plan, isLoading: planLoading } = usePlan();
   const [loading, setLoading] = useState(false);
-  const [loadingTier, setLoadingTier] = useState<string | null>(null);
-  const [error, setError] = useState("");
-  const [showTeamsWaitlist, setShowTeamsWaitlist] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isLoading && plan === "builder") router.replace("/overview");
-  }, [plan, isLoading, router]);
-
-  useEffect(() => {
-    const reference = new URLSearchParams(window.location.search).get("reference");
-    if (!reference) return;
-    let cancelled = false;
-    setLoading(true);
-    fetch("/api/billing/paystack/verify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ reference }),
-    })
-      .then(async (res) => {
-        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "Payment verification failed");
-        if (!cancelled) router.replace("/overview");
-      })
-      .catch((e: unknown) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : "Payment verification failed");
-      })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [router]);
-
-  async function handleUpgrade(planKey: string | null) {
-    if (!planKey) { router.push("/auth/signup"); return; }
-    if (planKey === "team") {
-      setShowTeamsWaitlist(true);
-      return;
+    if (!planLoading && plan === "builder") {
+      router.replace("/overview");
     }
-    setLoadingTier(planKey);
-    setError("");
+  }, [plan, planLoading, router]);
+
+  async function handleUpgrade() {
+    setLoading(true);
+    setError(null);
     try {
       const res = await fetch("/api/billing/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan: planKey }),
+        body: JSON.stringify({ plan: "builder" }),
       });
-      if (!res.ok) throw new Error("Could not create checkout session");
-      const { url } = await res.json();
-      if (url) window.location.href = url;
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Something went wrong. Please try again.");
-    } finally { setLoadingTier(null); }
+      const data = await res.json() as { url?: string; error?: string };
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        throw new Error(data.error ?? "Failed to start checkout");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong. Try again.");
+      setLoading(false);
+    }
+  }
+
+  if (planLoading) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center",
+        minHeight: "100vh", background: "var(--bm-bg)" }}>
+        <Loader2 size={20} color="var(--bm-text3)" className="animate-spin" />
+      </div>
+    );
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "var(--bm-bg)", padding: "60px 24px 80px" }}>
-      {showTeamsWaitlist && (
-        <TeamsWaitlistCard asModal onClose={() => setShowTeamsWaitlist(false)} />
-      )}
-      <div style={{ maxWidth: 920, margin: "0 auto" }}>
+    <main style={{ minHeight: "100vh", background: "var(--bm-bg)", overflowX: "hidden",
+      padding: "clamp(24px, 6vw, 48px) clamp(16px, 5vw, 24px) clamp(48px, 8vw, 80px)" }}>
+      <div style={{ maxWidth: 540, margin: "0 auto" }}>
 
         {/* Header */}
-        <div style={{ textAlign: "center", marginBottom: 56 }}>
-          <p style={{
-            fontFamily: "'DM Mono', monospace",
-            fontSize: 9,
-            textTransform: "uppercase",
-            letterSpacing: "0.10em",
-            color: "var(--bm-accent)",
-            marginBottom: 14,
-          }}>
-            Pricing
-          </p>
-          <h1 style={{
-            fontFamily: "'Syne', sans-serif",
-            fontSize: 32,
-            fontWeight: 700,
-            letterSpacing: "-0.025em",
-            color: "var(--bm-text)",
-            marginBottom: 14,
-            lineHeight: 1.2,
-          }}>
-            Not a rate limit upgrade.<br />A power upgrade.
-          </h1>
-          <p style={{
-            fontFamily: "'Inter', sans-serif",
-            fontSize: 13,
-            color: "var(--bm-text2)",
-            maxWidth: 480,
-            margin: "0 auto",
-            lineHeight: 1.6,
-          }}>
-            At day 7 this product is good. At day 90 it&apos;s irreplaceable. The longer you use BuildMind, the more accurate your behavioral model becomes — avoidance zones, spiral signals, execution style.
-          </p>
-        </div>
-
-        {error && (
-          <div style={{
-            maxWidth: 480,
-            margin: "0 auto 28px",
-            padding: "12px 16px",
-            background: "var(--bm-red-dim)",
-            border: "1px solid var(--bm-red-bd)",
-            borderRadius: "var(--r-lg)",
-            fontSize: 12,
-            color: "var(--bm-red)",
-            fontFamily: "'Inter', sans-serif",
-          }}>
-            {error}
+        <div style={{ textAlign: "center", marginBottom: "clamp(28px, 5vw, 44px)" }}>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 6,
+            padding: "4px 12px", borderRadius: 99,
+            background: "rgba(232,197,71,0.1)", border: "1px solid rgba(232,197,71,0.25)",
+            marginBottom: 16 }}>
+            <Zap size={11} color="var(--bm-accent)" />
+            <span style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-accent)",
+              textTransform: "uppercase" as const, letterSpacing: "0.1em" }}>
+              Builder Plan
+            </span>
           </div>
-        )}
+          <h1 style={{ fontFamily: "'Syne', sans-serif",
+            fontSize: "clamp(24px, 6vw, 36px)", fontWeight: 900,
+            letterSpacing: "-0.04em", color: "var(--bm-text)", lineHeight: 1.1,
+            margin: "0 0 clamp(10px, 2vw, 14px)" }}>
+            The full execution system.<br />
+            <span style={{ color: "var(--bm-accent)" }}>${PLAN_PRICE_MONTHLY.builder}/month.</span>
+          </h1>
+          <p style={{ fontSize: "clamp(13px, 2.5vw, 15px)", color: "var(--bm-text2)",
+            lineHeight: 1.7, maxWidth: 420, margin: "0 auto" }}>
+            Most AI tools answer questions. BuildMind builds a behavioral model of how you execute — and uses it to give you one task per day that actually moves the needle.
+          </p>
+        </div>
 
-        {/* Tier cards */}
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-          gap: 16,
-          marginBottom: 48,
-        }}>
-          {TIERS.map((tier) => (
-            <div
-              key={tier.id}
-              style={{
-                position: "relative",
-                background: tier.featured ? "var(--bm-accent-dim)" : "var(--bm-bg2)",
-                border: `1px solid ${tier.featured ? "var(--bm-accent-bd)" : "var(--bm-border)"}`,
-                borderRadius: "var(--r-xl)",
-                padding: "28px 24px",
-                display: "flex",
-                flexDirection: "column",
-              }}
-            >
-              {/* Most popular badge */}
-              {tier.badge && (
-                <div style={{
-                  position: "absolute",
-                  top: -1,
-                  right: 20,
-                  fontFamily: "'DM Mono', monospace",
-                  fontSize: 9,
-                  letterSpacing: "0.06em",
-                  textTransform: "uppercase",
-                  padding: "3px 10px",
-                  background: "var(--bm-accent)",
-                  color: "var(--bm-text-inv)",
-                  borderRadius: "0 0 var(--r-md) var(--r-md)",
-                  fontWeight: 500,
-                }}>
-                  {tier.badge}
+        {/* Value arc */}
+        <div style={{ marginBottom: "clamp(24px, 4vw, 36px)", borderRadius: 14,
+          border: "1px solid var(--bm-border)", background: "var(--bm-bg2)",
+          overflow: "hidden" }}>
+          <div style={{ padding: "clamp(12px, 2.5vw, 16px) clamp(14px, 3vw, 20px)",
+            borderBottom: "1px solid var(--bm-border)" }}>
+            <p style={{ fontFamily: "'DM Mono', monospace", fontSize: 9,
+              textTransform: "uppercase" as const, letterSpacing: "0.1em",
+              color: "var(--bm-text3)", margin: 0 }}>
+              What you get by day
+            </p>
+          </div>
+          {VALUE_MOMENTS.map(({ day, color, text }, i) => (
+            <div key={day} style={{ display: "flex", gap: "clamp(12px, 3vw, 16px)",
+              padding: "clamp(12px, 2.5vw, 16px) clamp(14px, 3vw, 20px)",
+              borderBottom: i < VALUE_MOMENTS.length - 1 ? "1px solid var(--bm-border)" : "none",
+              alignItems: "flex-start" }}>
+              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, fontWeight: 700,
+                color, padding: "2px 8px", borderRadius: 6,
+                border: `1px solid ${color}44`, background: `${color}11`,
+                flexShrink: 0, whiteSpace: "nowrap" as const, marginTop: 1 }}>
+                {day}
+              </span>
+              <p style={{ fontSize: "clamp(11px, 2vw, 13px)", color: "var(--bm-text2)",
+                lineHeight: 1.6, margin: 0 }}>
+                {text}
+              </p>
+            </div>
+          ))}
+        </div>
+
+        {/* CTA card */}
+        <div style={{ borderRadius: 16,
+          border: "2px solid rgba(232,197,71,0.3)",
+          background: "linear-gradient(160deg, rgba(232,197,71,0.05) 0%, var(--bm-bg2) 60%)",
+          padding: "clamp(20px, 4vw, 28px)",
+          marginBottom: "clamp(20px, 4vw, 28px)" }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 4 }}>
+            <span style={{ fontFamily: "'Syne', sans-serif",
+              fontSize: "clamp(32px, 8vw, 44px)", fontWeight: 900,
+              color: "var(--bm-text)", letterSpacing: "-0.04em" }}>
+              ${PLAN_PRICE_MONTHLY.builder}
+            </span>
+            <span style={{ fontSize: 14, color: "var(--bm-text3)" }}>/month</span>
+          </div>
+          <p style={{ fontSize: 12, color: "var(--bm-text4)", marginBottom: "clamp(16px, 3vw, 20px)" }}>
+            Cancel anytime. No contracts.
+          </p>
+
+          {error && (
+            <div style={{ padding: "10px 14px", borderRadius: 9, marginBottom: 12,
+              background: "rgba(224,85,85,0.08)", border: "1px solid rgba(224,85,85,0.2)",
+              fontSize: 12, color: "var(--bm-red, #E05555)" }}>
+              {error}
+            </div>
+          )}
+
+          <button
+            onClick={() => void handleUpgrade()}
+            disabled={loading}
+            style={{ width: "100%", padding: "clamp(13px, 3vw, 16px) 0",
+              borderRadius: 12, border: "none",
+              background: loading ? "var(--bm-bg3)" : "var(--bm-accent)",
+              color: loading ? "var(--bm-text3)" : "#000",
+              fontFamily: "inherit", fontSize: "clamp(14px, 2.5vw, 16px)", fontWeight: 700,
+              cursor: loading ? "not-allowed" : "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+              transition: "all 0.15s" }}>
+            {loading
+              ? <><Loader2 size={16} className="animate-spin" /> Redirecting to checkout...</>
+              : <><Zap size={15} /> Upgrade to Builder <ArrowRight size={14} /></>}
+          </button>
+
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center",
+            gap: 6, marginTop: 10 }}>
+            <Shield size={11} color="var(--bm-text4)" />
+            <span style={{ fontSize: 11, color: "var(--bm-text4)" }}>
+              Secured by Paystack · 14-day free trial
+            </span>
+          </div>
+        </div>
+
+        {/* Feature list */}
+        <div style={{ borderRadius: 14, border: "1px solid var(--bm-border)",
+          background: "var(--bm-bg2)", padding: "clamp(16px, 3vw, 22px)",
+          marginBottom: "clamp(20px, 4vw, 28px)" }}>
+          <p style={{ fontFamily: "'DM Mono', monospace", fontSize: 9,
+            textTransform: "uppercase" as const, letterSpacing: "0.1em",
+            color: "var(--bm-text3)", marginBottom: "clamp(12px, 2.5vw, 16px)" }}>
+            Everything in Builder
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: "clamp(10px, 2vw, 14px)" }}>
+            {BUILDER_FEATURES.map(({ label, note }) => (
+              <div key={label} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                <Check size={13} color="var(--bm-accent)" strokeWidth={2.5}
+                  style={{ flexShrink: 0, marginTop: 2 }} />
+                <div>
+                  <div style={{ fontSize: "clamp(12px, 2vw, 13px)", fontWeight: 600,
+                    color: "var(--bm-text)", marginBottom: 2 }}>{label}</div>
+                  <div style={{ fontSize: "clamp(10px, 1.8vw, 11px)", color: "var(--bm-text4)",
+                    lineHeight: 1.5 }}>{note}</div>
                 </div>
-              )}
-
-              {/* Tier name */}
-              <p style={{
-                fontFamily: "'DM Mono', monospace",
-                fontSize: 10,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                color: "var(--bm-text3)",
-                marginBottom: 8,
-              }}>
-                {tier.name}
-              </p>
-
-              {/* Price */}
-              <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 4 }}>
-                <span style={{
-                  fontFamily: "'Syne', sans-serif",
-                  fontSize: 28,
-                  fontWeight: 700,
-                  letterSpacing: "-0.03em",
-                  color: "var(--bm-text)",
-                }}>
-                  {tier.price}
-                </span>
-                <span style={{
-                  fontFamily: "'Inter', sans-serif",
-                  fontSize: 11,
-                  color: "var(--bm-text3)",
-                }}>
-                  {tier.priceSub}
-                </span>
               </div>
-
-              {/* Desc */}
-              <p style={{
-                fontFamily: "'Inter', sans-serif",
-                fontSize: 12,
-                color: "var(--bm-text2)",
-                lineHeight: 1.55,
-                marginBottom: 20,
-              }}>
-                {tier.desc}
-              </p>
-
-              {/* Features */}
-              <ul style={{ listStyle: "none", padding: 0, margin: "0 0 24px", flex: 1 }}>
-                {tier.features.map((f, i) => (
-                  <li
-                    key={i}
-                    style={{
-                      display: "flex",
-                      alignItems: "flex-start",
-                      gap: 8,
-                      padding: "6px 0",
-                      borderTop: i === 0 ? "1px solid var(--bm-border)" : "1px solid var(--bm-border)",
-                      fontFamily: "'Inter', sans-serif",
-                      fontSize: 12.5,
-                      color: "var(--bm-text2)",
-                      lineHeight: 1.45,
-                    }}
-                  >
-                    <span style={{
-                      fontFamily: "'DM Mono', monospace",
-                      fontSize: 11,
-                      color: "var(--bm-accent)",
-                      flexShrink: 0,
-                      marginTop: 1,
-                    }}>
-                      →
-                    </span>
-                    {f}
-                  </li>
-                ))}
-              </ul>
-
-              {/* CTA button */}
-              <button
-                onClick={() => handleUpgrade(tier.planKey)}
-                disabled={loading || loadingTier === tier.planKey}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 8,
-                  width: "100%",
-                  padding: "11px 0",
-                  borderRadius: "var(--r-lg)",
-                  border: tier.featured ? "none" : "1px solid var(--bm-border2)",
-                  background: tier.featured ? "var(--bm-accent)" : "transparent",
-                  color: tier.featured ? "var(--bm-text-inv)" : "var(--bm-text2)",
-                  fontFamily: "'Inter', sans-serif",
-                  fontWeight: 500,
-                  fontSize: 13,
-                  cursor: loading ? "not-allowed" : "pointer",
-                  opacity: loading ? 0.7 : 1,
-                  transition: "opacity 0.15s",
-                }}
-              >
-                {loadingTier === tier.planKey ? (
-                  <><Loader2 size={14} className="animate-spin" /> Processing…</>
-                ) : (
-                  <>{tier.cta} <ArrowRight size={13} /></>
-                )}
-              </button>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
 
-        {/* Trust row */}
-        <div style={{
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          gap: 24,
-          flexWrap: "wrap",
-        }}>
-          {[
-            { icon: <Shield size={11} />, text: "Secure checkout via Paystack" },
-            { icon: <Check size={11} />, text: "Instant access on payment" },
-            { icon: <Check size={11} />, text: "Cancel from Settings anytime" },
-          ].map(({ icon, text }) => (
-            <div key={text} style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              fontFamily: "'DM Mono', monospace",
-              fontSize: 10,
-              color: "var(--bm-text3)",
-              letterSpacing: "0.04em",
-            }}>
-              <span style={{ color: "var(--bm-accent)" }}>{icon}</span>
-              {text}
-            </div>
-          ))}
+        {/* Social proof */}
+        <div style={{ textAlign: "center", padding: "clamp(16px, 3vw, 20px)",
+          borderRadius: 12, border: "1px solid var(--bm-border)", background: "var(--bm-bg2)" }}>
+          <p style={{ fontSize: "clamp(11px, 2vw, 13px)", color: "var(--bm-text3)",
+            lineHeight: 1.65, margin: 0, fontStyle: "italic" }}>
+            &ldquo;The morning briefing alone is worth the price. I wake up knowing exactly what to do — not what to plan.&rdquo;
+          </p>
+          <p style={{ fontSize: 11, color: "var(--bm-text4)", marginTop: 8 }}>
+            Early Builder member · Idea stage → Validation in 3 weeks
+          </p>
         </div>
+
       </div>
-    </div>
+    </main>
   );
-}
+    }
