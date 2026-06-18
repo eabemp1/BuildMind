@@ -319,7 +319,8 @@ export default function OverviewPage() {
       {/* ── Metrics row — 4 flat stat chips ── */}
       {summaries.length > 0 && (
         <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}
-          style={{ display: "flex", gap: 0, borderRadius: 10, border: "1px solid var(--bm-border)", overflow: "hidden", marginBottom: 20 }}>
+          style={{ borderRadius: 10, border: "1px solid var(--bm-border)", overflow: "hidden", marginBottom: 20 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)" }} className="sm:flex">
           {[
             {
               label: "Momentum Score",
@@ -349,7 +350,12 @@ export default function OverviewPage() {
               tooltip: "How consistently and deeply you're executing right now — last 14 days only. Built from active days, reflection depth, confidence scores, and whether BuildMind has detected your behavioural patterns. Goes down when you go quiet.",
             },
           ].map((stat, i, arr) => (
-            <div key={stat.label} style={{ flex: 1, padding: "14px 16px", borderRight: i < arr.length - 1 ? "1px solid var(--bm-border)" : "none" }}>
+            <div key={stat.label} style={{
+              flex: 1,
+              padding: "14px 16px",
+              borderRight: i % 2 === 0 ? "1px solid var(--bm-border)" : "none",
+              borderBottom: i < 2 ? "1px solid var(--bm-border)" : "none",
+            }} className="sm:[border-right:var(--bm-border)_solid_1px] sm:[border-bottom:none]">
               <div style={{ display: "flex", alignItems: "center", fontSize: 11, color: "var(--bm-text3)", marginBottom: 4 }}>
                 {stat.label}
                 {"tooltip" in stat && stat.tooltip && <MetricTooltip text={stat.tooltip} />}
@@ -364,6 +370,7 @@ export default function OverviewPage() {
               </div>
             </div>
           ))}
+          </div>
         </motion.div>
       )}
 
@@ -463,4 +470,4 @@ export default function OverviewPage() {
       )}
     </div>
   );
-}
+    }
