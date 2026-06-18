@@ -24,6 +24,7 @@ type WeekData = {
   stage: string;
   streak: number | null;
   score: number | null;
+  momentum_score: number | null;
   tasksCommitted: number | null;
   tasksDone: number | null;
   milestone: string;
@@ -88,6 +89,7 @@ export default function WeeklySharePage() {
     stage: PLACEHOLDER,
     streak: null,
     score: null,
+    momentum_score: null,
     tasksCommitted: null,
     tasksDone: null,
     milestone: PLACEHOLDER,
@@ -114,6 +116,7 @@ export default function WeeklySharePage() {
         stage: activeProject?.startup_stage ?? activeProject?.stage ?? PLACEHOLDER,
         streak: null,
         score: null,
+        momentum_score: null,
         tasksCommitted: null,
         tasksDone: null,
         milestone: PLACEHOLDER,
