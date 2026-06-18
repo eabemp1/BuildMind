@@ -917,7 +917,20 @@ export default function ProjectDetailPage() {
               </div>
             )}
           </div>
-          <ScoreBreakdown score={score} compact />
+          <a
+            href="/memory"
+            title="See what moves your score"
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 4,
+              padding: "3px 9px", borderRadius: 8,
+              background: score >= 70 ? "rgba(74,222,128,0.08)" : score >= 45 ? "rgba(232,197,71,0.08)" : "rgba(224,85,85,0.07)",
+              border: `1px solid ${score >= 70 ? "rgba(74,222,128,0.25)" : score >= 45 ? "rgba(232,197,71,0.2)" : "rgba(224,85,85,0.2)"}`,
+              color: score >= 70 ? "#4ade80" : score >= 45 ? "var(--bm-accent)" : "var(--bm-red, #E05555)",
+              fontSize: 11, fontWeight: 700, textDecoration: "none",
+            }}
+          >
+            {score}pts →
+          </a>
           <span className="text-[11px] text-[var(--bm-text3)]">{completedCount}/{tasks.length} tasks</span>
           <span className="text-[11px]" style={{ color: progress >= 60 ? "#4ade80" : progress >= 30 ? "#fbbf24" : "var(--bm-text3)" }}>{progress}% complete</span>
         </div>
@@ -1076,4 +1089,4 @@ export default function ProjectDetailPage() {
       )}
     </div>
   );
-}
+                                         }
