@@ -471,11 +471,44 @@ export function incrementDailyStreak(): number {
   const lastCheckin = storage.getLastCheckinDate();
   const current = getStoredStreak();
 
+  // Already checked in today — no change
   if (lastCheckin === today) return current;
 
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
-  const next = lastCheckin === streakDayKey(yesterday) ? current + 1 : 1;
+  const yesterdayKey = streakDayKey(yesterday);
+
+  let next: number;
+  if (lastCheckin === yesterdayKey) {
+    // Checked in yesterday — normal increment
+    next = current + 1;
+    // Clear any freeze that was used
+    storage.set("bm_streak_freeze_used", "0");
+  } else if (lastCheckin) {
+    // Missed at least one day — check if freeze is available
+    const freezeUsed = storage.get("bm_streak_freeze_used") === "1";
+    const twoDaysAgo = new Date();
+    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+    const twoDaysAgoKey = streakDayKey(twoDaysAgo);
+
+    if (!freezeUsed && lastCheckin === twoDaysAgoKey && current >= 3) {
+      // Used freeze: missed exactly 1 day, streak >= 3 (Duolingo rule: no freeze for <3 day streaks)
+      next = current; // streak preserved
+      storage.set("bm_streak_freeze_used", "1");
+      // Notify user their streak was saved by the freeze
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("bm_streak_freeze_used", { detail: { streak: current } }));
+      }
+    } else {
+      // Missed 2+ days or freeze already used — reset
+      next = 1;
+      storage.set("bm_streak_freeze_used", "0");
+    }
+  } else {
+    // First ever check-in
+    next = 1;
+    storage.set("bm_streak_freeze_used", "0");
+  }
 
   storage.setStreak(next);
   storage.setLastCheckinDate(today);
