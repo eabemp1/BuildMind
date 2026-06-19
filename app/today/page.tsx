@@ -15,7 +15,7 @@ import { updateAchievementStats, checkAndUnlockAchievements, getAchievementStats
 import { notifyReflectPending } from "@/lib/notifications";
 import { trackFunnelStep } from "@/lib/onboarding-analytics";
 import BuildMindLoader from "@/components/BuildMindLoader";
-import MorningBriefingCard from "@/components/MorningBriefingCard";
+import MorningBriefingModal from "@/components/MorningBriefingModal";
 import RecoveryModeCard from "@/components/RecoveryModeCard";
 import { PaywallMoment } from "@/components/PaywallMoment";
 import { Clock, CheckCircle2, Copy, Check, Flame, Brain, Sparkles, AlertCircle, TrendingUp, RotateCcw, Zap, ArrowRight } from "lucide-react";
@@ -439,6 +439,7 @@ function TodayContent() {
   // Morning briefing
   const [briefingAvailable, setBriefingAvailable] = useState(false);
   const [morningBriefing, setMorningBriefing] = useState<MorningBriefing | null>(null);
+  const [showBriefingModal, setShowBriefingModal] = useState(false);
 
   // Recovery Mode — shown when founder has 3+ days of momentum decay
   const [recoveryActive, setRecoveryActive] = useState(false);
@@ -465,17 +466,35 @@ function TodayContent() {
       })
       .catch(() => {});
 
-    fetch("/api/morning-briefing", { cache: "no-store" })
-      .then(r => r.json().then((body: { ok?: boolean; data?: MorningBriefing; upgradePrompt?: boolean }) => ({ status: r.status, body })))
-      .then(({ status, body }) => {
-        if (status === 200 && body?.ok && body?.data) {
-          setMorningBriefing(body.data);
-          setBriefingAvailable(true);
-        } else if (status === 403 && body?.upgradePrompt === true) {
-          setBriefingAvailable(true);
+    // Fetch briefing and server-side dismiss date in parallel
+    Promise.all([
+      fetch("/api/morning-briefing", { cache: "no-store" })
+        .then(r => r.json().then((body: { ok?: boolean; data?: MorningBriefing; upgradePrompt?: boolean }) => ({ status: r.status, body })))
+        .catch(() => null),
+      fetch("/api/founder-memory", { cache: "no-store", credentials: "include" })
+        .then(r => r.ok ? r.json() : null)
+        .catch(() => null),
+    ]).then(([briefingRes, mem]) => {
+      if (!briefingRes) return;
+      const { status, body } = briefingRes;
+      const today = new Date().toISOString().slice(0, 10);
+      const serverDismissedToday =
+        (mem as { data?: { briefing_dismissed_date?: string } } | null)
+          ?.data?.briefing_dismissed_date === today;
+
+      if (status === 200 && body?.ok && body?.data) {
+        setMorningBriefing(body.data);
+        setBriefingAvailable(true);
+        if (!serverDismissedToday) {
+          setShowBriefingModal(true);
         }
-      })
-      .catch(() => {});
+      } else if (status === 403 && body?.upgradePrompt === true) {
+        setBriefingAvailable(true);
+        if (!serverDismissedToday) {
+          setShowBriefingModal(true);
+        }
+      }
+    });
 
     // ── Recovery Mode check ─────────────────────────────────────────────────
     fetch("/api/recovery-mode", { cache: "no-store" })
@@ -1442,17 +1461,7 @@ function TodayContent() {
             </div>
           )}
 
-          {!planLoading && plan === "free" && briefingAvailable && !activePattern && (
-            <div style={{ marginBottom: 20, textAlign: "left" }}>
-              <PaywallMoment trigger="morning_briefing" />
-            </div>
-          )}
 
-          {plan !== "free" && morningBriefing && !activePattern && (
-            <div style={{ marginBottom: 20, textAlign: "left" }}>
-              <MorningBriefingCard initialBriefing={morningBriefing} />
-            </div>
-          )}
 
           <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 10, justifyContent: "center" }}>
             <button onClick={() => router.push("/reflect")} style={{ padding: "12px 20px", borderRadius: 10, border: "none", background: "var(--grad-primary)", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Reflect on today →</button>
@@ -1991,17 +2000,6 @@ function TodayContent() {
       )}
 
       {/* ── Pre-check-in paywall ── */}
-      {!planLoading && plan === "free" && briefingAvailable && (
-        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} style={{ marginBottom: 16 }}>
-          <PaywallMoment trigger="morning_briefing" />
-        </motion.div>
-      )}
-
-      {!planLoading && plan !== "free" && morningBriefing && (
-        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} style={{ marginBottom: 16 }}>
-          <MorningBriefingCard initialBriefing={morningBriefing} />
-        </motion.div>
-      )}
 
       {/* ══ HERO HEADER ══════════════════════════════════════════════════════════ */}
       <motion.div
@@ -2836,6 +2834,24 @@ function TodayContent() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ── Morning Briefing modal — first open of the day, server-gated ─── */}
+      {showBriefingModal && (morningBriefing || briefingAvailable) && (
+        <MorningBriefingModal
+          briefing={morningBriefing}
+          isPaywalled={!planLoading && plan === "free"}
+          onDismiss={() => {
+            setShowBriefingModal(false);
+            const today = new Date().toISOString().slice(0, 10);
+            fetch("/api/founder-memory", {
+              method: "PATCH",
+              credentials: "include",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ briefing_dismissed_date: today }),
+            }).catch(() => {});
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -2846,4 +2862,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-  }
+}
