@@ -1388,7 +1388,7 @@ function TodayContent() {
               // Optimistically dismiss in UI, revert if server fails
               setMilestoneBreakDismissed(true);
               storage.set(dismissKey, "1");
-              fetch("/api/founder-context", {
+              fetch("/api/founder-memory", {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ pending_milestone_break: null }),
