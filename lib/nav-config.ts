@@ -49,7 +49,7 @@ export const NAV: readonly NavItemConfig[] = [
   { href: "/break-my-startup", label: "Break My Startup",icon: BarChart3, enabled: true,  hidden: false, section: "Intelligence", badge: null, showDot: false, unlocksAt: 3 },
   { href: "/reports",          label: "Weekly Report",   icon: BarChart3, enabled: true,  hidden: false, section: "Intelligence", badge: null, requiredPlan: "builder" as Plan, showDot: false, unlocksAt: 7 },
   { href: "/achievements",     label: "Achievements",    icon: BarChart3, enabled: true,  hidden: false, section: "Intelligence", badge: null, showDot: true,  unlocksAt: 1 },
-  { href: "/memory",           label: "My Profile",      icon: BarChart3, enabled: true,  hidden: false, section: "Intelligence", badge: null, showDot: false, unlocksAt: 1 },
+  { href: "/memory",           label: "My Profile",      icon: BarChart3, enabled: true,  hidden: true, section: "Intelligence", badge: null, showDot: false, unlocksAt: 1 },
 
   // ── Settings section items ────────────────────────────────────────────────
   { href: "/upgrade",          label: "Upgrade",         icon: BarChart3, enabled: true,  hidden: false, section: "Settings", badge: null, showDot: false, unlocksAt: 0 },
