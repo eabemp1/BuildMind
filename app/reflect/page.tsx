@@ -96,7 +96,7 @@ export default function ReflectPage() {
       setHistory(saved);
       const action = storage.getJSON<{ action?: string }>("bm_today_action", {});
       setTodayAction(action?.action ?? "");
-      setStreak(getStoredStreak());
+      setStreak(0); // Server is source of truth — will be set correctly in the async fetch below
     } catch {}
     fetchBehaviorState<{ today_action: { action?: string }; reflect_done_date: string }>(["today_action", "reflect_done_date"]).then(values => {
       if (values.today_action?.action) {
@@ -137,12 +137,15 @@ export default function ReflectPage() {
               .maybeSingle(),
           ]);
 
-          // Sync server streak so reflect-synthesis receives accurate data across devices
-          let resolvedStreak = getStoredStreak();
-          if (founderCtxRes.status === "fulfilled" && typeof founderCtxRes.value.data?.streak === "number") {
-            resolvedStreak = Math.max(founderCtxRes.value.data.streak, resolvedStreak);
-            setStreak(resolvedStreak);
+          // Streak: server is always the authority. getStoredStreak() can be
+          // stale or 0 cross-device — don't Math.max it against server, just use server.
+          // If server has no streak yet (new user), fall back to 0 honestly.
+          let resolvedStreak = 0;
+          if (founderCtxRes.status === "fulfilled" && founderCtxRes.value.data !== null) {
+            const serverStreak = founderCtxRes.value.data?.streak;
+            resolvedStreak = typeof serverStreak === "number" ? serverStreak : 0;
           }
+          setStreak(resolvedStreak);
 
           if (summariesRes.status === "fulfilled" && summariesRes.value.data?.[0]?.startup_stage) {
             setStartupStage(summariesRes.value.data[0].startup_stage);
