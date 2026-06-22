@@ -130,7 +130,7 @@ export async function emitPulse(
     });
 
     // Async score refresh — never awaited, never blocks the calling route
-    supabase.rpc("upsert_pulse_score", { p_user_id: userId }).then(() => {}).catch(() => {});
+    Promise.resolve(supabase.rpc("upsert_pulse_score", { p_user_id: userId })).then(() => {}).catch(() => {});
   } catch {
     // Pulse is non-fatal — never propagate
   }
@@ -168,7 +168,7 @@ export async function emitPulseBatch(
 
     await supabase.from("pulse_events").insert(rows);
 
-    supabase.rpc("upsert_pulse_score", { p_user_id: userId }).then(() => {}).catch(() => {});
+    Promise.resolve(supabase.rpc("upsert_pulse_score", { p_user_id: userId })).then(() => {}).catch(() => {});
   } catch {
     // Non-fatal
   }
