@@ -43,33 +43,43 @@ export interface ScoringInput {
   momentum_score?: number | null;    // Supabase-persisted activity momentum (0-100)
   xp?: number | null;               // Cumulative achievement XP (server-synced)
   streak?: number | null;           // Authoritative streak (Supabase-synced)
+  /**
+   * Optional Pulse Score override. When present and > 0, replaces momentum_score
+   * in the formula with a higher weight (0.35) since Pulse is a quality-weighted
+   * signal that encodes depth, not just presence.
+   */
+  pulseScore?: number | null;
 }
 
 /**
- * computeStartupScore — enhanced 5-signal model (v2)
+ * computeStartupScore — v3, Pulse-aware
  *
- * Signal weights:
- *   execution_score  (0–100) → primary AI-assessed quality signal,  weight 0.45
- *   momentum_score   (0–100) → server-persisted daily activity,      weight 0.25
- *   xp boost         (0–20)  → absolute achievement XP bonus
- *   streak boost     (0–10)  → absolute raw streak bonus, capped at 30 days
- *   validation boost (0–20)  → absolute validation_strengths bonus
+ * Signal weights (no Pulse):
+ *   execution_score  (0-100)  weight 0.45
+ *   momentum_score   (0-100)  weight 0.25
+ *   xp boost         (0-20)   absolute
+ *   streak boost     (0-10)   absolute, capped at 30 days
+ *   validation boost (0-20)   absolute
  *
- * The consistency_score differs from the streak boost:
- *   streak_boost    = linear ramp up to 30 days (rewards length)
- *   consistency     = measures *regularity* — did you show up at least 5 of the
- *                     last 7 days? This rewards cadence over raw day count.
+ * Signal weights (with Pulse):
+ *   execution_score  (0-100)  weight 0.40
+ *   pulseScore       (0-100)  weight 0.35  (replaces momentum — higher quality signal)
+ *   xp/streak/validation boosts unchanged
  *
- * The raw ceiling can exceed 100, intentionally allowing exceptional behaviour
- * to offset weak signals. The final result is clamped to [0, 100]. All inputs
- * are optional — missing ones score 0.
- * Returns an integer 0–100.
+ * Baseline guarantee: a new founder with only momentum_score=50 and no earned
+ * signals scores ~25. The 50 is the DB default, so they are never shown 0 or 12
+ * just for being new.
+ *
+ * Returns an integer 0-100.
  */
 export function computeStartupScore(summary: ScoringInput): number {
   const execution = summary.execution_score ?? 0;
-  const momentum  = summary.momentum_score  ?? 0;
+  const pulse     = typeof summary.pulseScore === "number" && summary.pulseScore > 0
+    ? summary.pulseScore
+    : null;
+  const momentum  = summary.momentum_score ?? 50; // 50 is DB default
 
-  // XP → 0–20 boost via stepped thresholds
+  // XP → 0-20 boost via stepped thresholds
   const xp = summary.xp ?? 0;
   const xpBoost =
     xp >= 3500 ? 20 :
@@ -78,21 +88,26 @@ export function computeStartupScore(summary: ScoringInput): number {
     xp >= 500  ?  8 :
     xp >= 200  ?  4 : 0;
 
-  // Streak → 0–10 boost, capped at 30-day streak = 10 pts
+  // Streak → 0-10 boost, capped at 30 days
   const streak = Math.min(summary.streak ?? 0, 30);
   const streakBoost = Math.round((streak / 30) * 10);
 
-  // Validation strengths → 0–20 boost
+  // Validation strengths → 0-20 boost
   const strengthBoost = Math.min(20, (summary.validation_strengths ?? []).length * 4);
 
-  const raw =
-    execution  * 0.45 +
-    momentum   * 0.25 +
-    xpBoost         +   // absolute pts (0–20)
-    streakBoost     +   // absolute pts (0–10)
-    strengthBoost;      // absolute pts (0–20)
+  let raw: number;
+  if (pulse !== null) {
+    raw = execution * 0.40 + pulse * 0.35 + xpBoost + streakBoost + strengthBoost;
+  } else {
+    raw = execution * 0.45 + momentum * 0.25 + xpBoost + streakBoost + strengthBoost;
+  }
 
-  return Math.min(100, Math.max(0, Math.round(raw)));
+  // Baseline floor for new founders: momentum=50, no other signals → ~25
+  // Once any earned signal exists the floor is irrelevant
+  const hasEarnedSignals = execution > 0 || xpBoost > 0 || streakBoost > 0 || strengthBoost > 0;
+  const baseline = !hasEarnedSignals ? Math.round(momentum * 0.50) : 0;
+
+  return Math.min(100, Math.max(baseline, Math.round(raw)));
 }
 
 /**
