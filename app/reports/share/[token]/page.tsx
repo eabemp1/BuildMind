@@ -17,23 +17,36 @@ import type { Metadata } from "next";
 import { ShareReportClient } from "./ShareReportClient";
 
 interface ReportData {
-  week_start_date: string;
-  projects_count: number;
+  week_start_date:      string;
+  projects_count:       number;
   milestones_completed: number;
-  tasks_completed: number;
-  ai_summary: string;
-  ai_risks: string;
-  ai_suggestions: string;
+  tasks_completed:      number;
+  ai_summary:           string;
+  ai_risks:             string;
+  ai_suggestions:       string;
+  // Pulse fields — written by weekly-report route
+  pulse_score?:         number;
+  pulse_streak?:        number;
+  signal_ratio?:        number;
+  execution_trend?:     "up" | "down" | "flat";
+  velocity_7d?:         number;
+  positive_events?:     number;
+  negative_events?:     number;
 }
 
 interface WeeklyReportRow {
-  share_token: string;
-  report_data: ReportData;
-  ai_summary: string;
-  created_at: string;
+  share_token:      string;
+  report_data:      ReportData;
+  ai_summary:       string;
+  created_at:       string;
+  // Pulse top-level columns
+  pulse_score?:     number;
+  pulse_streak?:    number;
+  signal_ratio?:    number;
+  execution_trend?: "up" | "down" | "flat";
   // joined from profiles
-  display_name?: string;
-  avatar_url?: string;
+  display_name?:    string;
+  avatar_url?:      string;
   startup_summary?: string;
 }
 
@@ -50,6 +63,10 @@ async function getReportByToken(token: string): Promise<WeeklyReportRow | null> 
       report_data,
       ai_summary,
       created_at,
+      pulse_score,
+      pulse_streak,
+      signal_ratio,
+      execution_trend,
       profiles (
         display_name,
         avatar_url
@@ -63,15 +80,22 @@ async function getReportByToken(token: string): Promise<WeeklyReportRow | null> 
 
   if (error || !data) return null;
 
-  // Flatten joined data
   const profiles = (data as unknown as { profiles?: { display_name?: string; avatar_url?: string } }).profiles;
   const ctx      = (data as unknown as { founder_context?: { startup_summary?: string } }).founder_context;
+  const row      = data as unknown as {
+    pulse_score?: number; pulse_streak?: number;
+    signal_ratio?: number; execution_trend?: string;
+  };
 
   return {
     share_token:      data.share_token,
     report_data:      data.report_data as ReportData,
     ai_summary:       data.ai_summary as string,
     created_at:       data.created_at as string,
+    pulse_score:      row.pulse_score ?? undefined,
+    pulse_streak:     row.pulse_streak ?? undefined,
+    signal_ratio:     row.signal_ratio ?? undefined,
+    execution_trend:  (row.execution_trend as "up" | "down" | "flat") ?? undefined,
     display_name:     profiles?.display_name ?? "A founder",
     avatar_url:       profiles?.avatar_url,
     startup_summary:  ctx?.startup_summary ?? undefined,
@@ -89,12 +113,13 @@ export async function generateMetadata(
 
   const name   = report.display_name ?? "A founder";
   const tasks  = report.report_data?.tasks_completed ?? 0;
+  const pulse  = report.pulse_score ?? report.report_data?.pulse_score ?? 0;
   const weekOf = report.created_at
     ? new Date(report.created_at).toLocaleDateString("en-US", { month: "long", day: "numeric" })
     : "this week";
 
-  const title       = `${name}'s Week — ${tasks} tasks shipped | BuildMind`;
-  const description = report.ai_summary?.slice(0, 160) ?? `${name} shipped ${tasks} tasks this week building their startup.`;
+  const title       = `${name}'s Week — Pulse ${pulse} · ${tasks} tasks shipped | BuildMind`;
+  const description = report.ai_summary?.slice(0, 160) ?? `${name} shipped ${tasks} tasks this week. Pulse Score: ${pulse}/100.`;
 
   return {
     title,
