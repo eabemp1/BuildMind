@@ -171,7 +171,11 @@ export async function getProjectsForCurrentUser(): Promise<BuildMindProject[]> {
       revenue_model: null,
       startup_stage: project.startup_stage ?? "Idea",
       validation_score: project.validation_score ?? 35,
-      execution_score: project.execution_score ?? 20,
+      // Bug fix: execution_score fallback was 20, making new projects score ~22
+      // instead of the intended ~13 (no AI analysis yet = no execution signal).
+      // Using 0 lets computeStartupScore reflect reality — run Break My Startup
+      // or complete tasks to earn an execution score.
+      execution_score: project.execution_score ?? 0,
       momentum_score: project.momentum_score ?? 50,
       target_users: null,
       problem: null,
