@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { groqJSON, hasAdminEnv } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { checkPlanAccess } from "@/app/api/ai/_planCheck";
+import { getPulseWeekSummary, getPulseMetrics, emitPulse } from "@/lib/pulse";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -263,13 +264,35 @@ export async function POST(request: Request) {
           : "";
     }
 
-    const momentumScore = clamp(15 + tasks * 7 + milestones * 10, 10, 95);
+    // ── Pulse-derived scores (replaces manual count formula) ─────────────
+    const [pulseWeek, pulseMetrics] = await Promise.all([
+      getPulseWeekSummary(userId, projectId),
+      getPulseMetrics(userId),
+    ]);
+
+    // Fall back to legacy count if Pulse has no data yet (early users)
+    const legacyMomentum = clamp(15 + tasks * 7 + milestones * 10, 10, 95);
+    const momentumScore = pulseMetrics.pulseScore > 0
+      ? clamp(Math.round(pulseMetrics.pulseScore), 10, 95)
+      : legacyMomentum;
+
+    // Execution trend from Pulse is deterministic — not AI-generated
+    const deterministicTrend = pulseWeek.executionTrend;
+    const pulseStreak = pulseMetrics.pulseStreak;
 
     // reflectionCount is the most reliable signal for Today-page activity
     // Re-derive it from tasks (which includes reflection rows) for the prompt
-    const activitySignal = tasks > 0
-      ? `${tasks} action${tasks !== 1 ? "s" : ""} completed or reflected on this week`
-      : "No completed actions recorded this week";
+    const pulsePositive = pulseWeek.positiveEvents;
+    const pulseNegative = pulseWeek.negativeEvents;
+    const avgReflectionQuality = pulseWeek.reflectionQualities.length > 0
+      ? Math.round(pulseWeek.reflectionQualities.reduce((a, b) => a + b, 0) / pulseWeek.reflectionQualities.length * 10) / 10
+      : null;
+
+    const activitySignal = pulsePositive > 0
+      ? `${pulsePositive} positive-signal events this week (${pulseNegative} overrides/blocks). Pulse Score: ${momentumScore}/100. Streak: ${pulseStreak} days.${avgReflectionQuality ? ` Avg reflection quality: ${avgReflectionQuality}/5.` : ""}`
+      : tasks > 0
+        ? `${tasks} action${tasks !== 1 ? "s" : ""} completed or reflected on this week`
+        : "No completed actions recorded this week";
 
     const systemPrompt = `You are a brutally honest startup coach. Return ONLY valid JSON with exactly these keys:
 {
@@ -278,6 +301,7 @@ export async function POST(request: Request) {
   "biggest_gap": "the single biggest execution gap right now",
   "next_week_focus": "one specific thing to prioritize next week. This will become Monday's first task — make it concrete and actionable.",
   "honest_assessment": "a direct, uncomfortable truth about where you are headed",
+  "execution_trend_note": "one sentence on whether this week felt faster or slower than last week — qualitative only",
   "momentum_score": <number 0-100>,
   "intention_vs_execution_rate": <number 0-100 — tasks completed / tasks committed this week>,
   "execution_trend": "up" | "down" | "flat"
@@ -336,10 +360,13 @@ INSTRUCTION:
 
     try {
       const ai = await groqJSON<AIWeeklyReport>(systemPrompt, userPrompt);
-      if (ai?.summary && typeof ai.momentum_score === "number") {
+      // Never trust ai.momentum_score — the AI inflates it to match its
+      // narrative tone. We always use our Pulse-derived score.
+      if (ai?.summary) {
         result = {
           ...ai,
-          momentum_score: clamp(Math.round(ai.momentum_score), 10, 95),
+          momentum_score: momentumScore,  // always our computed value
+          execution_trend: deterministicTrend,  // always deterministic
         };
       }
     } catch {
@@ -415,12 +442,20 @@ INSTRUCTION:
     // Today-action generator reads last_week_summary from founder_memory on Monday
     const reportData = {
       week_start_date: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-      projects_count: projects,
+      projects_count:       projects,
       milestones_completed: milestones,
-      tasks_completed: tasks,
-      ai_summary: result.summary,
-      ai_risks: result.biggest_gap,
-      ai_suggestions: result.next_week_focus,
+      tasks_completed:      tasks,
+      ai_summary:           result.summary,
+      ai_risks:             result.biggest_gap,
+      ai_suggestions:       result.next_week_focus,
+      // Pulse fields — used by the public share card
+      pulse_score:          momentumScore,
+      pulse_streak:         pulseStreak,
+      signal_ratio:         pulseMetrics.signalRatio,
+      execution_trend:      deterministicTrend,
+      velocity_7d:          pulseMetrics.velocity7d,
+      positive_events:      pulseWeek.positiveEvents,
+      negative_events:      pulseWeek.negativeEvents,
     };
 
     // Growth #4: Generate a share token so the report can be linked publicly.
@@ -434,13 +469,28 @@ INSTRUCTION:
     await supabaseForShare
       .from("weekly_reports")
       .upsert({
-        user_id:     userId,
-        share_token: shareToken,
-        report_data: reportData,
-        ai_summary:  result.summary,
-        created_at:  new Date().toISOString(),
+        user_id:          userId,
+        share_token:      shareToken,
+        report_data:      reportData,
+        ai_summary:       result.summary,
+        pulse_score:      momentumScore,
+        pulse_streak:     pulseStreak,
+        signal_ratio:     pulseMetrics.signalRatio,
+        execution_trend:  deterministicTrend,
+        created_at:       new Date().toISOString(),
       }, { onConflict: "user_id,share_token" })
       .then(() => {});
+
+    // Emit report_generated to Pulse (non-blocking)
+    emitPulse(userId, "report_generated", projectId || null, {
+      stage: projectStage || undefined,
+      metadata: {
+        share_token: shareToken,
+        pulse_score: momentumScore,
+        pulse_streak: pulseStreak,
+        execution_trend: deterministicTrend,
+      },
+    }).catch(() => {});
 
     const shareUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "https://buildmind.live"}/reports/share/${shareToken}`;
 
