@@ -326,6 +326,7 @@ export default function ReportsPage() {
   const [aiReport, setAiReport] = useState<AIWeeklyReportView | null>(null);
   const [aiReportLoading, setAiReportLoading] = useState(false);
   const [xpSynced, setXpSynced] = useState(false);
+  const [scoreSynced, setScoreSynced] = useState(false);
   const [recentActions, setRecentActions] = useState<{ action_shown: string; outcome: string; created_at: string }[]>([]);
 
   const { data: summaries = [], isLoading } = useProjectSummariesQuery();
@@ -335,7 +336,7 @@ export default function ReportsPage() {
 
   useEffect(() => {
     void syncStreakFromServer().catch(() => {});
-    void syncScoreHistory().catch(() => {});
+    void syncScoreHistory().then(() => setScoreSynced(true)).catch(() => setScoreSynced(true));
     void syncXP().then(() => setXpSynced(true)).catch(() => setXpSynced(true));
     // Fetch recent completed actions for export
     import("@/lib/supabase/client").then(({ createClient }) => {
@@ -397,7 +398,8 @@ export default function ReportsPage() {
     const vals = hist.slice(-7).map(h => h.score);
     while (vals.length < 7) vals.unshift(0);
     return vals;
-  }, [xpSynced]);
+  // scoreSynced ensures this recomputes after server data lands
+  }, [xpSynced, scoreSynced]);
 
   const wins = metrics?.wins ?? [];
   const displayWins = aiReport ? [...wins].slice(0, 4) : wins;
