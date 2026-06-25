@@ -47,6 +47,7 @@ export const NAV: readonly NavItemConfig[] = [
   // ── Intelligence section (visible in sidebar after unlock) ──────────────
   { href: "/ai-coach",         label: "AI Coach",        icon: BarChart3, enabled: true,  hidden: false, section: "Intelligence", badge: null, showDot: false, unlocksAt: 3 },
   { href: "/break-my-startup", label: "Break My Startup",icon: BarChart3, enabled: true,  hidden: false, section: "Intelligence", badge: null, showDot: false, unlocksAt: 3 },
+  { href: "/agents",           label: "Agent Workforce",  icon: BarChart3, enabled: true,  hidden: false, section: "Intelligence", badge: "NEW", showDot: false, requiredPlan: "builder" as Plan, unlocksAt: 5 },
   { href: "/reports",          label: "Weekly Report",   icon: BarChart3, enabled: true,  hidden: false, section: "Intelligence", badge: null, requiredPlan: "builder" as Plan, showDot: false, unlocksAt: 7 },
   { href: "/achievements",     label: "Achievements",    icon: BarChart3, enabled: true,  hidden: false, section: "Intelligence", badge: null, showDot: true,  unlocksAt: 1 },
   { href: "/memory",           label: "My Profile",      icon: BarChart3, enabled: true,  hidden: true, section: "Intelligence", badge: null, showDot: false, unlocksAt: 1 },
