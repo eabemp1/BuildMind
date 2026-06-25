@@ -466,35 +466,37 @@ function TodayContent() {
       })
       .catch(() => {});
 
-    // Fetch briefing and server-side dismiss date in parallel
-    Promise.all([
-      fetch("/api/morning-briefing", { cache: "no-store" })
-        .then(r => r.json().then((body: { ok?: boolean; data?: MorningBriefing; upgradePrompt?: boolean }) => ({ status: r.status, body })))
-        .catch(() => null),
-      fetch("/api/founder-memory", { cache: "no-store", credentials: "include" })
-        .then(r => r.ok ? r.json() : null)
-        .catch(() => null),
-    ]).then(([briefingRes, mem]) => {
-      if (!briefingRes) return;
-      const { status, body } = briefingRes;
-      const today = new Date().toISOString().slice(0, 10);
-      const serverDismissedToday =
-        (mem as { data?: { briefing_dismissed_date?: string } } | null)
-          ?.data?.briefing_dismissed_date === today;
+    // Fetch dismiss date first (fast), then briefing (slow — may generate)
+    // Decoupled so a slow AI generation doesn't race with the dismiss check.
+    const today = new Date().toISOString().slice(0, 10);
 
-      if (status === 200 && body?.ok && body?.data) {
+    // Step 1: check server dismiss state immediately (fast DB read)
+    let serverDismissedToday = false;
+    try {
+      const memRes = await fetch("/api/founder-memory", { cache: "no-store", credentials: "include" });
+      if (memRes.ok) {
+        const mem = await memRes.json() as { data?: { briefing_dismissed_date?: string } } | null;
+        serverDismissedToday = mem?.data?.briefing_dismissed_date === today;
+      }
+    } catch { /* non-fatal */ }
+
+    // Step 2: if already dismissed today, skip the briefing fetch entirely
+    if (serverDismissedToday) return;
+
+    // Step 3: fetch briefing (may trigger AI generation — can take several seconds)
+    try {
+      const briefingRes = await fetch("/api/morning-briefing", { cache: "no-store" });
+      const body = await briefingRes.json() as { ok?: boolean; data?: MorningBriefing; upgradePrompt?: boolean };
+
+      if (briefingRes.status === 200 && body?.ok && body?.data) {
         setMorningBriefing(body.data);
         setBriefingAvailable(true);
-        if (!serverDismissedToday) {
-          setShowBriefingModal(true);
-        }
-      } else if (status === 403 && body?.upgradePrompt === true) {
+        setShowBriefingModal(true);
+      } else if (briefingRes.status === 403 && body?.upgradePrompt === true) {
         setBriefingAvailable(true);
-        if (!serverDismissedToday) {
-          setShowBriefingModal(true);
-        }
+        setShowBriefingModal(true);
       }
-    });
+    } catch { /* non-fatal */ }
 
     // ── Recovery Mode check ─────────────────────────────────────────────────
     fetch("/api/recovery-mode", { cache: "no-store" })
