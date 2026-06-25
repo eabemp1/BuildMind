@@ -296,7 +296,11 @@ export async function GET(req: Request) {
     .limit(1)
     .maybeSingle();
 
-  if (existing) return NextResponse.json({ ok: true, data: existing, cached: true });
+  if (existing) {
+    // Reconstruct gaps from raw_context for cached briefings
+    const cachedGaps = (existing.raw_context as { gaps?: unknown[] } | null)?.gaps ?? [];
+    return NextResponse.json({ ok: true, data: { ...existing, gaps: cachedGaps }, cached: true });
+  }
 
   // Generate a fresh one
   const { data: ctx } = await admin
@@ -378,10 +382,42 @@ export async function GET(req: Request) {
 
   try {
     const briefing = await generateMorningBriefing(reflexionCtx);
+
+    // Note: morning_briefings table has: win, risk, action, raw_context, delivered_at.
+    // The briefing object also contains `gaps` which is NOT a DB column.
+    // Spread only the known columns; store gaps inside raw_context.
+    //
+    // INSERT and SELECT are separated — chaining .select().maybeSingle() on an
+    // admin client insert returns null in some Supabase versions even when the
+    // row was written. We insert first, then fetch the row back by user+date.
+    const insertPayload = {
+      user_id:      user.id,
+      win:          briefing.win,
+      risk:         briefing.risk,
+      action:       briefing.action,
+      raw_context:  { gaps: briefing.gaps ?? [], stage: reflexionCtx.stage },
+      delivered_at: new Date().toISOString(),
+    };
+
+    const { error: insertError } = await admin
+      .from("morning_briefings")
+      .insert(insertPayload);
+
+    if (insertError) {
+      // If it's a duplicate (already generated today via race), fall through to fetch
+      if (!insertError.message?.includes("duplicate") && !insertError.code?.includes("23505")) {
+        throw new Error(`morning_briefings insert: ${insertError.message}`);
+      }
+    }
+
+    // Fetch the row back (works regardless of whether we just inserted or it was a dup)
     const { data: saved } = await admin
       .from("morning_briefings")
-      .insert({ user_id: user.id, ...briefing, delivered_at: new Date().toISOString() })
-      .select()
+      .select("*")
+      .eq("user_id", user.id)
+      .gte("created_at", `${today}T00:00:00Z`)
+      .order("created_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     if (activeProject?.id) {
@@ -396,18 +432,6 @@ export async function GET(req: Request) {
       );
 
       // ── Write execution_score + momentum_score back to projects ──────────
-      // These two columns drive computeStartupScore, the score arc, score trend
-      // sparkline, exec score tile, and weekly-share card. The sync-project-score
-      // queue job that was supposed to write them is never enqueued anywhere, so
-      // both columns are permanently NULL. We write them here since the morning
-      // briefing already computes momentum and the reflexion output encodes
-      // execution quality — this is the only place that runs daily with both
-      // values available.
-      //
-      // momentum: sourced from reflexionCtx.momentumScore (= founder_context.momentum_score).
-      // execution: reflexion verdict → pass=75, partial=45, fail=20.
-      // briefing.risk is a string label, not a number — use reflexionCtx.momentumScore
-      // which is already sourced from founder_context.momentum_score.
       const newMomentum = reflexionCtx.momentumScore ?? 50;
 
       const reflexionVerdict = (briefing as Record<string, unknown>).reflexion_verdict as string | undefined;
@@ -426,7 +450,13 @@ export async function GET(req: Request) {
         .eq("user_id", user.id);
     }
 
-    return NextResponse.json({ ok: true, data: saved });
+    // Always return a valid briefing — even if DB fetch returned null,
+    // return the generated briefing directly so the modal still fires.
+    const returnData = saved
+      ? { ...saved, gaps: briefing.gaps ?? [] }
+      : { ...insertPayload, id: null, gaps: briefing.gaps ?? [], created_at: new Date().toISOString() };
+
+    return NextResponse.json({ ok: true, data: returnData });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String(e) }, { status: 500 });
   }
