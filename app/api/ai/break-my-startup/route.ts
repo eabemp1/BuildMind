@@ -17,6 +17,7 @@ import {
   type StartupContext,
   type ScrapedCompetitor,
 } from "@/lib/agents";
+import { competitorSearch } from "@/lib/search";
 import {
   computeViabilityScore,
   computeViabilityBreakdown,
@@ -51,116 +52,23 @@ type ReflexionStatus = "ok" | "partial" | "failed";
 
 type ScrapeResult = { results: ScrapedCompetitor[]; scraped: boolean; source?: string };
 
-/** Parse DDG lite HTML into ScrapedCompetitor array */
-function parseDDGHtml(html: string): ScrapedCompetitor[] {
-  const linkMatches = [...html.matchAll(/class="result-link"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi)];
-  const snippetMatches = [...html.matchAll(/class="result-snippet"[^>]*>([\s\S]*?)<\/td>/gi)];
-  const results: ScrapedCompetitor[] = [];
-  for (let i = 0; i < Math.min(linkMatches.length, 6); i++) {
-    const href = linkMatches[i]?.[1] ?? "";
-    const rawTitle = (linkMatches[i]?.[2] ?? "").replace(/<[^>]+>/g, "").trim();
-    const rawSnippet = (snippetMatches[i]?.[1] ?? "").replace(/<[^>]+>/g, "").trim();
-    let url = href;
-    if (href.includes("uddg=")) {
-      const match = href.match(/uddg=([^&]+)/);
-      if (match?.[1]) url = decodeURIComponent(match[1]);
-    }
-    if (!url.startsWith("http") || !rawTitle) continue;
-    results.push({ title: rawTitle, url, snippet: rawSnippet });
-  }
-  return results;
-}
-
-/** Primary scraper — DuckDuckGo lite */
-async function scrapeDDG(query: string): Promise<ScrapeResult> {
-  const encoded = encodeURIComponent(query);
-  const res = await fetch(`https://lite.duckduckgo.com/lite/?q=${encoded}`, {
-    headers: { "User-Agent": "Mozilla/5.0", "Accept-Language": "en-US,en;q=0.9" },
-    signal: AbortSignal.timeout(8000),
-  });
-  if (!res.ok) return { results: [], scraped: false };
-  const html = await res.text();
-  // Detect DDG HTML structure change — if neither pattern matches, treat as blocked
-  if (!html.includes("result-link") && !html.includes("uddg=")) {
-    return { results: [], scraped: false };
-  }
-  const results = parseDDGHtml(html);
-  return { results, scraped: results.length > 0, source: "ddg" };
-}
-
-/** Secondary scraper — Brave Search open endpoint (no API key on public tier) */
-async function scrapeBrave(query: string): Promise<ScrapeResult> {
-  const encoded = encodeURIComponent(query);
-  const res = await fetch(`https://search.brave.com/search?q=${encoded}&source=web`, {
-    headers: { "User-Agent": "Mozilla/5.0", "Accept": "text/html" },
-    signal: AbortSignal.timeout(8000),
-  });
-  if (!res.ok) return { results: [], scraped: false };
-  const html = await res.text();
-  // Brave uses data-url and class fz-15 title pattern
-  const titleMatches = [...html.matchAll(/class="[^"]*title[^"]*"[^>]*>([^<]{3,80})<\/span/gi)];
-  const urlMatches   = [...html.matchAll(/data-url="(https?:[^"]+)"/gi)];
-  const results: ScrapedCompetitor[] = [];
-  for (let i = 0; i < Math.min(Math.min(titleMatches.length, urlMatches.length), 6); i++) {
-    const rawTitle = (titleMatches[i]?.[1] ?? "").trim();
-    const url = (urlMatches[i]?.[1] ?? "").trim();
-    if (!url.startsWith("http") || !rawTitle) continue;
-    results.push({ title: rawTitle, url, snippet: "" });
-  }
-  return { results, scraped: results.length > 0, source: "brave" };
-}
-
-/** Tertiary fallback — AI synthesises plausible competitor context from idea text */
-async function aiSynthesiseCompetitors(query: string): Promise<ScrapeResult> {
-  const { callModelJSON, hasAIProvider } = await import("@/lib/ai-providers");
-  if (!hasAIProvider()) return { results: [], scraped: false };
-  try {
-    interface AISynthResult {
-      competitors?: Array<{ name: string; url: string; description: string }>;
-    }
-    const result = await callModelJSON<AISynthResult>(
-      [{
-        role: "system",
-        content: `You are a market research assistant. Given a startup description, name up to 4 real known competitors or similar tools. Return ONLY valid JSON: { "competitors": [{ "name": string, "url": string, "description": string }] }`
-      }, {
-        role: "user",
-        content: `Startup: ${query.slice(0, 300)}
-
-List real direct or indirect competitors.`
-      }],
-      { role: "fast", maxTokens: 400 },
-    );
-    const comps = result?.competitors ?? [];
-    const results: ScrapedCompetitor[] = comps
-      .filter((c) => c.name && c.url)
-      .map((c) => ({ title: c.name, url: c.url, snippet: c.description ?? "" }));
-    // scraped: false signals to UI that this is AI-inferred, not scraped
-    return { results, scraped: false, source: "ai_synthesised" };
-  } catch {
-    return { results: [], scraped: false };
-  }
-}
-
 /**
- * scrapeCompetitors — three-layer fallback chain.
- * DDG → Brave → AI synthesis. Never returns null competitor data.
- * source field tells the caller where the data came from.
+ * scrapeCompetitors — delegates to lib/search.ts waterfall.
+ * Priority: Brave API → Tavily → DDG → Serper → AI synthesis.
+ * Never returns null. source field tells caller which provider fired.
  */
 async function scrapeCompetitors(query: string): Promise<ScrapeResult> {
-  // Layer 1 — DDG lite
   try {
-    const ddg = await scrapeDDG(query);
-    if (ddg.results.length > 0) return ddg;
-  } catch { /* fall through */ }
-
-  // Layer 2 — Brave Search
-  try {
-    const brave = await scrapeBrave(query);
-    if (brave.results.length > 0) return brave;
-  } catch { /* fall through */ }
-
-  // Layer 3 — AI synthesis (never blocks; scraped: false signals inferred data)
-  return aiSynthesiseCompetitors(query);
+    // Extract startup title + problem from the query string for competitorSearch
+    const response = await competitorSearch(query, query);
+    return {
+      results: response.results.map(r => ({ title: r.title, url: r.url, snippet: r.snippet })),
+      scraped: response.scraped,
+      source:  response.provider,
+    };
+  } catch {
+    return { results: [], scraped: false, source: "none" };
+  }
 }
 
 // ─── Signal score (preserved — used for free tier preview) ───────────────────
@@ -479,8 +387,8 @@ export async function POST(request: Request) {
       // Build legacy-compatible response shape
       const baseSignal = viabilityResult.viability_score;
       const competitorSummary = competitors.length > 0
-        ? `DuckDuckGo found ${competitors.length} related products or pages. ${agentPipeline.competitor?.saturation_level === "high" ? "This is a crowded space — differentiation is critical." : "Competitive landscape shows room to differentiate."}`
-        : "DuckDuckGo did not find clear direct competitors. Use more specific market terms for a better scan.";
+        ? `Search found ${competitors.length} related products or pages via ${competitor_data_source}. ${agentPipeline.competitor?.saturation_level === "high" ? "This is a crowded space — differentiation is critical." : "Competitive landscape shows room to differentiate."}`
+        : "No competitors found in live search. Try more specific market terms.";
 
       return NextResponse.json({
         success: true,
@@ -490,7 +398,7 @@ export async function POST(request: Request) {
             `Parsed idea into structured schema: ${parsed.category}`,
             focusAreas.length ? `Prioritized selected focus areas: ${focusAreas.join(", ")}` : "No focus areas selected",
             `5-agent pipeline completed in ${agentPipeline.duration_ms}ms`,
-            `Found ${competitors.length} competitor(s) via DuckDuckGo`,
+            `Found ${competitors.length} competitor(s) via ${competitor_data_source}`,
             `Viability score: ${viabilityResult.viability_score}/100 (${viabilityResult.verdict})`,
           ],
           verdict: viabilityResult.verdict_reason,
