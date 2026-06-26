@@ -465,7 +465,7 @@ function FindingCard({
 // ── Main page ──────────────────────────────────────────────────────────────────
 
 export default function AgentsPage() {
-  const { plan, loading: planLoading } = usePlan();
+  const { plan, isLoading: planLoading } = usePlan();
   const activeProjectId = useActiveProjectId();
 
   const [activeRun, setActiveRun]     = useState<AgentRun | null>(null);
