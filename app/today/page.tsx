@@ -467,36 +467,38 @@ function TodayContent() {
       .catch(() => {});
 
     // Fetch dismiss date first (fast), then briefing (slow — may generate)
-    // Decoupled so a slow AI generation doesn't race with the dismiss check.
-    const today = new Date().toISOString().slice(0, 10);
+    // Wrapped in async IIFE since useEffect callbacks cannot be async directly.
+    void (async () => {
+      const today = new Date().toISOString().slice(0, 10);
 
-    // Step 1: check server dismiss state immediately (fast DB read)
-    let serverDismissedToday = false;
-    try {
-      const memRes = await fetch("/api/founder-memory", { cache: "no-store", credentials: "include" });
-      if (memRes.ok) {
-        const mem = await memRes.json() as { data?: { briefing_dismissed_date?: string } } | null;
-        serverDismissedToday = mem?.data?.briefing_dismissed_date === today;
-      }
-    } catch { /* non-fatal */ }
+      // Step 1: check server dismiss state immediately (fast DB read)
+      let serverDismissedToday = false;
+      try {
+        const memRes = await fetch("/api/founder-memory", { cache: "no-store", credentials: "include" });
+        if (memRes.ok) {
+          const mem = await memRes.json() as { data?: { briefing_dismissed_date?: string } } | null;
+          serverDismissedToday = mem?.data?.briefing_dismissed_date === today;
+        }
+      } catch { /* non-fatal */ }
 
-    // Step 2: if already dismissed today, skip the briefing fetch entirely
-    if (serverDismissedToday) return;
+      // Step 2: if already dismissed today, skip the briefing fetch entirely
+      if (serverDismissedToday) return;
 
-    // Step 3: fetch briefing (may trigger AI generation — can take several seconds)
-    try {
-      const briefingRes = await fetch("/api/morning-briefing", { cache: "no-store" });
-      const body = await briefingRes.json() as { ok?: boolean; data?: MorningBriefing; upgradePrompt?: boolean };
+      // Step 3: fetch briefing (may trigger AI generation — can take several seconds)
+      try {
+        const briefingRes = await fetch("/api/morning-briefing", { cache: "no-store" });
+        const body = await briefingRes.json() as { ok?: boolean; data?: MorningBriefing; upgradePrompt?: boolean };
 
-      if (briefingRes.status === 200 && body?.ok && body?.data) {
-        setMorningBriefing(body.data);
-        setBriefingAvailable(true);
-        setShowBriefingModal(true);
-      } else if (briefingRes.status === 403 && body?.upgradePrompt === true) {
-        setBriefingAvailable(true);
-        setShowBriefingModal(true);
-      }
-    } catch { /* non-fatal */ }
+        if (briefingRes.status === 200 && body?.ok && body?.data) {
+          setMorningBriefing(body.data);
+          setBriefingAvailable(true);
+          setShowBriefingModal(true);
+        } else if (briefingRes.status === 403 && body?.upgradePrompt === true) {
+          setBriefingAvailable(true);
+          setShowBriefingModal(true);
+        }
+      } catch { /* non-fatal */ }
+    })();
 
     // ── Recovery Mode check ─────────────────────────────────────────────────
     fetch("/api/recovery-mode", { cache: "no-store" })
