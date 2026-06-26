@@ -534,7 +534,7 @@ export async function runAgentWorkforce(input: AgentRunInput): Promise<AgentRunR
 
     // Persist findings to isolation layer
     if (iterFindings.length > 0) {
-      await admin.from("agent_findings").insert(
+      await Promise.resolve(admin.from("agent_findings").insert(
         iterFindings.map(f => ({
           run_id:    input.runId,
           user_id:   input.userId,
@@ -542,7 +542,7 @@ export async function runAgentWorkforce(input: AgentRunInput): Promise<AgentRunR
           ...f,
           founder_confirmed: null,  // always null — never auto-promote
         }))
-      ).then(() => {}).catch(() => {});
+      )).catch(() => {});
     }
 
     const score = scoreFindings(allFindings);
