@@ -1,59 +1,15 @@
 /**
  * POST /api/agents/run
  *
- * Validates the request, inserts an agent_runs row, kicks off the agent
- * workforce in the background (fire-and-forget), and returns the run ID
- * so the client can start polling /api/agents/status/[runId].
+ * Runs the agent to completion synchronously before responding.
+ * This is the correct pattern for Vercel — fire-and-forget via setImmediate
+ * is killed when the lambda is frozen after the response is sent.
+ *
+ * maxDuration = 300 s gives the full agent pipeline room to breathe.
+ * The client renders the queued card immediately on POST response,
+ * then receives the complete run in json.data when the route resolves.
  *
  * Plan gate: builder only.
- * DB requirement: agent_runs and agent_findings tables (see migration below).
- *
- * MIGRATION (run once in Supabase SQL editor):
- * ─────────────────────────────────────────────────────────────────────
- * CREATE TABLE IF NOT EXISTS agent_runs (
- *   id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
- *   user_id          uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
- *   project_id       uuid REFERENCES projects(id) ON DELETE SET NULL,
- *   agent_type       text NOT NULL CHECK (agent_type IN ('research','validation','competitor')),
- *   status           text NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','running','complete','error','abandoned')),
- *   mission          text,
- *   current_action   text,
- *   iteration        int2 NOT NULL DEFAULT 0,
- *   max_iterations   int2 NOT NULL DEFAULT 3,
- *   signals_found    int2 NOT NULL DEFAULT 0,
- *   confidence_pct   int2 NOT NULL DEFAULT 0,
- *   verdict          text CHECK (verdict IN ('proceed','pivot','kill','inconclusive')),
- *   top_finding_1    text,
- *   top_finding_2    text,
- *   top_finding_3    text,
- *   top_risk         text,
- *   recommended_action text,
- *   report_markdown  text,
- *   started_at       timestamptz NOT NULL DEFAULT now(),
- *   completed_at     timestamptz,
- *   updated_at       timestamptz NOT NULL DEFAULT now()
- * );
- * ALTER TABLE agent_runs ENABLE ROW LEVEL SECURITY;
- * CREATE POLICY agent_runs_own ON agent_runs FOR ALL USING (auth.uid() = user_id);
- *
- * CREATE TABLE IF NOT EXISTS agent_findings (
- *   id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
- *   run_id            uuid NOT NULL REFERENCES agent_runs(id) ON DELETE CASCADE,
- *   user_id           uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
- *   iteration         int2 NOT NULL DEFAULT 1,
- *   signal_type       text NOT NULL,
- *   positive          boolean NOT NULL DEFAULT true,
- *   confidence        float4 NOT NULL DEFAULT 0.5,
- *   title             text NOT NULL,
- *   evidence          text NOT NULL,
- *   source_type       text NOT NULL DEFAULT 'reasoning',
- *   action_hint       text,
- *   founder_confirmed boolean,
- *   created_at        timestamptz NOT NULL DEFAULT now()
- * );
- * ALTER TABLE agent_findings ENABLE ROW LEVEL SECURITY;
- * CREATE POLICY agent_findings_own ON agent_findings FOR ALL USING (auth.uid() = user_id);
- * ─────────────────────────────────────────────────────────────────────
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -62,17 +18,17 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { runAgentWorkforce, AGENT_IDENTITY, type AgentType } from "@/lib/agentWorkforce";
 
-export const runtime    = "nodejs";
-export const dynamic    = "force-dynamic";
-export const maxDuration = 300; // agent run can take up to ~2 min
+export const runtime     = "nodejs";
+export const dynamic     = "force-dynamic";
+export const maxDuration = 300;
 
 const BodySchema = z.object({
-  agentType:  z.enum(["research", "validation", "competitor"]),
-  projectId:  z.string().uuid().nullable().optional(),
+  agentType: z.enum(["research", "validation", "competitor"]),
+  projectId: z.string().uuid().nullable().optional(),
 });
 
 export async function POST(req: NextRequest) {
-  // ── Auth ─────────────────────────────────────────────────────────────────
+  // ── Auth ──────────────────────────────────────────────────────────────────
   const auth = await getRouteUser();
   if (!auth) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
@@ -87,8 +43,7 @@ export async function POST(req: NextRequest) {
   // ── Parse body ────────────────────────────────────────────────────────────
   let body: z.infer<typeof BodySchema>;
   try {
-    const raw = await req.json();
-    body = BodySchema.parse(raw);
+    body = BodySchema.parse(await req.json());
   } catch {
     return NextResponse.json({ ok: false, error: "Invalid request body." }, { status: 400 });
   }
@@ -97,14 +52,12 @@ export async function POST(req: NextRequest) {
   const admin = createAdminClient();
 
   // ── Load startup context ──────────────────────────────────────────────────
-  // Primary: projects row (has problem, target_users, startup_stage).
-  // Fallback: founder_context (startup_summary, current_stage).
-  let startupTitle   = "Your Startup";
-  let startupSummary = "";
-  let problem        = "";
-  let targetUsers    = "founders";
-  let stage          = "Idea";
-  let resolvedProjectId: string | null = projectId ?? null;
+  let startupTitle        = "Your Startup";
+  let startupSummary      = "";
+  let problem             = "";
+  let targetUsers         = "founders";
+  let stage               = "Idea";
+  const resolvedProjectId = projectId ?? null;
 
   if (projectId) {
     const { data: proj } = await admin
@@ -116,14 +69,14 @@ export async function POST(req: NextRequest) {
 
     if (proj) {
       startupTitle   = (proj.name ?? proj.title ?? "Your Startup").trim();
-      startupSummary = proj.description ?? "";
-      problem        = proj.problem        ?? proj.description ?? "";
-      targetUsers    = proj.target_users   ?? "founders";
-      stage          = proj.startup_stage  ?? "Idea";
+      startupSummary = proj.description  ?? "";
+      problem        = proj.problem      ?? proj.description ?? "";
+      targetUsers    = proj.target_users ?? "founders";
+      stage          = proj.startup_stage ?? "Idea";
     }
   }
 
-  // Also pull founder_context for richer summary
+  // Enrich from founder_context
   const { data: fc } = await admin
     .from("founder_context")
     .select("startup_summary,current_stage")
@@ -132,17 +85,15 @@ export async function POST(req: NextRequest) {
 
   if (fc) {
     if (!startupSummary && fc.startup_summary) startupSummary = fc.startup_summary;
-    if (stage === "Idea" && fc.current_stage)  stage           = fc.current_stage;
+    if (stage === "Idea" && fc.current_stage)  stage          = fc.current_stage;
   }
 
-  // If we still have nothing useful, fail gracefully
   if (!problem && !startupSummary) {
     return NextResponse.json(
       { ok: false, error: "No startup context found. Complete onboarding first." },
       { status: 422 },
     );
   }
-
   if (!problem) problem = startupSummary;
 
   // ── Create agent_runs row ─────────────────────────────────────────────────
@@ -163,13 +114,12 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (insertErr || !runRow) {
-    // agent_runs table doesn't exist yet — migration not applied
     const isMissing = insertErr?.message?.includes("does not exist");
     return NextResponse.json(
       {
         ok:    false,
         error: isMissing
-          ? "Database tables not ready. Apply the agent_runs migration first (see route comment)."
+          ? "Database tables not ready — apply the agent_runs migration."
           : (insertErr?.message ?? "Failed to create agent run."),
       },
       { status: 500 },
@@ -178,28 +128,51 @@ export async function POST(req: NextRequest) {
 
   const runId = runRow.id as string;
 
-  // ── Fire-and-forget ───────────────────────────────────────────────────────
-  // We return the runId immediately; the client polls /api/agents/status/[runId].
-  // runAgentWorkforce writes all state to agent_runs + agent_findings directly.
-  setImmediate(() => {
-    runAgentWorkforce({
+  // ── Run synchronously ─────────────────────────────────────────────────────
+  // Do NOT use setImmediate / Promise.resolve().then() here.
+  // Vercel freezes the lambda the moment the response is flushed,
+  // killing any background work. We await the full run and return the
+  // complete result so the client gets everything in one response.
+  try {
+    const result = await runAgentWorkforce({
       runId,
-      userId:         auth.userId,
-      projectId:      resolvedProjectId,
-      agentType:      agentType as AgentType,
+      userId:        auth.userId,
+      projectId:     resolvedProjectId,
+      agentType:     agentType as AgentType,
       stage,
       startupTitle,
       startupSummary,
       problem,
       targetUsers,
-      maxIterations:  3,
-    }).catch(async (err) => {
-      await admin
-        .from("agent_runs")
-        .update({ status: "error", current_action: String(err).slice(0, 200), updated_at: new Date().toISOString() })
-        .eq("id", runId);
+      maxIterations: 3,
     });
-  });
 
-  return NextResponse.json({ ok: true, runId });
+    // Fetch the final run row to return full state to client
+    const { data: finalRun } = await admin
+      .from("agent_runs")
+      .select("*")
+      .eq("id", runId)
+      .maybeSingle();
+
+    return NextResponse.json({
+      ok:     true,
+      runId,
+      data:   finalRun,   // client can skip polling — it already has the result
+      result,
+    });
+  } catch (err) {
+    await admin
+      .from("agent_runs")
+      .update({
+        status:         "error",
+        current_action: String(err).slice(0, 200),
+        updated_at:     new Date().toISOString(),
+      })
+      .eq("id", runId);
+
+    return NextResponse.json(
+      { ok: false, error: "Agent run failed. Check server logs.", runId },
+      { status: 500 },
+    );
+  }
 }
