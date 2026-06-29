@@ -97,10 +97,10 @@ No preamble. No markdown. Only the JSON array.`;
             : "",
         ].filter(Boolean).join("\n");
 
-        // Fallback insights if AI fails
+        // Fallback — generic but not stale/misleading
         const fallback: InsightItem[] = [
-          { type: "insight", text: "Complete your first task reflection tonight to unlock pattern analysis." },
-          { type: "insight", text: "BuildMind needs at least 5 reflections to surface behavioral patterns." },
+          { type: "insight", text: "Keep completing daily tasks — your behavioral model will sharpen with each session." },
+          { type: "insight", text: "BuildMind tracks avoidance patterns, confidence trends, and execution rhythm over time." },
         ];
 
         let insights: InsightItem[] = fallback;
