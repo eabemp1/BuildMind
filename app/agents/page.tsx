@@ -2,20 +2,8 @@
 
 /**
  * app/agents/page.tsx — Agent Workforce
- *
- * Surfaces BuildMind's three specialized agents:
- *   Research Agent   — market research, industry trends, user sentiment
- *   Validation Agent — assumption testing, pain point analysis, pivot indicators
- *   Competitor Agent — competitor tracking, positioning gaps, launch monitoring
- *
- * Plan gate: builder (preview of coming Operator tier).
- *
- * UX flow:
- *   1. Founder picks an agent → clicks "Deploy"
- *   2. Agent identity card shows live status (Mission / Status / Signals / Confidence / Next Action)
- *   3. When complete → verdict card (top 3 findings + top risk + recommended action)
- *   4. Findings panel → founder reviews each signal, clicks Confirm or Reject
- *   5. Confirmed findings → propagate to founder context on next briefing refresh
+ * Rebased to BuildMind brand tokens (--bm-accent gold, dark obsidian palette).
+ * Run persists via localStorage so navigating away and back resumes polling.
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -59,57 +47,58 @@ interface AgentFinding {
   founder_confirmed: boolean | null;
 }
 
-// ── Sub-components ─────────────────────────────────────────────────────────────
+const STORAGE_KEY = "bm_agent_run_id";
+
+// ── Agent card (selection) ────────────────────────────────────────────────────
 
 function AgentCard({
-  agentType,
-  onDeploy,
-  deploying,
+  agentType, onDeploy, deploying,
 }: {
   agentType: AgentType;
   onDeploy: (type: AgentType) => void;
   deploying: boolean;
 }) {
   const identity = AGENT_IDENTITY[agentType];
-  const colors: Record<AgentType, string> = {
-    research:   "#5b6cf0",
-    validation: "#4ade80",
-    competitor: "#f59e0b",
+  // Brand-token accent per agent — all within gold family for cohesion
+  const colors: Record<AgentType, { border: string; text: string; bg: string }> = {
+    research:   { border: "var(--bm-accent-bd)",  text: "var(--bm-accent)",  bg: "var(--bm-accent-dim)" },
+    validation: { border: "var(--bm-green-bd)",   text: "var(--bm-green)",   bg: "var(--bm-green-dim)"  },
+    competitor: { border: "rgba(224,82,82,0.22)", text: "var(--bm-red)",     bg: "var(--bm-red-dim)"    },
   };
-  const color = colors[agentType];
+  const c = colors[agentType];
+  const icons: Record<AgentType, string> = { research: "🔬", validation: "✅", competitor: "🎯" };
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       style={{
-        background:   "#161922",
-        border:       `1px solid ${color}28`,
-        borderRadius: 14,
-        padding:      "20px 20px 18px",
-        display:      "flex",
+        background:    "var(--bm-bg2)",
+        border:        `1px solid ${c.border}`,
+        borderRadius:  14,
+        padding:       "20px 20px 18px",
+        display:       "flex",
         flexDirection: "column",
-        gap: 12,
+        gap:           12,
       }}
     >
       <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
         <div style={{
           width: 36, height: 36, borderRadius: 10, flexShrink: 0,
-          background: `${color}18`,
-          border:     `1px solid ${color}35`,
-          display:    "flex", alignItems: "center", justifyContent: "center",
-          fontSize:   16,
+          background: c.bg, border: `1px solid ${c.border}`,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 16,
         }}>
-          {agentType === "research" ? "🔬" : agentType === "validation" ? "✅" : "🎯"}
+          {icons[agentType]}
         </div>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "#e4e8f8", marginBottom: 2 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--bm-text)", marginBottom: 2 }}>
             {identity.name}
           </div>
-          <div style={{ fontSize: 11, color: color, fontFamily: "'DM Mono', monospace", marginBottom: 6 }}>
+          <div style={{ fontSize: 11, color: c.text, fontFamily: "'DM Mono', monospace", marginBottom: 6 }}>
             {identity.tagline}
           </div>
-          <div style={{ fontSize: 12, color: "#6b738f", lineHeight: 1.55 }}>
+          <div style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.55 }}>
             {identity.description}
           </div>
         </div>
@@ -121,10 +110,10 @@ function AgentCard({
         style={{
           width:        "100%",
           padding:      "10px 0",
-          background:   deploying ? "transparent" : `${color}18`,
-          border:       `1px solid ${deploying ? "#2a2e45" : color + "40"}`,
+          background:   deploying ? "transparent" : c.bg,
+          border:       `1px solid ${deploying ? "var(--bm-border)" : c.border}`,
           borderRadius: 9,
-          color:        deploying ? "#404560" : color,
+          color:        deploying ? "var(--bm-text4)" : c.text,
           fontSize:     13,
           fontWeight:   600,
           cursor:       deploying ? "not-allowed" : "pointer",
@@ -132,194 +121,174 @@ function AgentCard({
           transition:   "all 0.15s",
         }}
       >
-        {deploying ? "Agent running…" : `Deploy ${identity.name}`}
+        {deploying ? "Deploying…" : `Deploy ${identity.name}`}
       </button>
     </motion.div>
   );
 }
 
+// ── Live agent card ───────────────────────────────────────────────────────────
+
 function LiveAgentCard({ run, pendingCount }: { run: AgentRun; pendingCount: number }) {
   const identity = AGENT_IDENTITY[run.agent_type];
   const isRunning = run.status === "running" || run.status === "queued";
 
-  const verdictColor = {
-    proceed:      "#4ade80",
-    pivot:        "#f59e0b",
-    kill:         "#f87171",
-    inconclusive: "#6b738f",
-  }[run.verdict ?? "inconclusive"] ?? "#6b738f";
-
-  const verdictEmoji = {
-    proceed:      "🟢",
-    pivot:        "🟡",
-    kill:         "🔴",
-    inconclusive: "⚪",
-  }[run.verdict ?? "inconclusive"] ?? "⚪";
+  const verdictStyles: Record<string, { color: string; bg: string; border: string; emoji: string; label: string }> = {
+    proceed:      { color: "var(--bm-green)",  bg: "var(--bm-green-dim)",  border: "var(--bm-green-bd)",  emoji: "🟢", label: "Proceed"      },
+    pivot:        { color: "var(--bm-accent)", bg: "var(--bm-accent-dim)", border: "var(--bm-accent-bd)", emoji: "🟡", label: "Pivot Recommended" },
+    kill:         { color: "var(--bm-red)",    bg: "var(--bm-red-dim)",    border: "var(--bm-red-bd)",    emoji: "🔴", label: "Kill"         },
+    inconclusive: { color: "var(--bm-text3)",  bg: "var(--bm-bg3)",        border: "var(--bm-border)",    emoji: "⚪", label: "Inconclusive" },
+  };
+  const vStyle = verdictStyles[run.verdict ?? "inconclusive"] ?? verdictStyles.inconclusive;
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       style={{
-        background:   "#0f1117",
-        border:       "1px solid #1e2235",
+        background:   "var(--bm-bg2)",
+        border:       "1px solid var(--bm-border2)",
         borderRadius: 16,
         overflow:     "hidden",
       }}
     >
-      {/* Agent header */}
+      {/* Header */}
       <div style={{
-        padding:    "16px 20px 14px",
-        borderBottom: "1px solid #1a1d2e",
-        display:    "flex",
-        alignItems: "center",
-        gap: 12,
+        padding: "16px 20px 14px",
+        borderBottom: "1px solid var(--bm-border)",
+        display: "flex", alignItems: "center", gap: 12,
       }}>
         <div style={{
-          fontSize: 18,
-          width: 36, height: 36,
+          fontSize: 18, width: 36, height: 36,
           display: "flex", alignItems: "center", justifyContent: "center",
-          background: "#161922",
-          border: "1px solid #1e2235",
-          borderRadius: 9,
+          background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: 9,
         }}>
-          {run.agent_type === "research" ? "🔬" : run.agent_type === "validation" ? "✅" : "🎯"}
+          {{ research: "🔬", validation: "✅", competitor: "🎯" }[run.agent_type]}
         </div>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: "#e4e8f8" }}>{identity.name}</div>
-          <div style={{ fontSize: 10, color: "#404560", fontFamily: "'DM Mono', monospace", marginTop: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--bm-text)" }}>{identity.name}</div>
+          <div style={{ fontSize: 10, color: "var(--bm-text4)", fontFamily: "'DM Mono', monospace", marginTop: 1 }}>
             {new Date(run.started_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
           </div>
         </div>
         <div style={{
-          padding:    "3px 10px",
-          borderRadius: 20,
-          background: isRunning ? "rgba(91,108,240,0.1)" : run.status === "complete" ? "rgba(74,222,128,0.1)" : "rgba(248,113,113,0.1)",
-          border:     isRunning ? "1px solid rgba(91,108,240,0.25)" : run.status === "complete" ? "1px solid rgba(74,222,128,0.25)" : "1px solid rgba(248,113,113,0.25)",
-          fontSize:   10,
-          fontWeight: 600,
-          color:      isRunning ? "#7c8cf0" : run.status === "complete" ? "#4ade80" : "#f87171",
-          fontFamily: "'DM Mono', monospace",
-          letterSpacing: "0.04em",
+          padding: "3px 10px", borderRadius: 20,
+          background: isRunning ? "var(--bm-accent-dim)" : run.status === "complete" ? "var(--bm-green-dim)" : "var(--bm-red-dim)",
+          border: isRunning ? "1px solid var(--bm-accent-bd)" : run.status === "complete" ? "1px solid var(--bm-green-bd)" : "1px solid var(--bm-red-bd)",
+          fontSize: 10, fontWeight: 600,
+          color: isRunning ? "var(--bm-accent)" : run.status === "complete" ? "var(--bm-green)" : "var(--bm-red)",
+          fontFamily: "'DM Mono', monospace", letterSpacing: "0.04em",
         }}>
           {isRunning ? "RUNNING" : run.status.toUpperCase()}
         </div>
       </div>
 
-      {/* Live identity card — what the agent is doing right now */}
-      <div style={{ padding: "14px 20px", borderBottom: "1px solid #1a1d2e" }}>
+      {/* Live stats */}
+      <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--bm-border)" }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 20px" }}>
           <div>
-            <div style={{ fontSize: 9, color: "#404560", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'DM Mono', monospace", marginBottom: 3 }}>Mission</div>
-            <div style={{ fontSize: 11.5, color: "#9099b8", lineHeight: 1.5 }}>{run.mission}</div>
+            <div style={{ fontSize: 9, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'DM Mono', monospace", marginBottom: 3 }}>Mission</div>
+            <div style={{ fontSize: 11.5, color: "var(--bm-text2)", lineHeight: 1.5 }}>{run.mission}</div>
           </div>
           <div>
-            <div style={{ fontSize: 9, color: "#404560", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'DM Mono', monospace", marginBottom: 3 }}>Status</div>
-            <div style={{ fontSize: 11.5, color: isRunning ? "#7c8cf0" : "#9099b8", display: "flex", alignItems: "center", gap: 5 }}>
+            <div style={{ fontSize: 9, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'DM Mono', monospace", marginBottom: 3 }}>Status</div>
+            <div style={{ fontSize: 11.5, color: isRunning ? "var(--bm-accent)" : "var(--bm-text2)", display: "flex", alignItems: "center", gap: 5 }}>
               {isRunning && (
                 <span style={{
                   display: "inline-block", width: 6, height: 6,
-                  borderRadius: "50%", background: "#5b6cf0",
-                  animation: "pulse 1.5s ease infinite",
+                  borderRadius: "50%", background: "var(--bm-accent)",
+                  animation: "bm-pulse 1.5s ease infinite",
                 }} />
               )}
               {run.current_action ?? (isRunning ? "Starting…" : "Complete")}
             </div>
           </div>
           <div>
-            <div style={{ fontSize: 9, color: "#404560", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'DM Mono', monospace", marginBottom: 3 }}>Evidence collected</div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: "#e4e8f8", fontFamily: "'DM Mono', monospace" }}>
-              {run.signals_found} <span style={{ fontSize: 11, color: "#555e7a", fontWeight: 400 }}>signals</span>
+            <div style={{ fontSize: 9, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'DM Mono', monospace", marginBottom: 3 }}>Evidence collected</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: "var(--bm-text)", fontFamily: "'DM Mono', monospace", letterSpacing: "-0.02em" }}>
+              {run.signals_found} <span style={{ fontSize: 11, color: "var(--bm-text3)", fontWeight: 400 }}>signals</span>
             </div>
           </div>
           <div>
-            <div style={{ fontSize: 9, color: "#404560", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'DM Mono', monospace", marginBottom: 3 }}>Confidence</div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: "#e4e8f8", fontFamily: "'DM Mono', monospace" }}>
-              {run.confidence_pct}% {run.confidence_pct >= 70 ? "🟢" : run.confidence_pct >= 45 ? "🟡" : "🔴"}
+            <div style={{ fontSize: 9, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'DM Mono', monospace", marginBottom: 3 }}>Confidence</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: "var(--bm-text)", fontFamily: "'DM Mono', monospace", letterSpacing: "-0.02em" }}>
+              {run.confidence_pct}%{" "}
+              <span style={{ fontSize: 13 }}>
+                {run.confidence_pct >= 70 ? "🟢" : run.confidence_pct >= 45 ? "🟡" : run.confidence_pct > 0 ? "🔴" : ""}
+              </span>
             </div>
           </div>
         </div>
 
-        {/* Iteration progress bar */}
         {isRunning && (
-          <div style={{ marginTop: 12 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-              <span style={{ fontSize: 9, color: "#404560", fontFamily: "'DM Mono', monospace" }}>Research cycles</span>
-              <span style={{ fontSize: 9, color: "#555e7a", fontFamily: "'DM Mono', monospace" }}>{run.iteration}/{run.max_iterations}</span>
+          <div style={{ marginTop: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+              <span style={{ fontSize: 9, color: "var(--bm-text3)", fontFamily: "'DM Mono', monospace" }}>Research cycles</span>
+              <span style={{ fontSize: 9, color: "var(--bm-text3)", fontFamily: "'DM Mono', monospace" }}>{run.iteration}/{run.max_iterations}</span>
             </div>
-            <div style={{ height: 3, background: "#1e2235", borderRadius: 2 }}>
+            <div style={{ height: 3, background: "var(--bm-bg4)", borderRadius: 2 }}>
               <div style={{
                 height: "100%", borderRadius: 2,
-                width: `${(run.iteration / run.max_iterations) * 100}%`,
-                background: "linear-gradient(90deg, #5b6cf0, #7c8cf0)",
-                transition: "width 0.5s ease",
+                width: `${Math.max(5, (run.iteration / run.max_iterations) * 100)}%`,
+                background: "var(--bm-accent)",
+                transition: "width 0.6s ease",
               }} />
             </div>
           </div>
         )}
       </div>
 
-      {/* Verdict — shown when complete */}
+      {/* Verdict */}
       {run.status === "complete" && run.verdict && (
-        <div style={{ padding: "14px 20px", borderBottom: "1px solid #1a1d2e" }}>
+        <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--bm-border)" }}>
           <div style={{
-            fontSize: 9, color: verdictColor, textTransform: "uppercase",
+            fontSize: 9, color: vStyle.color, textTransform: "uppercase",
             letterSpacing: "0.1em", fontFamily: "'DM Mono', monospace", marginBottom: 10,
           }}>
-            {verdictEmoji} Verdict
+            {vStyle.emoji} Verdict — {vStyle.label}
           </div>
 
-          <div style={{ marginBottom: 14 }}>
-            <div style={{
-              fontSize: 13, fontWeight: 700, color: verdictColor,
-              padding: "8px 14px",
-              background: `${verdictColor}10`,
-              border: `1px solid ${verdictColor}25`,
-              borderRadius: 8,
-            }}>
-              {run.recommended_action}
-            </div>
+          <div style={{
+            fontSize: 13, fontWeight: 600, color: vStyle.color,
+            padding: "10px 14px",
+            background: vStyle.bg, border: `1px solid ${vStyle.border}`,
+            borderRadius: 8, marginBottom: 14, lineHeight: 1.55,
+          }}>
+            {run.recommended_action}
           </div>
 
           {[run.top_finding_1, run.top_finding_2, run.top_finding_3].filter(Boolean).map((f, i) => (
             <div key={i} style={{ display: "flex", gap: 10, marginBottom: 8, alignItems: "flex-start" }}>
               <span style={{
-                fontSize: 9, fontWeight: 700, color: "#5b6cf0",
+                fontSize: 9, fontWeight: 700, color: "var(--bm-accent)",
                 fontFamily: "'DM Mono', monospace",
-                background: "rgba(91,108,240,0.1)",
-                border: "1px solid rgba(91,108,240,0.2)",
-                borderRadius: 4, padding: "2px 5px",
-                flexShrink: 0, marginTop: 1,
+                background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)",
+                borderRadius: 4, padding: "2px 5px", flexShrink: 0, marginTop: 1,
               }}>
                 #{i + 1}
               </span>
-              <span style={{ fontSize: 12.5, color: "#9099b8", lineHeight: 1.55 }}>{f}</span>
+              <span style={{ fontSize: 12.5, color: "var(--bm-text2)", lineHeight: 1.55 }}>{f}</span>
             </div>
           ))}
 
           {run.top_risk && (
             <div style={{
-              marginTop: 10, padding: "10px 12px",
-              background: "rgba(248,113,113,0.06)",
-              border: "1px solid rgba(248,113,113,0.15)",
-              borderRadius: 8,
+              marginTop: 12, padding: "10px 12px",
+              background: "var(--bm-red-dim)", border: "1px solid var(--bm-red-bd)", borderRadius: 8,
             }}>
-              <div style={{ fontSize: 9, color: "#f87171", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'DM Mono', monospace", marginBottom: 4 }}>Top risk</div>
-              <div style={{ fontSize: 12, color: "#c4cae8", lineHeight: 1.55 }}>{run.top_risk}</div>
+              <div style={{ fontSize: 9, color: "var(--bm-red)", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'DM Mono', monospace", marginBottom: 4 }}>Top risk</div>
+              <div style={{ fontSize: 12, color: "var(--bm-text2)", lineHeight: 1.55 }}>{run.top_risk}</div>
             </div>
           )}
 
           {pendingCount > 0 && (
             <div style={{
               marginTop: 12, padding: "8px 12px",
-              background: "rgba(245,158,11,0.07)",
-              border: "1px solid rgba(245,158,11,0.2)",
-              borderRadius: 8,
-              fontSize: 12, color: "#f59e0b",
-              display: "flex", alignItems: "center", gap: 6,
+              background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)", borderRadius: 8,
+              fontSize: 12, color: "var(--bm-accent)", display: "flex", alignItems: "center", gap: 6,
             }}>
               <span>⚠️</span>
-              <span>{pendingCount} finding{pendingCount !== 1 ? "s" : ""} pending your review — scroll down to confirm or reject</span>
+              <span>{pendingCount} finding{pendingCount !== 1 ? "s" : ""} pending your review — scroll down</span>
             </div>
           )}
         </div>
@@ -328,35 +297,33 @@ function LiveAgentCard({ run, pendingCount }: { run: AgentRun; pendingCount: num
   );
 }
 
+// ── Finding card ──────────────────────────────────────────────────────────────
+
 function FindingCard({
-  finding,
-  onConfirm,
+  finding, onConfirm,
 }: {
   finding: AgentFinding;
   onConfirm: (id: string, confirmed: boolean) => void;
 }) {
   const [acting, setActing] = useState(false);
 
-  const handle = async (confirmed: boolean) => {
+  const handle = (confirmed: boolean) => {
     setActing(true);
     onConfirm(finding.id, confirmed);
   };
 
   const confColor =
-    finding.confidence >= 0.7 ? "#4ade80" :
-    finding.confidence >= 0.5 ? "#f59e0b" : "#f87171";
+    finding.confidence >= 0.7 ? "var(--bm-green)" :
+    finding.confidence >= 0.5 ? "var(--bm-accent)" : "var(--bm-red)";
 
   if (finding.founder_confirmed === true) {
     return (
       <div style={{
-        padding: "12px 14px",
-        background: "rgba(74,222,128,0.04)",
-        border: "1px solid rgba(74,222,128,0.15)",
-        borderRadius: 10,
-        opacity: 0.7,
+        padding: "12px 14px", background: "var(--bm-green-dim)",
+        border: "1px solid var(--bm-green-bd)", borderRadius: 10, opacity: 0.7,
       }}>
-        <div style={{ fontSize: 11.5, color: "#4ade80", fontWeight: 600 }}>✓ {finding.title}</div>
-        <div style={{ fontSize: 10.5, color: "#6b738f", marginTop: 2 }}>Confirmed — added to your context</div>
+        <div style={{ fontSize: 11.5, color: "var(--bm-green)", fontWeight: 600 }}>✓ {finding.title}</div>
+        <div style={{ fontSize: 10.5, color: "var(--bm-text3)", marginTop: 2 }}>Confirmed — added to your context</div>
       </div>
     );
   }
@@ -364,14 +331,11 @@ function FindingCard({
   if (finding.founder_confirmed === false) {
     return (
       <div style={{
-        padding: "12px 14px",
-        background: "rgba(248,113,113,0.04)",
-        border: "1px solid rgba(248,113,113,0.12)",
-        borderRadius: 10,
-        opacity: 0.5,
+        padding: "12px 14px", background: "var(--bm-red-dim)",
+        border: "1px solid var(--bm-red-bd)", borderRadius: 10, opacity: 0.5,
       }}>
-        <div style={{ fontSize: 11.5, color: "#f87171", fontWeight: 600 }}>✕ {finding.title}</div>
-        <div style={{ fontSize: 10.5, color: "#6b738f", marginTop: 2 }}>Rejected</div>
+        <div style={{ fontSize: 11.5, color: "var(--bm-red)", fontWeight: 600 }}>✕ {finding.title}</div>
+        <div style={{ fontSize: 10.5, color: "var(--bm-text3)", marginTop: 2 }}>Rejected</div>
       </div>
     );
   }
@@ -381,10 +345,11 @@ function FindingCard({
       initial={{ opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
       style={{
-        background: "#161922",
-        border: `1px solid ${finding.positive ? "rgba(74,222,128,0.12)" : "rgba(248,113,113,0.12)"}`,
+        background:   "var(--bm-bg2)",
+        border:       `1px solid ${finding.positive ? "var(--bm-green-bd)" : "var(--bm-red-bd)"}`,
+        borderLeft:   `3px solid ${finding.positive ? "var(--bm-green)" : "var(--bm-red)"}`,
         borderRadius: 12,
-        padding: "14px 16px",
+        padding:      "14px 16px",
       }}
     >
       <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 8 }}>
@@ -392,33 +357,28 @@ function FindingCard({
           {finding.positive ? "📈" : "📉"}
         </span>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: "#e4e8f8", marginBottom: 3 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text)", marginBottom: 3 }}>
             {finding.title}
           </div>
           <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
             <span style={{
               fontSize: 9, fontFamily: "'DM Mono', monospace",
-              color: confColor, background: `${confColor}12`,
-              border: `1px solid ${confColor}25`,
-              borderRadius: 4, padding: "1px 6px",
+              color: confColor, background: confColor + "18",
+              border: `1px solid ${confColor}33`, borderRadius: 4, padding: "1px 6px",
             }}>
               {Math.round(finding.confidence * 100)}% conf
             </span>
-            <span style={{
-              fontSize: 9, color: "#555e7a",
-              fontFamily: "'DM Mono', monospace",
-            }}>
+            <span style={{ fontSize: 9, color: "var(--bm-text4)", fontFamily: "'DM Mono', monospace" }}>
               {finding.signal_type.replace(/_/g, " ")}
             </span>
           </div>
-          <div style={{ fontSize: 12, color: "#7880a8", lineHeight: 1.6, marginBottom: 6 }}>
+          <div style={{ fontSize: 12, color: "var(--bm-text2)", lineHeight: 1.6, marginBottom: 6 }}>
             {finding.evidence}
           </div>
           {finding.action_hint && (
             <div style={{
-              fontSize: 11.5, color: "#5b6cf0",
-              borderLeft: "2px solid rgba(91,108,240,0.3)",
-              paddingLeft: 8,
+              fontSize: 11.5, color: "var(--bm-accent)",
+              borderLeft: "2px solid var(--bm-accent-bd)", paddingLeft: 8,
             }}>
               → {finding.action_hint}
             </div>
@@ -426,18 +386,16 @@ function FindingCard({
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: 6, paddingTop: 10, borderTop: "1px solid #1e2235" }}>
+      <div style={{ display: "flex", gap: 6, paddingTop: 10, borderTop: "1px solid var(--bm-border)" }}>
         <button
           onClick={() => handle(true)}
           disabled={acting}
           style={{
             flex: 1, padding: "7px 0",
-            background: "rgba(74,222,128,0.08)",
-            border: "1px solid rgba(74,222,128,0.2)",
-            borderRadius: 7, color: "#4ade80",
+            background: "var(--bm-green-dim)", border: "1px solid var(--bm-green-bd)",
+            borderRadius: 7, color: "var(--bm-green)",
             fontSize: 12, fontWeight: 600,
-            cursor: acting ? "not-allowed" : "pointer",
-            fontFamily: "inherit",
+            cursor: acting ? "not-allowed" : "pointer", fontFamily: "inherit",
           }}
         >
           Confirm → add to context
@@ -447,12 +405,10 @@ function FindingCard({
           disabled={acting}
           style={{
             flex: 1, padding: "7px 0",
-            background: "rgba(248,113,113,0.06)",
-            border: "1px solid rgba(248,113,113,0.18)",
-            borderRadius: 7, color: "#f87171",
+            background: "var(--bm-red-dim)", border: "1px solid var(--bm-red-bd)",
+            borderRadius: 7, color: "var(--bm-red)",
             fontSize: 12, fontWeight: 600,
-            cursor: acting ? "not-allowed" : "pointer",
-            fontFamily: "inherit",
+            cursor: acting ? "not-allowed" : "pointer", fontFamily: "inherit",
           }}
         >
           Reject
@@ -462,21 +418,28 @@ function FindingCard({
   );
 }
 
-// ── Main page ──────────────────────────────────────────────────────────────────
+// ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function AgentsPage() {
-  const { plan, isLoading: planLoading } = usePlan();
+  const { plan, loading: planLoading } = usePlan();
   const activeProjectId = useActiveProjectId();
 
-  const [activeRun, setActiveRun]     = useState<AgentRun | null>(null);
-  const [findings, setFindings]       = useState<AgentFinding[]>([]);
+  const [activeRun, setActiveRun]       = useState<AgentRun | null>(null);
+  const [findings, setFindings]         = useState<AgentFinding[]>([]);
   const [pendingCount, setPendingCount] = useState(0);
-  const [deploying, setDeploying]     = useState(false);
-  const [error, setError]             = useState<string | null>(null);
+  const [deploying, setDeploying]       = useState(false);
+  const [error, setError]               = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const stopPolling = useCallback(() => {
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+  }, []);
+
+  const loadFindings = useCallback(async (runId: string) => {
+    const fRes = await fetch(`/api/agents/findings/${runId}`, { credentials: "include" });
+    if (!fRes.ok) return;
+    const fJson = await fRes.json();
+    if (fJson.ok) setFindings([...fJson.data.pending, ...fJson.data.confirmed, ...fJson.data.rejected]);
   }, []);
 
   const pollStatus = useCallback(async (runId: string) => {
@@ -487,18 +450,25 @@ export default function AgentsPage() {
       if (json.ok) {
         setActiveRun(json.data);
         setPendingCount(json.pendingReview ?? 0);
-        if (json.data.status === "complete" || json.data.status === "error" || json.data.status === "abandoned") {
+        if (["complete", "error", "abandoned"].includes(json.data.status)) {
           stopPolling();
-          // Load findings
-          const fRes = await fetch(`/api/agents/findings/${runId}`, { credentials: "include" });
-          if (fRes.ok) {
-            const fJson = await fRes.json();
-            if (fJson.ok) setFindings([...fJson.data.pending, ...fJson.data.confirmed, ...fJson.data.rejected]);
-          }
+          localStorage.removeItem(STORAGE_KEY);
+          await loadFindings(runId);
         }
       }
     } catch {}
-  }, [stopPolling]);
+  }, [stopPolling, loadFindings]);
+
+  // Resume any in-progress run from localStorage on mount
+  useEffect(() => {
+    const savedRunId = localStorage.getItem(STORAGE_KEY);
+    if (!savedRunId) return;
+    pollStatus(savedRunId).then(() => {
+      // If still running, start polling
+      pollRef.current = setInterval(() => pollStatus(savedRunId), 2500);
+    });
+    return () => stopPolling();
+  }, [pollStatus, stopPolling]);
 
   const handleDeploy = useCallback(async (agentType: AgentType) => {
     setDeploying(true);
@@ -509,54 +479,46 @@ export default function AgentsPage() {
 
     try {
       const res = await fetch("/api/agents/run", {
-        method:      "POST",
-        credentials: "include",
-        headers:     { "Content-Type": "application/json" },
-        body:        JSON.stringify({ agentType, projectId: activeProjectId }),
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agentType, projectId: activeProjectId }),
       });
       const json = await res.json();
 
       if (!res.ok || !json.ok) {
-        if (res.status === 403) {
-          setError("Agent Workforce requires Builder plan. Upgrade to access.");
-        } else {
-          setError(json.error ?? "Agent run failed — please retry.");
-        }
+        setError(res.status === 403
+          ? "Agent Workforce requires Builder plan."
+          : (json.error ?? "Agent run failed — please retry."));
         setDeploying(false);
         return;
       }
 
-      // Start polling during the run
       const runId = json.runId as string;
-      pollRef.current = setInterval(() => pollStatus(runId), 2500);
+      localStorage.setItem(STORAGE_KEY, runId);
 
+      // Synchronous route returns complete data immediately
       if (json.data) {
         setActiveRun(json.data);
-        stopPolling();
-        // Load findings immediately if complete
-        const fRes = await fetch(`/api/agents/findings/${runId}`, { credentials: "include" });
-        if (fRes.ok) {
-          const fJson = await fRes.json();
-          if (fJson.ok) setFindings([...fJson.data.pending, ...fJson.data.confirmed, ...fJson.data.rejected]);
-        }
+        localStorage.removeItem(STORAGE_KEY);
+        await loadFindings(runId);
+      } else {
+        // Fallback: start polling if somehow still async
+        pollRef.current = setInterval(() => pollStatus(runId), 2500);
       }
     } catch (e) {
       setError(String(e));
     }
     setDeploying(false);
-  }, [activeProjectId, pollStatus, stopPolling]);
+  }, [activeProjectId, pollStatus, stopPolling, loadFindings]);
 
   const handleConfirm = useCallback(async (findingId: string, confirmed: boolean) => {
     try {
       await fetch("/api/agents/confirm", {
-        method:      "POST",
-        credentials: "include",
-        headers:     { "Content-Type": "application/json" },
-        body:        JSON.stringify({ findingId, confirmed }),
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ findingId, confirmed }),
       });
-      setFindings(prev => prev.map(f =>
-        f.id === findingId ? { ...f, founder_confirmed: confirmed } : f
-      ));
+      setFindings(prev => prev.map(f => f.id === findingId ? { ...f, founder_confirmed: confirmed } : f));
       setPendingCount(prev => Math.max(0, prev - 1));
     } catch {}
   }, []);
@@ -567,28 +529,31 @@ export default function AgentsPage() {
 
   return (
     <div style={{
-      minHeight:  "100vh",
-      background: "#0b0d14",
-      padding:    "32px 20px 80px",
+      minHeight: "100vh", background: "var(--bm-bg)",
+      padding: "32px 20px 80px",
       fontFamily: "ui-sans-serif, system-ui, -apple-system, sans-serif",
-      maxWidth:   740,
-      margin:     "0 auto",
+      maxWidth: 740, margin: "0 auto",
     }}>
-      <style>{`@keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.4} }`}</style>
+      <style>{`
+        @keyframes bm-pulse { 0%,100%{opacity:1}50%{opacity:0.35} }
+      `}</style>
 
       {/* Header */}
       <div style={{ marginBottom: 28 }}>
         <div style={{
           fontSize: 9, fontWeight: 700, letterSpacing: "0.12em",
-          textTransform: "uppercase", color: "#5b6cf0",
+          textTransform: "uppercase", color: "var(--bm-accent)",
           fontFamily: "'DM Mono', monospace", marginBottom: 6,
         }}>
           Agent Workforce
         </div>
-        <h1 style={{ fontSize: 22, fontWeight: 700, color: "#e4e8f8", margin: "0 0 6px" }}>
+        <h1 style={{
+          fontSize: 22, fontWeight: 700, color: "var(--bm-text)",
+          margin: "0 0 6px", letterSpacing: "-0.025em",
+        }}>
           Your startup team
         </h1>
-        <p style={{ fontSize: 13, color: "#555e7a", margin: 0, lineHeight: 1.6 }}>
+        <p style={{ fontSize: 13, color: "var(--bm-text3)", margin: 0, lineHeight: 1.6 }}>
           Specialized agents that research, validate, and analyse on your behalf.
           You review every finding before it reaches your context.
         </p>
@@ -596,12 +561,11 @@ export default function AgentsPage() {
         {plan === "free" && (
           <div style={{
             marginTop: 14, padding: "10px 14px",
-            background: "rgba(245,158,11,0.07)",
-            border: "1px solid rgba(245,158,11,0.2)",
-            borderRadius: 9, fontSize: 12.5, color: "#f59e0b",
+            background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)",
+            borderRadius: 9, fontSize: 12.5, color: "var(--bm-accent)",
           }}>
             Agent Workforce is available on the Builder plan.{" "}
-            <a href="/upgrade" style={{ color: "#f59e0b", fontWeight: 700, textDecoration: "underline" }}>
+            <a href="/upgrade" style={{ color: "var(--bm-accent)", fontWeight: 700, textDecoration: "underline" }}>
               Upgrade →
             </a>
           </div>
@@ -611,16 +575,42 @@ export default function AgentsPage() {
       {error && (
         <div style={{
           marginBottom: 16, padding: "10px 14px",
-          background: "rgba(248,113,113,0.07)",
-          border: "1px solid rgba(248,113,113,0.2)",
-          borderRadius: 9, fontSize: 12.5, color: "#f87171",
+          background: "var(--bm-red-dim)", border: "1px solid var(--bm-red-bd)",
+          borderRadius: 9, fontSize: 12.5, color: "var(--bm-red)",
         }}>
           {error}
         </div>
       )}
 
+      {/* Deploying state — shown while waiting for the synchronous run */}
+      {deploying && (
+        <motion.div
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          style={{
+            marginBottom: 20, padding: "20px",
+            background: "var(--bm-bg2)", border: "1px solid var(--bm-accent-bd)",
+            borderRadius: 14, display: "flex", alignItems: "center", gap: 14,
+          }}
+        >
+          <span style={{
+            display: "inline-block", width: 10, height: 10,
+            borderRadius: "50%", background: "var(--bm-accent)",
+            animation: "bm-pulse 1s ease infinite", flexShrink: 0,
+          }} />
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text)", marginBottom: 2 }}>
+              Agent running — searching the web, analysing signals…
+            </div>
+            <div style={{ fontSize: 11.5, color: "var(--bm-text3)" }}>
+              This takes 30–90 seconds. You can navigate away and come back — your run will be here.
+            </div>
+          </div>
+        </motion.div>
+      )}
+
       {/* Agent selection */}
-      {!activeRun && (
+      {!activeRun && !deploying && (
         <div style={{ display: "grid", gap: 12, marginBottom: 24 }}>
           {(["research", "validation", "competitor"] as AgentType[]).map(type => (
             <AgentCard
@@ -633,21 +623,18 @@ export default function AgentsPage() {
         </div>
       )}
 
-      {/* Live agent card */}
+      {/* Live / complete agent card */}
       {activeRun && (
         <div style={{ marginBottom: 24 }}>
           <LiveAgentCard run={activeRun} pendingCount={pendingCount} />
-
           {activeRun.status === "complete" && (
             <button
               onClick={() => { setActiveRun(null); setFindings([]); stopPolling(); }}
               style={{
                 marginTop: 12, width: "100%",
                 padding: "9px 0",
-                background: "transparent",
-                border: "1px solid #1e2235",
-                borderRadius: 9,
-                color: "#404560",
+                background: "transparent", border: "1px solid var(--bm-border)",
+                borderRadius: 9, color: "var(--bm-text3)",
                 fontSize: 12, fontWeight: 600,
                 cursor: "pointer", fontFamily: "inherit",
               }}
@@ -661,12 +648,9 @@ export default function AgentsPage() {
       {/* Findings review */}
       <AnimatePresence>
         {findings.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-          >
+          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <div style={{
-              fontSize: 9, fontWeight: 700, color: "#555e7a",
+              fontSize: 9, fontWeight: 700, color: "var(--bm-text3)",
               textTransform: "uppercase", letterSpacing: "0.1em",
               fontFamily: "'DM Mono', monospace", marginBottom: 12,
             }}>
