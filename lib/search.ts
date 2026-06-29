@@ -40,7 +40,18 @@ export interface SearchResponse {
   query:    string;
 }
 
-const TIMEOUT_MS = 9000;
+const TIMEOUT_MS = 8000; // slightly under Vercel's per-fetch budget
+
+// True when a real search API key exists — used to skip DDG scraping when
+// a proper provider is available (DDG has a 9 s timeout and fragile HTML
+// parsing that burns time when Tavily already works fine).
+function hasSearchApiKey(): boolean {
+  return Boolean(
+    process.env.BRAVE_SEARCH_API_KEY ||
+    process.env.TAVILY_API_KEY       ||
+    process.env.SERPER_API_KEY,
+  );
+}
 
 function signal() { return AbortSignal.timeout(TIMEOUT_MS); }
 
@@ -265,7 +276,9 @@ export async function webSearch(query: string, count = 10): Promise<SearchRespon
   const attempts: Array<() => Promise<SearchResponse | null>> = [
     () => searchBrave(query, "web", count),
     () => searchTavily(query, "basic", count),
-    () => searchDDG(query),
+    // Skip DDG when a real API key is present — its 9 s HTML-scrape timeout
+    // burns Vercel function budget when Tavily already works fine.
+    ...(!hasSearchApiKey() ? [() => searchDDG(query)] : []),
     () => searchSerper(query, "search", count),
   ];
 
@@ -290,7 +303,7 @@ export async function discussionSearch(query: string, count = 10): Promise<Searc
   const attempts: Array<() => Promise<SearchResponse | null>> = [
     () => searchBrave(query, "discussions", count),
     () => searchTavily(`${query} reddit forum community discussion`, "basic", count),
-    () => searchDDG(redditQuery),
+    ...(!hasSearchApiKey() ? [() => searchDDG(redditQuery)] : []),
     () => searchSerper(redditQuery, "search", count),
   ];
 
@@ -313,7 +326,7 @@ export async function newsSearch(query: string, count = 8): Promise<SearchRespon
     () => searchBrave(query, "news", count),
     () => searchTavily(`${query} recent news 2024 2025`, "basic", count),
     () => searchSerper(query, "news", count),
-    () => searchDDG(`${query} news`),
+    ...(!hasSearchApiKey() ? [() => searchDDG(`${query} news`)] : []),
   ];
 
   for (const attempt of attempts) {
