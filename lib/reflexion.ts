@@ -71,6 +71,17 @@ export async function groqCall(messages: GroqMessage[], temperature = 0.5, maxTo
 }
 
 /**
+ * groqFastCall — routes through the FAST chain instead of REASONING.
+ * Use for trivial extraction/compression tasks (e.g. rationale sentence
+ * extraction) that don't need reasoning_effort=high. This frees up
+ * reasoning-tier rate limit headroom for the Generator/Critic/Verifier
+ * stages that actually benefit from deep reasoning.
+ */
+async function groqFastCall(messages: GroqMessage[], temperature = 0.3, maxTokens = 100): Promise<string> {
+  return callModel(messages, { role: "fast", temperature, maxTokens });
+}
+
+/**
  * groqJSONCall — same as groqCall but forces response_format: json_object.
  * Use for Agent B (Critic) and Agent D (Verifier) to guarantee parseable JSON output.
  * Both use the reasoning chain — gpt-oss-120b with reasoning_effort=high + json_object mode.
@@ -479,13 +490,13 @@ Stage: ${context.stage} | Momentum: ${context.momentumScore}/100 | Cognitive: ${
   const refined = await groqCall([
     { role: "system", content: refinerPrompt },
     { role: "user", content: "Write the refined response." },
-  ], 0.3, 400).catch(() => generated);
+  ], 0.3, 550).catch(() => generated);
 
   const rationalePrompt = `Extract a single sentence (max 15 words) explaining WHY this advice is right for this founder RIGHT NOW.
 Format: "Because [specific reason tied to their stage/situation]."
 Advice: ${refined}`;
 
-  const rationale = await groqCall([
+  const rationale = await groqFastCall([
     { role: "system", content: rationalePrompt },
     { role: "user", content: "One sentence rationale only." },
   ], 0.2, 60).catch(() => `Because you're at ${context.stage} stage and this is the highest-leverage move.`);
@@ -643,7 +654,7 @@ ${executionMode ? "\nEXECUTION MODE: Generate the first concrete step of the MVP
     groqCall([
       { role: "system", content: generatorSystemPrompt },
       { role: "user", content: `Task: ${task}\n\nGenerate the single highest-leverage action. Direct, intelligent, specific.` },
-    ], 0.5, 500),
+    ], 0.5, 800),
     deadlineMs - 14_000, // leave 14 s for Critic + Verifier + Refiner + Rationale
     "Unable to generate action — please try again.",
   ).catch(() => "Unable to generate action — please try again.");
@@ -696,7 +707,7 @@ ${generated}`;
           { role: "system", content: stage4CriticPrompt },
           { role: "user", content: "Evaluate and critique." },
         ],
-        { role: "reasoning", temperature: 0.3, maxTokens: 350 },
+        { role: "reasoning", temperature: 0.3, maxTokens: 500 },
       ),
       deadlineMs - 9_000, // leave 9 s for Verifier + Refiner + Rationale
       stage4Output,
@@ -752,7 +763,7 @@ ${baseForVerification}`;
           { role: "system", content: stage5VerifierPrompt },
           { role: "user", content: "Verify the claims." },
         ],
-        { role: "reasoning", temperature: 0.2, maxTokens: 400 },
+        { role: "reasoning", temperature: 0.2, maxTokens: 600 },
       ),
       deadlineMs - 5_000, // leave 5 s for Refiner + Rationale
       verifierFallback,
@@ -811,7 +822,7 @@ Valid: ${stage5Output.valid_claims.join(", ")}`;
     groqCall([
       { role: "system", content: stage7RefinerPrompt },
       { role: "user", content: "Write the final action." },
-    ], 0.3, 400),
+    ], 0.3, 550),
     deadlineMs - 3_000, // leave 3 s for Rationale
     baseForVerification,
   ).catch(() => baseForVerification);
@@ -822,9 +833,10 @@ Format: "Because [specific reason]."
 Context: Stage=${founderContext.stage}, Viability=${viabilityScore.viability_score}/100, Demand=${signals.demand_score}/100
 Action: ${finalAction}`;
 
-  // G1: Rationale gets whatever is left (up to 3 s)
+  // G1: Rationale gets whatever is left (up to 3 s) — routed via fast chain,
+  // trivial sentence-extraction doesn't need reasoning_effort=high.
   const rationale = await withDeadline(
-    groqCall([
+    groqFastCall([
       { role: "system", content: rationalePrompt },
       { role: "user", content: "One sentence rationale." },
     ], 0.2, 60),
