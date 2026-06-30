@@ -82,6 +82,14 @@ const GEMINI_API_KEY       = readApiKey("GEMINI_API_KEY");
 // Upgrade to Gemini 2.5 Flash — stronger reasoning and lower hallucination rate
 const GEMINI_MODEL         = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
+// OPENROUTER — no-card alternative for genuine model diversity. Google AI Studio's
+// API now requires a card on file in many regions even for free-tier Gemini models;
+// OpenRouter fronts the same Gemini Flash (and DeepSeek, Qwen3, Llama 4) for free
+// with no card required at signup. This is the diversity source for the Critic
+// stage when GEMINI_API_KEY direct access isn't available.
+const OPENROUTER_API_KEY   = readApiKey("OPENROUTER_API_KEY");
+const OPENROUTER_MODEL     = process.env.OPENROUTER_MODEL || "deepseek/deepseek-r1:free";
+
 const cerebrasClient = CEREBRAS_API_KEY
   ? new Cerebras({ apiKey: CEREBRAS_API_KEY, timeout: 20000, maxRetries: 0 })
   : null;
@@ -92,16 +100,19 @@ export function getAIProviderStatus() {
       GROQ_API_KEY ? { provider: "groq", model: GROQ_MODEL, configured: true } : null,
       GROQ_API_KEY ? { provider: "groq", model: "llama-3.3-70b-versatile", configured: true } : null,
       CEREBRAS_API_KEY ? { provider: "cerebras", model: CEREBRAS_MODEL, configured: true } : null,
+      OPENROUTER_API_KEY ? { provider: "openrouter", model: OPENROUTER_MODEL, configured: true } : null,
       GEMINI_API_KEY ? { provider: "gemini", model: GEMINI_MODEL, configured: true } : null,
     ].filter(Boolean),
     reasoning: [
       GROQ_API_KEY ? { provider: "groq", model: GROQ_REASONING_MODEL, configured: true } : null,
+      OPENROUTER_API_KEY ? { provider: "openrouter", model: OPENROUTER_MODEL, configured: true } : null,
+      GEMINI_API_KEY ? { provider: "gemini", model: GEMINI_MODEL, configured: true } : null,
       GROQ_API_KEY ? { provider: "groq", model: "qwen/qwen3-32b", configured: true } : null,
       CEREBRAS_API_KEY ? { provider: "cerebras", model: CEREBRAS_REASONING_MODEL, configured: true } : null,
-      GEMINI_API_KEY ? { provider: "gemini", model: GEMINI_MODEL, configured: true } : null,
     ].filter(Boolean),
     fallback: [
       GEMINI_API_KEY ? { provider: "gemini", model: GEMINI_MODEL, configured: true } : null,
+      OPENROUTER_API_KEY ? { provider: "openrouter", model: OPENROUTER_MODEL, configured: true } : null,
       CEREBRAS_API_KEY ? { provider: "cerebras", model: CEREBRAS_MODEL, configured: true } : null,
       GROQ_API_KEY ? { provider: "groq", model: GROQ_MODEL, configured: true } : null,
     ].filter(Boolean),
@@ -113,11 +124,13 @@ export function getAIProviderDiagnostics() {
   const configured = {
     groq: Boolean(GROQ_API_KEY),
     cerebras: Boolean(CEREBRAS_API_KEY),
+    openrouter: Boolean(OPENROUTER_API_KEY),
     gemini: Boolean(GEMINI_API_KEY),
   };
   const missingEnv = [
     configured.groq ? null : "GROQ_API_KEY",
     configured.cerebras ? null : "CEREBRAS_API_KEY",
+    configured.openrouter ? null : "OPENROUTER_API_KEY",
     configured.gemini ? null : "GEMINI_API_KEY",
   ].filter(Boolean) as string[];
 
@@ -133,7 +146,7 @@ export function getAIProviderDiagnostics() {
 }
 
 export function hasAIProvider(): boolean {
-  return Boolean(GROQ_API_KEY || CEREBRAS_API_KEY || GEMINI_API_KEY);
+  return Boolean(GROQ_API_KEY || CEREBRAS_API_KEY || OPENROUTER_API_KEY || GEMINI_API_KEY);
 }
 
 export function sanitizeModelOutput(text: string): string {
@@ -290,6 +303,48 @@ async function geminiCall(
   return sanitizeModelOutput(text);
 }
 
+/**
+ * openRouterCall — OpenAI-compatible API, fronts free-tier models (DeepSeek R1,
+ * Gemini Flash, Qwen3, Llama 4) with no credit card required at signup. This is
+ * the genuine model-diversity source when GEMINI_API_KEY direct access is
+ * blocked by a card requirement in your region.
+ */
+async function openRouterCall(
+  messages: ChatMessage[],
+  model: string,
+  temperature: number,
+  maxTokens: number,
+  jsonMode: boolean,
+): Promise<string> {
+  if (!OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY not set");
+  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    signal: AbortSignal.timeout(20000),
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+      // Required by OpenRouter for free-tier routing/analytics — safe to set generically
+      "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || "https://buildmind.live",
+      "X-Title": "BuildMind",
+    },
+    body: JSON.stringify({
+      model,
+      temperature,
+      max_tokens: maxTokens,
+      ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
+      messages,
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`OPENROUTER_${res.status}: ${text.slice(0, 150)}`);
+  }
+  const body = await res.json();
+  const text: string = body?.choices?.[0]?.message?.content;
+  if (!text) throw new Error("OpenRouter empty response");
+  return sanitizeModelOutput(text);
+}
+
 // ── Rate limit detection ──────────────────────────────────────────────────────
 
 function isRetryableProviderError(err: unknown): boolean {
@@ -359,6 +414,9 @@ function getFastChain(): ProviderFn[] {
     // Cerebras runs gpt-oss-120b at 1,854 t/s — world's fastest for this model
     chain.push({ label: `cerebras:${CEREBRAS_MODEL}`, call: (m, t, mt, j) => cerebrasCall(m, CEREBRAS_MODEL, t, mt, j) });
   }
+  if (OPENROUTER_API_KEY) {
+    chain.push({ label: `openrouter:${OPENROUTER_MODEL}`, call: (m, t, mt, j) => openRouterCall(m, OPENROUTER_MODEL, t, mt, j) });
+  }
   if (GEMINI_API_KEY) {
     chain.push({ label: `gemini:${GEMINI_MODEL}`, call: (m, t, mt, j) => geminiCall(m, t, mt, j) });
   }
@@ -370,20 +428,35 @@ function getReasoningChain(): ProviderFn[] {
   if (GROQ_API_KEY) {
     // gpt-oss-120b with reasoning_effort=high — native CoT, near o4-mini quality
     chain.push({ label: `groq:${GROQ_REASONING_MODEL}`, call: (m, t, mt, j) => groqCall(m, GROQ_REASONING_MODEL, t, mt, j, true) });
-    // Qwen3-32b as secondary reasoning model (strong math/logic)
+  }
+  // CRITIC DIVERSITY FIX: gpt-oss critiquing gpt-oss shares blind spots — a model
+  // rarely catches its own failure modes. OpenRouter's free DeepSeek R1 is a
+  // genuinely different architecture/training lineage and requires NO credit card
+  // (unlike Google AI Studio's direct API, which now gates free Gemini behind
+  // billing in many regions). This is the real diversity source for Critic/Verifier.
+  if (OPENROUTER_API_KEY) {
+    chain.push({ label: `openrouter:${OPENROUTER_MODEL}`, call: (m, t, mt, j) => openRouterCall(m, OPENROUTER_MODEL, t, mt, j) });
+  }
+  // Direct Gemini — only reachable if a card is on file with Google. Kept as a
+  // bonus path; not relied upon, since GEMINI_API_KEY may be unusable.
+  if (GEMINI_API_KEY) {
+    chain.push({ label: `gemini:${GEMINI_MODEL}`, call: (m, t, mt, j) => geminiCall(m, t, mt, j) });
+  }
+  if (GROQ_API_KEY) {
+    // Qwen3-32b — same-family fallback (strong math/logic)
     chain.push({ label: "groq:qwen/qwen3-32b", call: (m, t, mt, j) => groqCall(m, "qwen/qwen3-32b", t, mt, j, true) });
   }
   if (CEREBRAS_API_KEY) {
     // Cerebras gpt-oss-120b — high throughput reasoning fallback
     chain.push({ label: `cerebras:${CEREBRAS_REASONING_MODEL}`, call: (m, t, mt, j) => cerebrasCall(m, CEREBRAS_REASONING_MODEL, t, mt, j) });
   }
-  if (GEMINI_API_KEY) {
-    chain.push({ label: `gemini:${GEMINI_MODEL}`, call: (m, t, mt, j) => geminiCall(m, t, mt, j) });
-  }
   return chain;
 }
 function getFallbackChain(): ProviderFn[] {
   const chain: ProviderFn[] = [];
+  if (OPENROUTER_API_KEY) {
+    chain.push({ label: `openrouter:${OPENROUTER_MODEL}`, call: (m, t, mt, j) => openRouterCall(m, OPENROUTER_MODEL, t, mt, j) });
+  }
   if (GEMINI_API_KEY) {
     chain.push({ label: `gemini:${GEMINI_MODEL}`, call: (m, t, mt, j) => geminiCall(m, t, mt, j) });
   }
