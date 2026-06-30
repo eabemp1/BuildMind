@@ -246,14 +246,25 @@ export function getTotalXP(): number {
   return Number(storage.get(XP_KEY) ?? "0");
 }
 
-function addXP(amount: number): void {
+function addXP(amount: number, reason = "achievement"): void {
   const next = getTotalXP() + amount;
   storage.set(XP_KEY, String(next));
   fetch("/api/user/xp", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ amount }),
-  }).catch(() => {});
+    body: JSON.stringify({ amount, reason }),
+  }).then(async (res) => {
+    if (!res.ok) {
+      // Previously this was a silent .catch(() => {}) — a server-side XP
+      // write failure was invisible, which is exactly how founder_context.xp
+      // ended up referenced everywhere but never actually populated for
+      // weeks. Logging here at minimum surfaces it in error tracking.
+      const body = await res.json().catch(() => ({}));
+      console.error(`[achievements] XP grant failed (+${amount} for "${reason}"):`, body?.error ?? res.status);
+    }
+  }).catch((err) => {
+    console.error(`[achievements] XP grant network error (+${amount} for "${reason}"):`, err);
+  });
 }
 
 export function getAchievementStats(): AchievementStats {
@@ -315,7 +326,7 @@ export function checkAndUnlockAchievements(): Achievement[] {
   for (const achievement of ACHIEVEMENTS) {
     if (!unlockedIds.has(achievement.id) && achievement.condition(stats)) {
       unlocked.push({ id: achievement.id, unlockedAt: Date.now(), seen: false });
-      addXP(achievement.xp);
+      addXP(achievement.xp, `achievement:${achievement.id}`);
       newlyUnlocked.push(achievement);
     }
   }
