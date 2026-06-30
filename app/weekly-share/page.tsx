@@ -14,7 +14,6 @@ import html2canvas from "html2canvas";
 import { motion } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import { selectActiveProject, useActiveProjectId, useProjectSummariesQuery } from "@/lib/queries";
-import { computeStartupScore } from "@/lib/buildmind";
 import { getStoredStreak } from "@/lib/plan";
 import { storage } from "@/lib/storage";
 
@@ -162,18 +161,14 @@ export default function WeeklySharePage() {
       let next = base;
       if (activeProject?.id) {
         try {
-          // Fetch real momentum from founder_context — not the AI-generated project column
-          const supabase = createClient();
-          const { data: { user } } = await supabase.auth.getUser();
-          let liveMomentum: number | null = null;
-          if (user) {
-            const { data: ctx } = await supabase
-              .from("founder_context")
-              .select("momentum_score")
-              .eq("user_id", user.id)
-              .maybeSingle();
-            liveMomentum = typeof ctx?.momentum_score === "number" ? ctx.momentum_score : null;
-          }
+          // ── Single source of truth: lib/scorecard.ts via the scorecard API ──
+          // Replaces the previous pattern of fetching momentum separately and
+          // hardcoding xp:0 into computeStartupScore — that hardcoded 0 is why
+          // weekly-share's score never matched the reports page (which fetched
+          // real XP via getXP()/syncXP()).
+          const scorecardRes = await fetch("/api/founder-context/scorecard", { cache: "no-store" });
+          const scorecardJson = scorecardRes.ok ? await scorecardRes.json() : null;
+          const scorecard = scorecardJson?.ok ? scorecardJson.data : null;
 
           const reportRes = await fetch("/api/ai/weekly-report", {
             method: "POST",
@@ -197,15 +192,8 @@ export default function WeeklySharePage() {
 
             next = {
               ...base,
-              score: activeProject
-                ? Math.round(computeStartupScore({
-                    ...activeProject,
-                    momentum_score: liveMomentum ?? activeProject.momentum_score,
-                    xp: 0,
-                    streak: base.streak ?? 0
-                  }))
-                : null,
-              momentum_score: liveMomentum ?? activeProject.momentum_score ?? null,
+              score: scorecard ? Math.round(scorecard.projectScore) : null,
+              momentum_score: scorecard ? scorecard.momentum : null,
               tasksCommitted,
               tasksDone,
               milestone: data?.reportData?.ai_summary ?? data?.summary ?? PLACEHOLDER,
