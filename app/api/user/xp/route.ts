@@ -10,8 +10,8 @@
 
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { rateLimitAsync } from "@/lib/server/rateLimit";
+import { getFounderScorecard, grantXP } from "@/lib/scorecard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,14 +27,8 @@ export async function GET() {
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
-    const admin = createAdminClient();
-    const { data } = await admin
-      .from("founder_context")
-      .select("xp")
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    return NextResponse.json({ xp: (data?.xp as number | null) ?? 0 });
+    const scorecard = await getFounderScorecard(userId);
+    return NextResponse.json({ xp: scorecard.xp });
   } catch {
     return NextResponse.json({ xp: 0 });
   }
@@ -56,6 +50,7 @@ export async function POST(req: Request) {
 
   const body = await req.json().catch(() => ({}));
   const amount = Number(body?.amount ?? 0);
+  const reason = typeof body?.reason === "string" ? body.reason : "client-awarded";
   if (!amount || isNaN(amount) || amount <= 0) {
     return NextResponse.json({ error: "amount must be a positive number" }, { status: 400 });
   }
@@ -67,22 +62,11 @@ export async function POST(req: Request) {
   }
 
   try {
-    const admin = createAdminClient();
-
-    // Fetch current XP
-    const { data: existing } = await admin
-      .from("founder_context")
-      .select("xp")
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    const currentXP = (existing?.xp as number | null) ?? 0;
-    const newXP = currentXP + amount;
-
-    await admin
-      .from("founder_context")
-      .upsert({ user_id: userId, xp: newXP }, { onConflict: "user_id" });
-
+    // grantXP() is the ONLY permitted writer to founder_context.xp — see
+    // lib/scorecard.ts. It throws loudly on failure instead of swallowing
+    // errors, which is what made the original achievements addXP() bug
+    // (silent .catch(() => {})) invisible for so long.
+    const newXP = await grantXP(userId, amount, reason);
     return NextResponse.json({ ok: true, xp: newXP });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to update XP";
