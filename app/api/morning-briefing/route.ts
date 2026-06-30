@@ -227,12 +227,13 @@ export async function GET(req: Request) {
             }),
           );
 
-          // ── Write execution_score + momentum_score back to projects ────────
-          // Same logic as the single-user GET path — keeps both paths in sync.
-          // briefing.risk is a string label, not a number — use the existing
-          // momentum_score from founder_context as the authoritative value.
-          // The morning briefing updates it via task-complete writes; we preserve
-          // the current value here and only update execution_score from the verdict.
+          // ── Mirror momentum + write execution_score onto projects ───────────
+          // momentum_score is NEVER computed here — founder_context is the
+          // single source of truth, written exclusively by
+          // app/api/founder-context/task-complete/route.ts (which uses the
+          // bounded EMA formula in lib/momentum.ts). This is purely a
+          // best-effort mirror for legacy reads against project_summaries.
+          // See lib/scorecard.ts for the canonical read/write contract.
           const batchMomentum = ctx.momentum_score ?? 50;
           const batchVerdict = (briefing as Record<string, unknown>).reflexion_verdict as string | undefined;
           const batchExecution =
