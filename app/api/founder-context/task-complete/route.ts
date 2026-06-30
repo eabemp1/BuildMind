@@ -63,7 +63,22 @@ export async function POST(req: Request) {
   const isHardTask = ["launch", "revenue", "growth"].some(s =>
     (stage || ctx?.current_stage || "").toLowerCase().includes(s)
   );
-  const newMomentum = momentumOnTaskComplete(current, isHardTask);
+
+  // EMA needs to know how many days elapsed since momentum was last touched —
+  // a task completed after a 5-day gap should compound differently than one
+  // completed the day after the last update.
+  const todayForGap = new Date().toISOString().slice(0, 10);
+  const lastActiveForGap = ctx?.last_active ?? todayForGap;
+  const daysSinceLastUpdate = Math.max(
+    1,
+    Math.round((new Date(todayForGap).getTime() - new Date(lastActiveForGap).getTime()) / 86_400_000),
+  );
+  const todayCountBeforeThis = ctx?.last_task_date === todayForGap ? (ctx?.tasks_completed_today ?? 0) : 0;
+
+  const newMomentum = momentumOnTaskComplete(current, isHardTask, {
+    tasksCompletedToday: todayCountBeforeThis,
+    daysSinceLastUpdate,
+  });
 
   // Consecutive task tracking — powers the Emotional Language Layer in reflexion.ts
   const today = new Date().toISOString().slice(0, 10); // UTC — matches fetchBehaviorState comparison
@@ -138,6 +153,19 @@ export async function POST(req: Request) {
       : {}),
     ...(stage ? { current_stage: stage } : {}),
   }, { onConflict: "user_id" });
+
+  // ── Mirror onto projects (read-only consumers: project_summaries view) ────
+  // founder_context above is the single source of truth — this is purely a
+  // best-effort mirror so legacy queries against `projects` don't show stale
+  // numbers. Never block the response on this; never treat it as authoritative.
+  if (projectId) {
+    admin
+      .from("projects")
+      .update({ momentum_score: newMomentum, streak: newStreak })
+      .eq("id", projectId)
+      .eq("user_id", user.id)
+      .then(() => {}, () => {});
+  }
 
   const computedScore = newMomentum;
   // Non-blocking score history snapshot — feeds the Progress page 7-day trend
