@@ -200,17 +200,23 @@ export default function InsightsPage() {
         ? projQ.eq("id", activeProjectId)
         : projQ.order("created_at", { ascending: false }).limit(1);
 
-      const [memRes, ctxRes, reflRes, logRes, projRes] = await Promise.allSettled([
+      const [memRes, ctxRes, reflRes, logRes, projRes, scorecardRes] = await Promise.allSettled([
         supabase.from("founder_memory")
           .select("avoidance_zones,strengths,personality_tags,last_insight")
           .eq("user_id", user.id).maybeSingle(),
         supabase.from("founder_context")
-          .select("momentum_score,streak,meta_critic_signal,active_pattern_signal,active_pattern_message,active_pattern_subject,last_pattern_shown_at")
+          .select("meta_critic_signal,active_pattern_signal,active_pattern_message,active_pattern_subject,last_pattern_shown_at")
           .eq("user_id", user.id).maybeSingle(),
         reflQ,
         supabase.from("action_logs").select("outcome,outcome_note,created_at")
           .eq("user_id", user.id).gte("created_at", thirtyDaysAgo),
         projQ.maybeSingle(),
+        // ── Single source of truth for momentum/streak/xp — see lib/scorecard.ts ──
+        // Previously this page read ctx.momentum_score directly with a `?? 0`
+        // fallback (every other page used `?? 50`) AND ctx.streak, which never
+        // existed as a column until the June 30 migration — both guaranteed
+        // this page showed 0 regardless of real activity.
+        fetch("/api/founder-context/scorecard", { cache: "no-store" }),
       ]);
 
       const mem   = memRes.status  === "fulfilled" ? memRes.value.data  : null;
@@ -218,6 +224,18 @@ export default function InsightsPage() {
       const refs  = reflRes.status === "fulfilled" ? (reflRes.value.data ?? []) : [];
       const logs  = logRes.status  === "fulfilled" ? (logRes.value.data ?? []) : [];
       const stage = projRes.status === "fulfilled" ? (projRes.value.data?.startup_stage ?? "Idea") : "Idea";
+
+      let scorecardMomentum = 50;
+      let scorecardStreak = 0;
+      if (scorecardRes.status === "fulfilled" && scorecardRes.value.ok) {
+        try {
+          const scorecardJson = await scorecardRes.value.json();
+          if (scorecardJson?.ok) {
+            scorecardMomentum = scorecardJson.data.momentum;
+            scorecardStreak   = scorecardJson.data.streak;
+          }
+        } catch { /* fall through to defaults */ }
+      }
 
       // Day-of-week completion
       const completionByDay: Record<string, { completed: number; total: number }> = {};
@@ -254,8 +272,8 @@ export default function InsightsPage() {
         avoidanceZones:         (mem?.avoidance_zones  ?? []) as string[],
         strengths:              (mem?.strengths         ?? []) as string[],
         personalityTags:        (mem?.personality_tags  ?? []) as string[],
-        momentumScore:          ctx?.momentum_score ?? 0,
-        streak:                 ctx?.streak ?? 0,
+        momentumScore:          scorecardMomentum,
+        streak:                 scorecardStreak,
         metacriticSignal:       ctx?.meta_critic_signal ?? undefined,
         lastInsight:            mem?.last_insight ?? undefined,
         activePatternSignal:    ctx?.active_pattern_signal   ?? null,
