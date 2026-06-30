@@ -165,10 +165,26 @@ function AICoachPageInner() {
   const [memory, setMemory] = useState<string[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
   const [coachMessagesThisWeek, setCoachMessagesThisWeek] = useState(0);
+  const [scorecardScore, setScorecardScore] = useState<number | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  const score = activeProject ? computeStartupScore(activeProject) : 0;
+  // ── Single source of truth for score — see lib/scorecard.ts ──────────────
+  // Previously: computeStartupScore(activeProject) with NO xp/streak passed,
+  // meaning this page's score never reflected real XP or streak at all —
+  // identical bug class to weekly-share's hardcoded xp:0.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/founder-context/scorecard", { cache: "no-store" })
+      .then(res => res.ok ? res.json() : null)
+      .then(json => {
+        if (!cancelled && json?.ok) setScorecardScore(Math.round(json.data.projectScore));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const score = scorecardScore ?? (activeProject ? computeStartupScore(activeProject) : 0);
   const limits = getLimits(plan);
   const coachLimit = plan === "free" ? FREE_COACH_MESSAGES_PER_WEEK : limits.aiMessagesPerDay;
   const remaining = plan === "free" ? Math.max(0, coachLimit - coachMessagesThisWeek) : Infinity;
