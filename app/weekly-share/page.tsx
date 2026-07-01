@@ -276,12 +276,12 @@ export default function WeeklySharePage() {
 
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:16}}>
           {[
-            {label:"Tasks done",value:loading ? PLACEHOLDER : `${statValue(weekData.tasksDone)}/${statValue(weekData.tasksCommitted)}`,color:"var(--bm-text)"},
-            {label:"Exec score",value:loading ? PLACEHOLDER : statValue(weekData.score, "/100"),color:"var(--bm-green)"},
-            {label:"Momentum",  value:loading ? PLACEHOLDER : weekData.momentum_score != null ? `${weekData.momentum_score}` : "—", color:"#A78BFA"},
-            {label:"Accountability",value:loading ? PLACEHOLDER : pct(weekData.tasksDone, weekData.tasksCommitted),color:"var(--bm-amber)"},
+            {label:"Tasks done",value:loading ? PLACEHOLDER : `${statValue(weekData.tasksDone)}/${statValue(weekData.tasksCommitted)}`,color:"var(--bm-text)",title:"Tasks you completed out of tasks committed to this week"},
+            {label:"Exec score",value:loading ? PLACEHOLDER : statValue(weekData.score, "/100"),color:"var(--bm-green)",title:"Composite score combining execution quality, momentum, XP, and streak"},
+            {label:"Momentum",  value:loading ? PLACEHOLDER : weekData.momentum_score != null ? `${weekData.momentum_score}` : "—", color:"#A78BFA",title:"Your current momentum score (0-100) — reflects recent activity pattern, not lifetime total"},
+            {label:"Accountability",value:loading ? PLACEHOLDER : pct(weekData.tasksDone, weekData.tasksCommitted),color:"var(--bm-amber)",title:"Percentage of committed tasks you actually completed this week (tasks done ÷ tasks committed)"},
           ].map(s=>(
-            <div key={s.label} style={{background:"var(--bm-bg3)",borderRadius:10,padding:"10px 12px",textAlign:"center"}}>
+            <div key={s.label} title={s.title} style={{background:"var(--bm-bg3)",borderRadius:10,padding:"10px 12px",textAlign:"center",cursor:"help"}}>
               <div style={{fontSize:16,fontWeight:600,color:s.color}}>{s.value}</div>
               <div style={{fontSize:10,color:"var(--bm-text3)",marginTop:2}}>{s.label}</div>
             </div>
