@@ -22,6 +22,7 @@
 
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { setWeeklyMomentumBaseline } from "@/lib/scorecard";
 import { hasAdminEnv } from "@/app/api/ai/_utils";
 import { sendEmail } from "@/lib/email";
 import { logError, logInfo } from "@/lib/server/logger";
@@ -208,6 +209,13 @@ export async function GET(request: Request) {
     const momentumEnd    = ctx?.momentum_score ?? 0;
     const momentumStart  = refls.length > 0 ? (refls[0].momentum_score ?? momentumEnd) : momentumEnd;
     const streak         = ctx?.streak ?? 0;
+
+    // ── Weekly momentum baseline snapshot ─────────────────────────────────
+    // Powers FounderScorecard.momentumTrend / momentumDelta (lib/scorecard.ts),
+    // used by app/insights/page.tsx (Behavioral Patterns) to show whether
+    // momentum is rising or falling week over week. Runs for every builder
+    // user regardless of whether they end up receiving an email below.
+    setWeeklyMomentumBaseline(user.id).catch(() => {});
 
     // Skip if they did literally nothing and momentum didn't change
     if (tasksCompleted === 0 && momentumEnd === momentumStart && streak === 0) continue;
