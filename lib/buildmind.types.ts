@@ -103,6 +103,12 @@ export type WeeklyReportMetrics = {
   tasksCompletedPreviousWeek: number;
   activeStreakDays: number;
   momentumScore: number | null;
+  // Lifetime XP — single source of truth, mirrors lib/scorecard.ts getFounderScorecard().xp.
+  // Previously this field didn't exist at all, which is why the Weekly Report's
+  // "Total XP" tile always called getXP() (a client-side localStorage cache that
+  // only gets populated by a separate, unrelated syncXP() call) instead of reading
+  // real server data through this metrics object like every other tile does.
+  totalXP: number;
   focusData: { label: string; value: number; color: string }[];
   wins: string[];
   nextFocus: string[];
