@@ -634,7 +634,7 @@ export default function ReportsPage() {
                 : "Check-ins completed vs total"}
               trend={executionTrend} color={intentionRate >= 60 ? "var(--bm-green)" : intentionRate >= 30 ? "var(--bm-amber)" : "var(--bm-red)"} icon={TrendingUp}/>
           ) : (
-            <Tile label="Total XP" value={getXP()}
+            <Tile label="Total XP" value={metrics?.totalXP ?? 0}
               sub="Lifetime achievement points" trend="up"
               spark={scoreHistory} color="#A78BFA" icon={Zap}/>
           )}
