@@ -53,6 +53,7 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
     tasksCompletedPreviousWeek: 0,
     activeStreakDays: 0,
     momentumScore: null,
+    totalXP: 0,
     focusData: [],
     wins: [],
     nextFocus: [],
@@ -66,20 +67,27 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
 
   const supabase = createClient();
 
-  let founderContextRow: { streak?: number | null; momentum_score?: number | null } | null = null;
+  // ── Single source of truth: route through the scorecard API, not a raw ────
+  // founder_context query. The previous direct query here had a silent
+  // `catch { /* non-fatal */ }` that could swallow errors invisibly — the
+  // exact reason Weekly Report showed momentum as "—" while the identical
+  // query pattern in app/insights/page.tsx (via the scorecard endpoint)
+  // worked correctly. Using the same endpoint everywhere means every page
+  // either all works or all fails loudly together — never silently diverges.
+  let serverMomentumScore: number | null = null;
+  let serverXP = 0;
+  let serverStreakFromScorecard = 0;
   try {
-    const { data } = await supabase
-      .from("founder_context")
-      .select("streak, momentum_score")
-      .eq("user_id", user.id)
-      .maybeSingle();
-    founderContextRow = data;
-  } catch { /* non-fatal */ }
-
-  const serverMomentumScore: number | null =
-    typeof founderContextRow?.momentum_score === "number"
-      ? founderContextRow.momentum_score
-      : null;
+    const scorecardRes = await fetch("/api/founder-context/scorecard", { cache: "no-store" });
+    if (scorecardRes.ok) {
+      const scorecardJson = await scorecardRes.json();
+      if (scorecardJson?.ok) {
+        serverMomentumScore = scorecardJson.data.momentum;
+        serverXP = scorecardJson.data.xp;
+        serverStreakFromScorecard = scorecardJson.data.streak;
+      }
+    }
+  } catch { /* leave nulls/zero — UI shows "—" honestly rather than a stale guess */ }
 
   // ── Score history — last 14 days to cover both this and previous week ─────
   let scoreHistoryRows: Array<{ score: number; recorded_at: string }> = [];
@@ -93,7 +101,7 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
     scoreHistoryRows = data ?? [];
   } catch { /* non-fatal */ }
 
-  if (scoreHistoryRows.length === 0 && founderContextRow) {
+  if (scoreHistoryRows.length === 0 && serverMomentumScore !== null) {
     try {
       const { data: jsonbCtx } = await supabase
         .from("founder_context")
@@ -261,7 +269,7 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
     if (completedDates.has(d.toLocaleDateString("en-CA"))) computedStreakFromDates += 1;
     else if (i > 0) break;
   }
-  const dbStreak = typeof founderContextRow?.streak === "number" ? founderContextRow.streak : 0;
+  const dbStreak = serverStreakFromScorecard;
   const activeStreakDays = Math.max(dbStreak, computedStreakFromDates);
 
   const tasksCompletedThisWeek = taskData.reduce((sum, count) => sum + count, 0);
@@ -424,6 +432,7 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
     score, previousScore, weeklyScores, taskData,
     tasksCompletedThisWeek, tasksCompletedPreviousWeek,
     activeStreakDays, momentumScore: serverMomentumScore,
+    totalXP: serverXP,
     focusData, wins, nextFocus,
     intention_vs_execution_rate,
     previous_intention_vs_execution_rate,
