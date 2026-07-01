@@ -14,6 +14,7 @@ import { detectSpiralFull } from "@/lib/cofounder/spiralDetection";
 import { injectContinuityIntoSystemPrompt, recordInteractionServer, type RecentInteraction } from "@/lib/conversationContinuity";
 import { evaluateAIOutput } from "@/lib/aiEvaluator";
 import { getPromptForRequest, loadActivePrompts } from "@/lib/promptRegistry";
+import { getFounderScorecard } from "@/lib/scorecard";
 
 const FREE_COACH_MESSAGES_PER_DAY = 3;
 
@@ -207,13 +208,23 @@ export async function POST(request: Request) {
     let lastMorningNote = "";
     let confidenceScore: number | null = null;
     let recentInteractions: RecentInteraction[] = [];
+    let scorecardContext = "";
 
     // supabase client is needed outside the hasAdminEnv block for recordInteractionServer
     const supabase = hasAdminEnv() ? createAdminClient() : null;
 
     if (hasAdminEnv() && supabase) {
       try {
-        const [projectResult, memoryResult, milestonesResult, profileResult] = await Promise.allSettled([
+        // ── Real scorecard — single source of truth, see lib/scorecard.ts ────
+        // Fetched independently of the Promise.allSettled below (which is
+        // project-scoped) since momentum/streak/xp are founder-scoped, not
+        // project-scoped. Without this, the model was inferring "momentum"
+        // from task/milestone completion ratios and presenting that guess
+        // as if it were the real momentum_score — a fabricated number that
+        // coincidentally sounds authoritative because it's phrased as a fact.
+        const scorecardPromise = getFounderScorecard(userId).catch(() => null);
+
+        const [projectResult, memoryResult, milestonesResult, profileResult, scorecardResult] = await Promise.allSettled([
           supabase
             .from("projects")
             .select("name, title, description, target_users, problem, startup_stage, validation_strengths, validation_weaknesses")
@@ -225,11 +236,17 @@ export async function POST(request: Request) {
           // Task 5: fetch recent_interactions to extract today's morning note
           // NOTE: recent_interactions lives on founder_context (migration 20260517000000), not profiles
           supabase.from("founder_context").select("recent_interactions").eq("user_id", userId).maybeSingle(),
+          scorecardPromise,
         ]);
 
         const project = projectResult.status === "fulfilled" ? projectResult.value.data : null;
         memory = memoryResult.status === "fulfilled" ? memoryResult.value.data as FounderMemory | null : null;
         const milestones = milestonesResult.status === "fulfilled" ? milestonesResult.value.data ?? [] : [];
+
+        const scorecard = scorecardResult.status === "fulfilled" ? scorecardResult.value : null;
+        if (scorecard) {
+          scorecardContext = `\nMomentum score: ${scorecard.momentum}/100 (${scorecard.momentumLabel.label})\nActive streak: ${scorecard.streak} day${scorecard.streak === 1 ? "" : "s"}\nLifetime XP: ${scorecard.xp}\nExecution score: ${scorecard.executionScore}/100\n\nIMPORTANT: The momentum score above (${scorecard.momentum}/100) is the ONLY correct value for "momentum score" — a specific, named metric independent of task or milestone completion percentages. Never compute or state a different "momentum score" from task/milestone ratios; those are separate metrics you may mention by their own names (e.g. "task completion rate") but must not relabel as momentum.`;
+        }
 
         // Task 5: extract today's morning note from recent_interactions
         const profileInteractions = profileResult.status === "fulfilled"
@@ -360,7 +377,7 @@ Answer rules:
 - Under 200 words. Dense and direct. Never "Great question!" Never filler.
 ${spiralInstruction}${proactiveObservation}
 
-${projectContext ? `FOUNDER'S REAL DATA:\n${projectContext}` : ""}${founderMemoryContext}${morningNoteContext}${blockerContext}${domainContext}${historyContext}
+${projectContext ? `FOUNDER'S REAL DATA:\n${projectContext}${scorecardContext}` : scorecardContext}${founderMemoryContext}${morningNoteContext}${blockerContext}${domainContext}${historyContext}
 
 Founder's message: ${message}
 
