@@ -112,6 +112,11 @@ export async function middleware(request: NextRequest) {
   const isExploreRoute = pathname === "/explore" || pathname.startsWith("/explore/");
   const isFounderRoute = pathname.startsWith("/founder/");
   const isStudentRoute = pathname === "/students";
+  const isGeoDefinitionRoute =
+    pathname === "/founder-execution-intelligence" ||
+    pathname === "/founder-drift" ||
+    pathname === "/execution-memory" ||
+    pathname === "/startup-cognitive-load";
   const isPublicRoute =
     pathname === "/" ||
     pathname === "/landing" ||
@@ -128,7 +133,8 @@ export async function middleware(request: NextRequest) {
     isExploreRoute ||
     isFounderRoute ||
     isConversionRoute ||
-    isStudentRoute;
+    isStudentRoute ||
+    isGeoDefinitionRoute;
   const isApiRoute = pathname.startsWith("/api");
   const isOnboardingRoute = pathname === "/onboarding" || pathname.startsWith("/onboarding/");
 
