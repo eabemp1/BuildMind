@@ -26,6 +26,8 @@ interface InsightData {
   strengths:              string[];
   personalityTags:        string[];
   momentumScore:          number;
+  momentumDelta:          number | null;
+  momentumTrend:          "up" | "down" | "flat" | "unknown";
   streak:                 number;
   metacriticSignal?:      string;
   lastInsight?:           string;
@@ -227,12 +229,16 @@ export default function InsightsPage() {
 
       let scorecardMomentum = 50;
       let scorecardStreak = 0;
+      let scorecardMomentumDelta: number | null = null;
+      let scorecardMomentumTrend: InsightData["momentumTrend"] = "unknown";
       if (scorecardRes.status === "fulfilled" && scorecardRes.value.ok) {
         try {
           const scorecardJson = await scorecardRes.value.json();
           if (scorecardJson?.ok) {
-            scorecardMomentum = scorecardJson.data.momentum;
-            scorecardStreak   = scorecardJson.data.streak;
+            scorecardMomentum      = scorecardJson.data.momentum;
+            scorecardStreak        = scorecardJson.data.streak;
+            scorecardMomentumDelta = scorecardJson.data.momentumDelta;
+            scorecardMomentumTrend = scorecardJson.data.momentumTrend;
           }
         } catch { /* fall through to defaults */ }
       }
@@ -273,6 +279,8 @@ export default function InsightsPage() {
         strengths:              (mem?.strengths         ?? []) as string[],
         personalityTags:        (mem?.personality_tags  ?? []) as string[],
         momentumScore:          scorecardMomentum,
+        momentumDelta:          scorecardMomentumDelta,
+        momentumTrend:          scorecardMomentumTrend,
         streak:                 scorecardStreak,
         metacriticSignal:       ctx?.meta_critic_signal ?? undefined,
         lastInsight:            mem?.last_insight ?? undefined,
@@ -426,14 +434,30 @@ export default function InsightsPage() {
           <Section label="Momentum" accent="var(--bm-accent)">
             <div style={{ display: "flex", alignItems: "flex-end", gap: 20, marginBottom: 16 }}>
               <div>
-                <div style={{
-                  fontSize: 48, fontWeight: 800, color: "var(--bm-text)",
-                  lineHeight: 1, letterSpacing: "-0.04em",
-                  fontFamily: "'DM Mono', monospace",
-                }}>
-                  {data.momentumScore}
+                <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                  <div style={{
+                    fontSize: 48, fontWeight: 800, color: "var(--bm-text)",
+                    lineHeight: 1, letterSpacing: "-0.04em",
+                    fontFamily: "'DM Mono', monospace",
+                  }}>
+                    {data.momentumScore}
+                  </div>
+                  {data.momentumTrend !== "unknown" && (
+                    <span style={{
+                      fontSize: 13, fontWeight: 700, fontFamily: "'DM Mono', monospace",
+                      color: data.momentumTrend === "up"   ? "var(--bm-green)" :
+                             data.momentumTrend === "down" ? "var(--bm-red)"   :
+                             "var(--bm-text3)",
+                    }}>
+                      {data.momentumTrend === "up"   && `↑ +${data.momentumDelta}`}
+                      {data.momentumTrend === "down" && `↓ ${data.momentumDelta}`}
+                      {data.momentumTrend === "flat" && "→ steady"}
+                    </span>
+                  )}
                 </div>
-                <div style={{ fontSize: 10, color: "var(--bm-text3)", marginTop: 3 }}>/ 100</div>
+                <div style={{ fontSize: 10, color: "var(--bm-text3)", marginTop: 3 }}>
+                  / 100{data.momentumTrend !== "unknown" ? " · vs last week" : ""}
+                </div>
               </div>
               <div style={{ flex: 1, paddingBottom: 6 }}>
                 <Bar value={data.momentumScore} />
@@ -443,6 +467,11 @@ export default function InsightsPage() {
                 </div>
               </div>
             </div>
+            {data.momentumTrend === "unknown" && (
+              <p style={{ fontSize: 11, color: "var(--bm-text4)", margin: "0 0 12px", lineHeight: 1.5 }}>
+                Trend appears after your first Sunday check-in — BuildMind needs one full week to compare against.
+              </p>
+            )}
             <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
               {data.streak > 0 && (
                 <div>
