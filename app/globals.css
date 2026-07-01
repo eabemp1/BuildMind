@@ -160,3 +160,90 @@ body {
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
+
+/* ── Landing hero — was referenced in LandingPageClient.tsx but never ──
+   defined anywhere (no Tailwind utility, no custom CSS), so the browser
+   silently dropped every one of these classes. The result: the hero
+   "window" rendered as a bare div with only its raw padding, no border,
+   no background, no glow — exactly the flat/uneven look reported. ──── */
+
+.bm-hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--bm-accent-bd);
+  background: var(--bm-accent-dim);
+  color: var(--bm-accent);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.bm-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--bm-accent);
+  box-shadow: 0 0 0 0 rgba(232, 197, 71, 0.6);
+  animation: bm-live-pulse 2s ease-in-out infinite;
+}
+
+@keyframes bm-live-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(232, 197, 71, 0.5); }
+  70%  { box-shadow: 0 0 0 6px rgba(232, 197, 71, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(232, 197, 71, 0); }
+}
+
+/* Ambient background glows behind the hero window — absolutely positioned
+   blurred radial orbs. Must be position:absolute or they push page layout
+   and create the extra unexpected spacing seen around the hero. */
+.bm-hero-glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(60px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* The bordered "window" containing the hero content and the reflexion
+   loop mockup on the right. This is the element that had NO border and
+   NO background at all before this fix — just raw padding utility classes
+   sitting on a transparent, unstyled div. */
+.bm-hero-window {
+  position: relative;
+  z-index: 1;
+  border: 1px solid var(--bm-border2);
+  border-radius: var(--r-xl);
+  background: linear-gradient(180deg, rgba(255,255,255,0.02) 0%, rgba(255,255,255,0.00) 100%), var(--bm-bg2);
+  overflow: hidden;
+  box-shadow: 0 1px 0 0 rgba(255,255,255,0.04) inset, 0 20px 60px -20px rgba(0,0,0,0.5);
+}
+
+/* Thin gold gradient line along the top edge of the hero window, echoing
+   the accent color used throughout the rest of the brand system. */
+.bm-hero-window-glow-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--bm-accent-bd), transparent);
+  z-index: 2;
+}
+
+/* Soft radial burst anchored behind the reflexion-loop mockup on the right
+   side of the hero window, giving the "live" panel a subtle glow without
+   a hard-edged box. */
+.bm-hero-burst {
+  position: absolute;
+  top: -10%;
+  right: -10%;
+  width: 55%;
+  height: 70%;
+  background: radial-gradient(ellipse, rgba(232,197,71,0.10) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
