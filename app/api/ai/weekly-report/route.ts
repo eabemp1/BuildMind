@@ -3,6 +3,7 @@ import { groqJSON, hasAdminEnv } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { checkPlanAccess } from "@/app/api/ai/_planCheck";
 import { getPulseWeekSummary, getPulseMetrics, emitPulse } from "@/lib/pulse";
+import { getFounderScorecard } from "@/lib/scorecard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -270,15 +271,24 @@ export async function POST(request: Request) {
       getPulseMetrics(userId),
     ]);
 
-    // Fall back to legacy count if Pulse has no data yet (early users)
-    const legacyMomentum = clamp(15 + tasks * 7 + milestones * 10, 10, 95);
-    const momentumScore = pulseMetrics.pulseScore > 0
-      ? clamp(Math.round(pulseMetrics.pulseScore), 10, 95)
-      : legacyMomentum;
+    // MOMENTUM FIX (June 30 2026): this used to compute its own "Pulse Score"
+    // momentum (either from pulseMetrics.pulseScore or a legacy tasks/milestones
+    // formula), completely disconnected from founder_context.momentum_score —
+    // the value shown on Behavioral Patterns and the weekly-share stat tile.
+    // The AI's prose summary would then quote THIS disconnected number (e.g.
+    // "momentum remains high at 87") while the tile above it correctly showed
+    // the real founder_context value (e.g. 50) — same page, two different
+    // "momentum scores", neither telling the founder which was real.
+    //
+    // Fix: momentum is now read from the single source of truth (lib/scorecard.ts)
+    // and passed to the AI as an immutable fact it must reference verbatim,
+    // exactly like the coach route fix in app/api/ai/coach/route.ts.
+    const scorecard = await getFounderScorecard(userId).catch(() => null);
+    const momentumScore = scorecard?.momentum ?? 50;
 
     // Execution trend from Pulse is deterministic — not AI-generated
     const deterministicTrend = pulseWeek.executionTrend;
-    const pulseStreak = pulseMetrics.pulseStreak;
+    const pulseStreak = scorecard?.streak ?? pulseMetrics.pulseStreak;
 
     // reflectionCount is the most reliable signal for Today-page activity
     // Re-derive it from tasks (which includes reflection rows) for the prompt
@@ -289,7 +299,7 @@ export async function POST(request: Request) {
       : null;
 
     const activitySignal = pulsePositive > 0
-      ? `${pulsePositive} positive-signal events this week (${pulseNegative} overrides/blocks). Pulse Score: ${momentumScore}/100. Streak: ${pulseStreak} days.${avgReflectionQuality ? ` Avg reflection quality: ${avgReflectionQuality}/5.` : ""}`
+      ? `${pulsePositive} positive-signal events this week (${pulseNegative} overrides/blocks). Momentum Score: ${momentumScore}/100. Streak: ${pulseStreak} days.${avgReflectionQuality ? ` Avg reflection quality: ${avgReflectionQuality}/5.` : ""}`
       : tasks > 0
         ? `${tasks} action${tasks !== 1 ? "s" : ""} completed or reflected on this week`
         : "No completed actions recorded this week";
@@ -302,11 +312,12 @@ export async function POST(request: Request) {
   "next_week_focus": "one specific thing to prioritize next week. This will become Monday's first task — make it concrete and actionable.",
   "honest_assessment": "a direct, uncomfortable truth about where you are headed",
   "execution_trend_note": "one sentence on whether this week felt faster or slower than last week — qualitative only",
-  "momentum_score": <number 0-100>,
   "intention_vs_execution_rate": <number 0-100 — tasks completed / tasks committed this week>,
   "execution_trend": "up" | "down" | "flat"
 }
-No preamble. No markdown. Only JSON.`;
+No preamble. No markdown. Only JSON.
+
+CRITICAL — Momentum score: the momentum score in HARD NUMBERS below is the founder's real, authoritative momentum_score. If your "summary" or any other prose field references a momentum number, it MUST be exactly that number — never estimate, round differently, or infer a different momentum figure from task/milestone counts. Tasks and milestones are separate facts; do not use them to compute or imply an alternate momentum value.`;
 
     const userPrompt = `Weekly behavioral data for this founder:
 
@@ -360,12 +371,14 @@ INSTRUCTION:
 
     try {
       const ai = await groqJSON<AIWeeklyReport>(systemPrompt, userPrompt);
-      // Never trust ai.momentum_score — the AI inflates it to match its
-      // narrative tone. We always use our Pulse-derived score.
+      // momentum_score is no longer part of the AI's JSON schema (see systemPrompt
+      // above) — it's set here from the real founder_context value regardless,
+      // as a defensive backstop in case an older cached prompt or model behavior
+      // still emits the field.
       if (ai?.summary) {
         result = {
           ...ai,
-          momentum_score: momentumScore,  // always our computed value
+          momentum_score: momentumScore,  // always the real founder_context value
           execution_trend: deterministicTrend,  // always deterministic
         };
       }
