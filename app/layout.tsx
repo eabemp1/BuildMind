@@ -15,8 +15,9 @@ export const metadata: Metadata = {
     template: "%s | BuildMind",
   },
   description:
-    "BuildMind watches your startup context and tells you the one highest-leverage thing to do next. No lists. No frameworks. Just the next move — decided overnight while you sleep.",
+    "BuildMind is a Founder Execution Intelligence system. It watches your startup context and tells you the one highest-leverage thing to do next — no lists, no frameworks, just the next move, decided overnight while you sleep.",
   keywords: [
+    "founder execution intelligence",
     "what to do next as a founder",
     "founder decision fatigue",
     "daily action for founders",
@@ -68,7 +69,7 @@ export const metadata: Metadata = {
     siteName: "BuildMind",
     title: "BuildMind — Your next move, already decided",
     description:
-      "BuildMind watches your startup context and tells you the one highest-leverage thing to do next. No lists. No frameworks. Just the next move.",
+      "Founder Execution Intelligence for solo founders. BuildMind watches your startup context and tells you the one highest-leverage thing to do next.",
     images: [
       {
         url: "/logo/buildmind-og-image.png",
@@ -80,9 +81,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "BuildMind — AI Chief of Staff for Stuck Founders",
+    title: "BuildMind — Founder Execution Intelligence",
     description:
-      "BuildMind decides the next execution move, stress-tests weak ideas, and keeps founder momentum honest.",
+      "BuildMind builds a behavioral memory of how you execute — tracking drift and momentum to decide your next move.",
     images: [{ url: "/logo/buildmind-og-image.png", width: 1200, height: 630 }],
     creator: "@buildmind_os",
   },
@@ -108,11 +109,12 @@ const jsonLd = [
     operatingSystem: "Web",
     url: "https://buildmind.live",
     description:
-      "BuildMind is the AI Chief of Staff for stuck founders. It decides the next execution move, stress-tests weak ideas, and keeps founder momentum honest.",
+      "BuildMind is a Founder Execution Intelligence system that builds a behavioral memory of how founders work — tracking drift, momentum, and avoidance patterns to surface the highest-leverage next action.",
     featureList: [
-      "AI-powered daily action based on startup stage",
-      "Reflect loop — yesterday's outcome changes today's action",
-      "Founder streak tracking",
+      "Founder behavioral memory",
+      "Execution drift detection",
+      "Agent workforce for market research",
+      "Daily execution intelligence",
       "AI Coach with real project data",
       "Break My Startup — brutal AI stress test",
       "Weekly share card for build-in-public",
@@ -147,7 +149,7 @@ const jsonLd = [
     "@type": "WebSite",
     url: "https://buildmind.live",
     name: "BuildMind",
-    description: "Daily action engine for founders",
+    description: "Founder Execution Intelligence for solo founders — daily action engine and behavioral memory",
   },
   {
     "@context": "https://schema.org",
@@ -158,7 +160,7 @@ const jsonLd = [
         name: "What is BuildMind?",
         acceptedAnswer: {
           "@type": "Answer",
-          text: "BuildMind is the AI Chief of Staff for stuck founders. It decides the next execution move, stress-tests weak ideas, and keeps founder momentum honest.",
+          text: "BuildMind is a Founder Execution Intelligence system — it builds a behavioral memory of how a founder actually executes, decides the next move, stress-tests weak ideas, and keeps founder momentum honest.",
         },
       },
       {
@@ -184,6 +186,34 @@ const jsonLd = [
           "@type": "Answer",
           text: "Solo founders, indie hackers, and first-time entrepreneurs who have an idea or early startup and want to stop planning and start executing. BuildMind works best for people in the idea, validation, prototype, MVP, or launch stage.",
         },
+      },
+    ],
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "DefinedTermSet",
+    name: "BuildMind Founder Execution Framework",
+    url: "https://buildmind.live/founder-execution-intelligence",
+    hasDefinedTerm: [
+      {
+        "@type": "DefinedTerm",
+        name: "Founder Execution Intelligence",
+        url: "https://buildmind.live/founder-execution-intelligence",
+      },
+      {
+        "@type": "DefinedTerm",
+        name: "Founder Drift",
+        url: "https://buildmind.live/founder-drift",
+      },
+      {
+        "@type": "DefinedTerm",
+        name: "Execution Memory",
+        url: "https://buildmind.live/execution-memory",
+      },
+      {
+        "@type": "DefinedTerm",
+        name: "Startup Cognitive Load",
+        url: "https://buildmind.live/startup-cognitive-load",
       },
     ],
   },
