@@ -2193,7 +2193,13 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
       </section>
 
       {/* Footer */}
-      <footer className="py-8 px-6 text-center text-xs" style={{ borderTop: "1px solid rgba(255,255,255,0.06)", color: "var(--bm-text3)", background: "rgba(9,9,10,0.6)", backdropFilter: "blur(8px)" }}>
+      <footer className="py-10 px-6 text-center text-xs" style={{ borderTop: "1px solid rgba(255,255,255,0.06)", color: "var(--bm-text3)", background: "rgba(9,9,10,0.6)", backdropFilter: "blur(8px)" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "6px 20px", marginBottom: 16 }}>
+          <a href="/founder-execution-intelligence" style={{ color: "var(--bm-text3)", textDecoration: "none" }}>Founder Execution Intelligence</a>
+          <a href="/founder-drift" style={{ color: "var(--bm-text3)", textDecoration: "none" }}>Founder Drift</a>
+          <a href="/execution-memory" style={{ color: "var(--bm-text3)", textDecoration: "none" }}>Execution Memory</a>
+          <a href="/startup-cognitive-load" style={{ color: "var(--bm-text3)", textDecoration: "none" }}>Startup Cognitive Load</a>
+        </div>
         © {new Date().getFullYear()} BuildMind. Built for founders who ship.
       </footer>
 
