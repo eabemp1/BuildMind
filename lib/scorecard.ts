@@ -48,9 +48,11 @@ export interface FounderScorecard {
   projectScore: number;      // composite 0-100 used by dashboard/reports/weekly-share
   momentumLabel: { label: string; color: string; emoji: string };
   isDecaying: boolean;       // momentum dropped ≥5 pts since last check — triggers AI warning copy
+  momentumDelta: number | null;   // momentum - momentum_last_week, null if no baseline yet
+  momentumTrend: "up" | "down" | "flat" | "unknown"; // for UI arrows/color, e.g. Behavioral Patterns
 }
 
-const DEFAULT_SCORECARD: Omit<FounderScorecard, "projectScore" | "momentumLabel" | "isDecaying"> = {
+const DEFAULT_SCORECARD: Omit<FounderScorecard, "projectScore" | "momentumLabel" | "isDecaying" | "momentumDelta" | "momentumTrend"> = {
   momentum: 50,
   streak: 0,
   xp: 0,
@@ -105,13 +107,21 @@ export async function getFounderScorecard(
     validation_strengths: validationStrengths,
   });
 
+  const hasBaseline = typeof ctx?.momentum_last_week === "number";
+  const momentumDelta = hasBaseline ? raw.momentum - (ctx!.momentum_last_week as number) : null;
+  const momentumTrend: FounderScorecard["momentumTrend"] =
+    momentumDelta == null ? "unknown" :
+    momentumDelta >= 2    ? "up" :
+    momentumDelta <= -2   ? "down" :
+    "flat";
+
   return {
     ...raw,
     projectScore,
     momentumLabel: momentumLabel(raw.momentum),
-    isDecaying: typeof ctx?.momentum_last_week === "number"
-      ? isMomentumDecaying(raw.momentum, ctx.momentum_last_week)
-      : false,
+    isDecaying: hasBaseline ? isMomentumDecaying(raw.momentum, ctx!.momentum_last_week as number) : false,
+    momentumDelta,
+    momentumTrend,
   };
 }
 
