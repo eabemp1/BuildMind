@@ -54,11 +54,11 @@ function buildPlaceholderReasoning(message: string, projectTitle?: string, score
 }
 
 const QUICK_PROMPTS = [
-  "What should I do today?",
-  "Why am I stuck?",
-  "What's my biggest risk?",
-  "How do I get my first 10 users?",
-  "Am I ready to launch?",
+  "What am I actually avoiding right now?",
+  "What's the one thing that would change everything this week?",
+  "Be honest — am I making real progress or just staying busy?",
+  "What would you do if you were me right now?",
+  "What pattern do you see in how I work that I probably can not see?",
 ];
 
 const FREE_COACH_MESSAGES_PER_WEEK = 3;
@@ -165,26 +165,10 @@ function AICoachPageInner() {
   const [memory, setMemory] = useState<string[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
   const [coachMessagesThisWeek, setCoachMessagesThisWeek] = useState(0);
-  const [scorecardScore, setScorecardScore] = useState<number | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // ── Single source of truth for score — see lib/scorecard.ts ──────────────
-  // Previously: computeStartupScore(activeProject) with NO xp/streak passed,
-  // meaning this page's score never reflected real XP or streak at all —
-  // identical bug class to weekly-share's hardcoded xp:0.
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/founder-context/scorecard", { cache: "no-store" })
-      .then(res => res.ok ? res.json() : null)
-      .then(json => {
-        if (!cancelled && json?.ok) setScorecardScore(Math.round(json.data.projectScore));
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, []);
-
-  const score = scorecardScore ?? (activeProject ? computeStartupScore(activeProject) : 0);
+  const score = activeProject ? computeStartupScore(activeProject) : 0;
   const limits = getLimits(plan);
   const coachLimit = plan === "free" ? FREE_COACH_MESSAGES_PER_WEEK : limits.aiMessagesPerDay;
   const remaining = plan === "free" ? Math.max(0, coachLimit - coachMessagesThisWeek) : Infinity;
@@ -287,7 +271,7 @@ function AICoachPageInner() {
     { id: "supportive" as const, label: "Supportive" },
     { id: "challenger" as const, label: "Challenger" },
   ];
-  const suggestedActions = ["Define your ideal user persona", "Build in public on X consistently", "Create a lead magnet", "Launch on Product Hunt"];
+
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-5 px-0 py-1 sm:px-6 sm:py-7" style={{ minHeight: isMobile ? "auto" : "calc(100vh - 80px)", height: isMobile ? "auto" : "calc(100vh - 80px)" }}>
@@ -337,8 +321,8 @@ function AICoachPageInner() {
                   <Bot size={22} color="var(--bm-accent)" />
                 </div>
                 <div style={{maxWidth:400,textAlign:"center"}}>
-                  <div style={{fontFamily:"'Syne', sans-serif",fontSize:18,fontWeight:700,letterSpacing:"-0.02em",color:"var(--bm-text)",marginBottom:10,lineHeight:1.3}}>Your session is now set up.</div>
-                  <p style={{fontFamily:"'Inter', sans-serif",fontSize:12.5,color:"var(--bm-text2)",lineHeight:1.65,margin:0}}>I&apos;m not a generic AI assistant — I know your startup, your stage, your fears, and your Break My Startup result. I&apos;m closest to the expensive executive coach, the VC operating partner, and the founder therapist — available at 2am when the anxiety hits. What do you want to work through today?</p>
+                  <div style={{fontFamily:"'Syne', sans-serif",fontSize:18,fontWeight:700,letterSpacing:"-0.02em",color:"var(--bm-text)",marginBottom:10,lineHeight:1.3}}>I already know where things stand.</div>
+                  <p style={{fontFamily:"'Inter', sans-serif",fontSize:12.5,color:"var(--bm-text2)",lineHeight:1.65,margin:0}}>I have read your reflections. I know the blockers you keep naming and the tasks you keep skipping. I am not going to ask you to explain your situation. Tell me what you are stuck on right now, or ask me what you should be doing — I will tell you directly, including the things you probably did not ask about.</p>
                 </div>
                 <div className="flex max-w-full gap-2 overflow-x-auto px-1 sm:flex-wrap sm:justify-center">
                   {QUICK_PROMPTS.map(p => (
@@ -393,31 +377,7 @@ function AICoachPageInner() {
           </Card>
 
           <Card className="p-4">
-            <div className="mb-3.5 flex items-center gap-1.5">
-              <Sparkles size={13} color="var(--bm-text3)" />
-              <span className="text-[13px] font-semibold text-[var(--bm-text)]">Suggested Actions</span>
-            </div>
-            {suggestedActions.map((a, i) => (
-              <button key={i} onClick={() => sendMessage(`How do I: ${a}`)}
-                className="mb-2 flex w-full cursor-pointer items-center gap-2 rounded-lg border border-[var(--bm-border)] bg-transparent px-3 py-2 text-left text-[12px] text-[var(--bm-text3)] transition-colors hover:border-[var(--bm-accent-bd)] hover:bg-[var(--bm-accent-dim)] hover:text-[var(--bm-text2)]">
-                <Zap size={10} color="var(--bm-accent)" style={{ flexShrink: 0 }} />
-                {a}
-              </button>
-            ))}
-          </Card>
-
-          <Card className="border-[var(--bm-accent-bd)] p-4">
-            <div className="mb-2.5 text-[13px] font-semibold text-[var(--bm-text)]">Today's Focus</div>
-            <div className="mb-2 text-[13px] font-semibold text-[var(--bm-text)]">
-              {activeProject?.startup_stage === "Idea" ? "Talk to 5 potential users" :
-               activeProject?.startup_stage === "MVP" ? "Ship your first version" :
-               "Talk to 3 potential users"}
-            </div>
-            <span className="rounded-full border border-[rgba(224,85,85,0.22)] bg-[rgba(224,85,85,0.10)] px-2 py-0.5 text-[10px] font-bold text-[var(--bm-red)]">High Impact</span>
-          </Card>
-
-          <Card className="p-4">
-            <div className="mb-3 text-[13px] font-semibold text-[var(--bm-text)]">Quick Questions</div>
+            <div className="mb-3 text-[13px] font-semibold text-[var(--bm-text)]">Ask directly</div>
             {QUICK_PROMPTS.map(p => (
               <button key={p} onClick={() => sendMessage(p)}
                 className="mb-1.5 block w-full cursor-pointer rounded-lg border border-[var(--bm-border)] bg-transparent px-3 py-2 text-left text-[12px] text-[var(--bm-text3)] transition-colors hover:bg-[var(--bm-bg3)] hover:text-[var(--bm-text2)]">
@@ -425,6 +385,17 @@ function AICoachPageInner() {
               </button>
             ))}
           </Card>
+
+          {activeProject && (
+            <Card className="border-[var(--bm-accent-bd)] p-4">
+              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--bm-text3)]">Current project</div>
+              <div className="mb-1.5 text-[13px] font-semibold text-[var(--bm-text)]">{activeProject.title}</div>
+              <div className="text-[12px] text-[var(--bm-text3)]">Stage: {activeProject.startup_stage ?? "Not set"}</div>
+              {score > 0 && (
+                <div className="mt-2 text-[12px] text-[var(--bm-text3)]">Execution score: <span style={{ color: score >= 60 ? "var(--bm-accent)" : "var(--bm-amber)", fontWeight: 600 }}>{score}/100</span></div>
+              )}
+            </Card>
+          )}
         </motion.div>
       </div>
     </div>
