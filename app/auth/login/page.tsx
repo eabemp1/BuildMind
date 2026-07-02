@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BrandMark } from "@/components/layout/logo";
+import { useTheme } from "@/components/layout/theme-provider";
 
 function AuthAestheticLayer() {
   return (
@@ -135,6 +136,122 @@ function AuthWorldCanvas() {
           </circle>
           <circle r="1.8" fill="#9B7FE8" opacity="0.35">
             <animateMotion dur="15s" repeatCount="indefinite" begin="3s"><mpath href="#auth-tp3" /></animateMotion>
+          </circle>
+        </svg>
+      </div>
+    </>
+  );
+}
+
+// ── Light theme: sunrise + neural network, the auth-page counterpart to
+//    AuthWorldCanvas. Same fixed full-bleed footprint, different metaphor:
+//    a founder's mind waking up, not a ship in deep space.
+function AuthNeuralDawnCanvas() {
+  const nodesRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = nodesRef.current;
+    if (!el || el.childElementCount > 0) return;
+    for (let i = 0; i < 40; i++) {
+      const n = document.createElement("div");
+      const sz = Math.random() * 2.4 + 1.3;
+      const dur = (Math.random() * 4 + 3).toFixed(1);
+      const del = (Math.random() * 5).toFixed(1);
+      const op = (Math.random() * 0.28 + 0.13).toFixed(2);
+      const tint = ["#C9A227", "#D98E5B", "#8FA66B"][i % 3];
+      Object.assign(n.style, {
+        position: "absolute",
+        width: `${sz}px`, height: `${sz}px`,
+        borderRadius: "50%",
+        background: tint,
+        top: `${Math.random() * 100}%`,
+        left: `${Math.random() * 100}%`,
+        opacity: op,
+        animation: `auth-neuron-pulse ${dur}s ${del}s ease-in-out infinite`,
+        pointerEvents: "none",
+      });
+      el.appendChild(n);
+    }
+  }, []);
+
+  return (
+    <>
+      <style>{`
+        @keyframes auth-neuron-pulse {
+          0%,100% { opacity: .2; transform: scale(1); }
+          50% { opacity: .55; transform: scale(1.6); }
+        }
+        @keyframes auth-dawn-drift {
+          0% { transform: translateY(0); }
+          100% { transform: translateY(60px); }
+        }
+      `}</style>
+      <div
+        aria-hidden
+        className="pointer-events-none fixed inset-0 z-0 overflow-hidden"
+      >
+        <div
+          className="absolute inset-[-56px]"
+          style={{
+            backgroundImage: "linear-gradient(rgba(140,100,40,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(140,100,40,0.03) 1px, transparent 1px)",
+            backgroundSize: "52px 52px",
+            animation: "auth-dawn-drift 24s linear infinite",
+            maskImage: "radial-gradient(ellipse 82% 68% at 50% 38%, rgba(0,0,0,0.5) 12%, transparent 82%)",
+            WebkitMaskImage: "radial-gradient(ellipse 82% 68% at 50% 38%, rgba(0,0,0,0.5) 12%, transparent 82%)",
+          }}
+        />
+        <div style={{ position: "absolute", width: 700, height: 500, top: -80, left: "50%", transform: "translateX(-50%)", background: "radial-gradient(ellipse 55% 55% at 50% 0%, rgba(233,178,74,0.18) 0%, rgba(217,142,91,0.07) 45%, transparent 72%)" }} />
+        <div style={{ position: "absolute", width: 500, height: 400, top: "50%", left: "62%", transform: "translate(-50%,-50%)", background: "radial-gradient(ellipse, rgba(217,142,91,0.10) 0%, transparent 70%)" }} />
+        <div style={{ position: "absolute", width: 400, height: 300, bottom: "12%", left: "12%", background: "radial-gradient(ellipse, rgba(143,166,107,0.08) 0%, transparent 68%)" }} />
+        <div ref={nodesRef} className="absolute inset-0" />
+        <svg
+          className="absolute inset-0 h-full w-full"
+          style={{ opacity: 0.5 }}
+          viewBox="0 0 1440 900"
+          preserveAspectRatio="xMidYMid slice"
+          fill="none"
+        >
+          <defs>
+            <linearGradient id="auth-ng1" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="transparent" />
+              <stop offset="20%" stopColor="rgba(201,162,39,0.28)" />
+              <stop offset="80%" stopColor="rgba(201,162,39,0.28)" />
+              <stop offset="100%" stopColor="transparent" />
+            </linearGradient>
+            <linearGradient id="auth-ng2" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="transparent" />
+              <stop offset="25%" stopColor="rgba(217,142,91,0.18)" />
+              <stop offset="75%" stopColor="rgba(217,142,91,0.18)" />
+              <stop offset="100%" stopColor="transparent" />
+            </linearGradient>
+            <linearGradient id="auth-ng3" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="transparent" />
+              <stop offset="30%" stopColor="rgba(143,166,107,0.14)" />
+              <stop offset="70%" stopColor="rgba(143,166,107,0.14)" />
+              <stop offset="100%" stopColor="transparent" />
+            </linearGradient>
+            <filter id="auth-ngf">
+              <feGaussianBlur stdDeviation="1.3" result="blur" />
+              <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+            </filter>
+          </defs>
+          <path id="auth-np1" d="M -40 640 C 140 600 260 480 420 460 C 600 440 680 320 880 340 C 1060 358 1180 240 1480 200" stroke="url(#auth-ng1)" strokeWidth="0.9" strokeDasharray="1 7" />
+          <path id="auth-np2" d="M 40 760 C 220 700 360 560 560 520 C 760 480 860 560 1040 440 C 1200 340 1340 280 1480 240" stroke="url(#auth-ng2)" strokeWidth="0.7" strokeDasharray="1 9" opacity="0.65" />
+          <path id="auth-np3" d="M 260 840 C 440 780 600 660 800 600 C 1000 540 1140 600 1360 460" stroke="url(#auth-ng3)" strokeWidth="0.55" strokeDasharray="1 11" opacity="0.42" />
+          <circle r="3.5" fill="#C9A227" opacity="0.85" filter="url(#auth-ngf)">
+            <animateMotion dur="10s" repeatCount="indefinite" begin="0s"><mpath href="#auth-np1" /></animateMotion>
+          </circle>
+          <circle r="2.5" fill="#C9A227" opacity="0.55">
+            <animateMotion dur="10s" repeatCount="indefinite" begin="3.5s"><mpath href="#auth-np1" /></animateMotion>
+          </circle>
+          <circle r="2" fill="#D98E5B" opacity="0.5">
+            <animateMotion dur="10s" repeatCount="indefinite" begin="7s"><mpath href="#auth-np1" /></animateMotion>
+          </circle>
+          <circle r="2.5" fill="#D98E5B" opacity="0.42">
+            <animateMotion dur="13s" repeatCount="indefinite" begin="1.5s"><mpath href="#auth-np2" /></animateMotion>
+          </circle>
+          <circle r="1.8" fill="#8FA66B" opacity="0.4">
+            <animateMotion dur="16s" repeatCount="indefinite" begin="4s"><mpath href="#auth-np3" /></animateMotion>
           </circle>
         </svg>
       </div>
@@ -358,9 +475,9 @@ function StatCard({ label, dot, value, sub, style, animDuration, animDelay }: St
       className="absolute rounded-[var(--r-xl)] px-3.5 py-2.5 whitespace-nowrap backdrop-blur-sm"
       style={{
         ...style,
-        background: "rgba(19,19,21,.78)",
+        background: "var(--bm-bg2)",
         border: "1px solid var(--bm-border)",
-        boxShadow: "0 18px 48px rgba(0,0,0,.34)",
+        boxShadow: "0 18px 48px rgba(0,0,0,.14)",
         animation: `float ${animDuration} ease-in-out infinite, fade-in .5s ${animDelay} ease forwards`,
         opacity: 0,
         zIndex: 0,
@@ -507,6 +624,7 @@ function LoginContent() {
   const router       = useRouter();
   const searchParams = useSearchParams();
   const supabase     = createClient();
+  const { theme }    = useTheme();
 
   const [tab,          setTab         ] = useState<"signin" | "signup">("signin");
   const [email,        setEmail       ] = useState("");
@@ -598,7 +716,7 @@ function LoginContent() {
   return (
     <div className="bm-auth-skin relative min-h-screen flex overflow-hidden" style={{ background: "var(--bm-bg)" }}>
       <AuthAestheticLayer />
-      <AuthWorldCanvas />
+      {theme === "light" ? <AuthNeuralDawnCanvas /> : <AuthWorldCanvas />}
       <LeftPanel />
 
       {/* Vertical divider */}
