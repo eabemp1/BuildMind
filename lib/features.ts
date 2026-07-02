@@ -6,7 +6,7 @@ export const FEATURES = {
   founderScore:      true,
   startupTimeline:   true,
   notifications:     true,   // ✅ enabled — local notification engine
-  publicProjects:    true,  // 🔒 Month 6–7: requires 100 users with data (Playbook §5.3)
+  publicProjects:    false,  // 🔒 Month 6–7: requires 100 users with data (Playbook §5.3)
   adminPortal:       true,   // ✅ enabled
   analytics:         true,
   startupCommunity:  false,
@@ -14,7 +14,7 @@ export const FEATURES = {
   startupKit:        false,
   weeklyShare:       true,
   // Growth Improvement #2: public founder score (backend ready, toggle to enable)
-  publicFounderScore: true, // 🔒 activate when ready — /founder/[username] is built
+  publicFounderScore: false, // 🔒 activate when ready — /founder/[username] is built
   // Growth Improvement #3: teams waitlist (UI built, captures demand before feature exists)
   teamsWaitlist:     true,   // ✅ waitlist capture is live
   // Growth Improvement #5: detailed onboarding funnel tracking
