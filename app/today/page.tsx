@@ -17,6 +17,7 @@ import { trackFunnelStep } from "@/lib/onboarding-analytics";
 import BuildMindLoader from "@/components/BuildMindLoader";
 import MorningBriefingModal from "@/components/MorningBriefingModal";
 import RecoveryModeCard from "@/components/RecoveryModeCard";
+import { BlockerInsightCard } from "@/components/BlockerInsightCard";
 import { PaywallMoment } from "@/components/PaywallMoment";
 import { Clock, CheckCircle2, Copy, Check, Flame, Brain, Sparkles, AlertCircle, TrendingUp, RotateCcw, Zap, ArrowRight } from "lucide-react";
 import { storage } from "@/lib/storage";
@@ -443,6 +444,9 @@ function TodayContent() {
 
   // Recovery Mode — shown when founder has 3+ days of momentum decay
   const [recoveryActive, setRecoveryActive] = useState(false);
+  const [blockerInsight, setBlockerInsight] = useState<{
+    id: string; title: string; body: string; action_redirect: string | null;
+  } | null>(null);
   const [recoveryChecked, setRecoveryChecked] = useState(false);
 
   // Momentum decay banner — shown when score dropped 5+ pts this week
@@ -540,6 +544,14 @@ function TodayContent() {
           try { setStreak(getStoredStreak()); } catch {}
         });
         syncUrgencyFromServer().catch(() => {});
+
+        // Fetch active blocker insight — the "cheat code" card
+        fetch("/api/blocker-insight")
+          .then(r => r.json())
+          .then((json: { data?: { id: string; title: string; body: string; action_redirect: string | null } | null }) => {
+            if (json?.data) setBlockerInsight(json.data);
+          })
+          .catch(() => {});
 
         const today = localDayKey();
         const checkinKey = `bm_checkin_done_date_${uid}`;
@@ -1555,6 +1567,26 @@ function TodayContent() {
             </span>
           )}
         </div>
+      )}
+
+      {/* ── Blocker Insight Card ─────────────────────────────────────────────── */}
+      {blockerInsight && (
+        <BlockerInsightCard
+          id={blockerInsight.id}
+          title={blockerInsight.title}
+          body={blockerInsight.body}
+          actionRedirect={blockerInsight.action_redirect}
+          onDismiss={async (id, actedOn) => {
+            setBlockerInsight(null);
+            try {
+              await fetch("/api/blocker-insight", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id, acted_on: actedOn }),
+              });
+            } catch { /* non-fatal */ }
+          }}
+        />
       )}
 
       {/* ── Recovery Mode ──────────────────────────────────────────────────── */}
