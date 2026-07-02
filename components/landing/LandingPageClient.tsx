@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { BrandMark } from "@/components/layout/logo";
+import { useTheme } from "@/components/layout/theme-provider";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
 
 // ── "A Day With BuildMind" timeline data ──────────────────────────────────────
@@ -368,8 +369,8 @@ function HeroReflexionPipeline() {
               <div
                 className="bm-float-card min-w-0 flex-1 rounded-[var(--r-xl)] border p-2.5 sm:p-3.5"
                 style={{
-                  background: "rgba(255,255,255,0.025)",
-                  borderColor: "rgba(255,255,255,0.07)",
+                  background: "var(--glass-bg-light)",
+                  borderColor: "var(--glass-border)",
                   backdropFilter: "blur(16px)",
                   WebkitBackdropFilter: "blur(16px)",
                   ["--node-color" as string]: agent.color + "55",
@@ -847,7 +848,7 @@ function BreakMyStartupSection() {
               onChange={(e) => setIdea(e.target.value)}
               placeholder="Describe your startup idea or current model — what you're building, who it's for, how you make money..."
               className="bm-break-textarea h-44 w-full resize-none rounded-[var(--r-xl)] p-4 text-base outline-none transition-all duration-150 sm:h-36 sm:text-sm"
-              style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.10)", color: "var(--bm-text)", fontFamily: "inherit", backdropFilter: "blur(8px)" }}
+              style={{ background: "var(--glass-bg-light)", border: "1px solid var(--glass-border)", color: "var(--bm-text)", fontFamily: "inherit", backdropFilter: "blur(8px)" }}
             />
             <Button onClick={handleBreak} loading={loading} disabled={!idea.trim()} size="lg" className="w-full self-start sm:w-auto">
               {!loading && <AlertTriangle size={16} />}
@@ -1179,13 +1180,177 @@ function WorldCanvas() {
   );
 }
 
+/* ── Light-theme decorative backdrop ───────────────────────────────────────
+   Dark theme = deep space, trajectories, WorldCanvas.
+   Light theme = sunrise + a founder's mind waking up — neurons firing,
+   synaptic pathways connecting, an evolving network. Same structural
+   footprint as WorldCanvas (fixed, full-bleed, z-index 0) but a distinct
+   visual metaphor: growth and cognition instead of orbit and distance.
+─────────────────────────────────────────────────────────────────────────── */
+function NeuralDawnCanvas() {
+  const nodesRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = nodesRef.current;
+    if (!el || el.childElementCount > 0) return;
+    // Soft warm synapse motes — the light-theme counterpart to WorldCanvas's stars
+    for (let i = 0; i < 46; i++) {
+      const n = document.createElement("div");
+      const sz  = Math.random() * 2.6 + 1.4;
+      const dur = (Math.random() * 4 + 3).toFixed(1);
+      const del = (Math.random() * 5).toFixed(1);
+      const op  = (Math.random() * 0.30 + 0.14).toFixed(2);
+      const tint = ["#C9A227", "#D98E5B", "#8FA66B"][i % 3];
+      Object.assign(n.style, {
+        position: "absolute",
+        width: `${sz}px`, height: `${sz}px`,
+        borderRadius: "50%",
+        background: tint,
+        boxShadow: `0 0 ${(sz * 3).toFixed(0)}px ${tint}55`,
+        top: `${Math.random() * 100}%`,
+        left: `${Math.random() * 100}%`,
+        opacity: op,
+        animation: `bm-neuron-pulse ${dur}s ${del}s ease-in-out infinite`,
+        pointerEvents: "none",
+      });
+      el.appendChild(n);
+    }
+  }, []);
+
+  return (
+    <>
+      <style>{`
+        @keyframes bm-neuron-pulse {
+          0%,100% { opacity: var(--op, .2); transform: scale(1); }
+          50%      { opacity: calc(var(--op, .2) * 2.6); transform: scale(1.6); }
+        }
+        @keyframes bm-dawn-drift {
+          0%   { transform: translateY(0); }
+          100% { transform: translateY(60px); }
+        }
+        @keyframes bm-dawn-breathe {
+          0%,100% { opacity: 0.55; transform: translateX(-50%) scale(1); }
+          50%      { opacity: 0.85; transform: translateX(-50%) scale(1.05); }
+        }
+      `}</style>
+
+      <div
+        aria-hidden
+        style={{
+          position: "fixed", inset: 0,
+          pointerEvents: "none", zIndex: 0, overflow: "hidden",
+        }}
+      >
+        {/* Faint dendritic lattice — a thinking-grid instead of a nav-grid */}
+        <div style={{
+          position: "absolute", inset: -60,
+          backgroundImage: "linear-gradient(rgba(140,100,40,0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(140,100,40,0.035) 1px, transparent 1px)",
+          backgroundSize: "58px 58px",
+          animation: "bm-dawn-drift 30s linear infinite",
+          maskImage: "radial-gradient(ellipse 80% 65% at 50% 30%, rgba(0,0,0,0.5) 0%, transparent 78%)",
+          WebkitMaskImage: "radial-gradient(ellipse 80% 65% at 50% 30%, rgba(0,0,0,0.5) 0%, transparent 78%)",
+        }} />
+
+        {/* Sunrise crown — the sun just clearing the horizon */}
+        <div style={{ position:"absolute", width:1000, height:640, top:-160, left:"50%", transform:"translateX(-50%)", background:"radial-gradient(ellipse 55% 55% at 50% 0%, rgba(233,178,74,0.20) 0%, rgba(217,142,91,0.09) 42%, transparent 72%)", pointerEvents:"none", animation:"bm-dawn-breathe 11s ease-in-out infinite" }} />
+
+        {/* Warm coral bloom, right */}
+        <div style={{ position:"absolute", width:600, height:480, top:"28%", right:"-6%", background:"radial-gradient(ellipse, rgba(217,142,91,0.12) 0%, rgba(201,162,39,0.05) 45%, transparent 72%)", pointerEvents:"none", animation:"bm-aurora-shift 15s ease-in-out infinite 2s" }} />
+
+        {/* Sage-green growth bloom, left — the "evolution" note */}
+        <div style={{ position:"absolute", width:520, height:420, top:"42%", left:"-8%", background:"radial-gradient(ellipse, rgba(143,166,107,0.10) 0%, rgba(201,162,39,0.04) 50%, transparent 72%)", pointerEvents:"none", animation:"bm-aurora-shift 17s ease-in-out infinite 4s" }} />
+
+        {/* Bottom amber pool */}
+        <div style={{ position:"absolute", width:520, height:360, bottom:"6%", left:"18%", background:"radial-gradient(ellipse, rgba(201,162,39,0.08) 0%, transparent 68%)", pointerEvents:"none" }} />
+
+        {/* Synapse motes */}
+        <div ref={nodesRef} style={{ position:"absolute", inset:0 }} />
+
+        {/* Neural pathway SVG — nodes + dendrites instead of orbital trajectories */}
+        <svg
+          style={{ position:"absolute", inset:0, width:"100%", height:"100%", opacity:0.5 }}
+          viewBox="0 0 1440 900"
+          preserveAspectRatio="xMidYMid slice"
+          fill="none"
+        >
+          <defs>
+            <linearGradient id="bm-ng1" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%"   stopColor="transparent"/>
+              <stop offset="20%"  stopColor="rgba(201,162,39,0.30)"/>
+              <stop offset="80%"  stopColor="rgba(201,162,39,0.30)"/>
+              <stop offset="100%" stopColor="transparent"/>
+            </linearGradient>
+            <linearGradient id="bm-ng2" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%"   stopColor="transparent"/>
+              <stop offset="25%"  stopColor="rgba(217,142,91,0.20)"/>
+              <stop offset="75%"  stopColor="rgba(217,142,91,0.20)"/>
+              <stop offset="100%" stopColor="transparent"/>
+            </linearGradient>
+            <linearGradient id="bm-ng3" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%"   stopColor="transparent"/>
+              <stop offset="30%"  stopColor="rgba(143,166,107,0.16)"/>
+              <stop offset="70%"  stopColor="rgba(143,166,107,0.16)"/>
+              <stop offset="100%" stopColor="transparent"/>
+            </linearGradient>
+            <filter id="bm-ngf">
+              <feGaussianBlur stdDeviation="1.3" result="blur"/>
+              <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+          </defs>
+
+          {/* Branching dendrite pathways — a mind making connections, not a rocket's arc */}
+          <path id="bm-np1"
+            d="M -40 640 C 140 600 260 480 420 460 C 600 440 680 320 880 340 C 1060 358 1180 240 1480 200"
+            stroke="url(#bm-ng1)" strokeWidth="0.9" strokeDasharray="1 7"/>
+          <path id="bm-np2"
+            d="M 40 760 C 220 700 360 560 560 520 C 760 480 860 560 1040 440 C 1200 340 1340 280 1480 240"
+            stroke="url(#bm-ng2)" strokeWidth="0.7" strokeDasharray="1 9" opacity="0.65"/>
+          <path id="bm-np3"
+            d="M 260 840 C 440 780 600 660 800 600 C 1000 540 1140 600 1360 460"
+            stroke="url(#bm-ng3)" strokeWidth="0.55" strokeDasharray="1 11" opacity="0.42"/>
+          {/* Cross-links — the "network" feel */}
+          <path d="M 420 460 C 460 540 520 560 600 500" stroke="rgba(201,162,39,0.14)" strokeWidth="0.5" strokeDasharray="1 6"/>
+          <path d="M 880 340 C 900 420 960 440 1040 440" stroke="rgba(217,142,91,0.12)" strokeWidth="0.5" strokeDasharray="1 6"/>
+
+          {/* Node markers at key junctions — synapses */}
+          {[[420,460],[880,340],[600,500],[1040,440],[260,840],[800,600]].map(([cx,cy],i) => (
+            <circle key={i} cx={cx} cy={cy} r={i % 2 === 0 ? 3 : 2.2} fill={i % 2 === 0 ? "#C9A227" : "#D98E5B"} opacity="0.5" filter="url(#bm-ngf)" />
+          ))}
+
+          {/* Traveling signal pulses along the primary pathway */}
+          <circle r="3.5" fill="#C9A227" opacity="0.85" filter="url(#bm-ngf)">
+            <animateMotion dur="10s" repeatCount="indefinite" begin="0s"><mpath href="#bm-np1"/></animateMotion>
+          </circle>
+          <circle r="2.5" fill="#C9A227" opacity="0.55">
+            <animateMotion dur="10s" repeatCount="indefinite" begin="3.5s"><mpath href="#bm-np1"/></animateMotion>
+          </circle>
+          <circle r="2" fill="#D98E5B" opacity="0.5">
+            <animateMotion dur="10s" repeatCount="indefinite" begin="7s"><mpath href="#bm-np1"/></animateMotion>
+          </circle>
+
+          <circle r="2.5" fill="#D98E5B" opacity="0.42">
+            <animateMotion dur="13s" repeatCount="indefinite" begin="1.5s"><mpath href="#bm-np2"/></animateMotion>
+          </circle>
+          <circle r="2" fill="#D98E5B" opacity="0.3">
+            <animateMotion dur="13s" repeatCount="indefinite" begin="8s"><mpath href="#bm-np2"/></animateMotion>
+          </circle>
+
+          <circle r="1.8" fill="#8FA66B" opacity="0.4">
+            <animateMotion dur="16s" repeatCount="indefinite" begin="4s"><mpath href="#bm-np3"/></animateMotion>
+          </circle>
+        </svg>
+      </div>
+    </>
+  );
+}
+
 const landingShellStyle = {
   background: "var(--bm-bg)",
   color: "var(--bm-text)",
   position: "relative",
 } as CSSProperties;
 
-const subtleSectionBorder = "1px solid rgba(255,255,255,0.06)";
+const subtleSectionBorder = "1px solid var(--bm-border)";
 
 function LandingAestheticLayer() {
   return (
@@ -1243,6 +1408,33 @@ function LandingAestheticLayer() {
         --spring-fast:    cubic-bezier(0.16, 1, 0.3, 1);
         --spring-med:     cubic-bezier(0.34, 1.56, 0.64, 1);
         --ease-out-expo:  cubic-bezier(0.19, 1, 0.22, 1);
+      }
+
+      /* ── LIGHT THEME token overrides — sunrise glass instead of dark glass ─── */
+      .light-mode .bm-landing-skin {
+        --glass-bg:       rgba(255,255,255,0.60);
+        --glass-bg-light: rgba(255,255,255,0.55);
+        --glass-border:   rgba(120,80,20,0.10);
+        --glass-border-hi:rgba(120,80,20,0.16);
+        --glass-shine:    rgba(255,236,196,0.55);
+        --glass-shadow:   0 8px 30px rgba(140,100,40,0.10), 0 1px 0 rgba(255,255,255,0.6) inset, 0 -1px 0 rgba(140,100,40,0.05) inset;
+        --glass-shadow-lg:0 24px 60px rgba(140,100,40,0.14), 0 2px 0 rgba(255,255,255,0.6) inset;
+
+        --aurora-gold:    rgba(201,162,39,0.22);
+        --aurora-teal:    rgba(217,142,91,0.14);
+        --aurora-indigo:  rgba(224,150,120,0.12);
+        --aurora-violet:  rgba(143,166,107,0.10);
+
+        --glow-gold-sm:   0 0 12px rgba(201,162,39,0.35), 0 0 4px rgba(201,162,39,0.5);
+        --glow-gold-md:   0 0 24px rgba(201,162,39,0.28), 0 0 48px rgba(201,162,39,0.12);
+        --glow-gold-lg:   0 0 60px rgba(201,162,39,0.20), 0 0 120px rgba(201,162,39,0.08);
+        --glow-teal-sm:   0 0 12px rgba(217,142,91,0.4), 0 0 4px rgba(217,142,91,0.55);
+
+        --gold:           #B5920A;
+        --gold-bright:    #8F7008;
+        --gold-dim:       rgba(201,162,39,0.14);
+        --gold-border:    rgba(201,162,39,0.32);
+        --gold-glow:      rgba(201,162,39,0.18);
       }
 
       /* ── Global transition base ───────────────────────────────────────────── */
@@ -1389,6 +1581,52 @@ function LandingAestheticLayer() {
         transition-duration: 0.08s;
       }
 
+      /* ── LIGHT THEME overrides for hardcoded-literal blocks above ──────────── */
+      .light-mode .bm-landing-skin .gradient-text {
+        background: linear-gradient(135deg, #B5920A 0%, #D9B23A 40%, #B5920A 70%, #8F7008 100%);
+        background-size: 200% auto;
+      }
+      .light-mode .bm-landing-skin .gradient-text-subtle {
+        background: linear-gradient(135deg, var(--bm-text) 0%, rgba(60,45,20,0.55) 100%);
+      }
+      .light-mode .bm-landing-skin .bm-glass::before {
+        background: linear-gradient(90deg, transparent 0%, var(--glass-shine) 25%, rgba(255,240,210,0.7) 50%, var(--glass-shine) 75%, transparent 100%);
+      }
+      .light-mode .bm-landing-skin .bm-glass::after {
+        background: linear-gradient(90deg, transparent, rgba(140,100,40,0.06), transparent);
+      }
+      .light-mode .bm-landing-skin .bm-glass-gold {
+        background:
+          radial-gradient(ellipse 120% 60% at 50% -10%, rgba(201,162,39,0.14) 0%, transparent 65%),
+          linear-gradient(145deg, rgba(201,162,39,0.07) 0%, rgba(255,255,255,0.5) 50%, rgba(217,142,91,0.05) 100%);
+        box-shadow:
+          0 0 0 1px rgba(201,162,39,0.10),
+          0 24px 60px rgba(140,100,40,0.14),
+          0 1px 0 rgba(255,255,255,0.7) inset,
+          0 0 60px rgba(201,162,39,0.08);
+      }
+      .light-mode .bm-landing-skin .bm-glass-gold::before {
+        background: linear-gradient(90deg, transparent 0%, rgba(201,162,39,0.45) 20%, rgba(201,162,39,0.8) 50%, rgba(201,162,39,0.45) 80%, transparent 100%);
+      }
+      .light-mode .bm-landing-skin .bm-glass-deep {
+        background: rgba(255,252,246,0.85);
+        border: 1px solid rgba(120,80,20,0.10);
+        box-shadow: 0 4px 18px rgba(140,100,40,0.10), 0 1px 0 rgba(255,255,255,0.6) inset;
+      }
+      .light-mode .bm-landing-skin .html-soft-panel {
+        background: rgba(255,252,246,0.65);
+        border: 1px solid rgba(120,80,20,0.10);
+        box-shadow: 0 2px 16px rgba(140,100,40,0.08), 0 1px 0 rgba(255,255,255,0.6) inset;
+      }
+      .light-mode .bm-landing-skin .bm-glass-hover:hover {
+        border-color: rgba(120,80,20,0.18);
+        box-shadow:
+          0 16px 40px rgba(140,100,40,0.14),
+          0 1px 0 rgba(255,255,255,0.7) inset,
+          0 0 0 1px rgba(201,162,39,0.12),
+          inset 0 0 30px rgba(255,240,210,0.2);
+      }
+
       /* ══════════════════════════════════════════════════════════════════════
          AMBIENT GLOW / LIGHTING SYSTEM
       ══════════════════════════════════════════════════════════════════════ */
@@ -1449,6 +1687,27 @@ function LandingAestheticLayer() {
         0%,100% { opacity: 0.55; transform: translateX(-50%) scale(1) rotate(-1deg); }
         33%     { opacity: 0.85; transform: translateX(-50%) scale(1.08) rotate(0deg); }
         66%     { opacity: 0.70; transform: translateX(-50%) scale(1.03) rotate(1deg); }
+      }
+
+      /* ── LIGHT THEME overrides — sunrise hero instead of dark hero window ──── */
+      .light-mode .bm-hero-window {
+        background:
+          radial-gradient(ellipse 160% 80% at 50% -5%, rgba(201,162,39,0.16) 0%, rgba(201,162,39,0.04) 40%, transparent 60%),
+          radial-gradient(ellipse 60% 50% at 80% 60%, rgba(217,142,91,0.08) 0%, transparent 60%),
+          var(--bm-bg2);
+        border: 1px solid rgba(120,80,20,0.10);
+        box-shadow:
+          0 30px 80px rgba(140,100,40,0.14),
+          0 1px 0 rgba(255,255,255,0.7) inset,
+          0 0 0 1px rgba(201,162,39,0.07),
+          inset 0 0 100px rgba(201,162,39,0.04);
+      }
+      .light-mode .bm-hero-burst {
+        background: radial-gradient(ellipse 55% 55% at 50% 0%,
+          rgba(233,178,74,0.34) 0%,
+          rgba(201,162,39,0.14) 30%,
+          rgba(217,142,91,0.07) 55%,
+          transparent 75%);
       }
 
       /* Aurora side-light — teal/indigo accent */
@@ -1582,6 +1841,20 @@ function LandingAestheticLayer() {
         box-shadow: 0 1px 0 rgba(255,255,255,0.08) inset, 0 4px 16px rgba(0,0,0,0.3) !important;
         transform: translateY(-1px);
       }
+      .light-mode .bm-landing-skin .html-panel {
+        background: rgba(255,252,246,0.75);
+        border: 1px solid rgba(120,80,20,0.10);
+        box-shadow: 0 0 0 1px rgba(201,162,39,0.06), 0 24px 60px rgba(140,100,40,0.12);
+      }
+      .light-mode .bm-landing-skin .html-btn-secondary {
+        background: rgba(255,252,246,0.7) !important;
+        box-shadow: 0 1px 0 rgba(255,255,255,0.7) inset, 0 2px 10px rgba(140,100,40,0.08) !important;
+      }
+      .light-mode .bm-landing-skin .html-btn-secondary:hover {
+        background: rgba(255,252,246,0.95) !important;
+        border-color: rgba(120,80,20,0.18) !important;
+        box-shadow: 0 1px 0 rgba(255,255,255,0.8) inset, 0 4px 14px rgba(140,100,40,0.10) !important;
+      }
 
       /* Chip badges */
       .bm-chip {
@@ -1656,6 +1929,30 @@ function LandingAestheticLayer() {
           transparent 100%);
         margin: 0; border: none;
       }
+      .light-mode .bm-chip {
+        border: 1px solid rgba(120,80,20,0.10);
+        background: rgba(255,252,246,0.5);
+      }
+      .light-mode .bm-chip:hover {
+        border-color: rgba(120,80,20,0.18);
+        background: rgba(255,252,246,0.8);
+      }
+      .light-mode .bm-stat-card {
+        background: rgba(255,255,255,0.55);
+        border: 1px solid rgba(120,80,20,0.10);
+      }
+      .light-mode .bm-stat-card:hover {
+        border-color: rgba(120,80,20,0.18);
+        box-shadow: 0 10px 30px rgba(140,100,40,0.10), 0 0 0 1px rgba(201,162,39,0.08);
+      }
+      .light-mode .bm-divider {
+        background: linear-gradient(90deg,
+          transparent 0%,
+          rgba(120,80,20,0.10) 25%,
+          rgba(201,162,39,0.28) 50%,
+          rgba(120,80,20,0.10) 75%,
+          transparent 100%);
+      }
 
       /* Timeline line */
       .bm-timeline-line {
@@ -1724,6 +2021,10 @@ function LandingAestheticLayer() {
       .bm-nav-scrolled {
         background: rgba(6,6,9,0.88) !important;
         box-shadow: 0 1px 0 rgba(232,197,71,0.08), 0 4px 24px rgba(0,0,0,0.4) !important;
+      }
+      .light-mode .bm-nav-scrolled {
+        background: rgba(255,252,246,0.90) !important;
+        box-shadow: 0 1px 0 rgba(201,162,39,0.12), 0 4px 20px rgba(140,100,40,0.08) !important;
       }
 
       /* ── Nav link hover — underline glow ──────────────────────────────────── */
@@ -1808,6 +2109,20 @@ function LandingAestheticLayer() {
         background: rgba(255,255,255,0.055);
         transform: translateY(-1px);
       }
+      .light-mode .bm-proof-pill {
+        background: rgba(255,252,246,0.6);
+        border: 1px solid rgba(120,80,20,0.10);
+      }
+      .light-mode .bm-proof-pill:hover {
+        border-color: rgba(120,80,20,0.18);
+        background: rgba(255,252,246,0.85);
+      }
+      .light-mode .bm-hero-badge {
+        background: rgba(201,162,39,0.10);
+        border: 1px solid rgba(201,162,39,0.28);
+        color: rgba(140,105,10,0.95);
+        box-shadow: 0 0 16px rgba(201,162,39,0.10), inset 0 1px 0 rgba(255,255,255,0.6);
+      }
 
       /* ── Section entry animations ─────────────────────────────────────────── */
       @keyframes bm-section-reveal {
@@ -1889,6 +2204,7 @@ function LandingAestheticLayer() {
 }
 
 export default function LandingPageClient({ initialStats }: { initialStats?: PublicStats }) {
+  const { theme } = useTheme();
   const [stats, setStats] = useState(() => normalizePublicStats(initialStats));
   const [demoOpen, setDemoOpen] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
@@ -1955,17 +2271,17 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
         style={{ width: `${scrollProgress * 100}%`, transition: "width 0.1s linear" }}
       />
 
-      {/* ── World Canvas: ambient atmosphere ── */}
-      <WorldCanvas />
+      {/* ── Ambient atmosphere: dark = deep space, light = sunrise + neural network ── */}
+      {theme === "light" ? <NeuralDawnCanvas /> : <WorldCanvas />}
 
       {/* Navbar */}
       <nav
         className={`sticky top-0 z-50 flex h-16 items-center justify-between gap-3 px-4 sm:px-6${navScrolled ? " bm-nav-scrolled" : ""}`}
         style={{
-          background: "rgba(9,9,10,0.75)",
+          background: theme === "light" ? "rgba(255,252,246,0.72)" : "rgba(9,9,10,0.75)",
           backdropFilter: "blur(20px) saturate(150%)",
           WebkitBackdropFilter: "blur(20px) saturate(150%)",
-          borderBottom: "1px solid rgba(255,255,255,0.07)",
+          borderBottom: subtleSectionBorder,
           boxShadow: "0 1px 0 rgba(232,197,71,0.06)",
           position: "relative",
           zIndex: 50,
@@ -2193,7 +2509,7 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
       </section>
 
       {/* Footer */}
-      <footer className="py-10 px-6 text-center text-xs" style={{ borderTop: "1px solid rgba(255,255,255,0.06)", color: "var(--bm-text3)", background: "rgba(9,9,10,0.6)", backdropFilter: "blur(8px)" }}>
+      <footer className="py-10 px-6 text-center text-xs" style={{ borderTop: subtleSectionBorder, color: "var(--bm-text3)", background: theme === "light" ? "rgba(255,252,246,0.6)" : "rgba(9,9,10,0.6)", backdropFilter: "blur(8px)" }}>
         <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "6px 20px", marginBottom: 16 }}>
           <a href="/founder-execution-intelligence" style={{ color: "var(--bm-text3)", textDecoration: "none" }}>Founder Execution Intelligence</a>
           <a href="/founder-drift" style={{ color: "var(--bm-text3)", textDecoration: "none" }}>Founder Drift</a>
