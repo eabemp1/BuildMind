@@ -10,6 +10,7 @@ import { recordActivity } from "@/lib/server/activityLog";
 import { checkAndCacheStageTransition } from "@/lib/server/stageTransitionCache";
 import { recordActionOutcome } from "@/lib/learning";
 import { invalidateCognitionCache } from "@/lib/founderCognition";
+import { classifyBlocker, runBlockerIntelligencePipeline } from "@/lib/blockerIntelligence";
 
 import { z } from "zod";
 
@@ -220,6 +221,9 @@ Problem being solved: ${project.problem ?? "Not specified"}
 Target users: ${project.target_users ?? "Not specified"}`;
         }
 
+        // Classify blocker into enum category before saving
+        const blockerCategory = blocker ? classifyBlocker(blocker) : null;
+
         // Write reflection to Supabase for future personalisation
         await supabase.from("reflections").insert({
           user_id:      verifiedUserId,
@@ -230,12 +234,17 @@ Target users: ${project.target_users ?? "Not specified"}`;
           what_tried:    what_tried    ?? null,
           what_happened: what_happened ?? null,
           what_learned:  what_learned  ?? null,
-          blocker:       blocker       ?? null,
+          blocker:          blocker       ?? null,
+          blocker_category: blockerCategory,
           confidence,
           today_action:  todayAction,
           created_at:    new Date().toISOString(),
         });
 
+        // Blocker intelligence pipeline — fire-and-forget
+        if (blockerCategory && blockerCategory !== "other") {
+          void runBlockerIntelligencePipeline(supabase, verifiedUserId);
+        }
         const todayDate = new Date().toISOString().slice(0, 10);
         const { data: existingContext } = await supabase
           .from("founder_context")
