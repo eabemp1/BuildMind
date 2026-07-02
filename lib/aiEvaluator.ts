@@ -59,9 +59,11 @@ export interface EvaluateParams {
   originalOutput?: string;
 }
 
-const CHECKS: Array<{ name: string; test: (output: string, ctx: EvaluateParams["founderContext"]) => boolean }> = [
-  { name: "has_number", test: (output) => /\b\d+\b/.test(output) },
-  { name: "has_platform", test: (output) => /(linkedin|whatsapp|email|twitter|phone|in person|slack|telegram|instagram|reddit|product hunt|indie hackers)/i.test(output) },
+// Action-type contexts (daily action, morning briefing) require platform + number precision.
+// Coach/conversational contexts use a looser rubric — judged on depth and specificity, not format.
+const ACTION_CHECKS: Array<{ name: string; test: (output: string, ctx: EvaluateParams["founderContext"]) => boolean }> = [
+  { name: "has_number",            test: (output) => /\b\d+\b/.test(output) },
+  { name: "has_platform",          test: (output) => /(linkedin|whatsapp|email|twitter|phone|in person|slack|telegram|instagram|reddit|product hunt|indie hackers)/i.test(output) },
   {
     name: "has_user_type",
     test: (output, ctx) => {
@@ -70,13 +72,30 @@ const CHECKS: Array<{ name: string; test: (output: string, ctx: EvaluateParams["
       return !firstWord || output.toLowerCase().includes(firstWord);
     },
   },
-  { name: "not_too_generic", test: (output) => !/\b(some people|potential users|your audience|people who might|early adopters in general)\b/i.test(output) },
-  { name: "has_concrete_verb", test: (output) => /(message|call|send|post|dm|email|reach out|interview|show|share|pitch|schedule|record|publish|launch|ask)\b/i.test(output) },
+  { name: "not_too_generic",       test: (output) => !/\b(some people|potential users|your audience|people who might|early adopters in general)\b/i.test(output) },
+  { name: "has_concrete_verb",     test: (output) => /(message|call|send|post|dm|email|reach out|interview|show|share|pitch|schedule|record|publish|launch|ask)\b/i.test(output) },
   { name: "no_hallucinated_stats", test: (output) => !/\b\d{1,3}%\s+of\s+(founders|startups|businesses|companies|users)/i.test(output) },
 ];
 
-function runPreScreen(output: string, ctx: EvaluateParams["founderContext"]) {
-  const failed_checks = CHECKS.filter(({ test }) => !test(output, ctx)).map(({ name }) => name);
+// Coach responses are conversational — penalise filler and genericism, not missing a platform name.
+const COACH_CHECKS: Array<{ name: string; test: (output: string, ctx: EvaluateParams["founderContext"]) => boolean }> = [
+  { name: "not_too_generic",       test: (output) => !/\b(some people|potential users|your audience|people who might|early adopters in general)\b/i.test(output) },
+  { name: "has_concrete_verb",     test: (output) => /(message|call|send|post|dm|email|reach out|interview|show|share|pitch|schedule|record|publish|launch|ask|try|focus|start)\b/i.test(output) },
+  { name: "no_hallucinated_stats", test: (output) => !/\b\d{1,3}%\s+of\s+(founders|startups|businesses|companies|users)/i.test(output) },
+  { name: "not_filler",            test: (output) => !/\b(great question|absolutely|certainly|of course|happy to help|i understand that|i hear you)\b/i.test(output) },
+  { name: "has_specificity",       test: (output, ctx) => {
+    const hasStageRef   = ctx.stage ? output.toLowerCase().includes(ctx.stage.toLowerCase()) : false;
+    const hasNumber     = /\b\d+\b/.test(output);
+    const hasNoun       = /(user|customer|founder|product|feature|stage|project|week|day|hour|minute)\b/i.test(output);
+    return hasStageRef || hasNumber || hasNoun;
+  }},
+];
+
+const IS_COACH_CONTEXT = new Set<EvalContext>(["coach", "founder_insight", "break_startup", "onboarding_insight"]);
+
+function runPreScreen(output: string, ctx: EvaluateParams["founderContext"], context?: EvalContext) {
+  const checks = context && IS_COACH_CONTEXT.has(context) ? COACH_CHECKS : ACTION_CHECKS;
+  const failed_checks = checks.filter(({ test }) => !test(output, ctx)).map(({ name }) => name);
   return { passed: failed_checks.length === 0, failed_checks };
 }
 
@@ -206,7 +225,7 @@ async function maybeRollupMetrics(promptId: PromptId, promptVersion: string): Pr
 
 export async function evaluateAIOutput(params: EvaluateParams): Promise<EvalResult | null> {
   try {
-    const preScreen = runPreScreen(params.output, params.founderContext);
+    const preScreen = runPreScreen(params.output, params.founderContext, params.context);
     const hardFails = preScreen.failed_checks.filter((check) => ["has_number", "has_platform"].includes(check));
     const rubric = hardFails.length ? null : await runModelEval(params);
     const verdict = aggregateVerdict(preScreen, rubric);
