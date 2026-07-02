@@ -14,7 +14,6 @@ import { detectSpiralFull } from "@/lib/cofounder/spiralDetection";
 import { injectContinuityIntoSystemPrompt, recordInteractionServer, type RecentInteraction } from "@/lib/conversationContinuity";
 import { evaluateAIOutput } from "@/lib/aiEvaluator";
 import { getPromptForRequest, loadActivePrompts } from "@/lib/promptRegistry";
-import { getFounderScorecard } from "@/lib/scorecard";
 
 const FREE_COACH_MESSAGES_PER_DAY = 3;
 
@@ -208,23 +207,13 @@ export async function POST(request: Request) {
     let lastMorningNote = "";
     let confidenceScore: number | null = null;
     let recentInteractions: RecentInteraction[] = [];
-    let scorecardContext = "";
 
     // supabase client is needed outside the hasAdminEnv block for recordInteractionServer
     const supabase = hasAdminEnv() ? createAdminClient() : null;
 
     if (hasAdminEnv() && supabase) {
       try {
-        // ── Real scorecard — single source of truth, see lib/scorecard.ts ────
-        // Fetched independently of the Promise.allSettled below (which is
-        // project-scoped) since momentum/streak/xp are founder-scoped, not
-        // project-scoped. Without this, the model was inferring "momentum"
-        // from task/milestone completion ratios and presenting that guess
-        // as if it were the real momentum_score — a fabricated number that
-        // coincidentally sounds authoritative because it's phrased as a fact.
-        const scorecardPromise = getFounderScorecard(userId).catch(() => null);
-
-        const [projectResult, memoryResult, milestonesResult, profileResult, scorecardResult] = await Promise.allSettled([
+        const [projectResult, memoryResult, milestonesResult, profileResult] = await Promise.allSettled([
           supabase
             .from("projects")
             .select("name, title, description, target_users, problem, startup_stage, validation_strengths, validation_weaknesses")
@@ -236,17 +225,11 @@ export async function POST(request: Request) {
           // Task 5: fetch recent_interactions to extract today's morning note
           // NOTE: recent_interactions lives on founder_context (migration 20260517000000), not profiles
           supabase.from("founder_context").select("recent_interactions").eq("user_id", userId).maybeSingle(),
-          scorecardPromise,
         ]);
 
         const project = projectResult.status === "fulfilled" ? projectResult.value.data : null;
         memory = memoryResult.status === "fulfilled" ? memoryResult.value.data as FounderMemory | null : null;
         const milestones = milestonesResult.status === "fulfilled" ? milestonesResult.value.data ?? [] : [];
-
-        const scorecard = scorecardResult.status === "fulfilled" ? scorecardResult.value : null;
-        if (scorecard) {
-          scorecardContext = `\nMomentum score: ${scorecard.momentum}/100 (${scorecard.momentumLabel.label})\nActive streak: ${scorecard.streak} day${scorecard.streak === 1 ? "" : "s"}\nLifetime XP: ${scorecard.xp}\nExecution score: ${scorecard.executionScore}/100\n\nIMPORTANT: The momentum score above (${scorecard.momentum}/100) is the ONLY correct value for "momentum score" — a specific, named metric independent of task or milestone completion percentages. Never compute or state a different "momentum score" from task/milestone ratios; those are separate metrics you may mention by their own names (e.g. "task completion rate") but must not relabel as momentum.`;
-        }
 
         // Task 5: extract today's morning note from recent_interactions
         const profileInteractions = profileResult.status === "fulfilled"
@@ -359,29 +342,42 @@ Validation gaps: ${valWeaknesses || "None recorded"}`;
       ? `\n\nTODAY'S MORNING INTENTION (founder logged this earlier today): "${lastMorningNote}" — if relevant, connect your coaching to what they said they'd do today.`
       : "";
 
-    const baseSystemPrompt = `You are BuildMind — a direct, honest AI coach for founders. You think like a great co-founder: you have full context on their project, you follow the conversation, and you never give generic advice.
+    const baseSystemPrompt = `You are BuildMind — not an assistant, not a chatbot. You are the co-founder who stayed up building with Emmanuel and knows exactly where things stand.
 
-You must return ONLY valid JSON with exactly these two fields:
+You have read every reflection. You know the blockers he named. You know the streaks that broke. You know what he keeps skipping and what he actually ships. When he asks you something, you already have context — you do not need to ask for it.
+
+The difference between you and every other AI: you notice things he did not ask about, and you say them. Not to be clever — because that is what a real co-founder does. If he asks about X but the actual problem is Y, you name Y first, briefly, then answer X.
+
+WHAT YOU NEVER DO:
+- Never say "great question", "certainly", "absolutely", "happy to help", or any filler
+- Never give a numbered list of generic startup advice
+- Never say "as a founder you should..." — you know this specific founder
+- Never deflect when asked for an opinion — give it directly
+- Never write more than 180 words — density beats length every time
+- Never recommend something you know he consistently skips without naming that pattern directly
+
+WHAT YOU ALWAYS DO:
+- Lead with the most important thing, even if he did not ask for it
+- Name the real pattern when you see it: "You keep listing visibility as a blocker but you skip content tasks 80% of the time. The fix is not more content."
+- Be honest when the data suggests he is avoiding something — name it without judgment
+- When confidence is low on a claim, say so: "I am not certain, but my read is..."
+- End with one concrete thing he can do in the next 30 minutes when relevant
+
+REASONING FORMAT:
+The reasoning array shows your actual thought process — what you noticed, what pattern you recognised, what you decided to lead with. Make it real, not performative.
+
+You must return ONLY valid JSON:
 {
-  "reasoning": ["step 1", "step 2", "step 3"],
-  "answer": "your response here"
+  "reasoning": ["what I noticed about his situation", "what pattern this connects to", "what matters most to say first"],
+  "answer": "your response — direct, specific, under 180 words"
 }
-
-The "reasoning" array: 2-4 short internal thinking steps (8-15 words each). Show what you're noticing about this specific founder's situation.
-
-Answer rules:
-- READ THE FOUNDER'S MESSAGE FIRST. If they ask a follow-up, answer it directly.
-- If they ask something unrelated to their project, engage — then optionally connect back.
-- If they ask for your opinion, give it. Do not deflect.
-- Only push toward action when it naturally fits.
-- Under 200 words. Dense and direct. Never "Great question!" Never filler.
 ${spiralInstruction}${proactiveObservation}
 
-${projectContext ? `FOUNDER'S REAL DATA:\n${projectContext}${scorecardContext}` : scorecardContext}${founderMemoryContext}${morningNoteContext}${blockerContext}${domainContext}${historyContext}
+${projectContext ? `FOUNDER CONTEXT (real data):\n${projectContext}` : ""}${founderMemoryContext}${morningNoteContext}${blockerContext}${domainContext}${historyContext}
 
-Founder's message: ${message}
+Message: ${message}
 
-Return ONLY the JSON object. No preamble. No markdown.`;
+Return ONLY the JSON. No preamble. No markdown fences.`;
 
     // Inject cross-feature continuity block before the base system prompt
     const systemPrompt = injectContinuityIntoSystemPrompt(baseSystemPrompt, recentInteractions);
