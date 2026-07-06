@@ -87,6 +87,38 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: "daily" as const,
       priority: 0.8,
     },
+    {
+      url: `${base}/pricing`,
+      lastModified: now,
+      changeFrequency: "weekly",
+      priority: 0.7,
+    },
+    // GEO / definitional content pages — these were live, canonicalized,
+    // and earning search impressions but were missing from the sitemap.
+    {
+      url: `${base}/founder-execution-intelligence`,
+      lastModified: now,
+      changeFrequency: "monthly",
+      priority: 0.7,
+    },
+    {
+      url: `${base}/founder-drift`,
+      lastModified: now,
+      changeFrequency: "monthly",
+      priority: 0.7,
+    },
+    {
+      url: `${base}/execution-memory`,
+      lastModified: now,
+      changeFrequency: "monthly",
+      priority: 0.7,
+    },
+    {
+      url: `${base}/startup-cognitive-load`,
+      lastModified: now,
+      changeFrequency: "monthly",
+      priority: 0.7,
+    },
     // Legal
     {
       url: `${base}/legal/terms`,
