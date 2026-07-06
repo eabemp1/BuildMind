@@ -11,6 +11,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useActiveProjectId } from "@/lib/queries";
 import { usePlan } from "@/lib/usePlan";
 import { AGENT_IDENTITY, type AgentType } from "@/lib/agentWorkforce";
+import { RadialGauge } from "@/components/charts";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -211,12 +212,16 @@ function LiveAgentCard({ run, pendingCount }: { run: AgentRun; pendingCount: num
           </div>
           <div>
             <div style={{ fontSize: 9, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'DM Mono', monospace", marginBottom: 3 }}>Confidence</div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: "var(--bm-text)", fontFamily: "'DM Mono', monospace", letterSpacing: "-0.02em" }}>
-              {run.confidence_pct}%{" "}
-              <span style={{ fontSize: 13 }}>
-                {run.confidence_pct >= 70 ? "🟢" : run.confidence_pct >= 45 ? "🟡" : run.confidence_pct > 0 ? "🔴" : ""}
-              </span>
-            </div>
+            <RadialGauge
+              value={run.confidence_pct}
+              size={44}
+              strokeWidth={4}
+              thresholds={[
+                { min: 70, color: "var(--bm-green)" },
+                { min: 45, color: "var(--bm-accent)" },
+                { min: 0, color: "var(--bm-red)" },
+              ]}
+            />
           </div>
         </div>
 
@@ -312,10 +317,6 @@ function FindingCard({
     onConfirm(finding.id, confirmed);
   };
 
-  const confColor =
-    finding.confidence >= 0.7 ? "var(--bm-green)" :
-    finding.confidence >= 0.5 ? "var(--bm-accent)" : "var(--bm-red)";
-
   if (finding.founder_confirmed === true) {
     return (
       <div style={{
@@ -353,21 +354,23 @@ function FindingCard({
       }}
     >
       <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 8 }}>
-        <span style={{ fontSize: 12, flexShrink: 0, marginTop: 1 }}>
-          {finding.positive ? "📈" : "📉"}
-        </span>
+        <div style={{ flexShrink: 0, marginTop: -2 }}>
+          <RadialGauge
+            value={Math.round(finding.confidence * 100)}
+            size={36}
+            strokeWidth={3.5}
+            thresholds={[
+              { min: 70, color: "var(--bm-green)" },
+              { min: 50, color: "var(--bm-accent)" },
+              { min: 0, color: "var(--bm-red)" },
+            ]}
+          />
+        </div>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text)", marginBottom: 3 }}>
-            {finding.title}
+            {finding.positive ? "📈 " : "📉 "}{finding.title}
           </div>
           <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-            <span style={{
-              fontSize: 9, fontFamily: "'DM Mono', monospace",
-              color: confColor, background: confColor + "18",
-              border: `1px solid ${confColor}33`, borderRadius: 4, padding: "1px 6px",
-            }}>
-              {Math.round(finding.confidence * 100)}% conf
-            </span>
             <span style={{ fontSize: 9, color: "var(--bm-text4)", fontFamily: "'DM Mono', monospace" }}>
               {finding.signal_type.replace(/_/g, " ")}
             </span>
