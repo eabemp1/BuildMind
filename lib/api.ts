@@ -171,11 +171,28 @@ export type BreakMyStartupAnalysis = {
   closingStatement: string;
 };
 
+/** Mirrors lib/scoring/index.ts's BreakdownEntry — duplicated here (not imported)
+ *  to avoid pulling server-only scoring code into the client bundle. */
+export type ViabilityBreakdownEntry = {
+  key: "demand" | "competition" | "timing" | "uniqueness" | "monetization";
+  label: string;
+  score: number;
+  weight: string;
+  interpretation: "strong" | "moderate" | "weak";
+  tip: string;
+};
+
 export type BreakMyStartupResult = {
   analysis: BreakMyStartupAnalysis;
   webSearchUsed: boolean;
   searchResultCount: number;
   competitors_scraped: boolean;
+  /** 0–100 overall score from the 5-agent viability pipeline. */
+  viability_score?: number;
+  /** Per-dimension breakdown (demand/competition/timing/uniqueness/monetization), each 0–100.
+   *  Computed server-side by computeViabilityBreakdown() but was never wired into any UI —
+   *  feeds the RadarChart in BreakMyStartup2.tsx. */
+  viability_breakdown_labelled?: ViabilityBreakdownEntry[];
   /** "ddg" | "brave" | "ai_synthesised" | "none" — indicates whether competitor data was live-scraped or AI-inferred */
   competitor_data_source?: string;
   projectContext: {
