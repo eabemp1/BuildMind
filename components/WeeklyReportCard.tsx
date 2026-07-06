@@ -14,6 +14,7 @@
 import { useRef } from "react";
 import { motion } from "framer-motion";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
+import { MomentumArc } from "@/components/charts";
 
 type ReportData = {
   summary: string;
@@ -55,40 +56,6 @@ const C = {
   red:       "#f87171",
   indigo:    "var(--bm-text2)",
 };
-
-function MomentumArc({ score, size = 130 }: { score: number; size?: number }) {
-  const stroke = 10;
-  const r = (size - stroke) / 2;
-  const circ = 2 * Math.PI * r;
-  const color = score >= 70 ? C.green : score >= 40 ? C.amber : C.red;
-  const label = score >= 70 ? "Strong" : score >= 40 ? "Building" : "Critical";
-  return (
-    <div style={{ position: "relative", width: size, height: size }}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform: "rotate(-90deg)" }}>
-        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="var(--bm-border)" strokeWidth={stroke} />
-        <motion.circle
-          cx={size/2} cy={size/2} r={r} fill="none"
-          stroke={color} strokeWidth={stroke} strokeLinecap="round"
-          strokeDasharray={circ}
-          initial={{ strokeDashoffset: circ }}
-          animate={{ strokeDashoffset: circ - (score / 100) * circ }}
-          transition={{ duration: 1.4, ease: "easeOut", delay: 0.3 }}
-        />
-      </svg>
-      <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-        <motion.span
-          initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1 }}
-          style={{ fontSize: size * 0.23, fontWeight: 800, color, lineHeight: 1, letterSpacing: "-0.04em" }}
-        >
-          {score}
-        </motion.span>
-        <span style={{ fontSize: size * 0.1, color: C.text2, textTransform: "uppercase", letterSpacing: "0.08em", marginTop: 2 }}>
-          {label}
-        </span>
-      </div>
-    </div>
-  );
-}
 
 function StageBar({ stage }: { stage: string }) {
   const norm = STAGE_ORDER.find(s => stage.toLowerCase().includes(s.toLowerCase())) ?? stage;
