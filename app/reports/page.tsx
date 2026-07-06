@@ -28,6 +28,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { ScoreArc, Sparkline, DotCalendar } from "@/components/charts";
 
 function useIsMobile() {
   const [m, setM] = useState(false);
@@ -38,56 +39,6 @@ function useIsMobile() {
     return () => q.removeEventListener("change", up);
   }, []);
   return m;
-}
-
-function ScoreArc({ value, size = 120 }: { value: number; size?: number }) {
-  const r = size * 0.38;
-  const circ = 2 * Math.PI * r;
-  const offset = circ - (value / 100) * circ;
-  const col = value >= 60 ? "var(--bm-green)" : value >= 30 ? "var(--bm-amber)" : "var(--bm-red)";
-  return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ display: "block" }}>
-      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="var(--bm-bg3)" strokeWidth={size*0.09} />
-      <motion.circle
-        cx={size/2} cy={size/2} r={r} fill="none"
-        stroke={col} strokeWidth={size*0.09} strokeLinecap="round"
-        strokeDasharray={circ}
-        initial={{ strokeDashoffset: circ }}
-        animate={{ strokeDashoffset: offset }}
-        transition={{ duration: 1.2, ease: "easeOut" }}
-        transform={`rotate(-90 ${size/2} ${size/2})`}
-        style={{ filter: `drop-shadow(0 0 ${size*0.05}px ${col}88)` }}
-      />
-      <text x={size/2} y={size/2+size*0.06} textAnchor="middle" fill={col}
-        style={{ fontSize: size*0.26, fontWeight: 800, fontFamily: "inherit" }}>{value}</text>
-      <text x={size/2} y={size/2+size*0.22} textAnchor="middle" fill="var(--bm-text3)"
-        style={{ fontSize: size*0.09, fontWeight: 600, fontFamily: "inherit", textTransform: "uppercase", letterSpacing: "0.1em" }}>score</text>
-    </svg>
-  );
-}
-
-function Sparkline({ data, color, w = 100, h = 36 }: { data: number[]; color: string; w?: number; h?: number }) {
-  // Only plot non-zero points so gaps show as gaps
-  const pts = data.map((v, i) => ({ x: (i/(data.length-1))*w, y: v, idx: i })).filter(p => p.y > 0);
-  if (pts.length < 2) return null;
-  const min = Math.min(...pts.map(p => p.y));
-  const max = Math.max(...pts.map(p => p.y));
-  const range = max - min || 1;
-  const pointStr = pts.map(p => `${p.x},${h-((p.y-min)/range)*(h-6)-3}`).join(" ");
-  const id = "spk" + color.replace(/[^a-z0-9]/gi,"");
-  return (
-    <svg viewBox={`0 0 ${w} ${h}`} width={w} height={h} style={{ overflow: "visible" }}>
-      <defs>
-        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.18"/>
-          <stop offset="100%" stopColor={color} stopOpacity="0"/>
-        </linearGradient>
-      </defs>
-      <polyline points={pointStr} fill="none" stroke={color} strokeWidth="1.8"
-        strokeLinecap="round" strokeLinejoin="round"
-        style={{ filter: `drop-shadow(0 0 4px ${color}66)`}}/>
-    </svg>
-  );
 }
 
 // ── PATCH 2: DayBars with date labels ────────────────────────────────────────
@@ -121,77 +72,6 @@ function DayBars({ data, color, weekStart }: { data: number[]; color: string; we
           </div>
         );
       })}
-    </div>
-  );
-}
-
-// ── PATCH 1: DotCalendar component ───────────────────────────────────────────
-// 4-week heatmap. activeDays is an array of "YYYY-MM-DD" strings.
-function DotCalendar({ activeDays, streak }: { activeDays: string[]; streak: number }) {
-  const activeSet = new Set(activeDays);
-  const today = new Date();
-  // Build 28 days, starting from 27 days ago, Mon-aligned
-  const days: Array<{ iso: string; isActive: boolean; isToday: boolean; label: string }> = [];
-  for (let i = 27; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(today.getDate() - i);
-    const iso = d.toLocaleDateString("en-CA");
-    days.push({
-      iso,
-      isActive: activeSet.has(iso),
-      isToday: i === 0,
-      label: d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }),
-    });
-  }
-  // Week labels: Mon Tue Wed Thu Fri Sat Sun
-  const weekDayLabels = ["M","T","W","T","F","S","S"];
-  return (
-    <div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)" }}>Activity — Last 4 Weeks</span>
-        {streak > 0 && (
-          <span style={{ fontSize: 11, color: "var(--bm-amber)", fontWeight: 700 }}>
-            🔥 {streak}d streak
-          </span>
-        )}
-      </div>
-      {/* Day-of-week column headers */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 16px)", gap: 3, marginBottom: 4 }}>
-        {weekDayLabels.map((d, i) => (
-          <div key={i} style={{ textAlign: "center", fontSize: 8, color: "var(--bm-text4)", fontWeight: 600, width: 16 }}>{d}</div>
-        ))}
-      </div>
-      {/* 4 rows x 7 cols — compact 16px cells so grid never stretches on wide screens */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 16px)", gap: 3 }}>
-        {days.map((day, i) => (
-          <div
-            key={i}
-            title={`${day.label}${day.isActive ? " — active" : ""}`}
-            style={{
-              width: 16,
-              height: 16,
-              borderRadius: 3,
-              background: day.isToday
-                ? "var(--bm-accent)"
-                : day.isActive
-                  ? "rgba(92,200,138,0.75)"
-                  : "var(--bm-bg3)",
-              boxShadow: day.isActive && !day.isToday ? "0 0 4px rgba(92,200,138,0.3)" : "none",
-              border: day.isToday ? "1px solid var(--bm-accent)" : "1px solid transparent",
-              transition: "transform 0.1s",
-              cursor: "default",
-            }}
-          />
-        ))}
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, justifyContent: "flex-end" }}>
-        <div style={{ width: 8, height: 8, borderRadius: 2, background: "var(--bm-bg3)" }}/>
-        <span style={{ fontSize: 9, color: "var(--bm-text4)" }}>No activity</span>
-        <div style={{ width: 8, height: 8, borderRadius: 2, background: "rgba(92,200,138,0.55)" }}/>
-        <span style={{ fontSize: 9, color: "var(--bm-text4)" }}>Active</span>
-        <div style={{ width: 8, height: 8, borderRadius: 2, background: "var(--bm-accent)" }}/>
-        <span style={{ fontSize: 9, color: "var(--bm-text4)" }}>Today</span>
-      </div>
     </div>
   );
 }
