@@ -1112,7 +1112,7 @@ function TodayContent() {
     recordOverride("Not the right task right now").catch(() => {});
     // Write skip signal to founder_memory so coach knows what this founder avoids
     if (aiAction?.action) {
-      observeTaskEvent(aiAction.action, "skipped", aiAction.action_type ?? undefined).catch(() => {});
+      observeTaskEvent(aiAction.action, "skipped").catch(() => {});
     }
     // Always clear cache and fetch a new task regardless of plan or API response
     setAiAction(null);
@@ -1331,7 +1331,6 @@ function TodayContent() {
         observeTaskEvent(
           aiAction.action,
           observeOutcome,
-          aiAction.action_type ?? undefined,
         ).catch(() => {}); // client-side, best-effort
       }
 
