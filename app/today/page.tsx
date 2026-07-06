@@ -1072,8 +1072,10 @@ function TodayContent() {
 
   // ── Cognitive load save ────────────────────────────────────────────────────
   const handleCogLoad = useCallback((level: "low" | "normal" | "high") => {
+    // Show the selected button highlighted for a beat before the card
+    // collapses — otherwise cogLoadSaved flips true in the same render as
+    // the click and the card unmounts before the tap registers visually.
     setCogLoad(level);
-    setCogLoadSaved(true);
     const todayKey = new Date().toISOString().slice(0, 10);
     try { localStorage.setItem(`bm_cog_load_${todayKey}`, level); } catch {}
     fetch("/api/founder-context", {
@@ -1081,6 +1083,7 @@ function TodayContent() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ cognitive_load: level }),
     }).catch(() => {});
+    setTimeout(() => setCogLoadSaved(true), 350);
   }, []);
 
   // ── Push permission request ────────────────────────────────────────────────
@@ -2905,7 +2908,14 @@ function TodayContent() {
               credentials: "include",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ briefing_dismissed_date: today }),
-            }).catch(() => {});
+            })
+              .then(async (res) => {
+                if (!res.ok) {
+                  const body = await res.json().catch(() => null);
+                  console.error("Failed to persist briefing dismissal:", res.status, body?.error);
+                }
+              })
+              .catch((err) => console.error("Failed to persist briefing dismissal:", err));
           }}
         />
       )}
