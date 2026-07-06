@@ -30,6 +30,7 @@ import { useProjectsQuery } from "@/lib/queries";
 import { SurvivalBar } from "./break-my-startup/SurvivalBar";
 import { AttackCard } from "./break-my-startup/AttackCard";
 import { MoatFingerprint } from "./break-my-startup/MoatFingerprint";
+import { RadarChart, SeverityStack, type SeverityItem } from "@/components/charts";
 import { AIErrorBoundary } from "./AIErrorBoundary";
 import { ConfidenceBadge } from "./ConfidenceBadge";
 import {
@@ -238,6 +239,35 @@ function BreakMyStartup2Inner({ projectId }: { projectId?: number }) {
                   </button>
                 </div>
               </motion.div>
+            )}
+
+            {state === "debate" && rounds.length > 0 && (
+              <div style={{ marginTop: 20 }}>
+                <SeverityStack
+                  title="Attack Severity"
+                  items={rounds.map((r): SeverityItem => ({
+                    label: r.title,
+                    severity: r.severity,
+                  }))}
+                />
+              </div>
+            )}
+
+            {state === "debate" && result?.viability_breakdown_labelled && result.viability_breakdown_labelled.length >= 3 && (
+              <div style={{ marginTop: 20, display: "flex", justifyContent: "center" }}>
+                <RadarChart
+                  axes={result.viability_breakdown_labelled.map((b) => ({
+                    key: b.key,
+                    label: b.label.replace("Market ", "").replace("Competitive Position", "Competition").replace(" Path", ""),
+                    value: b.score,
+                    max: 100,
+                    tip: b.tip,
+                  }))}
+                  centerValue={result.viability_score}
+                  centerLabel="viability"
+                  size={260}
+                />
+              </div>
             )}
 
             {state === "debate" && moatDimensions.length > 0 && <MoatFingerprint dimensions={moatDimensions} />}
