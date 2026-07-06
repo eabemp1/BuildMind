@@ -23,6 +23,7 @@ import { Badge, BadgeVariant } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
+import { RadialGauge, RadarChart, SeverityStack, type SeverityItem, type Severity } from "@/components/charts";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 type RiskSeverity = "Critical" | "High" | "Medium" | "Low";
@@ -43,6 +44,10 @@ interface BreakResult {
   gated?: boolean;
   score_note?: string;
   agents?: Array<{ name: string; status: string; summary: string; confidence?: number }>;
+  /** Per-dimension 0-100 scores from the 5-agent pipeline's SignalSummary.
+   *  The API has always returned this on signal_summary; it just wasn't
+   *  read here before. Feeds the radar chart. */
+  signalBreakdown?: Array<{ key: string; label: string; value: number; tip?: string }>;
   isSynthetic?: boolean; // D2: true when all agents fell back to hardcoded defaults
   focusAreas?: string[];
   executionPlan?: { mvp_roadmap?: string[]; first_10_actions?: string[]; gtm_plan?: string[] } | null;
@@ -68,7 +73,14 @@ type BreakApiData = {
   reasoning?: string[];
   agent_outputs?: Record<string, Record<string, unknown> | null>;
   agent_statuses?: Record<string, string>;
-  signal_summary?: { overall_confidence?: number };
+  signal_summary?: {
+    overall_confidence?: number;
+    demand_score?: number;
+    competition_score?: number;
+    timing_score?: number;
+    uniqueness_score?: number;
+    risk_score?: number;
+  };
   execution_plan?: BreakResult["executionPlan"];
   reflexion_action?: BreakResult["reflexionAction"];
   focus_areas?: string[];
@@ -115,41 +127,6 @@ function cleanAIText(value = ""): string {
 
 function cleanAIList(items?: string[]): string[] {
   return (items ?? []).map(cleanAIText).filter(Boolean);
-}
-
-// ── Survival ring ─────────────────────────────────────────────────────────────
-function SurvivalRing({ value, size = 110 }: { value: number; size?: number }) {
-  const stroke = 8;
-  const r = (size - stroke) / 2;
-  const circ = 2 * Math.PI * r;
-  const color = value >= 60 ? "var(--bm-green)" : value >= 40 ? "var(--bm-amber)" : "var(--bm-red)";
-  return (
-    <div style={{ position: "relative", width: size, height: size, flexShrink: 0 }}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform: "rotate(-90deg)" }}>
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--bm-border)" strokeWidth={stroke} />
-        <motion.circle
-          cx={size / 2} cy={size / 2} r={r}
-          fill="none" stroke={color} strokeWidth={stroke}
-          strokeLinecap="round" strokeDasharray={circ}
-          initial={{ strokeDashoffset: circ }}
-          animate={{ strokeDashoffset: circ - (value / 100) * circ }}
-          transition={{ duration: 1.4, ease: "easeOut", delay: 0.3 }}
-          style={{ filter: `drop-shadow(0 0 5px ${color}55)` }}
-        />
-      </svg>
-      <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-        <motion.span
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 1.0 }}
-          style={{ fontSize: 22, fontWeight: 800, color, letterSpacing: "-0.03em", lineHeight: 1 }}
-        >
-          {value}%
-        </motion.span>
-        <span style={{ fontSize: 9, color: "var(--bm-text4)", marginTop: 2 }}>survive</span>
-      </div>
-    </div>
-  );
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
@@ -267,6 +244,20 @@ export default function BreakMyStartupPage() {
       };
     });
 
+    const ss = data.signal_summary;
+    const signalBreakdown =
+      ss && [ss.demand_score, ss.competition_score, ss.timing_score, ss.uniqueness_score, ss.risk_score].some(
+        (v) => typeof v === "number"
+      )
+        ? [
+            { key: "demand", label: "Demand", value: ss.demand_score ?? 0, tip: "How much real demand signal was found" },
+            { key: "competition", label: "Market Space", value: 100 - (ss.competition_score ?? 100), tip: "Inverted competition score — higher means less crowded" },
+            { key: "timing", label: "Timing", value: ss.timing_score ?? 0, tip: "How favorable current market timing looks" },
+            { key: "uniqueness", label: "Uniqueness", value: ss.uniqueness_score ?? 0, tip: "Differentiation vs. what's already out there" },
+            { key: "risk", label: "Safety", value: 100 - (ss.risk_score ?? 100), tip: "Inverted risk score — higher means lower execution risk" },
+          ]
+        : undefined;
+
     return {
       overallRisk,
       summary: cleanAIText(data.verdict) || "Stress test complete. Review the risks before deciding what to build next.",
@@ -280,6 +271,7 @@ export default function BreakMyStartupPage() {
             /focus areas|5-agent|viability score|competitor/i.test(item)
           ).join(" | ") || "Calculated from execution data, validation signals, stage, and competitor context.",
       agents,
+      signalBreakdown,
       isSynthetic,
       focusAreas: cleanAIList(data.focus_areas),
       executionPlan: data.execution_plan
@@ -628,7 +620,16 @@ export default function BreakMyStartupPage() {
             >
               <div style={{ display: "flex", alignItems: "flex-start", gap: 20, flexWrap: "wrap" }}>
                 {result.survival_probability !== undefined && (
-                  <SurvivalRing value={result.survival_probability} />
+                  <RadialGauge
+                    value={result.survival_probability}
+                    size={110}
+                    label="survive"
+                    thresholds={[
+                      { min: 60, color: "var(--bm-green)" },
+                      { min: 40, color: "var(--bm-amber)" },
+                      { min: 0, color: "var(--bm-red)" },
+                    ]}
+                  />
                 )}
                 <div style={{ flex: "1 1 220px", minWidth: 0 }}>
                   <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: "var(--bm-text3)", letterSpacing: "0.07em", marginBottom: 10 }}>
@@ -744,6 +745,11 @@ export default function BreakMyStartupPage() {
                     </div>
                   ))}
                 </div>
+                {result.signalBreakdown && (
+                  <div style={{ display: "flex", justifyContent: "center", paddingTop: 8 }}>
+                    <RadarChart axes={result.signalBreakdown} size={240} />
+                  </div>
+                )}
               </Card>
             )}
 
@@ -805,6 +811,15 @@ export default function BreakMyStartupPage() {
                   {result.risks.length} found
                 </span>
               </div>
+              {result.risks.length > 1 && (
+                <SeverityStack
+                  title="At a glance"
+                  items={result.risks.map((risk): SeverityItem => ({
+                    label: risk.category,
+                    severity: ({ Critical: "fatal", High: "high", Medium: "medium", Low: "low" } as Record<RiskSeverity, Severity>)[risk.severity],
+                  }))}
+                />
+              )}
               {result.risks.map((risk, i) => (
                 <motion.div
                   key={i}
