@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { logError } from "@/lib/server/logger";
 import type { FounderMemory } from "@/lib/founderMemory";
+import { assembleCoachContext, computeContextConfidence } from "@/lib/coachContext";
 
 export const runtime     = "nodejs";
 export const dynamic     = "force-dynamic";
@@ -213,40 +214,43 @@ export async function POST(request: Request) {
 
     if (hasAdminEnv() && supabase) {
       try {
-        const [projectResult, memoryResult, milestonesResult, profileResult] = await Promise.allSettled([
+        // Run project fetch and full behavioral context assembly in parallel
+        const [projectResult, milestonesResult, profileResult, behavioralResult] = await Promise.allSettled([
           supabase
             .from("projects")
             .select("name, title, description, target_users, problem, startup_stage, validation_strengths, validation_weaknesses")
             .eq("id", projectId)
             .eq("user_id", userId)
             .maybeSingle(),
-          supabase.from("founder_memory").select("*").eq("user_id", userId).maybeSingle(),
           supabase.from("milestones").select("id, title, status").eq("project_id", projectId),
-          // Task 5: fetch recent_interactions to extract today's morning note
-          // NOTE: recent_interactions lives on founder_context (migration 20260517000000), not profiles
           supabase.from("founder_context").select("recent_interactions").eq("user_id", userId).maybeSingle(),
+          // ── NEW: assembleCoachContext pulls reflections, action patterns,
+          // momentum, skip reasons, blocker insights, score trend, and memory
+          // — the six data sources the coach previously never saw.
+          assembleCoachContext(supabase, userId, projectId),
         ]);
 
-        const project = projectResult.status === "fulfilled" ? projectResult.value.data : null;
-        memory = memoryResult.status === "fulfilled" ? memoryResult.value.data as FounderMemory | null : null;
+        const project    = projectResult.status    === "fulfilled" ? projectResult.value.data    : null;
         const milestones = milestonesResult.status === "fulfilled" ? milestonesResult.value.data ?? [] : [];
+        const behavioral = behavioralResult.status === "fulfilled" ? behavioralResult.value : null;
 
-        // Task 5: extract today's morning note from recent_interactions
+        // Still read memory for spiral persistence (write path only)
+        const { data: memData } = await supabase.from("founder_memory").select("emotional_signals").eq("user_id", userId).maybeSingle();
+        memory = memData as FounderMemory | null;
+
+        // Extract morning note from recent_interactions (unchanged)
         const profileInteractions = profileResult.status === "fulfilled"
           ? (profileResult.value.data?.recent_interactions as Array<{ type?: string; note?: string; timestamp?: string }> | null) ?? []
           : [];
-        const todayUTC = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
+        const todayUTC = new Date().toISOString().slice(0, 10);
         const todayMorningCheckin = profileInteractions.find(
           (r) => r.type === "morning_checkin" && r.timestamp?.startsWith(todayUTC),
         );
-        if (todayMorningCheckin?.note) {
-          lastMorningNote = todayMorningCheckin.note;
-        }
+        if (todayMorningCheckin?.note) lastMorningNote = todayMorningCheckin.note;
         recentInteractions = profileInteractions as RecentInteraction[];
 
+        // Build project context block (kept — gives structured startup fields)
         const milestoneIds = milestones.map((m) => m.id);
-      
-        // Batch milestone IDs to avoid URL length limits
         let allTasks: Array<{ title: string; is_completed: boolean }> = [];
         if (milestoneIds.length > 0) {
           const BATCH_SIZE = 20;
@@ -265,19 +269,17 @@ export async function POST(request: Request) {
             if (result.data) allTasks = allTasks.concat(result.data);
           }
         }
-        const { data: tasks } = { data: allTasks };
 
-        const completedTasks = (tasks ?? []).filter((t) => t.is_completed).length;
-        const totalTasks = (tasks ?? []).length;
-        const completedMilestones = milestones.filter((m) => m.status === 'completed').length;
+        const completedTasks      = allTasks.filter((t) => t.is_completed).length;
+        const totalTasks          = allTasks.length;
+        const completedMilestones = milestones.filter((m) => m.status === "completed").length;
 
         if (project) {
           stage = project.startup_stage ?? inferStage(completedTasks, totalTasks, completedMilestones, milestones.length);
           const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-          const valStrengths = (project.validation_strengths ?? []).join(", ");
-          const valWeaknesses = (project.validation_weaknesses ?? []).join(", ");
-          projectContext = `
-Project: ${project.name ?? project.title}
+          const valStrengths   = (project.validation_strengths ?? []).join(", ");
+          const valWeaknesses  = (project.validation_weaknesses ?? []).join(", ");
+          projectContext = `Project: ${project.name ?? project.title}
 Stage: ${stage}
 Problem: ${project.problem ?? "Not defined"}
 Target users: ${project.target_users ?? "Not defined"}
@@ -287,9 +289,10 @@ Validation strengths: ${valStrengths || "None recorded"}
 Validation gaps: ${valWeaknesses || "None recorded"}`;
         }
 
-        founderMemoryContext = buildFounderMemoryContext(memory);
+        // Replace thin memory context with the full behavioral context block
+        founderMemoryContext = behavioral?.contextBlock ?? buildFounderMemoryContext(memory);
 
-        // ── Persist spiral event to founder_memory for pattern tracking ────────
+        // Persist spiral event to founder_memory (write path — unchanged)
         if (spiralDetected && memory) {
           const signals = (memory.emotional_signals ?? []) as { trigger: string; type: string; confidence: number }[];
           signals.push({ trigger: message.slice(0, 80), type: "draining", confidence: 0.85 });
@@ -297,8 +300,13 @@ Validation gaps: ${valWeaknesses || "None recorded"}`;
             .update({ emotional_signals: signals.slice(-20), updated_at: new Date().toISOString() })
             .eq("user_id", userId);
         }
+
+        // Update confidence score using behavioral signals (much more accurate than before)
+        if (behavioral) {
+          confidenceScore = computeContextConfidence(behavioral.signals);
+        }
       } catch (err) {
-        console.error("[coach] Optional founder context fetch failed:", err);
+        console.error("[coach] Context assembly failed:", err);
       }
     }
 
@@ -328,14 +336,13 @@ Validation gaps: ${valWeaknesses || "None recorded"}`;
         : spiralSignal;
     const effectiveSpiralDetected = spiralDetected || (spiralResultFull.detected && spiralResultFull.detectedBy === "llm");
 
-    // Task 1: derive a confidence_score from the quality checks so ConfidenceBadge can render
-    // We compute it after project context is assembled — same checks Agent B runs.
-    const hasProjectContext   = Boolean(projectContext.trim());
-    const hasTargetUsers      = Boolean(body?.targetUsers || projectContext.includes("Target users:") && !projectContext.includes("Target users: Not defined"));
-    const hasMemory           = Boolean(memory && (memory.personality_tags?.length || memory.strengths?.length));
-    const hasMorningNote      = Boolean(lastMorningNote);
-    const rawScore = [hasProjectContext, hasTargetUsers, hasMemory, hasMorningNote].filter(Boolean).length / 4;
-    confidenceScore = Math.round(rawScore * 100) / 100; // e.g. 0.75
+    // Confidence score computed inside data-fetch block via computeContextConfidence()
+    // Fall back to simple check if behavioral assembly failed
+    if (confidenceScore === null) {
+      const hasProjectContext = Boolean(projectContext.trim());
+      const hasTargetUsers    = Boolean(projectContext.includes("Target users:") && !projectContext.includes("Not defined"));
+      confidenceScore = [hasProjectContext, hasTargetUsers].filter(Boolean).length / 2;
+    }
 
     // Task 5: inject today's morning note into system prompt so coach has same-day context
     const morningNoteContext = lastMorningNote
