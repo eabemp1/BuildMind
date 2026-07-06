@@ -2313,13 +2313,13 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
       </nav>
 
       {/* Hero */}
-      <section className="html-section flex min-h-[calc(100vh-64px)] items-center px-4 pb-12 pt-10 sm:px-8 sm:pb-20 sm:pt-20 lg:pb-24">
+      <section className="html-section flex min-h-[calc(100vh-64px)] items-center px-4 pb-12 pt-10 sm:px-8 sm:pb-20 sm:pt-20 md:px-12 lg:px-20 lg:pb-24 xl:px-28">
         {/* Ambient glow — hidden on mobile via max-width to prevent overflow */}
         <div className="bm-hero-glow hidden sm:block" style={{ width: 700, height: 700, top: "0%", right: "-12%", background: "radial-gradient(ellipse, rgba(232,197,71,0.09) 0%, rgba(74,184,176,0.04) 45%, transparent 70%)" }} />
         <div className="bm-hero-glow hidden sm:block" style={{ width: 450, height: 450, bottom: "5%", left: "25%", background: "radial-gradient(ellipse, rgba(91,108,240,0.06) 0%, transparent 70%)" }} />
         <div className="bm-hero-glow hidden sm:block" style={{ width: 300, height: 300, top: "20%", left: "-5%", background: "radial-gradient(ellipse, rgba(155,127,232,0.05) 0%, transparent 70%)" }} />
 
-        <div className="bm-hero-window mx-auto w-full max-w-[1180px] px-4 py-8 sm:px-10 sm:py-16 lg:px-14 lg:py-20">
+        <div className="bm-hero-window mx-auto w-full max-w-[1080px] px-4 py-8 sm:px-10 sm:py-16 lg:px-14 lg:py-20">
           <div className="bm-hero-window-glow-line" />
           <div className="bm-hero-burst" />
 
