@@ -9,6 +9,35 @@ const nextConfig = {
   reactStrictMode: true,
   outputFileTracingRoot: __dirname,
 
+  // SEO FIX: canonicalize on the non-www host. Without this, Google was
+  // crawling and indexing buildmind.live and www.buildmind.live as two
+  // separate, unresolved duplicate URLs for every public page.
+  async redirects() {
+    return [
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "www.buildmind.live" }],
+        destination: "https://buildmind.live/:path*",
+        permanent: true,
+      },
+      // SEO FIX: /privacy and /terms were orphaned duplicates of
+      // /legal/privacy and /legal/terms (same content, no canonical
+      // pointing between them). The /legal/ versions are the ones
+      // actually linked from the UI, so they're canonical; these
+      // old routes now 301 to them instead of serving duplicate pages.
+      {
+        source: "/privacy",
+        destination: "/legal/privacy",
+        permanent: true,
+      },
+      {
+        source: "/terms",
+        destination: "/legal/terms",
+        permanent: true,
+      },
+    ];
+  },
+
   // Security headers applied to all routes
   async headers() {
     return [
