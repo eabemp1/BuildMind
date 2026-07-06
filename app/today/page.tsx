@@ -9,6 +9,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { computeStartupScore } from "@/lib/buildmind";
 import { computeScoreDelta, applyScoreDelta, getXP, recordScore } from "@/lib/scoring";
 import { getStoredStreak, incrementDailyStreak, recordTaskCompletion, syncStreakFromServer } from "@/lib/plan";
+import { observeTaskEvent } from "@/lib/founderMemory";
 import { usePlan } from "@/lib/usePlan";
 import { syncUrgencyFromServer } from "@/lib/urgency";
 import { updateAchievementStats, checkAndUnlockAchievements, getAchievementStats } from "@/lib/achievements";
@@ -1109,6 +1110,10 @@ function TodayContent() {
     setReplacingTask(true);
     // Fire override signal best-effort — do NOT block the task refresh on it
     recordOverride("Not the right task right now").catch(() => {});
+    // Write skip signal to founder_memory so coach knows what this founder avoids
+    if (aiAction?.action) {
+      observeTaskEvent(aiAction.action, "skipped", aiAction.action_type ?? undefined).catch(() => {});
+    }
     // Always clear cache and fetch a new task regardless of plan or API response
     setAiAction(null);
     setDebtSuppression(null);
@@ -1311,6 +1316,23 @@ function TodayContent() {
             outcome_note: undefined,
           }),
         }).catch(() => {}); // best-effort — never blocks the check-in
+      }
+
+      // ── Write to founder_memory (avoidance_zones / strengths) ─────────────
+      // This is the missing call that was designed but never wired.
+      // observeTaskEvent() atomically appends to avoidance_zones when skipped
+      // and to strengths when completed, so the AI Coach can mirror the founder's
+      // actual behavioral patterns instead of returning empty arrays.
+      if (aiAction?.action) {
+        const observeOutcome =
+          selectedOutcome === "completed" ? "completed" :
+          selectedOutcome === "partial"   ? "completed" : // partial counts as a strength signal
+          "skipped";
+        observeTaskEvent(
+          aiAction.action,
+          observeOutcome,
+          aiAction.action_type ?? undefined,
+        ).catch(() => {}); // client-side, best-effort
       }
 
       // ── Increment daily streak ────────────────────────────────────────────
