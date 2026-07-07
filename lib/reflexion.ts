@@ -471,7 +471,7 @@ ${generated}`;
   const refinerPrompt = `You are BuildMind's execution engine. ${refinerMode}
 Rules:
 - Every claim must be backed by logic specific to THIS founder
-- Must name the exact platform, the exact user type, and include a number
+- Only name an exact platform, user type, or number if it is directly supported by the founder context or critique below — never invent one to sound specific
 - Must be harder-hitting than the input
 - End with a single concrete action they can start in the next 30 minutes
 - No preamble, no "here's the refined version"
@@ -524,6 +524,12 @@ export interface VerifierOutput {
   confidence_score: number;     // 0–1 overall confidence in the output
   verdict: "verified" | "partial" | "rejected";
   rejection_reason?: string;    // only when verdict is "rejected"
+  // FIX (hallucination guard): any specific platform, user-type, number, or
+  // deadline present in the action that has NO corresponding signal in
+  // structuredSignals. The Generator/Refiner prompts require "exact" specifics,
+  // which previously caused fabricated numbers (e.g. "100 pre-commitments by 5PM")
+  // to pass through unflagged. This field forces a REBUILD instead of a polish.
+  fabricated_specifics: string[];
 }
 
 /**
@@ -641,8 +647,8 @@ VIABILITY CONTEXT:
 CRITICAL RULES:
 - Generate the SINGLE highest-leverage next move for this founder
 - Tie every claim to a specific signal listed above
-- Name exact platform, exact user type, exact number
-- If uncertain about something, say "I don't know" — never fabricate
+- If a specific platform, user type, number, or deadline is directly supported by a signal listed above, name it exactly.
+- If it is NOT supported by a signal, do not invent one — say so plainly (e.g. "no verified channel yet — the first move is finding one") rather than filling the gap with a fabricated platform, number, or deadline.
 - Optimize for ACTION, not analysis
 - Adjust difficulty for cognitive state: ${founderContext.cognitiveLoad ?? "fresh"}
 ${learnedPatternsPrompt ? learnedPatternsPrompt : ""}
@@ -740,6 +746,7 @@ Respond in JSON:
   "missing_data": ["what would increase confidence 1", "..."],
   "confidence_score": 0.0–1.0,
   "verdict": "verified" | "partial" | "rejected",
+  "fabricated_specifics": ["any exact platform, user type, number, or deadline in the action that has NO matching signal above — e.g. a named platform never mentioned in signals, or a specific count/deadline invented rather than derived"],
   "rejection_reason": "only if rejected"
 }
 
@@ -752,6 +759,7 @@ ${baseForVerification}`;
     missing_data: ["User interview data", "Willingness-to-pay evidence"],
     confidence_score: 0.4,
     verdict: "partial",
+    fabricated_specifics: [],
   };
 
   let stage5Output: VerifierOutput = verifierFallback;
@@ -773,6 +781,7 @@ ${baseForVerification}`;
         ...verifierFallback,
         ...raw,
         confidence_score: Math.min(1, Math.max(0, Number(raw.confidence_score) || 0.4)),
+        fabricated_specifics: Array.isArray(raw.fabricated_specifics) ? raw.fabricated_specifics : [],
       };
     }
   } catch (err) { logError("reflexion/verifier", err); /* use fallback */ }
@@ -783,8 +792,12 @@ ${baseForVerification}`;
   // If partial: adds caveats and surfaces the weak claims.
   // If verified: polishes only.
 
+  const hasFabrication = stage5Output.fabricated_specifics?.length > 0;
+
   const refinerMode =
-    stage5Output.verdict === "rejected"
+    hasFabrication
+      ? "REBUILD from signals — the verifier detected fabricated specifics (a platform, number, or deadline with no supporting signal). Remove them entirely; do not replace with a different invented specific."
+      : stage5Output.verdict === "rejected"
       ? "REBUILD from signals — the action was rejected by the verifier."
       : stage5Output.verdict === "partial"
       ? "POLISH and add appropriate caveats for weak claims."
@@ -794,17 +807,21 @@ ${baseForVerification}`;
     ? `\nWEAK CLAIMS TO CAVEAT: ${stage5Output.weak_claims.join(", ")}`
     : "";
 
+  const fabricationNote = hasFabrication
+    ? `\nFABRICATED SPECIFICS TO REMOVE (no supporting signal — do not restate these or substitute new invented ones): ${stage5Output.fabricated_specifics.join(", ")}`
+    : "";
+
   const stage7RefinerPrompt = `You are BuildMind's final output engine. ${refinerMode}
 
 RULES:
 - Direct, intelligent, slightly warm — decisive operator tone, not consultant
 - Tie every recommendation to a specific signal
-- Name exact platform, exact user type, exact number or time
+- Only name an exact platform, user type, number, or deadline if it is directly supported by a signal — otherwise describe the action without inventing one
 - End with one concrete action the founder can start in the next 30 minutes
 - Max 4 sentences
 - If confidence is low (${stage5Output.confidence_score < 0.5 ? "YES — it is low" : "no, confidence is adequate"}), acknowledge uncertainty directly
 - Cognitive state today: ${founderContext.cognitiveLoad ?? "fresh"} — adjust difficulty accordingly
-${weakClaimsNote}
+${weakClaimsNote}${fabricationNote}
 ${emotionalInstruction}${cofounderStyleInstruction}${channelStyleInstruction}
 
 INPUT ACTION:
