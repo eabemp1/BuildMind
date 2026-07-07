@@ -2,6 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { TRIAL_DURATION_DAYS } from "@/lib/plan";
+import { persistUserPlan } from "@/lib/billing/server";
+import { logError } from "@/lib/server/logger";
 
 function safeNextPath(value: string | null): string {
   if (!value || !value.startsWith("/") || value.startsWith("//")) return "/onboarding";
@@ -13,6 +15,52 @@ function appOrigin(requestUrl: URL): string {
   // sign-in. Redirecting to a different configured host after callback can make
   // mobile browsers look logged out even when the exchange succeeded.
   return requestUrl.origin.replace(/\/$/, "");
+}
+
+/**
+ * maybeTagFoundingMember — honors the Founder Execution Rhythm Quiz's
+ * "lifetime founder pricing + direct input on the roadmap" pre-commitment
+ * promise automatically, with no manual work required.
+ *
+ * Runs on every sign-in (cheap no-op for everyone who never took the quiz).
+ * If this user's email matches an unconverted row in founding_members:
+ *   1. Grants a lifetime "builder" plan (no expiry, never charged again).
+ *   2. Stamps founding_members.converted_user_id so this only ever fires once.
+ * Best-effort — never blocks sign-in if it fails.
+ */
+async function maybeTagFoundingMember(supabase: Awaited<ReturnType<typeof createClient>>) {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user?.email) return;
+
+    const admin = createAdminClient();
+    const email = user.email.trim().toLowerCase();
+
+    const { data: match } = await admin
+      .from("founding_members")
+      .select("id, converted_user_id")
+      .eq("email", email)
+      .is("converted_user_id", null)
+      .maybeSingle();
+
+    if (!match) return; // no pre-commitment, or already converted — nothing to do
+
+    await persistUserPlan(user.id, "builder", {
+      status: "active",
+      isLifetime: true,
+      isFoundingMember: true,
+      customerEmail: email,
+      meta: { founding_member_source: "quiz" },
+    });
+
+    await admin
+      .from("founding_members")
+      .update({ converted_user_id: user.id, converted_at: new Date().toISOString() })
+      .eq("id", match.id);
+  } catch (err) {
+    logError("auth/callback/maybeTagFoundingMember", err);
+    // Non-fatal — sign-in proceeds either way; can be reconciled manually if needed.
+  }
 }
 
 async function maybeStartTrial(supabase: Awaited<ReturnType<typeof createClient>>) {
@@ -87,6 +135,7 @@ export async function GET(request: NextRequest) {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         await maybeStartTrial(supabase);
+        await maybeTagFoundingMember(supabase);
         const redirectUrl = new URL(origin);
         redirectUrl.pathname = next;
         return NextResponse.redirect(redirectUrl);
@@ -100,9 +149,11 @@ export async function GET(request: NextRequest) {
     }
 
     await maybeStartTrial(supabase);
+    await maybeTagFoundingMember(supabase);
   } else {
     const supabase = await createClient();
     await maybeStartTrial(supabase);
+    await maybeTagFoundingMember(supabase);
   }
 
   const redirectUrl = new URL(origin);
