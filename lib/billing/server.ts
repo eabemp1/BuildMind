@@ -17,6 +17,12 @@ type BillingUpdate = {
   amountMinor?: number | null;
   currency?: string | null;
   meta?: Record<string, unknown>;
+  /** FOUNDING MEMBER FIX: when true, skips the 30-day auto-renewal period —
+   *  this access does not expire and is never charged again. */
+  isLifetime?: boolean;
+  /** FOUNDING MEMBER FIX: tags the subscriptions row so the badge/roadmap-input
+   *  surface can read it directly without joining another table. */
+  isFoundingMember?: boolean;
 };
 
 const MONTHLY_PERIOD_MS = 30 * 24 * 60 * 60 * 1000;
@@ -69,11 +75,28 @@ export async function persistUserPlan(userId: string, plan: PublicPlan, update: 
   const { data, error } = await supabase.auth.admin.getUserById(userId);
   if (error) throw new Error(error.message);
 
+  // Preserve existing founding-member status unless this call explicitly sets it —
+  // otherwise an unrelated billing event (e.g. a future webhook type) would
+  // silently overwrite is_founding_member back to false on upsert.
+  let existingFoundingMember = false;
+  let existingFoundingSince: string | null = null;
+  if (update.isFoundingMember === undefined) {
+    const { data: existingSub } = await supabase
+      .from("subscriptions")
+      .select("is_founding_member, founding_member_since")
+      .eq("user_id", userId)
+      .maybeSingle();
+    existingFoundingMember = existingSub?.is_founding_member ?? false;
+    existingFoundingSince = existingSub?.founding_member_since ?? null;
+  }
+
   const existingMetadata = (data.user?.user_metadata ?? {}) as Record<string, unknown>;
   const status = update.status ?? (plan === "builder" ? "active" : "free");
   const nowIso = new Date().toISOString();
   const billingPeriodStart = update.periodStart ?? (plan === "builder" && status === "active" ? nowIso : null);
-  const billingPeriodEnd = update.periodEnd ?? (billingPeriodStart ? addMonthlyPeriod(billingPeriodStart) : null);
+  const billingPeriodEnd = update.isLifetime
+    ? null
+    : update.periodEnd ?? (billingPeriodStart ? addMonthlyPeriod(billingPeriodStart) : null);
   const nextMetadata: Record<string, unknown> = {
     ...existingMetadata,
     ...(update.meta ?? {}),
@@ -129,6 +152,8 @@ export async function persistUserPlan(userId: string, plan: PublicPlan, update: 
     customer_email:           update.customerEmail ?? null,
     amount_minor:             update.amountMinor ?? null,
     currency:                 update.currency ?? "GHS",
+    is_founding_member:       update.isFoundingMember ?? existingFoundingMember,
+    founding_member_since:    update.isFoundingMember ? nowIso : existingFoundingSince,
     updated_at:               nowIso,
   };
 
