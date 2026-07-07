@@ -28,6 +28,7 @@ import { ProfileCompletenessBar } from "@/components/ProfileCompletenessBar";
 import { LoopNarrative } from "@/components/LoopNarrative";
 import { broadcastTabEvent, useTabSync } from "@/lib/tabSync";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
+import { linkifyChannels } from "@/lib/linkifyChannels";
 import { recordOverride } from "@/lib/founderContext";
 import type { MorningBriefing } from "@/lib/founderContext";
 import GhostGoalBanner from "@/components/GhostGoalBanner";
@@ -2517,7 +2518,7 @@ function TodayContent() {
                 Primary Objective
               </div>
               <p style={{ fontSize: isMobile ? 20 : 22, fontWeight: 400, color: "var(--bm-text)", lineHeight: 1.42, margin: "0 0 8px", letterSpacing: "-0.025em" }}>
-                {sanitizeOutput(actionData.action)}
+                {linkifyChannels(sanitizeOutput(actionData.action))}
               </p>
               <p style={{ fontSize: 13, color: "var(--bm-text2)", fontWeight: 400, margin: 0, lineHeight: 1.55 }}>
                 {isOutreachAction
