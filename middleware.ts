@@ -108,7 +108,7 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/break/") ||
     pathname === "/upgrade" ||
     pathname === "/ventures" ||
-    pathname.startsWith("/ventures/");
+    pathname.startsWith("/ventures/") ||
     pathname === "/quiz" ||
     pathname.startsWith("/quiz/");
   const isExploreRoute = pathname === "/explore" || pathname.startsWith("/explore/");
