@@ -15,6 +15,7 @@ import { Card } from "@/components/ui/card";
 import { BrandMark } from "@/components/layout/logo";
 import { useTheme } from "@/components/layout/theme-provider";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
+import { WorldCanvas } from "@/components/landing/WorldCanvas";
 
 // ── "A Day With BuildMind" timeline data ──────────────────────────────────────
 const DAY_TIMELINE = [
@@ -2313,7 +2314,13 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
       </nav>
 
       {/* Hero */}
-      <section className="html-section flex min-h-[calc(100vh-64px)] items-center px-4 pb-12 pt-10 sm:px-8 sm:pb-20 sm:pt-20 md:px-12 lg:px-20 lg:pb-24 xl:px-28">
+      <section className="html-section relative flex min-h-[calc(100vh-64px)] items-center px-4 pb-12 pt-10 sm:px-8 sm:pb-20 sm:pt-20 md:px-12 lg:px-20 lg:pb-24 xl:px-28">
+        {/* Animated ambient shader — same gold/indigo/teal story as the static
+            orbs below, in motion. Safe to keep both layered, or delete the
+            three static .bm-hero-glow divs beneath it if the motion alone
+            reads as enough. */}
+        <WorldCanvas className="hidden sm:block" />
+
         {/* Ambient glow — hidden on mobile via max-width to prevent overflow */}
         <div className="bm-hero-glow hidden sm:block" style={{ width: 700, height: 700, top: "0%", right: "-12%", background: "radial-gradient(ellipse, rgba(232,197,71,0.09) 0%, rgba(74,184,176,0.04) 45%, transparent 70%)" }} />
         <div className="bm-hero-glow hidden sm:block" style={{ width: 450, height: 450, bottom: "5%", left: "25%", background: "radial-gradient(ellipse, rgba(91,108,240,0.06) 0%, transparent 70%)" }} />
