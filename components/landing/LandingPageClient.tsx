@@ -15,7 +15,6 @@ import { Card } from "@/components/ui/card";
 import { BrandMark } from "@/components/layout/logo";
 import { useTheme } from "@/components/layout/theme-provider";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
-import { WorldCanvas } from "@/components/landing/WorldCanvas";
 
 // ── "A Day With BuildMind" timeline data ──────────────────────────────────────
 const DAY_TIMELINE = [
@@ -832,7 +831,7 @@ function BreakMyStartupSection() {
   return (
     <section className="html-section px-5 py-[60px] sm:px-8 sm:py-24" style={{ borderTop: subtleSectionBorder }}>
       <div className="max-w-3xl mx-auto">
-        <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: "-60px" }} transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }} className="flex flex-col gap-6">
+        <motion.div initial={{ opacity: 0, y: 20, scale: 0.94 }} whileInView={{ opacity: 1, y: 0, scale: 1 }} viewport={{ once: true, margin: "-60px" }} transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }} className="flex flex-col gap-6">
           <div>
             <Badge variant="danger" dot className="mb-4">Stress-Test Your Idea — Free, No Sign-Up</Badge>
             <h2 className="mb-3 text-3xl font-bold tracking-tight text-[var(--bm-text)] sm:text-4xl">
@@ -915,7 +914,7 @@ function PricingSection() {
   return (
     <section className="html-section px-5 py-[60px] sm:px-8 sm:py-24" style={{ borderTop: subtleSectionBorder }}>
       <div className="mx-auto max-w-[740px]">
-        <motion.div initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="mb-10 text-center">
+        <motion.div initial={{ opacity: 0, y: 12, scale: 0.94 }} whileInView={{ opacity: 1, y: 0, scale: 1 }} viewport={{ once: true }} className="mb-10 text-center">
           <h2 className="mb-3 text-3xl font-bold tracking-tight text-[var(--bm-text)]">
             The system works while you're not.
           </h2>
@@ -924,7 +923,7 @@ function PricingSection() {
 
         <div className="mt-12 grid grid-cols-1 gap-4 md:grid-cols-2">
           {/* Free */}
-          <motion.div initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.05 }}>
+          <motion.div initial={{ opacity: 0, y: 12, scale: 0.94 }} whileInView={{ opacity: 1, y: 0, scale: 1 }} viewport={{ once: true }} transition={{ delay: 0.05 }}>
             <div className="bm-glass bm-glass-hover" style={{ borderRadius: 20, padding: 28, display: "flex", flexDirection: "column", gap: 20, height: "100%" }}>
               <div>
                 <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Free</div>
@@ -957,7 +956,7 @@ function PricingSection() {
           </motion.div>
 
           {/* Builder */}
-          <motion.div initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.1 }}>
+          <motion.div initial={{ opacity: 0, y: 12, scale: 0.94 }} whileInView={{ opacity: 1, y: 0, scale: 1 }} viewport={{ once: true }} transition={{ delay: 0.1 }}>
             <div className="bm-pricing-featured" style={{ padding: 28, display: "flex", flexDirection: "column", gap: 20 }}>
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
@@ -1034,6 +1033,153 @@ function normalizePublicStats(stats?: PublicStats) {
 }
 
 // ── Main landing page ─────────────────────────────────────────────────────────
+// ── World Canvas — ambient atmosphere layer ───────────────────────────────────
+function WorldCanvas() {
+  const starsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = starsRef.current;
+    if (!el) return;
+    // Generate 90 stars as small divs
+    for (let i = 0; i < 90; i++) {
+      const s = document.createElement("div");
+      const sz  = Math.random() * 1.4 + 0.3;
+      const dur = (Math.random() * 5 + 3).toFixed(1);
+      const del = (Math.random() * 5).toFixed(1);
+      const op  = (Math.random() * 0.4 + 0.1).toFixed(2);
+      Object.assign(s.style, {
+        position: "absolute",
+        width: `${sz}px`, height: `${sz}px`,
+        borderRadius: "50%",
+        background: "#fff",
+        top: `${Math.random() * 100}%`,
+        left: `${Math.random() * 100}%`,
+        opacity: op,
+        animation: `bm-star-twinkle ${dur}s ${del}s ease-in-out infinite`,
+        pointerEvents: "none",
+      });
+      el.appendChild(s);
+    }
+  }, []);
+
+  return (
+    <>
+      {/* Inject star keyframes once */}
+      <style>{`
+        @keyframes bm-star-twinkle {
+          0%,100% { opacity: var(--op, .2); transform: scale(1); }
+          50%      { opacity: calc(var(--op, .2) * 3); transform: scale(1.5); }
+        }
+        @keyframes bm-grid-drift {
+          0%   { transform: translateY(0); }
+          100% { transform: translateY(56px); }
+        }
+      `}</style>
+
+      <div
+        aria-hidden
+        style={{
+          position: "fixed", inset: 0,
+          pointerEvents: "none", zIndex: 0, overflow: "hidden",
+        }}
+      >
+        {/* Drifting grid */}
+        <div style={{
+          position: "absolute", inset: -60,
+          backgroundImage: "linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px)",
+          backgroundSize: "52px 52px",
+          animation: "bm-grid-drift 28s linear infinite",
+          maskImage: "radial-gradient(ellipse 80% 65% at 50% 35%, rgba(0,0,0,0.6) 0%, transparent 80%)",
+          WebkitMaskImage: "radial-gradient(ellipse 80% 65% at 50% 35%, rgba(0,0,0,0.6) 0%, transparent 80%)",
+        }} />
+
+        {/* Primary volumetric glow — gold crown */}
+        <div style={{ position:"absolute", width:900, height:600, top:-120, left:"50%", transform:"translateX(-50%)", background:"radial-gradient(ellipse 55% 55% at 50% 0%, rgba(232,197,71,0.11) 0%, rgba(74,184,176,0.04) 45%, transparent 70%)", pointerEvents:"none", animation:"bm-burst-breathe 10s ease-in-out infinite" }} />
+
+        {/* Aurora — teal right */}
+        <div style={{ position:"absolute", width:600, height:500, top:"30%", right:"-5%", background:"radial-gradient(ellipse, rgba(74,184,176,0.07) 0%, rgba(91,108,240,0.04) 45%, transparent 70%)", pointerEvents:"none", animation:"bm-aurora-shift 14s ease-in-out infinite 2s" }} />
+
+        {/* Aurora — indigo left */}
+        <div style={{ position:"absolute", width:500, height:400, top:"40%", left:"-8%", background:"radial-gradient(ellipse, rgba(91,108,240,0.06) 0%, rgba(155,127,232,0.03) 50%, transparent 70%)", pointerEvents:"none", animation:"bm-aurora-shift 16s ease-in-out infinite 5s" }} />
+
+        {/* Bottom violet glow */}
+        <div style={{ position:"absolute", width:500, height:350, bottom:"8%", left:"15%", background:"radial-gradient(ellipse, rgba(155,127,232,0.05) 0%, transparent 65%)", pointerEvents:"none" }} />
+
+        {/* Stars */}
+        <div ref={starsRef} style={{ position:"absolute", inset:0 }} />
+
+        {/* Trajectory SVG — the BuildMind visual signature */}
+        <svg
+          style={{ position:"absolute", inset:0, width:"100%", height:"100%", opacity:0.42 }}
+          viewBox="0 0 1440 900"
+          preserveAspectRatio="xMidYMid slice"
+          fill="none"
+        >
+          <defs>
+            <linearGradient id="bm-tg1" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%"   stopColor="transparent"/>
+              <stop offset="20%"  stopColor="rgba(92,200,138,0.18)"/>
+              <stop offset="80%"  stopColor="rgba(92,200,138,0.18)"/>
+              <stop offset="100%" stopColor="transparent"/>
+            </linearGradient>
+            <linearGradient id="bm-tg2" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%"   stopColor="transparent"/>
+              <stop offset="25%"  stopColor="rgba(74,184,176,0.12)"/>
+              <stop offset="75%"  stopColor="rgba(74,184,176,0.12)"/>
+              <stop offset="100%" stopColor="transparent"/>
+            </linearGradient>
+            <linearGradient id="bm-tg3" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%"   stopColor="transparent"/>
+              <stop offset="30%"  stopColor="rgba(155,127,232,0.07)"/>
+              <stop offset="70%"  stopColor="rgba(155,127,232,0.07)"/>
+              <stop offset="100%" stopColor="transparent"/>
+            </linearGradient>
+            <filter id="bm-gf">
+              <feGaussianBlur stdDeviation="1.5" result="blur"/>
+              <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+          </defs>
+
+          {/* Trajectory curves */}
+          <path id="bm-tp1"
+            d="M -40 720 C 160 660 320 440 520 380 C 720 320 900 460 1080 300 C 1220 180 1340 130 1480 90"
+            stroke="url(#bm-tg1)" strokeWidth="0.75" strokeDasharray="5 8"/>
+          <path id="bm-tp2"
+            d="M 60 820 C 240 760 420 580 620 500 C 820 420 1020 520 1200 360 C 1320 260 1400 200 1480 160"
+            stroke="url(#bm-tg2)" strokeWidth="0.6" strokeDasharray="3 10" opacity="0.62"/>
+          <path id="bm-tp3"
+            d="M 300 880 C 500 820 680 660 880 580 C 1080 500 1240 580 1440 420"
+            stroke="url(#bm-tg3)" strokeWidth="0.45" strokeDasharray="2 12" opacity="0.35"/>
+
+          {/* Animated dots on primary trajectory */}
+          <circle r="3.5" fill="#5CC88A" opacity="0.85" filter="url(#bm-gf)">
+            <animateMotion dur="9s" repeatCount="indefinite" begin="0s"><mpath href="#bm-tp1"/></animateMotion>
+          </circle>
+          <circle r="2.5" fill="#5CC88A" opacity="0.55">
+            <animateMotion dur="9s" repeatCount="indefinite" begin="3s"><mpath href="#bm-tp1"/></animateMotion>
+          </circle>
+          <circle r="2" fill="#4AB8B0" opacity="0.5">
+            <animateMotion dur="9s" repeatCount="indefinite" begin="6s"><mpath href="#bm-tp1"/></animateMotion>
+          </circle>
+
+          {/* Dots on secondary */}
+          <circle r="2.5" fill="#4AB8B0" opacity="0.4">
+            <animateMotion dur="12s" repeatCount="indefinite" begin="1.5s"><mpath href="#bm-tp2"/></animateMotion>
+          </circle>
+          <circle r="2" fill="#4AB8B0" opacity="0.3">
+            <animateMotion dur="12s" repeatCount="indefinite" begin="7s"><mpath href="#bm-tp2"/></animateMotion>
+          </circle>
+
+          {/* Dot on tertiary */}
+          <circle r="1.8" fill="#9B7FE8" opacity="0.35">
+            <animateMotion dur="15s" repeatCount="indefinite" begin="3s"><mpath href="#bm-tp3"/></animateMotion>
+          </circle>
+        </svg>
+      </div>
+    </>
+  );
+}
+
 /* ── Light-theme decorative backdrop ───────────────────────────────────────
    Dark theme = deep space, trajectories, WorldCanvas.
    Light theme = sunrise + a founder's mind waking up — neurons firing,
@@ -1858,7 +2004,7 @@ function LandingAestheticLayer() {
           transparent 100%);
         z-index: 2;
       }
-      /* Ambient corner glow on pricing card */
+      /* Ambient corner glow on pricing card — now breathing, not static */
       .bm-pricing-featured::after {
         content: '';
         position: absolute;
@@ -1869,6 +2015,14 @@ function LandingAestheticLayer() {
         filter: blur(20px);
         pointer-events: none;
         z-index: 0;
+        animation: bm-pricing-breathe 5s ease-in-out infinite;
+      }
+      @keyframes bm-pricing-breathe {
+        0%, 100% { opacity: 0.7; transform: translateX(-50%) scale(1); }
+        50%      { opacity: 1;   transform: translateX(-50%) scale(1.15); }
+      }
+      .light-mode .bm-pricing-featured::after {
+        background: radial-gradient(ellipse, rgba(201,162,39,0.18) 0%, transparent 70%);
       }
 
       /* ── Navbar scroll enhancement ────────────────────────────────────────── */
@@ -2167,13 +2321,7 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
       </nav>
 
       {/* Hero */}
-      <section className="html-section relative flex min-h-[calc(100vh-64px)] items-center px-4 pb-12 pt-10 sm:px-8 sm:pb-20 sm:pt-20 md:px-12 lg:px-20 lg:pb-24 xl:px-28">
-        {/* Animated ambient shader — same gold/indigo/teal story as the static
-            orbs below, in motion. Safe to keep both layered, or delete the
-            three static .bm-hero-glow divs beneath it if the motion alone
-            reads as enough. */}
-        <WorldCanvas className="hidden sm:block" />
-
+      <section className="html-section flex min-h-[calc(100vh-64px)] items-center px-4 pb-12 pt-10 sm:px-8 sm:pb-20 sm:pt-20 md:px-12 lg:px-20 lg:pb-24 xl:px-28">
         {/* Ambient glow — hidden on mobile via max-width to prevent overflow */}
         <div className="bm-hero-glow hidden sm:block" style={{ width: 700, height: 700, top: "0%", right: "-12%", background: "radial-gradient(ellipse, rgba(232,197,71,0.09) 0%, rgba(74,184,176,0.04) 45%, transparent 70%)" }} />
         <div className="bm-hero-glow hidden sm:block" style={{ width: 450, height: 450, bottom: "5%", left: "25%", background: "radial-gradient(ellipse, rgba(91,108,240,0.06) 0%, transparent 70%)" }} />
@@ -2251,6 +2399,65 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
           </motion.div>
           </div>
         </div>
+
+        {/* Floating ambient widgets — real live stats, not decoration.
+            Zoom+fade in on mount via .bm-float-card, then drift forever
+            via .bm-drift — both classes already power the agent pipeline
+            above; reused here so the whole hero moves as one system. */}
+        <div
+          className="bm-float-card bm-drift bm-glass-gold absolute z-[2] hidden rounded-2xl px-4 py-3 lg:block"
+          style={{
+            top: "8%",
+            left: "1%",
+            ["--float-delay" as string]: "0.9s",
+            ["--drift-duration" as string]: "7.5s",
+          }}
+        >
+          <div className="mb-1 flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.1em] text-[var(--bm-text4)]">
+            <span className="bm-live-dot" style={{ width: 5, height: 5 }} />
+            Founders building
+          </div>
+          <div className="font-display text-2xl font-bold text-[var(--bm-text)]">
+            {stats.founders.toLocaleString()}
+          </div>
+        </div>
+
+        <div
+          className="bm-float-card bm-drift bm-glass absolute z-[2] hidden rounded-2xl px-4 py-3 xl:block"
+          style={{
+            top: "4%",
+            right: "3%",
+            ["--float-delay" as string]: "1.15s",
+            ["--drift-duration" as string]: "6.2s",
+          }}
+        >
+          <div className="mb-1 text-[9px] font-bold uppercase tracking-[0.1em] text-[var(--bm-text4)]">
+            Projects active
+          </div>
+          <div className="font-display text-2xl font-bold text-[var(--bm-text)]">
+            {stats.projects.toLocaleString()}
+          </div>
+        </div>
+
+        {stats.weekly_tasks > 0 && (
+          <div
+            className="bm-float-card bm-drift bm-glass absolute z-[2] hidden rounded-2xl px-4 py-3 lg:block"
+            style={{
+              bottom: "10%",
+              right: "2%",
+              ["--float-delay" as string]: "1.4s",
+              ["--drift-duration" as string]: "8s",
+            }}
+          >
+            <div className="mb-1 flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.1em] text-[var(--bm-text4)]">
+              <span className="bm-live-dot" style={{ width: 5, height: 5 }} />
+              Tasks this week
+            </div>
+            <div className="font-display text-2xl font-bold text-[var(--bm-accent)]">
+              {stats.weekly_tasks.toLocaleString()}
+            </div>
+          </div>
+        )}
       </section>
 
       <section id="how" className="html-section px-5 py-[60px] sm:px-8 sm:py-24" style={{ borderTop: subtleSectionBorder }}>
@@ -2262,7 +2469,7 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
       {/* Interactive Reflexion Loop Demo */}
       <section className="html-section px-5 py-[60px] sm:px-8 sm:py-24" style={{ borderTop: subtleSectionBorder }}>
         <div className="max-w-3xl mx-auto">
-          <motion.div initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="mb-8">
+          <motion.div initial={{ opacity: 0, y: 12, scale: 0.94 }} whileInView={{ opacity: 1, y: 0, scale: 1 }} viewport={{ once: true }} className="mb-8">
             <Badge variant="info" dot className="mb-4">Try it live — no account needed</Badge>
             <h2 className="text-3xl font-bold tracking-tight text-[var(--bm-text)] mb-3">
               Watch the system decide your next move
@@ -2271,7 +2478,7 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
               This is the same loop that runs every night while you sleep. Enter your startup idea and watch it generate the one action you should take tomorrow — then go verify it yourself.
             </p>
           </motion.div>
-          <motion.div initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.1 }}>
+          <motion.div initial={{ opacity: 0, y: 10, scale: 0.94 }} whileInView={{ opacity: 1, y: 0, scale: 1 }} viewport={{ once: true }} transition={{ delay: 0.1 }}>
             <ReflexionPipelineDemo />
           </motion.div>
         </div>
@@ -2280,7 +2487,7 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
       {/* Feature Grid */}
       <section id="features" className="html-section px-5 py-[60px] sm:px-8 sm:py-24" style={{ borderTop: subtleSectionBorder }}>
         <div className="mx-auto max-w-[1100px]">
-          <motion.div initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="mb-10 text-left sm:mb-14 sm:text-center">
+          <motion.div initial={{ opacity: 0, y: 12, scale: 0.94 }} whileInView={{ opacity: 1, y: 0, scale: 1 }} viewport={{ once: true }} className="mb-10 text-left sm:mb-14 sm:text-center">
             <h2 className="mb-3 text-3xl font-bold tracking-tight sm:text-3xl">
               Built to remove decisions. Not add more.
             </h2>
@@ -2339,9 +2546,10 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
           className="bm-cta-section-bg pointer-events-none"
         />
         <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          whileInView={{ opacity: 1, y: 0 }}
+          initial={{ opacity: 0, y: 12, scale: 0.94 }}
+          whileInView={{ opacity: 1, y: 0, scale: 1 }}
           viewport={{ once: true }}
+          transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
           className="relative z-[1] mx-auto max-w-[560px]"
         >
           <h2
