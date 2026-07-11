@@ -217,9 +217,18 @@ body {
   z-index: 1;
   border: 1px solid var(--bm-border2);
   border-radius: var(--r-xl);
-  background: linear-gradient(180deg, rgba(255,255,255,0.02) 0%, rgba(255,255,255,0.00) 100%), var(--bm-bg2);
+  /* Was solid var(--bm-bg2), which fully occluded the fixed WorldCanvas
+     sitting behind it — the hero rendered as a flat opaque card with the
+     animated trajectory/aurora/star background invisible underneath.
+     Now genuinely translucent + blurred, so the canvas reads through. */
+  background: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.00) 100%), rgba(16,16,18,0.42);
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
   overflow: hidden;
-  box-shadow: 0 1px 0 0 rgba(255,255,255,0.04) inset, 0 20px 60px -20px rgba(0,0,0,0.5);
+  box-shadow: 0 1px 0 0 rgba(255,255,255,0.06) inset, 0 30px 90px -20px rgba(0,0,0,0.6);
+}
+.light-mode .bm-hero-window {
+  background: linear-gradient(180deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.15) 100%), rgba(255,255,255,0.30);
 }
 
 /* Thin gold gradient line along the top edge of the hero window, echoing
