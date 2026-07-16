@@ -4,6 +4,7 @@ import { persistUserPlan, resolveUserIdByEmail } from "@/lib/billing/server";
 import { sendEmail } from "@/lib/email";
 import { logError } from "@/lib/server/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { PLAN_PRICE_CENTS, FOUNDING_DISCOUNT_MULTIPLIER } from "@/lib/billing/pricing";
 
 type PaystackEvent = {
   event?: string;
@@ -54,10 +55,58 @@ function expectedAmountPesewas(): number {
   );
 }
 
-function isValidSuccessfulCharge(event: PaystackEvent): boolean {
+/**
+ * isFoundingCharge — determines founding-member status for THIS charge.
+ * Checks metadata first (set at checkout — see app/api/billing/checkout/route.ts),
+ * then falls back to the user's existing subscriptions row. The fallback matters
+ * for renewal charges, where Paystack may not echo back the original
+ * transaction's metadata on subsequent auto-billed invoices.
+ */
+async function isFoundingCharge(event: PaystackEvent, userId: string | null): Promise<boolean> {
+  const metaFlag = event.data?.metadata?.founding_member;
+  if (metaFlag === true || metaFlag === "true") return true;
+  if (!userId) return false;
+  try {
+    const admin = createAdminClient();
+    const { data } = await admin
+      .from("subscriptions")
+      .select("is_founding_member")
+      .eq("user_id", userId)
+      .maybeSingle();
+    return Boolean(data?.is_founding_member);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * FIX: the previous version of this function returned false for ANY
+ * non-GHS currency (`!== "GHS"` short-circuit), which meant every USD
+ * charge — the entire non-Ghana market — was silently rejected here and
+ * never granted access. Fixed while adding founding-member amount
+ * validation below, since both currencies needed a discount-aware floor.
+ */
+async function isValidSuccessfulCharge(event: PaystackEvent, userId: string | null): Promise<boolean> {
   if ((event.data?.status ?? "").toLowerCase() !== "success") return false;
-  if ((event.data?.currency ?? "").toUpperCase() !== "GHS") return false;
-  return (event.data?.amount ?? 0) >= expectedAmountPesewas();
+
+  const currency = (event.data?.currency ?? "").toUpperCase();
+  const amount = event.data?.amount ?? 0;
+  const founding = await isFoundingCharge(event, userId);
+
+  if (currency === "GHS") {
+    const base = expectedAmountPesewas();
+    // 20% buffer below the exact discount to tolerate live FX drift between
+    // checkout-time conversion and webhook receipt — still rejects a
+    // trivially-underpaid or forged charge.
+    const floor = founding ? Math.floor(base * FOUNDING_DISCOUNT_MULTIPLIER * 0.8) : base;
+    return amount >= floor;
+  }
+  if (currency === "USD") {
+    const base = PLAN_PRICE_CENTS.builder;
+    const floor = founding ? Math.floor(base * FOUNDING_DISCOUNT_MULTIPLIER * 0.95) : base;
+    return amount >= floor;
+  }
+  return false;
 }
 
 export async function POST(request: Request) {
@@ -119,11 +168,12 @@ export async function POST(request: Request) {
     null;
   const subscriptionToken = event.data?.subscription?.email_token ?? null;
 
-  if (eventName === "charge.success" && !isValidSuccessfulCharge(event)) {
+  if (eventName === "charge.success" && !(await isValidSuccessfulCharge(event, userId))) {
     return NextResponse.json({ ok: true, ignored: "invalid_charge_payload" });
   }
 
   if (eventName === "charge.success" || eventName === "subscription.create") {
+    const founding = await isFoundingCharge(event, userId);
     await persistUserPlan(userId, "builder", {
       provider: "paystack",
       status: "active",
@@ -131,6 +181,7 @@ export async function POST(request: Request) {
       transactionId,
       subscriptionId,
       customerEmail: email,
+      isFoundingMember: founding,
       meta: {
         billing_interval: subscriptionId ? "monthly" : "unknown",
         billing_subscription_token: subscriptionToken,
