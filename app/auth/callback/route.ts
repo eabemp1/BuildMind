@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { TRIAL_DURATION_DAYS } from "@/lib/plan";
-import { persistUserPlan } from "@/lib/billing/server";
+import { markFoundingEligible } from "@/lib/billing/server";
 import { logError } from "@/lib/server/logger";
 
 function safeNextPath(value: string | null): string {
@@ -24,7 +24,8 @@ function appOrigin(requestUrl: URL): string {
  *
  * Runs on every sign-in (cheap no-op for everyone who never took the quiz).
  * If this user's email matches an unconverted row in founding_members:
- *   1. Grants a lifetime "builder" plan (no expiry, never charged again).
+ *   1. Flags them as founding-discount-eligible (does NOT grant free access —
+ *      see markFoundingEligible for why). The discount is applied at checkout.
  *   2. Stamps founding_members.converted_user_id so this only ever fires once.
  * Best-effort — never blocks sign-in if it fails.
  */
@@ -45,13 +46,7 @@ async function maybeTagFoundingMember(supabase: Awaited<ReturnType<typeof create
 
     if (!match) return; // no pre-commitment, or already converted — nothing to do
 
-    await persistUserPlan(user.id, "builder", {
-      status: "active",
-      isLifetime: true,
-      isFoundingMember: true,
-      customerEmail: email,
-      meta: { founding_member_source: "quiz" },
-    });
+    await markFoundingEligible(user.id, email);
 
     await admin
       .from("founding_members")
