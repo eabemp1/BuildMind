@@ -5,19 +5,32 @@ import { callModel, callModelJSON, hasAIProvider } from "@/lib/ai-providers";
 
 // Plan-aware AI limits
 // Free:    30 calls/month (monthly cap) AND 3 calls/day (daily burst cap)
-// Builder: unlimited (-1). Venture tier removed — features folded into Builder (Playbook v4).
+// Builder: 1,500/month, 80/day — a high ceiling, not a true "-1 unlimited".
 //
-// The daily cap (3) prevents a free user from burning their entire monthly
-// quota in a single day. The monthly cap (30) remains the binding long-run
-// constraint. Builder users have no caps — usage is tracked for analytics only.
-const PLAN_MONTHLY_LIMITS: Record<string, number> = {
+// FIX: previously Builder was -1/-1 (genuinely unlimited). Founding members
+// convert onto this exact plan (see app/api/billing/checkout/route.ts +
+// lib/billing/pricing.ts) via a locked-in discount, so a single high-usage
+// founding member with no cap could exhaust the shared Groq/Cerebras/
+// OpenRouter free-tier rate limits and degrade the app for every other user,
+// regardless of what anyone is paying. 80/day (~2,400/month ceiling if used
+// daily) is generous enough that no realistic legitimate usage pattern hits
+// it, while still bounding the worst case.
+//
+// NOTE: if your pricing page advertises "unlimited AI" anywhere, either
+// update that copy to something like "generous usage" or raise these numbers
+// further — the goal here is a safety ceiling, not a customer-facing wall.
+//
+// The daily cap prevents a free user from burning their entire monthly
+// quota in a single day. The monthly cap remains the binding long-run
+// constraint for both plans now.
+export const PLAN_MONTHLY_LIMITS: Record<string, number> = {
   free: 30,
-  builder: -1,
+  builder: 1500,
 };
 
-const PLAN_DAILY_LIMITS: Record<string, number> = {
+export const PLAN_DAILY_LIMITS: Record<string, number> = {
   free: 3,
-  builder: -1,  // unlimited — still tracked for analytics
+  builder: 80,
 };
 
 export function hasAdminEnv(): boolean {
