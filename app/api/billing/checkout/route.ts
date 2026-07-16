@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { normalizePlan, type Plan } from "@/lib/plan";
 import { getClientIp, rateLimitAsync } from "@/lib/server/rateLimit";
 import { usdToPesewas } from "@/lib/fx";
+import { PLAN_PRICE_USD, PLAN_PRICE_CENTS, foundingPriceUsd, foundingPriceCents } from "@/lib/billing/pricing";
 
 /**
  * Countries billed in GHS via the local Paystack plan.
@@ -11,29 +13,25 @@ import { usdToPesewas } from "@/lib/fx";
 const GHS_COUNTRIES = new Set(["GH", "GHANA"]);
 
 /**
- * USD price per plan — single source of truth.
- * GHS is converted live from this at checkout.
- * USD plan charges this amount directly in dollars.
- */
-const PLAN_PRICE_USD: Record<Plan, number> = {
-  free:    0,
-  builder: 39,
-};
-
-/** USD price in cents for Paystack (USD plan) */
-const PLAN_PRICE_CENTS: Record<Plan, number> = {
-  free:    0,
-  builder: 3900, // $39.00
-};
-
-/**
  * Paystack plan codes — set these in your env.
  * GHS plan: create on Paystack dashboard in GHS (we update periodically).
  * USD plan: create on Paystack dashboard in USD (stable, no conversion needed).
+ *
+ * FOUNDING NOTE: Paystack bills recurring subscriptions at the PLAN's
+ * configured price, not the one-off "amount" sent at initialize — so
+ * founding members need their OWN plan codes at the discounted price, or
+ * their renewal after month one silently jumps back to full price. Create
+ * two more plans on your Paystack dashboard (GHS + USD) at the discounted
+ * amount from lib/billing/pricing.ts and set these env vars. Until you do,
+ * this falls back to the regular plan code with a console warning — the
+ * FIRST charge will still be correct (we control that amount directly), but
+ * renewals won't be discounted.
  */
 const PLAN_CODES = {
   ghs: () => process.env.PAYSTACK_BUILDER_PLAN_CODE?.trim(),
   usd: () => process.env.PAYSTACK_BUILDER_PLAN_CODE_USD?.trim(),
+  foundingGhs: () => process.env.PAYSTACK_FOUNDING_PLAN_CODE?.trim(),
+  foundingUsd: () => process.env.PAYSTACK_FOUNDING_PLAN_CODE_USD?.trim(),
 };
 
 const PURCHASABLE_PLANS: Plan[] = ["builder"];
@@ -92,7 +90,19 @@ export async function POST(req: Request) {
   const requestedPlan = normalizePlan(body?.plan as string | undefined);
   const plan: Plan = PURCHASABLE_PLANS.includes(requestedPlan) ? requestedPlan : "builder";
 
-  const usdPrice = PLAN_PRICE_USD[plan];
+  // ── Founding-member discount ────────────────────────────────────────────
+  // Look up whether this user was flagged eligible in app/auth/callback/route.ts
+  // (via markFoundingEligible). This is a read of their OWN status only —
+  // never trust a client-supplied "I'm a founding member" flag for pricing.
+  const admin = createAdminClient();
+  const { data: subRow } = await admin
+    .from("subscriptions")
+    .select("is_founding_member")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  const isFoundingMember = Boolean(subRow?.is_founding_member);
+
+  const usdPrice = isFoundingMember ? foundingPriceUsd(plan) : PLAN_PRICE_USD[plan];
   if (!usdPrice || usdPrice <= 0) {
     return NextResponse.json({ error: `Plan "${plan}" is not purchasable` }, { status: 400 });
   }
@@ -107,19 +117,27 @@ export async function POST(req: Request) {
   let fxMeta: Record<string, unknown> = {};
 
   if (isGhs) {
-    // Local (Ghana) — convert $39 to pesewas at live BoG rate
+    // Local (Ghana) — convert $39 (or discounted price) to pesewas at live BoG rate
     const { pesewas, rateUsed, source } = await usdToPesewas(usdPrice);
     amount = pesewas;
     currency = "GHS";
-    paystackPlanCode = PLAN_CODES.ghs();
+    paystackPlanCode = isFoundingMember ? PLAN_CODES.foundingGhs() : PLAN_CODES.ghs();
+    if (isFoundingMember && !paystackPlanCode) {
+      console.warn("[checkout] PAYSTACK_FOUNDING_PLAN_CODE not set — founding member's renewal will bill at full price after month one.");
+      paystackPlanCode = PLAN_CODES.ghs();
+    }
     fxMeta = { fx_rate: rateUsed, fx_source: source };
     console.log(`[checkout] GHS path — $${usdPrice} → ${pesewas} pesewas (rate: ${rateUsed ?? "n/a"}, source: ${source})`);
   } else {
     // Global — charge in USD directly, no conversion needed
-    amount = PLAN_PRICE_CENTS[plan];
+    amount = isFoundingMember ? foundingPriceCents(plan) : PLAN_PRICE_CENTS[plan];
     currency = "USD";
-    paystackPlanCode = PLAN_CODES.usd();
-    console.log(`[checkout] USD path — $${usdPrice} → ${amount} cents`);
+    paystackPlanCode = isFoundingMember ? PLAN_CODES.foundingUsd() : PLAN_CODES.usd();
+    if (isFoundingMember && !paystackPlanCode) {
+      console.warn("[checkout] PAYSTACK_FOUNDING_PLAN_CODE_USD not set — founding member's renewal will bill at full price after month one.");
+      paystackPlanCode = PLAN_CODES.usd();
+    }
+    console.log(`[checkout] USD path — $${usdPrice} → ${amount} cents${isFoundingMember ? " (founding discount)" : ""}`);
   }
 
   const baseUrl = appUrl(req);
@@ -135,6 +153,7 @@ export async function POST(req: Request) {
       billing_interval: "monthly",
       billing_currency: currency,
       billing_country: country || "unknown",
+      founding_member: isFoundingMember,
       ...fxMeta,
     },
   };
