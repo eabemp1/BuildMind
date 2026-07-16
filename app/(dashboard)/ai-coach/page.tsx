@@ -61,10 +61,14 @@ const QUICK_PROMPTS = [
   "What pattern do you see in how I work that I probably can not see?",
 ];
 
-const FREE_COACH_MESSAGES_PER_WEEK = 3;
+// FIX: renamed from *_PER_WEEK — the server (app/api/ai/coach/route.ts,
+// FREE_COACH_MESSAGES_PER_DAY) enforces this as a DAILY cap. The client
+// counter was previously week-scoped, blocking free users ~7x more
+// aggressively than the real server policy. Now both are day-scoped.
+const FREE_COACH_MESSAGES_PER_DAY = 3;
 
-function getCoachMessagesThisWeek() {
-  return storage.getCoachMessagesThisWeek();
+function getCoachMessagesToday() {
+  return storage.getCoachMessagesToday();
 }
 
 function recordCoachMessage() {
@@ -164,14 +168,14 @@ function AICoachPageInner() {
   const [personality, setPersonality] = useState<"direct" | "supportive" | "challenger">("direct");
   const [memory, setMemory] = useState<string[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
-  const [coachMessagesThisWeek, setCoachMessagesThisWeek] = useState(0);
+  const [coachMessagesToday, setCoachMessagesToday] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const score = activeProject ? computeStartupScore(activeProject) : 0;
   const limits = getLimits(plan);
-  const coachLimit = plan === "free" ? FREE_COACH_MESSAGES_PER_WEEK : limits.aiMessagesPerDay;
-  const remaining = plan === "free" ? Math.max(0, coachLimit - coachMessagesThisWeek) : Infinity;
+  const coachLimit = plan === "free" ? FREE_COACH_MESSAGES_PER_DAY : limits.aiMessagesPerDay;
+  const remaining = plan === "free" ? Math.max(0, coachLimit - coachMessagesToday) : Infinity;
 
   useEffect(() => {
     void fetchAndSyncStoredPlanFromBillingStatus();
@@ -179,7 +183,7 @@ function AICoachPageInner() {
 
   useEffect(() => {
     try { setMemory(storage.getJSON<string[]>("bm_coach_memory", [])); } catch {}
-    setCoachMessagesThisWeek(getCoachMessagesThisWeek());
+    setCoachMessagesToday(getCoachMessagesToday());
     const supabase = createClient();
     supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
     fetchBehaviorState<{
@@ -244,7 +248,7 @@ function AICoachPageInner() {
       persistBehaviorState({ coach_memory: newMemory });
       setMessages(prev => prev.map(m => m.id === thinkingMsg.id ? { ...m, content: reply, reasoning: payload?.data?.reasoning ?? m.reasoning, phase: "done", confidence_score } : m));
       recordCoachMessage();
-      setCoachMessagesThisWeek(getCoachMessagesThisWeek());
+      setCoachMessagesToday(getCoachMessagesToday());
       const stats = getAchievementStats();
       updateAchievementStats({ ...stats, aiMessages: (stats.aiMessages ?? 0) + 1 });
       checkAndUnlockAchievements();
@@ -308,7 +312,7 @@ function AICoachPageInner() {
             </div>
             {plan === "free" && (
               <span className="text-[11px]" style={{ color: remaining > 1 ? "var(--bm-text3)" : "var(--bm-amber)" }}>
-                {remaining}/{coachLimit} messages left this week
+                {remaining}/{coachLimit} messages left today
               </span>
             )}
           </div>
