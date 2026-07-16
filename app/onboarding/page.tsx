@@ -1646,6 +1646,13 @@ function OnboardingInner() {
   const [startupStage, setStartupStage] = useState<string>("Idea");
   const [error, setError] = useState<string | null>(null);
 
+  // Safety net: ensures a trial is always started for anyone who reaches
+  // onboarding, regardless of which signup path got them here. Idempotent
+  // (see app/api/billing/start-trial/route.ts) — a no-op if already set.
+  useEffect(() => {
+    fetch("/api/billing/start-trial", { method: "POST" }).catch(() => {});
+  }, []);
+
   // Redirect if already onboarded; restore integrations screen if returning from OAuth
   useEffect(() => {
     // Check if we're returning from an OAuth integration flow mid-onboarding
