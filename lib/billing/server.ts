@@ -70,6 +70,42 @@ export async function getUserPlanById(userId: string): Promise<PublicPlan> {
   return sanitizePlan(data.user?.user_metadata?.plan);
 }
 
+/**
+ * markFoundingEligible — used by app/auth/callback/route.ts when a user's
+ * email matches an unconverted founding_members row.
+ *
+ * IMPORTANT: this does NOT grant free access. It only flags the user as
+ * eligible for the discounted founding price at checkout (see
+ * lib/billing/pricing.ts). Their actual plan/status is untouched — if they
+ * were on "free", they stay on "free" until they pay the discounted rate.
+ * This avoids the free-forever liability of an unknown-cost AI pipeline
+ * while still honoring the "lifetime founder pricing" promise.
+ */
+export async function markFoundingEligible(userId: string, email: string | null) {
+  const supabase = createAdminClient();
+  const nowIso = new Date().toISOString();
+
+  // Only set is_founding_member/founding_member_since — do NOT touch plan or
+  // status. If no subscriptions row exists yet, this creates one defaulted to
+  // "free" (the table's own DEFAULT), which is correct for a brand-new user.
+  const { error } = await supabase
+    .from("subscriptions")
+    .upsert(
+      {
+        user_id: userId,
+        customer_email: email,
+        is_founding_member: true,
+        founding_member_since: nowIso,
+        updated_at: nowIso,
+      },
+      { onConflict: "user_id", ignoreDuplicates: false },
+    );
+
+  if (error) {
+    throw new Error(`[billing/markFoundingEligible] upsert failed: ${error.message}`);
+  }
+}
+
 export async function persistUserPlan(userId: string, plan: PublicPlan, update: BillingUpdate = {}) {
   const supabase = createAdminClient();
   const { data, error } = await supabase.auth.admin.getUserById(userId);
