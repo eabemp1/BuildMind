@@ -467,14 +467,30 @@ function TodayContent() {
   useEffect(() => {
     fetch("/api/ai/usage-status", { cache: "no-store" })
       .then(r => r.ok ? r.json() : null)
-      .then((d: { monthlyUsed?: number; monthlyLimit?: number; unlimited?: boolean } | null) => {
-        if (d) setAiUsage({ monthlyUsed: d.monthlyUsed ?? 0, monthlyLimit: d.monthlyLimit ?? 30, unlimited: d.unlimited ?? false });
+      .then((d: { ok?: boolean; monthlyUsed?: number; monthlyLimit?: number; unlimited?: boolean } | null) => {
+        // FIX: previously `d.monthlyLimit ?? 30` silently rendered a fabricated
+        // "30 remaining" banner whenever the response was missing fields —
+        // indistinguishable from a real 30-remaining state. Now only trust the
+        // response when it explicitly succeeded AND returned real numbers;
+        // otherwise leave aiUsage as null so the banner stays hidden rather
+        // than showing a made-up number.
+        if (d && d.ok && typeof d.monthlyUsed === "number" && typeof d.monthlyLimit === "number") {
+          setAiUsage({ monthlyUsed: d.monthlyUsed, monthlyLimit: d.monthlyLimit, unlimited: d.unlimited ?? false });
+        } else if (d && !d.ok) {
+          console.warn("[usage-status] request succeeded but returned an error payload:", d);
+        }
       })
       .catch(() => {});
 
     // Fetch dismiss date first (fast), then briefing (slow — may generate)
     // Wrapped in async IIFE since useEffect callbacks cannot be async directly.
-    void (async () => {
+    //
+    // FIX: skip entirely on a user's first session. isFirstSession existed
+    // but was previously only used for copy tweaks — the briefing modal fired
+    // regardless, showing a brand-new user a "morning briefing" with zero
+    // real history to summarize, stacked on top of their first task and the
+    // push-permission prompt below. All within ~1.5s of landing on mobile.
+    if (!isFirstSession) void (async () => {
       const today = new Date().toISOString().slice(0, 10);
 
       // Step 1: check server dismiss state immediately (fast DB read)
