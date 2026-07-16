@@ -1,18 +1,22 @@
 /**
  * app/api/ai/usage-status/route.ts
  *
- * Server-authoritative AI usage gate. 
+ * Server-authoritative AI usage gate.
  * Reads plan from Supabase user_metadata — not localStorage.
- * Builder plan: unlimited (-1). Free plan: 50/month.
+ *
+ * FIX: previously declared its own FREE_MONTHLY_LIMIT = 50 here, while
+ * app/api/ai/_utils.ts (the code that actually BLOCKS calls) enforced 30.
+ * A free user could be blocked at 30 real calls while this endpoint still
+ * reported room out of 50 — actively misleading. Now imports the exact same
+ * constants used for enforcement, so display and enforcement can never drift
+ * apart again.
  */
 
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { PLAN_LIMITS } from "@/lib/plan";
 import { getEffectivePlan } from "@/lib/server/plan";
-
-const FREE_MONTHLY_LIMIT = 50;
+import { PLAN_MONTHLY_LIMITS } from "@/app/api/ai/_utils";
 
 export async function GET() {
   try {
@@ -25,22 +29,8 @@ export async function GET() {
 
     // Plan is read from Supabase — trial-aware (getEffectivePlan checks trial_ends_at)
     const plan = await getEffectivePlan(user.id);
-    const limits = PLAN_LIMITS[plan];
+    const monthlyLimit = PLAN_MONTHLY_LIMITS[plan] ?? PLAN_MONTHLY_LIMITS.free;
 
-    // Builder plan = unlimited AI
-    if (limits.aiMessagesPerDay === -1) {
-      return NextResponse.json({
-        ok: true,
-        userId: user.id,
-        plan,
-        monthlyUsed: 0,
-        monthlyLimit: -1,
-        unlimited: true,
-        hitLimit: false,
-      });
-    }
-
-    // Free plan — check monthly usage from Supabase ai_usage table
     const now = new Date();
     const month = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
 
@@ -55,10 +45,14 @@ export async function GET() {
         .maybeSingle();
       monthlyUsed = usage?.count ?? 0;
     } catch {
-      // ai_usage table may not exist — treat as 0
+      // ai_usage table may not exist yet (migration pending) — treat as 0
+      // rather than failing the whole request; this is display-only.
     }
 
-    const monthlyLimit = FREE_MONTHLY_LIMIT;
+    // FIX: builder is no longer truly "-1 unlimited" (see app/api/ai/_utils.ts) —
+    // it now has a generous but real ceiling. Report it accurately instead of
+    // always claiming "unlimited", which would hide a real approaching limit
+    // from a heavy builder-plan user.
     return NextResponse.json({
       ok: true,
       userId: user.id,
@@ -72,4 +66,4 @@ export async function GET() {
     const msg = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
-                                                    }
+}
