@@ -677,7 +677,17 @@ function LoginContent() {
           options: { emailRedirectTo: `${window.location.origin}/auth/callback?next=/onboarding` },
         });
         if (err) throw err;
-        if (data.session || data.user) { router.replace("/onboarding"); return; }
+        if (data.session || data.user) {
+          // FIX: when Supabase returns a session immediately (email
+          // confirmation disabled), this redirects straight to /onboarding
+          // and NEVER passes through /auth/callback — which is the only
+          // place that was starting the 14-day trial. Call the existing
+          // (previously unused) fallback route directly so trial start
+          // isn't silently skipped for this signup path.
+          fetch("/api/billing/start-trial", { method: "POST" }).catch(() => {});
+          router.replace("/onboarding");
+          return;
+        }
         setSuccessMsg("Check your email to confirm your account.");
         setTab("signin");
       }
