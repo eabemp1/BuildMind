@@ -132,12 +132,14 @@ function weekKey(): string {
   const week = Math.ceil((((utc.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
   return `${utc.getUTCFullYear()}_w${week}`;
 }
-function coachWeekKey(): string {
-  const d = new Date();
-  const day = d.getUTCDay() || 7;
-  const monday = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-  monday.setUTCDate(monday.getUTCDate() - (day - 1));
-  return `${monday.getUTCFullYear()}-${String(monday.getUTCMonth() + 1).padStart(2, "0")}-${String(monday.getUTCDate()).padStart(2, "0")}`;
+// FIX: previously week-scoped (one Monday-anchored bucket, capped at 3 for
+// the ENTIRE week client-side) while app/api/ai/coach/route.ts enforces 3
+// PER DAY server-side. A free user sending even one message a day hit this
+// client-side wall by day 2–3 of the week — 7x more restrictive than the
+// actual server policy, and the likely cause of "free users can't use their
+// AI coach" reports. Now day-scoped to match the server exactly.
+function coachDayKey(): string {
+  return new Date().toISOString().slice(0, 10);
 }
 
 class UserScopedStorage {
@@ -293,18 +295,18 @@ class UserScopedStorage {
     localStorage.setItem(k, String(this.getActionsThisWeek() + 1));
   }
 
-  getCoachMessagesThisWeek(): number {
+  getCoachMessagesToday(): number {
     const uid = this._uid();
     if (!uid || typeof globalThis.window === "undefined") return 0;
     return Number(
-      localStorage.getItem(scopedKey(uid, `bm_coach_${coachWeekKey()}`)) ?? "0"
+      localStorage.getItem(scopedKey(uid, `bm_coach_${coachDayKey()}`)) ?? "0"
     );
   }
   recordCoachMessage(): void {
     const uid = this._uid();
     if (!uid || typeof globalThis.window === "undefined") return;
-    const k = scopedKey(uid, `bm_coach_${coachWeekKey()}`);
-    localStorage.setItem(k, String(this.getCoachMessagesThisWeek() + 1));
+    const k = scopedKey(uid, `bm_coach_${coachDayKey()}`);
+    localStorage.setItem(k, String(this.getCoachMessagesToday() + 1));
   }
 
   getPlan(): string | null {
