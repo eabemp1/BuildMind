@@ -27,6 +27,7 @@ import { callModel, callModelJSON } from "@/lib/ai-providers";
 import type { ViabilityScoreResult } from "@/lib/scoring";
 import { logError } from "@/lib/server/logger";
 import { getBenchmarkInsights, buildBenchmarkPrompt } from "@/lib/benchmarks";
+import { formatRegionalContextBlock } from "@/lib/regionalContext";
 
 interface GroqMessage { role: "system" | "user" | "assistant"; content: string; }
 
@@ -116,6 +117,7 @@ export interface ReflexionContext {
   debtContext?: string;                // execution debt prompt block
   recentActionsBlock?: string;         // recent tasks shown for anti-repeat enforcement
   goalAnchor?: string;                 // immutable north-star goal — survives bad reflections
+  country?: string;                    // ISO country code — Founder Context Engine, see lib/regionalContext.ts
 }
 
 // ── NEW IN V4: Agent Persona Rotation (Playbook §4.4) ─────────────────────
@@ -136,6 +138,10 @@ const CRITIC_PERSONAS: Record<number, { name: string; prompt: string }> = {
   3: {
     name: "Customer Empathy Advocate",
     prompt: "You are a customer empathy advocate. Would a real user actually care? Is this solving their problem or the founder's problem? Challenge assumptions about demand.",
+  },
+  4: {
+    name: "Regional Operator",
+    prompt: "You are an operator who has actually built and sold in THIS founder's specific market — not a generic global advisor. If a REGIONAL CONTEXT block appears above, hold the advice to those specifics: does it assume a payment method or channel that doesn't match how this market actually pays and buys? Would a Western default (card checkout, Facebook ads, cold email) actually reach this audience, or is that advice imported from a market that works differently? If no regional context is available, say so explicitly rather than inventing local specifics you don't have.",
   },
 };
 
@@ -229,9 +235,9 @@ export function getWeeklyCriticPersona(
   // Derive a stable per-user offset from the userId by summing char codes mod 4.
   // This is not cryptographic — it only needs to distribute users across the 4 slots.
   const userOffset = userId
-    ? Array.from(userId).reduce((acc, ch) => acc + ch.charCodeAt(0), 0) % 4
+    ? Array.from(userId).reduce((acc, ch) => acc + ch.charCodeAt(0), 0) % 5
     : 0;
-  return CRITIC_PERSONAS[(week + userOffset) % 4];
+  return CRITIC_PERSONAS[(week + userOffset) % 5];
 }
 
 export function getISOWeekNumber(date: Date): number {
@@ -634,6 +640,7 @@ ${contextBlock}${newUserInstruction}
 ${founderContext.archetypeContext ? `\n${founderContext.archetypeContext}` : ""}
 ${founderContext.knowledgeBaseContext ? `\n${founderContext.knowledgeBaseContext}` : ""}
 ${founderContext.debtContext ? `\n${founderContext.debtContext}` : ""}
+${founderContext.country ? `\n${formatRegionalContextBlock(founderContext.country)}` : ""}
 
 VERIFIED MARKET SIGNALS:
 ${structuredSignals.map((s, i) => `${i + 1}. ${s}`).join("\n")}
