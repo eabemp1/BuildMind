@@ -10,6 +10,7 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { formatRegionalContextBlock } from "@/lib/regionalContext";
 
 export interface CoachBehavioralContext {
   /** The full formatted string for the system prompt */
@@ -273,6 +274,20 @@ export async function assembleCoachContext(
 
       if (memLines.length) sections.push(`FOUNDER MEMORY (system-observed over time):\n${memLines.join("\n")}`);
     }
+  } catch { /* non-fatal */ }
+
+  // ── 7. Regional context (Founder Context Engine) ──────────────────────────
+  // Single parameterized lookup, not a separate "regional mode" — see
+  // lib/regionalContext.ts for the design rationale.
+  try {
+    const { data: fc } = await supabase
+      .from("founder_context")
+      .select("country")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    const regionalBlock = formatRegionalContextBlock(fc?.country ?? null);
+    if (regionalBlock) sections.push(regionalBlock);
   } catch { /* non-fatal */ }
 
   // ── Assemble ──────────────────────────────────────────────────────────────
