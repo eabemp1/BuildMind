@@ -5,6 +5,7 @@ import { normalizePlan, type Plan } from "@/lib/plan";
 import { getClientIp, rateLimitAsync } from "@/lib/server/rateLimit";
 import { usdToPesewas } from "@/lib/fx";
 import { PLAN_PRICE_USD, PLAN_PRICE_CENTS, foundingPriceUsd, foundingPriceCents } from "@/lib/billing/pricing";
+import { createPolarCheckout } from "@/lib/billing/polar";
 
 /**
  * Countries billed in GHS via the local Paystack plan.
@@ -13,25 +14,23 @@ import { PLAN_PRICE_USD, PLAN_PRICE_CENTS, foundingPriceUsd, foundingPriceCents 
 const GHS_COUNTRIES = new Set(["GH", "GHANA"]);
 
 /**
- * Paystack plan codes — set these in your env.
- * GHS plan: create on Paystack dashboard in GHS (we update periodically).
- * USD plan: create on Paystack dashboard in USD (stable, no conversion needed).
+ * Paystack plan code — set this in your env. GHS only now; USD/international
+ * traffic routes through Polar (see lib/billing/polar.ts) since Paystack has
+ * not approved international payments on this account.
  *
  * FOUNDING NOTE: Paystack bills recurring subscriptions at the PLAN's
  * configured price, not the one-off "amount" sent at initialize — so
- * founding members need their OWN plan codes at the discounted price, or
+ * founding members need their OWN plan code at the discounted price, or
  * their renewal after month one silently jumps back to full price. Create
- * two more plans on your Paystack dashboard (GHS + USD) at the discounted
- * amount from lib/billing/pricing.ts and set these env vars. Until you do,
- * this falls back to the regular plan code with a console warning — the
+ * a second plan on your Paystack dashboard (GHS) at the discounted amount
+ * from lib/billing/pricing.ts and set PAYSTACK_FOUNDING_PLAN_CODE. Until you
+ * do, this falls back to the regular plan code with a console warning — the
  * FIRST charge will still be correct (we control that amount directly), but
  * renewals won't be discounted.
  */
 const PLAN_CODES = {
   ghs: () => process.env.PAYSTACK_BUILDER_PLAN_CODE?.trim(),
-  usd: () => process.env.PAYSTACK_BUILDER_PLAN_CODE_USD?.trim(),
   foundingGhs: () => process.env.PAYSTACK_FOUNDING_PLAN_CODE?.trim(),
-  foundingUsd: () => process.env.PAYSTACK_FOUNDING_PLAN_CODE_USD?.trim(),
 };
 
 const PURCHASABLE_PLANS: Plan[] = ["builder"];
@@ -65,14 +64,6 @@ export async function POST(req: Request) {
   const ipLimit = await rateLimitAsync(`checkout:ip:${getClientIp(req)}`, 30, 15 * 60 * 1000, { failClosed: true });
   if (!ipLimit.ok) {
     return NextResponse.json({ error: "Too many checkout attempts. Try again shortly." }, { status: 429 });
-  }
-
-  const paystackSecretKey = process.env.PAYSTACK_SECRET_KEY ?? "";
-  if (!paystackSecretKey) {
-    return NextResponse.json(
-      { error: "Paystack is not configured. Add PAYSTACK_SECRET_KEY." },
-      { status: 503 },
-    );
   }
 
   const supabase = await createClient();
@@ -110,37 +101,55 @@ export async function POST(req: Request) {
   // ── Currency routing ────────────────────────────────────────────────────────
   const country = resolveCountry(req, body);
   const isGhs = GHS_COUNTRIES.has(country);
+  const baseUrl = appUrl(req);
 
-  let amount: number;
-  let currency: "GHS" | "USD";
-  let paystackPlanCode: string | undefined;
-  let fxMeta: Record<string, unknown> = {};
-
-  if (isGhs) {
-    // Local (Ghana) — convert $39 (or discounted price) to pesewas at live BoG rate
-    const { pesewas, rateUsed, source } = await usdToPesewas(usdPrice);
-    amount = pesewas;
-    currency = "GHS";
-    paystackPlanCode = isFoundingMember ? PLAN_CODES.foundingGhs() : PLAN_CODES.ghs();
-    if (isFoundingMember && !paystackPlanCode) {
-      console.warn("[checkout] PAYSTACK_FOUNDING_PLAN_CODE not set — founding member's renewal will bill at full price after month one.");
-      paystackPlanCode = PLAN_CODES.ghs();
+  // ── International (non-Ghana) — route through Polar ─────────────────────
+  // FIX: previously attempted a Paystack USD charge here, which silently
+  // failed for every non-Ghana customer because Paystack has not approved
+  // international payments on this account (a pending compliance review, not
+  // a code issue). Polar acts as Merchant of Record and handles global cards
+  // + tax compliance directly, so this path no longer depends on that
+  // approval at all.
+  if (!isGhs) {
+    const amountCents = isFoundingMember ? foundingPriceCents(plan) : PLAN_PRICE_CENTS[plan];
+    try {
+      const checkout = await createPolarCheckout({
+        userId: user.id,
+        email: user.email,
+        successUrl: `${baseUrl}/upgrade`,
+        amountCents,
+        plan,
+        isFoundingMember,
+      });
+      return NextResponse.json({ url: checkout.url, plan, recurring: true, currency: "USD" });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Could not create checkout session";
+      console.error("[checkout] Polar checkout failed:", msg);
+      return NextResponse.json({ error: msg }, { status: 502 });
     }
-    fxMeta = { fx_rate: rateUsed, fx_source: source };
-    console.log(`[checkout] GHS path — $${usdPrice} → ${pesewas} pesewas (rate: ${rateUsed ?? "n/a"}, source: ${source})`);
-  } else {
-    // Global — charge in USD directly, no conversion needed
-    amount = isFoundingMember ? foundingPriceCents(plan) : PLAN_PRICE_CENTS[plan];
-    currency = "USD";
-    paystackPlanCode = isFoundingMember ? PLAN_CODES.foundingUsd() : PLAN_CODES.usd();
-    if (isFoundingMember && !paystackPlanCode) {
-      console.warn("[checkout] PAYSTACK_FOUNDING_PLAN_CODE_USD not set — founding member's renewal will bill at full price after month one.");
-      paystackPlanCode = PLAN_CODES.usd();
-    }
-    console.log(`[checkout] USD path — $${usdPrice} → ${amount} cents${isFoundingMember ? " (founding discount)" : ""}`);
   }
 
-  const baseUrl = appUrl(req);
+  // ── Ghana — unchanged, still Paystack ───────────────────────────────────
+  const paystackSecretKey = process.env.PAYSTACK_SECRET_KEY ?? "";
+  if (!paystackSecretKey) {
+    return NextResponse.json(
+      { error: "Paystack is not configured. Add PAYSTACK_SECRET_KEY." },
+      { status: 503 },
+    );
+  }
+
+  // Local (Ghana) — convert $39 (or discounted price) to pesewas at live BoG rate
+  const { pesewas, rateUsed, source } = await usdToPesewas(usdPrice);
+  const amount = pesewas;
+  const currency = "GHS";
+  let paystackPlanCode = isFoundingMember ? PLAN_CODES.foundingGhs() : PLAN_CODES.ghs();
+  if (isFoundingMember && !paystackPlanCode) {
+    console.warn("[checkout] PAYSTACK_FOUNDING_PLAN_CODE not set — founding member's renewal will bill at full price after month one.");
+    paystackPlanCode = PLAN_CODES.ghs();
+  }
+  const fxMeta = { fx_rate: rateUsed, fx_source: source };
+  console.log(`[checkout] GHS path — $${usdPrice} → ${pesewas} pesewas (rate: ${rateUsed ?? "n/a"}, source: ${source})`);
+
   const paystackBody = {
     email: user.email,
     amount,
