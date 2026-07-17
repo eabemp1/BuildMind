@@ -4,7 +4,7 @@ import { normalizePlan, type Plan } from "@/lib/plan";
 export type PublicPlan = Extract<Plan, "free" | "builder">;
 
 type BillingUpdate = {
-  provider?: "paystack" | "stripe";
+  provider?: "paystack" | "stripe" | "polar";
   status?: "active" | "canceled" | "processing" | "free" | "grace";
   reference?: string | null;
   transactionId?: string | null;
