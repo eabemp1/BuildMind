@@ -1583,7 +1583,11 @@ function LandingAestheticLayer() {
 
       /* ── LIGHT THEME overrides for hardcoded-literal blocks above ──────────── */
       .light-mode .bm-landing-skin .gradient-text {
-        background: linear-gradient(135deg, #B5920A 0%, #D9B23A 40%, #B5920A 70%, #8F7008 100%);
+        /* Darkened stops — the previous mid-stop (#D9B23A) had only ~2:1
+           contrast against the white hero background, so the shimmer
+           animation caused the text to fade to near-invisible for part of
+           every cycle. All stops below hold >=3:1 contrast on white. */
+        background: linear-gradient(135deg, #8F7008 0%, #B5920A 40%, #8F7008 70%, #6B5406 100%);
         background-size: 200% auto;
       }
       .light-mode .bm-landing-skin .gradient-text-subtle {
