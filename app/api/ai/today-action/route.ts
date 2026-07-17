@@ -215,6 +215,7 @@ export async function POST(request: Request) {
     let cognitionMomentumScore = 50;
     let cognitionAvoidanceSignals: string[] = [];
     let cognitionCognitiveLoad: ReflexionContext["cognitiveLoad"] = "fresh";
+    let founderCountry: string | undefined;
     // FIX 1.3: Hoist memoryResult to outer scope so it can be reused later
     // without a second DB round-trip to founder_memory
     let memoryResult: PromiseSettledResult<{ data: Record<string, unknown> | null; error: unknown }> | null = null;
@@ -249,7 +250,7 @@ export async function POST(request: Request) {
           .maybeSingle(),
         supabase
           .from("founder_context")
-          .select("avoidance_zones, override_reasons, tasks_overridden_this_week, topics_mentioned_repeatedly, days_inactive, consecutive_tasks_completed, cognitive_load, momentum_score, streak, pattern_flags")
+          .select("avoidance_zones, override_reasons, tasks_overridden_this_week, topics_mentioned_repeatedly, days_inactive, consecutive_tasks_completed, cognitive_load, momentum_score, streak, pattern_flags, country")
           .eq("user_id", userId)
           .maybeSingle(),
       ]);
@@ -542,7 +543,9 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
         tasks_overridden_this_week?: number;
         topics_mentioned_repeatedly?: string[];
         days_inactive?: number;
+        country?: string;
       };
+      founderCountry = context.country ?? undefined;
       const debt = computeExecutionDebt({
         avoidance_zones: context.avoidance_zones ?? [],
         override_reasons: context.override_reasons ?? [],
@@ -590,6 +593,7 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
       debtContext,
       reflectionHistory: recentActionHistory || undefined,
       recentActionsBlock: personalisationCtx.recentActionsBlock || undefined,
+      country: founderCountry,
       // ── Goal Anchor — prevents task drift when reflections are negative ────────
       // A bad reflection ("I didn't do it", "it failed") becomes the dominant signal
       // if no north-star goal is present, causing the AI to abandon the startup's
