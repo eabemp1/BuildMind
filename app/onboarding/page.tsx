@@ -1649,8 +1649,11 @@ function OnboardingInner() {
   // Safety net: ensures a trial is always started for anyone who reaches
   // onboarding, regardless of which signup path got them here. Idempotent
   // (see app/api/billing/start-trial/route.ts) — a no-op if already set.
+  // Also silently captures country for the Founder Context Engine — same
+  // idempotent, first-write-wins pattern, no user-facing step added.
   useEffect(() => {
     fetch("/api/billing/start-trial", { method: "POST" }).catch(() => {});
+    fetch("/api/founder/detect-country", { method: "POST" }).catch(() => {});
   }, []);
 
   // Redirect if already onboarded; restore integrations screen if returning from OAuth
