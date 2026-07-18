@@ -9,7 +9,8 @@ import { BrandMark } from "@/components/layout/logo";
 
 interface DashboardData {
   promoter: { name: string; since: string };
-  missions: { key: string; title: string; points: number }[];
+  missions: { key: string; title: string; points: number; instr: string; copy: string }[];
+  todaysMission: { key: string; title: string; points: number; instr: string; copy: string };
   completedKeys: string[];
   activity: { mission_key: string; note: string | null; completed_at: string }[];
   stats: {
@@ -41,6 +42,7 @@ export default function PromoterDashboardPage() {
   const [feedbackLoading, setFeedbackLoading] = useState(false);
   const [note, setNote] = useState("");
   const [noteFor, setNoteFor] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -123,9 +125,73 @@ export default function PromoterDashboardPage() {
         <h1 style={{ fontFamily: "Syne, sans-serif", fontWeight: 800, fontSize: 28, marginBottom: 4 }}>
           {promoter.name}'s Dashboard
         </h1>
-        <p style={{ color: TEXT2, fontSize: 14, marginBottom: 28 }}>
+        <p style={{ color: TEXT2, fontSize: 14, marginBottom: 16 }}>
           Every post you log shows up here. No pressure — just a real record of the effort you're putting in.
         </p>
+
+        {/* Originality warning — the templates below are a starting point, not a script */}
+        <div style={{ background: "rgba(251,146,60,0.08)", border: "1px solid rgba(251,146,60,0.3)", borderRadius: 12, padding: "14px 16px", marginBottom: 24 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#fb923c", marginBottom: 4 }}>Before you post: make it yours</div>
+          <p style={{ fontSize: 12.5, color: TEXT2, lineHeight: 1.55 }}>
+            The text below each mission is a starting point, not a script. Posting it word-for-word — especially the same line everywhere — tends to get quietly buried by most platforms' algorithms, and readers can usually tell it's copy-pasted anyway. Read it, then rewrite it in how you'd actually say it. Change the opening line, drop a phrase that doesn't sound like you, add something true and specific if you can. Two sentences in your own voice beat a perfect paragraph that isn't.
+          </p>
+        </div>
+
+        {/* Today's Mission — the actual daily-work answer, not just a list to pick from */}
+        <div style={{ background: `linear-gradient(135deg, rgba(99,102,241,0.14), rgba(139,92,246,0.08))`, border: `1px solid ${ACCENT}`, borderRadius: 16, padding: 20, marginBottom: 24 }}>
+          <div style={{ fontSize: 11, color: ACCENT, fontFamily: "DM Mono, monospace", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
+            Today's mission
+          </div>
+          <div style={{ fontFamily: "Syne, sans-serif", fontWeight: 800, fontSize: 20, marginBottom: 8 }}>
+            {data.todaysMission.title}
+          </div>
+          <p style={{ fontSize: 13, color: TEXT2, marginBottom: 12, lineHeight: 1.5 }}>{data.todaysMission.instr}</p>
+          <div style={{ fontSize: 10.5, color: "#fb923c", fontFamily: "DM Mono, monospace", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
+            Starting point — rewrite before posting
+          </div>
+          <div style={{ background: "rgba(0,0,0,0.25)", border: `1px solid ${BORDER}`, borderRadius: 10, padding: "12px 14px", fontSize: 13, lineHeight: 1.55, whiteSpace: "pre-wrap", marginBottom: 12 }}>
+            {data.todaysMission.copy}
+          </div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(data.todaysMission.copy);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1800);
+              }}
+              style={{ background: copied ? "#4ade80" : ACCENT, color: copied ? "#0a0e1a" : "white", border: "none", padding: "10px 16px", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+            >
+              {copied ? "Copied ✓" : "Copy starting point"}
+            </button>
+            <button
+              onClick={() => setNoteFor(noteFor === data.todaysMission.key ? null : data.todaysMission.key)}
+              style={{ background: "transparent", border: `1px solid ${TEXT2}`, color: TEXT, padding: "10px 16px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+            >
+              {noteFor === data.todaysMission.key ? "Cancel" : "Done — log it"}
+            </button>
+          </div>
+          {noteFor === data.todaysMission.key && (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ fontSize: 11.5, color: TEXT2, marginBottom: 6 }}>
+                Paste what you actually posted (your rewritten version) — helps track that it wasn't just copy-pasted, and gives better feedback below.
+              </div>
+              <textarea
+                value={note}
+                onChange={e => setNote(e.target.value)}
+                placeholder="What you actually posted…"
+                rows={3}
+                style={{ width: "100%", background: "#0d1220", border: `1px solid ${BORDER}`, borderRadius: 8, padding: "10px 12px", color: TEXT, fontSize: 13, marginBottom: 10, resize: "vertical" }}
+              />
+              <button
+                onClick={() => logMission(data.todaysMission.key)}
+                disabled={logging === data.todaysMission.key}
+                style={{ background: ACCENT, color: "white", border: "none", padding: "9px 16px", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: logging === data.todaysMission.key ? "default" : "pointer" }}
+              >
+                {logging === data.todaysMission.key ? "Logging…" : "Confirm log"}
+              </button>
+            </div>
+          )}
+        </div>
 
         {/* Stat cards */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 24 }}>
