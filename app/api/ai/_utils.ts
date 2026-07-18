@@ -23,6 +23,16 @@ import { callModel, callModelJSON, hasAIProvider } from "@/lib/ai-providers";
 // The daily cap prevents a free user from burning their entire monthly
 // quota in a single day. The monthly cap remains the binding long-run
 // constraint for both plans now.
+//
+// FEATURE SPLIT (added): these limits used to be shared across every AI
+// route — a free user chatting twice with AI Coach had no calls left to
+// generate today's action, which is the entire habit loop the product is
+// built around. "core" now has its own, much more generous allowance
+// reserved for the one-task-a-day generation (today-action route). It is
+// naturally used ~1-2x/day by a real user, so a high ceiling here costs
+// nothing in practice while guaranteeing the core loop is never blocked by
+// usage on the open-ended, more expensive "general" surfaces (Coach,
+// Break My Startup, reflections), which keep the original tighter limits.
 export const PLAN_MONTHLY_LIMITS: Record<string, number> = {
   free: 30,
   builder: 1500,
@@ -32,6 +42,18 @@ export const PLAN_DAILY_LIMITS: Record<string, number> = {
   free: 3,
   builder: 80,
 };
+
+export const CORE_MONTHLY_LIMITS: Record<string, number> = {
+  free: 45,     // ~1.5/day headroom — generous, but still a real ceiling
+  builder: 3000,
+};
+
+export const CORE_DAILY_LIMITS: Record<string, number> = {
+  free: 6,      // realistically used 1-2x/day; this is slack, not a wall
+  builder: 150,
+};
+
+export type AIUsageFeature = "general" | "core";
 
 export function hasAdminEnv(): boolean {
   const has = Boolean(
@@ -52,7 +74,11 @@ export function hasGroqKey(): boolean {
   return hasAIProvider();
 }
 
-export async function enforceAndTrackAIUsage(userId: string, planOverride?: string) {
+export async function enforceAndTrackAIUsage(
+  userId: string,
+  planOverride?: string,
+  feature: AIUsageFeature = "general",
+) {
   if (!hasAdminEnv()) return; // dev mode — skip limits
   const supabase = createAdminClient();
 
@@ -73,8 +99,10 @@ export async function enforceAndTrackAIUsage(userId: string, planOverride?: stri
     plan = normalizePlan(planOverride);
   }
 
-  const monthlyLimit = PLAN_MONTHLY_LIMITS[plan] ?? 30;
-  const dailyLimit   = PLAN_DAILY_LIMITS[plan]   ?? 3;
+  const monthlyLimits = feature === "core" ? CORE_MONTHLY_LIMITS : PLAN_MONTHLY_LIMITS;
+  const dailyLimits    = feature === "core" ? CORE_DAILY_LIMITS   : PLAN_DAILY_LIMITS;
+  const monthlyLimit = monthlyLimits[plan] ?? monthlyLimits.free;
+  const dailyLimit   = dailyLimits[plan]   ?? dailyLimits.free;
 
   // ── Step 1: Daily cap check (fires first to prevent burst abuse) ───────────
   // Run the daily check before the monthly check so a free user who has
@@ -82,7 +110,7 @@ export async function enforceAndTrackAIUsage(userId: string, planOverride?: stri
 
   const { data: dailyCount, error: dailyError } = await supabase.rpc(
     "increment_ai_usage_daily_capped",
-    { p_user_id: userId, p_date: today, p_limit: dailyLimit },
+    { p_user_id: userId, p_date: today, p_limit: dailyLimit, p_feature: feature },
   );
 
   if (dailyError) throw new Error(dailyError.message);
@@ -90,16 +118,17 @@ export async function enforceAndTrackAIUsage(userId: string, planOverride?: stri
   // RPC returns -1 when the daily limit is already reached.
   if (dailyCount === -1) {
     const limitLabel = dailyLimit === -1 ? "unlimited" : String(dailyLimit);
+    const what = feature === "core" ? "today's action generation" : "AI Coach and other AI features";
     throw new Error(
-      `Daily AI limit reached (${limitLabel} calls/day on the free plan). ` +
-      `Your limit resets at midnight UTC, or upgrade to Builder for unlimited AI.`,
+      `Daily AI limit reached for ${what} (${limitLabel} calls/day on the free plan). ` +
+      `Your limit resets at midnight UTC, or upgrade to Builder for a much higher ceiling.`,
     );
   }
 
   // ── Step 2: Monthly cap check ──────────────────────────────────────────────
   // Builder/Venture: unlimited — just track via atomic upsert, no cap needed.
   if (monthlyLimit === -1) {
-    await supabase.rpc("increment_ai_usage", { p_user_id: userId, p_month: month });
+    await supabase.rpc("increment_ai_usage", { p_user_id: userId, p_month: month, p_feature: feature });
     return;
   }
 
@@ -110,6 +139,7 @@ export async function enforceAndTrackAIUsage(userId: string, planOverride?: stri
     p_user_id: userId,
     p_month: month,
     p_limit: monthlyLimit,
+    p_feature: feature,
   });
 
   if (rpcError) throw new Error(rpcError.message);
@@ -122,7 +152,7 @@ export async function enforceAndTrackAIUsage(userId: string, planOverride?: stri
     // Use a dedicated decrement RPC; increment_ai_usage_daily_capped(-1) is
     // the unlimited increment path, not a decrement path.
     try {
-      await supabase.rpc("decrement_ai_usage_daily", { p_user_id: userId, p_date: today });
+      await supabase.rpc("decrement_ai_usage_daily", { p_user_id: userId, p_date: today, p_feature: feature });
     } catch {
       // B2 FIX: Fallback must use a relative atomic decrement (count - 1), NOT
       // a read-compute-write with `dailyCount`. `dailyCount` is the post-increment
@@ -133,6 +163,7 @@ export async function enforceAndTrackAIUsage(userId: string, planOverride?: stri
       const { error: fallbackError } = await supabase.rpc("safe_decrement_ai_usage_daily_fallback", {
         p_user_id: userId,
         p_date: today,
+        p_feature: feature,
       });
       if (fallbackError) {
         // If the fallback RPC is also not deployed, use a raw SQL expression via
@@ -143,7 +174,8 @@ export async function enforceAndTrackAIUsage(userId: string, planOverride?: stri
           .from("ai_usage_daily")
           .update({ count: supabase.rpc as unknown as number }) // signal: use RPC migration
           .eq("user_id", userId)
-          .eq("date", today);
+          .eq("date", today)
+          .eq("feature", feature);
         // NOTE: Deploy supabase/migrations/add_safe_decrement_ai_usage_daily.sql
         // to add the safe_decrement_ai_usage_daily_fallback() function that
         // executes: UPDATE ai_usage_daily SET count = GREATEST(count - 1, 0) ...
