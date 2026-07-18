@@ -1450,6 +1450,13 @@ function LandingAestheticLayer() {
 
       /* ── Typography ───────────────────────────────────────────────────────── */
       .bm-landing-skin .gradient-text {
+        /* Defensive fallback: if background-clip:text fails to clip to the
+           glyph shapes in some rendering context (a known cross-browser
+           quirk, distinct from the contrast issue fixed below), this solid
+           color shows instead of a blank/solid block. inline-block is part
+           of the standard fix for this same class of bug. */
+        display: inline-block;
+        color: var(--bm-accent2);
         background: linear-gradient(135deg, #E8C547 0%, #F5D97A 40%, #E8C547 70%, #C9A82E 100%);
         background-size: 200% auto;
         -webkit-background-clip: text;
@@ -1586,7 +1593,11 @@ function LandingAestheticLayer() {
         /* Darkened stops — the previous mid-stop (#D9B23A) had only ~2:1
            contrast against the white hero background, so the shimmer
            animation caused the text to fade to near-invisible for part of
-           every cycle. All stops below hold >=3:1 contrast on white. */
+           every cycle. All stops below hold >=3:1 contrast on white.
+           Added explicit fallback color (line above, in the base rule,
+           now var(--bm-accent2)) for the separate class of bug where the
+           clip fails entirely rather than just losing contrast. */
+        color: #6B5406;
         background: linear-gradient(135deg, #8F7008 0%, #B5920A 40%, #8F7008 70%, #6B5406 100%);
         background-size: 200% auto;
       }
