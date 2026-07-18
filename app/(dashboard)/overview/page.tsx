@@ -130,6 +130,17 @@ export default function OverviewPage() {
   const [serverTodayDone, setServerTodayDone] = useState(false);
 
   useEffect(() => {
+    // Bug fix: currentMrr previously always started at 0 and was never
+    // synced from the loaded project, so the MRR widget showed
+    // "Pre-revenue" on every reload even for founders who'd already set
+    // an MRR value. Hydrate it from the active project whenever it loads
+    // or changes.
+    if (activeProject?.current_mrr != null) {
+      setCurrentMrr(activeProject.current_mrr);
+    }
+  }, [activeProject?.id, activeProject?.current_mrr]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
     const cachedUid = localStorage.getItem("bm_active_user_id");
     if (cachedUid) storage.onSignIn(cachedUid);
@@ -263,7 +274,7 @@ export default function OverviewPage() {
           stage:          activeProject?.stage ?? activeProject?.startup_stage ?? "",
           targetUsers:    activeProject?.target_users ?? "",
           avoidanceZones: overview?.avoidanceZones ?? [],
-          mrr:            activeProject?.mrr ?? 0,
+          mrr:            activeProject?.current_mrr ?? 0,
           displayName:    overview?.founderName ?? "",
           tasksCompleted: doneTasks,
         }}
