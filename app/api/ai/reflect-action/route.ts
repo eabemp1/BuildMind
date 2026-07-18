@@ -48,6 +48,9 @@ interface ReflectActionInput {
 }
 
 interface ReflectActionOutput {
+  witnessed: string;    // NEW: names specifically what you did today, unprompted by outcome —
+                         // the "someone saw this" line. Distinct from causality (forward-looking)
+                         // and identityLine (who you're becoming). This one just proves it registered.
   causality: string;   // "because you said X → tomorrow is Y"
   nextAction: string;  // personalised next concrete action
   identityLine: string; // who they're becoming ("You're someone who executes.")
@@ -55,21 +58,25 @@ interface ReflectActionOutput {
 
 const FALLBACKS: Record<string, ReflectActionOutput> = {
   completed: {
+    witnessed: "You said you'd do it, and you did — on a day nobody was checking but you.",
     causality: "Because you completed it → tomorrow goes deeper into what's working.",
     nextAction: "Double down on what worked today — apply the same energy to the next milestone.",
     identityLine: "You're someone who executes.",
   },
   partial: {
+    witnessed: "You showed up and moved it forward, even without finishing — that's still real progress logged.",
     causality: "Because you partially completed it → tomorrow finishes before adding anything new.",
     nextAction: "Finish what you started. Incomplete work compounds into debt.",
     identityLine: "You're building the habit. Keep going.",
   },
   blocked: {
+    witnessed: "You hit a wall today and told the system instead of pretending it didn't happen. That matters.",
     causality: "Because you got blocked → tomorrow removes the blocker before anything else.",
     nextAction: "Write down the exact blocker in one sentence. Then find one person who's solved it before.",
     identityLine: "Founders who name their blockers solve them. You named it.",
   },
   learned: {
+    witnessed: "Today wasn't a shipped feature, but you're leaving it with something you didn't have this morning.",
     causality: "Because you learned something → tomorrow applies that insight to a real user.",
     nextAction: "Take what you learned and test it with one real person today. Knowledge without action is trivia.",
     identityLine: "You're learning faster than most founders even start.",
@@ -398,18 +405,20 @@ Target users: ${project.target_users ?? "Not specified"}`;
       result = await groqJSON<ReflectActionOutput>(
       `You are BuildMind, a ruthlessly honest execution coach for solo founders.
 Your job: take the founder's daily reflection and generate:
-1. causality — a specific "because you said X → tomorrow is Y" sentence (max 18 words, direct, no fluff)
-2. nextAction — one concrete action for tomorrow, specific to your situation (max 25 words)
-3. identityLine — a short identity-reinforcing statement about who you are becoming (max 12 words)
+1. witnessed — one sentence that proves you actually registered what they specifically did today (reference their note/what_tried/what_happened/blocker if given, not the outcome label). This is not praise and not analysis — it's the "someone saw this" line. Solo founders build alone with no one to debrief with; this line is the one moment in the product where the system explicitly acknowledges the specific effort, not just logs it. Max 20 words. Never generic — if it could apply to any founder on any day, rewrite it.
+2. causality — a specific "because you said X → tomorrow is Y" sentence (max 18 words, direct, no fluff)
+3. nextAction — one concrete action for tomorrow, specific to your situation (max 25 words)
+4. identityLine — a short identity-reinforcing statement about who you are becoming (max 12 words)
 
 Rules:
+- witnessed must reference something specific from the note/fields — never fall back to restating the outcome category
 - causality must reference your actual note if provided
 - nextAction must be specific — no generic advice
 - identityLine should feel earned, not cheerleady
 - CRITICAL: Write entirely in second person. Address the founder as "you"/"your". Never write "the founder", "they", or "their".
 - If confidence is 1-2, acknowledge the difficulty but push forward
 - If blocked, the next action is always: remove the blocker first
-- Return JSON ONLY with keys: causality, nextAction, identityLine`,
+- Return JSON ONLY with keys: witnessed, causality, nextAction, identityLine`,
       `REFLECTION:
 Outcome: ${outcome}
 Note: "${note || "No note provided"}"
