@@ -26,6 +26,23 @@ export async function middleware(request: NextRequest) {
     request: { headers: new Headers({ ...Object.fromEntries(request.headers), "x-nonce": nonce }) },
   });
   response.headers.set("Content-Security-Policy", csp);
+
+  // ── Referral attribution ────────────────────────────────────────────────
+  // Captures ?ref=<promoter_ref_code> into a 30-day cookie so
+  // app/auth/callback/route.ts can credit the right promoter at signup time,
+  // regardless of how many pages the person visits in between. Read-only
+  // capture here — the actual conversion is recorded at signup, not here,
+  // so a click alone is never counted as a conversion.
+  const refCode = request.nextUrl.searchParams.get("ref");
+  if (refCode && /^[A-Za-z0-9_-]{1,32}$/.test(refCode)) {
+    response.cookies.set("bm_ref", refCode, {
+      maxAge: 60 * 60 * 24 * 30,
+      path: "/",
+      httpOnly: true,
+      sameSite: "lax",
+    });
+  }
+
   const devAuthEnabled = process.env.NODE_ENV !== "production" && process.env.DEV_AUTH_ENABLED === "1";
   const isDevAuthed = devAuthEnabled && request.cookies.get("bm_dev_auth")?.value === "1";
   const isDevOnboarded = isDevAuthed && request.cookies.get("bm_dev_onboarded")?.value === "1";
