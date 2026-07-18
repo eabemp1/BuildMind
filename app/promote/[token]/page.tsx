@@ -20,6 +20,8 @@ interface DashboardData {
     activeDays: string[];
     dailyCounts: number[];
     totalLogged: number;
+    conversions: number;
+    lastConversionAt: string | null;
   };
 }
 
@@ -195,6 +197,14 @@ export default function PromoterDashboardPage() {
 
         {/* Stat cards */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 24 }}>
+          <StatCard label="Signups driven">
+            <div style={{ fontFamily: "Syne, sans-serif", fontSize: 36, fontWeight: 800, color: stats.conversions > 0 ? "#4ade80" : TEXT }}>
+              {stats.conversions}
+            </div>
+            <div style={{ fontSize: 12, color: TEXT2 }}>
+              {stats.lastConversionAt ? `last ${new Date(stats.lastConversionAt).toLocaleDateString()}` : "from your link"}
+            </div>
+          </StatCard>
           <StatCard label="Momentum">
             <RadialGauge value={stats.momentum} size={92} label="momentum" />
           </StatCard>
