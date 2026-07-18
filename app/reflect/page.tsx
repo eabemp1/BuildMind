@@ -47,6 +47,14 @@ function buildFallbackCausality(o: Outcome, n: string, c: number): string {
   return "You gained an insight → tomorrow we apply it. Knowledge without action is just trivia.";
 }
 
+function buildFallbackWitness(o: Outcome, whatTried: string): string {
+  const specific = whatTried?.trim();
+  if (o === "completed") return specific ? `You said you'd try "${specific.slice(0, 60)}" — and you actually did it today.` : "You said you'd do it, and you did — on a day nobody was checking but you.";
+  if (o === "partial") return "You showed up and moved it forward, even without finishing — that's still real progress logged.";
+  if (o === "blocked") return "You hit a wall today and told the system instead of pretending it didn't happen. That matters.";
+  return "Today wasn't a shipped feature, but you're leaving it with something you didn't have this morning.";
+}
+
 export default function ReflectPage() {
   const router = useRouter();
   const [outcome, setOutcome] = useState<Outcome | null>(null);
@@ -60,6 +68,7 @@ export default function ReflectPage() {
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
   const [causality, setCausality] = useState("");
+  const [witnessed, setWitnessed] = useState("");
   const [nextAction, setNextAction] = useState("");
   const [userId, setUserId] = useState<string | null>(null);
 
@@ -237,6 +246,7 @@ export default function ReflectPage() {
 
       let caus = buildFallbackCausality(outcome, richNote, confidence);
       let next = "";
+      let witness = buildFallbackWitness(outcome, whatTried);
       try {
         const res = await fetch("/api/ai/reflect-action", {
           method: "POST", headers: { "Content-Type": "application/json" },
@@ -254,16 +264,17 @@ export default function ReflectPage() {
             projectId: activeProjectId,
           }),
         });
-        if (res.ok) { const d = await res.json(); const payload = d.data ?? d; caus = payload.causality || caus; next = payload.nextAction || ""; }
+        if (res.ok) { const d = await res.json(); const payload = d.data ?? d; caus = payload.causality || caus; next = payload.nextAction || ""; witness = payload.witnessed || witness; }
       } catch {}
       setCausality(caus);
+      setWitnessed(witness);
       setNextAction(next);
       const entry = { date: Date.now(), outcome, note: richNote, confidence, causality: caus };
       const newHistory = [...history, entry].slice(-30);
       setHistory(newHistory);
       storage.setJSON("bm_reflect_history", newHistory);
       persistBehaviorState({
-        today_action: { action: todayAction, outcome, note: richNote, confidence },
+        today_action: { action: todayAction, outcome, note: richNote, confidence, witnessed },
         reflect_done_date: new Date().toISOString().slice(0, 10),
       });
       const stats = getAchievementStats();
@@ -304,6 +315,11 @@ export default function ReflectPage() {
             <h2 style={{ fontSize: 22, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em", marginBottom: 8 }}>Reflection saved</h2>
             <p style={{ fontSize: 13, color: "var(--bm-text3)", lineHeight: 1.6 }}>This compounds. Every reflection makes tomorrow sharper.</p>
           </div>
+          {witnessed && (
+            <div style={{ background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)", borderRadius: 16, padding: "18px 22px", marginBottom: 14 }}>
+              <p style={{ fontSize: 14, color: "var(--bm-text)", lineHeight: 1.6, margin: 0, fontWeight: 500 }}>{sanitizeOutput(witnessed)}</p>
+            </div>
+          )}
           {causality && (
             <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-accent-bd)", borderRadius: 16, padding: "20px 22px", marginBottom: 14 }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-accent)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10, display: "flex", alignItems: "center", gap: 5 }}>
