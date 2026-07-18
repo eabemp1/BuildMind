@@ -2346,7 +2346,7 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
           <div className="bm-hero-window-glow-line" />
           <div className="bm-hero-burst" />
 
-          <div className="relative z-[1] grid w-full items-center gap-8 sm:gap-12 md:grid-cols-2 lg:gap-16">
+          <div className="relative z-[3] grid w-full items-center gap-8 sm:gap-12 md:grid-cols-2 lg:gap-16" style={{ isolation: "isolate" }}>
           {/* Left */}
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }} className="flex flex-col gap-5 sm:gap-6">
             {/* Live pill */}
