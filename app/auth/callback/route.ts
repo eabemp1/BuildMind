@@ -58,6 +58,37 @@ async function maybeTagFoundingMember(supabase: Awaited<ReturnType<typeof create
   }
 }
 
+/**
+ * maybeCreditReferral — reads the bm_ref cookie (set by middleware.ts when
+ * someone visits with ?ref=<code>) and records a conversion for that
+ * promoter, once per user. This is the actual "did their content drive
+ * signups" answer — not activity volume, a real attributed conversion.
+ * Best-effort — never blocks sign-in if it fails.
+ */
+async function maybeCreditReferral(request: NextRequest, userId: string) {
+  try {
+    const refCode = request.cookies.get("bm_ref")?.value;
+    if (!refCode) return;
+
+    const admin = createAdminClient();
+    const { data: promoter } = await admin
+      .from("promoters")
+      .select("id")
+      .eq("ref_code", refCode)
+      .maybeSingle();
+    if (!promoter) return;
+
+    // Unique index on user_id makes this safe to call more than once —
+    // a duplicate insert just fails silently and is ignored below.
+    await admin
+      .from("promoter_conversions")
+      .insert({ promoter_id: promoter.id, user_id: userId })
+      .then(() => {}, () => {}); // ignore unique-violation on repeat visits
+  } catch (err) {
+    logError("auth/callback/maybeCreditReferral", err);
+  }
+}
+
 async function maybeStartTrial(supabase: Awaited<ReturnType<typeof createClient>>) {
   // ── Free Trial: initialise on first sign-in ──────────────────────────────
   // Only starts the trial if it hasn't been started yet (idempotent).
@@ -131,6 +162,7 @@ export async function GET(request: NextRequest) {
       if (user) {
         await maybeStartTrial(supabase);
         await maybeTagFoundingMember(supabase);
+        await maybeCreditReferral(request, user.id);
         const redirectUrl = new URL(origin);
         redirectUrl.pathname = next;
         return NextResponse.redirect(redirectUrl);
@@ -145,10 +177,18 @@ export async function GET(request: NextRequest) {
 
     await maybeStartTrial(supabase);
     await maybeTagFoundingMember(supabase);
+    {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) await maybeCreditReferral(request, user.id);
+    }
   } else {
     const supabase = await createClient();
     await maybeStartTrial(supabase);
     await maybeTagFoundingMember(supabase);
+    {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) await maybeCreditReferral(request, user.id);
+    }
   }
 
   const redirectUrl = new URL(origin);
