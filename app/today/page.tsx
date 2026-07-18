@@ -161,6 +161,7 @@ type StoredReflection = {
   outcome: Outcome;
   note?: string;
   confidence?: number;
+  witnessed?: string; // acknowledgment line from app/reflect — surfaced here too, not just on /reflect
 };
 
 // ── Fallback actions (used when API is unavailable) ──────────────────────────
@@ -2059,7 +2060,7 @@ function TodayContent() {
           stage:          project?.startup_stage ?? "",
           targetUsers:    project?.target_users ?? "",
           avoidanceZones: [],
-          mrr:            project?.mrr ?? 0,
+          mrr:            project?.current_mrr ?? 0,
           displayName:    project?.name ?? "",
           tasksCompleted: project?.tasksCompleted ?? 0,
         }}
@@ -2248,6 +2249,21 @@ function TodayContent() {
 
             {/* Right: content */}
             <div style={{ flex: 1, minWidth: 0 }}>
+              {/* Witnessed — rendered FIRST, above everything else, distinct styling.
+                  This is the acknowledgment line, not analysis — it should read
+                  differently from the outcome badge and causal link below it. */}
+              {yesterdayReflection.witnessed && (
+                <p style={{
+                  fontSize: 13,
+                  color: "var(--bm-text)",
+                  marginBottom: 8,
+                  lineHeight: 1.5,
+                  fontWeight: 500,
+                }}>
+                  {sanitizeOutput(yesterdayReflection.witnessed)}
+                </p>
+              )}
+
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
                 <span style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Yesterday</span>
                 <span style={{
