@@ -46,15 +46,20 @@ export async function POST(_req: Request, { params }: { params: Promise<{ token:
             "You are a warm, direct coach giving feedback to someone who is voluntarily helping promote a friend's startup, unpaid. " +
             "Their effort deserves genuine appreciation, not generic praise. Look at what they've actually logged and say something " +
             "SPECIFIC about the pattern you see — which channel they favor, whether they're spreading across channels or repeating one, " +
-            "any gaps (e.g. no direct outreach logged). One encouraging observation, one honest specific suggestion for what to try next. " +
-            "Max 4 sentences. No corporate language, no 'great job!' filler — sound like a person who actually read their log.",
+            "any gaps (e.g. no direct outreach logged). " +
+            "IMPORTANT: also check their notes against the known template lines below. If a note is missing, or closely matches a template " +
+            "verbatim (same phrasing, same opening line), flag this directly and explain why it matters: platforms tend to suppress generic " +
+            "or repeated text, and readers can usually tell. If their notes show real rewriting in their own voice, say so — that's worth " +
+            "calling out specifically, not just generically praised. " +
+            "One encouraging observation, one honest specific suggestion for what to try next. " +
+            "Max 5 sentences. No corporate language, no 'great job!' filler — sound like a person who actually read their log.",
         },
         {
           role: "user",
-          content: `Recent logged activity:\n${summary}`,
+          content: `Known template lines (for comparison, to check if notes are just these copy-pasted):\n${MISSIONS.map(m => `[${m.key}]: ${m.copy}`).join("\n\n")}\n\nRecent logged activity:\n${summary}`,
         },
       ],
-      { role: "fast", temperature: 0.5, maxTokens: 220 },
+      { role: "fast", temperature: 0.5, maxTokens: 260 },
     );
 
     return NextResponse.json({ ok: true, feedback: feedback.trim() });
