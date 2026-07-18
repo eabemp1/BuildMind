@@ -153,9 +153,21 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--bm-border2); border-radius: 2px; }
 
-/* Used on auth and landing pages for the brand tagline. */
+/* Used on auth and landing pages for the brand tagline.
+   FIX: was hardcoded to an old teal/green gradient (#5CC88A, #4AB8B0) that
+   predates the current gold accent design system entirely — completely
+   disconnected from --bm-accent. That's why it never matched the intended
+   gold look in dark mode, and why light mode specifically was unreadable:
+   the light-mode bm-bg (#F5F5F3, near-white) had far lower contrast against
+   that teal than the properly-designed --bm-accent (#B5920A, a much darker
+   saturated gold) does. Now driven by the same theme variables the rest of
+   the hero already correctly uses, so it adapts per-theme automatically.
+   Also added an explicit fallback `color` before the transparent fill —
+   if background-clip:text isn't supported in some rendering context, text
+   now degrades to solid accent-colored text instead of invisible. */
 .gradient-text {
-  background: linear-gradient(90deg, #5CC88A, #4AB8B0);
+  color: var(--bm-accent); /* fallback if background-clip:text isn't supported */
+  background: linear-gradient(90deg, var(--bm-accent), var(--bm-accent2));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
