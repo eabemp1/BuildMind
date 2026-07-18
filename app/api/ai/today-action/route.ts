@@ -188,7 +188,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: "userId and projectId required" }, { status: 400 });
     }
 
-    await enforceAndTrackAIUsage(userId, routeUser.plan);
+    // feature: "core" — this is the single daily action, the habit loop the
+    // whole product is built around. It gets its own generous allowance so
+    // usage on AI Coach / Break My Startup / reflections never blocks it.
+    await enforceAndTrackAIUsage(userId, routeUser.plan, "core");
 
     let projectContext = "";
     let stage = providedStage || "Idea";
