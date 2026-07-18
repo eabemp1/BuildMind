@@ -39,6 +39,11 @@ export async function GET() {
         .order("completed_at", { ascending: false })
         .limit(200);
 
+      const { count: conversionCount } = await admin
+        .from("promoter_conversions")
+        .select("*", { count: "exact", head: true })
+        .eq("promoter_id", p.id);
+
       const acts = activity ?? [];
       return {
         name: p.name,
@@ -46,6 +51,7 @@ export async function GET() {
         createdAt: p.created_at,
         momentum: computeMomentum(acts),
         totalLogged: acts.length,
+        conversions: conversionCount ?? 0,
         lastActive: acts[0]?.completed_at ?? null,
       };
     }),
