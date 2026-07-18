@@ -38,7 +38,6 @@ export type ProjectSummary = {
   startup_summary?: string | null;
   startup_stage?: string | null;
   current_mrr?: number | null;
-  mrr?: number | null;
   validation_score?: number | null;
   execution_score?: number | null;
   momentum_score?: number | null;
