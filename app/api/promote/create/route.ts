@@ -18,13 +18,15 @@ export async function POST(req: Request) {
 
   const body = await req.json().catch(() => ({}));
   const name = typeof body?.name === "string" ? body.name.trim().slice(0, 60) : "";
+  const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : null;
   if (!name) return NextResponse.json({ ok: false, error: "Name is required" }, { status: 400 });
 
   const token = crypto.randomBytes(24).toString("base64url");
+  const refCode = crypto.randomBytes(6).toString("base64url").replace(/[^A-Za-z0-9]/g, "").slice(0, 8);
   const admin = createAdminClient();
   const { error } = await admin
     .from("promoters")
-    .insert({ name, access_token: token, created_by: user.id });
+    .insert({ name, access_token: token, ref_code: refCode, email, created_by: user.id });
 
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
 
