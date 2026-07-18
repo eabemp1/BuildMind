@@ -10,6 +10,7 @@ interface PromoterRow {
   createdAt: string;
   momentum: number;
   totalLogged: number;
+  conversions: number;
   lastActive: string | null;
 }
 
@@ -24,6 +25,7 @@ export default function PromotersAdminPage() {
   const [rows, setRows] = useState<PromoterRow[] | null>(null);
   const [error, setError] = useState("");
   const [newName, setNewName] = useState("");
+  const [newEmail, setNewEmail] = useState("");
   const [creating, setCreating] = useState(false);
   const [createdUrl, setCreatedUrl] = useState("");
 
@@ -48,12 +50,13 @@ export default function PromotersAdminPage() {
       const res = await fetch("/api/promote/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newName.trim() }),
+        body: JSON.stringify({ name: newName.trim(), email: newEmail.trim() || undefined }),
       });
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error ?? "Could not create");
       setCreatedUrl(json.url);
       setNewName("");
+      setNewEmail("");
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create promoter link");
@@ -82,6 +85,13 @@ export default function PromotersAdminPage() {
             value={newName}
             onChange={e => setNewName(e.target.value)}
             placeholder="Name (e.g. Kwame)"
+            style={{ flex: 1, minWidth: 160, background: "#0d1220", border: `1px solid ${BORDER}`, borderRadius: 8, padding: "10px 12px", color: TEXT, fontSize: 13.5 }}
+          />
+          <input
+            value={newEmail}
+            onChange={e => setNewEmail(e.target.value)}
+            placeholder="Email (optional — for reminders)"
+            type="email"
             style={{ flex: 1, minWidth: 160, background: "#0d1220", border: `1px solid ${BORDER}`, borderRadius: 8, padding: "10px 12px", color: TEXT, fontSize: 13.5 }}
           />
           <button
@@ -118,6 +128,12 @@ export default function PromotersAdminPage() {
                     <div style={{ fontSize: 12, color: TEXT2 }}>
                       {p.totalLogged} logged · last active {p.lastActive ? new Date(p.lastActive).toLocaleDateString() : "never"}
                     </div>
+                  </div>
+                  <div style={{ textAlign: "center", flexShrink: 0 }}>
+                    <div style={{ fontFamily: "Syne, sans-serif", fontWeight: 800, fontSize: 22, color: p.conversions > 0 ? "#4ade80" : TEXT2 }}>
+                      {p.conversions}
+                    </div>
+                    <div style={{ fontSize: 10, color: TEXT2, textTransform: "uppercase", letterSpacing: "0.04em" }}>signups</div>
                   </div>
                   <div style={{ fontSize: 12, color: TEXT2, fontFamily: "DM Mono, monospace" }}>→</div>
                 </div>
