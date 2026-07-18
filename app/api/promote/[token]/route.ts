@@ -73,7 +73,7 @@ async function resolvePromoter(token: string) {
   const admin = createAdminClient();
   const { data } = await admin
     .from("promoters")
-    .select("id, name, created_at")
+    .select("id, name, created_at, ref_code")
     .eq("access_token", token)
     .maybeSingle();
   return data;
@@ -132,6 +132,21 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     .order("completed_at", { ascending: false })
     .limit(200);
 
+  // Diagnostic tool: real attributed conversions, not just activity volume.
+  // Anyone who signs up after clicking a link with ?ref=<promoter's code>
+  // gets recorded here (see middleware.ts + app/auth/callback/route.ts).
+  const { data: conversions } = await admin
+    .from("promoter_conversions")
+    .select("converted_at")
+    .eq("promoter_id", promoter.id)
+    .order("converted_at", { ascending: false });
+
+  const refUrl = `https://buildmind.live/quiz?ref=${promoter.ref_code}`;
+  const missionsWithRef = MISSIONS.map(m => ({
+    ...m,
+    copy: m.copy.replaceAll("buildmind.live/quiz", refUrl.replace("https://", "")),
+  }));
+
   const rows = activity ?? [];
   const momentum = computeMomentum(rows);
   const streak = computeStreak(rows);
@@ -153,11 +168,16 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   return NextResponse.json({
     ok: true,
     promoter: { name: promoter.name, since: promoter.created_at },
-    missions: MISSIONS,
-    todaysMission: getTodaysMission(rows),
+    missions: missionsWithRef,
+    todaysMission: missionsWithRef.find(m => m.key === getTodaysMission(rows).key) ?? missionsWithRef[0],
     completedKeys: [...completedKeys],
     activity: rows.slice(0, 30),
-    stats: { momentum, streak, completionRate, activeDays, dailyCounts, totalLogged: rows.length },
+    stats: {
+      momentum, streak, completionRate, activeDays, dailyCounts, totalLogged: rows.length,
+      conversions: conversions?.length ?? 0,
+      lastConversionAt: conversions?.[0]?.converted_at ?? null,
+    },
+    refUrl,
   });
 }
 
