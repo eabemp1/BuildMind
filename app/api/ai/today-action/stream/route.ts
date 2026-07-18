@@ -191,7 +191,9 @@ export async function POST(request: Request) {
           return;
         }
 
-        await enforceAndTrackAIUsage(userId, routeUser.plan);
+        // feature: "core" — see non-streaming today-action/route.ts for why
+        // this gets its own usage bucket, separate from Coach/reflections.
+        await enforceAndTrackAIUsage(userId, routeUser.plan, "core");
 
         let stage = providedStage || "Idea";
         let targetUsers = "";
