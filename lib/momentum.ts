@@ -31,7 +31,7 @@
 const EMA_ALPHA = 0.25; // weight given to today's signal vs the running average
 
 /** Today's activity signal, 0-100, based on what happened. */
-function dailyActivitySignal(input: {
+export function dailyActivitySignal(input: {
   tasksCompletedToday: number;
   isHardTask: boolean;
   reflectionFiled: boolean;
@@ -155,4 +155,4 @@ export function computeMomentumTrend(history: number[]): MomentumTrend {
  */
 export function projectMomentum(current: number, additionalDaysInactive: number): number {
   return momentumDecay(current, additionalDaysInactive);
-}
+                          }
