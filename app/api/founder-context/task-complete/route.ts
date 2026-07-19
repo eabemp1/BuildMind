@@ -92,6 +92,14 @@ export async function POST(req: Request) {
     wasOverridden: false,
   });
 
+  type CompleteTaskAtomicResult = {
+    momentum: number;
+    streak: number;
+    xp: number;
+    xp_earned: number;
+    consecutive: number;
+  };
+
   const { data: taskResult, error: taskRpcError } = await admin
     .rpc("complete_task_atomic", {
       p_user_id: user.id,
@@ -101,7 +109,7 @@ export async function POST(req: Request) {
       p_today: today,
       p_stage: stage || null,
     })
-    .single();
+    .single<CompleteTaskAtomicResult>();
 
   if (taskRpcError) throw new Error(`complete_task_atomic failed: ${taskRpcError.message}`);
 
@@ -109,6 +117,7 @@ export async function POST(req: Request) {
   const newStreak = taskResult!.streak;
   const newXP = taskResult!.xp;
   const newConsecutive = taskResult!.consecutive;
+  const xpEarned = taskResult!.xp_earned;
 
 
   // ── Pattern Detection (Playbook §3.2) ────────────────────────────────────
@@ -270,4 +279,4 @@ export async function POST(req: Request) {
       severity: activePattern.severity,
     } : null,
   });
-    }
+      }
