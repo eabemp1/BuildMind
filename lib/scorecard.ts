@@ -32,7 +32,7 @@
  */
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { applyMomentumEMA, momentumLabel, isMomentumDecaying } from "@/lib/momentum";
+import { momentumLabel, isMomentumDecaying } from "@/lib/momentum";
 import { computeStartupScore } from "@/lib/scoring";
 
 export interface FounderScorecard {
@@ -140,25 +140,22 @@ export async function grantXP(userId: string, amount: number, reason: string): P
     throw new Error(`grantXP: amount must be a positive finite number, got ${amount}`);
   }
   const admin = createAdminClient();
-  const { data: ctx } = await admin
-    .from("founder_context")
-    .select("xp")
-    .eq("user_id", userId)
-    .maybeSingle();
 
-  const newXP = (ctx?.xp ?? 0) + Math.round(amount);
-
-  const { error } = await admin
-    .from("founder_context")
-    .upsert({ user_id: userId, xp: newXP }, { onConflict: "user_id" });
+  // FIX: previously read founder_context.xp in JS, computed newXP, then
+  // wrote it back — two round trips with no lock between them. Two
+  // near-simultaneous grants for the same user could both read the same
+  // stale value and one silently overwrite the other. Now atomic —
+  // see supabase/migrations/20260719000000_atomic_scorecard_rpcs.sql.
+  const { data, error } = await admin.rpc("grant_xp_atomic", {
+    p_user_id: userId,
+    p_amount: Math.round(amount),
+  });
 
   if (error) {
-    // Loud failure — XP silently failing is exactly the bug this file fixes.
-    // Never swallow this error the way the old addXP() did.
     throw new Error(`grantXP failed for user ${userId} (+${amount} for "${reason}"): ${error.message}`);
   }
 
-  return newXP;
+  return data as number;
 }
 
 /**
@@ -172,40 +169,24 @@ export async function updateStreak(
   todayIso: string,
 ): Promise<number> {
   const admin = createAdminClient();
-  const { data: ctx } = await admin
-    .from("founder_context")
-    .select("streak, last_checkin_date")
-    .eq("user_id", userId)
-    .maybeSingle();
 
-  const yesterday = new Date(todayIso);
-  yesterday.setUTCDate(yesterday.getUTCDate() - 1);
-  const yesterdayIso = yesterday.toISOString().slice(0, 10);
-
-  const previousStreak = ctx?.streak ?? 0;
-  const lastCheckin = ctx?.last_checkin_date ?? null;
-
-  const newStreak =
-    lastCheckin === todayIso ? previousStreak :        // already counted today
-    lastCheckin === yesterdayIso ? previousStreak + 1 : // consecutive day
-    1;                                                   // gap — restart at 1
-
-  const { error } = await admin
-    .from("founder_context")
-    .upsert({ user_id: userId, streak: newStreak, last_checkin_date: todayIso }, { onConflict: "user_id" });
+  // FIX: previously read streak+last_checkin_date in JS, computed the new
+  // value, then wrote it back — two round trips, no lock. A task-complete
+  // and a concurrent reflection submit for the same user could both read
+  // the same stale streak and one would silently overwrite the other's
+  // increment. Now atomic — see
+  // supabase/migrations/20260719000000_atomic_scorecard_rpcs.sql.
+  const { data, error } = await admin.rpc("update_streak_atomic", {
+    p_user_id: userId,
+    p_project_id: projectId,
+    p_today: todayIso,
+  });
 
   if (error) {
     throw new Error(`updateStreak failed for user ${userId}: ${error.message}`);
   }
 
-  // Mirror onto projects for legacy project_summaries reads — best-effort,
-  // never blocks the authoritative founder_context write above.
-  if (projectId) {
-    await admin.from("projects").update({ streak: newStreak }).eq("id", projectId).eq("user_id", userId)
-      .then(() => {}, () => {});
-  }
-
-  return newStreak;
+  return data as number;
 }
 
 /**
@@ -223,29 +204,26 @@ export async function updateMomentum(
   daysSinceLastUpdate = 1,
 ): Promise<number> {
   const admin = createAdminClient();
-  const { data: ctx } = await admin
-    .from("founder_context")
-    .select("momentum_score")
-    .eq("user_id", userId)
-    .maybeSingle();
 
-  const current = ctx?.momentum_score ?? 50;
-  const newMomentum = applyMomentumEMA(current, signal, daysSinceLastUpdate);
-
-  const { error } = await admin
-    .from("founder_context")
-    .upsert({ user_id: userId, momentum_score: newMomentum }, { onConflict: "user_id" });
+  // FIX: previously read momentum_score in JS, ran applyMomentumEMA(), then
+  // wrote it back — two round trips, no lock, and a formula that had to be
+  // hand-copied into supabase/functions/scheduled-jobs (Deno can't import
+  // this file). Now atomic AND shared: this calls the same Postgres
+  // function the edge function calls, so there's exactly one implementation
+  // of the EMA math, not two to keep in sync. See
+  // supabase/migrations/20260719000000_atomic_scorecard_rpcs.sql.
+  const { data, error } = await admin.rpc("update_momentum_atomic", {
+    p_user_id: userId,
+    p_project_id: projectId,
+    p_signal: signal,
+    p_days_since_last_update: daysSinceLastUpdate,
+  });
 
   if (error) {
     throw new Error(`updateMomentum failed for user ${userId}: ${error.message}`);
   }
 
-  if (projectId) {
-    await admin.from("projects").update({ momentum_score: newMomentum }).eq("id", projectId).eq("user_id", userId)
-      .then(() => {}, () => {});
-  }
-
-  return newMomentum;
+  return data as number;
 }
 
 /**
