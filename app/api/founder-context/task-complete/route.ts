@@ -12,7 +12,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { momentumOnTaskComplete } from "@/lib/founderContext";
+import { dailyActivitySignal } from "@/lib/momentum";
 import { detectPattern, shouldSurfacePattern, type PatternResult } from "@/lib/patternDetection";
 import { recordActivity } from "@/lib/server/activityLog";
 import { checkAndCacheStageTransition } from "@/lib/server/stageTransitionCache";
@@ -55,7 +55,6 @@ export async function POST(req: Request) {
     ? (recentTasksResult.value.data ?? []).map((r: { today_action: string }) => r.today_action).filter(Boolean)
     : [];
 
-  const current = ctx?.momentum_score ?? 50;
   const previousTaskCount = ctx?.tasks_accepted_this_week ?? 0;
   const isFirstTask = previousTaskCount === 0;
 
@@ -67,39 +66,50 @@ export async function POST(req: Request) {
   // EMA needs to know how many days elapsed since momentum was last touched —
   // a task completed after a 5-day gap should compound differently than one
   // completed the day after the last update.
-  const todayForGap = new Date().toISOString().slice(0, 10);
-  const lastActiveForGap = ctx?.last_active ?? todayForGap;
+  const today = new Date().toISOString().slice(0, 10); // UTC — matches fetchBehaviorState comparison
+  const lastActiveForGap = ctx?.last_active ?? today;
   const daysSinceLastUpdate = Math.max(
     1,
-    Math.round((new Date(todayForGap).getTime() - new Date(lastActiveForGap).getTime()) / 86_400_000),
+    Math.round((new Date(today).getTime() - new Date(lastActiveForGap).getTime()) / 86_400_000),
   );
-  const todayCountBeforeThis = ctx?.last_task_date === todayForGap ? (ctx?.tasks_completed_today ?? 0) : 0;
+  const todayCountBeforeThis = ctx?.last_task_date === today ? (ctx?.tasks_completed_today ?? 0) : 0;
 
-  const newMomentum = momentumOnTaskComplete(current, isHardTask, {
-    tasksCompletedToday: todayCountBeforeThis,
-    daysSinceLastUpdate,
+  // FIX (root cause of the months-long inconsistency): this route previously
+  // computed momentum, streak, and XP independently in JS and wrote them as
+  // part of one big upsert below — a THIRD implementation alongside
+  // lib/scorecard.ts's canonical functions and the Deno edge function's
+  // (now-removed) hand-copy. Now calls ONE atomic Postgres function that
+  // does the full row lock, all the math, and all the writes (momentum,
+  // streak, XP, and task counters) in a single round trip — see
+  // complete_task_atomic in supabase/migrations/20260719000000_atomic_scorecard_rpcs.sql.
+  // This is genuinely faster than a naive per-metric RPC split would have
+  // been, not just "no worse": one lock instead of three, one round trip
+  // instead of four.
+  const signal = dailyActivitySignal({
+    tasksCompletedToday: todayCountBeforeThis + 1,
+    isHardTask,
+    reflectionFiled: false,
+    wasOverridden: false,
   });
 
-  // Consecutive task tracking — powers the Emotional Language Layer in reflexion.ts
-  const today = new Date().toISOString().slice(0, 10); // UTC — matches fetchBehaviorState comparison
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayKey = yesterday.toISOString().slice(0, 10);
-  const lastCheckinDate = ctx?.last_checkin_date ?? null;
-  const previousStreak = ctx?.streak ?? 0;
-  const newStreak = lastCheckinDate === today
-    ? previousStreak
-    : lastCheckinDate === yesterdayKey
-      ? previousStreak + 1
-      : 1;
-  const previousTodayCount = ctx?.last_task_date === today ? (ctx?.tasks_completed_today ?? 0) : 0;
-  const isReturningAfterGap = (ctx?.last_active ?? "") < today;
-  const prevConsecutive = ctx?.consecutive_tasks_completed ?? 0;
-  const newConsecutive = isReturningAfterGap ? 1 : prevConsecutive + 1;
-  const baseXP = 10;
-  const streakBonus = newStreak >= 7 ? 5 : 0;
-  const xpEarned = baseXP + streakBonus;
-  const newXP = (ctx?.xp ?? 0) + xpEarned;
+  const { data: taskResult, error: taskRpcError } = await admin
+    .rpc("complete_task_atomic", {
+      p_user_id: user.id,
+      p_project_id: projectId || null,
+      p_signal: signal,
+      p_days_since_last_update: daysSinceLastUpdate,
+      p_today: today,
+      p_stage: stage || null,
+    })
+    .single();
+
+  if (taskRpcError) throw new Error(`complete_task_atomic failed: ${taskRpcError.message}`);
+
+  const newMomentum = taskResult!.momentum;
+  const newStreak = taskResult!.streak;
+  const newXP = taskResult!.xp;
+  const newConsecutive = taskResult!.consecutive;
+
 
   // ── Pattern Detection (Playbook §3.2) ────────────────────────────────────
   // Run after every task completion — surfaces behavioural signals to the
@@ -128,21 +138,15 @@ export async function POST(req: Request) {
     // Pattern detection is non-fatal — never block task completion
   }
 
+  // Only two things left to write here: tasks_accepted_this_week (a weekly
+  // counter separate from the RPC's daily/total counters) and the
+  // pattern-detection fields, which depend on newMomentum from the RPC
+  // above so couldn't be folded into it. Everything else — momentum, streak,
+  // xp, consecutive count, today/total counts, last_active, days_inactive,
+  // current_stage — was already written atomically by complete_task_atomic.
   await admin.from("founder_context").upsert({
     user_id: user.id,
-    momentum_score: newMomentum,
-    momentum_updated_at: new Date().toISOString(),
-    last_active: today,
-    days_inactive: 0,
     tasks_accepted_this_week: previousTaskCount + 1,
-    consecutive_tasks_completed: newConsecutive,
-    tasks_completed_today: previousTodayCount + 1,
-    last_task_date: today,
-    daily_tasks_reset_at: new Date().toISOString(),
-    tasks_completed_total: (ctx?.tasks_completed_total ?? 0) + 1,
-    xp: newXP,
-    streak: newStreak,
-    last_checkin_date: today,
     ...(activePattern?.signal
       ? {
           active_pattern_signal: activePattern.signal,
@@ -151,21 +155,12 @@ export async function POST(req: Request) {
           last_pattern_shown_at: new Date().toISOString(),
         }
       : {}),
-    ...(stage ? { current_stage: stage } : {}),
   }, { onConflict: "user_id" });
 
   // ── Mirror onto projects (read-only consumers: project_summaries view) ────
-  // founder_context above is the single source of truth — this is purely a
-  // best-effort mirror so legacy queries against `projects` don't show stale
-  // numbers. Never block the response on this; never treat it as authoritative.
-  if (projectId) {
-    admin
-      .from("projects")
-      .update({ momentum_score: newMomentum, streak: newStreak })
-      .eq("id", projectId)
-      .eq("user_id", user.id)
-      .then(() => {}, () => {});
-  }
+  // founder_context is the single source of truth — the RPCs above already
+  // mirror momentum_score/streak onto projects internally (passed
+  // p_project_id), so no separate mirror needed here anymore.
 
   const computedScore = newMomentum;
   // Non-blocking score history snapshot — feeds the Progress page 7-day trend
@@ -275,4 +270,4 @@ export async function POST(req: Request) {
       severity: activePattern.severity,
     } : null,
   });
-                                   }
+    }
