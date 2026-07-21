@@ -59,19 +59,32 @@ export async function GET() {
         new Date(trialStartedAt).getTime() + TRIAL_DURATION_DAYS * 24 * 60 * 60 * 1000,
       ).toISOString();
 
-      const { data: inserted } = await admin
+      // FIX: previously a plain .insert() — this route almost certainly
+      // fires on most page loads (checking trial/billing status), making
+      // it the most likely dominant source of the 611 duplicate
+      // founder_context rows found on one heavily-active account. Two
+      // concurrent requests (multiple tabs, fast navigation) could both see
+      // no trial row yet and both insert. There WAS a fallback below for
+      // when the insert failed — but a plain insert with no unique
+      // constraint to violate never actually fails, it just creates another
+      // duplicate row and takes the "success" branch every time. Now uses
+      // upsert with ignoreDuplicates so a losing concurrent request becomes
+      // a no-op instead of a new row.
+      await admin
         .from("founder_context")
-        .insert({
-          user_id: user.id,
-          trial_started_at: trialStartedAt,
-          trial_ends_at: trialEndsAtNew,
-          trial_expired: false,
-        })
+        .upsert(
+          { user_id: user.id, trial_started_at: trialStartedAt, trial_ends_at: trialEndsAtNew, trial_expired: false },
+          { onConflict: "user_id", ignoreDuplicates: true },
+        );
+
+      const { data: current } = await admin
+        .from("founder_context")
         .select("trial_started_at, trial_ends_at, trial_expired")
+        .eq("user_id", user.id)
         .maybeSingle();
 
-      if (inserted) {
-        trialRow = inserted;
+      if (current) {
+        trialRow = current;
       } else {
         const { data: existing } = await admin
           .from("founder_context")
