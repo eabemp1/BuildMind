@@ -709,6 +709,23 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
       reflexionStatus = "failed";
       logError("today-action/reflexion", err, { route: "/api/ai/today-action", userId, requestId });
       // Reflexion loop failure is non-fatal — use single-pass result
+
+      // FIX: this is the exact failure mode that ran silently for 6 weeks
+      // for one user — every single day fell back to the same static
+      // per-stage template, invisible anywhere except console/Sentry logs
+      // (which don't retain 6 weeks of history). Now persisted so it's
+      // queryable and the health-check page can flag repeat offenders.
+      if (supabase) {
+        supabase
+          .from("ai_generation_fallback_events")
+          .insert({
+            user_id: userId,
+            route: "today-action",
+            stage,
+            error_message: err instanceof Error ? err.message : String(err),
+          })
+          .then(() => {}, () => {}); // best-effort — never blocks the response
+      }
     }
 
     // ── Merge reflexion output back into TodayAction shape ─────────────────
