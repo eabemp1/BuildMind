@@ -105,6 +105,35 @@ export async function GET() {
     .select("*", { count: "exact", head: true })
     .gte("created_at", thirtyDaysAgo);
 
+  // Check 6: AI generation fallback rate + repeat offenders.
+  // THE MOST IMPORTANT CHECK ON THIS PAGE. A real user hit the static
+  // per-stage fallback template 20+ times in a row across 6 weeks with
+  // zero visibility anywhere queryable — this is what would have caught it
+  // in week one instead of week six. repeatOffenders (3+ hits in 7 days for
+  // one user) is the real signal, not the raw count — occasional fallback
+  // firing is normal, models do sometimes fail.
+  const sevenDaysAgo = new Date(Date.now() - 7 * 86_400_000).toISOString();
+  let fallbackCount = 0;
+  let repeatOffenders: { userId: string; count: number }[] = [];
+  try {
+    const { data: fallbackEvents } = await admin
+      .from("ai_generation_fallback_events")
+      .select("user_id, created_at")
+      .gte("created_at", sevenDaysAgo);
+
+    fallbackCount = fallbackEvents?.length ?? 0;
+    const byUser = new Map<string, number>();
+    for (const e of fallbackEvents ?? []) {
+      byUser.set(e.user_id, (byUser.get(e.user_id) ?? 0) + 1);
+    }
+    repeatOffenders = [...byUser.entries()]
+      .filter(([, count]) => count >= 3)
+      .map(([userId, count]) => ({ userId, count }))
+      .sort((a, b) => b.count - a.count);
+  } catch {
+    // Table may not exist yet if the migration hasn't been run — non-fatal.
+  }
+
   return NextResponse.json({
     ok: true,
     generatedAt: new Date().toISOString(),
@@ -143,6 +172,15 @@ export async function GET() {
         label: "Founding-member pre-commitments saved, last 30 days",
         count: foundingMemberCount ?? 0,
         note: "Zero here for an extended period likely means the save is broken again, not that nobody's taking the quiz — check before assuming.",
+      },
+      aiFallbackRate: {
+        label: "AI generation fallback events, last 7 days",
+        count: fallbackCount,
+        repeatOffenders,
+        healthy: repeatOffenders.length === 0,
+        note: repeatOffenders.length > 0
+          ? repeatOffenders.length + " user(s) hitting the static fallback 3+ times this week — their real AI generation is structurally broken, not unlucky. This is exactly the pattern that ran undetected for 6 weeks before. Check these user_ids first."
+          : null,
       },
     },
   });
