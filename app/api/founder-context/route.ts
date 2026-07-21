@@ -20,11 +20,22 @@ export async function GET() {
     .maybeSingle();
 
   if (dbErr && dbErr.code === "PGRST116") {
-    // Row doesn't exist yet — create it
+    // FIX: previously a plain .insert() here — if two requests for the same
+    // user raced (multiple tabs, rapid navigation), both could see "no row
+    // yet" and both insert, creating a duplicate. With no unique constraint
+    // on user_id (a separate bug, now fixed at the schema level), nothing
+    // stopped this from compounding — one heavily-testing account ended up
+    // with 611 duplicate rows over two months. ignoreDuplicates:true makes
+    // this safe now that the constraint exists: if a concurrent request won
+    // the race, this becomes a no-op instead of a second row.
+    await admin
+      .from("founder_context")
+      .upsert({ user_id: user.id }, { onConflict: "user_id", ignoreDuplicates: true });
+
     const { data: created } = await admin
       .from("founder_context")
-      .insert({ user_id: user.id })
-      .select()
+      .select("*")
+      .eq("user_id", user.id)
       .maybeSingle();
     return NextResponse.json({ ok: true, data: created });
   }
