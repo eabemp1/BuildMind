@@ -30,6 +30,12 @@ const ReflectActionSchema = z.object({
   streak:        z.number().int().min(0).max(9999).default(0),
   userId:        z.string().uuid().optional(),
   projectId:     z.string().uuid().optional(),
+  // FIX: reflections had no way to know which task they resolved — every
+  // task stayed "pending" forever regardless of reflection outcome. See
+  // reflections_task_id.sql. Optional so this doesn't break reflections
+  // that genuinely aren't tied to a specific roadmap task (e.g. an ad-hoc
+  // daily action that isn't in the tasks table at all).
+  taskId:        z.string().uuid().optional(),
 });
 
 interface ReflectActionInput {
@@ -45,6 +51,7 @@ interface ReflectActionInput {
   streak:        number;
   userId?:       string;
   projectId?:    string;
+  taskId?:       string;
 }
 
 interface ReflectActionOutput {
@@ -202,7 +209,7 @@ export async function POST(request: Request) {
       );
     }
     const body: ReflectActionInput = parseResult.data;
-    const { outcome, note, what_tried, what_happened, what_learned, blocker, confidence, stage, todayAction, streak, userId, projectId } = body;
+    const { outcome, note, what_tried, what_happened, what_learned, blocker, confidence, stage, todayAction, streak, userId, projectId, taskId } = body;
 
     // Use the server-verified userId from auth, fall back to body for backwards compat
     const verifiedUserId = routeUser.userId ?? userId;
@@ -235,6 +242,7 @@ Target users: ${project.target_users ?? "Not specified"}`;
         await supabase.from("reflections").insert({
           user_id:      verifiedUserId,
           project_id:   projectId,
+          task_id:      taskId ?? null,
           outcome,
           note,
           // Rich separated fields for aggressive personalisation
@@ -247,6 +255,27 @@ Target users: ${project.target_users ?? "Not specified"}`;
           today_action:  todayAction,
           created_at:    new Date().toISOString(),
         });
+
+        // FIX: reflect-action previously never touched the tasks table at
+        // all — confirmed via real founder data showing has_reflection=true
+        // with status still "pending" on every row. Only update when a real
+        // taskId was supplied (never guess); ownership is enforced via
+        // .eq("user_id", ...) so this can't touch another user's task even
+        // if a taskId were somehow forged.
+        if (taskId) {
+          const taskStatus =
+            outcome === "completed" ? "completed" :
+            outcome === "blocked"   ? "blocked"   :
+            null; // "partial"/"learned" — leave as-is, not a terminal state
+          if (taskStatus) {
+            await supabase
+              .from("tasks")
+              .update({ status: taskStatus, is_completed: taskStatus === "completed" })
+              .eq("id", taskId)
+              .eq("user_id", verifiedUserId)
+              .then(() => {}, (err) => logError("reflect-action/task-status-update", err, { taskId, verifiedUserId }));
+          }
+        }
 
         // Blocker intelligence pipeline — fire-and-forget
         if (blockerCategory && blockerCategory !== "other") {
