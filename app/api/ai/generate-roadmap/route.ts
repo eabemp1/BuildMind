@@ -99,6 +99,7 @@ async function insertTasks(
       milestone_id: row.milestone_id,
       title: row.title,
       status: (row.is_completed ? "completed" : "pending") as string,
+      priority: row.priority,
     })),
     // Attempt 2 — with user_id if available
     rows.map((row) => ({
@@ -106,6 +107,7 @@ async function insertTasks(
       user_id: row.user_id,
       title: row.title,
       status: (row.is_completed ? "completed" : "pending") as string,
+      priority: row.priority,
     })),
     // Attempt 3 — with is_completed (only works after migration 20260430000000 runs)
     rows.map((row) => ({
@@ -113,8 +115,9 @@ async function insertTasks(
       user_id: row.user_id,
       title: row.title,
       is_completed: row.is_completed,
+      priority: row.priority,
     })),
-    // Attempt 4 — description fallback (very old schema)
+    // Attempt 4 — description fallback (very old schema, no priority column)
     rows.map((row) => ({
       milestone_id: row.milestone_id,
       description: row.title,
@@ -167,22 +170,50 @@ export async function POST(request: Request) {
 
     let roadmap = FALLBACK_ROADMAP;
 
+    // FIX: previously generated all 5 stages' full task lists in one call,
+    // regardless of the founder's actual current stage — this is the
+    // confirmed root cause of Growth-stage tasks ("partner with 3
+    // accelerators", "onboard 100 founders with personalized kickoff
+    // calls") appearing for a founder still at Launch. Only the current
+    // stage and the one immediately after get real, detailed tasks. Later
+    // stages get a milestone placeholder with zero tasks — they'll be
+    // properly generated when the founder actually reaches them and has
+    // real context (momentum, reflections, what worked) to generate from,
+    // instead of a same-day guess made before any of that exists.
+    const currentStageIdx = STAGE_ORDER.findIndex((s) => s.toLowerCase() === initialStage.toLowerCase());
+    const detailedStages = STAGE_ORDER.slice(Math.max(0, currentStageIdx), currentStageIdx + 2);
+
     try {
       await enforceAndTrackAIUsage(userId, routeUser.plan);
       const result = await groqJSON<{ roadmap: Array<{ milestone: string; tasks: string[] }> }>(
-        `You are a startup execution strategist. Return JSON with key "roadmap" only — an array of 5 milestone objects.
+        `You are a startup execution strategist for BuildMind — a tool built specifically for SOLO founders with no team, no contractor budget, and limited hours (they are almost always doing this alongside other obligations, not full-time with hired help).
+
+Return JSON with key "roadmap" only — an array of milestone objects for these stages ONLY: ${detailedStages.join(", ")}.
 Each object has "milestone" (string) and "tasks" (array of 3-5 specific action strings).
-Milestones must be in this exact order: Idea, Validation, MVP, Launch, Growth.
-Tasks must be specific to this exact startup — not generic advice.`,
+
+HARD CONSTRAINTS on every task:
+- Must be completable by ONE person, alone, without hiring anyone or requiring a team.
+- Never suggest anything requiring a contractor, agency, hired help, or "partner with an organization" — those require capacity a solo founder doesn't have and BD timelines (months) that don't fit a daily-action tool.
+- Never suggest "personalized 1:1 [X] for every user/customer" at any scale beyond a handful — that's a hiring plan disguised as a task, not an action.
+- Scope every task to something achievable in hours, not weeks — if an idea is real but too big for one action, break it into the FIRST concrete step only, not the whole initiative.
+- Tasks must be specific to this exact startup — not generic advice.`,
         `Project: ${projectName}
 Idea: ${idea}
 Target users: ${targetUsers}
 Problem: ${problem}
+Founder's current stage: ${initialStage}
 
-Generate a specific roadmap for this startup. Tasks must reference the actual product and users.`,
+Generate a specific roadmap for THIS founder's current and immediate-next stage only. Tasks must reference the actual product and users, and must be realistic for one person working alone.`,
       );
-      if (Array.isArray(result?.roadmap) && result.roadmap.length >= 3) {
-        roadmap = result.roadmap;
+      if (Array.isArray(result?.roadmap) && result.roadmap.length >= 1) {
+        // Merge: detailed tasks for current+next stage, empty placeholders
+        // for later stages (never silently drop a milestone from the roadmap
+        // view — just don't populate tasks for stages that are premature).
+        const detailedMap = new Map(result.roadmap.map((m) => [m.milestone, m.tasks]));
+        roadmap = STAGE_ORDER.map((stageName) => ({
+          milestone: stageName,
+          tasks: detailedMap.get(stageName) ?? [],
+        }));
       }
     } catch (err) {
       console.error("Roadmap AI generation failed, writing fallback roadmap:", err);
@@ -219,11 +250,21 @@ Generate a specific roadmap for this startup. Tasks must reference the actual pr
 
           if (createdMilestone?.id) {
             milestoneIds.push({ id: createdMilestone.id, title: milestone.milestone, order_index: i });
-            const taskRows = (milestone.tasks ?? []).map((t) => ({
+            // FIX: previously never set priority, so every task silently
+            // got the schema default (5) — confirmed as the exact cause of
+            // flat priority:5 across every row in a real founder's task
+            // list. Stage distance from the founder's actual current stage
+            // dominates (current-stage tasks always rank above next-stage
+            // ones); position within the stage's task list breaks ties.
+            // Lower number = higher priority, matching the schema default's
+            // convention (DEFAULT 5, so 1 is more urgent than 5).
+            const stageDistance = Math.max(0, i - Math.max(0, currentStageIdx));
+            const taskRows = (milestone.tasks ?? []).map((t, taskIdx) => ({
               milestone_id: createdMilestone.id,
               user_id: userId,
               title: t,
               is_completed: false,
+              priority: stageDistance * 10 + taskIdx + 1,
             }));
             if (taskRows.length) {
               await insertTasks(supabase, taskRows);
