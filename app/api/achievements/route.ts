@@ -10,6 +10,8 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
+import { ACHIEVEMENTS } from "@/lib/achievements";
+import { getServerAchievementStats } from "@/lib/achievementStats";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,32 +55,55 @@ export async function POST(request: Request) {
     const userId = userResult.user.id;
 
     const body = await request.json().catch(() => ({}));
-    const ids: string[] = Array.isArray(body?.ids) ? body.ids : [];
+    const requestedIds: string[] = Array.isArray(body?.ids) ? body.ids : [];
 
-    if (ids.length === 0) {
+    if (requestedIds.length === 0) {
       return NextResponse.json({ ok: false, error: "ids array required" }, { status: 400 });
     }
 
+    // FIX (Finding A.1, BuildMind_Feature_Debugging_Audit_2026-07-22.md):
+    // the client's ids array is a claim, not a fact. Re-evaluate each
+    // requested achievement's own condition() against server-derived stats
+    // — never persist an id just because the client asked for it. This is
+    // the only change needed to stop "unlock every achievement in one POST".
+    const stats = await getServerAchievementStats(userId, userResult.plan);
+    const achievementById = new Map(ACHIEVEMENTS.map((a) => [a.id, a]));
+
+    const verifiedIds = requestedIds.filter((id) => {
+      const achievement = achievementById.get(id);
+      if (!achievement) return false; // unknown id — reject silently
+      try {
+        return achievement.condition(stats);
+      } catch {
+        return false;
+      }
+    });
+
     const supabase = createAdminClient();
 
-    // Upsert all achievements — ignore conflicts (already unlocked)
-    const rows = ids.map((achievement_id) => ({
-      user_id: userId,
-      achievement_id,
-      unlocked_at: new Date().toISOString(),
-    }));
+    if (verifiedIds.length > 0) {
+      const rows = verifiedIds.map((achievement_id) => ({
+        user_id: userId,
+        achievement_id,
+        unlocked_at: new Date().toISOString(),
+      }));
 
-    const { error } = await supabase
-      .from("user_achievements")
-      .upsert(rows, { onConflict: "user_id,achievement_id", ignoreDuplicates: true });
+      const { error } = await supabase
+        .from("user_achievements")
+        .upsert(rows, { onConflict: "user_id,achievement_id", ignoreDuplicates: true });
 
-    if (error) {
-      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+      if (error) {
+        return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+      }
     }
 
-    return NextResponse.json({ ok: true, unlocked: ids.length });
+    return NextResponse.json({
+      ok: true,
+      unlocked: verifiedIds.length,
+      rejected: requestedIds.length - verifiedIds.length,
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "achievements POST failed";
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
-}
+                                   }
