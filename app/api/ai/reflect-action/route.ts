@@ -282,31 +282,32 @@ Target users: ${project.target_users ?? "Not specified"}`;
           void runBlockerIntelligencePipeline(supabase, verifiedUserId);
         }
         const todayDate = new Date().toISOString().slice(0, 10);
-        const { data: existingContext } = await supabase
-          .from("founder_context")
-          .select("streak, last_checkin_date")
-          .eq("user_id", verifiedUserId)
-          .maybeSingle();
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayDate = yesterday.toISOString().slice(0, 10);
-        const lastCheckinDate = existingContext?.last_checkin_date ?? null;
-        const previousStreak = existingContext?.streak ?? 0;
-        const nextStreak = lastCheckinDate === todayDate
-          ? previousStreak
-          : lastCheckinDate === yesterdayDate
-            ? previousStreak + 1
-            : 1;
+        // FIX: this was a THIRD independent, non-atomic (read-then-write,
+        // no row lock) reimplementation of streak logic — separate from the
+        // dedicated /api/founder-context/streak route and from
+        // complete_task_atomic. The value written here was always
+        // server-derived (never trusted the client's `streak` param for the
+        // actual write), so this wasn't forgeable — but it was still a
+        // fourth place computing "what is the new streak" with its own
+        // copy of the same logic, exactly the pattern that caused months of
+        // inconsistency elsewhere in this app. Now calls the same shared,
+        // atomic RPC every other path uses.
+        const { data: nextStreak, error: streakErr } = await supabase.rpc("update_streak_atomic", {
+          p_user_id: verifiedUserId,
+          p_project_id: projectId ?? null,
+          p_today: todayDate,
+        });
+        if (streakErr) {
+          logError("reflect-action/streak", streakErr, { verifiedUserId });
+        }
 
         await supabase
           .from("founder_context")
-          .upsert({
-            user_id: verifiedUserId,
-            streak: nextStreak,
-            last_checkin_date: todayDate,
+          .update({
             last_active: todayDate,
             days_inactive: 0,
-          }, { onConflict: "user_id" });
+          })
+          .eq("user_id", verifiedUserId);
 
         await supabase
           .from("user_behavior_state")
@@ -391,7 +392,7 @@ Target users: ${project.target_users ?? "Not specified"}`;
           const location = meta.city     ?? meta.location ?? meta.country ?? "Somewhere";
 
           const typeMap: Record<string, string> = {
-            completed: streak >= 7 ? "streak" : "done",
+            completed: (nextStreak ?? streak) >= 7 ? "streak" : "done",
             partial:   "done",
             blocked:   "reflect",
             learned:   "reflect",
@@ -415,7 +416,7 @@ Target users: ${project.target_users ?? "Not specified"}`;
             stage_color: stageColor,
             action:      todayAction,
             outcome:     note && note.trim() ? note.trim() : null,
-            streak,
+            streak: nextStreak ?? streak,
             type:        eventType,
           });
         } catch {
@@ -454,7 +455,7 @@ Note: "${note || "No note provided"}"
 Confidence (1-5): ${confidence}
 Today's action was: "${todayAction || "Not specified"}"
 Startup stage: ${stage}
-Current streak: ${streak} days
+Current streak: ${nextStreak ?? streak} days
 ${projectContext}`,
       );
     } catch {
