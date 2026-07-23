@@ -25,7 +25,19 @@ export async function checkAndCacheStageTransition(userId: string, projectId: st
 
   const [{ count: reflectionCount }, { count: completedCount }, { data: latestReflection }] = await Promise.all([
     supabase.from("reflections").select("id", { count: "exact", head: true }).eq("user_id", userId),
-    supabase.from("tasks").select("id", { count: "exact", head: true }).eq("project_id", projectId).eq("is_completed", true),
+    // FIX: previously .eq("project_id", projectId) directly on tasks — that
+    // column does not exist on the tasks table (it only has milestone_id,
+    // which links to milestones, which links to projects). That query
+    // either errored or silently returned null, so completedCount always
+    // read as 0 and shouldPrompt could NEVER become true — the level-up
+    // recommendation prompt was effectively permanently dead, regardless
+    // of how many tasks a founder actually completed.
+    supabase
+      .from("tasks")
+      .select("id, milestones!inner(project_id)", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("is_completed", true)
+      .eq("milestones.project_id", projectId),
     supabase
       .from("reflections")
       .select("confidence, outcome")
