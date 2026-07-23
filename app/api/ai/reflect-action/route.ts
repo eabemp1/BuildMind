@@ -215,6 +215,10 @@ export async function POST(request: Request) {
     const verifiedUserId = routeUser.userId ?? userId;
 
     let projectContext = "";
+    // Hoisted so the AI prompt below (outside the Supabase try/catch) can
+    // read the freshly-computed streak; stays undefined if Supabase isn't
+    // wired or the block throws, in which case callers fall back to `streak`.
+    let nextStreak: number | undefined;
 
     // If Supabase is wired, pull project context for deeper personalisation
     if (verifiedUserId && projectId && hasAdminEnv()) {
@@ -292,13 +296,15 @@ Target users: ${project.target_users ?? "Not specified"}`;
         // copy of the same logic, exactly the pattern that caused months of
         // inconsistency elsewhere in this app. Now calls the same shared,
         // atomic RPC every other path uses.
-        const { data: nextStreak, error: streakErr } = await supabase.rpc("update_streak_atomic", {
+        const { data: streakRpcData, error: streakErr } = await supabase.rpc("update_streak_atomic", {
           p_user_id: verifiedUserId,
           p_project_id: projectId ?? null,
           p_today: todayDate,
         });
         if (streakErr) {
           logError("reflect-action/streak", streakErr, { verifiedUserId });
+        } else {
+          nextStreak = streakRpcData ?? undefined;
         }
 
         await supabase
