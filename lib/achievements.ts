@@ -246,25 +246,19 @@ export function getTotalXP(): number {
   return Number(storage.get(XP_KEY) ?? "0");
 }
 
-function addXP(amount: number, reason = "achievement"): void {
+// FIX (security audit): this function previously POSTed {amount, reason}
+// directly to /api/user/xp, which trusted the client-supplied amount
+// (capped at 500/call, but 20 calls/hour = 10,000 XP/hour indefinitely —
+// a real, exploitable forgery path). XP for achievements is now granted
+// server-side inside POST /api/achievements, using the achievement's own
+// canonical xp value — never a client-supplied number. This function now
+// ONLY updates the local optimistic display value for instant UI feedback;
+// it does not (and must not) independently tell the server how much XP to
+// grant. The actual authoritative value still comes from
+// getFounderScorecard() / the scorecard endpoint, same as before.
+function updateLocalXPDisplay(amount: number): void {
   const next = getTotalXP() + amount;
   storage.set(XP_KEY, String(next));
-  fetch("/api/user/xp", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ amount, reason }),
-  }).then(async (res) => {
-    if (!res.ok) {
-      // Previously this was a silent .catch(() => {}) — a server-side XP
-      // write failure was invisible, which is exactly how founder_context.xp
-      // ended up referenced everywhere but never actually populated for
-      // weeks. Logging here at minimum surfaces it in error tracking.
-      const body = await res.json().catch(() => ({}));
-      console.error(`[achievements] XP grant failed (+${amount} for "${reason}"):`, body?.error ?? res.status);
-    }
-  }).catch((err) => {
-    console.error(`[achievements] XP grant network error (+${amount} for "${reason}"):`, err);
-  });
 }
 
 export function getAchievementStats(): AchievementStats {
@@ -326,7 +320,7 @@ export function checkAndUnlockAchievements(): Achievement[] {
   for (const achievement of ACHIEVEMENTS) {
     if (!unlockedIds.has(achievement.id) && achievement.condition(stats)) {
       unlocked.push({ id: achievement.id, unlockedAt: Date.now(), seen: false });
-      addXP(achievement.xp, `achievement:${achievement.id}`);
+      updateLocalXPDisplay(achievement.xp);
       newlyUnlocked.push(achievement);
     }
   }
