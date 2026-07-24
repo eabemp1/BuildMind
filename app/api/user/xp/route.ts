@@ -2,16 +2,14 @@
  * app/api/user/xp/route.ts
  *
  * GET  → returns the current user's XP total from founder_context
- * POST → increments XP by the given amount
- *
- * XP is stored in founder_context.xp (int column). Previously it lived only
- * in localStorage, which caused score discrepancies across devices.
+ * POST → disabled (410 Gone). XP grants now happen server-side only,
+ *         inside POST /api/achievements, tied to verified achievement
+ *         unlocks. See that route.
  */
 
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { rateLimitAsync } from "@/lib/server/rateLimit";
-import { getFounderScorecard, grantXP } from "@/lib/scorecard";
+import { getFounderScorecard } from "@/lib/scorecard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,42 +32,22 @@ export async function GET() {
   }
 }
 
-export async function POST(req: Request) {
-  const userId = await getUserId();
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const limit = await rateLimitAsync(
-    `xp:${userId}`,
-    20,              // 20 XP grants per hour — generous for legitimate use
-    60 * 60 * 1000,
-    { failClosed: false }  // fail open — authenticated route
+export async function POST() {
+  // FIX (security audit, high-severity): this endpoint previously accepted
+  // a client-supplied { amount, reason } and trusted it directly, capped
+  // only at 500/request — 20 requests/hour (the route's own rate limit)
+  // meant a script could grant up to 10,000 XP/hour indefinitely, with no
+  // check that any real, verifiable event actually happened.
+  //
+  // XP is now granted exclusively server-side, inside POST /api/achievements,
+  // tied to a real newly-verified achievement unlock and using that
+  // achievement's own canonical xp value — never a client-supplied amount.
+  // This endpoint's only remaining legitimate caller (lib/achievements.ts)
+  // has been updated to stop calling it. Kept as a route (rather than
+  // deleted) so any stale client / old cached JS bundle that still tries to
+  // call it fails loudly and safely instead of 404ing unexpectedly.
+  return NextResponse.json(
+    { error: "Direct XP grants are no longer accepted. XP is awarded automatically via verified achievement unlocks." },
+    { status: 410 }, // 410 Gone — deliberate, not a transient failure
   );
-  if (!limit.ok) {
-    return NextResponse.json({ error: "Too many XP requests" }, { status: 429 });
-  }
-
-  const body = await req.json().catch(() => ({}));
-  const amount = Number(body?.amount ?? 0);
-  const reason = typeof body?.reason === "string" ? body.reason : "client-awarded";
-  if (!amount || isNaN(amount) || amount <= 0) {
-    return NextResponse.json({ error: "amount must be a positive number" }, { status: 400 });
-  }
-  // Cap per-request XP to a reasonable maximum (largest legitimate award is ~50 XP).
-  // This prevents a crafted POST from inflating a user's XP to an arbitrary value.
-  const MAX_XP_PER_CALL = 500;
-  if (amount > MAX_XP_PER_CALL) {
-    return NextResponse.json({ error: `amount must not exceed ${MAX_XP_PER_CALL}` }, { status: 400 });
-  }
-
-  try {
-    // grantXP() is the ONLY permitted writer to founder_context.xp — see
-    // lib/scorecard.ts. It throws loudly on failure instead of swallowing
-    // errors, which is what made the original achievements addXP() bug
-    // (silent .catch(() => {})) invisible for so long.
-    const newXP = await grantXP(userId, amount, reason);
-    return NextResponse.json({ ok: true, xp: newXP });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to update XP";
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
 }
