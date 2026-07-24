@@ -12,6 +12,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { ACHIEVEMENTS } from "@/lib/achievements";
 import { getServerAchievementStats } from "@/lib/achievementStats";
+import { grantXP } from "@/lib/scorecard";
+import { logError } from "@/lib/server/logger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -80,8 +82,31 @@ export async function POST(request: Request) {
     });
 
     const supabase = createAdminClient();
+    let xpGranted = 0;
 
     if (verifiedIds.length > 0) {
+      // FIX (audit finding: /api/user/xp let the client choose how much XP
+      // to grant, capped only at 500/call — 20 calls/hour = 10,000 XP/hour
+      // indefinitely). XP is now granted HERE, server-side, tied to a real
+      // newly-verified achievement unlock, using that achievement's own
+      // canonical xp value from ACHIEVEMENTS — never a client-supplied
+      // amount. /api/user/xp's POST handler has been correspondingly
+      // disabled; see that file.
+      //
+      // Only grant XP for IDs that are genuinely NEW — check what's already
+      // unlocked first, so a repeat POST with the same ids (e.g. a retried
+      // request) never double-grants. ignoreDuplicates on the upsert below
+      // already prevents duplicate ROWS, but says nothing about whether we
+      // already granted XP for them on a previous call.
+      const { data: alreadyUnlocked } = await supabase
+        .from("user_achievements")
+        .select("achievement_id")
+        .eq("user_id", userId)
+        .in("achievement_id", verifiedIds);
+
+      const alreadyUnlockedSet = new Set((alreadyUnlocked ?? []).map((r) => r.achievement_id));
+      const newlyUnlockedIds = verifiedIds.filter((id) => !alreadyUnlockedSet.has(id));
+
       const rows = verifiedIds.map((achievement_id) => ({
         user_id: userId,
         achievement_id,
@@ -95,12 +120,26 @@ export async function POST(request: Request) {
       if (error) {
         return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
       }
+
+      for (const id of newlyUnlockedIds) {
+        const achievement = achievementById.get(id);
+        if (!achievement || !achievement.xp) continue;
+        try {
+          await grantXP(userId, achievement.xp, `achievement:${id}`);
+          xpGranted += achievement.xp;
+        } catch (err) {
+          // Don't fail the whole request over one XP grant — the
+          // achievement itself is already correctly persisted above.
+          logError("achievements/grantXP", err, { userId, achievementId: id });
+        }
+      }
     }
 
     return NextResponse.json({
       ok: true,
       unlocked: verifiedIds.length,
       rejected: requestedIds.length - verifiedIds.length,
+      xpGranted,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "achievements POST failed";
