@@ -34,6 +34,7 @@ export const queryKeys = {
   notifications: ["notifications"] as const,
   coach: (projectId: string) => ["coach", projectId] as const,
   projectSummaries: ["project-summaries"] as const,
+  scorecard: ["founder-scorecard"] as const,
 };
 
 export function selectActiveProject(summaries: ProjectSummary[], activeProjectId?: string | null) {
@@ -235,3 +236,50 @@ export function useAICoachQuery(projectId: string) {
     staleTime: 5 * 60 * 1000, // 5 min
   });
 }
+
+/**
+ * useFounderScorecardQuery — THE canonical source for momentum, streak, xp,
+ * executionScore, and projectScore across the whole app.
+ *
+ * FIX: overview, reports, today, and project-detail pages each
+ * independently reconstructed a score by pulling XP/streak from browser
+ * localStorage (getXP()/getStoredStreak()) and calling computeStartupScore()
+ * themselves — four separate assemblies of the same number, each able to
+ * drift from the others depending on when that page's local cache last
+ * synced. This is the confirmed, reported cause of momentum/score
+ * disagreeing between weekly reports and the dashboard/execution pages.
+ *
+ * Every page migrated to this hook now reads the exact same server-computed
+ * value from GET /api/founder-context/scorecard (backed by
+ * lib/scorecard.ts's getFounderScorecard(), the same function
+ * task-complete/streak/xp routes already write through) — one number,
+ * everywhere, always.
+ */
+export function useFounderScorecardQuery(validationStrengths: string[] = []) {
+  return useQuery({
+    queryKey: [...queryKeys.scorecard, validationStrengths.join(",")],
+    queryFn: async () => {
+      const params = validationStrengths.length
+        ? `?validationStrengths=${encodeURIComponent(validationStrengths.join(","))}`
+        : "";
+      const res = await fetch(`/api/founder-context/scorecard${params}`, { cache: "no-store" });
+      if (!res.ok) throw new Error("Could not load scorecard");
+      const json = await res.json();
+      if (!json?.ok) throw new Error(json?.error ?? "Could not load scorecard");
+      return json.data as {
+        momentum: number;
+        streak: number;
+        xp: number;
+        executionScore: number;
+        tasksCompletedTotal: number;
+        tasksCompletedToday: number;
+        projectScore: number;
+        momentumLabel: { label: string; color: string; emoji: string };
+        isDecaying: boolean;
+        momentumDelta: number | null;
+        momentumTrend: "up" | "down" | "flat" | "unknown";
+      };
+    },
+    staleTime: 60_000,
+  });
+                                                }
