@@ -5,10 +5,10 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { computeStartupScore } from "@/lib/buildmind";
-import { selectActiveProject, useActiveProjectId, useProjectSummariesQuery, useDashboardOverviewQuery } from "@/lib/queries";
+import { selectActiveProject, useActiveProjectId, useProjectSummariesQuery, useDashboardOverviewQuery, useFounderScorecardQuery } from "@/lib/queries";
 import { recordScore, markActiveToday, recordPendingTasks, syncUrgencyFromServer } from "@/lib/urgency";
 import { getStoredStreak, syncStreakFromServer } from "@/lib/plan";
-import { getXP, getScoreHistory, syncScoreHistory, syncXP, computeConsistencyBonus } from "@/lib/scoring";
+import { getScoreHistory, syncScoreHistory, syncXP, computeConsistencyBonus } from "@/lib/scoring";
 import { ArrowRight, CheckCircle2 } from "lucide-react";
 import { ProfileCompletenessBar } from "@/components/ProfileCompletenessBar";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -186,9 +186,14 @@ export default function OverviewPage() {
     return () => clearInterval(t);
   }, []);
 
+  const { data: scorecard } = useFounderScorecardQuery();
+
   const streak = overview?.founderStreakDays ?? localStreak;
 
-  const score = activeProject ? computeStartupScore({ ...activeProject, xp: getXP(), streak }) : 0;
+  // FIX: previously used local-storage getXP(), independent of the
+  // canonical scorecard other pages (reports, weekly-share) now read from —
+  // a real source of the reported "momentum differs between pages" issue.
+  const score = activeProject ? computeStartupScore({ ...activeProject, xp: scorecard?.xp ?? 0, streak }) : 0;
 
   const scoreDelta = useMemo(() => {
     const history = getScoreHistory();
@@ -334,7 +339,19 @@ export default function OverviewPage() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)" }} className="sm:flex">
           {[
             {
-              label: "Momentum Score",
+              // FIX: this tile was labeled "Momentum Score" but bound to
+              // the COMPOSITE startup score (execution + momentum + xp +
+              // streak + validation) — a genuinely different number from
+              // scorecard.momentum, which is what weekly reports call
+              // "Momentum Score." Same label, different underlying value —
+              // directly confirmed as a source of the reported discrepancy.
+              // Renamed to be honest about what it actually shows. NOTE: a
+              // dedicated raw-momentum tile was deliberately NOT added here
+              // — this is a fixed 4-tile grid and I didn't want to guess at
+              // whether a 5th tile breaks the responsive layout without
+              // seeing it render. If you want true momentum visible here
+              // too, that's a small follow-up, not bundled into this fix.
+              label: "Startup Score",
               value: score > 0 ? `${score}` : "—",
               delta: scoreDelta,
               tooltip: "How consistently you're executing. Built from task completion, reflection quality, and time between actions. Decays slowly if you go inactive.",
@@ -481,4 +498,4 @@ export default function OverviewPage() {
       )}
     </div>
   );
-    }
+}
