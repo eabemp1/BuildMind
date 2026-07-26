@@ -4,7 +4,7 @@ import { Suspense, useState, useEffect, useRef, useMemo, useCallback } from "rea
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
-import { selectActiveProject, useActiveProjectId, useProjectSummariesQuery, queryKeys } from "@/lib/queries";
+import { selectActiveProject, useActiveProjectId, useProjectSummariesQuery, queryKeys, useFounderScorecardQuery } from "@/lib/queries";
 import { useQueryClient } from "@tanstack/react-query";
 import { computeStartupScore } from "@/lib/buildmind";
 import { computeScoreDelta, applyScoreDelta, getXP, recordScore } from "@/lib/scoring";
@@ -955,9 +955,16 @@ function TodayContent() {
     }
   }, [actionLoading, aiAction, debtSuppression, replacingTask]);
 
+  // FIX: was calling getXP() directly (local storage), independent of the
+  // same canonical scorecard reports/overview/project-detail now all read
+  // from — the confirmed root cause of momentum/score disagreeing across
+  // pages. `streak` here is left as this page's own local state
+  // (unchanged) since it's already kept in sync elsewhere in this file;
+  // only xp needed correcting.
+  const { data: scorecard } = useFounderScorecardQuery();
   const score = project ? computeStartupScore({
     ...project,
-    xp: getXP(),
+    xp: scorecard?.xp ?? 0,
     streak,
   }) : 0;
   const stageKey = project?.startup_stage?.toLowerCase() ?? "idea";
