@@ -7,7 +7,7 @@ import {
   type BuildMindMilestone, type BuildMindTask,
   computeStartupScore, updateMilestoneForCurrentUser,
 } from "@/lib/buildmind";
-import { useDeleteProjectMutation, useProjectDetailQuery, useUpdateTaskMutation } from "@/lib/queries";
+import { useDeleteProjectMutation, useProjectDetailQuery, useUpdateTaskMutation, useFounderScorecardQuery } from "@/lib/queries";
 import { setActiveProjectId } from "@/lib/api";
 import { createClient } from "@/lib/supabase/client";
 import { storage } from "@/lib/storage";
@@ -692,18 +692,22 @@ export default function ProjectDetailPage() {
   });
 
   const stage = String(project?.startup_stage ?? "MVP");
+  // FIX: momentum came from project.momentum_score directly (a mirror
+  // column, not the authoritative value — see earlier this-session fix on
+  // task-complete's atomic RPCs) and xp came from a require()'d local
+  // getXP() call, both independent of the canonical scorecard. Now both,
+  // plus streak, read from the exact same source reports/overview use.
+  const { data: scorecard } = useFounderScorecardQuery();
   const score = useMemo(() => {
     if (!project) return 0;
-    let xp = 0;
-    try { const { getXP: _getXP } = require("@/lib/scoring"); xp = _getXP(); } catch { /* ok */ }
     return computeStartupScore({
       validation_strengths: project.validation_strengths,
       execution_score: project.execution_score,
-      momentum_score: project.momentum_score,
-      streak: liveStreak,
-      xp,
+      momentum_score: scorecard?.momentum ?? project.momentum_score,
+      streak: scorecard?.streak ?? liveStreak,
+      xp: scorecard?.xp ?? 0,
     });
-  }, [project, tasks, liveStreak]);
+  }, [project, tasks, liveStreak, scorecard]);
   const validationStrengths = Array.isArray(project?.validation_strengths)
     ? project.validation_strengths.length
     : 0;
@@ -1089,4 +1093,4 @@ export default function ProjectDetailPage() {
       )}
     </div>
   );
-                                         }
+                       }
