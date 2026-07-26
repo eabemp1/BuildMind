@@ -16,8 +16,9 @@ import { useEffect, useRef, useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { selectActiveProject, useActiveProjectId, useProjectSummariesQuery, useWeeklyReportMetricsQuery } from "@/lib/queries";
 import { computeStartupScore } from "@/lib/buildmind";
-import { getScoreHistory, getXP, syncScoreHistory, syncXP } from "@/lib/scoring";
-import { getStoredStreak, syncStreakFromServer } from "@/lib/plan";
+import { getScoreHistory, syncScoreHistory, syncXP } from "@/lib/scoring";
+import { syncStreakFromServer } from "@/lib/plan";
+import { useFounderScorecardQuery } from "@/lib/queries";
 import PaywallGate from "@/components/PaywallGate";
 import { usePlan } from "@/lib/usePlan";
 import {
@@ -213,6 +214,7 @@ export default function ReportsPage() {
   const activeProjectId = useActiveProjectId();
   const project = useMemo(() => selectActiveProject(summaries, activeProjectId), [summaries, activeProjectId]);
   const { data: metrics, isLoading: metricsLoading } = useWeeklyReportMetricsQuery(project?.id);
+  const { data: scorecard } = useFounderScorecardQuery();
 
   useEffect(() => {
     void syncStreakFromServer().catch(() => {});
@@ -258,11 +260,16 @@ export default function ReportsPage() {
   }, [project?.id]);
 
   const liveScore = useMemo(() => {
-    if (!project) return 0;
-    let streak = 0; try { streak = getStoredStreak(); } catch { /* ok */ }
-    let xp = 0; try { xp = getXP(); } catch { /* ok */ }
-    return computeStartupScore({ ...project, streak, xp });
-  }, [project, xpSynced]);
+    // FIX: previously reconstructed this from browser localStorage
+    // (getStoredStreak()/getXP()) independently of the primary `metrics`
+    // source below — a brief-but-real window where this fallback could
+    // show a different number than the scorecard-backed metrics.score,
+    // which is exactly the "momentum differs between pages" symptom
+    // reported. Now uses the same canonical scorecard the metrics source
+    // already reads from, so the fallback can never disagree with it.
+    if (!project || !scorecard) return 0;
+    return computeStartupScore({ ...project, streak: scorecard.streak, xp: scorecard.xp });
+  }, [project, scorecard]);
 
   const score = metrics?.score ?? liveScore;
   const weeklyScores = metrics?.weeklyScores ?? Array(7).fill(0).map((_,i) => i===6 ? score : 0);
