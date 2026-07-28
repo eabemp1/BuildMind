@@ -11,33 +11,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { sendEmail } from "@/lib/email";
+import { verifyQStashSignature } from "@/lib/queue";
 
 export const runtime  = "nodejs";
 export const dynamic  = "force-dynamic";
 export const maxDuration = 15;
 
-async function verifyQStashSignature(req: NextRequest, rawBody: string): Promise<boolean> {
-  const sig = req.headers.get("upstash-signature");
-  if (!sig) return false;
-  const currentKey = process.env.QSTASH_CURRENT_SIGNING_KEY;
-  const nextKey    = process.env.QSTASH_NEXT_SIGNING_KEY;
-  if (!currentKey && !nextKey) return process.env.NODE_ENV !== "production";
-  const encoder = new TextEncoder();
-  const keys = [currentKey, nextKey].filter(Boolean) as string[];
-  for (const keyStr of keys) {
-    try {
-      const key = await crypto.subtle.importKey(
-        "raw", encoder.encode(keyStr),
-        { name: "HMAC", hash: "SHA-256" }, false, ["verify"],
-      );
-      const [, payload] = sig.split(".");
-      const valid = await crypto.subtle.verify("HMAC", key,
-        encoder.encode(payload ?? ""), encoder.encode(rawBody));
-      if (valid) return true;
-    } catch { continue; }
-  }
-  return false;
-}
+// FIX (critical, security audit): see app/api/cron/evening-check/worker/route.ts
+// for the full explanation — identical structurally-broken manual JWT/HMAC
+// verification, third and final instance found. Replaced with the shared,
+// SDK-backed helper.
 
 export async function POST(req: NextRequest) {
   const start = Date.now();
