@@ -19,6 +19,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import webpush from "web-push";
+import { verifyQStashSignature } from "@/lib/queue";
 
 export const runtime  = "nodejs";
 export const dynamic  = "force-dynamic";
@@ -35,39 +36,17 @@ function configureVapid() {
   vapidConfigured = true;
 }
 
-/** Verify QStash HMAC-SHA256 signature — reject if invalid */
-async function verifyQStashSignature(req: NextRequest, rawBody: string): Promise<boolean> {
-  const sig = req.headers.get("upstash-signature");
-  if (!sig) return false;
-
-  const currentKey = process.env.QSTASH_CURRENT_SIGNING_KEY;
-  const nextKey    = process.env.QSTASH_NEXT_SIGNING_KEY;
-  if (!currentKey && !nextKey) {
-    // Dev/no-QStash mode — allow without signature
-    return process.env.NODE_ENV !== "production";
-  }
-
-  const encoder = new TextEncoder();
-  const keys = [currentKey, nextKey].filter(Boolean) as string[];
-  for (const keyStr of keys) {
-    try {
-      const key = await crypto.subtle.importKey(
-        "raw",
-        encoder.encode(keyStr),
-        { name: "HMAC", hash: "SHA-256" },
-        false,
-        ["verify"],
-      );
-      const [, payload] = sig.split(".");
-      const data = encoder.encode(payload ?? "");
-      const valid = await crypto.subtle.verify("HMAC", key, data, encoder.encode(rawBody));
-      if (valid) return true;
-    } catch {
-      continue;
-    }
-  }
-  return false;
-}
+// FIX (critical, security audit): this file previously had its own manual
+// HMAC verification that was structurally broken — QStash signatures are
+// JWTs (header.payload.signature), but this code took the PAYLOAD segment
+// and verified it as if it were the signature, checked against the raw
+// HTTP body instead of the actual JWT signing input, and silently
+// discarded the real signature (third segment) entirely. This would have
+// rejected essentially every real QStash delivery in production,
+// silently breaking the evening-check fanout for every user at >500 DAU
+// (the threshold noted in this file's own header comment for when fanout
+// becomes required). Replaced with lib/queue's verifyQStashSignature,
+// which correctly uses the @upstash/qstash SDK's Receiver.verify().
 
 function eveningNudge(daysInactive: number): string {
   if (daysInactive >= 3) return "No pressure. Just log one honest reflection and reset tomorrow.";
