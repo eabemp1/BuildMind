@@ -18,9 +18,9 @@ import {
   shouldActivateRecoveryMode,
   getRecoveryModeMessage,
   generateResetMission,
-  momentumAfterResetMission,
 } from "@/lib/recoveryMode";
 import type { ReflexionContext } from "@/lib/reflexion";
+import { logError } from "@/lib/server/logger";
 
 export async function GET() {
   const supabase = await createClient();
@@ -123,7 +123,7 @@ export async function POST() {
   });
 }
 
-export async function PATCH() {
+export async function PATCH(req: Request) {
   // Mark Reset Mission as complete and resume normal mode
   const supabase = await createClient();
   const { data: { user }, error } = await supabase.auth.getUser();
@@ -132,22 +132,39 @@ export async function PATCH() {
   }
 
   const admin = createAdminClient();
+  const { projectId = null } = await req.json().catch(() => ({}));
 
   const { data: ctx } = await admin
     .from("founder_context")
     .select("momentum_score")
     .eq("user_id", user.id)
     .maybeSingle();
-
   const currentScore = ctx?.momentum_score ?? 50;
-  const newScore = momentumAfterResetMission(currentScore);
+
+  // FIX (audit finding, High severity): this was a SIXTH independent,
+  // disconnected momentum writer found this session — read-then-write with
+  // no lock (a real race risk) and no projects-table mirror, meaning a
+  // Reset Mission completion wouldn't show up on mirror-reading pages. The
+  // flat "+4" delta is deliberately different from every other path's EMA
+  // signal model (see lib/recoveryMode.ts's own comment: "meaningful but
+  // not full task credit") — bump_momentum_atomic preserves that exact
+  // design while closing both the race and the missing mirror. See
+  // supabase/migrations for bump_momentum_atomic.
+  const { data: newScore, error: momentumErr } = await admin.rpc("bump_momentum_atomic", {
+    p_user_id: user.id,
+    p_project_id: projectId,
+    p_delta: 4,
+  });
+  if (momentumErr) {
+    logError("recovery-mode/momentum", momentumErr, { userId: user.id });
+  }
+  const resolvedScore = newScore ?? currentScore;
 
   await admin
     .from("founder_context")
     .update({
       recovery_mode_active: false,
       reset_mission_complete: true,
-      momentum_score: newScore,
       days_inactive: 0,
       updated_at: new Date().toISOString(),
     })
@@ -156,7 +173,7 @@ export async function PATCH() {
   return NextResponse.json({
     ok: true,
     message: "Reset Mission complete. Full mode resumes tomorrow morning.",
-    momentumScore: newScore,
-    momentumDelta: newScore - currentScore,
+    momentumScore: resolvedScore,
+    momentumDelta: resolvedScore - currentScore,
   });
-                              }
+}
