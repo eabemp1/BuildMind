@@ -149,7 +149,7 @@ export async function enqueueBatch(name: QueueName, payloads: QueueJob[]): Promi
  * Returns true if the signature is valid (or if QSTASH is not configured,
  * allowing local dev to call workers directly).
  */
-export async function verifyQStashSignature(req: Request): Promise<boolean> {
+export async function verifyQStashSignature(req: Request, preReadBody?: string): Promise<boolean> {
   const currentKey = process.env.QSTASH_CURRENT_SIGNING_KEY;
   const nextKey    = process.env.QSTASH_NEXT_SIGNING_KEY;
 
@@ -175,7 +175,13 @@ export async function verifyQStashSignature(req: Request): Promise<boolean> {
     // Dynamic import so this file works without the package installed
     const { Receiver } = await import("@upstash/qstash");
     const receiver = new Receiver({ currentSigningKey: currentKey, nextSigningKey: nextKey });
-    const body = await req.text();
+    // FIX: previously always called req.text() itself. Every real caller
+    // (the three cron workers) ALSO needs the raw body for their own
+    // payload parsing, and a Request body stream can only be consumed
+    // once — a second req.text() call after the first would throw or
+    // return empty, silently breaking verification. Callers that already
+    // read the body now pass it through explicitly.
+    const body = preReadBody ?? await req.text();
     await receiver.verify({ signature, body });
     return true;
   } catch {
