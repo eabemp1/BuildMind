@@ -5,8 +5,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { momentumOnOverride } from "@/lib/founderContext";
 import { recordActivity } from "@/lib/server/activityLog";
+import { logError } from "@/lib/server/logger";
 
 export async function POST(req: Request) {
   const supabase = await createClient();
@@ -20,23 +20,44 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "Builder plan required", upgradeUrl: "/upgrade" }, { status: 403 });
   }
 
-  const { reason = "not specified", taskText = "" } = await req.json().catch(() => ({}));
+  const { reason = "not specified", taskText = "", projectId = null } = await req.json().catch(() => ({}));
   const admin = createAdminClient();
 
   const { data: ctx } = await admin
     .from("founder_context")
-    .select("momentum_score, tasks_overridden_this_week, override_reasons, current_stage")
+    .select("tasks_overridden_this_week, override_reasons, current_stage")
     .eq("user_id", user.id)
     .maybeSingle();
 
-  const current = ctx?.momentum_score ?? 50;
-  const newMomentum = momentumOnOverride(current);
+  // FIX (audit finding, High severity): this route previously read
+  // momentum_score directly, computed momentumOnOverride() locally in JS,
+  // and wrote it back with a plain upsert — the FIFTH independent,
+  // disconnected momentum writer found this session (alongside
+  // complete_task_atomic, reflect-action, the dedicated /streak route, and
+  // the Deno scheduled-jobs decay, all already consolidated earlier).
+  // This one also skipped the projects-table mirror entirely, meaning an
+  // override event's momentum change would never show up on pages reading
+  // the mirror — directly contributing to the "momentum differs across
+  // pages" issue. momentumOnOverride(current) always resolves to the same
+  // fixed signal (40 — "soft signal, not punitive", see
+  // lib/momentum.ts:dailyActivitySignal), so it's passed as a constant here
+  // rather than recomputed — same math, now through the shared, atomic,
+  // row-locked path.
+  const { data: newMomentum, error: momentumErr } = await admin.rpc("update_momentum_atomic", {
+    p_user_id: user.id,
+    p_project_id: projectId,
+    p_signal: 40,
+    p_days_since_last_update: 1,
+  });
+  if (momentumErr) {
+    logError("founder-context/override/momentum", momentumErr, { userId: user.id });
+  }
+
   const newOverrides = (ctx?.tasks_overridden_this_week ?? 0) + 1;
   const reasons: string[] = [...(ctx?.override_reasons ?? []), reason].slice(-10);
 
   await admin.from("founder_context").upsert({
     user_id: user.id,
-    momentum_score: newMomentum,
     tasks_overridden_this_week: newOverrides,
     override_reasons: reasons,
     // Reset consecutive streak — override breaks the chain
@@ -57,5 +78,5 @@ export async function POST(req: Request) {
 
   recordActivity(user.id, "task_overridden", { reason, taskText, stage: ctx?.current_stage ?? null }).catch(() => {});
 
-  return NextResponse.json({ ok: true, momentum: newMomentum });
+  return NextResponse.json({ ok: true, momentum: newMomentum ?? null });
 }
