@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import webpush from "web-push";
+import { verifyQStashSignature } from "@/lib/queue";
 
 export const runtime  = "nodejs";
 export const dynamic  = "force-dynamic";
@@ -26,25 +27,12 @@ function configureVapid() {
   vapidConfigured = true;
 }
 
-async function verifyQStashSignature(req: NextRequest, rawBody: string): Promise<boolean> {
-  const sig = req.headers.get("upstash-signature");
-  if (!sig) return false;
-  const keys = [
-    process.env.QSTASH_CURRENT_SIGNING_KEY,
-    process.env.QSTASH_NEXT_SIGNING_KEY,
-  ].filter(Boolean) as string[];
-  if (!keys.length) return process.env.NODE_ENV !== "production";
-  const enc = new TextEncoder();
-  for (const k of keys) {
-    try {
-      const key = await crypto.subtle.importKey("raw", enc.encode(k),
-        { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
-      const [, p] = sig.split(".");
-      if (await crypto.subtle.verify("HMAC", key, enc.encode(p ?? ""), enc.encode(rawBody))) return true;
-    } catch { continue; }
-  }
-  return false;
-}
+// FIX (critical, security audit): see app/api/cron/evening-check/worker/route.ts
+// for the full explanation — this had the identical structurally-broken
+// manual JWT/HMAC verification (payload segment checked as if it were the
+// signature, against the raw body instead of the real signing input),
+// which would reject essentially every real QStash delivery in production.
+// Replaced with the shared, SDK-backed helper.
 
 export async function POST(req: NextRequest) {
   const start = Date.now();
