@@ -11,6 +11,7 @@ import { checkAndCacheStageTransition } from "@/lib/server/stageTransitionCache"
 import { recordActionOutcome } from "@/lib/learning";
 import { invalidateCognitionCache } from "@/lib/founderCognition";
 import { classifyBlocker, runBlockerIntelligencePipeline } from "@/lib/blockerIntelligence";
+import { momentumOnReflect } from "@/lib/momentum";
 
 import { z } from "zod";
 
@@ -219,6 +220,11 @@ export async function POST(request: Request) {
     // read the freshly-computed streak; stays undefined if Supabase isn't
     // wired or the block throws, in which case callers fall back to `streak`.
     let nextStreak: number | undefined;
+    // Hoisted for the same reason as nextStreak — read by the response
+    // payload below so the client can animate the actual server-computed
+    // momentum change instead of guessing at one.
+    let momentumBefore: number | undefined;
+    let momentumAfter: number | undefined;
 
     // If Supabase is wired, pull project context for deeper personalisation
     if (verifiedUserId && projectId && hasAdminEnv()) {
@@ -307,11 +313,36 @@ Target users: ${project.target_users ?? "Not specified"}`;
           nextStreak = streakRpcData ?? undefined;
         }
 
+        // FIX: reflections previously never touched momentum_score at all —
+        // momentumOnReflect() existed in lib/momentum.ts but had no caller.
+        // Read the current value, apply the same EMA every other momentum
+        // mutation uses, and write it back in the same update as last_active.
+        try {
+          const { data: fc } = await supabase
+            .from("founder_context")
+            .select("momentum_score, momentum_updated_at")
+            .eq("user_id", verifiedUserId)
+            .maybeSingle();
+
+          const current = typeof fc?.momentum_score === "number" ? fc.momentum_score : 20;
+          momentumBefore = current;
+          const lastUpdated = fc?.momentum_updated_at ? new Date(fc.momentum_updated_at) : null;
+          const daysSince = lastUpdated
+            ? Math.max(1, Math.round((Date.now() - lastUpdated.getTime()) / (1000 * 60 * 60 * 24)))
+            : 1;
+          momentumAfter = momentumOnReflect(current, daysSince);
+        } catch (err) {
+          logError("reflect-action/momentum-read", err, { verifiedUserId });
+        }
+
         await supabase
           .from("founder_context")
           .update({
             last_active: todayDate,
             days_inactive: 0,
+            ...(momentumAfter !== undefined
+              ? { momentum_score: momentumAfter, momentum_updated_at: new Date().toISOString() }
+              : {}),
           })
           .eq("user_id", verifiedUserId);
 
@@ -476,7 +507,17 @@ ${projectContext}`,
       }
     })();
 
-    return NextResponse.json({ success: true, data: { ...fallback, ...result } });
+    return NextResponse.json({
+      success: true,
+      data: {
+        ...fallback,
+        ...result,
+        streak: nextStreak ?? streak,
+        momentum: momentumBefore !== undefined && momentumAfter !== undefined
+          ? { before: momentumBefore, after: momentumAfter }
+          : undefined,
+      },
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Reflect action failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
