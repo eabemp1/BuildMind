@@ -19,6 +19,7 @@ import TestimonialModal, {
 } from "@/components/TestimonialModal";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
+import ReflectionCelebration from "@/components/ReflectionCelebration";
 
 type Outcome = "completed" | "blocked" | "partial" | "learned";
 type ReflectionHistoryEntry = {
@@ -90,6 +91,10 @@ export default function ReflectPage() {
   const [testimonialSource, setTestimonialSource] = useState<TestimonialSource | null>(null);
   const [historySynthesis, setHistorySynthesis] = useState<string | null>(null);
   const canSubmit = outcome !== null && whatTried.trim().length > 0;
+  const [showCelebration, setShowCelebration] = useState(false);
+  const [celebrationMomentum, setCelebrationMomentum] = useState<{ before: number; after: number } | undefined>(undefined);
+  const [celebrationStreak, setCelebrationStreak] = useState(0);
+  const [streakExtended, setStreakExtended] = useState(false);
 
   useEffect(() => {
     // Pre-fill outcome from today page redirect
@@ -264,7 +269,18 @@ export default function ReflectPage() {
             projectId: activeProjectId,
           }),
         });
-        if (res.ok) { const d = await res.json(); const payload = d.data ?? d; caus = payload.causality || caus; next = payload.nextAction || ""; witness = payload.witnessed || witness; }
+        if (res.ok) {
+          const d = await res.json();
+          const payload = d.data ?? d;
+          caus = payload.causality || caus;
+          next = payload.nextAction || "";
+          witness = payload.witnessed || witness;
+          const newStreak = typeof payload.streak === "number" ? payload.streak : streak;
+          setStreakExtended(newStreak > streak);
+          setCelebrationStreak(newStreak);
+          setStreak(newStreak);
+          if (payload.momentum) setCelebrationMomentum(payload.momentum);
+        }
       } catch {}
       setCausality(caus);
       setWitnessed(witness);
@@ -301,12 +317,20 @@ export default function ReflectPage() {
       if (modalSource) setTestimonialSource(modalSource);
 
       setDone(true);
+      setShowCelebration(true);
     } finally { setSubmitting(false); }
   }
 
   if (done) {
     return (
       <div style={{ maxWidth: 560, margin: "0 auto", padding: "48px clamp(12px, 5vw, 24px)" }}>
+        <ReflectionCelebration
+          open={showCelebration}
+          streak={celebrationStreak}
+          streakExtended={streakExtended}
+          momentum={celebrationMomentum}
+          onDismiss={() => setShowCelebration(false)}
+        />
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
           <div style={{ textAlign: "center", marginBottom: 28 }}>
             <div style={{ width: 60, height: 60, borderRadius: "50%", background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
