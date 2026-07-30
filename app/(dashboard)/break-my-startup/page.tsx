@@ -35,6 +35,15 @@ interface RiskItem {
   mitigation: string;
 }
 
+interface PivotItem {
+  title: string;
+  description: string;
+  target_niche: string;
+  why_better: string;
+  estimated_score_delta: number;
+  key_change: string;
+}
+
 interface BreakResult {
   overallRisk: RiskSeverity;
   summary: string;
@@ -51,6 +60,11 @@ interface BreakResult {
   isSynthetic?: boolean; // D2: true when all agents fell back to hardcoded defaults
   focusAreas?: string[];
   executionPlan?: { mvp_roadmap?: string[]; first_10_actions?: string[]; gtm_plan?: string[] } | null;
+  /** Pivot Engine output (lib/agents generatePivots). The backend has always
+   *  computed this — it's the system's actual "you might be going in the
+   *  wrong direction" signal — but it was dropped before reaching the UI.
+   *  Now surfaced as its own card. */
+  pivots?: PivotItem[];
   reflexionAction?: {
     action?: string;
     rationale?: string;
@@ -84,6 +98,7 @@ type BreakApiData = {
   execution_plan?: BreakResult["executionPlan"];
   reflexion_action?: BreakResult["reflexionAction"];
   focus_areas?: string[];
+  pivots?: PivotItem[];
 };
 
 const FOCUS_AREAS = [
@@ -160,6 +175,7 @@ export default function BreakMyStartupPage() {
 
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [customIdea, setCustomIdea] = useState("");
+  const [knownCompetitors, setKnownCompetitors] = useState("");
   const [focusAreas, setFocusAreas] = useState<FocusArea[]>([]);
   const [executionMode, setExecutionMode] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -203,18 +219,41 @@ export default function BreakMyStartupPage() {
       probability < 50 ? "High" :
       probability < 75 ? "Medium" : "Low";
 
-    // FIX: this used to be `differentiationPlan[index] ?? brutalAdvice ?? ...`,
-    // which silently discarded the Risk agent's own per-risk `mitigation` field
-    // (e.g. "Run 5 user interviews with willingness-to-pay questions this
-    // week" for Market Risk, "Define your single most important milestone..."
-    // for Execution Risk) and substituted the Competitor agent's positioning
-    // suggestions instead — unrelated content, and the same reason `differentiationPlan[0]`
-    // duplicated verbatim between the Market Risk card and the Competitive
-    // Landscape card below. Now reads the real mitigation Risk agent wrote
-    // for that specific risk, only falling back when it's genuinely missing.
+    // FIX (previous pass): this used to be `differentiationPlan[index] ?? brutalAdvice ?? ...`,
+    // which discarded the Risk agent's own per-risk `mitigation` field and
+    // substituted the Competitor agent's positioning suggestions instead.
+    // That pass reads `riskAgentOutput.top_risks[index].mitigation` first —
+    // correct when the Risk agent returns per-risk mitigations. But it left
+    // a real duplication path open: whenever the Risk agent's mitigation for
+    // a given index is missing/empty (fallback, timeout, or a short/invalid
+    // model response), it falls through to `differentiationPlan[index]`,
+    // and the Competitive Landscape card below independently falls through
+    // to `differentiationPlan[0]` — the SAME index every time. If Market
+    // Risk (index 0) also had to fall back, both cards render the exact
+    // same string, verbatim. That's the bug the founder is seeing in
+    // production (Market Risk and Competitive Landscape showing identical
+    // mitigation text). Confirmed by reading this file: nothing tracked
+    // which differentiationPlan entries were already used.
+    //
+    // Fix: track used differentiation-plan indices across ALL risk cards
+    // (including the appended Competitive Landscape one) so no two cards
+    // can ever render the same fallback text. If every differentiation
+    // entry is exhausted, fall back to a distinct final-resort line instead
+    // of repeating brutalAdvice/differentiationPlan[0] again.
     const riskAgentOutput = data.agent_outputs?.risk as
       | { top_risks?: Array<{ mitigation?: string }> }
       | undefined;
+
+    const usedDiffIndices = new Set<number>();
+    function nextDifferentiationEntry(): string | undefined {
+      for (let i = 0; i < differentiationPlan.length; i++) {
+        if (!usedDiffIndices.has(i)) {
+          usedDiffIndices.add(i);
+          return differentiationPlan[i];
+        }
+      }
+      return undefined;
+    }
 
     const risks: RiskItem[] = (killReasons.length ? killReasons : ["Execution risk not enough data yet"]).map((reason, index) => ({
       category: ["Market Risk", "Execution Risk", "Moat Risk", "Revenue Risk"][index] ?? "Startup Risk",
@@ -222,7 +261,7 @@ export default function BreakMyStartupPage() {
       description: reason,
       mitigation:
         cleanAIText(riskAgentOutput?.top_risks?.[index]?.mitigation) ||
-        differentiationPlan[index] ||
+        nextDifferentiationEntry() ||
         brutalAdvice ||
         "Talk to 5 target users and validate the riskiest assumption before building more.",
     }));
@@ -232,7 +271,9 @@ export default function BreakMyStartupPage() {
         category: "Competitive Landscape",
         severity: "Medium",
         description: cleanAIText(data.competitor_summary),
-        mitigation: differentiationPlan[0] ?? "Pick one underserved niche and position around that pain instead of competing broadly.",
+        mitigation:
+          nextDifferentiationEntry() ??
+          "Pick one underserved niche and position around that pain instead of competing broadly.",
       });
     }
 
@@ -288,6 +329,16 @@ export default function BreakMyStartupPage() {
       signalBreakdown,
       isSynthetic,
       focusAreas: cleanAIList(data.focus_areas),
+      pivots: Array.isArray(data.pivots)
+        ? data.pivots.slice(0, 3).map((p) => ({
+            title: cleanAIText(p.title),
+            description: cleanAIText(p.description),
+            target_niche: cleanAIText(p.target_niche),
+            why_better: cleanAIText(p.why_better),
+            estimated_score_delta: typeof p.estimated_score_delta === "number" ? p.estimated_score_delta : 0,
+            key_change: cleanAIText(p.key_change),
+          }))
+        : undefined,
       executionPlan: data.execution_plan
         ? {
             mvp_roadmap: cleanAIList(data.execution_plan.mvp_roadmap),
@@ -357,6 +408,11 @@ export default function BreakMyStartupPage() {
           idea,
           focusAreas,
           executionMode,
+          knownCompetitors: knownCompetitors
+            .split(",")
+            .map((c) => c.trim())
+            .filter(Boolean)
+            .slice(0, 8),
         }),
       });
 
@@ -517,6 +573,19 @@ export default function BreakMyStartupPage() {
               onChange={(e) => setCustomIdea(e.target.value)}
               rows={6}
             />
+
+            {/* Known competitors — grounds the Competitor agent's search in
+                real, named tools you already know about, instead of leaving
+                it entirely to generic keyword search results. */}
+            <Textarea
+              label="Known competitors (optional)"
+              helperText="Name any tools you already know compete with you, comma-separated (e.g. validator.ai, Notion AI). We'll look these up directly alongside the general market search."
+              placeholder="validator.ai, Notion AI, ..."
+              value={knownCompetitors}
+              onChange={(e) => setKnownCompetitors(e.target.value)}
+              rows={1}
+            />
+
 
             {/* Focus areas */}
             <div className="flex flex-col gap-2">
@@ -878,6 +947,49 @@ export default function BreakMyStartupPage() {
                 </motion.div>
               ))}
             </div>
+
+            {/* Pivot suggestions — the system's actual "you might be going in
+                the wrong direction" signal. Computed server-side by the
+                Pivot Engine (lib/agents generatePivots) on every run, but
+                previously dropped before it reached this page. */}
+            {result.pivots && result.pivots.length > 0 && (
+              <Card className="p-4 flex flex-col gap-3">
+                <div className="flex items-center gap-2">
+                  <RefreshCw size={13} style={{ color: "var(--bm-accent)" }} />
+                  <h3 className="text-sm font-semibold text-[var(--bm-text)]">
+                    Consider a different direction
+                  </h3>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {result.pivots.map((pivot) => (
+                    <div
+                      key={pivot.title}
+                      className="flex flex-col gap-1.5 rounded-lg p-3"
+                      style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)" }}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-semibold text-[var(--bm-text)]">{pivot.title}</span>
+                        {pivot.estimated_score_delta > 0 && (
+                          <span
+                            className="text-[10px] font-semibold"
+                            style={{ color: "var(--bm-green)" }}
+                          >
+                            +{pivot.estimated_score_delta} viability
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs leading-relaxed text-[var(--bm-text3)]">{pivot.description}</p>
+                      <p className="text-[11px] leading-relaxed text-[var(--bm-text3)]">
+                        <span className="font-semibold text-[var(--bm-text2)]">Target: </span>{pivot.target_niche}
+                      </p>
+                      <p className="text-[11px] leading-relaxed text-[var(--bm-text3)]">
+                        <span className="font-semibold text-[var(--bm-text2)]">Why: </span>{pivot.why_better}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
 
             {/* Actions */}
             <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
