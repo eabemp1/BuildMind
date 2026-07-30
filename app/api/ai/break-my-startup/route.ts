@@ -68,6 +68,38 @@ async function scrapeCompetitors(query: string): Promise<ScrapeResult> {
   }
 }
 
+/**
+ * lookupNamedCompetitors — the generic competitor search (competitorSearch
+ * above) queries by the startup's own title/problem text, so whether a real,
+ * well-known tool (e.g. "validator.ai", "Notion AI") shows up is left
+ * entirely to chance in what the search provider returns for that generic
+ * query. When the founder already knows their competitors by name, look
+ * each one up directly and merge the results in — this grounds the
+ * Competitor agent's "5 potential competitors" output in named, real tools
+ * instead of only whatever generic keyword search happens to surface.
+ * Best-effort: any single lookup failing must not fail the whole request.
+ */
+async function lookupNamedCompetitors(names: string[]): Promise<ScrapedCompetitor[]> {
+  if (names.length === 0) return [];
+  const { webSearch } = await import("@/lib/search");
+  const settled = await Promise.allSettled(
+    names.slice(0, 8).map((name) => webSearch(`${name} product features pricing`, 3)),
+  );
+  const merged: ScrapedCompetitor[] = [];
+  settled.forEach((result, i) => {
+    if (result.status === "fulfilled" && result.value.results.length > 0) {
+      const top = result.value.results[0];
+      merged.push({ title: top.title || names[i], url: top.url, snippet: top.snippet || `Founder-named competitor: ${names[i]}` });
+    } else {
+      // Even if the search fails, keep the name itself as a signal for the
+      // Competitor agent — better than silently dropping a founder-supplied
+      // competitor because a lookup happened to fail.
+      merged.push({ title: names[i], url: "", snippet: `Founder-named competitor: ${names[i]} (lookup unavailable)` });
+    }
+  });
+  return merged;
+}
+
 // ─── Signal score (preserved — used for free tier preview) ───────────────────
 
 function signalScore(
@@ -204,6 +236,7 @@ const BreakMyStartupSchema = z.object({
   stage:        z.string().optional(),
   focusAreas:   z.array(z.string()).max(10).optional(),
   executionMode: z.boolean().optional(),
+  knownCompetitors: z.array(z.string().max(80)).max(8).optional(),
 });
 
 export async function POST(request: Request) {
@@ -228,6 +261,9 @@ export async function POST(request: Request) {
       ? body.focusAreas.map(String).filter(Boolean).slice(0, 10)
       : [];
     const requestExecutionMode = Boolean(body?.executionMode);
+    const knownCompetitorNames = Array.isArray(body?.knownCompetitors)
+      ? body.knownCompetitors.map(String).map((s) => s.trim()).filter(Boolean).slice(0, 8)
+      : [];
     fallbackIdea = idea;
     fallbackStage = String(body?.stage ?? "Idea");
     fallbackFocusAreas = focusAreas;
@@ -292,16 +328,42 @@ export async function POST(request: Request) {
 
     // ── Idea-only mode (no projectId) ─────────────────────────────────────
     if (!projectId) {
-      // Scrape competitors
-      const scrapeResult = await scrapeCompetitors(
-        `${idea} startup tool software competitors`,
-      );
-      const competitors = scrapeResult.results;
-      const competitors_scraped = scrapeResult.scraped;
+      // Scrape competitors — generic search plus any founder-named ones,
+      // run in parallel so naming known competitors doesn't add latency.
+      const [scrapeResult, namedCompetitors] = await Promise.all([
+        scrapeCompetitors(`${idea} startup tool software competitors`),
+        lookupNamedCompetitors(knownCompetitorNames),
+      ]);
+      const competitors = [...namedCompetitors, ...scrapeResult.results];
+      const competitors_scraped = scrapeResult.scraped || namedCompetitors.length > 0;
       const competitor_data_source = scrapeResult.source ?? "none";
 
       // Parse idea into structured schema
       const parsed = await parseStartupIdea(idea);
+
+      // Founder behavioral context — even in idea-only mode (no projectId)
+      // this is still the same logged-in founder, so their memory/behavior
+      // signals are real context for execution-risk reasoning. This is
+      // "outside idea" territory though (isOwnProject: false below), so
+      // agents are told to weight it as founder-capacity context only, not
+      // as evidence about the idea itself. Best-effort: if Supabase admin
+      // isn't configured or the row doesn't exist, we silently proceed
+      // without it — this must never block the idea-only flow.
+      let ideaModeFounderCtx: {
+        cognitive_load?: string; avoidance_zones?: string[];
+        topics_repeated?: string[]; days_inactive?: number;
+      } | null = null;
+      if (hasAdminEnv()) {
+        try {
+          const supabase = createAdminClient();
+          const { data } = await supabase
+            .from("founder_context")
+            .select("cognitive_load,avoidance_zones,topics_repeated,days_inactive")
+            .eq("user_id", userId)
+            .maybeSingle();
+          ideaModeFounderCtx = data;
+        } catch { /* non-fatal — proceed without founder context */ }
+      }
 
       // Build startup context
       const startupCtx: StartupContext = {
@@ -312,6 +374,11 @@ export async function POST(request: Request) {
         stage: String(body?.stage ?? "Idea"),
         competitors,
         focusAreas,
+        founderCognitiveLoad: (ideaModeFounderCtx?.cognitive_load as "fresh" | "drained" | "autopilot") ?? undefined,
+        founderAvoidanceZones: ideaModeFounderCtx?.avoidance_zones ?? [],
+        founderTopicsRepeated: ideaModeFounderCtx?.topics_repeated ?? [],
+        founderDaysInactive: ideaModeFounderCtx?.days_inactive ?? undefined,
+        isOwnProject: false,
       };
 
       // Run 5-agent pipeline
@@ -535,29 +602,33 @@ export async function POST(request: Request) {
     const valScore = project.validation_score ?? 0;
     const baseSignal = signalScore(taskRate, milestoneRate, strengths, weaknesses, execScore, valScore, stage);
 
-    // Scrape competitors with two parallel queries (direct + broad)
-    const [directResults, broadResults] = await Promise.allSettled([
+    // Scrape competitors with two parallel queries (direct + broad), plus
+    // any founder-named competitors looked up directly by name.
+    const [directResults, broadResults, namedCompetitors] = await Promise.allSettled([
       scrapeCompetitors(
         `${(project.name ?? project.title) ?? ""} ${project.problem ?? ""} startup site:producthunt.com OR site:crunchbase.com`,
       ),
       scrapeCompetitors(
         `${project.problem ?? project.description ?? ""} startup tool software`,
       ),
+      lookupNamedCompetitors(knownCompetitorNames),
     ]);
 
     const rawCompetitors = [
       ...(directResults.status === "fulfilled" ? directResults.value.results : []),
       ...(broadResults.status === "fulfilled" ? broadResults.value.results : []),
     ];
+    const namedCompetitorList = namedCompetitors.status === "fulfilled" ? namedCompetitors.value : [];
     const competitors_scraped =
       (directResults.status === "fulfilled" && directResults.value.scraped) ||
-      (broadResults.status === "fulfilled" && broadResults.value.scraped);
+      (broadResults.status === "fulfilled" && broadResults.value.scraped) ||
+      namedCompetitorList.length > 0;
     const competitor_data_source =
       (directResults.status === "fulfilled" && directResults.value.source) ||
       (broadResults.status === "fulfilled" && broadResults.value.source) ||
       "none";
     const seen = new Set<string>();
-    const competitors = rawCompetitors.filter(c => {
+    const scrapedCompetitors = rawCompetitors.filter(c => {
       try {
         const d = new URL(c.url).hostname;
         if (seen.has(d)) return false;
@@ -565,6 +636,18 @@ export async function POST(request: Request) {
         return true;
       } catch { return false; }
     }).slice(0, 5);
+    // Founder-named competitors may not always resolve to a real URL (lookup
+    // can fail) so they're deduped by name instead and merged in after the
+    // URL-based filter above — otherwise an empty `url` would be silently
+    // dropped by `new URL("")` throwing.
+    const seenNames = new Set(scrapedCompetitors.map(c => c.title.toLowerCase()));
+    const dedupedNamed = namedCompetitorList.filter(c => {
+      const key = c.title.toLowerCase();
+      if (seenNames.has(key)) return false;
+      seenNames.add(key);
+      return true;
+    });
+    const competitors = [...dedupedNamed, ...scrapedCompetitors].slice(0, 8);
 
     // Build startup context from project data
     const startupCtx: StartupContext = {
@@ -579,6 +662,11 @@ export async function POST(request: Request) {
       executionScore: execScore,
       momentumScore: founderCtxRow?.momentum_score ?? 50,
       focusAreas,
+      founderCognitiveLoad: (founderCtxRow?.cognitive_load as "fresh" | "drained" | "autopilot") ?? undefined,
+      founderAvoidanceZones: founderCtxRow?.avoidance_zones ?? [],
+      founderTopicsRepeated: founderCtxRow?.topics_repeated ?? [],
+      founderDaysInactive: founderCtxRow?.days_inactive ?? undefined,
+      isOwnProject: true,
     };
 
     // Run 5-agent pipeline with full project context
