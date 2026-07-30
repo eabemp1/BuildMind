@@ -1,938 +1,919 @@
-/**
- * lib/agents/index.ts — Multi-Agent Orchestrator
- *
- * Five specialist agents run in parallel via Promise.allSettled.
- * Each agent has a single responsibility, returns typed JSON,
- * and includes a confidence score on every claim.
- *
- * Agent roster:
- *   1. MarketResearchAgent   — demand signals, market size, growth trajectory
- *   2. CompetitorAgent       — competitive landscape, gaps, saturation level
- *   3. TrendAgent            — timing signals, macro tailwinds/headwinds
- *   4. SentimentAgent        — user pain points, community signals, demand authenticity
- *   5. RiskAgent             — execution risks, blind spots, failure modes
- *
- * Orchestrator:
- *   runAgentPipeline()       — runs all 5 in parallel, collects results,
- *                              returns AgentPipelineResult with per-agent
- *                              outputs + a merged signal summary
- *
- * Data strategy:
- *   - Competitor data comes from lib/search.ts's webSearch waterfall
- *     (Tavily primary), passed in from the route.
- *   - Trend agent grounds timing signals in live newsSearch() results.
- *   - Sentiment agent grounds pain/community signals in live
- *     discussionSearch() results (Reddit/HN), instead of inventing them.
- *   - Market/Risk agents reason from: scraped competitor data + founder
- *     context + training knowledge (no dedicated live search yet).
- *   - Every claim has a confidence score (0–1). Low confidence → flagged.
- *   - No hallucinated statistics. Agents must hedge when uncertain.
- *
- * Usage (server-side only):
- *   import { runAgentPipeline } from "@/lib/agents";
- *   const pipeline = await runAgentPipeline({ idea, stage, competitors, ... });
- */
+"use client";
+import React from "react";
 
-import { callModelJSON, hasAIProvider } from "@/lib/ai-providers";
-import { discussionSearch, newsSearch } from "@/lib/search";
+import { useEffect, useRef, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { useActiveProjectId, useProjectsQuery } from "@/lib/queries";
+import { setActiveProjectId } from "@/lib/api";
+import { createClient } from "@/lib/supabase/client";
+import { storage } from "@/lib/storage";
+import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
+import { canAccess, incrementDailyStreak } from "@/lib/plan";
+import { usePlan } from "@/lib/usePlan";
+import { useLimitModal } from "@/components/LimitModal";
+import { updateAchievementStats, checkAndUnlockAchievements } from "@/lib/achievements";
+import {
+  Shield, ChevronDown, AlertTriangle, CheckCircle2,
+  RefreshCw, Save, X, Loader2,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { BuildMindCalibrating } from "@/components/BuildMindCalibrating";
+import { Card } from "@/components/ui/card";
+import { Badge, BadgeVariant } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/input";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { sanitizeOutput } from "@/lib/sanitizeOutput";
+import { RadialGauge, RadarChart, SeverityStack, type SeverityItem, type Severity } from "@/components/charts";
 
-// ─── D1 FIX: Prompt injection sanitiser ──────────────────────────────────────
-// User-supplied strings (idea, problem, targetUsers, solution) are embedded
-// verbatim into AI prompts. Without sanitisation a user can inject instructions
-// that override the agent's system prompt, manipulate JSON output, and store
-// fraudulent viability scores. This function strips control chars, truncates to
-// a safe length, and pattern-matches the most common injection phrases.
+// ── Types ────────────────────────────────────────────────────────────────────
+type RiskSeverity = "Critical" | "High" | "Medium" | "Low";
 
-// FIX: control-char stripping used to be a regex character class built from
-// \x hex escapes (`/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g`). That's valid JS, but
-// it broke the Vercel/SWC build with "Unterminated regexp literal" after a
-// round-trip through this pipeline — something between here and the deploy
-// re-encoded or dropped a byte inside the character class and desynced the
-// literal. A regex with a hand-escaped hex character class has no built-in
-// way to detect that kind of corruption; a plain per-codepoint filter does,
-// because there's no special character left to mis-transmit.
-function stripControlChars(input: string): string {
-  let out = "";
-  for (const ch of input) {
-    const code = ch.codePointAt(0) ?? 0;
-    // Strip ASCII/Unicode control ranges, keep \n \r \t (0x0A, 0x0D, 0x09).
-    const isControl =
-      (code <= 8) || code === 11 || code === 12 || (code >= 14 && code <= 31) || code === 127;
-    if (!isControl) out += ch;
-  }
-  return out;
-}
-
-export function sanitizePromptInput(input: string, maxLength = 500): string {
-  if (typeof input !== "string") return "";
-  return stripControlChars(input)
-    // Detect and neutralise common prompt-injection openers.
-    .replace(
-      /\b(ignore|disregard|forget|override|bypass)\b[\s\S]{0,60}\b(previous|prior|all|above|system)\b[\s\S]{0,60}\b(instructions?|prompts?|rules?|context)\b/gi,
-      "[FILTERED]",
-    )
-    // Strip "begin new prompt / new instruction" patterns
-    .replace(/\b(begin|start|end)\b[\s\S]{0,30}\b(new\s+)?(prompt|instruction|task|system)\b/gi, "[FILTERED]")
-    // Trim to max length (hard cap to prevent prompt bloat)
-    .slice(0, maxLength)
-    .trim();
-}
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-export interface StartupContext {
-  idea: string;
-  problem: string;
-  targetUsers: string;
-  solution: string;
-  stage: string;
-  competitors: ScrapedCompetitor[];
-  focusAreas?: string[];
-  // Optional enrichment from project data
-  validationStrengths?: string[];
-  validationWeaknesses?: string[];
-  executionScore?: number;
-  momentumScore?: number;
-}
-
-export interface ScrapedCompetitor {
-  title: string;
-  url: string;
-  snippet: string;
-}
-
-// ── Agent output types ────────────────────────────────────────────────────────
-
-export interface MarketResearchOutput {
-  market_size_signal: "niche" | "mid" | "large" | "unknown";
-  demand_authenticity: "real" | "manufactured" | "uncertain";
-  growth_trajectory: "growing" | "flat" | "declining" | "unknown";
-  demand_signals: string[];           // concrete evidence of demand
-  demand_gaps: string[];              // underserved segments or needs
-  target_customer_fit: string;        // how well idea matches stated target users
-  confidence: number;                 // 0–1
-  reasoning: string;                  // internal reasoning chain
-}
-
-export interface CompetitorOutput {
-  saturation_level: "low" | "medium" | "high" | "unknown";
-  direct_competitors: CompetitorSummary[];
-  indirect_competitors: string[];
-  market_gaps: string[];              // what competitors are NOT doing
-  differentiation_opportunities: string[];
-  competitive_moat_score: number;     // 0–10: how defensible is this space
-  confidence: number;
-  reasoning: string;
-}
-
-export interface CompetitorSummary {
-  name: string;
-  url?: string;
-  weakness: string;                   // their specific gap this founder can exploit
-  threat_level: "low" | "medium" | "high";
-}
-
-export interface TrendOutput {
-  timing_signal: "early" | "right" | "late" | "unknown";
-  macro_tailwinds: string[];          // forces working IN favour
-  macro_headwinds: string[];          // forces working AGAINST
-  window_of_opportunity: string;      // specific timing narrative
-  trend_confidence: number;           // 0–1
-  confidence: number;
-  reasoning: string;
-}
-
-export interface SentimentOutput {
-  pain_intensity: "low" | "medium" | "high" | "unknown";
-  user_pain_points: string[];         // real complaints/frustrations found
-  demand_signals: string[];           // evidence people want a solution
-  community_signals: string[];        // forum/community evidence
-  willingness_to_pay_signal: "unlikely" | "possible" | "likely" | "unknown";
-  confidence: number;
-  reasoning: string;
-}
-
-export interface RiskOutput {
-  top_risks: Risk[];
-  blind_spots: string[];              // things founder hasn't considered
-  failure_modes: string[];            // specific ways this startup could die
-  execution_risk_level: "low" | "medium" | "high" | "critical";
-  confidence: number;
-  reasoning: string;
-}
-
-export interface Risk {
-  title: string;
+interface RiskItem {
+  category: string;
+  severity: RiskSeverity;
   description: string;
-  severity: "low" | "medium" | "high" | "fatal";
   mitigation: string;
 }
 
-function focusAreaLine(ctx: StartupContext): string {
-  return ctx.focusAreas?.length
-    ? `Founder-selected focus areas: ${ctx.focusAreas.join(", ")}. Prioritize these dimensions when deciding what to inspect, criticize, and recommend.`
-    : "Founder-selected focus areas: none.";
+interface BreakResult {
+  overallRisk: RiskSeverity;
+  summary: string;
+  risks: RiskItem[];
+  survival_probability?: number;
+  brutal_advice?: string;
+  gated?: boolean;
+  score_note?: string;
+  agents?: Array<{ name: string; status: string; summary: string; confidence?: number }>;
+  /** Per-dimension 0-100 scores from the 5-agent pipeline's SignalSummary.
+   *  The API has always returned this on signal_summary; it just wasn't
+   *  read here before. Feeds the radar chart. */
+  signalBreakdown?: Array<{ key: string; label: string; value: number; tip?: string }>;
+  isSynthetic?: boolean; // D2: true when all agents fell back to hardcoded defaults
+  focusAreas?: string[];
+  executionPlan?: { mvp_roadmap?: string[]; first_10_actions?: string[]; gtm_plan?: string[] } | null;
+  reflexionAction?: {
+    action?: string;
+    rationale?: string;
+    confidence?: number;
+    supporting_signals?: string[];
+    risks?: string[];
+    log_row_id?: string | null;
+  } | null;
 }
 
-// ── Pipeline output ───────────────────────────────────────────────────────────
-
-export interface AgentPipelineResult {
-  market: MarketResearchOutput | null;
-  competitor: CompetitorOutput | null;
-  trend: TrendOutput | null;
-  sentiment: SentimentOutput | null;
-  risk: RiskOutput | null;
-  // Merged signal summary for scoring engine
-  signal_summary: SignalSummary;
-  // Which agents succeeded/failed
-  agent_statuses: Record<AgentName, "success" | "failed" | "fallback">;
-  // How long the pipeline took
-  duration_ms: number;
-  // D2 FIX: true when ALL agents fell back to hardcoded defaults (total AI outage).
-  // The UI must display a clear "analysis unavailable" state instead of showing
-  // synthetic scores that look real. A clustered 45–55 viability score derived
-  // from fallback defaults is not meaningful signal — displaying it as real
-  // analysis destroys user trust when they discover it.
-  analysis_is_synthetic: boolean;
-  // Count of agents that used real AI vs hardcoded fallback
-  agents_succeeded: number;
-  agents_failed: number;
-}
-
-export type AgentName = "market" | "competitor" | "trend" | "sentiment" | "risk";
-
-export interface SignalSummary {
-  // Distilled inputs for the scoring engine
-  demand_score: number;           // 0–100
-  competition_score: number;      // 0–100 (higher = more competitive = harder)
-  timing_score: number;           // 0–100 (higher = better timing)
-  uniqueness_score: number;       // 0–100
-  risk_score: number;             // 0–100 (higher = more risky)
-  overall_confidence: number;     // 0–1 (average across agents)
-  // Aggregated lists for report generation
-  all_risks: Risk[];
-  all_opportunities: string[];
-  all_pain_points: string[];
-  competitor_gaps: string[];
-}
-
-// ─── Agent 1: Market Research ─────────────────────────────────────────────────
-
-async function runMarketResearchAgent(ctx: StartupContext): Promise<MarketResearchOutput> {
-  const system = `You are a specialist Market Research Agent in a startup validation pipeline.
-Your ONLY job: assess genuine market demand for this startup idea.
-
-Return ONLY valid JSON matching this exact shape:
-{
-  "market_size_signal": "niche" | "mid" | "large" | "unknown",
-  "demand_authenticity": "real" | "manufactured" | "uncertain",
-  "growth_trajectory": "growing" | "flat" | "declining" | "unknown",
-  "demand_signals": ["concrete evidence string 1", "..."],
-  "demand_gaps": ["underserved segment or need 1", "..."],
-  "target_customer_fit": "one sentence on fit between idea and target users",
-  "confidence": 0.0–1.0,
-  "reasoning": "your internal reasoning chain (2-3 sentences)"
-}
-
-Rules:
-- demand_signals must be SPECIFIC. Not "there is demand". Name the signal.
-- If you are uncertain, lower confidence. Never fabricate statistics.
-- demand_gaps: where are real users underserved RIGHT NOW?
-- market_size_signal: niche = <$100M TAM, mid = $100M–$1B, large = $1B+
-- confidence reflects how much real evidence you have vs inference`;
-
-  const competitorContext = ctx.competitors.length > 0
-    ? `\nScraped competitor data:\n${ctx.competitors.map((c, i) => `${i + 1}. ${c.title} — ${c.url}\n   ${c.snippet}`).join("\n")}`
-    : "\nNo scraped competitor data available.";
-
-  const user = `Startup idea: ${sanitizePromptInput(ctx.idea)}
-Problem: ${sanitizePromptInput(ctx.problem)}
-Target users: ${sanitizePromptInput(ctx.targetUsers)}
-Solution: ${sanitizePromptInput(ctx.solution, 600)}
-Stage: ${ctx.stage}
-${focusAreaLine(ctx)}
-${competitorContext}
-
-Assess market demand. Be specific. Lower confidence when uncertain.`;
-
-  const fallback: MarketResearchOutput = {
-    market_size_signal: "unknown",
-    demand_authenticity: "uncertain",
-    growth_trajectory: "unknown",
-    demand_signals: ["Insufficient data to confirm demand — founder needs to run user interviews"],
-    demand_gaps: ["Gap analysis requires more market research"],
-    target_customer_fit: "Target customer fit is unverified — needs direct user validation",
-    confidence: 0.3,
-    reasoning: "Market research agent fell back to defaults due to insufficient context.",
+type BreakApiData = {
+  verdict?: string;
+  kill_reasons?: string[];
+  survive_reasons?: string[];
+  brutal_advice?: string;
+  survival_probability?: number;
+  competitor_summary?: string;
+  differentiation_plan?: string[];
+  gated?: boolean;
+  reasoning?: string[];
+  agent_outputs?: Record<string, Record<string, unknown> | null>;
+  agent_statuses?: Record<string, string>;
+  signal_summary?: {
+    overall_confidence?: number;
+    demand_score?: number;
+    competition_score?: number;
+    timing_score?: number;
+    uniqueness_score?: number;
+    risk_score?: number;
   };
+  execution_plan?: BreakResult["executionPlan"];
+  reflexion_action?: BreakResult["reflexionAction"];
+  focus_areas?: string[];
+};
 
-  try {
-    const result = await callModelJSON<MarketResearchOutput>(
-      [{ role: "system", content: system }, { role: "user", content: user }],
-      { role: "fast", maxTokens: 700 },
-    );
-    // Validate required fields
-    if (!result.demand_signals || !result.confidence) return fallback;
-    return {
-      ...fallback,
-      ...result,
-      confidence: Math.min(1, Math.max(0, Number(result.confidence) || 0.3)),
-    };
-  } catch {
-    return fallback;
-  }
+const FOCUS_AREAS = [
+  "Business Model",
+  "Unit Economics",
+  "Market Size",
+  "Competitive Moat",
+  "Founder-Market Fit",
+  "Tech Risk",
+  "Regulatory Risk",
+] as const;
+type FocusArea = (typeof FOCUS_AREAS)[number];
+
+function severityVariant(s: RiskSeverity): BadgeVariant {
+  if (s === "Critical") return "danger";
+  if (s === "High") return "warning";
+  if (s === "Medium") return "info";
+  return "neutral";
 }
 
-// ─── Agent 2: Competitor Analysis ────────────────────────────────────────────
+function overallColor(s: RiskSeverity) {
+  if (s === "Critical") return "var(--bm-red)";
+  if (s === "High") return "var(--bm-amber)";
+  if (s === "Medium") return "var(--bm-blue)";
+  return "var(--bm-green)";
+}
 
-async function runCompetitorAgent(ctx: StartupContext): Promise<CompetitorOutput> {
-  const system = `You are a specialist Competitor Analysis Agent in a startup validation pipeline.
-Your ONLY job: map the competitive landscape and find exploitable gaps.
+function cleanAIText(value = ""): string {
+  return value
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .replace(/<think>[\s\S]*$/gi, "")
+    .replace(/^[\s\S]*<\/think>/gi, "")
+    .replace(/[•→⇒➜➔]/g, "-")
+    .replace(/[—–]/g, "-")
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/\u2026/g, "...")
+    .replace(/[^\S\r\n]+/g, " ")
+    .trim();
+}
 
-Return ONLY valid JSON matching this exact shape:
-{
-  "saturation_level": "low" | "medium" | "high" | "unknown",
-  "direct_competitors": [
-    {
-      "name": "Competitor name",
-      "url": "url or empty string",
-      "weakness": "their specific gap this founder can exploit",
-      "threat_level": "low" | "medium" | "high"
+function cleanAIList(items?: string[]): string[] {
+  return (items ?? []).map(cleanAIText).filter(Boolean);
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+export default function BreakMyStartupPage() {
+  const [reflectionCount, setReflectionCount] = React.useState(0);
+
+  React.useEffect(() => {
+    async function fetchCount() {
+      try {
+        const { createClient: cc } = await import("@/lib/supabase/client");
+        const supabase = cc();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const { count } = await supabase.from("reflections").select("id", { count: "exact", head: true }).eq("user_id", user.id);
+        setReflectionCount(count ?? 0);
+      } catch { /* non-fatal */ }
     }
-  ],
-  "indirect_competitors": ["alternative solution 1", "..."],
-  "market_gaps": ["what NO competitor is doing well 1", "..."],
-  "differentiation_opportunities": ["specific angle 1", "..."],
-  "competitive_moat_score": 0–10,
-  "confidence": 0.0–1.0,
-  "reasoning": "2-3 sentence reasoning chain"
-}
-
-Rules:
-- Use the scraped competitor data as primary evidence
-- market_gaps: must be SPECIFIC to the competitors listed, not generic
-- differentiation_opportunities: name a specific positioning angle, not "be better"
-- competitive_moat_score: 0 = commodity, 10 = nearly impossible to replicate
-- saturation: low = few direct competitors, high = crowded with funded players`;
-
-  const competitorContext = ctx.competitors.length > 0
-    ? `\nLive competitor data from web scan:\n${ctx.competitors.map((c, i) => `${i + 1}. ${c.title}\n   URL: ${c.url}\n   Context: ${c.snippet}`).join("\n\n")}`
-    : "\nNo competitor data from web scan. Reason from training knowledge only — lower confidence accordingly.";
-
-  const user = `Startup idea: ${sanitizePromptInput(ctx.idea)}
-Problem being solved: ${sanitizePromptInput(ctx.problem)}
-Target users: ${sanitizePromptInput(ctx.targetUsers)}
-Stage: ${ctx.stage}
-${focusAreaLine(ctx)}
-${competitorContext}
-
-Map the competitive landscape. Name specific gaps. Be precise.`;
-
-  const fallback: CompetitorOutput = {
-    saturation_level: "unknown",
-    direct_competitors: [],
-    indirect_competitors: ["Manual workarounds", "Spreadsheets", "Existing tools repurposed"],
-    market_gaps: ["Unable to identify specific gaps without competitor data"],
-    differentiation_opportunities: ["Run a competitor scan with more specific search terms"],
-    competitive_moat_score: 3,
-    confidence: 0.25,
-    reasoning: "Competitor agent fell back — insufficient scraped data to map landscape precisely.",
-  };
-
-  try {
-    const result = await callModelJSON<CompetitorOutput>(
-      [{ role: "system", content: system }, { role: "user", content: user }],
-      { role: "fast", maxTokens: 700 },
-    );
-    if (!result.saturation_level) return fallback;
-    return {
-      ...fallback,
-      ...result,
-      competitive_moat_score: Math.min(10, Math.max(0, Number(result.competitive_moat_score) || 3)),
-      confidence: Math.min(1, Math.max(0, Number(result.confidence) || 0.25)),
-    };
-  } catch {
-    return fallback;
-  }
-}
-
-// ─── Agent 3: Trend Detection ─────────────────────────────────────────────────
-
-async function runTrendAgent(ctx: StartupContext): Promise<TrendOutput> {
-  // FIX: this agent previously had zero live grounding — it guessed macro
-  // tailwinds/headwinds purely from training knowledge, which is why output
-  // like "AI productivity tools lowering the cost of building" reads as a
-  // generic template line instead of something tied to real, current signal.
-  // newsSearch() already existed in lib/search.ts but nothing called it here.
-  let newsContext = "\nNo live news signals available. Reason from training knowledge only — lower confidence accordingly.";
-  try {
-    const news = await newsSearch(`${ctx.idea} ${ctx.problem}`.slice(0, 200), 6);
-    if (news.results.length > 0) {
-      newsContext = `\nLive news/market signals from web search (${news.provider}):\n${news.results
-        .map((r, i) => `${i + 1}. ${r.title}${r.age ? ` (${r.age})` : ""} — ${r.snippet}`)
-        .join("\n")}`;
-    }
-  } catch { /* fall through to no-signal messaging */ }
-
-  const system = `You are a specialist Trend Detection Agent in a startup validation pipeline.
-Your ONLY job: assess timing — is this the right moment to build this?
-
-Return ONLY valid JSON matching this exact shape:
-{
-  "timing_signal": "early" | "right" | "late" | "unknown",
-  "macro_tailwinds": ["force working IN favour 1", "..."],
-  "macro_headwinds": ["force working AGAINST 1", "..."],
-  "window_of_opportunity": "specific narrative about the timing window",
-  "trend_confidence": 0.0–1.0,
-  "confidence": 0.0–1.0,
-  "reasoning": "2-3 sentence reasoning chain"
-}
-
-Rules:
-- timing_signal "early" = market not ready yet, "right" = optimal window, "late" = too crowded/declining
-- macro_tailwinds: name SPECIFIC macro forces (e.g. "AI commoditisation lowering build costs", "remote work normalising async tools")
-- macro_headwinds: name SPECIFIC friction forces (e.g. "incumbent with $50M war chest", "regulation tightening in this sector")
-- window_of_opportunity: one concrete sentence about WHY now (or why not now)
-- Prefer citing the live news/market signals supplied below over generic training knowledge when they're available
-- Lower confidence if timing is genuinely unclear or no live signals were found`;
-
-  const user = `Startup idea: ${sanitizePromptInput(ctx.idea)}
-Problem: ${sanitizePromptInput(ctx.problem)}
-Target users: ${sanitizePromptInput(ctx.targetUsers)}
-Stage: ${ctx.stage}
-${focusAreaLine(ctx)}
-Known competitors: ${ctx.competitors.map(c => c.title).join(", ") || "none found"}
-${newsContext}
-
-Assess timing. Is this the right moment? What forces are at play?`;
-
-  const fallback: TrendOutput = {
-    timing_signal: "unknown",
-    macro_tailwinds: ["AI tooling lowering cost of building", "Founder ecosystem growing globally"],
-    macro_headwinds: ["Market timing unverified", "Competitive landscape unclear"],
-    window_of_opportunity: "Timing assessment requires more market research to confirm.",
-    trend_confidence: 0.3,
-    confidence: 0.3,
-    reasoning: "Trend agent fell back to defaults — insufficient signals to assess timing.",
-  };
-
-  try {
-    const result = await callModelJSON<TrendOutput>(
-      [{ role: "system", content: system }, { role: "user", content: user }],
-      { role: "fast", maxTokens: 700 },
-    );
-    if (!result.timing_signal) return fallback;
-    return {
-      ...fallback,
-      ...result,
-      trend_confidence: Math.min(1, Math.max(0, Number(result.trend_confidence) || 0.3)),
-      confidence: Math.min(1, Math.max(0, Number(result.confidence) || 0.3)),
-    };
-  } catch {
-    return fallback;
-  }
-}
-
-// ─── Agent 4: Customer Sentiment ──────────────────────────────────────────────
-
-async function runSentimentAgent(ctx: StartupContext): Promise<SentimentOutput> {
-  // FIX: this agent was asked to report "community_signals" and Reddit/forum
-  // evidence but was never given any actual discussion data — discussionSearch()
-  // existed in lib/search.ts for exactly this purpose and nothing called it.
-  // Output like "inability to maintain a consistent daily work rhythm" was the
-  // model inventing a plausible-sounding pain point, not reading a real one.
-  let discussionContext = "\nNo live discussion/forum data available. Reason from training knowledge only — lower confidence accordingly.";
-  try {
-    const discussions = await discussionSearch(`${ctx.problem} ${ctx.targetUsers}`.slice(0, 200), 6);
-    if (discussions.results.length > 0) {
-      discussionContext = `\nLive Reddit/HN/forum signals from web search (${discussions.provider}):\n${discussions.results
-        .map((r, i) => `${i + 1}. ${r.title} — ${r.snippet}`)
-        .join("\n")}`;
-    }
-  } catch { /* fall through to no-signal messaging */ }
-
-  const system = `You are a specialist Customer Sentiment Agent in a startup validation pipeline.
-Your ONLY job: assess whether real users genuinely feel the pain this startup addresses.
-
-Return ONLY valid JSON matching this exact shape:
-{
-  "pain_intensity": "low" | "medium" | "high" | "unknown",
-  "user_pain_points": ["real complaint or frustration 1", "..."],
-  "demand_signals": ["evidence people are actively seeking solution 1", "..."],
-  "community_signals": ["forum/community evidence 1", "..."],
-  "willingness_to_pay_signal": "unlikely" | "possible" | "likely" | "unknown",
-  "confidence": 0.0–1.0,
-  "reasoning": "2-3 sentence reasoning chain"
-}
-
-Rules:
-- pain_intensity "high" = users are actively complaining, losing money, or blocked
-- user_pain_points: name SPECIFIC frustrations, not generic ones
-- demand_signals: evidence of active search for solutions (complaints, workarounds, requests)
-- community_signals: quote or closely paraphrase the live Reddit/forum data supplied below — do not invent forum activity that isn't in the supplied data
-- willingness_to_pay: "likely" only if there's evidence people already pay for adjacent solutions
-- If no live discussion data was found and you cannot confirm pain intensity, say "unknown" and lower confidence`;
-
-  const user = `Startup idea: ${sanitizePromptInput(ctx.idea)}
-Problem addressed: ${sanitizePromptInput(ctx.problem)}
-Target users: ${sanitizePromptInput(ctx.targetUsers)}
-Stage: ${ctx.stage}
-${focusAreaLine(ctx)}
-Competitor snippets (for sentiment inference): ${ctx.competitors.map(c => c.snippet).filter(Boolean).join(" | ") || "none"}
-${discussionContext}
-
-Assess user pain intensity and demand authenticity. Be specific.`;
-
-  const fallback: SentimentOutput = {
-    pain_intensity: "unknown",
-    user_pain_points: ["Pain intensity unverified — founder needs to conduct user interviews"],
-    demand_signals: ["No confirmed demand signals — go talk to 5 target users this week"],
-    community_signals: ["Community research not available in this context"],
-    willingness_to_pay_signal: "unknown",
-    confidence: 0.2,
-    reasoning: "Sentiment agent fell back — no user interview data or community signals available.",
-  };
-
-  try {
-    const result = await callModelJSON<SentimentOutput>(
-      [{ role: "system", content: system }, { role: "user", content: user }],
-      { role: "fast", maxTokens: 700 },
-    );
-    if (!result.pain_intensity) return fallback;
-    return {
-      ...fallback,
-      ...result,
-      confidence: Math.min(1, Math.max(0, Number(result.confidence) || 0.2)),
-    };
-  } catch {
-    return fallback;
-  }
-}
-
-// ─── Agent 5: Risk Assessment ─────────────────────────────────────────────────
-
-async function runRiskAgent(ctx: StartupContext): Promise<RiskOutput> {
-  const system = `You are a specialist Risk Assessment Agent in a startup validation pipeline.
-Your ONLY job: identify the real ways this startup will fail.
-
-Return ONLY valid JSON matching this exact shape:
-{
-  "top_risks": [
-    {
-      "title": "short risk name",
-      "description": "specific description of the risk",
-      "severity": "low" | "medium" | "high" | "fatal",
-      "mitigation": "one concrete action to reduce this risk"
-    }
-  ],
-  "blind_spots": ["thing founder hasn't considered 1", "..."],
-  "failure_modes": ["specific way this startup could die 1", "..."],
-  "execution_risk_level": "low" | "medium" | "high" | "critical",
-  "confidence": 0.0–1.0,
-  "reasoning": "2-3 sentence reasoning chain"
-}
-
-Rules:
-- top_risks: 3–5 risks, ordered by severity descending
-- Each risk must be SPECIFIC to this startup, not generic startup advice
-- blind_spots: things the founder description reveals they haven't thought about
-- failure_modes: specific death scenarios (e.g. "Enterprise sales cycle kills runway before first contract")
-- execution_risk_level based on stage + complexity + competition
-- "fatal" severity = this alone could kill the company`;
-
-  const user = `Startup idea: ${sanitizePromptInput(ctx.idea)}
-Problem: ${sanitizePromptInput(ctx.problem)}
-Target users: ${sanitizePromptInput(ctx.targetUsers)}
-Stage: ${ctx.stage}
-${focusAreaLine(ctx)}
-Known weaknesses: ${ctx.validationWeaknesses?.join(", ") || "none provided"}
-Execution score: ${ctx.executionScore ?? "unknown"}/100
-
-Identify the real risks. Be specific and brutal.`;
-
-  const fallback: RiskOutput = {
-    top_risks: [
-      {
-        title: "Unvalidated demand",
-        description: "No confirmed evidence that target users will pay for this solution",
-        severity: "high",
-        mitigation: "Run 5 user interviews with willingness-to-pay questions this week",
-      },
-      {
-        title: "Execution bandwidth",
-        description: "Solo founder risk — no validation of capacity to execute",
-        severity: "medium",
-        mitigation: "Define your single most important milestone for the next 30 days",
-      },
-    ],
-    blind_spots: ["Distribution strategy not defined", "Unit economics not modelled"],
-    failure_modes: ["Building without validating demand first", "Running out of runway before first paying customer"],
-    execution_risk_level: "high",
-    // FIX: this was 0.4, which is ABOVE the agent_statuses success threshold
-    // (risk: confidence > 0.3) used in runAgentPipeline below. That meant a
-    // total agent failure (Groq call threw, or returned an invalid shape)
-    // silently rendered as "SUCCESS" in the Five-Agent Analysis UI, with the
-    // hardcoded blind_spots ("Distribution strategy not defined", "Unit
-    // economics not modelled") shown as if it were live analysis. Every other
-    // agent's fallback confidence sits at or below its own threshold on
-    // purpose; this one didn't.
-    confidence: 0.25,
-    reasoning: "Risk agent used default high-risk assessment — insufficient project data to refine.",
-  };
-
-  try {
-    const result = await callModelJSON<RiskOutput>(
-      [{ role: "system", content: system }, { role: "user", content: user }],
-      { role: "reasoning", maxTokens: 800 },
-    );
-    if (!result.top_risks || !Array.isArray(result.top_risks)) return fallback;
-    return {
-      ...fallback,
-      ...result,
-      confidence: Math.min(1, Math.max(0, Number(result.confidence) || 0.4)),
-    };
-  } catch {
-    return fallback;
-  }
-}
-
-// ─── Signal Merger ────────────────────────────────────────────────────────────
-
-/**
- * mergeSignals — converts 5 agent outputs into a unified SignalSummary
- * used by the scoring engine and report generator.
- */
-function mergeSignals(
-  market: MarketResearchOutput | null,
-  competitor: CompetitorOutput | null,
-  trend: TrendOutput | null,
-  sentiment: SentimentOutput | null,
-  risk: RiskOutput | null,
-): SignalSummary {
-  // ── Demand score (0–100) ──
-  const demandMap = { real: 80, manufactured: 30, uncertain: 45 };
-  const painMap = { high: 85, medium: 55, low: 25, unknown: 35 };
-  const wtpMap = { likely: 85, possible: 55, unlikely: 20, unknown: 35 };
-  const demandBase = market ? demandMap[market.demand_authenticity] ?? 45 : 45;
-  const painBonus = sentiment ? painMap[sentiment.pain_intensity] ?? 35 : 35;
-  const wtpBonus = sentiment ? wtpMap[sentiment.willingness_to_pay_signal] ?? 35 : 35;
-  const demand_score = Math.round((demandBase * 0.4) + (painBonus * 0.35) + (wtpBonus * 0.25));
-
-  // ── Competition score (0–100, higher = more competitive = harder) ──
-  const satMap = { high: 80, medium: 50, low: 20, unknown: 45 };
-  const competition_score = competitor ? satMap[competitor.saturation_level] ?? 45 : 45;
-
-  // ── Timing score (0–100, higher = better timing) ──
-  const timingMap = { right: 80, early: 55, late: 25, unknown: 40 };
-  const timing_score = trend ? timingMap[trend.timing_signal] ?? 40 : 40;
-
-  // ── Uniqueness score (0–100) ──
-  const moatBase = competitor ? Math.round((competitor.competitive_moat_score / 10) * 60) : 30;
-  const gapBonus = competitor ? Math.min(40, (competitor.market_gaps?.length ?? 0) * 8) : 10;
-  const uniqueness_score = Math.min(100, moatBase + gapBonus);
-
-  // ── Risk score (0–100, higher = more risky) ──
-  const riskLevelMap = { critical: 90, high: 70, medium: 45, low: 20 };
-  const fatalRisks = risk?.top_risks?.filter(r => r.severity === "fatal").length ?? 0;
-  const highRisks = risk?.top_risks?.filter(r => r.severity === "high").length ?? 0;
-  const riskBase = risk ? riskLevelMap[risk.execution_risk_level] ?? 70 : 70;
-  const riskPenalty = Math.min(20, fatalRisks * 10 + highRisks * 4);
-  const risk_score = Math.min(100, riskBase + riskPenalty);
-
-  // ── Overall confidence ──
-  const confidences = [market, competitor, trend, sentiment, risk]
-    .filter(Boolean)
-    .map(a => a!.confidence);
-  const overall_confidence = confidences.length > 0
-    ? Math.round((confidences.reduce((a, b) => a + b, 0) / confidences.length) * 100) / 100
-    : 0.3;
-
-  // ── Aggregated lists ──
-  const all_risks: Risk[] = risk?.top_risks ?? [];
-  const all_opportunities: string[] = [
-    ...(competitor?.differentiation_opportunities ?? []),
-    ...(market?.demand_gaps ?? []),
-    ...(trend?.macro_tailwinds ?? []),
-  ].filter(Boolean).slice(0, 8);
-
-  const all_pain_points: string[] = [
-    ...(sentiment?.user_pain_points ?? []),
-    ...(sentiment?.demand_signals ?? []),
-  ].filter(Boolean).slice(0, 6);
-
-  const competitor_gaps: string[] = competitor?.market_gaps ?? [];
-
-  return {
-    demand_score,
-    competition_score,
-    timing_score,
-    uniqueness_score,
-    risk_score,
-    overall_confidence,
-    all_risks,
-    all_opportunities,
-    all_pain_points,
-    competitor_gaps,
-  };
-}
-
-// ─── Main Orchestrator ────────────────────────────────────────────────────────
-
-/**
- * runAgentPipeline — executes all 5 agents in parallel.
- *
- * Uses Promise.allSettled so one agent failing doesn't kill the whole pipeline.
- * Failed agents fall back to their typed defaults.
- * Returns AgentPipelineResult with all outputs + merged SignalSummary.
- *
- * Budget: 25 s aggregate wall-clock cap. Each provider already has a 20 s
- * per-call AbortSignal, but the fallback chain can attempt up to 4 providers
- * sequentially — so without an outer cap the pipeline could theoretically
- * block for 80 s per agent. The race below limits the whole fan-out to 25 s;
- * any agent that hasn't resolved by then is treated as failed (null output).
- */
-
-const PIPELINE_TIMEOUT_MS = 25_000;
-
-function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms),
-    ),
-  ]);
-}
-
-export async function runAgentPipeline(ctx: StartupContext): Promise<AgentPipelineResult> {
-  const start = Date.now();
-
-  const [marketResult, competitorResult, trendResult, sentimentResult, riskResult] =
-    await Promise.allSettled([
-      withTimeout(runMarketResearchAgent(ctx),  PIPELINE_TIMEOUT_MS, "MarketResearchAgent"),
-      withTimeout(runCompetitorAgent(ctx),       PIPELINE_TIMEOUT_MS, "CompetitorAgent"),
-      withTimeout(runTrendAgent(ctx),            PIPELINE_TIMEOUT_MS, "TrendAgent"),
-      withTimeout(runSentimentAgent(ctx),        PIPELINE_TIMEOUT_MS, "SentimentAgent"),
-      withTimeout(runRiskAgent(ctx),             PIPELINE_TIMEOUT_MS, "RiskAgent"),
-    ]);
-
-  const market = marketResult.status === "fulfilled" ? marketResult.value : null;
-  const competitor = competitorResult.status === "fulfilled" ? competitorResult.value : null;
-  const trend = trendResult.status === "fulfilled" ? trendResult.value : null;
-  const sentiment = sentimentResult.status === "fulfilled" ? sentimentResult.value : null;
-  const risk = riskResult.status === "fulfilled" ? riskResult.value : null;
-
-  const agent_statuses: Record<AgentName, "success" | "failed" | "fallback"> = {
-    market: marketResult.status === "fulfilled"
-      ? (market!.confidence > 0.3 ? "success" : "fallback")
-      : "failed",
-    competitor: competitorResult.status === "fulfilled"
-      ? (competitor!.confidence > 0.25 ? "success" : "fallback")
-      : "failed",
-    trend: trendResult.status === "fulfilled"
-      ? (trend!.confidence > 0.3 ? "success" : "fallback")
-      : "failed",
-    sentiment: sentimentResult.status === "fulfilled"
-      ? (sentiment!.confidence > 0.2 ? "success" : "fallback")
-      : "failed",
-    risk: riskResult.status === "fulfilled"
-      ? (risk!.confidence > 0.3 ? "success" : "fallback")
-      : "failed",
-  };
-
-  const signal_summary = mergeSignals(market, competitor, trend, sentiment, risk);
-
-  const agents_succeeded = Object.values(agent_statuses).filter(s => s === "success").length;
-  const agents_failed    = Object.values(agent_statuses).filter(s => s !== "success").length;
-  // D2 FIX: flag when the entire pipeline used synthetic fallback defaults
-  const analysis_is_synthetic = agents_succeeded === 0;
-
-  return {
-    market,
-    competitor,
-    trend,
-    sentiment,
-    risk,
-    signal_summary,
-    agent_statuses,
-    duration_ms: Date.now() - start,
-    analysis_is_synthetic,
-    agents_succeeded,
-    agents_failed,
-  };
-}
-
-// ─── Input Parser ─────────────────────────────────────────────────────────────
-
-/**
- * Parsed schema from free-text startup idea.
- * Used by validate-idea route before running the agent pipeline.
- */
-export interface ParsedStartupSchema {
-  problem: string;
-  target_customer: string;
-  solution: string;
-  value_proposition: string;
-  monetization: string;
-  category: string;
-}
-
-/**
- * parseStartupIdea — converts free-text idea into structured schema.
- * Single Groq call, fast, used as Stage 0 before pipeline runs.
- */
-export async function parseStartupIdea(rawIdea: string): Promise<ParsedStartupSchema> {
-  if (!hasAIProvider()) {
-    return {
-      problem: rawIdea,
-      target_customer: "Not specified",
-      solution: rawIdea,
-      value_proposition: "Not specified",
-      monetization: "Not specified",
-      category: "Not specified",
-    };
-  }
-
-  const system = `You are a startup idea parser. Convert a free-text startup description into a structured schema.
-Return ONLY valid JSON with exactly these keys:
-{
-  "problem": "the core problem being solved (1-2 sentences)",
-  "target_customer": "specific customer segment (be specific, not 'businesses')",
-  "solution": "the proposed solution (1-2 sentences)",
-  "value_proposition": "why this is better than existing alternatives (1 sentence)",
-  "monetization": "how this makes money (be specific: subscription, per-seat, transaction fee, etc.)",
-  "category": "market category (e.g. B2B SaaS, Consumer App, Marketplace, Developer Tools, etc.)"
-}
-If a field cannot be inferred from the text, write "Not specified" — do not invent.`;
-
-  try {
-    const result = await callModelJSON<ParsedStartupSchema>(
-      [{ role: "system", content: system }, { role: "user", content: `Startup idea: "${rawIdea}"` }],
-      { role: "fast", maxTokens: 400 },
-    );
-    return {
-      problem: result.problem || rawIdea,
-      target_customer: result.target_customer || "Not specified",
-      solution: result.solution || rawIdea,
-      value_proposition: result.value_proposition || "Not specified",
-      monetization: result.monetization || "Not specified",
-      category: result.category || "Not specified",
-    };
-  } catch {
-    return {
-      problem: rawIdea,
-      target_customer: "Not specified",
-      solution: rawIdea,
-      value_proposition: "Not specified",
-      monetization: "Not specified",
-      category: "Not specified",
-    };
-  }
-}
-
-// ─── Pivot Engine ─────────────────────────────────────────────────────────────
-
-export interface PivotSuggestion {
-  title: string;
-  description: string;
-  target_niche: string;
-  why_better: string;
-  estimated_score_delta: number;  // how much this pivot improves viability score
-  key_change: string;             // the single most important thing that changes
-}
-
-/**
- * generatePivots — produces 3 scored pivot suggestions based on agent signals.
- * Each pivot targets a clearer niche and justifies why it improves viability.
- */
-export async function generatePivots(
-  ctx: StartupContext,
-  signals: SignalSummary,
-  currentScore: number,
-): Promise<PivotSuggestion[]> {
-  const fallbackPivots: PivotSuggestion[] = [
-    {
-      title: "Niche down to one user segment",
-      description: "Instead of targeting all users, focus exclusively on the highest-pain segment",
-      target_niche: "Power users with acute pain",
-      why_better: "Niche products have higher conversion and word-of-mouth",
-      estimated_score_delta: 8,
-      key_change: "Target audience definition",
-    },
-    {
-      title: "B2B pivot",
-      description: "Sell to businesses rather than individual consumers",
-      target_niche: "Small businesses in target sector",
-      why_better: "B2B has clearer willingness-to-pay and longer retention",
-      estimated_score_delta: 6,
-      key_change: "Monetization model",
-    },
-    {
-      title: "Services-first validation",
-      description: "Offer the solution as a done-for-you service before building product",
-      target_niche: "Early adopters willing to pay for outcome",
-      why_better: "Validates willingness-to-pay before engineering investment",
-      estimated_score_delta: 10,
-      key_change: "Go-to-market approach",
-    },
-  ];
-
-  if (!hasAIProvider()) return fallbackPivots;
-
-  const system = `You are a Pivot Engine in a startup validation system.
-Generate exactly 3 improved pivot variations of this startup idea.
-Each pivot must: target a clearer niche, improve viability, and justify why.
-
-Return ONLY valid JSON:
-{
-  "pivots": [
-    {
-      "title": "short pivot name",
-      "description": "what changes in this pivot (2 sentences)",
-      "target_niche": "specific niche this pivot targets",
-      "why_better": "specific reason this scores higher (reference the signals)",
-      "estimated_score_delta": 5–20,
-      "key_change": "the single most important thing that changes"
-    }
-  ]
-}
-
-Rules:
-- Each pivot must be MEANINGFULLY different from each other
-- estimated_score_delta: honest estimate of improvement, not inflated
-- Reference actual gaps and pain points from the signal data
-- Do not suggest "add more features" as a pivot`;
-
-  const user = `Current startup: ${sanitizePromptInput(ctx.idea)}
-Problem: ${sanitizePromptInput(ctx.problem)}
-Target users: ${sanitizePromptInput(ctx.targetUsers)}
-Current viability score: ${currentScore}/100
-${focusAreaLine(ctx)}
-
-Signal data:
-- Demand score: ${signals.demand_score}/100
-- Competition score: ${signals.competition_score}/100 (higher = harder)
-- Timing score: ${signals.timing_score}/100
-- Uniqueness score: ${signals.uniqueness_score}/100
-- Key gaps identified: ${signals.competitor_gaps.slice(0, 3).join(", ") || "none"}
-- Key pain points: ${signals.all_pain_points.slice(0, 3).join(", ") || "none"}
-
-Generate 3 pivots that improve on the weakest signals.`;
-
-  try {
-    const result = await callModelJSON<{ pivots: PivotSuggestion[] }>(
-      [{ role: "system", content: system }, { role: "user", content: user }],
-      { role: "fast", maxTokens: 700 },
-    );
-    if (!result.pivots || result.pivots.length < 3) return fallbackPivots;
-    return result.pivots.slice(0, 3).map(p => ({
-      title: p.title || "Pivot",
-      description: p.description || "",
-      target_niche: p.target_niche || "Not specified",
-      why_better: p.why_better || "Addresses key signal gaps",
-      estimated_score_delta: Math.min(25, Math.max(3, Number(p.estimated_score_delta) || 5)),
-      key_change: p.key_change || "Strategy",
+    fetchCount();
+
+    fetchBehaviorState<{ break_streak_date: string }>(["break_streak_date"]).then(values => {
+      const today = new Date().toISOString().split("T")[0];
+      if (values.break_streak_date === today) {
+        storage.set("bm_break_streak_date", today);
+      }
+    }).catch(() => {});
+  }, []);
+  const { plan, isLoading: planLoading } = usePlan();
+  const { showLimitModal } = useLimitModal();
+  const { data: projects = [], isLoading: projectsLoading } = useProjectsQuery();
+  const activeProjectId = useActiveProjectId();
+
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  const [customIdea, setCustomIdea] = useState("");
+  const [focusAreas, setFocusAreas] = useState<FocusArea[]>([]);
+  const [executionMode, setExecutionMode] = useState(false);
+  const [loading, setLoading] = useState(false);
+  // G4 FIX: Track in-flight request so a network retry or component remount
+  // can abort the previous request rather than running two pipelines in parallel.
+  const abortRef = useRef<AbortController | null>(null);
+  const [result, setResult] = useState<BreakResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [outcomeSaving, setOutcomeSaving] = useState<string | null>(null);
+
+  // Pre-fill idea from selected project
+  const selectedProject = projects.find((p) => p.id === selectedProjectId);
+
+  useEffect(() => {
+    if (!activeProjectId || selectedProjectId) return;
+    if (projects.some((p) => p.id === activeProjectId)) setSelectedProjectId(activeProjectId);
+  }, [activeProjectId, projects, selectedProjectId]);
+
+  useEffect(() => {
+    if (!selectedProjectId) return;
+    if (!selectedProject) return;
+    const projectIdea = [
+      selectedProject.title,
+      selectedProject.description,
+      selectedProject.problem,
+      selectedProject.target_users ? `Target users: ${selectedProject.target_users}` : "",
+    ].filter(Boolean).join("\n\n");
+    setCustomIdea(projectIdea);
+  }, [selectedProjectId, selectedProject]);
+
+  function mapApiResult(data: BreakApiData): BreakResult {
+    const probability = typeof data.survival_probability === "number" ? data.survival_probability : undefined;
+    const killReasons = cleanAIList(data.kill_reasons);
+    const differentiationPlan = cleanAIList(data.differentiation_plan);
+    const brutalAdvice = cleanAIText(data.brutal_advice);
+    const overallRisk: RiskSeverity =
+      probability == null ? "High" :
+      probability < 25 ? "Critical" :
+      probability < 50 ? "High" :
+      probability < 75 ? "Medium" : "Low";
+
+    // FIX: this used to be `differentiationPlan[index] ?? brutalAdvice ?? ...`,
+    // which silently discarded the Risk agent's own per-risk `mitigation` field
+    // (e.g. "Run 5 user interviews with willingness-to-pay questions this
+    // week" for Market Risk, "Define your single most important milestone..."
+    // for Execution Risk) and substituted the Competitor agent's positioning
+    // suggestions instead — unrelated content, and the same reason `differentiationPlan[0]`
+    // duplicated verbatim between the Market Risk card and the Competitive
+    // Landscape card below. Now reads the real mitigation Risk agent wrote
+    // for that specific risk, only falling back when it's genuinely missing.
+    const riskAgentOutput = data.agent_outputs?.risk as
+      | { top_risks?: Array<{ mitigation?: string }> }
+      | undefined;
+
+    const risks: RiskItem[] = (killReasons.length ? killReasons : ["Execution risk not enough data yet"]).map((reason, index) => ({
+      category: ["Market Risk", "Execution Risk", "Moat Risk", "Revenue Risk"][index] ?? "Startup Risk",
+      severity: index === 0 ? overallRisk : overallRisk === "Critical" ? "High" : overallRisk,
+      description: reason,
+      mitigation:
+        cleanAIText(riskAgentOutput?.top_risks?.[index]?.mitigation) ||
+        differentiationPlan[index] ||
+        brutalAdvice ||
+        "Talk to 5 target users and validate the riskiest assumption before building more.",
     }));
-  } catch {
-    return fallbackPivots;
+
+    if (data.competitor_summary) {
+      risks.push({
+        category: "Competitive Landscape",
+        severity: "Medium",
+        description: cleanAIText(data.competitor_summary),
+        mitigation: differentiationPlan[0] ?? "Pick one underserved niche and position around that pain instead of competing broadly.",
+      });
+    }
+
+    // D2 FIX: Detect when all agents fell back (overall_confidence ≤ 0.3 and every
+    // agent_status is "fallback"). In that case the score is computed from hardcoded
+    // defaults — show a banner so founders don't make decisions on synthetic data.
+    const allStatuses = Object.values(data.agent_statuses ?? {});
+    const isSynthetic =
+      (data.signal_summary?.overall_confidence ?? 1) <= 0.35 &&
+      allStatuses.length > 0 &&
+      allStatuses.every((s) => s === "fallback");
+
+    const agents = Object.entries(data.agent_outputs ?? {}).map(([name, output]) => {
+      const reasoning =
+        output && typeof (output as Record<string, unknown>).reasoning === "string"
+          ? ((output as Record<string, unknown>).reasoning as string)
+          : "";
+      return {
+        name: name[0].toUpperCase() + name.slice(1),
+        status: data.agent_statuses?.[name] ?? "complete",
+        summary: cleanAIText(reasoning) || "Agent completed with structured analysis.",
+        confidence: data.signal_summary?.overall_confidence,
+      };
+    });
+
+    const ss = data.signal_summary;
+    const signalBreakdown =
+      ss && [ss.demand_score, ss.competition_score, ss.timing_score, ss.uniqueness_score, ss.risk_score].some(
+        (v) => typeof v === "number"
+      )
+        ? [
+            { key: "demand", label: "Demand", value: ss.demand_score ?? 0, tip: "How much real demand signal was found" },
+            { key: "competition", label: "Market Space", value: 100 - (ss.competition_score ?? 100), tip: "Inverted competition score — higher means less crowded" },
+            { key: "timing", label: "Timing", value: ss.timing_score ?? 0, tip: "How favorable current market timing looks" },
+            { key: "uniqueness", label: "Uniqueness", value: ss.uniqueness_score ?? 0, tip: "Differentiation vs. what's already out there" },
+            { key: "risk", label: "Safety", value: 100 - (ss.risk_score ?? 100), tip: "Inverted risk score — higher means lower execution risk" },
+          ]
+        : undefined;
+
+    return {
+      overallRisk,
+      summary: cleanAIText(data.verdict) || "Stress test complete. Review the risks before deciding what to build next.",
+      risks,
+      survival_probability: probability,
+      brutal_advice: brutalAdvice || undefined,
+      gated: data.gated,
+      score_note: data.gated
+        ? "Free preview score: estimated from your written idea only."
+        : cleanAIList(data.reasoning).filter((item) =>
+            /focus areas|5-agent|viability score|competitor/i.test(item)
+          ).join(" | ") || "Calculated from execution data, validation signals, stage, and competitor context.",
+      agents,
+      signalBreakdown,
+      isSynthetic,
+      focusAreas: cleanAIList(data.focus_areas),
+      executionPlan: data.execution_plan
+        ? {
+            mvp_roadmap: cleanAIList(data.execution_plan.mvp_roadmap),
+            first_10_actions: cleanAIList(data.execution_plan.first_10_actions),
+            gtm_plan: cleanAIList(data.execution_plan.gtm_plan),
+          }
+        : null,
+      reflexionAction: data.reflexion_action
+        ? {
+            ...data.reflexion_action,
+            action: cleanAIText(data.reflexion_action.action),
+            rationale: cleanAIText(data.reflexion_action.rationale),
+            supporting_signals: cleanAIList(data.reflexion_action.supporting_signals),
+            risks: cleanAIList(data.reflexion_action.risks),
+          }
+        : null,
+    };
   }
+
+  function toggleFocus(area: FocusArea) {
+    setFocusAreas((prev) =>
+      prev.includes(area) ? prev.filter((a) => a !== area) : [...prev, area]
+    );
+  }
+
+  async function handleRunTest() {
+    const idea = customIdea.trim() || selectedProject?.description || selectedProject?.title || "";
+    if (!idea) {
+      setError("Please describe your startup idea or select a project.");
+      return;
+    }
+
+    // G4 FIX: Cancel any in-flight request before starting a new one.
+    // This prevents a network-retry from running two full 5-agent pipelines
+    // simultaneously and double-charging the AI usage counter.
+    if (abortRef.current) {
+      abortRef.current.abort();
+    }
+    const abortController = new AbortController();
+    abortRef.current = abortController;
+
+    setLoading(true);
+    setResult(null);
+    setError(null);
+    setSaved(false);
+
+    try {
+      const supabase = createClient();
+      const { data: authData } = await supabase.auth.getUser();
+      if (!authData.user) throw new Error("Not authenticated");
+
+      const freePreviewKey = `bm_break_preview_used_${authData.user.id}`;
+      // Wait for server-authoritative plan before applying free gate —
+      // prevents Builder users from being blocked during the plan loading window.
+      if (!planLoading && plan === "free" && storage.get(freePreviewKey)) {
+        showLimitModal("break_startup");
+        return;
+      }
+
+      const res = await fetch("/api/ai/break-my-startup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: abortController.signal, // G4 FIX: abort if a newer request starts
+        body: JSON.stringify({
+          userId: authData.user.id,
+          projectId: selectedProjectId || undefined,
+          idea,
+          focusAreas,
+          executionMode,
+        }),
+      });
+
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok || !payload?.success) throw new Error(payload?.error ?? "Request failed");
+
+      const mappedResult = mapApiResult(payload.data ?? {});
+      setResult(mappedResult);
+      if (plan === "free") storage.set(freePreviewKey, "1");
+
+      // Track achievement
+      try {
+        updateAchievementStats({ breakMyStartupUsed: true });
+        await checkAndUnlockAchievements();
+        // Break My Startup counts as a streak-qualifying activity — increment once per day
+        const todayKey = new Date().toISOString().split("T")[0];
+        if (storage.get("bm_break_streak_date") !== todayKey) {
+          incrementDailyStreak();
+          storage.set("bm_break_streak_date", todayKey);
+          persistBehaviorState({ break_streak_date: todayKey });
+        }
+      } catch {}
+    } catch {
+      setError("Something went wrong running the stress test. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSave() {
+    if (!result || !selectedProjectId) return;
+    setSaving(true);
+    try {
+      const supabase = createClient();
+      const { data: user } = await supabase.auth.getUser();
+      if (!user.user) throw new Error("Not authenticated");
+
+      // Save result to project notes
+      await fetch("/api/ventures/notes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: selectedProjectId,
+          type: "stress_test",
+          content: JSON.stringify(result),
+        }),
+      });
+      setSaved(true);
+    } catch {
+      // Silently fail — user can still copy the result
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleReset() {
+    setResult(null);
+    setError(null);
+    setSaved(false);
+    setCustomIdea("");
+  }
+
+  async function handleOutcome(outcome: "completed" | "partial" | "overridden") {
+    const logRowId = result?.reflexionAction?.log_row_id;
+    if (!logRowId) return;
+    setOutcomeSaving(outcome);
+    try {
+      await fetch("/api/ai/reflexion-outcome", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ log_row_id: logRowId, outcome }),
+      });
+    } finally {
+      setOutcomeSaving(null);
+    }
+  }
+
+  return (
+    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 flex flex-col gap-8">
+
+      {/* Header */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.2 }}
+      >
+        <PageHeader
+          title="Break My Startup"
+          subtitle="Run a brutal, honest stress-test on your current project or any idea. No sugarcoating. The goal is to make you stronger, not scare you."
+          action={
+            <span className="inline-flex h-9 items-center gap-2 rounded-[var(--r-xl)] border border-[var(--bm-border)] bg-[var(--bm-bg2)] px-3 text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--bm-red)]">
+              <Shield size={15} />
+              Stress test
+            </span>
+          }
+        />
+      </motion.div>
+
+      {/* Input panel */}
+      <AnimatePresence mode="wait">
+        {!result && (
+          <motion.div
+            key="input"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            className="flex flex-col gap-5"
+          >
+            {/* Project selector */}
+            {!projectsLoading && projects.length > 0 && (
+              <Card className="p-4 flex flex-col gap-3">
+                <label className="text-xs font-medium text-[var(--bm-text2)] uppercase tracking-widest">
+                  Select a Project (optional)
+                </label>
+                <div className="relative">
+                  <select
+                    value={selectedProjectId}
+                    onChange={(e) => {
+                      setSelectedProjectId(e.target.value);
+                      if (e.target.value) setActiveProjectId(e.target.value);
+                      if (!e.target.value) setCustomIdea("");
+                    }}
+                    className="w-full h-10 rounded-lg pl-3 pr-8 text-sm outline-none appearance-none cursor-pointer"
+                    style={{
+                      background: "var(--bm-bg3)",
+                      border: "1px solid var(--bm-border2)",
+                      color: "var(--bm-text)",
+                    }}
+                  >
+                    <option value="">— Use custom idea instead —</option>
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.title ?? "Untitled"}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown
+                    size={13}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                    style={{ color: "var(--bm-text3)" }}
+                  />
+                </div>
+
+                {selectedProject && (
+                  <p className="text-xs text-[var(--bm-text3)] leading-relaxed line-clamp-2">
+                    {selectedProject.description ?? "No description"}
+                  </p>
+                )}
+              </Card>
+            )}
+
+            {/* Custom idea textarea */}
+            <Textarea
+              label={selectedProjectId ? "Startup context to stress-test" : "Describe your startup idea"}
+              helperText={selectedProjectId ? "Loaded from your selected project. You can edit or add domain-specific context before running the test." : undefined}
+              placeholder="What are you building? Who is it for? How do you plan to make money? Paste your pitch, business model, domain, or current strategy..."
+              value={customIdea}
+              onChange={(e) => setCustomIdea(e.target.value)}
+              rows={6}
+            />
+
+            {/* Focus areas */}
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <label className="text-xs font-medium text-[var(--bm-text2)] uppercase tracking-widest">
+                  Focus Areas (optional)
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setExecutionMode((value) => !value)}
+                  className="w-full rounded-lg px-3 py-1.5 text-xs font-semibold sm:w-auto"
+                  style={{
+                    border: "1px solid var(--bm-border)",
+                    background: executionMode ? "rgba(92,200,138,0.12)" : "var(--bm-bg3)",
+                    color: executionMode ? "var(--bm-accent)" : "var(--bm-text3)",
+                  }}
+                >
+                  Focus Mode {executionMode ? "On" : "Off"}
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {FOCUS_AREAS.map((area) => {
+                  const active = focusAreas.includes(area);
+                  return (
+                    <button
+                      key={area}
+                      onClick={() => toggleFocus(area)}
+                      className="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-150"
+                      style={{
+                        background: active ? "rgba(92,200,138,0.10)" : "var(--bm-bg3)",
+                        borderColor: active ? "var(--bm-accent-bd)" : "var(--bm-border)",
+                        color: active ? "var(--bm-accent)" : "var(--bm-text3)",
+                      }}
+                    >
+                      {area}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-[var(--bm-text3)]">
+                Leave empty to stress-test everything. Focus Mode turns the result into an execution-first plan.
+              </p>
+            </div>
+
+            {/* Error */}
+            {error && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="flex items-center gap-2 text-sm p-3 rounded-lg"
+                style={{
+                  background: "rgba(224,85,85,0.08)",
+                  border: "1px solid rgba(224,85,85,0.2)",
+                  color: "var(--bm-red)",
+                }}
+              >
+                <AlertTriangle size={14} />
+                {error}
+              </motion.div>
+            )}
+
+            {/* Loading skeleton */}
+            {loading && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col gap-3">
+                {[1, 2, 3].map((i) => (
+                  <div
+                    key={i}
+                    className="rounded-[var(--r-xl)] p-5 border border-[var(--bm-border)] bg-[var(--bm-bg2)] animate-pulse flex flex-col gap-2"
+                  >
+                    <div className="h-4 w-36 rounded-full bg-[var(--bm-bg3)]" />
+                    <div className="h-3 w-full rounded-full bg-[var(--bm-bg3)] opacity-70" />
+                    <div className="h-3 w-5/6 rounded-full bg-[var(--bm-bg3)] opacity-50" />
+                    <div className="h-3 w-2/3 rounded-full bg-[var(--bm-bg3)] opacity-40" />
+                  </div>
+                ))}
+              </motion.div>
+            )}
+
+            {!loading && (
+              <Button
+                size="lg"
+                onClick={handleRunTest}
+                disabled={!customIdea.trim() && !selectedProjectId}
+                className="w-full sm:w-auto sm:self-start"
+              >
+                <AlertTriangle size={15} />
+                Run Stress Test →
+              </Button>
+            )}
+          </motion.div>
+        )}
+
+        {/* Result panel */}
+        {result && !loading && (
+          <motion.div
+            key="result"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.35 }}
+            className="flex flex-col gap-5"
+          >
+            {/* Overall verdict — visceral, full-width */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.97 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.4 }}
+              style={{
+                borderRadius: "var(--r-xl)",
+                padding: "clamp(16px, 4vw, 24px)",
+                background: "var(--bm-bg2)",
+                border: `1px solid ${overallColor(result.overallRisk)}40`,
+                boxShadow: `0 0 32px ${overallColor(result.overallRisk)}18`,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 20, flexWrap: "wrap" }}>
+                {result.survival_probability !== undefined && (
+                  <RadialGauge
+                    value={result.survival_probability}
+                    size={110}
+                    label="survive"
+                    thresholds={[
+                      { min: 60, color: "var(--bm-green)" },
+                      { min: 40, color: "var(--bm-amber)" },
+                      { min: 0, color: "var(--bm-red)" },
+                    ]}
+                  />
+                )}
+                <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+                  <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: "var(--bm-text3)", letterSpacing: "0.07em", marginBottom: 10 }}>
+                    Survival score · Moat strength · Market timing
+                  </div>
+                  <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: "var(--bm-text4)", letterSpacing: "0.06em", marginBottom: 12 }}>
+                    The uncomfortable ones are the useful ones.
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                    <span style={{
+                      fontSize: 9, fontWeight: 700, letterSpacing: "0.12em",
+                      textTransform: "uppercase", color: "var(--bm-text3)",
+                    }}>
+                      Verdict
+                    </span>
+                    <Badge variant={severityVariant(result.overallRisk)} size="md" dot>
+                      {result.overallRisk} Risk
+                    </Badge>
+                  </div>
+                  {result.summary && (
+                    <p style={{ fontSize: 15, fontWeight: 600, color: "var(--bm-text)", lineHeight: 1.55, marginBottom: 0 }}>
+                      {sanitizeOutput(result.summary)}
+                    </p>
+                  )}
+                  {result.score_note && (
+                    <p style={{ fontSize: 12, color: "var(--bm-text3)", marginTop: 6, lineHeight: 1.5 }}>
+                      {sanitizeOutput(result.score_note)}
+                    </p>
+                  )}
+                  {result.gated && (
+                    <button
+                      type="button"
+                      onClick={() => showLimitModal("break_startup")}
+                      style={{
+                        marginTop: 12, display: "inline-flex", alignItems: "center", gap: 6,
+                        fontSize: 12, fontWeight: 600, color: "var(--bm-text-inv)",
+                        background: "var(--bm-accent)", border: "none", borderRadius: "var(--r-md)",
+                        padding: "8px 16px", cursor: "pointer",
+                      }}
+                    >
+                      Unlock full analysis →
+                    </button>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+
+            {/* Brutal advice — high contrast */}
+            {result.brutal_advice && (
+              <motion.div
+                initial={{ opacity: 0, x: -6 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.2 }}
+                style={{
+                  borderRadius: "var(--r-lg)",
+                  padding: "16px 18px",
+                  background: "rgba(232,160,32,0.06)",
+                  border: "1px solid rgba(232,160,32,0.3)",
+                  borderLeft: "3px solid var(--bm-amber)",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                  <AlertTriangle size={13} style={{ color: "var(--bm-amber)", flexShrink: 0 }} />
+                  <span style={{
+                    fontSize: 9, fontWeight: 700, textTransform: "uppercase",
+                    letterSpacing: "0.12em", color: "var(--bm-amber)",
+                  }}>
+                    Brutal advice
+                  </span>
+                </div>
+                <p style={{ fontSize: 14, color: "var(--bm-text)", lineHeight: 1.6, fontWeight: 500, margin: 0 }}>
+                  {sanitizeOutput(result.brutal_advice)}
+                </p>
+              </motion.div>
+            )}
+
+            {/* D2 FIX: Synthetic-analysis warning — shown when all 5 agents fell back */}
+            {result.isSynthetic && (
+              <div style={{
+                background: "var(--bm-amber-muted, rgba(245,158,11,0.12))",
+                border: "1px solid var(--bm-amber, #f59e0b)",
+                borderRadius: 10,
+                padding: "12px 16px",
+                display: "flex",
+                gap: 10,
+                alignItems: "flex-start",
+              }}>
+                <span style={{ fontSize: 16, flexShrink: 0 }}>⚠️</span>
+                <div>
+                  <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "var(--bm-amber, #f59e0b)" }}>
+                    Analysis unavailable — AI providers unreachable
+                  </p>
+                  <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.5 }}>
+                    All five analysis agents fell back to default values. The score shown is estimated, not
+                    computed from your actual idea. Try again in a few minutes when providers recover.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Risk breakdown cards */}
+            {result.agents && result.agents.length > 0 && (
+              <Card className="p-4 flex flex-col gap-3">
+                <h3 className="text-sm font-semibold text-[var(--bm-text)]">Five-Agent Analysis</h3>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {result.agents.map((agent) => (
+                    <div key={agent.name} className="rounded-lg p-3" style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)" }}>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-semibold text-[var(--bm-text)]">{agent.name}</span>
+                        <span className="text-[10px] uppercase tracking-widest text-[var(--bm-text4)]">{agent.status}</span>
+                      </div>
+                      <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-[var(--bm-text3)]">{sanitizeOutput(agent.summary)}</p>
+                    </div>
+                  ))}
+                </div>
+                {result.signalBreakdown && (
+                  <div style={{ display: "flex", justifyContent: "center", paddingTop: 8 }}>
+                    <RadarChart axes={result.signalBreakdown} size={240} />
+                  </div>
+                )}
+              </Card>
+            )}
+
+            {result.executionPlan && (
+              <Card className="p-4 flex flex-col gap-3">
+                <h3 className="text-sm font-semibold text-[var(--bm-text)]">Focus Mode Plan</h3>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {[
+                    ["MVP Roadmap", result.executionPlan.mvp_roadmap],
+                    ["First Actions", result.executionPlan.first_10_actions],
+                    ["Go To Market", result.executionPlan.gtm_plan],
+                  ].map(([title, items]) => (
+                    <div key={title as string} className="flex flex-col gap-2">
+                      <span className="text-xs font-semibold text-[var(--bm-text2)]">{title as string}</span>
+                      {(items as string[] | undefined)?.slice(0, 4).map((item) => (
+                        <p key={item} className="text-xs leading-relaxed text-[var(--bm-text3)]">{sanitizeOutput(item)}</p>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+
+            {result.reflexionAction && (
+              <Card className="p-4 flex flex-col gap-3">
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                  <h3 className="text-sm font-semibold text-[var(--bm-text)]">Reflexion Loop</h3>
+                  {typeof result.reflexionAction.confidence === "number" && (
+                    <span className="text-xs text-[var(--bm-text3)]">{Math.round(result.reflexionAction.confidence * 100)}% confidence</span>
+                  )}
+                </div>
+                <p className="text-sm leading-relaxed text-[var(--bm-text2)]">{sanitizeOutput(result.reflexionAction.action)}</p>
+                {result.reflexionAction.rationale && (
+                  <p className="text-xs leading-relaxed text-[var(--bm-text3)]">{sanitizeOutput(result.reflexionAction.rationale)}</p>
+                )}
+                {result.reflexionAction.log_row_id && (
+                  <div className="flex flex-wrap gap-2">
+                    {(["completed", "partial", "overridden"] as const).map((outcome) => (
+                      <Button key={outcome} variant="ghost" size="sm" onClick={() => handleOutcome(outcome)} loading={outcomeSaving === outcome}>
+                        Mark {outcome}
+                      </Button>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            )}
+
+            {/* Risk breakdown cards */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+                <h3 style={{ fontSize: 12, fontWeight: 700, color: "var(--bm-text)", margin: 0, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                  Kill reasons
+                </h3>
+                <span style={{
+                  fontSize: 10, fontWeight: 600, color: "var(--bm-red)",
+                  background: "rgba(224,85,85,0.1)", border: "1px solid rgba(224,85,85,0.2)",
+                  borderRadius: 4, padding: "1px 6px",
+                }}>
+                  {result.risks.length} found
+                </span>
+              </div>
+              {result.risks.length > 1 && (
+                <SeverityStack
+                  title="At a glance"
+                  items={result.risks.map((risk): SeverityItem => ({
+                    label: risk.category,
+                    severity: ({ Critical: "fatal", High: "high", Medium: "medium", Low: "low" } as Record<RiskSeverity, Severity>)[risk.severity],
+                  }))}
+                />
+              )}
+              {result.risks.map((risk, i) => (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.08 }}
+                  style={{
+                    borderRadius: "var(--r-md)",
+                    overflow: "hidden",
+                    border: `1px solid ${
+                      risk.severity === "Critical" ? "rgba(224,85,85,0.3)" :
+                      risk.severity === "High" ? "rgba(232,160,32,0.25)" :
+                      "var(--bm-border)"
+                    }`,
+                    background: "var(--bm-bg2)",
+                  }}
+                >
+                  <div style={{ height: 3, background: overallColor(risk.severity), opacity: 0.7 }} />
+                  <div style={{ padding: "12px 14px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", minWidth: 18, flexShrink: 0 }}>
+                        #{i + 1}
+                      </span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: "var(--bm-text)", flex: 1 }}>
+                        {risk.category}
+                      </span>
+                      <Badge variant={severityVariant(risk.severity)} size="sm" dot>
+                        {risk.severity}
+                      </Badge>
+                    </div>
+                    <p style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.55, margin: "0 0 10px 0" }}>
+                      {sanitizeOutput(risk.description)}
+                    </p>
+                    <div style={{
+                      display: "flex", alignItems: "flex-start", gap: 8,
+                      background: "var(--bm-bg3)", borderRadius: "var(--r-sm)", padding: "8px 10px",
+                    }}>
+                      <CheckCircle2 size={12} style={{ color: "var(--bm-accent)", flexShrink: 0, marginTop: 1 }} />
+                      <span style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.5 }}>{sanitizeOutput(risk.mitigation)}</span>
+                    </div>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+
+            {/* Actions */}
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+              {selectedProjectId && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleSave}
+                  loading={saving}
+                  disabled={saved}
+                >
+                  {saved ? (
+                    <>
+                      <CheckCircle2 size={13} style={{ color: "var(--bm-green)" }} />
+                      Saved to Project
+                    </>
+                  ) : (
+                    <>
+                      <Save size={13} />
+                      Save to Project
+                    </>
+                  )}
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleReset}
+              >
+                <RefreshCw size={13} />
+                Run Again
+              </Button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
 }
