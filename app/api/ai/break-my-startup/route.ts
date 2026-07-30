@@ -37,15 +37,12 @@ import {
 
 type ReflexionStatus = "ok" | "partial" | "failed";
 
-// ─── Competitor scraper — DDG with fallback chain ────────────────────────────
+// ─── Competitor scraper — delegates to lib/search.ts waterfall ──────────────
 //
 // FIX: DDG blocks the request or changes HTML structure → empty competitor data
-// silently poisoned the 5-agent pipeline. Now has three layers of defence:
-//   1. DDG lite (primary) — fast, no API key required
-//   2. Brave Search open endpoint (secondary) — different source, different IP block risk
-//   3. AI-synthesised fallback (tertiary) — if both scrapers fail, the agent
-//      generates plausible competitor context from the idea text itself so the
-//      pipeline never runs with genuinely null competitor data.
+// silently poisoned the 5-agent pipeline. lib/search.ts now runs Tavily first
+// (reliable, structured JSON) with Brave/Serper as backups and DDG demoted to
+// a last-resort scrape that only fires when no other provider key exists.
 //
 // The caller always gets { results, scraped } — scraped: false signals to the
 // UI that competitor data is inferred, not scraped, so it can show a caveat.
@@ -54,7 +51,7 @@ type ScrapeResult = { results: ScrapedCompetitor[]; scraped: boolean; source?: s
 
 /**
  * scrapeCompetitors — delegates to lib/search.ts waterfall.
- * Priority: Brave API → Tavily → DDG → Serper → AI synthesis.
+ * Priority: Tavily → Brave → Serper → DDG (last resort) → AI synthesis.
  * Never returns null. source field tells caller which provider fired.
  */
 async function scrapeCompetitors(query: string): Promise<ScrapeResult> {
