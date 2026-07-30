@@ -93,6 +93,19 @@ export interface StartupContext {
   validationWeaknesses?: string[];
   executionScore?: number;
   momentumScore?: number;
+  // Founder memory / behavioral signals (from founder_context row).
+  // Additive fields — only populated when the route has a userId to look
+  // up founder_context for. All optional so existing callers/tests are
+  // unaffected.
+  founderCognitiveLoad?: "fresh" | "drained" | "autopilot";
+  founderAvoidanceZones?: string[];   // topics/tasks the founder has been avoiding
+  founderTopicsRepeated?: string[];   // recurring themes across reflections
+  founderDaysInactive?: number;
+  // true when this analysis is running against the founder's own tracked
+  // project (projectId present); false when it's a fresh/outside idea
+  // pasted into the idea-only flow. Agents should scope how much weight
+  // founder execution history gets accordingly.
+  isOwnProject?: boolean;
 }
 
 export interface ScrapedCompetitor {
@@ -172,6 +185,32 @@ function focusAreaLine(ctx: StartupContext): string {
   return ctx.focusAreas?.length
     ? `Founder-selected focus areas: ${ctx.focusAreas.join(", ")}. Prioritize these dimensions when deciding what to inspect, criticize, and recommend.`
     : "Founder-selected focus areas: none.";
+}
+
+/**
+ * founderContextLine — surfaces founder memory/behavioral signals to agents
+ * that reason about execution risk and realistic demand. Only meaningful
+ * when isOwnProject is true (the founder's own tracked project); for a
+ * fresh/outside idea these signals describe the founder, not the idea, so
+ * we label them accordingly and tell the agent to weight them lightly.
+ */
+function founderContextLine(ctx: StartupContext): string {
+  const hasSignal =
+    ctx.founderCognitiveLoad || ctx.founderAvoidanceZones?.length ||
+    ctx.founderTopicsRepeated?.length || typeof ctx.founderDaysInactive === "number";
+  if (!hasSignal) return "\nFounder behavioral context: none available.";
+
+  const lines: string[] = [];
+  if (ctx.founderCognitiveLoad) lines.push(`Cognitive load: ${ctx.founderCognitiveLoad}`);
+  if (typeof ctx.founderDaysInactive === "number") lines.push(`Days inactive: ${ctx.founderDaysInactive}`);
+  if (ctx.founderAvoidanceZones?.length) lines.push(`Topics/tasks the founder has been avoiding: ${ctx.founderAvoidanceZones.join(", ")}`);
+  if (ctx.founderTopicsRepeated?.length) lines.push(`Recurring themes across the founder's reflections: ${ctx.founderTopicsRepeated.join(", ")}`);
+
+  const scopeNote = ctx.isOwnProject
+    ? "This is the founder's own tracked project — weight this context directly when assessing execution risk."
+    : "This idea is being evaluated outside the founder's tracked project — use this only as light context on founder capacity, not as evidence about the idea itself.";
+
+  return `\nFounder behavioral context (${scopeNote}):\n${lines.map(l => `- ${l}`).join("\n")}`;
 }
 
 // ── Pipeline output ───────────────────────────────────────────────────────────
@@ -316,7 +355,7 @@ Rules:
 - saturation: low = few direct competitors, high = crowded with funded players`;
 
   const competitorContext = ctx.competitors.length > 0
-    ? `\nLive competitor data from web scan:\n${ctx.competitors.map((c, i) => `${i + 1}. ${c.title}\n   URL: ${c.url}\n   Context: ${c.snippet}`).join("\n\n")}`
+    ? `\nLive competitor data from web scan (entries marked "Founder-named" were supplied directly by the founder as known competitors — always name these explicitly in direct_competitors rather than only generic/scraped ones):\n${ctx.competitors.map((c, i) => `${i + 1}. ${c.title}\n   URL: ${c.url}\n   Context: ${c.snippet}`).join("\n\n")}`
     : "\nNo competitor data from web scan. Reason from training knowledge only — lower confidence accordingly.";
 
   const user = `Startup idea: ${sanitizePromptInput(ctx.idea)}
@@ -547,8 +586,9 @@ Stage: ${ctx.stage}
 ${focusAreaLine(ctx)}
 Known weaknesses: ${ctx.validationWeaknesses?.join(", ") || "none provided"}
 Execution score: ${ctx.executionScore ?? "unknown"}/100
+${founderContextLine(ctx)}
 
-Identify the real risks. Be specific and brutal.`;
+Identify the real risks. Be specific and brutal. If founder behavioral context shows avoidance zones, repeated topics, or a drained/autopilot cognitive load, treat that as direct evidence for execution risk — don't just default to generic "solo founder bandwidth" language.`;
 
   const fallback: RiskOutput = {
     top_risks: [
