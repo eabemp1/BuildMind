@@ -9,6 +9,7 @@
 import { NextResponse } from "next/server";
 import { groqJSON } from "@/app/api/ai/_utils";
 import { getClientIp, rateLimitAsync } from "@/lib/server/rateLimit";
+import { webSearch } from "@/lib/search";
 
 function previewSignalScore(idea: string, users: string, problem: string): number {
   const words = idea.split(/\s+/).filter(Boolean).length;
@@ -19,20 +20,15 @@ function previewSignalScore(idea: string, users: string, problem: string): numbe
   return Math.min(82, Math.max(12, Math.round(raw)));
 }
 
+// FIX: this used to hit DDG lite directly with no fallback — DDG's HTML
+// structure breaks often and returns junk/empty results with nothing to
+// fall back to. Now delegates to lib/search.ts's waterfall, which tries
+// Tavily first (reliable, structured) and only touches DDG as a last resort.
 async function scrapeCompetitors(query: string): Promise<{ titles: string; scraped: boolean }> {
   try {
-    const encoded = encodeURIComponent(query);
-    const res = await fetch(`https://lite.duckduckgo.com/lite/?q=${encoded}`, {
-      headers: { "User-Agent": "Mozilla/5.0", "Accept-Language": "en-US,en;q=0.9" },
-      signal: AbortSignal.timeout(6000),
-    });
-    if (!res.ok) return { titles: "", scraped: false };
-    const html = await res.text();
-    const titles = [...html.matchAll(/class="result-link"[^>]*>([^<]+)<\/a>/gi)]
-      .slice(0, 4)
-      .map(m => m[1].trim())
-      .filter(Boolean);
-    return { titles: titles.length ? titles.join(", ") : "", scraped: titles.length > 0 };
+    const response = await webSearch(query, 4);
+    const titles = response.results.map(r => r.title).filter(Boolean);
+    return { titles: titles.length ? titles.join(", ") : "", scraped: response.scraped && titles.length > 0 };
   } catch { return { titles: "", scraped: false }; }
 }
 
