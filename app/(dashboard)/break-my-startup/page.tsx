@@ -203,11 +203,28 @@ export default function BreakMyStartupPage() {
       probability < 50 ? "High" :
       probability < 75 ? "Medium" : "Low";
 
+    // FIX: this used to be `differentiationPlan[index] ?? brutalAdvice ?? ...`,
+    // which silently discarded the Risk agent's own per-risk `mitigation` field
+    // (e.g. "Run 5 user interviews with willingness-to-pay questions this
+    // week" for Market Risk, "Define your single most important milestone..."
+    // for Execution Risk) and substituted the Competitor agent's positioning
+    // suggestions instead — unrelated content, and the same reason `differentiationPlan[0]`
+    // duplicated verbatim between the Market Risk card and the Competitive
+    // Landscape card below. Now reads the real mitigation Risk agent wrote
+    // for that specific risk, only falling back when it's genuinely missing.
+    const riskAgentOutput = data.agent_outputs?.risk as
+      | { top_risks?: Array<{ mitigation?: string }> }
+      | undefined;
+
     const risks: RiskItem[] = (killReasons.length ? killReasons : ["Execution risk not enough data yet"]).map((reason, index) => ({
       category: ["Market Risk", "Execution Risk", "Moat Risk", "Revenue Risk"][index] ?? "Startup Risk",
       severity: index === 0 ? overallRisk : overallRisk === "Critical" ? "High" : overallRisk,
       description: reason,
-      mitigation: differentiationPlan[index] ?? brutalAdvice ?? "Talk to 5 target users and validate the riskiest assumption before building more.",
+      mitigation:
+        cleanAIText(riskAgentOutput?.top_risks?.[index]?.mitigation) ||
+        differentiationPlan[index] ||
+        brutalAdvice ||
+        "Talk to 5 target users and validate the riskiest assumption before building more.",
     }));
 
     if (data.competitor_summary) {
@@ -229,17 +246,14 @@ export default function BreakMyStartupPage() {
       allStatuses.every((s) => s === "fallback");
 
     const agents = Object.entries(data.agent_outputs ?? {}).map(([name, output]) => {
-      const text = output
-        ? Object.values(output)
-            .flat()
-            .filter((value) => typeof value === "string")
-            .slice(0, 2)
-            .join(" ")
-        : "";
+      const reasoning =
+        output && typeof (output as Record<string, unknown>).reasoning === "string"
+          ? ((output as Record<string, unknown>).reasoning as string)
+          : "";
       return {
         name: name[0].toUpperCase() + name.slice(1),
         status: data.agent_statuses?.[name] ?? "complete",
-        summary: cleanAIText(text) || "Agent completed with structured analysis.",
+        summary: cleanAIText(reasoning) || "Agent completed with structured analysis.",
         confidence: data.signal_summary?.overall_confidence,
       };
     });
