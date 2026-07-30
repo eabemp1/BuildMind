@@ -5,16 +5,18 @@
  * quota/auth errors, hands off to the next. Every provider returns the
  * same SearchResult shape so callers never know or care which fired.
  *
- * Priority order (per founder's instruction — Serper is last):
- *   1. Brave Search API     — structured JSON, discussions endpoint, 2k free/month
- *   2. Tavily               — AI-native, 1k free/month, best quality per query
- *   3. DDG lite scrape      — no key, free forever, fragile HTML parsing
- *   4. Serper (Google)      — highest quality but trial-limited, kept as backup
+ * Priority order (Tavily primary — DDG lite scrape returns unreliable,
+ * frequently-broken results and is now a last-resort only):
+ *   1. Tavily               — AI-native, 1k free/month, best quality per query
+ *   2. Brave Search API     — structured JSON, discussions endpoint, 2k free/month
+ *   3. Serper (Google)      — highest quality but trial-limited, kept as backup
+ *   4. DDG lite scrape      — no key, free forever, fragile HTML parsing — only
+ *                             runs when no other provider key is configured
  *   5. AI synthesis         — always available, marked as inferred not scraped
  *
  * Env vars:
- *   BRAVE_SEARCH_API_KEY    — https://api.search.brave.com/app/keys (free tier)
  *   TAVILY_API_KEY          — https://tavily.com (free tier)
+ *   BRAVE_SEARCH_API_KEY    — https://api.search.brave.com/app/keys (free tier)
  *   SERPER_API_KEY          — https://serper.dev (free trial 2.5k queries)
  *
  * Usage:
@@ -43,8 +45,9 @@ export interface SearchResponse {
 const TIMEOUT_MS = 8000; // slightly under Vercel's per-fetch budget
 
 // True when a real search API key exists — used to skip DDG scraping when
-// a proper provider is available (DDG has a 9 s timeout and fragile HTML
-// parsing that burns time when Tavily already works fine).
+// a proper provider is available (DDG has a 9 s timeout, fragile HTML
+// parsing, and frequently-broken/low-quality results — it only runs when
+// Tavily/Brave/Serper are all unavailable).
 function hasSearchApiKey(): boolean {
   return Boolean(
     process.env.BRAVE_SEARCH_API_KEY ||
@@ -270,16 +273,16 @@ async function synthesiseWithAI(query: string): Promise<SearchResponse> {
 
 /**
  * webSearch — general web search.
- * Priority: Brave → Tavily → DDG → Serper → AI synthesis
+ * Priority: Tavily → Brave → Serper → DDG (last resort) → AI synthesis
  */
 export async function webSearch(query: string, count = 10): Promise<SearchResponse> {
   const attempts: Array<() => Promise<SearchResponse | null>> = [
-    () => searchBrave(query, "web", count),
     () => searchTavily(query, "basic", count),
-    // Skip DDG when a real API key is present — its 9 s HTML-scrape timeout
-    // burns Vercel function budget when Tavily already works fine.
-    ...(!hasSearchApiKey() ? [() => searchDDG(query)] : []),
+    () => searchBrave(query, "web", count),
     () => searchSerper(query, "search", count),
+    // Skip DDG when a real API key is present — its 9 s HTML-scrape timeout
+    // and unreliable parsing only make sense as a genuine last resort.
+    ...(!hasSearchApiKey() ? [() => searchDDG(query)] : []),
   ];
 
   for (const attempt of attempts) {
@@ -294,17 +297,17 @@ export async function webSearch(query: string, count = 10): Promise<SearchRespon
 
 /**
  * discussionSearch — surfaces Reddit/HN/forum posts about a problem.
- * Priority: Brave discussions → Tavily → DDG (reddit:) → Serper (reddit:) → AI synthesis
+ * Priority: Tavily → Brave discussions → Serper (reddit:) → DDG (reddit:, last resort) → AI synthesis
  * Critical for Validation Agent — this is where real user pain signals live.
  */
 export async function discussionSearch(query: string, count = 10): Promise<SearchResponse> {
   const redditQuery = `${query} site:reddit.com OR site:news.ycombinator.com`;
 
   const attempts: Array<() => Promise<SearchResponse | null>> = [
-    () => searchBrave(query, "discussions", count),
     () => searchTavily(`${query} reddit forum community discussion`, "basic", count),
-    ...(!hasSearchApiKey() ? [() => searchDDG(redditQuery)] : []),
+    () => searchBrave(query, "discussions", count),
     () => searchSerper(redditQuery, "search", count),
+    ...(!hasSearchApiKey() ? [() => searchDDG(redditQuery)] : []),
   ];
 
   for (const attempt of attempts) {
@@ -319,12 +322,12 @@ export async function discussionSearch(query: string, count = 10): Promise<Searc
 
 /**
  * newsSearch — recent news and competitor launches.
- * Priority: Brave news → Tavily → Serper news → DDG → AI synthesis
+ * Priority: Tavily → Brave news → Serper news → DDG (last resort) → AI synthesis
  */
 export async function newsSearch(query: string, count = 8): Promise<SearchResponse> {
   const attempts: Array<() => Promise<SearchResponse | null>> = [
-    () => searchBrave(query, "news", count),
     () => searchTavily(`${query} recent news 2024 2025`, "basic", count),
+    () => searchBrave(query, "news", count),
     () => searchSerper(query, "news", count),
     ...(!hasSearchApiKey() ? [() => searchDDG(`${query} news`)] : []),
   ];
