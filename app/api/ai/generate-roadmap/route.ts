@@ -13,6 +13,25 @@ const FALLBACK_ROADMAP = [
 
 const STAGE_ORDER = ["Idea", "Validation", "MVP", "Launch", "Growth", "Revenue"];
 
+// Provisional (heuristic) estimates for stages the AI hasn't generated real
+// tasks for yet — later stages beyond currentStage+1 (see detailedStages
+// below). These are placeholders only, marked estimate_is_provisional so
+// the UI can show them as rough, and get overwritten with a real AI
+// estimate once that stage's tasks are actually generated. Confirmed gap:
+// as of this migration, nothing currently regenerates a later stage's
+// milestone automatically when the founder reaches it — only the manual
+// "Regenerate Milestones" button (app/(dashboard)/projects/[id]/page.tsx)
+// re-runs this route, wiping and recreating ALL milestones. That's a
+// pre-existing behavior this change does not alter.
+const PROVISIONAL_STAGE_ESTIMATES: Record<string, { difficulty: number; estimated_days: number }> = {
+  Idea:       { difficulty: 2, estimated_days: 5 },
+  Validation: { difficulty: 3, estimated_days: 10 },
+  MVP:        { difficulty: 4, estimated_days: 21 },
+  Launch:     { difficulty: 3, estimated_days: 10 },
+  Growth:     { difficulty: 4, estimated_days: 30 },
+  Revenue:    { difficulty: 4, estimated_days: 30 },
+};
+
 function normalizeStage(input: string): string {
   const value = String(input || "").trim().toLowerCase();
   if (value.includes("idea")) return "Idea";
@@ -30,6 +49,12 @@ async function insertMilestone(
 ) {
   const payloads = [
     // Attempt 1 — rich schema used by current app
+    // difficulty/estimated_days/estimate_is_provisional/started_at added for
+    // milestone stall detection (migration 20260731000000). If that
+    // migration hasn't been applied live yet, this attempt fails on
+    // "column ... does not exist" and falls through to attempt 2, which
+    // omits them — same drift-safety pattern already used for
+    // is_completed above.
     {
       project_id: payload.project_id,
       user_id: payload.user_id,
@@ -38,6 +63,10 @@ async function insertMilestone(
       order_index: payload.order_index,
       status: "pending" as string,
       is_completed: payload.is_completed ?? false,
+      difficulty: payload.difficulty ?? null,
+      estimated_days: payload.estimated_days ?? null,
+      estimate_is_provisional: payload.estimate_is_provisional ?? false,
+      started_at: payload.started_at ?? null,
     },
     // Attempt 2 — with ordering/stage but without is_completed
     {
@@ -183,20 +212,32 @@ export async function POST(request: Request) {
     const currentStageIdx = STAGE_ORDER.findIndex((s) => s.toLowerCase() === initialStage.toLowerCase());
     const detailedStages = STAGE_ORDER.slice(Math.max(0, currentStageIdx), currentStageIdx + 2);
 
+    // Per-milestone difficulty (1-5) + estimated_days, keyed by same output
+    // as detailedMap below. Populated only for detailedStages (the AI call
+    // below); later placeholder stages fall back to PROVISIONAL_STAGE_ESTIMATES.
+    let estimateMap = new Map<string, { difficulty: number; estimated_days: number }>();
+
     try {
       await enforceAndTrackAIUsage(userId, routeUser.plan);
-      const result = await groqJSON<{ roadmap: Array<{ milestone: string; tasks: string[] }> }>(
+      const result = await groqJSON<{
+        roadmap: Array<{ milestone: string; tasks: string[]; difficulty: number; estimated_days: number }>;
+      }>(
         `You are a startup execution strategist for BuildMind — a tool built specifically for SOLO founders with no team, no contractor budget, and limited hours (they are almost always doing this alongside other obligations, not full-time with hired help).
 
 Return JSON with key "roadmap" only — an array of milestone objects for these stages ONLY: ${detailedStages.join(", ")}.
-Each object has "milestone" (string) and "tasks" (array of 3-5 specific action strings).
+Each object has:
+- "milestone" (string)
+- "tasks" (array of 3-5 specific action strings)
+- "difficulty" (integer 1-5: 1 = a few hours of straightforward work, 5 = weeks of hard, uncertain work with real failure risk — judge based on what this milestone actually requires for a solo founder, not generic startup difficulty)
+- "estimated_days" (integer: realistic calendar days for ONE person working alone, part-time-capacity, to complete every task in this milestone — not an idealized full-time estimate)
 
 HARD CONSTRAINTS on every task:
 - Must be completable by ONE person, alone, without hiring anyone or requiring a team.
 - Never suggest anything requiring a contractor, agency, hired help, or "partner with an organization" — those require capacity a solo founder doesn't have and BD timelines (months) that don't fit a daily-action tool.
 - Never suggest "personalized 1:1 [X] for every user/customer" at any scale beyond a handful — that's a hiring plan disguised as a task, not an action.
 - Scope every task to something achievable in hours, not weeks — if an idea is real but too big for one action, break it into the FIRST concrete step only, not the whole initiative.
-- Tasks must be specific to this exact startup — not generic advice.`,
+- Tasks must be specific to this exact startup — not generic advice.
+- estimated_days must be realistic for a solo founder juggling this alongside other obligations — do not pad for a full-time team, and do not compress to an unrealistic sprint.`,
         `Project: ${projectName}
 Idea: ${idea}
 Target users: ${targetUsers}
@@ -210,6 +251,17 @@ Generate a specific roadmap for THIS founder's current and immediate-next stage 
         // for later stages (never silently drop a milestone from the roadmap
         // view — just don't populate tasks for stages that are premature).
         const detailedMap = new Map(result.roadmap.map((m) => [m.milestone, m.tasks]));
+        estimateMap = new Map(
+          result.roadmap
+            .filter((m) => Number.isFinite(m.difficulty) && Number.isFinite(m.estimated_days))
+            .map((m) => [
+              m.milestone,
+              {
+                difficulty: Math.min(5, Math.max(1, Math.round(m.difficulty))),
+                estimated_days: Math.max(1, Math.round(m.estimated_days)),
+              },
+            ]),
+        );
         roadmap = STAGE_ORDER.map((stageName) => ({
           milestone: stageName,
           tasks: detailedMap.get(stageName) ?? [],
@@ -237,8 +289,21 @@ Generate a specific roadmap for THIS founder's current and immediate-next stage 
 
         // Insert new milestones and tasks
         const milestoneIds: Array<{ id: string; title: string; order_index: number }> = [];
+        const nowIso = new Date().toISOString();
         for (let i = 0; i < roadmap.length; i++) {
           const milestone = roadmap[i];
+          const aiEstimate = estimateMap.get(milestone.milestone);
+          const provisionalEstimate = PROVISIONAL_STAGE_ESTIMATES[milestone.milestone];
+          const estimate = aiEstimate ?? provisionalEstimate ?? null;
+          // Only the founder's CURRENT stage is meaningfully "started" the
+          // moment the roadmap is created — the next-stage milestone exists
+          // but nothing is being worked on it yet. That one gets started_at
+          // stamped later, when this milestone completes and it becomes
+          // current (lib/buildmind.ts updateTaskStatus — see that file for
+          // the matching write). Placeholder future-stage milestones never
+          // get started_at here; they're not active and shouldn't be
+          // eligible for stall alerts until they are.
+          const isCurrentStageMilestone = i === currentStageIdx;
           const createdMilestone = await insertMilestone(supabase, {
             project_id: projectId,
             user_id: userId,
@@ -246,6 +311,10 @@ Generate a specific roadmap for THIS founder's current and immediate-next stage 
             stage: milestone.milestone,
             order_index: i,
             is_completed: false,
+            difficulty: estimate?.difficulty ?? null,
+            estimated_days: estimate?.estimated_days ?? null,
+            estimate_is_provisional: !aiEstimate,
+            started_at: isCurrentStageMilestone ? nowIso : null,
           });
 
           if (createdMilestone?.id) {
