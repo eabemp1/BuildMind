@@ -268,18 +268,22 @@ export async function POST(request: Request) {
         .from("milestones")
         .select("id, title, status")
         .eq("project_id", projectId)
+        // order_index is the roadmap-generation-assigned sequence (see
+        // generate-roadmap/route.ts); created_at is only a tiebreak for
+        // rows sharing the same order_index.
+        .order("order_index", { ascending: true })
         .order("created_at", { ascending: true });
 
       const milestoneIds = (milestones ?? []).map((m) => m.id);
       
       // Batch milestone IDs to avoid URL length limits
-      let allTasks: Array<{ title: string; is_completed: boolean; milestone_id: string }> = [];
+      let allTasks: Array<{ title: string; is_completed: boolean; milestone_id: string; priority: number | null }> = [];
       if (milestoneIds.length > 0) {
         const BATCH_SIZE = 20;
         const batches = [];
         for (let i = 0; i < milestoneIds.length; i += BATCH_SIZE) {
           const batchIds = milestoneIds.slice(i, i + BATCH_SIZE);
-          const tasksQuery = supabase.from("tasks").select("title, is_completed, milestone_id");
+          const tasksQuery = supabase.from("tasks").select("title, is_completed, milestone_id, priority");
           batches.push(
             batchIds.length === 1
               ? tasksQuery.eq("milestone_id", batchIds[0])
@@ -290,6 +294,13 @@ export async function POST(request: Request) {
         for (const result of batchResults) {
           if (result.data) allTasks = allTasks.concat(result.data);
         }
+        // FIX: each batch was returned in whatever order Postgres felt like
+        // (no ORDER BY), and batches were then concatenated as-is, so
+        // pendingTasksList's .slice(0, 5) below was picking an arbitrary
+        // 5 tasks rather than the highest-priority ones. roadmap generation
+        // sets priority = stageDistance * 10 + taskIdx + 1 (lower = more
+        // urgent, see generate-roadmap/route.ts), so sort ascending here.
+        allTasks.sort((a, b) => (a.priority ?? 5) - (b.priority ?? 5));
       }
       const { data: tasks } = { data: allTasks };
 
