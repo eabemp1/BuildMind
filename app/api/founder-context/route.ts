@@ -62,7 +62,7 @@ export async function PATCH(req: Request) {
     "ai_messages_today","momentum_score","days_inactive",
     "consecutive_tasks_completed","tasks_accepted_this_week","tasks_overridden_this_week",
   ]);
-  const BOOL_FIELDS = new Set(["pending_milestone_break"]);
+  const BOOL_FIELDS = new Set<string>([]); // pending_milestone_break removed — belongs to founder_memory (see /api/founder-memory), not founder_context; confirmed unused here via repo-wide grep
   const ARRAY_FIELDS = new Set(["topics_mentioned_repeatedly","override_reasons"]);
 
   const patch: Record<string, unknown> = {};
