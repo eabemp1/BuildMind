@@ -238,6 +238,9 @@ export async function POST(request: Request) {
 
             const { data: milestones } = await supabase.from("milestones")
               .select("id, title, status").eq("project_id", projectId)
+              // order_index is the roadmap-generation-assigned sequence;
+              // created_at is only a tiebreak for equal order_index rows.
+              .order("order_index", { ascending: true })
               .order("created_at", { ascending: true });
 
             const pending = (milestones ?? []).filter(m => m.status !== "completed").map(m => m.title).slice(0, 5);
