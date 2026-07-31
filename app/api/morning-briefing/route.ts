@@ -19,6 +19,7 @@ import { planFromUserMetadata } from "@/lib/plan";
 import { getEffectivePlan, getFreshPlanForUser } from "@/lib/server/plan";
 import { hasAdminEnv } from "@/app/api/ai/_utils";
 import { buildTodayActionCacheFromBriefing, upsertTodayActionCache } from "@/lib/todayActionCache";
+import { checkExecutionDebtSuppression } from "@/lib/executionDebtGate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -80,7 +81,7 @@ export async function GET(req: Request) {
     // Fetch all founder contexts (one per user)
     const { data: contexts, error: ctxErr } = await admin
       .from("founder_context")
-      .select("user_id, startup_summary, current_stage, momentum_score, avoidance_zones, topics_mentioned_repeatedly, cognitive_load, timezone_offset, last_active")
+      .select("user_id, startup_summary, current_stage, momentum_score, avoidance_zones, topics_mentioned_repeatedly, cognitive_load, timezone_offset, last_active, override_reasons, tasks_overridden_this_week, days_inactive")
       .gte("last_active", activeSince);
 
     if (ctxErr || !contexts?.length) {
@@ -215,7 +216,35 @@ export async function GET(req: Request) {
           delivered_at: new Date().toISOString(),
         });
 
-        if (activeProject?.id) {
+        // FIX: the nightly job used to cache a task regardless of execution
+        // debt, so a founder who should hit the live "you're avoiding X"
+        // intervention (see route.ts:576-588 / stream/route.ts:291-303)
+        // instead silently got a normal-looking task from the overnight
+        // cache and never saw the intervention at all. Run the same check
+        // here and skip caching if it would suppress — the founder then
+        // falls through to the live route on page load, which surfaces the
+        // intervention as intended.
+        let debtSuppressedOvernight = false;
+        try {
+          const { data: memoryRow } = await admin
+            .from("founder_memory")
+            .select("avoidance_zones, personality_tags, last_debt_surfaced")
+            .eq("user_id", ctx.user_id)
+            .maybeSingle();
+          const { suppressed } = await checkExecutionDebtSuppression(ctx.user_id, {
+            avoidance_zones: ctx.avoidance_zones ?? [],
+            override_reasons: (ctx as Record<string, unknown>).override_reasons as string[] | undefined,
+            tasks_overridden_this_week: (ctx as Record<string, unknown>).tasks_overridden_this_week as number | undefined,
+            topics_mentioned_repeatedly: ctx.topics_mentioned_repeatedly ?? [],
+            days_inactive: (ctx as Record<string, unknown>).days_inactive as number | undefined,
+            memory_avoidance_zones: (memoryRow?.avoidance_zones as string[] | undefined) ?? [],
+            personality_tags: (memoryRow?.personality_tags as string[] | undefined) ?? [],
+            last_debt_surfaced: (memoryRow?.last_debt_surfaced as Record<string, string> | null | undefined) ?? null,
+          });
+          debtSuppressedOvernight = suppressed;
+        } catch { /* non-fatal — if the debt check itself fails, fall back to caching as before */ }
+
+        if (activeProject?.id && !debtSuppressedOvernight) {
           await upsertTodayActionCache(
             admin,
             ctx.user_id,
@@ -422,33 +451,58 @@ export async function GET(req: Request) {
       .maybeSingle();
 
     if (activeProject?.id) {
-      await upsertTodayActionCache(
-        admin,
-        user.id,
-        buildTodayActionCacheFromBriefing({
-          briefing,
-          project: activeProject,
-          stage: activeProject.startup_stage ?? ctx?.current_stage ?? "Idea",
-        }),
-      );
+      // FIX: same gap as the cron path — check execution debt before caching
+      // a task so the founder gets the live intervention flow instead of a
+      // silently-cached task when debt should suppress generation.
+      let debtSuppressedOnDemand = false;
+      try {
+        const { data: memoryRow } = await admin
+          .from("founder_memory")
+          .select("avoidance_zones, personality_tags, last_debt_surfaced")
+          .eq("user_id", user.id)
+          .maybeSingle();
+        const { suppressed } = await checkExecutionDebtSuppression(user.id, {
+          avoidance_zones: ctx?.avoidance_zones ?? [],
+          override_reasons: (ctx as Record<string, unknown> | null)?.override_reasons as string[] | undefined,
+          tasks_overridden_this_week: (ctx as Record<string, unknown> | null)?.tasks_overridden_this_week as number | undefined,
+          topics_mentioned_repeatedly: ctx?.topics_mentioned_repeatedly ?? [],
+          days_inactive: (ctx as Record<string, unknown> | null)?.days_inactive as number | undefined,
+          memory_avoidance_zones: (memoryRow?.avoidance_zones as string[] | undefined) ?? [],
+          personality_tags: (memoryRow?.personality_tags as string[] | undefined) ?? [],
+          last_debt_surfaced: (memoryRow?.last_debt_surfaced as Record<string, string> | null | undefined) ?? null,
+        });
+        debtSuppressedOnDemand = suppressed;
+      } catch { /* non-fatal — fall back to caching as before if the check fails */ }
 
-      // ── Write execution_score + momentum_score back to projects ──────────
-      const newMomentum = reflexionCtx.momentumScore ?? 50;
+      if (!debtSuppressedOnDemand) {
+        await upsertTodayActionCache(
+          admin,
+          user.id,
+          buildTodayActionCacheFromBriefing({
+            briefing,
+            project: activeProject,
+            stage: activeProject.startup_stage ?? ctx?.current_stage ?? "Idea",
+          }),
+        );
 
-      const reflexionVerdict = (briefing as Record<string, unknown>).reflexion_verdict as string | undefined;
-      const newExecution =
-        reflexionVerdict === "pass"    ? 75 :
-        reflexionVerdict === "partial" ? 45 :
-        reflexionVerdict === "fail"    ? 20 :
-        (activeProject as Record<string, unknown>).execution_score != null
-          ? (activeProject as Record<string, unknown>).execution_score as number
-          : 50;
+        // ── Write execution_score + momentum_score back to projects ──────────
+        const newMomentum = reflexionCtx.momentumScore ?? 50;
 
-      await admin
-        .from("projects")
-        .update({ momentum_score: newMomentum, execution_score: newExecution })
-        .eq("id", activeProject.id)
-        .eq("user_id", user.id);
+        const reflexionVerdict = (briefing as Record<string, unknown>).reflexion_verdict as string | undefined;
+        const newExecution =
+          reflexionVerdict === "pass"    ? 75 :
+          reflexionVerdict === "partial" ? 45 :
+          reflexionVerdict === "fail"    ? 20 :
+          (activeProject as Record<string, unknown>).execution_score != null
+            ? (activeProject as Record<string, unknown>).execution_score as number
+            : 50;
+
+        await admin
+          .from("projects")
+          .update({ momentum_score: newMomentum, execution_score: newExecution })
+          .eq("id", activeProject.id)
+          .eq("user_id", user.id);
+      }
     }
 
     // Always return a valid briefing — even if DB fetch returned null,
