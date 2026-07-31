@@ -215,8 +215,11 @@ function TaskCheckbox({ checked, onChange, size=16 }: { checked:boolean; onChang
 }
 
 // ─── Milestone card ─────────────────────────────────────────────────────────
-function MilestoneCard({ milestone, tasks, index, onToggleTask }: { milestone:BuildMindMilestone; tasks:BuildMindTask[]; index:number; onToggleTask:(t:BuildMindTask)=>void }) {
+function MilestoneCard({ milestone, tasks, index, onToggleTask, onUpdateEstimate }: { milestone:BuildMindMilestone; tasks:BuildMindTask[]; index:number; onToggleTask:(t:BuildMindTask)=>void; onUpdateEstimate:(difficulty:number|null, estimated_days:number|null)=>void }) {
   const [expanded, setExpanded] = useState(false);
+  const [editingEstimate, setEditingEstimate] = useState(false);
+  const [difficultyDraft, setDifficultyDraft] = useState(milestone.difficulty ?? 3);
+  const [estimatedDaysDraft, setEstimatedDaysDraft] = useState(milestone.estimated_days ?? 7);
   const milestoneType=inferMilestoneType(milestone.title);
   const typeColor=TYPE_COLORS[milestoneType];
   const typeLabel=TYPE_LABELS[milestoneType];
@@ -226,6 +229,8 @@ function MilestoneCard({ milestone, tasks, index, onToggleTask }: { milestone:Bu
   const total=tasks.length;
   const pct=total>0?Math.round((done/total)*100):0;
   const isComplete=total>0&&done===total;
+  const daysOpen = milestone.started_at ? Math.floor((Date.now() - new Date(milestone.started_at).getTime()) / (1000*60*60*24)) : null;
+  const isOverEstimate = !isComplete && daysOpen != null && milestone.estimated_days != null && daysOpen > milestone.estimated_days;
 
   return (
     <motion.div initial={{ opacity:0,y:6 }} animate={{ opacity:1,y:0 }} transition={{ delay:index*0.06 }}
@@ -239,6 +244,12 @@ function MilestoneCard({ milestone, tasks, index, onToggleTask }: { milestone:Bu
             <div style={{ display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:5 }}>
               <span style={{ fontSize:10,padding:"2px 8px",borderRadius:99,fontFamily:"monospace",background:`${typeColor}18`,color:typeColor,fontWeight:500 }}>{typeLabel}</span>
               <span style={{ fontSize:10,color:VIZ.text3,fontFamily:"monospace" }}>{week}</span>
+              {milestone.estimated_days != null && (
+                <span style={{ fontSize:10,padding:"2px 8px",borderRadius:99,fontFamily:"monospace",background:isOverEstimate?"rgba(232,197,71,0.15)":"rgba(255,255,255,0.05)",color:isOverEstimate?"var(--bm-amber)":VIZ.text3 }}>
+                  {milestone.estimate_is_provisional ? "~" : ""}{milestone.estimated_days}d{milestone.difficulty ? ` · diff ${milestone.difficulty}/5` : ""}
+                  {isOverEstimate && daysOpen != null ? ` · ${daysOpen}d in` : ""}
+                </span>
+              )}
             </div>
             <div style={{ fontSize:13,fontWeight:600,lineHeight:1.4,color:isComplete?"var(--bm-green)":VIZ.text1,textDecoration:isComplete?"line-through":"none" }}>{milestone.title}</div>
             {total>0&&(
@@ -258,6 +269,42 @@ function MilestoneCard({ milestone, tasks, index, onToggleTask }: { milestone:Bu
         {expanded&&(
           <motion.div initial={{ height:0,opacity:0 }} animate={{ height:"auto",opacity:1 }} exit={{ height:0,opacity:0 }} transition={{ duration:0.22 }} style={{ overflow:"hidden" }}>
             <div style={{ borderTop:`1px solid ${VIZ.border}`,padding:"14px 16px 16px",display:"flex",flexDirection:"column",gap:14 }}>
+              <div>
+                <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6 }}>
+                  <div style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.1em",color:VIZ.text3,fontFamily:"monospace" }}>Estimate</div>
+                  {!editingEstimate && (
+                    <button onClick={(e)=>{e.stopPropagation();setEditingEstimate(true);}}
+                      style={{ fontSize:10,color:VIZ.text3,background:"none",border:"none",cursor:"pointer",textDecoration:"underline",padding:0 }}>edit</button>
+                  )}
+                </div>
+                {editingEstimate ? (
+                  <div onClick={(e)=>e.stopPropagation()} style={{ display:"flex",alignItems:"center",gap:10,flexWrap:"wrap" }}>
+                    <label style={{ fontSize:11,color:VIZ.text2,display:"flex",alignItems:"center",gap:6 }}>
+                      Difficulty
+                      <select value={difficultyDraft} onChange={(e)=>setDifficultyDraft(Number(e.target.value))}
+                        style={{ background:VIZ.panel,border:`1px solid ${VIZ.border}`,borderRadius:6,color:VIZ.text1,fontSize:11,padding:"3px 6px" }}>
+                        {[1,2,3,4,5].map(n=>(<option key={n} value={n}>{n}</option>))}
+                      </select>
+                    </label>
+                    <label style={{ fontSize:11,color:VIZ.text2,display:"flex",alignItems:"center",gap:6 }}>
+                      Est. days
+                      <input type="number" min={1} max={365} value={estimatedDaysDraft}
+                        onChange={(e)=>setEstimatedDaysDraft(Math.max(1, Number(e.target.value) || 1))}
+                        style={{ width:56,background:VIZ.panel,border:`1px solid ${VIZ.border}`,borderRadius:6,color:VIZ.text1,fontSize:11,padding:"3px 6px" }} />
+                    </label>
+                    <button onClick={()=>{onUpdateEstimate(difficultyDraft, estimatedDaysDraft);setEditingEstimate(false);}}
+                      style={{ fontSize:11,color:"#000",background:"var(--bm-accent)",border:"none",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontWeight:600 }}>Save</button>
+                    <button onClick={()=>setEditingEstimate(false)}
+                      style={{ fontSize:11,color:VIZ.text3,background:"none",border:"none",cursor:"pointer" }}>Cancel</button>
+                  </div>
+                ) : (
+                  <p style={{ fontSize:12,color:VIZ.text2,lineHeight:1.6,margin:0 }}>
+                    {milestone.estimated_days != null
+                      ? `${milestone.estimate_is_provisional ? "Rough estimate (not yet task-detailed): " : ""}${milestone.estimated_days} day${milestone.estimated_days===1?"":"s"}${milestone.difficulty ? `, difficulty ${milestone.difficulty}/5` : ""}${daysOpen != null ? ` — ${daysOpen} day${daysOpen===1?"":"s"} since started` : ""}`
+                      : "No estimate set yet."}
+                  </p>
+                )}
+              </div>
               <div>
                 <div style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.1em",color:VIZ.text3,marginBottom:6,fontFamily:"monospace" }}>What to do</div>
                 <p style={{ fontSize:12,color:VIZ.text2,lineHeight:1.7,margin:0 }}>{detail}</p>
@@ -686,8 +733,13 @@ export default function ProjectDetailPage() {
   };
 
   const milestoneMutation = useMutation({
-    mutationFn: (payload: { id: string; title?: string; stage?: string }) =>
-      updateMilestoneForCurrentUser(payload.id, { title: payload.title, stage: payload.stage }),
+    mutationFn: (payload: { id: string; title?: string; stage?: string; difficulty?: number | null; estimated_days?: number | null }) =>
+      updateMilestoneForCurrentUser(payload.id, {
+        title: payload.title,
+        stage: payload.stage,
+        difficulty: payload.difficulty,
+        estimated_days: payload.estimated_days,
+      }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: queryKeys.project(id) }),
   });
 
@@ -1011,7 +1063,8 @@ export default function ProjectDetailPage() {
             </>
           )}
           {milestones.map((m, mi) => (
-            <MilestoneCard key={m.id} milestone={m} tasks={tasks.filter(t => t.milestone_id === m.id)} index={mi} onToggleTask={toggleTask} />
+            <MilestoneCard key={m.id} milestone={m} tasks={tasks.filter(t => t.milestone_id === m.id)} index={mi} onToggleTask={toggleTask}
+              onUpdateEstimate={(difficulty, estimated_days) => milestoneMutation.mutate({ id: m.id, difficulty, estimated_days })} />
           ))}
         </div>
       )}
