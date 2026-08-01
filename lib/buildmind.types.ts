@@ -67,6 +67,16 @@ export type BuildMindMilestone = {
   stage?: string;
   order_index?: number;
   is_completed?: boolean | null;
+  // FIX (build blocker): referenced by an in-progress editable milestone-card
+  // component (difficultyDraft/estimatedDaysDraft) but not yet backed by any
+  // DB column — grep of every migration/schema file found neither field.
+  // Added here as optional purely to unblock the type error. This does NOT
+  // mean these values persist anywhere yet — if the feature is meant to save
+  // to Supabase, that needs an actual migration (`ALTER TABLE milestones ADD
+  // COLUMN difficulty int`, etc.) plus wiring in whatever route writes
+  // milestone updates. Flagging rather than guessing at that wiring blind.
+  difficulty?: number | null;
+  estimated_days?: number | null;
 };
 
 export type BuildMindTask = {
