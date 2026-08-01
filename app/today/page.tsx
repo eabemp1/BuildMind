@@ -57,7 +57,11 @@ type InitialAnalysis = {
 
 // ── Milestone Break interstitial (fires after milestone/stage change) ────────
 type MilestoneBreakResult = {
-  trigger: "milestone_complete" | "stage_transition";
+  // NOTE: "stalling" is not yet emitted by app/api/ai/milestone-break/route.ts
+  // (which only produces "milestone_complete" | "stage_transition" today).
+  // Client-side is ready for a future stalled-milestone detector; until the
+  // server emits it, this branch never renders.
+  trigger: "milestone_complete" | "stage_transition" | "stalling";
   triggerLabel: string;
   brutal_points: [string, string, string];
   recommended_action: string;
@@ -649,8 +653,13 @@ function TodayContent() {
     if (!userId || !projectId) return;
 
     // ── Fetch pending milestone-break interstitial ──────────────────────────
-    // Stored by /api/ai/milestone-break when a milestone or stage transition fires
-    fetch("/api/founder-context", { cache: "no-store" })
+    // Stored by /api/ai/milestone-break in founder_memory.pending_milestone_break
+    // (see migration 20260521000001_founder_memory_weekly_loop.sql). Must fetch
+    // /api/founder-memory here, not /api/founder-context — the founder_context
+    // table has no such column, and its route even mis-lists this field as a
+    // boolean (app/api/founder-context/route.ts:65), so this fetch could never
+    // have found the real value.
+    fetch("/api/founder-memory", { cache: "no-store" })
       .then(r => r.ok ? r.json() : null)
       .then((ctx: { data?: { pending_milestone_break?: string } } | null) => {
         if (!ctx?.data?.pending_milestone_break) return;
@@ -1398,26 +1407,33 @@ function TodayContent() {
     </div>
   );
 
-  // ── Milestone Break interstitial — mandatory checkpoint after milestone/stage change ──
+  // ── Milestone Break interstitial — mandatory checkpoint after milestone/stage change, or a stalled milestone ──
   if (milestoneBreak && !milestoneBreakDismissed) {
+    const isStalling = milestoneBreak.trigger === "stalling";
     return (
       <div style={{ maxWidth: 560, margin: "0 auto", padding: isMobile ? "40px 16px" : "80px 24px" }}>
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
           {/* Header */}
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 28 }}>
-            <div style={{ width: 32, height: 32, borderRadius: 8, background: "var(--bm-red)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <AlertCircle size={16} color="#fff" />
+            <div style={{ width: 32, height: 32, borderRadius: 8, background: isStalling ? "var(--bm-amber)" : "var(--bm-red)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <AlertCircle size={16} color={isStalling ? "#000" : "#fff"} />
             </div>
             <div>
-              <p style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", margin: 0 }}>Mandatory checkpoint</p>
+              <p style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", margin: 0 }}>
+                {isStalling ? "Still open" : "Mandatory checkpoint"}
+              </p>
               <p style={{ fontSize: 14, fontWeight: 700, color: "var(--bm-text)", margin: 0, lineHeight: 1.3 }}>
-                You just completed: {sanitizeOutput(milestoneBreak.triggerLabel)}
+                {isStalling
+                  ? `Still working on: ${sanitizeOutput(milestoneBreak.triggerLabel)}`
+                  : `You just completed: ${sanitizeOutput(milestoneBreak.triggerLabel)}`}
               </p>
             </div>
           </div>
 
           <p style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.6, marginBottom: 24 }}>
-            Before you move to the next milestone, here's what could still kill this.
+            {isStalling
+              ? "This has been open longer than expected. No judgment — some milestones just run long. Here's what's likely actually going on."
+              : "Before you move to the next milestone, here's what could still kill this."}
           </p>
 
           {/* 3 brutal points */}
