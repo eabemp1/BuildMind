@@ -645,32 +645,74 @@ export async function createProjectWithRoadmap(params: {
     ? [BLOCKER_TO_AVOIDANCE[params.blocker_type]].filter(Boolean)
     : [];
 
-  await supabase.from("founder_context").upsert({
-    user_id: user.id,
-    startup_summary:   startupSummary,
-    current_stage:     params.startup_stage ?? "Idea",
-    momentum_score:    50,
-    last_active:       new Date().toISOString().slice(0, 10),
-    days_inactive:     0,
-    avoidance_zones: initialAvoidance,
-    topics_mentioned_repeatedly: [],
-    consecutive_tasks_completed: 0,
-    tasks_accepted_this_week:    0,
-    tasks_overridden_this_week:  0,
-    cognitive_load:              "fresh",
-  }, { onConflict: "user_id" });
+  // FIX: founder_context and founder_memory are one-row-per-founder tables
+  // (onConflict: "user_id"), not per-project. The unconditional upserts below
+  // used to fire on every createProjectWithRoadmap call, so a founder's 2nd,
+  // 3rd, etc. project silently reset their accumulated momentum_score,
+  // avoidance_zones, streak-adjacent counters, and founder_memory's
+  // personality_tags/insight_history/strengths back to day-1 defaults —
+  // wiping weeks of real behavioral history every time they started a new
+  // venture. Only seed full defaults when no row exists yet (true first
+  // project); otherwise only refresh the fields that legitimately describe
+  // "the project the founder is now actively working on."
+  const { data: existingFounderContext } = await supabase
+    .from("founder_context")
+    .select("user_id")
+    .eq("user_id", user.id)
+    .maybeSingle();
 
-  // Seed founder_memory with onboarding data — used by the coach from message 1
-  void supabase.from("founder_memory").upsert({
-    user_id:          user.id,
-    startup_summary:  startupSummary,
-    avoidance_zones:  [],
-    strengths:        [],
-    personality_tags: [],
-    insight_history:  [],
-    cofounder_style:  "execution-coach",
-    updated_at:       new Date().toISOString(),
-  }, { onConflict: "user_id" });
+  if (!existingFounderContext) {
+    await supabase.from("founder_context").upsert({
+      user_id: user.id,
+      startup_summary:   startupSummary,
+      current_stage:     params.startup_stage ?? "Idea",
+      momentum_score:    50,
+      last_active:       new Date().toISOString().slice(0, 10),
+      days_inactive:     0,
+      avoidance_zones: initialAvoidance,
+      topics_mentioned_repeatedly: [],
+      consecutive_tasks_completed: 0,
+      tasks_accepted_this_week:    0,
+      tasks_overridden_this_week:  0,
+      cognitive_load:              "fresh",
+    }, { onConflict: "user_id" });
+  } else {
+    await supabase
+      .from("founder_context")
+      .update({
+        startup_summary: startupSummary,
+        current_stage:   params.startup_stage ?? "Idea",
+        last_active:     new Date().toISOString().slice(0, 10),
+      })
+      .eq("user_id", user.id);
+  }
+
+  // Seed founder_memory with onboarding data — used by the coach from message 1.
+  // Same one-row-per-founder caveat as above: only full-seed on a genuine
+  // first project; otherwise only refresh startup_summary.
+  const { data: existingFounderMemory } = await supabase
+    .from("founder_memory")
+    .select("user_id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (!existingFounderMemory) {
+    void supabase.from("founder_memory").upsert({
+      user_id:          user.id,
+      startup_summary:  startupSummary,
+      avoidance_zones:  [],
+      strengths:        [],
+      personality_tags: [],
+      insight_history:  [],
+      cofounder_style:  "execution-coach",
+      updated_at:       new Date().toISOString(),
+    }, { onConflict: "user_id" });
+  } else {
+    void supabase
+      .from("founder_memory")
+      .update({ startup_summary: startupSummary, updated_at: new Date().toISOString() })
+      .eq("user_id", user.id);
+  }
   // ─────────────────────────────────────────────────────────────────────────
 
   trackEvent("project_created");
