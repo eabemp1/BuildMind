@@ -1,3 +1,4 @@
+
 import { NextResponse } from "next/server";
 import { groqJSON, hasAdminEnv } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -462,7 +463,12 @@ INSTRUCTION:
       ai_risks:             result.biggest_gap,
       ai_suggestions:       result.next_week_focus,
       // Pulse fields — used by the public share card
-      pulse_score:          momentumScore,
+      // FIX: was momentumScore (founder_context's day-to-day momentum EMA) —
+      // a different, deliberately-distinct concept from pulseMetrics.pulseScore
+      // (lib/pulse.ts's "canonical BuildMind execution quality score"). The
+      // field is literally named pulse_score and rendered publicly as
+      // "Pulse Score" — it should read from Pulse, not momentum.
+      pulse_score:          pulseMetrics.pulseScore,
       pulse_streak:         pulseStreak,
       signal_ratio:         pulseMetrics.signalRatio,
       execution_trend:      deterministicTrend,
@@ -486,7 +492,7 @@ INSTRUCTION:
         share_token:      shareToken,
         report_data:      reportData,
         ai_summary:       result.summary,
-        pulse_score:      momentumScore,
+        pulse_score:      pulseMetrics.pulseScore,
         pulse_streak:     pulseStreak,
         signal_ratio:     pulseMetrics.signalRatio,
         execution_trend:  deterministicTrend,
@@ -499,7 +505,7 @@ INSTRUCTION:
       stage: projectStage || undefined,
       metadata: {
         share_token: shareToken,
-        pulse_score: momentumScore,
+        pulse_score: pulseMetrics.pulseScore,
         pulse_streak: pulseStreak,
         execution_trend: deterministicTrend,
       },
@@ -546,4 +552,4 @@ export async function GET(request: Request) {
     message: "Weekly report cron is reachable. Reports are generated on-demand for Builder users from /reports.",
     builderUsers: builderCount,
   });
-}
+            }
