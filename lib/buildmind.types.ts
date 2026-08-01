@@ -67,16 +67,15 @@ export type BuildMindMilestone = {
   stage?: string;
   order_index?: number;
   is_completed?: boolean | null;
-  // FIX (build blocker): referenced by an in-progress editable milestone-card
-  // component (difficultyDraft/estimatedDaysDraft) but not yet backed by any
-  // DB column — grep of every migration/schema file found neither field.
-  // Added here as optional purely to unblock the type error. This does NOT
-  // mean these values persist anywhere yet — if the feature is meant to save
-  // to Supabase, that needs an actual migration (`ALTER TABLE milestones ADD
-  // COLUMN difficulty int`, etc.) plus wiring in whatever route writes
-  // milestone updates. Flagging rather than guessing at that wiring blind.
-  difficulty?: number | null;
-  estimated_days?: number | null;
+  // Added by supabase/migrations/20260731000000_milestone_estimates_stall_detection.sql
+  // — Phase 1 of stall detection. Confirmed live via the migration's
+  // verification query (information_schema.columns) — 2026-07-31.
+  difficulty?: number | null;              // 1-5, founder-editable
+  estimated_days?: number | null;          // founder-editable
+  estimate_is_provisional?: boolean;       // true until founder confirms/edits the AI-generated estimate
+  started_at?: string | null;              // when this became the founder's active milestone, not when the row was created
+  stall_alert_count?: number;
+  last_stall_alert_at?: string | null;
 };
 
 export type BuildMindTask = {
