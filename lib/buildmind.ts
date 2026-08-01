@@ -179,7 +179,17 @@ export async function updateTaskStatus(taskId: string, isCompleted: boolean, not
 
 export async function updateMilestoneForCurrentUser(
   milestoneId: string,
-  payload: { title?: string; stage?: string; order_index?: number }
+  payload: {
+    title?: string;
+    stage?: string;
+    order_index?: number;
+    // From supabase/migrations/20260731000000_milestone_estimates_stall_detection.sql,
+    // confirmed live.
+    difficulty?: number | null;
+    estimated_days?: number | null;
+    estimate_is_provisional?: boolean;
+    started_at?: string | null;
+  }
 ) {
   const supabase = createClient();
   const { data, error } = await supabase
