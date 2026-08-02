@@ -210,7 +210,18 @@ export default function InsightsPage() {
           .select("meta_critic_signal,active_pattern_signal,active_pattern_message,active_pattern_subject,last_pattern_shown_at")
           .eq("user_id", user.id).maybeSingle(),
         reflQ,
-        supabase.from("action_logs").select("outcome,outcome_note,created_at")
+        // FIX: previously selected `outcome_note`, confirmed via SQL
+        // (information_schema.columns on action_logs) NOT to exist — only
+        // created_at/outcome/user_id do. Selecting a nonexistent column
+        // fails the whole PostgREST query; supabase-js resolves that as
+        // { data: null, error } rather than throwing, so Promise.allSettled
+        // saw this as "fulfilled" and `logs` silently became [] for every
+        // founder, permanently. That broke: the day-of-week heatmap
+        // ("When you build"), override reasons ("Why you skip"), and
+        // totalTasksCompleted/totalTasksShown (so the completion-rate stat
+        // next to Streak never showed, and the AI-insights gate undercounted
+        // real activity). None of this ever surfaced as a visible error.
+        supabase.from("action_logs").select("outcome,created_at")
           .eq("user_id", user.id).gte("created_at", thirtyDaysAgo),
         projQ.maybeSingle(),
         // ── Single source of truth for momentum/streak/xp — see lib/scorecard.ts ──
@@ -264,14 +275,14 @@ export default function InsightsPage() {
         avgConfidenceByOutcome[k] = parseFloat((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1));
       }
 
-      // Override reasons
-      const overrideReasons: Record<string, number> = {};
-      for (const log of logs as Array<{ outcome?: string; outcome_note?: string }>) {
-        if ((log.outcome === "overridden" || log.outcome === "partial") && log.outcome_note) {
-          overrideReasons[log.outcome_note] = (overrideReasons[log.outcome_note] ?? 0) + 1;
-        }
-      }
-      const topOverrideReason = Object.entries(overrideReasons).sort((a, b) => b[1] - a[1])[0]?.[0];
+      // Override reasons — removed. This depended on action_logs.outcome_note,
+      // confirmed via SQL not to exist. No other text field was checked, so
+      // there's no confirmed real source for this right now. "Why you skip"
+      // (line ~605) is gated on `topOverrideReason` being truthy, so it will
+      // simply not render until a real source is found and wired back in —
+      // that's honest (no section) rather than the previous silent-empty
+      // bug (a section that looked complete but was fed from a dead query).
+      const topOverrideReason: string | undefined = undefined;
       const totalTasksCompleted = (logs as Array<{ outcome?: string }>).filter(l => l.outcome === "completed").length;
 
       const resolved: InsightData = {
@@ -698,4 +709,4 @@ export default function InsightsPage() {
       )}
     </div>
   );
-}
+  }
