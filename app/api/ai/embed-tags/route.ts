@@ -123,11 +123,55 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const staleBefore = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const staleOrMissingFilter = `personality_tags_embedding.is.null,avoidance_zones_embedding.is.null,updated_at.lt.${staleBefore}`;
 
-  if (body.userId) {
-    // Single-user call (triggered after a coach interaction).
-    // IDOR FIX: verify the session JWT and confirm it matches body.userId.
-    // Without this any authenticated user could trigger embedding for another
-    // user's founder_memory by passing an arbitrary UUID in the body.
+  // FIX: body.userId presence used to be checked before isCron, so the
+  // coach route's fire-and-forget call (app/api/ai/coach/route.ts:444-451,
+  // which sends Bearer ${CRON_SECRET} *with* a userId in the body) always
+  // fell into the "verify session JWT" branch below — where CRON_SECRET
+  // fails JWT validation and returns 403. Every single coach-triggered
+  // embedding refresh has silently failed since this route was written;
+  // only the nightly sweep (GET, no body, so body.userId is empty) ever
+  // worked. A valid CRON_SECRET is a legitimate service-role credential
+  // regardless of whether a userId is also present — check isCron first,
+  // and use body.userId only to scope a cron-authenticated call to one user
+  // when present (full sweep otherwise). Session-JWT verification is now
+  // only reached for a non-cron-secret caller that supplied a userId.
+  if (isCron) {
+    if (body.userId) {
+      // Cron-secret-authenticated, scoped to one user — the coach route's
+      // post-interaction trigger.
+      const { data: rows } = await supabase
+        .from("founder_memory")
+        .select("user_id")
+        .eq("user_id", body.userId)
+        .or(staleOrMissingFilter)
+        .limit(1);
+      userIds = (rows ?? []).map((r: { user_id: string }) => r.user_id);
+    } else {
+      // Early exit if no actionable records exist.
+      const { count, error: countError } = await supabase
+        .from("founder_memory")
+        .select("user_id", { count: "exact", head: true })
+        .or(staleOrMissingFilter);
+      if (countError) {
+        return NextResponse.json({ ok: false, error: countError.message, step: "count_stale_embeddings" }, { status: 500 });
+      }
+      if (!count) {
+        return NextResponse.json({ skipped: true, reason: "no records", processed: 0, durationMs: Date.now() - start });
+      }
+
+      // Nightly sweep: rows missing or stale embeddings
+      const { data: rows } = await supabase
+        .from("founder_memory")
+        .select("user_id")
+        .or(staleOrMissingFilter)
+        .limit(20); // batch 20 per run to stay within maxDuration
+      userIds = (rows ?? []).map((r: { user_id: string }) => r.user_id);
+    }
+  } else if (body.userId) {
+    // Not cron-secret-authenticated — fall back to verifying the caller's
+    // own session JWT matches the userId they're asking to embed.
+    // IDOR FIX: without this any authenticated user could trigger embedding
+    // for another user's founder_memory by passing an arbitrary UUID.
     const sessionToken = req.headers.get("authorization")?.replace(/^Bearer /, "");
     if (!sessionToken) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
@@ -144,26 +188,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       .eq("user_id", body.userId)
       .or(staleOrMissingFilter)
       .limit(1);
-    userIds = (rows ?? []).map((r: { user_id: string }) => r.user_id);
-  } else if (isCron) {
-    // Early exit if no actionable records exist.
-    const { count, error: countError } = await supabase
-      .from("founder_memory")
-      .select("user_id", { count: "exact", head: true })
-      .or(staleOrMissingFilter);
-    if (countError) {
-      return NextResponse.json({ ok: false, error: countError.message, step: "count_stale_embeddings" }, { status: 500 });
-    }
-    if (!count) {
-      return NextResponse.json({ skipped: true, reason: "no records", processed: 0, durationMs: Date.now() - start });
-    }
-
-    // Nightly sweep: rows missing or stale embeddings
-    const { data: rows } = await supabase
-      .from("founder_memory")
-      .select("user_id")
-      .or(staleOrMissingFilter)
-      .limit(20); // batch 20 per run to stay within maxDuration
     userIds = (rows ?? []).map((r: { user_id: string }) => r.user_id);
   } else {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
@@ -247,4 +271,4 @@ function meanVector(vecs: number[][]): number[] {
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   return POST(req);
-}
+      }
