@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useActiveProjectId, useProjectsQuery } from "@/lib/queries";
 import { setActiveProjectId } from "@/lib/api";
+import { createProjectWithRoadmap } from "@/lib/buildmind";
 import { createClient } from "@/lib/supabase/client";
 import { storage } from "@/lib/storage";
 import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
@@ -14,7 +15,7 @@ import { useLimitModal } from "@/components/LimitModal";
 import { updateAchievementStats, checkAndUnlockAchievements } from "@/lib/achievements";
 import {
   Shield, ChevronDown, AlertTriangle, CheckCircle2,
-  RefreshCw, Save, X, Loader2,
+  RefreshCw, Save, X, Loader2, Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BuildMindCalibrating } from "@/components/BuildMindCalibrating";
@@ -22,7 +23,8 @@ import { Card } from "@/components/ui/card";
 import { Badge, BadgeVariant } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { sanitizeOutput } from "@/lib/sanitizeOutput";
+import { sanitizeOutput, sanitizeMarkdown } from "@/lib/sanitizeOutput";
+import { Markdown } from "@/components/ui/Markdown";
 import { RadialGauge, RadarChart, SeverityStack, type SeverityItem, type Severity } from "@/components/charts";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -202,6 +204,16 @@ export default function BreakMyStartupPage() {
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [outcomeSaving, setOutcomeSaving] = useState<string | null>(null);
+  // ISSUE-4 FIX: distinguishes "founder deliberately picked an existing
+  // project from the dropdown" from "a project got auto-selected because it
+  // happened to be active elsewhere in the app". Only the former should let
+  // results be saved onto that project — otherwise a genuinely new/custom
+  // idea silently gets attached to whatever project the founder was last
+  // viewing, instead of being offered as its own new project.
+  const [projectExplicitlySelected, setProjectExplicitlySelected] = useState(false);
+  const [addingProject, setAddingProject] = useState(false);
+  const [addedProjectId, setAddedProjectId] = useState<string | null>(null);
+  const [addProjectError, setAddProjectError] = useState<string | null>(null);
 
   // Pre-fill idea from selected project
   const selectedProject = projects.find((p) => p.id === selectedProjectId);
@@ -223,6 +235,15 @@ export default function BreakMyStartupPage() {
     }
   }, [activeProjectId, projects]);
 
+  // ISSUE-4 FIX: remember exactly what text we auto-filled from the project,
+  // so handleRunTest can tell "founder is still testing the pre-loaded
+  // project as-is" apart from "founder edited this into a different idea".
+  // That distinction matters because the backend, when given a projectId,
+  // ignores the typed idea entirely and re-reads the project's own stored
+  // description — so a diverged custom idea must NOT be sent with a
+  // projectId, or it silently gets swapped out for "the existing project"
+  // again, discarding what the founder actually wrote.
+  const autofilledIdeaRef = useRef<string>("");
   useEffect(() => {
     if (!selectedProjectId) return;
     if (!selectedProject) return;
@@ -232,6 +253,7 @@ export default function BreakMyStartupPage() {
       selectedProject.problem,
       selectedProject.target_users ? `Target users: ${selectedProject.target_users}` : "",
     ].filter(Boolean).join("\n\n");
+    autofilledIdeaRef.current = projectIdea;
     setCustomIdea(projectIdea);
   }, [selectedProjectId, selectedProject]);
 
@@ -398,6 +420,21 @@ export default function BreakMyStartupPage() {
       return;
     }
 
+    // ISSUE-4 FIX: the backend, when given a projectId, ignores the `idea`
+    // field entirely and re-reads the project's own stored description —
+    // see app/api/ai/break-my-startup/route.ts's "if (!projectId)" branch.
+    // So if the founder edited the textarea into something that no longer
+    // matches what we auto-filled from the selected project, sending
+    // projectId would silently discard their edit and re-run the OLD
+    // project data instead. Only attach projectId when either the founder
+    // explicitly chose that project, or the text still matches what was
+    // pre-filled (i.e. they haven't diverged from it).
+    const ideaMatchesAutofill = customIdea.trim() === autofilledIdeaRef.current.trim();
+    const runProjectId =
+      selectedProjectId && (projectExplicitlySelected || ideaMatchesAutofill)
+        ? selectedProjectId
+        : undefined;
+
     // G4 FIX: Cancel any in-flight request before starting a new one.
     // This prevents a network-retry from running two full 5-agent pipelines
     // simultaneously and double-charging the AI usage counter.
@@ -411,6 +448,8 @@ export default function BreakMyStartupPage() {
     setResult(null);
     setError(null);
     setSaved(false);
+    setAddedProjectId(null);
+    setAddProjectError(null);
 
     try {
       const supabase = createClient();
@@ -431,7 +470,7 @@ export default function BreakMyStartupPage() {
         signal: abortController.signal, // G4 FIX: abort if a newer request starts
         body: JSON.stringify({
           userId: authData.user.id,
-          projectId: selectedProjectId || undefined,
+          projectId: runProjectId,
           idea,
           focusAreas,
           executionMode,
@@ -495,11 +534,57 @@ export default function BreakMyStartupPage() {
     }
   }
 
+  // ISSUE-4 FIX: When the founder ran the stress test on a custom idea
+  // (no project explicitly selected — see projectExplicitlySelected above),
+  // give them a real path to turn that idea into a new project instead of
+  // it having nowhere to go, or silently landing on whatever project
+  // happened to be auto-selected. Reuses the same project-creation flow as
+  // onboarding (createProjectWithRoadmap), then attaches this stress test
+  // as the project's first note so nothing from the run is lost.
+  async function handleAddAsProject() {
+    if (!result || !customIdea.trim()) return;
+    setAddingProject(true);
+    setAddProjectError(null);
+    try {
+      const firstLine = customIdea.trim().split("\n")[0] ?? customIdea.trim();
+      const projectName = firstLine.slice(0, 60).replace(/[.!?]+$/, "").trim() || "Untitled idea";
+
+      const created = await createProjectWithRoadmap({
+        project_name: projectName,
+        idea_description: customIdea.trim(),
+        target_users: selectedProject?.target_users ?? "Not specified yet",
+        problem: selectedProject?.problem || result.risks[0]?.description || customIdea.trim(),
+      });
+
+      const newProjectId = (created as { id?: string } | null)?.id;
+      if (newProjectId) {
+        await fetch("/api/ventures/notes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            projectId: newProjectId,
+            type: "stress_test",
+            content: JSON.stringify(result),
+          }),
+        }).catch(() => {});
+        setAddedProjectId(newProjectId);
+        setActiveProjectId(newProjectId);
+      }
+    } catch {
+      setAddProjectError("Couldn't create the project. Please try again.");
+    } finally {
+      setAddingProject(false);
+    }
+  }
+
   function handleReset() {
     setResult(null);
     setError(null);
     setSaved(false);
     setCustomIdea("");
+    setProjectExplicitlySelected(false);
+    setAddedProjectId(null);
+    setAddProjectError(null);
   }
 
   async function handleOutcome(outcome: "completed" | "partial" | "overridden") {
@@ -559,6 +644,10 @@ export default function BreakMyStartupPage() {
                     value={selectedProjectId}
                     onChange={(e) => {
                       setSelectedProjectId(e.target.value);
+                      // Deliberate dropdown interaction — whatever the founder
+                      // picks (a project, or "— Use custom idea instead —")
+                      // now reflects real intent, not an auto-selection.
+                      setProjectExplicitlySelected(Boolean(e.target.value));
                       if (e.target.value) setActiveProjectId(e.target.value);
                       // FIX: this used to also call setCustomIdea("") whenever
                       // the dropdown was set back to "— Use custom idea
@@ -767,9 +856,9 @@ export default function BreakMyStartupPage() {
                     </Badge>
                   </div>
                   {result.summary && (
-                    <p style={{ fontSize: 15, fontWeight: 600, color: "var(--bm-text)", lineHeight: 1.55, marginBottom: 0 }}>
-                      {sanitizeOutput(result.summary)}
-                    </p>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: "var(--bm-text)", lineHeight: 1.55, marginBottom: 0 }}>
+                      <Markdown textSize={15}>{sanitizeMarkdown(result.summary)}</Markdown>
+                    </div>
                   )}
                   {result.score_note && (
                     <p style={{ fontSize: 12, color: "var(--bm-text3)", marginTop: 6, lineHeight: 1.5 }}>
@@ -817,9 +906,9 @@ export default function BreakMyStartupPage() {
                     Brutal advice
                   </span>
                 </div>
-                <p style={{ fontSize: 14, color: "var(--bm-text)", lineHeight: 1.6, fontWeight: 500, margin: 0 }}>
-                  {sanitizeOutput(result.brutal_advice)}
-                </p>
+                <div style={{ fontSize: 14, color: "var(--bm-text)", lineHeight: 1.6, fontWeight: 500 }}>
+                  <Markdown textSize={14}>{sanitizeMarkdown(result.brutal_advice)}</Markdown>
+                </div>
               </motion.div>
             )}
 
@@ -858,7 +947,9 @@ export default function BreakMyStartupPage() {
                         <span className="text-xs font-semibold text-[var(--bm-text)]">{agent.name}</span>
                         <span className="text-[10px] uppercase tracking-widest text-[var(--bm-text4)]">{agent.status}</span>
                       </div>
-                      <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-[var(--bm-text3)]">{sanitizeOutput(agent.summary)}</p>
+                      <div className="mt-1">
+                        <Markdown textSize={12}>{sanitizeMarkdown(agent.summary)}</Markdown>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -898,9 +989,16 @@ export default function BreakMyStartupPage() {
                     <span className="text-xs text-[var(--bm-text3)]">{Math.round(result.reflexionAction.confidence * 100)}% confidence</span>
                   )}
                 </div>
-                <p className="text-sm leading-relaxed text-[var(--bm-text2)]">{sanitizeOutput(result.reflexionAction.action)}</p>
-                {result.reflexionAction.rationale && (
-                  <p className="text-xs leading-relaxed text-[var(--bm-text3)]">{sanitizeOutput(result.reflexionAction.rationale)}</p>
+                {/* NOTE: reflexionAction.action is the same text already shown in
+                    "Brutal advice" above (the API sets brutal_advice = reflexionAction.action) —
+                    repeating it here was the source of the "exact copy" duplication. This card
+                    now surfaces what Brutal Advice doesn't: why, and how confident the system is. */}
+                {result.reflexionAction.rationale ? (
+                  <Markdown textSize={13}>{sanitizeMarkdown(result.reflexionAction.rationale)}</Markdown>
+                ) : (
+                  <p className="text-sm leading-relaxed text-[var(--bm-text2)]">
+                    See &ldquo;Brutal advice&rdquo; above — this is the action the Reflexion pipeline recommends.
+                  </p>
                 )}
                 {result.reflexionAction.log_row_id && (
                   <div className="flex flex-wrap gap-2">
@@ -967,15 +1065,17 @@ export default function BreakMyStartupPage() {
                         {risk.severity}
                       </Badge>
                     </div>
-                    <p style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.55, margin: "0 0 10px 0" }}>
-                      {sanitizeOutput(risk.description)}
-                    </p>
+                    <div style={{ margin: "0 0 10px 0" }}>
+                      <Markdown textSize={13}>{sanitizeMarkdown(risk.description)}</Markdown>
+                    </div>
                     <div style={{
                       display: "flex", alignItems: "flex-start", gap: 8,
                       background: "var(--bm-bg3)", borderRadius: "var(--r-sm)", padding: "8px 10px",
                     }}>
                       <CheckCircle2 size={12} style={{ color: "var(--bm-accent)", flexShrink: 0, marginTop: 1 }} />
-                      <span style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.5 }}>{sanitizeOutput(risk.mitigation)}</span>
+                      <div style={{ flex: 1 }}>
+                        <Markdown textSize={12}>{sanitizeMarkdown(risk.mitigation)}</Markdown>
+                      </div>
                     </div>
                   </div>
                 </motion.div>
@@ -1027,7 +1127,7 @@ export default function BreakMyStartupPage() {
 
             {/* Actions */}
             <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-              {selectedProjectId && (
+              {selectedProjectId && projectExplicitlySelected ? (
                 <Button
                   variant="secondary"
                   size="sm"
@@ -1047,7 +1147,31 @@ export default function BreakMyStartupPage() {
                     </>
                   )}
                 </Button>
-              )}
+              ) : customIdea.trim() ? (
+                // ISSUE-4 FIX: a custom idea (no project deliberately chosen)
+                // now gets its own path to becoming a project, rather than
+                // either having no save option or silently attaching to
+                // whatever project happened to be active elsewhere.
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleAddAsProject}
+                  loading={addingProject}
+                  disabled={Boolean(addedProjectId)}
+                >
+                  {addedProjectId ? (
+                    <>
+                      <CheckCircle2 size={13} style={{ color: "var(--bm-green)" }} />
+                      Added as Project
+                    </>
+                  ) : (
+                    <>
+                      <Plus size={13} />
+                      Add as Project
+                    </>
+                  )}
+                </Button>
+              ) : null}
               <Button
                 variant="ghost"
                 size="sm"
@@ -1057,9 +1181,17 @@ export default function BreakMyStartupPage() {
                 Run Again
               </Button>
             </div>
+            {addProjectError && (
+              <p style={{ fontSize: 12, color: "var(--bm-red)", margin: 0 }}>{addProjectError}</p>
+            )}
+            {addedProjectId && (
+              <p style={{ fontSize: 12, color: "var(--bm-text3)", margin: 0 }}>
+                Saved as a new project — you can find it in your projects list.
+              </p>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
     </div>
   );
-  }
+}
