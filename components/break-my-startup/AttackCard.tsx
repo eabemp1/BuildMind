@@ -2,7 +2,8 @@
 
 import { motion } from "framer-motion";
 import { ROLE_META, SEVERITY_COLORS, type AttackRound } from "./types";
-import { sanitizeOutput } from "@/lib/sanitizeOutput";
+import { sanitizeOutput, sanitizeMarkdown } from "@/lib/sanitizeOutput";
+import { Markdown } from "@/components/ui/Markdown";
 
 export function AttackCard({
   round,
@@ -47,7 +48,7 @@ export function AttackCard({
       </div>
 
       <h4 style={{ fontSize: 14, fontWeight: 600, color: "var(--bm-text)", margin: "0 0 8px" }}>{sanitizeOutput(round.title)}</h4>
-      <p style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.65, margin: 0 }}>{sanitizeOutput(round.body)}</p>
+      <Markdown textSize={13}>{sanitizeMarkdown(round.body)}</Markdown>
 
       {/* Rebuttal block — shows founder defense + score + adversary counter */}
       {round.rebuttal && (
@@ -96,4 +97,4 @@ export function AttackCard({
       )}
     </motion.div>
   );
-}
+      }
