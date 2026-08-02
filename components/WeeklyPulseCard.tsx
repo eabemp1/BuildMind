@@ -19,7 +19,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Sparkles, Target, Flame, TrendingUp, TrendingDown, Ghost, Share2, Check } from "lucide-react";
+import { Sparkles, Target, Flame, TrendingUp, TrendingDown, Ghost, Share2, Check, Download } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useActiveProjectId } from "@/lib/queries";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
@@ -300,14 +300,33 @@ export function WeeklyPulseCard() {
       )}
 
       {/* 4. SHARE */}
-      <button onClick={handleShare} style={{
-        display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "10px 16px",
-        borderRadius: "var(--r-md, 10px)", border: "1px solid var(--bm-border)", background: "var(--bm-bg3)",
-        color: "var(--bm-text2)", fontFamily: "'Inter', sans-serif", fontSize: 12.5, fontWeight: 600, cursor: "pointer",
-      }}>
-        {copied ? <Check size={13} /> : <Share2 size={13} />}
-        {copied ? "Copied" : "Share this week"}
-      </button>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button onClick={handleShare} style={{
+          flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "10px 16px",
+          borderRadius: "var(--r-md, 10px)", border: "1px solid var(--bm-border)", background: "var(--bm-bg3)",
+          color: "var(--bm-text2)", fontFamily: "'Inter', sans-serif", fontSize: 12.5, fontWeight: 600, cursor: "pointer",
+        }}>
+          {copied ? <Check size={13} /> : <Share2 size={13} />}
+          {copied ? "Copied" : "Share this week"}
+        </button>
+        {/* Real server-rendered PNG (app/api/card/weekly-pulse) — no
+            html2canvas, no client-side DOM screenshot. The browser just
+            navigates to the image URL with a download attribute; the route
+            itself builds the PNG from the same data this card renders. */}
+        <a
+          href={`/api/card/weekly-pulse${activeProjectId ? `?projectId=${activeProjectId}` : ""}`}
+          download="buildmind-weekly-pulse.png"
+          style={{
+            flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "10px 16px",
+            borderRadius: "var(--r-md, 10px)", border: "1px solid var(--bm-accent-bd, var(--bm-border))",
+            background: "rgba(93,169,224,0.08)", color: "var(--bm-accent)", fontFamily: "'Inter', sans-serif",
+            fontSize: 12.5, fontWeight: 600, cursor: "pointer", textDecoration: "none",
+          }}
+        >
+          <Download size={13} />
+          Download image
+        </a>
+      </div>
     </motion.div>
   );
-  }
+}
