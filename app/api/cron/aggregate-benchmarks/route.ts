@@ -9,8 +9,9 @@
  *   3. For cohorts with sample_size ≥ 10, call AI to generate insight_text
  *   4. Upsert into benchmark_cohorts
  *
- * Triggered by QStash nightly at 2am UTC (registered in vercel.json / cron-schedule.sql).
- * Authorization: Bearer ${CRON_SECRET}
+ * Triggered by Vercel Cron nightly at 2am UTC (registered in vercel.json's
+ * `crons` array — sends a GET request, delegated to POST below).
+ * Authorization: Bearer ${CRON_SECRET} or x-cron-secret: ${CRON_SECRET}
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -78,10 +79,17 @@ Be specific and data-driven. Start with "Founders who..." or "At ${cohort.stage}
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const start = Date.now();
 
-  // Auth check
+  // FIX: only accepted `Authorization: Bearer ${CRON_SECRET}` — every other
+  // cron route in the codebase (morning-briefing, weekly-report,
+  // milestone-break, promoter-digest, sunday-email, milestone-stall,
+  // evening-check, meta-critic, re-engage) also accepts an `x-cron-secret`
+  // header. Whatever's actually calling this on a schedule that sends
+  // x-cron-secret instead of Bearer would 401 silently.
   const authHeader = req.headers.get("authorization");
+  const bearer = authHeader?.match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
+  const cronSecretHeader = req.headers.get("x-cron-secret") ?? bearer;
   const cronSecret = process.env.CRON_SECRET;
-  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+  if (!cronSecret || cronSecretHeader !== cronSecret) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
