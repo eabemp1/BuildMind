@@ -92,9 +92,19 @@ export async function PATCH(req: Request) {
     project_id?: string;
     tasks_done?: number;
     current_score?: number;
+    // FIX: app/today/page.tsx's check-in flow only ever sent project_id +
+    // current_score to this endpoint — never tasks_done. Since
+    // `newTasksDone = tasks_done ?? goal.tasks_done` falls back to the
+    // EXISTING value when tasks_done is omitted, every Today completion
+    // updated the score but silently left tasks_done unchanged, forever.
+    // That's the confirmed cause of "Ghost Goals didn't increment." Added
+    // this atomic-increment flag so the caller doesn't need to fetch and
+    // recompute the current count itself (avoids a read-then-write race
+    // between two check-ins) — it just says "one more task happened."
+    increment_tasks_done?: boolean;
   };
 
-  const { project_id, tasks_done, current_score } = body;
+  const { project_id, tasks_done, current_score, increment_tasks_done } = body;
   if (!project_id) return NextResponse.json({ ok: false, error: "project_id required" }, { status: 400 });
 
   const admin = createAdminClient();
@@ -110,7 +120,7 @@ export async function PATCH(req: Request) {
 
   if (!goal) return NextResponse.json({ ok: false, error: "No active goal" }, { status: 404 });
 
-  const newTasksDone   = tasks_done   ?? goal.tasks_done;
+  const newTasksDone   = increment_tasks_done ? (goal.tasks_done ?? 0) + 1 : (tasks_done ?? goal.tasks_done);
   const newScore       = current_score ?? goal.current_score;
 
   // Compute status
@@ -130,4 +140,4 @@ export async function PATCH(req: Request) {
 
   if (dbErr) return NextResponse.json({ ok: false, error: dbErr.message }, { status: 500 });
   return NextResponse.json({ ok: true, data });
-}
+    }
