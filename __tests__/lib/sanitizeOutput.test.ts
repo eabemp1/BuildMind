@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sanitizeOutput } from "@/lib/sanitizeOutput";
+import { sanitizeOutput, sanitizeMarkdown } from "@/lib/sanitizeOutput";
 
 describe("sanitizeOutput", () => {
   it("returns an empty string for empty, null, and undefined input", () => {
@@ -43,5 +43,40 @@ describe("sanitizeOutput", () => {
 
   it("trims leading and trailing whitespace", () => {
     expect(sanitizeOutput(" \n hello \n ")).toBe("hello");
+  });
+});
+
+describe("sanitizeMarkdown", () => {
+  it("returns an empty string for empty, null, and undefined input", () => {
+    expect(sanitizeMarkdown("")).toBe("");
+    expect(sanitizeMarkdown(null)).toBe("");
+    expect(sanitizeMarkdown(undefined)).toBe("");
+  });
+
+  it("preserves bold, italic, and heading markdown syntax", () => {
+    expect(sanitizeMarkdown("**bold** and *italic*")).toBe("**bold** and *italic*");
+    expect(sanitizeMarkdown("## Heading")).toBe("## Heading");
+  });
+
+  it("preserves table syntax", () => {
+    const table = "| A | B |\n| --- | --- |\n| 1 | 2 |";
+    expect(sanitizeMarkdown(table)).toBe(table);
+  });
+
+  it("strips invisible/control characters without touching markdown", () => {
+    expect(sanitizeMarkdown("**bold\u200B**")).toBe("**bold**");
+  });
+
+  it("strips a code fence that wraps the entire response", () => {
+    expect(sanitizeMarkdown("```\nhello **world**\n```")).toBe("hello **world**");
+  });
+
+  it("does not strip a code fence that only wraps part of the response", () => {
+    const input = "Some text\n```js\nconst x = 1;\n```\nMore text";
+    expect(sanitizeMarkdown(input)).toBe(input);
+  });
+
+  it("collapses consecutive blank lines to max two", () => {
+    expect(sanitizeMarkdown("A\n\n\n\nB")).toBe("A\n\nB");
   });
 });
