@@ -144,5 +144,6 @@ export function computeMilestonePacing(
     projectedDate: projected.toISOString().slice(0, 10),
     deltaDays,
     risk,
+    reason,
   };
 }
