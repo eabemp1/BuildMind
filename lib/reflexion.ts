@@ -62,6 +62,39 @@ function withDeadline<T>(promise: Promise<T>, deadlineMs: number, fallback: T): 
   ]);
 }
 
+/**
+ * estimateTaskDifficulty — deterministic, keyword-based. NOT an AI
+ * classification (no extra model call, no risk of an LLM inventing a
+ * rating that doesn't match the actual task text). This is the first
+ * per-task difficulty signal anywhere in the codebase — the only prior
+ * "hard task" concept (app/api/founder-context/task-complete/route.ts's
+ * isHardTask) is scoped to the whole PROJECT STAGE (launch/revenue/growth),
+ * not the individual task, so it can't answer "is THIS task hard." This is
+ * intentionally coarse (3 bands) and conservative — it's a labeling aid for
+ * the founder to calibrate expectations, not a scored metric anything else
+ * depends on. Revisit with real per-task outcome data once that exists.
+ */
+export function estimateTaskDifficulty(
+  actionText: string,
+  cognitiveLoad?: ReflexionContext["cognitiveLoad"],
+): "light" | "focused" | "deep" {
+  const text = actionText.toLowerCase();
+  const deepSignals = ["launch", "build", "ship", "integrate", "migrate", "redesign", "negotiate", "pitch", "fundrais", "hire"];
+  const lightSignals = ["message", "email", "post", "ask", "list", "note", "review", "read", "reply", "schedule"];
+  const deepHits = deepSignals.filter((w) => text.includes(w)).length;
+  const lightHits = lightSignals.filter((w) => text.includes(w)).length;
+
+  let score = deepHits - lightHits;
+  // A drained founder's task was generated to be lighter by design (per the
+  // "adjust difficulty for cognitive state" prompt instruction) — reflect
+  // that same intent in the label rather than contradicting it.
+  if (cognitiveLoad === "drained") score -= 1;
+
+  if (score >= 2) return "deep";
+  if (score <= -1) return "light";
+  return "focused";
+}
+
 // groqCall routes ALL reflexion text calls through the reasoning chain.
 // gpt-oss-120b (primary) handles both text and JSON on Groq; Cerebras fallback is
 // equally fast. Using "reasoning" here means every Reflexion stage (Generator,
@@ -361,6 +394,7 @@ export interface ReflexionResult {
   nextAction?: string;     // Suggested next concrete action
   verdict?: "pass" | "fail";
   reject_reason?: string | null;
+  difficulty?: "light" | "focused" | "deep"; // See estimateTaskDifficulty().
 }
 
 /**
@@ -514,6 +548,7 @@ Advice: ${refined}`;
     nextAction: extractAction(refined),
     verdict: (critiqueData.verdict ?? "pass") as "pass" | "fail",
     reject_reason: critiqueData.verdict === "fail" ? (critiqueData.reason ?? null) : null,
+    difficulty: estimateTaskDifficulty(refined, context.cognitiveLoad),
   };
 }
 
@@ -566,6 +601,7 @@ export interface FullReflexionOutput {
   supporting_signals: string[]; // Real signals backing the action
   risks: string[];              // Risks to this specific action
   confidence: number;           // 0–1
+  difficulty: "light" | "focused" | "deep"; // See estimateTaskDifficulty() below.
   scores: {
     viability: number;
     execution_risk: number;
@@ -884,6 +920,7 @@ Action: ${finalAction}`;
     supporting_signals: stage5Output.valid_claims.slice(0, 4),
     risks: agentPipeline.risk?.top_risks?.slice(0, 3).map(r => r.title) ?? [],
     confidence: stage5Output.confidence_score,
+    difficulty: estimateTaskDifficulty(finalAction, founderContext.cognitiveLoad),
     scores: {
       viability: viabilityScore.viability_score,
       execution_risk,
@@ -1282,7 +1319,18 @@ function buildContextBlock(ctx: ReflexionContext): string {
   ];
   if (ctx.problem) lines.push(`Problem: ${ctx.problem}`);
   if (ctx.targetUsers) lines.push(`Target users: ${ctx.targetUsers}`);
-  if (ctx.cognitiveLoad) lines.push(`Cognitive state today: ${ctx.cognitiveLoad}`);
+  if (ctx.cognitiveLoad) {
+    lines.push(`Cognitive state today: ${ctx.cognitiveLoad}`);
+    // FIX: this used to just state the fact and hope the model adjusted —
+    // now directive, matching how the (unused) 7-stage pipeline's prompt
+    // handled this. Confirmed reachable: buildContextBlock() feeds
+    // generatorPrompt in the live runReflexionLoop, and cognitiveLoad here
+    // is set from the Today page's energy check-in via
+    // mapEnergyToCognitiveLoad() in app/api/ai/today-action/route.ts.
+    if (ctx.cognitiveLoad === "drained") {
+      lines.push(`This founder reported low energy today — assign something smaller and lower-friction than usual. Do not assign a task that requires deep focus or a big push.`);
+    }
+  }
   if (ctx.avoidanceSignals?.length) lines.push(`Avoidance signals: ${ctx.avoidanceSignals.join(", ")}`);
   if (ctx.overrideReasons?.length) lines.push(`Recent override reasons: ${ctx.overrideReasons.join(", ")}`);
   if (ctx.topicsRepeated?.length) lines.push(`Topics mentioned repeatedly: ${ctx.topicsRepeated.join(", ")}`);
@@ -1315,4 +1363,4 @@ function extractAction(text: string): string {
     /\b(do|send|call|write|post|reach out|open|find|talk|test|launch|build|contact)\b/i.test(s)
   );
   return actionSentence ?? sentences[sentences.length - 1] ?? "";
-  }
+}
