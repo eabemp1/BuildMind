@@ -131,6 +131,21 @@ function cleanAIText(value = ""): string {
     .replace(/<think>[\s\S]*?<\/think>/gi, "")
     .replace(/<think>[\s\S]*$/gi, "")
     .replace(/^[\s\S]*<\/think>/gi, "")
+    // FIX: this function stripped think-tags, arrows, dashes, curly quotes,
+    // and ellipsis, but never touched markdown syntax. This page renders
+    // every AI string as plain JSX text — no ReactMarkdown, no
+    // dangerouslySetInnerHTML anywhere in this file (confirmed via grep) —
+    // so any markdown the model outputs shows up as literal characters
+    // instead of being interpreted. Bold/italic stripped BEFORE the single-
+    // asterisk/underscore pass, or **text** would only half-match.
+    .replace(/\*\*\*([^*]+)\*\*\*/g, "$1")   // ***bold italic***
+    .replace(/\*\*([^*]+)\*\*/g, "$1")       // **bold**
+    .replace(/__([^_]+)__/g, "$1")           // __bold__
+    .replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, "$1") // *italic* (not part of **)
+    .replace(/(?<!_)_([^_\n]+)_(?!_)/g, "$1")     // _italic_
+    .replace(/`{1,3}([^`]+)`{1,3}/g, "$1")   // `code` / ```code```
+    .replace(/^#{1,6}\s+/gm, "")             // # Heading markers
+    .replace(/^[-*+]\s+/gm, "")              // markdown bullet markers
     .replace(/[•→⇒➜➔]/g, "-")
     .replace(/[—–]/g, "-")
     .replace(/[“”]/g, '"')
@@ -191,10 +206,22 @@ export default function BreakMyStartupPage() {
   // Pre-fill idea from selected project
   const selectedProject = projects.find((p) => p.id === selectedProjectId);
 
+  // FIX: this effect used to list `selectedProjectId` in its own dependency
+  // array with a guard of `!selectedProjectId` — meaning every time the
+  // founder cleared it (by choosing "Use custom idea instead"), the effect
+  // re-fired and immediately set it right back to activeProjectId. That's
+  // the exact bug: selecting custom idea appeared to instantly snap back to
+  // the active project. This should only auto-select the active project
+  // ONCE, on initial load — not re-assert itself every time it's cleared.
+  const didAutoSelectProject = useRef(false);
   useEffect(() => {
-    if (!activeProjectId || selectedProjectId) return;
-    if (projects.some((p) => p.id === activeProjectId)) setSelectedProjectId(activeProjectId);
-  }, [activeProjectId, projects, selectedProjectId]);
+    if (didAutoSelectProject.current) return;
+    if (!activeProjectId) return;
+    if (projects.some((p) => p.id === activeProjectId)) {
+      setSelectedProjectId(activeProjectId);
+      didAutoSelectProject.current = true;
+    }
+  }, [activeProjectId, projects]);
 
   useEffect(() => {
     if (!selectedProjectId) return;
