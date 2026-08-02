@@ -13,7 +13,7 @@
  * - suggested operating mode
  *
  * Stored in founder_memory.initial_analysis so subsequent loads don't
- * re-generate. Invalidated when stage changes.
+ * re-generate. Invalidated when project_id or stage changes, or after 7 days.
  */
 
 import { NextResponse } from "next/server";
@@ -34,6 +34,14 @@ export type InitialAnalysis = {
   operating_mode: string; // e.g. "Execution Sprint"
   generated_at: string;
   stage: string;
+  // FIX: founder_memory.initial_analysis is one row per user_id, not per
+  // project — the cache-read below used to only check age (< 7 days), so a
+  // founder's second project could be served the first project's analysis
+  // wholesale (wrong problem, wrong risks, wrong everything). The doc
+  // comment at the top of this file also claimed the cache was "invalidated
+  // when stage changes," but the code never actually checked `stage` either
+  // — that was aspirational, not real. project_id closes both gaps.
+  project_id: string;
 };
 
 export async function POST(request: Request) {
@@ -58,29 +66,8 @@ export async function POST(request: Request) {
 
     const supabase = createAdminClient();
 
-    // Check if we already have a fresh analysis (same stage, generated < 7 days ago)
-    if (!forceRefresh) {
-      const { data: memory } = await supabase
-        .from("founder_memory")
-        .select("initial_analysis")
-        .eq("user_id", userId)
-        .maybeSingle();
-
-      if (memory?.initial_analysis) {
-        try {
-          const cached = JSON.parse(memory.initial_analysis) as InitialAnalysis;
-          const age = Date.now() - new Date(cached.generated_at).getTime();
-          const sevenDays = 7 * 24 * 60 * 60 * 1000;
-          if (age < sevenDays) {
-            return NextResponse.json({ ok: true, data: cached, cached: true });
-          }
-        } catch {
-          // malformed — regenerate
-        }
-      }
-    }
-
-    // Fetch project context
+    // Fetch project context first — needed to validate the cache below
+    // against the CURRENT project + stage, not just how old the cache is.
     const { data: project } = await supabase
       .from("projects")
       .select("title, problem, description, target_users, startup_stage, execution_score, momentum_score, validation_strengths, validation_weaknesses")
@@ -93,6 +80,29 @@ export async function POST(request: Request) {
     }
 
     const stage = project.startup_stage ?? "Idea";
+
+    // Check if we already have a fresh analysis for THIS project at its
+    // CURRENT stage (same project_id, same stage, generated < 7 days ago)
+    if (!forceRefresh) {
+      const { data: memory } = await supabase
+        .from("founder_memory")
+        .select("initial_analysis")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (memory?.initial_analysis) {
+        try {
+          const cached = JSON.parse(memory.initial_analysis) as InitialAnalysis;
+          const age = Date.now() - new Date(cached.generated_at).getTime();
+          const sevenDays = 7 * 24 * 60 * 60 * 1000;
+          if (cached.project_id === projectId && cached.stage === stage && age < sevenDays) {
+            return NextResponse.json({ ok: true, data: cached, cached: true });
+          }
+        } catch {
+          // malformed — regenerate
+        }
+      }
+    }
 
     // Fetch recent reflections for behavioral context
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -168,6 +178,7 @@ No preamble. No markdown. Only JSON.`;
       operating_mode: stage === "Idea" || stage === "Validation" ? "Validation Sprint" : "Execution Sprint",
       generated_at: new Date().toISOString(),
       stage,
+      project_id: projectId,
     };
 
     try {
@@ -197,6 +208,7 @@ No preamble. No markdown. Only JSON.`;
           health_score: Math.min(100, Math.max(0, Math.round(ai.health_score))),
           generated_at: new Date().toISOString(),
           stage,
+          project_id: projectId,
         };
       }
     } catch {
