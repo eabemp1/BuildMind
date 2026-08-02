@@ -1306,12 +1306,22 @@ function TodayContent() {
             }).catch(() => {});
 
           // ── Update ghost goal progress ──────────────────────────────────────
+          // FIX: this call previously sent only project_id + current_score.
+          // Since the PATCH handler falls back to the existing tasks_done
+          // when it's not provided, every completion updated the score but
+          // never incremented the task count — the confirmed cause of
+          // "Ghost Goals didn't increment" when a task was completed today.
+          // Only increment on an actual completion, matching how
+          // selectedOutcome is already mapped to a completion signal
+          // elsewhere in this function (partial counts as a strength
+          // signal, but shouldn't inflate the raw completed-task count).
           fetch("/api/weekly-goal", {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               project_id:    project.id,
               current_score: newComputedScore,
+              increment_tasks_done: selectedOutcome === "completed",
             }),
           }).catch(() => {});
         } catch {}
@@ -2997,4 +3007,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-  }
+}
