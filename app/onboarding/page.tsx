@@ -14,6 +14,7 @@ import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { createProjectWithRoadmap, getCurrentUser, getOnboardingStatus } from "@/lib/buildmind";
+import { setActiveProjectId } from "@/lib/api";
 import { createClient } from "@/lib/supabase/client";
 import { identifyUser } from "@/lib/analytics";
 import { trackFunnelStep } from "@/lib/onboarding-analytics";
@@ -1733,13 +1734,22 @@ function OnboardingInner() {
 
       // Map onboarding v2 fields to createProjectWithRoadmap's expected params.
       const projectName = (startupName || idea).slice(0, 60).replace(/[.!?]+$/, "").trim();
-      await createProjectWithRoadmap({
+      const newProject = await createProjectWithRoadmap({
         project_name: projectName,
         idea_description: idea,
         target_users: resolvedDepthAnswers.targetUsers.trim() || "founders",
         problem: strikeResult?.marketGap ?? idea,
         startup_stage: startupStage,
       });
+      // FIX: return value was previously discarded. For a founder's first
+      // project this happened to work — selectActiveProject() falls back to
+      // whichever project has the most recent activity when there's no
+      // stored active_project_id. But an existing founder's second-project
+      // onboarding still had their FIRST project's id stored as active, and
+      // that id still matches a real project in their summaries list, so the
+      // fallback never triggers — they'd land on /today after finishing
+      // onboarding for a brand-new project and see their old one instead.
+      if (newProject?.id) setActiveProjectId(newProject.id);
 
       // Persist founder name into user metadata
       if (founderName) {
@@ -1913,4 +1923,4 @@ export default function OnboardingPage() {
       <OnboardingInner />
     </Suspense>
   );
-}
+        }
