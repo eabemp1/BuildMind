@@ -144,6 +144,7 @@ export async function POST(request: Request) {
       weeklyGoalResult,
       reflectionsResult,
       actionLogsResult,
+      overrideLogsResult,
     ] = await Promise.allSettled([
       getFounderScorecard(user.id),
       // FIX: originally read founder_context.score_history (jsonb). Confirmed
@@ -188,6 +189,11 @@ export async function POST(request: Request) {
       // to select only confirmed columns; override-reason tracking is
       // removed below until a real text field for it is confirmed to exist.
       admin.from("action_logs").select("outcome, created_at").eq("user_id", user.id).gte("created_at", weekAgoIso),
+      // FIX: same correction as app/insights/page.tsx — the real override-
+      // reason data lives in reflexion_learning_log.outcome_note (written
+      // by lib/learning.ts's recordActionOutcome), not action_logs.
+      admin.from("reflexion_learning_log").select("outcome_note").eq("user_id", user.id)
+        .eq("outcome", "overridden").not("outcome_note", "is", null).gte("created_at", weekAgoIso),
     ]);
 
     const scorecard = scorecardResult.status === "fulfilled" ? scorecardResult.value : null;
@@ -205,6 +211,7 @@ export async function POST(request: Request) {
     const weeklyGoalRow = weeklyGoalResult.status === "fulfilled" ? (weeklyGoalResult.value as { data: any })?.data ?? null : null;
     const reflections = reflectionsResult.status === "fulfilled" ? (reflectionsResult.value.data ?? []) : [];
     const actionLogs = actionLogsResult.status === "fulfilled" ? (actionLogsResult.value.data ?? []) : [];
+    const overrideLogs = overrideLogsResult.status === "fulfilled" ? (overrideLogsResult.value.data ?? []) : [];
 
     // ── Core task stats (real, from the tasks table) ──────────────────────
     const tasksCompleted = weekTasks.filter((t) => t.status === "completed").length;
@@ -288,11 +295,15 @@ export async function POST(request: Request) {
       confidenceByOutcome[k] = parseFloat((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1));
     }
 
-    // Override-reason tracking removed — it depended on action_logs.outcome_note,
-    // confirmed NOT to exist via the founder's SQL check. No other text field
-    // was in that check, so this feature has no confirmed real data source
-    // right now. Re-add only once a real column is confirmed.
-    const topOverrideReason: string | null = null;
+    // Override-reason tracking — now sourced from reflexion_learning_log
+    // (the real, working table, confirmed via lib/learning.ts's
+    // recordActionOutcome), not action_logs (which never had this data).
+    const overrideReasonCounts: Record<string, number> = {};
+    for (const log of overrideLogs as Array<{ outcome_note?: string | null }>) {
+      if (log.outcome_note) overrideReasonCounts[log.outcome_note] = (overrideReasonCounts[log.outcome_note] ?? 0) + 1;
+    }
+    const topOverrideReason: string | null =
+      Object.entries(overrideReasonCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
 
     // ── Weekly goal / ghost line (borrowed, real, project-scoped) ──────────
     const weeklyGoal = weeklyGoalRow
