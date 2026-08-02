@@ -370,11 +370,26 @@ Target users: ${project.target_users ?? "Not specified"}`;
           ], { onConflict: "user_id,key" });
 
         try {
+          // FIX: previously required outcome = 'pending' here. Confirmed via
+          // trace that app/today/page.tsx's handleCheckIn already calls
+          // /api/ai/reflexion-outcome immediately on check-in — BEFORE the
+          // founder ever reaches this page — which sets this same row's
+          // outcome away from 'pending' (e.g. to 'overridden') with
+          // outcome_note left undefined. By the time this code ran, no row
+          // with outcome='pending' existed anymore for today, so this query
+          // silently found nothing and the blocker/note text typed here
+          // never reached reflexion_learning_log.outcome_note — the real
+          // reason "Why you skip" stayed empty even after the table the
+          // frontend reads from was corrected. Match on "most recent row for
+          // this user today" instead of a status Today's own check-in flow
+          // already consumes. Updating the same outcome again here is
+          // harmless (idempotent) — the real fix is that outcome_note now
+          // actually gets attached.
           const { data: pendingLog } = await supabase
             .from("reflexion_learning_log")
             .select("id")
             .eq("user_id", verifiedUserId)
-            .eq("outcome", "pending")
+            .gte("created_at", todayDate)
             .order("created_at", { ascending: false })
             .limit(1)
             .maybeSingle();
@@ -522,4 +537,4 @@ ${projectContext}`,
     const message = error instanceof Error ? error.message : "Reflect action failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+  }
