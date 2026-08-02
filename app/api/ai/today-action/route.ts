@@ -32,6 +32,7 @@ type TodayAction = {
   message: string;       // Ready-to-send script or message they can copy-paste
   why: string;           // 1-2 sentences referencing their actual stage + situation
   time: string;          // Realistic time estimate
+  difficulty?: "light" | "focused" | "deep"; // From lib/reflexion.ts's estimateTaskDifficulty()
 };
 
 type ReflexionStatus = "ok" | "partial" | "failed";
@@ -218,6 +219,30 @@ export async function POST(request: Request) {
     let cognitionMomentumScore = 50;
     let cognitionAvoidanceSignals: string[] = [];
     let cognitionCognitiveLoad: ReflexionContext["cognitiveLoad"] = "fresh";
+    // FIX: founder_context.cognitive_load is written by the Today page's
+    // energy check-in (components using handleCogLoad) with values
+    // "low" | "normal" | "high" — but this field was being passed straight
+    // through as if it already matched ReflexionContext's expected
+    // "fresh" | "drained" | "autopilot" vocabulary. It never did (confirmed:
+    // no other writer of this column exists anywhere in the codebase — only
+    // the Today page writes it, and only ever with low/normal/high). Two
+    // real consequences this caused: (1) the prompt text at lib/reflexion.ts
+    // ~660/830 was literally interpolating "low"/"normal"/"high" into
+    // "Cognitive state today: X" instead of the intended vocabulary, and
+    // (2) lib/reflexion.ts:343's `ctx.cognitiveLoad !== "fresh"` complexity-
+    // scoring check fired unconditionally for every real value a founder
+    // could pick, since none of low/normal/high ever equals the literal
+    // string "fresh" — so every energy selection scored identically.
+    function mapEnergyToCognitiveLoad(raw: unknown): ReflexionContext["cognitiveLoad"] {
+      if (raw === "low") return "drained";
+      // "normal" and "high" both map to "fresh" for now — there's no
+      // "high energy, assign something harder" concept in reflexion.ts's
+      // current vocabulary. Worth a real product decision later (should
+      // high energy actively bias toward more ambitious tasks?), not
+      // assumed here.
+      if (raw === "normal" || raw === "high") return "fresh";
+      return "fresh";
+    }
     let founderCountry: string | undefined;
     // FIX 1.3: Hoist memoryResult to outer scope so it can be reused later
     // without a second DB round-trip to founder_memory
@@ -503,7 +528,7 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
         ? (cognitionInput.context?.momentum_score ?? 50)
         : 50;
       cognitionAvoidanceSignals = cognitionInput.memory?.avoidance_zones ?? [];
-      cognitionCognitiveLoad = cognitionInput.context?.cognitive_load ?? "fresh";
+      cognitionCognitiveLoad = mapEnergyToCognitiveLoad(cognitionInput.context?.cognitive_load);
     }
 
     if (hasAdminEnv() && (title || problem || targetUsers)) {
@@ -771,6 +796,10 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
       ...(reflexionOutput?.output ? { body: cleanVisibleText(reflexionOutput.output, "") } : {}),
       // If reflexion ran, its rationale becomes the task's why
       why: cleanVisibleText(reflexionOutput?.rationale, fallback.why),
+      // FIX: difficulty was never surfaced anywhere — the only prior
+      // per-something difficulty concept (isHardTask in
+      // task-complete/route.ts) is scoped to project stage, not this task.
+      difficulty: reflexionOutput?.difficulty,
     };
     finalResult.message = buildPersonalizedTodayDraft(finalResult.action, fallback, {
       title,
@@ -853,4 +882,4 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
     const message = error instanceof Error ? error.message : "Today action failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-  }
+}
