@@ -202,7 +202,7 @@ export default function InsightsPage() {
         ? projQ.eq("id", activeProjectId)
         : projQ.order("created_at", { ascending: false }).limit(1);
 
-      const [memRes, ctxRes, reflRes, logRes, projRes, scorecardRes] = await Promise.allSettled([
+      const [memRes, ctxRes, reflRes, logRes, projRes, scorecardRes, overrideRes] = await Promise.allSettled([
         supabase.from("founder_memory")
           .select("avoidance_zones,strengths,personality_tags,last_insight")
           .eq("user_id", user.id).maybeSingle(),
@@ -230,6 +230,18 @@ export default function InsightsPage() {
         // existed as a column until the June 30 migration — both guaranteed
         // this page showed 0 regardless of real activity.
         fetch("/api/founder-context/scorecard", { cache: "no-store" }),
+        // FIX: override reasons ("Why you skip") were being read from
+        // action_logs.outcome_note, which doesn't exist. The REAL, working
+        // capture mechanism is reflexion_learning_log.outcome_note, written
+        // by lib/learning.ts's recordActionOutcome() via
+        // /api/ai/reflexion-outcome — a fully wired pipeline, just never
+        // queried from here. NOT independently SQL-confirmed to have exactly
+        // this shape (id/outcome/outcome_note/created_at) — taken from the
+        // writer's own code; flagged as a follow-up query.
+        supabase.from("reflexion_learning_log").select("outcome,outcome_note,created_at")
+          .eq("user_id", user.id).eq("outcome", "overridden")
+          .not("outcome_note", "is", null)
+          .gte("created_at", thirtyDaysAgo),
       ]);
 
       const mem   = memRes.status  === "fulfilled" ? memRes.value.data  : null;
@@ -237,6 +249,7 @@ export default function InsightsPage() {
       const refs  = reflRes.status === "fulfilled" ? (reflRes.value.data ?? []) : [];
       const logs  = logRes.status  === "fulfilled" ? (logRes.value.data ?? []) : [];
       const stage = projRes.status === "fulfilled" ? (projRes.value.data?.startup_stage ?? "Idea") : "Idea";
+      const overrideLogs = overrideRes.status === "fulfilled" ? (overrideRes.value.data ?? []) : [];
 
       let scorecardMomentum = 50;
       let scorecardStreak = 0;
@@ -275,14 +288,16 @@ export default function InsightsPage() {
         avgConfidenceByOutcome[k] = parseFloat((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1));
       }
 
-      // Override reasons — removed. This depended on action_logs.outcome_note,
-      // confirmed via SQL not to exist. No other text field was checked, so
-      // there's no confirmed real source for this right now. "Why you skip"
-      // (line ~605) is gated on `topOverrideReason` being truthy, so it will
-      // simply not render until a real source is found and wired back in —
-      // that's honest (no section) rather than the previous silent-empty
-      // bug (a section that looked complete but was fed from a dead query).
-      const topOverrideReason: string | undefined = undefined;
+      // Override reasons — now sourced from reflexion_learning_log
+      // (the real, working table — see fetch comment above), not
+      // action_logs (which never had this data at all).
+      const overrideReasons: Record<string, number> = {};
+      for (const log of overrideLogs as Array<{ outcome_note?: string | null }>) {
+        if (log.outcome_note) {
+          overrideReasons[log.outcome_note] = (overrideReasons[log.outcome_note] ?? 0) + 1;
+        }
+      }
+      const topOverrideReason = Object.entries(overrideReasons).sort((a, b) => b[1] - a[1])[0]?.[0];
       const totalTasksCompleted = (logs as Array<{ outcome?: string }>).filter(l => l.outcome === "completed").length;
 
       const resolved: InsightData = {
@@ -709,4 +724,4 @@ export default function InsightsPage() {
       )}
     </div>
   );
-  }
+                      }
