@@ -15,22 +15,26 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import ReportsPage from "@/app/reports/page";
 import InsightsPage from "@/app/insights/page";
+import { WeeklyPulseCard } from "@/components/WeeklyPulseCard";
 import { createClient } from "@/lib/supabase/client";
 import { BuildMindCalibrating } from "@/components/BuildMindCalibrating";
 import { useActiveProjectId } from "@/lib/queries";
 
 // ── Lazy-loaded tab content ───────────────────────────────────────────────────
-// We import the existing page components directly to avoid duplication.
-// In production these would be refactored into shared components; here we
-// inline lightweight versions that pull from the same data layer.
 
 function ThisWeekTab({ reflectionCount }: { reflectionCount: number }) {
   if (reflectionCount < 7) {
     return <BuildMindCalibrating count={reflectionCount} surface="insights" />;
   }
-  return <ReportsPage />;
+  // Was previously `<ReportsPage />` — a direct passthrough of the /reports
+  // export/reporting surface, giving this tab no content of its own. Now a
+  // dedicated weekly pulse (Story → Insights → Evidence → Metrics → Share),
+  // backed by app/api/ai/weekly-pulse/route.ts, which borrows every metric
+  // from wherever it's already computed rather than recomputing anything.
+  // /reports stays a separate, still-live nav destination for the export/
+  // reporting use case (PDF/CSV/image export, 4-week heatmap).
+  return <WeeklyPulseCard />;
 }
 
 function PatternsTab({ reflectionCount }: { reflectionCount: number }) {
@@ -184,4 +188,4 @@ export default function ProgressPage() {
       </div>
     </>
   );
-}
+                  }
