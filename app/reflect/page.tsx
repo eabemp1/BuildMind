@@ -59,6 +59,15 @@ function buildFallbackWitness(o: Outcome, whatTried: string): string {
 export default function ReflectPage() {
   const router = useRouter();
   const [outcome, setOutcome] = useState<Outcome | null>(null);
+  // FIX: outcome used to be freely re-pickable here even when it arrived
+  // pre-filled from Today's check-in — but by the time a founder reaches
+  // this page, task-complete has already run the full momentum/streak/XP/
+  // pattern-detection pipeline for whatever outcome they tapped on Today.
+  // Letting them silently pick a different one here only changed the task's
+  // stored status, leaving those stats permanently mismatched with no
+  // reconciliation. Lock the choice instead — matches how the reward was
+  // actually calculated.
+  const [outcomeLocked, setOutcomeLocked] = useState(false);
   const [whatTried, setWhatTried] = useState("");
   const [whatHappened, setWhatHappened] = useState("");
   const [whatLearned, setWhatLearned] = useState("");
@@ -103,6 +112,7 @@ export default function ReflectPage() {
       const preOutcome = params.get("outcome") as Outcome | null;
       if (preOutcome && ["completed", "partial", "blocked", "learned"].includes(preOutcome)) {
         setOutcome(preOutcome);
+        setOutcomeLocked(true);
       }
     }
     try {
@@ -408,11 +418,17 @@ export default function ReflectPage() {
 
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.06 }}
         style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 14, padding: "18px clamp(14px, 4vw, 22px)", marginBottom: 12 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 14 }}>What happened?</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 9 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 4 }}>What happened?</div>
+        {outcomeLocked && (
+          <div style={{ fontSize: 11, color: "var(--bm-text3)", marginBottom: 10 }}>
+            Set from today's check-in — your momentum and streak were already updated for this outcome.
+          </div>
+        )}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 9, marginTop: outcomeLocked ? 0 : 14 }}>
           {OUTCOME_CHIPS.map(chip => (
-            <button key={chip.id} onClick={() => setOutcome(chip.id)}
-              style={{ display: "flex", alignItems: "center", gap: 10, padding: "13px 14px", borderRadius: 12, border: `1px solid ${outcome === chip.id ? chip.border : "var(--bm-border)"}`, background: outcome === chip.id ? chip.bg : "var(--bm-bg3)", cursor: "pointer", fontFamily: "inherit", textAlign: "left", transition: "all 0.15s" }}>
+            <button key={chip.id} onClick={() => { if (!outcomeLocked) setOutcome(chip.id); }}
+              disabled={outcomeLocked && outcome !== chip.id}
+              style={{ display: "flex", alignItems: "center", gap: 10, padding: "13px 14px", borderRadius: 12, border: `1px solid ${outcome === chip.id ? chip.border : "var(--bm-border)"}`, background: outcome === chip.id ? chip.bg : "var(--bm-bg3)", cursor: outcomeLocked ? (outcome === chip.id ? "default" : "not-allowed") : "pointer", opacity: outcomeLocked && outcome !== chip.id ? 0.45 : 1, fontFamily: "inherit", textAlign: "left", transition: "all 0.15s" }}>
               <span style={{ fontSize: 15, color: outcome === chip.id ? chip.color : "var(--bm-text3)", fontWeight: 700, width: 20 }}>{chip.icon}</span>
               <div>
                 <div style={{ fontSize: 13, fontWeight: outcome === chip.id ? 700 : 500, color: outcome === chip.id ? chip.color : "var(--bm-text2)" }}>{chip.label}</div>
