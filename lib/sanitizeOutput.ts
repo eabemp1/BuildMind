@@ -42,3 +42,42 @@ export function sanitizeOutput(raw: string | null | undefined): string {
 
   return s.trim();
 }
+
+/**
+ * sanitizeMarkdown
+ * Same invisible/control-character cleanup as sanitizeOutput, but WITHOUT
+ * destroying markdown syntax. Use this (paired with the <Markdown> component
+ * in components/ui/Markdown.tsx) for any AI output that may legitimately
+ * contain bold text, headings, lists, code, or tables and should be
+ * *rendered* as such rather than flattened to plain text.
+ *
+ * sanitizeOutput() is still correct for short, single-line fields (badge
+ * labels, verdict strings) where markdown markers are always stray noise
+ * rather than intentional formatting — this function is for longer-form
+ * analysis text.
+ */
+export function sanitizeMarkdown(raw: string | null | undefined): string {
+  if (!raw) return "";
+
+  let s = raw;
+
+  // Non-printable ASCII controls (keep tab, LF, CR)
+  // eslint-disable-next-line no-control-regex
+  s = s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
+
+  // Unicode invisible / directional / BOM / soft-hyphen / replacement char
+  s = s.replace(/[\u00AD\u200B-\u200F\u202A-\u202F\u2060-\u2064\uFEFF\uFFFD]/g, "");
+
+  // Strip wrapping code fences ONLY when they wrap the entire response
+  // (a leftover artefact from the model echoing a fence around everything),
+  // not fences that legitimately wrap a code sample within longer text.
+  const trimmed = s.trim();
+  if (/^```[a-z]*\n[\s\S]*\n```$/i.test(trimmed) && (trimmed.match(/```/g) ?? []).length === 2) {
+    s = trimmed.replace(/^```[a-z]*\n/i, "").replace(/\n```$/i, "");
+  }
+
+  // Collapse runs of 3+ blank lines to at most 2
+  s = s.replace(/\n{3,}/g, "\n\n");
+
+  return s.trim();
+}
