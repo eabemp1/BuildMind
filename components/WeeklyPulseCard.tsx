@@ -32,6 +32,7 @@ interface GradedDimension { label: string; score: number | null; grade: "A" | "B
 interface SparklinePoint { date: string; real: number | null; ghost: number | null; }
 
 interface WeeklyPulseData {
+  is_quiet_week: boolean;
   momentum_score: number; momentum_delta: number | null; streak: number;
   tasks_completed: number; tasks_total: number; completion_rate: number; active_days: number;
   un_ghosted: string[]; milestones: MilestonePacing[]; archetype: string | null;
@@ -267,7 +268,16 @@ export function WeeklyPulseCard() {
       </div>
 
       {/* Grades */}
-      {data.grades.some((g) => g.grade !== "N/A") && (
+      {/* Grades — hidden entirely on a quiet week rather than showing a
+          grid of N/A badges, which reads as broken rather than honest. */}
+      {data.is_quiet_week ? (
+        <p style={{
+          fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: "var(--bm-text3)",
+          textAlign: "center", padding: "4px 0",
+        }}>
+          Not enough activity yet to grade this week — check back after a few tasks.
+        </p>
+      ) : data.grades.some((g) => g.grade !== "N/A") && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
           {data.grades.map((g) => <GradeBadge key={g.label} g={g} />)}
         </div>
@@ -300,4 +310,4 @@ export function WeeklyPulseCard() {
       </button>
     </motion.div>
   );
-}
+  }
