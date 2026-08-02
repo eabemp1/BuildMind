@@ -21,12 +21,22 @@
  *  - Momentum / streak / xp / momentum trend: lib/scorecard.ts's
  *    getFounderScorecard() — the documented single source of truth, same
  *    one /reports and app/insights/page.tsx already call.
- *  - Real execution line (sparkline): founder_context.score_history (jsonb
- *    column). NOTE: app/api/user/score-history/route.ts's own file header
- *    comment claims a fallback to a dedicated `score_history` table if the
- *    jsonb column doesn't exist — but its actual GET handler only ever
- *    reads founder_context.score_history, no fallback is implemented. This
- *    route matches the real GET handler's behavior, not the comment.
+ *  - Real execution line (sparkline): the STANDALONE `score_history` table
+ *    (user_id, score, recorded_at), NOT founder_context.score_history
+ *    (jsonb). An earlier draft of this route used the jsonb column,
+ *    matching app/api/user/score-history/route.ts's GET handler — but
+ *    grepping every writer of "score_history" found two independent write
+ *    paths: app/api/founder-context/task-complete/route.ts writes the
+ *    standalone table automatically on every task completion, while the
+ *    jsonb column only gets written when a founder visits /reports or
+ *    /overview (lib/scoring/index.ts's syncScoreHistory(), client-
+ *    triggered). The jsonb column is sparse in practice (confirmed: only 1
+ *    founder account had any jsonb score_history at all) while the
+ *    standalone table is populated automatically. This route reads the
+ *    standalone table for that reason. NOT independently SQL-confirmed to
+ *    have exactly the columns assumed (user_id, score, recorded_at) —
+ *    that's taken from the writer's own upsert call, not a live schema
+ *    check; flagged as a follow-up query, not asserted as verified.
  *  - Ghost/target line: weekly_goals (target_score, tasks_done, etc.),
  *    keyed by project_id + week_start — same table/shape as
  *    app/api/weekly-goal/route.ts. Requires a project_id; when the founder
@@ -77,6 +87,7 @@ export const maxDuration = 30;
 interface SparklinePoint { date: string; real: number | null; ghost: number | null; }
 
 interface WeeklyPulseResponse {
+  is_quiet_week: boolean;
   momentum_score: number;
   momentum_delta: number | null;
   streak: number;
@@ -125,7 +136,7 @@ export async function POST(request: Request) {
 
     const [
       scorecardResult,
-      ctxScoreHistoryResult,
+      scoreHistoryResult,
       memoryResult,
       weekTasksResult,
       backlogTasksResult,
@@ -135,7 +146,24 @@ export async function POST(request: Request) {
       actionLogsResult,
     ] = await Promise.allSettled([
       getFounderScorecard(user.id),
-      admin.from("founder_context").select("score_history").eq("user_id", user.id).maybeSingle(),
+      // FIX: originally read founder_context.score_history (jsonb). Confirmed
+      // via grep that TWO independent write paths exist for "daily score":
+      //   1. app/api/founder-context/task-complete/route.ts writes to the
+      //      STANDALONE `score_history` table, automatically, on every task
+      //      completion server-side.
+      //   2. app/api/user/score-history/route.ts (POST) writes to
+      //      founder_context.score_history (jsonb) — but only ever gets
+      //      called by lib/scoring/index.ts's syncScoreHistory(), which is
+      //      only triggered client-side when a founder visits /reports or
+      //      /overview. Not automatic, not reliable.
+      // This is why the founder's SQL check showed only 1 founder with any
+      // jsonb score_history at all. Reading the standalone table instead —
+      // same concept, but the source that's actually populated in practice.
+      // NOT YET independently confirmed via SQL that this table has the
+      // exact columns assumed below (user_id, score, recorded_at) — that's
+      // taken from task-complete/route.ts's own upsert call, not a live
+      // schema check. Flagged to the founder as a follow-up query.
+      admin.from("score_history").select("score, recorded_at").eq("user_id", user.id).gte("recorded_at", weekAgoIso).order("recorded_at", { ascending: true }),
       admin.from("founder_memory").select("avoidance_zones, personality_tags, insight_history").eq("user_id", user.id).maybeSingle(),
       admin.from("tasks").select("id, title, status, milestone_id, created_at, updated_at").eq("user_id", user.id).gte("updated_at", weekAgoIso),
       // Backlog: tasks that existed before this week (for Backlog Clearance grading).
@@ -151,12 +179,25 @@ export async function POST(request: Request) {
       admin.from("reflections").select("confidence, outcome, created_at").eq("user_id", user.id).gte("created_at", weekAgoIso),
       // Best-effort: action_logs isn't in the committed schema (see header note).
       // If it doesn't exist live, this rejects and we fall back to empty below.
-      admin.from("action_logs").select("outcome, outcome_note, created_at").eq("user_id", user.id).gte("created_at", weekAgoIso),
+      // FIX: previously selected `outcome_note`, which the founder's SQL
+      // check (information_schema.columns) confirms does NOT exist on
+      // action_logs — only outcome/created_at/user_id came back. Selecting
+      // a nonexistent column fails the whole PostgREST query, which meant
+      // this Promise was rejecting entirely and silently zeroing out
+      // day-of-week data too, not just the override-reason feature. Fixed
+      // to select only confirmed columns; override-reason tracking is
+      // removed below until a real text field for it is confirmed to exist.
+      admin.from("action_logs").select("outcome, created_at").eq("user_id", user.id).gte("created_at", weekAgoIso),
     ]);
 
     const scorecard = scorecardResult.status === "fulfilled" ? scorecardResult.value : null;
     const scoreHistory: Array<{ date: string; score: number }> =
-      ctxScoreHistoryResult.status === "fulfilled" ? (ctxScoreHistoryResult.value.data?.score_history ?? []) : [];
+      scoreHistoryResult.status === "fulfilled"
+        ? (scoreHistoryResult.value.data ?? []).map((row: { score: number; recorded_at: string }) => ({
+            date: row.recorded_at.slice(0, 10),
+            score: row.score,
+          }))
+        : [];
     const memory = memoryResult.status === "fulfilled" ? memoryResult.value.data : null;
     const weekTasks = weekTasksResult.status === "fulfilled" ? (weekTasksResult.value.data ?? []) : [];
     const backlogTasks = backlogTasksResult.status === "fulfilled" ? (backlogTasksResult.value.data ?? []) : [];
@@ -247,13 +288,11 @@ export async function POST(request: Request) {
       confidenceByOutcome[k] = parseFloat((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1));
     }
 
-    const overrideReasons: Record<string, number> = {};
-    for (const log of actionLogs as Array<{ outcome?: string; outcome_note?: string }>) {
-      if ((log.outcome === "overridden" || log.outcome === "partial") && log.outcome_note) {
-        overrideReasons[log.outcome_note] = (overrideReasons[log.outcome_note] ?? 0) + 1;
-      }
-    }
-    const topOverrideReason = Object.entries(overrideReasons).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+    // Override-reason tracking removed — it depended on action_logs.outcome_note,
+    // confirmed NOT to exist via the founder's SQL check. No other text field
+    // was in that check, so this feature has no confirmed real data source
+    // right now. Re-add only once a real column is confirmed.
+    const topOverrideReason: string | null = null;
 
     // ── Weekly goal / ghost line (borrowed, real, project-scoped) ──────────
     const weeklyGoal = weeklyGoalRow
@@ -277,7 +316,16 @@ export async function POST(request: Request) {
     });
 
     // ── Grading (deterministic, lib/patternGrading.ts) ─────────────────────
-    const grades = computeWeeklyGrades({
+    // ── Quiet-week detection (deterministic — never let the AI decide when
+    //    data is too thin to say anything trustworthy). Threshold: fewer
+    //    than 3 tasks touched AND no milestones with real pacing data.
+    //    Below this, grading would be mostly N/A and the story would have
+    //    almost nothing real to work with — skip the AI call rather than
+    //    let it strain for a "good story" out of near-empty facts. ────────
+    const milestonesWithPacing = milestones.filter((m) => m.risk !== "unknown").length;
+    const isQuietWeek = tasksTotal < 3 && milestonesWithPacing === 0;
+
+    const grades = isQuietWeek ? [] : computeWeeklyGrades({
       tasksCompleted, tasksTotal, backlogTotal, backlogCleared, activeDaysThisWeek: activeDays,
       milestoneRisks: milestones.map((m) => m.risk), unGhostedCount: unGhosted.length,
       currentAvoidanceZoneCount: avoidanceZones.length,
@@ -286,8 +334,18 @@ export async function POST(request: Request) {
     // ── Story synthesis — every number is a hard fact the model restates,
     //    never estimates. Archetype given as read-only tone context, not a
     //    fact to restate as new. ───────────────────────────────────────────
-    let story = `${tasksCompleted} of ${tasksTotal} tasks completed this week (${completionRate}%). Momentum: ${momentumScore}/100.`;
-    if (hasAIProvider()) {
+    let story: string;
+    if (isQuietWeek) {
+      // Deterministic, honest quiet-week copy — no AI call, nothing to
+      // strain for out of near-empty facts. Acknowledges the lull without
+      // implying failure, and gives one clear next step rather than a page
+      // full of N/A grades.
+      story = tasksTotal === 0
+        ? `Quiet week — nothing logged yet. Momentum's holding at ${momentumScore}/100, so nothing's slipping, it just paused. Pick one task for tomorrow to get this moving again.`
+        : `A quieter week — ${tasksCompleted} of ${tasksTotal} task${tasksTotal === 1 ? "" : "s"} moved. Momentum's holding at ${momentumScore}/100. Pick one thing for next week and this resets.`;
+    } else {
+      story = `${tasksCompleted} of ${tasksTotal} tasks completed this week (${completionRate}%). Momentum: ${momentumScore}/100.`;
+      if (hasAIProvider()) {
       try {
         const gradeLines = grades.filter((g) => g.grade !== "N/A").map((g) => `${g.label}: ${g.grade} — ${g.basis}`).join("\n");
         const factSheet = `
@@ -314,6 +372,7 @@ Write a 2-3 sentence story-style summary of the founder's week. Brief, specific,
       } catch {
         // Fall back to the deterministic sentence above.
       }
+      }
     }
 
     // ── Persist into founder_memory.insight_history (existing append-log,
@@ -331,6 +390,7 @@ Write a 2-3 sentence story-style summary of the founder's week. Brief, specific,
     }
 
     const response: WeeklyPulseResponse = {
+      is_quiet_week: isQuietWeek,
       momentum_score: momentumScore, momentum_delta: momentumDelta, streak,
       tasks_completed: tasksCompleted, tasks_total: tasksTotal, completion_rate: completionRate,
       active_days: activeDays, un_ghosted: unGhosted, milestones, archetype,
