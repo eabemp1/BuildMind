@@ -78,6 +78,7 @@ type ActionData = {
   reflexion?: ReflexionMeta;
   // log_row_id from recordActionShown — closes the learning loop via reflexion-outcome
   log_row_id?: string;
+  difficulty?: "light" | "focused" | "deep"; // From app/api/ai/today-action's response
 };
 
 type CachedTodayAction = {
@@ -2546,6 +2547,17 @@ function TodayContent() {
               </span>
             )}
             <span style={{ fontSize: 11, color: "var(--bm-text3)", display: "flex", alignItems: "center", gap: 4, marginLeft: "auto" }}>
+              {actionData.difficulty && (
+                <span style={{
+                  fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 999,
+                  textTransform: "capitalize",
+                  color: actionData.difficulty === "deep" ? "var(--bm-red)" : actionData.difficulty === "light" ? "var(--bm-green)" : "var(--bm-text3)",
+                  background: actionData.difficulty === "deep" ? "rgba(224,85,85,0.12)" : actionData.difficulty === "light" ? "rgba(74,184,176,0.12)" : "var(--bm-bg3)",
+                  border: `1px solid ${actionData.difficulty === "deep" ? "rgba(224,85,85,0.3)" : actionData.difficulty === "light" ? "rgba(74,184,176,0.3)" : "var(--bm-border)"}`,
+                }}>
+                  {actionData.difficulty}
+                </span>
+              )}
               <Clock size={11} /> {actionData.time}
             </span>
           </div>
@@ -2985,4 +2997,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-}
+  }
