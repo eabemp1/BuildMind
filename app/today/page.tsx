@@ -43,18 +43,6 @@ type ReflexionMeta = {
   lastReflectionUsed: boolean;
 };
 
-// ── BuildMind Initial Analysis (shown on first task load) ────────────────────
-type InitialAnalysis = {
-  transition_state: string;
-  key_risks: [string, string, string];
-  immediate_priorities: [string, string, string];
-  health_score: number;
-  founder_pattern: string;
-  operating_mode: string;
-  generated_at: string;
-  stage: string;
-};
-
 // ── Milestone Break interstitial (fires after milestone/stage change) ────────
 type MilestoneBreakResult = {
   // NOTE: "stalling" is not yet emitted by app/api/ai/milestone-break/route.ts
@@ -412,7 +400,6 @@ function TodayContent() {
   const [displayName, setDisplayName] = useState<string | null>(null);
   const [accountAgeDays, setAccountAgeDays] = useState(0);
   const [accountCreatedAt, setAccountCreatedAt] = useState<string | null>(null);
-  const [isFirstRun, setIsFirstRun] = useState(false);
 
   // AI-personalised action state
   const [aiAction, setAiAction] = useState<ActionData | null>(null);
@@ -423,10 +410,6 @@ function TodayContent() {
   const [forceActionRefresh, setForceActionRefresh] = useState(0);
   // Progressive streaming label — shows which agent is currently running
   const [streamLabel, setStreamLabel] = useState<string | null>(null);
-
-  // Initial Analysis — BuildMind first-impression card
-  const [initialAnalysis, setInitialAnalysis] = useState<InitialAnalysis | null>(null);
-  const [initialAnalysisDismissed, setInitialAnalysisDismissed] = useState(false);
 
   // Milestone Break interstitial — fires after milestone/stage change
   const [milestoneBreak, setMilestoneBreak] = useState<MilestoneBreakResult | null>(null);
@@ -617,32 +600,6 @@ function TodayContent() {
     } catch {}
   }, []);
 
-  useEffect(() => {
-    if (!userId || !project?.id) return;
-    const seenKey = `bm_has_seen_today_${userId}`;
-    const firstSeenKey = `bm_today_first_seen_at_${userId}`;
-    const seen = storage.get(seenKey);
-    if (seen) {
-      setInitialAnalysisDismissed(true);
-      setIsFirstRun(false);
-      return;
-    }
-
-    const firstSeenAt = parseInt(storage.get(firstSeenKey) ?? "0", 10);
-    if (firstSeenAt > 0 && Date.now() - firstSeenAt >= 24 * 60 * 60 * 1000) {
-      storage.set(seenKey, "1");
-      setInitialAnalysisDismissed(true);
-      setIsFirstRun(false);
-      return;
-    }
-
-    if (!firstSeenAt) storage.set(firstSeenKey, String(Date.now()));
-
-    const hasPriorCheckin = done || streak > 0 || Boolean(storage.get(`bm_checkin_done_date_${userId}`) || storage.get("bm_checkin_done_date"));
-    setIsFirstRun(!hasPriorCheckin);
-    setInitialAnalysisDismissed(false);
-  }, [done, project?.id, streak, userId]);
-
   // Fetch personalised action from AI once we have project data
   useEffect(() => {
     const abortController = new AbortController();
@@ -812,28 +769,6 @@ function TodayContent() {
     }
 
     setActionLoading(true);
-
-    // ── Fetch Initial Analysis in parallel with today's action ──────────────
-    // Shows the "BuildMind Initial Analysis" card on first task load
-    const analysisKey = `bm_initial_analysis_${projectId}`;
-    const cachedAnalysis = storage.getJSON<InitialAnalysis | null>(analysisKey, null);
-    if (cachedAnalysis && cachedAnalysis.stage === currentStage) {
-      setInitialAnalysis(cachedAnalysis);
-    } else {
-      fetch("/api/ai/initial-analysis", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId }),
-      })
-        .then(r => r.ok ? r.json() : null)
-        .then((d: { ok?: boolean; data?: InitialAnalysis } | null) => {
-          if (d?.ok && d.data) {
-            setInitialAnalysis(d.data);
-            storage.setJSON(analysisKey, d.data);
-          }
-        })
-        .catch(() => {});
-    }
 
     const pendingMilestones = project.pendingMilestones ?? [];
     const pendingTasks = project.pendingTasks ?? [];
@@ -1306,22 +1241,12 @@ function TodayContent() {
             }).catch(() => {});
 
           // ── Update ghost goal progress ──────────────────────────────────────
-          // FIX: this call previously sent only project_id + current_score.
-          // Since the PATCH handler falls back to the existing tasks_done
-          // when it's not provided, every completion updated the score but
-          // never incremented the task count — the confirmed cause of
-          // "Ghost Goals didn't increment" when a task was completed today.
-          // Only increment on an actual completion, matching how
-          // selectedOutcome is already mapped to a completion signal
-          // elsewhere in this function (partial counts as a strength
-          // signal, but shouldn't inflate the raw completed-task count).
           fetch("/api/weekly-goal", {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               project_id:    project.id,
               current_score: newComputedScore,
-              increment_tasks_done: selectedOutcome === "completed",
             }),
           }).catch(() => {});
         } catch {}
@@ -1587,7 +1512,6 @@ function TodayContent() {
     ? buildYesterdayCausalLine(yesterdayReflection)
     : null;
   const isDayOneColdStart = accountAgeDays <= 1 && streak === 0 && !done;
-  const shouldShowInitialAnalysis = Boolean(isFirstRun && initialAnalysis && !initialAnalysisDismissed);
   const weekOneStageKey = (project?.startup_stage ?? "Idea").toLowerCase();
   const weekOneMilestones = WEEK_ONE_MILESTONES[weekOneStageKey] ?? WEEK_ONE_MILESTONES.idea;
   const weekOneTarget = weekOneMilestones[weekOneMilestones.length - 1]?.milestone ?? WEEK_ONE_MILESTONES.idea[2].milestone;
@@ -1865,102 +1789,6 @@ function TodayContent() {
         )}
       </AnimatePresence>
 
-      {shouldShowInitialAnalysis && initialAnalysis && (
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4 }}
-          style={{
-            background: "var(--bm-accent-dim)",
-            border: "1px solid var(--bm-accent-bd)",
-            borderRadius: 14,
-            padding: isMobile ? "18px" : "22px 24px",
-            marginBottom: 16,
-            fontFamily: "'DM Mono', monospace",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 18 }}>
-            <div style={{ fontSize: 10, color: "var(--bm-accent)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>
-              ⚡ BuildMind Initial Analysis
-            </div>
-            <div style={{ fontSize: 10, color: "var(--bm-text3)", textAlign: "right" }}>
-              {project?.name ?? productName ?? "Your startup"}
-            </div>
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "140px 1fr", gap: isMobile ? 10 : 16, alignItems: "center", marginBottom: 18 }}>
-            <div style={{ fontSize: 11, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Health score</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ flex: 1, height: 9, borderRadius: 99, background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", overflow: "hidden" }}>
-                <div style={{ width: `${Math.max(0, Math.min(100, initialAnalysis.health_score))}%`, height: "100%", background: "var(--bm-accent)" }} />
-              </div>
-              <span style={{ fontSize: 12, color: "var(--bm-text)", fontWeight: 700, minWidth: 48, textAlign: "right" }}>
-                {initialAnalysis.health_score}/100
-              </span>
-            </div>
-          </div>
-
-          <div style={{ marginBottom: 18 }}>
-            <div style={{ fontSize: 11, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 7 }}>
-              Your founder pattern
-            </div>
-            <p style={{ fontSize: isMobile ? 13 : 14, color: "var(--bm-text)", lineHeight: 1.65, margin: 0 }}>
-              "{sanitizeOutput(initialAnalysis.founder_pattern)}"
-            </p>
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16, marginBottom: 18 }}>
-            <div>
-              <div style={{ fontSize: 11, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
-                Top 3 risks right now
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {initialAnalysis.key_risks.map((risk, index) => (
-                  <div key={risk} style={{ display: "flex", gap: 8, color: "var(--bm-text2)", fontSize: 12, lineHeight: 1.55 }}>
-                    <span style={{ color: "var(--bm-accent)", flexShrink: 0 }}>{index + 1}</span>
-                    <span>{sanitizeOutput(risk)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div>
-              <div style={{ fontSize: 11, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
-                Where to focus first
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {initialAnalysis.immediate_priorities.map((priority) => (
-                  <div key={priority} style={{ display: "flex", gap: 8, color: "var(--bm-text2)", fontSize: 12, lineHeight: 1.55 }}>
-                    <span style={{ color: "var(--bm-accent)", flexShrink: 0 }}>→</span>
-                    <span>{sanitizeOutput(priority)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <button
-            onClick={() => {
-              setInitialAnalysisDismissed(true);
-              if (userId) storage.set(`bm_has_seen_today_${userId}`, "1");
-            }}
-            style={{
-              width: "100%",
-              padding: "12px 14px",
-              borderRadius: 10,
-              border: "1px solid var(--bm-accent-bd)",
-              background: "var(--bm-accent)",
-              color: "var(--bm-bg)",
-              fontSize: 13,
-              fontWeight: 700,
-              cursor: "pointer",
-              fontFamily: "inherit",
-            }}
-          >
-            Got it - show me today's action →
-          </button>
-        </motion.div>
-      )}
-
       {/* ── Context drawer (collapsed by default) — everything below wraps here ── */}
       {isContextOpen && (<>
 
@@ -2000,88 +1828,6 @@ function TodayContent() {
                 </p>
               </div>
             </div>
-          </div>
-        </motion.div>
-      )}
-
-      {/* ══ BUILDMIND INITIAL ANALYSIS CARD ══════════════════════════════════════
-          Shows perceived intelligence on first task load — creates emotional connection
-          and trust before the founder even reads their task.
-      ═══════════════════════════════════════════════════════════════════════════ */}
-      {initialAnalysis && !initialAnalysisDismissed && !shouldShowInitialAnalysis && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.04, duration: 0.35 }}
-          style={{
-            background: "var(--bm-bg2)",
-            border: "1px solid var(--bm-border2)",
-            borderRadius: 14,
-            padding: isMobile ? "18px" : "20px 22px",
-            marginBottom: 16,
-            position: "relative",
-          }}
-        >
-          {/* Dismiss */}
-          <button
-            onClick={() => setInitialAnalysisDismissed(true)}
-            style={{ position: "absolute", top: 12, right: 14, background: "none", border: "none", color: "var(--bm-text4)", cursor: "pointer", padding: 4, fontSize: 16, lineHeight: 1 }}
-            aria-label="Dismiss"
-          >×</button>
-
-          {/* Header */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
-            <div style={{ width: 24, height: 24, borderRadius: 6, background: "var(--bm-accent)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <Zap size={13} color="#fff" />
-            </div>
-            <div>
-              <p style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-accent)", textTransform: "uppercase", letterSpacing: "0.08em", margin: 0 }}>BuildMind Initial Analysis</p>
-              <p style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text)", margin: 0, lineHeight: 1.3 }}>
-                {initialAnalysis.transition_state.charAt(0).toUpperCase() + initialAnalysis.transition_state.slice(1)}
-              </p>
-            </div>
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 14, marginBottom: 14 }}>
-            {/* Key Risks */}
-            <div>
-              <p style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 8px" }}>Key Risks</p>
-              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                {initialAnalysis.key_risks.map((risk, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 7 }}>
-                    <div style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--bm-amber)", flexShrink: 0, marginTop: 5 }} />
-                    <p style={{ fontSize: 12, color: "var(--bm-text2)", margin: 0, lineHeight: 1.5 }}>{sanitizeOutput(risk)}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Immediate Priorities */}
-            <div>
-              <p style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 8px" }}>Immediate Priorities</p>
-              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                {initialAnalysis.immediate_priorities.map((p, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 7 }}>
-                    <div style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--bm-accent)", flexShrink: 0, marginTop: 5 }} />
-                    <p style={{ fontSize: 12, color: "var(--bm-text2)", margin: 0, lineHeight: 1.5 }}>{sanitizeOutput(p)}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Bottom stats row */}
-          <div style={{ display: "flex", gap: 0, borderRadius: 10, border: "1px solid var(--bm-border)", overflow: "hidden" }}>
-            {[
-              { label: "Startup Health", value: `${initialAnalysis.health_score}/100` },
-              { label: "Founder Pattern", value: initialAnalysis.founder_pattern },
-              { label: "Suggested Mode", value: initialAnalysis.operating_mode },
-            ].map((stat, i, arr) => (
-              <div key={stat.label} style={{ flex: 1, padding: "10px 12px", borderRight: i < arr.length - 1 ? "1px solid var(--bm-border)" : "none" }}>
-                <p style={{ fontSize: 9, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 3px" }}>{stat.label}</p>
-                <p style={{ fontSize: 11, fontWeight: 600, color: "var(--bm-text)", margin: 0, lineHeight: 1.3 }}>{sanitizeOutput(stat.value)}</p>
-              </div>
-            ))}
           </div>
         </motion.div>
       )}
@@ -3007,4 +2753,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-}
+  }
