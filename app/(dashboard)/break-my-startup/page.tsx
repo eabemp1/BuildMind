@@ -533,7 +533,14 @@ export default function BreakMyStartupPage() {
                     onChange={(e) => {
                       setSelectedProjectId(e.target.value);
                       if (e.target.value) setActiveProjectId(e.target.value);
-                      if (!e.target.value) setCustomIdea("");
+                      // FIX: this used to also call setCustomIdea("") whenever
+                      // the dropdown was set back to "— Use custom idea
+                      // instead —", unconditionally wiping whatever the
+                      // founder had typed in the textarea below — the exact
+                      // reason "custom idea" looked broken: switching the
+                      // dropdown at all could erase your own text before you
+                      // ever hit submit. Never force-clear text the founder
+                      // typed themselves.
                     }}
                     className="w-full h-10 rounded-lg pl-3 pr-8 text-sm outline-none appearance-none cursor-pointer"
                     style={{
@@ -1028,4 +1035,4 @@ export default function BreakMyStartupPage() {
       </AnimatePresence>
     </div>
   );
-}
+  }
