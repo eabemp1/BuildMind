@@ -164,6 +164,10 @@ const DESTINATIONS: Record<string, { icon: string; label: string; url?: string }
   prototype:  [{ icon: "🚀", label: "Product Hunt", url: "https://www.producthunt.com" }, { icon: "𝕏", label: "Twitter / X", url: "https://twitter.com/intent/tweet" }, { icon: "🧵", label: "Indie Hackers", url: "https://www.indiehackers.com" }, { icon: "🎥", label: "Loom → share" }],
   mvp:        [{ icon: "🚀", label: "Product Hunt", url: "https://www.producthunt.com" }, { icon: "𝕏", label: "Twitter / X", url: "https://twitter.com/intent/tweet" }, { icon: "🧵", label: "Indie Hackers", url: "https://www.indiehackers.com" }, { icon: "💬", label: "WhatsApp" }],
   launch:     [{ icon: "🚀", label: "Product Hunt", url: "https://www.producthunt.com/posts/new" }, { icon: "𝕏", label: "Twitter / X", url: "https://twitter.com/intent/tweet" }, { icon: "🧵", label: "Indie Hackers", url: "https://www.indiehackers.com/post" }, { icon: "📰", label: "Hacker News", url: "https://news.ycombinator.com/submit" }],
+  // FIX: no "growth" key existed here, so DESTINATIONS[aiAction?.destKey ?? stageKey] ?? DESTINATIONS.idea
+  // silently fell back to idea-stage sharing channels (Reddit r/startups, "text 3 people")
+  // for a founder who is already past launch and working on retention.
+  growth:     [{ icon: "📞", label: "Call directly" }, { icon: "📧", label: "Email personally" }, { icon: "💼", label: "LinkedIn" }, { icon: "𝕏", label: "Twitter DM" }],
   revenue:    [{ icon: "📞", label: "Call directly" }, { icon: "📧", label: "Email personally" }, { icon: "💼", label: "LinkedIn" }, { icon: "𝕏", label: "Twitter DM" }],
 };
 
@@ -173,6 +177,12 @@ const STATIC_ACTIONS: Record<string, { action: string; message: string; why: str
   prototype:  { action: "Record a 3-minute Loom walkthrough and send it to 5 people today.", message: "Hey — I've built a rough prototype for [problem]. Would you watch a 3-minute demo and tell me what confuses you most? Brutal honesty only.", why: "Dropbox got 75K signups from a demo video before writing any backend code. Ship something real.", time: "Under 2 hours", destKey: "prototype" },
   mvp:        { action: "Send your working link to one warm contact before end of day.", message: "Hey — I've been building [product] to solve [problem]. It's rough but working. Would you try it for 10 minutes and tell me what breaks?", why: "The version they see today teaches you more than 3 more days of polishing. Ship it.", time: "30 minutes", destKey: "mvp" },
   launch:     { action: "Post on Product Hunt this week — imperfect listing beats no listing.", message: "We just launched [product] on Product Hunt — it [solves problem] for [target users]. Would love your support and brutal feedback: [link]", why: "You don't need to be ready. You need to be visible.", time: "3 hours to prepare", destKey: "launch" },
+  // FIX: no "growth" key existed here, so buildContextualStaticAction()'s
+  // STATIC_ACTIONS[stageKey] ?? STATIC_ACTIONS.idea silently fell back to
+  // "Talk to 5 people who have this problem before writing any code" for a
+  // founder already past launch — the AI-unavailable fallback path was
+  // telling a Growth-stage founder to re-do Idea-stage validation.
+  growth:     { action: "Call one churned user today — not to win them back, to understand why they left.", message: "Hey [name] — I noticed you stopped using [product]. No sales pitch. I just want to understand what didn't work so I can fix it. 10 minutes?", why: "Retention beats acquisition. Every churn conversation tells you more than another week of dashboards.", time: "1 hour", destKey: "growth" },
   revenue:    { action: "Call one churned user today — not to win them back, to understand why they left.", message: "Hey [name] — I noticed you stopped using [product]. No sales pitch. I just want to understand what didn't work so I can fix it. 10 minutes?", why: "Churn analysis conversations are the highest-leverage activity at revenue stage.", time: "1 hour", destKey: "revenue" },
 };
 
@@ -1312,11 +1322,21 @@ function TodayContent() {
       // or any other page. incrementDailyStreak() is idempotent for the same day.
       const newStreak = serverStreak ?? incrementDailyStreak();
       setStreak(newStreak);
-      fetch("/api/founder-context/streak", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ streak: newStreak, lastCheckinDate: localDayKey() }),
-      }).catch(() => {});
+      // FIX: when task-complete above already succeeded, serverStreak is the
+      // authoritative value the server just computed and returned — POSTing
+      // it right back to /streak was a redundant round-trip (harmless, since
+      // that route re-derives from its own atomic function and is idempotent
+      // per day, but still a wasted request on every single check-in). Only
+      // hit /streak when task-complete didn't give us a server value, i.e.
+      // the fallback path where incrementDailyStreak() computed a local-only
+      // number the server has never seen and needs to learn about.
+      if (serverStreak == null) {
+        fetch("/api/founder-context/streak", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ streak: newStreak, lastCheckinDate: localDayKey() }),
+        }).catch(() => {});
+      }
 
       // Notify other open tabs so they show the done state immediately
       const todayBroadcast = localDayKey();
