@@ -182,6 +182,12 @@ export default function InsightsPage() {
   const [error,   setError]   = useState<string | null>(null);
   const [aiInsights,  setAiInsights]  = useState<AiInsightItem[]>([]);
   const [aiLoading,   setAiLoading]   = useState(false);
+  // ISSUE-5 FIX: previously any failure in the /api/ai/insights stream
+  // (auth hiccup, provider error, network drop) was swallowed silently —
+  // aiInsights just stayed empty and the whole "AI pattern analysis"
+  // section never rendered, with no indication anything went wrong. This
+  // tracks that failure so we can show a visible retry state instead.
+  const [aiError,     setAiError]     = useState<string | null>(null);
   const activeProjectId = useActiveProjectId();
 
   const load = useCallback(async () => {
@@ -331,6 +337,7 @@ export default function InsightsPage() {
 
       if (hasEnoughData) {
         setAiLoading(true);
+        setAiError(null);
         const collected: AiInsightItem[] = [];
         fetch("/api/ai/insights", {
           method: "POST",
@@ -348,10 +355,22 @@ export default function InsightsPage() {
           }),
         })
           .then(async (res) => {
-            if (!res.ok || !res.body) { setAiLoading(false); return; }
+            if (!res.ok || !res.body) {
+              setAiError("Couldn't load your pattern analysis.");
+              setAiLoading(false);
+              return;
+            }
             const reader  = res.body.getReader();
             const decoder = new TextDecoder();
             let buffer = "";
+            // ISSUE-5 FIX: this used to only look at `data: ` lines and
+            // ignore the preceding `event: ` line entirely, so an
+            // `event: error` block was silently dropped (its payload has
+            // no .text/.type, so the old `if (payload?.text && payload?.type)`
+            // check just skipped it) — the page ended up with zero insights
+            // and zero explanation. Now we track the event name per block
+            // and surface error events explicitly.
+            let currentEvent = "message";
             while (true) {
               const { done, value } = await reader.read();
               if (done) break;
@@ -359,20 +378,36 @@ export default function InsightsPage() {
               const lines = buffer.split("\n");
               buffer = lines.pop() ?? "";
               for (const line of lines) {
+                if (line.startsWith("event: ")) {
+                  currentEvent = line.slice(7).trim();
+                  continue;
+                }
                 if (line.startsWith("data: ")) {
                   try {
                     const payload = JSON.parse(line.slice(6));
-                    if (payload?.text && payload?.type) {
+                    if (currentEvent === "error") {
+                      setAiError("Couldn't generate pattern analysis — try refreshing.");
+                    } else if (payload?.text && payload?.type) {
                       collected.push(payload as AiInsightItem);
                       setAiInsights([...collected]);
                     }
                   } catch {}
                 }
+                if (line.trim() === "") currentEvent = "message";
               }
+            }
+            // If the stream closed without ever producing an insight or an
+            // explicit error event, that's still a failure state from the
+            // founder's perspective — don't let the section just vanish.
+            if (collected.length === 0) {
+              setAiError((prev) => prev ?? "No pattern analysis came back — try refreshing.");
             }
             setAiLoading(false);
           })
-          .catch(() => setAiLoading(false));
+          .catch(() => {
+            setAiError("Couldn't reach the analysis service — try refreshing.");
+            setAiLoading(false);
+          });
       }
     } catch (e) {
       setError(String(e));
@@ -640,7 +675,7 @@ export default function InsightsPage() {
           )}
 
           {/* ── AI pattern analysis ──────────────────────────────────────── */}
-          {(aiLoading || aiInsights.length > 0) && (
+          {(aiLoading || aiInsights.length > 0 || aiError) && (
             <Section label="AI pattern analysis" accent="var(--bm-accent)">
               {aiLoading && aiInsights.length === 0 && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -691,6 +726,26 @@ export default function InsightsPage() {
                 ))}
               </div>
 
+              {aiError && aiInsights.length === 0 && !aiLoading && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <p style={{ fontSize: 13, color: "var(--bm-text3)", margin: 0, lineHeight: 1.6 }}>
+                    {aiError}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => { setAiError(null); load(); }}
+                    style={{
+                      alignSelf: "flex-start",
+                      fontSize: 12, fontWeight: 600, color: "var(--bm-accent)",
+                      background: "transparent", border: "1px solid var(--bm-border)",
+                      borderRadius: 7, padding: "6px 12px", cursor: "pointer",
+                    }}
+                  >
+                    Try again
+                  </button>
+                </div>
+              )}
+
               {aiLoading && aiInsights.length > 0 && (
                 <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 10 }}>
                   <span style={{
@@ -724,4 +779,4 @@ export default function InsightsPage() {
       )}
     </div>
   );
-                      }
+  }
