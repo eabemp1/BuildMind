@@ -1,3 +1,4 @@
+
 "use client";
 
 /**
@@ -17,7 +18,7 @@
  * for actual execution, on the same grid.
  */
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { motion } from "framer-motion";
 import { Sparkles, Target, Flame, TrendingUp, TrendingDown, Ghost, Share2, Check, Download } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -152,6 +153,23 @@ export function WeeklyPulseCard() {
       if (navigator.share) await navigator.share({ text });
       else { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000); }
     } catch { /* user cancelled share sheet */ }
+  }, [data]);
+
+  // X/Twitter intent link — carries over the retired /weekly-share page's
+  // tweet format, now built from the same corrected, single-source data
+  // This Week already renders (no separate fetch, no separate streak
+  // fallback chain to drift from the rest of the app).
+  const tweetIntentUrl = useMemo(() => {
+    if (!data) return null;
+    const bestMilestone = data.milestones[0];
+    const text =
+      `This week building with @buildmind_os\n\n` +
+      `✓ ${data.tasks_completed}/${data.tasks_total} tasks done\n` +
+      `🔥 ${data.streak}d streak\n` +
+      `📈 Momentum: ${data.momentum_score}/100\n` +
+      (bestMilestone ? `🎯 ${bestMilestone.title}: ${bestMilestone.reason}\n\n` : "\n") +
+      `Track my build → buildmind.live\n#BuildInPublic #Startups`;
+    return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
   }, [data]);
 
   if (loading) {
@@ -327,6 +345,37 @@ export function WeeklyPulseCard() {
           Download image
         </a>
       </div>
+
+      {/* Carried over from the retired /weekly-share page — same tweet
+          format, now built from correct, single-source data. */}
+      {tweetIntentUrl && (
+        <a
+          href={tweetIntentUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "10px 16px",
+            borderRadius: "var(--r-md, 10px)", border: "1px solid var(--bm-border)", background: "transparent",
+            color: "var(--bm-text2)", fontFamily: "'Inter', sans-serif", fontSize: 12.5, fontWeight: 600,
+            cursor: "pointer", textDecoration: "none",
+          }}
+        >
+          𝕏 Share on X — #BuildInPublic
+        </a>
+      )}
+
+      {/* Reports stays a separate surface for the exportable/historical
+          view (4-week heatmap, CSV/PDF/PNG) — linked here, not merged in,
+          so This Week stays a few-seconds read. */}
+      <a
+        href="/reports"
+        style={{
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 16px",
+          color: "var(--bm-text3)", fontFamily: "'Inter', sans-serif", fontSize: 12, textDecoration: "none",
+        }}
+      >
+        View full report &amp; export →
+      </a>
     </motion.div>
   );
-}
+  }
