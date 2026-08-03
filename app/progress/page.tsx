@@ -165,7 +165,7 @@ export default function ProgressPage() {
       </div>
 
       {/* Tab content */}
-      <div style={{ width: "100%", padding: "0 16px 24px" }}>
+      <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 16px 24px" }}>
         <AnimatePresence mode="wait">
           <motion.div
             key={activeTab}
