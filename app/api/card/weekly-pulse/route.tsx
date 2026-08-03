@@ -30,6 +30,7 @@
 import { ImageResponse } from "next/og";
 import { createClient } from "@/lib/supabase/server";
 import { getWeeklyPulseData, type SparklinePoint } from "@/lib/weeklyPulseData";
+import { getLogoDataUri } from "@/lib/cardLogo";
 
 export const runtime = "nodejs";
 
@@ -88,7 +89,10 @@ export async function GET(request: Request) {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  const data = await getWeeklyPulseData(user.id, projectId);
+  const [data, logoDataUri] = await Promise.all([
+    getWeeklyPulseData(user.id, projectId),
+    getLogoDataUri(),
+  ]);
   const chart = buildSparklineChart(data.sparkline, Boolean(data.weekly_goal));
   const topGrades = data.grades.filter((g) => g.grade !== "N/A").slice(0, 3);
 
@@ -107,9 +111,13 @@ export async function GET(request: Request) {
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", zIndex: 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-            <div style={{ width: 52, height: 52, borderRadius: 14, background: COLORS.accent, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <span style={{ color: "white", fontSize: 26, fontWeight: 700 }}>B</span>
-            </div>
+            {logoDataUri ? (
+              <img src={logoDataUri} width={52} height={52} style={{ borderRadius: 14 }} />
+            ) : (
+              <div style={{ width: 52, height: 52, borderRadius: 14, background: COLORS.accent, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <span style={{ color: "white", fontSize: 26, fontWeight: 700 }}>B</span>
+              </div>
+            )}
             <span style={{ color: COLORS.text, fontSize: 30, fontWeight: 700, letterSpacing: -0.5 }}>BuildMind</span>
           </div>
           <span style={{ color: COLORS.text3, fontSize: 20, letterSpacing: 2, textTransform: "uppercase" }}>
