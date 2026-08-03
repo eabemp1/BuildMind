@@ -30,6 +30,7 @@ import { broadcastTabEvent, useTabSync } from "@/lib/tabSync";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
 import { linkifyChannels } from "@/lib/linkifyChannels";
 import { recordOverride } from "@/lib/founderContext";
+import { truncateChars } from "@/lib/textTruncate";
 import type { MorningBriefing } from "@/lib/founderContext";
 import GhostGoalBanner from "@/components/GhostGoalBanner";
 
@@ -201,7 +202,7 @@ function inferProjectProblem(problem: string, productName: string, description =
   if (problem.trim()) return problem.trim();
   const haystack = `${productName} ${description}`.toLowerCase();
   if (/(consent|privacy|gdpr|compliance|audit)/.test(haystack)) return "verifiable consent tracking and audit logging";
-  if (description.trim()) return description.trim().slice(0, 120);
+  if (description.trim()) return truncateChars(description, 120);
   return productName.trim() ? `${productName.trim()} and the workflow it improves` : "their current workflow";
 }
 
@@ -1512,7 +1513,7 @@ function TodayContent() {
             <button onClick={() => router.push("/invite")} style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid var(--bm-accent-bd)", background: "var(--bm-accent-dim)", color: "var(--bm-accent)", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
               Invite a founder →
             </button>
-            <button onClick={() => router.push("/weekly-share")} style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+            <button onClick={() => router.push("/progress")} style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
               Share this week's progress
             </button>
           </div>
@@ -2773,4 +2774,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-  }
+}
