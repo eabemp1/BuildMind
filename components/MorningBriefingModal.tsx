@@ -22,6 +22,7 @@
 import { useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
+import { truncateChars } from "@/lib/textTruncate";
 import type { MorningBriefing } from "@/lib/founderContext";
 
 interface Props {
@@ -181,7 +182,7 @@ function PaywalledContent({ win }: { win?: string }) {
           }}
         >
           <span style={{ color: "var(--bm-green)", fontWeight: 700 }}>Win: </span>
-          {sanitizeOutput(win).slice(0, 60)}…
+          {truncateChars(sanitizeOutput(win), 60)}
         </div>
       )}
       <div
@@ -285,4 +286,4 @@ function Row({
       </span>
     </div>
   );
-  }
+                }
