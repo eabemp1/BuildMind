@@ -8,6 +8,7 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
+import { getArchetypeDisplay } from "@/lib/founderArchetypeDisplay";
 
 interface FounderMemory {
   avoidance_zones: string[];
@@ -15,6 +16,7 @@ interface FounderMemory {
   personality_tags: string[];
   last_insight: string | null;
   archetype_classified_at: string | null;
+  archetype_confidence: number | null;
 }
 
 interface FounderCtx {
@@ -110,7 +112,7 @@ export default function MemoryPage() {
 
         const [memRes, ctxRes] = await Promise.all([
           supabase.from("founder_memory")
-            .select("avoidance_zones, strengths, personality_tags, last_insight, archetype_classified_at")
+            .select("avoidance_zones, strengths, personality_tags, last_insight, archetype_classified_at, archetype_confidence")
             .eq("user_id", user.id)
             .maybeSingle(),
           supabase.from("founder_context")
@@ -135,6 +137,11 @@ export default function MemoryPage() {
     (memory.personality_tags?.length ?? 0) > 0 ||
     memory.last_insight
   );
+
+  const archetypeDisplay = getArchetypeDisplay(memory?.personality_tags ?? []);
+  // Everything except the raw "archetype:*" tag — that one now gets its own
+  // dedicated card above instead of sitting unexplained in this generic list.
+  const nonArchetypeTags = (memory?.personality_tags ?? []).filter((t) => !t.startsWith("archetype:"));
 
   return (
     <div style={{ maxWidth: 600, margin: "0 auto", padding: "32px 16px 80px" }}>
@@ -180,6 +187,60 @@ export default function MemoryPage() {
               </motion.div>
             )}
 
+            {/* Founder archetype — the primary "who you are as a builder" read.
+                Given its own prominent card (rather than being one raw tag
+                among the generic personality chips below) because this is
+                one of the system's core signals: it directly shapes the
+                tone and framing of every daily task via
+                buildArchetypeSystemContext(). If it isn't visible here, it
+                isn't doing its job. */}
+            {archetypeDisplay && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                style={{
+                  borderRadius: 14,
+                  border: "1px solid var(--bm-accent-bd)",
+                  background: "var(--bm-accent-dim)",
+                  padding: "22px 24px",
+                  marginBottom: 14,
+                }}
+              >
+                <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-accent)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 14 }}>
+                  Your founder archetype
+                </div>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 14 }}>
+                  <div style={{ fontSize: 30, lineHeight: 1 }}>{archetypeDisplay.icon}</div>
+                  <div>
+                    <div style={{ fontSize: 19, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.02em", marginBottom: 3 }}>
+                      {archetypeDisplay.name}
+                    </div>
+                    <p style={{ fontSize: 13, color: "var(--bm-text2)", fontStyle: "italic", margin: 0, lineHeight: 1.5 }}>
+                      &ldquo;{archetypeDisplay.tagline}&rdquo;
+                    </p>
+                  </div>
+                </div>
+                <p style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.65, margin: "0 0 14px" }}>
+                  {archetypeDisplay.description}
+                </p>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 14px", borderRadius: 10, background: "var(--bm-bg2)", border: "1px solid var(--bm-border)" }}>
+                  <span style={{ fontSize: 14, flexShrink: 0 }}>👀</span>
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>What to watch for</div>
+                    <p style={{ fontSize: 12, color: "var(--bm-text2)", margin: 0, lineHeight: 1.5 }}>{archetypeDisplay.watchFor}</p>
+                  </div>
+                </div>
+                {memory?.archetype_classified_at && (
+                  <p style={{ fontSize: 11, color: "var(--bm-text4)", margin: "12px 0 0" }}>
+                    {memory.archetype_confidence != null && (
+                      <>{Math.round(memory.archetype_confidence * 100)}% confidence · </>
+                    )}
+                    Last updated {new Date(memory.archetype_classified_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })} · re-evaluated weekly as you check in
+                  </p>
+                )}
+              </motion.div>
+            )}
+
             {/* Execution stats */}
             {ctx && (
               <Section title="Execution stats" icon="📊">
@@ -198,19 +259,14 @@ export default function MemoryPage() {
               </Section>
             )}
 
-            {/* Personality tags */}
-            {memory && (memory.personality_tags?.length ?? 0) > 0 && (
+            {/* Other personality tags — archetype has its own card above */}
+            {nonArchetypeTags.length > 0 && (
               <Section title="Founder profile" icon="🧠">
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                  {(memory.personality_tags ?? []).map((tag, i) => (
+                  {nonArchetypeTags.map((tag, i) => (
                     <Tag key={tag} label={tag} index={i} />
                   ))}
                 </div>
-                {memory.archetype_classified_at && (
-                  <p style={{ fontSize: 11, color: "var(--bm-text4)", margin: "12px 0 0" }}>
-                    Profile last updated {new Date(memory.archetype_classified_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
-                  </p>
-                )}
               </Section>
             )}
 
