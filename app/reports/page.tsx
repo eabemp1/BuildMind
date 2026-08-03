@@ -325,17 +325,32 @@ export default function ReportsPage() {
     setExporting(fmt);
     try {
       if (fmt === "png") {
-        const html2canvas = (await import("html2canvas")).default;
-        const el = reportCardRef.current;
-        if (!el) return;
-        const canvas = await html2canvas(el, {
-          backgroundColor: getComputedStyle(document.documentElement).getPropertyValue("--bm-bg").trim() || "#0a0a0a",
-          scale: 2, useCORS: true, logging: false,
+        // FIX: replaced html2canvas (DOM screenshot of the whole scrolling
+        // dashboard — heatmap included — which produces an awkwardly tall,
+        // browser-rendering-dependent image) with a real server-rendered
+        // PNG via app/api/card/weekly-report/route.tsx. Sends the exact
+        // metrics this page already computed — no re-derivation, no risk
+        // of drifting from what's on screen.
+        const res = await fetch("/api/card/weekly-report", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            score, scoreDelta, streak, tasksThisWeek, taskDelta,
+            intentionRate, prevIntentionRate,
+            totalXP: metrics?.totalXP ?? 0,
+            momentumScore: metrics?.momentumScore ?? null,
+            weekOverWeekSentence,
+            taskData,
+          }),
         });
+        if (!res.ok) { setExporting(null); return; }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.download = `buildmind-report-${new Date().toISOString().slice(0, 10)}.png`;
-        link.href = canvas.toDataURL("image/png");
+        link.href = url;
         link.click();
+        URL.revokeObjectURL(url);
         setExported("Report downloaded ✓");
       } else if (fmt === "pdf") {
         window.print();
@@ -799,4 +814,4 @@ export default function ReportsPage() {
       </div>
     </PaywallGate>
   );
-  }
+          }
