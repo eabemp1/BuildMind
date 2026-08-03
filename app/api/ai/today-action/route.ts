@@ -24,6 +24,7 @@ export const dynamic     = "force-dynamic";
 export const maxDuration = 30; // reflexion loop (Generator + Critic + Refiner) ~15–20 s
 import { inferStage } from "@/lib/stages";
 import { recordActionShown } from "@/lib/learning";
+import { truncateWords } from "@/lib/textTruncate";
 
 type TodayAction = {
   action: string;        // Concrete task with platform, user type, count, and context
@@ -771,10 +772,15 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
     // not a paragraph dumped into a headline slot.
     function extractActionTitle(output: string, fallbackAction: string): string {
       if (!output?.trim()) return fallbackAction;
-      // Take the first sentence (ends at . or — or newline), cap at 12 words
+      // FIX: previously capped at 12 words with NO ellipsis at all — the
+      // confirmed cause of tasks reading as cut off mid-sentence on Today.
+      // A task described as needing "platform, user type, count, and
+      // context" (see TodayAction's own field comments above) is inherently
+      // a longer sentence than 12 words allows. Raised the cap and switched
+      // to the shared, ellipsis-aware truncateWords() so a genuinely long
+      // title is visibly shortened, not silently severed.
       const firstSentence = output.trim().match(/^([^.\n\u2014]+[.\u2014]?\s*)/)?.[1]?.trim() ?? output.trim();
-      const words = firstSentence.split(/\s+/);
-      const title = words.slice(0, 12).join(" ").replace(/[.\u2014,]$/, "").trim();
+      const title = truncateWords(firstSentence, 18);
       return title || fallbackAction;
     }
 
@@ -882,4 +888,4 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
     const message = error instanceof Error ? error.message : "Today action failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+        }
