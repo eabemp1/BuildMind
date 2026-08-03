@@ -17,6 +17,7 @@
  */
 
 import { ImageResponse } from "next/og";
+import { getLogoDataUri } from "@/lib/cardLogo";
 
 export const runtime = "nodejs";
 
@@ -44,6 +45,7 @@ function val(v: number | null | undefined, suffix = ""): string {
 
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as WeeklyReportCardBody;
+  const logoDataUri = await getLogoDataUri();
   const taskData = body.taskData?.length === 7 ? body.taskData : [0, 0, 0, 0, 0, 0, 0];
   const maxTasks = Math.max(...taskData, 1);
   const dayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -64,9 +66,13 @@ export async function POST(request: Request) {
 
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", zIndex: 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-            <div style={{ width: 52, height: 52, borderRadius: 14, background: COLORS.accent, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <span style={{ color: "white", fontSize: 26, fontWeight: 700 }}>B</span>
-            </div>
+            {logoDataUri ? (
+              <img src={logoDataUri} width={52} height={52} style={{ borderRadius: 14 }} />
+            ) : (
+              <div style={{ width: 52, height: 52, borderRadius: 14, background: COLORS.accent, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <span style={{ color: "white", fontSize: 26, fontWeight: 700 }}>B</span>
+              </div>
+            )}
             <span style={{ color: COLORS.text, fontSize: 30, fontWeight: 700, letterSpacing: -0.5 }}>BuildMind</span>
           </div>
           <span style={{ color: COLORS.text3, fontSize: 20, letterSpacing: 2, textTransform: "uppercase" }}>Weekly Report</span>
