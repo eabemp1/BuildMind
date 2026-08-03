@@ -1,4 +1,3 @@
-
 "use client";
 
 /**
@@ -24,6 +23,7 @@ import { Sparkles, Target, Flame, TrendingUp, TrendingDown, Ghost, Share2, Check
 import { createClient } from "@/lib/supabase/client";
 import { useActiveProjectId } from "@/lib/queries";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
+import { ARCHETYPE_DISPLAY, type FounderArchetype } from "@/lib/founderArchetypeDisplay";
 
 interface MilestonePacing {
   id: string; title: string; targetDate: string | null; projectedDate: string | null;
@@ -193,12 +193,18 @@ export function WeeklyPulseCard() {
             Your week
           </span>
           {data.archetype && (
-            <span style={{
-              marginLeft: "auto", fontFamily: "'DM Mono', monospace", fontSize: 10, padding: "3px 8px",
-              borderRadius: 999, background: "var(--bm-bg3)", color: "var(--bm-text3)", border: "1px solid var(--bm-border)",
-            }}>
-              {data.archetype.replace(/-/g, " ")}
-            </span>
+            <a
+              href="/memory"
+              style={{
+                marginLeft: "auto", fontFamily: "'DM Mono', monospace", fontSize: 10, padding: "3px 10px",
+                borderRadius: 999, background: "var(--bm-bg3)", color: "var(--bm-text3)", border: "1px solid var(--bm-border)",
+                textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 5,
+              }}
+              title="See what this means →"
+            >
+              <span>{ARCHETYPE_DISPLAY[data.archetype as FounderArchetype]?.icon ?? ""}</span>
+              {ARCHETYPE_DISPLAY[data.archetype as FounderArchetype]?.name ?? data.archetype.replace(/-/g, " ")}
+            </a>
           )}
         </div>
         <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 14.5, lineHeight: 1.6, color: "var(--bm-text)", margin: 0 }}>
