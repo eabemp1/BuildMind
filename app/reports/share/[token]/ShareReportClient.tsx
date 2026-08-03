@@ -15,6 +15,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
+import { truncateChars } from "@/lib/textTruncate";
 
 interface ReportData {
   week_start_date:     string;
@@ -268,7 +269,7 @@ export function ShareReportClient({ report }: Props) {
                   marginTop: 3, overflow: "hidden",
                   textOverflow: "ellipsis", whiteSpace: "nowrap",
                 }}>
-                  {sanitizeOutput(report.startup_summary).slice(0, 72)}
+                  {truncateChars(sanitizeOutput(report.startup_summary), 72)}
                 </div>
               )}
             </div>
@@ -378,7 +379,7 @@ export function ShareReportClient({ report }: Props) {
                 fontSize: 13.5, color: "#c4cae8",
                 lineHeight: 1.65, margin: 0,
               }}>
-                {sanitizeOutput(report.ai_summary).slice(0, 300)}
+                {truncateChars(sanitizeOutput(report.ai_summary), 300)}
               </p>
             </div>
           )}
@@ -396,7 +397,7 @@ export function ShareReportClient({ report }: Props) {
                 Next week →
               </div>
               <p style={{ fontSize: 12.5, color: "#7880a8", margin: 0, lineHeight: 1.55 }}>
-                {sanitizeOutput(rd.ai_suggestions).slice(0, 160)}
+                {truncateChars(sanitizeOutput(rd.ai_suggestions), 160)}
               </p>
             </div>
           )}
@@ -493,4 +494,4 @@ export function ShareReportClient({ report }: Props) {
       </p>
     </div>
   );
-}
+                      }
