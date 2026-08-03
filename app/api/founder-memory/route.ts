@@ -29,6 +29,21 @@ export async function GET() {
     .from("founder_memory")
     .select("*")
     .eq("user_id", user.id)
+    // FIX: founder_memory has no UNIQUE constraint on user_id (confirmed —
+    // only `id` is the primary key), while the PATCH handler below upserts
+    // with `onConflict: "user_id"`. Without a matching unique index,
+    // onConflict has nothing to target, so every PATCH likely inserts a new
+    // row instead of updating the existing one — the same root cause
+    // already documented elsewhere in this codebase for founder_context's
+    // 611-duplicate-row incident. `.maybeSingle()` errors the moment a
+    // second row exists, which made this route return 500 — and
+    // app/today/page.tsx's dismiss check treats a failed fetch as "not
+    // dismissed," so the morning briefing modal kept reappearing. Ordering
+    // by most-recently-updated and taking one row tolerates duplicates
+    // gracefully instead of hard-failing, independent of whether the
+    // underlying duplicate rows get cleaned up.
+    .order("updated_at", { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   if (dbErr) return NextResponse.json({ ok: false, error: dbErr.message }, { status: 500 });
