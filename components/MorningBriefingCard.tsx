@@ -14,6 +14,7 @@ import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { fetchMorningBriefing, type MorningBriefing, type BriefingGap } from "@/lib/founderContext";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
+import { truncateChars } from "@/lib/textTruncate";
 
 // BriefingGap used for gap display rendering
 type _BriefingGap = BriefingGap;
@@ -75,7 +76,7 @@ function MorningBriefingCardInner({ initialBriefing }: { initialBriefing?: Morni
           <div>
             <div style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.6, marginBottom: 10 }}>
               <span style={{ color: "var(--bm-green)", fontWeight: 600 }}>Win:</span>{" "}
-              {sanitizeOutput(briefing.win).slice(0, 40)}…
+              {truncateChars(sanitizeOutput(briefing.win), 40)}
             </div>
             <div style={{ fontSize: 11, color: "var(--bm-text3)", fontStyle: "italic", marginBottom: 10 }}>
               Your risk and today&apos;s action are in Builder.
@@ -134,4 +135,4 @@ export default function MorningBriefingCard({ initialBriefing }: { initialBriefi
       <MorningBriefingCardInner initialBriefing={initialBriefing} />
     </AIErrorBoundary>
   );
-}
+                         }
