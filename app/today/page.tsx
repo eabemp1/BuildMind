@@ -28,6 +28,7 @@ import { ProfileCompletenessBar } from "@/components/ProfileCompletenessBar";
 import { LoopNarrative } from "@/components/LoopNarrative";
 import { broadcastTabEvent, useTabSync } from "@/lib/tabSync";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
+import { getArchetypeDisplay } from "@/lib/founderArchetypeDisplay";
 import { linkifyChannels } from "@/lib/linkifyChannels";
 import { recordOverride } from "@/lib/founderContext";
 import { truncateChars } from "@/lib/textTruncate";
@@ -411,6 +412,11 @@ function TodayContent() {
   const [displayName, setDisplayName] = useState<string | null>(null);
   const [accountAgeDays, setAccountAgeDays] = useState(0);
   const [accountCreatedAt, setAccountCreatedAt] = useState<string | null>(null);
+  // Founder archetype — light presence on the daily page (see /memory for
+  // the full explanation). This is one query for one string array, kept
+  // deliberately separate from the big data-loading effects below so it
+  // can't interfere with task loading if it ever fails.
+  const [archetypeTags, setArchetypeTags] = useState<string[]>([]);
 
   // AI-personalised action state
   const [aiAction, setAiAction] = useState<ActionData | null>(null);
@@ -542,6 +548,19 @@ function TodayContent() {
       : null;
     if (savedCogLoad) { setCogLoad(savedCogLoad); setCogLoadSaved(true); }
   }, []);
+
+  // Founder archetype — isolated fetch, doesn't gate or block anything else on this page.
+  useEffect(() => {
+    if (!userId) return;
+    const supabase = createClient();
+    Promise.resolve(
+      supabase.from("founder_memory").select("personality_tags").eq("user_id", userId).maybeSingle(),
+    )
+      .then(({ data }) => {
+        if (Array.isArray(data?.personality_tags)) setArchetypeTags(data.personality_tags as string[]);
+      })
+      .catch(() => {});
+  }, [userId]);
 
   useEffect(() => {
     const supabase = createClient();
@@ -1866,6 +1885,35 @@ function TodayContent() {
           tasksCompleted: project?.tasksCompleted ?? 0,
         }}
       />
+
+      {/* ── Founder archetype — compact, non-blocking presence on the daily
+          page. Deliberately not a modal or a dismiss-to-proceed gate (that
+          was the problem with the old Initial Analysis card) — just a small
+          persistent badge, since this is a core signal the AI uses on every
+          task and it should be visible somewhere the founder actually looks
+          daily, not just on /memory. Tap through for the full explanation. */}
+      {(() => {
+        const archetype = getArchetypeDisplay(archetypeTags);
+        if (!archetype) return null;
+        return (
+          <a
+            href="/memory"
+            style={{
+              display: "flex", alignItems: "center", gap: 10,
+              padding: "10px 14px", marginTop: 10,
+              borderRadius: 10, border: "1px solid var(--bm-border)", background: "var(--bm-bg2)",
+              textDecoration: "none",
+            }}
+          >
+            <span style={{ fontSize: 18, flexShrink: 0 }}>{archetype.icon}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: "var(--bm-text)" }}>{archetype.name}</span>
+              <span style={{ fontSize: 11, color: "var(--bm-text3)", marginLeft: 8 }}>— your founder archetype</span>
+            </div>
+            <span style={{ fontSize: 11, color: "var(--bm-text4)", flexShrink: 0 }}>Learn more →</span>
+          </a>
+        );
+      })()}
 
       {/* ── Morning / evening mobile check-in ── */}
       {checkinSlot && (
