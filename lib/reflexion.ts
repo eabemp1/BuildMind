@@ -671,6 +671,27 @@ export async function runFullReflexionPipeline(
   const cofounderStyleInstruction = getCofounderStyleInstruction(founderContext.cofounderStyle);
   const newUserInstruction = getNewUserContextInstruction(founderContext.sessionCount);
 
+  // ── Weakest-dimension detection ──────────────────────────────────────────
+  // The radar chart shown to the founder (Demand / Market Space / Timing /
+  // Uniqueness / Safety — see app/(dashboard)/break-my-startup/page.tsx)
+  // already normalizes competition_score and risk_score so higher is always
+  // better across all five axes. The Generator prompt below previously only
+  // saw demand/competition/timing as raw numbers and never uniqueness_score
+  // or risk_score at all — so "brutal advice" almost always defaulted to a
+  // demand/GTM action even when the radar's weakest point was Uniqueness or
+  // Safety. Mirror the same normalization here so the two stay consistent.
+  const dimensionStrengths: Array<{ label: string; score: number }> = [
+    { label: "Demand", score: signals.demand_score },
+    { label: "Market Space", score: 100 - signals.competition_score },
+    { label: "Timing", score: signals.timing_score },
+    { label: "Uniqueness", score: signals.uniqueness_score },
+    { label: "Safety", score: 100 - signals.risk_score },
+  ].sort((a, b) => a.score - b.score);
+  const weakestDimensionLabel = dimensionStrengths[0].label;
+  const weakestDimensionScore = dimensionStrengths[0].score;
+  const secondWeakestDimensionLabel = dimensionStrengths[1]?.label;
+  const secondWeakestDimensionScore = dimensionStrengths[1]?.score;
+
   const generatorSystemPrompt = `You are an advanced startup intelligence engine operating as a decisive operator — not a consultant.
 ${contextBlock}${newUserInstruction}
 ${founderContext.archetypeContext ? `\n${founderContext.archetypeContext}` : ""}
@@ -686,10 +707,14 @@ VIABILITY CONTEXT:
 - Demand signal: ${signals.demand_score}/100
 - Competition pressure: ${signals.competition_score}/100
 - Timing: ${signals.timing_score}/100
+- Uniqueness / moat strength: ${signals.uniqueness_score}/100
+- Execution risk (safety): ${signals.risk_score}/100 (higher = riskier)
+- Weakest dimension: ${weakestDimensionLabel} (${weakestDimensionScore}/100)${secondWeakestDimensionLabel ? `, second weakest: ${secondWeakestDimensionLabel} (${secondWeakestDimensionScore}/100)` : ""}
 
 CRITICAL RULES:
 - Generate the SINGLE highest-leverage next move for this founder
 - Tie every claim to a specific signal listed above
+- The recommended action MUST address the weakest dimension above (or explain briefly why a different dimension is more urgent right now) — do not default to a demand/GTM action when uniqueness or execution risk is the actual bottleneck.
 - If a specific platform, user type, number, or deadline is directly supported by a signal listed above, name it exactly.
 - If it is NOT supported by a signal, do not invent one — say so plainly (e.g. "no verified channel yet — the first move is finding one") rather than filling the gap with a fabricated platform, number, or deadline.
 - Optimize for ACTION, not analysis
@@ -964,6 +989,24 @@ function structureSignals(signals: SignalSummary, pipeline: AgentPipelineResult)
   // Timing
   if (pipeline.trend?.window_of_opportunity) {
     structured.push(`[TIMING] ${pipeline.trend.window_of_opportunity}`);
+  }
+
+  // Moat / uniqueness — previously computed (uniqueness_score, competitive_moat_score)
+  // but never surfaced as a structured signal, so the Generator/Critic/Refiner
+  // never saw it as text even though it's plotted on the founder-facing radar.
+  if (pipeline.competitor?.differentiation_opportunities?.length) {
+    structured.push(`[MOAT] ${pipeline.competitor.differentiation_opportunities[0]}`);
+  }
+  if (typeof pipeline.competitor?.competitive_moat_score === "number") {
+    structured.push(
+      `[MOAT] Competitive moat score: ${pipeline.competitor.competitive_moat_score}/10 — ${
+        pipeline.competitor.competitive_moat_score <= 4
+          ? "low, easily replicated"
+          : pipeline.competitor.competitive_moat_score <= 7
+            ? "moderate, defensible with effort"
+            : "strong, hard to copy"
+      }`,
+    );
   }
 
   // Top risks
