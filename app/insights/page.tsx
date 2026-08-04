@@ -38,8 +38,22 @@ interface InsightData {
   completionByDay:        Record<string, { completed: number; total: number }>;
   avgConfidenceByOutcome: Record<string, number>;
   topOverrideReason?:     string;
-  totalTasksCompleted:    number;
-  totalTasksShown:        number;
+  totalTasksCompleted:    number; // last 30 days, from action_logs
+  totalTasksShown:        number; // last 30 days, from action_logs
+  // ── Merged in from app/memory/page.tsx (retired — see app/memory/page.tsx) ──
+  // tasksCompletedTotal is deliberately NOT the same number as
+  // totalTasksCompleted above: this is founder_context's lifetime counter,
+  // the other is a 30-day rolling count from action_logs. Both are real,
+  // both are useful, they're just answering different questions — labeled
+  // separately below rather than picking one (that's the same "two
+  // divergent concepts smashed into one field" bug pattern already fixed
+  // elsewhere this session for pulse_score/momentum).
+  tasksCompletedTotal:       number;
+  daysInactive:              number;
+  cognitiveLoad:             string | null;
+  consecutiveTasksCompleted: number;
+  topicsMentionedRepeatedly: string[];
+  archetypeClassifiedAt:     string | null;
 }
 
 type AiInsightItem = { type: "warning" | "positive" | "insight"; text: string };
@@ -210,10 +224,10 @@ export default function InsightsPage() {
 
       const [memRes, ctxRes, reflRes, logRes, projRes, scorecardRes, overrideRes] = await Promise.allSettled([
         supabase.from("founder_memory")
-          .select("avoidance_zones,strengths,personality_tags,last_insight")
+          .select("avoidance_zones,strengths,personality_tags,last_insight,archetype_classified_at")
           .eq("user_id", user.id).maybeSingle(),
         supabase.from("founder_context")
-          .select("meta_critic_signal,active_pattern_signal,active_pattern_message,active_pattern_subject,last_pattern_shown_at")
+          .select("meta_critic_signal,active_pattern_signal,active_pattern_message,active_pattern_subject,last_pattern_shown_at,tasks_completed_total,days_inactive,cognitive_load,consecutive_tasks_completed,topics_mentioned_repeatedly")
           .eq("user_id", user.id).maybeSingle(),
         reflQ,
         // FIX: previously selected `outcome_note`, confirmed via SQL
@@ -325,6 +339,13 @@ export default function InsightsPage() {
         topOverrideReason,
         totalTasksCompleted,
         totalTasksShown: logs.length,
+        // ── Merged in from app/memory/page.tsx ──────────────────────────
+        tasksCompletedTotal:       ctx?.tasks_completed_total ?? 0,
+        daysInactive:              ctx?.days_inactive ?? 0,
+        cognitiveLoad:             ctx?.cognitive_load ?? null,
+        consecutiveTasksCompleted: ctx?.consecutive_tasks_completed ?? 0,
+        topicsMentionedRepeatedly: (ctx?.topics_mentioned_repeatedly ?? []) as string[],
+        archetypeClassifiedAt:     mem?.archetype_classified_at ?? null,
       };
       setData(resolved);
 
@@ -427,7 +448,11 @@ export default function InsightsPage() {
     data.streak > 0 ||
     data.totalTasksShown > 0 ||
     data.avoidanceZones.length > 0 ||
-    data.strengths.length > 0
+    data.strengths.length > 0 ||
+    data.tasksCompletedTotal > 0 ||
+    data.cognitiveLoad !== null ||
+    data.topicsMentionedRepeatedly.length > 0 ||
+    data.personalityTags.length > 0
   );
 
   return (
@@ -551,6 +576,25 @@ export default function InsightsPage() {
                   </div>
                 </div>
               )}
+              {/* Merged in from app/memory/page.tsx's "Execution stats" grid */}
+              {data.tasksCompletedTotal > 0 && (
+                <div>
+                  <div style={{ fontSize: 9, color: "var(--bm-text3)", fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 3 }}>Lifetime tasks</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: "var(--bm-text)", fontFamily: "'DM Mono', monospace" }}>{data.tasksCompletedTotal}</div>
+                </div>
+              )}
+              {data.consecutiveTasksCompleted > 0 && (
+                <div>
+                  <div style={{ fontSize: 9, color: "var(--bm-text3)", fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 3 }}>Consecutive</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: "var(--bm-text)", fontFamily: "'DM Mono', monospace" }}>{data.consecutiveTasksCompleted}</div>
+                </div>
+              )}
+              {data.daysInactive > 0 && (
+                <div>
+                  <div style={{ fontSize: 9, color: "var(--bm-text3)", fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 3 }}>Days inactive</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: data.daysInactive >= 3 ? "var(--bm-red)" : "var(--bm-text)", fontFamily: "'DM Mono', monospace" }}>{data.daysInactive}</div>
+                </div>
+              )}
             </div>
           </Section>
 
@@ -636,6 +680,27 @@ export default function InsightsPage() {
             </Section>
           )}
 
+          {/* ── Today's reported capacity — merged in from app/memory/page.tsx ── */}
+          {data.cognitiveLoad && (
+            <Section label="Today's reported capacity" accent={data.cognitiveLoad === "low" ? "var(--bm-red)" : data.cognitiveLoad === "high" ? "var(--bm-green)" : undefined}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 22 }}>
+                  {data.cognitiveLoad === "low" ? "🪫" : data.cognitiveLoad === "high" ? "🔥" : "⚡"}
+                </span>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "var(--bm-text)", textTransform: "capitalize" }}>{data.cognitiveLoad}</div>
+                  <div style={{ fontSize: 11.5, color: "var(--bm-text3)" }}>
+                    {data.cognitiveLoad === "low"
+                      ? "Tasks today are scoped for low energy — light but forward-moving."
+                      : data.cognitiveLoad === "high"
+                      ? "High capacity reported — expect a more demanding task today."
+                      : "Normal capacity — standard task difficulty."}
+                  </div>
+                </div>
+              </div>
+            </Section>
+          )}
+
           {/* ── Avoidance zones ──────────────────────────────────────────── */}
           {data.avoidanceZones.length > 0 && (
             <Section label="What you avoid" accent="var(--bm-accent)">
@@ -645,6 +710,18 @@ export default function InsightsPage() {
               <p style={{ fontSize: 11.5, color: "var(--bm-text3)", margin: 0, lineHeight: 1.6 }}>
                 These signals are injected into every task recommendation to route around your blind spots.
               </p>
+            </Section>
+          )}
+
+          {/* ── Topics you keep circling — merged in from app/memory/page.tsx ── */}
+          {data.topicsMentionedRepeatedly.length > 0 && (
+            <Section label="Topics you keep circling" accent="var(--bm-amber, #E8A020)">
+              <p style={{ fontSize: 11.5, color: "var(--bm-text3)", margin: "0 0 10px", lineHeight: 1.6 }}>
+                Things you mention repeatedly in reflections without taking action. BuildMind will push you to resolve or drop these.
+              </p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {data.topicsMentionedRepeatedly.map((t, i) => <Chip key={t} label={t} color={i % 2 ? "var(--bm-amber, #E8A020)" : undefined} />)}
+              </div>
             </Section>
           )}
 
@@ -659,6 +736,11 @@ export default function InsightsPage() {
           {data.personalityTags.length > 0 && (
             <Section label="How you operate">
               {data.personalityTags.map(t => <Chip key={t} label={t} />)}
+              {data.archetypeClassifiedAt && (
+                <p style={{ fontSize: 11, color: "var(--bm-text4)", margin: "12px 0 0" }}>
+                  Profile last updated {new Date(data.archetypeClassifiedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                </p>
+              )}
             </Section>
           )}
 
