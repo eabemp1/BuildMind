@@ -94,9 +94,17 @@ function weekStartMonday(d: Date): string {
 export async function getWeeklyPulseData(userId: string, projectId?: string): Promise<WeeklyPulseResponse> {
   const admin = createAdminClient();
   const now = new Date();
-  const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-  const weekAgoIso = weekAgo.toISOString();
   const weekStart = weekStartMonday(now);
+  // FIX: previously a rolling "now minus 7 days" window, while
+  // weekly_goals (Ghost Goals, app/api/weekly-goal/route.ts) uses the
+  // calendar week starting Monday. On any day other than Monday, those two
+  // windows cover different date ranges — Ghost Goals only counts since
+  // this Monday, while This Week's rolling window reached back into the
+  // PREVIOUS calendar week too. That mismatch is why task counts between
+  // Ghost Goals (Today) and This Week (Progress) could disagree, and why
+  // it wasn't obvious which tasks were actually being reflected where.
+  // Now both use the same Monday-anchored week.
+  const weekAgoIso = `${weekStart}T00:00:00.000Z`;
 
   const [
     scorecardResult,
