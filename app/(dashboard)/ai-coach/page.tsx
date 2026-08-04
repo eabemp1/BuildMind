@@ -325,8 +325,28 @@ function AICoachPageInner() {
                   <Bot size={22} color="var(--bm-accent)" />
                 </div>
                 <div style={{maxWidth:400,textAlign:"center"}}>
-                  <div style={{fontFamily:"'Syne', sans-serif",fontSize:18,fontWeight:700,letterSpacing:"-0.02em",color:"var(--bm-text)",marginBottom:10,lineHeight:1.3}}>I already know where things stand.</div>
-                  <p style={{fontFamily:"'Inter', sans-serif",fontSize:12.5,color:"var(--bm-text2)",lineHeight:1.65,margin:0}}>I have read your reflections. I know the blockers you keep naming and the tasks you keep skipping. I am not going to ask you to explain your situation. Tell me what you are stuck on right now, or ask me what you should be doing — I will tell you directly, including the things you probably did not ask about.</p>
+              {(() => {
+                // FIX (High #10): this used to unconditionally claim "I have
+                // read your reflections" even for a founder with zero
+                // reflections and zero completed tasks — the exact
+                // overclaiming pattern flagged for the coach's system prompt
+                // (see app/api/ai/coach/route.ts's knowledgeClaim). Reuse
+                // data already fetched via useDashboardOverviewQuery instead
+                // of adding a new request just for this copy.
+                const hasHistory = (overview?.completedTasks ?? 0) > 0 || overview?.daysSinceLastReflection != null;
+                return (
+                  <>
+                    <div style={{fontFamily:"'Syne', sans-serif",fontSize:18,fontWeight:700,letterSpacing:"-0.02em",color:"var(--bm-text)",marginBottom:10,lineHeight:1.3}}>
+                      {hasHistory ? "I already know where things stand." : "Day one. Let's get oriented."}
+                    </div>
+                    <p style={{fontFamily:"'Inter', sans-serif",fontSize:12.5,color:"var(--bm-text2)",lineHeight:1.65,margin:0}}>
+                      {hasHistory
+                        ? "I have read your reflections. I know the blockers you keep naming and the tasks you keep skipping. I am not going to ask you to explain your situation. Tell me what you are stuck on right now, or ask me what you should be doing — I will tell you directly, including the things you probably did not ask about."
+                        : "You don't have a track record with me yet, so I'm not going to pretend I know your patterns. Tell me what you're actually stuck on, or what you're building — I'll give you a direct read based on that, not a guess at history I don't have."}
+                    </p>
+                  </>
+                );
+              })()}
                 </div>
                 <div className="flex max-w-full gap-2 overflow-x-auto px-1 sm:flex-wrap sm:justify-center">
                   {QUICK_PROMPTS.map(p => (
