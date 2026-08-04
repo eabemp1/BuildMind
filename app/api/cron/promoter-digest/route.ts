@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendEmail } from "@/lib/email";
 import { logError } from "@/lib/server/logger";
+import { claimSendSlots } from "@/lib/cronSendLog";
 
 /**
  * GET /api/cron/promoter-digest
@@ -49,6 +50,7 @@ export async function GET(request: Request) {
 
   const rows = promoters ?? [];
   const results: { promoter: string; momentum: number; totalLogged: number; conversions: number; lastActive: string | null }[] = [];
+  const reminderCandidates: { id: string; name: string; email: string; access_token: string }[] = [];
   let reminded = 0;
 
   for (const p of rows) {
@@ -78,25 +80,35 @@ export async function GET(request: Request) {
       lastActive,
     });
 
-    // ── Job 1: reminder for quiet promoters ──────────────────────────────
     if (p.email && daysSinceActive >= 3) {
-      try {
-        await sendEmail({
-          to: p.email,
-          subject: "Your BuildMind mission is waiting",
-          html: `
-            <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
-              <p>Hey ${p.name.split(" ")[0]},</p>
-              <p>No pressure at all — just a heads up that there's a fresh mission waiting whenever you have a minute:</p>
-              <p><a href="https://buildmind.live/promote/${p.access_token}" style="display:inline-block;background:#6366f1;color:white;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600;">Open your dashboard</a></p>
-              <p style="color:#888;font-size:13px;">Everything's already written for you — just copy, personalize, post.</p>
-            </div>
-          `,
-        });
-        reminded++;
-      } catch (err) {
-        logError("cron/promoter-digest/reminder", err, { promoterId: p.id });
-      }
+      reminderCandidates.push({ id: p.id, name: p.name, email: p.email, access_token: p.access_token });
+    }
+  }
+
+  // FIX (High #9): no durable per-promoter marker existed before this send
+  // — a retry or overlapping trigger would re-nag every quiet promoter.
+  // Claim atomically first, only send to the claimed subset.
+  const claimedReminderIds = new Set(
+    await claimSendSlots(reminderCandidates.map((p) => p.id), "promoter_reminder")
+  );
+
+  for (const p of reminderCandidates.filter((c) => claimedReminderIds.has(c.id))) {
+    try {
+      await sendEmail({
+        to: p.email,
+        subject: "Your BuildMind mission is waiting",
+        html: `
+          <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+            <p>Hey ${p.name.split(" ")[0]},</p>
+            <p>No pressure at all — just a heads up that there's a fresh mission waiting whenever you have a minute:</p>
+            <p><a href="https://buildmind.live/promote/${p.access_token}" style="display:inline-block;background:#6366f1;color:white;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600;">Open your dashboard</a></p>
+            <p style="color:#888;font-size:13px;">Everything's already written for you — just copy, personalize, post.</p>
+          </div>
+        `,
+      });
+      reminded++;
+    } catch (err) {
+      logError("cron/promoter-digest/reminder", err, { promoterId: p.id });
     }
   }
 
@@ -105,7 +117,10 @@ export async function GET(request: Request) {
   let ownerDigestSent = false;
   if (isFriday && rows.length > 0) {
     const ownerIds = [...new Set(rows.map(p => p.created_by).filter(Boolean))] as string[];
-    for (const ownerId of ownerIds) {
+    // FIX (High #9): claim per-owner before sending — protects against a
+    // retry or overlapping trigger sending the same Friday digest twice.
+    const claimedOwnerIds = new Set(await claimSendSlots(ownerIds, "promoter_digest_owner"));
+    for (const ownerId of ownerIds.filter((id) => claimedOwnerIds.has(id))) {
       try {
         const { data: userData } = await admin.auth.admin.getUserById(ownerId);
         const ownerEmail = userData?.user?.email;
@@ -138,4 +153,4 @@ export async function GET(request: Request) {
   }
 
   return NextResponse.json({ ok: true, promotersChecked: rows.length, reminded, ownerDigestSent });
-}
+                     }
