@@ -25,8 +25,17 @@ const ALLOWED_KEYS = new Set([
   "first_seen_at",
   "install_prompt_shown",
   "urgency_dismissed_date",
-  "achievements_unlocked",
-  "achievement_stats",
+  // FIX (High #7): achievements_unlocked / achievement_stats removed from
+  // this whitelist. Nothing server-side has treated them as authoritative
+  // since achievements moved to a real user_achievements table + /api/achievements
+  // (server re-verifies each achievement's condition() against
+  // getServerAchievementStats() before persisting — see app/api/achievements/route.ts).
+  // But lib/achievements.ts's syncAchievementsFromServer() still read these
+  // two keys BACK from here and overwrote local storage with them — meaning
+  // a single forged PATCH to this endpoint from one device would propagate
+  // to every other device/session that ran that sync. Stripping them here
+  // closes that; the calls that still write/read them elsewhere become
+  // harmless no-ops (filtered out same as any other unrecognized key).
   "notifications",
   "blueprint_uses",
   "competitor_history",
@@ -97,4 +106,4 @@ export async function PATCH(req: NextRequest) {
   if (dbError) return NextResponse.json({ ok: false, error: dbError.message }, { status: 500 });
 
   return NextResponse.json({ ok: true });
-}
+  }
