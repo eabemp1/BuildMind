@@ -428,18 +428,18 @@ async function deriveCofounderMessage(memory: FounderMemory): Promise<PulseMessa
       streak:        overview?.founderStreakDays ?? undefined,
       daysInactive:  overview?.daysSinceLastReflection ?? undefined,
     };
-    // Fetch momentum from founder_context directly
-    const { createClient } = await import("@/lib/supabase/client");
-    const supabase = createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      const { data: ctx } = await supabase
-        .from("founder_context")
-        .select("momentum_score")
-        .eq("user_id", user.id)
-        .maybeSingle();
-      if (typeof ctx?.momentum_score === "number") {
-        liveSignals.momentumScore = ctx.momentum_score;
+    // FIX (High #8): was a raw `founder_context.momentum_score` query, run
+    // independently of the rest of the app's Pulse engine (lib/pulse.ts,
+    // /api/pulse/metrics) — a second, divergent momentum concept living
+    // right next to the real one. Confirmed live (2026-08) that pulse_events,
+    // pulse_scores, pulse_event_weights tables and get_pulse_streak /
+    // upsert_pulse_score functions all exist, so this now reads the same
+    // canonical pulseScore every other Pulse-aware surface uses.
+    const res = await fetch("/api/pulse/metrics");
+    if (res.ok) {
+      const body = await res.json() as { ok?: boolean; data?: { pulseScore?: number } };
+      if (body.ok && typeof body.data?.pulseScore === "number") {
+        liveSignals.momentumScore = body.data.pulseScore;
       }
     }
   } catch { /* non-fatal */ }
