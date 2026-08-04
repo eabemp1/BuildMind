@@ -133,13 +133,19 @@ export default function AchievementsPage() {
     const local = new Set(getUnlocked().map((a) => a.id));
     setUnlocked(local);
 
-    // 2. Hydrate from server — cross-device truth
+    // 2. Hydrate from server — cross-device truth.
+    // FIX: this used to union local into the final displayed set
+    // (new Set([...local, ...data.ids])), so a forged localStorage entry
+    // (open devtools, write a fake achievement id) would display as
+    // unlocked forever, even after real server data arrived — the union
+    // never removes anything local that the server doesn't confirm. Server
+    // data now REPLACES local once it's in; local is only for the instant
+    // optimistic first render before this fetch resolves.
     fetch("/api/achievements")
       .then((r) => r.ok ? r.json() : null)
       .then((data: { ids?: string[]; records?: { achievement_id: string; unlocked_at: string }[] } | null) => {
         if (!data?.ids) return;
-        const merged = new Set([...local, ...data.ids]);
-        setUnlocked(merged);
+        setUnlocked(new Set(data.ids));
         // Store timestamps for display
         const ts: Record<string, string> = {};
         (data.records ?? []).forEach((r) => { ts[r.achievement_id] = r.unlocked_at; });
@@ -273,4 +279,4 @@ export default function AchievementsPage() {
       `}</style>
     </div>
   );
-}
+  }
