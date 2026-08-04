@@ -974,7 +974,7 @@ export default function ProjectDetailPage() {
             )}
           </div>
           <a
-            href="/memory"
+            href="/progress?tab=patterns"
             title="See what moves your score"
             style={{
               display: "inline-flex", alignItems: "center", gap: 4,
