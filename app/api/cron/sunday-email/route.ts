@@ -27,6 +27,7 @@ import { hasAdminEnv } from "@/app/api/ai/_utils";
 import { sendEmail } from "@/lib/email";
 import { logError, logInfo } from "@/lib/server/logger";
 import { generateSundayEmailNarrative } from "@/lib/cron/aiContent";
+import { claimSendSlots } from "@/lib/cronSendLog";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -244,13 +245,23 @@ export async function GET(request: Request) {
   }
 
   // ── 5. Send emails in batches of 10 (Resend free tier: 100/day) ───────────
+  // FIX (High #9): no durable per-user marker existed before this send loop
+  // — only best-effort logging (logInfo/logError) AFTER each send. Claim
+  // each user's slot atomically first; only the returned (successfully
+  // claimed) subset gets an email. Default (today's) date is correct here
+  // since this cron runs weekly, so a same-day claim naturally means "once
+  // this Sunday" — no multi-day window to worry about like re-engage.
+  const claimedUserIds = new Set(await claimSendSlots(weekData.map((d) => d.userId), "sunday_email"));
+  const sendableWeekData = weekData.filter((d) => claimedUserIds.has(d.userId));
+  const deduped = weekData.length - sendableWeekData.length;
+
   const BATCH = 10;
   let sent = 0;
   let failed = 0;
   let processed = 0;
 
-  for (let i = 0; i < weekData.length; i += BATCH) {
-    const batch = weekData.slice(i, i + BATCH);
+  for (let i = 0; i < sendableWeekData.length; i += BATCH) {
+    const batch = sendableWeekData.slice(i, i + BATCH);
     await Promise.allSettled(
       batch.map(async (d) => {
         try {
@@ -299,7 +310,7 @@ export async function GET(request: Request) {
       })
     );
     // Small delay between batches to stay within rate limits
-    if (i + BATCH < weekData.length) {
+    if (i + BATCH < sendableWeekData.length) {
       await new Promise(r => setTimeout(r, 100));
     }
   }
@@ -310,9 +321,10 @@ export async function GET(request: Request) {
     week_number:     weekNumber,
     builder_users:   builderUsers.length,
     eligible:        weekData.length,
+    deduped, // already claimed for this Sunday by an earlier/overlapping run
     processed,
     durationMs:      Date.now() - start,
     emails_sent:     sent,
     emails_failed:   failed,
   });
-                              }
+        }
