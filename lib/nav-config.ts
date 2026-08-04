@@ -62,7 +62,7 @@ export const NAV: readonly NavItemConfig[] = [
   { href: "/agents",           label: "Agent Workforce",  icon: Bot,           enabled: true,  hidden: false, section: "Intelligence", badge: "NEW", showDot: false, requiredPlan: "builder" as Plan, unlocksAt: 5 },
   { href: "/reports",          label: "Weekly Report",   icon: ClipboardList,  enabled: true,  hidden: false, section: "Intelligence", badge: null, requiredPlan: "builder" as Plan, showDot: false, unlocksAt: 7 },
   { href: "/achievements",     label: "Achievements",    icon: Trophy,         enabled: true,  hidden: false, section: "Intelligence", badge: null, showDot: true,  unlocksAt: 1 },
-  { href: "/memory",           label: "My Profile",      icon: UserCircle,     enabled: true,  hidden: true, section: "Intelligence", badge: null, showDot: false, unlocksAt: 1 },
+  { href: "/progress?tab=patterns", label: "My Profile",      icon: UserCircle,     enabled: true,  hidden: true, section: "Intelligence", badge: null, showDot: false, unlocksAt: 1 },
 
   // ── Settings section items ────────────────────────────────────────────────
   { href: "/upgrade",          label: "Upgrade",         icon: Rocket,         enabled: true,  hidden: false, section: "Settings", badge: null, showDot: false, unlocksAt: 0 },
