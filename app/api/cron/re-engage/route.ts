@@ -6,9 +6,10 @@
  * re-engagement email. A second email fires at 14 days for users who
  * still haven't returned.
  *
- * Rate-limiting: one email per user per re-engagement window (7-day then
- * 14-day). Stored in founder_context.last_re_engagement_email_at so we
- * never double-send.
+ * Rate-limiting: one email per user per re-engagement wave (7-day, then
+ * 14-day), enforced via an atomic claim against cron_send_log (see
+ * lib/cronSendLog.ts and supabase/migrations/20260803000000_cron_send_log.sql)
+ * — not a check-then-update pattern, so two overlapping runs can't both send.
  *
  * Triggered by Vercel Cron (see vercel.json). Protected by CRON_SECRET.
  *
@@ -23,6 +24,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { sendEmail } from "@/lib/email";
 import { generateReEngagementEmail } from "@/lib/cron/aiContent";
+import { claimSendSlots } from "@/lib/cronSendLog";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -120,15 +122,25 @@ export async function GET(req: NextRequest) {
   let totalRows = 0;
 
   // Cursor-paginated fetch — prevents OOM at scale (fixes audit §3 cron issue).
+  // FIX (High #11): this used to check ctx.last_re_engagement_email_at,
+  // send, THEN update that marker — two overlapping runs (retry, or the
+  // same double-trigger risk confirmed for push/send-daily) could both read
+  // the stale marker before either write landed, both send. Now: collect
+  // all candidates across every page first, then claim atomically (via
+  // cron_send_log — see lib/cronSendLog.ts) before any send happens, and
+  // only send to users this run actually won the claim for.
   const PAGE_SIZE = 100;
   let pageFrom = 0;
   let hasMore = true;
+  type CtxRow = { user_id: string; days_inactive: number };
+  const sevenDayRows: CtxRow[] = [];
+  const fourteenDayRows: CtxRow[] = [];
 
   while (hasMore) {
     // Fetch contexts where days_inactive is in the 7-day or 14-day window
     const { data: contexts, error: ctxError } = await supabase
       .from("founder_context")
-      .select("user_id, days_inactive, last_re_engagement_email_at")
+      .select("user_id, days_inactive")
       .or(`and(days_inactive.gte.6,days_inactive.lte.8),and(days_inactive.gte.13,days_inactive.lte.15)`)
       .range(pageFrom, pageFrom + PAGE_SIZE - 1);
 
@@ -141,26 +153,46 @@ export async function GET(req: NextRequest) {
     hasMore = rows.length === PAGE_SIZE;
     pageFrom += PAGE_SIZE;
 
-  for (const ctx of rows) {
-    const daysInactive: number = ctx.days_inactive ?? 0;
-
-    // Decide which wave this is
-    const isSevenDay     = daysInactive >= 6 && daysInactive <= 8;
-    const isFourteenDay  = daysInactive >= 13 && daysInactive <= 15;
-    if (!isSevenDay && !isFourteenDay) { skipped++; continue; }
-
-    // Skip if already sent in this window
-    const lastSentAt = ctx.last_re_engagement_email_at;
-    if (lastSentAt) {
-      const lastSent = new Date(lastSentAt);
-      // Don't re-send within a 5-day window of the last email
-      const fiveDaysAgo = new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000);
-      if (lastSent > fiveDaysAgo) {
-        skipped++;
-        details.push({ userId: ctx.user_id, result: "skipped:too_recent" });
-        continue;
-      }
+    for (const ctx of rows) {
+      const daysInactive: number = ctx.days_inactive ?? 0;
+      const isSevenDay    = daysInactive >= 6 && daysInactive <= 8;
+      const isFourteenDay = daysInactive >= 13 && daysInactive <= 15;
+      if (isSevenDay) sevenDayRows.push(ctx);
+      else if (isFourteenDay) fourteenDayRows.push(ctx);
+      else skipped++;
     }
+  }
+
+  // Claim once-ever per wave, per user — a fixed sentinel date (not "today")
+  // because these waves span a multi-day window (days_inactive 6-8, 13-15),
+  // so a naive "claimed today" check wouldn't stop the same user matching
+  // the window again tomorrow and getting a second 7-day email.
+  // dryRun must NOT consume real claims — that would silently block the
+  // actual send that follows a preview run.
+  const CLAIM_SENTINEL_DATE = "2000-01-01";
+  // NOTE: dryRun preview shows everyone currently in-window, including
+  // founders who already received this wave's email in a past run — it
+  // doesn't do a read-only lookback against cron_send_log. Fine for a
+  // debug/preview tool; the real send path below is what's correctness-
+  // critical, and that one does claim atomically.
+  const [claimedSevenDay, claimedFourteenDay] = dryRun
+    ? [sevenDayRows.map((r) => r.user_id), fourteenDayRows.map((r) => r.user_id)]
+    : await Promise.all([
+        claimSendSlots(sevenDayRows.map((r) => r.user_id), "re_engage_7day", CLAIM_SENTINEL_DATE),
+        claimSendSlots(fourteenDayRows.map((r) => r.user_id), "re_engage_14day", CLAIM_SENTINEL_DATE),
+      ]);
+  const claimedSevenDaySet = new Set(claimedSevenDay);
+  const claimedFourteenDaySet = new Set(claimedFourteenDay);
+  skipped += (sevenDayRows.length - claimedSevenDay.length) + (fourteenDayRows.length - claimedFourteenDay.length);
+
+  const toProcess: (CtxRow & { isSevenDay: boolean })[] = [
+    ...sevenDayRows.filter((r) => claimedSevenDaySet.has(r.user_id)).map((r) => ({ ...r, isSevenDay: true })),
+    ...fourteenDayRows.filter((r) => claimedFourteenDaySet.has(r.user_id)).map((r) => ({ ...r, isSevenDay: false })),
+  ];
+
+  for (const ctx of toProcess) {
+    const daysInactive = ctx.days_inactive ?? 0;
+    const isSevenDay = ctx.isSevenDay;
 
     // Look up user profile + project for context
     const [authResult, projectResult] = await Promise.allSettled([
@@ -227,12 +259,6 @@ export async function GET(req: NextRequest) {
           html: buildReEngagementHTML(name, startupName, daysInactive, aiContent.body),
         });
 
-        // Record that we sent, so we don't double-send
-        await supabase
-          .from("founder_context")
-          .update({ last_re_engagement_email_at: now.toISOString() })
-          .eq("user_id", ctx.user_id);
-
         sent++;
         details.push({ userId: ctx.user_id, result: `sent:${isSevenDay ? "7day" : "14day"}` });
       } catch (err) {
@@ -247,8 +273,6 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  } // end while (pagination)
-
   return NextResponse.json({
     ok: true,
     dryRun,
@@ -260,4 +284,4 @@ export async function GET(req: NextRequest) {
     failed,
     details: dryRun ? details : undefined, // Only expose details in dry-run to avoid PII in logs
   });
-}
+    }
