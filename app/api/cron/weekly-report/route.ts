@@ -16,6 +16,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasAdminEnv } from "@/app/api/ai/_utils";
+import { claimSendSlots } from "@/lib/cronSendLog";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -122,9 +123,18 @@ export async function GET(request: Request) {
         process.env.VAPID_PRIVATE_KEY!,
       );
 
+      // FIX (High #9): no durable per-user marker existed before this send
+      // — only aggregate counts returned in the response, no per-user log.
+      // This runs weekly on a fixed day (Friday), so default (today's) date
+      // semantics correctly mean "once this Friday." Claim every builder
+      // up front; only push_subscriptions rows for the claimed subset ever
+      // get sent to.
+      const claimedBuilderIds = new Set(await claimSendSlots(builderIds, "weekly_report_push"));
+
       const BATCH = 50;
       for (let i = 0; i < builderIds.length; i += BATCH) {
-        const batch = builderIds.slice(i, i + BATCH);
+        const batch = builderIds.slice(i, i + BATCH).filter((id) => claimedBuilderIds.has(id));
+        if (batch.length === 0) continue;
         const { data: subs } = await supabase
           .from("push_subscriptions")
           .select("user_id, subscription")
