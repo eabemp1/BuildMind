@@ -93,11 +93,12 @@ function CreateModal({
   isPending,
 }: {
   onClose: () => void;
-  onCreate: (data: { title: string; problem: string; stage: StartupStage }) => void;
+  onCreate: (data: { title: string; problem: string; stage: StartupStage; targetUsers: string }) => void;
   isPending: boolean;
 }) {
   const [title, setTitle] = useState("");
   const [problem, setProblem] = useState("");
+  const [targetUsers, setTargetUsers] = useState("");
   const [stage, setStage] = useState<StartupStage>("Idea");
   const [error, setError] = useState("");
 
@@ -105,17 +106,21 @@ function CreateModal({
     setError("");
     if (!title.trim()) { setError("Project name is required."); return; }
     try {
+      // FIX: was hardcoded to "Founders" here, so this check always passed
+      // regardless of what the founder actually typed (or didn't type) for
+      // targeting — meaning this project's target_users fed into every AI
+      // prompt from day one was a lie. Validate the real field.
       projectCreateSchema.parse({
         projectName: title.trim(),
         ideaDescription: problem.trim(),
-        targetUsers: "Founders",
+        targetUsers: targetUsers.trim(),
       });
     } catch (e: unknown) {
       const msg = (e as { errors?: { message: string }[] })?.errors?.[0]?.message;
       setError(msg ?? "Invalid input");
       return;
     }
-    onCreate({ title, problem, stage });
+    onCreate({ title, problem, stage, targetUsers: targetUsers.trim() });
   }
 
   return (
@@ -163,6 +168,13 @@ function CreateModal({
             value={problem}
             onChange={(e) => setProblem(e.target.value)}
             rows={3}
+          />
+
+          <Input
+            label="Who Is This For?"
+            placeholder="e.g. solo founders juggling multiple ventures"
+            value={targetUsers}
+            onChange={(e) => setTargetUsers(e.target.value)}
           />
 
           <div className="flex flex-col gap-2">
@@ -251,7 +263,7 @@ export default function ProjectsPage() {
       .catch(() => {});
   }, []);
 
-  async function handleCreate(data: { title: string; problem: string; stage: StartupStage }) {
+  async function handleCreate(data: { title: string; problem: string; stage: StartupStage; targetUsers: string }) {
     if (!canCreateProject) {
       showLimitModal("projects");
       return;
@@ -260,7 +272,7 @@ export default function ProjectsPage() {
       await createMut.mutateAsync({
         project_name: data.title.trim(),
         idea_description: data.problem.trim(),
-        target_users: "Founders",
+        target_users: data.targetUsers,
         problem: data.problem.trim(),
         startup_stage: data.stage,
       });
@@ -513,4 +525,4 @@ export default function ProjectsPage() {
       </AnimatePresence>
     </div>
   );
-}
+  }
