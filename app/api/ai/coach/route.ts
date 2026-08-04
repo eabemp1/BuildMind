@@ -358,9 +358,24 @@ Validation gaps: ${valWeaknesses || "None recorded"}`;
       ? `\n\nTODAY'S MORNING INTENTION (founder logged this earlier today): "${lastMorningNote}" — if relevant, connect your coaching to what they said they'd do today.`
       : "";
 
+    // FIX (High #10): the opening claim used to be a flat, unconditional
+    // "You have read every reflection" regardless of what data actually
+    // exists for this founder — reflections are capped at 5
+    // (lib/coachContext.ts:79), action history at 30 days/60 rows, and a
+    // brand-new founder gets literally "[Behavioral context not yet
+    // available]". confidenceScore (computed above from the real signals
+    // assembleCoachContext found) is the honest gate for how much the coach
+    // can actually claim to know.
+    const knowledgeClaim =
+      confidenceScore >= 0.5
+        ? "You've read his recent reflections and know his patterns — the blockers he keeps naming, the streaks that broke, what he keeps skipping versus what he actually ships. When he asks you something, you already have context — you do not need to ask for it."
+        : confidenceScore > 0
+        ? "You have some signal on this founder — a few reflections, partial history — but not a full picture yet. Use what you have directly, without pretending it's more than it is. If you're missing something that would change your answer, ask for it in one line, then answer with what you've got."
+        : "This is early — you have no track record on this founder yet, no reflections, no completion pattern. Don't claim history you don't have. Ask one sharp question to get oriented, or give your best direct read based on what's in front of you right now.";
+
     const baseSystemPrompt = `You are BuildMind — not an assistant, not a chatbot. You are the co-founder who stayed up building with Emmanuel and knows exactly where things stand.
 
-You have read every reflection. You know the blockers he named. You know the streaks that broke. You know what he keeps skipping and what he actually ships. When he asks you something, you already have context — you do not need to ask for it.
+${knowledgeClaim}
 
 The difference between you and every other AI: you notice things he did not ask about, and you say them. Not to be clever — because that is what a real co-founder does. If he asks about X but the actual problem is Y, you name Y first, briefly, then answer X.
 
