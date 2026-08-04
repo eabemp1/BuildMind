@@ -36,6 +36,7 @@ import webpush from "web-push";
 import { createClient } from "@supabase/supabase-js";
 import { planFromUserMetadata } from "@/lib/plan";
 import { logError, logInfo } from "@/lib/server/logger";
+import { claimSendSlots } from "@/lib/cronSendLog";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -329,10 +330,21 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  // FIX (High #9): no durable per-user marker existed before this send loop
+  // — only best-effort logging (push_cron_log, an aggregate summary row)
+  // AFTER sending. Confirmed live: pg_cron runs a job literally named
+  // daily-push-notifications at 06:00 UTC while vercel.json separately
+  // schedules this same route at 07:00 UTC — very likely already sending
+  // every subscriber two daily notifications. Claim each user's slot
+  // atomically before sending; only the returned (successfully claimed)
+  // subset actually gets a notification.
+  const claimedUserIds = new Set(await claimSendSlots(subs.map((s) => s.user_id), "daily_push"));
+  const sendableSubs = subs.filter((s) => claimedUserIds.has(s.user_id));
+
   // Send to all subscribers, using Recovery Mode message when appropriate
   // and personalised briefing body when available
   const results = await Promise.allSettled(
-    subs.map(async (row) => {
+    sendableSubs.map(async (row) => {
       try {
         const plan = planMap.get(row.user_id) ?? "free";
         if (!isBriefingDayForPlan(plan)) {
@@ -436,6 +448,7 @@ export async function POST(req: NextRequest) {
     recoveryMode: recoveryCount,
     personalised: personalisedCount,
     total: subs.length,
+    deduped: subs.length - sendableSubs.length, // already claimed for today by an earlier/overlapping run
     message: defaultMessage.title,
     failedDetails,
     processed: sent + skipped,
