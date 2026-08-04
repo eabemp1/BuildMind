@@ -119,6 +119,34 @@ export default function GhostGoalBanner({
     setSaving(true);
     setError(null);
     try {
+      // FIX: previously computed target_score/target_tasks with a fixed
+      // formula (currentScore+10, streak-based task count) — completely
+      // disconnected from what the founder actually typed. Now sends the
+      // text to /api/ai/calibrate-goal first so the numbers are reasoned
+      // from the goal's actual content (e.g. "talk to 3 people" implies a
+      // task count near 3-4), with the same formula only as a fallback if
+      // that call fails.
+      let targetScore = Math.min(95, Math.max(55, currentScore + 10));
+      let targetTasks = streak >= 14 ? 7 : streak >= 7 ? 6 : 5;
+      try {
+        const calRes = await fetch("/api/ai/calibrate-goal", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            custom_text: customText.trim(),
+            stage, execution_score: currentScore, streak,
+            startup_summary: startupSummary, project_name: projectName,
+          }),
+        });
+        const calJson = await calRes.json() as { ok: boolean; target_score?: number; target_tasks?: number };
+        if (calJson.ok) {
+          targetScore = calJson.target_score ?? targetScore;
+          targetTasks = calJson.target_tasks ?? targetTasks;
+        }
+      } catch {
+        // Non-fatal — falls back to the formula above rather than blocking save.
+      }
+
       const res = await fetch("/api/weekly-goal", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -126,8 +154,8 @@ export default function GhostGoalBanner({
           project_id:   projectId,
           goal_text:    customText.trim(),
           goal_type:    "custom",
-          target_score: Math.min(95, Math.max(55, currentScore + 10)),
-          target_tasks: streak >= 14 ? 7 : streak >= 7 ? 6 : 5,
+          target_score: targetScore,
+          target_tasks: targetTasks,
         }),
       });
       const json = await res.json() as { ok: boolean; data?: WeeklyGoal; error?: string };
