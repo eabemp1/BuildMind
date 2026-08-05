@@ -18,6 +18,7 @@ import { getPromptForRequest, loadActivePrompts } from "@/lib/promptRegistry";
 import { upsertTodayActionCache } from "@/lib/todayActionCache";
 import { buildTodayPersonalisationContext } from "@/lib/todayPersonalisationContext";
 import { loadBehavioralContext } from "@/lib/behavioralLayers";
+import { buildFounderIntelligencePromptBlock, loadFounderIntelligence, summarizeFounderIntelligenceForClient, type FounderIntelligenceState } from "@/lib/founderIntelligence";
 
 export const runtime     = "nodejs";
 export const dynamic     = "force-dynamic";
@@ -220,6 +221,8 @@ export async function POST(request: Request) {
     let cognitionMomentumScore = 50;
     let cognitionAvoidanceSignals: string[] = [];
     let cognitionCognitiveLoad: ReflexionContext["cognitiveLoad"] = "fresh";
+    let founderIntelligence: FounderIntelligenceState | null = null;
+    let founderIntelligencePromptBlock = "";
     // FIX: founder_context.cognitive_load is written by the Today page's
     // energy check-in (components using handleCogLoad) with values
     // "low" | "normal" | "high" — but this field was being passed straight
@@ -566,6 +569,17 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
       lastReflectionContext += `\n\nACTIVE GOALS (advance one today):\n${personalisationCtx.activeGoals.map((g, i) => `${i + 1}. ${g}`).join("\n")}`;
     }
 
+    if (hasAdminEnv() && supabase && userId) {
+      try {
+        founderIntelligence = await loadFounderIntelligence(supabase, userId, projectId, {
+          now: new Date(),
+        });
+        founderIntelligencePromptBlock = buildFounderIntelligencePromptBlock(founderIntelligence);
+      } catch (err) {
+        logError("today-action/founder-intelligence", err, { route: "/api/ai/today-action", userId, requestId });
+      }
+    }
+
     // Build contextual fallback using real project data (never placeholder text)
     const fallback = buildContextualFallback(stage, targetUsers, problem, title, projectContext);
 
@@ -735,6 +749,7 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
       lastReflectionContext ? `Last reflection: ${lastReflectionContext}` : "",
       recentActionHistory ? `Anti-repetition guard: ${recentActionHistory}` : "",
       behavioralPromptBlock || "",
+      founderIntelligencePromptBlock || "",
     ].filter(Boolean).join("\n");
 
     let reflexionOutput: Awaited<ReturnType<typeof runReflexionLoop>> | null = null;
@@ -883,7 +898,7 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
       }
     }
 
-    return NextResponse.json({ success: true, data: { ...finalResult, stage, reflexion_status: reflexionStatus } });
+    return NextResponse.json({ success: true, data: { ...finalResult, stage, reflexion_status: reflexionStatus, intelligence: founderIntelligence ? summarizeFounderIntelligenceForClient(founderIntelligence) : undefined } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Today action failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });

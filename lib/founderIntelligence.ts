@@ -1,0 +1,746 @@
+import { buildExecutionSignature, type ExecutionSignature, type TaskRecord } from "@/lib/outcomeCorrelation";
+import { buildTemporalProfile, type SessionEvent, type TemporalProfile } from "@/lib/temporalPatterns";
+import { deriveLearnedPatterns, type LearnedPatterns, type LearningLogRow } from "@/lib/learning";
+import { logError } from "@/lib/server/logger";
+
+type SupabaseLike = {
+  from: (table: string) => any;
+};
+
+export type IntelligenceSignalType =
+  | "GOAL_SLIPPAGE"
+  | "BEHAVIOR_STRATEGY_CONTRADICTION"
+  | "REPEATED_AVOIDANCE"
+  | "EVIDENCE_GAP"
+  | "ASSUMPTION_DECAY"
+  | "EXECUTION_DEGRADATION"
+  | "BUSYWORK_PATTERN"
+  | "RECOMMENDATION_REJECTION_PATTERN"
+  | "MOMENTUM_CHANGE"
+  | "FOUNDER_BEHAVIOR_CHANGE";
+
+export type SignalSeverity = "low" | "medium" | "high" | "critical";
+
+export interface SignalEvidence {
+  source: string;
+  detail: string;
+  count?: number;
+  window?: string;
+}
+
+export interface IntelligenceSignal {
+  type: IntelligenceSignalType;
+  severity: SignalSeverity;
+  confidence: number;
+  title: string;
+  summary: string;
+  evidence: SignalEvidence[];
+  detected_at: string;
+  expires_at?: string;
+  affected_goal?: string | null;
+  affected_assumption?: string | null;
+  recommended_response: string;
+}
+
+export interface FounderState {
+  strengths: string[];
+  avoidance_patterns: string[];
+  execution_patterns: string[];
+  operating_windows: string[];
+  recommendation_acceptance: string[];
+  recommendation_rejection: string[];
+  behavioral_trends: string[];
+  confidence: number;
+  recent_changes: string[];
+}
+
+export interface StartupState {
+  current_goal: string | null;
+  active_milestones: string[];
+  stalled_milestones: string[];
+  current_projects: string[];
+  evidence: string[];
+  assumptions: string[];
+  risks: string[];
+  metrics: Record<string, number | string | null>;
+  strategic_priorities: string[];
+  recent_changes: string[];
+}
+
+export interface StrategyState {
+  stated_priorities: string[];
+  observed_priorities: string[];
+  contradictions: string[];
+  strategic_drift: string[];
+  priority_confidence: number;
+}
+
+export interface ExecutionState {
+  completed_actions: string[];
+  skipped_actions: string[];
+  delayed_actions: string[];
+  repeated_actions: string[];
+  outcome_quality: string[];
+  execution_velocity: number;
+}
+
+export interface TemporalCoherenceState {
+  today_changes: string[];
+  week_changes: string[];
+  week_over_week_changes: string[];
+  increasing_behaviors: string[];
+  decreasing_behaviors: string[];
+  strengthening_patterns: string[];
+  weakening_patterns: string[];
+}
+
+export interface DecisionCandidate {
+  id: string;
+  action: string;
+  rationale: string;
+  expected_evidence: string;
+  scores: {
+    impact: number;
+    urgency: number;
+    goal_relevance: number;
+    evidence_value: number;
+    founder_fit: number;
+    execution_probability: number;
+    opportunity_cost: number;
+    repetition_penalty: number;
+    behavioral_correction: number;
+    risk_reduction: number;
+    confidence: number;
+    total: number;
+  };
+  supporting_signals: IntelligenceSignalType[];
+  why_it_beats_alternatives: string;
+}
+
+export interface DecisionState {
+  candidates: DecisionCandidate[];
+  top_candidate: DecisionCandidate | null;
+  decision_basis: string[];
+}
+
+export interface FounderIntelligenceState {
+  founder: FounderState;
+  startup: StartupState;
+  strategy: StrategyState;
+  execution: ExecutionState;
+  temporal: TemporalCoherenceState;
+  signals: IntelligenceSignal[];
+  decision: DecisionState;
+  source_summary: {
+    reflections: number;
+    learning_logs: number;
+    activity_events: number;
+    milestones: number;
+    tasks: number;
+    action_logs: number;
+  };
+  generated_at: string;
+}
+
+export interface FounderIntelligenceInput {
+  founderContext?: Record<string, any> | null;
+  founderMemory?: Record<string, any> | null;
+  project?: Record<string, any> | null;
+  milestones?: Array<Record<string, any>>;
+  tasks?: Array<Record<string, any>>;
+  reflections?: Array<Record<string, any>>;
+  learningLogs?: LearningLogRow[];
+  activityEvents?: SessionEvent[];
+  actionLogs?: Array<Record<string, any>>;
+  now?: Date;
+}
+
+const EXTERNAL_KEYWORDS = /\b(user|customer|interview|feedback|talked|called|met|spoke|revenue|sale|paid|pricing|launch|publish|post|pitch|email|reach out|dm|contact)\b/i;
+const REVENUE_KEYWORDS = /\b(revenue|sale|paid|pricing|price|charge|payment|mrr|arr|invoice|subscription|upsell|close)\b/i;
+const USER_EVIDENCE_KEYWORDS = /\b(user|customer|interview|feedback|talked|called|met|spoke|reply|response|commitment|preorder|paid|payment|signed up|signup)\b/i;
+
+function clampScore(n: number): number {
+  return Math.max(0, Math.min(100, Math.round(n)));
+}
+
+function confidenceFromCounts(count: number, reliableAt: number): number {
+  return Math.max(0.2, Math.min(0.95, count / reliableAt));
+}
+
+function unique(values: Array<string | null | undefined>, limit = 8): string[] {
+  return [...new Set(values.map((v) => String(v ?? "").trim()).filter(Boolean))].slice(0, limit);
+}
+
+function daysBetween(now: Date, iso?: string | null): number {
+  if (!iso) return 999;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return 999;
+  return Math.floor((now.getTime() - d.getTime()) / 86_400_000);
+}
+
+function recentWithin<T extends Record<string, any>>(rows: T[], now: Date, days: number, field = "created_at"): T[] {
+  const cutoff = now.getTime() - days * 86_400_000;
+  return rows.filter((r) => {
+    const raw = r[field] ?? r.occurred_at ?? r.updated_at;
+    const t = raw ? new Date(raw).getTime() : 0;
+    return t >= cutoff;
+  });
+}
+
+function signal(params: Omit<IntelligenceSignal, "detected_at"> & { now: Date }): IntelligenceSignal {
+  return {
+    ...params,
+    detected_at: params.now.toISOString(),
+  };
+}
+
+function stagePriority(stage: string): string {
+  const s = stage.toLowerCase();
+  if (s.includes("revenue")) return "close or expand paid usage";
+  if (s.includes("growth")) return "retain users while growing a repeatable channel";
+  if (s.includes("launch")) return "drive qualified users through one repeatable channel";
+  if (s.includes("mvp")) return "ship to real users and observe usage";
+  if (s.includes("validation")) return "collect commitment evidence from target users";
+  return "validate the core problem with real people";
+}
+
+function actionCategory(text: string): string {
+  const t = text.toLowerCase();
+  if (REVENUE_KEYWORDS.test(t)) return "revenue";
+  if (/\b(message|dm|email|reach out|contact|call|talk|interview|feedback)\b/i.test(t)) return "customer evidence";
+  if (/\b(build|ship|code|implement|deploy|fix|feature)\b/i.test(t)) return "build";
+  if (/\b(write|post|publish|content|tweet|thread|blog)\b/i.test(t)) return "distribution";
+  if (/\b(research|review|analyze|read|study|compare)\b/i.test(t)) return "research";
+  return "operations";
+}
+
+export function deriveTemporalCoherence(input: FounderIntelligenceInput): TemporalCoherenceState {
+  const now = input.now ?? new Date();
+  const reflections = input.reflections ?? [];
+  const learningLogs = input.learningLogs ?? [];
+  const actions = input.actionLogs ?? [];
+  const thisWeekReflections = recentWithin(reflections, now, 7);
+  const lastWeekReflections = reflections.filter((r) => {
+    const age = daysBetween(now, r.created_at);
+    return age >= 7 && age < 14;
+  });
+  const thisWeekCompleted = thisWeekReflections.filter((r) => r.outcome === "completed" || r.outcome === "done").length;
+  const lastWeekCompleted = lastWeekReflections.filter((r) => r.outcome === "completed" || r.outcome === "done").length;
+  const thisWeekLogs = recentWithin(learningLogs, now, 7);
+  const lastWeekLogs = learningLogs.filter((r) => {
+    const age = daysBetween(now, r.created_at);
+    return age >= 7 && age < 14;
+  });
+  const thisWeekExternal = thisWeekReflections.filter((r) => EXTERNAL_KEYWORDS.test(`${r.today_action ?? ""} ${r.note ?? ""}`)).length;
+  const lastWeekExternal = lastWeekReflections.filter((r) => EXTERNAL_KEYWORDS.test(`${r.today_action ?? ""} ${r.note ?? ""}`)).length;
+  const today = recentWithin([...reflections, ...actions], now, 1);
+
+  const week_changes: string[] = [];
+  if (thisWeekReflections.length || lastWeekReflections.length) {
+    week_changes.push(`Completed ${thisWeekCompleted}/${thisWeekReflections.length} reflected actions this week vs ${lastWeekCompleted}/${lastWeekReflections.length} last week.`);
+  }
+  if (thisWeekExternal !== lastWeekExternal) {
+    week_changes.push(`External evidence actions moved from ${lastWeekExternal} last week to ${thisWeekExternal} this week.`);
+  }
+  if (thisWeekLogs.length || lastWeekLogs.length) {
+    const rejectedNow = thisWeekLogs.filter((r) => r.outcome === "overridden" || r.outcome === "ignored").length;
+    const rejectedBefore = lastWeekLogs.filter((r) => r.outcome === "overridden" || r.outcome === "ignored").length;
+    week_changes.push(`Recommendation rejection moved from ${rejectedBefore} last week to ${rejectedNow} this week.`);
+  }
+
+  return {
+    today_changes: today.length ? [`${today.length} founder activity/reflection events recorded today.`] : [],
+    week_changes,
+    week_over_week_changes: week_changes,
+    increasing_behaviors: thisWeekExternal > lastWeekExternal ? ["external evidence seeking"] : [],
+    decreasing_behaviors: thisWeekExternal < lastWeekExternal ? ["external evidence seeking"] : [],
+    strengthening_patterns: thisWeekCompleted < lastWeekCompleted ? ["execution slowdown"] : [],
+    weakening_patterns: thisWeekCompleted > lastWeekCompleted ? ["execution slowdown"] : [],
+  };
+}
+
+export function deriveIntelligenceSignals(params: {
+  input: FounderIntelligenceInput;
+  executionSignature: ExecutionSignature;
+  temporalProfile: TemporalProfile;
+  learnedPatterns: LearnedPatterns;
+  temporal: TemporalCoherenceState;
+}): IntelligenceSignal[] {
+  const { input, executionSignature, temporalProfile, learnedPatterns, temporal } = params;
+  const now = input.now ?? new Date();
+  const founderContext = input.founderContext ?? {};
+  const project = input.project ?? {};
+  const reflections = input.reflections ?? [];
+  const learningLogs = input.learningLogs ?? [];
+  const milestones = input.milestones ?? [];
+  const tasks = input.tasks ?? [];
+  const signals: IntelligenceSignal[] = [];
+  const stage = String(project.startup_stage ?? founderContext.current_stage ?? "Idea");
+  const activeMilestone = milestones.find((m) => m.status !== "completed" && m.status !== "abandoned");
+
+  const avoidance = unique([
+    ...((founderContext.avoidance_zones ?? []) as string[]),
+    ...((input.founderMemory?.avoidance_zones ?? []) as string[]),
+    ...executionSignature.avoidanceZones.map((z) => String(z.category)),
+    ...learnedPatterns.avoided_action_types,
+  ], 6);
+  if (avoidance.length > 0) {
+    signals.push(signal({
+      now,
+      type: "REPEATED_AVOIDANCE",
+      severity: avoidance.length >= 3 ? "high" : "medium",
+      confidence: confidenceFromCounts(avoidance.length + executionSignature.avoidanceZones.length, 5),
+      title: "Repeated avoidance pattern detected",
+      summary: `BuildMind currently sees avoidance around ${avoidance.slice(0, 3).join(", ")}.`,
+      evidence: [
+        { source: "founder_context/founder_memory", detail: avoidance.join(", "), count: avoidance.length },
+        ...executionSignature.avoidanceZones.slice(0, 2).map((z) => ({ source: "execution_signature", detail: `${z.category}: ${Math.round(z.completionRate * 100)}% completion`, count: z.totalTasks })),
+      ],
+      affected_goal: activeMilestone?.title ?? null,
+      recommended_response: "Prefer a smaller direct exposure to the avoided work rather than routing around it entirely.",
+    }));
+  }
+
+  const thisWeek = recentWithin(reflections, now, 7);
+  const completedThisWeek = thisWeek.filter((r) => r.outcome === "completed" || r.outcome === "done");
+  const externalThisWeek = completedThisWeek.filter((r) => EXTERNAL_KEYWORDS.test(`${r.today_action ?? ""} ${r.note ?? ""}`));
+  if (completedThisWeek.length >= 3 && externalThisWeek.length === 0) {
+    signals.push(signal({
+      now,
+      type: "BUSYWORK_PATTERN",
+      severity: "high",
+      confidence: confidenceFromCounts(completedThisWeek.length, 5),
+      title: "Busywork pattern",
+      summary: `${completedThisWeek.length} completed actions this week, but none visibly touched users, revenue, launch, or distribution.`,
+      evidence: completedThisWeek.slice(0, 5).map((r) => ({ source: "reflections", detail: String(r.today_action ?? r.note ?? "completed action") })),
+      affected_goal: activeMilestone?.title ?? null,
+      recommended_response: "Move the next action toward external evidence or revenue signal instead of internal progress.",
+    }));
+  }
+
+  const evidenceRows = recentWithin(reflections, now, 14).filter((r) => USER_EVIDENCE_KEYWORDS.test(`${r.today_action ?? ""} ${r.note ?? ""} ${r.what_happened ?? ""} ${r.what_learned ?? ""}`));
+  if (evidenceRows.length === 0) {
+    signals.push(signal({
+      now,
+      type: "EVIDENCE_GAP",
+      severity: stage.toLowerCase().includes("idea") || stage.toLowerCase().includes("validation") ? "critical" : "high",
+      confidence: reflections.length >= 3 ? 0.8 : 0.55,
+      title: "No recent external evidence",
+      summary: "No user/customer/revenue evidence was detected in the last 14 days of reflections.",
+      evidence: [{ source: "reflections", detail: "No recent reflection contained user/customer/revenue evidence keywords.", window: "14 days" }],
+      affected_goal: activeMilestone?.title ?? null,
+      affected_assumption: project.problem ? `Problem is painful for ${project.target_users ?? "target users"}` : null,
+      recommended_response: "Prioritize one action that produces external evidence today.",
+    }));
+  }
+
+  const activeMilestones = milestones.filter((m) => m.status !== "completed" && m.status !== "abandoned");
+  const stalled = activeMilestones.filter((m) => daysBetween(now, m.updated_at ?? m.created_at) >= 7);
+  if (stalled.length > 0) {
+    signals.push(signal({
+      now,
+      type: "GOAL_SLIPPAGE",
+      severity: stalled.length >= 2 ? "high" : "medium",
+      confidence: confidenceFromCounts(stalled.length, 3),
+      title: "Goal slippage",
+      summary: `${stalled.length} active milestone${stalled.length === 1 ? "" : "s"} have not visibly moved in at least 7 days.`,
+      evidence: stalled.slice(0, 3).map((m) => ({ source: "milestones", detail: `${m.title} last updated ${daysBetween(now, m.updated_at ?? m.created_at)} days ago` })),
+      affected_goal: stalled[0]?.title ?? null,
+      recommended_response: "Pick a next action that directly advances or revalidates the stalest active milestone.",
+    }));
+  }
+
+  const priority = stagePriority(stage);
+  const observedCategories = completedThisWeek.map((r) => actionCategory(String(r.today_action ?? r.note ?? "")));
+  const externalObserved = observedCategories.filter((c) => c === "customer evidence" || c === "revenue" || c === "distribution").length;
+  if ((stage.toLowerCase().includes("validation") || stage.toLowerCase().includes("revenue") || stage.toLowerCase().includes("launch")) && completedThisWeek.length >= 3 && externalObserved === 0) {
+    signals.push(signal({
+      now,
+      type: "BEHAVIOR_STRATEGY_CONTRADICTION",
+      severity: "high",
+      confidence: 0.75,
+      title: "Behavior contradicts stated strategy",
+      summary: `Stated stage priority is to ${priority}, but completed work this week appears internal.`,
+      evidence: completedThisWeek.slice(0, 4).map((r) => ({ source: "reflections", detail: String(r.today_action ?? r.note ?? "completed action") })),
+      affected_goal: activeMilestone?.title ?? null,
+      recommended_response: "Choose a task that makes the stated strategy observable in behavior today.",
+    }));
+  }
+
+  const rejected = learningLogs.filter((r) => r.outcome === "overridden" || r.outcome === "ignored");
+  if (learnedPatterns.patterns_reliable && rejected.length >= 3) {
+    signals.push(signal({
+      now,
+      type: "RECOMMENDATION_REJECTION_PATTERN",
+      severity: rejected.length >= 5 ? "high" : "medium",
+      confidence: Math.min(0.9, learnedPatterns.total_logged / 12),
+      title: "Recommendation rejection pattern",
+      summary: `The founder has rejected or ignored ${rejected.length} recent recommendations; avoided types: ${learnedPatterns.avoided_action_types.join(", ") || "not yet specific"}.`,
+      evidence: rejected.slice(0, 3).map((r) => ({ source: "reflexion_learning_log", detail: `${r.action_shown} → ${r.outcome}` })),
+      recommended_response: "Reduce friction or change channel/type while preserving the strategic goal.",
+    }));
+  }
+
+  const momentum = Number(founderContext.momentum_score ?? 50);
+  const lastWeekMomentum = founderContext.momentum_last_week == null ? null : Number(founderContext.momentum_last_week);
+  if (lastWeekMomentum !== null && Math.abs(momentum - lastWeekMomentum) >= 10) {
+    signals.push(signal({
+      now,
+      type: "MOMENTUM_CHANGE",
+      severity: momentum < lastWeekMomentum ? "high" : "medium",
+      confidence: 0.8,
+      title: momentum < lastWeekMomentum ? "Momentum dropped" : "Momentum improved",
+      summary: `Momentum moved from ${lastWeekMomentum} to ${momentum}.`,
+      evidence: [{ source: "founder_context", detail: `momentum_last_week=${lastWeekMomentum}, momentum_score=${momentum}` }],
+      recommended_response: momentum < lastWeekMomentum ? "Assign a smaller high-signal task to restart execution." : "Use the momentum window for a higher-leverage uncomfortable task.",
+    }));
+  }
+
+  if (temporal.decreasing_behaviors.length > 0 || temporalProfile.sessionLengthTrend === "shrinking") {
+    signals.push(signal({
+      now,
+      type: "FOUNDER_BEHAVIOR_CHANGE",
+      severity: "medium",
+      confidence: 0.65,
+      title: "Founder behavior is changing",
+      summary: temporal.decreasing_behaviors.length ? `Decreasing behavior: ${temporal.decreasing_behaviors.join(", ")}.` : "Session length appears to be shrinking.",
+      evidence: [{ source: "temporal_profile", detail: temporalProfile.insight ?? `session trend=${temporalProfile.sessionLengthTrend}` }],
+      recommended_response: "Adjust task size/timing and explicitly test whether the old operating pattern still holds.",
+    }));
+  }
+
+  const staleTasks = tasks.filter((t) => !t.is_completed && t.status !== "completed" && daysBetween(now, t.updated_at ?? t.created_at ?? t.due_date) >= 14);
+  if (staleTasks.length > 0 && evidenceRows.length === 0) {
+    signals.push(signal({
+      now,
+      type: "ASSUMPTION_DECAY",
+      severity: "medium",
+      confidence: 0.6,
+      title: "Assumption confidence is decaying",
+      summary: "Open work is aging while recent external evidence is missing.",
+      evidence: staleTasks.slice(0, 3).map((t) => ({ source: "tasks", detail: `${t.title} has been open/stale for ${daysBetween(now, t.updated_at ?? t.created_at ?? t.due_date)} days` })),
+      affected_assumption: project.problem ? `Target users need ${project.problem}` : null,
+      recommended_response: "Treat the core assumption as untrusted until today's action produces fresh evidence.",
+    }));
+  }
+
+  const completionRate = thisWeek.length ? completedThisWeek.length / thisWeek.length : null;
+  if (completionRate !== null && thisWeek.length >= 4 && completionRate < 0.4) {
+    signals.push(signal({
+      now,
+      type: "EXECUTION_DEGRADATION",
+      severity: "high",
+      confidence: confidenceFromCounts(thisWeek.length, 7),
+      title: "Execution degradation",
+      summary: `Only ${Math.round(completionRate * 100)}% of reflected actions were completed this week.`,
+      evidence: [{ source: "reflections", detail: `${completedThisWeek.length}/${thisWeek.length} completed`, window: "7 days" }],
+      recommended_response: "Make the next action smaller, clearer, and tied to one evidence-producing outcome.",
+    }));
+  }
+
+  return signals.sort((a, b) => {
+    const sev = { critical: 4, high: 3, medium: 2, low: 1 } as const;
+    return sev[b.severity] - sev[a.severity] || b.confidence - a.confidence;
+  });
+}
+
+export function buildFounderIntelligenceState(input: FounderIntelligenceInput): FounderIntelligenceState {
+  const now = input.now ?? new Date();
+  const founderContext = input.founderContext ?? {};
+  const founderMemory = input.founderMemory ?? {};
+  const project = input.project ?? {};
+  const reflections = input.reflections ?? [];
+  const learningLogs = input.learningLogs ?? [];
+  const activityEvents = input.activityEvents ?? [];
+  const milestones = input.milestones ?? [];
+  const tasks = input.tasks ?? [];
+  const actionLogs = input.actionLogs ?? [];
+
+  const temporalProfile = buildTemporalProfile(activityEvents, Number(founderContext.timezone_offset ?? 0));
+  const taskRecords: TaskRecord[] = reflections.map((r) => ({
+    title: String(r.today_action ?? r.note ?? ""),
+    completed: r.outcome === "completed" || r.outcome === "done",
+    created_at: String(r.created_at ?? now.toISOString()),
+    override_reason: r.outcome === "blocked" || r.outcome === "abandoned" ? String(r.blocker ?? r.note ?? "") : null,
+  }));
+  const executionSignature = buildExecutionSignature(taskRecords, Number(founderContext.momentum_score ?? 50));
+  const learnedPatterns = deriveLearnedPatterns(learningLogs);
+  const temporal = deriveTemporalCoherence(input);
+  const signals = deriveIntelligenceSignals({ input, executionSignature, temporalProfile, learnedPatterns, temporal });
+  const thisWeek = recentWithin(reflections, now, 7);
+  const completedThisWeek = thisWeek.filter((r) => r.outcome === "completed" || r.outcome === "done");
+  const skippedThisWeek = thisWeek.filter((r) => ["blocked", "abandoned", "skipped"].includes(String(r.outcome)));
+  const activeMilestones = milestones.filter((m) => m.status !== "completed" && m.status !== "abandoned");
+  const stalledMilestones = activeMilestones.filter((m) => daysBetween(now, m.updated_at ?? m.created_at) >= 7);
+  const stage = String(project.startup_stage ?? founderContext.current_stage ?? "Idea");
+  const statedPriorities = unique([stagePriority(stage), ...activeMilestones.slice(0, 3).map((m) => m.title)]);
+  const observedPriorities = unique(completedThisWeek.map((r) => actionCategory(String(r.today_action ?? r.note ?? ""))));
+  const contradictionSignals = signals.filter((s) => s.type === "BEHAVIOR_STRATEGY_CONTRADICTION");
+
+  const founder: FounderState = {
+    strengths: unique([...(founderMemory.strengths ?? []), ...executionSignature.strengths.map((s) => String(s.category)), ...learnedPatterns.preferred_action_types], 8),
+    avoidance_patterns: unique([...(founderContext.avoidance_zones ?? []), ...(founderMemory.avoidance_zones ?? []), ...executionSignature.avoidanceZones.map((s) => String(s.category)), ...learnedPatterns.avoided_action_types], 8),
+    execution_patterns: unique([executionSignature.signatureSentence, learnedPatterns.patterns_reliable ? `Recommendation completion rate ${Math.round(learnedPatterns.completion_rate * 100)}%` : null], 5),
+    operating_windows: unique([temporalProfile.peakProductivityHour != null ? `Best completion hour around ${temporalProfile.peakProductivityHour}:00` : null, temporalProfile.dropoutHour != null ? `Dropout risk around ${temporalProfile.dropoutHour}:00` : null], 4),
+    recommendation_acceptance: learnedPatterns.preferred_action_types.map((t) => `Completes ${t} recommendations`),
+    recommendation_rejection: unique([...learnedPatterns.avoided_action_types.map((t) => `Avoids ${t} recommendations`), ...learnedPatterns.avoided_platforms.map((p) => `Avoids ${p}`)], 6),
+    behavioral_trends: unique([...temporal.increasing_behaviors.map((b) => `${b} increasing`), ...temporal.decreasing_behaviors.map((b) => `${b} decreasing`)], 6),
+    confidence: clampScore((learnedPatterns.patterns_reliable ? 30 : 0) + Math.min(reflections.length, 10) * 4 + Math.min(activityEvents.length, 20)),
+    recent_changes: temporal.week_changes.slice(0, 5),
+  };
+
+  const startup: StartupState = {
+    current_goal: activeMilestones[0]?.title ?? stagePriority(stage),
+    active_milestones: activeMilestones.map((m) => String(m.title)).slice(0, 5),
+    stalled_milestones: stalledMilestones.map((m) => String(m.title)).slice(0, 5),
+    current_projects: unique([project.name, project.title], 3),
+    evidence: unique(reflections.filter((r) => USER_EVIDENCE_KEYWORDS.test(`${r.today_action ?? ""} ${r.note ?? ""} ${r.what_happened ?? ""} ${r.what_learned ?? ""}`)).map((r) => String(r.what_learned ?? r.what_happened ?? r.note ?? r.today_action)), 6),
+    assumptions: unique([project.problem ? `Target users have this problem: ${project.problem}` : null, project.target_users ? `Target segment: ${project.target_users}` : null], 6),
+    risks: signals.filter((s) => ["EVIDENCE_GAP", "GOAL_SLIPPAGE", "ASSUMPTION_DECAY", "BUSYWORK_PATTERN"].includes(s.type)).map((s) => s.summary).slice(0, 6),
+    metrics: {
+      momentum_score: founderContext.momentum_score ?? null,
+      current_mrr: project.current_mrr ?? null,
+      tasks_completed_this_week: completedThisWeek.length,
+      reflected_actions_this_week: thisWeek.length,
+    },
+    strategic_priorities: statedPriorities,
+    recent_changes: temporal.week_changes.slice(0, 5),
+  };
+
+  const strategy: StrategyState = {
+    stated_priorities: statedPriorities,
+    observed_priorities: observedPriorities,
+    contradictions: contradictionSignals.map((s) => s.summary),
+    strategic_drift: signals.filter((s) => s.type === "BUSYWORK_PATTERN" || s.type === "GOAL_SLIPPAGE").map((s) => s.summary),
+    priority_confidence: clampScore((activeMilestones.length ? 40 : 20) + (project.problem ? 20 : 0) + (thisWeek.length ? 20 : 0)),
+  };
+
+  const repeatedActions = unique(reflections.map((r) => String(r.today_action ?? "")).filter((title, _, arr) => title && arr.filter((x) => x === title).length > 1), 5);
+  const execution: ExecutionState = {
+    completed_actions: completedThisWeek.map((r) => String(r.today_action ?? r.note ?? "completed action")).slice(0, 6),
+    skipped_actions: skippedThisWeek.map((r) => String(r.today_action ?? r.note ?? "skipped action")).slice(0, 6),
+    delayed_actions: tasks.filter((t) => !t.is_completed && t.status !== "completed" && daysBetween(now, t.updated_at ?? t.created_at ?? t.due_date) >= 7).map((t) => String(t.title)).slice(0, 6),
+    repeated_actions: repeatedActions,
+    outcome_quality: startup.evidence.length ? [`${startup.evidence.length} evidence-producing reflections detected.`] : ["Recent completion does not clearly show external evidence yet."],
+    execution_velocity: thisWeek.length ? Math.round((completedThisWeek.length / thisWeek.length) * 100) : 0,
+  };
+
+  const stateWithoutDecision = {
+    founder,
+    startup,
+    strategy,
+    execution,
+    temporal,
+    signals,
+    source_summary: {
+      reflections: reflections.length,
+      learning_logs: learningLogs.length,
+      activity_events: activityEvents.length,
+      milestones: milestones.length,
+      tasks: tasks.length,
+      action_logs: actionLogs.length,
+    },
+    generated_at: now.toISOString(),
+  };
+
+  const decision = buildDecisionState({ ...stateWithoutDecision, decision: { candidates: [], top_candidate: null, decision_basis: [] } });
+
+  return { ...stateWithoutDecision, decision };
+}
+
+function scoreCandidate(candidate: Omit<DecisionCandidate, "scores" | "why_it_beats_alternatives">, state: FounderIntelligenceState): DecisionCandidate {
+  const signalTypes = new Set(candidate.supporting_signals);
+  const isExternal = /user|customer|interview|feedback|message|call|revenue|pricing|paid|launch|post|publish/i.test(candidate.action);
+  const hasAvoidance = signalTypes.has("REPEATED_AVOIDANCE") || signalTypes.has("RECOMMENDATION_REJECTION_PATTERN");
+  const hasGoalRisk = signalTypes.has("GOAL_SLIPPAGE");
+  const hasEvidenceGap = signalTypes.has("EVIDENCE_GAP") || signalTypes.has("ASSUMPTION_DECAY");
+  const repeated = state.execution.repeated_actions.some((a) => a && candidate.action.toLowerCase().includes(a.toLowerCase().slice(0, 24)));
+  const founderAvoidsExternal = state.founder.avoidance_patterns.some((p) => /outreach|interview|customer|sales|pricing|revenue/i.test(p));
+  const isGenericContinuation = candidate.id === "continue_best_next_task";
+  const impact = isGenericContinuation ? 55 : hasEvidenceGap || hasGoalRisk ? 90 : isExternal ? 75 : 55;
+  const urgency = isGenericContinuation ? 45 : signalTypes.has("EVIDENCE_GAP") || signalTypes.has("GOAL_SLIPPAGE") ? 90 : signalTypes.has("MOMENTUM_CHANGE") ? 70 : 55;
+  const goal_relevance = isGenericContinuation ? 60 : candidate.action.toLowerCase().includes(String(state.startup.current_goal ?? "").toLowerCase().slice(0, 12)) ? 85 : hasGoalRisk ? 80 : 60;
+  const evidence_value = isGenericContinuation ? 45 : isExternal ? 90 : hasEvidenceGap ? 75 : 45;
+  const founder_fit = hasAvoidance ? 55 : founderAvoidsExternal && isExternal ? 50 : 75;
+  const execution_probability = state.execution.execution_velocity > 70 ? 80 : state.execution.execution_velocity > 40 ? 65 : 45;
+  const opportunity_cost = isExternal ? 15 : 35;
+  const repetition_penalty = repeated ? 40 : 0;
+  const behavioral_correction = isGenericContinuation ? 40 : hasAvoidance || signalTypes.has("BEHAVIOR_STRATEGY_CONTRADICTION") ? 80 : 45;
+  const risk_reduction = isGenericContinuation ? 50 : hasGoalRisk || hasEvidenceGap || signalTypes.has("ASSUMPTION_DECAY") ? 85 : 55;
+  const confidence = Math.round(candidate.supporting_signals.reduce((sum, type) => sum + (state.signals.find((s) => s.type === type)?.confidence ?? 0.5), 0) / Math.max(1, candidate.supporting_signals.length) * 100);
+  const total = clampScore(
+    impact * 0.16 + urgency * 0.14 + goal_relevance * 0.13 + evidence_value * 0.15 + founder_fit * 0.1 + execution_probability * 0.1 + behavioral_correction * 0.1 + risk_reduction * 0.1 + confidence * 0.08 - opportunity_cost * 0.08 - repetition_penalty * 0.08,
+  );
+  return {
+    ...candidate,
+    scores: { impact, urgency, goal_relevance, evidence_value, founder_fit, execution_probability, opportunity_cost, repetition_penalty, behavioral_correction, risk_reduction, confidence, total },
+    why_it_beats_alternatives: `Scores highest because it balances ${hasEvidenceGap ? "fresh evidence" : hasGoalRisk ? "goal recovery" : "execution progress"} with founder fit and avoids repeating stale work.`,
+  };
+}
+
+export function buildDecisionState(state: FounderIntelligenceState): DecisionState {
+  const candidates: Array<Omit<DecisionCandidate, "scores" | "why_it_beats_alternatives">> = [];
+  const currentGoal = state.startup.current_goal ?? "the current startup goal";
+  const target = state.startup.assumptions.find((a) => a.toLowerCase().includes("target segment"))?.replace(/^Target segment: /, "") || "one target user";
+  const topSignals = state.signals.slice(0, 5);
+
+  if (state.signals.some((s) => s.type === "EVIDENCE_GAP" || s.type === "ASSUMPTION_DECAY")) {
+    candidates.push({
+      id: "evidence_probe",
+      action: `Get one external evidence signal for ${currentGoal}: message or call ${target} and ask what they did the last time this problem appeared.`,
+      rationale: "Fresh evidence is the bottleneck; more internal work will not reduce assumption risk.",
+      expected_evidence: "A concrete user/customer response, objection, workflow detail, or commitment signal.",
+      supporting_signals: topSignals.filter((s) => s.type === "EVIDENCE_GAP" || s.type === "ASSUMPTION_DECAY" || s.type === "BUSYWORK_PATTERN").map((s) => s.type),
+    });
+  }
+
+  if (state.signals.some((s) => s.type === "GOAL_SLIPPAGE")) {
+    candidates.push({
+      id: "unstall_goal",
+      action: `Unstall ${currentGoal}: choose the smallest unfinished task tied to it and define the evidence that would prove it moved today.`,
+      rationale: "The active goal is aging; the next move should make progress observable rather than broad.",
+      expected_evidence: "A task completion plus a specific before/after or user/revenue/learning artifact.",
+      supporting_signals: topSignals.filter((s) => s.type === "GOAL_SLIPPAGE" || s.type === "MOMENTUM_CHANGE").map((s) => s.type),
+    });
+  }
+
+  if (state.signals.some((s) => s.type === "REPEATED_AVOIDANCE" || s.type === "BEHAVIOR_STRATEGY_CONTRADICTION" || s.type === "RECOMMENDATION_REJECTION_PATTERN")) {
+    const avoid = state.founder.avoidance_patterns[0] ?? "the avoided work";
+    candidates.push({
+      id: "avoidance_microdose",
+      action: `Do a 15-minute micro-dose of ${avoid}: one small exposure that advances ${currentGoal} without letting avoidance pick the agenda.`,
+      rationale: "The behavioral pattern is now part of the startup bottleneck, not a side issue.",
+      expected_evidence: "Whether a smaller version of the avoided action gets started or still gets resisted.",
+      supporting_signals: topSignals.filter((s) => s.type === "REPEATED_AVOIDANCE" || s.type === "BEHAVIOR_STRATEGY_CONTRADICTION" || s.type === "RECOMMENDATION_REJECTION_PATTERN").map((s) => s.type),
+    });
+  }
+
+  candidates.push({
+    id: "continue_best_next_task",
+    action: `Advance ${currentGoal} with the highest-priority open task, but require one observable result before calling it done.`,
+    rationale: "When signals are mixed, preserve strategic continuity and improve outcome quality.",
+    expected_evidence: "A completed task with a named result, blocker, or learning artifact.",
+    supporting_signals: topSignals.map((s) => s.type),
+  });
+
+  const ranked = candidates
+    .map((candidate) => scoreCandidate({ ...candidate, supporting_signals: unique(candidate.supporting_signals, 5) as IntelligenceSignalType[] }, state))
+    .sort((a, b) => b.scores.total - a.scores.total)
+    .slice(0, 4);
+
+  return {
+    candidates: ranked,
+    top_candidate: ranked[0] ?? null,
+    decision_basis: [
+      ranked[0] ? `Top candidate score: ${ranked[0].scores.total}/100.` : "No candidate ranked.",
+      ...topSignals.slice(0, 3).map((s) => `${s.type}: ${s.summary}`),
+    ],
+  };
+}
+
+export function buildFounderIntelligencePromptBlock(state: FounderIntelligenceState): string {
+  const topSignals = state.signals.slice(0, 5);
+  const candidate = state.decision.top_candidate;
+  const lines: string[] = [
+    "FOUNDER INTELLIGENCE OS STATE (structured, deterministic signals — treat as factual state, not prose decoration):",
+    `Current goal: ${state.startup.current_goal ?? "unknown"}`,
+    `Founder strengths: ${state.founder.strengths.join(", ") || "not enough evidence"}`,
+    `Founder avoidance: ${state.founder.avoidance_patterns.join(", ") || "not enough evidence"}`,
+    `Observed priorities: ${state.strategy.observed_priorities.join(", ") || "none observed this week"}`,
+    `Stated priorities: ${state.strategy.stated_priorities.join(", ") || "unknown"}`,
+  ];
+  if (state.temporal.week_changes.length) {
+    lines.push(`Recent change: ${state.temporal.week_changes.slice(0, 2).join(" ")}`);
+  }
+  if (topSignals.length) {
+    lines.push("Top machine-readable signals:");
+    for (const s of topSignals) {
+      lines.push(`- ${s.type} [${s.severity}, ${Math.round(s.confidence * 100)}%]: ${s.summary} Recommended response: ${s.recommended_response}`);
+    }
+  }
+  if (candidate) {
+    lines.push("Deterministic top candidate before LLM refinement:");
+    lines.push(`- Action: ${candidate.action}`);
+    lines.push(`- Score: ${candidate.scores.total}/100; why it beats alternatives: ${candidate.why_it_beats_alternatives}`);
+    lines.push(`- Expected evidence: ${candidate.expected_evidence}`);
+  }
+  lines.push("INSTRUCTION: Use the top candidate and signals as the decision basis unless the user's fresh context clearly contradicts them. If changing the action, explain which signal changed the ranking.");
+  return lines.join("\n");
+}
+
+export function summarizeFounderIntelligenceForClient(state: FounderIntelligenceState) {
+  return {
+    generated_at: state.generated_at,
+    current_goal: state.startup.current_goal,
+    top_signals: state.signals.slice(0, 4).map((s) => ({
+      type: s.type,
+      severity: s.severity,
+      confidence: s.confidence,
+      title: s.title,
+      summary: s.summary,
+      evidence: s.evidence.slice(0, 3),
+      recommended_response: s.recommended_response,
+    })),
+    what_changed: state.temporal.week_changes.slice(0, 3),
+    founder_model: {
+      strengths: state.founder.strengths.slice(0, 5),
+      avoidance_patterns: state.founder.avoidance_patterns.slice(0, 5),
+      operating_windows: state.founder.operating_windows.slice(0, 3),
+      confidence: state.founder.confidence,
+    },
+    strategy: {
+      stated_priorities: state.strategy.stated_priorities.slice(0, 4),
+      observed_priorities: state.strategy.observed_priorities.slice(0, 4),
+      contradictions: state.strategy.contradictions.slice(0, 3),
+    },
+    decision: {
+      top_candidate: state.decision.top_candidate,
+      alternatives: state.decision.candidates.slice(1, 4),
+      basis: state.decision.decision_basis,
+    },
+    source_summary: state.source_summary,
+  };
+}
+
+export async function loadFounderIntelligence(
+  supabase: SupabaseLike,
+  userId: string,
+  projectId?: string,
+  preloaded: Partial<FounderIntelligenceInput> = {},
+): Promise<FounderIntelligenceState> {
+  const now = preloaded.now ?? new Date();
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 86_400_000).toISOString();
+  const fourteenDaysAgo = new Date(now.getTime() - 14 * 86_400_000).toISOString();
+
+  try {
+    const [contextRes, memoryRes, projectRes, milestonesRes, tasksRes, reflectionsRes, learningRes, activityRes, actionLogsRes] = await Promise.allSettled([
+      preloaded.founderContext !== undefined ? Promise.resolve({ data: preloaded.founderContext }) : supabase.from("founder_context").select("*").eq("user_id", userId).maybeSingle(),
+      preloaded.founderMemory !== undefined ? Promise.resolve({ data: preloaded.founderMemory }) : supabase.from("founder_memory").select("*").eq("user_id", userId).maybeSingle(),
+      preloaded.project !== undefined ? Promise.resolve({ data: preloaded.project }) : projectId ? supabase.from("projects").select("*").eq("id", projectId).eq("user_id", userId).maybeSingle() : Promise.resolve({ data: null }),
+      preloaded.milestones !== undefined ? Promise.resolve({ data: preloaded.milestones }) : projectId ? supabase.from("milestones").select("*").eq("project_id", projectId).eq("user_id", userId).order("created_at", { ascending: true }).limit(20) : Promise.resolve({ data: [] }),
+      preloaded.tasks !== undefined ? Promise.resolve({ data: preloaded.tasks }) : supabase.from("tasks").select("*").eq("user_id", userId).order("updated_at", { ascending: false }).limit(80),
+      preloaded.reflections !== undefined ? Promise.resolve({ data: preloaded.reflections }) : supabase.from("reflections").select("*").eq("user_id", userId).gte("created_at", thirtyDaysAgo).order("created_at", { ascending: false }).limit(80),
+      preloaded.learningLogs !== undefined ? Promise.resolve({ data: preloaded.learningLogs }) : supabase.from("reflexion_learning_log").select("*").eq("user_id", userId).gte("created_at", thirtyDaysAgo).order("created_at", { ascending: false }).limit(50),
+      preloaded.activityEvents !== undefined ? Promise.resolve({ data: preloaded.activityEvents }) : supabase.from("activity_log").select("event_type, occurred_at, metadata").eq("user_id", userId).gte("occurred_at", thirtyDaysAgo).order("occurred_at", { ascending: false }).limit(500),
+      preloaded.actionLogs !== undefined ? Promise.resolve({ data: preloaded.actionLogs }) : supabase.from("action_logs").select("*").eq("user_id", userId).gte("created_at", fourteenDaysAgo).order("created_at", { ascending: false }).limit(80),
+    ]);
+
+    const data = <T>(res: PromiseSettledResult<{ data: T }>, fallback: T): T => res.status === "fulfilled" ? (res.value.data ?? fallback) : fallback;
+
+    return buildFounderIntelligenceState({
+      founderContext: data(contextRes as PromiseSettledResult<{ data: Record<string, any> | null }>, null),
+      founderMemory: data(memoryRes as PromiseSettledResult<{ data: Record<string, any> | null }>, null),
+      project: data(projectRes as PromiseSettledResult<{ data: Record<string, any> | null }>, null),
+      milestones: data(milestonesRes as PromiseSettledResult<{ data: Array<Record<string, any>> }>, []),
+      tasks: data(tasksRes as PromiseSettledResult<{ data: Array<Record<string, any>> }>, []),
+      reflections: data(reflectionsRes as PromiseSettledResult<{ data: Array<Record<string, any>> }>, []),
+      learningLogs: data(learningRes as PromiseSettledResult<{ data: LearningLogRow[] }>, []),
+      activityEvents: data(activityRes as PromiseSettledResult<{ data: SessionEvent[] }>, []),
+      actionLogs: data(actionLogsRes as PromiseSettledResult<{ data: Array<Record<string, any>> }>, []),
+      now,
+    });
+  } catch (err) {
+    logError("founderIntelligence/loadFounderIntelligence", err, { userId, projectId });
+    return buildFounderIntelligenceState({ ...preloaded, now });
+  }
+}
