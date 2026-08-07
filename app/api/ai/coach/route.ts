@@ -17,6 +17,7 @@ import { evaluateAIOutput } from "@/lib/aiEvaluator";
 import { getPromptForRequest, loadActivePrompts } from "@/lib/promptRegistry";
 import { loadFounderIntelligence, buildFounderIntelligencePromptBlock } from "@/lib/founderIntelligence";
 import { recordActionShown } from "@/lib/learning";
+import { buildCofounderJudgmentPromptBlock, evaluateFounderProposal, buildCofounderJudgment } from "@/lib/cofounderJudgment";
 
 const FREE_COACH_MESSAGES_PER_DAY = 3;
 
@@ -250,7 +251,9 @@ export async function POST(request: Request) {
         const milestones = milestonesResult.status === "fulfilled" ? milestonesResult.value.data ?? [] : [];
         const behavioral = behavioralResult.status === "fulfilled" ? behavioralResult.value : null;
         const intelligenceState = intelligenceResult?.status === "fulfilled" ? intelligenceResult.value : null;
-        intelligenceBlock = intelligenceState ? buildFounderIntelligencePromptBlock(intelligenceState) : "";
+        intelligenceBlock = intelligenceState
+          ? `${buildFounderIntelligencePromptBlock(intelligenceState)}\n\n${buildCofounderJudgmentPromptBlock(buildCofounderJudgment(intelligenceState))}\n\nFOUNDER PROPOSAL EVALUATION:\n${JSON.stringify(evaluateFounderProposal(message, intelligenceState))}`
+          : "";
 
         // Still read memory for spiral persistence (write path only)
         const { data: memData } = await supabase.from("founder_memory").select("emotional_signals").eq("user_id", userId).maybeSingle();
