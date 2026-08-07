@@ -18,6 +18,7 @@ import { recordActivity } from "@/lib/server/activityLog";
 import { checkAndCacheStageTransition } from "@/lib/server/stageTransitionCache";
 import { invalidateCognitionCache } from "@/lib/founderCognition";
 import { compareFounderIntelligenceOutcome } from "@/lib/learningLoop";
+import { markRecommendationObserved } from "@/lib/recommendationLifecycle";
 
 export async function POST(req: Request) {
   const supabase = await createClient();
@@ -224,9 +225,16 @@ export async function POST(req: Request) {
       project_id: projectId || null,
       stage: stage || ctx?.current_stage || null,
       action_shown: taskTitle || null,
-      outcome: outcome === "blocked" || outcome === "skipped" ? outcome : "completed",
+      outcome: outcome === "blocked" ? "partial" : outcome === "skipped" ? "overridden" : "completed",
       outcome_recorded_at: new Date().toISOString(),
       session_id: `task_complete:${user.id}:${Date.now()}`,
+      evidence_produced: outcome === "completed" ? taskTitle || null : null,
+      outcome_quality: outcome === "completed" ? "useful" : "none",
+      lifecycle_events: [{
+        type: outcome === "completed" ? "completed" : outcome === "blocked" ? "blocked" : "skipped",
+        at: new Date().toISOString(),
+        note: taskTitle || null,
+      }],
     });
   } catch {
     // Non-fatal — table may not exist in all envs, or row already inserted by stream route
@@ -239,21 +247,28 @@ export async function POST(req: Request) {
       project_id: projectId || null,
       stage:     stage || ctx?.current_stage || null,
       action_shown: taskTitle || null,
-      outcome:   outcome === "blocked" || outcome === "skipped" ? outcome : "completed",
+      outcome:   outcome === "blocked" ? "partial" : outcome === "skipped" ? "overridden" : "completed",
       created_at: new Date().toISOString(),
     });
   } catch {
     // Non-fatal — backfilled from reflexion_learning_log if missing
   }
-  // Founder Intelligence OBSERVE -> COMPARE -> LEARN.
-  // Reflection submission already closes this loop; direct task completion
-  // needs to do the same or deterministic prediction rows remain pending.
+
+  markRecommendationObserved(admin, {
+    userId: user.id,
+    taskTitle: taskTitle || "",
+    outcome,
+    founderExplanation: taskTitle || undefined,
+    evidenceProduced: outcome === "completed" ? taskTitle || undefined : undefined,
+  }).catch(() => {});
+
   compareFounderIntelligenceOutcome(admin, {
     userId: user.id,
     taskTitle: taskTitle || "",
     outcome,
     reflectionText: taskTitle || "",
   }).catch(() => {});
+
   // ── PATCH 2: Write checkin_done_date to user_behavior_state (AWAITED) ────
   // This was previously fire-and-forget. Awaiting it guarantees that by the time
   // the client receives this 200 response and navigates to /reflect, any other
