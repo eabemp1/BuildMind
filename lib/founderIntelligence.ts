@@ -2,6 +2,7 @@ import { buildExecutionSignature, type ExecutionSignature, type TaskRecord } fro
 import { buildTemporalProfile, type SessionEvent, type TemporalProfile } from "@/lib/temporalPatterns";
 import { deriveLearnedPatterns, type LearnedPatterns, type LearningLogRow } from "@/lib/learning";
 import { logError } from "@/lib/server/logger";
+import { buildTemporalComparison } from "@/lib/temporalCoherence";
 
 type SupabaseLike = {
   from: (table: string) => any;
@@ -187,6 +188,22 @@ function recentWithin<T extends Record<string, any>>(rows: T[], now: Date, days:
   });
 }
 
+function recencyWeight(now: Date, iso?: string | null, halfLifeDays = 21): number {
+  const age = daysBetween(now, iso);
+  if (age <= 0) return 1;
+  if (age >= 365) return 0.05;
+  return Math.max(0.05, Math.pow(0.5, age / halfLifeDays));
+}
+
+function weightedCompletedEvidence(reflections: Array<Record<string, any>>, now: Date): number {
+  return reflections.reduce((sum, r) => {
+    const completed = r.outcome === "completed" || r.outcome === "done";
+    if (!completed) return sum;
+    const hasEvidence = USER_EVIDENCE_KEYWORDS.test(`${r.today_action ?? ""} ${r.note ?? ""} ${r.what_happened ?? ""} ${r.what_learned ?? ""}`);
+    return hasEvidence ? sum + recencyWeight(now, r.created_at, 14) : sum;
+  }, 0);
+}
+
 function signal(params: Omit<IntelligenceSignal, "detected_at"> & { now: Date }): IntelligenceSignal {
   return {
     ...params,
@@ -216,6 +233,7 @@ function actionCategory(text: string): string {
 
 export function deriveTemporalCoherence(input: FounderIntelligenceInput): TemporalCoherenceState {
   const now = input.now ?? new Date();
+  const comparison = buildTemporalComparison(input);
   const reflections = input.reflections ?? [];
   const learningLogs = input.learningLogs ?? [];
   const actions = input.actionLogs ?? [];
@@ -249,13 +267,19 @@ export function deriveTemporalCoherence(input: FounderIntelligenceInput): Tempor
   }
 
   return {
-    today_changes: today.length ? [`${today.length} founder activity/reflection events recorded today.`] : [],
-    week_changes,
-    week_over_week_changes: week_changes,
-    increasing_behaviors: thisWeekExternal > lastWeekExternal ? ["external evidence seeking"] : [],
-    decreasing_behaviors: thisWeekExternal < lastWeekExternal ? ["external evidence seeking"] : [],
-    strengthening_patterns: thisWeekCompleted < lastWeekCompleted ? ["execution slowdown"] : [],
-    weakening_patterns: thisWeekCompleted > lastWeekCompleted ? ["execution slowdown"] : [],
+    today_changes: unique([...comparison.changed_today, ...(today.length ? [`${today.length} founder activity/reflection events recorded today.`] : [])], 6),
+    week_changes: unique([...week_changes, ...comparison.changed_this_week, ...comparison.since_last_decision], 8),
+    week_over_week_changes: unique([...week_changes, ...comparison.week_over_week], 8),
+    increasing_behaviors: unique([...comparison.increasing, ...(thisWeekExternal > lastWeekExternal ? ["external evidence seeking"] : [])], 5),
+    decreasing_behaviors: unique([...comparison.decreasing, ...(thisWeekExternal < lastWeekExternal ? ["external evidence seeking"] : [])], 5),
+    strengthening_patterns: unique([
+      ...(thisWeekCompleted < lastWeekCompleted ? ["execution slowdown"] : []),
+      comparison.recommendation_effectiveness.trend === "down" ? "recommendation effectiveness decay" : null,
+    ], 5),
+    weakening_patterns: unique([
+      ...(thisWeekCompleted > lastWeekCompleted ? ["execution slowdown"] : []),
+      comparison.recommendation_effectiveness.trend === "up" ? "recommendation effectiveness decay" : null,
+    ], 5),
   };
 }
 
@@ -493,6 +517,9 @@ export function buildFounderIntelligenceState(input: FounderIntelligenceInput): 
   const accuracySampleSize = Number(intelligenceAccuracy?.sample_size ?? 0);
   const accuracyScore = Number(intelligenceAccuracy?.average_match_score ?? 0);
   const accuracyAdjustment = accuracySampleSize >= 3 ? Math.round((accuracyScore - 0.5) * 20) : 0;
+  const recentReflectionWeight = reflections.reduce((sum, r) => sum + recencyWeight(now, r.created_at, 21), 0);
+  const recentActivityWeight = activityEvents.reduce((sum, a) => sum + recencyWeight(now, a.occurred_at, 14), 0);
+  const evidenceWeight = weightedCompletedEvidence(reflections, now);
 
   const founder: FounderState = {
     strengths: unique([...(founderMemory.strengths ?? []), ...executionSignature.strengths.map((s) => String(s.category)), ...learnedPatterns.preferred_action_types], 8),
@@ -507,7 +534,13 @@ export function buildFounderIntelligenceState(input: FounderIntelligenceInput): 
       accuracySampleSize >= 3 && intelligenceAccuracy?.trend === "up" ? "Founder Intelligence predictions are getting more accurate" : null,
       accuracySampleSize >= 3 && intelligenceAccuracy?.trend === "down" ? "Founder Intelligence predictions are slipping — model may be stale" : null,
     ], 6),
-    confidence: clampScore((learnedPatterns.patterns_reliable ? 30 : 0) + Math.min(reflections.length, 10) * 4 + Math.min(activityEvents.length, 20) + accuracyAdjustment),
+    confidence: clampScore(
+      (learnedPatterns.patterns_reliable ? 25 : 0)
+      + Math.min(recentReflectionWeight, 10) * 4
+      + Math.min(recentActivityWeight, 20)
+      + Math.min(evidenceWeight, 5) * 3
+      + accuracyAdjustment,
+    ),
     recent_changes: temporal.week_changes.slice(0, 5),
   };
 

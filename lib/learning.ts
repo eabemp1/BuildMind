@@ -502,6 +502,8 @@ export async function recordActionShown(params: {
         critic_persona: params.criticPersona ?? null,
         viability_score: params.viabilityScore ?? null,
         confidence: params.confidence ?? null,
+        recommendation_shown_at: new Date().toISOString(),
+        lifecycle_events: [{ type: "shown", at: new Date().toISOString() }],
         verifier_confidence: params.verifierConfidence ?? null,
         // rebuttal_score mirrors viability_score at show-time so
         // deriveLearnedPatterns can use it without ambiguity

@@ -54,6 +54,7 @@ import { loadCognitionInput, synthesizeFounderCognition, buildCognitionPromptBlo
 import { buildTodayPersonalisationContext } from "@/lib/todayPersonalisationContext";
 import { loadFounderIntelligence, buildFounderIntelligencePromptBlock, summarizeFounderIntelligenceForClient, type FounderIntelligenceState } from "@/lib/founderIntelligence";
 import { recordFounderIntelligencePrediction } from "@/lib/learningLoop";
+import { buildStartupRelationshipGraph, traceRelationshipChain } from "@/lib/founderRelationships";
 import { logError } from "@/lib/server/logger";
 import { recordActivity } from "@/lib/server/activityLog";
 
@@ -459,6 +460,32 @@ export async function loadTodayActionContext(params: {
     ctx.founderIntelligence = await loadFounderIntelligence(supabase, userId, projectId, { now: new Date() });
     ctx.founderIntelligencePromptBlock = buildFounderIntelligencePromptBlock(ctx.founderIntelligence);
     ctx.intelligenceSummary = summarizeFounderIntelligenceForClient(ctx.founderIntelligence);
+
+    try {
+      const [projectGraphRes, milestonesGraphRes, tasksGraphRes, reflectionsGraphRes] = await Promise.allSettled([
+        supabase.from("projects").select("*").eq("id", projectId).eq("user_id", userId).maybeSingle(),
+        supabase.from("milestones").select("*").eq("project_id", projectId).eq("user_id", userId).order("created_at", { ascending: true }).limit(30),
+        supabase.from("tasks").select("*").eq("user_id", userId).order("updated_at", { ascending: false }).limit(80),
+        supabase.from("reflections").select("*").eq("user_id", userId).order("created_at", { ascending: false }).limit(80),
+      ]);
+      const data = <T,>(res: PromiseSettledResult<{ data: T }>, fallback: T): T =>
+        res.status === "fulfilled" ? (res.value.data ?? fallback) : fallback;
+      const graph = buildStartupRelationshipGraph({
+        project: data(projectGraphRes as PromiseSettledResult<{ data: Record<string, any> | null }>, null),
+        milestones: data(milestonesGraphRes as PromiseSettledResult<{ data: Array<Record<string, any>> }>, []),
+        tasks: data(tasksGraphRes as PromiseSettledResult<{ data: Array<Record<string, any>> }>, []),
+        reflections: data(reflectionsGraphRes as PromiseSettledResult<{ data: Array<Record<string, any>> }>, []),
+      }, ctx.founderIntelligence);
+      const chain = traceRelationshipChain(
+        graph,
+        ctx.founderIntelligence.startup.stalled_milestones[0] ?? ctx.founderIntelligence.startup.active_milestones[0] ?? null,
+      );
+      if (chain.narrative && chain.path.length) {
+        ctx.founderIntelligencePromptBlock += `\n\nSTARTUP RELATIONSHIP TRACE (goal-to-evidence chain):\n${chain.narrative}\nInstruction: Today's recommendation must connect to this chain or explicitly explain why a different chain has become more important.`;
+      }
+    } catch (err) {
+      logError("todayActionContext/relationshipGraph", err, { userId, projectId });
+    }
 
     if (ctx.founderIntelligence.decision.top_candidate) {
       recordFounderIntelligencePrediction(supabase, {
