@@ -31,29 +31,16 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logError } from "@/lib/server/logger";
+import { inferActionType, inferActionPlatform, type ActionType, type ActionPlatform } from "@/lib/actionClassification";
+
+// Re-exported for backward compatibility — these used to be defined here.
+// Moved to lib/actionClassification.ts (dependency-free) so client code
+// (lib/founderMemory.ts) can use the same classification without pulling
+// this server-only module (createAdminClient) into the browser bundle.
+export { inferActionType, inferActionPlatform };
+export type { ActionType, ActionPlatform };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-
-export type ActionType =
-  | "user_interview"
-  | "content"
-  | "outreach"
-  | "build"
-  | "research"
-  | "pivot"
-  | "pricing"
-  | "other";
-
-export type ActionPlatform =
-  | "linkedin"
-  | "whatsapp"
-  | "twitter"
-  | "email"
-  | "reddit"
-  | "instagram"
-  | "slack"
-  | "phone"
-  | "other";
 
 export type ActionOutcome =
   | "completed"
@@ -136,53 +123,8 @@ export interface LearningLogRow {
 }
 
 // ─── Action classification ────────────────────────────────────────────────────
-
-/**
- * inferActionType — categorises an action string into a type label.
- * Used when writing a new log row. Keyword-based, fast, no LLM needed.
- */
-export function inferActionType(action: string): ActionType {
-  const a = action.toLowerCase();
-  if (/interview|talk to|speak with|call|user research|conversation|ask \d+ people/i.test(a))
-    return "user_interview";
-  // pricing check before content — "publish your pricing" should be pricing not content.
-  // But exclude: "payment integration" (build), "analyse/research pricing strategies" (research).
-  // Require pricing/charge/monetize NOT preceded by research/analyse/study verbs,
-  // and exclude "payment integration" patterns.
-  if (
-    /\bprice|pricing|charge|subscription|revenue|monetize\b/i.test(a) &&
-    !/payment.*(integrat|gateway|api|system|process)|integrat.*payment/i.test(a) &&
-    !/(?:research|analys[ei]s?|analyz|study|compare|look.up|find).*(?:pric|charg|subscript)/i.test(a)
-  )
-    return "pricing";
-  if (/post|write|publish|content|article|tweet|thread|blog|share/i.test(a))
-    return "content";
-  if (/message|reach out|dm|email|contact|outreach|send to \d+|cold/i.test(a))
-    return "outreach";
-  if (/build|code|develop|deploy|launch|create|implement|ship/i.test(a))
-    return "build";
-  if (/research|analyse|analyze|search|find|look up|compare|study/i.test(a))
-    return "research";
-  if (/pivot|niche|reposition|change target|different market/i.test(a))
-    return "pivot";
-  return "other";
-}
-
-/**
- * inferActionPlatform — extracts the primary platform from action text.
- */
-export function inferActionPlatform(action: string): ActionPlatform {
-  const a = action.toLowerCase();
-  if (/linkedin/i.test(a)) return "linkedin";
-  if (/whatsapp/i.test(a)) return "whatsapp";
-  if (/twitter|tweet|x\.com/i.test(a)) return "twitter";
-  if (/email|gmail|inbox/i.test(a)) return "email";
-  if (/reddit|subreddit/i.test(a)) return "reddit";
-  if (/instagram/i.test(a)) return "instagram";
-  if (/slack/i.test(a)) return "slack";
-  if (/phone|call|call them|ring/i.test(a)) return "phone";
-  return "other";
-}
+// inferActionType / inferActionPlatform now live in lib/actionClassification.ts
+// (re-exported above) — see that file for implementation.
 
 // ─── Pattern derivation ───────────────────────────────────────────────────────
 

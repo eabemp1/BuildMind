@@ -25,11 +25,24 @@ export async function buildTodayPersonalisationContext(
   try {
     const supabase = createAdminClient();
 
+    // CROSS-PROJECT CONTAMINATION FIX: these two queries previously filtered
+    // only by user_id, with no project_id filter at all — despite both
+    // reflexion_learning_log and reflections having a project_id column
+    // (reflections: supabase/migrations/20260502000000_agentic_upgrades.sql).
+    // A founder with more than one project (or a Break My Startup run on a
+    // separate custom idea) had every other project's tasks and reflections
+    // pulled into "today's" generation — confirmed in production data where
+    // a BuildMind task referenced an unrelated project by name.
+    // `.or(project_id.eq.X,project_id.is.null)` keeps legacy rows written
+    // before the project_id column existed (which would otherwise vanish
+    // from context for every project, permanently) while excluding rows
+    // known to belong to a specific *other* project.
     const [actionsResult, reflectionsResult, milestonesResult] = await Promise.allSettled([
       supabase
         .from("reflexion_learning_log")
         .select("action_shown, stage, created_at, outcome")
         .eq("user_id", userId)
+        .or(`project_id.eq.${projectId},project_id.is.null`)
         .order("created_at", { ascending: false })
         .limit(7),
 
@@ -37,6 +50,7 @@ export async function buildTodayPersonalisationContext(
         .from("reflections")
         .select("outcome, confidence, note, what_tried, what_happened, what_learned, blocker, created_at, today_action")
         .eq("user_id", userId)
+        .or(`project_id.eq.${projectId},project_id.is.null`)
         .order("created_at", { ascending: false })
         .limit(5),
 
@@ -87,6 +101,16 @@ export async function buildTodayPersonalisationContext(
               if (r.note && !r.what_tried) lines.push(`  Note: "${r.note}"`);
               return lines.join("\n");
             }),
+            // FIX: this block used to end here, with no enforced instruction —
+            // just the raw reflection text and a soft "use this" framing.
+            // Confirmed in production: a founder explicitly wrote in
+            // "What they learned" that they wanted to commit to one
+            // distribution channel for a week before switching, and the
+            // next several tasks scattered across five different channels
+            // anyway. The content was present in the prompt; nothing told
+            // the model it was binding. Mirror the same imperative pattern
+            // used for recurringBlockers below.
+            "-> If \"What they learned\" states a specific strategy, channel, or focus decision (e.g. \"stick to LinkedIn until I hit 10 signups before trying Reddit\"), today's task MUST follow that decision — do not switch channel, platform, or approach unless the founder's own reflection says they're done with it or it failed.",
           ].join("\n");
 
     const milestones =
