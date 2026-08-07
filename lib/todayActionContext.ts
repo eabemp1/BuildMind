@@ -55,6 +55,7 @@ import { buildTodayPersonalisationContext } from "@/lib/todayPersonalisationCont
 import { loadFounderIntelligence, buildFounderIntelligencePromptBlock, summarizeFounderIntelligenceForClient, type FounderIntelligenceState } from "@/lib/founderIntelligence";
 import { recordFounderIntelligencePrediction } from "@/lib/learningLoop";
 import { buildStartupRelationshipGraph, traceRelationshipChain } from "@/lib/founderRelationships";
+import { buildCofounderJudgment, buildCofounderJudgmentPromptBlock } from "@/lib/cofounderJudgment";
 import { logError } from "@/lib/server/logger";
 import { recordActivity } from "@/lib/server/activityLog";
 
@@ -459,6 +460,7 @@ export async function loadTodayActionContext(params: {
   try {
     ctx.founderIntelligence = await loadFounderIntelligence(supabase, userId, projectId, { now: new Date() });
     ctx.founderIntelligencePromptBlock = buildFounderIntelligencePromptBlock(ctx.founderIntelligence);
+    ctx.founderIntelligencePromptBlock += `\n\n${buildCofounderJudgmentPromptBlock(buildCofounderJudgment(ctx.founderIntelligence))}`;
     ctx.intelligenceSummary = summarizeFounderIntelligenceForClient(ctx.founderIntelligence);
 
     try {
@@ -494,6 +496,7 @@ export async function loadTodayActionContext(params: {
         stage: ctx.stage,
         sessionId,
         candidate: ctx.founderIntelligence.decision.top_candidate,
+        alternatives: ctx.founderIntelligence.decision.candidates.slice(1, 4),
       }).catch(() => {});
     }
   } catch (err) {

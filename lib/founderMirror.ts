@@ -89,6 +89,9 @@ function mayBeWrongAbout(state: FounderIntelligenceState, accuracy: Intelligence
   if (accuracy.sample_size >= 5 && accuracy.average_match_score < 0.4) {
     items.push("Recent recommendations haven't matched what you actually did — its model of what you need next may be stale.");
   }
+  for (const correction of state.founder.corrections.slice(-2)) {
+    items.push(`Founder correction to retain: BuildMind believed "${correction.belief}", but the founder said "${correction.correction}".`);
+  }
   if (!items.length) {
     items.push("No unresolved contradictions detected right now; confidence in the beliefs above is as good as it currently gets.");
   }

@@ -73,6 +73,7 @@ export async function recordFounderIntelligencePrediction(
     sessionId: string;
     candidate: DecisionCandidate;
     supportingSignals?: IntelligenceSignalType[];
+    alternatives?: DecisionCandidate[];
   },
 ): Promise<string | null> {
   try {
@@ -88,6 +89,22 @@ export async function recordFounderIntelligencePrediction(
         predicted_evidence: params.candidate.expected_evidence,
         supporting_signals: params.supportingSignals ?? params.candidate.supporting_signals ?? [],
         prediction_confidence: Math.max(0, Math.min(1, (params.candidate.scores?.confidence ?? 50) / 100)),
+        decision_rationale: {
+          rationale: params.candidate.rationale,
+          why_it_beats_alternatives: params.candidate.why_it_beats_alternatives,
+          scores: params.candidate.scores,
+          supporting_signals: params.supportingSignals ?? params.candidate.supporting_signals ?? [],
+        },
+        alternatives_considered: (params.alternatives ?? []).map((alternative) => ({
+          id: alternative.id,
+          action: alternative.action,
+          rationale: alternative.rationale,
+          score: alternative.scores.total,
+          expected_evidence: alternative.expected_evidence,
+        })),
+        decision_confidence: Math.max(0, Math.min(1, (params.candidate.scores?.confidence ?? 50) / 100)),
+        review_condition: params.candidate.expected_evidence,
+        decision_recorded_at: new Date().toISOString(),
         outcome: "pending",
       })
       .select("id")

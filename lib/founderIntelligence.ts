@@ -53,6 +53,7 @@ export interface FounderState {
   behavioral_trends: string[];
   confidence: number;
   recent_changes: string[];
+  corrections: Array<{ belief: string; correction: string; evidence?: string; created_at?: string }>;
 }
 
 export interface StartupState {
@@ -542,6 +543,9 @@ export function buildFounderIntelligenceState(input: FounderIntelligenceInput): 
       + accuracyAdjustment,
     ),
     recent_changes: temporal.week_changes.slice(0, 5),
+    corrections: Array.isArray(founderMemory.founder_corrections)
+      ? founderMemory.founder_corrections.slice(-5).filter((item: unknown): item is { belief: string; correction: string; evidence?: string; created_at?: string } => Boolean(item && typeof item === "object" && "correction" in item))
+      : [],
   };
 
   const startup: StartupState = {
@@ -746,6 +750,7 @@ export function summarizeFounderIntelligenceForClient(state: FounderIntelligence
       avoidance_patterns: state.founder.avoidance_patterns.slice(0, 5),
       operating_windows: state.founder.operating_windows.slice(0, 3),
       confidence: state.founder.confidence,
+      corrections: state.founder.corrections,
     },
     strategy: {
       stated_priorities: state.strategy.stated_priorities.slice(0, 4),
