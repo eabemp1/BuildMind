@@ -470,6 +470,9 @@ ${baseForC}`,
           fallback.action,
           fallback.message,
         );
+        const deterministicCandidate = founderIntelligence?.decision.top_candidate ?? null;
+        const finalAction = deterministicCandidate?.action ?? parsed.action;
+        const decisionReason = deterministicCandidate?.why_it_beats_alternatives;
 
         // rationale — use from parsed output, fall back to a generic sentence
         const rationale = parsed.rationale ||
@@ -484,11 +487,21 @@ ${baseForC}`,
 
         const finalData = {
           ...fallback,
-          action: parsed.action,
+          action: finalAction,
           message: parsed.draft,  // ← AI-written DRAFT, not hardcoded template
-          why: rationale,
+          why: decisionReason ? `${rationale} ${decisionReason}` : rationale,
           stage,
           isAI: true,
+          decisionBasis: deterministicCandidate ? {
+            expected_evidence: deterministicCandidate.expected_evidence,
+            why_it_beats_alternatives: deterministicCandidate.why_it_beats_alternatives,
+            score: deterministicCandidate.scores.total,
+            alternatives: founderIntelligence?.decision.candidates.slice(1, 4).map((c) => ({
+              action: c.action,
+              score: c.scores.total,
+              why: c.why_it_beats_alternatives,
+            })) ?? [],
+          } : undefined,
           reflexion: {
             verdict: criticVerdict,
             criticPersona: criticPersona.name,
