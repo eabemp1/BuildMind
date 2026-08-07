@@ -12,6 +12,7 @@ import { recordActionOutcome } from "@/lib/learning";
 import { invalidateCognitionCache } from "@/lib/founderCognition";
 import { classifyBlocker, runBlockerIntelligencePipeline } from "@/lib/blockerIntelligence";
 import { momentumOnReflect } from "@/lib/momentum";
+import { compareFounderIntelligenceOutcome } from "@/lib/learningLoop";
 
 import { z } from "zod";
 
@@ -424,6 +425,15 @@ Target users: ${project.target_users ?? "Not specified"}`;
         // ── Fire-and-forget: close both learning loops ────────────────────────
         try { invalidateCognitionCache(verifiedUserId); } catch { /* non-fatal */ }
         extractAndWritePatterns(supabase, verifiedUserId).catch((err) => logError("reflect-action/extractPatterns", err));
+
+        // Learning loop OBSERVE path via reflections (the primary way founders
+        // report outcomes from today-action-stream). Non-fatal, fire-and-forget.
+        compareFounderIntelligenceOutcome(supabase, {
+          userId: verifiedUserId,
+          taskTitle: todayAction ?? note ?? "",
+          outcome,
+          reflectionText: `${what_happened ?? ""} ${what_learned ?? ""}`.trim(),
+        }).catch(() => {});
         recordActivity(verifiedUserId, "reflection_done", { projectId, outcome, confidence }).catch(() => {});
         checkAndCacheStageTransition(verifiedUserId, projectId).catch(() => {});
 
