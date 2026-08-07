@@ -34,6 +34,7 @@ import {
   recordActionShown,
   markIgnoredAfter24h,
 } from "@/lib/learning";
+import { loadFounderIntelligence, buildFounderIntelligencePromptBlock } from "@/lib/founderIntelligence";
 
 type ReflexionStatus = "ok" | "partial" | "failed";
 
@@ -547,7 +548,7 @@ export async function POST(request: Request) {
     const supabase = createAdminClient();
 
     // Load project + milestones + tasks in parallel
-    const [projectResult, milestonesResult, founderContextResult] = await Promise.allSettled([
+    const [projectResult, milestonesResult, founderContextResult, intelligenceResult] = await Promise.allSettled([
       supabase
         .from("projects")
         .select("name,title,description,target_users,problem,startup_stage,validation_strengths,validation_weaknesses,validation_score,execution_score")
@@ -563,6 +564,10 @@ export async function POST(request: Request) {
         .select("momentum_score,cognitive_load,consecutive_tasks_completed,days_inactive,avoidance_zones,topics_repeated")
         .eq("user_id", userId)
         .maybeSingle(),
+      // Founder Intelligence OS: load the coherence layer so BMS Reflexion
+      // sees the same typed signals as Today. Non-fatal — BMS degrades to
+      // learnedPatternsPrompt alone if this fails.
+      loadFounderIntelligence(supabase, userId, projectId, { now: new Date() }).catch(() => null),
     ]);
 
     if (projectResult.status === "rejected" || projectResult.value.error) {
@@ -580,6 +585,8 @@ export async function POST(request: Request) {
     const founderCtxRow = founderContextResult.status === "fulfilled"
       ? founderContextResult.value.data
       : null;
+    const intelligenceState = intelligenceResult?.status === "fulfilled" ? intelligenceResult.value : null;
+    const intelligenceBlock = intelligenceState ? buildFounderIntelligencePromptBlock(intelligenceState) : "";
 
     // Load tasks for milestone IDs
     const milestoneIds = milestones.map(m => m.id);
@@ -718,7 +725,7 @@ export async function POST(request: Request) {
         viabilityScore: viabilityResult,
         task: `Given this founder's project data and the agent analysis, what is the single highest-leverage next move?${focusAreaPrompt}`,
         executionMode: requestExecutionMode,
-        learnedPatternsPrompt: `${learnedPatternsPrompt}${focusAreaPrompt}`,
+        learnedPatternsPrompt: `${learnedPatternsPrompt}${focusAreaPrompt}${intelligenceBlock ? `\n\n${intelligenceBlock}` : ""}`,
       });
 
       // Record action shown — starts the learning loop for this run
