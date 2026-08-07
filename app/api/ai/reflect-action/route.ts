@@ -13,6 +13,7 @@ import { invalidateCognitionCache } from "@/lib/founderCognition";
 import { classifyBlocker, runBlockerIntelligencePipeline } from "@/lib/blockerIntelligence";
 import { momentumOnReflect } from "@/lib/momentum";
 import { compareFounderIntelligenceOutcome } from "@/lib/learningLoop";
+import { markRecommendationObserved } from "@/lib/recommendationLifecycle";
 
 import { z } from "zod";
 
@@ -433,6 +434,13 @@ Target users: ${project.target_users ?? "Not specified"}`;
           taskTitle: todayAction ?? note ?? "",
           outcome,
           reflectionText: `${what_happened ?? ""} ${what_learned ?? ""}`.trim(),
+        }).catch(() => {});
+        markRecommendationObserved(supabase, {
+          userId: verifiedUserId,
+          taskTitle: todayAction ?? note ?? "",
+          outcome,
+          founderExplanation: note || blocker || undefined,
+          evidenceProduced: `${what_happened ?? ""} ${what_learned ?? ""}`.trim() || undefined,
         }).catch(() => {});
         recordActivity(verifiedUserId, "reflection_done", { projectId, outcome, confidence }).catch(() => {});
         checkAndCacheStageTransition(verifiedUserId, projectId).catch(() => {});
