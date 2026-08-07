@@ -171,3 +171,117 @@ describe("Phase 15 eval: Founder Mirror is honest about its own accuracy", () =>
     expect(mirror.may_be_wrong_about.some((m) => /stale/i.test(m))).toBe(true);
   });
 });
+
+describe("Phase 15 eval: additional founder scenarios", () => {
+  it("healthy momentum: preserves evidence-producing behavior instead of over-correcting", () => {
+    const healthy = buildFounderIntelligenceState({
+      now: NOW,
+      founderContext: {
+        current_stage: "MVP",
+        momentum_score: 74,
+        momentum_last_week: 62,
+        intelligence_accuracy: { sample_size: 8, average_match_score: 0.78, trend: "up" },
+      },
+      founderMemory: { strengths: ["customer demos"] },
+      project: {
+        name: "OpsPilot",
+        startup_stage: "MVP",
+        problem: "ops teams lose handoff context",
+        target_users: "operations managers",
+      },
+      milestones: [
+        { id: "m1", title: "Run concierge MVP demos", status: "in_progress", created_at: "2026-08-01T00:00:00.000Z", updated_at: "2026-08-04T00:00:00.000Z" },
+      ],
+      tasks: [
+        { id: "t1", milestone_id: "m1", title: "Demo workflow with ops manager", status: "pending", is_completed: false, created_at: "2026-08-02T00:00:00.000Z", updated_at: "2026-08-04T00:00:00.000Z" },
+      ],
+      reflections: [
+        { today_action: "Demo workflow with one operations manager", outcome: "completed", what_learned: "Customer said handoff notes are painful", created_at: "2026-08-04T10:00:00.000Z" },
+        { today_action: "Call customer about handoff workflow", outcome: "completed", what_learned: "User wants Slack summary", created_at: "2026-08-03T10:00:00.000Z" },
+        { today_action: "Watch operations manager use prototype", outcome: "completed", what_happened: "User completed two handoffs", created_at: "2026-08-02T10:00:00.000Z" },
+      ],
+      learningLogs: [
+        { user_id: "u1", action_shown: "Demo workflow", outcome: "completed", action_type: "user_interview", created_at: "2026-08-04T00:00:00.000Z" } as any,
+        { user_id: "u1", action_shown: "Call customer", outcome: "completed", action_type: "user_interview", created_at: "2026-08-03T00:00:00.000Z" } as any,
+        { user_id: "u1", action_shown: "Watch customer use prototype", outcome: "completed", action_type: "user_interview", created_at: "2026-08-02T00:00:00.000Z" } as any,
+        { user_id: "u1", action_shown: "Ask customer about workflow", outcome: "completed", action_type: "user_interview", created_at: "2026-08-01T00:00:00.000Z" } as any,
+        { user_id: "u1", action_shown: "Send demo follow-up", outcome: "completed", action_type: "outreach", created_at: "2026-07-31T00:00:00.000Z" } as any,
+      ],
+      activityEvents: [],
+      actionLogs: [],
+    });
+
+    expect(healthy.signals.some((s) => s.type === "EVIDENCE_GAP")).toBe(false);
+    expect(healthy.startup.evidence.length).toBeGreaterThan(0);
+    expect(healthy.founder.confidence).toBeGreaterThan(35);
+    expect(healthy.decision.top_candidate).not.toBeNull();
+  });
+
+  it("recovery founder: detects improving behavior and avoids stale low-confidence assumptions", () => {
+    const recovering = buildFounderIntelligenceState({
+      now: NOW,
+      founderContext: {
+        current_stage: "Launch",
+        momentum_score: 61,
+        momentum_last_week: 41,
+        intelligence_accuracy: { sample_size: 6, average_match_score: 0.66, trend: "up" },
+      },
+      founderMemory: { avoidance_zones: ["publishing publicly"] },
+      project: {
+        name: "LedgerLite",
+        startup_stage: "Launch",
+        problem: "freelancers forget invoice follow-up",
+        target_users: "freelance designers",
+      },
+      milestones: [
+        { id: "m1", title: "Launch invoice follow-up beta", status: "in_progress", created_at: "2026-07-28T00:00:00.000Z", updated_at: "2026-08-04T00:00:00.000Z" },
+      ],
+      tasks: [
+        { id: "t1", milestone_id: "m1", title: "Publish beta ask", status: "pending", is_completed: false, created_at: "2026-08-01T00:00:00.000Z", updated_at: "2026-08-04T00:00:00.000Z" },
+      ],
+      reflections: [
+        { today_action: "Publish beta ask to freelance designers", outcome: "completed", note: "Posted and got 3 replies", what_learned: "Three designers asked for reminders", created_at: "2026-08-04T10:00:00.000Z" },
+        { today_action: "DM two designers about invoices", outcome: "completed", what_happened: "One replied with current follow-up process", created_at: "2026-08-03T10:00:00.000Z" },
+        { today_action: "Draft launch copy", outcome: "completed", note: "Internal prep", created_at: "2026-07-25T10:00:00.000Z" },
+      ],
+      learningLogs: [],
+      activityEvents: [],
+      actionLogs: [],
+    });
+
+    expect(recovering.signals.some((s) => s.type === "MOMENTUM_CHANGE")).toBe(true);
+    expect(recovering.temporal.increasing_behaviors).toContain("external evidence seeking");
+    expect(recovering.founder.behavioral_trends).toContain("Founder Intelligence predictions are getting more accurate");
+  });
+
+  it("decay: older evidence contributes less confidence than recent evidence", () => {
+    const oldEvidence = buildFounderIntelligenceState({
+      now: NOW,
+      founderContext: { current_stage: "Validation", momentum_score: 55 },
+      project: { name: "OldCo", startup_stage: "Validation", problem: "old problem", target_users: "founders" },
+      milestones: [],
+      tasks: [],
+      reflections: [
+        { today_action: "Interview customer", outcome: "completed", what_learned: "Customer had problem", created_at: "2026-05-01T10:00:00.000Z" },
+      ],
+      learningLogs: [],
+      activityEvents: [],
+      actionLogs: [],
+    });
+    const recentEvidence = buildFounderIntelligenceState({
+      now: NOW,
+      founderContext: { current_stage: "Validation", momentum_score: 55 },
+      project: { name: "NewCo", startup_stage: "Validation", problem: "new problem", target_users: "founders" },
+      milestones: [],
+      tasks: [],
+      reflections: [
+        { today_action: "Interview customer", outcome: "completed", what_learned: "Customer had problem", created_at: "2026-08-04T10:00:00.000Z" },
+      ],
+      learningLogs: [],
+      activityEvents: [],
+      actionLogs: [],
+    });
+
+    expect(recentEvidence.founder.confidence).toBeGreaterThan(oldEvidence.founder.confidence);
+  });
+});
