@@ -1,161 +1,126 @@
 "use client";
 
-/**
- * app/today/components/IntelligencePanel.tsx — Phase 10
- *
- * Layers the Founder Intelligence coherence layer (lib/founderIntelligence.ts)
- * ABOVE the existing Today task card, exactly as the spec requires:
- * "Do not delete Today. Upgrade it." This does not replace the primary
- * action card below it — it only adds:
- *   - what changed
- *   - what BuildMind detected (top signal) and why it matters
- *   - what it predicts the founder may struggle with (avoidance pattern)
- *   - the expected evidence it's watching for from today's action
- *
- * Renders nothing if there's no intelligence summary yet (e.g. brand new
- * founder with no history) — additive only, never a loading blocker.
- */
-
 import { useState } from "react";
-import { ChevronDown, ChevronUp, Sparkles } from "lucide-react";
+import { AlertTriangle, ArrowRight, BrainCircuit, ChevronDown, ChevronUp, CircleHelp, Eye, FlaskConical, ShieldAlert, Sparkles, Target } from "lucide-react";
+
+type Signal = {
+  type: string;
+  severity: "low" | "medium" | "high" | "critical";
+  confidence: number;
+  title: string;
+  summary: string;
+  recommended_response: string;
+  evidence?: Array<{ source: string; detail: string; count?: number; window?: string }>;
+};
 
 export interface TodayIntelligenceSummary {
   generated_at: string;
   current_goal: string | null;
-  top_signals: Array<{
-    type: string;
-    severity: "low" | "medium" | "high" | "critical";
-    confidence: number;
-    title: string;
-    summary: string;
-    recommended_response: string;
-  }>;
+  top_signals: Signal[];
   what_changed: string[];
-  founder_model: {
-    strengths: string[];
-    avoidance_patterns: string[];
-    operating_windows: string[];
-    confidence: number;
-  };
+  founder_model: { strengths: string[]; avoidance_patterns: string[]; operating_windows: string[]; confidence: number };
+  strategy: { stated_priorities: string[]; observed_priorities: string[]; contradictions: string[] };
   decision: {
-    top_candidate: { expected_evidence: string; why_it_beats_alternatives: string; scores?: { total: number } } | null;
+    top_candidate: { action?: string; expected_evidence: string; why_it_beats_alternatives: string; scores?: { total: number } } | null;
     alternatives?: Array<{ action: string; scores?: { total: number }; why_it_beats_alternatives: string }>;
     basis?: string[];
   };
+  cofounder_judgment?: {
+    what_matters_now: string;
+    largest_constraint: string;
+    neglected_area: string | null;
+    opportunity_cost: string;
+    highest_leverage_action: string | null;
+    should_not_do: Array<{ type: string; statement: string; reason: string; evidence: string[]; confidence: number }>;
+    reasoning: Array<{ observation: string; interpretation: string; evidence: string[]; confidence: number; implication: string; recommended_action: string; uncertainty: string; smallest_evidence_to_resolve: string }>;
+    intervention: { should_intervene: boolean; mode: string; intensity: number; reason: string; evidence: string[] };
+    uncertainty: { known: string[]; inferred: string[]; unknown: string[] };
+  };
 }
 
-const SEVERITY_COLOR: Record<string, string> = {
-  critical: "var(--bm-red)",
-  high: "var(--bm-red)",
-  medium: "var(--bm-accent)",
-  low: "var(--bm-text3)",
-};
+const severityColor: Record<Signal["severity"], string> = { critical: "var(--bm-red)", high: "var(--bm-red)", medium: "var(--bm-accent)", low: "var(--bm-text3)" };
+
+function Label({ children }: { children: React.ReactNode }) {
+  return <div style={{ fontFamily: "'DM Mono', monospace", color: "var(--bm-text4)", fontSize: 10, textTransform: "uppercase", marginBottom: 6 }}>{children}</div>;
+}
+
+function EvidenceList({ items }: { items: string[] }) {
+  if (!items.length) return null;
+  return <ul style={{ margin: "8px 0 0", padding: 0, listStyle: "none", display: "grid", gap: 5 }}>
+    {items.slice(0, 3).map((item, index) => <li key={`${item}-${index}`} style={{ display: "flex", gap: 7, color: "var(--bm-text3)", fontSize: 12, lineHeight: 1.45 }}><span style={{ color: "var(--bm-accent)" }}>+</span>{item}</li>)}
+  </ul>;
+}
 
 export function IntelligencePanel({ data }: { data: TodayIntelligenceSummary | null | undefined }) {
-  const [expanded, setExpanded] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   if (!data) return null;
 
-  const topSignal = data.top_signals[0];
-  const struggle = data.founder_model.avoidance_patterns[0];
+  const judgment = data.cofounder_judgment;
+  const signal = data.top_signals[0];
+  const reasoning = judgment?.reasoning[0];
+  const negative = judgment?.should_not_do[0];
   const changed = data.what_changed[0];
+  const hasContent = judgment || signal || changed;
+  if (!hasContent) return null;
 
-  // Nothing meaningful to show yet (very new founder) — stay silent rather
-  // than showing an empty-feeling box.
-  if (!topSignal && !changed && !struggle) return null;
+  const interventionTone = judgment?.intervention.mode === "escalation" || judgment?.intervention.mode === "challenge" ? "var(--bm-red)" : "var(--bm-accent)";
 
   return (
-    <div
-      style={{
-        border: "1px solid var(--bm-border)",
-        borderRadius: 10,
-        background: "var(--bm-bg3)",
-        marginBottom: 14,
-        overflow: "hidden",
-      }}
-    >
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        style={{
-          width: "100%",
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          padding: "10px 14px",
-          background: "transparent",
-          border: "none",
-          cursor: "pointer",
-          textAlign: "left",
-        }}
-      >
-        <Sparkles size={13} color="var(--bm-accent)" />
-        <span style={{ fontSize: 11, color: "var(--bm-text3)", fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-          What BuildMind noticed
-        </span>
-        {topSignal && (
-          <span style={{ fontSize: 11, color: SEVERITY_COLOR[topSignal.severity] ?? "var(--bm-text3)", marginLeft: 4 }}>
-            {topSignal.title}
-          </span>
-        )}
-        <span style={{ marginLeft: "auto", color: "var(--bm-text4)" }}>
-          {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-        </span>
-      </button>
-
-      {expanded && (
-        <div style={{ padding: "0 14px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
-          {changed && (
-            <div>
-              <div style={{ fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>What changed</div>
-              <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.5 }}>{changed}</p>
-            </div>
-          )}
-
-          {topSignal && (
-            <div>
-              <div style={{ fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>Why it matters</div>
-              <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.5 }}>{topSignal.summary}</p>
-            </div>
-          )}
-
-          {struggle && (
-            <div>
-              <div style={{ fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>May be a struggle today</div>
-              <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.5 }}>{struggle}</p>
-            </div>
-          )}
-
-          {data.decision.top_candidate?.expected_evidence && (
-            <div>
-              <div style={{ fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>BuildMind will learn from today's outcome</div>
-              <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.5 }}>{data.decision.top_candidate.expected_evidence}</p>
-            </div>
-          )}
-
-          {data.decision.top_candidate?.why_it_beats_alternatives && (
-            <div>
-              <div style={{ fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>Why this action beat alternatives</div>
-              <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.5 }}>
-                {data.decision.top_candidate.why_it_beats_alternatives}
-                {data.decision.top_candidate.scores?.total != null ? ` Score: ${data.decision.top_candidate.scores.total}/100.` : ""}
-              </p>
-            </div>
-          )}
-
-          {data.decision.alternatives && data.decision.alternatives.length > 0 && (
-            <div>
-              <div style={{ fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>Alternatives considered</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {data.decision.alternatives.slice(0, 2).map((alt, i) => (
-                  <p key={i} style={{ fontSize: 12, color: "var(--bm-text3)", margin: 0, lineHeight: 1.45 }}>
-                    {alt.action}{alt.scores?.total != null ? ` (${alt.scores.total}/100)` : ""}
-                  </p>
-                ))}
-              </div>
-            </div>
-          )}
+    <section aria-label="BuildMind decision brief" style={{ marginBottom: 16, border: "1px solid var(--bm-border2)", borderRadius: 8, overflow: "hidden", background: "var(--bm-bg2)", boxShadow: "0 18px 40px rgba(0,0,0,0.12)" }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "16px 18px", borderBottom: "1px solid var(--bm-border)", background: "linear-gradient(105deg, var(--bm-bg3), var(--bm-bg2))" }}>
+        <div style={{ width: 32, height: 32, borderRadius: 7, display: "grid", placeItems: "center", background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)", flex: "0 0 auto" }}><BrainCircuit size={17} color="var(--bm-accent)" /></div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <Label>BuildMind decision brief</Label>
+          <div style={{ color: "var(--bm-text)", fontSize: 16, fontWeight: 700, lineHeight: 1.35 }}>{judgment?.what_matters_now ?? signal?.recommended_response ?? "Calibrating the highest-leverage next move"}</div>
+          {data.current_goal && <div style={{ color: "var(--bm-text3)", fontSize: 12, marginTop: 5 }}>Current goal: {data.current_goal}</div>}
         </div>
-      )}
-    </div>
+        {judgment?.intervention.should_intervene && <div style={{ display: "flex", gap: 5, alignItems: "center", color: interventionTone, fontSize: 11, fontFamily: "'DM Mono', monospace", textTransform: "uppercase", flex: "0 0 auto" }}><AlertTriangle size={13} />{judgment.intervention.mode}</div>}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+        <div style={{ padding: "15px 18px", borderRight: "1px solid var(--bm-border)" }}>
+          <Label>What changed</Label>
+          <div style={{ color: "var(--bm-text2)", fontSize: 13, lineHeight: 1.55 }}>{changed ?? "No material shift detected. BuildMind is monitoring for a meaningful change."}</div>
+        </div>
+        <div style={{ padding: "15px 18px" }}>
+          <Label>What matters</Label>
+          <div style={{ color: "var(--bm-text)", fontSize: 13, lineHeight: 1.55, fontWeight: 600 }}>{judgment?.largest_constraint ?? signal?.summary ?? "No high-confidence constraint detected yet."}</div>
+          {judgment?.neglected_area && <div style={{ marginTop: 7, color: "var(--bm-text3)", fontSize: 12 }}>Neglected: {judgment.neglected_area}</div>}
+        </div>
+      </div>
+
+      <div style={{ borderTop: "1px solid var(--bm-border)", padding: "15px 18px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7 }}><Eye size={14} color="var(--bm-accent)" /><Label>What BuildMind noticed</Label><span style={{ marginTop: -6, color: severityColor[signal?.severity ?? "low"], fontSize: 11 }}>{signal?.title}</span></div>
+        <div style={{ color: "var(--bm-text2)", fontSize: 13, lineHeight: 1.6 }}>{reasoning?.observation ?? signal?.summary}</div>
+        <EvidenceList items={reasoning?.evidence ?? signal?.evidence?.map((item) => `${item.source}: ${item.detail}`) ?? []} />
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", borderTop: "1px solid var(--bm-border)" }}>
+        <div style={{ padding: "15px 18px", borderRight: "1px solid var(--bm-border)" }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}><Target size={14} color="var(--bm-accent)" /><Label>What you should do</Label></div>
+          <div style={{ color: "var(--bm-text)", fontSize: 13, lineHeight: 1.55, fontWeight: 650 }}>{judgment?.highest_leverage_action ?? data.decision.top_candidate?.action ?? signal?.recommended_response}</div>
+          {data.decision.top_candidate?.why_it_beats_alternatives && <div style={{ color: "var(--bm-text3)", fontSize: 12, lineHeight: 1.5, marginTop: 7 }}>{data.decision.top_candidate.why_it_beats_alternatives}</div>}
+        </div>
+        <div style={{ padding: "15px 18px" }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}><ShieldAlert size={14} color={negative ? "var(--bm-red)" : "var(--bm-text4)"} /><Label>What you should not do</Label></div>
+          <div style={{ color: negative ? "var(--bm-text2)" : "var(--bm-text3)", fontSize: 13, lineHeight: 1.55 }}>{negative?.statement ?? "No high-confidence stop or pause recommendation right now."}</div>
+          {negative && <div style={{ color: "var(--bm-text3)", fontSize: 12, lineHeight: 1.45, marginTop: 7 }}>{negative.reason}</div>}
+        </div>
+      </div>
+
+      <div style={{ borderTop: "1px solid var(--bm-border)", padding: "15px 18px", background: "var(--bm-bg3)" }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}><FlaskConical size={14} color="var(--bm-accent)" /><Label>What we will learn</Label></div>
+        <div style={{ color: "var(--bm-text2)", fontSize: 13, lineHeight: 1.55 }}>{reasoning?.smallest_evidence_to_resolve ?? data.decision.top_candidate?.expected_evidence ?? "The next observable outcome will refine this recommendation."}</div>
+      </div>
+
+      <button type="button" onClick={() => setDetailsOpen((current) => !current)} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "11px 18px", background: "transparent", border: 0, borderTop: "1px solid var(--bm-border)", color: "var(--bm-text3)", fontSize: 12, cursor: "pointer" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 7 }}><Sparkles size={13} />How BuildMind reached this judgment</span>{detailsOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+      </button>
+      {detailsOpen && <div style={{ borderTop: "1px solid var(--bm-border)", padding: "15px 18px", display: "grid", gap: 14 }}>
+        <div><Label>Interpretation and uncertainty</Label><div style={{ color: "var(--bm-text2)", fontSize: 13, lineHeight: 1.55 }}>{reasoning?.interpretation ?? signal?.recommended_response}</div><div style={{ color: "var(--bm-text3)", fontSize: 12, lineHeight: 1.5, marginTop: 7 }}><CircleHelp size={12} style={{ verticalAlign: "-2px", marginRight: 5 }} />{reasoning?.uncertainty ?? judgment?.uncertainty.unknown[0] ?? "No unresolved uncertainty has been identified."}</div></div>
+        {data.strategy.contradictions[0] && <div><Label>Potential contradiction</Label><div style={{ color: "var(--bm-text2)", fontSize: 13, lineHeight: 1.55 }}>{data.strategy.contradictions[0]}</div></div>}
+        {data.decision.alternatives?.length ? <div><Label>Alternatives considered</Label><div style={{ display: "grid", gap: 6 }}>{data.decision.alternatives.slice(0, 3).map((alternative, index) => <div key={`${alternative.action}-${index}`} style={{ display: "flex", gap: 8, color: "var(--bm-text3)", fontSize: 12, lineHeight: 1.45 }}><ArrowRight size={13} color="var(--bm-text4)" />{alternative.action}{alternative.scores?.total != null ? ` (${alternative.scores.total}/100)` : ""}</div>)}</div></div> : null}
+      </div>}
+    </section>
   );
 }
