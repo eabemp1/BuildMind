@@ -22,6 +22,7 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { getCurrentUser } from "@/lib/data/projects";
+import { actionCategoryLabel } from "@/lib/actionClassification";
 
 // ── Runtime validation ─────────────────────────────────────────────────────────
 // Guards against silent data loss from SQL/TypeScript schema mismatches.
@@ -221,7 +222,17 @@ export async function observeTaskEvent(
   const supabase = createClient();
 
   if (event === "skipped" || event === "overdue") {
-    const zone = category ?? taskTitle.split(" ").slice(0, 3).join(" ");
+    // FIX: this used to fall back to `taskTitle.split(" ").slice(0, 3).join(" ")`
+    // whenever no explicit category was passed — and no call site (Today
+    // page, lib/queries.ts, lib/buildmind.ts) ever passed one. Confirmed in
+    // production data: avoidance_zones contained raw task-title fragments
+    // like "Create a 7-day" instead of a genuine behavioral category. Every
+    // one of those tasks had a proper category available via
+    // action_type in reflexion_learning_log — actionCategoryLabel() runs
+    // the same keyword classification used there, so this now stores
+    // something like "direct outreach (linkedin)" instead of a text
+    // fragment.
+    const zone = category ?? actionCategoryLabel(taskTitle);
     // append_avoidance_zone RPC: atomically appends if not already present (max 10 items)
     await supabase.rpc("append_avoidance_zone", {
       p_user_id: (await getCurrentUser())?.id ?? "",
@@ -240,7 +251,8 @@ export async function observeTaskEvent(
   }
 
   if (event === "completed") {
-    const strength = category ?? taskTitle.split(" ").slice(0, 3).join(" ");
+    // Same fix as above, mirrored for strengths.
+    const strength = category ?? actionCategoryLabel(taskTitle);
     // append_strength RPC: atomically appends if not already present (max 10 items)
     await supabase.rpc("append_strength", {
       p_user_id: (await getCurrentUser())?.id ?? "",
