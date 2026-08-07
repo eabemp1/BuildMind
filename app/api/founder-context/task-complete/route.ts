@@ -17,6 +17,7 @@ import { detectPattern, shouldSurfacePattern, type PatternResult } from "@/lib/p
 import { recordActivity } from "@/lib/server/activityLog";
 import { checkAndCacheStageTransition } from "@/lib/server/stageTransitionCache";
 import { invalidateCognitionCache } from "@/lib/founderCognition";
+import { compareFounderIntelligenceOutcome } from "@/lib/learningLoop";
 
 export async function POST(req: Request) {
   const supabase = await createClient();
@@ -244,7 +245,15 @@ export async function POST(req: Request) {
   } catch {
     // Non-fatal — backfilled from reflexion_learning_log if missing
   }
-
+  // Founder Intelligence OBSERVE -> COMPARE -> LEARN.
+  // Reflection submission already closes this loop; direct task completion
+  // needs to do the same or deterministic prediction rows remain pending.
+  compareFounderIntelligenceOutcome(admin, {
+    userId: user.id,
+    taskTitle: taskTitle || "",
+    outcome,
+    reflectionText: taskTitle || "",
+  }).catch(() => {});
   // ── PATCH 2: Write checkin_done_date to user_behavior_state (AWAITED) ────
   // This was previously fire-and-forget. Awaiting it guarantees that by the time
   // the client receives this 200 response and navigates to /reflect, any other
