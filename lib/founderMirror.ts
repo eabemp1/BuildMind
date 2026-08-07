@@ -27,6 +27,9 @@ export interface FounderBelief {
   why: string;
   evidence: string[];
   confidence: number; // 0-1
+  trend: "strengthening" | "weakening" | "persistent" | "emerging";
+  last_updated: string;
+  contradictory_evidence: string[];
 }
 
 export interface FounderMirror {
@@ -53,6 +56,9 @@ function beliefsFromState(state: FounderIntelligenceState): FounderBelief[] {
       why: "Derived from which recommendation and task types you actually complete, not a self-report.",
       evidence: state.execution.completed_actions.slice(0, 3),
       confidence: Math.max(0.3, state.founder.confidence / 100),
+      trend: state.temporal.strengthening_patterns.length ? "strengthening" : "persistent",
+      last_updated: state.generated_at,
+      contradictory_evidence: state.founder.corrections.map((item) => item.correction).slice(-2),
     });
   }
 
@@ -62,6 +68,9 @@ function beliefsFromState(state: FounderIntelligenceState): FounderBelief[] {
       why: "Derived from repeated skips, overrides, or delays around this category of work.",
       evidence: [...state.execution.skipped_actions.slice(0, 2), ...state.execution.delayed_actions.slice(0, 1)].filter(Boolean),
       confidence: Math.max(0.25, (state.founder.confidence / 100) * 0.9),
+      trend: state.temporal.weakening_patterns.length ? "weakening" : "persistent",
+      last_updated: state.generated_at,
+      contradictory_evidence: state.founder.corrections.map((item) => item.correction).slice(-2),
     });
   }
 
@@ -71,6 +80,9 @@ function beliefsFromState(state: FounderIntelligenceState): FounderBelief[] {
       why: "Derived from timestamps of your completed vs. dropped activity, not a stated preference.",
       evidence: [],
       confidence: 0.5,
+      trend: "emerging",
+      last_updated: state.generated_at,
+      contradictory_evidence: [],
     });
   }
 

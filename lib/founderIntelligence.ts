@@ -3,6 +3,7 @@ import { buildTemporalProfile, type SessionEvent, type TemporalProfile } from "@
 import { deriveLearnedPatterns, type LearnedPatterns, type LearningLogRow } from "@/lib/learning";
 import { logError } from "@/lib/server/logger";
 import { buildTemporalComparison } from "@/lib/temporalCoherence";
+import { buildCofounderJudgment } from "@/lib/cofounderJudgment";
 
 type SupabaseLike = {
   from: (table: string) => any;
@@ -732,6 +733,7 @@ export function buildFounderIntelligencePromptBlock(state: FounderIntelligenceSt
 }
 
 export function summarizeFounderIntelligenceForClient(state: FounderIntelligenceState) {
+  const cofounderJudgment = buildCofounderJudgment(state);
   return {
     generated_at: state.generated_at,
     current_goal: state.startup.current_goal,
@@ -762,6 +764,7 @@ export function summarizeFounderIntelligenceForClient(state: FounderIntelligence
       alternatives: state.decision.candidates.slice(1, 4),
       basis: state.decision.decision_basis,
     },
+    cofounder_judgment: cofounderJudgment,
     source_summary: state.source_summary,
   };
 }
