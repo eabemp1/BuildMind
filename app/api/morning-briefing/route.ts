@@ -20,6 +20,7 @@ import { getEffectivePlan, getFreshPlanForUser } from "@/lib/server/plan";
 import { hasAdminEnv } from "@/app/api/ai/_utils";
 import { buildTodayActionCacheFromBriefing, upsertTodayActionCache } from "@/lib/todayActionCache";
 import { checkExecutionDebtSuppression } from "@/lib/executionDebtGate";
+import { recordActionShown } from "@/lib/learning";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -215,6 +216,16 @@ export async function GET(req: Request) {
           ...briefing,
           delivered_at: new Date().toISOString(),
         });
+        if (briefing.action) {
+          recordActionShown({
+            userId: ctx.user_id,
+            projectId: activeProject?.id ?? undefined,
+            sessionId: `morning_briefing:${ctx.user_id}:${today}`,
+            stage: activeProject?.startup_stage ?? ctx.current_stage ?? "Idea",
+            actionShown: briefing.action,
+            criticPersona: "morning_briefing",
+          }).catch(() => {});
+        }
 
         // FIX: the nightly job used to cache a task regardless of execution
         // debt, so a founder who should hit the live "you're avoiding X"
@@ -412,6 +423,16 @@ export async function GET(req: Request) {
 
   try {
     const briefing = await generateMorningBriefing(reflexionCtx);
+    if (briefing.action) {
+      recordActionShown({
+        userId: user.id,
+        projectId: activeProject?.id ?? undefined,
+        sessionId: `morning_briefing:${user.id}:${today}`,
+        stage: activeProject?.startup_stage ?? ctx?.current_stage ?? "Idea",
+        actionShown: briefing.action,
+        criticPersona: "morning_briefing",
+      }).catch(() => {});
+    }
 
     // Note: morning_briefings table has: win, risk, action, raw_context, delivered_at.
     // The briefing object also contains `gaps` which is NOT a DB column.
