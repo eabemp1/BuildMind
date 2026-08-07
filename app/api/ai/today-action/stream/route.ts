@@ -33,6 +33,10 @@ import { getPromptForRequest, loadActivePrompts } from "@/lib/promptRegistry";
 import { upsertTodayActionCache } from "@/lib/todayActionCache";
 import { buildTodayPersonalisationContext } from "@/lib/todayPersonalisationContext";
 import { recordActionShown } from "@/lib/learning";
+import { buildFounderIntelligencePromptBlock, loadFounderIntelligence, summarizeFounderIntelligenceForClient, type FounderIntelligenceState } from "@/lib/founderIntelligence";
+import { recordFounderIntelligencePrediction } from "@/lib/learningLoop";
+import { loadTodayActionContext } from "@/lib/todayActionContext";
+import { formatRegionalContextBlock } from "@/lib/regionalContext";
 
 function sse(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -208,169 +212,69 @@ export async function POST(request: Request) {
         let cognitionBlock = "";
         let cognitionMomentumScore = 50;
         let cognitionAvoidanceSignals: string[] = [];
+        let cognitiveLoad: "fresh" | "drained" | "autopilot" = "fresh";
+        let founderCountry: string | undefined;
         let lastReflectionNote: string | undefined;
         let adminForCache: ReturnType<typeof createAdminClient> | null = null;
-
-        if (hasAdminEnv()) {
-          const supabase = createAdminClient();
-          adminForCache = supabase;
-          const [projectResult, memoryResult, contextResult] = await Promise.allSettled([
-            supabase.from("projects")
-              .select("name, title, description, target_users, problem, startup_stage")
-              .eq("id", projectId).eq("user_id", userId).maybeSingle(),
-            supabase.from("founder_memory")
-              .select("avoidance_zones, strengths, last_insight, personality_tags, decision_patterns, last_debt_surfaced")
-              .eq("user_id", userId).maybeSingle(),
-            supabase.from("founder_context")
-              .select("avoidance_zones, override_reasons, tasks_overridden_this_week, topics_mentioned_repeatedly, days_inactive, streak, last_checkin_date, tasks_completed_total, consecutive_tasks_completed")
-              .eq("user_id", userId).maybeSingle(),
-          ]);
-
-          const project = projectResult.status === "fulfilled" ? projectResult.value.data : null;
-          const memory = memoryResult.status === "fulfilled" ? memoryResult.value.data : null;
-
-          if (project) {
-            stage = (project.startup_stage ?? providedStage) || "Idea";
-            targetUsers = project.target_users ?? "";
-            problem = project.problem ?? "";
-            title = (project.name ?? project.title) ?? "";
-            description = project.description ?? "";
-
-            const { data: milestones } = await supabase.from("milestones")
-              .select("id, title, status").eq("project_id", projectId)
-              // order_index is the roadmap-generation-assigned sequence;
-              // created_at is only a tiebreak for equal order_index rows.
-              .order("order_index", { ascending: true })
-              .order("created_at", { ascending: true });
-
-            const pending = (milestones ?? []).filter(m => m.status !== "completed").map(m => m.title).slice(0, 5);
-            const done = (milestones ?? []).filter(m => m.status === "completed").length;
-
-            projectContext = `Project: ${title}\nStage: ${stage}\nProblem: ${problem || "Not specified"}\nTarget users: ${targetUsers || "Not specified"}\nPending milestones: ${pending.join(", ") || "None"}\nCompleted milestones: ${done}`;
-          }
-
-          if (memory) {
-            const avoidance = (memory.avoidance_zones ?? []) as string[];
-            founderArchetype = ((memory.personality_tags ?? []) as string[])
-              .find((tag) => tag.startsWith("archetype:"))
-              ?.replace("archetype:", "");
-            if (avoidance.length) {
-              lastReflectionContext += `\nAvoidance zones: ${avoidance.join(", ")} — name the pattern and assign it anyway.`;
-            }
-            const archetypeContext = buildArchetypeSystemContext((memory.personality_tags ?? []) as string[]);
-            if (archetypeContext) lastReflectionContext += `\n\n${archetypeContext}`;
-          }
-
-          if (memoryResult.status === "fulfilled" && contextResult.status === "fulfilled") {
-            const m = (memoryResult.value.data ?? {}) as {
-              avoidance_zones?: string[];
-              decision_patterns?: unknown[];
-              personality_tags?: string[];
-              last_debt_surfaced?: Record<string, string> | null;
-            };
-            const c = (contextResult.value.data ?? {}) as {
-              avoidance_zones?: string[];
-              override_reasons?: string[];
-              tasks_overridden_this_week?: number;
-              topics_mentioned_repeatedly?: string[];
-              days_inactive?: number;
-            };
-            const debt = computeExecutionDebt({
-              avoidance_zones: c.avoidance_zones ?? [],
-              override_reasons: c.override_reasons ?? [],
-              tasks_overridden_this_week: c.tasks_overridden_this_week ?? 0,
-              topics_mentioned_repeatedly: c.topics_mentioned_repeatedly ?? [],
-              days_inactive: c.days_inactive ?? 0,
-            }, {
-              avoidance_zones: m.avoidance_zones ?? [],
-              decision_patterns: [],
-              personality_tags: m.personality_tags ?? [],
-              last_debt_surfaced: m.last_debt_surfaced ?? null,
-            });
-            debtContext = buildDebtPromptInjection(debt);
-            if (debtSuppressesTask(debt) && !acknowledgeDebt) {
-              await markDebtSurfaced(userId, debt);
-              emit("done", {
-                success: true,
-                data: {
-                  debtSuppressed: true,
-                  debtCategory: debt.category,
-                  debtMessage: debt.message,
-                  interventionHint: debt.interventionHint,
-                  stage,
-                },
-              });
-              controller.close();
-              return;
-            }
-            if (acknowledgeDebt) {
-              recordActivity(userId, "task_overridden", { projectId, debtCategory: debt.category }).catch(() => {});
-            }
-          }
-
-          const { data: lastReflection } = await supabase.from("reflections")
-            .select("outcome, note, confidence, today_action, created_at, what_tried, what_happened, what_learned, blocker")
-            .eq("user_id", userId)
-            .gte("created_at", new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString())
-            .order("created_at", { ascending: false }).limit(1).maybeSingle();
-
-          if (lastReflection) {
-            const reflectDate = new Date(lastReflection.created_at).toLocaleDateString();
-            lastReflectionNote = lastReflection.note ?? undefined;
-            lastReflectionContext = `\nLAST REFLECTION (${reflectDate}):\nYesterday: "${lastReflection.today_action ?? "Not recorded"}"\nOutcome: ${lastReflection.outcome}\nConfidence: ${lastReflection.confidence}/5\nNote: "${lastReflection.note ?? "None"}"\n${lastReflection.what_tried ? `What they actually tried: "${lastReflection.what_tried}"` : ""}\n${lastReflection.what_happened ? `What concretely happened: "${lastReflection.what_happened}"` : ""}\n${lastReflection.what_learned ? `What they learned: "${lastReflection.what_learned}"` : ""}\n${lastReflection.blocker ? `Specific blocker: "${lastReflection.blocker}"` : ""}\nINSTRUCTION: Use what_tried and what_happened as the PRIMARY signal. If what_tried is set, today must be a direct causal response. blocked+blocker -> remove the specific blocker first. what_learned -> apply to one real person today.` + lastReflectionContext;
-          }
-
-          try {
-            const { data: recentRows } = await supabase.from("reflections")
-              .select("outcome, note, today_action, created_at")
-              .eq("user_id", userId)
-              .not("today_action", "is", null)
-              .order("created_at", { ascending: false })
-              .limit(8);
-
-            const lines = (recentRows ?? [])
-              .filter((r) => r.today_action)
-              .map((r, i) => {
-                const note = r.note ? ` | note: ${String(r.note).slice(0, 120)}` : "";
-                return `${i + 1}. "${r.today_action}" -> ${r.outcome ?? "unknown"}${note}`;
-              });
-
-            if (lines.length) {
-              lastReflectionContext += `\n\nRECENT ACTION HISTORY (do not repeat these task shapes or messages):\n${lines.join("\n")}\nInstruction: today's action must be a new next move. Change the person, channel, ask, experiment, or success criterion. Never reuse previous outreach copy.`;
-            }
-          } catch { /* non-fatal */ }
-        }
-
-        if (hasAdminEnv() && (title || projectContext)) {
-          const cognitionInput = await loadCognitionInput(userId, stage, title);
-          const cognitionState = await synthesizeFounderCognition(userId, cognitionInput);
-          cognitionBlock = buildCognitionPromptBlock(cognitionState);
-          cognitionMomentumScore = cognitionState.signal_confidence > 0.3
-            ? (cognitionInput.context?.momentum_score ?? 50)
-            : 50;
-          cognitionAvoidanceSignals = cognitionInput.memory?.avoidance_zones ?? [];
-        }
-
-        if (hasAdminEnv() && (title || problem || targetUsers)) {
-          knowledgeMatches = await searchFounderKnowledgeBase(
-            `${title}. ${problem}. ${targetUsers}. ${projectContext}`.trim(),
-            stage,
-            founderArchetype,
-            0,
-          );
-          const knowledgeContext = buildKnowledgeBaseContext(knowledgeMatches, founderArchetype);
-          if (knowledgeContext) lastReflectionContext += `\n\n${knowledgeContext}`;
-        }
-
+        let founderIntelligence: FounderIntelligenceState | null = null;
+        let founderIntelligencePromptBlock = "";
         let personalisationCtx = {
           recentActionsBlock: "",
           recentReflectionsBlock: "",
           recurringBlockers: [] as string[],
           activeGoals: [] as string[],
         };
-        if (hasAdminEnv() && projectId) {
-          personalisationCtx = await buildTodayPersonalisationContext(userId, projectId);
+
+        // ── Shared context loader (lib/todayActionContext.ts) ────────────────
+        // Replaces the ~200-line duplicated data-loading block that previously
+        // existed independently in both this file and today-action/route.ts.
+        const tctx = await loadTodayActionContext({
+          userId,
+          projectId,
+          providedStage,
+          acknowledgeDebt,
+          sessionId: `today_action_stream:${projectId || "none"}:${Date.now()}`,
+        });
+
+        if (tctx.debtSuppression.suppressed) {
+          emit("done", {
+            success: true,
+            data: {
+              debtSuppressed: true,
+              debtCategory: tctx.debtSuppression.category,
+              debtMessage: tctx.debtSuppression.message,
+              interventionHint: tctx.debtSuppression.interventionHint,
+              stage: tctx.stage,
+            },
+          });
+          controller.close();
+          return;
         }
+
+        stage = tctx.stage;
+        targetUsers = tctx.targetUsers;
+        problem = tctx.problem;
+        title = tctx.title;
+        description = tctx.description;
+        projectContext = tctx.projectContext;
+        lastReflectionContext = tctx.lastReflectionContext;
+        debtContext = tctx.debtContext;
+        founderArchetype = tctx.founderArchetype;
+        knowledgeMatches = tctx.knowledgeMatches;
+        cognitionBlock = tctx.cognitionBlock;
+        cognitionMomentumScore = tctx.cognitionMomentumScore;
+        cognitionAvoidanceSignals = tctx.cognitionAvoidanceSignals;
+        // See lib/todayActionContext.ts's mapEnergyToCognitiveLoad — the
+        // stream route previously had no cognitive-load handling at all
+        // (not even the buggy "low"/"normal"/"high" passthrough the
+        // non-stream route had), so this is new here, not a bug fix.
+        cognitiveLoad = tctx.cognitionCognitiveLoad ?? "fresh";
+        founderCountry = tctx.founderCountry;
+        lastReflectionNote = tctx.lastReflectionNote;
+        adminForCache = tctx.adminClient;
+        founderIntelligence = tctx.founderIntelligence;
+        founderIntelligencePromptBlock = tctx.founderIntelligencePromptBlock;
+        personalisationCtx = tctx.personalisationCtx;
 
         const fallback = buildFallback(stage, targetUsers, problem, title, description);
 
@@ -386,6 +290,21 @@ export async function POST(request: Request) {
             ? `\nRECURRING BLOCKERS DETECTED:\n${personalisationCtx.recurringBlockers.map((b) => `- "${b}"`).join("\n")}\n-> Today's task must either directly address one of these blockers or explicitly route around it.`
             : "";
 
+        // New here (see lib/todayActionContext.ts's mapEnergyToCognitiveLoad)
+        // — the stream route previously had no cognitive-load handling at
+        // all, not even a buggy passthrough.
+        const cognitiveLoadLine =
+          cognitiveLoad === "drained"
+            ? `\nFOUNDER ENERGY TODAY: drained. Assign something smaller and more achievable than usual — a 15-20 minute win, not a stretch task.`
+            : cognitiveLoad === "autopilot"
+              ? `\nFOUNDER ENERGY TODAY: autopilot / low-focus. Prefer a task with a clear script or checklist over one requiring fresh judgment calls.`
+              : "";
+
+        // Same regional-context helper the non-stream route passes through
+        // ReflexionContext.country — this route builds its prompt inline
+        // rather than via runReflexionLoop(), so it's injected directly.
+        const regionalContextLine = founderCountry ? `\n${formatRegionalContextBlock(founderCountry)}` : "";
+
         // ── PATCH 1: systemA — structured TASK/RATIONALE/DRAFT output ────────
         // Old prompt: "Return a single concrete task" → model returns one headline, stops.
         // New prompt: structured output with a real paste-ready draft using actual
@@ -398,7 +317,10 @@ ${activeGoalsLine}
 ${personalisationCtx.recentReflectionsBlock}
 ${personalisationCtx.recentActionsBlock}
 ${blockersLine}
+${cognitiveLoadLine}
+${regionalContextLine}
 ${cognitionBlock ? `\n${cognitionBlock}` : ""}
+${founderIntelligencePromptBlock ? `\n${founderIntelligencePromptBlock}` : ""}
 ${lastReflectionContext}
 ${debtContext}
 
@@ -575,6 +497,11 @@ ${baseForC}`,
             passedCritic: criticVerdict !== "fail",
             lastReflectionUsed: lastReflectionContext.includes("LAST REFLECTION"),
           },
+          // Phase 10: layers the coherence-layer summary above the existing
+          // Today experience without replacing it — "what changed / what
+          // BuildMind detected / why it matters / predicted top action" for
+          // any UI that wants to surface it (see lib/founderIntelligence.ts).
+          intelligence: founderIntelligence ? summarizeFounderIntelligenceForClient(founderIntelligence) : undefined,
         };
 
         // Quality log (fire-and-forget)
