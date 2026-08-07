@@ -16,6 +16,7 @@ import { injectContinuityIntoSystemPrompt, recordInteractionServer, type RecentI
 import { evaluateAIOutput } from "@/lib/aiEvaluator";
 import { getPromptForRequest, loadActivePrompts } from "@/lib/promptRegistry";
 import { loadFounderIntelligence, buildFounderIntelligencePromptBlock } from "@/lib/founderIntelligence";
+import { recordActionShown } from "@/lib/learning";
 
 const FREE_COACH_MESSAGES_PER_DAY = 3;
 
@@ -460,6 +461,14 @@ Return ONLY the JSON. No preamble. No markdown fences.`;
         interactionSummary,
         effectiveSpiralDetected ? (effectiveSpiralSignal ?? undefined) : undefined,
       ).catch(() => {}); // fire-and-forget
+      recordActionShown({
+        userId,
+        projectId,
+        sessionId: `ai_coach:${projectId}:${Date.now()}`,
+        stage,
+        actionShown: answer,
+        criticPersona: "ai_coach",
+      }).catch(() => {});
     }
 
     // AI Improvement #3: trigger embedding update for tag deduplication
