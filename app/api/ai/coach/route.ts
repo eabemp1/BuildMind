@@ -15,6 +15,7 @@ import { detectSpiralFull } from "@/lib/cofounder/spiralDetection";
 import { injectContinuityIntoSystemPrompt, recordInteractionServer, type RecentInteraction } from "@/lib/conversationContinuity";
 import { evaluateAIOutput } from "@/lib/aiEvaluator";
 import { getPromptForRequest, loadActivePrompts } from "@/lib/promptRegistry";
+import { loadFounderIntelligence, buildFounderIntelligencePromptBlock } from "@/lib/founderIntelligence";
 
 const FREE_COACH_MESSAGES_PER_DAY = 3;
 
@@ -212,6 +213,7 @@ export async function POST(request: Request) {
 
     let projectContext = "";
     let stage = "MVP";
+    let intelligenceBlock = "";
     let founderMemoryContext = "";
     let memory: FounderMemory | null = null;
     let lastMorningNote = "";
@@ -224,7 +226,7 @@ export async function POST(request: Request) {
     if (hasAdminEnv() && supabase) {
       try {
         // Run project fetch and full behavioral context assembly in parallel
-        const [projectResult, milestonesResult, profileResult, behavioralResult] = await Promise.allSettled([
+        const [projectResult, milestonesResult, profileResult, behavioralResult, intelligenceResult] = await Promise.allSettled([
           supabase
             .from("projects")
             .select("name, title, description, target_users, problem, startup_stage, validation_strengths, validation_weaknesses")
@@ -237,11 +239,17 @@ export async function POST(request: Request) {
           // momentum, skip reasons, blocker insights, score trend, and memory
           // — the six data sources the coach previously never saw.
           assembleCoachContext(supabase, userId, projectId),
+          // Founder Intelligence coherence layer — loads existing signals into
+          // typed state so the coach doesn't have to re-derive them from scratch.
+          // Non-fatal: if it fails the coach degrades gracefully to coachContext alone.
+          loadFounderIntelligence(supabase, userId, projectId, { now: new Date() }).catch(() => null),
         ]);
 
         const project    = projectResult.status    === "fulfilled" ? projectResult.value.data    : null;
         const milestones = milestonesResult.status === "fulfilled" ? milestonesResult.value.data ?? [] : [];
         const behavioral = behavioralResult.status === "fulfilled" ? behavioralResult.value : null;
+        const intelligenceState = intelligenceResult?.status === "fulfilled" ? intelligenceResult.value : null;
+        intelligenceBlock = intelligenceState ? buildFounderIntelligencePromptBlock(intelligenceState) : "";
 
         // Still read memory for spiral persistence (write path only)
         const { data: memData } = await supabase.from("founder_memory").select("emotional_signals").eq("user_id", userId).maybeSingle();
@@ -404,7 +412,7 @@ You must return ONLY valid JSON:
 }
 ${spiralInstruction}${proactiveObservation}
 
-${projectContext ? `FOUNDER CONTEXT (real data):\n${projectContext}` : ""}${founderMemoryContext}${morningNoteContext}${blockerContext}${domainContext}${historyContext}
+${projectContext ? `FOUNDER CONTEXT (real data):\n${projectContext}` : ""}${founderMemoryContext}${intelligenceBlock ? `\n\n${intelligenceBlock}` : ""}${morningNoteContext}${blockerContext}${domainContext}${historyContext}
 
 Message: ${message}
 
