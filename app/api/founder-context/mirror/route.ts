@@ -9,6 +9,12 @@ import { getFounderIntelligenceAccuracy } from "@/lib/learningLoop";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+type QueryResult<T> = PromiseSettledResult<{ data: T }>;
+
+function settledData<T>(res: QueryResult<T>, fallback: T): T {
+  return res.status === "fulfilled" ? (res.value.data ?? fallback) : fallback;
+}
+
 export async function GET(request: Request) {
   const supabase = await createClient();
   const { data: { user }, error } = await supabase.auth.getUser();
@@ -45,14 +51,11 @@ export async function GET(request: Request) {
     admin.from("reflections").select("*").eq("user_id", user.id).order("created_at", { ascending: false }).limit(80),
   ]);
 
-  const data = <T,>(res: PromiseSettledResult<{ data: T }>, fallback: T): T =>
-    res.status === "fulfilled" ? (res.value.data ?? fallback) : fallback;
-
   const graph = buildStartupRelationshipGraph({
-    project: data(projectRes as PromiseSettledResult<{ data: Record<string, any> | null }>, null),
-    milestones: data(milestonesRes as PromiseSettledResult<{ data: Array<Record<string, any>> }>, []),
-    tasks: data(tasksRes as PromiseSettledResult<{ data: Array<Record<string, any>> }>, []),
-    reflections: data(reflectionsRes as PromiseSettledResult<{ data: Array<Record<string, any>> }>, []),
+    project: settledData(projectRes as QueryResult<Record<string, any> | null>, null),
+    milestones: settledData(milestonesRes as QueryResult<Array<Record<string, any>>>, []),
+    tasks: settledData(tasksRes as QueryResult<Array<Record<string, any>>>, []),
+    reflections: settledData(reflectionsRes as QueryResult<Array<Record<string, any>>>, []),
   }, state);
 
   return NextResponse.json({
