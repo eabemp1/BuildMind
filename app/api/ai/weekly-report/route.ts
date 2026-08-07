@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { checkPlanAccess } from "@/app/api/ai/_planCheck";
 import { getPulseWeekSummary, getPulseMetrics, emitPulse } from "@/lib/pulse";
 import { getFounderScorecard } from "@/lib/scorecard";
+import { loadFounderIntelligence, buildFounderIntelligencePromptBlock } from "@/lib/founderIntelligence";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -287,6 +288,19 @@ export async function POST(request: Request) {
     const scorecard = await getFounderScorecard(userId).catch(() => null);
     const momentumScore = scorecard?.momentum ?? 50;
 
+    // Founder Intelligence OS: load typed coherence-layer signals so the
+    // weekly report's "biggest_gap" and "honest_assessment" can reference
+    // machine-readable signals (EVIDENCE_GAP, BEHAVIOR_STRATEGY_CONTRADICTION)
+    // rather than only the AI's own inference. Non-fatal.
+    let weeklyIntelligenceBlock = "";
+    if (hasAdminEnv()) {
+      try {
+        const adminForWeekly = createAdminClient();
+        const intelligenceState = await loadFounderIntelligence(adminForWeekly, userId, projectId || undefined, { now: new Date() });
+        weeklyIntelligenceBlock = buildFounderIntelligencePromptBlock(intelligenceState);
+      } catch { /* non-fatal */ }
+    }
+
     // Execution trend from Pulse is deterministic — not AI-generated
     const deterministicTrend = pulseWeek.executionTrend;
     const pulseStreak = scorecard?.streak ?? pulseMetrics.pulseStreak;
@@ -349,7 +363,7 @@ INSTRUCTION:
 - CRITICAL: Write entirely in second person throughout all fields. Address the founder as "you"/"your". Never write "the founder", "they", or "their".
 - Write next_week_focus as one concrete task the founder should do first on Monday, naming the product and user type.
 - Be specific. Reference the actual tasks shown above. Do NOT write generic startup advice.
-- If no reflections were submitted, say so directly in honest_assessment.`;
+- If no reflections were submitted, say so directly in honest_assessment.${weeklyIntelligenceBlock ? `\n\n${weeklyIntelligenceBlock}` : ""}`;
 
     let result: AIWeeklyReport = {
       summary: tasks === 0
