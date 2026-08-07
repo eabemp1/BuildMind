@@ -318,7 +318,14 @@ export function deriveIntelligenceSignals(params: {
     }));
   }
 
-  const evidenceRows = recentWithin(reflections, now, 14).filter((r) => USER_EVIDENCE_KEYWORDS.test(`${r.today_action ?? ""} ${r.note ?? ""} ${r.what_happened ?? ""} ${r.what_learned ?? ""}`));
+  // Fix: only count reflections that both keyword-match user/customer evidence
+  // AND were actually completed (not blocked/abandoned). A blocked attempt to
+  // interview users looks like evidence text but produces zero real signal.
+  const evidenceRows = recentWithin(reflections, now, 14).filter((r) => {
+    const completed = r.outcome === "completed" || r.outcome === "done";
+    if (!completed) return false;
+    return USER_EVIDENCE_KEYWORDS.test(`${r.today_action ?? ""} ${r.note ?? ""} ${r.what_happened ?? ""} ${r.what_learned ?? ""}`);
+  });
   if (evidenceRows.length === 0) {
     signals.push(signal({
       now,
@@ -326,8 +333,8 @@ export function deriveIntelligenceSignals(params: {
       severity: stage.toLowerCase().includes("idea") || stage.toLowerCase().includes("validation") ? "critical" : "high",
       confidence: reflections.length >= 3 ? 0.8 : 0.55,
       title: "No recent external evidence",
-      summary: "No user/customer/revenue evidence was detected in the last 14 days of reflections.",
-      evidence: [{ source: "reflections", detail: "No recent reflection contained user/customer/revenue evidence keywords.", window: "14 days" }],
+      summary: "No completed user/customer/revenue actions were detected in the last 14 days. Blocked attempts don't count.",
+      evidence: [{ source: "reflections", detail: "No completed reflection in the last 14 days contained confirmed user/customer/revenue evidence.", window: "14 days" }],
       affected_goal: activeMilestone?.title ?? null,
       affected_assumption: project.problem ? `Problem is painful for ${project.target_users ?? "target users"}` : null,
       recommended_response: "Prioritize one action that produces external evidence today.",
@@ -477,6 +484,16 @@ export function buildFounderIntelligenceState(input: FounderIntelligenceInput): 
   const observedPriorities = unique(completedThisWeek.map((r) => actionCategory(String(r.today_action ?? r.note ?? ""))));
   const contradictionSignals = signals.filter((s) => s.type === "BEHAVIOR_STRATEGY_CONTRADICTION");
 
+  // Phase 11 learning loop feedback: intelligence_accuracy is written by
+  // lib/learningLoop.ts after each resolved Founder Intelligence prediction.
+  // It nudges FounderState.confidence and surfaces as a behavioral trend so
+  // the product can visibly "get to know" the founder better over time,
+  // instead of confidence being a static function of raw row counts.
+  const intelligenceAccuracy = founderContext.intelligence_accuracy as { sample_size?: number; average_match_score?: number; trend?: string } | undefined;
+  const accuracySampleSize = Number(intelligenceAccuracy?.sample_size ?? 0);
+  const accuracyScore = Number(intelligenceAccuracy?.average_match_score ?? 0);
+  const accuracyAdjustment = accuracySampleSize >= 3 ? Math.round((accuracyScore - 0.5) * 20) : 0;
+
   const founder: FounderState = {
     strengths: unique([...(founderMemory.strengths ?? []), ...executionSignature.strengths.map((s) => String(s.category)), ...learnedPatterns.preferred_action_types], 8),
     avoidance_patterns: unique([...(founderContext.avoidance_zones ?? []), ...(founderMemory.avoidance_zones ?? []), ...executionSignature.avoidanceZones.map((s) => String(s.category)), ...learnedPatterns.avoided_action_types], 8),
@@ -484,8 +501,13 @@ export function buildFounderIntelligenceState(input: FounderIntelligenceInput): 
     operating_windows: unique([temporalProfile.peakProductivityHour != null ? `Best completion hour around ${temporalProfile.peakProductivityHour}:00` : null, temporalProfile.dropoutHour != null ? `Dropout risk around ${temporalProfile.dropoutHour}:00` : null], 4),
     recommendation_acceptance: learnedPatterns.preferred_action_types.map((t) => `Completes ${t} recommendations`),
     recommendation_rejection: unique([...learnedPatterns.avoided_action_types.map((t) => `Avoids ${t} recommendations`), ...learnedPatterns.avoided_platforms.map((p) => `Avoids ${p}`)], 6),
-    behavioral_trends: unique([...temporal.increasing_behaviors.map((b) => `${b} increasing`), ...temporal.decreasing_behaviors.map((b) => `${b} decreasing`)], 6),
-    confidence: clampScore((learnedPatterns.patterns_reliable ? 30 : 0) + Math.min(reflections.length, 10) * 4 + Math.min(activityEvents.length, 20)),
+    behavioral_trends: unique([
+      ...temporal.increasing_behaviors.map((b) => `${b} increasing`),
+      ...temporal.decreasing_behaviors.map((b) => `${b} decreasing`),
+      accuracySampleSize >= 3 && intelligenceAccuracy?.trend === "up" ? "Founder Intelligence predictions are getting more accurate" : null,
+      accuracySampleSize >= 3 && intelligenceAccuracy?.trend === "down" ? "Founder Intelligence predictions are slipping — model may be stale" : null,
+    ], 6),
+    confidence: clampScore((learnedPatterns.patterns_reliable ? 30 : 0) + Math.min(reflections.length, 10) * 4 + Math.min(activityEvents.length, 20) + accuracyAdjustment),
     recent_changes: temporal.week_changes.slice(0, 5),
   };
 
@@ -494,7 +516,11 @@ export function buildFounderIntelligenceState(input: FounderIntelligenceInput): 
     active_milestones: activeMilestones.map((m) => String(m.title)).slice(0, 5),
     stalled_milestones: stalledMilestones.map((m) => String(m.title)).slice(0, 5),
     current_projects: unique([project.name, project.title], 3),
-    evidence: unique(reflections.filter((r) => USER_EVIDENCE_KEYWORDS.test(`${r.today_action ?? ""} ${r.note ?? ""} ${r.what_happened ?? ""} ${r.what_learned ?? ""}`)).map((r) => String(r.what_learned ?? r.what_happened ?? r.note ?? r.today_action)), 6),
+    evidence: unique(reflections.filter((r) => {
+      const completed = r.outcome === "completed" || r.outcome === "done";
+      if (!completed) return false;
+      return USER_EVIDENCE_KEYWORDS.test(`${r.today_action ?? ""} ${r.note ?? ""} ${r.what_happened ?? ""} ${r.what_learned ?? ""}`);
+    }).map((r) => String(r.what_learned ?? r.what_happened ?? r.note ?? r.today_action)), 6),
     assumptions: unique([project.problem ? `Target users have this problem: ${project.problem}` : null, project.target_users ? `Target segment: ${project.target_users}` : null], 6),
     risks: signals.filter((s) => ["EVIDENCE_GAP", "GOAL_SLIPPAGE", "ASSUMPTION_DECAY", "BUSYWORK_PATTERN"].includes(s.type)).map((s) => s.summary).slice(0, 6),
     metrics: {
@@ -719,10 +745,33 @@ export async function loadFounderIntelligence(
       preloaded.project !== undefined ? Promise.resolve({ data: preloaded.project }) : projectId ? supabase.from("projects").select("*").eq("id", projectId).eq("user_id", userId).maybeSingle() : Promise.resolve({ data: null }),
       preloaded.milestones !== undefined ? Promise.resolve({ data: preloaded.milestones }) : projectId ? supabase.from("milestones").select("*").eq("project_id", projectId).eq("user_id", userId).order("created_at", { ascending: true }).limit(20) : Promise.resolve({ data: [] }),
       preloaded.tasks !== undefined ? Promise.resolve({ data: preloaded.tasks }) : supabase.from("tasks").select("*").eq("user_id", userId).order("updated_at", { ascending: false }).limit(80),
-      preloaded.reflections !== undefined ? Promise.resolve({ data: preloaded.reflections }) : supabase.from("reflections").select("*").eq("user_id", userId).gte("created_at", thirtyDaysAgo).order("created_at", { ascending: false }).limit(80),
-      preloaded.learningLogs !== undefined ? Promise.resolve({ data: preloaded.learningLogs }) : supabase.from("reflexion_learning_log").select("*").eq("user_id", userId).gte("created_at", thirtyDaysAgo).order("created_at", { ascending: false }).limit(50),
+      // CROSS-PROJECT CONTAMINATION FIX: previously filtered only by
+      // user_id — a founder with multiple projects (or a Break My Startup
+      // run on an unrelated custom idea) had every other project's
+      // reflections/tasks/action-outcomes pulled into this project's
+      // signal derivation. Same bug class as todayPersonalisationContext.ts
+      // (fixed earlier), reintroduced here independently since this module
+      // queries the same tables from scratch. `.or(project_id.eq.X,
+      // project_id.is.null)` keeps legacy rows written before project_id
+      // existed on these tables, while excluding rows known to belong to a
+      // specific *other* project. Only applied when projectId is known —
+      // falls back to unscoped (same as before) for idea-only contexts.
+      preloaded.reflections !== undefined
+        ? Promise.resolve({ data: preloaded.reflections })
+        : (projectId
+            ? supabase.from("reflections").select("*").eq("user_id", userId).or(`project_id.eq.${projectId},project_id.is.null`).gte("created_at", thirtyDaysAgo).order("created_at", { ascending: false }).limit(80)
+            : supabase.from("reflections").select("*").eq("user_id", userId).gte("created_at", thirtyDaysAgo).order("created_at", { ascending: false }).limit(80)),
+      preloaded.learningLogs !== undefined
+        ? Promise.resolve({ data: preloaded.learningLogs })
+        : (projectId
+            ? supabase.from("reflexion_learning_log").select("*").eq("user_id", userId).or(`project_id.eq.${projectId},project_id.is.null`).gte("created_at", thirtyDaysAgo).order("created_at", { ascending: false }).limit(50)
+            : supabase.from("reflexion_learning_log").select("*").eq("user_id", userId).gte("created_at", thirtyDaysAgo).order("created_at", { ascending: false }).limit(50)),
       preloaded.activityEvents !== undefined ? Promise.resolve({ data: preloaded.activityEvents }) : supabase.from("activity_log").select("event_type, occurred_at, metadata").eq("user_id", userId).gte("occurred_at", thirtyDaysAgo).order("occurred_at", { ascending: false }).limit(500),
-      preloaded.actionLogs !== undefined ? Promise.resolve({ data: preloaded.actionLogs }) : supabase.from("action_logs").select("*").eq("user_id", userId).gte("created_at", fourteenDaysAgo).order("created_at", { ascending: false }).limit(80),
+      preloaded.actionLogs !== undefined
+        ? Promise.resolve({ data: preloaded.actionLogs })
+        : (projectId
+            ? supabase.from("action_logs").select("*").eq("user_id", userId).or(`project_id.eq.${projectId},project_id.is.null`).gte("created_at", fourteenDaysAgo).order("created_at", { ascending: false }).limit(80)
+            : supabase.from("action_logs").select("*").eq("user_id", userId).gte("created_at", fourteenDaysAgo).order("created_at", { ascending: false }).limit(80)),
     ]);
 
     const data = <T>(res: PromiseSettledResult<{ data: T }>, fallback: T): T => res.status === "fulfilled" ? (res.value.data ?? fallback) : fallback;
