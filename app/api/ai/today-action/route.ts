@@ -845,19 +845,39 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
         lastReflectionUsed: boolean;
       };
       body?: string; // full reflexion output, stored separately from the card title
+      decisionBasis?: {
+        expected_evidence: string;
+        why_it_beats_alternatives: string;
+        score: number;
+        alternatives: Array<{ action: string; score: number; why: string }>;
+      };
     } = {
       ...fallback,
       // Card title: short imperative extracted from reflexion output
-      action: extractActionTitle(reflexionOutput?.output ?? "", fallback.action),
+      action: founderIntelligence?.decision.top_candidate?.action ?? extractActionTitle(reflexionOutput?.output ?? "", fallback.action),
       // Full body stored separately so the UI can show detail if needed
       ...(reflexionOutput?.output ? { body: cleanVisibleText(reflexionOutput.output, "") } : {}),
       // If reflexion ran, its rationale becomes the task's why
-      why: cleanVisibleText(reflexionOutput?.rationale, fallback.why),
+      why: founderIntelligence?.decision.top_candidate
+        ? `${cleanVisibleText(reflexionOutput?.rationale, fallback.why)} ${founderIntelligence.decision.top_candidate.why_it_beats_alternatives}`
+        : cleanVisibleText(reflexionOutput?.rationale, fallback.why),
       // FIX: difficulty was never surfaced anywhere — the only prior
       // per-something difficulty concept (isHardTask in
       // task-complete/route.ts) is scoped to project stage, not this task.
       difficulty: reflexionOutput?.difficulty,
     };
+    if (founderIntelligence?.decision.top_candidate) {
+      finalResult.decisionBasis = {
+        expected_evidence: founderIntelligence.decision.top_candidate.expected_evidence,
+        why_it_beats_alternatives: founderIntelligence.decision.top_candidate.why_it_beats_alternatives,
+        score: founderIntelligence.decision.top_candidate.scores.total,
+        alternatives: founderIntelligence.decision.candidates.slice(1, 4).map((c) => ({
+          action: c.action,
+          score: c.scores.total,
+          why: c.why_it_beats_alternatives,
+        })),
+      };
+    }
     finalResult.message = buildPersonalizedTodayDraft(finalResult.action, fallback, {
       title,
       targetUsers,
