@@ -43,6 +43,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 export default function FounderMirrorPage() {
   const [data, setData] = useState<MirrorResponse["data"] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [correction, setCorrection] = useState("");
+  const [correctionStatus, setCorrectionStatus] = useState("");
 
   useEffect(() => {
     fetch("/api/founder-context/mirror", { cache: "no-store" })
@@ -51,6 +53,24 @@ export default function FounderMirrorPage() {
       .catch(() => setData(null))
       .finally(() => setLoading(false));
   }, []);
+
+  async function submitCorrection() {
+    const text = correction.trim();
+    if (!text) return;
+    setCorrectionStatus("Saving...");
+    try {
+      const response = await fetch("/api/founder-context/mirror/correction", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ belief: "General Founder Mirror model", correction: text }),
+      });
+      if (!response.ok) throw new Error("save failed");
+      setCorrection("");
+      setCorrectionStatus("Correction saved. Future judgments will retain it as founder-provided evidence.");
+    } catch {
+      setCorrectionStatus("Could not save the correction. Please try again.");
+    }
+  }
 
   return (
     <main style={{ maxWidth: 860, margin: "0 auto", padding: "28px 16px 40px" }}>
@@ -106,6 +126,21 @@ export default function FounderMirrorPage() {
             <ul style={{ margin: 0, paddingLeft: 18, color: "var(--bm-text2)", fontSize: 13, lineHeight: 1.7 }}>
               {data.mirror.may_be_wrong_about.map((item, i) => <li key={i}>{item}</li>)}
             </ul>
+            <div style={{ display: "grid", gap: 8, marginTop: 14 }}>
+              <textarea
+                value={correction}
+                onChange={(event) => setCorrection(event.target.value)}
+                placeholder="Correct anything this model has misunderstood about how you work."
+                rows={3}
+                style={{ width: "100%", resize: "vertical", border: "1px solid var(--bm-border)", borderRadius: 6, padding: 10, background: "var(--bm-bg)", color: "var(--bm-text)", fontSize: 13, boxSizing: "border-box" }}
+              />
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <button type="button" onClick={submitCorrection} disabled={!correction.trim()} style={{ border: 0, borderRadius: 6, padding: "8px 12px", background: "var(--bm-accent)", color: "white", fontSize: 12, cursor: correction.trim() ? "pointer" : "not-allowed", opacity: correction.trim() ? 1 : 0.5 }}>
+                  Correct model
+                </button>
+                {correctionStatus && <span style={{ color: "var(--bm-text3)", fontSize: 12 }}>{correctionStatus}</span>}
+              </div>
+            </div>
           </Section>
 
           <Section title="Evidence chain">
