@@ -6,6 +6,7 @@ import { checkPlanAccess } from "@/app/api/ai/_planCheck";
 import { getPulseWeekSummary, getPulseMetrics, emitPulse } from "@/lib/pulse";
 import { getFounderScorecard } from "@/lib/scorecard";
 import { loadFounderIntelligence, buildFounderIntelligencePromptBlock } from "@/lib/founderIntelligence";
+import { recordActionShown } from "@/lib/learning";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -524,6 +525,16 @@ INSTRUCTION:
         execution_trend: deterministicTrend,
       },
     }).catch(() => {});
+    if (result.next_week_focus) {
+      recordActionShown({
+        userId,
+        projectId: projectId || undefined,
+        sessionId: `weekly_report:${userId}:${reportData.week_start_date}`,
+        stage: projectStage || "Idea",
+        actionShown: result.next_week_focus,
+        criticPersona: "weekly_report",
+      }).catch(() => {});
+    }
 
     const shareUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "https://buildmind.live"}/reports/share/${shareToken}`;
 
