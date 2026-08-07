@@ -31,6 +31,15 @@ function Pill({ children }: { children: React.ReactNode }) {
   );
 }
 
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section style={{ border: "1px solid var(--bm-border)", borderRadius: 10, padding: 16, background: "var(--bm-bg2)" }}>
+      <h2 style={{ margin: "0 0 10px", fontSize: 16, color: "var(--bm-text)" }}>{title}</h2>
+      {children}
+    </section>
+  );
+}
+
 export default function FounderMirrorPage() {
   const [data, setData] = useState<MirrorResponse["data"] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -63,7 +72,7 @@ export default function FounderMirrorPage() {
         </div>
       ) : (
         <div style={{ display: "grid", gap: 14 }}>
-          <section style={{ border: "1px solid var(--bm-border)", borderRadius: 10, padding: 16, background: "var(--bm-bg2)" }}>
+          <Section title="Model accuracy">
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
               <Pill>{data.mirror.self_reported_accuracy.sample_size} resolved predictions</Pill>
               <Pill>{data.mirror.self_reported_accuracy.accuracy_pct ?? "No"}% match</Pill>
@@ -72,7 +81,7 @@ export default function FounderMirrorPage() {
             <p style={{ margin: 0, color: "var(--bm-text2)", fontSize: 13, lineHeight: 1.6 }}>
               {data.mirror.self_reported_accuracy.summary}
             </p>
-          </section>
+          </Section>
 
           {data.mirror.beliefs.map((belief, i) => (
             <section key={i} style={{ border: "1px solid var(--bm-border)", borderRadius: 10, padding: 16, background: "var(--bm-bg2)" }}>
@@ -87,19 +96,27 @@ export default function FounderMirrorPage() {
             </section>
           ))}
 
-          <section style={{ border: "1px solid var(--bm-border)", borderRadius: 10, padding: 16, background: "var(--bm-bg2)" }}>
-            <h2 style={{ margin: "0 0 10px", fontSize: 16, color: "var(--bm-text)" }}>What may be wrong</h2>
+          <Section title="What changed recently">
+            <ul style={{ margin: 0, paddingLeft: 18, color: "var(--bm-text2)", fontSize: 13, lineHeight: 1.7 }}>
+              {(data.mirror.recent_changes.length ? data.mirror.recent_changes : ["No clear recent changes detected yet."]).map((item, i) => <li key={i}>{item}</li>)}
+            </ul>
+          </Section>
+
+          <Section title="What may be wrong">
             <ul style={{ margin: 0, paddingLeft: 18, color: "var(--bm-text2)", fontSize: 13, lineHeight: 1.7 }}>
               {data.mirror.may_be_wrong_about.map((item, i) => <li key={i}>{item}</li>)}
             </ul>
-          </section>
+          </Section>
 
-          <section style={{ border: "1px solid var(--bm-border)", borderRadius: 10, padding: 16, background: "var(--bm-bg2)" }}>
-            <h2 style={{ margin: "0 0 8px", fontSize: 16, color: "var(--bm-text)" }}>Evidence chain</h2>
-            <p style={{ margin: 0, fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.6 }}>
+          <Section title="Evidence chain">
+            <p style={{ margin: "0 0 8px", fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.6 }}>
               {data.relationship_chain.narrative || "No relationship chain available yet."}
             </p>
-          </section>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <Pill>{data.relationship_graph_summary.nodes} nodes</Pill>
+              <Pill>{data.relationship_graph_summary.edges} edges</Pill>
+            </div>
+          </Section>
         </div>
       )}
     </main>
