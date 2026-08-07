@@ -21,6 +21,8 @@ import {
 } from "@/lib/recoveryMode";
 import type { ReflexionContext } from "@/lib/reflexion";
 import { logError } from "@/lib/server/logger";
+import { recordActionShown } from "@/lib/learning";
+import { markRecommendationObserved } from "@/lib/recommendationLifecycle";
 
 export async function GET() {
   const supabase = await createClient();
@@ -104,6 +106,13 @@ export async function POST() {
 
   // ── Generate the Reset Mission ────────────────────────────────────────────
   const resetMission = await generateResetMission(reflexionCtx);
+  recordActionShown({
+    userId: user.id,
+    sessionId: `recovery_mode:${user.id}:${Date.now()}`,
+    stage: ctx.current_stage ?? "Idea",
+    actionShown: resetMission.task,
+    criticPersona: "recovery_mode",
+  }).catch(() => {});
 
   // ── Activate Recovery Mode and persist Reset Mission ─────────────────────
   await admin
@@ -114,6 +123,13 @@ export async function POST() {
       updated_at: new Date().toISOString(),
     })
     .eq("user_id", user.id);
+  markRecommendationObserved(admin, {
+    userId: user.id,
+    taskTitle: "Recovery Mode reset mission",
+    outcome: "completed",
+    founderExplanation: "Reset Mission complete",
+    evidenceProduced: "Recovery Mode reset mission completed",
+  }).catch(() => {});
 
   return NextResponse.json({
     ok: true,
