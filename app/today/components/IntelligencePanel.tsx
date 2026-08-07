@@ -38,7 +38,9 @@ export interface TodayIntelligenceSummary {
     confidence: number;
   };
   decision: {
-    top_candidate: { expected_evidence: string; why_it_beats_alternatives: string } | null;
+    top_candidate: { expected_evidence: string; why_it_beats_alternatives: string; scores?: { total: number } } | null;
+    alternatives?: Array<{ action: string; scores?: { total: number }; why_it_beats_alternatives: string }>;
+    basis?: string[];
   };
 }
 
@@ -127,6 +129,29 @@ export function IntelligencePanel({ data }: { data: TodayIntelligenceSummary | n
             <div>
               <div style={{ fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>BuildMind will learn from today's outcome</div>
               <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.5 }}>{data.decision.top_candidate.expected_evidence}</p>
+            </div>
+          )}
+
+          {data.decision.top_candidate?.why_it_beats_alternatives && (
+            <div>
+              <div style={{ fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>Why this action beat alternatives</div>
+              <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.5 }}>
+                {data.decision.top_candidate.why_it_beats_alternatives}
+                {data.decision.top_candidate.scores?.total != null ? ` Score: ${data.decision.top_candidate.scores.total}/100.` : ""}
+              </p>
+            </div>
+          )}
+
+          {data.decision.alternatives && data.decision.alternatives.length > 0 && (
+            <div>
+              <div style={{ fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>Alternatives considered</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {data.decision.alternatives.slice(0, 2).map((alt, i) => (
+                  <p key={i} style={{ fontSize: 12, color: "var(--bm-text3)", margin: 0, lineHeight: 1.45 }}>
+                    {alt.action}{alt.scores?.total != null ? ` (${alt.scores.total}/100)` : ""}
+                  </p>
+                ))}
+              </div>
             </div>
           )}
         </div>
