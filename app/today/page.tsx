@@ -34,6 +34,7 @@ import { recordOverride } from "@/lib/founderContext";
 import { truncateChars } from "@/lib/textTruncate";
 import type { MorningBriefing } from "@/lib/founderContext";
 import GhostGoalBanner from "@/components/GhostGoalBanner";
+import { IntelligencePanel, type TodayIntelligenceSummary } from "./components/IntelligencePanel";
 
 type Outcome = "completed" | "blocked" | "partial" | "learned";
 type ReflexionMeta = {
@@ -69,6 +70,9 @@ type ActionData = {
   // log_row_id from recordActionShown — closes the learning loop via reflexion-outcome
   log_row_id?: string;
   difficulty?: "light" | "focused" | "deep"; // From app/api/ai/today-action's response
+  // Founder Intelligence OS (Phase 10) — layered above the existing action,
+  // never required for the card to render. See app/today/components/IntelligencePanel.tsx.
+  intelligence?: TodayIntelligenceSummary;
 };
 
 type CachedTodayAction = {
@@ -2334,6 +2338,8 @@ function TodayContent() {
           </div>
         </div>
       ) : (
+        <>
+        <IntelligencePanel data={actionData.intelligence} />
         <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -2516,6 +2522,7 @@ function TodayContent() {
           </div>
         </div>
       </motion.div>
+      </>
       )}
 
       {accountAgeDays < 7 && (
