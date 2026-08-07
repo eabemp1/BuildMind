@@ -18,7 +18,8 @@ import { getPromptForRequest, loadActivePrompts } from "@/lib/promptRegistry";
 import { upsertTodayActionCache } from "@/lib/todayActionCache";
 import { buildTodayPersonalisationContext } from "@/lib/todayPersonalisationContext";
 import { loadBehavioralContext } from "@/lib/behavioralLayers";
-import { buildFounderIntelligencePromptBlock, loadFounderIntelligence, summarizeFounderIntelligenceForClient, type FounderIntelligenceState } from "@/lib/founderIntelligence";
+import { summarizeFounderIntelligenceForClient, type FounderIntelligenceState } from "@/lib/founderIntelligence";
+import { loadTodayActionContext } from "@/lib/todayActionContext";
 
 export const runtime     = "nodejs";
 export const dynamic     = "force-dynamic";
@@ -181,6 +182,7 @@ export async function POST(request: Request) {
     const clientPendingMilestones: string[] = body?.pendingMilestones ?? [];
     const clientPendingTasks: string[]       = body?.pendingTasks ?? [];
     const clientCompletionRate = body?.completionRate ?? null;
+    const acknowledgeDebt = body?.acknowledgeDebt ?? false;
 
     // Prevent one user from fetching another user's project data
     if (userId !== routeUser.userId) {
@@ -223,7 +225,51 @@ export async function POST(request: Request) {
     let cognitionCognitiveLoad: ReflexionContext["cognitiveLoad"] = "fresh";
     let founderIntelligence: FounderIntelligenceState | null = null;
     let founderIntelligencePromptBlock = "";
-    // FIX: founder_context.cognitive_load is written by the Today page's
+    let personalisationCtx = { recentActionsBlock: "", recentReflectionsBlock: "", recurringBlockers: [] as string[], activeGoals: [] as string[] };
+
+    // ── Shared context loader (lib/todayActionContext.ts) ──────────────────
+    // All DB reads, debt computation, cognition, knowledge-base, personalisation
+    // and Founder Intelligence OS loading now live in one place, shared with
+    // today-action/stream/route.ts (the primary SSE path).
+    const tctx = await loadTodayActionContext({
+      userId,
+      projectId,
+      providedStage,
+      acknowledgeDebt,
+      sessionId: requestId,
+    });
+
+    if (tctx.debtSuppression.suppressed) {
+      return NextResponse.json({
+        success: true,
+        data: {
+          debtSuppressed: true,
+          debtCategory: tctx.debtSuppression.category,
+          debtMessage: tctx.debtSuppression.message,
+          interventionHint: tctx.debtSuppression.interventionHint,
+          stage: tctx.stage,
+        },
+      });
+    }
+
+    stage = tctx.stage;
+    targetUsers = tctx.targetUsers;
+    problem = tctx.problem;
+    title = tctx.title;
+    projectContext = tctx.projectContext;
+    lastReflectionContext = tctx.lastReflectionContext;
+    founderArchetype = tctx.founderArchetype;
+    knowledgeMatches = tctx.knowledgeMatches;
+    cognitionBlock = tctx.cognitionBlock;
+    cognitionMomentumScore = tctx.cognitionMomentumScore;
+    cognitionAvoidanceSignals = tctx.cognitionAvoidanceSignals;
+    supabase = tctx.adminClient;
+    founderIntelligence = tctx.founderIntelligence;
+    founderIntelligencePromptBlock = tctx.founderIntelligencePromptBlock;
+    personalisationCtx = tctx.personalisationCtx;
+    // Non-stream route still uses hoistedReflection for the Reflexion context
+    // below; populate it from lastReflectionNote if available.
+    recentActionHistory = "";
     // energy check-in (components using handleCogLoad) with values
     // "low" | "normal" | "high" — but this field was being passed straight
     // through as if it already matched ReflexionContext's expected
@@ -546,12 +592,6 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
       if (knowledgeContext) lastReflectionContext += `\n\n${knowledgeContext}`;
     }
 
-    let personalisationCtx = {
-      recentActionsBlock: "",
-      recentReflectionsBlock: "",
-      recurringBlockers: [] as string[],
-      activeGoals: [] as string[],
-    };
     if (hasAdminEnv() && projectId) {
       personalisationCtx = await buildTodayPersonalisationContext(userId, projectId);
     }
@@ -569,16 +609,12 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
       lastReflectionContext += `\n\nACTIVE GOALS (advance one today):\n${personalisationCtx.activeGoals.map((g, i) => `${i + 1}. ${g}`).join("\n")}`;
     }
 
-    if (hasAdminEnv() && supabase && userId) {
-      try {
-        founderIntelligence = await loadFounderIntelligence(supabase, userId, projectId, {
-          now: new Date(),
-        });
-        founderIntelligencePromptBlock = buildFounderIntelligencePromptBlock(founderIntelligence);
-      } catch (err) {
-        logError("today-action/founder-intelligence", err, { route: "/api/ai/today-action", userId, requestId });
-      }
-    }
+    // NOTE: founderIntelligence loading + prediction recording already
+    // happened inside loadTodayActionContext() above (tctx.founderIntelligence,
+    // tctx.founderIntelligencePromptBlock) — this used to reload it a second
+    // time here AND call recordFounderIntelligencePrediction() again,
+    // writing a duplicate prediction row into the learning-loop accuracy
+    // table on every single request. Removed; tctx's values are used as-is.
 
     // Build contextual fallback using real project data (never placeholder text)
     const fallback = buildContextualFallback(stage, targetUsers, problem, title, projectContext);
