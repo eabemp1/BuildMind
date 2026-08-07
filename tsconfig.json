@@ -38,6 +38,7 @@
     "node_modules",
     ".next",
     "buildmind_patched",
+    "founder-intelligence-os-files",
     "__tests__/**",
     "e2e/**",
     "supabase/functions/**"
