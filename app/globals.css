@@ -42,6 +42,15 @@
   --bm-indigo:  var(--bm-accent);
   --bm-violet:  var(--bm-accent);
   --bm-teal:    var(--bm-green);
+  /* "Intel" role — the accent used by Founder Intelligence surfaces
+     (Founder Mirror, ScoreRing gradient mode) to read as "the model is
+     speaking," distinct from --bm-accent (brand/CTA gold) and from
+     --bm-purple (which is itself just an alias to gold above, not a real
+     purple). A genuine purple→pink pair. */
+  --bm-intel:      #9B87F5;
+  --bm-intel2:     #E8A0D8;
+  --bm-intel-dim:  rgba(155,135,245,0.10);
+  --bm-intel-bd:   rgba(155,135,245,0.25);
   --r-sm: 2px;
   --r-md: 4px;
   --r-lg: 6px;
@@ -89,6 +98,10 @@
   --bm-blue-bd:   rgba(26,95,170,0.22);
   --bm-amber:     var(--bm-accent);
   --bm-teal:      var(--bm-green);
+  --bm-intel:     #6B4FD6;
+  --bm-intel2:    #C15FA8;
+  --bm-intel-dim: rgba(107,79,214,0.08);
+  --bm-intel-bd:  rgba(107,79,214,0.22);
   --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
   --shadow-md: none;
   --shadow-lg: none;
