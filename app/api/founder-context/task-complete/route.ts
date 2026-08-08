@@ -6,8 +6,9 @@
  * PATCHES APPLIED (June 2026):
  *  1. checkin_done_date upsert is now AWAITED (was fire-and-forget) so cross-device
  *     done-state is visible before the client navigates away.
- *  2. reflexion_learning_log insert added so Reports page task counts are always correct,
- *     regardless of whether log_row_id was set by the stream route.
+ *  2. reflexion_learning_log insert now only fires as a genuine fallback when
+ *     no log_row_id is present — see PATCH 1 below for why the unconditional
+ *     version was double-counting every completion.
  */
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
@@ -25,7 +26,7 @@ export async function POST(req: Request) {
   const { data: { user }, error } = await supabase.auth.getUser();
   if (error || !user) return NextResponse.json({ ok: false }, { status: 401 });
 
-  const { stage = "", projectId = "", taskTitle = "", outcome = "completed" } = await req.json().catch(() => ({}));
+  const { stage = "", projectId = "", taskTitle = "", outcome = "completed", log_row_id = "" } = await req.json().catch(() => ({}));
   const admin = createAdminClient();
 
   // Fetch context + founder_memory + recent task titles in parallel for pattern detection
@@ -216,28 +217,38 @@ export async function POST(req: Request) {
   if (projectId) checkAndCacheStageTransition(user.id, projectId).catch(() => {});
 
   // ── PATCH 1: Write completion to reflexion_learning_log (AWAITED) ─────────
-  // Ensures Reports page task counts are always correct regardless of whether
-  // the stream route's log_row_id path ran. Non-fatal — a failure here must
-  // never block the task completion response.
-  try {
-    await admin.from("reflexion_learning_log").insert({
-      user_id: user.id,
-      project_id: projectId || null,
-      stage: stage || ctx?.current_stage || null,
-      action_shown: taskTitle || null,
-      outcome: outcome === "blocked" ? "partial" : outcome === "skipped" ? "overridden" : "completed",
-      outcome_recorded_at: new Date().toISOString(),
-      session_id: `task_complete:${user.id}:${Date.now()}`,
-      evidence_produced: outcome === "completed" ? taskTitle || null : null,
-      outcome_quality: outcome === "completed" ? "useful" : "none",
-      lifecycle_events: [{
-        type: outcome === "completed" ? "completed" : outcome === "blocked" ? "blocked" : "skipped",
-        at: new Date().toISOString(),
-        note: taskTitle || null,
-      }],
-    });
-  } catch {
-    // Non-fatal — table may not exist in all envs, or row already inserted by stream route
+  // FIX (duplicate-write bug): this used to insert UNCONDITIONALLY on every
+  // completion — "just in case" the stream route hadn't already logged a
+  // "shown" row. But app/today/page.tsx ALSO independently calls
+  // POST /api/ai/reflexion-outcome with the same log_row_id, which UPDATES
+  // that existing row's outcome in place. When log_row_id is present, both
+  // paths were firing: one UPDATE (correct) and one unconditional INSERT
+  // (a genuine duplicate row for the same single task completion) — which
+  // is why Progress's "X of Y tasks this week" total crept up on every
+  // check-in even though the founder only ever sees Today's Ghost Goal
+  // count reflect the real task. Now this insert only runs as a true
+  // fallback, when there's no existing row to update.
+  if (!log_row_id) {
+    try {
+      await admin.from("reflexion_learning_log").insert({
+        user_id: user.id,
+        project_id: projectId || null,
+        stage: stage || ctx?.current_stage || null,
+        action_shown: taskTitle || null,
+        outcome: outcome === "blocked" ? "partial" : outcome === "skipped" ? "overridden" : "completed",
+        outcome_recorded_at: new Date().toISOString(),
+        session_id: `task_complete:${user.id}:${Date.now()}`,
+        evidence_produced: outcome === "completed" ? taskTitle || null : null,
+        outcome_quality: outcome === "completed" ? "useful" : "none",
+        lifecycle_events: [{
+          type: outcome === "completed" ? "completed" : outcome === "blocked" ? "blocked" : "skipped",
+          at: new Date().toISOString(),
+          note: taskTitle || null,
+        }],
+      });
+    } catch {
+      // Non-fatal — table may not exist in all envs
+    }
   }
 
   // Also write to action_logs — the source crons (sunday-email, meta-critic, weekly-report) read.
@@ -303,4 +314,4 @@ export async function POST(req: Request) {
       severity: activePattern.severity,
     } : null,
   });
-      }
+                                               }
