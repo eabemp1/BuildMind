@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { enforceAndTrackAIUsage, hasAdminEnv } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { runReflexionLoop, getWeeklyCriticPersona, type ReflexionContext } from "@/lib/reflexion";
+import { buildCofounderJudgment } from "@/lib/cofounderJudgment";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { logError, generateRequestId } from "@/lib/server/logger";
 import { fetchNotionContext, formatNotionContextForPrompt } from "@/lib/integrations/notion";
@@ -685,6 +686,7 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
       reflectionHistory: recentActionHistory || undefined,
       recentActionsBlock: personalisationCtx.recentActionsBlock || undefined,
       country: founderCountry,
+      cofounderJudgment: founderIntelligence ? buildCofounderJudgment(founderIntelligence) : undefined,
       // ── Goal Anchor — prevents task drift when reflections are negative ────────
       // A bad reflection ("I didn't do it", "it failed") becomes the dominant signal
       // if no north-star goal is present, causing the AI to abandon the startup's
@@ -960,4 +962,4 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
     const message = error instanceof Error ? error.message : "Today action failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-        }
+}
