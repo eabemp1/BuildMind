@@ -30,10 +30,10 @@ import { broadcastTabEvent, useTabSync } from "@/lib/tabSync";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
 import { getArchetypeDisplay } from "@/lib/founderArchetypeDisplay";
 import { linkifyChannels } from "@/lib/linkifyChannels";
+import GhostGoalBanner from "@/components/GhostGoalBanner";
 import { recordOverride } from "@/lib/founderContext";
 import { truncateChars } from "@/lib/textTruncate";
 import type { MorningBriefing } from "@/lib/founderContext";
-import GhostGoalBanner from "@/components/GhostGoalBanner";
 import { IntelligencePanel, type TodayIntelligenceSummary } from "./components/IntelligencePanel";
 import { WhatChangedCard } from "./components/WhatChangedCard";
 import { RisksGapsCard } from "./components/RisksGapsCard";
@@ -415,7 +415,6 @@ function TodayContent() {
   const [streak, setStreak] = useState(0);
   // Ref guard — prevents iOS double-tap from firing handleCheckIn twice
   const checkInFired = useRef(false);
-  // Product Improvement #2 — Task-first layout: context collapsed by default
   const [isContextOpen, setIsContextOpen] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState<string | null>(null);
@@ -1280,12 +1279,21 @@ function TodayContent() {
             }).catch(() => {});
 
           // ── Update ghost goal progress ──────────────────────────────────────
+          // FIX: this call previously sent only current_score. The route's
+          // `increment_tasks_done` flag existed but nothing ever set it, so
+          // Ghost Goals' tasks_done stayed at whatever POST /api/weekly-goal
+          // last reset it to (0) forever — the confirmed cause of "Ghost
+          // Goals didn't increment" / "don't know where it's getting tasks
+          // from" (it wasn't getting them from anywhere; the number was
+          // static). Today's check-in is the one place a task is actually
+          // completed, so this is the one place that should set the flag.
           fetch("/api/weekly-goal", {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              project_id:    project.id,
-              current_score: newComputedScore,
+              project_id:           project.id,
+              current_score:        newComputedScore,
+              increment_tasks_done: true,
             }),
           }).catch(() => {});
         } catch {}
@@ -1579,365 +1587,12 @@ function TodayContent() {
   return (
     <div style={{ maxWidth: 920, margin: "0 auto", padding: isMobile ? "0 0 24px" : "20px 8px 48px" }}>
 
-      {/* ══ PRODUCT IMPROVEMENT #2 — TASK-FIRST LAYOUT ══
-          Project badge is 1 line, then ACTION CARD is the first full block.
-          All context (yesterday, analysis, check-ins) moves into a
-          collapsible drawer below the action card.
-      ══════════════════════════════════════════════════ */}
-
-      {/* Lightweight project + stage badge */}
-      {project && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text2)", letterSpacing: "-0.01em" }}>
-            {project.name ?? "Your startup"}
-          </span>
-          {project.startup_stage && (
-            <span style={{
-              fontFamily: "'DM Mono', monospace",
-              fontSize: 9,
-              padding: "2px 8px",
-              borderRadius: "var(--r-sm)",
-              background: "var(--bm-accent-dim)",
-              color: "var(--bm-accent)",
-              border: "1px solid var(--bm-accent-bd)",
-              textTransform: "uppercase",
-              letterSpacing: "0.08em",
-            }}>
-              {project.startup_stage}
-            </span>
-          )}
-          {isDayOneColdStart ? (
-            <span style={{ marginLeft: "auto", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-accent)" }}>
-              Start your streak today
-            </span>
-          ) : streak > 0 && (
-            <span style={{ marginLeft: "auto", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-text4)" }}>
-              {streak}d
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* ── Blocker Insight Card ─────────────────────────────────────────────── */}
-      {blockerInsight && (
-        <BlockerInsightCard
-          id={blockerInsight.id}
-          title={blockerInsight.title}
-          body={blockerInsight.body}
-          actionRedirect={blockerInsight.action_redirect}
-          onDismiss={async (id, actedOn) => {
-            setBlockerInsight(null);
-            try {
-              await fetch("/api/blocker-insight", {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id, acted_on: actedOn }),
-              });
-            } catch { /* non-fatal */ }
-          }}
-        />
-      )}
-
-      {/* ── Recovery Mode ──────────────────────────────────────────────────── */}
-      {recoveryChecked && recoveryActive && plan !== "free" && (
-        <RecoveryModeCard
-          onComplete={(newScore) => {
-            setRecoveryActive(false);
-            setDecayDrop(null);
-            // Optimistically update the score display
-            void queryClient.invalidateQueries({ queryKey: queryKeys.projectSummaries });
-            void queryClient.invalidateQueries({ queryKey: queryKeys.overviewRoot });
-            void newScore;
-          }}
-        />
-      )}
-
-      {/* ── Momentum Decay Banner ──────────────────────────────────────────── */}
-      <AnimatePresence>
-        {!recoveryActive && decayDrop !== null && decayDrop > 0 && !decayDismissed && plan !== "free" && (
-          <motion.div
-            key="decay-banner"
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, height: 0, marginBottom: 0 }}
-            transition={{ duration: 0.3 }}
-            style={{
-              marginBottom: 14,
-              borderRadius: 12,
-              border: "1px solid rgba(255,170,0,0.3)",
-              borderLeft: "3px solid var(--bm-amber)",
-              background: "rgba(255,170,0,0.05)",
-              padding: "12px 16px",
-              display: "flex",
-              alignItems: "flex-start",
-              gap: 10,
-            }}
-          >
-            <span style={{ fontSize: 14, flexShrink: 0, marginTop: 1 }}>⚡</span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-amber)", textTransform: "uppercase", letterSpacing: "0.09em", marginBottom: 3 }}>
-                Momentum decay detected
-              </div>
-              <p style={{ fontSize: 12, color: "var(--bm-text2)", margin: 0, lineHeight: 1.55 }}>
-                Your score has dropped <strong style={{ color: "var(--bm-amber)" }}>{decayDrop} points</strong> below baseline. Today&apos;s task is calibrated for recovery — completing it stops the slide.
-              </p>
-            </div>
-            <button
-              onClick={() => setDecayDismissed(true)}
-              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--bm-text4)", padding: "2px 4px", flexShrink: 0, fontSize: 16, lineHeight: 1 }}
-            >
-              ×
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ── Cognitive Load selector ────────────────────────────────────────── */}
-      <AnimatePresence>
-        {!cogLoadSaved && !done && (
-          <motion.div
-            key="cog-load"
-            initial={{ opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, height: 0, marginBottom: 0 }}
-            transition={{ duration: 0.3 }}
-            style={{
-              marginBottom: 14,
-              borderRadius: 12,
-              border: "1px solid var(--bm-border)",
-              background: "var(--bm-bg2)",
-              padding: "12px 16px",
-            }}
-          >
-            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.09em", marginBottom: 10 }}>
-              Capacity check — how&apos;s your energy today?
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              {(["low", "normal", "high"] as const).map((level) => {
-                const labels = { low: "🪫 Low", normal: "⚡ Normal", high: "🔥 High" };
-                const colors = { low: "rgba(224,85,85,0.15)", normal: "rgba(255,170,0,0.12)", high: "rgba(74,184,176,0.12)" };
-                const borders = { low: "rgba(224,85,85,0.35)", normal: "rgba(255,170,0,0.3)", high: "rgba(74,184,176,0.3)" };
-                return (
-                  <button
-                    key={level}
-                    onClick={() => handleCogLoad(level)}
-                    style={{
-                      flex: 1,
-                      padding: "9px 6px",
-                      borderRadius: 9,
-                      border: `1px solid ${cogLoad === level ? borders[level] : "var(--bm-border2)"}`,
-                      background: cogLoad === level ? colors[level] : "var(--bm-bg3)",
-                      color: "var(--bm-text2)",
-                      fontSize: 12,
-                      fontWeight: cogLoad === level ? 700 : 500,
-                      cursor: "pointer",
-                      fontFamily: "inherit",
-                      transition: "all 0.15s",
-                    }}
-                  >
-                    {labels[level]}
-                  </button>
-                );
-              })}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ── Ghost Goal Banner ─────────────────────────────────────────────── */}
-      {project && (
-        <GhostGoalBanner
-          projectId={project.id}
-          currentScore={score}
-          stage={project.startup_stage ?? "Idea"}
-          executionScore={project.execution_score ?? 0}
-          streak={streak}
-          startupSummary={(project as unknown as Record<string, unknown>).startup_summary as string | undefined}
-          projectName={project.name ?? project.title ?? ""}
-        />
-      )}
-
-      {/* ── Auto Level-Up celebration card ───────────────────────────────── */}
-      <AnimatePresence>
-        {leveledUp && !levelUpDismissed && (
-          <motion.div
-            key="level-up-card"
-            initial={{ opacity: 0, scale: 0.97, y: -8 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.97, y: -4 }}
-            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-            style={{
-              marginBottom: 16,
-              borderRadius: 14,
-              border: "1px solid rgba(74,184,176,0.4)",
-              background: "linear-gradient(135deg, rgba(74,184,176,0.08) 0%, rgba(232,197,71,0.06) 100%)",
-              padding: isMobile ? "18px" : "20px 24px",
-              position: "relative",
-              overflow: "hidden",
-            }}
-          >
-            {/* Glow */}
-            <div style={{
-              position: "absolute", top: -40, right: -40,
-              width: 200, height: 200,
-              borderRadius: "50%",
-              background: "radial-gradient(ellipse, rgba(74,184,176,0.15) 0%, transparent 70%)",
-              pointerEvents: "none",
-            }} />
-
-            <button
-              onClick={() => setLevelUpDismissed(true)}
-              style={{
-                position: "absolute", top: 12, right: 12,
-                background: "none", border: "none", cursor: "pointer",
-                color: "var(--bm-text4)", padding: 4,
-              }}
-            >
-              ×
-            </button>
-
-            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-teal, #4AB8B0)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>
-              ✦ Stage unlocked
-            </div>
-            <div style={{ fontSize: isMobile ? 18 : 20, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.02em", marginBottom: 4 }}>
-              {leveledUp.old_stage} → {leveledUp.new_stage}
-            </div>
-            <p style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.6, margin: "0 0 16px" }}>
-              Your execution score and consistency unlocked the next stage. BuildMind will recalibrate your tasks for <strong>{leveledUp.new_stage}</strong> stage priorities.
-            </p>
-
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <a
-                href="/break"
-                style={{
-                  display: "inline-flex", alignItems: "center", gap: 5,
-                  padding: "9px 14px", borderRadius: 9,
-                  background: "rgba(74,184,176,0.15)", border: "1px solid rgba(74,184,176,0.35)",
-                  color: "var(--bm-teal, #4AB8B0)", fontSize: 12, fontWeight: 700,
-                  textDecoration: "none",
-                }}
-              >
-                Break My Startup at {leveledUp.new_stage}
-                <ArrowRight size={12} />
-              </a>
-              <a
-                href="/reports"
-                style={{
-                  display: "inline-flex", alignItems: "center", gap: 5,
-                  padding: "9px 14px", borderRadius: 9,
-                  background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)",
-                  color: "var(--bm-text2)", fontSize: 12, fontWeight: 600,
-                  textDecoration: "none",
-                }}
-              >
-                Weekly Report
-                <ArrowRight size={12} />
-              </a>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ── Context drawer (collapsed by default) — everything below wraps here ── */}
-      {isContextOpen && (<>
-
-      {/* ── Reflexion Strike Replay — day one causal thread (same visual as yesterdayReflection) ── */}
-      {isFirstSession && !yesterdayReflection && (
-        <motion.div
-          initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
-          style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)", borderRadius: 10, padding: "14px 16px", marginBottom: 14 }}
-        >
-          <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-            {/* Left: icon + connector — identical to yesterdayReflection */}
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0, paddingTop: 2 }}>
-              <div style={{ width: 28, height: 28, borderRadius: "50%", background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "var(--bm-accent)", flexShrink: 0 }}>
-                ⚡
-              </div>
-              <div style={{ width: 1, flex: 1, minHeight: 16, background: "var(--bm-border2)", margin: "4px 0" }} />
-              <RotateCcw size={12} color="var(--bm-accent)" />
-            </div>
-            {/* Right: content */}
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                <span style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.08em" }}>From your Reflexion Strike</span>
-                <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 99, fontWeight: 600, color: "var(--bm-accent)", background: "var(--bm-bg3)", border: "1px solid var(--bm-border)" }}>
-                  Market gap identified
-                </span>
-              </div>
-              {project?.problem && (
-                <p style={{ fontSize: 12, color: "var(--bm-text3)", marginBottom: 6, lineHeight: 1.5, fontStyle: "italic" }}>
-                  &ldquo;{sanitizeOutput(project.problem).slice(0, 100)}{sanitizeOutput(project.problem).length > 100 ? "…" : ""}&rdquo;
-                </p>
-              )}
-              {/* Causal link inset — identical structure to yesterdayReflection */}
-              <div style={{ display: "flex", gap: 6, alignItems: "flex-start", padding: "8px 10px", borderRadius: 8, background: "var(--bm-bg3)", border: "1px solid var(--bm-border)" }}>
-                <RotateCcw size={10} color="var(--bm-text3)" style={{ flexShrink: 0, marginTop: 1 }} />
-                <p style={{ fontSize: 11, color: "var(--bm-text2)", margin: 0, lineHeight: 1.55 }}>
-                  This is your starting baseline. The system has no history on you yet — every reflection you log tonight makes tomorrow&apos;s task sharper.
-                </p>
-              </div>
-            </div>
-          </div>
-        </motion.div>
-      )}
-
-      {/* ── Profile completeness ── */}
-      <ProfileCompletenessBar
-        asBanner
-        fields={{
-          startupSummary: project?.description ?? project?.startup_summary ?? "",
-          stage:          project?.startup_stage ?? "",
-          targetUsers:    project?.target_users ?? "",
-          avoidanceZones: [],
-          mrr:            project?.current_mrr ?? 0,
-          displayName:    project?.name ?? "",
-          tasksCompleted: project?.tasksCompleted ?? 0,
-        }}
-      />
-
-      {/* ── Founder archetype — compact, non-blocking presence on the daily
-          page. Deliberately not a modal or a dismiss-to-proceed gate (that
-          was the problem with the old Initial Analysis card) — just a small
-          persistent badge, since this is a core signal the AI uses on every
-          task and it should be visible somewhere the founder actually looks
-          daily, not just on /memory. Tap through for the full explanation. */}
-      {(() => {
-        const archetype = getArchetypeDisplay(archetypeTags);
-        if (!archetype) return null;
-        return (
-          <a
-            href="/memory"
-            style={{
-              display: "flex", alignItems: "center", gap: 10,
-              padding: "10px 14px", marginTop: 10,
-              borderRadius: 10, border: "1px solid var(--bm-border)", background: "var(--bm-bg2)",
-              textDecoration: "none",
-            }}
-          >
-            <span style={{ fontSize: 18, flexShrink: 0 }}>{archetype.icon}</span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: "var(--bm-text)" }}>{archetype.name}</span>
-              <span style={{ fontSize: 11, color: "var(--bm-text3)", marginLeft: 8 }}>— your founder archetype</span>
-            </div>
-            <span style={{ fontSize: 11, color: "var(--bm-text4)", flexShrink: 0 }}>Learn more →</span>
-          </a>
-        );
-      })()}
-
-      {/* ── Morning / evening mobile check-in ── */}
-      {checkinSlot && (
-        <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 16 }}>
-          <MobileCheckin type={checkinSlot.type} onComplete={(note) => {
-            storage.set(checkinSlot.key, "1");
-            const endpoint = checkinSlot.type === "morning" ? "/api/morning-checkin" : "/api/evening-checkin";
-            fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ note }) }).catch(() => {});
-          }} />
-        </motion.div>
-      )}
-
-      {/* ── Pre-check-in paywall ── */}
-
-      {/* ══ HERO HEADER ══════════════════════════════════════════════════════════ */}
+      {/* ══ HERO HEADER — logo, UI mode toggle, streak/plan usage, page title.
+          Previously trapped behind a collapsed "context" drawer (collapsed by
+          default), which meant the Simple/Pro toggle — and by extension the
+          Intelligence Panel that toggle controls — was invisible until a
+          founder happened to open "Why this task?". Now always rendered at
+          the top of the page. ══════════════════════════════════════════ */}
       <motion.div
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -2073,6 +1728,162 @@ function TodayContent() {
           </div>
         )}
       </motion.div>
+
+      {/* ── Founder archetype — compact, non-blocking presence on the daily
+          page. Deliberately not a modal or a dismiss-to-proceed gate (that
+          was the problem with the old Initial Analysis card) — just a small
+          persistent badge, since this is a core signal the AI uses on every
+          task and it should be visible somewhere the founder actually looks
+          daily, not just on /memory. Tap through for the full explanation.
+          Kept always-visible alongside the Intelligence Panel per the
+          founder's explicit request — everything else that used to live in
+          this spot moved into (or stayed in) the "Why this task?" drawer. */}
+      {(() => {
+        const archetype = getArchetypeDisplay(archetypeTags);
+        if (!archetype) return null;
+        return (
+          <a
+            href="/memory"
+            style={{
+              display: "flex", alignItems: "center", gap: 10,
+              padding: "10px 14px", marginBottom: 22,
+              borderRadius: 10, border: "1px solid var(--bm-border)", background: "var(--bm-bg2)",
+              textDecoration: "none",
+            }}
+          >
+            <span style={{ fontSize: 18, flexShrink: 0 }}>{archetype.icon}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: "var(--bm-text)" }}>{archetype.name}</span>
+              <span style={{ fontSize: 11, color: "var(--bm-text3)", marginLeft: 8 }}>— your founder archetype</span>
+            </div>
+            <span style={{ fontSize: 11, color: "var(--bm-text4)", flexShrink: 0 }}>Learn more →</span>
+          </a>
+        );
+      })()}
+
+      {/* ══ PRODUCT IMPROVEMENT #2 — TASK-FIRST LAYOUT ══
+          Project badge is 1 line, then ACTION CARD is the first full block.
+          All context (yesterday, analysis, check-ins) moves into a
+          collapsible drawer below the action card.
+      ══════════════════════════════════════════════════ */}
+
+      {/* Lightweight project + stage badge */}
+      {project && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text2)", letterSpacing: "-0.01em" }}>
+            {project.name ?? "Your startup"}
+          </span>
+          {project.startup_stage && (
+            <span style={{
+              fontFamily: "'DM Mono', monospace",
+              fontSize: 9,
+              padding: "2px 8px",
+              borderRadius: "var(--r-sm)",
+              background: "var(--bm-accent-dim)",
+              color: "var(--bm-accent)",
+              border: "1px solid var(--bm-accent-bd)",
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+            }}>
+              {project.startup_stage}
+            </span>
+          )}
+          {isDayOneColdStart ? (
+            <span style={{ marginLeft: "auto", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-accent)" }}>
+              Start your streak today
+            </span>
+          ) : streak > 0 && (
+            <span style={{ marginLeft: "auto", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-text4)" }}>
+              {streak}d
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* ── Ghost Goal Banner — restored; was never behind a toggle, just
+          removed in the same aggressive pass as the alert cards. Keep. ── */}
+      {/* ── Ghost Goal Banner ─────────────────────────────────────────────── */}
+      {project && (
+        <GhostGoalBanner
+          projectId={project.id}
+          currentScore={score}
+          stage={project.startup_stage ?? "Idea"}
+          executionScore={project.execution_score ?? 0}
+          streak={streak}
+          startupSummary={(project as unknown as Record<string, unknown>).startup_summary as string | undefined}
+          projectName={project.name ?? project.title ?? ""}
+        />
+      )}
+
+      {/* ── Context drawer (collapsed by default) — everything below wraps here ── */}
+      {isContextOpen && (<>
+
+      {/* ── Reflexion Strike Replay — day one causal thread (same visual as yesterdayReflection) ── */}
+      {isFirstSession && !yesterdayReflection && (
+        <motion.div
+          initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
+          style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)", borderRadius: 10, padding: "14px 16px", marginBottom: 14 }}
+        >
+          <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+            {/* Left: icon + connector — identical to yesterdayReflection */}
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0, paddingTop: 2 }}>
+              <div style={{ width: 28, height: 28, borderRadius: "50%", background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "var(--bm-accent)", flexShrink: 0 }}>
+                ⚡
+              </div>
+              <div style={{ width: 1, flex: 1, minHeight: 16, background: "var(--bm-border2)", margin: "4px 0" }} />
+              <RotateCcw size={12} color="var(--bm-accent)" />
+            </div>
+            {/* Right: content */}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.08em" }}>From your Reflexion Strike</span>
+                <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 99, fontWeight: 600, color: "var(--bm-accent)", background: "var(--bm-bg3)", border: "1px solid var(--bm-border)" }}>
+                  Market gap identified
+                </span>
+              </div>
+              {project?.problem && (
+                <p style={{ fontSize: 12, color: "var(--bm-text3)", marginBottom: 6, lineHeight: 1.5, fontStyle: "italic" }}>
+                  &ldquo;{sanitizeOutput(project.problem).slice(0, 100)}{sanitizeOutput(project.problem).length > 100 ? "…" : ""}&rdquo;
+                </p>
+              )}
+              {/* Causal link inset — identical structure to yesterdayReflection */}
+              <div style={{ display: "flex", gap: 6, alignItems: "flex-start", padding: "8px 10px", borderRadius: 8, background: "var(--bm-bg3)", border: "1px solid var(--bm-border)" }}>
+                <RotateCcw size={10} color="var(--bm-text3)" style={{ flexShrink: 0, marginTop: 1 }} />
+                <p style={{ fontSize: 11, color: "var(--bm-text2)", margin: 0, lineHeight: 1.55 }}>
+                  This is your starting baseline. The system has no history on you yet — every reflection you log tonight makes tomorrow&apos;s task sharper.
+                </p>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
+      {/* ── Profile completeness ── */}
+      <ProfileCompletenessBar
+        asBanner
+        fields={{
+          startupSummary: project?.description ?? project?.startup_summary ?? "",
+          stage:          project?.startup_stage ?? "",
+          targetUsers:    project?.target_users ?? "",
+          avoidanceZones: [],
+          mrr:            project?.current_mrr ?? 0,
+          displayName:    project?.name ?? "",
+          tasksCompleted: project?.tasksCompleted ?? 0,
+        }}
+      />
+
+      {/* ── Morning / evening mobile check-in ── */}
+      {checkinSlot && (
+        <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 16 }}>
+          <MobileCheckin type={checkinSlot.type} onComplete={(note) => {
+            storage.set(checkinSlot.key, "1");
+            const endpoint = checkinSlot.type === "morning" ? "/api/morning-checkin" : "/api/evening-checkin";
+            fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ note }) }).catch(() => {});
+          }} />
+        </motion.div>
+      )}
+
+      {/* ── Pre-check-in paywall ── */}
 
       {/* ══════════════════════════════════════════════════════════════════════
           YESTERDAY'S REFLECTION THREAD
@@ -2545,53 +2356,6 @@ function TodayContent() {
       </>
       )}
 
-      {accountAgeDays < 7 && (
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          style={{
-            background: "var(--bm-bg2)",
-            border: "1px solid var(--bm-border)",
-            borderRadius: 14,
-            padding: isMobile ? "14px" : "14px 16px",
-            marginBottom: 14,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
-            <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-              Week 1 journey
-            </span>
-            <div style={{ display: "flex", alignItems: "center", flex: 1, minWidth: isMobile ? "100%" : 260 }}>
-              {weekOneDays.map((day, index) => (
-                <div key={day.day} style={{ display: "flex", alignItems: "center", flex: index < 6 ? 1 : "0 0 auto" }}>
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-                    <div
-                      style={{
-                        width: 13,
-                        height: 13,
-                        borderRadius: "50%",
-                        background: day.completed ? "var(--bm-accent)" : day.active ? "var(--bm-bg4)" : "var(--bm-bg3)",
-                        border: day.completed ? "1px solid var(--bm-accent-bd)" : "1px solid var(--bm-border2)",
-                      }}
-                    />
-                    <span style={{ fontSize: 9, color: day.active ? "var(--bm-text2)" : "var(--bm-text4)", fontFamily: "'DM Mono', monospace" }}>
-                      D{day.day}
-                    </span>
-                  </div>
-                  {index < 6 && (
-                    <div style={{ flex: 1, height: 1, background: weekOneDays[index + 1]?.completed ? "var(--bm-accent-bd)" : "var(--bm-border)", margin: "0 5px 13px" }} />
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-          <p style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.55, margin: 0 }}>
-            By Day 7 you'll have {sanitizeOutput(weekOneTarget)}
-          </p>
-        </motion.div>
-      )}
-
       {/* ── Destinations ── */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}
         style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 18, padding: isMobile ? "18px" : "20px 24px", marginBottom: 14 }}>
@@ -2849,4 +2613,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-}
+  }
