@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { AlertTriangle, ArrowRight, BrainCircuit, ChevronDown, ChevronUp, CircleHelp, Eye, FlaskConical, ShieldAlert, Sparkles, Target } from "lucide-react";
 
-type Signal = {
+export type Signal = {
   type: string;
   severity: "low" | "medium" | "high" | "critical";
   confidence: number;
@@ -38,7 +38,7 @@ export interface TodayIntelligenceSummary {
   };
 }
 
-const severityColor: Record<Signal["severity"], string> = { critical: "var(--bm-red)", high: "var(--bm-red)", medium: "var(--bm-accent)", low: "var(--bm-text3)" };
+export const severityColor: Record<Signal["severity"], string> = { critical: "var(--bm-red)", high: "var(--bm-red)", medium: "var(--bm-accent)", low: "var(--bm-text3)" };
 
 function Label({ children }: { children: React.ReactNode }) {
   return <div style={{ fontFamily: "'DM Mono', monospace", color: "var(--bm-text4)", fontSize: 10, textTransform: "uppercase", marginBottom: 6 }}>{children}</div>;
@@ -70,8 +70,8 @@ export function IntelligencePanel({ data }: { data: TodayIntelligenceSummary | n
       <div style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "16px 18px", borderBottom: "1px solid var(--bm-border)", background: "linear-gradient(105deg, var(--bm-bg3), var(--bm-bg2))" }}>
         <div style={{ width: 32, height: 32, borderRadius: 7, display: "grid", placeItems: "center", background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)", flex: "0 0 auto" }}><BrainCircuit size={17} color="var(--bm-accent)" /></div>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <Label>BuildMind decision brief</Label>
-          <div style={{ color: "var(--bm-text)", fontSize: 16, fontWeight: 700, lineHeight: 1.35 }}>{judgment?.what_matters_now ?? signal?.recommended_response ?? "Calibrating the highest-leverage next move"}</div>
+          <Label>Why this is the highest-leverage move</Label>
+          <div style={{ color: "var(--bm-text)", fontSize: 16, fontWeight: 700, lineHeight: 1.35 }}>{judgment?.largest_constraint ?? signal?.summary ?? "Calibrating the highest-leverage next move"}</div>
           {data.current_goal && <div style={{ color: "var(--bm-text3)", fontSize: 12, marginTop: 5 }}>Current goal: {data.current_goal}</div>}
         </div>
         {judgment?.intervention.should_intervene && <div style={{ display: "flex", gap: 5, alignItems: "center", color: interventionTone, fontSize: 11, fontFamily: "'DM Mono', monospace", textTransform: "uppercase", flex: "0 0 auto" }}><AlertTriangle size={13} />{judgment.intervention.mode}</div>}
@@ -83,8 +83,8 @@ export function IntelligencePanel({ data }: { data: TodayIntelligenceSummary | n
           <div style={{ color: "var(--bm-text2)", fontSize: 13, lineHeight: 1.55 }}>{changed ?? "No material shift detected. BuildMind is monitoring for a meaningful change."}</div>
         </div>
         <div style={{ padding: "15px 18px" }}>
-          <Label>What matters</Label>
-          <div style={{ color: "var(--bm-text)", fontSize: 13, lineHeight: 1.55, fontWeight: 600 }}>{judgment?.largest_constraint ?? signal?.summary ?? "No high-confidence constraint detected yet."}</div>
+          <Label>Opportunity cost</Label>
+          <div style={{ color: "var(--bm-text)", fontSize: 13, lineHeight: 1.55, fontWeight: 600 }}>{judgment?.opportunity_cost ?? "No high-confidence opportunity cost identified yet."}</div>
           {judgment?.neglected_area && <div style={{ marginTop: 7, color: "var(--bm-text3)", fontSize: 12 }}>Neglected: {judgment.neglected_area}</div>}
         </div>
       </div>
@@ -97,9 +97,15 @@ export function IntelligencePanel({ data }: { data: TodayIntelligenceSummary | n
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", borderTop: "1px solid var(--bm-border)" }}>
         <div style={{ padding: "15px 18px", borderRight: "1px solid var(--bm-border)" }}>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}><Target size={14} color="var(--bm-accent)" /><Label>What you should do</Label></div>
-          <div style={{ color: "var(--bm-text)", fontSize: 13, lineHeight: 1.55, fontWeight: 650 }}>{judgment?.highest_leverage_action ?? data.decision.top_candidate?.action ?? signal?.recommended_response}</div>
-          {data.decision.top_candidate?.why_it_beats_alternatives && <div style={{ color: "var(--bm-text3)", fontSize: 12, lineHeight: 1.5, marginTop: 7 }}>{data.decision.top_candidate.why_it_beats_alternatives}</div>}
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}><Target size={14} color="var(--bm-accent)" /><Label>Why this beats the alternatives</Label></div>
+          {/* Intentionally NOT repeating the action title here — it's already the
+              headline of the Today Task card above. This panel is reasoning only. */}
+          <div style={{ color: "var(--bm-text)", fontSize: 13, lineHeight: 1.55, fontWeight: 500 }}>{data.decision.top_candidate?.why_it_beats_alternatives ?? judgment?.opportunity_cost ?? "This is the single action most likely to move your highest-priority goal forward right now."}</div>
+          {data.decision.top_candidate?.scores?.total != null && (
+            <div style={{ display: "inline-flex", marginTop: 9, fontFamily: "'DM Mono', monospace", fontSize: 11, color: "var(--bm-intel)", background: "var(--bm-intel-dim)", border: "1px solid var(--bm-intel-bd)", borderRadius: 5, padding: "2px 8px" }}>
+            Score {data.decision.top_candidate.scores.total}/100
+            </div>
+          )}
         </div>
         <div style={{ padding: "15px 18px" }}>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}><ShieldAlert size={14} color={negative ? "var(--bm-red)" : "var(--bm-text4)"} /><Label>What you should not do</Label></div>
