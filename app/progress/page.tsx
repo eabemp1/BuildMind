@@ -13,7 +13,8 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import InsightsPage from "@/app/insights/page";
 import { WeeklyPulseCard } from "@/components/WeeklyPulseCard";
@@ -46,8 +47,15 @@ function PatternsTab({ reflectionCount }: { reflectionCount: number }) {
 
 type Tab = "week" | "patterns";
 
-export default function ProgressPage() {
-  const [activeTab, setActiveTab] = useState<Tab>("week");
+// FIX: this component previously always defaulted to the "week" tab and
+// ignored any ?tab= query param, so the deep link from RisksGapsCard
+// ("View all risks" → /progress?tab=patterns) landed on the wrong tab.
+// Reads the query param once on mount to pick the initial tab; the tab
+// bar's own onClick still drives normal in-page switching afterward.
+function ProgressContent() {
+  const searchParams = useSearchParams();
+  const initialTab: Tab = searchParams.get("tab") === "patterns" ? "patterns" : "week";
+  const [activeTab, setActiveTab] = useState<Tab>(initialTab);
   const [reflectionCount, setReflectionCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const activeProjectId = useActiveProjectId();
@@ -188,4 +196,12 @@ export default function ProgressPage() {
       </div>
     </>
   );
-                  }
+}
+
+export default function ProgressPage() {
+  return (
+    <Suspense fallback={null}>
+      <ProgressContent />
+    </Suspense>
+  );
+    }
