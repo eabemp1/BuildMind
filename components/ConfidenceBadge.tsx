@@ -37,8 +37,8 @@ export function ConfidenceBadge({ score, missingData = [], label }: Props) {
 
   const isLow    = score < 0.5;
   const badgeColor = isLow
-    ? { bg: "rgba(239,68,68,0.1)", border: "rgba(239,68,68,0.25)", text: "#f87171" }
-    : { bg: "rgba(245,158,11,0.1)", border: "rgba(245,158,11,0.25)", text: "#fbbf24" };
+    ? { bg: "var(--bm-red-dim)", border: "var(--bm-red-bd)", text: "var(--bm-red)" }
+    : { bg: "var(--bm-accent-dim)", border: "var(--bm-accent-bd)", text: "var(--bm-amber)" };
 
   const defaultLabel = isLow ? "Low confidence" : "Based on limited data";
   const displayLabel = label ?? defaultLabel;
