@@ -307,7 +307,7 @@ function AICoachPageInner() {
           className="flex min-h-[72vh] flex-1 flex-col overflow-hidden rounded-[var(--r-xl)] border border-[var(--bm-border)] bg-[var(--bm-bg2)] shadow-md lg:min-h-0">
           <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--bm-border)] px-4 py-4 sm:px-5">
             <div className="flex items-center gap-2">
-              <div className="h-2 w-2 rounded-full bg-[var(--bm-accent)]" />
+              <div className="h-2 w-2 rounded-full bg-[var(--bm-intel)]" />
               <span className="text-[13px] font-semibold text-[var(--bm-text2)]">Conversation</span>
             </div>
             {plan === "free" && (
@@ -321,8 +321,8 @@ function AICoachPageInner() {
             {messages.length === 0 && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}
                 className="flex h-full flex-col items-center justify-center gap-4 text-center">
-              <div style={{width:48,height:48,borderRadius:"var(--r-md)",background:"var(--bm-accent-dim)",border:"1px solid var(--bm-accent-bd)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                  <Bot size={22} color="var(--bm-accent)" />
+              <div style={{width:48,height:48,borderRadius:"var(--r-md)",background:"var(--bm-intel-dim)",border:"1px solid var(--bm-intel-bd)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                  <Bot size={22} color="var(--bm-intel)" />
                 </div>
                 <div style={{maxWidth:400,textAlign:"center"}}>
               {(() => {
@@ -394,7 +394,7 @@ function AICoachPageInner() {
               <p className="text-[13px] leading-relaxed text-[var(--bm-text3)]">Memory builds as you talk to the coach.</p>
             ) : memory.slice(-4).map((m, i) => (
               <div key={i} className="mb-2 flex items-start gap-2">
-                <div className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--bm-accent)] opacity-60" />
+                <div className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--bm-intel)] opacity-60" />
                 <span className="text-[11px] leading-relaxed text-[var(--bm-text3)]">{sanitizeOutput(m).slice(0, 55)}{sanitizeOutput(m).length > 55 ? "…" : ""}</span>
               </div>
             ))}
