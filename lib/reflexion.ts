@@ -28,6 +28,7 @@ import type { ViabilityScoreResult } from "@/lib/scoring";
 import { logError } from "@/lib/server/logger";
 import { getBenchmarkInsights, buildBenchmarkPrompt } from "@/lib/benchmarks";
 import { formatRegionalContextBlock } from "@/lib/regionalContext";
+import type { CofounderJudgment } from "@/lib/cofounderJudgment";
 
 interface GroqMessage { role: "system" | "user" | "assistant"; content: string; }
 
@@ -151,6 +152,7 @@ export interface ReflexionContext {
   recentActionsBlock?: string;         // recent tasks shown for anti-repeat enforcement
   goalAnchor?: string;                 // immutable north-star goal — survives bad reflections
   country?: string;                    // ISO country code — Founder Context Engine, see lib/regionalContext.ts
+  cofounderJudgment?: CofounderJudgment;
 }
 
 // ── NEW IN V4: Agent Persona Rotation (Playbook §4.4) ─────────────────────
@@ -394,8 +396,32 @@ export interface ReflexionResult {
   nextAction?: string;     // Suggested next concrete action
   verdict?: "pass" | "fail";
   reject_reason?: string | null;
+  overridden?: boolean;
+  overrideReason?: string | null;
   difficulty?: "light" | "focused" | "deep"; // See estimateTaskDifficulty().
 }
+
+export function buildCriticJudgmentRule(judgment: CofounderJudgment): string {
+  const rules: string[] = [];
+  let n = 10;
+
+  if (judgment.should_not_do.length > 0) {
+    const statements = judgment.should_not_do.map((item) => `"${item.statement}" (${item.reason})`).join("; ");
+    rules.push(`${n}. BuildMind's deterministic judgment layer has flagged the following as things NOT to recommend right now: ${statements}. If the advice does one of these, REJECT — unless the advice explicitly explains why this specific case is an exception.`);
+    n++;
+  }
+
+  if (judgment.intervention.mode === "challenge" || judgment.intervention.mode === "escalation") {
+    rules.push(`${n}. BuildMind has identified a ${judgment.intervention.mode === "escalation" ? "critical" : "significant"} issue that the advice must address: "${judgment.intervention.reason}". If the advice is unrelated to this and doesn't explain why it's still the right priority, REJECT.`);
+    n++;
+  }
+
+  if (judgment.highest_leverage_action) {
+    rules.push(`${n}. BuildMind's ranking of candidate actions selected "${judgment.highest_leverage_action}" as the highest-leverage move, because: ${judgment.opportunity_cost} If the advice recommends something substantially different in theme or category with no stated reason, REJECT.`);
+  }
+
+  return rules.length ? `\n${rules.join("\n")}` : "";
+                                                                }
 
 /**
  * runReflexionLoop — the 3-agent chain
@@ -466,6 +492,7 @@ REJECT this task if ANY of the following are true:
 7. The action repeats a recent action shape, target, channel, or outreach message instead of advancing the thread
 8. The action is semantically equivalent to any task listed in the RECENT TASKS block below (if provided)
 9. The action drifts away from the PRIMARY GOAL stated in the founder context — a negative reflection is NOT permission to pivot to a different objective; it is permission only to try a different approach toward the same goal
+${context.cofounderJudgment ? buildCriticJudgmentRule(context.cofounderJudgment) : ""}
 
 ${context.recentActionsBlock ? `\n${context.recentActionsBlock}` : ""}
 
@@ -541,15 +568,34 @@ Advice: ${refined}`;
     { role: "user", content: "One sentence rationale only." },
   ], 0.2, 60).catch(() => `Because you're at ${context.stage} stage and this is the highest-leverage move.`);
 
+  let output = refined;
+  let overridden = false;
+  let overrideReason: string | null = null;
+  const judgment = context.cofounderJudgment;
+  if (judgment?.intervention.mode === "escalation" && judgment.highest_leverage_action) {
+    const candidateWords = judgment.highest_leverage_action.toLowerCase().split(/\W+/).filter((w) => w.length > 4);
+    const outputLower = refined.toLowerCase();
+    const overlapCount = candidateWords.filter((w) => outputLower.includes(w)).length;
+    const overlapRatio = candidateWords.length > 0 ? overlapCount / candidateWords.length : 1;
+    if (overlapRatio < 0.2) {
+    output = `${judgment.highest_leverage_action} ${judgment.opportunity_cost}`.trim();
+    overridden = true;
+    overrideReason = `Generated advice did not reflect the escalated judgment (${Math.round(overlapRatio * 100)}% keyword overlap): ${judgment.intervention.reason}`;
+    logError("reflexion/deterministicOverride", new Error(overrideReason), { task });
+  }
+}
+
   return {
-    output: refined,
-    critique,
-    rationale: rationale.trim(),
-    nextAction: extractAction(refined),
-    verdict: (critiqueData.verdict ?? "pass") as "pass" | "fail",
-    reject_reason: critiqueData.verdict === "fail" ? (critiqueData.reason ?? null) : null,
-    difficulty: estimateTaskDifficulty(refined, context.cognitiveLoad),
-  };
+  output,
+  critique,
+  rationale: overridden ? judgment!.intervention.reason : rationale.trim(),
+  nextAction: extractAction(output),
+  verdict: (critiqueData.verdict ?? "pass") as "pass" | "fail",
+  reject_reason: critiqueData.verdict === "fail" ? (critiqueData.reason ?? null) : null,
+  difficulty: estimateTaskDifficulty(output, context.cognitiveLoad),
+  overridden,
+  overrideReason,
+ };
 }
 
 // ─── v5: Full 7-Stage Reflexion Pipeline ─────────────────────────────────────
