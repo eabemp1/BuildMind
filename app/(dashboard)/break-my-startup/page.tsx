@@ -1074,6 +1074,9 @@ export default function BreakMyStartupPage() {
                     }}>
                       <CheckCircle2 size={12} style={{ color: "var(--bm-accent)", flexShrink: 0, marginTop: 1 }} />
                       <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 9, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>
+                          How to de-risk this
+                        </div>
                         <Markdown textSize={12}>{sanitizeMarkdown(risk.mitigation)}</Markdown>
                       </div>
                     </div>
