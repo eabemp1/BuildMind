@@ -41,6 +41,7 @@
 // Keys that are intentionally global (not user-scoped)
 const GLOBAL_KEYS = new Set([
   "bm_theme",
+  "bm_ui_mode", // "lite" | "pro" — display density preference, per-device like theme
   "bm_ref_code",
   "bm_cl_waitlist",
   "bm_dev_auth",
