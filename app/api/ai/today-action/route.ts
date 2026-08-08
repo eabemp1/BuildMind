@@ -20,6 +20,7 @@ import { buildTodayPersonalisationContext } from "@/lib/todayPersonalisationCont
 import { loadBehavioralContext } from "@/lib/behavioralLayers";
 import { summarizeFounderIntelligenceForClient, type FounderIntelligenceState } from "@/lib/founderIntelligence";
 import { loadTodayActionContext } from "@/lib/todayActionContext";
+import { buildCofounderJudgment } from "@/lib/cofounderJudgment";
 
 export const runtime     = "nodejs";
 export const dynamic     = "force-dynamic";
