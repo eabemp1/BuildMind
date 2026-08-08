@@ -63,11 +63,12 @@ export default function Providers({ children, nonce }: { children: React.ReactNo
     });
 
     const { data: { subscription: cacheSubscription } } = supabase.auth.onAuthStateChange((event, session) => {
-     const nextUserId = session?.user?.id ?? null;
-     const isGenuineAccountSwitch =
-    activeUserId !== null && nextUserId !== null && activeUserId !== nextUserId;
-     if (event === "SIGNED_OUT" || nextUserId !== activeUserId) {
-    // Cancel any in-flight queries before clearing — otherwise a resolving
+      const nextUserId = session?.user?.id ?? null;
+      const isGenuineAccountSwitch =
+        activeUserId !== null && nextUserId !== null && activeUserId !== nextUserId;
+      if (event === "SIGNED_OUT" || nextUserId !== activeUserId) {
+        // Cancel any in-flight queries before clearing — otherwise a resolving
+        // request could repopulate the cache with the previous user's data.
         void queryClient.cancelQueries().then(() => {
           queryClient.clear();
           if (isGenuineAccountSwitch && typeof window !== "undefined") {
@@ -75,6 +76,9 @@ export default function Providers({ children, nonce }: { children: React.ReactNo
           }
         });
         setShowBillingSynced(false);
+      }
+      activeUserId = nextUserId;
+    });
 
     // ── Notification checks ────────────────────────────────────────────────────
     try {
@@ -147,4 +151,4 @@ export default function Providers({ children, nonce }: { children: React.ReactNo
       </ThemeProvider>
     </QueryClientProvider>
   );
-}
+                                                 }
