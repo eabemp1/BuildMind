@@ -1192,6 +1192,12 @@ function TodayContent() {
             projectId: project?.id,
             taskTitle: actionData?.action ?? "",
             outcome: selectedOutcome,
+            // FIX: tells task-complete whether a "shown" row already exists
+            // for this task (created when it was generated). If it does,
+            // /api/ai/reflexion-outcome below updates that row directly —
+            // task-complete's own reflexion_learning_log insert now skips
+            // itself in that case instead of writing a duplicate row.
+            log_row_id: aiAction?.log_row_id ?? null,
           }),
         });
         if (tcRes.ok) {
