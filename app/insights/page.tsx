@@ -191,6 +191,7 @@ function GhostBar({ label }: { label: string }) {
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export default function InsightsPage() {
+  const [tab, setTab] = useState<"signals" | "trends" | "patterns">("signals");
   const [data,    setData]    = useState<InsightData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState<string | null>(null);
@@ -486,6 +487,34 @@ export default function InsightsPage() {
         </p>
       </motion.div>
 
+      {!loading && !error && (
+        <div style={{ display: "flex", gap: 2, marginBottom: 20, borderBottom: "1px solid var(--bm-border)" }}>
+          {([
+            { id: "signals", label: "Signals" },
+            { id: "trends", label: "Trends" },
+            { id: "patterns", label: "Patterns" },
+          ] as const).map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              style={{
+                fontFamily: "'DM Mono', monospace",
+                fontSize: 11,
+                padding: "9px 14px",
+                background: "transparent",
+                border: "none",
+                borderBottom: tab === t.id ? "2px solid var(--bm-accent)" : "2px solid transparent",
+                color: tab === t.id ? "var(--bm-text)" : "var(--bm-text3)",
+                cursor: "pointer",
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {loading && (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           {["Momentum", "Execution", "Patterns"].map(l => (
@@ -517,6 +546,7 @@ export default function InsightsPage() {
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
 
           {/* ── Momentum ─────────────────────────────────────────────────── */}
+          {tab === "trends" && (
           <Section label="Momentum" accent="var(--bm-accent)">
             <div style={{ display: "flex", alignItems: "flex-end", gap: 20, marginBottom: 16 }}>
               <div>
@@ -597,9 +627,10 @@ export default function InsightsPage() {
               )}
             </div>
           </Section>
+          )}
 
           {/* ── Active pattern ───────────────────────────────────────────── */}
-          {data.activePatternSignal && data.activePatternMessage && (
+          {tab === "signals" && data.activePatternSignal && data.activePatternMessage && (
             <Section
               label={`Pattern detected · ${data.activePatternSignal.replace(/_/g, " ").toUpperCase()}`}
               accent={
@@ -621,6 +652,7 @@ export default function InsightsPage() {
           )}
 
           {/* ── Day-of-week heatmap ──────────────────────────────────────── */}
+          {tab === "trends" && (
           <Section label="When you build">
             {data.totalTasksShown > 0 ? (
               <>
@@ -646,9 +678,10 @@ export default function InsightsPage() {
               </div>
             )}
           </Section>
+          )}
 
           {/* ── Confidence by outcome ────────────────────────────────────── */}
-          {Object.keys(data.avgConfidenceByOutcome).length > 0 && (
+          {tab === "trends" && Object.keys(data.avgConfidenceByOutcome).length > 0 && (
             <Section label="Confidence vs outcome">
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 {Object.entries(data.avgConfidenceByOutcome)
@@ -681,7 +714,7 @@ export default function InsightsPage() {
           )}
 
           {/* ── Today's reported capacity — merged in from app/memory/page.tsx ── */}
-          {data.cognitiveLoad && (
+          {tab === "trends" && data.cognitiveLoad && (
             <Section label="Today's reported capacity" accent={data.cognitiveLoad === "low" ? "var(--bm-red)" : data.cognitiveLoad === "high" ? "var(--bm-green)" : undefined}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <span style={{ fontSize: 22 }}>
@@ -702,7 +735,7 @@ export default function InsightsPage() {
           )}
 
           {/* ── Avoidance zones ──────────────────────────────────────────── */}
-          {data.avoidanceZones.length > 0 && (
+          {tab === "patterns" && data.avoidanceZones.length > 0 && (
             <Section label="What you avoid" accent="var(--bm-accent)">
               <div style={{ marginBottom: 10 }}>
                 {data.avoidanceZones.map(z => <Chip key={z} label={z} color="var(--bm-accent)" />)}
@@ -714,7 +747,7 @@ export default function InsightsPage() {
           )}
 
           {/* ── Topics you keep circling — merged in from app/memory/page.tsx ── */}
-          {data.topicsMentionedRepeatedly.length > 0 && (
+          {tab === "patterns" && data.topicsMentionedRepeatedly.length > 0 && (
             <Section label="Topics you keep circling" accent="var(--bm-amber, #E8A020)">
               <p style={{ fontSize: 11.5, color: "var(--bm-text3)", margin: "0 0 10px", lineHeight: 1.6 }}>
                 Things you mention repeatedly in reflections without taking action. BuildMind will push you to resolve or drop these.
@@ -726,14 +759,14 @@ export default function InsightsPage() {
           )}
 
           {/* ── Strengths ────────────────────────────────────────────────── */}
-          {data.strengths.length > 0 && (
+          {tab === "patterns" && data.strengths.length > 0 && (
             <Section label="Where you're strong" accent="var(--bm-green)">
               {data.strengths.map(s => <Chip key={s} label={s} color="var(--bm-green)" />)}
             </Section>
           )}
 
           {/* ── How you operate ─────────────────────────────────────────── */}
-          {data.personalityTags.length > 0 && (
+          {tab === "patterns" && data.personalityTags.length > 0 && (
             <Section label="How you operate">
               {data.personalityTags.map(t => <Chip key={t} label={t} />)}
               {data.archetypeClassifiedAt && (
@@ -745,7 +778,7 @@ export default function InsightsPage() {
           )}
 
           {/* ── Top skip reason ──────────────────────────────────────────── */}
-          {data.topOverrideReason && (
+          {tab === "signals" && data.topOverrideReason && (
             <Section label="Why you skip" accent="var(--bm-red)">
               <p style={{ fontSize: 14, color: "var(--bm-text)", fontWeight: 600, margin: "0 0 8px" }}>
                 "{data.topOverrideReason}"
@@ -757,7 +790,7 @@ export default function InsightsPage() {
           )}
 
           {/* ── AI pattern analysis ──────────────────────────────────────── */}
-          {(aiLoading || aiInsights.length > 0 || aiError) && (
+          {tab === "signals" && (aiLoading || aiInsights.length > 0 || aiError) && (
             <Section label="AI pattern analysis" accent="var(--bm-accent)">
               {aiLoading && aiInsights.length === 0 && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -841,7 +874,7 @@ export default function InsightsPage() {
           )}
 
           {/* ── Meta-critic diagnosis ────────────────────────────────────── */}
-          {data.metacriticSignal && (
+          {tab === "signals" && data.metacriticSignal && (
             <Section label="BuildMind diagnosis" accent="var(--bm-green)">
               <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.65 }}>
                 {sanitizeOutput(data.metacriticSignal)}
