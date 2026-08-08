@@ -8,7 +8,8 @@ export type BadgeVariant =
   | "danger"
   | "neutral"
   | "gradient"
-  | "info";
+  | "info"
+  | "intel";
 
 interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
   variant?: BadgeVariant;
@@ -41,6 +42,11 @@ const variantStyles: Record<BadgeVariant, { bg: string; text: string; border: st
     bg: "var(--bm-accent-dim)",
     text: "var(--bm-accent)",
     border: "var(--bm-accent-bd)",
+  },
+  intel: {
+    bg: "var(--bm-intel-dim)",
+    text: "var(--bm-intel)",
+    border: "var(--bm-intel-bd)",
   },
   gradient: {
     bg: "var(--bm-accent-dim)",
