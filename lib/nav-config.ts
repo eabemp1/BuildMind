@@ -1,14 +1,27 @@
 /**
- * lib/nav-config.ts — Collapsed nav (Product Improvement #1 — fully implemented)
+ * lib/nav-config.ts — Page-based Founder Intelligence OS nav
  *
- * 4 primary destinations, all noise removed:
- *   Today    — daily execution (the task)
- *   Progress — two tabs: This Week + Patterns (weekly report + insights merged)
- *   Projects — milestone visibility
- *   Settings — everything else
+ * Core: Today (what matters now) · Insights (what BuildMind is noticing) ·
+ *       Progress (trends & patterns) · Projects (what's being built) ·
+ *       Settings
+ * Intelligence: AI Coach (/ai-coach) · Founder Mirror · Break My Startup ·
+ *       Agent Workforce · Weekly Report · Achievements
+ *
+ * Every item maps to a real, working route. No placeholder pages were
+ * created for spec concepts (Strategy/Goals/Tasks/Experiments/Metrics)
+ * that don't have a dedicated route or backing data in this codebase.
+ * Where those concepts exist, they live inside an existing page instead:
+ *   Metrics/Trends → inside /progress
+ *   Tasks          → inside /today (Today's Focus Plan)
+ *   Goals          → surfaced via GhostGoalBanner inside /today
+ *
+ * "Memory" is deliberately NOT a nav item — /memory is a retired redirect
+ * stub (redirect("/progress?tab=patterns")); every field it used to render
+ * was already merged into /insights and /progress. Adding it back to the
+ * sidebar would just point founders at a redirect. See app/memory/page.tsx.
  *
  * Reflect is NOT a nav item. It surfaces as a bottom-sheet modal from Today's
- * done state. AI Coach stays as a power-user route, hidden from main nav.
+ * done state.
  *
  * Secondary items (hidden: true) remain routable but won't appear in sidebar.
  */
@@ -50,18 +63,26 @@ export type NavItemConfig = {
 };
 
 export const NAV: readonly NavItemConfig[] = [
-  // ── 4 primary destinations ────────────────────────────────────────────────
+  // ── Primary destinations (page-based Founder Intelligence OS shell) ─────
+  // Each maps to a real, working route — no placeholder pages were created
+  // for spec concepts (Strategy/Goals/Tasks/Experiments/Metrics) that don't
+  // have a dedicated route or backing data in this codebase today. Where
+  // those concepts DO exist, they live inside an existing page instead:
+  //   Metrics/Trends  → inside /progress
+  //   Tasks           → inside /today (Today's Focus Plan)
+  //   Goals           → surfaced via GhostGoalBanner inside /today
   { href: "/today",    label: "Today",    icon: CircleDot,    enabled: true, section: null, badge: null, showDot: false, unlocksAt: 0 },
+  { href: "/insights", label: "Insights", icon: Lightbulb,    enabled: true, section: null, badge: null, showDot: false, unlocksAt: 3 },
   { href: "/progress", label: "Progress", icon: TrendingUp,   enabled: true, section: null, badge: null, showDot: false, unlocksAt: 1 },
   { href: "/projects", label: "Projects", icon: FolderKanban, enabled: true, section: null, badge: null, showDot: false, unlocksAt: 0 },
   { href: "/settings", label: "Settings", icon: Settings,     enabled: true, section: null, badge: null, showDot: false, unlocksAt: 0 },
 
   // ── Intelligence section (visible in sidebar after unlock) ──────────────
   { href: "/ai-coach",         label: "AI Coach",        icon: Brain,          enabled: true,  hidden: false, section: "Intelligence", badge: null, showDot: false, unlocksAt: 3 },
+  { href: "/founder-mirror",   label: "Founder Mirror",  icon: UserCircle,     enabled: true,  hidden: false, section: "Intelligence", badge: null, showDot: false, unlocksAt: 7 },
   { href: "/break-my-startup", label: "Break My Startup",icon: Hammer,         enabled: true,  hidden: false, section: "Intelligence", badge: null, showDot: false, unlocksAt: 3 },
   { href: "/agents",           label: "Agent Workforce",  icon: Bot,           enabled: true,  hidden: false, section: "Intelligence", badge: "NEW", showDot: false, requiredPlan: "builder" as Plan, unlocksAt: 5 },
   { href: "/reports",          label: "Weekly Report",   icon: ClipboardList,  enabled: true,  hidden: false, section: "Intelligence", badge: null, requiredPlan: "builder" as Plan, showDot: false, unlocksAt: 7 },
-  { href: "/founder-mirror",    label: "Founder Mirror",  icon: UserCircle,     enabled: true,  hidden: false, section: "Intelligence", badge: null, showDot: false, unlocksAt: 7 },
   { href: "/achievements",     label: "Achievements",    icon: Trophy,         enabled: true,  hidden: false, section: "Intelligence", badge: null, showDot: true,  unlocksAt: 1 },
   { href: "/progress?tab=patterns", label: "My Profile",      icon: UserCircle,     enabled: true,  hidden: true, section: "Intelligence", badge: null, showDot: false, unlocksAt: 1 },
 
@@ -70,7 +91,6 @@ export const NAV: readonly NavItemConfig[] = [
 
   // ── Hidden / routable-only ────────────────────────────────────────────────
   { href: "/overview",         label: "Execution",       icon: Gauge,          enabled: true,  hidden: true, section: null, badge: null, showDot: false, unlocksAt: 3 },
-  { href: "/insights",         label: "Insights",        icon: Lightbulb,      enabled: true,  hidden: true, section: null, badge: null, showDot: false, unlocksAt: 3 },
   { href: "/ventures",         label: "Ventures",        icon: Briefcase,      enabled: false, hidden: true, section: null, badge: null, requiredPlan: "builder" as Plan, showDot: false, unlocksAt: 7 },
   { href: "/startup-kit",      label: "Startup Kit",     icon: Package,        enabled: false, hidden: true, section: null, badge: null, requiredPlan: "builder" as Plan, showDot: false, unlocksAt: 7 },
   { href: "/invite",           label: "Invite",          icon: UserPlus,       enabled: false, hidden: true, section: null, badge: null, showDot: false, unlocksAt: 7 },
