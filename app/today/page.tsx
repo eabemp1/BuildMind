@@ -35,6 +35,10 @@ import { truncateChars } from "@/lib/textTruncate";
 import type { MorningBriefing } from "@/lib/founderContext";
 import GhostGoalBanner from "@/components/GhostGoalBanner";
 import { IntelligencePanel, type TodayIntelligenceSummary } from "./components/IntelligencePanel";
+import { WhatChangedCard } from "./components/WhatChangedCard";
+import { RisksGapsCard } from "./components/RisksGapsCard";
+import { useUIMode } from "@/lib/uiMode";
+import { UIModeToggle } from "@/components/ui/UIModeToggle";
 
 type Outcome = "completed" | "blocked" | "partial" | "learned";
 type ReflexionMeta = {
@@ -400,6 +404,7 @@ function TodayContent() {
   const isFirstSession = searchParams.get("first_session") === "true";
   const queryClient = useQueryClient();
   const { plan, isLoading: planLoading } = usePlan();
+  const [uiMode, setUIMode] = useUIMode();
   const { data: summaries = [], isLoading } = useProjectSummariesQuery();
   const activeProjectId = useActiveProjectId();
   const project = useMemo(() => selectActiveProject(summaries, activeProjectId), [summaries, activeProjectId]);
@@ -1973,6 +1978,8 @@ function TodayContent() {
             </span>
           </div>
 
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <UIModeToggle mode={uiMode} onChange={setUIMode} />
           {isDayOneColdStart ? (
             <div
               style={{
@@ -2008,6 +2015,7 @@ function TodayContent() {
               </span>
             </div>
           )}
+          </div>
         </div>
 
         <div style={{ paddingBottom: 18, borderBottom: "1px solid var(--bm-border)" }}>
@@ -2339,7 +2347,20 @@ function TodayContent() {
         </div>
       ) : (
         <>
-        <IntelligencePanel data={actionData.intelligence} />
+        {uiMode === "pro" && <IntelligencePanel data={actionData.intelligence} />}
+        {uiMode === "pro" && actionData.intelligence && (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
+              gap: 14,
+              marginBottom: 14,
+            }}
+          >
+            <WhatChangedCard items={actionData.intelligence.what_changed} />
+            <RisksGapsCard signals={actionData.intelligence.top_signals} />
+          </div>
+        )}
         <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -2347,7 +2368,7 @@ function TodayContent() {
         style={{
           padding: 1,
             borderRadius: 12,
-            background: "var(--bm-border2)",
+            background: "var(--bm-accent-bd)",
             marginBottom: 14,
             transition: "background 0.4s",
           }}
@@ -2393,10 +2414,10 @@ function TodayContent() {
             </span>
           </div>
 
-          {/* Primary action */}
+          {/* Primary action — reference-style "highest-leverage action" card */}
           <div style={{
-            background: "var(--bm-bg)",
-            border: "1px solid var(--bm-border)",
+            background: "linear-gradient(180deg, var(--bm-bg2), var(--bm-bg3))",
+            border: "1px solid var(--bm-accent-bd)",
             borderRadius: 10,
             padding: isMobile ? "16px" : "18px 18px",
             marginBottom: 14,
@@ -2408,12 +2429,11 @@ function TodayContent() {
               width: 26, height: 26, borderRadius: 6,
               background: "var(--bm-accent)", color: "#fff",
               display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 11, fontWeight: 500, flexShrink: 0,
-              fontFamily: "'DM Mono', monospace",
-            }}>01</div>
+              fontSize: 13, flexShrink: 0,
+            }}>🎯</div>
             <div>
-              <div style={{ fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'DM Mono', monospace", marginBottom: 7 }}>
-                Primary Objective
+              <div style={{ fontSize: 10, color: "var(--bm-accent)", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'DM Mono', monospace", marginBottom: 7 }}>
+                Today's highest-leverage action
               </div>
               <p style={{ fontSize: isMobile ? 20 : 22, fontWeight: 400, color: "var(--bm-text)", lineHeight: 1.42, margin: "0 0 8px", letterSpacing: "-0.025em" }}>
                 {linkifyChannels(sanitizeOutput(actionData.action))}
