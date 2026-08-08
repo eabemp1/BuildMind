@@ -313,9 +313,25 @@ Write a 2-3 sentence story-style summary of the founder's week. Brief, specific,
     }
   }
 
-  if (story.length >= 20 && story.length <= 500) {
+  // FIX: this used to unconditionally prepend a new insight_history entry
+  // on every call — and this function runs on every "This Week" tab mount
+  // (app/progress/page.tsx → WeeklyPulseCard → POST /api/ai/weekly-pulse),
+  // not just once a week. Opening Progress repeatedly (or React re-mounting
+  // the tab) kept growing insight_history with near-duplicate entries every
+  // time, which is the confirmed cause of "opening Progress keeps
+  // incrementing something." Now it only writes when the story is actually
+  // new (different text) or it's a different calendar day than the most
+  // recent entry, so merely re-opening the page within the same day and
+  // getting the same deterministic/AI story back is a no-op.
+  const existingHistory = Array.isArray(memory?.insight_history) ? memory.insight_history : [];
+  const mostRecent = existingHistory[0] as { text?: string; created_at?: string } | undefined;
+  const today = new Date().toISOString().slice(0, 10);
+  const isSameDayAsLast = mostRecent?.created_at?.slice(0, 10) === today;
+  const isSameTextAsLast = mostRecent?.text === story;
+  const shouldWrite = story.length >= 20 && story.length <= 500 && !(isSameDayAsLast && isSameTextAsLast);
+
+  if (shouldWrite) {
     try {
-      const existingHistory = Array.isArray(memory?.insight_history) ? memory.insight_history : [];
       const history = [{ text: story, created_at: new Date().toISOString() }, ...existingHistory].slice(0, 10);
       await admin.from("founder_memory").upsert(
         { user_id: userId, insight_history: history, last_insight: story, updated_at: new Date().toISOString() },
