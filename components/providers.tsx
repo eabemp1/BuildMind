@@ -63,18 +63,18 @@ export default function Providers({ children, nonce }: { children: React.ReactNo
     });
 
     const { data: { subscription: cacheSubscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      const nextUserId = session?.user?.id ?? null;
-      if (event === "SIGNED_OUT" || nextUserId !== activeUserId) {
-        // Cancel any in-flight queries before clearing — otherwise a resolving
-        // fetch can call setQueryData after the clear and populate User B's UI
-        // with User A's data during the brief sign-out window.
+     const nextUserId = session?.user?.id ?? null;
+     const isGenuineAccountSwitch =
+    activeUserId !== null && nextUserId !== null && activeUserId !== nextUserId;
+     if (event === "SIGNED_OUT" || nextUserId !== activeUserId) {
+    // Cancel any in-flight queries before clearing — otherwise a resolving
         void queryClient.cancelQueries().then(() => {
           queryClient.clear();
+          if (isGenuineAccountSwitch && typeof window !== "undefined") {
+            window.location.reload();
+          }
         });
         setShowBillingSynced(false);
-      }
-      activeUserId = nextUserId;
-    });
 
     // ── Notification checks ────────────────────────────────────────────────────
     try {
