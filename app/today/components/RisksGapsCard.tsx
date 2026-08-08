@@ -36,7 +36,7 @@ export function RisksGapsCard({ signals }: { signals: Signal[] }) {
           Risks &amp; gaps to watch
         </h3>
         <Link
-          href="/insights"
+          href="/progress?tab=patterns"
           style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--bm-text3)", textDecoration: "none" }}
         >
           View all risks <ArrowRight size={11} />
