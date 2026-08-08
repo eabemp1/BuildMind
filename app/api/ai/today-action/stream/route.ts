@@ -20,7 +20,8 @@ export const runtime     = "nodejs";
 export const dynamic     = "force-dynamic";
 export const maxDuration = 30;
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getWeeklyCriticPersona, groqCall } from "@/lib/reflexion";
+import { getWeeklyCriticPersona, groqCall, buildCriticJudgmentRule } from "@/lib/reflexion";
+import { buildCofounderJudgment } from "@/lib/cofounderJudgment";
 import { callModelJSON, sanitizeModelOutput } from "@/lib/ai-providers";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { buildArchetypeSystemContext } from "@/lib/founderArchetype";
@@ -386,6 +387,7 @@ You are a GATEKEEPER. Reject the task if ANY of the following are true:
 5. DRAFT contains placeholder text like "[Your Product]", "[Target Audience]", "[Name]", "[Company]"
 6. The task does not advance any of the stated active goals (if goals were provided)
 7. The DRAFT is not paste-ready (too generic, no specific context)
+${founderIntelligence ? buildCriticJudgmentRule(buildCofounderJudgment(founderIntelligence)) : ""}
 
 ${personalisationCtx.recentActionsBlock}
 
@@ -595,4 +597,4 @@ ${baseForC}`,
 
 export async function GET() {
   return NextResponse.json({ error: "Use POST" }, { status: 405 });
-                    }
+  }
