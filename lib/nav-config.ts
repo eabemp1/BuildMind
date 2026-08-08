@@ -1,9 +1,9 @@
 /**
  * lib/nav-config.ts — Page-based Founder Intelligence OS nav
  *
- * Core: Today (what matters now) · Insights (what BuildMind is noticing) ·
- *       Progress (trends & patterns) · Projects (what's being built) ·
- *       Settings
+ * Core: Today (what matters now) · Progress (trends & patterns, includes
+ *       the former Insights page as its "Patterns" tab) · Projects (what's
+ *       being built) · Settings
  * Intelligence: AI Coach (/ai-coach) · Founder Mirror · Break My Startup ·
  *       Agent Workforce · Weekly Report · Achievements
  *
@@ -39,7 +39,6 @@ import {
   FolderKanban,
   Gauge,
   Hammer,
-  Lightbulb,
   Package,
   Rocket,
   Settings,
@@ -71,8 +70,13 @@ export const NAV: readonly NavItemConfig[] = [
   //   Metrics/Trends  → inside /progress
   //   Tasks           → inside /today (Today's Focus Plan)
   //   Goals           → surfaced via GhostGoalBanner inside /today
+  // "Insights" was removed as its own nav item — /insights is now only
+  // rendered as the "Patterns" tab inside /progress (see
+  // app/progress/page.tsx's PatternsTab), so a separate top-level
+  // destination was a duplicate of a tab one click away. The route itself
+  // stays alive (Progress imports the page component directly) — only the
+  // sidebar entry is gone.
   { href: "/today",    label: "Today",    icon: CircleDot,    enabled: true, section: null, badge: null, showDot: false, unlocksAt: 0 },
-  { href: "/insights", label: "Insights", icon: Lightbulb,    enabled: true, section: null, badge: null, showDot: false, unlocksAt: 3 },
   { href: "/progress", label: "Progress", icon: TrendingUp,   enabled: true, section: null, badge: null, showDot: false, unlocksAt: 1 },
   { href: "/projects", label: "Projects", icon: FolderKanban, enabled: true, section: null, badge: null, showDot: false, unlocksAt: 0 },
   { href: "/settings", label: "Settings", icon: Settings,     enabled: true, section: null, badge: null, showDot: false, unlocksAt: 0 },
@@ -134,4 +138,4 @@ export async function syncTasksCompletedFromServer(): Promise<void> {
   } catch {
     // Non-fatal
   }
-   }
+  }
