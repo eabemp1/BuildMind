@@ -202,6 +202,7 @@ export default function ReportsPage() {
   const reportRef = useRef<HTMLDivElement>(null);
   const reportCardRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState<ExportFmt|null>(null);
+  const [reportTab, setReportTab] = useState<"overview" | "week" | "analysis">("overview");
   const [menuOpen, setMenuOpen] = useState(false);
   const [exported, setExported] = useState<string|null>(null);
   const [aiReport, setAiReport] = useState<AIWeeklyReportView | null>(null);
@@ -449,6 +450,7 @@ export default function ReportsPage() {
             color: #000;
           }
           .bm-no-print { display: none !important; }
+          .bm-report-tabpanel { display: block !important; }
           @page { margin: 12mm; size: A4 portrait; }
         }
       `}</style>
@@ -496,8 +498,32 @@ export default function ReportsPage() {
           )}
         </AnimatePresence>
 
+        {/* Chapter tabs — screen-only navigation. All three panels stay
+            mounted and are only visually toggled (display:none), never
+            unmounted, so print/PDF (window.print()) always shows every
+            section regardless of which tab is active on screen — see
+            .bm-report-tabpanel print override above. */}
+        <div className="bm-no-print" style={{ display:"flex", gap:2, marginBottom:16, borderBottom:"1px solid var(--bm-border)" }}>
+          {([
+            { id:"overview", label:"Overview" },
+            { id:"week", label:"This Week" },
+            { id:"analysis", label:"BuildMind Analysis" },
+          ] as const).map(t => (
+            <button key={t.id} type="button" onClick={() => setReportTab(t.id)}
+              style={{
+                fontFamily:"'DM Mono', monospace", fontSize:11, padding:"9px 14px",
+                background:"transparent", border:"none", cursor:"pointer",
+                borderBottom: reportTab === t.id ? "2px solid var(--bm-accent)" : "2px solid transparent",
+                color: reportTab === t.id ? "var(--bm-text)" : "var(--bm-text3)",
+              }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
         <div ref={reportCardRef} style={{ background:"var(--bm-bg)", padding: isMobile ? 0 : 8 }}>
 
+        <div className="bm-report-tabpanel" style={{ display: reportTab === "overview" ? undefined : "none" }}>
         {/* HERO ROW */}
         <div style={{ display:"grid",
           gridTemplateColumns: isMobile ? "1fr 1fr" : "auto 1fr 1fr 1fr",
@@ -513,8 +539,8 @@ export default function ReportsPage() {
               {scoreDelta !== 0 && (
                 <div style={{ display:"flex", alignItems:"center", gap:5, fontSize:11, fontWeight:700,
                   color: scoreDelta > 0 ? "var(--bm-green)" : "var(--bm-red)",
-                  background: scoreDelta > 0 ? "rgba(92,200,138,0.1)" : "rgba(224,85,85,0.1)",
-                  border: `1px solid ${scoreDelta > 0 ? "rgba(92,200,138,0.25)" : "rgba(224,85,85,0.25)"}`,
+                  background: scoreDelta > 0 ? "var(--bm-green-dim)" : "var(--bm-red-dim)",
+                  border: `1px solid ${scoreDelta > 0 ? "var(--bm-green-bd)" : "var(--bm-red-bd)"}`,
                   borderRadius:20, padding:"3px 10px" }}>
                   {scoreDelta > 0 ? <TrendingUp size={10}/> : <TrendingDown size={10}/>}
                   {scoreDelta > 0 ? `+${scoreDelta}` : scoreDelta} this week
@@ -538,7 +564,7 @@ export default function ReportsPage() {
           ) : (
             <Tile label="Total XP" value={metrics?.totalXP ?? 0}
               sub="Lifetime achievement points" trend="up"
-              spark={scoreHistory} color="#A78BFA" icon={Zap}/>
+              spark={scoreHistory} color="var(--bm-intel2)" icon={Zap}/>
           )}
         </div>
 
@@ -619,6 +645,9 @@ export default function ReportsPage() {
           </div>
         </motion.div>
 
+        </div>
+
+        <div className="bm-report-tabpanel" style={{ display: reportTab === "week" ? undefined : "none" }}>
         {/* WINS & FOCUS */}
         <SectionHead>This Week</SectionHead>
         <div style={{ display:"grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap:12, marginBottom:16 }}>
@@ -675,7 +704,7 @@ export default function ReportsPage() {
                 // Exec Score: use liveScore (computed) — execution_score in DB can be stale/null
                 { label:"Exec Score", value: project.execution_score != null ? project.execution_score : liveScore, color:"var(--bm-amber)" },
                 // Momentum: server value from founder_context.momentum_score only — never fall back to stale project column
-                { label:"Momentum",   value: metrics?.momentumScore != null ? metrics.momentumScore : "—", color:"#A78BFA" },
+                { label:"Momentum",   value: metrics?.momentumScore != null ? metrics.momentumScore : "—", color:"var(--bm-intel2)" },
               ] as const).map(({ label, value, color }) => (
                 <div key={label}>
                   <div style={{ fontSize:9, fontWeight:700, color:"var(--bm-text3)",
@@ -687,6 +716,9 @@ export default function ReportsPage() {
           </>
         )}
 
+        </div>
+
+        <div className="bm-report-tabpanel" style={{ display: reportTab === "analysis" ? undefined : "none" }}>
         {/* AI INSIGHT */}
         <motion.div initial={{ opacity:0, y:6 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.45 }}
           style={{ background:"var(--bm-accent-dim)", border:"1px solid var(--bm-accent-bd)",
@@ -706,8 +738,8 @@ export default function ReportsPage() {
           {intentionRate != null && (
             <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12,
               padding:"10px 14px", borderRadius:10,
-              background: intentionRate >= 60 ? "rgba(92,200,138,0.08)" : "rgba(255,170,0,0.08)",
-              border: `1px solid ${intentionRate >= 60 ? "rgba(92,200,138,0.2)" : "rgba(255,170,0,0.2)"}` }}>
+              background: intentionRate >= 60 ? "var(--bm-green-dim)" : "var(--bm-accent-dim)",
+              border: `1px solid ${intentionRate >= 60 ? "var(--bm-green-bd)" : "var(--bm-accent-bd)"}` }}>
               <div>
                 <p style={{ fontSize:11, fontWeight:700, color:"var(--bm-text3)", textTransform:"uppercase",
                   letterSpacing:"0.08em", margin:"0 0 2px" }}>Check-in Follow-through This Week</p>
@@ -738,8 +770,8 @@ export default function ReportsPage() {
               </p>
               {aiReport.intention_vs_action && (
                 <div style={{ marginBottom:12, padding:"12px 14px",
-                  background:"rgba(168,213,186,0.04)",
-                  border:"1px solid rgba(168,213,186,0.15)", borderRadius:10 }}>
+                  background:"var(--bm-green-dim)",
+                  border:"1px solid var(--bm-green-bd)", borderRadius:10 }}>
                   <p style={{ fontSize:9, fontWeight:700, color:"var(--bm-accent)",
                     textTransform:"uppercase", letterSpacing:"0.1em", margin:"0 0 6px" }}>
                     Intention vs Reality
@@ -751,8 +783,8 @@ export default function ReportsPage() {
               )}
               {aiReport.honest_assessment && (
                 <div style={{ padding:"12px 14px",
-                  background:"rgba(248,113,113,0.05)",
-                  border:"1px solid rgba(248,113,113,0.15)", borderRadius:10,
+                  background:"var(--bm-red-dim)",
+                  border:"1px solid var(--bm-red-bd)", borderRadius:10,
                   marginBottom: aiReport.next_week_focus ? 10 : 0 }}>
                   <p style={{ fontSize:9, fontWeight:700, color:"var(--bm-red)",
                     textTransform:"uppercase", letterSpacing:"0.1em", margin:"0 0 6px" }}>
@@ -801,6 +833,7 @@ export default function ReportsPage() {
             </p>
           </motion.div>
         )}
+        </div>
         </div>
 
         {/* FOOTER */}
