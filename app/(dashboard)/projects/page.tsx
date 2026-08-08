@@ -62,6 +62,33 @@ function normalizeStage(input: string): StartupStage {
   return "Idea";
 }
 
+// ── Project health (spec §15 — "make it obvious which projects are healthy,
+//    at risk, stalled, or completed"). Derived entirely client-side from
+//    fields already present on the project summary (lastActivity,
+//    tasksCompleted/Total, computed score) — no backend/API change, no new
+//    intelligence logic, just a presentational read of existing data. ──────
+type ProjectHealth = "completed" | "healthy" | "at-risk" | "stalled";
+
+const HEALTH_META: Record<ProjectHealth, { label: string; variant: "success" | "warning" | "danger" | "neutral"; dot: string }> = {
+  completed: { label: "Completed", variant: "success", dot: "var(--bm-green)" },
+  healthy:   { label: "Healthy",   variant: "success", dot: "var(--bm-green)" },
+  "at-risk": { label: "At risk",   variant: "warning", dot: "var(--bm-amber)" },
+  stalled:   { label: "Stalled",   variant: "danger",  dot: "var(--bm-red)" },
+};
+
+function deriveProjectHealth(s: { tasksCompleted?: number | null; tasksTotal?: number | null; lastActivity?: string | null }, score: number): ProjectHealth {
+  const completed = s.tasksTotal && s.tasksTotal > 0 && s.tasksCompleted === s.tasksTotal;
+  if (completed) return "completed";
+
+  const daysSinceActivity = s.lastActivity
+    ? Math.floor((Date.now() - new Date(s.lastActivity).getTime()) / 86_400_000)
+    : Infinity;
+
+  if (daysSinceActivity >= 7) return "stalled";
+  if (daysSinceActivity >= 3 || score < 40) return "at-risk";
+  return "healthy";
+}
+
 // ── Progress bar ──────────────────────────────────────────────────────────────
 function ProgressBar({
   value, max, i = 0,
@@ -357,6 +384,8 @@ export default function ProjectsPage() {
             const completion = s.tasksTotal > 0
               ? Math.round((s.tasksCompleted / s.tasksTotal) * 100)
               : 0;
+            const health = deriveProjectHealth(s, score);
+            const healthMeta = HEALTH_META[health];
 
             return (
               <motion.div
@@ -388,6 +417,7 @@ export default function ProjectsPage() {
                             {s.title}
                           </span>
                           <Badge variant={stageVariant} size="sm">{stageNorm}</Badge>
+                          <Badge variant={healthMeta.variant} size="sm" dot>{healthMeta.label}</Badge>
                           {isActive && (
                             <Badge variant="success" size="sm" dot>Active</Badge>
                           )}
