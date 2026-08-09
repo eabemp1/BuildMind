@@ -156,6 +156,14 @@ export interface FounderIntelligenceInput {
   activityEvents?: SessionEvent[];
   actionLogs?: Array<Record<string, any>>;
   now?: Date;
+  /** FIX (task-repeat bug): a task the founder just explicitly rejected
+   *  (e.g. via "Replace this task") to exclude from candidate ranking.
+   *  Without this, buildDecisionState()'s candidate pool is a small fixed
+   *  set keyed purely off which signal types are active — since signals
+   *  barely change within the few seconds around a replace click, the
+   *  exact same candidate would win the ranking again every time. See
+   *  buildDecisionState() below for where this is actually applied. */
+  excludeAction?: string;
 }
 
 const EXTERNAL_KEYWORDS = /\b(user|customer|interview|feedback|talked|called|met|spoke|revenue|sale|paid|pricing|launch|publish|post|pitch|email|reach out|dm|contact)\b/i;
@@ -607,7 +615,7 @@ export function buildFounderIntelligenceState(input: FounderIntelligenceInput): 
     generated_at: now.toISOString(),
   };
 
-  const decision = buildDecisionState({ ...stateWithoutDecision, decision: { candidates: [], top_candidate: null, decision_basis: [] } });
+  const decision = buildDecisionState({ ...stateWithoutDecision, decision: { candidates: [], top_candidate: null, decision_basis: [] } }, preloaded.excludeAction);
 
   return { ...stateWithoutDecision, decision };
 }
@@ -642,7 +650,7 @@ function scoreCandidate(candidate: Omit<DecisionCandidate, "scores" | "why_it_be
   };
 }
 
-export function buildDecisionState(state: FounderIntelligenceState): DecisionState {
+export function buildDecisionState(state: FounderIntelligenceState, excludeAction?: string): DecisionState {
   const candidates: Array<Omit<DecisionCandidate, "scores" | "why_it_beats_alternatives">> = [];
   const currentGoal = state.startup.current_goal ?? "the current startup goal";
   const target = state.startup.assumptions.find((a) => a.toLowerCase().includes("target segment"))?.replace(/^Target segment: /, "") || "one target user";
@@ -688,6 +696,15 @@ export function buildDecisionState(state: FounderIntelligenceState): DecisionSta
   });
 
   const ranked = candidates
+    .filter((candidate) => {
+      // FIX (task-repeat bug): drop the candidate template whose generated
+      // text matches what the founder just rejected. "continue_best_next_task"
+      // has no signal gate and is always pushed above, so there's always at
+      // least one remaining candidate to rank even if the excluded one was
+      // the only signal-gated one active right now.
+      if (!excludeAction) return true;
+      return candidate.action.trim().toLowerCase() !== excludeAction.trim().toLowerCase();
+    })
     .map((candidate) => scoreCandidate({ ...candidate, supporting_signals: unique(candidate.supporting_signals, 5) as IntelligenceSignalType[] }, state))
     .sort((a, b) => b.scores.total - a.scores.total)
     .slice(0, 4);
