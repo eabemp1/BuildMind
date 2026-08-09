@@ -22,53 +22,13 @@ import { sanitizeOutput } from "@/lib/sanitizeOutput";
 
 type Tab = "milestones" | "tasks" | "validation" | "roadmap";
 
-type TransitionReadinessPrompt = {
-  shouldPrompt: boolean;
-  transitionMessage: string;
-  currentStage: string;
-  nextStage: string | null;
-  signals: { milestonesComplete: boolean; avgConfidence: number | null; recentOverrides: number };
-};
-
-function ReadinessPrompt({
-  readiness,
-  projectId,
-  onDismiss,
-}: {
-  readiness: TransitionReadinessPrompt;
-  projectId: string;
-  onDismiss: () => void;
-}) {
-  return (
-    <div style={{ background: "rgba(74,222,128,0.05)", border: "1px solid rgba(74,222,128,0.2)", borderRadius: 14, padding: "16px 20px", marginBottom: 20 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "#4ade80", marginBottom: 8 }}>
-            Ready to advance to {String(readiness.nextStage ?? "the next")} stage?
-          </div>
-          <div style={{ fontSize: 12, color: "var(--bm-text2)", lineHeight: 1.6, marginBottom: 10 }}>
-            {String(readiness.transitionMessage)}
-          </div>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", fontSize: 11, color: "var(--bm-text4)" }}>
-            <span>✓ Milestones complete</span>
-            {readiness.signals.avgConfidence !== null ? (
-              <span>✓ Confidence {readiness.signals.avgConfidence.toFixed(1)}/5</span>
-            ) : null}
-            <span>✓ Execution stable</span>
-          </div>
-        </div>
-        <button
-          onClick={() => {
-            storage.set(`bm_transition_dismissed_${projectId}_${readiness.currentStage}`, "1");
-            onDismiss();
-          }}
-          style={{ background: "none", border: "none", color: "var(--bm-text4)", cursor: "pointer", fontSize: 16, padding: 0, lineHeight: 1 }}>
-          ×
-        </button>
-      </div>
-    </div>
-  );
-}
+// CONSOLIDATION: TransitionReadinessPrompt / ReadinessPrompt removed — this
+// rendered a second, separately-sourced "ready to move up?" banner
+// alongside the "Stage check" banner below, both answering the same
+// question from what used to be two different detectors with different
+// thresholds. Now there's one detector (lib/server/stageTransition.ts) and
+// one banner (the "Stage check" block further down, driven by
+// stageTransitionPrompt). See that file's header comment for the full story.
 
 // ─── Design tokens ──────────────────────────────────────────────────────────
 const VIZ = {
@@ -443,8 +403,6 @@ export default function ProjectDetailPage() {
     milestone_title?: string; acknowledged: boolean;
   } | null>(null);
   const [challengeAcknowledged, setChallengeAcknowledged] = useState(false);
-  const [transitionReadiness, setTransitionReadiness] = useState<TransitionReadinessPrompt | null>(null);
-  const [readinessDismissed, setReadinessDismissed] = useState(false);
   const [stageTransitionPrompt, setStageTransitionPrompt] = useState<{
     currentStage: string; nextStage: string | null; reason: string;
   } | null>(null);
@@ -550,8 +508,20 @@ export default function ProjectDetailPage() {
       }).eq("user_id", project.user_id);
 
       // Refresh all project data
+      // FIX: this never invalidated queryKeys.projectSummaries — the query
+      // Today's page actually reads its `project` object from (via
+      // selectActiveProject(summaries, activeProjectId) in app/today/page.tsx).
+      // Only queryKeys.project(id)/projects were invalidated, which this
+      // page itself uses, but Today kept serving the pre-transition stage
+      // from its own cached summary indefinitely — confirmed root cause of
+      // "I'm on Launch stage but received an Idea stage task": the daily
+      // action generator does correctly read the live DB stage server-side,
+      // but Today's client-side cache-validity check compares against this
+      // stale client stage, found a false "match", and never busted the
+      // cached (wrong-stage) action.
       void qc.invalidateQueries({ queryKey: queryKeys.project(id) });
       void qc.invalidateQueries({ queryKey: queryKeys.projects });
+      void qc.invalidateQueries({ queryKey: queryKeys.projectSummaries });
     } catch (err) {
       console.error("[projects] stage select failed:", err);
     } finally {
@@ -660,45 +630,12 @@ export default function ProjectDetailPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project?.id]);
 
-  // REC 3.1: Read cached stage transition readiness from founder_context
-  useEffect(() => {
-    if (!id || !project?.id || !project.user_id) return;
-    const dismissKey = `bm_transition_dismissed_${id}_${project.startup_stage}`;
-    if (storage.get(dismissKey)) {
-      setReadinessDismissed(true);
-      return;
-    }
-    void (async () => {
-      try {
-        const supabase = createClient();
-        const { data } = await supabase
-          .from("founder_context")
-          .select("pending_stage_transition")
-          .eq("user_id", project.user_id)
-          .maybeSingle();
-        const pending = (data?.pending_stage_transition ?? null) as {
-          project_id?: string;
-          current_stage?: string;
-          recommended_stage?: string | null;
-          reason?: string;
-        } | null;
-        if (pending?.project_id === id && pending.recommended_stage) {
-          setTransitionReadiness({
-            shouldPrompt: true,
-            transitionMessage: pending.reason ?? "",
-            currentStage: pending.current_stage ?? project.startup_stage ?? "Idea",
-            nextStage: pending.recommended_stage ?? null,
-            signals: {
-              milestonesComplete: true,
-              avgConfidence: null,
-              recentOverrides: 0,
-            },
-          });
-        }
-      } catch { /* non-fatal */ }
-    })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  // CONSOLIDATION: the effect that used to live here read
+  // founder_context.pending_stage_transition directly and rendered a
+  // second "ready to move up?" banner via ReadinessPrompt — removed. The
+  // effect above (check-stage-transition) now writes that same field as a
+  // side effect via the single shared detector, so this page doesn't need
+  // its own separate read of it; one fetch, one banner.
 
   // REC 2.3: When a milestone is marked complete, trigger stage-transition challenge in background
   const triggerMilestoneChallenge = async (milestoneTitle: string) => {
@@ -838,7 +775,6 @@ export default function ProjectDetailPage() {
 
   const roadmapSteps = STAGE_ROADMAPS[stage] ?? STAGE_ROADMAPS["MVP"];
   const progressColor = progress >= 60 ? "var(--bm-accent)" : "var(--grad-primary)";
-  const shouldShowReadinessPrompt = Boolean(transitionReadiness?.shouldPrompt && !readinessDismissed);
 
   return (
     <div
@@ -891,13 +827,9 @@ export default function ProjectDetailPage() {
         </div>
       ) : null}
 
-      {shouldShowReadinessPrompt && transitionReadiness ? (
-        <ReadinessPrompt
-          readiness={transitionReadiness}
-          projectId={id}
-          onDismiss={() => setReadinessDismissed(true)}
-        />
-      ) : null}
+      {/* CONSOLIDATION: ReadinessPrompt removed here — was a second banner
+          sourced from the now-retired detector, redundant with the "Stage
+          check" banner above (both now driven by the same shared function). */}
 
       <div className="mb-5 border-b border-[var(--bm-border)] pb-[18px]">
         <button onClick={() => router.back()}
@@ -1146,4 +1078,4 @@ export default function ProjectDetailPage() {
       )}
     </div>
   );
-                       }
+                                                                                      }
