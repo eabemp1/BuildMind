@@ -582,7 +582,7 @@ function FounderStateScreen({
   }
 
   return (
-    <OnboardingShell step={2} maxWidth={560}>
+    <OnboardingShell step={3} maxWidth={560}>
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
@@ -908,7 +908,7 @@ function StrikeScreen({ idea, result, onContinue, onBack }: {
   ];
 
   return (
-    <OnboardingShell step={3} maxWidth={560}>
+    <OnboardingShell step={2} maxWidth={560}>
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
@@ -1923,4 +1923,4 @@ export default function OnboardingPage() {
       <OnboardingInner />
     </Suspense>
   );
-        }
+  }
