@@ -133,7 +133,19 @@ export async function getWeeklyPulseData(userId: string, projectId?: string): Pr
     // holds the real task text (confirmed via the same route's insert call),
     // so it also replaces the tasks-table title source for un-ghosted
     // matching below.
-    admin.from("reflexion_learning_log").select("outcome, action_shown, outcome_note, created_at").eq("user_id", userId).gte("created_at", weekAgoIso),
+    // FIX: this query used to count every reflexion_learning_log row this
+    // week as a "task" — but Break My Startup ALSO writes to this same
+    // table via its own recordActionShown() calls (session_id prefixed
+    // "bms_..."), since it has its own separate learning loop. That meant
+    // running an analysis, not completing a daily task, silently bumped
+    // "X of Y tasks completed this week" on Progress — confirmed: running
+    // Break My Startup once incremented the total by 1 with zero tasks
+    // actually completed. Today's own rows are session_id-prefixed
+    // "today_action" (see recordActionShown() call sites in
+    // app/api/ai/today-action/route.ts and .../stream/route.ts), so we can
+    // filter to just those without touching the shared table or the other
+    // callers that legitimately need their own rows there.
+    admin.from("reflexion_learning_log").select("outcome, action_shown, outcome_note, created_at, session_id").eq("user_id", userId).gte("created_at", weekAgoIso),
     admin.from("tasks").select("id, status, updated_at").eq("user_id", userId).lt("created_at", weekAgoIso),
     (() => {
       let q = admin.from("milestones").select("id, title, target_date, status, created_at, project_id").eq("user_id", userId).neq("status", "abandoned");
@@ -158,7 +170,12 @@ export async function getWeeklyPulseData(userId: string, projectId?: string): Pr
   const memory = memoryResult.status === "fulfilled" ? memoryResult.value.data : null;
   // "weekTasks" here now means reflexion_learning_log rows for this week —
   // each represents one shown/answered Today action, not a `tasks` table row.
-  const weekTasks = weekTasksResult.status === "fulfilled" ? (weekTasksResult.value.data ?? []) : [];
+  // Filtered to session_id starting with "today_action" so Break My Startup
+  // runs (session_id "bms_...") and task-complete's rare fallback rows
+  // (session_id "task_complete:...") don't count as Today tasks here — see
+  // the FIX comment on the query above for why this matters.
+  const weekTasks = (weekTasksResult.status === "fulfilled" ? (weekTasksResult.value.data ?? []) : [])
+    .filter((t: { session_id?: string | null }) => (t.session_id ?? "").startsWith("today_action"));
   const backlogTasks = backlogTasksResult.status === "fulfilled" ? (backlogTasksResult.value.data ?? []) : [];
   const milestoneRows = milestonesResult.status === "fulfilled" ? (milestonesResult.value.data ?? []) : [];
   const weeklyGoalRow = weeklyGoalResult.status === "fulfilled" ? (weeklyGoalResult.value as { data: any })?.data ?? null : null;
