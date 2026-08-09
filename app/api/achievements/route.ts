@@ -139,10 +139,27 @@ export async function POST(request: Request) {
       ok: true,
       unlocked: verifiedIds.length,
       rejected: requestedIds.length - verifiedIds.length,
+      // FIX: the response only ever returned counts, never which specific
+      // ids were actually verified/persisted vs silently rejected. The
+      // client fired this POST and ignored the response entirely
+      // (.catch(() => {}), no .then()), optimistically writing EVERY
+      // requested id to localStorage regardless of what the server did
+      // with it. When client-side stats (lib/achievements.ts's
+      // getAchievementStats(), a manually-accumulated localStorage
+      // counter) disagreed with server-side stats (getServerAchievementStats(),
+      // computed fresh from live DB queries) — which the various counting
+      // bugs found this session made a real, frequent possibility — the
+      // achievement would show as unlocked locally but never actually get
+      // a row written here. It would then vanish the moment localStorage
+      // was cleared (cache clear, new device, PWA reinstall), which is
+      // exactly the "achievements just reset" symptom. Returning the
+      // actual verified id list lets the client only commit to
+      // localStorage what the server actually confirmed.
+      verifiedIds,
       xpGranted,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "achievements POST failed";
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
-                                   }
+}
