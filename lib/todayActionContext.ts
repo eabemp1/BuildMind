@@ -110,8 +110,13 @@ export async function loadTodayActionContext(params: {
   providedStage: string;
   acknowledgeDebt: boolean;
   sessionId: string;
+  /** FIX (task-repeat bug): see FounderIntelligenceInput.excludeAction —
+   *  threaded through from the client's "Replace this task" request so
+   *  the deterministic candidate ranking doesn't just re-pick the same
+   *  task the founder already rejected. */
+  excludeAction?: string;
 }): Promise<TodayActionContext> {
-  const { userId, projectId, providedStage, acknowledgeDebt, sessionId } = params;
+  const { userId, projectId, providedStage, acknowledgeDebt, sessionId, excludeAction } = params;
 
   const ctx: TodayActionContext = {
     stage: providedStage || "Idea",
@@ -458,7 +463,7 @@ export async function loadTodayActionContext(params: {
 
   // ── 8. Founder Intelligence OS coherence layer ─────────────────────────
   try {
-    ctx.founderIntelligence = await loadFounderIntelligence(supabase, userId, projectId, { now: new Date() });
+    ctx.founderIntelligence = await loadFounderIntelligence(supabase, userId, projectId, { now: new Date(), excludeAction });
     ctx.founderIntelligencePromptBlock = buildFounderIntelligencePromptBlock(ctx.founderIntelligence);
     ctx.founderIntelligencePromptBlock += `\n\n${buildCofounderJudgmentPromptBlock(buildCofounderJudgment(ctx.founderIntelligence))}`;
     ctx.intelligenceSummary = summarizeFounderIntelligenceForClient(ctx.founderIntelligence);
