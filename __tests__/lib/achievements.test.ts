@@ -39,8 +39,23 @@ const localStorageMock = {
 vi.stubGlobal("window", { localStorage: localStorageMock });
 vi.stubGlobal("localStorage", localStorageMock);
 
+// FIX: checkAndUnlockAchievements() now awaits a real server round-trip
+// (POST /api/achievements) before committing anything locally — see
+// lib/achievements.ts for why. Mock fetch to echo back whatever ids were
+// requested as verified, matching what the real server does when the
+// stats genuinely qualify (which is what these tests seed).
+vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+  const body = init?.body ? JSON.parse(String(init.body)) : {};
+  const ids: string[] = Array.isArray(body?.ids) ? body.ids : [];
+  return {
+    ok: true,
+    json: async () => ({ ok: true, unlocked: ids.length, rejected: 0, verifiedIds: ids, xpGranted: 0 }),
+  };
+}));
+
 function clearStore() {
   Object.keys(store).forEach(k => delete store[k]);
+  (fetch as ReturnType<typeof vi.fn>).mockClear();
 }
 
 function seedStats(stats: Partial<AchievementStats>) {
@@ -220,52 +235,52 @@ describe("ACHIEVEMENTS — data integrity", () => {
 describe("checkAndUnlockAchievements", () => {
   beforeEach(clearStore);
 
-  it("unlocks streak_1 when checkInsDone >= 1 and returns it in newly unlocked", () => {
+  it("unlocks streak_1 when checkInsDone >= 1 and returns it in newly unlocked", async () => {
     seedStats({ checkInsDone: 1 });
-    const newly = checkAndUnlockAchievements();
+    const newly = await checkAndUnlockAchievements();
     const ids = newly.map(a => a.id);
     expect(ids).toContain("streak_1");
   });
 
-  it("does NOT re-unlock an already-unlocked achievement", () => {
+  it("does NOT re-unlock an already-unlocked achievement", async () => {
     seedStats({ checkInsDone: 1 });
     seedUnlocked([{ id: "streak_1", unlockedAt: Date.now() - 1000, seen: true }]);
-    const newly = checkAndUnlockAchievements();
+    const newly = await checkAndUnlockAchievements();
     expect(newly.map(a => a.id)).not.toContain("streak_1");
   });
 
-  it("adds XP when a new achievement is unlocked", () => {
+  it("adds XP when a new achievement is unlocked", async () => {
     seedStats({ checkInsDone: 1 });
     store["bm_xp"] = "0";
-    checkAndUnlockAchievements();
+    await checkAndUnlockAchievements();
     const xp = getTotalXP();
     expect(xp).toBeGreaterThan(0);
   });
 
-  it("unlocks multiple achievements in one call", () => {
+  it("unlocks multiple achievements in one call", async () => {
     seedStats({ checkInsDone: 1, aiMessages: 1 });
-    const newly = checkAndUnlockAchievements();
+    const newly = await checkAndUnlockAchievements();
     const ids = newly.map(a => a.id);
     expect(ids).toContain("streak_1");
     expect(ids).toContain("ai_first");
   });
 
-  it("returns empty array when no new achievements qualify", () => {
+  it("returns empty array when no new achievements qualify", async () => {
     seedStats({ checkInsDone: 0 });
-    const newly = checkAndUnlockAchievements();
+    const newly = await checkAndUnlockAchievements();
     expect(newly).toHaveLength(0);
   });
 
-  it("persists newly unlocked achievements to storage", () => {
+  it("persists newly unlocked achievements to storage", async () => {
     seedStats({ checkInsDone: 1 });
-    checkAndUnlockAchievements();
+    await checkAndUnlockAchievements();
     const stored = getUnlocked();
     expect(stored.some(u => u.id === "streak_1")).toBe(true);
   });
 
-  it("newly unlocked achievements have seen: false", () => {
+  it("newly unlocked achievements have seen: false", async () => {
     seedStats({ checkInsDone: 1 });
-    checkAndUnlockAchievements();
+    await checkAndUnlockAchievements();
     const stored = getUnlocked();
     const a = stored.find(u => u.id === "streak_1")!;
     expect(a.seen).toBe(false);
