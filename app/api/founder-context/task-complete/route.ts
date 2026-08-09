@@ -175,16 +175,43 @@ export async function POST(req: Request) {
   // p_project_id), so no separate mirror needed here anymore.
 
   const computedScore = newMomentum;
-  // Non-blocking score history snapshot — feeds the Progress page 7-day trend
+  // FIX: this used to upsert with onConflict: "user_id,recorded_at::date" —
+  // but recorded_at::date is a SQL expression, not a plain column, and
+  // Supabase/PostgREST's onConflict resolution can't match that against the
+  // table's expression-based unique index. The upsert has been throwing on
+  // every single call since this was written (confirmed: score_history had
+  // zero rows total, for every user). Silently swallowed by the fire-and-
+  // forget .catch(() => {}), so nothing ever surfaced the failure — this is
+  // also why the Progress page's "real" sparkline line has never drawn.
+  // Replaced with an explicit check-then-write so it never depends on
+  // PostgREST resolving an expression index through onConflict.
   if (typeof computedScore === "number") {
-    Promise.resolve(
-      admin
-        .from("score_history")
-        .upsert(
-          { user_id: user.id, score: computedScore, recorded_at: new Date().toISOString() },
-          { onConflict: "user_id,recorded_at::date" }
-        )
-    ).then(() => {}).catch(() => {});
+    void (async () => {
+      try {
+        const dayStart = new Date(); dayStart.setUTCHours(0, 0, 0, 0);
+        const dayEnd = new Date(dayStart); dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
+        const { data: existing } = await admin
+          .from("score_history")
+          .select("id")
+          .eq("user_id", user.id)
+          .gte("recorded_at", dayStart.toISOString())
+          .lt("recorded_at", dayEnd.toISOString())
+          .maybeSingle();
+
+        if (existing?.id) {
+          await admin
+            .from("score_history")
+            .update({ score: computedScore, recorded_at: new Date().toISOString() })
+            .eq("id", existing.id);
+        } else {
+          await admin
+            .from("score_history")
+            .insert({ user_id: user.id, score: computedScore, recorded_at: new Date().toISOString() });
+        }
+      } catch {
+        // Non-fatal — must never block the task completion response
+      }
+    })();
   }
 
   if (taskTitle) {
@@ -314,4 +341,4 @@ export async function POST(req: Request) {
       severity: activePattern.severity,
     } : null,
   });
-                                               }
+      }
