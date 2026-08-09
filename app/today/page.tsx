@@ -425,6 +425,7 @@ function TodayContent() {
   // deliberately separate from the big data-loading effects below so it
   // can't interfere with task loading if it ever fails.
   const [archetypeTags, setArchetypeTags] = useState<string[]>([]);
+  const [stageNudge, setStageNudge] = useState<{ currentStage: string; nextStage: string; projectId: string | null } | null>(null);
 
   // AI-personalised action state
   const [aiAction, setAiAction] = useState<ActionData | null>(null);
@@ -566,6 +567,29 @@ function TodayContent() {
     )
       .then(({ data }) => {
         if (Array.isArray(data?.personality_tags)) setArchetypeTags(data.personality_tags as string[]);
+      })
+      .catch(() => {});
+  }, [userId]);
+
+  // Stage-transition nudge — isolated fetch, same non-blocking pattern as
+  // the archetype badge above. Reads founder_context.pending_stage_transition,
+  // which lib/server/stageTransition.ts's single canonical detector keeps
+  // current (written after every task completion and every reflection —
+  // see that file's header comment). Previously this only surfaced on the
+  // project page, requiring a visit there to discover it existed at all.
+  useEffect(() => {
+    if (!userId) return;
+    const supabase = createClient();
+    Promise.resolve(
+      supabase.from("founder_context").select("pending_stage_transition").eq("user_id", userId).maybeSingle(),
+    )
+      .then(({ data }) => {
+        const pending = (data as { pending_stage_transition?: {
+          project_id?: string; current_stage?: string; recommended_stage?: string | null;
+        } | null } | null)?.pending_stage_transition;
+        if (pending?.recommended_stage) {
+          setStageNudge({ currentStage: pending.current_stage ?? "", nextStage: pending.recommended_stage, projectId: pending.project_id ?? null });
+        }
       })
       .catch(() => {});
   }, [userId]);
@@ -1767,6 +1791,26 @@ function TodayContent() {
         );
       })()}
 
+      {/* ── Stage-transition nudge — one line, links to the full prompt on
+          the project page rather than duplicating it here. See
+          lib/server/stageTransition.ts for how this gets computed. ── */}
+      {stageNudge && (
+        <a
+          href={stageNudge.projectId ? `/projects/${stageNudge.projectId}` : "/projects"}
+          style={{
+            display: "flex", alignItems: "center", gap: 8,
+            padding: "9px 14px", marginBottom: 22,
+            borderRadius: 10, border: "1px solid var(--bm-green-bd)", background: "var(--bm-green-dim)",
+            textDecoration: "none", fontSize: 12, color: "var(--bm-green)",
+          }}
+        >
+          <span style={{ flex: 1 }}>
+            You're hitting {stageNudge.nextStage}-stage signals — ready to move up?
+          </span>
+          <span style={{ fontSize: 11, flexShrink: 0 }}>See why →</span>
+        </a>
+      )}
+
       {/* ══ PRODUCT IMPROVEMENT #2 — TASK-FIRST LAYOUT ══
           Project badge is 1 line, then ACTION CARD is the first full block.
           All context (yesterday, analysis, check-ins) moves into a
@@ -2619,4 +2663,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-  }
+}
