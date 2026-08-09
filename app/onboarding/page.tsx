@@ -1793,7 +1793,16 @@ function OnboardingInner() {
     setFounderWorries(worries);
     setDepthAnswers(prev => ({ ...prev, avoidance: note || prev.avoidance }));
     trackFunnelStep("founder_state_complete");
-    void saveOnboarding({ worries, avoidanceNote: note });
+    // FIX: this used to call saveOnboarding() directly, skipping straight
+    // to completion. IntegrationsScreen (Notion/Linear connect) existed in
+    // this file the whole time but was only reachable through a narrow
+    // OAuth-redirect-return edge case — never as a normal step in the live
+    // flow, which is why it looked like it had "vanished." Per founder's
+    // request, restoring ONLY this one screen (not the Depth/Stage/Identity
+    // screens or PromiseScreen, which are separate orphaned paths from an
+    // older, longer onboarding design and were not asked for) —
+    // Founder State now leads to Integrations, which leads straight to save.
+    setScreen("integrations");
   };
 
   const handleDepthComplete = (answers: DepthAnswers) => {
@@ -1898,7 +1907,11 @@ function OnboardingInner() {
         />
       )}
       {screen === "integrations" && (
-        <IntegrationsScreen key="integrations" onComplete={() => setScreen("promise")} />
+        // FIX: was onComplete={() => setScreen("promise")} — chained into
+        // PromiseScreen, a separate orphaned screen that wasn't part of
+        // what was asked for. Goes straight to save now, matching "just
+        // the integrations, without major additions."
+        <IntegrationsScreen key="integrations" onComplete={handleIntegrationsComplete} />
       )}
       {screen === "promise" && (
         <PromiseScreen
