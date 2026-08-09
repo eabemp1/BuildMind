@@ -7,7 +7,7 @@ import { FEATURES } from "@/lib/features";
 import { callModelJSON } from "@/lib/ai-providers";
 import { logError } from "@/lib/server/logger";
 import { recordActivity } from "@/lib/server/activityLog";
-import { checkAndCacheStageTransition } from "@/lib/server/stageTransitionCache";
+import { evaluateAndCacheStageTransition } from "@/lib/server/stageTransition";
 import { recordActionOutcome } from "@/lib/learning";
 import { invalidateCognitionCache } from "@/lib/founderCognition";
 import { classifyBlocker, runBlockerIntelligencePipeline } from "@/lib/blockerIntelligence";
@@ -443,7 +443,9 @@ Target users: ${project.target_users ?? "Not specified"}`;
           evidenceProduced: `${what_happened ?? ""} ${what_learned ?? ""}`.trim() || undefined,
         }).catch(() => {});
         recordActivity(verifiedUserId, "reflection_done", { projectId, outcome, confidence }).catch(() => {});
-        checkAndCacheStageTransition(verifiedUserId, projectId).catch(() => {});
+        // CONSOLIDATION: was checkAndCacheStageTransition() — see
+        // lib/server/stageTransition.ts for why there's now one detector.
+        evaluateAndCacheStageTransition(verifiedUserId, projectId).catch(() => {});
 
         // Trigger full synthesis after every reflection (fire-and-forget)
         fetch(`${process.env.NEXT_PUBLIC_APP_URL ?? ""}/api/ai/founder-insight`, {
@@ -555,4 +557,4 @@ ${projectContext}`,
     const message = error instanceof Error ? error.message : "Reflect action failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-  }
+}
