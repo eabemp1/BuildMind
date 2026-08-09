@@ -189,6 +189,17 @@ export async function POST(request: Request) {
         const projectId = String(body?.projectId ?? "").trim();
         const providedStage = String(body?.stage ?? "").trim().slice(0, 50);
         const acknowledgeDebt = Boolean(body?.acknowledgeDebt);
+        // FIX (task-repeat bug): "Replace this task" cleared client-side
+        // cache and forced a fresh generation call, but never told the
+        // server which task the founder had just explicitly rejected.
+        // Founder context/signals rarely change meaningfully within the
+        // few seconds between the original request and a replace click,
+        // so the deterministic candidate scoring (and often the LLM too)
+        // legitimately re-picked the exact same top-ranked action — the
+        // request WAS fresh, it just kept arriving at the same answer.
+        // Now the rejected action's text is threaded into the prompt as
+        // an explicit exclusion.
+        const excludeAction = String(body?.excludeAction ?? "").trim().slice(0, 500);
 
         if (userId !== routeUser.userId || !userId || !projectId) {
           emit("error", { message: "Invalid request" });
@@ -235,6 +246,7 @@ export async function POST(request: Request) {
           providedStage,
           acknowledgeDebt,
           sessionId: `today_action_stream:${projectId || "none"}:${Date.now()}`,
+          excludeAction,
         });
 
         if (tctx.debtSuppression.suppressed) {
@@ -275,6 +287,9 @@ export async function POST(request: Request) {
         adminForCache = tctx.adminClient;
         founderIntelligence = tctx.founderIntelligence;
         founderIntelligencePromptBlock = tctx.founderIntelligencePromptBlock;
+        if (excludeAction) {
+          founderIntelligencePromptBlock += `\n\nHARD CONSTRAINT: The founder just explicitly rejected this exact task moments ago: "${excludeAction}". Do NOT suggest this same task again, even reworded — pick a genuinely different highest-leverage action from the remaining candidates.`;
+        }
         personalisationCtx = tctx.personalisationCtx;
 
         const fallback = buildFallback(stage, targetUsers, problem, title, description);
