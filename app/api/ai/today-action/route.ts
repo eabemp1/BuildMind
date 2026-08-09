@@ -170,6 +170,7 @@ export async function POST(request: Request) {
       pendingTasks:      z.array(z.string().max(100)).max(5).optional(),
       completionRate:    z.number().min(0).max(100).optional(),
       acknowledgeDebt:   z.boolean().optional(),
+      excludeAction:     z.string().max(500).optional(),
     });
     const parsedBody = bodySchema.safeParse(rawBody);
     if (!parsedBody.success) {
@@ -181,6 +182,7 @@ export async function POST(request: Request) {
     const requestId = generateRequestId(); // traces this pipeline run through all log lines
     const projectId = String(body?.projectId ?? "").trim();
     const providedStage = String(body?.stage ?? "").trim().slice(0, 50);
+    const excludeAction = String(body?.excludeAction ?? "").trim().slice(0, 500);
     const clientPendingMilestones: string[] = body?.pendingMilestones ?? [];
     const clientPendingTasks: string[]       = body?.pendingTasks ?? [];
     const clientCompletionRate = body?.completionRate ?? null;
@@ -239,6 +241,7 @@ export async function POST(request: Request) {
       providedStage,
       acknowledgeDebt,
       sessionId: requestId,
+      excludeAction,
     });
 
     if (tctx.debtSuppression.suppressed) {
@@ -268,6 +271,9 @@ export async function POST(request: Request) {
     supabase = tctx.adminClient;
     founderIntelligence = tctx.founderIntelligence;
     founderIntelligencePromptBlock = tctx.founderIntelligencePromptBlock;
+    if (excludeAction) {
+      founderIntelligencePromptBlock += `\n\nHARD CONSTRAINT: The founder just explicitly rejected this exact task moments ago: "${excludeAction}". Do NOT suggest this same task again, even reworded — pick a genuinely different highest-leverage action from the remaining candidates.`;
+    }
     personalisationCtx = tctx.personalisationCtx;
     // Non-stream route still uses hoistedReflection for the Reflexion context
     // below; populate it from lastReflectionNote if available.
@@ -962,4 +968,4 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
     const message = error instanceof Error ? error.message : "Today action failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+  }
