@@ -124,11 +124,11 @@ export default function OwnerPanel() {
     window.dispatchEvent(new Event("bm_plan_changed"));
   };
 
-  const applyStatUpdate = (partial: Partial<typeof stats>) => {
+  const applyStatUpdate = async (partial: Partial<typeof stats>) => {
     updateAchievementStats(partial);
     const freshStats = getAchievementStats();
     setStats(freshStats);
-    const newBadges = checkAndUnlockAchievements();
+    const newBadges = await checkAndUnlockAchievements();
     if (newBadges.length > 0) {
       setUnlocked(getUnlocked());
       setXp(getTotalXP());
@@ -457,4 +457,4 @@ export default function OwnerPanel() {
       )}
     </div>
   );
-}
+                 }
