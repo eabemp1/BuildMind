@@ -309,32 +309,58 @@ export async function syncAchievementsFromServer(): Promise<void> {
   }
 }
 
-/** Returns newly unlocked achievements (call after any stat update) */
-export function checkAndUnlockAchievements(): Achievement[] {
+/** Returns newly unlocked achievements (call after any stat update).
+ *
+ * FIX: this used to write EVERY locally-computed candidate straight to
+ * localStorage and fire the server POST as pure fire-and-forget
+ * (`.catch(() => {})`, no `.then()` at all) — so a client/server stats
+ * disagreement meant an achievement could show as unlocked locally
+ * forever without a real row ever existing in user_achievements. The
+ * moment localStorage was cleared (cache clear, new device, PWA
+ * reinstall), it would vanish with no server copy to restore it from —
+ * the "achievements just reset" symptom. Now this awaits the server's
+ * response and only commits to localStorage (and only returns for the
+ * toast) whatever the server actually verified and persisted.
+ */
+export async function checkAndUnlockAchievements(): Promise<Achievement[]> {
   if (typeof window === "undefined") return [];
   const stats = getAchievementStats();
   const unlocked = getUnlocked();
   const unlockedIds = new Set(unlocked.map(u => u.id));
-  const newlyUnlocked: Achievement[] = [];
+  const candidates: Achievement[] = [];
 
   for (const achievement of ACHIEVEMENTS) {
     if (!unlockedIds.has(achievement.id) && achievement.condition(stats)) {
-      unlocked.push({ id: achievement.id, unlockedAt: Date.now(), seen: false });
-      updateLocalXPDisplay(achievement.xp);
-      newlyUnlocked.push(achievement);
+      candidates.push(achievement);
     }
   }
 
-  if (newlyUnlocked.length > 0) {
-    saveUnlocked(unlocked);
-    // Write to server for cross-device persistence — best-effort, never blocks
-    if (typeof window !== "undefined") {
-      fetch("/api/achievements", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: newlyUnlocked.map((a) => a.id) }),
-      }).catch(() => {});
+  if (candidates.length === 0) return [];
+
+  let verifiedIds: string[] = [];
+  try {
+    const res = await fetch("/api/achievements", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: candidates.map((a) => a.id) }),
+    });
+    if (res.ok) {
+      const data = await res.json().catch(() => null) as { verifiedIds?: string[] } | null;
+      verifiedIds = Array.isArray(data?.verifiedIds) ? data.verifiedIds : [];
     }
+  } catch {
+    // Network failure — don't commit anything locally that the server
+    // hasn't confirmed. Next call (next stat update) will retry.
+    return [];
+  }
+
+  const newlyUnlocked = candidates.filter((a) => verifiedIds.includes(a.id));
+  if (newlyUnlocked.length > 0) {
+    for (const achievement of newlyUnlocked) {
+      unlocked.push({ id: achievement.id, unlockedAt: Date.now(), seen: false });
+      updateLocalXPDisplay(achievement.xp);
+    }
+    saveUnlocked(unlocked);
   }
   return newlyUnlocked;
 }
