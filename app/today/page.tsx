@@ -433,6 +433,11 @@ function TodayContent() {
   const [aiUsage, setAiUsage] = useState<{ monthlyUsed: number; monthlyLimit: number; unlimited: boolean } | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [replacingTask, setReplacingTask] = useState(false);
+  // FIX (task-repeat bug): holds the task text just rejected via "Replace
+  // this task" so the next generation call can tell the server to exclude
+  // it. A ref (not state) since it only needs to be read inside the
+  // generation effect, not trigger a re-render on its own.
+  const lastRejectedActionRef = useRef<string | null>(null);
   const [forceActionRefresh, setForceActionRefresh] = useState(0);
   // Progressive streaming label — shows which agent is currently running
   const [streamLabel, setStreamLabel] = useState<string | null>(null);
@@ -842,6 +847,10 @@ function TodayContent() {
       pendingMilestones,
       pendingTasks,
       completionRate: project.completion_rate ?? 0,
+      // FIX (task-repeat bug): tells the server which task was just
+      // rejected via "Replace this task" so buildDecisionState() can
+      // exclude it from candidate ranking instead of re-picking it.
+      excludeAction: lastRejectedActionRef.current ?? undefined,
     });
 
     // ── Streaming path (SSE) ─────────────────────────────────────────────────
@@ -902,6 +911,11 @@ function TodayContent() {
               if (!signal.aborted) {
                 setAiAction(actionData);
                 setStreamLabel(null);
+                // FIX (task-repeat bug): clear the rejection once a new
+                // action has actually been generated — otherwise this same
+                // task text would stay excluded forever, including on
+                // tomorrow's fresh generation.
+                lastRejectedActionRef.current = null;
                 const cacheValue = { date: today, projectId, stage: currentStage, data: actionData };
                 const nowTs = Date.now().toString();
                 storage.setJSON(cacheKey, cacheValue);
@@ -938,6 +952,7 @@ function TodayContent() {
           if (json?.success && actionData) {
             setDebtSuppression(null);
             setAiAction(actionData);
+            lastRejectedActionRef.current = null;
             const cacheValue = { date: today, projectId, stage: currentStage, data: actionData };
             const nowTs = Date.now().toString();
             storage.setJSON(cacheKey, cacheValue);
@@ -1143,6 +1158,10 @@ function TodayContent() {
 
   const handlePreTaskReplace = useCallback(async () => {
     setReplacingTask(true);
+    // FIX (task-repeat bug): capture what's being rejected BEFORE it's
+    // cleared below, so the next generation call can tell the server to
+    // exclude it — see lastRejectedActionRef declaration for why.
+    lastRejectedActionRef.current = aiAction?.action ?? null;
     // Fire override signal best-effort — do NOT block the task refresh on it
     recordOverride("Not the right task right now").catch(() => {});
     // Write skip signal to founder_memory so coach knows what this founder avoids
@@ -2663,4 +2682,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-}
+  }
