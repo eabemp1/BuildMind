@@ -16,10 +16,12 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { dailyActivitySignal } from "@/lib/momentum";
 import { detectPattern, shouldSurfacePattern, type PatternResult } from "@/lib/patternDetection";
 import { recordActivity } from "@/lib/server/activityLog";
-import { checkAndCacheStageTransition } from "@/lib/server/stageTransitionCache";
+import { evaluateAndCacheStageTransition } from "@/lib/server/stageTransition";
 import { invalidateCognitionCache } from "@/lib/founderCognition";
 import { compareFounderIntelligenceOutcome } from "@/lib/learningLoop";
 import { markRecommendationObserved } from "@/lib/recommendationLifecycle";
+import { actionCategoryLabel } from "@/lib/actionClassification";
+import { deduplicateTags } from "@/lib/founderMemory";
 
 export async function POST(req: Request) {
   const supabase = await createClient();
@@ -215,7 +217,19 @@ export async function POST(req: Request) {
   }
 
   if (taskTitle) {
-    const zone = String(taskTitle).slice(0, 80);
+    // FIX: this used to store `String(taskTitle).slice(0, 80)` — a raw
+    // truncated fragment of the task sentence — as if it were a behavioral
+    // category. That's why Founder Mirror / Insights / the Today
+    // Intelligence Panel showed things like 'Comment on 3 r/Entrepreneur or
+    // r/SideProject threads today - ask solo founders t' (cut off mid-word)
+    // instead of a clean category like "direct outreach (reddit)". This
+    // exact bug was already fixed once, in lib/founderMemory.ts's
+    // observeTaskEvent() (see its comment for the same root cause) — but
+    // this route has its own SEPARATE write to the same avoidance_zones /
+    // strengths columns that never got the same fix, so the array kept
+    // accumulating garbled fragments from this path even after the other
+    // path started writing clean categories. Now both paths agree.
+    const zone = actionCategoryLabel(String(taskTitle));
     const field = outcome === "blocked" || outcome === "skipped" ? "avoidance_zones" : "strengths";
     void (async () => {
       const { data: mem } = await admin
@@ -225,23 +239,31 @@ export async function POST(req: Request) {
         .maybeSingle();
       const memoryRow = mem as { avoidance_zones?: string[]; strengths?: string[] } | null;
       const current = ((memoryRow?.[field] as string[] | undefined) ?? []).filter(Boolean);
-      if (current.length >= 10 || current.includes(zone)) return;
+      // Also runs the existing array through deduplicateTags — this lets
+      // old garbled raw-fragment entries already sitting in someone's row
+      // get squeezed out over time (dedup keeps the shorter/more-canonical
+      // form) rather than needing a separate one-off cleanup migration.
+      const next = deduplicateTags([...current, zone]);
+      if (next.length === current.length && current.includes(zone)) return;
       if (memoryRow) {
         await admin
           .from("founder_memory")
-          .update({ [field]: [...current, zone] })
+          .update({ [field]: next })
           .eq("user_id", user.id);
       } else {
         await admin
           .from("founder_memory")
-          .insert({ user_id: user.id, [field]: [zone] });
+          .insert({ user_id: user.id, [field]: next });
       }
     })().catch(() => {});
   }
 
   recordActivity(user.id, "task_completed", { stage, projectId }).catch(() => {});
   invalidateCognitionCache(user.id);
-  if (projectId) checkAndCacheStageTransition(user.id, projectId).catch(() => {});
+  // CONSOLIDATION: was checkAndCacheStageTransition() (the looser,
+  // now-retired detector) — see lib/server/stageTransition.ts for why
+  // there's now exactly one detector instead of two disagreeing ones.
+  if (projectId) evaluateAndCacheStageTransition(user.id, projectId).catch(() => {});
 
   // ── PATCH 1: Write completion to reflexion_learning_log (AWAITED) ─────────
   // FIX (duplicate-write bug): this used to insert UNCONDITIONALLY on every
@@ -341,4 +363,4 @@ export async function POST(req: Request) {
       severity: activePattern.severity,
     } : null,
   });
-      }
+    }
