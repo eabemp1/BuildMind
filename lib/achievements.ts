@@ -361,6 +361,13 @@ export async function checkAndUnlockAchievements(): Promise<Achievement[]> {
       updateLocalXPDisplay(achievement.xp);
     }
     saveUnlocked(unlocked);
+    // Page-coherence: notify same-tab listeners (e.g. Today's header XP
+    // chip) that something changed. localStorage's own "storage" event
+    // only fires in OTHER tabs, never the tab that made the write, so
+    // without this a same-tab UI has no way to know XP/level just moved.
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("bm_achievement_unlocked", { detail: { newlyUnlocked } }));
+    }
   }
   return newlyUnlocked;
 }
@@ -397,4 +404,4 @@ if (typeof window !== "undefined") {
       if (process.env.NODE_ENV === "development") console.log("Achievements reset.");
     },
   };
-}
+              }
