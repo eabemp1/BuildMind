@@ -12,7 +12,7 @@ import { getStoredStreak, incrementDailyStreak, recordTaskCompletion, syncStreak
 import { observeTaskEvent } from "@/lib/founderMemory";
 import { usePlan } from "@/lib/usePlan";
 import { syncUrgencyFromServer } from "@/lib/urgency";
-import { updateAchievementStats, checkAndUnlockAchievements, getAchievementStats } from "@/lib/achievements";
+import { updateAchievementStats, checkAndUnlockAchievements, getAchievementStats, xpToLevel, getTotalXP } from "@/lib/achievements";
 import { notifyReflectPending } from "@/lib/notifications";
 import { trackFunnelStep } from "@/lib/onboarding-analytics";
 import BuildMindLoader from "@/components/BuildMindLoader";
@@ -20,7 +20,7 @@ import MorningBriefingModal from "@/components/MorningBriefingModal";
 import RecoveryModeCard from "@/components/RecoveryModeCard";
 import { BlockerInsightCard } from "@/components/BlockerInsightCard";
 import { PaywallMoment } from "@/components/PaywallMoment";
-import { Clock, CheckCircle2, Copy, Check, Flame, Brain, Sparkles, AlertCircle, TrendingUp, RotateCcw, Zap, ArrowRight } from "lucide-react";
+import { Clock, CheckCircle2, Copy, Check, Flame, Brain, Sparkles, AlertCircle, TrendingUp, RotateCcw, Zap, ArrowRight, Trophy } from "lucide-react";
 import { storage } from "@/lib/storage";
 import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
 import { MobileCheckin } from "@/components/MobileCheckin";
@@ -426,6 +426,10 @@ function TodayContent() {
   // can't interfere with task loading if it ever fails.
   const [archetypeTags, setArchetypeTags] = useState<string[]>([]);
   const [stageNudge, setStageNudge] = useState<{ currentStage: string; nextStage: string; projectId: string | null } | null>(null);
+  // Page-coherence: XP/level chip in the always-visible header, so leveling
+  // up feels like a consequence of using Today rather than a fact you only
+  // discover by remembering Achievements exists as a separate page.
+  const [levelInfo, setLevelInfo] = useState<{ level: number; title: string } | null>(null);
 
   // AI-personalised action state
   const [aiAction, setAiAction] = useState<ActionData | null>(null);
@@ -598,6 +602,23 @@ function TodayContent() {
       })
       .catch(() => {});
   }, [userId]);
+
+  // Level chip — client-only read (localStorage XP, now server-verified
+  // before ever being committed there per the achievements fix, so this is
+  // trustworthy without its own network round-trip). Re-reads whenever an
+  // achievement toast fires so leveling up updates the header live.
+  useEffect(() => {
+    const read = () => {
+      try { setLevelInfo(xpToLevel(getTotalXP())); } catch {}
+    };
+    read();
+    window.addEventListener("storage", read);
+    window.addEventListener("bm_achievement_unlocked", read);
+    return () => {
+      window.removeEventListener("storage", read);
+      window.removeEventListener("bm_achievement_unlocked", read);
+    };
+  }, []);
 
   useEffect(() => {
     const supabase = createClient();
@@ -1719,6 +1740,22 @@ function TodayContent() {
               </span>
             </div>
           )}
+          {levelInfo && (
+            <a
+              href="/achievements"
+              style={{
+                display: "flex", alignItems: "center", gap: 5,
+                padding: "4px 9px", borderRadius: 5,
+                background: "var(--bm-intel-dim)", border: "1px solid var(--bm-intel-bd)",
+                textDecoration: "none",
+              }}
+            >
+              <Trophy size={11} color="var(--bm-intel2)" />
+              <span style={{ fontSize: 11, fontWeight: 400, color: "var(--bm-intel2)", fontFamily: "'DM Mono', monospace" }}>
+                Lv {levelInfo.level} · {levelInfo.title}
+              </span>
+            </a>
+          )}
           </div>
         </div>
 
@@ -2682,4 +2719,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-  }
+        }
