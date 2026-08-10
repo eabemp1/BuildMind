@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { getUnseenCount } from "@/lib/achievements";
 import { type Plan, canAccess, syncStreakFromServer } from "@/lib/plan";
+import { useActiveProjectId } from "@/lib/queries";
 import { usePlan } from "@/lib/usePlan";
 import { useTheme } from "@/components/layout/theme-provider";
 import CofounderPulse from "@/components/CofounderPulse";
@@ -108,6 +109,35 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
   // Init to 99 so nav items render unlocked immediately on new devices.
   // syncTasksCompletedFromServer() overwrites with the real server value on mount.
   const [tasksCompleted, setTasksCompleted] = useState(99);
+  // Page-coherence nav badges — see lib/crossPageSignals.ts.
+  const [crossPageBadges, setCrossPageBadges] = useState<Record<string, string>>({});
+  const activeProjectId = useActiveProjectId();
+
+  useEffect(() => {
+    const qs = activeProjectId ? `?projectId=${encodeURIComponent(activeProjectId)}` : "";
+    fetch(`/api/cross-page-signals${qs}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json: { signals?: Array<{ page: string; href: string; badge: string }> } | null) => {
+        if (!json?.signals) return;
+        // Keyed by the STATIC nav href (e.g. "/projects"), not each
+        // signal's own href (which for "projects" is a dynamic
+        // "/projects/{id}" deep link used elsewhere, e.g. a Today
+        // callout) — so the badge actually matches up against the fixed
+        // entries in lib/nav-config.ts's NAV array.
+        const NAV_HREF_BY_PAGE: Record<string, string> = {
+          progress: "/progress",
+          "founder-mirror": "/founder-mirror",
+          projects: "/projects",
+        };
+        const map: Record<string, string> = {};
+        for (const s of json.signals) {
+          const navHref = NAV_HREF_BY_PAGE[s.page];
+          if (navHref) map[navHref] = s.badge;
+        }
+        setCrossPageBadges(map);
+      })
+      .catch(() => {});
+  }, [activeProjectId]);
 
   useEffect(() => {
     const checkPending = () => {
@@ -213,12 +243,16 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
           }
           const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
           const showLock = !!item.requiredPlan && !hasPlanAccess(plan, item.requiredPlan as Plan);
+          // Page-coherence: a live signal (e.g. "2 at risk", "3 patterns")
+          // overrides the item's static config badge (like "NEW") when one
+          // exists for this href — see lib/crossPageSignals.ts.
+          const liveBadge = crossPageBadges[item.href];
           return (
             <React.Fragment key={item.href}>
               {sectionLabel && <SectionLabel label={sectionLabel} />}
               <NavItem
                 href={item.href} label={item.label} icon={item.icon as React.ElementType}
-                active={active} badge={item.badge} showLock={showLock}
+                active={active} badge={liveBadge ?? item.badge} showLock={showLock}
                 showDot={item.showDot} reflectPending={reflectPending}
                 unseenBadges={unseenBadges} onClick={onNavClick}
               />
@@ -368,4 +402,4 @@ export default function Sidebar() {
       </AnimatePresence>
     </>
   );
-}
+            }
