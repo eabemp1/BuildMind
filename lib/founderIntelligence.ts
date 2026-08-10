@@ -514,6 +514,23 @@ export function buildFounderIntelligenceState(input: FounderIntelligenceInput): 
   const activeMilestones = milestones.filter((m) => m.status !== "completed" && m.status !== "abandoned");
   const stalledMilestones = activeMilestones.filter((m) => daysBetween(now, m.updated_at ?? m.created_at) >= 7);
   const stage = String(project.startup_stage ?? founderContext.current_stage ?? "Idea");
+  // FIX (stale placeholder milestone bug): the roadmap seeder
+  // (app/api/ai/generate-roadmap/route.ts) creates one milestone per
+  // roadmap stage, titled literally "Idea", "Validation", "MVP", "Launch",
+  // "Growth". A project's overall stage (project.startup_stage) can
+  // advance independently via inferStage() without the founder ever
+  // marking that early placeholder card "completed" — so it stays
+  // `activeMilestones[0]` (oldest by created_at) forever. That meant
+  // current_goal below silently resolved to the literal word "Idea" on
+  // projects that had genuinely progressed to Launch/Growth, poisoning
+  // every downstream decision-candidate sentence that interpolates
+  // current_goal. Prefer a milestone with founder-specific content; only
+  // fall back to a placeholder-titled one (then stagePriority) if nothing
+  // else is active.
+  const ROADMAP_STAGE_PLACEHOLDER_TITLES = new Set(["idea", "validation", "mvp", "launch", "growth", "revenue"]);
+  const meaningfulActiveMilestones = activeMilestones.filter(
+    (m) => !ROADMAP_STAGE_PLACEHOLDER_TITLES.has(String(m.title ?? "").trim().toLowerCase()),
+  );
   const statedPriorities = unique([stagePriority(stage), ...activeMilestones.slice(0, 3).map((m) => m.title)]);
   const observedPriorities = unique(completedThisWeek.map((r) => actionCategory(String(r.today_action ?? r.note ?? ""))));
   const contradictionSignals = signals.filter((s) => s.type === "BEHAVIOR_STRATEGY_CONTRADICTION");
@@ -558,7 +575,7 @@ export function buildFounderIntelligenceState(input: FounderIntelligenceInput): 
   };
 
   const startup: StartupState = {
-    current_goal: activeMilestones[0]?.title ?? stagePriority(stage),
+    current_goal: meaningfulActiveMilestones[0]?.title ?? stagePriority(stage),
     active_milestones: activeMilestones.map((m) => String(m.title)).slice(0, 5),
     stalled_milestones: stalledMilestones.map((m) => String(m.title)).slice(0, 5),
     current_projects: unique([project.name, project.title], 3),
@@ -850,4 +867,4 @@ export async function loadFounderIntelligence(
     logError("founderIntelligence/loadFounderIntelligence", err, { userId, projectId });
     return buildFounderIntelligenceState({ ...preloaded, now });
   }
-  }
+}
