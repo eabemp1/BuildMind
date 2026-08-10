@@ -1175,20 +1175,18 @@ export default function AdminPage() {
   const [data, setData]         = useState<DashboardPayload | null>(null);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState<string | null>(null);
-  const [tab, setTab]           = useState<Tab>("overview");
+  // Initialize from URL hash on first render (for redirect URLs like /admin#ai)
+  const [tab, setTab]           = useState<Tab>(() => {
+    if (typeof window === "undefined") return "overview";
+    const h = window.location.hash.replace("#", "");
+    return VALID_TABS.has(h) ? (h as Tab) : "overview";
+  });
   const [override, setOverride] = useState<AdminUser | null>(null);
 
   // Sync tab → URL hash so bookmarks and redirects work
   useEffect(() => {
     if (typeof window !== "undefined") window.location.hash = tab;
   }, [tab]);
-
-  // Read hash on first mount (for redirect URLs like /admin#growth)
-  useEffect(() => {
-    const h = window.location.hash.replace("#", "");
-    if (VALID_TABS.has(h) && h !== tab) setTab(h as Tab);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
