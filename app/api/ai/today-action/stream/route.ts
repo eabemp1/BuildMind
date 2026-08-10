@@ -488,7 +488,19 @@ ${baseForC}`,
           fallback.message,
         );
         const deterministicCandidate = founderIntelligence?.decision.top_candidate ?? null;
-        const finalAction = deterministicCandidate?.action ?? parsed.action;
+        // FIX (blend, not override): finalAction used to prefer
+        // deterministicCandidate.action — a hand-written template string
+        // (see buildDecisionState in lib/founderIntelligence.ts). Since
+        // "continue_best_next_task" is pushed unconditionally with no
+        // signal gate, top_candidate is almost never null, so the template
+        // was winning over Agent A/C's actual output on nearly every
+        // request, making the whole three-agent pipeline above pointless
+        // for the headline text. The decision layer's reasoning is still
+        // fed to Agent A/C as required framing upstream (via
+        // founderIntelligencePromptBlock) and is still surfaced below as
+        // decisionReason/decisionBasis — it just no longer replaces the
+        // AI's own composed sentence.
+        const finalAction = parsed.action;
         const decisionReason = deterministicCandidate?.why_it_beats_alternatives;
 
         // rationale — use from parsed output, fall back to a generic sentence
