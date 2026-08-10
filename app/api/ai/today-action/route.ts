@@ -862,11 +862,28 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
       };
     } = {
       ...fallback,
-      // Card title: short imperative extracted from reflexion output
-      action: founderIntelligence?.decision.top_candidate?.action ?? extractActionTitle(reflexionOutput?.output ?? "", fallback.action),
+      // Card title: short imperative extracted from reflexion output.
+      // FIX (blend, not override): this used to fall back to
+      // founderIntelligence.decision.top_candidate.action first — a
+      // hand-written template string with two blanks filled in
+      // (currentGoal/target). Since "continue_best_next_task" is pushed
+      // unconditionally in buildDecisionState() with no signal gate,
+      // top_candidate is almost never null, so that template was winning
+      // over the actual Reflexion Loop output on nearly every request —
+      // the Generator/Critic/Verifier/Refiner ran (and cost tokens) but
+      // its text was discarded. The template's decision/signals are still
+      // fed into the Reflexion Loop as required framing via
+      // founderIntelligencePromptBlock (see taskSeed above and
+      // buildFounderIntelligencePromptBlock's INSTRUCTION line) — so the
+      // AI is told to honor the top candidate's direction, but the final
+      // displayed text is always the AI's own composed sentence, not the
+      // raw template.
+      action: extractActionTitle(reflexionOutput?.output ?? "", fallback.action),
       // Full body stored separately so the UI can show detail if needed
       ...(reflexionOutput?.output ? { body: cleanVisibleText(reflexionOutput.output, "") } : {}),
-      // If reflexion ran, its rationale becomes the task's why
+      // If reflexion ran, its rationale becomes the task's why. The
+      // decision layer's "why it beats alternatives" is still appended as
+      // supporting context, but no longer replaces the AI's own reasoning.
       why: founderIntelligence?.decision.top_candidate
         ? `${cleanVisibleText(reflexionOutput?.rationale, fallback.why)} ${founderIntelligence.decision.top_candidate.why_it_beats_alternatives}`
         : cleanVisibleText(reflexionOutput?.rationale, fallback.why),
