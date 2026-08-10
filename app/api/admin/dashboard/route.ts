@@ -336,14 +336,14 @@ export async function GET() {
     .sort((a, b) => a.date.localeCompare(b.date));
 
   // Per-context breakdown
-  const contextMap: Record<string, { pass: number; fail: number }> = {};
+  const qualityContextMap: Record<string, { pass: number; fail: number }> = {};
   for (const e of qEntries) {
     const ctx = e.context ?? "unknown";
-    if (!contextMap[ctx]) contextMap[ctx] = { pass: 0, fail: 0 };
-    if (e.verdict === "pass") contextMap[ctx].pass++;
-    else if (e.verdict === "fail") contextMap[ctx].fail++;
+    if (!qualityContextMap[ctx]) qualityContextMap[ctx] = { pass: 0, fail: 0 };
+    if (e.verdict === "pass") qualityContextMap[ctx].pass++;
+    else if (e.verdict === "fail") qualityContextMap[ctx].fail++;
   }
-  const contextBreakdown = Object.entries(contextMap)
+  const contextBreakdown = Object.entries(qualityContextMap)
     .map(([context, { pass, fail }]) => ({
       context, pass, fail, total: pass + fail,
       passRate: pass + fail > 0 ? Math.round((pass / (pass + fail)) * 100) : null,
