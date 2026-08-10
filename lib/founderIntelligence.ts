@@ -615,7 +615,7 @@ export function buildFounderIntelligenceState(input: FounderIntelligenceInput): 
     generated_at: now.toISOString(),
   };
 
-  const decision = buildDecisionState({ ...stateWithoutDecision, decision: { candidates: [], top_candidate: null, decision_basis: [] } }, preloaded.excludeAction);
+  const decision = buildDecisionState({ ...stateWithoutDecision, decision: { candidates: [], top_candidate: null, decision_basis: [] } }, input.excludeAction);
 
   return { ...stateWithoutDecision, decision };
 }
@@ -850,4 +850,4 @@ export async function loadFounderIntelligence(
     logError("founderIntelligence/loadFounderIntelligence", err, { userId, projectId });
     return buildFounderIntelligenceState({ ...preloaded, now });
   }
-}
+  }
