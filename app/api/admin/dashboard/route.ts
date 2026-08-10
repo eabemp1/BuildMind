@@ -295,29 +295,72 @@ export async function GET() {
 
   // ── 9. Quality summary ────────────────────────────────────────────────────
   // reflexion_log / reflexion_quality_log may not exist pre-migration — degrade.
-  let qualityRows: Array<{ passed: boolean; created_at: string }> | null = null;
+  type QualityRow = { verdict: string; reject_reason: string | null; context: string | null; created_at: string };
+  let qualityRows: QualityRow[] | null = null;
   try {
     const { data, error: qErr } = await admin
       .from("reflexion_quality_log")
-      .select("verdict, created_at")
+      .select("verdict, reject_reason, context, created_at")
       .gte("created_at", daysAgo(30));
-    if (!qErr && data) {
-      qualityRows = data.map(r => ({ passed: r.verdict === "pass", created_at: r.created_at }));
-    }
+    if (!qErr && data) qualityRows = data as QualityRow[];
   } catch {
     // table not yet created — quality section returns nulls
   }
 
-  const total = qualityRows?.length ?? 0;
-  const totalPass = qualityRows?.filter(r => r.passed).length ?? 0;
+  const qEntries = qualityRows ?? [];
+  const total = qEntries.length;
+  const totalPass = qEntries.filter(r => r.verdict === "pass").length;
+  const totalFail = qEntries.filter(r => r.verdict === "fail").length;
   const overallPassRate = total > 0 ? Math.round((totalPass / total) * 100) : null;
 
-  const recent = qualityRows?.filter(r => new Date(r.created_at) >= new Date(daysAgo(7))) ?? [];
-  const recentPass = recent.filter(r => r.passed).length;
+  const recent = qEntries.filter(r => new Date(r.created_at) >= new Date(daysAgo(7)));
+  const recentPass = recent.filter(r => r.verdict === "pass").length;
   const recentPassRate = recent.length > 0 ? Math.round((recentPass / recent.length) * 100) : null;
   const qualityAlert = recentPassRate !== null && recentPassRate < 60
     ? `Pass rate dropped to ${recentPassRate}% in the last 7 days — check Reflexion Loop output.`
     : null;
+
+  // Daily pass rate — last 30 days
+  const dailyMap: Record<string, { pass: number; fail: number }> = {};
+  for (const e of qEntries) {
+    const day = e.created_at.slice(0, 10);
+    if (!dailyMap[day]) dailyMap[day] = { pass: 0, fail: 0 };
+    if (e.verdict === "pass") dailyMap[day].pass++;
+    else if (e.verdict === "fail") dailyMap[day].fail++;
+  }
+  const dailyTrend = Object.entries(dailyMap)
+    .map(([date, { pass, fail }]) => ({
+      date, pass, fail, total: pass + fail,
+      passRate: pass + fail > 0 ? Math.round((pass / (pass + fail)) * 100) : null,
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  // Per-context breakdown
+  const contextMap: Record<string, { pass: number; fail: number }> = {};
+  for (const e of qEntries) {
+    const ctx = e.context ?? "unknown";
+    if (!contextMap[ctx]) contextMap[ctx] = { pass: 0, fail: 0 };
+    if (e.verdict === "pass") contextMap[ctx].pass++;
+    else if (e.verdict === "fail") contextMap[ctx].fail++;
+  }
+  const contextBreakdown = Object.entries(contextMap)
+    .map(([context, { pass, fail }]) => ({
+      context, pass, fail, total: pass + fail,
+      passRate: pass + fail > 0 ? Math.round((pass / (pass + fail)) * 100) : null,
+    }))
+    .sort((a, b) => b.total - a.total);
+
+  // Top reject reasons
+  const reasonMap: Record<string, number> = {};
+  for (const e of qEntries) {
+    if (e.verdict === "fail" && e.reject_reason) {
+      reasonMap[e.reject_reason] = (reasonMap[e.reject_reason] ?? 0) + 1;
+    }
+  }
+  const topRejectReasons = Object.entries(reasonMap)
+    .map(([reason, count]) => ({ reason, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10);
 
   // ── 10. Operator gate metrics ─────────────────────────────────────────────
   // briefing_opens table may not exist — degrade to 0
@@ -361,7 +404,7 @@ export async function GET() {
     ai_usage: aiUsageTable,
     funnel,
     activity,
-    quality: { total, overallPassRate, recentPassRate, qualityAlert },
+    quality: { total, totalPass, totalFail, overallPassRate, recentPassRate, qualityAlert, dailyTrend, contextBreakdown, topRejectReasons },
     operator_gate: { briefing_open_rate, task_completion_rate, day: operatorDay },
     last_updated: new Date().toISOString(),
   });
