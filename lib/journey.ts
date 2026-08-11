@@ -27,6 +27,7 @@ import {
   type RubricCategory,
 } from "@/lib/journeyCurriculum";
 import { xpForEvent, levelForXp, computeStreak, JOURNEY_ACHIEVEMENTS, type JourneyXpEventType, type LevelProgress, type StreakResult, type JourneyAchievementStats } from "@/lib/journeyGamification";
+import { getLessonsForModule, getExercisesForModule, getLessonById, getExerciseById, type JourneyLesson, type JourneyExercise } from "@/lib/journeyContent";
 
 // ─── XP ledger (Phase 5) ─────────────────────────────────────────────────────
 //
@@ -68,6 +69,93 @@ async function getTotalXp(identityColumn: IdentityColumn, identityValue: string)
     return 0;
   }
   return (data ?? []).reduce((sum, row) => sum + (row.xp ?? 0), 0);
+}
+
+// ─── Learn + Practice (lessons and exercises, content in lib/journeyContent.ts) ──
+//
+// Completion is tracked as a side effect of the XP ledger rather than a
+// separate table: a 'lesson_completed' or 'exercise_completed' event with
+// source_id = the lesson/exercise id IS the completion record. One fewer
+// table, and "has she done this" and "how much XP has she earned" can
+// never drift apart, because they're the same row.
+
+async function hasCompletedActivity(
+  identityColumn: IdentityColumn,
+  identityValue: string,
+  eventType: "lesson_completed" | "exercise_completed",
+  sourceId: string,
+): Promise<boolean> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("journey_xp_events")
+    .select("id")
+    .eq(identityColumn, identityValue)
+    .eq("event_type", eventType)
+    .eq("source_id", sourceId)
+    .maybeSingle();
+
+  if (error) {
+    logError("journey.hasCompletedActivity", error);
+    return false; // fail open on the check — worst case, XP is awarded once redundantly, not blocked
+  }
+  return data !== null;
+}
+
+export interface CompletionResult {
+  alreadyCompleted: boolean;
+}
+
+export async function completeLesson(identityColumn: IdentityColumn, identityValue: string, lessonId: string): Promise<CompletionResult> {
+  const lesson = getLessonById(lessonId);
+  if (!lesson) throw new Error(`Unknown lesson id: ${lessonId}`);
+
+  const already = await hasCompletedActivity(identityColumn, identityValue, "lesson_completed", lessonId);
+  if (!already) await awardXp(identityColumn, identityValue, "lesson_completed", lessonId);
+  return { alreadyCompleted: already };
+}
+
+export async function completeExercise(identityColumn: IdentityColumn, identityValue: string, exerciseId: string): Promise<CompletionResult> {
+  const exercise = getExerciseById(exerciseId);
+  if (!exercise) throw new Error(`Unknown exercise id: ${exerciseId}`);
+
+  const already = await hasCompletedActivity(identityColumn, identityValue, "exercise_completed", exerciseId);
+  if (!already) await awardXp(identityColumn, identityValue, "exercise_completed", exerciseId);
+  return { alreadyCompleted: already };
+}
+
+export interface LessonWithStatus extends JourneyLesson {
+  completed: boolean;
+}
+export interface ExerciseWithStatus extends JourneyExercise {
+  completed: boolean;
+}
+
+/** Fetches this module's lessons/exercises annotated with per-student completion. */
+async function getModuleContentWithStatus(
+  identityColumn: IdentityColumn,
+  identityValue: string,
+  moduleOrder: number,
+): Promise<{ lessons: LessonWithStatus[]; exercises: ExerciseWithStatus[] }> {
+  const lessons = getLessonsForModule(moduleOrder);
+  const exercises = getExercisesForModule(moduleOrder);
+
+  const admin = createAdminClient();
+  const { data: completedRows } = await admin
+    .from("journey_xp_events")
+    .select("event_type, source_id")
+    .eq(identityColumn, identityValue)
+    .in("event_type", ["lesson_completed", "exercise_completed"])
+    .in(
+      "source_id",
+      [...lessons.map((l) => l.id), ...exercises.map((e) => e.id)],
+    );
+
+  const completedIds = new Set((completedRows ?? []).map((r) => r.source_id));
+
+  return {
+    lessons: lessons.map((l) => ({ ...l, completed: completedIds.has(l.id) })),
+    exercises: exercises.map((e) => ({ ...e, completed: completedIds.has(e.id) })),
+  };
 }
 
 function hydrateAchievements(unlocked: UnlockedAchievement[]) {
@@ -255,6 +343,8 @@ export interface TodayMission {
    */
   latestGrade: LatestGrade | null;
   remediation: RemediationTip[];
+  lessons: LessonWithStatus[];
+  exercises: ExerciseWithStatus[];
 }
 
 /** Fetches the most recent grade for a project, if any (used for remediation). */
@@ -585,6 +675,7 @@ export async function getTodayMissionForStudent(studentId: string): Promise<Toda
   const remediation = needsRemediation
     ? await getRemediationForProject("student_id", studentId, path.current_module_order)
     : [];
+  const { lessons, exercises } = await getModuleContentWithStatus("student_id", studentId, path.current_module_order);
 
   return {
     moduleOrder: module_.order,
@@ -596,6 +687,8 @@ export async function getTodayMissionForStudent(studentId: string): Promise<Toda
     progressPct,
     latestGrade,
     remediation,
+    lessons,
+    exercises,
   };
 }
 
@@ -833,6 +926,7 @@ export async function getTodayMission(userId: string): Promise<TodayMission> {
   const remediation = needsRemediation
     ? await getRemediationForProject("user_id", userId, path.current_module_order)
     : [];
+  const { lessons, exercises } = await getModuleContentWithStatus("user_id", userId, path.current_module_order);
 
   return {
     moduleOrder: module_.order,
@@ -844,6 +938,8 @@ export async function getTodayMission(userId: string): Promise<TodayMission> {
     progressPct,
     latestGrade,
     remediation,
+    lessons,
+    exercises,
   };
 }
 
