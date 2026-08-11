@@ -92,7 +92,7 @@ vi.mock("../../lib/server/logger", () => ({
   logError: vi.fn(),
 }));
 
-import { gradeSubmission, checkAndUnlockJourneyAchievements } from "../../lib/journey";
+import { gradeSubmission, checkAndUnlockJourneyAchievements, completeLesson, completeExercise } from "../../lib/journey";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -435,6 +435,88 @@ describe("gradeSubmission — error handling", () => {
 
     await expect(gradeSubmission("mentor-001", SUBMISSION_ID, { score: 80 })).rejects.toThrow(
       "Failed to record grade",
+    );
+  });
+});
+
+// ── completeLesson / completeExercise — idempotent completion + XP award ──────
+
+describe("completeLesson", () => {
+  beforeEach(resetBuilders);
+
+  it("awards lesson_completed XP the first time a real lesson is completed", async () => {
+    table("journey_xp_events").__state.maybeSingle.mockResolvedValue({ data: null, error: null }); // not yet completed
+
+    const result = await completeLesson("user_id", "user-abc", "m1-fundamentals");
+
+    expect(result.alreadyCompleted).toBe(false);
+    const insertCall = table("journey_xp_events").__state.insert.mock.calls[0][0];
+    expect(insertCall.event_type).toBe("lesson_completed");
+    expect(insertCall.source_id).toBe("m1-fundamentals");
+    expect(insertCall.user_id).toBe("user-abc");
+    expect(insertCall.xp).toBe(10);
+  });
+
+  it("does NOT award XP again if the lesson was already completed", async () => {
+    table("journey_xp_events").__state.maybeSingle.mockResolvedValue({
+      data: { id: "existing-event" },
+      error: null,
+    }); // already completed
+
+    const result = await completeLesson("user_id", "user-abc", "m1-fundamentals");
+
+    expect(result.alreadyCompleted).toBe(true);
+    expect(table("journey_xp_events").__state.insert).not.toHaveBeenCalled();
+  });
+
+  it("throws for an unknown lesson id rather than silently awarding XP", async () => {
+    await expect(completeLesson("user_id", "user-abc", "not-a-real-lesson")).rejects.toThrow(
+      "Unknown lesson id",
+    );
+    expect(table("journey_xp_events").__state.insert).not.toHaveBeenCalled();
+  });
+
+  it("uses the student_id column on the token-link path", async () => {
+    table("journey_xp_events").__state.maybeSingle.mockResolvedValue({ data: null, error: null });
+
+    await completeLesson("student_id", "student-xyz", "m1-fundamentals");
+
+    const insertCall = table("journey_xp_events").__state.insert.mock.calls[0][0];
+    expect(insertCall.student_id).toBe("student-xyz");
+    expect(insertCall.user_id).toBeUndefined();
+  });
+});
+
+describe("completeExercise", () => {
+  beforeEach(resetBuilders);
+
+  it("awards exercise_completed XP the first time a real exercise is completed", async () => {
+    table("journey_xp_events").__state.maybeSingle.mockResolvedValue({ data: null, error: null });
+
+    const result = await completeExercise("user_id", "user-abc", "m1-ex1");
+
+    expect(result.alreadyCompleted).toBe(false);
+    const insertCall = table("journey_xp_events").__state.insert.mock.calls[0][0];
+    expect(insertCall.event_type).toBe("exercise_completed");
+    expect(insertCall.source_id).toBe("m1-ex1");
+    expect(insertCall.xp).toBe(15);
+  });
+
+  it("does NOT award XP again if the exercise was already completed", async () => {
+    table("journey_xp_events").__state.maybeSingle.mockResolvedValue({
+      data: { id: "existing-event" },
+      error: null,
+    });
+
+    const result = await completeExercise("user_id", "user-abc", "m1-ex1");
+
+    expect(result.alreadyCompleted).toBe(true);
+    expect(table("journey_xp_events").__state.insert).not.toHaveBeenCalled();
+  });
+
+  it("throws for an unknown exercise id", async () => {
+    await expect(completeExercise("user_id", "user-abc", "not-a-real-exercise")).rejects.toThrow(
+      "Unknown exercise id",
     );
   });
 });
