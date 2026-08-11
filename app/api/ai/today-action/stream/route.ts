@@ -20,7 +20,7 @@ export const runtime     = "nodejs";
 export const dynamic     = "force-dynamic";
 export const maxDuration = 30;
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getWeeklyCriticPersona, groqCall, buildCriticJudgmentRule } from "@/lib/reflexion";
+import { getWeeklyCriticPersona, buildCriticJudgmentRule } from "@/lib/reflexion";
 import { buildCofounderJudgment } from "@/lib/cofounderJudgment";
 import { callModelJSON, sanitizeModelOutput } from "@/lib/ai-providers";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
@@ -29,7 +29,7 @@ import { buildDebtPromptInjection, computeExecutionDebt, debtSuppressesTask, mar
 import { recordActivity } from "@/lib/server/activityLog";
 import { buildKnowledgeBaseContext, searchFounderKnowledgeBase, type FounderKnowledgeMatch } from "@/lib/founderKnowledgeBase";
 import { loadCognitionInput, synthesizeFounderCognition, buildCognitionPromptBlock } from "@/lib/founderCognition";
-import { evaluateAIOutput } from "@/lib/aiEvaluator";
+import { evaluateAIOutput, failsHardPreScreen } from "@/lib/aiEvaluator";
 import { getPromptForRequest, loadActivePrompts } from "@/lib/promptRegistry";
 import { upsertTodayActionCache } from "@/lib/todayActionCache";
 import { buildTodayPersonalisationContext } from "@/lib/todayPersonalisationContext";
@@ -149,21 +149,47 @@ function buildFallback(stage: string, targetUsers: string, problem: string, titl
 // ── PATCH 3: parseAgentOutput ────────────────────────────────────────────────
 // Extracts TASK, RATIONALE, DRAFT from the structured agent output.
 // Replaces buildPersonalizedTodayDraft — the AI draft is used directly.
-function parseAgentOutput(
-  raw: string,
-  fallbackAction: string,
-  fallbackMessage: string,
-): { action: string; rationale: string; draft: string } {
-  // Support both labeled (TASK: ...) and unlabeled output (graceful degradation)
-  const taskMatch = raw.match(/TASK:\s*([\s\S]+?)(?:\n|RATIONALE:|$)/);
-  const rationaleMatch = raw.match(/RATIONALE:\s*([\s\S]+?)(?:\n|DRAFT:|$)/);
-  const draftMatch = raw.match(/DRAFT:\s*([\s\S]+)$/);
-  const action = taskMatch?.[1]?.trim() || fallbackAction;
-  const rationale = rationaleMatch?.[1]?.trim() || "";
-  // DRAFT may span multiple lines — trim but preserve line breaks within it
-  const draft = draftMatch?.[1]?.trim() || fallbackMessage;
+// Kept in exact sync with the has_platform regex in lib/aiEvaluator.ts
+// ACTION_CHECKS. If that list changes, this must change with it — it's the
+// same list founderIntelligence.ts's OUTREACH_PLATFORMS draws from for
+// candidate templates, so all three stay aligned on one vocabulary.
+const ALLOWED_PLATFORMS = ["LinkedIn", "WhatsApp", "email", "Twitter", "phone", "in person", "Slack", "Telegram", "Instagram", "Reddit", "Product Hunt", "Indie Hackers"];
 
-  return { action, rationale, draft };
+function normalizePlatform(raw: string | undefined): string {
+  const found = ALLOWED_PLATFORMS.find((p) => (raw ?? "").toLowerCase().includes(p.toLowerCase()));
+  return found ?? "WhatsApp"; // safe, always-valid default — never leave platform empty
+}
+
+interface StructuredAction {
+  platform: string;
+  count: number;
+  user_type: string;
+  task: string;
+  rationale: string;
+  draft: string;
+}
+
+// Structural guarantee, not a hope: if the model's own `task` sentence
+// already names the platform and a number, leave it untouched. If it
+// doesn't, splice them in deterministically rather than throwing the whole
+// generation away and falling back to the generic template. This is what
+// turns has_platform/has_number from "usually true, we grade it after" into
+// "always true by construction."
+function composeConcreteTask(structured: StructuredAction): { task: string; platform: string; count: number } {
+  const platform = normalizePlatform(structured.platform);
+  const count = Number.isFinite(structured.count) && structured.count >= 1 ? Math.round(structured.count) : 3;
+  let task = (structured.task ?? "").trim();
+  const hasPlatform = new RegExp(platform.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(task);
+  const hasNumber = /\b\d+\b/.test(task);
+  if (!task) {
+    task = `Advance today's goal with ${count} ${structured.user_type || "people"} on ${platform}.`;
+  } else if (!hasPlatform || !hasNumber) {
+    const missing = [!hasNumber ? `${count} ${structured.user_type || "people"}` : null, !hasPlatform ? `on ${platform}` : null]
+      .filter(Boolean)
+      .join(" ");
+    task = `${task.replace(/[.!?]\s*$/, "")} — ${missing}.`;
+  }
+  return { task, platform, count };
 }
 
 export async function POST(request: Request) {
@@ -321,11 +347,18 @@ export async function POST(request: Request) {
         // rather than via runReflexionLoop(), so it's injected directly.
         const regionalContextLine = founderCountry ? `\n${formatRegionalContextBlock(founderCountry)}` : "";
 
-        // ── PATCH 1: systemA — structured TASK/RATIONALE/DRAFT output ────────
-        // Old prompt: "Return a single concrete task" → model returns one headline, stops.
-        // New prompt: structured output with a real paste-ready draft using actual
-        // product name and target user. Avoidance pattern named explicitly in RATIONALE.
-        // Token limit raised from 300 to 600 to give space for DRAFT.
+        // ── Structured output, not prose-then-regex ───────────────────────
+        // Previously this was one free-text completion parsed by a regex
+        // hunting for "TASK:"/"RATIONALE:"/"DRAFT:" labels. Every instruction
+        // block added above this point (goals, blockers, cognitive load,
+        // FI OS state, debt context...) increased the chance the model's
+        // output format drifted under the combined load, which silently
+        // failed the regex and fell back to the generic template — which is
+        // why strengthening the system kept making Today tasks *more*
+        // generic, not less. platform/count/user_type are now required JSON
+        // fields: the model cannot omit them without a parse failure we
+        // catch explicitly, and composeConcreteTask() repairs the sentence
+        // deterministically even if the model's own phrasing is loose.
         const systemA = `You are BuildMind — a brutally honest execution coach for solo founders. You know this founder's behavioral patterns and avoidance zones.
 
 ${projectContext ? `FOUNDER DATA:\n${projectContext}` : ""}
@@ -340,38 +373,49 @@ ${founderIntelligencePromptBlock ? `\n${founderIntelligencePromptBlock}` : ""}
 ${lastReflectionContext}
 ${debtContext}
 
-Output EXACTLY this structure — no preamble, no extra text:
-
-TASK: [One sentence. Specific number, exact platform, exact user type. Completable in under 1 hour. No generics like "some users" or "relevant communities".]
-RATIONALE: [One sentence starting with "Because". Name the specific avoidance pattern, blocker, or reflection outcome this directly addresses.]
-DRAFT: [A 2–3 sentence paste-ready message the founder can send TODAY. Use the actual product name (${title || "their product"}) and actual target user type (${targetUsers || "their users"}). No placeholder brackets like [Name], [Company], [Your Product]. Address the recipient's specific context.]
-
-EXAMPLE OF BAD OUTPUT:
-TASK: Message some users today about your product.
-RATIONALE: Because you need validation.
-DRAFT: Hi [Name], I wanted to reach out about my startup and get your thoughts.
-
-EXAMPLE OF GOOD OUTPUT (if product is BuildMind, targeting solo founders):
-TASK: Message 3 solo SaaS founders on LinkedIn today — ask if they track their daily execution pattern, not about BuildMind.
-RATIONALE: Because you've avoided cold outreach for 4 days and every insight in your DB came from a conversation, not a dashboard.
-DRAFT: Hi [Name], quick question — do you have any system for tracking whether you're actually following through on daily priorities, or does it just live in your head? Building something in this space and trying to understand how founders currently handle it.
+Return JSON with exactly these fields:
+{
+  "platform": one of ${JSON.stringify(ALLOWED_PLATFORMS)},
+  "count": integer 1-10 — how many people/actions,
+  "user_type": the specific user type this targets (use "${targetUsers || "their target users"}" unless the founder data clearly points elsewhere),
+  "task": one sentence, completable in under 1 hour, naming the platform and count explicitly. No generics like "some users" or "relevant communities".
+  "rationale": one sentence starting with "Because" — name the specific avoidance pattern, blocker, or reflection outcome this directly addresses.
+  "draft": a 2-3 sentence paste-ready message using the actual product name (${title || "their product"}) and actual target user type. No placeholder brackets like [Name], [Company], [Your Product].
+}
 
 HARD RULES:
-1. TASK must NOT be semantically equivalent to any task in the RECENT ACTION HISTORY above.
-2. DRAFT must use the actual product name and actual target user — never placeholder brackets.
-3. If a blocker or avoidance zone is present, TASK or RATIONALE must name it explicitly.
-4. DRAFT must not contain [Name], [Company], [Your Product], [Target Audience].`;
+1. "task" must NOT be semantically equivalent to any task in the RECENT ACTION HISTORY above.
+2. "draft" must use the actual product name and actual target user — never placeholder brackets.
+3. If a blocker or avoidance zone is present, "task" or "rationale" must name it explicitly.
+4. "draft" must not contain [Name], [Company], [Your Product], [Target Audience].`;
 
-        let agentAOutput = "";
+        let structuredA: StructuredAction;
         try {
-          agentAOutput = await groqCall(
-            [{ role: "system", content: systemA }, { role: "user", content: "Give me today's single most important task." }],
-            0.6, 1000  // Raised to 1000 — gives DRAFT enough room to complete
+          structuredA = await callModelJSON<StructuredAction>(
+            [{ role: "system", content: systemA }, { role: "user", content: "Give me today's single most important task. Return JSON only." }],
+            { role: "reasoning", temperature: 0.6, maxTokens: 700 },
           );
         } catch {
-          agentAOutput = `TASK: ${fallback.action}\nRATIONALE: Because you're at ${stage} stage and this is the highest-leverage move today.\nDRAFT: ${fallback.message}`;
+          structuredA = {
+            platform: normalizePlatform(fallback.platform),
+            count: 3,
+            user_type: targetUsers || "your target users",
+            task: fallback.action,
+            rationale: `Because you're at ${stage} stage and this is the highest-leverage move today.`,
+            draft: fallback.message,
+          };
         }
-        agentAOutput = cleanVisibleText(agentAOutput, `TASK: ${fallback.action}\nRATIONALE: Because this is the highest-leverage move today.\nDRAFT: ${fallback.message}`);
+        const composedA = composeConcreteTask(structuredA);
+        const agentAFields = {
+          task: composedA.task,
+          rationale: cleanVisibleText(structuredA.rationale, `Because this is the highest-leverage move today.`),
+          draft: cleanVisibleText(structuredA.draft, fallback.message),
+        };
+        // agentAOutput kept as a display blob purely so the Critic prompt
+        // below (which evaluates free text) and the eval/log pipeline don't
+        // need to change shape — the fields feeding it are now guaranteed,
+        // not parsed.
+        const agentAOutput = `TASK: ${agentAFields.task}\nRATIONALE: ${agentAFields.rationale}\nDRAFT: ${agentAFields.draft}`;
 
         emit("agent_a", { status: "done", output: agentAOutput });
 
@@ -431,62 +475,50 @@ Context: Stage=${stage}, Target users=${targetUsers || "unknown"}, Product=${tit
         // ── Agent C — Refiner ─────────────────────────────────────────────
         emit("agent_c", { status: "running", label: "Agent C refining final version…" });
 
-        const baseForC = criticVerdict === "fail" && improvedVersion
-          ? `${agentAOutput}\n\n[CRITIC SUGGESTED IMPROVED TASK: ${improvedVersion}]`
-          : agentAOutput;
         const refineMode = criticVerdict === "fail"
-          ? "REBUILD: The original task was rejected. Rewrite the TASK line to be sharper and more specific. Keep RATIONALE and DRAFT if they are good, or rewrite them to match the new task."
+          ? `REBUILD: The original task was rejected.${improvedVersion ? ` Critic's suggested improved task: "${improvedVersion}".` : ""} Rewrite "task" to be sharper and more specific. Keep "rationale" and "draft" if they are good, or rewrite them to match the new task.`
           : "POLISH: Tighten wording only — do not change substance.";
 
-        let refined = baseForC;
-
+        let structuredC: StructuredAction = structuredA;
         try {
-          // ── PATCH 2: Agent C preserves TASK/RATIONALE/DRAFT structure ────
-          // Old prompt: "2-3 sentences max" — collapsed the structure.
-          // New prompt: explicit instruction to output all three sections.
-          // Token limit raised from 250 to 600.
-          refined = await groqCall(
+          // Same schema as Agent A — the refiner adjusts the fields, it
+          // doesn't re-enter free text. composeConcreteTask() runs on
+          // whatever comes back either way, so a refiner that loosens the
+          // wording still can't ship without platform/count present.
+          structuredC = await callModelJSON<StructuredAction>(
             [{
               role: "system",
-              // ── PATCH 2 applied here ──────────────────────────────────────
               content: `BuildMind execution engine. ${refineMode}
 
-CRITICAL: Output EXACTLY this structure, no preamble:
-
-TASK: [refined task — specific number, exact platform, exact user type, completable in 30 min]
-RATIONALE: [one sentence starting with "Because" — name the avoidance zone or blocker this addresses]
-DRAFT: [2–3 sentence paste-ready message — use actual product name (${title || "their product"}) and actual target user (${targetUsers || "their users"}), no placeholder brackets]
+Return JSON with exactly these fields: platform (one of ${JSON.stringify(ALLOWED_PLATFORMS)}), count (integer 1-10), user_type, task (specific number + exact platform, completable in 30 min), rationale (one sentence starting with "Because"), draft (2-3 sentence paste-ready message using actual product name "${title || "their product"}" and actual target user "${targetUsers || "their users"}", no placeholder brackets).
 
 Rules:
-- Never use [Name], [Company], [Your Product], [Target Audience] in DRAFT
-- TASK must name the exact platform and a specific number
-- DRAFT must be something the founder can literally copy-paste right now
+- Never use [Name], [Company], [Your Product], [Target Audience] in draft
+- task must name the exact platform and a specific number
+- draft must be something the founder can literally copy-paste right now
 
 Stage: ${stage} | Target: ${targetUsers || "not set"} | Product: ${title || "not set"}
 Critique: ${criticReason}
 
 Input to refine:
-${baseForC}`,
-            }, { role: "user", content: "Refine the output." }],
-            0.3, 1000  // Raised to 1000 — gives DRAFT enough room to complete
+${JSON.stringify(structuredA)}`,
+            }, { role: "user", content: "Refine and return JSON only." }],
+            { role: "reasoning", temperature: 0.3, maxTokens: 700 },
           );
         } catch {
-          // refiner failed — use Agent A output as-is
+          // refiner failed — structuredC stays equal to Agent A's structured output
         }
-        refined = cleanVisibleText(refined, baseForC);
+
+        const composedC = composeConcreteTask(structuredC);
+        const agentCFields = {
+          task: composedC.task,
+          rationale: cleanVisibleText(structuredC.rationale, agentAFields.rationale),
+          draft: cleanVisibleText(structuredC.draft, agentAFields.draft),
+        };
+        const refined = `TASK: ${agentCFields.task}\nRATIONALE: ${agentCFields.rationale}\nDRAFT: ${agentCFields.draft}`;
 
         emit("agent_c", { status: "done", output: refined });
 
-        // ── PATCH 3: parseAgentOutput replaces buildPersonalizedTodayDraft ──
-        // Old code: called buildPersonalizedTodayDraft which picked a hardcoded
-        // template variant and ignored everything Agent A/C produced.
-        // New code: extracts TASK, RATIONALE, DRAFT from the structured output
-        // so the message field comes from the AI-written draft.
-        const parsed = parseAgentOutput(
-          refined || agentAOutput,
-          fallback.action,
-          fallback.message,
-        );
         const deterministicCandidate = founderIntelligence?.decision.top_candidate ?? null;
         // FIX (blend, not override): finalAction used to prefer
         // deterministicCandidate.action — a hand-written template string
@@ -500,24 +532,30 @@ ${baseForC}`,
         // founderIntelligencePromptBlock) and is still surfaced below as
         // decisionReason/decisionBasis — it just no longer replaces the
         // AI's own composed sentence.
-        const finalAction = parsed.action;
+        // ── Hard pre-screen gate ──────────────────────────────────────────
+        // Kept as a final safety net even though composeConcreteTask()
+        // already guarantees platform/count structurally — this catches
+        // the has_user_type check (which composeConcreteTask doesn't
+        // enforce) and any edge case where a bad normalizePlatform() match
+        // still slipped through. A hard fail here should now be rare rather
+        // than routine, which is the actual point of this whole rewrite.
+        const preScreenTarget = targetUsers || inferProjectAudience(targetUsers, title, description, problem);
+        const preScreen = failsHardPreScreen(agentCFields.task, { stage, targetUsers: preScreenTarget });
+        const wasHardFallback = preScreen.fails;
+        const finalAction = wasHardFallback ? fallback.action : agentCFields.task;
+        const finalDraft = wasHardFallback ? fallback.message : agentCFields.draft;
         const decisionReason = deterministicCandidate?.why_it_beats_alternatives;
 
-        // rationale — use from parsed output, fall back to a generic sentence
-        const rationale = parsed.rationale ||
-          cleanVisibleText(
-            await groqCall(
-              [{ role: "system", content: `One sentence (max 15 words) explaining WHY this is right for this founder NOW. Start with "Because".` },
-               { role: "user", content: parsed.action }],
-              0.2, 60
-            ).catch(() => ""),
-            `Because you're at ${stage} stage and this is the highest-leverage move today.`
-          );
+        // rationale — comes directly from the structured field now. The old
+        // code fell back to a THIRD separate LLM call whenever the regex
+        // failed to capture a RATIONALE section; that call site is gone
+        // because there's no longer a regex that can fail here.
+        const rationale = agentCFields.rationale;
 
         const finalData = {
           ...fallback,
           action: finalAction,
-          message: parsed.draft,  // ← AI-written DRAFT, not hardcoded template
+          message: finalDraft,  // ← AI-written DRAFT, unless the hard pre-screen rejected it
           why: decisionReason ? `${rationale} ${decisionReason}` : rationale,
           stage,
           isAI: true,
@@ -538,6 +576,13 @@ ${baseForC}`,
             loopRan: true,
             passedCritic: criticVerdict !== "fail",
             lastReflectionUsed: lastReflectionContext.includes("LAST REFLECTION"),
+            // Surfaced to the client rather than hidden — if the AI's own
+            // composition failed the platform/number/user-type gate, the
+            // founder is looking at the deterministic fallback, and the UI
+            // should be able to say so instead of pretending it's the same
+            // pipeline output every other day.
+            wasHardFallback,
+            hardFallbackReasons: wasHardFallback ? preScreen.failed_checks : undefined,
           },
           // Phase 10: layers the coherence-layer summary above the existing
           // Today experience without replacing it — "what changed / what
