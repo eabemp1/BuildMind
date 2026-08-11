@@ -14,7 +14,7 @@ import { recordActivity } from "@/lib/server/activityLog";
 import { buildPersonalizedTodayDraft } from "@/lib/todayDrafts";
 import { buildKnowledgeBaseContext, searchFounderKnowledgeBase, type FounderKnowledgeMatch } from "@/lib/founderKnowledgeBase";
 import { loadCognitionInput, synthesizeFounderCognition, buildCognitionPromptBlock } from "@/lib/founderCognition";
-import { evaluateAIOutput } from "@/lib/aiEvaluator";
+import { evaluateAIOutput, failsHardPreScreen } from "@/lib/aiEvaluator";
 import { getPromptForRequest, loadActivePrompts } from "@/lib/promptRegistry";
 import { upsertTodayActionCache } from "@/lib/todayActionCache";
 import { buildTodayPersonalisationContext } from "@/lib/todayPersonalisationContext";
@@ -852,6 +852,8 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
         loopRan: boolean;
         passedCritic: boolean;
         lastReflectionUsed: boolean;
+        wasHardFallback?: boolean;
+        hardFallbackReasons?: string[];
       };
       body?: string; // full reflexion output, stored separately from the card title
       decisionBasis?: {
@@ -913,6 +915,22 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
       knowledgeMatches,
     });
 
+    // ── Hard pre-screen gate ──────────────────────────────────────────────
+    // This route previously had NO gate at all before shipping — only the
+    // fire-and-forget evaluateAIOutput() below, which grades the output
+    // after it's already been sent to the founder. Same fix as the stream
+    // route: run the deterministic platform/number/user-type checks
+    // synchronously and fall back to the known-concrete buildContextualFallback()
+    // template on a hard fail, instead of shipping a known-bad action and
+    // only discovering it later on the AI & Quality dashboard.
+    const preScreenTarget = targetUsers || inferProjectAudience(targetUsers, title, projectContext, problem);
+    const preScreen = failsHardPreScreen(finalResult.action, { stage, targetUsers: preScreenTarget });
+    const wasHardFallback = preScreen.fails;
+    if (wasHardFallback) {
+      finalResult.action = fallback.action;
+      finalResult.message = fallback.message;
+    }
+
     if (reflexionOutput) {
       finalResult.reflexion = {
         verdict: reflexionOutput.verdict ?? "pass",
@@ -921,6 +939,12 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
         loopRan: true,
         passedCritic: reflexionOutput.verdict !== "fail",
         lastReflectionUsed: Boolean(reflexionContext.lastReflection),
+        // Surfaced to the client for the same reason as the stream route:
+        // if the pre-screen rejected the AI's own composition, the founder
+        // is looking at the deterministic fallback and the UI should be
+        // able to say so rather than presenting it as a normal AI turn.
+        wasHardFallback,
+        hardFallbackReasons: wasHardFallback ? preScreen.failed_checks : undefined,
       };
     }
 
