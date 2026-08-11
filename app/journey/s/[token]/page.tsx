@@ -81,6 +81,28 @@ export default function JourneyStudentLinkPage() {
     else setError(data.error || "Failed to start project");
   }
 
+  async function handleCompleteLesson(lessonId: string) {
+    const res = await fetch(`/api/journey/s/${token}/lessons/complete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lesson_id: lessonId }),
+    });
+    const data = await res.json();
+    if (data.ok) await load();
+    else setError(data.error || "Failed to mark lesson complete");
+  }
+
+  async function handleCompleteExercise(exerciseId: string) {
+    const res = await fetch(`/api/journey/s/${token}/exercises/complete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ exercise_id: exerciseId }),
+    });
+    const data = await res.json();
+    if (data.ok) await load();
+    else setError(data.error || "Failed to mark exercise complete");
+  }
+
   async function handleSubmit() {
     if (!mission?.project) return;
     setSubmitting(true);
@@ -165,12 +187,61 @@ export default function JourneyStudentLinkPage() {
         )}
 
         <section className="border border-[var(--bm-border)] rounded-xl p-5 mb-6">
-          <h2 className="text-sm font-semibold mb-3">Study</h2>
-          <ul className="text-sm text-[var(--bm-text2)] space-y-1 list-disc list-inside">
-            {mission.topics.map((t) => (
-              <li key={t}>{t}</li>
+          <h2 className="text-sm font-semibold mb-3">Learn</h2>
+          <div className="space-y-6">
+            {mission.lessons.map((lesson) => (
+              <div key={lesson.id}>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-medium">{lesson.title}</h3>
+                  {lesson.completed ? (
+                    <span className="text-xs text-emerald-400">✓ Done</span>
+                  ) : (
+                    <button
+                      onClick={() => handleCompleteLesson(lesson.id)}
+                      className="text-xs border border-[var(--bm-border)] rounded px-2 py-1"
+                    >
+                      Mark complete
+                    </button>
+                  )}
+                </div>
+                {lesson.body.map((para, i) => (
+                  <p key={i} className="text-sm text-[var(--bm-text2)] mb-2">{para}</p>
+                ))}
+                <ul className="text-xs text-[var(--bm-text3)] space-y-1 list-disc list-inside mt-2">
+                  {lesson.keyTakeaways.map((t) => (
+                    <li key={t}>{t}</li>
+                  ))}
+                </ul>
+              </div>
             ))}
-          </ul>
+          </div>
+        </section>
+
+        <section className="border border-[var(--bm-border)] rounded-xl p-5 mb-6">
+          <h2 className="text-sm font-semibold mb-3">Practice</h2>
+          <div className="space-y-4">
+            {mission.exercises.map((exercise) => (
+              <div key={exercise.id} className="border border-[var(--bm-border)] rounded-lg p-4">
+                <div className="flex items-start justify-between gap-3 mb-2">
+                  <p className="text-sm text-[var(--bm-text)]">{exercise.prompt}</p>
+                  {exercise.completed ? (
+                    <span className="text-xs text-emerald-400 shrink-0">✓ Done</span>
+                  ) : (
+                    <button
+                      onClick={() => handleCompleteExercise(exercise.id)}
+                      className="text-xs border border-[var(--bm-border)] rounded px-2 py-1 shrink-0"
+                    >
+                      Mark complete
+                    </button>
+                  )}
+                </div>
+                <details className="text-xs text-[var(--bm-text3)]">
+                  <summary className="cursor-pointer">Hint</summary>
+                  <p className="mt-1">{exercise.hint}</p>
+                </details>
+              </div>
+            ))}
+          </div>
         </section>
 
         <section className="border border-[var(--bm-border)] rounded-xl p-5 mb-6">
