@@ -34,6 +34,43 @@ interface StudentLink {
   last_active_at: string | null;
 }
 
+interface PlacementRequest {
+  id: string;
+  student_name: string | null;
+  requested_module_order: number;
+  correct_count: number;
+  total_questions: number;
+  score_pct: number;
+  duration_seconds: number;
+  tab_switch_count: number;
+  tab_away_seconds: number;
+  flags: string[];
+  created_at: string;
+}
+
+interface JourneyCall {
+  id: string;
+  student_id: string;
+  scheduled_at: string;
+  status: "scheduled" | "completed" | "canceled";
+  notes: string | null;
+}
+
+interface CallAgenda {
+  sinceLabel: string;
+  modulesPassedSince: { moduleOrder: number; title: string }[];
+  skillsNeedingReinforcement: { skillId: string; skillName: string }[];
+  currentStreak: number;
+  achievementsSince: { name: string; unlockedAt: string }[];
+  xpEarnedSince: number;
+}
+
+const FLAG_LABELS: Record<string, string> = {
+  completed_unusually_fast: "Completed unusually fast",
+  left_tab_repeatedly: "Left the tab repeatedly",
+  spent_significant_time_away: "Spent significant time away from the tab",
+};
+
 export default function JourneyMentorPage() {
   const [submissions, setSubmissions] = useState<PendingSubmission[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,6 +84,16 @@ export default function JourneyMentorPage() {
   const [newStudentName, setNewStudentName] = useState("");
   const [creatingLink, setCreatingLink] = useState(false);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
+
+  const [placementRequests, setPlacementRequests] = useState<PlacementRequest[]>([]);
+  const [reviewingPlacementId, setReviewingPlacementId] = useState<string | null>(null);
+
+  const [callStudentId, setCallStudentId] = useState<string>("");
+  const [callDateTime, setCallDateTime] = useState<string>("");
+  const [scheduling, setScheduling] = useState(false);
+  const [calls, setCalls] = useState<JourneyCall[]>([]);
+  const [agenda, setAgenda] = useState<CallAgenda | null>(null);
+  const [agendaStudentId, setAgendaStudentId] = useState<string | null>(null);
 
   const loadStudents = useCallback(async () => {
     try {
@@ -87,6 +134,86 @@ export default function JourneyMentorPage() {
     });
   }
 
+  const loadPlacementRequests = useCallback(async () => {
+    try {
+      const res = await fetch("/api/journey/mentor/placement");
+      const data = await res.json();
+      if (data.ok) setPlacementRequests(data.requests);
+    } catch {
+      // non-fatal
+    }
+  }, []);
+
+  async function handleReviewPlacement(requestId: string, approve: boolean) {
+    setReviewingPlacementId(requestId);
+    try {
+      const res = await fetch("/api/journey/mentor/placement/review", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ request_id: requestId, approve }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || "Failed to review");
+      await loadPlacementRequests();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to review placement request");
+    } finally {
+      setReviewingPlacementId(null);
+    }
+  }
+
+  async function handleScheduleCall() {
+    if (!callStudentId || !callDateTime) return;
+    setScheduling(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/journey/mentor/calls", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ student_id: callStudentId, scheduled_at: new Date(callDateTime).toISOString() }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || "Failed to schedule");
+      setCallDateTime("");
+      await loadCallsFor(callStudentId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to schedule call");
+    } finally {
+      setScheduling(false);
+    }
+  }
+
+  async function loadCallsFor(studentId: string) {
+    if (!studentId) return;
+    const res = await fetch(`/api/journey/mentor/calls?student_id=${studentId}`);
+    const data = await res.json();
+    if (data.ok) setCalls(data.calls);
+  }
+
+  async function handleShowAgenda(studentId: string) {
+    setAgendaStudentId(studentId);
+    setAgenda(null);
+    const res = await fetch(`/api/journey/mentor/calls/agenda?student_id=${studentId}`);
+    const data = await res.json();
+    if (data.ok) setAgenda(data.agenda);
+  }
+
+  async function handleCompleteCall(callId: string) {
+    const res = await fetch(`/api/journey/mentor/calls/${callId}/complete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const data = await res.json();
+    if (data.ok && callStudentId) await loadCallsFor(callStudentId);
+  }
+
+  async function handleCancelCall(callId: string) {
+    const res = await fetch(`/api/journey/mentor/calls/${callId}/cancel`, { method: "POST" });
+    const data = await res.json();
+    if (data.ok && callStudentId) await loadCallsFor(callStudentId);
+  }
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -105,7 +232,12 @@ export default function JourneyMentorPage() {
   useEffect(() => {
     load();
     loadStudents();
-  }, [load, loadStudents]);
+    loadPlacementRequests();
+  }, [load, loadStudents, loadPlacementRequests]);
+
+  useEffect(() => {
+    if (callStudentId) loadCallsFor(callStudentId);
+  }, [callStudentId]);
 
   async function handleGrade(submissionId: string) {
     const numericScore = Number(score);
@@ -175,6 +307,119 @@ export default function JourneyMentorPage() {
               </div>
             ))}
           </div>
+        </section>
+
+        {placementRequests.length > 0 && (
+          <section className="border border-amber-500/30 bg-amber-500/5 rounded-xl p-5 mb-10">
+            <h2 className="text-sm font-semibold mb-3">Placement requests awaiting review</h2>
+            <div className="space-y-4">
+              {placementRequests.map((r) => (
+                <div key={r.id} className="border border-[var(--bm-border)] rounded-lg p-4">
+                  <p className="text-sm font-medium mb-1">
+                    {r.student_name ?? "Student"} wants to start at Module {r.requested_module_order}
+                  </p>
+                  <p className="text-xs text-[var(--bm-text3)] mb-2">
+                    Scored {r.correct_count}/{r.total_questions} ({r.score_pct}%) · took {Math.round(r.duration_seconds)}s
+                  </p>
+                  {r.flags.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {r.flags.map((f) => (
+                        <span key={f} className="text-xs bg-amber-500/15 text-amber-400 rounded px-2 py-0.5">
+                          ⚠ {FLAG_LABELS[f] ?? f}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex gap-2 mt-2">
+                    <button
+                      onClick={() => handleReviewPlacement(r.id, true)}
+                      disabled={reviewingPlacementId === r.id}
+                      className="text-xs font-medium bg-white text-black rounded px-3 py-1.5 disabled:opacity-50"
+                    >
+                      Approve
+                    </button>
+                    <button
+                      onClick={() => handleReviewPlacement(r.id, false)}
+                      disabled={reviewingPlacementId === r.id}
+                      className="text-xs border border-[var(--bm-border)] rounded px-3 py-1.5 disabled:opacity-50"
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        <section className="border border-[var(--bm-border)] rounded-xl p-5 mb-10">
+          <h2 className="text-sm font-semibold mb-3">Video calls</h2>
+          <div className="flex gap-2 mb-4">
+            <select
+              value={callStudentId}
+              onChange={(e) => setCallStudentId(e.target.value)}
+              className="text-sm bg-transparent border border-[var(--bm-border)] rounded-lg px-3 py-2 outline-none"
+            >
+              <option value="">Select student…</option>
+              {students.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+            <input
+              type="datetime-local"
+              value={callDateTime}
+              onChange={(e) => setCallDateTime(e.target.value)}
+              className="text-sm bg-transparent border border-[var(--bm-border)] rounded-lg px-3 py-2 outline-none"
+            />
+            <button
+              onClick={handleScheduleCall}
+              disabled={scheduling || !callStudentId || !callDateTime}
+              className="text-sm font-medium bg-white text-black rounded-lg px-4 py-2 disabled:opacity-50"
+            >
+              Schedule
+            </button>
+          </div>
+
+          {callStudentId && (
+            <>
+              <button
+                onClick={() => handleShowAgenda(callStudentId)}
+                className="text-xs border border-[var(--bm-border)] rounded px-3 py-1.5 mb-3"
+              >
+                Show review agenda
+              </button>
+
+              {agendaStudentId === callStudentId && agenda && (
+                <div className="border border-[var(--bm-border)] rounded-lg p-4 mb-4 text-sm text-[var(--bm-text2)] space-y-2">
+                  <p className="text-xs text-[var(--bm-text3)]">
+                    Since {new Date(agenda.sinceLabel).toLocaleDateString()} — pulled directly from her activity, nothing generated
+                  </p>
+                  <p>Modules passed: {agenda.modulesPassedSince.length === 0 ? "none" : agenda.modulesPassedSince.map((m) => m.title).join(", ")}</p>
+                  <p>Skills needing reinforcement: {agenda.skillsNeedingReinforcement.length === 0 ? "none" : agenda.skillsNeedingReinforcement.map((s) => s.skillName).join(", ")}</p>
+                  <p>Current streak: {agenda.currentStreak} days</p>
+                  <p>XP earned: {agenda.xpEarnedSince}</p>
+                  <p>Achievements: {agenda.achievementsSince.length === 0 ? "none" : agenda.achievementsSince.map((a) => a.name).join(", ")}</p>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                {calls.map((c) => (
+                  <div key={c.id} className="flex items-center justify-between text-sm border border-[var(--bm-border)] rounded-lg px-3 py-2">
+                    <span>
+                      {new Date(c.scheduled_at).toLocaleString()}
+                      <span className="text-xs text-[var(--bm-text3)] ml-2">{c.status}</span>
+                    </span>
+                    {c.status === "scheduled" && (
+                      <div className="flex gap-2">
+                        <button onClick={() => handleCompleteCall(c.id)} className="text-xs border border-[var(--bm-border)] rounded px-2 py-1">Mark done</button>
+                        <button onClick={() => handleCancelCall(c.id)} className="text-xs border border-[var(--bm-border)] rounded px-2 py-1">Cancel</button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </section>
 
         <h1 className="text-2xl font-semibold tracking-tight mb-1">Submissions awaiting review</h1>
