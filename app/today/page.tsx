@@ -48,6 +48,8 @@ type ReflexionMeta = {
   loopRan: boolean;
   passedCritic: boolean;
   lastReflectionUsed: boolean;
+  wasHardFallback?: boolean;
+  hardFallbackReasons?: string[];
 };
 
 // ── Milestone Break interstitial (fires after milestone/stage change) ────────
@@ -2264,7 +2266,6 @@ function TodayContent() {
         </div>
       ) : (
         <>
-        {uiMode === "pro" && <IntelligencePanel data={actionData.intelligence} />}
         {uiMode === "pro" && actionData.intelligence && (
           <div
             style={{
@@ -2423,6 +2424,12 @@ function TodayContent() {
                 Your yesterday's reflection shaped this recommendation.
               </div>
             )}
+            {actionData.reflexion?.wasHardFallback && (
+              <div style={{ fontSize: 11, color: "var(--bm-text3)", borderTop: "1px solid var(--bm-border)", paddingTop: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                <AlertCircle size={11} color="var(--bm-text3)" />
+                Today's AI draft didn't meet our concreteness bar, so this is a proven fallback task instead — still real, just not freshly composed.
+              </div>
+            )}
           </div>
 
           {/* ── Message template — pre-filled with real project values ── */}
@@ -2459,6 +2466,7 @@ function TodayContent() {
           </div>
         </div>
       </motion.div>
+      {uiMode === "pro" && <IntelligencePanel data={actionData.intelligence} />}
       </>
       )}
 
@@ -2563,12 +2571,23 @@ function TodayContent() {
               onClick={() => {
                 if (submitting) return;
                 setSubmitting(true);
-                // Fire task-complete, streak and score updates, then navigate
-                void handleCheckIn(chip.id).then(() => {
-                  router.push(`/reflect?outcome=${chip.id}`);
-                }).catch(() => {
+                // Previously this awaited handleCheckIn's ENTIRE promise
+                // chain before navigating — 4 sequential network round-trips
+                // (task-complete fetch, persistBehaviorState, a direct
+                // Supabase score update, a founder-context PATCH) all had to
+                // resolve first. None of that is needed to render /reflect —
+                // it only needs the outcome (URL param) and this local
+                // snapshot, which handleCheckIn used to write mid-chain,
+                // after the first awaited call. Writing it here, synchronously,
+                // before navigating, and letting the rest of handleCheckIn's
+                // server-side bookkeeping run in the background is what
+                // actually cuts the wait — the bookkeeping doesn't block
+                // anything /reflect renders.
+                storage.setJSON("bm_today_action", { action: actionData?.action ?? "", outcome: chip.id, note: "", confidence: 3 });
+                void handleCheckIn(chip.id).catch(() => {
                   setSubmitting(false);
                 });
+                router.push(`/reflect?outcome=${chip.id}`);
               }}
               style={{
                 padding: isMobile ? "14px" : "12px 14px",
