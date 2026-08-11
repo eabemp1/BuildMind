@@ -18,7 +18,6 @@ import { detectPattern, shouldSurfacePattern, type PatternResult } from "@/lib/p
 import { recordActivity } from "@/lib/server/activityLog";
 import { evaluateAndCacheStageTransition } from "@/lib/server/stageTransition";
 import { invalidateCognitionCache } from "@/lib/founderCognition";
-import { compareFounderIntelligenceOutcome } from "@/lib/learningLoop";
 import { markRecommendationObserved } from "@/lib/recommendationLifecycle";
 import { actionCategoryLabel } from "@/lib/actionClassification";
 import { deduplicateTags } from "@/lib/founderMemory";
@@ -322,12 +321,16 @@ export async function POST(req: Request) {
     evidenceProduced: outcome === "completed" ? taskTitle || undefined : undefined,
   }).catch(() => {});
 
-  compareFounderIntelligenceOutcome(admin, {
-    userId: user.id,
-    taskTitle: taskTitle || "",
-    outcome,
-    reflectionText: taskTitle || "",
-  }).catch(() => {});
+  // Deliberately NOT calling compareFounderIntelligenceOutcome here. This
+  // fires immediately on tap, before the founder has typed anything — it
+  // was resolving the pending Founder Intelligence prediction using just
+  // the task's own title as "evidence" (reflectionText: taskTitle), and
+  // since compareFounderIntelligenceOutcome resolves the most recent
+  // PENDING row, that always won the race against app/api/ai/reflect-action's
+  // later call — which has the founder's real what_happened/what_learned
+  // text — leaving nothing pending for it to attach to. Outcome resolution
+  // for Founder Intelligence predictions now happens exactly once, in
+  // reflect-action, with genuine evidence instead of a self-echo.
 
   // ── PATCH 2: Write checkin_done_date to user_behavior_state (AWAITED) ────
   // This was previously fire-and-forget. Awaiting it guarantees that by the time
