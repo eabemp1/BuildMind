@@ -44,6 +44,7 @@ export interface ActivePrompt {
     version: string;
     text: string;
     traffic_pct: number;
+    metrics?: PromptMetrics;
   };
 }
 
@@ -134,9 +135,85 @@ export function getPromptText(id: PromptId): string {
   return getActivePrompt(id).text;
 }
 
+// Minimum rolled-up samples (see aiEvaluator.ts's maybeRollupMetrics — it
+// rolls up every 20 new eval rows) an arm needs before Thompson Sampling
+// trusts its posterior over the fixed traffic_pct split. Below this, a
+// bandit's estimate is barely better than a coin flip, so falling back to
+// the deterministic hash-bucket is both safer and gives founders a
+// consistent experience while data accumulates rather than a noisy one.
+const BANDIT_MIN_SAMPLES = 20;
+
+function gaussianRandom(): number {
+  let u = 0, v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+function sampleGamma(shape: number): number {
+  if (shape < 1) {
+    const u = Math.random();
+    return sampleGamma(shape + 1) * Math.pow(u, 1 / shape);
+  }
+  const d = shape - 1 / 3;
+  const c = 1 / Math.sqrt(9 * d);
+  for (let i = 0; i < 100; i++) {
+    let x: number, v: number;
+    do {
+      x = gaussianRandom();
+      v = 1 + c * x;
+    } while (v <= 0);
+    v = v * v * v;
+    const u = Math.random();
+    if (u < 1 - 0.0331 * x * x * x * x) return d * v;
+    if (Math.log(u) < 0.5 * x * x + d * (1 - v + Math.log(v))) return d * v;
+  }
+  return d;
+}
+
+function sampleBeta(alpha: number, beta: number): number {
+  const x = sampleGamma(alpha);
+  const y = sampleGamma(beta);
+  return x / (x + y);
+}
+
+// quality_pass_rate + sample_count is what's actually stored (a rolled-up
+// rate, not raw pass/fail counts) — this reconstructs an approximate
+// successes/failures pair from them, which is all Beta needs.
+function metricsToBetaParams(metrics: PromptMetrics | undefined): { alpha: number; beta: number } {
+  if (!metrics?.sample_count || metrics.quality_pass_rate === undefined) return { alpha: 1, beta: 1 }; // neutral prior
+  const successes = Math.round(metrics.quality_pass_rate * metrics.sample_count);
+  const failures = Math.max(0, metrics.sample_count - successes);
+  return { alpha: successes + 1, beta: failures + 1 };
+}
+
 export function getPromptForRequest(id: PromptId, userId?: string): { text: string; version: string; variant: "active" | "challenger" } {
   const prompt = getActivePrompt(id);
-  if (prompt.challenger && userId) {
+  if (!prompt.challenger) return { text: prompt.text, version: prompt.version, variant: "active" };
+
+  const activeSamples = prompt.metrics?.sample_count ?? 0;
+  const challengerSamples = prompt.challenger.metrics?.sample_count ?? 0;
+
+  if (activeSamples >= BANDIT_MIN_SAMPLES && challengerSamples >= BANDIT_MIN_SAMPLES) {
+    // Thompson Sampling: sample each arm's Beta posterior, serve whichever
+    // sample is higher. This replaces a fixed percentage that never adapted
+    // — a challenger that's actually performing better than the active
+    // prompt now organically wins more traffic over time, and one that's
+    // performing worse organically loses traffic, without anyone manually
+    // watching a dashboard and typing in a new traffic_pct.
+    const activeParams = metricsToBetaParams(prompt.metrics);
+    const challengerParams = metricsToBetaParams(prompt.challenger.metrics);
+    const activeSample = sampleBeta(activeParams.alpha, activeParams.beta);
+    const challengerSample = sampleBeta(challengerParams.alpha, challengerParams.beta);
+    if (challengerSample > activeSample) {
+      return { text: prompt.challenger.text, version: prompt.challenger.version, variant: "challenger" };
+    }
+    return { text: prompt.text, version: prompt.version, variant: "active" };
+  }
+
+  // Cold start: fixed hash-bucket, same as before — consistent per user
+  // while both arms accumulate enough samples for the bandit to trust.
+  if (userId) {
     const bucket = userId.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0) % 100;
     if (bucket < prompt.challenger.traffic_pct) {
       return { text: prompt.challenger.text, version: prompt.challenger.version, variant: "challenger" };
@@ -153,7 +230,7 @@ export async function loadActivePrompts(): Promise<void> {
     const supabase = createAdminClient();
     const { data, error } = await supabase
       .from("prompt_versions")
-      .select("prompt_id, version, text, notes, metrics, challenger_version, challenger_text, challenger_traffic_pct")
+      .select("prompt_id, version, text, notes, metrics, challenger_version, challenger_text, challenger_traffic_pct, challenger_metrics")
       .eq("is_active", true);
     if (error) throw error;
 
@@ -167,7 +244,7 @@ export async function loadActivePrompts(): Promise<void> {
         notes: row.notes ?? undefined,
         metrics: row.metrics ?? undefined,
         challenger: row.challenger_version && row.challenger_text
-          ? { version: row.challenger_version, text: row.challenger_text, traffic_pct: row.challenger_traffic_pct ?? 0 }
+          ? { version: row.challenger_version, text: row.challenger_text, traffic_pct: row.challenger_traffic_pct ?? 0, metrics: row.challenger_metrics ?? undefined }
           : undefined,
       };
     }
@@ -286,10 +363,16 @@ export async function promptDiff(id: PromptId, versionA: string, versionB: strin
   }
 }
 
-export async function updatePromptMetrics(id: PromptId, version: string, metrics: PromptMetrics): Promise<void> {
+export async function updatePromptMetrics(id: PromptId, version: string, metrics: PromptMetrics, variant: "active" | "challenger" = "active"): Promise<void> {
   try {
     const supabase = createAdminClient();
-    await supabase.from("prompt_versions").update({ metrics }).eq("prompt_id", id).eq("version", version);
+    if (variant === "challenger") {
+      // Challenger's version lives in the challenger_version COLUMN of the
+      // active row, not as a row's own `version` — match on that instead.
+      await supabase.from("prompt_versions").update({ challenger_metrics: metrics }).eq("prompt_id", id).eq("challenger_version", version);
+    } else {
+      await supabase.from("prompt_versions").update({ metrics }).eq("prompt_id", id).eq("version", version);
+    }
   } catch (err) {
     logError("promptRegistry/updatePromptMetrics", err);
   }

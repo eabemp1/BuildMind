@@ -134,6 +134,17 @@ export interface FounderIntelligenceState {
   temporal: TemporalCoherenceState;
   signals: IntelligenceSignal[];
   decision: DecisionState;
+  /**
+   * Per-archetype (candidate.id) success/failure counts from this founder's
+   * own resolved Founder Intelligence predictions (lib/learningLoop.ts).
+   * Read by scoreCandidate() as the Beta posterior for Thompson Sampling —
+   * this is what makes candidate ranking learn from THIS founder specifically
+   * instead of using the same fixed weights for everyone. Empty for a new
+   * founder with no resolved predictions yet, which is the correct cold-start
+   * state: scoreCandidate() falls back to Beta(1,1) — a neutral prior, not a
+   * penalty — so ranking behaves exactly as it did before this existed.
+   */
+  archetype_stats: Record<string, { successes: number; failures: number }>;
   source_summary: {
     reflections: number;
     learning_logs: number;
@@ -621,6 +632,7 @@ export function buildFounderIntelligenceState(input: FounderIntelligenceInput): 
     execution,
     temporal,
     signals,
+    archetype_stats: computeArchetypeStats(learningLogs),
     source_summary: {
       reflections: reflections.length,
       learning_logs: learningLogs.length,
@@ -635,6 +647,111 @@ export function buildFounderIntelligenceState(input: FounderIntelligenceInput): 
   const decision = buildDecisionState({ ...stateWithoutDecision, decision: { candidates: [], top_candidate: null, decision_basis: [] } }, input.excludeAction);
 
   return { ...stateWithoutDecision, decision };
+}
+
+// Same success/failure definition as getCandidateArchetypeStats() in
+// lib/learningLoop.ts, kept independent (not imported) since that function
+// hits the DB and this one works off rows FounderIntelligenceInput already
+// fetched — but the two must never quietly disagree about what counts as a
+// win, so: outcome === "completed" AND evidence_match_score >= 0.5.
+function computeArchetypeStats(learningLogs: LearningLogRow[]): Record<string, { successes: number; failures: number }> {
+  const stats: Record<string, { successes: number; failures: number }> = {};
+  for (const row of learningLogs as Array<LearningLogRow & { candidate_id?: string | null; prediction_source?: string | null; evidence_match_score?: number | null }>) {
+    if (row.prediction_source !== "founder_intelligence") continue;
+    const id = row.candidate_id;
+    if (!id || row.outcome === "pending") continue;
+    if (!stats[id]) stats[id] = { successes: 0, failures: 0 };
+    const success = row.outcome === "completed" && (row.evidence_match_score ?? 0) >= 0.5;
+    if (success) stats[id].successes += 1;
+    else stats[id].failures += 1;
+  }
+  return stats;
+}
+
+// ── Thompson Sampling primitives ────────────────────────────────────────
+// Self-contained — no stats library needed. Standard textbook methods:
+// Box-Muller for a normal draw, Marsaglia-Tsang for Gamma, Gamma ratio for
+// Beta. Used to sample from each archetype's Beta(successes+1, failures+1)
+// posterior at ranking time, rather than ranking by the raw success rate —
+// sampling (not the mean) is what gives bandits their explore/exploit
+// balance: an archetype with 1 success and 0 failures still occasionally
+// loses to one with 20/20, because its posterior is wide, not because it's
+// being penalized.
+function gaussianRandom(): number {
+  let u = 0, v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+function sampleGamma(shape: number): number {
+  if (shape < 1) {
+    const u = Math.random();
+    return sampleGamma(shape + 1) * Math.pow(u, 1 / shape);
+  }
+  const d = shape - 1 / 3;
+  const c = 1 / Math.sqrt(9 * d);
+  for (let i = 0; i < 100; i++) {
+    let x: number, v: number;
+    do {
+      x = gaussianRandom();
+      v = 1 + c * x;
+    } while (v <= 0);
+    v = v * v * v;
+    const u = Math.random();
+    if (u < 1 - 0.0331 * x * x * x * x) return d * v;
+    if (Math.log(u) < 0.5 * x * x + d * (1 - v + Math.log(v))) return d * v;
+  }
+  return d; // fallback — practically unreachable, keeps this total
+}
+
+function sampleBeta(alpha: number, beta: number): number {
+  const x = sampleGamma(alpha);
+  const y = sampleGamma(beta);
+  return x / (x + y);
+}
+
+// ── Recency decay ────────────────────────────────────────────────────────
+// A signal detected once (e.g. REPEATED_AVOIDANCE on day 3) previously kept
+// its full confidence forever unless re-detected — so a pattern from three
+// weeks ago could still be gating candidate selection and inflating a
+// candidate's confidence score today, long after it stopped being true.
+// This applies the same shape of fix already proven for momentum (bounded
+// EMA instead of an unbounded accumulator) to every signal type: exponential
+// half-life decay from detected_at, evaluated against state.generated_at
+// (not wall-clock "now" — keeps this deterministic and testable against a
+// fixed state snapshot). A signal with an explicit expires_at decays fully
+// by that date regardless of the default half-life.
+const SIGNAL_HALF_LIFE_DAYS = 10;
+const SIGNAL_ACTIVE_THRESHOLD = 0.3;
+
+function decayedSignalConfidence(signal: IntelligenceSignal, asOf: Date): number {
+  const detected = new Date(signal.detected_at).getTime();
+  if (!Number.isFinite(detected)) return signal.confidence;
+  const daysSince = Math.max(0, (asOf.getTime() - detected) / 86_400_000);
+  if (signal.expires_at) {
+    const expires = new Date(signal.expires_at).getTime();
+    if (Number.isFinite(expires)) {
+      const totalSpan = Math.max(1, (expires - detected) / 86_400_000);
+      return Math.max(0, signal.confidence * (1 - daysSince / totalSpan));
+    }
+  }
+  return signal.confidence * Math.exp(-Math.LN2 * (daysSince / SIGNAL_HALF_LIFE_DAYS));
+}
+
+/**
+ * Signals sorted by decayed confidence (freshest/strongest first) with
+ * anything that's decayed below SIGNAL_ACTIVE_THRESHOLD dropped entirely.
+ * This is what buildDecisionState's gating checks and scoreCandidate's
+ * confidence calc should read instead of the raw state.signals array — a
+ * signal that's aged out shouldn't gate a candidate into existence or prop
+ * up its confidence score just because it was true once.
+ */
+function activeSignals(signals: IntelligenceSignal[], asOf: Date): Array<IntelligenceSignal & { decayed_confidence: number }> {
+  return signals
+    .map((s) => ({ ...s, decayed_confidence: decayedSignalConfidence(s, asOf) }))
+    .filter((s) => s.decayed_confidence >= SIGNAL_ACTIVE_THRESHOLD)
+    .sort((a, b) => b.decayed_confidence - a.decayed_confidence);
 }
 
 function scoreCandidate(candidate: Omit<DecisionCandidate, "scores" | "why_it_beats_alternatives">, state: FounderIntelligenceState): DecisionCandidate {
@@ -656,48 +773,79 @@ function scoreCandidate(candidate: Omit<DecisionCandidate, "scores" | "why_it_be
   const repetition_penalty = repeated ? 40 : 0;
   const behavioral_correction = isGenericContinuation ? 40 : hasAvoidance || signalTypes.has("BEHAVIOR_STRATEGY_CONTRADICTION") ? 80 : 45;
   const risk_reduction = isGenericContinuation ? 50 : hasGoalRisk || hasEvidenceGap || signalTypes.has("ASSUMPTION_DECAY") ? 85 : 55;
-  const confidence = Math.round(candidate.supporting_signals.reduce((sum, type) => sum + (state.signals.find((s) => s.type === type)?.confidence ?? 0.5), 0) / Math.max(1, candidate.supporting_signals.length) * 100);
+  const asOf = new Date(state.generated_at);
+  const confidence = Math.round(candidate.supporting_signals.reduce((sum, type) => {
+    const signal = state.signals.find((s) => s.type === type);
+    return sum + (signal ? decayedSignalConfidence(signal, asOf) : 0.5);
+  }, 0) / Math.max(1, candidate.supporting_signals.length) * 100);
+  // Thompson Sampling: sample this archetype's Beta(successes+1, failures+1)
+  // posterior for THIS founder. A new founder or archetype with no resolved
+  // history yet samples Beta(1,1) — uniform, so it contributes ~50 on
+  // average and doesn't bias ranking either way. As real outcomes accumulate
+  // for this founder specifically, an archetype that's actually produced
+  // evidence for them pulls its own ranking up over time; one that hasn't
+  // pulls down — without any hand-tuned per-founder weight anywhere.
+  const archetypeHistory = state.archetype_stats[candidate.id];
+  const learned_fit = Math.round(sampleBeta((archetypeHistory?.successes ?? 0) + 1, (archetypeHistory?.failures ?? 0) + 1) * 100);
   const total = clampScore(
-    impact * 0.16 + urgency * 0.14 + goal_relevance * 0.13 + evidence_value * 0.15 + founder_fit * 0.1 + execution_probability * 0.1 + behavioral_correction * 0.1 + risk_reduction * 0.1 + confidence * 0.08 - opportunity_cost * 0.08 - repetition_penalty * 0.08,
+    impact * 0.16 + urgency * 0.14 + goal_relevance * 0.13 + evidence_value * 0.15 + founder_fit * 0.1 + execution_probability * 0.1 + behavioral_correction * 0.1 + risk_reduction * 0.1 + confidence * 0.08 + learned_fit * 0.12 - opportunity_cost * 0.08 - repetition_penalty * 0.08,
   );
   return {
     ...candidate,
     scores: { impact, urgency, goal_relevance, evidence_value, founder_fit, execution_probability, opportunity_cost, repetition_penalty, behavioral_correction, risk_reduction, confidence, total },
-    why_it_beats_alternatives: `Scores highest because it balances ${hasEvidenceGap ? "fresh evidence" : hasGoalRisk ? "goal recovery" : "execution progress"} with founder fit and avoids repeating stale work.`,
+    why_it_beats_alternatives: `Scores highest because it balances ${hasEvidenceGap ? "fresh evidence" : hasGoalRisk ? "goal recovery" : "execution progress"} with founder fit${archetypeHistory ? ", and this approach has worked for you before" : ""} and avoids repeating stale work.`,
   };
+}
+
+// Rotating platform pool for candidate templates. Kept in sync with the
+// has_platform regex in lib/aiEvaluator.ts ACTION_CHECKS — if that list
+// changes, this should change with it. Picking by a stable hash of the
+// current goal (rather than always the first option) means two founders
+// with different goals don't get the same channel every time, and the
+// same founder doesn't get the same channel every day for a repeating signal.
+const OUTREACH_PLATFORMS = ["WhatsApp", "LinkedIn", "email", "Twitter"] as const;
+function pickPlatform(seed: string): string {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  return OUTREACH_PLATFORMS[hash % OUTREACH_PLATFORMS.length];
 }
 
 export function buildDecisionState(state: FounderIntelligenceState, excludeAction?: string): DecisionState {
   const candidates: Array<Omit<DecisionCandidate, "scores" | "why_it_beats_alternatives">> = [];
   const currentGoal = state.startup.current_goal ?? "the current startup goal";
-  const target = state.startup.assumptions.find((a) => a.toLowerCase().includes("target segment"))?.replace(/^Target segment: /, "") || "one target user";
-  const topSignals = state.signals.slice(0, 5);
+  const target = state.startup.assumptions.find((a) => a.toLowerCase().includes("target segment"))?.replace(/^Target segment: /, "") || "target users";
+  // Decay-filtered: a signal detected once no longer gates candidate
+  // selection forever — see decayedSignalConfidence() above.
+  const live = activeSignals(state.signals, new Date(state.generated_at));
+  const topSignals = live.slice(0, 5);
 
-  if (state.signals.some((s) => s.type === "EVIDENCE_GAP" || s.type === "ASSUMPTION_DECAY")) {
+  if (live.some((s) => s.type === "EVIDENCE_GAP" || s.type === "ASSUMPTION_DECAY")) {
+    const platform = pickPlatform(`evidence_probe:${currentGoal}`);
     candidates.push({
       id: "evidence_probe",
-      action: `Get one external evidence signal for ${currentGoal}: message or call ${target} and ask what they did the last time this problem appeared.`,
+      action: `Message 3 ${target} on ${platform} for ${currentGoal}: ask what they did the last time this problem appeared.`,
       rationale: "Fresh evidence is the bottleneck; more internal work will not reduce assumption risk.",
       expected_evidence: "A concrete user/customer response, objection, workflow detail, or commitment signal.",
       supporting_signals: topSignals.filter((s) => s.type === "EVIDENCE_GAP" || s.type === "ASSUMPTION_DECAY" || s.type === "BUSYWORK_PATTERN").map((s) => s.type),
     });
   }
 
-  if (state.signals.some((s) => s.type === "GOAL_SLIPPAGE")) {
+  if (live.some((s) => s.type === "GOAL_SLIPPAGE")) {
     candidates.push({
       id: "unstall_goal",
-      action: `Unstall ${currentGoal}: choose the smallest unfinished task tied to it and define the evidence that would prove it moved today.`,
+      action: `Unstall ${currentGoal}: finish 1 concrete subtask today and log the specific before/after result — no planning, only a completed artifact.`,
       rationale: "The active goal is aging; the next move should make progress observable rather than broad.",
       expected_evidence: "A task completion plus a specific before/after or user/revenue/learning artifact.",
       supporting_signals: topSignals.filter((s) => s.type === "GOAL_SLIPPAGE" || s.type === "MOMENTUM_CHANGE").map((s) => s.type),
     });
   }
 
-  if (state.signals.some((s) => s.type === "REPEATED_AVOIDANCE" || s.type === "BEHAVIOR_STRATEGY_CONTRADICTION" || s.type === "RECOMMENDATION_REJECTION_PATTERN")) {
+  if (live.some((s) => s.type === "REPEATED_AVOIDANCE" || s.type === "BEHAVIOR_STRATEGY_CONTRADICTION" || s.type === "RECOMMENDATION_REJECTION_PATTERN")) {
     const avoid = state.founder.avoidance_patterns[0] ?? "the avoided work";
+    const platform = pickPlatform(`avoidance_microdose:${avoid}`);
     candidates.push({
       id: "avoidance_microdose",
-      action: `Do a 15-minute micro-dose of ${avoid}: one small exposure that advances ${currentGoal} without letting avoidance pick the agenda.`,
+      action: `Spend 15 minutes on ${avoid} today: send 1 message on ${platform} that advances ${currentGoal} without letting avoidance pick the agenda.`,
       rationale: "The behavioral pattern is now part of the startup bottleneck, not a side issue.",
       expected_evidence: "Whether a smaller version of the avoided action gets started or still gets resisted.",
       supporting_signals: topSignals.filter((s) => s.type === "REPEATED_AVOIDANCE" || s.type === "BEHAVIOR_STRATEGY_CONTRADICTION" || s.type === "RECOMMENDATION_REJECTION_PATTERN").map((s) => s.type),
@@ -706,7 +854,7 @@ export function buildDecisionState(state: FounderIntelligenceState, excludeActio
 
   candidates.push({
     id: "continue_best_next_task",
-    action: `Advance ${currentGoal} with the highest-priority open task, but require one observable result before calling it done.`,
+    action: `Advance ${currentGoal}: complete 1 highest-priority open task today and name one observable result before calling it done.`,
     rationale: "When signals are mixed, preserve strategic continuity and improve outcome quality.",
     expected_evidence: "A completed task with a named result, blocker, or learning artifact.",
     supporting_signals: topSignals.map((s) => s.type),
@@ -737,7 +885,7 @@ export function buildDecisionState(state: FounderIntelligenceState, excludeActio
 }
 
 export function buildFounderIntelligencePromptBlock(state: FounderIntelligenceState): string {
-  const topSignals = state.signals.slice(0, 5);
+  const topSignals = activeSignals(state.signals, new Date(state.generated_at)).slice(0, 5);
   const candidate = state.decision.top_candidate;
   const lines: string[] = [
     "FOUNDER INTELLIGENCE OS STATE (structured, deterministic signals — treat as factual state, not prose decoration):",
@@ -751,9 +899,9 @@ export function buildFounderIntelligencePromptBlock(state: FounderIntelligenceSt
     lines.push(`Recent change: ${state.temporal.week_changes.slice(0, 2).join(" ")}`);
   }
   if (topSignals.length) {
-    lines.push("Top machine-readable signals:");
+    lines.push("Top machine-readable signals (confidence shown is recency-decayed, not the original detection confidence):");
     for (const s of topSignals) {
-      lines.push(`- ${s.type} [${s.severity}, ${Math.round(s.confidence * 100)}%]: ${s.summary} Recommended response: ${s.recommended_response}`);
+      lines.push(`- ${s.type} [${s.severity}, ${Math.round(s.decayed_confidence * 100)}%]: ${s.summary} Recommended response: ${s.recommended_response}`);
     }
   }
   if (candidate) {
@@ -763,6 +911,7 @@ export function buildFounderIntelligencePromptBlock(state: FounderIntelligenceSt
     lines.push(`- Expected evidence: ${candidate.expected_evidence}`);
   }
   lines.push("INSTRUCTION: Use the top candidate and signals as the decision basis unless the user's fresh context clearly contradicts them. If changing the action, explain which signal changed the ranking.");
+  lines.push("SCHEMA REQUIREMENT (non-negotiable, overrides candidate wording if they conflict): the final TASK line must name a specific number and a specific platform or channel (WhatsApp, LinkedIn, email, Twitter, phone, in person, Slack, etc). If the top candidate's action is abstract or missing either, do NOT copy its phrasing — keep its intent but make it concrete.");
   return lines.join("\n");
 }
 

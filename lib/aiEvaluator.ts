@@ -93,10 +93,27 @@ const COACH_CHECKS: Array<{ name: string; test: (output: string, ctx: EvaluatePa
 
 const IS_COACH_CONTEXT = new Set<EvalContext>(["coach", "founder_insight", "break_startup", "onboarding_insight"]);
 
-function runPreScreen(output: string, ctx: EvaluateParams["founderContext"], context?: EvalContext) {
+// Exported so route handlers can gate what ships to the founder BEFORE
+// sending it, not just grade it afterward. This is pure regex/string
+// matching — cheap enough to call synchronously in the request path,
+// unlike evaluateAIOutput which does an LLM rubric call and is fire-and-forget.
+export const HARD_FAIL_CHECKS = ["has_number", "has_platform", "has_user_type"] as const;
+
+export function runPreScreen(output: string, ctx: EvaluateParams["founderContext"], context?: EvalContext) {
   const checks = context && IS_COACH_CONTEXT.has(context) ? COACH_CHECKS : ACTION_CHECKS;
   const failed_checks = checks.filter(({ test }) => !test(output, ctx)).map(({ name }) => name);
   return { passed: failed_checks.length === 0, failed_checks };
+}
+
+// Convenience wrapper for route handlers: true only if a check that the
+// dashboard treats as a hard fail (see aggregateVerdict below) is among the
+// failures. "not_too_generic" / "no_hallucinated_stats" etc. still get
+// logged and scored, but shouldn't block shipping on their own — they're
+// noisier signals than a missing platform/number/user-type.
+export function failsHardPreScreen(output: string, ctx: EvaluateParams["founderContext"], context?: EvalContext): { fails: boolean; failed_checks: string[] } {
+  const { failed_checks } = runPreScreen(output, ctx, context);
+  const hardFails = failed_checks.filter((c) => (HARD_FAIL_CHECKS as readonly string[]).includes(c));
+  return { fails: hardFails.length > 0, failed_checks: hardFails };
 }
 
 const EVALUATOR_PROMPT = `Evaluate AI-generated startup coaching advice with a strict 1-5 rubric.
@@ -140,7 +157,7 @@ function fallbackRubric(reason: string): EvalRubric {
 }
 
 function aggregateVerdict(preScreen: { passed: boolean; failed_checks: string[] }, rubric: EvalRubric | null) {
-  const hardFails = preScreen.failed_checks.filter((check) => ["has_number", "has_platform", "has_user_type"].includes(check));
+  const hardFails = preScreen.failed_checks.filter((check) => (HARD_FAIL_CHECKS as readonly string[]).includes(check));
   if (hardFails.length) {
     return { verdict: "fail" as const, overall_score: 1, reject_reason: `Pre-screen failed: ${hardFails.join(", ")}` };
   }
@@ -193,7 +210,7 @@ async function logEvalResult(params: EvaluateParams, result: EvalResult): Promis
   }
 }
 
-async function maybeRollupMetrics(promptId: PromptId, promptVersion: string): Promise<void> {
+async function maybeRollupMetrics(promptId: PromptId, promptVersion: string, variant: "active" | "challenger"): Promise<void> {
   try {
     const supabase = createAdminClient();
     const { data } = await supabase
@@ -217,7 +234,7 @@ async function maybeRollupMetrics(promptId: PromptId, promptVersion: string): Pr
       helpfulness_score: Math.round(avgScore * 10) / 10,
       hallucination_flag_rate: Math.round(hallucination_flag_rate * 100) / 100,
       sample_count: data.length,
-    });
+    }, variant);
   } catch (err) {
     logError("aiEvaluator/maybeRollupMetrics", err);
   }
@@ -239,7 +256,7 @@ export async function evaluateAIOutput(params: EvaluateParams): Promise<EvalResu
     };
     logEvalResult(params, result).catch(() => {});
     if (params.promptId && params.promptVersion) {
-      maybeRollupMetrics(params.promptId, params.promptVersion).catch(() => {});
+      maybeRollupMetrics(params.promptId, params.promptVersion, params.variant ?? "active").catch(() => {});
     }
     return result;
   } catch (err) {

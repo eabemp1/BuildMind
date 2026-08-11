@@ -86,6 +86,7 @@ export async function recordFounderIntelligencePrediction(
         stage: params.stage || "Idea",
         action_shown: params.candidate.action,
         prediction_source: "founder_intelligence",
+        candidate_id: params.candidate.id,
         predicted_evidence: params.candidate.expected_evidence,
         supporting_signals: params.supportingSignals ?? params.candidate.supporting_signals ?? [],
         prediction_confidence: Math.max(0, Math.min(1, (params.candidate.scores?.confidence ?? 50) / 100)),
@@ -240,5 +241,57 @@ export async function getFounderIntelligenceAccuracy(supabase: SupabaseLike, use
   } catch (err) {
     logError("learningLoop/getFounderIntelligenceAccuracy", err, { userId });
     return DEFAULT_ACCURACY;
+  }
+}
+
+export interface ArchetypeStats {
+  [candidateId: string]: { successes: number; failures: number };
+}
+
+/**
+ * Aggregates resolved (non-pending) founder_intelligence predictions by
+ * candidate_id (FI OS archetype: evidence_probe / unstall_goal /
+ * avoidance_microdose / continue_best_next_task) for one founder.
+ *
+ * This is what turns the learning loop from "a number on a dashboard" into
+ * an actual input to future decisions: lib/founderIntelligence.ts's
+ * scoreCandidate() samples from a Beta(successes+1, failures+1) posterior
+ * per archetype (Thompson Sampling) using exactly these counts, so an
+ * archetype that's reliably produced real evidence for this specific
+ * founder gets ranked higher over time, and one that hasn't gets tried less
+ * — without any hand-tuned per-founder weights.
+ *
+ * A row counts as a success if outcome === "completed" AND
+ * evidence_match_score >= 0.5 (the same bar compareFounderIntelligenceOutcome
+ * uses to decide "matched" — kept identical on purpose so this function and
+ * the dashboard accuracy number can never quietly disagree about what
+ * counts as a hit).
+ */
+export async function getCandidateArchetypeStats(supabase: SupabaseLike, userId: string): Promise<ArchetypeStats> {
+  try {
+    const { data, error } = await supabase
+      .from("reflexion_learning_log")
+      .select("candidate_id, outcome, evidence_match_score")
+      .eq("user_id", userId)
+      .eq("prediction_source", "founder_intelligence")
+      .neq("outcome", "pending")
+      .not("candidate_id", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(200);
+
+    if (error) throw error;
+    const stats: ArchetypeStats = {};
+    for (const row of (data ?? []) as Array<{ candidate_id: string | null; outcome: string; evidence_match_score: number | null }>) {
+      const id = row.candidate_id;
+      if (!id) continue;
+      if (!stats[id]) stats[id] = { successes: 0, failures: 0 };
+      const success = row.outcome === "completed" && (row.evidence_match_score ?? 0) >= 0.5;
+      if (success) stats[id].successes += 1;
+      else stats[id].failures += 1;
+    }
+    return stats;
+  } catch (err) {
+    logError("learningLoop/getCandidateArchetypeStats", err, { userId });
+    return {};
   }
 }
