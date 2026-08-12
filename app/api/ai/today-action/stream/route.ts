@@ -256,6 +256,7 @@ export async function POST(request: Request) {
         let adminForCache: ReturnType<typeof createAdminClient> | null = null;
         let founderIntelligence: FounderIntelligenceState | null = null;
         let founderIntelligencePromptBlock = "";
+        let isLowConfidence = false;
         let personalisationCtx = {
           recentActionsBlock: "",
           recentReflectionsBlock: "",
@@ -313,6 +314,21 @@ export async function POST(request: Request) {
         adminForCache = tctx.adminClient;
         founderIntelligence = tctx.founderIntelligence;
         founderIntelligencePromptBlock = tctx.founderIntelligencePromptBlock;
+
+        // ── Confidence as a branch, not a hidden number ───────────────────
+        // Previously the top candidate's confidence score existed (see
+        // scoreCandidate() in lib/founderIntelligence.ts) but never changed
+        // anything about the output — a 25%-confidence recommendation was
+        // phrased with exactly the same certainty as a 90%-confidence one.
+        // Below this threshold, the task itself should be framed as
+        // evidence-gathering ("here's how to find out"), not a confident
+        // directive dressed up to sound sure of itself.
+        const topCandidateConfidence = founderIntelligence?.decision.top_candidate?.scores.confidence ?? 100;
+        isLowConfidence = topCandidateConfidence < 40;
+        if (isLowConfidence) {
+          founderIntelligencePromptBlock += `\n\nCONFIDENCE NOTICE: Current confidence in this recommendation is low (${topCandidateConfidence}%) — there isn't enough recent evidence about this founder's situation yet. Do NOT phrase "task" as a confident directive. Frame it explicitly as a small evidence-gathering step, and "rationale" must say plainly that this is about closing an evidence gap, not a high-conviction recommendation.`;
+        }
+
         if (excludeAction) {
           founderIntelligencePromptBlock += `\n\nHARD CONSTRAINT: The founder just explicitly rejected this exact task moments ago: "${excludeAction}". Do NOT suggest this same task again, even reworded — pick a genuinely different highest-leverage action from the remaining candidates.`;
         }
@@ -559,10 +575,18 @@ ${JSON.stringify(structuredA)}`,
           why: decisionReason ? `${rationale} ${decisionReason}` : rationale,
           stage,
           isAI: true,
+          // Confidence as a branch, not a hidden number — see the
+          // CONFIDENCE NOTICE injected above. When true, "action"/"why" were
+          // generated with explicit instructions to frame this as
+          // evidence-gathering rather than a confident directive, and the
+          // UI should render a visibly different state, not just a lower
+          // percentage on the same-looking card.
+          isLowConfidence,
           decisionBasis: deterministicCandidate ? {
             expected_evidence: deterministicCandidate.expected_evidence,
             why_it_beats_alternatives: deterministicCandidate.why_it_beats_alternatives,
             score: deterministicCandidate.scores.total,
+            confidence: deterministicCandidate.scores.confidence,
             alternatives: founderIntelligence?.decision.candidates.slice(1, 4).map((c) => ({
               action: c.action,
               score: c.scores.total,
