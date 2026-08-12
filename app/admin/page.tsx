@@ -621,7 +621,8 @@ type CleanupRow = {
   strengths?: { before: string[]; after: string[] };
   writeError?: string;
 };
-type CleanupResponse = { ok: boolean; dryRun?: boolean; touched?: number; skipped?: number; results?: CleanupRow[]; error?: string };
+type CleanupSection = { ok: boolean; dryRun?: boolean; touched?: number; skipped?: number; results?: CleanupRow[]; error?: string };
+type CleanupResponse = { ok: boolean; dryRun?: boolean; founder_memory?: CleanupSection; founder_context?: CleanupSection; error?: string };
 
 function CleanupAvoidanceZonesCard() {
   const [loading, setLoading] = useState<"preview" | "apply" | null>(null);
@@ -644,6 +645,14 @@ function CleanupAvoidanceZonesCard() {
       setLoading(null);
     }
   }
+
+  // The endpoint returns two separate passes (founder_memory and the
+  // separate founder_context.avoidance_zones column) — combine for the
+  // top-level "how many rows total" summary, but each section's own
+  // results still render separately below so it's clear which table each
+  // change came from.
+  const totalTouched = (result?.founder_memory?.touched ?? 0) + (result?.founder_context?.touched ?? 0);
+  const totalSkipped = (result?.founder_memory?.skipped ?? 0) + (result?.founder_context?.skipped ?? 0);
 
   return (
     <Card style={{ padding: "20px 22px" }}>
@@ -669,13 +678,13 @@ function CleanupAvoidanceZonesCard() {
           {loading === "preview" ? "Previewing…" : "Preview (dry run)"}
         </button>
 
-        {result && result.dryRun && (result.touched ?? 0) > 0 && !confirming && (
+        {result && result.dryRun && totalTouched > 0 && !confirming && (
           <button
             onClick={() => setConfirming(true)}
             style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: C.rMd, border: `1px solid ${C.ab}`, background: C.ad, color: C.a, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}
           >
             <CheckCircle2 size={12} />
-            Run cleanup for real ({result.touched} row{result.touched === 1 ? "" : "s"})
+            Run cleanup for real ({totalTouched} row{totalTouched === 1 ? "" : "s"})
           </button>
         )}
 
@@ -709,38 +718,67 @@ function CleanupAvoidanceZonesCard() {
       {result && !result.dryRun && (
         <div style={{ display: "flex", gap: 8, padding: "10px 14px", borderRadius: C.rMd, background: "rgba(46,204,113,0.08)", border: "1px solid rgba(46,204,113,0.22)", color: C.a, fontSize: 12, marginBottom: 12 }}>
           <CheckCircle2 size={13} style={{ flexShrink: 0, marginTop: 1 }} />
-          Wrote {result.touched} row{result.touched === 1 ? "" : "s"}. {result.skipped} already clean.
+          Wrote {totalTouched} row{totalTouched === 1 ? "" : "s"}. {totalSkipped} already clean.
         </div>
       )}
 
-      {result && (result.results?.length ?? 0) > 0 && (
-        <div style={{ maxHeight: 360, overflowY: "auto", border: `1px solid ${C.b}`, borderRadius: C.rMd }}>
-          {result.results!.map(row => (
-            <div key={row.user_id} style={{ padding: "12px 14px", borderBottom: `1px solid ${C.b}` }}>
-              <div style={{ fontSize: 11, color: C.t4, marginBottom: 6, fontFamily: "monospace" }}>{row.user_id}</div>
-              {row.writeError && (
-                <div style={{ fontSize: 11, color: C.red, marginBottom: 6 }}>Write failed: {row.writeError}</div>
-              )}
-              {row.avoidance_zones && (
-                <div style={{ marginBottom: row.strengths ? 8 : 0 }}>
-                  <div style={{ fontSize: 10, color: C.t3, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>avoidance_zones</div>
-                  <div style={{ fontSize: 12, color: C.red, textDecoration: "line-through", opacity: 0.7 }}>{row.avoidance_zones.before.join(", ")}</div>
-                  <div style={{ fontSize: 12, color: C.a }}>{row.avoidance_zones.after.join(", ") || "(removed)"}</div>
-                </div>
-              )}
-              {row.strengths && (
-                <div>
-                  <div style={{ fontSize: 10, color: C.t3, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>strengths</div>
-                  <div style={{ fontSize: 12, color: C.red, textDecoration: "line-through", opacity: 0.7 }}>{row.strengths.before.join(", ")}</div>
-                  <div style={{ fontSize: 12, color: C.a }}>{row.strengths.after.join(", ") || "(removed)"}</div>
-                </div>
-              )}
+      {result && ((result.founder_memory?.results?.length ?? 0) > 0 || (result.founder_context?.results?.length ?? 0) > 0) && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {(result.founder_memory?.results?.length ?? 0) > 0 && (
+            <div>
+              <div style={{ fontSize: 10, color: C.t3, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>founder_memory ({result.founder_memory!.results!.length})</div>
+              <div style={{ maxHeight: 260, overflowY: "auto", border: `1px solid ${C.b}`, borderRadius: C.rMd }}>
+                {result.founder_memory!.results!.map(row => (
+                  <div key={row.user_id} style={{ padding: "12px 14px", borderBottom: `1px solid ${C.b}` }}>
+                    <div style={{ fontSize: 11, color: C.t4, marginBottom: 6, fontFamily: "monospace" }}>{row.user_id}</div>
+                    {row.writeError && (
+                      <div style={{ fontSize: 11, color: C.red, marginBottom: 6 }}>Write failed: {row.writeError}</div>
+                    )}
+                    {row.avoidance_zones && (
+                      <div style={{ marginBottom: row.strengths ? 8 : 0 }}>
+                        <div style={{ fontSize: 10, color: C.t3, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>avoidance_zones</div>
+                        <div style={{ fontSize: 12, color: C.red, textDecoration: "line-through", opacity: 0.7 }}>{row.avoidance_zones.before.join(", ")}</div>
+                        <div style={{ fontSize: 12, color: C.a }}>{row.avoidance_zones.after.join(", ") || "(removed)"}</div>
+                      </div>
+                    )}
+                    {row.strengths && (
+                      <div>
+                        <div style={{ fontSize: 10, color: C.t3, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>strengths</div>
+                        <div style={{ fontSize: 12, color: C.red, textDecoration: "line-through", opacity: 0.7 }}>{row.strengths.before.join(", ")}</div>
+                        <div style={{ fontSize: 12, color: C.a }}>{row.strengths.after.join(", ") || "(removed)"}</div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
-          ))}
+          )}
+          {(result.founder_context?.results?.length ?? 0) > 0 && (
+            <div>
+              <div style={{ fontSize: 10, color: C.t3, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>founder_context ({result.founder_context!.results!.length})</div>
+              <div style={{ maxHeight: 260, overflowY: "auto", border: `1px solid ${C.b}`, borderRadius: C.rMd }}>
+                {result.founder_context!.results!.map(row => (
+                  <div key={row.user_id} style={{ padding: "12px 14px", borderBottom: `1px solid ${C.b}` }}>
+                    <div style={{ fontSize: 11, color: C.t4, marginBottom: 6, fontFamily: "monospace" }}>{row.user_id}</div>
+                    {row.writeError && (
+                      <div style={{ fontSize: 11, color: C.red, marginBottom: 6 }}>Write failed: {row.writeError}</div>
+                    )}
+                    {row.avoidance_zones && (
+                      <div>
+                        <div style={{ fontSize: 10, color: C.t3, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>avoidance_zones</div>
+                        <div style={{ fontSize: 12, color: C.red, textDecoration: "line-through", opacity: 0.7 }}>{row.avoidance_zones.before.join(", ")}</div>
+                        <div style={{ fontSize: 12, color: C.a }}>{row.avoidance_zones.after.join(", ") || "(removed)"}</div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {result && (result.results?.length ?? 0) === 0 && result.touched === 0 && (
+      {result && totalTouched === 0 && (
         <p style={{ fontSize: 12, color: C.t3, margin: 0 }}>Nothing to clean — every row already looks right.</p>
       )}
     </Card>
@@ -1175,18 +1213,20 @@ export default function AdminPage() {
   const [data, setData]         = useState<DashboardPayload | null>(null);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState<string | null>(null);
-  // Initialize from URL hash on first render (for redirect URLs like /admin#ai)
-  const [tab, setTab]           = useState<Tab>(() => {
-    if (typeof window === "undefined") return "overview";
-    const h = window.location.hash.replace("#", "");
-    return VALID_TABS.has(h) ? (h as Tab) : "overview";
-  });
+  const [tab, setTab]           = useState<Tab>("overview");
   const [override, setOverride] = useState<AdminUser | null>(null);
 
   // Sync tab → URL hash so bookmarks and redirects work
   useEffect(() => {
     if (typeof window !== "undefined") window.location.hash = tab;
   }, [tab]);
+
+  // Read hash on first mount (for redirect URLs like /admin#growth)
+  useEffect(() => {
+    const h = window.location.hash.replace("#", "");
+    if (VALID_TABS.has(h) && h !== tab) setTab(h as Tab);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -1311,4 +1351,4 @@ export default function AdminPage() {
       <style>{`@keyframes adm-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
   );
-}
+                     }
