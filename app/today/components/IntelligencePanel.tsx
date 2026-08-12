@@ -21,8 +21,16 @@ export interface TodayIntelligenceSummary {
   founder_model: { strengths: string[]; avoidance_patterns: string[]; operating_windows: string[]; confidence: number };
   strategy: { stated_priorities: string[]; observed_priorities: string[]; contradictions: string[] };
   decision: {
-    top_candidate: { action?: string; expected_evidence: string; why_it_beats_alternatives: string; scores?: { total: number } } | null;
-    alternatives?: Array<{ action: string; scores?: { total: number }; why_it_beats_alternatives: string }>;
+    top_candidate: { action?: string; expected_evidence: string; why_it_beats_alternatives: string; scores?: { total: number; confidence?: number } } | null;
+    alternatives?: Array<{
+      id: string;
+      action: string;
+      rationale?: string;
+      expected_evidence: string;
+      supporting_signals?: string[];
+      scores?: { total: number };
+      why_it_beats_alternatives: string;
+    }>;
     basis?: string[];
   };
   cofounder_judgment?: {
@@ -55,7 +63,13 @@ function Label({ children }: { children: React.ReactNode }) {
   return <div style={{ fontFamily: "'DM Mono', monospace", color: "var(--bm-text4)", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>{children}</div>;
 }
 
-export function IntelligencePanel({ data }: { data: TodayIntelligenceSummary | null | undefined }) {
+export type ResolvedOutcome = { action_shown: string; outcome: string; outcome_note: string | null; evidence_match_score: number | null; outcome_recorded_at: string | null };
+
+export function IntelligencePanel({ data, onSwap, recentOutcomes }: {
+  data: TodayIntelligenceSummary | null | undefined;
+  onSwap?: (alt: NonNullable<TodayIntelligenceSummary["decision"]["alternatives"]>[number]) => void;
+  recentOutcomes?: ResolvedOutcome[];
+}) {
   const [open, setOpen] = useState(false);
   if (!data) return null;
 
@@ -75,6 +89,7 @@ export function IntelligencePanel({ data }: { data: TodayIntelligenceSummary | n
   if (!headline) return null;
 
   const isUrgent = judgment?.intervention.mode === "escalation" || judgment?.intervention.mode === "challenge";
+  const isLowConfidence = !isUrgent && (data.decision.top_candidate?.scores?.confidence ?? 100) < 40;
 
   return (
     <section
@@ -89,14 +104,19 @@ export function IntelligencePanel({ data }: { data: TodayIntelligenceSummary | n
     >
       {/* One headline. One line under it. Nothing else competes for the eye. */}
       <div style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "18px 20px" }}>
-        <div style={{ width: 30, height: 30, borderRadius: 8, display: "grid", placeItems: "center", background: isUrgent ? "rgba(229,72,77,0.12)" : "var(--bm-accent-dim)", border: `1px solid ${isUrgent ? "var(--bm-red)" : "var(--bm-accent-bd)"}`, flex: "0 0 auto" }}>
-          {isUrgent ? <AlertTriangle size={16} color="var(--bm-red)" /> : <BrainCircuit size={16} color="var(--bm-accent)" />}
+        <div style={{ width: 30, height: 30, borderRadius: 8, display: "grid", placeItems: "center", background: isUrgent ? "rgba(229,72,77,0.12)" : isLowConfidence ? "var(--bm-bg3)" : "var(--bm-accent-dim)", border: `1px solid ${isUrgent ? "var(--bm-red)" : isLowConfidence ? "var(--bm-border2)" : "var(--bm-accent-bd)"}`, flex: "0 0 auto" }}>
+          {isUrgent ? <AlertTriangle size={16} color="var(--bm-red)" /> : <BrainCircuit size={16} color={isLowConfidence ? "var(--bm-text3)" : "var(--bm-accent)"} />}
         </div>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <Label>{isUrgent ? "Worth stopping for" : "What's actually going on"}</Label>
+          <Label>{isUrgent ? "Worth stopping for" : isLowConfidence ? "Still calibrating" : "What's actually going on"}</Label>
           <div style={{ color: "var(--bm-text)", fontSize: 16, fontWeight: 700, lineHeight: 1.4, letterSpacing: "-0.01em" }}>
             {trimToSentence(headline, 28)}
           </div>
+          {isLowConfidence && (
+            <div style={{ color: "var(--bm-text3)", fontSize: 12.5, lineHeight: 1.5, marginTop: 8 }}>
+              Not enough recent evidence yet to recommend with confidence — today's task is about closing that gap, not a high-conviction call.
+            </div>
+          )}
           {negative && (
             <div style={{ display: "flex", gap: 6, alignItems: "flex-start", marginTop: 10, color: "var(--bm-text3)", fontSize: 12.5, lineHeight: 1.5 }}>
               <ShieldAlert size={13} color="var(--bm-text4)" style={{ marginTop: 2, flexShrink: 0 }} />
@@ -142,13 +162,27 @@ export function IntelligencePanel({ data }: { data: TodayIntelligenceSummary | n
           )}
           {data.decision.alternatives?.length ? (
             <div>
-              <Label>Alternatives considered</Label>
+              <Label>Not feeling it? Swap in</Label>
               <div style={{ display: "grid", gap: 6 }}>
                 {data.decision.alternatives.slice(0, 3).map((alt, i) => (
-                  <div key={`${alt.action}-${i}`} style={{ display: "flex", gap: 8, color: "var(--bm-text3)", fontSize: 12.5, lineHeight: 1.45 }}>
-                    <ArrowRight size={13} color="var(--bm-text4)" style={{ flexShrink: 0, marginTop: 2 }} />
-                    <span>{trimToSentence(alt.action, 18)}{alt.scores?.total != null ? ` (${alt.scores.total}/100)` : ""}</span>
-                  </div>
+                  <button
+                    key={`${alt.id}-${i}`}
+                    type="button"
+                    onClick={() => onSwap?.(alt)}
+                    disabled={!onSwap}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 8, textAlign: "left",
+                      background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: 8,
+                      padding: "8px 10px", color: "var(--bm-text2)", fontSize: 12.5, lineHeight: 1.45,
+                      cursor: onSwap ? "pointer" : "default", width: "100%",
+                    }}
+                  >
+                    <ArrowRight size={13} color="var(--bm-text4)" style={{ flexShrink: 0 }} />
+                    <span style={{ flex: 1 }}>{trimToSentence(alt.action, 18)}</span>
+                    {alt.scores?.total != null && (
+                      <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10.5, color: "var(--bm-text4)", flexShrink: 0 }}>{alt.scores.total}/100</span>
+                    )}
+                  </button>
                 ))}
               </div>
             </div>
@@ -157,6 +191,29 @@ export function IntelligencePanel({ data }: { data: TodayIntelligenceSummary | n
             <div>
               <Label>What we're watching for</Label>
               <div style={{ color: "var(--bm-text2)", fontSize: 13, lineHeight: 1.55 }}>{trimToSentence(reasoning?.smallest_evidence_to_resolve ?? data.decision.top_candidate?.expected_evidence, 26)}</div>
+            </div>
+          )}
+          {recentOutcomes && recentOutcomes.length > 0 && (
+            <div>
+              <Label>What happened last time</Label>
+              <div style={{ display: "grid", gap: 8 }}>
+                {recentOutcomes.map((o, i) => {
+                  const worked = o.outcome === "completed" && (o.evidence_match_score ?? 0) >= 0.5;
+                  const noSignal = o.outcome !== "completed" || o.evidence_match_score == null;
+                  const dot = worked ? "var(--bm-good, #6fcf97)" : noSignal ? "var(--bm-text4)" : "var(--bm-accent)";
+                  const date = o.outcome_recorded_at ? new Date(o.outcome_recorded_at).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
+                  return (
+                    <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12.5, lineHeight: 1.5 }}>
+                      <div style={{ width: 6, height: 6, borderRadius: "50%", background: dot, marginTop: 5, flexShrink: 0 }} />
+                      <div>
+                        <span style={{ color: "var(--bm-text4)", fontFamily: "'DM Mono', monospace", fontSize: 10 }}>{date}</span>{" "}
+                        <span style={{ color: "var(--bm-text2)" }}>{trimToSentence(o.action_shown, 16)}</span>
+                        {o.outcome_note && <span style={{ color: "var(--bm-text3)" }}> — {trimToSentence(o.outcome_note, 16)}</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>
