@@ -1,10 +1,11 @@
 /**
  * scripts/cleanup-avoidance-zones.ts
  *
- * ONE-TIME CLEANUP for founder_memory.avoidance_zones / strengths rows that
- * still contain the raw-truncated task-title fragments written before the
- * fix in app/api/founder-context/task-complete/route.ts (the one that used
- * to do `String(taskTitle).slice(0, 80)` instead of `actionCategoryLabel()`).
+ * ONE-TIME CLEANUP for founder_memory.avoidance_zones / strengths, AND
+ * founder_context.avoidance_zones, rows that still contain the raw-truncated
+ * task-title fragments written before the fix in
+ * app/api/founder-context/task-complete/route.ts (the one that used to do
+ * `String(taskTitle).slice(0, 80)` instead of `actionCategoryLabel()`).
  *
  * That fix stops NEW garbled entries from being written and cleans things
  * up organically over time (deduplicateTags() runs on every subsequent
@@ -12,6 +13,13 @@
  * sitting in them right now with no future write scheduled to clean them —
  * this script re-processes every existing row through the same
  * actionCategoryLabel() + deduplicateTags() pipeline, once, directly.
+ *
+ * founder_context.avoidance_zones is a SEPARATE column from
+ * founder_memory.avoidance_zones, fed by a weekly edge-function synthesis
+ * job (supabase/functions/scheduled-jobs/index.ts) that was silently
+ * failing since migration 20260604000000 renamed the column it was still
+ * reading/writing under the old name — now fixed, so this column starts
+ * accumulating data again and needs the same cleanup pass applied.
  *
  * Run: npx tsx scripts/cleanup-avoidance-zones.ts [--dry-run] [--user <uuid>]
  *
@@ -111,8 +119,46 @@ async function main() {
     }
   }
 
-  console.log(`\n${touched} row(s) ${isDryRun ? "would be" : "were"} updated, ${skipped} already clean.`);
-  if (isDryRun && touched > 0) {
+  console.log(`\n${touched} row(s) ${isDryRun ? "would be" : "were"} updated in founder_memory, ${skipped} already clean.`);
+
+  // ── Pass 2: founder_context.avoidance_zones (separate column, separate table) ──
+  let fcQuery = supabase.from("founder_context").select("user_id, avoidance_zones");
+  if (userIdArg) fcQuery = fcQuery.eq("user_id", userIdArg);
+
+  const { data: fcRows, error: fcError } = await fcQuery;
+  if (fcError) {
+    console.error("founder_context query failed:", fcError.message);
+    process.exit(1);
+  }
+
+  let fcTouched = 0;
+  let fcSkipped = 0;
+
+  for (const row of fcRows ?? []) {
+    const avoidance = cleanArray(row.avoidance_zones);
+    if (!avoidance.changed) {
+      fcSkipped++;
+      continue;
+    }
+    fcTouched++;
+    console.log(`\n[founder_context] user_id: ${row.user_id}`);
+    console.log(`  avoidance_zones:`);
+    console.log(`    before: ${JSON.stringify(avoidance.before)}`);
+    console.log(`    after:  ${JSON.stringify(avoidance.after)}`);
+
+    if (!isDryRun) {
+      const { error: updateError } = await supabase
+        .from("founder_context")
+        .update({ avoidance_zones: avoidance.after })
+        .eq("user_id", row.user_id);
+      if (updateError) {
+        console.error(`  FAILED to write: ${updateError.message}`);
+      }
+    }
+  }
+
+  console.log(`\n${fcTouched} row(s) ${isDryRun ? "would be" : "were"} updated in founder_context, ${fcSkipped} already clean.`);
+  if (isDryRun && (touched > 0 || fcTouched > 0)) {
     console.log("Run again without --dry-run to apply.");
   }
 }
