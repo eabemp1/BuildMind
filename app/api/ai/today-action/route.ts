@@ -229,6 +229,7 @@ export async function POST(request: Request) {
     let cognitionCognitiveLoad: ReflexionContext["cognitiveLoad"] = "fresh";
     let founderIntelligence: FounderIntelligenceState | null = null;
     let founderIntelligencePromptBlock = "";
+    let isLowConfidence = false;
     let personalisationCtx = { recentActionsBlock: "", recentReflectionsBlock: "", recurringBlockers: [] as string[], activeGoals: [] as string[] };
 
     // ── Shared context loader (lib/todayActionContext.ts) ──────────────────
@@ -271,6 +272,17 @@ export async function POST(request: Request) {
     supabase = tctx.adminClient;
     founderIntelligence = tctx.founderIntelligence;
     founderIntelligencePromptBlock = tctx.founderIntelligencePromptBlock;
+
+    // ── Confidence as a branch, not a hidden number ─────────────────────
+    // Same fix as today-action/stream/route.ts — see the comment there for
+    // the full rationale. Kept identical so the two routes can't drift into
+    // disagreeing about what counts as "low confidence."
+    const topCandidateConfidence = founderIntelligence?.decision.top_candidate?.scores.confidence ?? 100;
+    isLowConfidence = topCandidateConfidence < 40;
+    if (isLowConfidence) {
+      founderIntelligencePromptBlock += `\n\nCONFIDENCE NOTICE: Current confidence in this recommendation is low (${topCandidateConfidence}%) — there isn't enough recent evidence about this founder's situation yet. Do NOT phrase the task as a confident directive. Frame it explicitly as a small evidence-gathering step, and the rationale must say plainly that this is about closing an evidence gap, not a high-conviction recommendation.`;
+    }
+
     if (excludeAction) {
       founderIntelligencePromptBlock += `\n\nHARD CONSTRAINT: The founder just explicitly rejected this exact task moments ago: "${excludeAction}". Do NOT suggest this same task again, even reworded — pick a genuinely different highest-leverage action from the remaining candidates.`;
     }
@@ -856,10 +868,12 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
         hardFallbackReasons?: string[];
       };
       body?: string; // full reflexion output, stored separately from the card title
+      isLowConfidence?: boolean;
       decisionBasis?: {
         expected_evidence: string;
         why_it_beats_alternatives: string;
         score: number;
+        confidence?: number;
         alternatives: Array<{ action: string; score: number; why: string }>;
       };
     } = {
@@ -893,12 +907,15 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
       // per-something difficulty concept (isHardTask in
       // task-complete/route.ts) is scoped to project stage, not this task.
       difficulty: reflexionOutput?.difficulty,
+      // See CONFIDENCE NOTICE above — same fix as the stream route.
+      isLowConfidence,
     };
     if (founderIntelligence?.decision.top_candidate) {
       finalResult.decisionBasis = {
         expected_evidence: founderIntelligence.decision.top_candidate.expected_evidence,
         why_it_beats_alternatives: founderIntelligence.decision.top_candidate.why_it_beats_alternatives,
         score: founderIntelligence.decision.top_candidate.scores.total,
+        confidence: founderIntelligence.decision.top_candidate.scores.confidence,
         alternatives: founderIntelligence.decision.candidates.slice(1, 4).map((c) => ({
           action: c.action,
           score: c.scores.total,
