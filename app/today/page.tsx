@@ -76,6 +76,10 @@ type ActionData = {
   // log_row_id from recordActionShown — closes the learning loop via reflexion-outcome
   log_row_id?: string;
   difficulty?: "light" | "focused" | "deep"; // From app/api/ai/today-action's response
+  // Confidence as a branch — when true, action/why were composed with
+  // explicit evidence-gathering framing instead of a confident directive.
+  // See CONFIDENCE NOTICE in app/api/ai/today-action/stream/route.ts.
+  isLowConfidence?: boolean;
   // Founder Intelligence OS (Phase 10) — layered above the existing action,
   // never required for the card to render. See app/today/components/IntelligencePanel.tsx.
   intelligence?: TodayIntelligenceSummary;
@@ -435,6 +439,7 @@ function TodayContent() {
 
   // AI-personalised action state
   const [aiAction, setAiAction] = useState<ActionData | null>(null);
+  const [recentOutcomes, setRecentOutcomes] = useState<Array<{ action_shown: string; outcome: string; outcome_note: string | null; evidence_match_score: number | null; outcome_recorded_at: string | null }>>([]);
   const [debtSuppression, setDebtSuppression] = useState<DebtSuppression | null>(null);
   const [aiUsage, setAiUsage] = useState<{ monthlyUsed: number; monthlyLimit: number; unlimited: boolean } | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
@@ -505,6 +510,15 @@ function TodayContent() {
         } else if (d && !d.ok) {
           console.warn("[usage-status] request succeeded but returned an error payload:", d);
         }
+      })
+      .catch(() => {});
+
+    // "What happened last time" — cheap, read-only, no AI call. See
+    // app/api/founder-context/recent-outcomes/route.ts.
+    fetch("/api/founder-context/recent-outcomes", { cache: "no-store" })
+      .then(r => r.ok ? r.json() : null)
+      .then((d: { ok?: boolean; outcomes?: typeof recentOutcomes } | null) => {
+        if (d?.ok && Array.isArray(d.outcomes)) setRecentOutcomes(d.outcomes);
       })
       .catch(() => {});
 
@@ -1232,6 +1246,27 @@ function TodayContent() {
     } finally {
       setActionLoading(false);
     }
+  }
+
+  function handleSwapAlternative(alt: NonNullable<TodayIntelligenceSummary["decision"]["alternatives"]>[number]) {
+    if (!aiAction) return;
+    // Update the displayed action immediately — the founder shouldn't wait
+    // on a network round-trip to see the swap take effect.
+    setAiAction({
+      ...aiAction,
+      action: alt.action,
+      why: alt.why_it_beats_alternatives || aiAction.why,
+      message: alt.action, // draft/script wasn't generated for alternatives — action text stands in until reflected
+    });
+    // Fire-and-forget: repoints the pending Founder Intelligence prediction
+    // at what the founder actually chose. Doesn't block the swap from
+    // showing — this only keeps reflect-action's later outcome comparison
+    // and Thompson Sampling's per-archetype stats honest in the background.
+    void fetch("/api/founder-context/swap-action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ candidate: alt }),
+    }).catch(() => {});
   }
 
   async function handleCheckIn(selectedOutcome: Outcome) {
@@ -2335,7 +2370,7 @@ function TodayContent() {
           {/* Primary action — reference-style "highest-leverage action" card */}
           <div style={{
             background: "linear-gradient(180deg, var(--bm-bg2), var(--bm-bg3))",
-            border: "1px solid var(--bm-accent-bd)",
+            border: actionData.isLowConfidence ? "1px solid var(--bm-border2)" : "1px solid var(--bm-accent-bd)",
             borderRadius: 10,
             padding: isMobile ? "16px" : "18px 18px",
             marginBottom: 14,
@@ -2345,13 +2380,15 @@ function TodayContent() {
           }}>
             <div style={{
               width: 26, height: 26, borderRadius: 6,
-              background: "var(--bm-accent)", color: "#fff",
+              background: actionData.isLowConfidence ? "var(--bm-bg3)" : "var(--bm-accent)",
+              border: actionData.isLowConfidence ? "1px solid var(--bm-border2)" : "none",
+              color: actionData.isLowConfidence ? "var(--bm-text3)" : "#fff",
               display: "flex", alignItems: "center", justifyContent: "center",
               fontSize: 13, flexShrink: 0,
-            }}>🎯</div>
+            }}>{actionData.isLowConfidence ? "🔍" : "🎯"}</div>
             <div>
-              <div style={{ fontSize: 10, color: "var(--bm-accent)", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'DM Mono', monospace", marginBottom: 7 }}>
-                Today's highest-leverage action
+              <div style={{ fontSize: 10, color: actionData.isLowConfidence ? "var(--bm-text3)" : "var(--bm-accent)", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'DM Mono', monospace", marginBottom: 7 }}>
+                {actionData.isLowConfidence ? "Still calibrating — gathering evidence" : "Today's highest-leverage action"}
               </div>
               <p style={{ fontSize: isMobile ? 20 : 22, fontWeight: 400, color: "var(--bm-text)", lineHeight: 1.42, margin: "0 0 8px", letterSpacing: "-0.025em" }}>
                 {linkifyChannels(sanitizeOutput(actionData.action))}
@@ -2466,7 +2503,7 @@ function TodayContent() {
           </div>
         </div>
       </motion.div>
-      {uiMode === "pro" && <IntelligencePanel data={actionData.intelligence} />}
+      {uiMode === "pro" && <IntelligencePanel data={actionData.intelligence} onSwap={handleSwapAlternative} recentOutcomes={recentOutcomes} />}
       </>
       )}
 
