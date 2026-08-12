@@ -175,6 +175,16 @@ export interface FounderIntelligenceInput {
    *  exact same candidate would win the ranking again every time. See
    *  buildDecisionState() below for where this is actually applied. */
   excludeAction?: string;
+  /**
+   * One decision authority, not N independent generators: if present and
+   * dated today, buildFounderIntelligenceState() uses this DecisionState
+   * as-is instead of calling buildDecisionState() (which would draw a new
+   * Thompson Sampling sample and could land on a different top candidate
+   * purely from sampling variance, not from anything actually changing
+   * about the founder's situation). Ignored when excludeAction is set —
+   * an explicit "give me something else" should always compute fresh.
+   */
+  cachedDecision?: { decision: DecisionState; date: string } | null;
 }
 
 const EXTERNAL_KEYWORDS = /\b(user|customer|interview|feedback|talked|called|met|spoke|revenue|sale|paid|pricing|launch|publish|post|pitch|email|reach out|dm|contact)\b/i;
@@ -644,7 +654,11 @@ export function buildFounderIntelligenceState(input: FounderIntelligenceInput): 
     generated_at: now.toISOString(),
   };
 
-  const decision = buildDecisionState({ ...stateWithoutDecision, decision: { candidates: [], top_candidate: null, decision_basis: [] } }, input.excludeAction);
+  const todayDateStr = now.toISOString().slice(0, 10);
+  const hasFreshCache = !input.excludeAction && input.cachedDecision?.date === todayDateStr;
+  const decision = hasFreshCache
+    ? input.cachedDecision!.decision
+    : buildDecisionState({ ...stateWithoutDecision, decision: { candidates: [], top_candidate: null, decision_basis: [] } }, input.excludeAction);
 
   return { ...stateWithoutDecision, decision };
 }
@@ -1000,8 +1014,18 @@ export async function loadFounderIntelligence(
 
     const data = <T>(res: PromiseSettledResult<{ data: T }>, fallback: T): T => res.status === "fulfilled" ? (res.value.data ?? fallback) : fallback;
 
-    return buildFounderIntelligenceState({
-      founderContext: data(contextRes as PromiseSettledResult<{ data: Record<string, any> | null }>, null),
+    const founderContextRow = data(contextRes as PromiseSettledResult<{ data: Record<string, any> | null }>, null);
+    const todayDateStr = now.toISOString().slice(0, 10);
+    const cachedDecisionRaw = founderContextRow?.decision_cache;
+    const cachedDecisionDate = founderContextRow?.decision_cache_date;
+    // One decision authority: only treated as usable if it's dated today.
+    // A cache from yesterday (or earlier) is stale — new day, new sample.
+    const cachedDecision = cachedDecisionRaw && cachedDecisionDate
+      ? { decision: cachedDecisionRaw as DecisionState, date: String(cachedDecisionDate).slice(0, 10) }
+      : null;
+
+    const result = buildFounderIntelligenceState({
+      founderContext: founderContextRow,
       founderMemory: data(memoryRes as PromiseSettledResult<{ data: Record<string, any> | null }>, null),
       project: data(projectRes as PromiseSettledResult<{ data: Record<string, any> | null }>, null),
       milestones: data(milestonesRes as PromiseSettledResult<{ data: Array<Record<string, any>> }>, []),
@@ -1011,7 +1035,26 @@ export async function loadFounderIntelligence(
       activityEvents: data(activityRes as PromiseSettledResult<{ data: SessionEvent[] }>, []),
       actionLogs: data(actionLogsRes as PromiseSettledResult<{ data: Array<Record<string, any>> }>, []),
       now,
+      excludeAction: preloaded.excludeAction,
+      cachedDecision,
     });
+
+    // Cache miss (no same-day cache, or excludeAction forced a fresh
+    // compute) — write the newly-sampled decision back so the NEXT caller
+    // today (Today's own retry, Coach, any other surface) reads this same
+    // committed decision instead of drawing its own sample. Fire-and-forget:
+    // never adds latency to the response this decision is already part of.
+    const wasFreshCompute = preloaded.excludeAction || cachedDecision?.date !== todayDateStr;
+    if (wasFreshCompute) {
+      Promise.resolve(
+        supabase.from("founder_context").update({
+          decision_cache: result.decision,
+          decision_cache_date: todayDateStr,
+        }).eq("user_id", userId),
+      ).catch(() => {});
+    }
+
+    return result;
   } catch (err) {
     logError("founderIntelligence/loadFounderIntelligence", err, { userId, projectId });
     return buildFounderIntelligenceState({ ...preloaded, now });
