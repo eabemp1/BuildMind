@@ -177,4 +177,4 @@ export async function getCallAgenda(studentId: string): Promise<CallAgenda> {
     achievementsSince,
     xpEarnedSince,
   };
-  }
+}
