@@ -110,7 +110,7 @@ function ProgressContent() {
             fontFamily: "'Inter', sans-serif",
             fontSize: 12.5, color: "var(--bm-text2)", lineHeight: 1.5, margin: 0,
           }}>
-            At day 7 this product is good. At day 90 it&apos;s irreplaceable. The longer you use BuildMind, the more accurate your behavioral model becomes.
+            This gets sharper the more you use it — not on a fixed schedule, but because every resolved action feeds back into how much BuildMind trusts what it knows about you.
           </p>
         </div>
 
