@@ -15,8 +15,13 @@ import { deduplicateTags } from "@/lib/founderMemory";
  * existing logged-in admin session, and the service-role write uses the
  * server's own SUPABASE_SERVICE_ROLE_KEY (already configured in Vercel).
  *
+ * Cleans BOTH founder_memory.avoidance_zones/strengths AND the separate
+ * founder_context.avoidance_zones column (fed by a weekly edge-function
+ * synthesis job that was silently failing on a stale column name until
+ * this session — now fixed, so it needs the same safety net).
+ *
  * GET  → dry run: returns what WOULD change, writes nothing.
- * POST → live run: writes the cleaned arrays back to founder_memory.
+ * POST → live run: writes the cleaned arrays back.
  *
  * Optional query param ?user=<uuid> limits either mode to one account —
  * handy for spot-checking one of your test accounts before running it
@@ -90,6 +95,48 @@ async function runCleanup(userIdFilter: string | null, isDryRun: boolean) {
   return { ok: true as const, dryRun: isDryRun, touched, skipped, results };
 }
 
+async function runFounderContextCleanup(userIdFilter: string | null, isDryRun: boolean) {
+  const admin = createAdminClient();
+
+  let query = admin.from("founder_context").select("user_id, avoidance_zones");
+  if (userIdFilter) query = query.eq("user_id", userIdFilter);
+
+  const { data: rows, error } = await query;
+  if (error) {
+    return { ok: false as const, error: error.message };
+  }
+  if (!rows || rows.length === 0) {
+    return { ok: true as const, dryRun: isDryRun, touched: 0, skipped: 0, results: [] };
+  }
+
+  const results: Array<{ user_id: string; avoidance_zones: { before: string[]; after: string[] } }> = [];
+  let touched = 0;
+  let skipped = 0;
+
+  for (const row of rows) {
+    const avoidance = cleanArray((row as { avoidance_zones: unknown }).avoidance_zones);
+    if (!avoidance.changed) {
+      skipped++;
+      continue;
+    }
+    touched++;
+    const entry = { user_id: (row as { user_id: string }).user_id, avoidance_zones: { before: avoidance.before, after: avoidance.after } };
+    results.push(entry);
+
+    if (!isDryRun) {
+      const { error: updateError } = await admin
+        .from("founder_context")
+        .update({ avoidance_zones: avoidance.after })
+        .eq("user_id", (row as { user_id: string }).user_id);
+      if (updateError) {
+        (entry as Record<string, unknown>).writeError = updateError.message;
+      }
+    }
+  }
+
+  return { ok: true as const, dryRun: isDryRun, touched, skipped, results };
+}
+
 async function handle(request: Request, isDryRun: boolean) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -100,11 +147,21 @@ async function handle(request: Request, isDryRun: boolean) {
   const { searchParams } = new URL(request.url);
   const userIdFilter = searchParams.get("user");
 
-  const result = await runCleanup(userIdFilter, isDryRun);
-  if (!result.ok) {
-    return NextResponse.json(result, { status: 500 });
+  const founderMemoryResult = await runCleanup(userIdFilter, isDryRun);
+  const founderContextResult = await runFounderContextCleanup(userIdFilter, isDryRun);
+
+  if (!founderMemoryResult.ok) {
+    return NextResponse.json(founderMemoryResult, { status: 500 });
   }
-  return NextResponse.json(result);
+  if (!founderContextResult.ok) {
+    return NextResponse.json(founderContextResult, { status: 500 });
+  }
+  return NextResponse.json({
+    ok: true,
+    dryRun: isDryRun,
+    founder_memory: founderMemoryResult,
+    founder_context: founderContextResult,
+  });
 }
 
 // Dry run — safe to call any time, writes nothing.
