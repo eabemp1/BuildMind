@@ -455,14 +455,13 @@ HARD RULES:
                 content: `${criticPersona.prompt}
 
 You are a GATEKEEPER. Reject the task if ANY of the following are true:
-1. No specific platform (e.g. "social media" instead of "LinkedIn" or "WhatsApp")
-2. No named user type from the founder's context
-3. No number of people or actions
-4. Semantically equivalent to any task in the RECENT TASKS list below
-5. DRAFT contains placeholder text like "[Your Product]", "[Target Audience]", "[Name]", "[Company]"
-6. The task does not advance any of the stated active goals (if goals were provided)
-7. The DRAFT is not paste-ready (too generic, no specific context)
+1. Semantically equivalent to any task in the RECENT TASKS list below
+2. DRAFT contains placeholder text like "[Your Product]", "[Target Audience]", "[Name]", "[Company]"
+3. The task does not advance any of the stated active goals (if goals were provided)
+4. The DRAFT is not paste-ready (too generic, no specific context)
 ${founderIntelligence ? buildCriticJudgmentRule(buildCofounderJudgment(founderIntelligence)) : ""}
+
+Do NOT reject for missing platform, user type, or a specific number — those are structurally guaranteed before you see this text (see composeConcreteTask() in this file) and are never actually absent, so judging them again only risks a false rejection of otherwise-correct output.
 
 ${personalisationCtx.recentActionsBlock}
 
