@@ -35,8 +35,8 @@ const BUILDER_FEATURES = [
 const PROOF_POINTS = [
   { stat: "Day 1", text: "First calibrated task, tailored to your stage and startup context" },
   { stat: "Day 3", text: "First behavioral pattern detected and surfaced to you" },
-  { stat: "Day 7", text: "Weekly synthesis report with momentum trajectory and what to fix" },
-  { stat: "Day 30", text: "Full founder profile built — avoidance zones, strengths, personality model" },
+  { stat: "Week 2", text: "First week-over-week synthesis — what changed since last week, not just this week alone" },
+  { stat: "Ongoing", text: "Founder profile confidence grows with every resolved action — not a fixed calendar date, but the more evidence you give it, the more it trusts what it knows about you" },
 ];
 
 export default function PricingPage() {
