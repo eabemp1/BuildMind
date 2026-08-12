@@ -119,6 +119,89 @@ export async function recordFounderIntelligencePrediction(
   }
 }
 
+/**
+ * Called when a founder taps an alternative on the Today card instead of
+ * the deterministic top candidate. Updates the still-pending prediction row
+ * to point at the chosen archetype instead of creating a second row —
+ * there should be exactly one pending Founder Intelligence prediction per
+ * shown action, and it needs to describe what the founder is actually about
+ * to do, or reflect-action's later outcome comparison and Thompson
+ * Sampling's per-archetype stats would both be scored against the wrong
+ * candidate.
+ */
+export async function swapPredictionCandidate(
+  supabase: SupabaseLike,
+  params: { userId: string; candidate: DecisionCandidate },
+): Promise<boolean> {
+  try {
+    const { data: pending, error: findErr } = await supabase
+      .from("reflexion_learning_log")
+      .select("id")
+      .eq("user_id", params.userId)
+      .eq("prediction_source", "founder_intelligence")
+      .eq("outcome", "pending")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (findErr) throw findErr;
+    if (!pending?.id) return false;
+
+    const { error: updateErr } = await supabase
+      .from("reflexion_learning_log")
+      .update({
+        action_shown: params.candidate.action,
+        candidate_id: params.candidate.id,
+        predicted_evidence: params.candidate.expected_evidence,
+        decision_rationale: {
+          rationale: params.candidate.rationale,
+          why_it_beats_alternatives: params.candidate.why_it_beats_alternatives,
+          scores: params.candidate.scores,
+          founder_swapped: true,
+        },
+        review_condition: params.candidate.expected_evidence,
+      })
+      .eq("id", pending.id);
+    if (updateErr) throw updateErr;
+    return true;
+  } catch (err) {
+    logError("learningLoop/swapPredictionCandidate", err, { userId: params.userId });
+    return false;
+  }
+}
+
+export interface ResolvedPrediction {
+  action_shown: string;
+  outcome: string;
+  outcome_note: string | null;
+  evidence_match_score: number | null;
+  outcome_recorded_at: string | null;
+}
+
+/**
+ * Last few resolved (non-pending) Founder Intelligence predictions, most
+ * recent first. This is what powers the "what happened last time" view —
+ * the actual compounding evidence loop, not just a streak counter. Without
+ * this visible somewhere, the whole learning-loop rebuild this session is
+ * invisible to the one person it's meant to build trust with.
+ */
+export async function getRecentResolvedPredictions(supabase: SupabaseLike, userId: string, limit = 3): Promise<ResolvedPrediction[]> {
+  try {
+    const { data, error } = await supabase
+      .from("reflexion_learning_log")
+      .select("action_shown, outcome, outcome_note, evidence_match_score, outcome_recorded_at")
+      .eq("user_id", userId)
+      .eq("prediction_source", "founder_intelligence")
+      .neq("outcome", "pending")
+      .order("outcome_recorded_at", { ascending: false, nullsFirst: false })
+      .limit(limit);
+    if (error) throw error;
+    return (data ?? []) as ResolvedPrediction[];
+  } catch (err) {
+    logError("learningLoop/getRecentResolvedPredictions", err, { userId });
+    return [];
+  }
+}
+
 function mapOutcome(raw: string): "completed" | "overridden" | "ignored" | "partial" {
   const o = raw.toLowerCase();
   if (o === "completed" || o === "done") return "completed";
@@ -170,6 +253,7 @@ export async function compareFounderIntelligenceOutcome(
         outcome: mapOutcome(params.outcome),
         outcome_recorded_at: new Date().toISOString(),
         evidence_match_score: score,
+        outcome_note: params.reflectionText?.trim() ? params.reflectionText.trim().slice(0, 200) : null,
       })
       .eq("id", pending.id);
 
@@ -294,4 +378,4 @@ export async function getCandidateArchetypeStats(supabase: SupabaseLike, userId:
     logError("learningLoop/getCandidateArchetypeStats", err, { userId });
     return {};
   }
-}
+          }
