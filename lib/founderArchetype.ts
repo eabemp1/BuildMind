@@ -56,6 +56,85 @@ function validArchetype(value: unknown): value is FounderArchetype {
   return typeof value === "string" && value in ARCHETYPE_TONE;
 }
 
+// ── Empirical Bayes shrinkage for archetype confidence ──────────────────
+// Previously archetype_confidence was whatever the LLM self-reported in a
+// single onboarding classification call, then frozen forever — no
+// mechanism ever revisited it as the founder accumulated real behavioral
+// evidence. That's the actual reason "Day 30: confidence >= 0.65" wasn't a
+// promise the system could keep: confidence had no relationship to elapsed
+// time or evidence volume at all, in either direction.
+//
+// This blends the raw confidence with a cohort prior (average confidence
+// among other founders at the same stage), weighted by how much of this
+// founder's OWN resolved evidence exists. At onboarding, individual
+// evidence is ~0, so confidence honestly reflects "founders like you"
+// rather than one LLM guess from a paragraph of onboarding text. As real
+// evidence accumulates (see recomputeArchetypeConfidence below, called
+// periodically from the weekly job), the blend shifts toward what's
+// actually true of THIS founder.
+const SHRINKAGE_K = 5; // "virtual observations" the cohort prior is worth
+
+async function getStageConfidencePrior(supabase: ReturnType<typeof createAdminClient>, stage: string): Promise<number> {
+  try {
+    const { data: stageUsers } = await supabase.from("founder_context").select("user_id").eq("current_stage", stage).limit(200);
+    const ids = (stageUsers ?? []).map((r: { user_id: string }) => r.user_id);
+    if (ids.length < 5) return 0.5; // not enough cohort data to trust yet — neutral prior
+    const { data: mem } = await supabase.from("founder_memory").select("archetype_confidence").in("user_id", ids).not("archetype_confidence", "is", null);
+    const values = (mem ?? []).map((r: { archetype_confidence: number | null }) => r.archetype_confidence).filter((v: unknown): v is number => typeof v === "number");
+    if (values.length < 5) return 0.5;
+    return values.reduce((a: number, b: number) => a + b, 0) / values.length;
+  } catch {
+    return 0.5;
+  }
+}
+
+async function getEvidenceCount(supabase: ReturnType<typeof createAdminClient>, userId: string): Promise<number> {
+  try {
+    const { count } = await supabase
+      .from("reflexion_learning_log")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .neq("outcome", "pending");
+    return count ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+function shrinkConfidence(individualConfidence: number, individualEvidenceCount: number, cohortPrior: number, k = SHRINKAGE_K): number {
+  return (individualEvidenceCount * individualConfidence + k * cohortPrior) / (individualEvidenceCount + k);
+}
+
+/**
+ * Recomputes archetype_confidence for a founder using their CURRENT amount
+ * of resolved evidence, without re-running the LLM classification (the
+ * archetype label itself stays sticky — this only updates how much to
+ * trust it). Meant to be called periodically (weekly job) so confidence
+ * actually moves as evidence accumulates, instead of being set once at
+ * onboarding and never touched again.
+ */
+export async function recomputeArchetypeConfidence(userId: string, stage: string): Promise<number | null> {
+  try {
+    const supabase = createAdminClient();
+    const { data: memory } = await supabase.from("founder_memory").select("archetype_confidence, personality_tags").eq("user_id", userId).maybeSingle();
+    const archetypeTag = (memory?.personality_tags as string[] | undefined)?.find((t) => t.startsWith("archetype:"));
+    if (!archetypeTag || archetypeTag === "archetype:unclassified") return null; // nothing to recompute confidence for
+
+    const rawConfidence = typeof memory?.archetype_confidence === "number" ? memory.archetype_confidence : 0.5;
+    const [prior, evidenceCount] = await Promise.all([
+      getStageConfidencePrior(supabase, stage),
+      getEvidenceCount(supabase, userId),
+    ]);
+    const shrunk = shrinkConfidence(rawConfidence, evidenceCount, prior);
+
+    await supabase.from("founder_memory").update({ archetype_confidence: shrunk, updated_at: new Date().toISOString() }).eq("user_id", userId);
+    return shrunk;
+  } catch (err) {
+    console.error("[founderArchetype] recomputeArchetypeConfidence failed:", err);
+    return null;
+  }
+}
+
 async function upsertArchetype(userId: string, result: ArchetypeResult, statusTag: string) {
   const supabase = createAdminClient();
   const { data: existing } = await supabase
@@ -109,9 +188,22 @@ Extracted tags: ${extractedTags.join(", ") || "none"}${patternContext}`;
   try {
     const raw = await groqJSON<{ archetype?: string; confidence?: number; signals?: string[] }>(systemPrompt, userPrompt);
     const archetype = validArchetype(raw.archetype) ? raw.archetype : FALLBACK.archetype;
+    const rawConfidence = Math.min(1, Math.max(0, Number(raw.confidence ?? 0.5)));
+
+    // Shrink toward the stage cohort prior — at onboarding this founder has
+    // ~0 resolved evidence of their own, so the raw LLM confidence (a guess
+    // from one paragraph of onboarding text) shouldn't be trusted at face
+    // value. See recomputeArchetypeConfidence() for how this evolves later
+    // as real evidence accumulates.
+    const supabaseForPrior = createAdminClient();
+    const [prior, evidenceCount] = userId
+      ? await Promise.all([getStageConfidencePrior(supabaseForPrior, stage), getEvidenceCount(supabaseForPrior, userId)])
+      : [0.5, 0];
+    const shrunkConfidence = shrinkConfidence(rawConfidence, evidenceCount, prior);
+
     const result: ArchetypeResult = {
       archetype,
-      confidence: Math.min(1, Math.max(0, Number(raw.confidence ?? 0.5))),
+      confidence: shrunkConfidence,
       signals: Array.isArray(raw.signals) ? raw.signals.slice(0, 3) : FALLBACK.signals,
       toneDirective: ARCHETYPE_TONE[archetype],
       watchFor: ARCHETYPE_WATCH[archetype],
