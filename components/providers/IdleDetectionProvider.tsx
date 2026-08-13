@@ -59,7 +59,7 @@ export default function IdleDetectionProvider({ children }: { children: React.Re
             }}
           >
             <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-              <div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--bm-accent)", flexShrink: 0, marginTop: 4, boxShadow: "0 0 8px var(--bm-accent)" }} />
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--bm-accent)", flexShrink: 0, marginTop: 4 }} />
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: "var(--bm-accent)", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>CoFounder</div>
                 <div style={{ fontSize: 13, color: "#d0d0e0", lineHeight: 1.5 }}>{sanitizeOutput(toast.message)}</div>
