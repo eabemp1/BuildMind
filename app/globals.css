@@ -55,6 +55,40 @@
   --r-md: 4px;
   --r-lg: 6px;
   --r-xl: 8px;
+  --r-2xl: 12px; /* section-level cards, buttons in a grid (e.g. destination tiles) */
+  --r-3xl: 16px; /* large outer page-section containers */
+  /* ── TYPE SCALE ──────────────────────────────────────
+     7 sizes, nothing in between. If a design calls for "13.5px" or
+     "11.5px," that's a signal to round to the nearest step below, not to
+     invent a new number — the whole point is a small, memorizable set of
+     choices instead of every component picking its own value. --text-base
+     matches the existing global body font-size (13px) so nothing shifts
+     for unmigrated components. */
+  --text-xs:   11px;  /* timestamps, mono labels, fine print */
+  --text-sm:   12px;  /* secondary body, captions, metadata */
+  --text-base: 13px;  /* default body copy */
+  --text-md:   14px;  /* emphasized body, form inputs, list titles */
+  --text-lg:   16px;  /* card/section titles */
+  --text-xl:   20px;  /* page subheadings */
+  --text-2xl:  26px;  /* page titles (matches existing h1) */
+  --text-3xl:  34px;  /* hero/landing only */
+  --leading-tight:   1.25;
+  --leading-normal:  1.5;
+  --leading-relaxed: 1.65;
+  /* ── SPACING SCALE ───────────────────────────────────
+     4px base grid. Padding, margin, and gap should all be pulled from
+     this list — not "18px" or "22px" because it looked right in one
+     component. Consistent rhythm is most of what reads as "designed"
+     rather than "assembled." */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+  --space-12: 48px;
   --shadow-sm: none;
   --shadow-md: none;
   --shadow-lg: none;
