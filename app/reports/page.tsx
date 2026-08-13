@@ -61,7 +61,7 @@ function DayBars({ data, color, weekStart }: { data: number[]; color: string; we
               style={{ width: "100%", background: isToday ? "var(--bm-accent)" : color,
                 height: `${Math.max(3, (v/max)*40)}px`, borderRadius: 4,
                 transformOrigin: "bottom",
-                boxShadow: v > 0 ? `0 0 8px ${isToday ? "var(--bm-accent)" : color}44` : "none",
+                boxShadow: "none",
                 opacity: v === 0 ? 0.25 : 1,
               }}/>
             <span style={{ fontSize: 9, color: isToday ? "var(--bm-accent)" : "var(--bm-text3)", fontWeight: isToday ? 700 : 500, lineHeight: 1 }}>
@@ -722,7 +722,7 @@ export default function ReportsPage() {
         {/* AI INSIGHT */}
         <motion.div initial={{ opacity:0, y:6 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.45 }}
           style={{ background:"var(--bm-accent-dim)", border:"1px solid var(--bm-accent-bd)",
-            borderLeft:"3px solid var(--bm-accent)", borderRadius:"var(--r-xl)", padding:"18px 22px",
+            borderRadius:"var(--r-xl)", padding:"18px 22px",
             marginBottom: avoidancePattern ? 12 : 0 }}>
           <div style={{ fontSize:9, fontWeight:700, color:"var(--bm-accent)",
             textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:8 }}>BuildMind Analysis</div>
@@ -824,13 +824,16 @@ export default function ReportsPage() {
         {/* Avoidance pattern callout */}
         {avoidancePattern && (
           <motion.div initial={{ opacity:0, y:4 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.5 }}
-            style={{ borderLeft:"2px solid var(--bm-amber)", paddingLeft:14, marginBottom:0, marginTop:12 }}>
-            <p style={{ fontSize:13, color:"var(--bm-text2)", margin:"0 0 4px", lineHeight:1.5 }}>
-              Pattern detected: {avoidancePattern}. This is being written to your behavioral profile.
-            </p>
-            <p style={{ fontSize:12, color:"var(--bm-text3)", margin:0 }}>
-              Monday&apos;s task will route around this pattern automatically.
-            </p>
+            style={{ display:"flex", gap:10, marginBottom:0, marginTop:12 }}>
+            <span style={{ width:6, height:6, borderRadius:"50%", background:"var(--bm-amber)", marginTop:7, flexShrink:0 }} />
+            <div>
+              <p style={{ fontSize:13, color:"var(--bm-text2)", margin:"0 0 4px", lineHeight:1.5 }}>
+                Pattern detected: {avoidancePattern}. This is being written to your behavioral profile.
+              </p>
+              <p style={{ fontSize:12, color:"var(--bm-text3)", margin:0 }}>
+                Monday&apos;s task will route around this pattern automatically.
+              </p>
+            </div>
           </motion.div>
         )}
         </div>
