@@ -1545,12 +1545,14 @@ function TodayContent() {
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: 0.1 + i * 0.08 }}
                 style={{
-                  borderLeft: "2px solid var(--bm-red)",
-                  paddingLeft: 14,
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 10,
                   paddingTop: 2,
                   paddingBottom: 2,
                 }}
               >
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--bm-red)", marginTop: 6, flexShrink: 0 }} />
                 <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.6 }}>{sanitizeOutput(point)}</p>
               </motion.div>
             ))}
@@ -2341,20 +2343,20 @@ function TodayContent() {
               </span>
             )}
             {actionLoading && (
-              <span style={{ fontSize: 11, color: "var(--bm-text3)", display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: "var(--text-xs)", color: "var(--bm-text3)", display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
                 <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "var(--bm-accent)", opacity: 0.6, animation: "bm-pulse 1.2s ease-in-out infinite" }} />
                 {sanitizeOutput(streamLabel ?? "Calibrating...")}
               </span>
             )}
             {!actionData.isAI && !actionLoading && (
-              <span style={{ fontSize: 10, color: "var(--bm-text4)", fontStyle: "italic" }}>
+              <span style={{ fontSize: "var(--text-xs)", color: "var(--bm-text4)", fontStyle: "italic" }}>
                 Baseline objective
               </span>
             )}
-            <span style={{ fontSize: 11, color: "var(--bm-text3)", display: "flex", alignItems: "center", gap: 4, marginLeft: "auto" }}>
+            <span style={{ fontSize: "var(--text-xs)", color: "var(--bm-text3)", display: "flex", alignItems: "center", gap: "var(--space-1)", marginLeft: "auto" }}>
               {actionData.difficulty && (
                 <span style={{
-                  fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 999,
+                  fontSize: "var(--text-xs)", fontWeight: 700, padding: "2px 7px", borderRadius: 999,
                   textTransform: "capitalize",
                   color: actionData.difficulty === "deep" ? "var(--bm-red)" : actionData.difficulty === "light" ? "var(--bm-green)" : "var(--bm-text3)",
                   background: actionData.difficulty === "deep" ? "rgba(224,85,85,0.12)" : actionData.difficulty === "light" ? "rgba(74,184,176,0.12)" : "var(--bm-bg3)",
@@ -2371,29 +2373,29 @@ function TodayContent() {
           <div style={{
             background: "linear-gradient(180deg, var(--bm-bg2), var(--bm-bg3))",
             border: actionData.isLowConfidence ? "1px solid var(--bm-border2)" : "1px solid var(--bm-accent-bd)",
-            borderRadius: 10,
-            padding: isMobile ? "16px" : "18px 18px",
-            marginBottom: 14,
+            borderRadius: "var(--r-xl)",
+            padding: isMobile ? "var(--space-4)" : "var(--space-4) var(--space-4)",
+            marginBottom: "var(--space-4)",
             display: "flex",
             alignItems: "flex-start",
-            gap: 10,
+            gap: "var(--space-3)",
           }}>
             <div style={{
-              width: 26, height: 26, borderRadius: 6,
+              width: 26, height: 26, borderRadius: "var(--r-lg)",
               background: actionData.isLowConfidence ? "var(--bm-bg3)" : "var(--bm-accent)",
               border: actionData.isLowConfidence ? "1px solid var(--bm-border2)" : "none",
               color: actionData.isLowConfidence ? "var(--bm-text3)" : "#fff",
               display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 13, flexShrink: 0,
+              fontSize: "var(--text-base)", flexShrink: 0,
             }}>{actionData.isLowConfidence ? "🔍" : "🎯"}</div>
             <div>
-              <div style={{ fontSize: 10, color: actionData.isLowConfidence ? "var(--bm-text3)" : "var(--bm-accent)", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'DM Mono', monospace", marginBottom: 7 }}>
+              <div style={{ fontSize: "var(--text-xs)", color: actionData.isLowConfidence ? "var(--bm-text3)" : "var(--bm-accent)", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'DM Mono', monospace", marginBottom: "var(--space-2)" }}>
                 {actionData.isLowConfidence ? "Still calibrating — gathering evidence" : "Today's highest-leverage action"}
               </div>
-              <p style={{ fontSize: isMobile ? 20 : 22, fontWeight: 400, color: "var(--bm-text)", lineHeight: 1.42, margin: "0 0 8px", letterSpacing: "-0.025em" }}>
+              <p style={{ fontSize: isMobile ? "var(--text-xl)" : "var(--text-2xl)", fontWeight: 400, color: "var(--bm-text)", lineHeight: "var(--leading-tight)", margin: `0 0 var(--space-2)`, letterSpacing: "-0.025em" }}>
                 {linkifyChannels(sanitizeOutput(actionData.action))}
               </p>
-              <p style={{ fontSize: 13, color: "var(--bm-text2)", fontWeight: 400, margin: 0, lineHeight: 1.55 }}>
+              <p style={{ fontSize: "var(--text-base)", color: "var(--bm-text2)", fontWeight: 400, margin: 0, lineHeight: "var(--leading-relaxed)" }}>
                 {isOutreachAction
                   ? "Execute this before opening the rest of the day. The system will learn from the result."
                   : "This is the highest-leverage operating move for the current stage. Everything else is secondary."}
@@ -2408,18 +2410,18 @@ function TodayContent() {
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 6,
+                gap: "var(--space-2)",
                 background: "transparent",
                 border: "1px solid var(--bm-border)",
-                borderRadius: 8,
-                padding: "7px 13px",
-                fontSize: 12,
+                borderRadius: "var(--r-lg)",
+                padding: "var(--space-2) var(--space-3)",
+                fontSize: "var(--text-sm)",
                 fontWeight: 500,
                 color: "var(--bm-text3)",
                 cursor: replacingTask ? "not-allowed" : "pointer",
                 opacity: replacingTask ? 0.5 : 1,
                 transition: "all 0.15s",
-                marginBottom: 12,
+                marginBottom: "var(--space-3)",
                 fontFamily: "inherit",
               }}
               onMouseEnter={e => { e.currentTarget.style.color = "var(--bm-text2)"; }}
@@ -2432,15 +2434,15 @@ function TodayContent() {
 
           {/* Script instruction */}
           <div style={{
-            display: "flex", alignItems: "center", gap: 8, marginBottom: 10,
-            padding: "8px 12px", borderRadius: 9,
+            display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-3)",
+            padding: "var(--space-2) var(--space-3)", borderRadius: "var(--r-lg)",
             background: "var(--bm-bg3)", border: "1px solid var(--bm-border)",
           }}>
             <div>
-              <p style={{ fontSize: 12, fontWeight: 700, color: "var(--bm-text)", margin: "0 0 1px" }}>
+              <p style={{ fontSize: "var(--text-sm)", fontWeight: 700, color: "var(--bm-text)", margin: "0 0 1px" }}>
                 {isOutreachAction ? "Prepare the message" : "Prepare the script"}
               </p>
-              <p style={{ fontSize: 11, color: "var(--bm-text3)", margin: 0 }}>
+              <p style={{ fontSize: "var(--text-xs)", color: "var(--bm-text3)", margin: 0 }}>
                 {isOutreachAction
                   ? "Project context is pre-filled. Adjust only what improves clarity."
                   : "Use the script as written unless the context is wrong."}
@@ -2449,20 +2451,20 @@ function TodayContent() {
           </div>
 
           {/* Why — with reflexion rationale */}
-          <div style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: 10, padding: isMobile ? "16px" : "14px 16px", marginBottom: 18 }}>
-            <div style={{ fontSize: 10, fontWeight: 400, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6, display: "flex", alignItems: "center", gap: 5, fontFamily: "'DM Mono', monospace" }}>
+          <div style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-xl)", padding: isMobile ? "var(--space-4)" : "var(--space-4) var(--space-4)", marginBottom: "var(--space-5)" }}>
+            <div style={{ fontSize: "var(--text-xs)", fontWeight: 400, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "var(--space-2)", display: "flex", alignItems: "center", gap: 5, fontFamily: "'DM Mono', monospace" }}>
               <Brain size={10} color="var(--bm-text3)" /> Strategic rationale
             </div>
-            <p style={{ fontSize: isMobile ? 14 : 13, color: "var(--bm-text2)", margin: "0 0 10px", lineHeight: 1.6 }}>
+            <p style={{ fontSize: "var(--text-md)", color: "var(--bm-text2)", margin: "0 0 var(--space-3)", lineHeight: "var(--leading-relaxed)" }}>
               {sanitizeOutput(actionData.reflexion?.rationale ?? actionData.why)}
             </p>
             {actionData.reflexion?.lastReflectionUsed && (
-              <div style={{ fontSize: 11, color: "var(--bm-text3)", borderTop: "1px solid var(--bm-border)", paddingTop: 10 }}>
+              <div style={{ fontSize: "var(--text-xs)", color: "var(--bm-text3)", borderTop: "1px solid var(--bm-border)", paddingTop: "var(--space-3)" }}>
                 Your yesterday's reflection shaped this recommendation.
               </div>
             )}
             {actionData.reflexion?.wasHardFallback && (
-              <div style={{ fontSize: 11, color: "var(--bm-text3)", borderTop: "1px solid var(--bm-border)", paddingTop: 10, display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ fontSize: "var(--text-xs)", color: "var(--bm-text3)", borderTop: "1px solid var(--bm-border)", paddingTop: "var(--space-3)", display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
                 <AlertCircle size={11} color="var(--bm-text3)" />
                 Today's AI draft didn't meet our concreteness bar, so this is a proven fallback task instead — still real, just not freshly composed.
               </div>
@@ -2470,20 +2472,20 @@ function TodayContent() {
           </div>
 
           {/* ── Message template — pre-filled with real project values ── */}
-          <div style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: 10, padding: isMobile ? "16px" : "14px 16px" }}>
-            <div style={{ display: "flex", alignItems: isMobile ? "stretch" : "center", justifyContent: "space-between", marginBottom: 8, gap: 8, flexDirection: isMobile ? "column" : "row" }}>
-              <span style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+          <div style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: "var(--r-xl)", padding: isMobile ? "var(--space-4)" : "var(--space-4) var(--space-4)" }}>
+            <div style={{ display: "flex", alignItems: isMobile ? "stretch" : "center", justifyContent: "space-between", marginBottom: "var(--space-2)", gap: "var(--space-2)", flexDirection: isMobile ? "column" : "row" }}>
+              <span style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
                 {isOutreachAction ? "Execution draft" : "Execution script"}
               </span>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, width: isMobile ? "100%" : "auto" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", width: isMobile ? "100%" : "auto" }}>
                 <button
                   onClick={() => void handleShareMessage()}
-                  style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "4px 10px", borderRadius: 7, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", fontSize: 11, cursor: "pointer", fontFamily: "inherit", flex: isMobile ? 1 : "0 0 auto" }}
+                  style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "4px 10px", borderRadius: "var(--r-lg)", border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", fontSize: "var(--text-xs)", cursor: "pointer", fontFamily: "inherit", flex: isMobile ? 1 : "0 0 auto" }}
                 >
                   {shared ? <><Check size={11} color="var(--bm-accent)" /> Shared</> : <>↗ Share</>}
                 </button>
                 <button onClick={handleCopy}
-                  style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "4px 10px", borderRadius: 7, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", fontSize: 11, cursor: "pointer", fontFamily: "inherit", flex: isMobile ? 1 : "0 0 auto" }}>
+                  style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "4px 10px", borderRadius: "var(--r-lg)", border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", fontSize: "var(--text-xs)", cursor: "pointer", fontFamily: "inherit", flex: isMobile ? 1 : "0 0 auto" }}>
                   {copied ? <><Check size={11} color="var(--bm-accent)" /> Copied</> : <><Copy size={11} /> Copy</>}
                 </button>
               </div>
@@ -2493,12 +2495,12 @@ function TodayContent() {
                 value={draftMessage ?? ""}
                 onChange={e => setDraftMessage(e.target.value)}
                 rows={4}
-                style={{ width: "100%", background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)", borderRadius: 9, padding: "10px 13px", fontSize: isMobile ? 14 : 13, color: "var(--bm-text)", outline: "none", fontFamily: "inherit", resize: "vertical", boxSizing: "border-box", lineHeight: 1.6, transition: "border-color 0.15s" }}
+                style={{ width: "100%", background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)", borderRadius: "var(--r-lg)", padding: "var(--space-3) var(--space-3)", fontSize: isMobile ? "var(--text-md)" : "var(--text-base)", color: "var(--bm-text)", outline: "none", fontFamily: "inherit", resize: "vertical", boxSizing: "border-box", lineHeight: "var(--leading-relaxed)", transition: "border-color 0.15s" }}
                 onFocus={e => { e.target.style.borderColor = "var(--bm-accent-bd)"; }}
                 onBlur={e => { e.target.style.borderColor = "var(--bm-border2)"; }}
               />
             ) : (
-              <p style={{ fontSize: isMobile ? 14 : 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.6, fontStyle: "italic" }}>&ldquo;{sanitizeOutput(draftMessage ?? actionData.message)}&rdquo;</p>
+              <p style={{ fontSize: isMobile ? "var(--text-md)" : "var(--text-base)", color: "var(--bm-text2)", margin: 0, lineHeight: "var(--leading-relaxed)", fontStyle: "italic" }}>&ldquo;{sanitizeOutput(draftMessage ?? actionData.message)}&rdquo;</p>
             )}
           </div>
         </div>
@@ -2509,29 +2511,29 @@ function TodayContent() {
 
       {/* ── Destinations ── */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}
-        style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 18, padding: isMobile ? "18px" : "20px 24px", marginBottom: 14 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+        style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-3xl)", padding: isMobile ? "var(--space-5)" : "var(--space-5) var(--space-6)", marginBottom: "var(--space-4)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-1)" }}>
           <div style={{
             width: 22, height: 22, borderRadius: "50%",
             background: "var(--bm-bg4)", color: "var(--bm-text3)",
             display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 11, fontWeight: 800, flexShrink: 0,
+            fontSize: "var(--text-xs)", fontWeight: 800, flexShrink: 0,
           }}>3</div>
-          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)" }}>Send it — pick one channel below</div>
+          <div style={{ fontSize: "var(--text-sm)", fontWeight: 600, color: "var(--bm-text2)" }}>Send it — pick one channel below</div>
         </div>
-        <p style={{ fontSize: 11, color: "var(--bm-text3)", marginBottom: 14, lineHeight: 1.5, paddingLeft: 30 }}>
+        <p style={{ fontSize: "var(--text-xs)", color: "var(--bm-text3)", marginBottom: "var(--space-4)", lineHeight: "var(--leading-normal)", paddingLeft: 30 }}>
           {targetUsers
             ? <>Reach your <strong style={{ color: "var(--bm-text3)", fontWeight: 500 }}>{targetUsers}</strong> directly. At least 3 people. Done counts even if they don't reply.</>
             : "At least 3 people. Done counts as done even if they don't reply. Replies are a bonus."}
         </p>
-        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(4, 1fr)", gap: 9 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(4, 1fr)", gap: "var(--space-2)" }}>
           {destinations.map(d => (
             <a key={d.label} href={d.url} target="_blank" rel="noopener noreferrer"
-              style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 7, padding: isMobile ? "16px 8px" : "14px 8px", borderRadius: 12, border: "1px solid var(--bm-border)", background: "var(--bm-bg3)", textDecoration: "none", transition: "all 0.15s" }}
+              style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "var(--space-2)", padding: isMobile ? "var(--space-4) var(--space-2)" : "var(--space-3) var(--space-2)", borderRadius: "var(--r-2xl)", border: "1px solid var(--bm-border)", background: "var(--bm-bg3)", textDecoration: "none", transition: "all 0.15s" }}
               onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--bm-border2)"; e.currentTarget.style.background = "var(--bm-bg4)"; }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--bm-border)"; e.currentTarget.style.background = "var(--bm-bg3)"; }}>
-              <span style={{ fontSize: 22 }}>{d.icon}</span>
-              <span style={{ fontSize: 11, color: "var(--bm-text3)", textAlign: "center", lineHeight: 1.3 }}>{d.label}</span>
+              <span style={{ fontSize: "var(--text-2xl)" }}>{d.icon}</span>
+              <span style={{ fontSize: "var(--text-xs)", color: "var(--bm-text3)", textAlign: "center", lineHeight: "var(--leading-tight)" }}>{d.label}</span>
             </a>
           ))}
         </div>
@@ -2539,16 +2541,16 @@ function TodayContent() {
 
       {/* ── Check-in ── */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.16 }}
-        style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 18, padding: isMobile ? "18px" : "20px 24px" }}>
+        style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-3xl)", padding: isMobile ? "var(--space-5)" : "var(--space-5) var(--space-6)" }}>
 
         {/* Stage motivator */}
         {project?.startup_stage && (
           <p
             style={{
-              fontSize: 12,
+              fontSize: "var(--text-sm)",
               color: "var(--bm-text3)",
-              marginBottom: 14,
-              lineHeight: 1.5,
+              marginBottom: "var(--space-4)",
+              lineHeight: "var(--leading-normal)",
               fontStyle: "italic",
             }}
           >
@@ -2565,7 +2567,7 @@ function TodayContent() {
         )}
 
         {/* Progress tracker */}
-        <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 20, overflow: "hidden" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: "var(--space-5)", overflow: "hidden" }}>
           {[
             { n: 1, label: "Read action", done: true },
             { n: 2, label: "Edit script", done: !!draftMessage },
