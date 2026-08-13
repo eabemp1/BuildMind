@@ -173,8 +173,6 @@ export function NavItem({
           ? {
               color: "var(--bm-text)",
               background: "color-mix(in srgb, var(--bm-bg3) 64%, transparent)",
-              borderLeft: "2px solid var(--bm-accent)",
-              paddingLeft: "calc(1rem - 2px)",
               fontWeight: 500,
             }
           : {
