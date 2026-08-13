@@ -475,7 +475,7 @@ function DayTimeline() {
                       style={{
                         background: isActive ? "var(--bm-accent)" : "var(--bm-bg4)",
                         border: `1px solid ${isActive ? "var(--bm-accent)" : "var(--bm-border3)"}`,
-                        boxShadow: isActive ? "0 0 12px rgba(232,197,71,0.55), 0 0 4px rgba(232,197,71,0.8)" : "none",
+                        boxShadow: "none",
                       }}
                     />
                   </span>
