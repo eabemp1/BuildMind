@@ -194,7 +194,7 @@ function MilestoneCard({ milestone, tasks, index, onToggleTask, onUpdateEstimate
 
   return (
     <motion.div initial={{ opacity:0,y:6 }} animate={{ opacity:1,y:0 }} transition={{ delay:index*0.06 }}
-      style={{ background:isComplete?"rgba(74,222,128,0.03)":VIZ.panel, border:`1px solid ${isComplete?"rgba(74,222,128,0.2)":VIZ.border}`, borderLeft:`3px solid ${isComplete?"var(--bm-green)":typeColor}`, borderRadius:12, overflow:"hidden", transition:"border-color 0.3s" }}>
+      style={{ background:isComplete?"rgba(74,222,128,0.03)":VIZ.panel, border:`1px solid ${isComplete?"rgba(74,222,128,0.2)":VIZ.border}`, borderRadius:12, overflow:"hidden", transition:"border-color 0.3s" }}>
       <div style={{ padding:"14px 16px",cursor:"pointer" }} onClick={()=>setExpanded(!expanded)}>
         <div style={{ display:"flex",alignItems:"flex-start",gap:12 }}>
           <div style={{ width:20,height:20,borderRadius:"50%",flexShrink:0,marginTop:1,background:isComplete?"var(--bm-green)":"transparent",border:isComplete?"none":"1.5px solid var(--bm-border2)",display:"flex",alignItems:"center",justifyContent:"center" }}>
@@ -1057,9 +1057,9 @@ export default function ProjectDetailPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {roadmapSteps.map((step, i) => (
               <motion.div key={i} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}
-                style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderLeft: "3px solid var(--bm-accent)", borderRadius: 12, padding: "16px 18px" }}>
+                style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 12, padding: "16px 18px" }}>
                 <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
-                  <div style={{ width: 24, height: 24, borderRadius: "50%", background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 11, color: "var(--bm-accent)", fontWeight: 800 }}>{i + 1}</div>
+                  <div style={{ width: 24, height: 24, borderRadius: "50%", background: "var(--bm-bg4)", border: "1px solid var(--bm-border2)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 11, color: "var(--bm-text3)", fontWeight: 800 }}>{i + 1}</div>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text)", marginBottom: 6, lineHeight: 1.45 }}>{step.step}</div>
                     <div style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.65, marginBottom: 6 }}>{step.detail}</div>
