@@ -429,18 +429,30 @@ Target users: ${project.target_users ?? "Not specified"}`;
 
         // Learning loop OBSERVE path via reflections (the primary way founders
         // report outcomes from today-action-stream). Non-fatal, fire-and-forget.
+        // FIX: what_tried is the only REQUIRED field on the reflect form —
+        // what_happened/what_learned are optional and, per production data,
+        // are skipped on nearly every reflection. Excluding what_tried meant
+        // evidence matching ran against near-empty text on most rows,
+        // producing near-random low scores regardless of what actually
+        // happened — which would have gone on to poison Thompson Sampling's
+        // success/failure signal once candidate_id-tracked predictions
+        // started resolving.
+        const reflectionEvidenceText = [what_tried, what_happened, what_learned]
+          .filter((v): v is string => Boolean(v?.trim()))
+          .join(" — ")
+          .trim();
         compareFounderIntelligenceOutcome(supabase, {
           userId: verifiedUserId,
           taskTitle: todayAction ?? note ?? "",
           outcome,
-          reflectionText: `${what_happened ?? ""} ${what_learned ?? ""}`.trim(),
+          reflectionText: reflectionEvidenceText,
         }).catch(() => {});
         markRecommendationObserved(supabase, {
           userId: verifiedUserId,
           taskTitle: todayAction ?? note ?? "",
           outcome,
           founderExplanation: note || blocker || undefined,
-          evidenceProduced: `${what_happened ?? ""} ${what_learned ?? ""}`.trim() || undefined,
+          evidenceProduced: reflectionEvidenceText || undefined,
         }).catch(() => {});
         recordActivity(verifiedUserId, "reflection_done", { projectId, outcome, confidence }).catch(() => {});
         // CONSOLIDATION: was checkAndCacheStageTransition() — see
