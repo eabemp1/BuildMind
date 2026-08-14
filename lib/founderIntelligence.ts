@@ -625,7 +625,19 @@ export function buildFounderIntelligenceState(input: FounderIntelligenceInput): 
     priority_confidence: clampScore((activeMilestones.length ? 40 : 20) + (project.problem ? 20 : 0) + (thisWeek.length ? 20 : 0)),
   };
 
-  const repeatedActions = unique(reflections.map((r) => String(r.today_action ?? "")).filter((title, _, arr) => title && arr.filter((x) => x === title).length > 1), 5);
+  // FIX: previously only checked reflections.today_action — a task shown
+  // repeatedly but left pending (never reflected on) could never trigger
+  // this, which is the exact case the penalty exists to catch. Now also
+  // checks recent action_shown values from learningLogs (last 14 days),
+  // regardless of outcome, so a repeatedly-suggested-but-unaddressed task
+  // gets caught too.
+  const recentShownTitles = recentWithin(learningLogs, now, 14)
+    .map((r) => String((r as { action_shown?: string }).action_shown ?? ""));
+  const repeatedActions = unique(
+    [...reflections.map((r) => String(r.today_action ?? "")), ...recentShownTitles]
+      .filter((title, _, arr) => title && arr.filter((x) => x === title).length > 1),
+    5,
+  );
   const execution: ExecutionState = {
     completed_actions: completedThisWeek.map((r) => String(r.today_action ?? r.note ?? "completed action")).slice(0, 6),
     skipped_actions: skippedThisWeek.map((r) => String(r.today_action ?? r.note ?? "skipped action")).slice(0, 6),
