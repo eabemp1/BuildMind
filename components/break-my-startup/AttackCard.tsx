@@ -24,8 +24,7 @@ export function AttackCard({
       transition={{ delay: index * 0.08, duration: 0.35 }}
       style={{
         background: "var(--bm-bg2)",
-        border: `1px solid ${SEVERITY_COLORS[round.severity]}33`,
-        borderLeft: `3px solid ${SEVERITY_COLORS[round.severity]}`,
+        border: "1px solid var(--bm-border)",
         borderRadius: 10,
         padding: "16px 18px",
         marginBottom: 12,
