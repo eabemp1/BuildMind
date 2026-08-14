@@ -75,17 +75,18 @@ function Section({
       animate={{ opacity: 1, y: 0 }}
       style={{
         background:   "var(--bm-bg2)",
-        border:       `1px solid ${accent ? accent + "33" : "var(--bm-border)"}`,
-        borderLeft:   accent ? `3px solid ${accent}` : "1px solid var(--bm-border)",
+        border:       "1px solid var(--bm-border)",
         borderRadius: 14,
         padding:      "18px 20px",
       }}
     >
       <div style={{
+        display: "flex", alignItems: "center", gap: 7,
         fontSize: 9, fontWeight: 700, letterSpacing: "0.1em",
         textTransform: "uppercase", color: "var(--bm-text3)",
         fontFamily: "'DM Mono', monospace", marginBottom: 14,
       }}>
+        {accent && <span className="bm-status-dot" style={{ background: accent, marginTop: 0 }} />}
         {label}
       </div>
       {children}
@@ -825,15 +826,13 @@ export default function InsightsPage() {
                     initial={{ opacity: 0, x: -6 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ duration: 0.25 }}
-                    style={{
-                      borderLeft: `2px solid ${
-                        item.type === "warning"  ? "var(--bm-red)"   :
+                    style={{ display: "flex", alignItems: "flex-start", gap: 10 }}
+                  >
+                    <span className="bm-status-dot" style={{
+                      background: item.type === "warning"  ? "var(--bm-red)"   :
                         item.type === "positive" ? "var(--bm-green)" :
                         "var(--bm-accent)"
-                      }`,
-                      paddingLeft: 12,
-                    }}
-                  >
+                    }} />
                     <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.65 }}>
                       {sanitizeOutput(item.text)}
                     </p>
