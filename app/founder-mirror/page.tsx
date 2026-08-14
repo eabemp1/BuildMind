@@ -215,8 +215,9 @@ export default function FounderMirrorPage() {
           </div>
           <div style={{ display: "grid", gap: 9 }}>
             {(mirror.recent_changes.length ? mirror.recent_changes : ["No meaningful behavioral change detected yet."]).map((item, index) => (
-              <div key={`${item}-${index}`} style={{ borderLeft: "2px solid var(--bm-intel)", paddingLeft: 11, color: "var(--bm-text2)", fontSize: 13, lineHeight: 1.55 }}>
-                {item}
+              <div key={`${item}-${index}`} style={{ display: "flex", alignItems: "flex-start", gap: 9, color: "var(--bm-text2)", fontSize: 13, lineHeight: 1.55 }}>
+                <span className="bm-status-dot" style={{ background: "var(--bm-intel)" }} />
+                <span>{item}</span>
               </div>
             ))}
           </div>
