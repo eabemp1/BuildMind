@@ -347,13 +347,13 @@ function FindingCard({
       animate={{ opacity: 1, y: 0 }}
       style={{
         background:   "var(--bm-bg2)",
-        border:       `1px solid ${finding.positive ? "var(--bm-green-bd)" : "var(--bm-red-bd)"}`,
-        borderLeft:   `3px solid ${finding.positive ? "var(--bm-green)" : "var(--bm-red)"}`,
+        border:       "1px solid var(--bm-border)",
         borderRadius: 12,
         padding:      "14px 16px",
       }}
     >
       <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 8 }}>
+        <span className="bm-status-dot" style={{ background: finding.positive ? "var(--bm-green)" : "var(--bm-red)", marginTop: 5 }} />
         <div style={{ flexShrink: 0, marginTop: -2 }}>
           <RadialGauge
             value={Math.round(finding.confidence * 100)}
@@ -381,7 +381,7 @@ function FindingCard({
           {finding.action_hint && (
             <div style={{
               fontSize: 11.5, color: "var(--bm-accent)",
-              borderLeft: "2px solid var(--bm-accent-bd)", paddingLeft: 8,
+              borderLeft: "2px solid var(--bm-border)", paddingLeft: 8,
             }}>
               → {finding.action_hint}
             </div>
