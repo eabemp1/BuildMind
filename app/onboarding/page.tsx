@@ -1019,16 +1019,17 @@ function StrikeScreen({ idea, result, onContinue, onBack }: {
         <div style={{
           background: "var(--bm-bg2)",
           border: "1px solid var(--bm-border)",
-          borderLeft: "2px solid var(--bm-accent)",
           borderRadius: "var(--r-lg)",
           padding: "14px 16px",
           marginBottom: 24,
         }}>
           <p style={{
+            display: "flex", alignItems: "center", gap: 7,
             fontFamily: "'DM Mono', monospace", fontSize: 9,
             textTransform: "uppercase" as const, letterSpacing: "0.08em",
             color: "var(--bm-accent)", marginBottom: 8,
           }}>
+            <span className="bm-status-dot" style={{ background: "var(--bm-accent)", marginTop: 0 }} />
             What this means for your next 7 days
           </p>
           <p style={{
@@ -1476,9 +1477,8 @@ function IdentityScreen({ onComplete, startupStage, founderWorries }: {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.15 }}
           style={{
-            borderLeft: "2px solid var(--bm-accent)",
             background: "var(--bm-bg3)",
-            border: "1px solid var(--bm-border2)",
+            border: "1px solid var(--bm-accent-bd)",
             borderRadius: "var(--r-lg)",
             padding: "20px 22px",
             marginBottom: 14,
