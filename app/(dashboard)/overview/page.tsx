@@ -321,14 +321,17 @@ export default function OverviewPage() {
       {/* ── Attention strip ── */}
       {showAttention && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.05 }}
-          style={{ borderLeft: "2px solid var(--bm-amber)", paddingLeft: 14, marginBottom: 20 }}>
-          <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: "0 0 8px", lineHeight: 1.5 }}>
-            {attentionMessage}
-          </p>
-          <button onClick={() => router.push(attentionRoute)}
-            style={{ fontSize: 12, color: "var(--bm-accent)", background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit" }}>
-            {attentionLabel}
-          </button>
+          style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 20 }}>
+          <span className="bm-status-dot" style={{ background: "var(--bm-amber)" }} />
+          <div>
+            <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: "0 0 8px", lineHeight: 1.5 }}>
+              {attentionMessage}
+            </p>
+            <button onClick={() => router.push(attentionRoute)}
+              style={{ fontSize: 12, color: "var(--bm-accent)", background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit" }}>
+              {attentionLabel}
+            </button>
+          </div>
         </motion.div>
       )}
 
@@ -484,15 +487,18 @@ export default function OverviewPage() {
             </div>
           )}
 
-          {/* ── AI nudge — borderLeft only, no card ── */}
+          {/* ── AI nudge — status dot, no card ── */}
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.22 }}
-            style={{ borderLeft: "2px solid var(--bm-accent)", paddingLeft: 14, marginTop: 24 }}>
-            <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: "0 0 6px", lineHeight: 1.55 }}>
-              {nudge.text}
-            </p>
-            <p style={{ fontSize: 13, color: "var(--bm-text)", fontWeight: 500, margin: 0 }}>
-              → {nudge.action}
-            </p>
+            style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 24 }}>
+            <span className="bm-status-dot" style={{ background: "var(--bm-accent)" }} />
+            <div>
+              <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: "0 0 6px", lineHeight: 1.55 }}>
+                {nudge.text}
+              </p>
+              <p style={{ fontSize: 13, color: "var(--bm-text)", fontWeight: 500, margin: 0 }}>
+                → {nudge.action}
+              </p>
+            </div>
           </motion.div>
         </motion.div>
       )}
