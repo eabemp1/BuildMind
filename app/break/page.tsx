@@ -215,7 +215,7 @@ export default function BreakPublicPage() {
                 <div style={{ fontSize:11, color:"#ef4444", fontFamily:"monospace", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:12, fontWeight:600 }}>Why it fails</div>
                 {result.kill_reasons.map((r,i)=>(
                   <motion.div key={i} initial={{ opacity:0, x:-12 }} animate={{ opacity:1, x:0 }} transition={{ delay:0.1*i+0.3 }}
-                    style={{ display:"flex", gap:10, alignItems:"flex-start", padding:"11px 14px", background:"rgba(239,68,68,0.05)", border:"1px solid rgba(239,68,68,0.12)", borderLeft:"3px solid #ef4444", borderRadius:8, marginBottom:8 }}>
+                    style={{ display:"flex", gap:10, alignItems:"flex-start", padding:"11px 14px", background:"rgba(239,68,68,0.05)", border:"1px solid rgba(239,68,68,0.12)", borderRadius:8, marginBottom:8 }}>
                     <span style={{ color:"#ef4444", fontSize:12, flexShrink:0, marginTop:1 }}>✕</span>
                     <span style={{ fontSize:13, color:"var(--bm-text)", lineHeight:1.55 }}>{sanitizeOutput(r)}</span>
                   </motion.div>
@@ -228,7 +228,7 @@ export default function BreakPublicPage() {
                   <div style={{ fontSize:11, color:"#4ade80", fontFamily:"monospace", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:12, fontWeight:600 }}>Why it could work</div>
                   {result.survive_reasons.map((r,i)=>(
                     <motion.div key={i} initial={{ opacity:0, x:-12 }} animate={{ opacity:1, x:0 }} transition={{ delay:0.1*i+0.5 }}
-                      style={{ display:"flex", gap:10, alignItems:"flex-start", padding:"11px 14px", background:"rgba(74,222,128,0.05)", border:"1px solid rgba(74,222,128,0.12)", borderLeft:"3px solid #4ade80", borderRadius:8, marginBottom:8 }}>
+                      style={{ display:"flex", gap:10, alignItems:"flex-start", padding:"11px 14px", background:"rgba(74,222,128,0.05)", border:"1px solid rgba(74,222,128,0.12)", borderRadius:8, marginBottom:8 }}>
                       <span style={{ color:"#4ade80", fontSize:12, flexShrink:0, marginTop:1 }}>✓</span>
                       <span style={{ fontSize:13, color:"var(--bm-text)", lineHeight:1.55 }}>{sanitizeOutput(r)}</span>
                     </motion.div>
