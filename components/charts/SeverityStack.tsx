@@ -83,16 +83,20 @@ export function SeverityStack({ items, title = "Risk Severity" }: { items: Sever
           <div
             key={i}
             style={{
-              borderLeft: `3px solid ${SEVERITY_COLOR[item.severity]}`,
-              paddingLeft: 10,
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 8,
               paddingTop: 2,
               paddingBottom: 2,
             }}
           >
-            <div style={{ fontSize: 12, color: "var(--bm-text)", fontWeight: 500 }}>{item.label}</div>
-            {item.note && (
-              <div style={{ fontSize: 11, color: "var(--bm-text3)", marginTop: 2, lineHeight: 1.4 }}>{item.note}</div>
-            )}
+            <span className="bm-status-dot" style={{ background: SEVERITY_COLOR[item.severity] }} />
+            <div>
+              <div style={{ fontSize: 12, color: "var(--bm-text)", fontWeight: 500 }}>{item.label}</div>
+              {item.note && (
+                <div style={{ fontSize: 11, color: "var(--bm-text3)", marginTop: 2, lineHeight: 1.4 }}>{item.note}</div>
+              )}
+            </div>
           </div>
         ))}
       </div>
