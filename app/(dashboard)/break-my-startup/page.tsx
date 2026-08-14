@@ -894,7 +894,6 @@ export default function BreakMyStartupPage() {
                   padding: "16px 18px",
                   background: "rgba(232,160,32,0.06)",
                   border: "1px solid rgba(232,160,32,0.3)",
-                  borderLeft: "3px solid var(--bm-amber)",
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
