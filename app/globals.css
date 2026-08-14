@@ -315,3 +315,136 @@ body {
   pointer-events: none;
   z-index: 0;
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   DESIGN SYSTEM — synthesis direction
+   ══════════════════════════════════════════════════════════════════════
+   Codifies what the buildmind-synthesis-direction.html preview showed as
+   real, reusable classes. The point of putting these here — instead of
+   leaving every page to reinvent the same badge/disclosure/tile pattern
+   inline — is that this session's whole audit (colored border-strips in
+   14 files, 19 distinct spacing values in one page alone) came from
+   exactly that: no shared vocabulary, so every component quietly invented
+   its own. These classes ARE the vocabulary.
+
+   Sources, by discipline:
+   - LinkedIn: one accent per screen, everything else neutral
+   - GitHub:   status/category is a badge, never a card border or bg color
+   - X:        density comes from consistent tight spacing, not compression
+   - Claude:   secondary reasoning is collapsed by default, not shown
+   - YouTube:  one tile/card shape, reused — never a bespoke shape per item
+   - Linear:   muted status colors, small consistent radius, minimal motion
+   - Stripe:   tabular/mono numbers for anything precise (IDs, timestamps,
+               scores) — proportional type reads as approximate, mono
+               reads as exact, and precise data should look precise
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* ── Badges (GitHub) ──────────────────────────────────────────────────
+   Status, category, platform, count — anything that used to become a
+   colored border-strip or a fully tinted card. Small, mono, tinted
+   background with matching text color. Never full-saturation on a large
+   surface — the tint carries the meaning, not the area. */
+.bm-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: 'DM Mono', monospace;
+  font-size: var(--text-xs);
+  padding: 3px 9px;
+  border-radius: var(--r-md);
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.bm-badge-neutral { background: var(--bm-bg4); color: var(--bm-text3); }
+.bm-badge-accent  { background: var(--bm-accent-dim); color: var(--bm-accent); }
+.bm-badge-green   { background: var(--bm-green-dim);  color: var(--bm-green); }
+.bm-badge-red     { background: var(--bm-red-dim);    color: var(--bm-red); }
+
+/* ── Status dot (Linear) ──────────────────────────────────────────────
+   For list items and rows that need a severity/category signal but
+   aren't badge-shaped — replaces the old borderLeft strip pattern found
+   across 14 files this session. Muted colors, not saturated — Linear's
+   status dots are never full-brightness red/green, they're dialed back
+   so they read as information, not alarm. */
+.bm-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 6px;
+}
+
+/* ── Disclosure (Claude) ──────────────────────────────────────────────
+   Secondary reasoning, "why this", full detail — collapsed by default.
+   The founder who trusts the system never opens it; the one who wants to
+   verify, can. Native <details>/<summary> — no JS needed, keyboard and
+   screen-reader accessible for free. */
+.bm-disclosure {
+  border-top: 1px solid var(--bm-border);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+}
+.bm-disclosure summary {
+  font-size: var(--text-sm);
+  color: var(--bm-text3);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  list-style: none;
+  user-select: none;
+}
+.bm-disclosure summary::-webkit-details-marker { display: none; }
+.bm-disclosure summary::before {
+  content: '';
+  width: 0; height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid var(--bm-text4);
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+.bm-disclosure[open] summary::before { transform: rotate(180deg); }
+.bm-disclosure-body {
+  padding-top: var(--space-3);
+  font-size: var(--text-base);
+  color: var(--bm-text2);
+  line-height: var(--leading-relaxed);
+}
+
+/* ── Tile (YouTube) ───────────────────────────────────────────────────
+   One shape, reused everywhere a grid of equal-weight choices is shown
+   (destination channels, option pickers, etc). Once a founder learns
+   what one tile looks like, they've learned all of them — no per-item
+   novelty, no bespoke card shape per entry. */
+.bm-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-2);
+  border-radius: var(--r-2xl);
+  border: 1px solid var(--bm-border);
+  background: var(--bm-bg3);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.bm-tile:hover {
+  border-color: var(--bm-border2);
+  background: var(--bm-bg4);
+}
+
+/* ── Precise data (Stripe) ────────────────────────────────────────────
+   Scores, timestamps, IDs, percentages — anything that should read as
+   exact rather than approximate. Monospace + tabular figures. Body copy
+   stays proportional (Inter); only the number itself switches face. */
+.bm-data {
+  font-family: 'DM Mono', monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Accent discipline (LinkedIn) ─────────────────────────────────────
+   Reference only, not a class to apply — the rule is structural, not
+   stylistic: at most ONE element per screen uses --bm-accent as a fill
+   (not a tint). Everything else that currently reaches for gold as
+   decoration should be --bm-text3/--bm-border instead. This is a
+   subtraction task across existing pages, not a new pattern to add. */
