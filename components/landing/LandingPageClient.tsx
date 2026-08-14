@@ -260,7 +260,7 @@ function ReflexionPipelineDemo() {
                           </span>
                         )}
                         {visible && !active && (
-                          <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--bm-accent)" }}>✓</span>
+                          <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--bm-green)" }}>✓</span>
                         )}
                       </div>
                       {step.output && visible && (
