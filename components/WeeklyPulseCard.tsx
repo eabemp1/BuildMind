@@ -188,7 +188,7 @@ export function WeeklyPulseCard() {
       {/* 1. STORY */}
       <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-lg)", padding: "20px 20px 16px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-          <Sparkles size={14} style={{ color: "var(--bm-accent)" }} />
+          <Sparkles size={14} style={{ color: "var(--bm-text3)" }} />
           <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.10em", color: "var(--bm-text3)" }}>
             Your week
           </span>
@@ -235,12 +235,12 @@ export function WeeklyPulseCard() {
       {data.un_ghosted.length > 0 && (
         <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-lg)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <Ghost size={13} style={{ color: "var(--bm-accent)" }} />
+            <Ghost size={13} style={{ color: "var(--bm-text3)" }} />
             <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, fontWeight: 600, color: "var(--bm-text)" }}>Un-ghosted this week</span>
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
             {data.un_ghosted.map((item) => (
-              <span key={item} style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, padding: "4px 10px", borderRadius: 999, background: "var(--bm-bg3)", color: "var(--bm-text2)", border: "1px solid var(--bm-border)" }}>
+              <span key={item} className="bm-badge bm-badge-neutral" style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5 }}>
                 {sanitizeOutput(item)}
               </span>
             ))}
@@ -269,7 +269,7 @@ export function WeeklyPulseCard() {
             <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
               {data.momentum_delta !== null && data.momentum_delta < 0
                 ? <TrendingDown size={12} style={{ color: "var(--bm-red)" }} />
-                : <TrendingUp size={12} style={{ color: "var(--bm-accent)" }} />}
+                : <TrendingUp size={12} style={{ color: "var(--bm-green)" }} />}
               <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text3)" }}>Momentum</span>
             </div>
             <span style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color: "var(--bm-text)" }}>

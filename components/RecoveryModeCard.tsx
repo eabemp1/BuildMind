@@ -108,11 +108,11 @@ function RecoveryModeCardInner({ onComplete }: Props) {
       <div style={{
         background: "var(--bm-accent-dim)",
         border: "1px solid rgba(240,180,41,0.22)",
-        borderLeft: "3px solid #F0B429",
         borderRadius: "14px 14px 0 0",
         padding: "16px 20px",
       }}>
-        <div style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "#F0B429", marginBottom: 6, fontWeight: 700 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "#F0B429", marginBottom: 6, fontWeight: 700 }}>
+          <span className="bm-status-dot" style={{ background: "#F0B429", marginTop: 0 }} />
           Recovery Mode · {inactiveLabel}
         </div>
         <div style={{ fontSize: 15, color: "var(--bm-text)", fontWeight: 600, lineHeight: 1.4, marginBottom: 6 }}>
