@@ -385,10 +385,9 @@ export function ShareReportClient({ report }: Props) {
           )}
 
           {rd.ai_suggestions && (
-            <div style={{
-              borderLeft: "2px solid rgba(91,108,240,0.4)",
-              paddingLeft: 12,
-            }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 9 }}>
+              <span className="bm-status-dot" style={{ background: "rgba(91,108,240,0.8)" }} />
+              <div style={{ flex: 1 }}>
               <div style={{
                 fontSize: 9, color: "#555e7a", marginBottom: 4,
                 textTransform: "uppercase", letterSpacing: "0.06em",
@@ -399,6 +398,7 @@ export function ShareReportClient({ report }: Props) {
               <p style={{ fontSize: 12.5, color: "#7880a8", margin: 0, lineHeight: 1.55 }}>
                 {truncateChars(sanitizeOutput(rd.ai_suggestions), 160)}
               </p>
+              </div>
             </div>
           )}
         </div>
