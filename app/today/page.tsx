@@ -1250,22 +1250,44 @@ function TodayContent() {
 
   function handleSwapAlternative(alt: NonNullable<TodayIntelligenceSummary["decision"]["alternatives"]>[number]) {
     if (!aiAction) return;
-    // Update the displayed action immediately — the founder shouldn't wait
-    // on a network round-trip to see the swap take effect.
-    setAiAction({
+    const swappedAction: ActionData = {
       ...aiAction,
       action: alt.action,
       why: alt.why_it_beats_alternatives || aiAction.why,
       message: alt.action, // draft/script wasn't generated for alternatives — action text stands in until reflected
-    });
+    };
+    // Update the displayed action immediately — the founder shouldn't wait
+    // on a network round-trip to see the swap take effect.
+    setAiAction(swappedAction);
+
+    // Persist to the SAME localStorage key the page reads on mount
+    // (bm_today_action_cache_${userId}) — previously the swap only updated
+    // React state, so navigating away and back re-read the untouched
+    // pre-swap cache and silently reverted the swap. Bumping the timestamp
+    // too so this is treated as the freshest cache, not overwritten by a
+    // stale server-sync check.
+    if (userId) {
+      const currentStage = project?.startup_stage ?? "Idea";
+      storage.setJSON(`bm_today_action_cache_${userId}`, {
+        date: localDayKey(),
+        projectId: project?.id ?? "",
+        stage: currentStage,
+        data: swappedAction,
+      });
+      storage.set(`bm_today_action_cache_ts_${userId}`, String(Date.now()));
+    }
+
     // Fire-and-forget: repoints the pending Founder Intelligence prediction
-    // at what the founder actually chose. Doesn't block the swap from
-    // showing — this only keeps reflect-action's later outcome comparison
-    // and Thompson Sampling's per-archetype stats honest in the background.
+    // at what the founder actually chose, AND persists the swap into the
+    // server-side user_behavior_state cache (the actual source of truth a
+    // fresh page load or a different device would read) and
+    // founder_context.decision_cache (so Coach sees it too). Doesn't block
+    // the swap from showing on this device — this keeps every OTHER reader
+    // honest in the background.
     void fetch("/api/founder-context/swap-action", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ candidate: alt }),
+      body: JSON.stringify({ candidate: alt, projectId: project?.id ?? "", stage: project?.startup_stage ?? "Idea" }),
     }).catch(() => {});
   }
 
@@ -1774,7 +1796,7 @@ function TodayContent() {
               }}
             >
               <Flame size={11} color="var(--bm-text3)" />
-              <span className="bm-data" style={{ fontSize: 11, fontWeight: 400, color: "var(--bm-text3)" }}>
+              <span style={{ fontSize: 11, fontWeight: 400, color: "var(--bm-text3)", fontFamily: "'DM Mono', monospace" }}>
                 {streak}d streak
               </span>
             </div>
@@ -1982,7 +2004,7 @@ function TodayContent() {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
                 <span style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.08em" }}>From your Reflexion Strike</span>
-                <span className="bm-badge bm-badge-accent">
+                <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 99, fontWeight: 600, color: "var(--bm-accent)", background: "var(--bm-bg3)", border: "1px solid var(--bm-border)" }}>
                   Market gap identified
                 </span>
               </div>
@@ -2083,7 +2105,8 @@ function TodayContent() {
 
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
                 <span style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Yesterday</span>
-                <span className="bm-badge" style={{
+                <span style={{
+                  fontSize: 10, padding: "2px 8px", borderRadius: 99, fontWeight: 600,
                   color: OUTCOME_META[yesterdayReflection.outcome].color,
                   background: "var(--bm-bg3)",
                   border: "1px solid var(--bm-border)",
@@ -2157,12 +2180,20 @@ function TodayContent() {
             From your roadmap
           </span>
           {project?.pendingMilestones?.slice(0, 2).map((m: string, i: number) => (
-            <span key={i} className="bm-badge bm-badge-neutral" style={{ fontWeight: 600 }}>
+            <span key={i} style={{
+              fontSize: 10, padding: "3px 8px", borderRadius: 99,
+              background: "var(--bm-bg2)", color: "var(--bm-text3)",
+              border: "1px solid var(--bm-border2)", fontWeight: 600,
+            }}>
               ◎ {m}
             </span>
           ))}
           {project?.pendingTasks?.slice(0, 2).map((t: string, i: number) => (
-            <span key={i} className="bm-badge bm-badge-neutral" style={{ fontWeight: 500 }}>
+            <span key={i} style={{
+              fontSize: 10, padding: "3px 8px", borderRadius: 99,
+              background: "var(--bm-bg2)", color: "var(--bm-text3)",
+              border: "1px solid var(--bm-border2)", fontWeight: 500,
+            }}>
               ✦ {t}
             </span>
           ))}
@@ -2180,26 +2211,16 @@ function TodayContent() {
 
       </>)}
 
-      {/* ── "Why this task?" disclosure toggle — visually matches .bm-disclosure
-             summary styling; kept as a manual toggle (not native <details>) because
-             its content block renders earlier in the DOM (line ~1964), driven by
-             the same isContextOpen state — restructuring into a literal <details>
-             would require moving that block, too risky to do blind in this file. ── */}
+      {/* ── "Why this task?" disclosure toggle ── */}
       <button
         onClick={() => setIsContextOpen(o => !o)}
         style={{
-          display: "flex", alignItems: "center", gap: 8, marginBottom: 14,
+          display: "flex", alignItems: "center", gap: 6, marginBottom: 14,
           background: "none", border: "none", cursor: "pointer",
-          color: "var(--bm-text3)", fontSize: "var(--text-sm)", fontFamily: "inherit", padding: 0,
+          color: "var(--bm-text4)", fontSize: 11, fontFamily: "inherit", padding: 0,
         }}
       >
-        <span style={{
-          width: 0, height: 0,
-          borderLeft: "4px solid transparent", borderRight: "4px solid transparent",
-          borderTop: "5px solid var(--bm-text4)",
-          transform: isContextOpen ? "rotate(180deg)" : "none", transition: "transform 0.15s ease",
-          display: "inline-block", flexShrink: 0,
-        }} />
+        <span style={{ fontSize: 10, transform: isContextOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s", display: "inline-block" }}>▶</span>
         {isContextOpen ? "Hide context" : "Why this task?"}
       </button>
 
@@ -2334,12 +2355,12 @@ function TodayContent() {
           {/* Meta row — simplified */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
             {project?.startup_stage && (
-              <span className="bm-badge bm-badge-accent" style={{ textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: "var(--bm-accent-dim)", color: "var(--bm-accent)", border: "1px solid var(--bm-accent-bd)", fontWeight: 400, textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: "'DM Mono', monospace" }}>
                 {project.startup_stage} stage
               </span>
             )}
             {actionData.isAI && !actionLoading && (
-              <span className="bm-badge bm-badge-neutral">
+              <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: "var(--bm-bg3)", color: "var(--bm-text3)", border: "1px solid var(--bm-border)", fontWeight: 400, fontFamily: "'DM Mono', monospace" }}>
                 Context calibrated
               </span>
             )}
@@ -2356,8 +2377,8 @@ function TodayContent() {
             )}
             <span style={{ fontSize: "var(--text-xs)", color: "var(--bm-text3)", display: "flex", alignItems: "center", gap: "var(--space-1)", marginLeft: "auto" }}>
               {actionData.difficulty && (
-                <span className="bm-badge" style={{
-                  fontWeight: 700,
+                <span style={{
+                  fontSize: "var(--text-xs)", fontWeight: 700, padding: "2px 7px", borderRadius: 999,
                   textTransform: "capitalize",
                   color: actionData.difficulty === "deep" ? "var(--bm-red)" : actionData.difficulty === "light" ? "var(--bm-green)" : "var(--bm-text3)",
                   background: actionData.difficulty === "deep" ? "rgba(224,85,85,0.12)" : actionData.difficulty === "light" ? "rgba(74,184,176,0.12)" : "var(--bm-bg3)",
@@ -2530,8 +2551,9 @@ function TodayContent() {
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(4, 1fr)", gap: "var(--space-2)" }}>
           {destinations.map(d => (
             <a key={d.label} href={d.url} target="_blank" rel="noopener noreferrer"
-              className="bm-tile"
-              style={{ textDecoration: "none", padding: isMobile ? "var(--space-4) var(--space-2)" : "var(--space-3) var(--space-2)" }}>
+              style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "var(--space-2)", padding: isMobile ? "var(--space-4) var(--space-2)" : "var(--space-3) var(--space-2)", borderRadius: "var(--r-2xl)", border: "1px solid var(--bm-border)", background: "var(--bm-bg3)", textDecoration: "none", transition: "all 0.15s" }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--bm-border2)"; e.currentTarget.style.background = "var(--bm-bg4)"; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--bm-border)"; e.currentTarget.style.background = "var(--bm-bg3)"; }}>
               <span style={{ fontSize: "var(--text-2xl)" }}>{d.icon}</span>
               <span style={{ fontSize: "var(--text-xs)", color: "var(--bm-text3)", textAlign: "center", lineHeight: "var(--leading-tight)" }}>{d.label}</span>
             </a>
