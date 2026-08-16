@@ -18,7 +18,12 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { swapPredictionCandidate } from "@/lib/learningLoop";
+import { upsertTodayActionCache, type TodayActionCache, type TodayActionData } from "@/lib/todayActionCache";
 import type { DecisionCandidate } from "@/lib/founderIntelligence";
+
+function localDateKey(now = new Date()): string {
+  return now.toISOString().slice(0, 10);
+}
 
 export async function POST(req: Request) {
   const supabase = await createClient();
@@ -27,6 +32,8 @@ export async function POST(req: Request) {
 
   const body = await req.json().catch(() => ({}));
   const candidate = body?.candidate as Partial<DecisionCandidate> | undefined;
+  const projectId = typeof body?.projectId === "string" ? body.projectId : "";
+  const stage = typeof body?.stage === "string" ? body.stage : "Idea";
 
   // Minimal shape check — we only strictly need id/action/expected_evidence
   // for swapPredictionCandidate to do anything useful; scores/rationale are
@@ -53,6 +60,52 @@ export async function POST(req: Request) {
 
   const swapped = await swapPredictionCandidate(admin, { userId: user.id, candidate: fullCandidate });
 
+  // ── Persist the swap where the Today page actually reads from ──────────
+  // Previously this was the missing piece: founder_context.decision_cache
+  // got updated (below), but the client checks localStorage and this
+  // user_behavior_state row FIRST, before ever looking at FI OS state — so
+  // navigating away and back always restored the pre-swap action. Read the
+  // existing cache to preserve fields the swap shouldn't touch (platform,
+  // target_user, time, reflexion metadata), overwrite action/message/why,
+  // write back through the same function every other path uses.
+  let cacheUpdated = false;
+  try {
+    const { data: existingRow } = await admin
+      .from("user_behavior_state")
+      .select("value")
+      .eq("user_id", user.id)
+      .eq("key", "today_action_cache")
+      .maybeSingle();
+    const existing = existingRow?.value as TodayActionCache | null;
+
+    const updatedData: TodayActionData = {
+      ...(existing?.data ?? {
+        platform: "LinkedIn or WhatsApp",
+        target_user: "your target users",
+        time: "20 min",
+      }),
+      action: fullCandidate.action,
+      message: fullCandidate.action, // no full draft exists for an alternative until reflected on
+      why: fullCandidate.why_it_beats_alternatives || fullCandidate.rationale || "You chose this over the original recommendation.",
+      isAI: true,
+    };
+
+    const updatedCache: TodayActionCache = {
+      date: existing?.date ?? localDateKey(),
+      projectId: existing?.projectId ?? projectId,
+      stage: existing?.stage ?? stage,
+      data: updatedData,
+      generatedAt: new Date().toISOString(),
+      source: existing?.source ?? "today-action",
+    };
+
+    await upsertTodayActionCache(admin, user.id, updatedCache);
+    cacheUpdated = true;
+  } catch {
+    // Non-fatal — the FI OS decision_cache update below still keeps Coach
+    // and future fresh generations honest even if this specific write failed.
+  }
+
   // One decision authority: repoint today's cached decision at the
   // founder's actual choice, so Coach and any other surface reading
   // founder_context.decision_cache today see this swap, not the original
@@ -73,5 +126,5 @@ export async function POST(req: Request) {
   // now revisiting the page), the swap itself is purely a client-side
   // display change — this endpoint only keeps the learning data honest, it
   // never gates the UI.
-  return NextResponse.json({ ok: true, swapped });
+  return NextResponse.json({ ok: true, swapped, cacheUpdated });
 }
