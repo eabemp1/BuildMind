@@ -569,14 +569,14 @@ ${JSON.stringify(structuredA)}`,
         // here, matched by session_id (unique per generation, set above),
         // fire-and-forget so it never adds latency to the response.
         if (adminForCache) {
-          adminForCache
-            .from("reflexion_learning_log")
-            .update({ was_hard_fallback: wasHardFallback })
-            .eq("user_id", userId)
-            .eq("session_id", sessionId)
-            .eq("prediction_source", "founder_intelligence")
-            .then(() => {})
-            .catch(() => {});
+          Promise.resolve(
+            adminForCache
+              .from("reflexion_learning_log")
+              .update({ was_hard_fallback: wasHardFallback })
+              .eq("user_id", userId)
+              .eq("session_id", sessionId)
+              .eq("prediction_source", "founder_intelligence"),
+          ).catch(() => {});
         }
 
         // rationale — comes directly from the structured field now. The old
@@ -710,4 +710,4 @@ ${JSON.stringify(structuredA)}`,
 
 export async function GET() {
   return NextResponse.json({ error: "Use POST" }, { status: 405 });
-  }
+      }
