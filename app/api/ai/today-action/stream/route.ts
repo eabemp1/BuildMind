@@ -267,12 +267,13 @@ export async function POST(request: Request) {
         // ── Shared context loader (lib/todayActionContext.ts) ────────────────
         // Replaces the ~200-line duplicated data-loading block that previously
         // existed independently in both this file and today-action/route.ts.
+        const sessionId = `today_action_stream:${projectId || "none"}:${Date.now()}`;
         const tctx = await loadTodayActionContext({
           userId,
           projectId,
           providedStage,
           acknowledgeDebt,
-          sessionId: `today_action_stream:${projectId || "none"}:${Date.now()}`,
+          sessionId,
           excludeAction,
         });
 
@@ -560,6 +561,23 @@ ${JSON.stringify(structuredA)}`,
         const finalAction = wasHardFallback ? fallback.action : agentCFields.task;
         const finalDraft = wasHardFallback ? fallback.message : agentCFields.draft;
         const decisionReason = deterministicCandidate?.why_it_beats_alternatives;
+
+        // Historical tracking: previously wasHardFallback only existed in
+        // the live response and today's single (overwritten-daily) cache
+        // row — no way to see whether generation has been silently
+        // degrading to the fallback template repeatedly over time. Written
+        // here, matched by session_id (unique per generation, set above),
+        // fire-and-forget so it never adds latency to the response.
+        if (adminForCache) {
+          adminForCache
+            .from("reflexion_learning_log")
+            .update({ was_hard_fallback: wasHardFallback })
+            .eq("user_id", userId)
+            .eq("session_id", sessionId)
+            .eq("prediction_source", "founder_intelligence")
+            .then(() => {})
+            .catch(() => {});
+        }
 
         // rationale — comes directly from the structured field now. The old
         // code fell back to a THIRD separate LLM call whenever the regex
