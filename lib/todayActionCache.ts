@@ -18,6 +18,14 @@ export type TodayActionData = {
     loopRan: boolean;
     passedCritic: boolean;
     lastReflectionUsed: boolean;
+    /** True when the pre-screen gate rejected the AI's own composition and
+     *  the deterministic buildFallback() template shipped instead — see
+     *  the hard pre-screen gate in today-action/stream/route.ts. If this
+     *  is true on most/all days, generation is silently degrading to the
+     *  same fallback template every time, which would explain repeated
+     *  identical task text independent of any candidate-scoring fix. */
+    wasHardFallback?: boolean;
+    hardFallbackReasons?: string[];
   };
   reflexion_status?: string;
 };
