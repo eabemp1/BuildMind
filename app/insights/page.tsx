@@ -148,8 +148,8 @@ function DayHeatmap({ completionByDay }: { completionByDay: Record<string, { com
         const rate  = entry?.total ? entry.completed / entry.total : 0;
         const pct   = rate / maxRate;
         const color = !entry?.total ? "var(--bm-bg4)"
-          : rate >= 0.6 ? "var(--bm-accent)"
-          : rate >= 0.3 ? "var(--bm-green)"
+          : rate >= 0.6 ? "var(--bm-green)"
+          : rate >= 0.3 ? "var(--bm-amber)"
           : "var(--bm-red)";
         return (
           <div key={day} style={{ textAlign: "center" }}>
@@ -689,8 +689,8 @@ export default function InsightsPage() {
                   .sort((a, b) => b[1] - a[1])
                   .map(([outcome, avg]) => {
                     const color =
-                      outcome === "completed" ? "var(--bm-accent)" :
-                      outcome === "partial"   ? "var(--bm-green)"  :
+                      outcome === "completed" ? "var(--bm-green)" :
+                      outcome === "partial"   ? "var(--bm-amber)"  :
                       "var(--bm-text3)";
                     return (
                       <div key={outcome}>
