@@ -2216,7 +2216,7 @@ function TodayContent() {
           }}
         >
           <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-            <AlertCircle size={20} color="var(--bm-amber)" style={{ flexShrink: 0, marginTop: 2 }} />
+            <AlertCircle size={20} color="var(--bm-red)" style={{ flexShrink: 0, marginTop: 2 }} />
             <div>
               <div style={{ fontSize: 10, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'DM Mono', monospace", marginBottom: 8 }}>
                 Execution debt
@@ -2233,9 +2233,9 @@ function TodayContent() {
                 onClick={() => void handleAcknowledgeDebt()}
                 disabled={actionLoading}
                 style={{
-                  border: "1px solid var(--bm-amber-bd, rgba(232,160,32,0.35))",
-                  background: "var(--bm-amber-dim, rgba(232,160,32,0.10))",
-                  color: "var(--bm-amber)",
+                  border: "1px solid var(--bm-red-bd)",
+                  background: "var(--bm-red-dim)",
+                  color: "var(--bm-red)",
                   borderRadius: 8,
                   padding: "9px 12px",
                   cursor: actionLoading ? "default" : "pointer",
