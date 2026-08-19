@@ -3,28 +3,60 @@
 /**
  * app/journey/page.tsx — Developer Journey: Today (student view)
  *
- * Phase 1 vertical slice. Deliberately minimal — proves the loop
- * (today → project → submit) end to end. Not yet wired into
- * lib/nav-config.ts or styled to the full shared component library;
- * see docs/developer-journey-phase0-audit.md, section M.
+ * Design pass: uses BuildMind's actual tokens from app/globals.css rather
+ * than plain bordered boxes — bg2/bg3 elevation ladder, the amber accent
+ * (--bm-accent) for progress/action, green/red for pass/needs-work
+ * semantics, Syne for the module title (display face, used once, per the
+ * frontend-design principle of spending boldness in one place), DM Mono
+ * for all numerals (XP, streak, scores — data reads as data), lucide-react
+ * icons instead of emoji. Two deliberate motion moments: the XP bar fills
+ * in on load, a completed lesson/exercise checkmark pops with a small
+ * spring — everything else is quiet by design (master prompt §58: mature,
+ * not gamification overload).
  */
 
 import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { motion } from "framer-motion";
+import {
+  Flame,
+  Trophy,
+  CheckCircle2,
+  Circle,
+  ChevronDown,
+  Clock,
+  BookOpen,
+  Wrench,
+  Github,
+  Sparkles,
+  Target,
+  AlertTriangle,
+} from "lucide-react";
 import type { TodayMission } from "@/lib/journey";
+import { PythonCode } from "@/components/journey/PythonCode";
+
+const DIFFICULTY_STYLES: Record<string, string> = {
+  warmup: "bg-[var(--bm-blue-dim)] text-[var(--bm-blue)]",
+  core: "bg-[var(--bm-accent-dim)] text-[var(--bm-accent)]",
+  stretch: "bg-[var(--bm-red-dim)] text-[var(--bm-red)]",
+};
 
 interface ProgressSummary {
   level: number;
   levelName: string;
   totalXp: number;
+  xpIntoLevel: number;
   xpToNextLevel: number | null;
   currentStreak: number;
   achievements: { id: string; name: string; description: string; unlockedAt: string }[];
 }
 
 export default function JourneyTodayPage() {
+  const router = useRouter();
   const [mission, setMission] = useState<TodayMission | null>(null);
   const [progress, setProgress] = useState<ProgressSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [awaitingPlacement, setAwaitingPlacement] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [repoUrl, setRepoUrl] = useState("");
   const [notes, setNotes] = useState("");
@@ -35,6 +67,17 @@ export default function JourneyTodayPage() {
     setLoading(true);
     setError(null);
     try {
+      const placementRes = await fetch("/api/journey/placement/status");
+      const placementData = await placementRes.json();
+      if (placementData.ok && !placementData.hasPath) {
+        if (placementData.pendingRequest) {
+          setAwaitingPlacement(true);
+          return;
+        }
+        router.push("/journey/placement");
+        return;
+      }
+
       const [todayRes, progressRes] = await Promise.all([
         fetch("/api/journey/today"),
         fetch("/api/journey/progress"),
@@ -43,14 +86,16 @@ export default function JourneyTodayPage() {
       if (!data.ok) throw new Error(data.error || "Failed to load");
       setMission(data.mission);
 
-      const progressData = await progressRes.json();
-      if (progressData.ok) setProgress(progressData.progress);
+      if (progressRes.ok) {
+        const progressData = await progressRes.json();
+        if (progressData.ok) setProgress(progressData.progress);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     load();
@@ -114,10 +159,20 @@ export default function JourneyTodayPage() {
     }
   }
 
+  if (awaitingPlacement) {
+    return (
+      <main className="min-h-screen bg-[var(--bm-bg)] text-[var(--bm-text)] flex items-center justify-center px-6">
+        <p className="text-sm text-[var(--bm-text2)] max-w-md text-center">
+          Your placement request is waiting on mentor review. Check back soon.
+        </p>
+      </main>
+    );
+  }
+
   if (loading) {
     return (
       <main className="min-h-screen bg-[var(--bm-bg)] text-[var(--bm-text)] flex items-center justify-center">
-        <p className="text-sm text-[var(--bm-text3)]">Loading today&apos;s mission…</p>
+        <p className="text-sm text-[var(--bm-text3)] font-mono">Loading today&apos;s mission…</p>
       </main>
     );
   }
@@ -125,7 +180,7 @@ export default function JourneyTodayPage() {
   if (error && !mission) {
     return (
       <main className="min-h-screen bg-[var(--bm-bg)] text-[var(--bm-text)] flex items-center justify-center px-6">
-        <p className="text-sm text-red-400 max-w-md text-center">{error}</p>
+        <p className="text-sm text-[var(--bm-red)] max-w-md text-center">{error}</p>
       </main>
     );
   }
@@ -133,174 +188,291 @@ export default function JourneyTodayPage() {
   if (!mission) return null;
 
   const status = mission.project?.status ?? "not_started";
+  const xpBarPct = progress?.xpToNextLevel != null
+    ? Math.max(4, Math.round((progress.xpIntoLevel / (progress.xpIntoLevel + progress.xpToNextLevel)) * 100))
+    : 100;
 
   return (
     <main className="min-h-screen bg-[var(--bm-bg)] text-[var(--bm-text)]">
-      <div className="max-w-2xl mx-auto px-6 py-12">
-        <p className="text-xs uppercase tracking-wider text-[var(--bm-text3)] mb-2">
-          Module {mission.moduleOrder} of 16 · {mission.progressPct}% through the journey
-        </p>
-        <h1 className="text-2xl font-semibold tracking-tight mb-1">{mission.moduleTitle}</h1>
-        <p className="text-sm text-[var(--bm-text2)] mb-4">
-          Today&apos;s build: <span className="font-medium text-[var(--bm-text)]">{mission.projectTitle}</span>
-        </p>
-
+      <div className="max-w-2xl mx-auto px-6 py-14">
+        {/* ── Signature element: status strip ───────────────────────────── */}
         {progress && (
-          <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--bm-text3)] mb-8 pb-6 border-b border-[var(--bm-border)]">
-            <span className="font-medium text-[var(--bm-text)]">
-              Level {progress.level} · {progress.levelName}
-            </span>
-            <span>{progress.totalXp} XP{progress.xpToNextLevel !== null ? ` (${progress.xpToNextLevel} to next level)` : " (max level)"}</span>
-            {progress.currentStreak > 0 && <span>🔥 {progress.currentStreak}-day streak</span>}
-            {progress.achievements.length > 0 && (
-              <span title={progress.achievements.map((a) => a.name).join(", ")}>
-                🏆 {progress.achievements.length} achievement{progress.achievements.length === 1 ? "" : "s"}
-              </span>
-            )}
+          <div className="rounded-lg border border-[var(--bm-border)] bg-[var(--bm-bg2)] px-5 py-4 mb-8 flex items-center gap-6 flex-wrap">
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-9 rounded-full border border-[var(--bm-accent-bd)] bg-[var(--bm-accent-dim)] flex items-center justify-center shrink-0">
+                <span className="font-mono text-sm text-[var(--bm-accent)] font-medium">{progress.level}</span>
+              </div>
+              <div>
+                <p className="text-sm font-medium leading-none mb-1">{progress.levelName}</p>
+                <p className="text-xs text-[var(--bm-text3)] font-mono">
+                  {progress.totalXp.toLocaleString()} XP
+                </p>
+              </div>
+            </div>
+
+            <div className="flex-1 min-w-[100px]">
+              <div className="h-1.5 rounded-full bg-[var(--bm-bg4)] overflow-hidden">
+                <motion.div
+                  className="h-full rounded-full bg-[var(--bm-accent)]"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${Math.min(100, Math.max(4, xpBarPct))}%` }}
+                  transition={{ duration: 0.8, ease: "easeOut" }}
+                />
+              </div>
+              {progress.xpToNextLevel !== null && (
+                <p className="text-[10px] text-[var(--bm-text3)] font-mono mt-1">
+                  {progress.xpToNextLevel} XP to next level
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center gap-4 shrink-0">
+              <div className="flex items-center gap-1.5" title={`${progress.currentStreak}-day streak`}>
+                <Flame
+                  size={16}
+                  className={progress.currentStreak > 0 ? "text-[var(--bm-accent)]" : "text-[var(--bm-text4)]"}
+                  fill={progress.currentStreak > 0 ? "var(--bm-accent)" : "none"}
+                />
+                <span className="font-mono text-sm">{progress.currentStreak}</span>
+              </div>
+              {progress.achievements.length > 0 && (
+                <div
+                  className="flex items-center gap-1.5"
+                  title={progress.achievements.map((a) => a.name).join(", ")}
+                >
+                  <Trophy size={16} className="text-[var(--bm-accent)]" />
+                  <span className="font-mono text-sm">{progress.achievements.length}</span>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
-        <section className="border border-[var(--bm-border)] rounded-xl p-5 mb-6">
-          <h2 className="text-sm font-semibold mb-3">Learn</h2>
-          <div className="space-y-6">
+        {/* ── Header ─────────────────────────────────────────────────────── */}
+        <p className="text-xs font-mono uppercase tracking-wider text-[var(--bm-text3)] mb-3">
+          Module {mission.moduleOrder} / 16 &nbsp;·&nbsp; {mission.progressPct}% through the journey
+        </p>
+        <h1 className="font-syne text-3xl font-bold tracking-tight mb-2">{mission.moduleTitle}</h1>
+        <p className="text-sm text-[var(--bm-text2)] mb-10">
+          Today&apos;s build: <span className="text-[var(--bm-text)] font-medium">{mission.projectTitle}</span>
+        </p>
+
+        {/* ── Learn ──────────────────────────────────────────────────────── */}
+        <section className="mb-6">
+          <div className="flex items-center gap-2 mb-4">
+            <BookOpen size={15} className="text-[var(--bm-text3)]" />
+            <h2 className="text-xs font-mono uppercase tracking-wider text-[var(--bm-text3)]">Learn</h2>
+          </div>
+          <div className="space-y-3">
             {mission.lessons.map((lesson) => (
-              <div key={lesson.id}>
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-sm font-medium">{lesson.title}</h3>
+              <div key={lesson.id} className="rounded-lg border border-[var(--bm-border)] bg-[var(--bm-bg2)] p-5">
+                <div className="flex items-center justify-between mb-3 gap-3">
+                  <h3 className="text-sm font-semibold">{lesson.title}</h3>
                   {lesson.completed ? (
-                    <span className="text-xs text-emerald-400">✓ Done</span>
+                    <motion.span
+                      initial={{ scale: 0.6, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      transition={{ type: "spring", stiffness: 400, damping: 20 }}
+                      className="flex items-center gap-1 text-xs text-[var(--bm-green)] shrink-0"
+                    >
+                      <CheckCircle2 size={14} /> Done
+                    </motion.span>
                   ) : (
                     <button
                       onClick={() => handleCompleteLesson(lesson.id)}
-                      className="text-xs border border-[var(--bm-border)] rounded px-2 py-1"
+                      className="flex items-center gap-1 text-xs text-[var(--bm-text3)] hover:text-[var(--bm-text)] border border-[var(--bm-border2)] hover:border-[var(--bm-border3)] rounded-md px-2.5 py-1 shrink-0 transition-colors"
                     >
-                      Mark complete
+                      <Circle size={12} /> Mark complete
                     </button>
                   )}
                 </div>
+
+                <div className="flex items-start gap-2 rounded-md bg-[var(--bm-accent-dim)] border border-[var(--bm-accent-bd)] px-3 py-2.5 mb-4">
+                  <Target size={13} className="text-[var(--bm-accent)] mt-0.5 shrink-0" />
+                  <p className="text-xs text-[var(--bm-text2)] leading-relaxed">{lesson.whyItMatters}</p>
+                </div>
+
                 {lesson.body.map((para, i) => (
-                  <p key={i} className="text-sm text-[var(--bm-text2)] mb-2">{para}</p>
+                  <p key={i} className="text-sm text-[var(--bm-text2)] leading-relaxed mb-2.5 last:mb-0">{para}</p>
                 ))}
-                <ul className="text-xs text-[var(--bm-text3)] space-y-1 list-disc list-inside mt-2">
+
+                <div className="mt-4">
+                  <PythonCode code={lesson.codeExample.code} caption={lesson.codeExample.caption} />
+                </div>
+
+                <div className="mt-4">
+                  <p className="text-[10px] font-mono uppercase tracking-wide text-[var(--bm-text3)] mb-2 flex items-center gap-1">
+                    <AlertTriangle size={10} /> Common mistakes
+                  </p>
+                  <ul className="space-y-1.5">
+                    {lesson.commonMistakes.map((m) => (
+                      <li key={m} className="text-xs text-[var(--bm-text2)] leading-relaxed flex gap-2">
+                        <span className="text-[var(--bm-text4)] shrink-0">—</span>
+                        {m}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="flex flex-wrap gap-1.5 mt-4 pt-4 border-t border-[var(--bm-border)]">
                   {lesson.keyTakeaways.map((t) => (
-                    <li key={t}>{t}</li>
+                    <span
+                      key={t}
+                      className="text-[11px] leading-snug text-[var(--bm-text3)] bg-[var(--bm-bg3)] border border-[var(--bm-border)] rounded-full px-2.5 py-1"
+                    >
+                      {t}
+                    </span>
                   ))}
-                </ul>
+                </div>
               </div>
             ))}
           </div>
         </section>
 
-        <section className="border border-[var(--bm-border)] rounded-xl p-5 mb-6">
-          <h2 className="text-sm font-semibold mb-3">Practice</h2>
-          <div className="space-y-4">
+        {/* ── Practice ───────────────────────────────────────────────────── */}
+        <section className="mb-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Wrench size={15} className="text-[var(--bm-text3)]" />
+            <h2 className="text-xs font-mono uppercase tracking-wider text-[var(--bm-text3)]">Practice</h2>
+          </div>
+          <div className="space-y-2.5">
             {mission.exercises.map((exercise) => (
-              <div key={exercise.id} className="border border-[var(--bm-border)] rounded-lg p-4">
+              <div
+                key={exercise.id}
+                className="rounded-lg border border-[var(--bm-border)] bg-[var(--bm-bg2)] p-4 border-l-2 border-l-[var(--bm-accent-bd)]"
+              >
                 <div className="flex items-start justify-between gap-3 mb-2">
-                  <p className="text-sm text-[var(--bm-text)]">{exercise.prompt}</p>
+                  <div className="flex-1">
+                    <span
+                      className={`inline-block text-[10px] font-mono uppercase tracking-wide rounded px-1.5 py-0.5 mb-1.5 ${
+                        DIFFICULTY_STYLES[exercise.difficulty]
+                      }`}
+                    >
+                      {exercise.difficulty}
+                    </span>
+                    <p className="text-sm text-[var(--bm-text)]">{exercise.prompt}</p>
+                  </div>
                   {exercise.completed ? (
-                    <span className="text-xs text-emerald-400 shrink-0">✓ Done</span>
+                    <span className="flex items-center gap-1 text-xs text-[var(--bm-green)] shrink-0">
+                      <CheckCircle2 size={14} /> Done
+                    </span>
                   ) : (
                     <button
                       onClick={() => handleCompleteExercise(exercise.id)}
-                      className="text-xs border border-[var(--bm-border)] rounded px-2 py-1 shrink-0"
+                      className="flex items-center gap-1 text-xs text-[var(--bm-text3)] hover:text-[var(--bm-text)] border border-[var(--bm-border2)] hover:border-[var(--bm-border3)] rounded-md px-2.5 py-1 shrink-0 transition-colors"
                     >
-                      Mark complete
+                      <Circle size={12} /> Mark complete
                     </button>
                   )}
                 </div>
-                <details className="text-xs text-[var(--bm-text3)]">
-                  <summary className="cursor-pointer">Hint</summary>
-                  <p className="mt-1">{exercise.hint}</p>
+                <details className="group text-xs text-[var(--bm-text3)]">
+                  <summary className="cursor-pointer list-none flex items-center gap-1 w-fit hover:text-[var(--bm-text2)]">
+                    <ChevronDown size={12} className="transition-transform group-open:rotate-180" />
+                    Hint
+                  </summary>
+                  <p className="mt-2 pl-4 border-l border-[var(--bm-border)] text-[var(--bm-text2)]">{exercise.hint}</p>
                 </details>
               </div>
             ))}
           </div>
         </section>
 
-        <section className="border border-[var(--bm-border)] rounded-xl p-5 mb-6">
-          <h2 className="text-sm font-semibold mb-3">Build: {mission.projectTitle}</h2>
+        {/* ── Build ──────────────────────────────────────────────────────── */}
+        <section className="mb-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Github size={15} className="text-[var(--bm-text3)]" />
+            <h2 className="text-xs font-mono uppercase tracking-wider text-[var(--bm-text3)]">Build</h2>
+          </div>
 
-          {status === "not_started" && (
-            <button
-              onClick={handleStart}
-              className="text-sm font-medium bg-white text-black rounded-lg px-4 py-2"
-            >
-              Start this project
-            </button>
-          )}
+          <div className="rounded-lg border border-[var(--bm-border)] bg-[var(--bm-bg2)] p-5">
+            <h3 className="text-sm font-semibold mb-1">{mission.projectTitle}</h3>
 
-          {mission.milestone?.deadline && (
-            <p className="text-xs text-[var(--bm-text3)] mt-3">
-              Due: {new Date(mission.milestone.deadline).toLocaleDateString()}
-            </p>
-          )}
+            {mission.milestone?.deadline && (
+              <p className="flex items-center gap-1.5 text-xs text-[var(--bm-text3)] font-mono mb-4">
+                <Clock size={12} /> Due {new Date(mission.milestone.deadline).toLocaleDateString()}
+              </p>
+            )}
 
-          {(status === "in_progress" || status === "graded") && (
-            <div className="mt-4 space-y-3">
-              {mission.latestGrade && (
-                <div className="border border-amber-500/30 bg-amber-500/5 rounded-lg p-4 space-y-2">
-                  <p className="text-sm font-medium text-amber-400">
-                    Last score: {mission.latestGrade.score}/100 — let&apos;s tighten this up before moving on.
-                  </p>
-                  {mission.latestGrade.feedback && (
-                    <p className="text-sm text-[var(--bm-text2)]">{mission.latestGrade.feedback}</p>
-                  )}
-                  {mission.latestGrade.required_fixes && (
-                    <p className="text-sm text-[var(--bm-text2)]">
-                      <span className="font-medium">Fix before resubmitting:</span> {mission.latestGrade.required_fixes}
-                    </p>
-                  )}
-                  {mission.remediation.length > 0 && (
-                    <div className="pt-1">
-                      <p className="text-xs uppercase tracking-wide text-[var(--bm-text3)] mb-1">Focus on</p>
-                      <ul className="text-sm text-[var(--bm-text2)] space-y-1 list-disc list-inside">
-                        {mission.remediation.map((r) => (
-                          <li key={r.skillId}>
-                            <span className="font-medium text-[var(--bm-text)]">{r.skillName}:</span> {r.tip}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              )}
-              <input
-                value={repoUrl}
-                onChange={(e) => setRepoUrl(e.target.value)}
-                placeholder="GitHub repository URL"
-                className="w-full text-sm bg-transparent border border-[var(--bm-border)] rounded-lg px-3 py-2 outline-none"
-              />
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Notes / reflection (what you tried, what was hard)"
-                rows={3}
-                className="w-full text-sm bg-transparent border border-[var(--bm-border)] rounded-lg px-3 py-2 outline-none"
-              />
+            {status === "not_started" && (
               <button
-                onClick={handleSubmit}
-                disabled={submitting}
-                className="text-sm font-medium bg-white text-black rounded-lg px-4 py-2 disabled:opacity-50"
+                onClick={handleStart}
+                className="text-sm font-medium bg-[var(--bm-accent)] hover:bg-[var(--bm-accent2)] text-[var(--bm-text-inv)] rounded-md px-4 py-2 transition-colors"
               >
-                {submitting ? "Submitting…" : status === "graded" ? "Submit revision" : "Submit for review"}
+                Start this project
               </button>
-              {submitMsg && <p className="text-xs text-emerald-400">{submitMsg}</p>}
-            </div>
-          )}
+            )}
 
-          {status === "submitted" && (
-            <p className="text-sm text-[var(--bm-text2)] mt-2">
-              Submitted — waiting on mentor feedback.
-            </p>
-          )}
+            {(status === "in_progress" || status === "graded") && (
+              <div className="mt-1 space-y-4">
+                {mission.latestGrade && (
+                  <div className="rounded-lg border border-[var(--bm-red-bd)] bg-[var(--bm-red-dim)] p-4 space-y-2">
+                    <p className="text-sm font-medium text-[var(--bm-red)]">
+                      Last score: {mission.latestGrade.score}/100 — let&apos;s tighten this up before moving on.
+                    </p>
+                    {mission.latestGrade.feedback && (
+                      <p className="text-sm text-[var(--bm-text2)]">{mission.latestGrade.feedback}</p>
+                    )}
+                    {mission.latestGrade.required_fixes && (
+                      <p className="text-sm text-[var(--bm-text2)]">
+                        <span className="font-medium text-[var(--bm-text)]">Fix before resubmitting:</span>{" "}
+                        {mission.latestGrade.required_fixes}
+                      </p>
+                    )}
+                    {mission.remediation.length > 0 && (
+                      <div className="pt-1">
+                        <p className="text-[10px] font-mono uppercase tracking-wide text-[var(--bm-text3)] mb-1.5 flex items-center gap-1">
+                          <Sparkles size={10} /> Focus on
+                        </p>
+                        <ul className="text-sm text-[var(--bm-text2)] space-y-1">
+                          {mission.remediation.map((r) => (
+                            <li key={r.skillId}>
+                              <span className="font-medium text-[var(--bm-text)]">{r.skillName}:</span> {r.tip}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+                <div className="space-y-3">
+                  <input
+                    value={repoUrl}
+                    onChange={(e) => setRepoUrl(e.target.value)}
+                    placeholder="GitHub repository URL"
+                    className="w-full text-sm bg-[var(--bm-bg3)] border border-[var(--bm-border)] focus:border-[var(--bm-border3)] rounded-md px-3 py-2.5 outline-none transition-colors placeholder:text-[var(--bm-text3)]"
+                  />
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Notes / reflection (what you tried, what was hard)"
+                    rows={3}
+                    className="w-full text-sm bg-[var(--bm-bg3)] border border-[var(--bm-border)] focus:border-[var(--bm-border3)] rounded-md px-3 py-2.5 outline-none transition-colors placeholder:text-[var(--bm-text3)]"
+                  />
+                  <button
+                    onClick={handleSubmit}
+                    disabled={submitting}
+                    className="text-sm font-medium bg-[var(--bm-accent)] hover:bg-[var(--bm-accent2)] text-[var(--bm-text-inv)] rounded-md px-4 py-2 disabled:opacity-50 transition-colors"
+                  >
+                    {submitting ? "Submitting…" : status === "graded" ? "Submit revision" : "Submit for review"}
+                  </button>
+                  {submitMsg && <p className="text-xs text-[var(--bm-green)]">{submitMsg}</p>}
+                </div>
+              </div>
+            )}
 
-          {status === "passed" && (
-            <p className="text-sm text-[var(--bm-text2)] mt-2">Graded — you passed this one 🎉</p>
-          )}
+            {status === "submitted" && (
+              <p className="text-sm text-[var(--bm-text2)] mt-2">Submitted — waiting on mentor feedback.</p>
+            )}
+
+            {status === "passed" && (
+              <p className="flex items-center gap-1.5 text-sm text-[var(--bm-green)] mt-2">
+                <CheckCircle2 size={16} /> Graded — you passed this one
+              </p>
+            )}
+          </div>
         </section>
 
-        {error && <p className="text-xs text-red-400">{error}</p>}
+        {error && <p className="text-xs text-[var(--bm-red)]">{error}</p>}
       </div>
     </main>
   );
