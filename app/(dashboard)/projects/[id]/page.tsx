@@ -46,7 +46,7 @@ const VIZ = {
 };
 
 type MilestoneType = "action"|"research"|"legal"|"money"|"security";
-const TYPE_COLORS: Record<MilestoneType,string> = { action:"var(--bm-accent)",research:"var(--bm-accent2)",legal:"var(--bm-accent)",money:"var(--bm-green)",security:"var(--bm-red)" };
+const TYPE_COLORS: Record<MilestoneType,string> = { action:"var(--bm-accent)",research:"var(--bm-accent2)",legal:"var(--bm-blue)",money:"var(--bm-green)",security:"var(--bm-red)" };
 const TYPE_LABELS: Record<MilestoneType,string> = { action:"⚡ Action",research:"📚 Research",legal:"⚖️ Legal",money:"💰 Revenue",security:"🔒 Security" };
 
 function inferMilestoneType(title:string): MilestoneType {
