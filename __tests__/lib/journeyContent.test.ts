@@ -39,6 +39,26 @@ describe("JOURNEY_LESSONS coverage", () => {
     }
   });
 
+  it("every lesson has a whyItMatters framing that isn't a placeholder", () => {
+    for (const l of JOURNEY_LESSONS) {
+      expect(l.whyItMatters.length).toBeGreaterThan(30);
+    }
+  });
+
+  it("every lesson has a real code example with a caption and non-trivial code", () => {
+    for (const l of JOURNEY_LESSONS) {
+      expect(l.codeExample.caption.length).toBeGreaterThan(5);
+      expect(l.codeExample.code.length).toBeGreaterThan(20);
+    }
+  });
+
+  it("every lesson lists at least 2 specific common mistakes", () => {
+    for (const l of JOURNEY_LESSONS) {
+      expect(l.commonMistakes.length).toBeGreaterThanOrEqual(2);
+      expect(l.commonMistakes.every((m) => m.length > 15)).toBe(true);
+    }
+  });
+
   it("every lesson's moduleOrder is a real module (1-16)", () => {
     for (const l of JOURNEY_LESSONS) {
       expect(l.moduleOrder).toBeGreaterThanOrEqual(1);
@@ -48,10 +68,10 @@ describe("JOURNEY_LESSONS coverage", () => {
 });
 
 describe("JOURNEY_EXERCISES coverage", () => {
-  it("has at least two exercises for every one of the 16 modules", () => {
+  it("has exactly 3 exercises for every one of the 16 modules", () => {
     for (const m of JOURNEY_MODULES) {
       const exercises = getExercisesForModule(m.order);
-      expect(exercises.length).toBeGreaterThanOrEqual(2);
+      expect(exercises).toHaveLength(3);
     }
   });
 
@@ -64,6 +84,14 @@ describe("JOURNEY_EXERCISES coverage", () => {
     for (const e of JOURNEY_EXERCISES) {
       expect(e.prompt.length).toBeGreaterThan(15);
       expect(e.hint.length).toBeGreaterThan(10);
+    }
+  });
+
+  it("every module has exactly one warmup, one core, and one stretch exercise", () => {
+    for (const m of JOURNEY_MODULES) {
+      const exercises = getExercisesForModule(m.order);
+      const difficulties = exercises.map((e) => e.difficulty).sort();
+      expect(difficulties).toEqual(["core", "stretch", "warmup"]);
     }
   });
 });
