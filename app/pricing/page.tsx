@@ -98,7 +98,7 @@ export default function PricingPage() {
               <div key={stat} style={{ padding: "clamp(14px, 3vw, 20px)", borderRadius: 12,
                 border: "1px solid var(--bm-border)", background: "var(--bm-bg2)" }}>
                 <div style={{ fontFamily: "'DM Mono', monospace", fontSize: "clamp(18px, 4vw, 24px)",
-                  fontWeight: 900, color: "var(--bm-accent)", letterSpacing: "-0.03em", marginBottom: 8 }}>
+                  fontWeight: 900, color: "var(--bm-text)", letterSpacing: "-0.03em", marginBottom: 8 }}>
                   {stat}
                 </div>
                 <div style={{ fontSize: "clamp(11px, 2vw, 12px)", color: "var(--bm-text2)", lineHeight: 1.6 }}>
@@ -188,7 +188,7 @@ export default function PricingPage() {
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               {BUILDER_FEATURES.map(({ label, note }) => (
                 <div key={label} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                  <Check size={13} color="var(--bm-accent)" strokeWidth={2.5} style={{ flexShrink: 0, marginTop: 2 }} />
+                  <Check size={13} color="var(--bm-text3)" strokeWidth={2.5} style={{ flexShrink: 0, marginTop: 2 }} />
                   <div>
                     <div style={{ fontSize: "clamp(12px, 2vw, 13px)", fontWeight: 600, color: "var(--bm-text)", marginBottom: 2 }}>{label}</div>
                     <div style={{ fontSize: "clamp(10px, 1.8vw, 11px)", color: "var(--bm-text4)", lineHeight: 1.5 }}>{note}</div>
