@@ -55,7 +55,7 @@ function IntegrationCard({
         <div style={{ fontSize: 12, color: VIZ.text3, lineHeight: 1.45 }}>{description}</div>
       </div>
       {status === "connected" ? (
-        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--bm-accent)",
+        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--bm-green)",
           background: "rgba(92,200,138,0.08)", border: "1px solid rgba(92,200,138,0.2)",
           borderRadius: 6, padding: "4px 10px", flexShrink: 0 }}>
           Connected ✓
@@ -938,8 +938,8 @@ function StrikeScreen({ idea, result, onContinue, onBack }: {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 6 }}>
           {[
             { label: "Survival score", score: scores.survival, color: "var(--bm-red)" },
-            { label: "Moat strength", score: scores.moat, color: "var(--bm-accent)" },
-            { label: "Market timing", score: scores.timing, color: "var(--bm-accent)" },
+            { label: "Moat strength", score: scores.moat, color: "var(--bm-text)" },
+            { label: "Market timing", score: scores.timing, color: "var(--bm-text)" },
           ].map(({ label, score, color }) => (
             <div key={label} style={{
               background: "var(--bm-bg2)", border: "1px solid var(--bm-border)",
@@ -1487,7 +1487,7 @@ function IdentityScreen({ onComplete, startupStage, founderWorries }: {
           {/* Meta row */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
             {[
-              { text: stage, color: "var(--bm-accent)" },
+              { text: stage, color: "var(--bm-text3)" },
               { text: "High priority", color: "var(--bm-red)" },
               { text: "30 min", color: "var(--bm-text3)" },
             ].map(({ text, color }) => (
@@ -1586,7 +1586,7 @@ function IdentityScreen({ onComplete, startupStage, founderWorries }: {
                 <span style={{
                   fontFamily: "'DM Mono', monospace", fontSize: 8,
                   textTransform: "uppercase" as const, letterSpacing: "0.06em",
-                  color: "var(--bm-accent)", flexShrink: 0,
+                  color: "var(--bm-text3)", flexShrink: 0,
                 }}>{key}</span>
                 <span style={{
                   fontFamily: "'DM Mono', monospace", fontSize: 9,
@@ -1863,7 +1863,7 @@ function OnboardingInner() {
                 <motion.span
                   initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                   transition={{ delay: 0.6 + i * 0.15 }}
-                  style={{ marginLeft: "auto", fontSize: 11, color: "var(--bm-accent)", fontWeight: 700 }}>
+                  style={{ marginLeft: "auto", fontSize: 11, color: "var(--bm-green)", fontWeight: 700 }}>
                   ✓
                 </motion.span>
               </motion.div>
