@@ -45,7 +45,7 @@ const DAY_TIMELINE = [
     title: "Two replies received. Traction detected.",
     body: "Pattern detector notes the second positive reply in 3 days. Momentum rises from 74 to 81. The YC Critic will be more generous tonight because you're showing signal.",
     chips: ["Score 74 to 81", "Replies 2", "Pattern detected"],
-    color: "var(--bm-accent)",
+    color: "var(--bm-intel2)",
     icon: TrendingUp,
   },
   {
@@ -695,7 +695,7 @@ const FEATURES = [
     title: "Founder Memory",
     desc: "Every reflection, outcome, and check-in builds context. The AI remembers your history, so actions get sharper as it learns what works for you.",
     badge: "Memory",
-    badgeColor: "var(--bm-accent)",
+    badgeColor: "var(--bm-intel2)",
   },
 ];
 
@@ -890,7 +890,7 @@ function BreakMyStartupSection() {
                     </div>
                     <p className="text-sm text-[var(--bm-text2)] leading-relaxed">{sanitizeOutput(risk.description)}</p>
                     <div className="flex items-start gap-2 text-xs p-2.5 rounded-lg mt-1" style={{ background: "var(--bm-bg3)", color: "var(--bm-text3)" }}>
-                      <Shield size={12} className="shrink-0 mt-0.5" style={{ color: "var(--bm-accent)" }} />
+                      <Shield size={12} className="shrink-0 mt-0.5" style={{ color: "var(--bm-text3)" }} />
                       <span>{sanitizeOutput(risk.mitigation)}</span>
                     </div>
                   </Card>
@@ -942,7 +942,7 @@ function PricingSection() {
                   "1 project",
                 ].map((f) => (
                   <li key={f} className="flex items-start gap-2 text-sm text-[var(--bm-text2)]">
-                    <ChevronRight size={14} className="shrink-0 mt-0.5" style={{ color: "var(--bm-accent)" }} />
+                    <ChevronRight size={14} className="shrink-0 mt-0.5" style={{ color: "var(--bm-text3)" }} />
                     {f}
                   </li>
                 ))}
@@ -982,7 +982,7 @@ function PricingSection() {
                   "Unlimited projects",
                 ].map((f) => (
                   <li key={f} className="flex items-start gap-2 text-sm text-[var(--bm-text)]">
-                    <ChevronRight size={14} className="shrink-0 mt-0.5" style={{ color: "var(--bm-accent)" }} />
+                    <ChevronRight size={14} className="shrink-0 mt-0.5" style={{ color: "var(--bm-text3)" }} />
                     {f}
                   </li>
                 ))}
@@ -2163,16 +2163,16 @@ function LandingAestheticLayer() {
         transform: translateY(-3px);
       }
 
-      /* ── Feature grid card icons — accent ring ────────────────────────────── */
+      /* ── Feature grid card icons — neutral; each card's badge carries the color ── */
       .bm-feature-icon-wrap {
         display: flex;
         align-items: center;
         justify-content: center;
         width: 42px; height: 42px;
         border-radius: 11px;
-        background: rgba(232,197,71,0.09);
-        border: 1px solid rgba(232,197,71,0.20);
-        color: var(--bm-accent);
+        background: var(--bm-bg4);
+        border: 1px solid var(--bm-border2);
+        color: var(--bm-text3);
         position: relative;
         overflow: hidden;
         transition: background .25s ease, border-color .25s ease, box-shadow .25s ease;
@@ -2181,14 +2181,13 @@ function LandingAestheticLayer() {
         content: '';
         position: absolute;
         inset: 0;
-        background: radial-gradient(ellipse at 50% 0%, rgba(232,197,71,0.25) 0%, transparent 65%);
+        background: radial-gradient(ellipse at 50% 0%, rgba(255,255,255,0.06) 0%, transparent 65%);
         opacity: 0;
         transition: opacity .25s ease;
       }
       .bm-glass-hover:hover .bm-feature-icon-wrap {
-        background: rgba(232,197,71,0.15);
-        border-color: rgba(232,197,71,0.35);
-        box-shadow: 0 0 18px rgba(232,197,71,0.20);
+        background: var(--bm-bg3);
+        border-color: var(--bm-border3);
       }
       .bm-glass-hover:hover .bm-feature-icon-wrap::after {
         opacity: 1;
