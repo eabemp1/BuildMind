@@ -237,9 +237,9 @@ export default function FounderMirrorPage() {
 
         <Card style={{ padding: 18, background: "var(--bm-bg3)" }}>
           <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
-            <AlertTriangle size={15} color="var(--bm-accent)" />
+            <AlertTriangle size={15} color="var(--bm-amber)" />
             <div>
-              <Eyebrow color="var(--bm-accent)">Model uncertainty</Eyebrow>
+              <Eyebrow color="var(--bm-amber)">Model uncertainty</Eyebrow>
               <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 15, fontWeight: 700 }}>What may be wrong</div>
             </div>
           </div>
