@@ -186,8 +186,8 @@ function IntegrationsTab({ initialStatus }: { initialStatus: string | null }) {
             initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
             style={{
               padding: "10px 14px", borderRadius: 10,
-              background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)",
-              fontSize: 13, color: "var(--bm-accent)", fontWeight: 500,
+              background: "var(--bm-green-dim)", border: "1px solid var(--bm-green-bd)",
+              fontSize: 13, color: "var(--bm-green)", fontWeight: 500,
               display: "flex", alignItems: "center", gap: 8,
             }}
           >
@@ -213,7 +213,7 @@ function IntegrationsTab({ initialStatus }: { initialStatus: string | null }) {
           key={intg.id}
           style={{
             background: "var(--bm-bg2)",
-            border: `1px solid ${intg.status === "connected" ? "var(--bm-accent-bd)" : "var(--bm-border)"}`,
+            border: `1px solid ${intg.status === "connected" ? "var(--bm-green-bd)" : "var(--bm-border)"}`,
             borderRadius: 16,
             padding: isMobile ? "18px" : "20px 22px",
           }}
@@ -236,8 +236,8 @@ function IntegrationsTab({ initialStatus }: { initialStatus: string | null }) {
                 {intg.status === "connected" && (
                   <span style={{
                     fontSize: 10, padding: "2px 8px", borderRadius: 20,
-                    background: "var(--bm-accent-dim)", color: "var(--bm-accent)",
-                    border: "1px solid var(--bm-accent-bd)", fontWeight: 700, letterSpacing: "0.06em",
+                    background: "var(--bm-green-dim)", color: "var(--bm-green)",
+                    border: "1px solid var(--bm-green-bd)", fontWeight: 700, letterSpacing: "0.06em",
                   }}>
                     CONNECTED
                   </span>
@@ -258,7 +258,7 @@ function IntegrationsTab({ initialStatus }: { initialStatus: string | null }) {
             {/* CTA */}
             <div style={{ flexShrink: 0, width: isMobile ? "100%" : "auto" }}>
               {intg.status === "connected" ? (
-                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--bm-accent)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--bm-green)" }}>
                   <Check size={14} /> Active
                 </div>
               ) : (
@@ -694,7 +694,7 @@ function SettingsContent() {
                     <AnimatePresence>
                       {saved && (
                         <motion.span initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                          style={{ fontSize: 12, color: "var(--bm-accent)", display: "flex", alignItems: "center", gap: 6 }}>
+                          style={{ fontSize: 12, color: "var(--bm-green)", display: "flex", alignItems: "center", gap: 6 }}>
                           <Check size={12} /> Saved
                         </motion.span>
                       )}
@@ -849,7 +849,7 @@ function SettingsContent() {
                     <AnimatePresence>
                       {publicSaved && (
                         <motion.span initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                          style={{ fontSize: 12, color: "var(--bm-accent)", display: "flex", alignItems: "center", gap: 6 }}>
+                          style={{ fontSize: 12, color: "var(--bm-green)", display: "flex", alignItems: "center", gap: 6 }}>
                           <Check size={12} /> Saved
                         </motion.span>
                       )}
