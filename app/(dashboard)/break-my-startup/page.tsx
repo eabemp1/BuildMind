@@ -723,7 +723,7 @@ export default function BreakMyStartupPage() {
                   style={{
                     border: "1px solid var(--bm-border)",
                     background: executionMode ? "rgba(92,200,138,0.12)" : "var(--bm-bg3)",
-                    color: executionMode ? "var(--bm-accent)" : "var(--bm-text3)",
+                    color: executionMode ? "var(--bm-green)" : "var(--bm-text3)",
                   }}
                 >
                   Focus Mode {executionMode ? "On" : "Off"}
@@ -739,8 +739,8 @@ export default function BreakMyStartupPage() {
                       className="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-150"
                       style={{
                         background: active ? "rgba(92,200,138,0.10)" : "var(--bm-bg3)",
-                        borderColor: active ? "var(--bm-accent-bd)" : "var(--bm-border)",
-                        color: active ? "var(--bm-accent)" : "var(--bm-text3)",
+                        borderColor: active ? "var(--bm-green-bd)" : "var(--bm-border)",
+                        color: active ? "var(--bm-green)" : "var(--bm-text3)",
                       }}
                     >
                       {area}
@@ -1071,7 +1071,7 @@ export default function BreakMyStartupPage() {
                       display: "flex", alignItems: "flex-start", gap: 8,
                       background: "var(--bm-bg3)", borderRadius: "var(--r-sm)", padding: "8px 10px",
                     }}>
-                      <CheckCircle2 size={12} style={{ color: "var(--bm-accent)", flexShrink: 0, marginTop: 1 }} />
+                      <CheckCircle2 size={12} style={{ color: "var(--bm-text3)", flexShrink: 0, marginTop: 1 }} />
                       <div style={{ flex: 1 }}>
                         <div style={{ fontSize: 9, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>
                           How to de-risk this
