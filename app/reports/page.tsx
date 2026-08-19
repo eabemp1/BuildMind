@@ -623,7 +623,7 @@ export default function ReportsPage() {
             borderRadius:"var(--r-xl)", padding:"20px", marginBottom:16 }}>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
             <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-              <Activity size={13} color="var(--bm-accent)"/>
+              <Activity size={13} color="var(--bm-intel2)"/>
               <span style={{ fontSize:12, fontWeight:600, color:"var(--bm-text2)" }}>Score Trend — Last 7 Days</span>
             </div>
             <div style={{ display:"flex", gap:12 }}>
@@ -641,7 +641,7 @@ export default function ReportsPage() {
             </div>
           </div>
           <div style={{ height:60 }}>
-            <Sparkline data={weeklyScores.map(s=>s||0)} color="var(--bm-accent)" w={isMobile?320:880} h={60}/>
+            <Sparkline data={weeklyScores.map(s=>s||0)} color="var(--bm-intel2)" w={isMobile?320:880} h={60}/>
           </div>
         </motion.div>
 
