@@ -545,7 +545,7 @@ export default function AgentsPage() {
       <div style={{ marginBottom: 28 }}>
         <div style={{
           fontSize: 9, fontWeight: 700, letterSpacing: "0.12em",
-          textTransform: "uppercase", color: "var(--bm-accent)",
+          textTransform: "uppercase", color: "var(--bm-text3)",
           fontFamily: "'DM Mono', monospace", marginBottom: 6,
         }}>
           Agent Workforce
