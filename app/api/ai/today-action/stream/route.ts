@@ -15,6 +15,7 @@
 import { NextResponse } from "next/server";
 import { enforceAndTrackAIUsage, hasAdminEnv } from "@/app/api/ai/_utils";
 import { logError } from "@/lib/server/logger";
+import { truncateWords } from "@/lib/textTruncate";
 
 export const runtime     = "nodejs";
 export const dynamic     = "force-dynamic";
@@ -82,68 +83,200 @@ function inferProjectAudience(targetUsers: string, title: string, description = 
 }
 
 function inferProjectProblem(problem: string, title: string, description = ""): string {
-  if (problem?.trim()) return problem.trim();
+  if (problem?.trim()) return truncateWords(problem.trim(), 8).replace(/[.!?]+$/, "");
   const haystack = `${title} ${description}`.toLowerCase();
   if (/(consent|privacy|gdpr|compliance|audit)/.test(haystack)) return "verifiable consent tracking and audit logging";
-  if (description?.trim()) return description.trim().slice(0, 120);
+  if (description?.trim()) return truncateWords(description.trim(), 8).replace(/[.!?]+$/, "");
   return title?.trim() ? `${title.trim()} and the workflow it improves` : "their current workflow";
 }
 
-function buildFallback(stage: string, targetUsers: string, problem: string, title: string, description = ""): TodayAction {
+// Simple deterministic string hash — no crypto needed, just needs to be
+// stable and reasonably distributed for variant rotation.
+function hashString(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+type FallbackVariant = (ctx: { userType: string; problemDesc: string; productName: string; stage: string }) => {
+  action: string;
+  platform: string;
+  message: string;
+  why: string;
+  time: string;
+};
+
+/**
+ * Tier-3 fallback bank — used when AI generation is unavailable or the
+ * pre-screen gate rejects the AI's composition. Previously this was one
+ * static message per STAGE (6 entries total), which is why a founder could
+ * see byte-identical fallback text for days straight whenever AI was down:
+ * there was nothing to rotate between. This is organized by FI OS
+ * ARCHETYPE instead — reflecting what the decision layer actually
+ * determined (evidence gap, stalled goal, avoidance pattern, or steady
+ * execution), each with 4 genuinely different variants — different
+ * platform, different framing, different ask — selected by a deterministic
+ * rotation so consecutive days don't repeat. This doesn't require an LLM
+ * call at all: it's the same "template-based generation" technique used
+ * long before generative AI existed, applied to data the FI OS already
+ * computes for free.
+ */
+const FALLBACK_BANK: Record<string, FallbackVariant[]> = {
+  evidence_probe: [
+    ({ userType, problemDesc }) => ({
+      action: `Message 3 ${userType} today — no pitch, just ask about ${problemDesc}.`,
+      platform: "WhatsApp",
+      message: `Hi [Name], quick question — what's your biggest frustration with ${problemDesc}? Researching it, would love 10 minutes.`,
+      why: `Every assumption about ${userType} is probably wrong until tested. Three real conversations beat a week of planning.`,
+      time: "1 hour",
+    }),
+    ({ userType, problemDesc }) => ({
+      action: `Send 5 personal DMs to ${userType} on LinkedIn — ask about their workflow, not your idea.`,
+      platform: "LinkedIn",
+      message: `Hi [Name], how do you currently handle ${problemDesc}? Not pitching anything — genuinely curious what you do today.`,
+      why: `Ask about their life, not your idea — you get honest answers instead of polite ones.`,
+      time: "1–2 hours",
+    }),
+    ({ userType, problemDesc }) => ({
+      action: `Post one specific question about ${problemDesc} in a community where ${userType} gather — read the replies, don't defend your idea.`,
+      platform: "Reddit or relevant Slack",
+      message: `Curious how people handle ${problemDesc} today — what's your current approach, and what's annoying about it?`,
+      why: `A public question surfaces more honest disagreement than a DM — you want the objections, not just agreement.`,
+      time: "45 minutes",
+    }),
+    ({ userType, problemDesc }) => ({
+      action: `Call one ${userType} you already know — ask what they tried last time ${problemDesc} came up.`,
+      platform: "Phone call",
+      message: `Hey [Name], quick one — last time you dealt with ${problemDesc}, what did you actually do? Not selling anything, just trying to understand.`,
+      why: `Past behavior is a better predictor than a stated opinion — ask what they did, not what they'd do.`,
+      time: "30 minutes",
+    }),
+  ],
+  unstall_goal: [
+    ({ userType, problemDesc, productName }) => ({
+      action: `Finish the smallest unfinished piece of your current goal today — ship it, don't polish it.`,
+      platform: "Direct work — no outreach needed",
+      message: `(No draft needed — this is a build task, not an outreach task.)`,
+      why: `The goal has been aging without visible progress. One completed piece, however small, is worth more than another day of planning.`,
+      time: "1–2 hours",
+    }),
+    ({ userType, problemDesc, productName }) => ({
+      action: `Share ${productName}'s current state with 2 ${userType} and watch them use it — don't explain, just observe.`,
+      platform: "Screen share or in person",
+      message: `Hi [Name], I've got something rough built for ${problemDesc}. Could you try it for 10 minutes while I watch? I won't explain anything.`,
+      why: `Their confusion is your roadmap — this converts a stalled goal into a concrete next fix.`,
+      time: "45 minutes",
+    }),
+    ({ userType, problemDesc }) => ({
+      action: `Write down the ONE thing blocking your current goal, then do that one thing — not the easier task next to it.`,
+      platform: "Direct work — no outreach needed",
+      message: `(No draft needed — this is a build task, not an outreach task.)`,
+      why: `Goals stall when the real blocker gets avoided in favor of adjacent, easier work. Naming it first makes avoidance harder.`,
+      time: "1 hour",
+    }),
+    ({ userType, productName }) => ({
+      action: `Set a 45-minute timer and advance your current goal with zero context-switching — phone away, one tab open.`,
+      platform: "Direct work — no outreach needed",
+      message: `(No draft needed — this is a build task, not an outreach task.)`,
+      why: `Momentum on a stalled goal often just needs one uninterrupted block, not a new plan.`,
+      time: "45 minutes",
+    }),
+  ],
+  avoidance_microdose: [
+    ({ userType, problemDesc }) => ({
+      action: `Spend 15 minutes on the thing you've been avoiding — send just 1 message on WhatsApp related to ${problemDesc}.`,
+      platform: "WhatsApp",
+      message: `Hi [Name], following up — wanted to ask about ${problemDesc} directly rather than keep putting it off.`,
+      why: `A small, time-boxed version of the avoided task is easier to start than the full version — the goal today is starting, not finishing.`,
+      time: "15 minutes",
+    }),
+    ({ userType, problemDesc }) => ({
+      action: `Message 1 ${userType} on LinkedIn about ${problemDesc} — just one, keep it small.`,
+      platform: "LinkedIn",
+      message: `Hi [Name], quick one — has ${problemDesc} come up for you? Would love your take.`,
+      why: `Repeated avoidance compounds — one small exposure today breaks the pattern without requiring a big commitment.`,
+      time: "15 minutes",
+    }),
+    ({ userType, problemDesc }) => ({
+      action: `Draft (don't send yet) the message you've been avoiding about ${problemDesc} — get it written, decide on sending after.`,
+      platform: "Draft only — no send required",
+      message: `[Draft space — write the message you've been avoiding here, even if you don't send it today.]`,
+      why: `Separating "write it" from "send it" lowers the bar enough to actually start.`,
+      time: "20 minutes",
+    }),
+    ({ userType, problemDesc }) => ({
+      action: `Comment on 1 thread about ${problemDesc} where ${userType} are already talking — lower stakes than starting your own.`,
+      platform: "Reddit or community forum",
+      message: `Following this thread — dealing with something similar around ${problemDesc}. Curious what's worked for others here.`,
+      why: `Responding to an existing conversation is a smaller step than starting one — good re-entry point for an avoided category.`,
+      time: "15 minutes",
+    }),
+  ],
+  continue_best_next_task: [
+    ({ userType, productName }) => ({
+      action: `Complete your highest-priority open task today and name one observable result before calling it done.`,
+      platform: "Direct work — no outreach needed",
+      message: `(No draft needed — this is a build task, not an outreach task.)`,
+      why: `When no single signal dominates, the highest-leverage move is finishing what's already in motion with a real result attached.`,
+      time: "1–2 hours",
+    }),
+    ({ userType, productName }) => ({
+      action: `Call one ${userType} who stopped using ${productName} — ask why, don't defend.`,
+      platform: "Phone call",
+      message: `Hi [Name], noticed you stopped using ${productName}. No pitch — just want to understand what happened. 10 minutes?`,
+      why: `One churned user teaches you more than 10 new signups — this keeps forward motion honest.`,
+      time: "45 minutes",
+    }),
+    ({ userType, productName }) => ({
+      action: `Send a direct pricing question to 3 active ${userType} — ask if they'd pay, not what they think is fair in the abstract.`,
+      platform: "WhatsApp or Email",
+      message: `Hi [Name], considering pricing for ${productName}. Would [price] feel fair for what it does? Being honest helps more than being nice.`,
+      why: `Willingness-to-pay is a sharper signal than general feedback — worth checking even mid-execution.`,
+      time: "30 minutes",
+    }),
+    ({ userType, productName }) => ({
+      action: `Post one update about ${productName}'s progress where ${userType} gather — visibility compounds even without a big announcement.`,
+      platform: "Twitter/X or LinkedIn",
+      message: `Small update on ${productName}: [specific thing shipped/learned this week]. Building in public because it keeps me honest.`,
+      why: `Consistent small visibility beats sporadic big launches — this is a low-effort way to keep that going.`,
+      time: "20 minutes",
+    }),
+  ],
+};
+
+function buildFallback(
+  stage: string,
+  targetUsers: string,
+  problem: string,
+  title: string,
+  description = "",
+  archetype?: string | null,
+  rotationSeed = "",
+): TodayAction {
   const userType = inferProjectAudience(targetUsers, title, description, problem);
   const problemDesc = inferProjectProblem(problem, title, description);
   const productName = title?.trim() || "your product";
-  const fallbacks: Record<string, TodayAction> = {
-    Idea: {
-      action: `Message 3 ${userType} today — no pitch, just ask about ${problemDesc}.`,
-      platform: "WhatsApp or LinkedIn",
-      target_user: userType,
-      message: `Hi [Name], quick question — what's your biggest frustration with ${problemDesc}? I'm researching it and would love 10 minutes.`,
-      why: `Every assumption you have about ${userType} is probably wrong. Three real conversations will invalidate more than a week of planning.`,
-      time: "1 hour",
-    },
-    Validation: {
-      action: `Send 5 personal DMs to ${userType} — ask about their workflow, not your idea.`,
-      platform: "LinkedIn or WhatsApp",
-      target_user: userType,
-      message: `Hi [Name], how do ${userType} handle ${problemDesc}? Not pitching — genuinely curious.`,
-      why: `The Mom Test: ask about their life, not your idea. You'll get honest answers.`,
-      time: "1–2 hours",
-    },
-    MVP: {
-      action: `Share ${productName} with 2 ${userType} and watch them use it — don't explain.`,
-      platform: "Screen share or in person",
-      target_user: userType,
-      message: `Hi [Name], I've built something rough to solve ${problemDesc}. Try it for 10 minutes while I watch?`,
-      why: `Their confusion is your roadmap. Ship it.`,
-      time: "45 minutes",
-    },
-    Launch: {
-      action: `Post ${productName} in one community where ${userType} gather — one honest sentence about ${problemDesc}.`,
-      platform: "Twitter/X, LinkedIn, or relevant Slack",
-      target_user: userType,
-      message: `Built ${productName} to fix ${problemDesc} for ${userType}. It's live. Try it: [link]`,
-      why: `Visibility beats perfection.`,
-      time: "30 minutes",
-    },
-    Growth: {
-      action: `Call one ${userType} who stopped using ${productName} — ask why, don't defend.`,
-      platform: "Phone call",
-      target_user: userType,
-      message: `Hi [Name], I noticed you stopped using ${productName}. No pitch — just want to understand. 10 minutes?`,
-      why: `One churned user teaches you more than 10 new signups.`,
-      time: "45 minutes",
-    },
-    Revenue: {
-      action: `Send a direct pricing message to 3 active ${userType} — ask if they'd pay.`,
-      platform: "WhatsApp or Email",
-      target_user: userType,
-      message: `Hi [Name], considering charging for ${productName}. Would [price] feel fair? Be honest.`,
-      why: `Willingness-to-pay is the only signal that matters at revenue stage.`,
-      time: "30 minutes",
-    },
+
+  // Stage-appropriate archetype default when FI OS hasn't determined one
+  // yet (e.g. very first run for a new founder, or FI OS load failed).
+  const resolvedArchetype = archetype && FALLBACK_BANK[archetype]
+    ? archetype
+    : stage === "Growth" || stage === "Revenue"
+      ? "continue_best_next_task"
+      : "evidence_probe";
+
+  const variants = FALLBACK_BANK[resolvedArchetype];
+  const index = hashString(rotationSeed || `${resolvedArchetype}:${stage}`) % variants.length;
+  const chosen = variants[index]({ userType, problemDesc, productName, stage });
+
+  return {
+    action: chosen.action,
+    platform: chosen.platform,
+    target_user: userType,
+    message: chosen.message,
+    why: chosen.why,
+    time: chosen.time,
   };
-  return fallbacks[stage] ?? fallbacks["Idea"];
 }
 
 // ── PATCH 3: parseAgentOutput ────────────────────────────────────────────────
@@ -335,7 +468,11 @@ export async function POST(request: Request) {
         }
         personalisationCtx = tctx.personalisationCtx;
 
-        const fallback = buildFallback(stage, targetUsers, problem, title, description);
+        const fallback = buildFallback(
+          stage, targetUsers, problem, title, description,
+          founderIntelligence?.decision.top_candidate?.id,
+          `${userId}:${new Date().toISOString().slice(0, 10)}`,
+        );
 
         emit("agent_a", { status: "running", label: "Agent A generating your task…" });
 
@@ -412,7 +549,8 @@ HARD RULES:
             [{ role: "system", content: systemA }, { role: "user", content: "Give me today's single most important task. Return JSON only." }],
             { role: "reasoning", temperature: 0.6, maxTokens: 700 },
           );
-        } catch {
+        } catch (err) {
+          logError("today-action-stream/agentA", err, { userId, stage, provider: "callModelJSON" });
           structuredA = {
             platform: normalizePlatform(fallback.platform),
             count: 3,
@@ -477,7 +615,8 @@ Context: Stage=${stage}, Target users=${targetUsers || "unknown"}, Product=${tit
           criticReason = parsed.reason ?? "OK";
           improvedVersion = parsed.improved_version ?? null;
           improvedVersion = improvedVersion ? sanitizeModelOutput(improvedVersion) : null;
-        } catch {
+        } catch (err) {
+          logError("today-action-stream/agentB-critic", err, { userId, stage, provider: "callModelJSON" });
           // critic failed — default to pass
         }
 
@@ -521,7 +660,8 @@ ${JSON.stringify(structuredA)}`,
             }, { role: "user", content: "Refine and return JSON only." }],
             { role: "reasoning", temperature: 0.3, maxTokens: 700 },
           );
-        } catch {
+        } catch (err) {
+          logError("today-action-stream/agentC-refiner", err, { userId, stage, provider: "callModelJSON" });
           // refiner failed — structuredC stays equal to Agent A's structured output
         }
 
@@ -572,7 +712,10 @@ ${JSON.stringify(structuredA)}`,
           Promise.resolve(
             adminForCache
               .from("reflexion_learning_log")
-              .update({ was_hard_fallback: wasHardFallback })
+              .update({
+                was_hard_fallback: wasHardFallback,
+                was_hard_fallback_reasons: wasHardFallback ? preScreen.failed_checks : null,
+              })
               .eq("user_id", userId)
               .eq("session_id", sessionId)
               .eq("prediction_source", "founder_intelligence"),
@@ -710,4 +853,4 @@ ${JSON.stringify(structuredA)}`,
 
 export async function GET() {
   return NextResponse.json({ error: "Use POST" }, { status: 405 });
-      }
+  }
