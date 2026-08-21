@@ -627,23 +627,27 @@ Context: Stage=${stage}, Target users=${targetUsers || "unknown"}, Product=${tit
           persona: criticPersona.name,
         });
 
-        // ── Agent C — Refiner ─────────────────────────────────────────────
-        emit("agent_c", { status: "running", label: "Agent C refining final version…" });
-
-        const refineMode = criticVerdict === "fail"
-          ? `REBUILD: The original task was rejected.${improvedVersion ? ` Critic's suggested improved task: "${improvedVersion}".` : ""} Rewrite "task" to be sharper and more specific. Keep "rationale" and "draft" if they are good, or rewrite them to match the new task.`
-          : "POLISH: Tighten wording only — do not change substance.";
-
+        // ── Agent C — Refiner (REBUILD only — skipped on a clean pass) ─────
+        // Previously ran unconditionally, even in POLISH mode when the
+        // Critic already approved Agent A's output — a full third LLM call
+        // spent tightening wording on something already deemed good. Under
+        // real provider-cost/rate-limit constraints, that's not a
+        // sustainable default: only a genuine REBUILD (Critic said fail)
+        // justifies spending the extra call. This is a straight ~33% cut
+        // in LLM calls per generation on the common (pass) path.
         let structuredC: StructuredAction = structuredA;
-        try {
-          // Same schema as Agent A — the refiner adjusts the fields, it
-          // doesn't re-enter free text. composeConcreteTask() runs on
-          // whatever comes back either way, so a refiner that loosens the
-          // wording still can't ship without platform/count present.
-          structuredC = await callModelJSON<StructuredAction>(
-            [{
-              role: "system",
-              content: `BuildMind execution engine. ${refineMode}
+        if (criticVerdict === "fail") {
+          emit("agent_c", { status: "running", label: "Agent C rebuilding after critic rejection…" });
+          const refineMode = `REBUILD: The original task was rejected.${improvedVersion ? ` Critic's suggested improved task: "${improvedVersion}".` : ""} Rewrite "task" to be sharper and more specific. Keep "rationale" and "draft" if they are good, or rewrite them to match the new task.`;
+          try {
+            // Same schema as Agent A — the refiner adjusts the fields, it
+            // doesn't re-enter free text. composeConcreteTask() runs on
+            // whatever comes back either way, so a refiner that loosens the
+            // wording still can't ship without platform/count present.
+            structuredC = await callModelJSON<StructuredAction>(
+              [{
+                role: "system",
+                content: `BuildMind execution engine. ${refineMode}
 
 Return JSON with exactly these fields: platform (one of ${JSON.stringify(ALLOWED_PLATFORMS)}), count (integer 1-10), user_type, task (specific number + exact platform, completable in 30 min), rationale (one sentence starting with "Because"), draft (2-3 sentence paste-ready message using actual product name "${title || "their product"}" and actual target user "${targetUsers || "their users"}", no placeholder brackets).
 
@@ -657,12 +661,15 @@ Critique: ${criticReason}
 
 Input to refine:
 ${JSON.stringify(structuredA)}`,
-            }, { role: "user", content: "Refine and return JSON only." }],
-            { role: "reasoning", temperature: 0.3, maxTokens: 700 },
-          );
-        } catch (err) {
-          logError("today-action-stream/agentC-refiner", err, { userId, stage, provider: "callModelJSON" });
-          // refiner failed — structuredC stays equal to Agent A's structured output
+              }, { role: "user", content: "Refine and return JSON only." }],
+              { role: "reasoning", temperature: 0.3, maxTokens: 700 },
+            );
+          } catch (err) {
+            logError("today-action-stream/agentC-refiner", err, { userId, stage, provider: "callModelJSON" });
+            // refiner failed — structuredC stays equal to Agent A's structured output
+          }
+        } else {
+          emit("agent_c", { status: "done", output: "skipped — critic passed, no rebuild needed" });
         }
 
         const composedC = composeConcreteTask(structuredC);
@@ -673,7 +680,9 @@ ${JSON.stringify(structuredA)}`,
         };
         const refined = `TASK: ${agentCFields.task}\nRATIONALE: ${agentCFields.rationale}\nDRAFT: ${agentCFields.draft}`;
 
-        emit("agent_c", { status: "done", output: refined });
+        if (criticVerdict === "fail") {
+          emit("agent_c", { status: "done", output: refined });
+        }
 
         const deterministicCandidate = founderIntelligence?.decision.top_candidate ?? null;
         // FIX (blend, not override): finalAction used to prefer
