@@ -92,10 +92,33 @@ function inferProjectProblem(problem: string, title: string, description = ""): 
 
 // Simple deterministic string hash — no crypto needed, just needs to be
 // stable and reasonably distributed for variant rotation.
+// Naive singularizer — target user descriptions from onboarding are almost
+// always simple plural nouns ("solo founders," "small business owners"),
+// so stripping a trailing s/es handles the common case correctly. Doesn't
+// handle irregular plurals, but leaving "one solo founders" ungrammatical
+// (confirmed by testing) is strictly worse than an imperfect heuristic.
+function singularize(phrase: string): string {
+  const trimmed = phrase.trim();
+  if (/ies$/i.test(trimmed)) return trimmed.replace(/ies$/i, "y");
+  if (/(x|ch|sh|ss)es$/i.test(trimmed)) return trimmed.replace(/es$/i, "");
+  if (/s$/i.test(trimmed) && !/ss$/i.test(trimmed)) return trimmed.replace(/s$/i, "");
+  return trimmed;
+}
+
 function hashString(s: string): number {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-  return h;
+  // Avalanche finalizer (Murmur3 fmix32) — the raw polynomial hash above
+  // correlates strongly between near-identical inputs (e.g. dates one day
+  // apart differ by one character), which produced a visible period-4
+  // repeat in testing despite there being 4 variants to rotate through.
+  // This breaks that correlation so sequential days don't cycle predictably.
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x85ebca6b) >>> 0;
+  h ^= h >>> 13;
+  h = Math.imul(h, 0xc2b2ae35) >>> 0;
+  h ^= h >>> 16;
+  return h >>> 0;
 }
 
 type FallbackVariant = (ctx: { userType: string; problemDesc: string; productName: string; stage: string }) => {
@@ -145,7 +168,7 @@ const FALLBACK_BANK: Record<string, FallbackVariant[]> = {
       time: "45 minutes",
     }),
     ({ userType, problemDesc }) => ({
-      action: `Call one ${userType} you already know — ask what they tried last time ${problemDesc} came up.`,
+      action: `Call one ${singularize(userType)} you already know — ask what they tried last time ${problemDesc} came up.`,
       platform: "Phone call",
       message: `Hey [Name], quick one — last time you dealt with ${problemDesc}, what did you actually do? Not selling anything, just trying to understand.`,
       why: `Past behavior is a better predictor than a stated opinion — ask what they did, not what they'd do.`,
@@ -191,7 +214,7 @@ const FALLBACK_BANK: Record<string, FallbackVariant[]> = {
       time: "15 minutes",
     }),
     ({ userType, problemDesc }) => ({
-      action: `Message 1 ${userType} on LinkedIn about ${problemDesc} — just one, keep it small.`,
+      action: `Message 1 ${singularize(userType)} on LinkedIn about ${problemDesc} — just one, keep it small.`,
       platform: "LinkedIn",
       message: `Hi [Name], quick one — has ${problemDesc} come up for you? Would love your take.`,
       why: `Repeated avoidance compounds — one small exposure today breaks the pattern without requiring a big commitment.`,
@@ -221,7 +244,7 @@ const FALLBACK_BANK: Record<string, FallbackVariant[]> = {
       time: "1–2 hours",
     }),
     ({ userType, productName }) => ({
-      action: `Call one ${userType} who stopped using ${productName} — ask why, don't defend.`,
+      action: `Call one ${singularize(userType)} who stopped using ${productName} — ask why, don't defend.`,
       platform: "Phone call",
       message: `Hi [Name], noticed you stopped using ${productName}. No pitch — just want to understand what happened. 10 minutes?`,
       why: `One churned user teaches you more than 10 new signups — this keeps forward motion honest.`,
@@ -862,4 +885,4 @@ ${JSON.stringify(structuredA)}`,
 
 export async function GET() {
   return NextResponse.json({ error: "Use POST" }, { status: 405 });
-  }
+    }
