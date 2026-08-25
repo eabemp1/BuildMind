@@ -1,12 +1,13 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { ArrowRight, Clock, Target } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
 export type DecisionBriefProps = {
-  action: string;
-  rationale: string;
+  action: ReactNode;
+  rationale?: ReactNode;
   time?: string;
   lowConfidence?: boolean;
   expectedEvidence?: string;
@@ -25,7 +26,7 @@ export function DecisionBrief({ action, rationale, time, lowConfidence = false, 
             {lowConfidence ? "Calibration recommendation" : "Decision brief"}
           </p>
           <h2 className="mt-2 text-lg font-medium leading-snug text-[var(--bm-text)]">{action}</h2>
-          <p className="mt-2 text-sm leading-relaxed text-[var(--bm-text2)]">{rationale}</p>
+          {rationale ? <p className="mt-2 text-sm leading-relaxed text-[var(--bm-text2)]">{rationale}</p> : null}
           {expectedEvidence ? <p className="mt-3 border-t border-[var(--bm-border)] pt-3 text-xs leading-relaxed text-[var(--bm-text3)]"><span className="font-medium text-[var(--bm-text2)]">Expected evidence: </span>{expectedEvidence}</p> : null}
           <div className="mt-4 flex flex-wrap items-center gap-3">
             {time ? <span className="inline-flex items-center gap-1.5 text-xs text-[var(--bm-text3)]"><Clock size={12} />{time}</span> : null}
