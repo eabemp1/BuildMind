@@ -144,7 +144,7 @@ export interface FounderIntelligenceState {
    * state: scoreCandidate() falls back to Beta(1,1) — a neutral prior, not a
    * penalty — so ranking behaves exactly as it did before this existed.
    */
-  archetype_stats: Record<string, { successes: number; failures: number }>;
+  archetype_stats: Record<string, { successes: number; failures: number; recent_successes: number; recent_failures: number }>;
   source_summary: {
     reflections: number;
     learning_logs: number;
@@ -680,16 +680,28 @@ export function buildFounderIntelligenceState(input: FounderIntelligenceInput): 
 // hits the DB and this one works off rows FounderIntelligenceInput already
 // fetched — but the two must never quietly disagree about what counts as a
 // win, so: outcome === "completed" AND evidence_match_score >= 0.5.
-function computeArchetypeStats(learningLogs: LearningLogRow[]): Record<string, { successes: number; failures: number }> {
-  const stats: Record<string, { successes: number; failures: number }> = {};
+function computeArchetypeStats(learningLogs: LearningLogRow[]): Record<string, { successes: number; failures: number; recent_successes: number; recent_failures: number }> {
+  const byId: Record<string, Array<{ success: boolean; at: number }>> = {};
   for (const row of learningLogs as Array<LearningLogRow & { candidate_id?: string | null; prediction_source?: string | null; evidence_match_score?: number | null }>) {
     if (row.prediction_source !== "founder_intelligence") continue;
     const id = row.candidate_id;
     if (!id || row.outcome === "pending") continue;
-    if (!stats[id]) stats[id] = { successes: 0, failures: 0 };
     const success = row.outcome === "completed" && (row.evidence_match_score ?? 0) >= 0.5;
-    if (success) stats[id].successes += 1;
-    else stats[id].failures += 1;
+    const rawAt = row.outcome_recorded_at ?? row.created_at;
+    const at = rawAt ? new Date(rawAt).getTime() : 0;
+    (byId[id] ??= []).push({ success, at: Number.isFinite(at) ? at : 0 });
+  }
+  const stats: Record<string, { successes: number; failures: number; recent_successes: number; recent_failures: number }> = {};
+  for (const [id, rows] of Object.entries(byId)) {
+    // Most-recent-first, independent of whatever order learningLogs arrived
+    // in — recent_successes/recent_failures must reflect actual recency.
+    const sorted = [...rows].sort((a, b) => b.at - a.at);
+    const successes = sorted.filter((r) => r.success).length;
+    const failures = sorted.length - successes;
+    const recentWindow = sorted.slice(0, 5);
+    const recent_successes = recentWindow.filter((r) => r.success).length;
+    const recent_failures = recentWindow.length - recent_successes;
+    stats[id] = { successes, failures, recent_successes, recent_failures };
   }
   return stats;
 }
@@ -1071,4 +1083,4 @@ export async function loadFounderIntelligence(
     logError("founderIntelligence/loadFounderIntelligence", err, { userId, projectId });
     return buildFounderIntelligenceState({ ...preloaded, now });
   }
-}
+  }
