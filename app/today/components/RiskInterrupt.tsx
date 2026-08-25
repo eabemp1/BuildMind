@@ -1,14 +1,42 @@
 "use client";
 
-import { WhyReveal } from "@/components/ui/WhyReveal";
+import { AlertTriangle } from "lucide-react";
+import { Card } from "@/components/ui/card";
+import { EvidenceDisclosure } from "./EvidenceDisclosure";
 import type { Signal } from "./IntelligencePanel";
 
-export function EvidenceDisclosure({ signal, expectedEvidence, uncertainty }: { signal?: Signal; expectedEvidence?: string; uncertainty?: string }) {
-  const items = [
-    ...(signal?.evidence?.map((item) => ({ label: item.source, value: item.detail })) ?? []),
-    ...(expectedEvidence ? [{ label: "Expected evidence", value: expectedEvidence }] : []),
-    ...(uncertainty ? [{ label: "Uncertainty", value: uncertainty }] : []),
-  ];
-  if (!items.length) return null;
-  return <WhyReveal triggerLabel="Evidence and uncertainty" items={items} />;
+export function RiskInterrupt({ signal }: { signal: Signal }) {
+  return (
+    <Card
+      variant="alert"
+      role="alert"
+      className="mb-4 border-[var(--bm-red-bd)] p-4"
+    >
+      <div className="flex gap-3">
+        <AlertTriangle
+          size={18}
+          className="mt-0.5 shrink-0 text-[var(--bm-red)]"
+        />
+        <div className="min-w-0 flex-1">
+          <p className="font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--bm-red)]">
+            Critical risk
+          </p>
+          <h2 className="mt-1 text-sm font-medium text-[var(--bm-text)]">
+            {signal.title}
+          </h2>
+          <p className="mt-1 text-xs leading-relaxed text-[var(--bm-text2)]">
+            {signal.summary}
+          </p>
+          {signal.recommended_response ? (
+            <p className="mt-2 text-xs leading-relaxed text-[var(--bm-text3)]">
+              {signal.recommended_response}
+            </p>
+          ) : null}
+          <div className="mt-3">
+            <EvidenceDisclosure signal={signal} />
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
 }
