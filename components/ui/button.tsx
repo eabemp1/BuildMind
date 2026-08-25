@@ -1,10 +1,9 @@
 "use client";
 
 import { forwardRef, ButtonHTMLAttributes } from "react";
-import { motion, HTMLMotionProps } from "framer-motion";
 import { Loader2 } from "lucide-react";
 
-export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
+export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "intel";
 export type ButtonSize = "sm" | "md" | "lg";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -23,6 +22,8 @@ const variantStyles: Record<ButtonVariant, string> = {
     "bg-transparent border-[var(--bm-border2)] text-[var(--bm-text2)] hover:bg-[var(--bm-bg3)] hover:text-[var(--bm-text)] active:scale-[0.98]",
   danger:
     "bg-transparent text-[var(--bm-red)] border-[var(--bm-border2)] hover:bg-[rgba(176,72,72,0.08)] active:scale-[0.98]",
+  intel:
+    "bg-[var(--bm-intel-dim)] text-[var(--bm-intel)] border-[var(--bm-intel-bd)] hover:bg-[var(--bm-intel-dim)] active:scale-[0.98]",
 };
 
 const sizeStyles: Record<ButtonSize, string> = {
