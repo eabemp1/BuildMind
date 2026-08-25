@@ -20,6 +20,7 @@ import TestimonialModal, {
 import { PageHeader } from "@/components/ui/PageHeader";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
 import ReflectionCelebration from "@/components/ReflectionCelebration";
+import { ReflectionField } from "./components/ReflectionField";
 
 type Outcome = "completed" | "blocked" | "partial" | "learned";
 type ReflectionHistoryEntry = {
@@ -463,17 +464,7 @@ export default function ReflectPage() {
           blocker:       { label: "What exactly is blocking you?",  required: false, placeholder: "Specific blocker — not 'motivation', but: can't find users, auth keeps failing…", value: blocker,       set: setBlocker },
         }[field];
         if (!cfg) return null;
-        return (
-          <motion.div key={field} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.10 }}
-            style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 14, padding: "18px clamp(14px, 4vw, 22px)", marginBottom: 12 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 10 }}>
-              {cfg.label}
-              {cfg.required && <span style={{ color: "var(--bm-accent)", marginLeft: 4 }}>*</span>}
-            </div>
-            <textarea value={cfg.value} onChange={e => cfg.set(e.target.value)} placeholder={cfg.placeholder} rows={2}
-              style={{ width: "100%", background: "var(--bm-bg3)", border: `1px solid ${cfg.value.trim() ? "var(--bm-border3)" : "var(--bm-border2)"}`, borderRadius: 10, padding: "11px 14px", fontSize: 13, color: "var(--bm-text)", outline: "none", fontFamily: "inherit", resize: "none", boxSizing: "border-box", lineHeight: 1.6, transition: "border-color 0.15s" }} />
-          </motion.div>
-        );
+        return <ReflectionField key={field} label={cfg.label} required={cfg.required} placeholder={cfg.placeholder} value={cfg.value} onChange={cfg.set} />;
       })}
 
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.14 }}
