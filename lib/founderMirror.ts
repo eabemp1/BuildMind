@@ -21,6 +21,7 @@
 
 import type { FounderIntelligenceState } from "@/lib/founderIntelligence";
 import type { IntelligenceAccuracy } from "@/lib/learningLoop";
+import { buildFounderSkills, type FounderSkill } from "@/lib/founderSkills";
 
 export interface FounderBelief {
   belief: string;
@@ -34,6 +35,7 @@ export interface FounderBelief {
 
 export interface FounderMirror {
   beliefs: FounderBelief[];
+  skills: FounderSkill[];
   recent_changes: string[];
   strengthening_patterns: string[];
   weakening_patterns: string[];
@@ -126,6 +128,7 @@ function accuracySummary(accuracy: IntelligenceAccuracy): string {
 export function buildFounderMirror(state: FounderIntelligenceState, accuracy: IntelligenceAccuracy): FounderMirror {
   return {
     beliefs: beliefsFromState(state),
+    skills: buildFounderSkills(state),
     recent_changes: state.founder.recent_changes,
     strengthening_patterns: state.temporal.strengthening_patterns,
     weakening_patterns: state.temporal.weakening_patterns,
