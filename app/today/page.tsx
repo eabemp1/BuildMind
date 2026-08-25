@@ -37,6 +37,9 @@ import type { MorningBriefing } from "@/lib/founderContext";
 import { IntelligencePanel, type TodayIntelligenceSummary } from "./components/IntelligencePanel";
 import { WhatChangedCard } from "./components/WhatChangedCard";
 import { RisksGapsCard } from "./components/RisksGapsCard";
+import { EvidenceDisclosure } from "./components/EvidenceDisclosure";
+import { RiskInterrupt } from "./components/RiskInterrupt";
+import { SignalList } from "./components/SignalList";
 import { useUIMode } from "@/lib/uiMode";
 import { UIModeToggle } from "@/components/ui/UIModeToggle";
 
@@ -1124,6 +1127,8 @@ function TodayContent() {
   const isOutreachAction = actionData ? OUTREACH_KEYWORDS.some(kw =>
     actionData.action.toLowerCase().includes(kw) || actionData.message.toLowerCase().includes(kw)
   ) : false;
+  const criticalSignal = actionData?.intelligence?.top_signals.find((signal) => signal.severity === "critical");
+  const supportingSignals = actionData?.intelligence?.top_signals.filter((signal) => signal.severity !== "critical") ?? [];
 
   // Hydrate draft with real project values on action change
   useEffect(() => {
@@ -2304,19 +2309,7 @@ function TodayContent() {
         </div>
       ) : (
         <>
-        {uiMode === "pro" && actionData.intelligence && (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
-              gap: 14,
-              marginBottom: 14,
-            }}
-          >
-            <WhatChangedCard items={actionData.intelligence.what_changed} />
-            <RisksGapsCard signals={actionData.intelligence.top_signals} />
-          </div>
-        )}
+        {uiMode === "pro" && criticalSignal ? <RiskInterrupt signal={criticalSignal} /> : null}
         <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -2470,6 +2463,14 @@ function TodayContent() {
                 Today's AI draft didn't meet our concreteness bar, so this is a proven fallback task instead — still real, just not freshly composed.
               </div>
             )}
+            {uiMode === "pro" ? (
+              <div style={{ marginTop: "var(--space-3)" }}>
+                <EvidenceDisclosure
+                  expectedEvidence={actionData.intelligence?.decision?.top_candidate?.expected_evidence}
+                  uncertainty={actionData.isLowConfidence ? "This recommendation is intended to gather a concrete signal before stronger guidance is given." : undefined}
+                />
+              </div>
+            ) : null}
           </div>
 
           {/* ── Message template — pre-filled with real project values ── */}
@@ -2506,7 +2507,12 @@ function TodayContent() {
           </div>
         </div>
       </motion.div>
-      {uiMode === "pro" && <IntelligencePanel data={actionData.intelligence} onSwap={handleSwapAlternative} recentOutcomes={recentOutcomes} />}
+      {uiMode === "pro" && actionData.intelligence ? (
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1fr) 304px", gap: 14, marginTop: 14 }}>
+          <div><WhatChangedCard items={actionData.intelligence.what_changed} /><div style={{ marginTop: 14 }}><IntelligencePanel data={actionData.intelligence} onSwap={handleSwapAlternative} recentOutcomes={recentOutcomes} /></div></div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}><SignalList signals={supportingSignals} /><RisksGapsCard signals={supportingSignals} /></div>
+        </div>
+      ) : null}
       </>
       )}
 
