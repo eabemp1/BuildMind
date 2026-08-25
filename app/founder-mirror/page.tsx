@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   Activity, AlertTriangle, ArrowUpRight,
-  CircleHelp, Clock3, Eye, GitBranch, RefreshCw, ShieldCheck,
+  CircleHelp, Clock3, Eye, GitBranch, RefreshCw, ShieldCheck, TrendingUp,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge, type BadgeVariant } from "@/components/ui/badge";
@@ -21,11 +21,28 @@ type Belief = {
   contradictory_evidence: string[];
 };
 
+type Skill = {
+  id: string;
+  label: string;
+  description: string;
+  level: number;
+  xp: number;
+  xp_into_level: number;
+  xp_for_next_level: number;
+  progress: number;
+  attempts: number;
+  successes: number;
+  failures: number;
+  trend: "up" | "down" | "steady" | "new";
+  summary: string;
+};
+
 type MirrorResponse = {
   ok: boolean;
   data?: {
     mirror: {
       beliefs: Belief[];
+      skills: Skill[];
       recent_changes: string[];
       strengthening_patterns: string[];
       weakening_patterns: string[];
@@ -43,6 +60,13 @@ const trendMeta: Record<Belief["trend"], { color: string; variant: BadgeVariant 
   weakening: { color: "var(--bm-red)", variant: "danger" },
   persistent: { color: "var(--bm-intel)", variant: "intel" },
   emerging: { color: "var(--bm-text3)", variant: "neutral" },
+};
+
+const skillTrendMeta: Record<Skill["trend"], { color: string; variant: BadgeVariant; text: string }> = {
+  up: { color: "var(--bm-green)", variant: "success", text: "Trending up" },
+  down: { color: "var(--bm-red)", variant: "danger", text: "Trending down" },
+  steady: { color: "var(--bm-text3)", variant: "neutral", text: "Holding steady" },
+  new: { color: "var(--bm-intel)", variant: "intel", text: "New" },
 };
 
 function Eyebrow({ children, color }: { children: React.ReactNode; color?: string }) {
@@ -156,6 +180,54 @@ export default function FounderMirrorPage() {
           </div>
         </div>
       </Card>
+
+      {/* ── Skills — leveled up through real completed work, not logins ───── */}
+      {mirror.skills.length > 0 && (
+        <section>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <TrendingUp size={15} color="var(--bm-intel)" />
+              <div>
+                <Eyebrow color="var(--bm-intel)">Built through real work</Eyebrow>
+                <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700 }}>What you're getting better at</div>
+              </div>
+            </div>
+            <span style={{ color: "var(--bm-text4)", fontSize: 12 }}>{mirror.skills.length} tracked</span>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12 }}>
+            {mirror.skills.map((skill) => {
+              const meta = skillTrendMeta[skill.trend];
+              return (
+                <Card key={skill.id} style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
+                    <div>
+                      <h2 style={{ margin: 0, color: "var(--bm-text)", fontSize: 14, fontWeight: 600 }}>{skill.label}</h2>
+                      <div style={{ color: "var(--bm-text3)", fontSize: 11, marginTop: 3, lineHeight: 1.4 }}>{skill.description}</div>
+                    </div>
+                    <Badge variant="intel" size="sm">Lv. {skill.level}</Badge>
+                  </div>
+
+                  <div>
+                    <div style={{ height: 4, background: "var(--bm-bg3)", overflow: "hidden", borderRadius: 2 }}>
+                      <div style={{ height: "100%", width: `${Math.round(skill.progress * 100)}%`, background: "var(--bm-intel)" }} />
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", color: "var(--bm-text4)", fontSize: 11, marginTop: 6 }}>
+                      <span className="bm-data">{skill.xp_into_level}/{skill.xp_for_next_level} to Lv. {skill.level + 1}</span>
+                      <span className="bm-data">{skill.successes} completed</span>
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, borderTop: "1px solid var(--bm-border)", paddingTop: 10 }}>
+                    <Badge variant={meta.variant} size="sm">{meta.text}</Badge>
+                    <span style={{ color: "var(--bm-text4)", fontSize: 11 }}>{skill.attempts} attempted</span>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {/* ── Beliefs — behavior-derived traits, each with Why? evidence ──────── */}
       <section>
