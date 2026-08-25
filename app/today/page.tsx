@@ -40,6 +40,7 @@ import { RisksGapsCard } from "./components/RisksGapsCard";
 import { EvidenceDisclosure } from "./components/EvidenceDisclosure";
 import { RiskInterrupt } from "./components/RiskInterrupt";
 import { SignalList } from "./components/SignalList";
+import { DecisionBrief } from "./components/DecisionBrief";
 import { useUIMode } from "@/lib/uiMode";
 import { UIModeToggle } from "@/components/ui/UIModeToggle";
 
@@ -424,6 +425,7 @@ function TodayContent() {
   const [streak, setStreak] = useState(0);
   // Ref guard — prevents iOS double-tap from firing handleCheckIn twice
   const checkInFired = useRef(false);
+  const executionScriptRef = useRef<HTMLDivElement | null>(null);
   const [isContextOpen, setIsContextOpen] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState<string | null>(null);
@@ -2363,38 +2365,14 @@ function TodayContent() {
             </span>
           </div>
 
-          {/* Primary action — reference-style "highest-leverage action" card */}
-          <div style={{
-            background: "linear-gradient(180deg, var(--bm-bg2), var(--bm-bg3))",
-            border: actionData.isLowConfidence ? "1px solid var(--bm-border2)" : "1px solid var(--bm-accent-bd)",
-            borderRadius: "var(--r-xl)",
-            padding: isMobile ? "var(--space-4)" : "var(--space-4) var(--space-4)",
-            marginBottom: "var(--space-4)",
-            display: "flex",
-            alignItems: "flex-start",
-            gap: "var(--space-3)",
-          }}>
-            <div style={{
-              width: 26, height: 26, borderRadius: "var(--r-lg)",
-              background: actionData.isLowConfidence ? "var(--bm-bg3)" : "var(--bm-accent)",
-              border: actionData.isLowConfidence ? "1px solid var(--bm-border2)" : "none",
-              color: actionData.isLowConfidence ? "var(--bm-text3)" : "#fff",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: "var(--text-base)", flexShrink: 0,
-            }}>{actionData.isLowConfidence ? "🔍" : "🎯"}</div>
-            <div>
-              <div style={{ fontSize: "var(--text-xs)", color: actionData.isLowConfidence ? "var(--bm-text3)" : "var(--bm-accent)", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'DM Mono', monospace", marginBottom: "var(--space-2)" }}>
-                {actionData.isLowConfidence ? "Still calibrating — gathering evidence" : "Today's highest-leverage action"}
-              </div>
-              <p style={{ fontSize: isMobile ? "var(--text-xl)" : "var(--text-2xl)", fontWeight: 400, color: "var(--bm-text)", lineHeight: "var(--leading-tight)", margin: `0 0 var(--space-2)`, letterSpacing: "-0.025em" }}>
-                {linkifyChannels(sanitizeOutput(actionData.action))}
-              </p>
-              <p style={{ fontSize: "var(--text-base)", color: "var(--bm-text2)", fontWeight: 400, margin: 0, lineHeight: "var(--leading-relaxed)" }}>
-                {isOutreachAction
-                  ? "Execute this before opening the rest of the day. The system will learn from the result."
-                  : "This is the highest-leverage operating move for the current stage. Everything else is secondary."}
-              </p>
-            </div>
+          <div style={{ marginBottom: "var(--space-4)" }}>
+            <DecisionBrief
+              action={linkifyChannels(sanitizeOutput(actionData.action))}
+              lowConfidence={actionData.isLowConfidence}
+              expectedEvidence={actionData.intelligence?.decision?.top_candidate?.expected_evidence}
+              executeLabel="Open script"
+              onExecute={() => executionScriptRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+            />
           </div>
 
           {!done && !actionLoading && (
@@ -2474,7 +2452,7 @@ function TodayContent() {
           </div>
 
           {/* ── Message template — pre-filled with real project values ── */}
-          <div style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: "var(--r-xl)", padding: isMobile ? "var(--space-4)" : "var(--space-4) var(--space-4)" }}>
+          <div ref={executionScriptRef} style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: "var(--r-xl)", padding: isMobile ? "var(--space-4)" : "var(--space-4) var(--space-4)" }}>
             <div style={{ display: "flex", alignItems: isMobile ? "stretch" : "center", justifyContent: "space-between", marginBottom: "var(--space-2)", gap: "var(--space-2)", flexDirection: isMobile ? "column" : "row" }}>
               <span style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
                 {isOutreachAction ? "Execution draft" : "Execution script"}
