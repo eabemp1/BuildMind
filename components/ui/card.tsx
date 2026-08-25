@@ -4,15 +4,21 @@ import { forwardRef, HTMLAttributes } from "react";
 
 interface CardProps extends HTMLAttributes<HTMLDivElement> {
   hover?: boolean;
+  /** @deprecated Preserved for existing callers. Use variant instead. */
   gradient?: boolean;
+  variant?: "default" | "data" | "insight" | "alert";
   as?: "div" | "article" | "section";
 }
 
 export const Card = forwardRef<HTMLDivElement, CardProps>(
-  ({ hover = false, gradient = false, className = "", children, style, ...rest }, ref) => {
+  ({ hover = false, gradient = false, variant = "default", className = "", children, style, ...rest }, ref) => {
     const base = [
       "border bg-[var(--bm-bg2)] border-[var(--bm-border)] transition-colors duration-150",
       "rounded-[var(--r-lg)]",
+      variant === "data" ? "bg-[var(--bm-bg3)]" : "",
+      variant === "insight" ? "border-[var(--bm-intel-bd)]" : "",
+      variant === "alert" ? "border-[var(--bm-accent-bd)]" : "",
+      gradient ? "bg-gradient-to-br from-[var(--bm-bg2)] to-[var(--bm-bg3)]" : "",
       hover ? "cursor-pointer hover:border-[var(--bm-border2)]" : "",
       className,
     ].join(" ");
