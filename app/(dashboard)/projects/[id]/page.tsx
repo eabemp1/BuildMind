@@ -778,7 +778,7 @@ export default function ProjectDetailPage() {
 
   return (
     <div
-      style={{ maxWidth: 860, margin: "0 auto", padding: "20px clamp(12px, 4vw, 24px)", paddingBottom: 48 }}>
+      style={{ maxWidth: 1120, margin: "0 auto", padding: "20px clamp(12px, 4vw, 24px)", paddingBottom: 48 }}>
 
       {showUpgrade ? (
         <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 12, padding: "14px 16px", marginBottom: 16, display: "flex", gap: 12, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
@@ -923,6 +923,9 @@ export default function ProjectDetailPage() {
           <span className="text-[11px]" style={{ color: progress >= 60 ? "#4ade80" : progress >= 30 ? "#fbbf24" : "var(--bm-text3)" }}>{progress}% complete</span>
         </div>
       </div>
+
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
+      <main style={{ minWidth: 0 }}>
 
       {/* Progress bar */}
       <div style={{ height: 4, background: "var(--bm-bg3)", borderRadius: 99, overflow: "hidden", marginBottom: 16 }}>
@@ -1076,6 +1079,66 @@ export default function ProjectDetailPage() {
       {tab === "validation" && (
         <ValidationTab projectId={id} strengths={project.validation_strengths} weaknesses={project.validation_weaknesses} suggestions={project.validation_suggestions} router={router} />
       )}
+      </main>
+
+      <aside className="order-first lg:order-none" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 10, padding: "14px 16px" }}>
+          <div style={{ fontSize: 9, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "'DM Mono', monospace", marginBottom: 10 }}>
+            Project health
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 11, lineHeight: 1.45 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+              <span style={{ color: "var(--bm-text3)" }}>Momentum</span>
+              <span style={{ color: "var(--bm-text2)", fontFamily: "'DM Mono', monospace" }}>{score} pts</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+              <span style={{ color: "var(--bm-text3)" }}>Execution</span>
+              <span style={{ color: "var(--bm-text2)", fontFamily: "'DM Mono', monospace" }}>{completedCount}/{tasks.length} tasks</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+              <span style={{ color: "var(--bm-text3)" }}>Current stage</span>
+              <span style={{ color: "var(--bm-accent)", fontFamily: "'DM Mono', monospace" }}>{String(stage)}</span>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 10, padding: "14px 16px" }}>
+          <div style={{ fontSize: 9, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "'DM Mono', monospace", marginBottom: 10 }}>
+            Active sprint tasks
+          </div>
+          {tasks.filter(task => !task.is_completed).slice(0, 3).length > 0 ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {tasks.filter(task => !task.is_completed).slice(0, 3).map(task => (
+                <button
+                  key={task.id}
+                  onClick={() => setTab("tasks")}
+                  style={{ display: "flex", alignItems: "flex-start", gap: 8, width: "100%", padding: 0, border: "none", background: "none", color: "var(--bm-text2)", cursor: "pointer", fontFamily: "inherit", fontSize: 11, lineHeight: 1.45, textAlign: "left" }}
+                >
+                  <span style={{ width: 12, height: 12, borderRadius: 3, border: "1px solid var(--bm-border2)", marginTop: 2, flexShrink: 0 }} />
+                  <span>{task.title}</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p style={{ fontSize: 11, color: "var(--bm-text4)", margin: 0, lineHeight: 1.5 }}>No open tasks in this project.</p>
+          )}
+        </div>
+
+        <div style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: 10, padding: "14px 16px" }}>
+          <div style={{ fontSize: 9, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "'DM Mono', monospace", marginBottom: 7 }}>
+            Project statement
+          </div>
+          <p style={{ fontSize: 11, color: "var(--bm-text3)", lineHeight: 1.55, margin: 0 }}>
+            {project.problem || project.description || "Add a problem statement so BuildMind can keep recommendations calibrated."}
+          </p>
+          {project.target_users ? (
+            <p style={{ fontSize: 10, color: "var(--bm-text4)", lineHeight: 1.45, margin: "9px 0 0" }}>
+              Target users: {project.target_users}
+            </p>
+          ) : null}
+        </div>
+      </aside>
+      </div>
     </div>
   );
                                                                                       }
