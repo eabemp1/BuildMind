@@ -91,6 +91,47 @@ function weekStartMonday(d: Date): string {
   return monday.toISOString().slice(0, 10);
 }
 
+/**
+ * hasAnyGradableSignal — decides whether a week has ANYTHING real to grade.
+ *
+ * FIX: this used to be inlined as `tasksTotal < 3 && milestonesWithPacing
+ * === 0`, which hid ALL FOUR grades together (Execution Consistency,
+ * Backlog Clearance, Deadline Recovery, Avoidance Resistance) whenever the
+ * single Today daily action wasn't completed at least 3 times that week —
+ * even when Backlog Clearance/Deadline Recovery/Avoidance Resistance had
+ * real, current data from sources that have nothing to do with Today's
+ * task count (the project tasks table, milestone pacing, avoidance zones).
+ * A founder who cleared backlog tasks and resolved an avoidance zone but
+ * only logged 1-2 Today actions saw an empty grades section — real
+ * activity existed but nothing showed it, which is exactly the "feels
+ * passive/useless" symptom this was reported as.
+ *
+ * Each grade* function in lib/patternGrading.ts already degrades to its
+ * own "N/A" when ITS OWN inputs are empty, so gating per-source instead of
+ * all-or-nothing costs nothing — a week that's genuinely quiet on every
+ * dimension still ends up with every grade at N/A, same end state as
+ * before, just reached honestly instead of by a blanket Today-only cutoff.
+ *
+ * Kept as a small pure function (not inlined) specifically so this
+ * decision is unit-testable without mocking the rest of the
+ * Supabase-heavy getWeeklyPulseData() pipeline.
+ */
+export function hasAnyGradableSignal(input: {
+  tasksTotal: number;
+  backlogTotal: number;
+  milestonesWithPacing: number;
+  avoidanceZoneCount: number;
+  unGhostedCount: number;
+}): { any: boolean; reasons: string[] } {
+  const reasons: string[] = [];
+  if (input.tasksTotal > 0) reasons.push("today_actions");
+  if (input.backlogTotal > 0) reasons.push("backlog");
+  if (input.milestonesWithPacing > 0) reasons.push("milestones");
+  if (input.avoidanceZoneCount > 0) reasons.push("avoidance_zones");
+  if (input.unGhostedCount > 0) reasons.push("un_ghosted");
+  return { any: reasons.length > 0, reasons };
+}
+
 export async function getWeeklyPulseData(userId: string, projectId?: string): Promise<WeeklyPulseResponse> {
   const admin = createAdminClient();
   const now = new Date();
@@ -285,7 +326,10 @@ export async function getWeeklyPulseData(userId: string, projectId?: string): Pr
   });
 
   const milestonesWithPacing = milestones.filter((m) => m.risk !== "unknown").length;
-  const isQuietWeek = tasksTotal < 3 && milestonesWithPacing === 0;
+  const isQuietWeek = !hasAnyGradableSignal({
+    tasksTotal, backlogTotal, milestonesWithPacing,
+    avoidanceZoneCount: avoidanceZones.length, unGhostedCount: unGhosted.length,
+  }).any;
 
   const grades = isQuietWeek ? [] : computeWeeklyGrades({
     tasksCompleted, tasksTotal, backlogTotal, backlogCleared, activeDaysThisWeek: activeDays,
@@ -299,7 +343,9 @@ export async function getWeeklyPulseData(userId: string, projectId?: string): Pr
       ? `Quiet week — nothing logged yet. Momentum's holding at ${momentumScore}/100, so nothing's slipping, it just paused. Pick one task for tomorrow to get this moving again.`
       : `A quieter week — ${tasksCompleted} of ${tasksTotal} task${tasksTotal === 1 ? "" : "s"} moved. Momentum's holding at ${momentumScore}/100. Pick one thing for next week and this resets.`;
   } else {
-    story = `${tasksCompleted} of ${tasksTotal} tasks completed this week (${completionRate}%). Momentum: ${momentumScore}/100.`;
+    story = tasksTotal > 0
+      ? `${tasksCompleted} of ${tasksTotal} tasks completed this week (${completionRate}%). Momentum: ${momentumScore}/100.`
+      : `No Today actions logged this week, but real work happened elsewhere — ${backlogCleared > 0 ? `${backlogCleared} backlog task${backlogCleared === 1 ? "" : "s"} cleared` : unGhosted.length > 0 ? `${unGhosted.length} avoidance zone${unGhosted.length === 1 ? "" : "s"} tackled` : "milestone progress tracked"}. Momentum: ${momentumScore}/100.`;
     if (hasAIProvider()) {
       try {
         const gradeLines = grades.filter((g) => g.grade !== "N/A").map((g) => `${g.label}: ${g.grade} — ${g.basis}`).join("\n");
