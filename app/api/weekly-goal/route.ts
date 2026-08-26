@@ -62,6 +62,27 @@ export async function POST(req: Request) {
   const admin = createAdminClient();
   const week = weekStart(new Date());
 
+  // FIX: this previously always wrote tasks_done: 0, even when the founder
+  // sets (or resets) their goal partway through the week. lib/weeklyPulseData.ts's
+  // "This Week" tasks_completed counts every today_action completion since
+  // Monday regardless of when a weekly_goals row was created, so a goal set
+  // on Wednesday started 0-2 tasks behind reality and could never catch up —
+  // the confirmed cause of Progress showing more tasks than Ghost Goals.
+  // Backfill from the exact same source/window Progress uses: reflexion_learning_log
+  // rows this week with session_id prefixed "today_action" (Today's real
+  // completion flow — see the FIX comments in weeklyPulseData.ts for why
+  // this specific filter, not the generic `tasks` table or all learning-log
+  // rows, is the correct source).
+  const weekStartIso = `${week}T00:00:00.000Z`;
+  const { data: weekLogs } = await admin
+    .from("reflexion_learning_log")
+    .select("outcome, session_id")
+    .eq("user_id", user.id)
+    .gte("created_at", weekStartIso);
+  const backfilledTasksDone = (weekLogs ?? []).filter(
+    (r) => (r.session_id ?? "").startsWith("today_action") && r.outcome === "completed",
+  ).length;
+
   const { data, error: dbErr } = await admin
     .from("weekly_goals")
     .upsert({
@@ -72,7 +93,7 @@ export async function POST(req: Request) {
       goal_type,
       target_score: Math.min(100, Math.max(0, target_score)),
       target_tasks: Math.max(1, target_tasks),
-      tasks_done:   0,
+      tasks_done:   backfilledTasksDone,
       current_score: 0,
       status:       "active",
     }, { onConflict: "project_id,week_start" })
