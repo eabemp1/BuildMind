@@ -1,4 +1,4 @@
-"use client";
+\"use client";
 
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -278,19 +278,20 @@ function AICoachPageInner() {
 
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-5 px-0 py-1 sm:px-6 sm:py-7" style={{ minHeight: isMobile ? "auto" : "calc(100vh - 80px)", height: isMobile ? "auto" : "calc(100vh - 80px)" }}>
+    <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-5 px-0 py-1 sm:px-6 sm:py-7" style={{ minHeight: isMobile ? "auto" : "calc(100vh - 80px)", height: isMobile ? "auto" : "calc(100vh - 80px)" }}>
 
       {/* Header */}
       <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className="shrink-0">
         <PageHeader
+          eyebrow="Founder intelligence"
           title="AI Coach"
-          subtitle="Your personal startup coach. Ask anything."
+          subtitle="Ask for a direct read on the decision, blocker, or pattern that matters now."
           action={
             <div className="flex w-full items-center gap-2 overflow-x-auto pb-0.5 sm:w-auto">
             <span className="mr-1 shrink-0 text-[10px] text-[var(--bm-text3)]">Mode</span>
             {personalityOptions.map(opt => (
               <button key={opt.id} onClick={() => setPersonality(opt.id)}
-                className={`shrink-0 cursor-pointer rounded-lg border px-3 py-2 text-[11px] ${personality === opt.id ? "border-[var(--bm-accent-bd)] bg-[var(--bm-accent-dim)] font-semibold text-[var(--bm-accent)]" : "border-[var(--bm-border)] bg-transparent font-normal text-[var(--bm-text3)]"}`}>
+                className={`shrink-0 cursor-pointer rounded-[var(--r-sm)] border px-3 py-2 text-[11px] ${personality === opt.id ? "border-[var(--bm-intel-bd)] bg-[var(--bm-intel-dim)] font-semibold text-[var(--bm-intel2)]" : "border-[var(--bm-border)] bg-transparent font-normal text-[var(--bm-text3)]"}`}>
                 {opt.label}
               </button>
             ))}
@@ -304,11 +305,11 @@ function AICoachPageInner() {
 
         {/* Chat panel */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}
-          className="flex min-h-[72vh] flex-1 flex-col overflow-hidden rounded-[var(--r-xl)] border border-[var(--bm-border)] bg-[var(--bm-bg2)] shadow-md lg:min-h-0">
-          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--bm-border)] px-4 py-4 sm:px-5">
+          className="flex min-h-[72vh] flex-1 flex-col overflow-hidden rounded-[var(--r-lg)] border border-[var(--bm-border)] bg-[var(--bm-bg2)] lg:min-h-0">
+          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--bm-border)] px-4 py-3 sm:px-5">
             <div className="flex items-center gap-2">
               <div className="h-2 w-2 rounded-full bg-[var(--bm-intel)]" />
-              <span className="text-[13px] font-semibold text-[var(--bm-text2)]">Conversation</span>
+              <span className="font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--bm-text3)]">Coach conversation</span>
             </div>
             {plan === "free" && (
               <span className="text-[11px]" style={{ color: remaining > 1 ? "var(--bm-text3)" : "var(--bm-amber)" }}>
@@ -320,9 +321,9 @@ function AICoachPageInner() {
           <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4 sm:p-5" style={{ scrollbarWidth: "none" }}>
             {messages.length === 0 && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}
-                className="flex h-full flex-col items-center justify-center gap-4 text-center">
-              <div style={{width:48,height:48,borderRadius:"var(--r-md)",background:"var(--bm-intel-dim)",border:"1px solid var(--bm-intel-bd)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                  <Bot size={22} color="var(--bm-intel)" />
+                className="flex h-full flex-col items-center justify-center gap-5 px-1 text-center">
+              <div style={{width:42,height:42,borderRadius:"var(--r-sm)",background:"var(--bm-intel-dim)",border:"1px solid var(--bm-intel-bd)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                  <Bot size={19} color="var(--bm-intel2)" />
                 </div>
                 <div style={{maxWidth:400,textAlign:"center"}}>
               {(() => {
@@ -336,7 +337,7 @@ function AICoachPageInner() {
                 const hasHistory = (overview?.completedTasks ?? 0) > 0 || overview?.daysSinceLastReflection != null;
                 return (
                   <>
-                    <div style={{fontFamily:"'Syne', sans-serif",fontSize:18,fontWeight:700,letterSpacing:"-0.02em",color:"var(--bm-text)",marginBottom:10,lineHeight:1.3}}>
+                    <div style={{fontFamily:"'Syne', sans-serif",fontSize:20,fontWeight:700,letterSpacing:"-0.02em",color:"var(--bm-text)",marginBottom:8,lineHeight:1.3}}>
                       {hasHistory ? "I already know where things stand." : "Day one. Let's get oriented."}
                     </div>
                     <p style={{fontFamily:"'Inter', sans-serif",fontSize:12.5,color:"var(--bm-text2)",lineHeight:1.65,margin:0}}>
@@ -348,11 +349,11 @@ function AICoachPageInner() {
                 );
               })()}
                 </div>
-                <div className="flex max-w-full gap-2 overflow-x-auto px-1 sm:flex-wrap sm:justify-center">
+                <div className="grid w-full max-w-[520px] gap-2 text-left">
                   {QUICK_PROMPTS.map(p => (
                     <button key={p} onClick={() => sendMessage(p)}
-                      className="shrink-0 rounded-full border border-[var(--bm-border)] bg-[var(--bm-bg3)] px-4 py-2 text-[12px] text-[var(--bm-text3)] transition-colors hover:border-[var(--bm-accent-bd)] hover:text-[var(--bm-accent)]">
-                      {p}
+                      className="flex items-center justify-between gap-3 rounded-[var(--r-sm)] border border-[var(--bm-border)] bg-[var(--bm-bg3)] px-3.5 py-2.5 text-[12px] text-[var(--bm-text3)] transition-colors hover:border-[var(--bm-intel-bd)] hover:text-[var(--bm-text2)]">
+                      <span>{p}</span><ChevronRight size={13} color="var(--bm-text4)" />
                     </button>
                   ))}
                 </div>
@@ -364,7 +365,7 @@ function AICoachPageInner() {
 
           <div className="sticky bottom-0 shrink-0 border-t border-[var(--bm-border)] bg-[var(--bm-bg)]/90 p-3 backdrop-blur-sm sm:p-4">
             {plan === "free" && <div className="mb-2.5"><AIUsageBadge /></div>}
-            <div className="flex items-end gap-2.5 rounded-[var(--r-xl)] border border-[var(--bm-border2)] bg-[var(--bm-bg3)] px-3.5 py-3 transition-colors"
+            <div className="flex items-end gap-2.5 rounded-[var(--r-lg)] border border-[var(--bm-border2)] bg-[var(--bm-bg3)] px-3.5 py-3 transition-colors"
               onFocusCapture={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--bm-accent-bd)"; }}
               onBlurCapture={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--bm-border2)"; }}>
               <textarea ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
@@ -373,8 +374,8 @@ function AICoachPageInner() {
                 className="min-h-7 max-h-[120px] flex-1 resize-none border-0 bg-transparent text-[16px] leading-relaxed text-[var(--bm-text)] outline-none sm:text-[13px]" />
               <motion.button whileTap={{ scale: 0.95 }} onClick={() => sendMessage()}
                 disabled={!input.trim() || loading}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border-0 sm:h-8 sm:w-8"
-                style={{ background: !input.trim() || loading ? "var(--bm-bg4)" : "var(--bm-text)", color: !input.trim() || loading ? "var(--bm-text3)" : "var(--bm-bg)", cursor: !input.trim() || loading ? "not-allowed" : "pointer" }}>
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--r-sm)] border-0 sm:h-8 sm:w-8"
+                style={{ background: !input.trim() || loading ? "var(--bm-bg4)" : "var(--bm-accent)", color: !input.trim() || loading ? "var(--bm-text3)" : "#15130a", cursor: !input.trim() || loading ? "not-allowed" : "pointer" }}>
                 <Send size={13} />
               </motion.button>
             </div>
@@ -383,12 +384,21 @@ function AICoachPageInner() {
 
         {/* Right sidebar */}
         <motion.div initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.12 }}
-          className="flex w-full flex-col gap-3 overflow-y-auto lg:w-64" style={{ scrollbarWidth: "none" }}>
+          className="flex w-full flex-col gap-3 overflow-y-auto lg:w-[280px]" style={{ scrollbarWidth: "none" }}>
 
-          <Card className="p-4">
+          {activeProject && (
+            <Card variant="data" className="border-[var(--bm-accent-bd)] p-4">
+              <div className="mb-2 font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--bm-text3)]">Current context</div>
+              <div className="mb-1.5 text-[13px] font-semibold text-[var(--bm-text)]">{activeProject.title}</div>
+              <div className="text-[12px] text-[var(--bm-text3)]">{activeProject.startup_stage ?? "Stage not set"}</div>
+              {score > 0 && <div className="mt-3 border-t border-[var(--bm-border)] pt-3 text-[11px] text-[var(--bm-text3)]">Execution score <span className="bm-data ml-1 text-[var(--bm-accent)]">{score}/100</span></div>}
+            </Card>
+          )}
+
+          <Card variant="data" className="p-4">
             <div className="mb-3.5 flex items-center gap-1.5">
               <Brain size={13} color="var(--bm-text3)" />
-              <span className="text-[13px] font-semibold text-[var(--bm-text)]">Coach Memory</span>
+              <span className="font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--bm-text3)]">Coach memory</span>
             </div>
             {memory.length === 0 ? (
               <p className="text-[13px] leading-relaxed text-[var(--bm-text3)]">Memory builds as you talk to the coach.</p>
@@ -400,26 +410,15 @@ function AICoachPageInner() {
             ))}
           </Card>
 
-          <Card className="p-4">
-            <div className="mb-3 text-[13px] font-semibold text-[var(--bm-text)]">Ask directly</div>
+          <Card variant="data" className="p-4">
+            <div className="mb-3 font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--bm-text3)]">Ask directly</div>
             {QUICK_PROMPTS.map(p => (
               <button key={p} onClick={() => sendMessage(p)}
-                className="mb-1.5 block w-full cursor-pointer rounded-lg border border-[var(--bm-border)] bg-transparent px-3 py-2 text-left text-[12px] text-[var(--bm-text3)] transition-colors hover:bg-[var(--bm-bg3)] hover:text-[var(--bm-text2)]">
+                className="mb-1.5 block w-full cursor-pointer rounded-[var(--r-sm)] border border-[var(--bm-border)] bg-transparent px-3 py-2 text-left text-[12px] text-[var(--bm-text3)] transition-colors hover:bg-[var(--bm-bg2)] hover:text-[var(--bm-text2)]">
                 {p}
               </button>
             ))}
           </Card>
-
-          {activeProject && (
-            <Card className="border-[var(--bm-accent-bd)] p-4">
-              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--bm-text3)]">Current project</div>
-              <div className="mb-1.5 text-[13px] font-semibold text-[var(--bm-text)]">{activeProject.title}</div>
-              <div className="text-[12px] text-[var(--bm-text3)]">Stage: {activeProject.startup_stage ?? "Not set"}</div>
-              {score > 0 && (
-                <div className="mt-2 text-[12px] text-[var(--bm-text3)]">Execution score: <span style={{ color: score >= 60 ? "var(--bm-accent)" : "var(--bm-amber)", fontWeight: 600 }}>{score}/100</span></div>
-              )}
-            </Card>
-          )}
         </motion.div>
       </div>
     </div>
