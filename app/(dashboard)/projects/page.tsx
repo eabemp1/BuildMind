@@ -17,7 +17,7 @@ import { getLimits } from "@/lib/plan";
 import { usePlan } from "@/lib/usePlan";
 import { useLimitModal } from "@/components/LimitModal";
 import {
-  Plus, Trash2, ChevronRight, Check, X, ArrowRight, Clock,
+  Plus, Trash2, ChevronRight, Check, X, ArrowRight, Clock, FolderKanban,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -321,7 +321,7 @@ export default function ProjectsPage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 flex flex-col gap-8">
+    <div className="mx-auto max-w-[1120px] px-3 py-5 sm:px-6 sm:py-7">
 
       {/* Header */}
       <motion.div
@@ -330,48 +330,47 @@ export default function ProjectsPage() {
         transition={{ duration: 0.2 }}
       >
         <PageHeader
-          title="Projects"
-          subtitle="Build and manage all your startup ideas in one place."
+          eyebrow="Your contexts"
+          title="Your Projects"
+          subtitle="The hypotheses and workstreams BuildMind is tracking."
           action={
             <>
-              <div className="rounded-lg border border-[var(--bm-border)] bg-[var(--bm-bg3)] px-3 py-1.5 text-xs text-[var(--bm-text3)]">
-                {summaries.length}/{hasUnlimitedProjects ? "∞" : limits.maxProjects} projects
-              </div>
-              <Button onClick={() => setShowCreate(true)}>
+              <Button size="sm" onClick={() => setShowCreate(true)}>
                 <Plus size={14} />
-                New Project
+                Create project
               </Button>
             </>
           }
         />
       </motion.div>
 
-      {/* Loading */}
-      {isLoading && (
-        <div className="flex flex-col gap-3">
-          {[1, 2, 3].map((i) => <SkeletonRow key={i} />)}
-        </div>
-      )}
+      <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_250px] lg:items-start">
+        <main className="min-w-0">
+          {/* Loading */}
+          {isLoading && (
+            <div className="flex flex-col gap-2">
+              {[1, 2, 3].map((i) => <SkeletonRow key={i} />)}
+            </div>
+          )}
 
-      {/* Empty state */}
-      {!isLoading && summaries.length === 0 && (
-        <EmptyState
-          icon={Plus}
-          title="No projects yet"
-          body="Start your first project and BuildMind will break it into an executable roadmap."
-          action={
-            <Button onClick={() => setShowCreate(true)}>
-              <Plus size={14} />
-              New Project
-            </Button>
-          }
-        />
-      )}
+          {/* Empty state */}
+          {!isLoading && summaries.length === 0 && (
+            <EmptyState
+              icon={FolderKanban}
+              title="No projects yet"
+              body="Create your first project to give BuildMind enough context for sharper recommendations."
+              action={
+                <Button onClick={() => setShowCreate(true)}>
+                  <Plus size={14} />
+                  Create your first project
+                </Button>
+              }
+            />
+          )}
 
-      {/* Project list */}
-      {!isLoading && summaries.length > 0 && (
-        <div className="flex flex-col gap-3">
-          <SectionHeader label="Active portfolio" />
+          {/* Project list */}
+          {!isLoading && summaries.length > 0 && (
+            <div className="flex flex-col gap-2">
           {summaries.map((s, i) => {
             const score = computeStartupScore({
               ...s,
@@ -399,72 +398,65 @@ export default function ProjectsPage() {
                   style={
                     isActive
                       ? {
-                          borderColor: "var(--bm-accent-bd)",
-                          boxShadow: "0 0 24px rgba(92,200,138,0.06)",
+                          borderColor: "var(--bm-border2)",
                         }
                       : undefined
                   }
                 >
-                  <div className="p-5">
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-                      {/* Score ring */}
-                      <ScoreRing value={score} size={44} color={score >= 60 ? "var(--bm-green)" : score >= 30 ? "var(--bm-amber)" : "var(--bm-text3)"} />
-
-                      {/* Info */}
-                      <div className="flex-1 min-w-0 flex flex-col gap-2.5">
+                  <div className="p-4 sm:p-4.5">
+                    <div className="flex gap-3">
+                      <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm font-semibold text-[var(--bm-text)]">
-                            {s.title}
+                          <span className="text-[13px] font-semibold text-[var(--bm-text)]">
+                            {s.name ?? s.title}
                           </span>
                           <Badge variant={stageVariant} size="sm">{stageNorm}</Badge>
-                          <Badge variant={healthMeta.variant} size="sm" dot>{healthMeta.label}</Badge>
-                          {isActive && (
-                            <Badge variant="success" size="sm" dot>Active</Badge>
-                          )}
+                          {isActive ? <Badge variant="success" size="sm" dot>Active</Badge> : null}
                         </div>
 
                         {s.problem && (
-                          <p className="text-xs text-[var(--bm-text3)] leading-relaxed line-clamp-2">
+                          <p className="mt-2 text-[11px] leading-relaxed text-[var(--bm-text3)] line-clamp-1">
                             {s.problem}
                           </p>
                         )}
 
-                        <ProgressBar value={s.tasksCompleted ?? 0} max={s.tasksTotal ?? 0} i={i} />
-
-                        <div className="flex items-center gap-3 text-xs text-[var(--bm-text3)]">
-                          <span>{s.tasksCompleted ?? 0}/{s.tasksTotal ?? 0} tasks · {completion}%</span>
-                          {s.lastActivity && (
-                            <span className="flex items-center gap-1">
-                              <Clock size={10} />
-                              {new Date(s.lastActivity).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                            </span>
-                          )}
+                        <div className="mt-3 flex items-center gap-3">
+                          <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-[var(--bm-text4)]">
+                            Progress ({completion}%)
+                          </span>
+                          <div className="max-w-[110px] flex-1">
+                            <ProgressBar value={s.tasksCompleted ?? 0} max={s.tasksTotal ?? 0} i={i} />
+                          </div>
+                          <span className="font-mono text-[9px] text-[var(--bm-text4)]">
+                            {s.tasksCompleted ?? 0}/{s.tasksTotal ?? 0}
+                          </span>
                         </div>
                       </div>
 
                       {/* Actions */}
-                      <div className="grid w-full grid-cols-3 gap-2 sm:mt-0.5 sm:flex sm:w-auto sm:shrink-0 sm:items-center">
+                      <div className="flex shrink-0 items-start gap-1">
                         {!isActive && (
                           <Button
                             variant="ghost"
                             size="sm"
                             onClick={() => handleSetActive(s.id)}
                             title="Set as active"
-                            className="w-full"
+                            className="px-2"
                           >
                             <Check size={12} />
                           </Button>
                         )}
                         <Link href={`/projects/${s.id}`}>
-                          <Button variant="ghost" size="sm" className="w-full">
-                            View <ChevronRight size={12} />
+                          <Button variant="ghost" size="sm" className="px-2" title={`Open ${s.name ?? s.title}`}>
+                            <ChevronRight size={14} />
                           </Button>
                         </Link>
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={() => setDeleteConfirm(s.id)}
-                          className="text-[var(--bm-red)] hover:bg-[rgba(224,85,85,0.08)]"
+                          className="border-transparent px-2 text-[var(--bm-text4)] hover:bg-[rgba(224,85,85,0.08)] hover:text-[var(--bm-red)]"
+                          title={`Delete ${s.name ?? s.title}`}
                         >
                           <Trash2 size={12} />
                         </Button>
@@ -521,7 +513,7 @@ export default function ProjectsPage() {
               animate={{ opacity: 1 }}
               transition={{ delay: 0.4 }}
               onClick={() => setShowCreate(true)}
-              className="w-full py-5 rounded-[var(--r-xl)] text-sm flex items-center justify-center gap-2 transition-all duration-150"
+              className="w-full rounded-[var(--r-lg)] py-4 text-xs flex items-center justify-center gap-2 transition-all duration-150"
               style={{
                 border: "2px dashed var(--bm-border)",
                 background: "transparent",
@@ -537,11 +529,46 @@ export default function ProjectsPage() {
                 e.currentTarget.style.color = "var(--bm-text3)";
               }}
             >
-              <Plus size={14} /> Start a new project
+              <Plus size={14} /> Create another project
             </motion.button>
           )}
         </div>
-      )}
+          )}
+        </main>
+
+        <aside className="order-first lg:order-none">
+          <Card variant="data" className="p-4">
+            <p className="font-mono text-[9px] font-medium uppercase tracking-[0.1em] text-[var(--bm-text4)]">
+              Project overview
+            </p>
+            <div className="mt-3 flex items-end justify-between gap-3">
+              <div>
+                <p className="font-mono text-[11px] text-[var(--bm-text2)]">
+                  {summaries.length} of {hasUnlimitedProjects ? "unlimited" : limits.maxProjects} projects used
+                </p>
+                <p className="mt-1 text-[10px] leading-relaxed text-[var(--bm-text4)]">
+                  Your free plan allocation is fully visible here.
+                </p>
+              </div>
+              <span className="font-mono text-[10px] text-[var(--bm-accent)]">{summaries.length}</span>
+            </div>
+            <div className="mt-3 h-[2px] overflow-hidden bg-[var(--bm-bg4)]">
+              <div
+                className="h-full bg-[var(--bm-accent)]"
+                style={{ width: `${hasUnlimitedProjects ? 0 : Math.min(100, (summaries.length / limits.maxProjects) * 100)}%` }}
+              />
+            </div>
+            {!hasUnlimitedProjects && !canCreateProject ? (
+              <button
+                onClick={() => showLimitModal("projects")}
+                className="mt-3 bg-transparent p-0 text-[10px] font-medium text-[var(--bm-accent)] hover:underline"
+              >
+                Upgrade plan
+              </button>
+            ) : null}
+          </Card>
+        </aside>
+      </div>
 
       {/* Create modal */}
       <AnimatePresence>
