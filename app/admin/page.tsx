@@ -610,7 +610,148 @@ function AITab({ quality, aiUsage }: { quality: QualitySummary; aiUsage: AIUsage
       </Card>
 
       <CleanupAvoidanceZonesCard />
+      <ReclassifyFounderMemoryCard />
     </div>
+  );
+}
+
+// ─── Founder-memory reclassification (scripts/reclassify-founder-memory-from-source.ts, browser version) ─
+type ReclassifyRow = {
+  user_id: string;
+  source_events: number;
+  avoidance_zones?: { before: string[]; after: string[] };
+  strengths?: { before: string[]; after: string[] };
+  writeError?: string;
+};
+type ReclassifyResponse = { ok: boolean; dryRun?: boolean; touched?: number; skipped?: number; results?: ReclassifyRow[]; error?: string };
+
+function ReclassifyFounderMemoryCard() {
+  const [loading, setLoading] = useState<"preview" | "apply" | null>(null);
+  const [result, setResult] = useState<ReclassifyResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+
+  async function run(method: "GET" | "POST") {
+    setLoading(method === "GET" ? "preview" : "apply");
+    setError(null);
+    setConfirming(false);
+    try {
+      const res = await fetch("/api/admin/reclassify-founder-memory", { method });
+      const json: ReclassifyResponse = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error ?? `Request failed (${res.status})`);
+      setResult(json);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unknown error");
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  const totalTouched = result?.touched ?? 0;
+  const totalSkipped = result?.skipped ?? 0;
+
+  return (
+    <Card style={{ padding: "20px 22px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Shield size={14} color={C.a} />
+          <span style={{ fontSize: 13, fontWeight: 600, color: C.t }}>Reclassify founder memory from source</span>
+        </div>
+      </div>
+      <p style={{ fontSize: 12, color: C.t3, lineHeight: 1.6, margin: "6px 0 16px" }}>
+        Different fix from "Clean up avoidance zones" above — that one re-runs the already-stored label, so a
+        clean-looking generic value like "direct outreach" or "user interviews" comes back unchanged. This rebuilds
+        avoidance_zones/strengths from the real source text (reflections.today_action + tasks.title), which is where
+        the specificity actually still lives. Replaces both arrays per user — preview first.
+      </p>
+
+      <div style={{ display: "flex", gap: 10, marginBottom: result || error ? 16 : 0 }}>
+        <button
+          onClick={() => run("GET")}
+          disabled={loading !== null}
+          style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: C.rMd, border: `1px solid ${C.b}`, background: "transparent", color: C.t2, fontSize: 12, fontWeight: 600, cursor: loading ? "default" : "pointer", fontFamily: "inherit", opacity: loading !== null ? 0.6 : 1 }}
+        >
+          {loading === "preview" ? <Spin /> : <EyeOff size={12} />}
+          {loading === "preview" ? "Previewing…" : "Preview (dry run)"}
+        </button>
+
+        {result && result.dryRun && totalTouched > 0 && !confirming && (
+          <button
+            onClick={() => setConfirming(true)}
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: C.rMd, border: `1px solid ${C.ab}`, background: C.ad, color: C.a, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}
+          >
+            <CheckCircle2 size={12} />
+            Run for real ({totalTouched} user{totalTouched === 1 ? "" : "s"})
+          </button>
+        )}
+
+        {confirming && (
+          <>
+            <button
+              onClick={() => run("POST")}
+              disabled={loading !== null}
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: C.rMd, border: `1px solid ${C.red}`, background: "rgba(224,85,85,0.08)", color: C.red, fontSize: 12, fontWeight: 700, cursor: loading ? "default" : "pointer", fontFamily: "inherit", opacity: loading !== null ? 0.6 : 1 }}
+            >
+              {loading === "apply" ? <Spin /> : <AlertTriangle size={12} />}
+              {loading === "apply" ? "Writing…" : "Confirm — write changes now"}
+            </button>
+            <button
+              onClick={() => setConfirming(false)}
+              disabled={loading !== null}
+              style={{ padding: "8px 14px", borderRadius: C.rMd, border: `1px solid ${C.b}`, background: "transparent", color: C.t3, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}
+            >
+              Cancel
+            </button>
+          </>
+        )}
+      </div>
+
+      {error && (
+        <div style={{ display: "flex", gap: 8, padding: "10px 14px", borderRadius: C.rMd, background: "rgba(224,85,85,0.07)", border: "1px solid rgba(224,85,85,0.2)", color: C.red, fontSize: 12, marginBottom: 12 }}>
+          <XCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} /> {error}
+        </div>
+      )}
+
+      {result && !result.dryRun && (
+        <div style={{ display: "flex", gap: 8, padding: "10px 14px", borderRadius: C.rMd, background: "rgba(46,204,113,0.08)", border: "1px solid rgba(46,204,113,0.22)", color: C.a, fontSize: 12, marginBottom: 12 }}>
+          <CheckCircle2 size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+          Wrote {totalTouched} user{totalTouched === 1 ? "" : "s"}. {totalSkipped} unchanged/no source data.
+        </div>
+      )}
+
+      {result && (result.results?.length ?? 0) > 0 && (
+        <div style={{ maxHeight: 320, overflowY: "auto", border: `1px solid ${C.b}`, borderRadius: C.rMd }}>
+          {result.results!.map(row => (
+            <div key={row.user_id} style={{ padding: "12px 14px", borderBottom: `1px solid ${C.b}` }}>
+              <div style={{ fontSize: 11, color: C.t4, marginBottom: 6, fontFamily: "monospace" }}>
+                {row.user_id} <span style={{ color: C.t3 }}>· {row.source_events} source event{row.source_events === 1 ? "" : "s"}</span>
+              </div>
+              {row.writeError && (
+                <div style={{ fontSize: 11, color: C.red, marginBottom: 6 }}>Write failed: {row.writeError}</div>
+              )}
+              {row.avoidance_zones && (
+                <div style={{ marginBottom: row.strengths ? 8 : 0 }}>
+                  <div style={{ fontSize: 10, color: C.t3, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>avoidance_zones</div>
+                  <div style={{ fontSize: 12, color: C.red, textDecoration: "line-through", opacity: 0.7 }}>{row.avoidance_zones.before.join(", ") || "(none)"}</div>
+                  <div style={{ fontSize: 12, color: C.a }}>{row.avoidance_zones.after.join(", ") || "(removed)"}</div>
+                </div>
+              )}
+              {row.strengths && (
+                <div>
+                  <div style={{ fontSize: 10, color: C.t3, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>strengths</div>
+                  <div style={{ fontSize: 12, color: C.red, textDecoration: "line-through", opacity: 0.7 }}>{row.strengths.before.join(", ") || "(none)"}</div>
+                  <div style={{ fontSize: 12, color: C.a }}>{row.strengths.after.join(", ") || "(removed)"}</div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {result && totalTouched === 0 && (
+        <p style={{ fontSize: 12, color: C.t3, margin: 0 }}>Nothing changed — rebuilt arrays already match what's stored.</p>
+      )}
+    </Card>
   );
 }
 
@@ -1351,4 +1492,4 @@ export default function AdminPage() {
       <style>{`@keyframes adm-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
   );
-                     }
+  }
