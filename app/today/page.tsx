@@ -41,6 +41,7 @@ import { EvidenceDisclosure } from "./components/EvidenceDisclosure";
 import { RiskInterrupt } from "./components/RiskInterrupt";
 import { SignalList } from "./components/SignalList";
 import { DecisionBrief } from "./components/DecisionBrief";
+import { ContextAlignmentCard } from "./components/ContextAlignmentCard";
 import { useUIMode } from "@/lib/uiMode";
 import { UIModeToggle } from "@/components/ui/UIModeToggle";
 
@@ -243,11 +244,11 @@ function buildContextualStaticAction(
   };
 }
 
-const OUTCOME_CHIPS: { id: Outcome; label: string; color: string; bg: string; border: string }[] = [
-  { id: "completed", label: "Completed",         color: "var(--bm-text)",  bg: "var(--bm-bg4)", border: "var(--bm-border3)" },
-  { id: "partial",   label: "Partly done",       color: "var(--bm-text)",  bg: "var(--bm-bg4)", border: "var(--bm-border3)" },
-  { id: "blocked",   label: "Blocked",           color: "var(--bm-text)",  bg: "var(--bm-bg4)", border: "var(--bm-border3)" },
-  { id: "learned",   label: "Learned something", color: "var(--bm-text)",  bg: "var(--bm-bg4)", border: "var(--bm-border3)" },
+const OUTCOME_CHIPS: { id: Outcome; label: string; description: string; color: string; bg: string; border: string }[] = [
+  { id: "completed", label: "Completed",         description: "Task fully executed as planned.",        color: "var(--bm-text)",  bg: "var(--bm-bg4)", border: "var(--bm-border3)" },
+  { id: "partial",   label: "Partly done",       description: "Incomplete but made progress.",          color: "var(--bm-text)",  bg: "var(--bm-bg4)", border: "var(--bm-border3)" },
+  { id: "blocked",   label: "Blocked",           description: "Faced obstacles or issues.",             color: "var(--bm-text)",  bg: "var(--bm-bg4)", border: "var(--bm-border3)" },
+  { id: "learned",   label: "Learned something", description: "Didn't execute, but gained a real insight.", color: "var(--bm-text)",  bg: "var(--bm-bg4)", border: "var(--bm-border3)" },
 ];
 
 
@@ -1808,6 +1809,19 @@ function TodayContent() {
         <div style={{ paddingBottom: 18, borderBottom: "1px solid var(--bm-border)" }}>
           <p
             style={{
+              fontFamily: "'DM Mono', monospace",
+              fontSize: 9,
+              color: "var(--bm-text4)",
+              fontWeight: 500,
+              textTransform: "uppercase",
+              letterSpacing: "0.1em",
+              margin: "0 0 4px",
+            }}
+          >
+            Today&apos;s executive line
+          </p>
+          <p
+            style={{
               fontSize: 12,
               color: "var(--bm-text3)",
               fontWeight: 500,
@@ -2266,13 +2280,12 @@ function TodayContent() {
         >
           <div style={{ background: "var(--bm-bg2)", borderRadius: 11, padding: isMobile ? "20px" : "28px 30px 24px" }}>
             {/* Meta row skeleton */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-              <div style={{ height: 22, width: 90, borderRadius: 4, background: "var(--bm-bg3)", animation: "bm-pulse 1.4s ease-in-out infinite" }} />
-              <div style={{ height: 22, width: 120, borderRadius: 4, background: "var(--bm-bg3)", animation: "bm-pulse 1.4s ease-in-out infinite 0.1s" }} />
-              <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
-                <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: "50%", background: "var(--bm-accent)", opacity: 0.7, animation: "bm-pulse 1.2s ease-in-out infinite" }} />
-                <span style={{ fontSize: 11, color: "var(--bm-text3)" }}>{streamLabel ?? "Calibrating task..."}</span>
-              </div>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, marginBottom: 20, textAlign: "center" }}>
+              <div className="animate-spin" style={{ width: 22, height: 22, borderRadius: "50%", border: "2px solid var(--bm-border2)", borderTopColor: "var(--bm-accent)" }} />
+              <span style={{ fontSize: 13, color: "var(--bm-text2)" }}>{streamLabel ?? "Preparing your decision brief..."}</span>
+              <span style={{ fontFamily: "var(--font-mono, monospace)", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--bm-text4)" }}>
+                Aligning current hypothesis &amp; risk models
+              </span>
             </div>
 
             {/* Primary action skeleton */}
@@ -2358,7 +2371,15 @@ function TodayContent() {
             </span>
           </div>
 
-          <div style={{ marginBottom: "var(--space-4)" }}>
+          <div
+            style={{
+              marginBottom: "var(--space-4)",
+              display: actionData.isLowConfidence && actionData.intelligence && !isMobile ? "grid" : "block",
+              gridTemplateColumns: actionData.isLowConfidence && actionData.intelligence && !isMobile ? "1fr 260px" : undefined,
+              gap: actionData.isLowConfidence && actionData.intelligence && !isMobile ? 14 : undefined,
+              alignItems: "start",
+            }}
+          >
             <DecisionBrief
               action={linkifyChannels(sanitizeOutput(actionData.action))}
               lowConfidence={actionData.isLowConfidence}
@@ -2368,6 +2389,11 @@ function TodayContent() {
               executeLabel="Open script"
               onExecute={() => executionScriptRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
             />
+            {actionData.isLowConfidence && (
+              <div style={{ marginTop: isMobile ? 12 : 0 }}>
+                <ContextAlignmentCard intelligence={actionData.intelligence} />
+              </div>
+            )}
           </div>
 
           {!done && !actionLoading && (
@@ -2578,11 +2604,17 @@ function TodayContent() {
           ))}
         </div>
 
-        <div style={{ fontSize: 13, color: "var(--bm-text2)", marginBottom: 16, lineHeight: 1.6 }}>
-          How did it go? Tap your outcome to log today's reflection.
+        <p style={{ fontFamily: "var(--font-mono, monospace)", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--bm-text4)", margin: "0 0 6px" }}>
+          Check-in
+        </p>
+        <h2 style={{ fontSize: isMobile ? 16 : 17, fontWeight: 700, color: "var(--bm-text)", margin: "0 0 8px" }}>
+          How did it go?
+        </h2>
+        <div style={{ fontSize: 12.5, color: "var(--bm-text3)", marginBottom: 14, lineHeight: 1.6 }}>
+          Tap your outcome to log today's reflection.
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 9, marginBottom: 4 }}>
-          {OUTCOME_CHIPS.map(chip => (
+        <div style={{ display: "flex", flexDirection: "column", marginBottom: 4 }}>
+          {OUTCOME_CHIPS.map((chip, i) => (
             <button
               key={chip.id}
               disabled={submitting}
@@ -2608,28 +2640,38 @@ function TodayContent() {
                 router.push(`/reflect?outcome=${chip.id}`);
               }}
               style={{
-                padding: isMobile ? "14px" : "12px 14px",
-                borderRadius: 10,
-                border: `1px solid var(--bm-border)`,
-                background: "var(--bm-bg3)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+                padding: isMobile ? "13px 4px" : "12px 6px",
+                borderTop: i === 0 ? "1px solid var(--bm-border)" : "none",
+                borderBottom: "1px solid var(--bm-border)",
+                background: "transparent",
                 color: "var(--bm-text3)",
-                fontSize: isMobile ? 14 : 13,
-                fontWeight: 400,
                 cursor: submitting ? "not-allowed" : "pointer",
                 fontFamily: "inherit",
                 textAlign: "left" as const,
-                transition: "all 0.15s",
+                transition: "background 0.15s",
                 opacity: submitting ? 0.6 : 1,
               }}
-              onMouseEnter={e => { if (!submitting) { e.currentTarget.style.borderColor = "var(--bm-border3)"; e.currentTarget.style.color = "var(--bm-text)"; } }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--bm-border)"; e.currentTarget.style.color = "var(--bm-text3)"; }}
+              onMouseEnter={e => { if (!submitting) e.currentTarget.style.background = "var(--bm-bg3)"; }}
+              onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
             >
-              {submitting ? "Recording..." : chip.label}
+              <span>
+                <span style={{ display: "block", fontSize: isMobile ? 14 : 12.5, fontWeight: 600, color: "var(--bm-text)" }}>
+                  {submitting ? "Recording..." : chip.label}
+                </span>
+                <span style={{ display: "block", fontSize: 10.5, color: "var(--bm-text4)", marginTop: 2 }}>
+                  {chip.description}
+                </span>
+              </span>
+              <span style={{ color: "var(--bm-text4)", flexShrink: 0 }}>›</span>
             </button>
           ))}
         </div>
-        <p style={{ fontSize: 11, color: "var(--bm-text4)", margin: "8px 0 0", lineHeight: 1.5 }}>
-          You'll complete your reflection on the next screen.
+        <p style={{ fontSize: 11, color: "var(--bm-text4)", margin: "10px 0 0", lineHeight: 1.5 }}>
+          Your outcome selection will feed into /reflect for learning capture.
         </p>
       </motion.div>
       {/* Beyond the 3 changes — Loop Narrative (the 8.5 unlock) */}
