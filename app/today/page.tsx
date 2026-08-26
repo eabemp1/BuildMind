@@ -1816,7 +1816,7 @@ function TodayContent() {
               margin: "0 0 6px",
             }}
           >
-            {greetingLine}
+            {project?.startup_stage ? `${project.startup_stage} decision` : greetingLine}
           </p>
           <h1
             style={{
@@ -1829,9 +1829,7 @@ function TodayContent() {
               margin: "0 0 8px",
             }}
           >
-            {productName
-              ? `${productName}: today's operating focus`
-              : "Today's operating focus"}
+            The Decision Brief
           </h1>
           <p
             style={{
@@ -1841,12 +1839,7 @@ function TodayContent() {
               lineHeight: 1.5,
             }}
           >
-            {[
-              project?.startup_stage ? `${project.startup_stage} stage` : null,
-              targetUsers ? `serving ${targetUsers}` : null,
-            ]
-              .filter(Boolean)
-              .join(" · ")}
+            One decision. One action. Let&apos;s get it done.
           </p>
         </div>
 
@@ -2369,6 +2362,8 @@ function TodayContent() {
             <DecisionBrief
               action={linkifyChannels(sanitizeOutput(actionData.action))}
               lowConfidence={actionData.isLowConfidence}
+              rationale={sanitizeOutput(actionData.reflexion?.rationale ?? actionData.why)}
+              time={actionData.time}
               expectedEvidence={actionData.intelligence?.decision?.top_candidate?.expected_evidence}
               executeLabel="Open script"
               onExecute={() => executionScriptRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
