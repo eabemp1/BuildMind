@@ -270,7 +270,7 @@ export default function OverviewPage() {
   }
 
   return (
-    <div style={{ maxWidth: 820, margin: "0 auto", padding: "36px 24px 60px" }}>
+    <div style={{ maxWidth: 1120, margin: "0 auto", padding: "30px 20px 60px" }}>
 
       {/* ── Profile completeness (only shows when score < 80) ── */}
       <ProfileCompletenessBar
@@ -289,12 +289,14 @@ export default function OverviewPage() {
       <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} style={{ marginBottom: 20 }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
           <div>
-            <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em", margin: 0, lineHeight: 1.2 }}>
-              {founderFirst ? `${founderFirst}'s workspace` : "Workspace"}
+            <p style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 8px" }}>
+              Startup overview
+            </p>
+            <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: 28, fontWeight: 700, color: "var(--bm-text)", letterSpacing: "-0.025em", margin: 0, lineHeight: 1.2 }}>
+              How is the company actually doing?
             </h1>
-            <p style={{ fontSize: 13, color: "var(--bm-text3)", margin: "4px 0 0", lineHeight: 1 }}>
-              {dateStr}
-              {streak > 0 && <span style={{ marginLeft: 8, color: "var(--bm-amber)" }}>· {streak}d streak</span>}
+            <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: "6px 0 0", lineHeight: 1.5 }}>
+              Project health from observed milestones, tasks, and outcomes - not vanity metrics.
             </p>
           </div>
           {/* Today done chip */}
@@ -335,7 +337,25 @@ export default function OverviewPage() {
         </motion.div>
       )}
 
-      {/* ── Metrics row — 4 flat stat chips ── */}
+      {/* ── Startup health conclusion ── */}
+      {activeProject && (
+        <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.06 }} style={{ border: "1px solid var(--bm-border)", borderRadius: 12, background: "var(--bm-bg2)", padding: "18px 22px", marginBottom: 22 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 19, margin: 0, color: "var(--bm-text)" }}>{activeProject.title}</h2>
+              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-text3)", border: "1px solid var(--bm-border)", borderRadius: 4, padding: "3px 7px" }}>{stage}</span>
+            </div>
+            <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: score >= 70 ? "var(--bm-green)" : score >= 45 ? "var(--bm-amber)" : "var(--bm-red)", border: "1px solid var(--bm-border)", borderRadius: 5, padding: "5px 9px" }}>
+              {score >= 70 ? "Strong momentum" : score >= 45 ? "Moderate momentum" : "Needs attention"}
+            </span>
+          </div>
+          <p style={{ fontSize: 13, color: "var(--bm-text3)", margin: 0, lineHeight: 1.6 }}>
+            {milestonesCompleted > 0 ? `Milestones are moving, with ${milestonesCompleted} completed so far.` : "Your startup is still establishing its first measurable milestone."} {doneTasks > 0 ? `${doneTasks} tasks completed across the current operating cycle.` : "No completed tasks have been recorded yet."}
+          </p>
+        </motion.div>
+      )}
+
+      {/* ── Metrics row — supporting facts ── */}
       {summaries.length > 0 && (
         <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}
           style={{ borderRadius: 10, border: "1px solid var(--bm-border)", overflow: "hidden", marginBottom: 20 }}>
@@ -423,7 +443,7 @@ export default function OverviewPage() {
       {summaries.length > 0 && (
         <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Projects</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Active project execution</span>
             <Link href="/projects" style={{ fontSize: 12, color: "var(--bm-text3)", textDecoration: "none" }}>View all →</Link>
           </div>
 
