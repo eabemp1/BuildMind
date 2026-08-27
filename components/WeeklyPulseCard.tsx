@@ -186,11 +186,11 @@ export function WeeklyPulseCard() {
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {/* 1. STORY */}
-      <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-lg)", padding: "20px 20px 16px" }}>
+      <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderLeft: "3px solid var(--bm-amber)", borderRadius: "var(--r-lg)", padding: "20px 20px 16px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
           <Sparkles size={14} style={{ color: "var(--bm-text3)" }} />
           <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.10em", color: "var(--bm-text3)" }}>
-            Your week
+            Weekly conclusion
           </span>
           {data.archetype && (
             <a
@@ -288,6 +288,21 @@ export function WeeklyPulseCard() {
             </div>
             <span style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color: "var(--bm-text)" }}>{data.streak}d</span>
           </div>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12 }}>
+        <div style={{ background: "rgba(155,135,245,0.10)", border: "1px solid rgba(155,135,245,0.55)", borderRadius: "var(--r-lg)", padding: "16px 18px" }}>
+          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: "var(--bm-intel, #9b87f5)", textTransform: "uppercase", letterSpacing: ".08em" }}>Intelligence / confidence</span>
+          <h3 style={{ margin: "8px 0 6px", fontSize: 16, color: "var(--bm-text)" }}>{data.active_days >= 4 ? "Useful, not complete" : "Early signal"}</h3>
+          <p style={{ margin: 0, fontSize: 12, lineHeight: 1.5, color: "var(--bm-text3)" }}>{data.active_days >= 4 ? "Your execution pattern is grounded in multiple active days. Missing reflections still limit what can be inferred about outcomes." : "There is not enough activity yet to make a high-confidence read of your execution."}</p>
+          <span style={{ display: "inline-block", marginTop: 10, fontFamily: "'DM Mono', monospace", fontSize: 9, color: "var(--bm-intel, #9b87f5)" }}>{data.active_days >= 4 ? "MODERATE CONFIDENCE" : "LOW-EVIDENCE CLAIMS HIDDEN"}</span>
+        </div>
+        <div style={{ background: "rgba(232,160,32,0.08)", border: "1px solid rgba(232,160,32,0.45)", borderRadius: "var(--r-lg)", padding: "16px 18px" }}>
+          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: "var(--bm-amber)", textTransform: "uppercase", letterSpacing: ".08em" }}>Next action</span>
+          <h3 style={{ margin: "8px 0 6px", fontSize: 16, color: "var(--bm-text)" }}>Protect the next focused block.</h3>
+          <p style={{ margin: "0 0 12px", fontSize: 12, lineHeight: 1.5, color: "var(--bm-text3)" }}>Open Today to act on the current recommendation from your existing plan.</p>
+          <a href="/today" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 12px", borderRadius: 6, background: "var(--bm-amber)", color: "#17130a", textDecoration: "none", fontSize: 11, fontWeight: 700 }}>→ Open Today</a>
         </div>
       </div>
 
