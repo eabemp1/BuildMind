@@ -79,7 +79,7 @@ export function buildFounderSkills(state: FounderIntelligenceState): FounderSkil
     .map(([id, stat]) => {
       const meta = metaFor(id);
       const level = levelFromXp(stat.successes);
-      const trend = trendFor(stat.successes, stat.failures, stat.recent_successes, stat.recent_failures);
+      const trend = trendFor(stat.successes, stat.failures, stat.successes, stat.failures);
       return {
         id,
         ...meta,
