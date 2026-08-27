@@ -50,7 +50,11 @@ async function getUserWithTimeout(
   const result = await withTimeoutSentinel(
     supabase.auth.getUser().then((r) => ({ user: r.data.user, error: r.error })),
   );
-  if (result === MIDDLEWARE_TIMED_OUT) return { user: null, error: null, timedOut: true };
+  if (result === MIDDLEWARE_TIMED_OUT) {
+    // eslint-disable-next-line no-console -- deliberate: only way to see this from Vercel's function logs
+    console.error("[middleware] supabase.auth.getUser() timed out after", MIDDLEWARE_TIMEOUT_MS, "ms — Supabase may be slow/unreachable");
+    return { user: null, error: null, timedOut: true };
+  }
   return { ...result, timedOut: false };
 }
 
