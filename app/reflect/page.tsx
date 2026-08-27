@@ -106,6 +106,7 @@ export default function ReflectPage() {
   const canSubmit = outcome !== null && whatTried.trim().length > 0;
   const [showCelebration, setShowCelebration] = useState(false);
   const [celebrationMomentum, setCelebrationMomentum] = useState<{ before: number; after: number } | undefined>(undefined);
+  const [confidenceAdjustment, setConfidenceAdjustment] = useState<{ before: number; after: number; trend: "up" | "down" | "flat" | "unknown" } | undefined>(undefined);
   const [celebrationStreak, setCelebrationStreak] = useState(0);
   const [streakExtended, setStreakExtended] = useState(false);
 
@@ -294,6 +295,7 @@ export default function ReflectPage() {
           setCelebrationStreak(newStreak);
           setStreak(newStreak);
           if (payload.momentum) setCelebrationMomentum(payload.momentum);
+          if (payload.confidenceAdjustment) setConfidenceAdjustment(payload.confidenceAdjustment);
         }
       } catch {}
       setCausality(caus);
@@ -349,6 +351,7 @@ export default function ReflectPage() {
           witnessed={sanitizeOutput(witnessed)}
           causality={sanitizeOutput(causality)}
           nextAction={sanitizeOutput(displayNextAction)}
+          confidenceAdjustment={confidenceAdjustment}
           onOverview={() => router.push("/overview")}
           onToday={() => router.push("/today")}
         />
@@ -449,4 +452,4 @@ export default function ReflectPage() {
       </motion.button>
     </div>
   );
-}
+                }
