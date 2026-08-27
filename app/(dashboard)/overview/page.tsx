@@ -355,6 +355,67 @@ export default function OverviewPage() {
         </motion.div>
       )}
 
+      {/* ── Operating picture ── */}
+      {activeProject && (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]" style={{ marginBottom: 22 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <section style={{ border: "1px solid var(--bm-border)", borderRadius: 10, background: "var(--bm-bg2)", padding: "18px 22px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+                <div>
+                  <p style={{ margin: "0 0 6px", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: ".08em" }}>Active milestone</p>
+                  <h2 style={{ margin: 0, fontSize: 18, color: "var(--bm-text)" }}>{activeProject.pendingMilestones?.[0] ?? "Current operating milestone"}</h2>
+                </div>
+                <strong style={{ color: "var(--bm-amber)", fontFamily: "'DM Mono', monospace", fontSize: 12 }}>{totalTasks ? Math.round((doneTasks / totalTasks) * 100) : 0}% complete</strong>
+              </div>
+              <ProgressBar value={doneTasks} max={totalTasks || 1} />
+              <p style={{ margin: "12px 0 10px", fontSize: 12, color: "var(--bm-text4)" }}>{doneTasks} of {totalTasks || 0} tasks completed in the current cycle.</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {(activeProject.pendingTasks ?? []).slice(0, 4).map((task: string, i: number) => (
+                  <div key={task ?? i} style={{ display: "flex", alignItems: "center", gap: 9, color: "var(--bm-text2)", fontSize: 13 }}>
+                    <CheckCircle2 size={15} style={{ color: i < doneTasks ? "var(--bm-green)" : "var(--bm-text4)" }} />
+                    <span>{task || "Untitled task"}</span>
+                  </div>
+                ))}
+                {!(activeProject.pendingTasks?.length) && <span style={{ fontSize: 13, color: "var(--bm-text4)" }}>No milestone tasks recorded yet.</span>}
+              </div>
+            </section>
+
+            <section style={{ border: "1px solid var(--bm-border)", borderRadius: 10, background: "var(--bm-bg2)", padding: "16px 22px" }}>
+              <p style={{ margin: "0 0 8px", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: ".08em" }}>Current objective</p>
+              <p style={{ margin: 0, fontSize: 16, color: "var(--bm-text)" }}>{activeProject.pendingTasks?.[0] ?? nudge.action}</p>
+              <p style={{ margin: "8px 0 0", fontSize: 12, color: "var(--bm-text4)" }}>Derived from the current execution state.</p>
+            </section>
+
+            <section style={{ border: "1px solid var(--bm-border)", borderRadius: 10, background: "var(--bm-bg2)", padding: "16px 22px" }}>
+              <p style={{ margin: "0 0 8px", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: ".08em" }}>Next action</p>
+              <p style={{ margin: "0 0 12px", fontSize: 16, color: "var(--bm-text)" }}>{nudge.action}</p>
+              <Button size="sm" onClick={() => router.push("/today")} style={{ background: "var(--bm-amber)", color: "#111" }}>Go to Today <ArrowRight size={14} /></Button>
+            </section>
+
+            <section style={{ border: "1px solid var(--bm-border)", borderRadius: 10, background: "var(--bm-bg2)", padding: "16px 22px" }}>
+              <p style={{ margin: "0 0 12px", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: ".08em" }}>What changed</p>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div><span style={{ fontSize: 11, color: "var(--bm-text4)" }}>Since yesterday</span><p style={{ margin: "6px 0 0", color: "var(--bm-green)", fontSize: 13 }}>{doneTasks} tasks completed</p><p style={{ margin: "4px 0 0", color: "var(--bm-text3)", fontSize: 13 }}>{todayDone ? "Today's check-in recorded" : "Today's check-in still open"}</p></div>
+                <div><span style={{ fontSize: 11, color: "var(--bm-text4)" }}>Current signal</span><p style={{ margin: "6px 0 0", color: scoreDelta != null && scoreDelta < 0 ? "var(--bm-amber)" : "var(--bm-green)", fontSize: 13 }}>{scoreDelta == null ? "Baseline established" : `Score ${scoreDelta >= 0 ? "up" : "down"} ${Math.abs(scoreDelta)} points`}</p><p style={{ margin: "4px 0 0", color: "var(--bm-text3)", fontSize: 13 }}>{milestonesCompleted} milestones completed</p></div>
+              </div>
+            </section>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <section style={{ border: "1px solid var(--bm-border)", borderRadius: 10, background: "var(--bm-bg2)", padding: "16px 18px" }}>
+              <p style={{ margin: "0 0 12px", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: ".08em" }}>Needs attention</p>
+              {[attentionMessage, noReflectIn3Days ? "Reflection cadence is below target." : null, totalTasks > 0 && doneTasks / totalTasks < .5 ? "Completion rate is below 50%." : null].filter(Boolean).map((item, i) => <p key={i} style={{ margin: "0 0 10px", fontSize: 13, color: "var(--bm-text2)" }}><span style={{ color: i === 0 ? "var(--bm-red)" : "var(--bm-amber)", marginRight: 8 }}>•</span>{item}</p>)}
+            </section>
+            <section style={{ border: "1px solid var(--bm-border)", borderRadius: 10, background: "var(--bm-bg2)", padding: "16px 18px" }}>
+              <p style={{ margin: "0 0 12px", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: ".08em" }}>Evidence</p>
+              <p style={{ margin: "0 0 8px", fontSize: 13, color: "var(--bm-text2)" }}>• {doneTasks} of {totalTasks || 0} tasks completed</p><p style={{ margin: "0 0 8px", fontSize: 13, color: "var(--bm-text2)" }}>• {milestonesCompleted} milestones completed</p><p style={{ margin: 0, fontSize: 13, color: "var(--bm-text2)" }}>• {todayDone ? "Check-in recorded today" : "No check-in recorded today"}</p>
+              <div style={{ marginTop: 14, borderTop: "1px solid var(--bm-border)", paddingTop: 12 }}><span style={{ color: "var(--bm-accent)", fontFamily: "'DM Mono', monospace", fontSize: 10 }}>BUILDMIND INTERPRETATION</span><p style={{ margin: "6px 0 0", fontSize: 13, color: "var(--bm-text3)" }}>{nudge.text}</p></div>
+            </section>
+            <section style={{ border: "1px solid var(--bm-border)", borderRadius: 10, background: "var(--bm-bg2)", padding: "16px 18px" }}><p style={{ margin: "0 0 10px", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: ".08em" }}>What needs a decision</p><p style={{ margin: 0, fontSize: 14, color: "var(--bm-text)" }}>{attentionMessage}</p><button onClick={() => router.push("/today")} style={{ marginTop: 12, background: "none", border: 0, padding: 0, color: "var(--bm-accent)", cursor: "pointer", fontSize: 12 }}>Open today's brief →</button></section>
+          </div>
+        </div>
+      )}
+
       {/* ── Metrics row — supporting facts ── */}
       {summaries.length > 0 && (
         <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}
