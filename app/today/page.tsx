@@ -31,6 +31,7 @@ import { sanitizeOutput } from "@/lib/sanitizeOutput";
 import { getArchetypeDisplay } from "@/lib/founderArchetypeDisplay";
 import { linkifyChannels } from "@/lib/linkifyChannels";
 import GhostGoalBanner from "@/components/GhostGoalBanner";
+import ReckoningPill from "@/components/ReckoningPill";
 import { recordOverride } from "@/lib/founderContext";
 import { truncateChars } from "@/lib/textTruncate";
 import type { MorningBriefing } from "@/lib/founderContext";
@@ -42,6 +43,7 @@ import { RiskInterrupt } from "./components/RiskInterrupt";
 import { SignalList } from "./components/SignalList";
 import { DecisionBrief } from "./components/DecisionBrief";
 import { ContextAlignmentCard } from "./components/ContextAlignmentCard";
+import { IntelligenceUnavailableCard } from "./components/IntelligenceUnavailableCard";
 import { useUIMode } from "@/lib/uiMode";
 import { UIModeToggle } from "@/components/ui/UIModeToggle";
 
@@ -458,6 +460,16 @@ function TodayContent() {
   const [forceActionRefresh, setForceActionRefresh] = useState(0);
   // Progressive streaming label — shows which agent is currently running
   const [streamLabel, setStreamLabel] = useState<string | null>(null);
+  // True only when BOTH the SSE stream and the JSON fallback fail to
+  // produce a real action — i.e. actionData is about to silently fall back
+  // to STATIC_ACTIONS with no signal to the founder. Distinct from
+  // actionData.isAI === false, which also covers the (fine) low-confidence
+  // calibration case.
+  const [aiFetchFailed, setAiFetchFailed] = useState(false);
+  // Last real (isAI: true) action this session produced — used only for
+  // "Use last recommendation" on the unavailable screen. Not persisted;
+  // if nothing has succeeded yet this session, the button doesn't render.
+  const lastGoodActionRef = useRef<ActionData | null>(null);
 
   // Milestone Break interstitial — fires after milestone/stage change
   const [milestoneBreak, setMilestoneBreak] = useState<MilestoneBreakResult | null>(null);
@@ -785,7 +797,7 @@ function TodayContent() {
           cached?.stage === currentStage &&
           isActionData(cached.data)
         ) {
-          setAiAction({ ...cached.data, isAI: true });
+          setAiAction({ ...cached.data, isAI: true }); setAiFetchFailed(false); lastGoodActionRef.current = { ...cached.data, isAI: true };
           // Still sync server cache in background — non-blocking
           void fetchBehaviorState<{ today_action_cache: CachedTodayAction & { generatedAt?: string } }>(["today_action_cache"])
             .then((serverCache) => {
@@ -802,7 +814,7 @@ function TodayContent() {
               ) {
                 storage.setJSON(cacheKey, serverCache.today_action_cache);
                 storage.set(`bm_today_action_cache_ts_${userId}`, String(serverTs));
-                setAiAction({ ...serverCache.today_action_cache.data, isAI: true });
+                setAiAction({ ...serverCache.today_action_cache.data, isAI: true }); setAiFetchFailed(false); lastGoodActionRef.current = { ...serverCache.today_action_cache.data, isAI: true };
               }
             })
             .catch(() => {});
@@ -862,7 +874,7 @@ function TodayContent() {
         // Sync to localStorage so next open is instant
         storage.setJSON(cacheKey, serverCache.today_action_cache);
         if (serverCacheTs > 0) storage.set(`bm_today_action_cache_ts_${userId}`, String(serverCacheTs));
-        setAiAction({ ...serverCache.today_action_cache.data, isAI: true });
+        setAiAction({ ...serverCache.today_action_cache.data, isAI: true }); setAiFetchFailed(false); lastGoodActionRef.current = { ...serverCache.today_action_cache.data, isAI: true };
         return;
       }
       // Server cache exists but is stale — clear both server and localStorage
@@ -953,6 +965,8 @@ function TodayContent() {
               if (!actionData) break outer;
               if (!signal.aborted) {
                 setAiAction(actionData);
+                setAiFetchFailed(false);
+                lastGoodActionRef.current = actionData;
                 setStreamLabel(null);
                 // FIX (task-repeat bug): clear the rejection once a new
                 // action has actually been generated — otherwise this same
@@ -995,15 +1009,26 @@ function TodayContent() {
           if (json?.success && actionData) {
             setDebtSuppression(null);
             setAiAction(actionData);
+            setAiFetchFailed(false);
+            lastGoodActionRef.current = actionData;
             lastRejectedActionRef.current = null;
             const cacheValue = { date: today, projectId, stage: currentStage, data: actionData };
             const nowTs = Date.now().toString();
             storage.setJSON(cacheKey, cacheValue);
             if (userId) storage.set(`bm_today_action_cache_ts_${userId}`, nowTs);
             persistBehaviorState({ today_action_cache: cacheValue });
+          } else if (!json?.success) {
+            // Real failure — the request completed but the server didn't
+            // return a usable action (not caught below, since r.ok was
+            // true). actionData is about to fall back to STATIC_ACTIONS
+            // with isAI:false; this is what tells the UI that fallback is
+            // silent and unsignaled otherwise.
+            setAiFetchFailed(true);
           }
         })
-        .catch(() => {})
+        .catch(() => {
+          if (!signal.aborted) setAiFetchFailed(true);
+        })
         .finally(() => { if (!signal.aborted) setActionLoading(false); });
       return;
     }
@@ -1515,6 +1540,42 @@ function TodayContent() {
     </div>
   );
 
+  // ── No active project — genuinely empty, not a silently-sparse page.
+  // `project` is derived from `summaries` (useProjectSummariesQuery); if
+  // loading finished and nothing resolved, either the founder has no
+  // projects yet or none is marked active. Real distinction, real routes —
+  // no invented copy. ──
+  if (!isLoading && !project) {
+    return (
+      <div style={{ maxWidth: 460, margin: "0 auto", padding: isMobile ? "60px 16px" : "100px 24px", textAlign: "center" }}>
+        <p style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 8px" }}>
+          Daily briefing
+        </p>
+        <h1 style={{ fontSize: 18, fontWeight: 700, color: "var(--bm-text)", margin: "0 0 10px" }}>
+          No active plan detected
+        </h1>
+        <p style={{ fontSize: 13, color: "var(--bm-text3)", lineHeight: 1.6, margin: "0 0 20px" }}>
+          {summaries.length > 0
+            ? "You have projects, but none is currently active. Pick one to get today's task."
+            : "BuildMind generates daily recommendations once you have an active project with tasks or milestones."}
+        </p>
+        {/* Both cases route to /projects — Create Project is currently a
+            modal there (no standalone /projects/new route exists yet), so
+            this is a real link either way, not a guess. */}
+        <a
+          href="/projects"
+          style={{
+            display: "inline-block", padding: "10px 20px", borderRadius: 8,
+            border: "1px solid var(--bm-accent-bd)", background: "var(--bm-accent)",
+            color: "var(--bm-bg)", fontSize: 13, fontWeight: 700, textDecoration: "none",
+          }}
+        >
+          {summaries.length > 0 ? "Choose a project" : "Create a plan"}
+        </a>
+      </div>
+    );
+  }
+
   // ── Milestone Break interstitial — mandatory checkpoint after milestone/stage change, or a stalled milestone ──
   if (milestoneBreak && !milestoneBreakDismissed) {
     const isStalling = milestoneBreak.trigger === "stalling";
@@ -1926,9 +1987,15 @@ function TodayContent() {
           collapsible drawer below the action card.
       ══════════════════════════════════════════════════ */}
 
-      {/* Lightweight project + stage badge */}
+      {/* Lightweight project + stage badge — Weekly Vigil and The Reckoning
+          live here as compact chips, not as their own banners. Per the
+          Today-page task-first rule: DecisionBrief is the only element
+          allowed a permanently-open full block. Vigil is a few words,
+          always present once loaded; Reckoning renders nothing at all
+          except the ~1 day a month it has something real to surface. Both
+          open their full detail in a modal on tap, never inline. */}
       {project && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text2)", letterSpacing: "-0.01em" }}>
             {project.name ?? "Your startup"}
           </span>
@@ -1947,6 +2014,16 @@ function TodayContent() {
               {project.startup_stage}
             </span>
           )}
+          <GhostGoalBanner
+            projectId={project.id}
+            currentScore={score}
+            stage={project.startup_stage ?? "Idea"}
+            executionScore={project.execution_score ?? 0}
+            streak={streak}
+            startupSummary={(project as unknown as Record<string, unknown>).startup_summary as string | undefined}
+            projectName={project.name ?? project.title ?? ""}
+          />
+          <ReckoningPill projectId={project.id} />
           {isDayOneColdStart ? (
             <span style={{ marginLeft: "auto", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-accent)" }}>
               Start your streak today
@@ -1957,21 +2034,6 @@ function TodayContent() {
             </span>
           )}
         </div>
-      )}
-
-      {/* ── Ghost Goal Banner — restored; was never behind a toggle, just
-          removed in the same aggressive pass as the alert cards. Keep. ── */}
-      {/* ── Ghost Goal Banner ─────────────────────────────────────────────── */}
-      {project && (
-        <GhostGoalBanner
-          projectId={project.id}
-          currentScore={score}
-          stage={project.startup_stage ?? "Idea"}
-          executionScore={project.execution_score ?? 0}
-          streak={streak}
-          startupSummary={(project as unknown as Record<string, unknown>).startup_summary as string | undefined}
-          projectName={project.name ?? project.title ?? ""}
-        />
       )}
 
       {/* ── Context drawer (collapsed by default) — everything below wraps here ── */}
@@ -2315,6 +2377,21 @@ function TodayContent() {
             </div>
           </div>
         </div>
+      ) : aiFetchFailed && !actionLoading ? (
+        <IntelligenceUnavailableCard
+          lastSuccessAt={userId ? (() => {
+            const ts = storage.get(`bm_today_action_cache_ts_${userId}`);
+            return ts ? Number(ts) : null;
+          })() : null}
+          hasLastRecommendation={!!lastGoodActionRef.current}
+          onRetry={() => { setAiFetchFailed(false); setForceActionRefresh(v => v + 1); }}
+          onUseLastRecommendation={() => {
+            if (lastGoodActionRef.current) setAiAction(lastGoodActionRef.current);
+            setAiFetchFailed(false);
+          }}
+          onContinueBaseline={() => setAiFetchFailed(false)}
+          projectId={project?.id}
+        />
       ) : (
         <>
         {uiMode === "pro" && criticalSignal ? <RiskInterrupt signal={criticalSignal} /> : null}
@@ -2533,14 +2610,42 @@ function TodayContent() {
             : "At least 3 people. Done counts as done even if they don't reply. Replies are a bonus."}
         </p>
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(4, 1fr)", gap: "var(--space-2)" }}>
-          {destinations.map(d => (
-            <a key={d.label} href={d.url} target="_blank" rel="noopener noreferrer"
-              className="bm-tile"
-              style={{ textDecoration: "none", padding: isMobile ? "var(--space-4) var(--space-2)" : "var(--space-3) var(--space-2)" }}>
-              <span style={{ fontSize: "var(--text-2xl)" }}>{d.icon}</span>
-              <span style={{ fontSize: "var(--text-xs)", color: "var(--bm-text3)", textAlign: "center", lineHeight: "var(--leading-tight)" }}>{d.label}</span>
-            </a>
-          ))}
+          {destinations.map(d => {
+            // "Email personally" has no compose URL in DESTINATIONS (no
+            // fixed recipient to link to), but we do have real content —
+            // the same draft message already shown above — so it gets a
+            // real mailto: instead of sitting inert. Everything else
+            // without a url (Call directly, WhatsApp, LinkedIn DM, Loom,
+            // Text 3 people) has no real target data behind it (no phone
+            // number, no profile URL) — those stay as non-interactive
+            // labels rather than linking to nothing or a fabricated target.
+            const isEmail = d.label === "Email personally";
+            const mailHref = isEmail
+              ? `mailto:?subject=${encodeURIComponent(project?.name ? `Quick question about ${project.name}` : "Quick question")}&body=${encodeURIComponent(draftMessage ?? actionData.message ?? "")}`
+              : undefined;
+            const href = d.url ?? mailHref;
+            const inert = !href;
+            return (
+              <a
+                key={d.label}
+                href={href}
+                target={href ? "_blank" : undefined}
+                rel={href ? "noopener noreferrer" : undefined}
+                className="bm-tile"
+                onClick={inert ? (e) => e.preventDefault() : undefined}
+                style={{
+                  textDecoration: "none",
+                  padding: isMobile ? "var(--space-4) var(--space-2)" : "var(--space-3) var(--space-2)",
+                  opacity: inert ? 0.55 : 1,
+                  cursor: inert ? "default" : "pointer",
+                }}
+                title={inert ? "No linked destination yet — do this one manually" : undefined}
+              >
+                <span style={{ fontSize: "var(--text-2xl)" }}>{d.icon}</span>
+                <span style={{ fontSize: "var(--text-xs)", color: "var(--bm-text3)", textAlign: "center", lineHeight: "var(--leading-tight)" }}>{d.label}</span>
+              </a>
+            );
+          })}
         </div>
       </motion.div>
 
