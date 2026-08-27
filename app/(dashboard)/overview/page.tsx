@@ -270,7 +270,7 @@ export default function OverviewPage() {
   }
 
   return (
-    <div style={{ maxWidth: 1120, margin: "0 auto", padding: "30px 20px 60px" }}>
+    <div style={{ maxWidth: 820, margin: "0 auto", padding: "30px 20px 60px" }}>
 
       {/* ── Profile completeness (only shows when score < 80) ── */}
       <ProfileCompletenessBar
