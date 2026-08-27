@@ -603,7 +603,7 @@ export default function BreakMyStartupPage() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-6 px-0 py-5 sm:px-6 sm:py-8">
+    <div className="mx-auto flex w-full max-w-[820px] flex-col gap-6 px-0 py-5 sm:px-6 sm:py-8">
 
       {/* Header */}
       <motion.div
