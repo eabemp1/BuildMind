@@ -26,15 +26,12 @@ type Skill = {
   label: string;
   description: string;
   level: number;
-  xp: number;
   xp_into_level: number;
   xp_for_next_level: number;
   progress: number;
   attempts: number;
   successes: number;
-  failures: number;
   trend: "up" | "down" | "steady" | "new";
-  summary: string;
 };
 
 type MirrorResponse = {
@@ -181,7 +178,6 @@ export default function FounderMirrorPage() {
         </div>
       </Card>
 
-      {/* ── Skills — leveled up through real completed work, not logins ───── */}
       {mirror.skills.length > 0 && (
         <section>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
@@ -189,12 +185,11 @@ export default function FounderMirrorPage() {
               <TrendingUp size={15} color="var(--bm-intel)" />
               <div>
                 <Eyebrow color="var(--bm-intel)">Built through real work</Eyebrow>
-                <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700 }}>What you're getting better at</div>
+                <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700 }}>What you&apos;re getting better at</div>
               </div>
             </div>
             <span style={{ color: "var(--bm-text4)", fontSize: 12 }}>{mirror.skills.length} tracked</span>
           </div>
-
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12 }}>
             {mirror.skills.map((skill) => {
               const meta = skillTrendMeta[skill.trend];
@@ -207,7 +202,6 @@ export default function FounderMirrorPage() {
                     </div>
                     <Badge variant="intel" size="sm">Lv. {skill.level}</Badge>
                   </div>
-
                   <div>
                     <div style={{ height: 4, background: "var(--bm-bg3)", overflow: "hidden", borderRadius: 2 }}>
                       <div style={{ height: "100%", width: `${Math.round(skill.progress * 100)}%`, background: "var(--bm-intel)" }} />
@@ -217,7 +211,6 @@ export default function FounderMirrorPage() {
                       <span className="bm-data">{skill.successes} completed</span>
                     </div>
                   </div>
-
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, borderTop: "1px solid var(--bm-border)", paddingTop: 10 }}>
                     <Badge variant={meta.variant} size="sm">{meta.text}</Badge>
                     <span style={{ color: "var(--bm-text4)", fontSize: 11 }}>{skill.attempts} attempted</span>
