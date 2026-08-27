@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { ACHIEVEMENTS, getUnlocked, type Achievement } from "@/lib/achievements";
-import { Trophy, Lock, Star, Zap, Flame } from "lucide-react";
+import { Trophy, Lock, Star, Zap, Flame, Brain, FolderKanban, Users, Target, Check } from "lucide-react";
 
 function ProgressBar({ value, max }: { value: number; max: number }) {
   const pct = Math.min((value / max) * 100, 100);
@@ -19,7 +19,7 @@ function ProgressBar({ value, max }: { value: number; max: number }) {
   );
 }
 
-function AchievementCard({ a, unlocked, unlockedAt }: { a: Achievement; unlocked: boolean; unlockedAt?: string }) {
+function AchievementCard({ a, unlocked, unlockedAt, selected, onSelect }: { a: Achievement; unlocked: boolean; unlockedAt?: string; selected?: boolean; onSelect?: () => void }) {
   const timeAgo = unlockedAt ? (() => {
     const diff = Date.now() - new Date(unlockedAt).getTime();
     const d = Math.floor(diff / 86400000);
@@ -33,15 +33,19 @@ function AchievementCard({ a, unlocked, unlockedAt }: { a: Achievement; unlocked
     <motion.div
       whileHover={{ y: -2 }}
       transition={{ duration: 0.15 }}
+      onClick={onSelect}
+      role={onSelect ? "button" : undefined}
+      tabIndex={onSelect ? 0 : undefined}
+      onKeyDown={(e) => { if (onSelect && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onSelect(); } }}
       style={{
         background: "var(--bm-bg2)",
-        border: `1px solid ${unlocked ? "var(--bm-accent-bd)" : "var(--bm-border)"}`,
+        border: `1px solid ${selected ? "var(--bm-accent)" : unlocked ? "var(--bm-accent-bd)" : "var(--bm-border)"}`,
         borderRadius: 14,
         // Consistent padding — no horizontal overflow on small screens
         padding: "14px",
         opacity: unlocked ? 1 : 0.55,
         position: "relative",
-        overflow: "hidden",
+        overflow: "hidden", cursor: onSelect ? "pointer" : "default",
         // Ensure card never overflows its grid cell
         minWidth: 0,
         boxSizing: "border-box",
@@ -55,7 +59,7 @@ function AchievementCard({ a, unlocked, unlockedAt }: { a: Achievement; unlocked
       {/* Icon + content — stacked on very narrow cells, row on wider */}
       <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
         {/* Icon box — fixed size so it never shrinks */}
-        <div style={{
+        <motion.div animate={unlocked ? { boxShadow: ["0 0 0 rgba(232,160,32,0)", "0 0 14px rgba(232,160,32,0.22)", "0 0 0 rgba(232,160,32,0)"] } : undefined} transition={{ duration: 2.8, repeat: Infinity }} style={{
           width: 42, height: 42, minWidth: 42,
           borderRadius: 12, flexShrink: 0,
           background: unlocked ? "var(--bm-accent-dim)" : "var(--bm-bg3)",
@@ -64,8 +68,8 @@ function AchievementCard({ a, unlocked, unlockedAt }: { a: Achievement; unlocked
           fontSize: 22,
           filter: unlocked ? "none" : "grayscale(1)",
         }}>
-          {unlocked ? a.emoji : <Lock size={16} color="var(--bm-text3)" />}
-        </div>
+          {unlocked ? ({ streak: <Flame size={21} />, tasks: <Check size={21} />, ai: <Brain size={21} />, projects: <FolderKanban size={21} />, explorer: <Target size={21} />, founder: <Star size={21} />, social: <Users size={21} /> }[a.category] ?? <Trophy size={21} />) : <Lock size={16} color="var(--bm-text3)" />}
+        </motion.div>
 
         {/* Text block — minWidth:0 prevents overflow beyond card edge */}
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -126,6 +130,7 @@ export default function AchievementsPage() {
   const [unlocked, setUnlocked] = useState<Set<string>>(new Set());
   const [unlockedTimestamps, setUnlockedTimestamps] = useState<Record<string, string>>({});
   const [filter, setFilter] = useState("all");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
     setAll(ACHIEVEMENTS);
@@ -156,6 +161,7 @@ export default function AchievementsPage() {
 
   const displayed = filter === "all" ? all : all.filter((a) => a.category === filter);
   const unlockedCount = all.filter((a) => unlocked.has(a.id)).length;
+  const nextAchievement = all.find((a) => !unlocked.has(a.id));
 
   return (
     <div style={{ maxWidth: 840, margin: "0 auto", padding: "20px 16px" }}>
@@ -212,6 +218,14 @@ export default function AchievementsPage() {
         </div>
       </div>
 
+      {nextAchievement && (
+        <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16, padding: "14px 16px", border: "1px solid var(--bm-accent-bd)", borderRadius: 10, background: "linear-gradient(90deg, var(--bm-accent-dim), var(--bm-bg2))" }}>
+          <motion.div animate={{ scale: [1, 1.06, 1] }} transition={{ duration: 2.4, repeat: Infinity }} style={{ width: 42, height: 42, borderRadius: 10, display: "grid", placeItems: "center", background: "var(--bm-bg3)", color: "var(--bm-accent)", flexShrink: 0 }}><Target size={21} /></motion.div>
+          <div style={{ minWidth: 0, flex: 1 }}><span style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: "var(--bm-accent)", textTransform: "uppercase", letterSpacing: ".08em" }}>Recommended next achievement</span><div style={{ marginTop: 4, fontSize: 14, fontWeight: 700, color: "var(--bm-text)" }}>{nextAchievement.label}</div><div style={{ marginTop: 3, fontSize: 11, color: "var(--bm-text3)" }}>{nextAchievement.description}</div></div>
+          <button onClick={() => { setFilter(nextAchievement.category); setSelectedId(nextAchievement.id); }} style={{ flexShrink: 0, border: "1px solid var(--bm-accent-bd)", borderRadius: 6, padding: "7px 10px", background: "var(--bm-accent-dim)", color: "var(--bm-accent)", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>View path →</button>
+        </motion.div>
+      )}
+
       {/* Category filters — horizontal scroll on mobile, no wrap clutter */}
       <div style={{
         display: "flex", gap: 6, marginBottom: 16,
@@ -258,10 +272,17 @@ export default function AchievementsPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.04 }}
           >
-            <AchievementCard a={a} unlocked={unlocked.has(a.id)} unlockedAt={unlockedTimestamps[a.id]} />
+            <AchievementCard a={a} unlocked={unlocked.has(a.id)} unlockedAt={unlockedTimestamps[a.id]} selected={selectedId === a.id} onSelect={() => setSelectedId(selectedId === a.id ? null : a.id)} />
           </motion.div>
         ))}
       </div>
+
+      {selectedId && (() => { const a = all.find((item) => item.id === selectedId); if (!a) return null; const isUnlocked = unlocked.has(a.id); return (
+        <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} style={{ marginTop: 16, padding: "16px 18px", border: "1px solid var(--bm-accent-bd)", borderRadius: 10, background: "var(--bm-bg2)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}><div><span style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: "var(--bm-accent)", textTransform: "uppercase" }}>{isUnlocked ? "Achievement unlocked" : "Next milestone"}</span><h3 style={{ margin: "6px 0 4px", color: "var(--bm-text)", fontSize: 17 }}>{a.label}</h3><p style={{ margin: 0, color: "var(--bm-text3)", fontSize: 12, lineHeight: 1.5 }}>{a.description}</p></div><button aria-label="Close details" onClick={() => setSelectedId(null)} style={{ border: 0, background: "transparent", color: "var(--bm-text3)", cursor: "pointer", fontSize: 18 }}>×</button></div>
+          <div style={{ marginTop: 12, color: "var(--bm-text2)", fontSize: 12 }}>{isUnlocked ? `Earned ${a.xp} XP and added to your founder record.` : "Keep completing real work to unlock this achievement."}</div>
+        </motion.div>
+      ); })()}
 
       {displayed.length === 0 && (
         <div style={{ textAlign: "center", padding: "50px 0" }}>
