@@ -3,6 +3,72 @@ import { createServerClient } from "@supabase/ssr";
 import { FEATURES } from "@/lib/features";
 import { isAdminUser } from "@/lib/server/adminAuth";
 
+// Vercel Edge Middleware has a hard ~25s execution budget that Next.js
+// cannot extend (unlike serverless functions' maxDuration). This
+// middleware previously made two sequential, unbounded Supabase round
+// trips on every authenticated request — auth.getUser() and a projects
+// count query — with no timeout on either. A Supabase latency blip on
+// either call therefore stalled middleware long enough to hit
+// MIDDLEWARE_INVOCATION_TIMEOUT, which took the entire site down (this
+// runs on every route, not just the one that happened to be requested).
+// MIDDLEWARE_TIMEOUT_MS bounds each external call well under that budget
+// so a slow backend degrades gracefully instead of 504ing every route.
+const MIDDLEWARE_TIMEOUT_MS = 6000;
+
+function withTimeout<T>(promise: Promise<T>, fallback: T, ms = MIDDLEWARE_TIMEOUT_MS): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
+
+const MIDDLEWARE_TIMED_OUT = Symbol("middleware-timed-out");
+type TimedOut = typeof MIDDLEWARE_TIMED_OUT;
+
+/** Races a promise against the timeout, resolving to a distinguishable
+ *  sentinel on timeout instead of a caller-supplied fallback value — used
+ *  where the fallback shape can't be faked (e.g. Supabase's discriminated
+ *  auth response) or where "timed out" must stay distinguishable from a
+ *  real result down the line. */
+function withTimeoutSentinel<T>(promise: Promise<T>, ms = MIDDLEWARE_TIMEOUT_MS): Promise<T | TimedOut> {
+  return Promise.race([
+    promise,
+    new Promise<TimedOut>((resolve) => setTimeout(() => resolve(MIDDLEWARE_TIMED_OUT), ms)),
+  ]);
+}
+
+/** Resolves to { user, error, timedOut } — timedOut is true only when the
+ *  network call itself didn't finish in time, kept distinct from a real
+ *  auth error so a Supabase blip never triggers the stale-cookie wipe below. */
+async function getUserWithTimeout(
+  supabase: NonNullable<ReturnType<typeof createServerClient>>,
+): Promise<{
+  user: Awaited<ReturnType<typeof supabase.auth.getUser>>["data"]["user"];
+  error: Awaited<ReturnType<typeof supabase.auth.getUser>>["error"];
+  timedOut: boolean;
+}> {
+  const result = await withTimeoutSentinel(
+    supabase.auth.getUser().then((r) => ({ user: r.data.user, error: r.error })),
+  );
+  if (result === MIDDLEWARE_TIMED_OUT) return { user: null, error: null, timedOut: true };
+  return { ...result, timedOut: false };
+}
+
+/** Resolves to the project count, or null if the query times out. */
+function getProjectCountWithTimeout(
+  supabase: NonNullable<ReturnType<typeof createServerClient>>,
+  userId: string,
+): Promise<number | null> {
+  const countPromise = Promise.resolve(
+    supabase
+      .from("projects")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .then((result) => result.count),
+  );
+  return withTimeout(countPromise, null);
+}
+
 export async function middleware(request: NextRequest) {
   // Generate a per-request nonce for CSP (W5 fix — replaces static unsafe-inline)
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
@@ -98,12 +164,9 @@ export async function middleware(request: NextRequest) {
       )
     : null;
 
-  const {
-    data: { user },
-    error: authError,
-  } = supabase
-    ? await supabase.auth.getUser()
-    : { data: { user: null }, error: null };
+  const { user, error: authError } = supabase
+    ? await getUserWithTimeout(supabase)
+    : { user: null, error: null };
 
   if (authError) {
     for (const cookie of request.cookies.getAll()) {
@@ -215,14 +278,16 @@ export async function middleware(request: NextRequest) {
     // permanently block them from re-entering onboarding. The DB query is
     // fast (indexed on user_id, head-only count) and runs on every page
     // request only for authenticated users, which is acceptable.
+    //
+    // FALLBACK NOTE: on timeout we get `count: null` (distinct from a real
+    // `count: 0`), which we treat as "assume onboarding completed" below —
+    // bouncing an existing user back into onboarding because Supabase was
+    // slow for one request is worse than briefly skipping this check.
     let onboardingCompleted: boolean;
-    const { count: projectCount } = user
-      ? await supabase!
-          .from("projects")
-          .select("id", { count: "exact", head: true })
-          .eq("user_id", user.id)
-      : { count: isDevOnboarded ? 1 : 0 };
-    onboardingCompleted = (projectCount ?? 0) > 0;
+    const projectCount = user
+      ? await getProjectCountWithTimeout(supabase!, user.id)
+      : isDevOnboarded ? 1 : 0;
+    onboardingCompleted = projectCount === null ? true : (projectCount ?? 0) > 0;
 
     if (!onboardingCompleted && !isOnboardingRoute) {
       const redirectUrl = request.nextUrl.clone();
