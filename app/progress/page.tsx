@@ -89,7 +89,7 @@ function ProgressContent() {
 
   return (
     <>
-      <div style={{ maxWidth: 760, margin: "0 auto", padding: "28px 16px 24px" }}>
+      <div style={{ maxWidth: 1040, margin: "0 auto", padding: "28px 24px 24px" }}>
         {/* Page header */}
         <div style={{ marginBottom: 24 }}>
           <p style={{
@@ -97,25 +97,25 @@ function ProgressContent() {
             fontSize: 9, color: "var(--bm-text3)",
             textTransform: "uppercase", letterSpacing: "0.10em", margin: "0 0 8px",
           }}>
-            Progress
+            Execution intelligence / Progress
           </p>
           <h1 style={{
             fontFamily: "'Syne', sans-serif",
             fontSize: 26, fontWeight: 700, color: "var(--bm-text)",
             letterSpacing: "-0.025em", margin: "0 0 6px",
           }}>
-            Your execution record
+            What does the evidence say?
           </h1>
           <p style={{
             fontFamily: "'Inter', sans-serif",
             fontSize: 12.5, color: "var(--bm-text2)", lineHeight: 1.5, margin: 0,
           }}>
-            This gets sharper the more you use it — not on a fixed schedule, but because every resolved action feeds back into how much BuildMind trusts what it knows about you.
+            A grounded read of your execution over time - not another scorecard.
           </p>
         </div>
 
         {/* Vision Document retention hooks — shown before tabs */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12, marginBottom: 20 }}>
           <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-lg)", padding: "16px 18px" }}>
             <p style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.10em", color: "var(--bm-text3)", margin: "0 0 8px" }}>Execution patterns</p>
             <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "var(--bm-text2)", lineHeight: 1.6, margin: 0 }}>
@@ -173,7 +173,7 @@ function ProgressContent() {
       </div>
 
       {/* Tab content */}
-      <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 16px 24px" }}>
+      <div style={{ maxWidth: 1040, margin: "0 auto", padding: "0 24px 32px" }}>
         <AnimatePresence mode="wait">
           <motion.div
             key={activeTab}
