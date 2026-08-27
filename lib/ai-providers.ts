@@ -3,23 +3,71 @@
  *
  * Multi-provider rotation with automatic fallback.
  *
+ * PROVIDER STATUS — verified August 26, 2026 (provider policies change
+ * often; re-verify before assuming any of this is still true):
+ *
+ *   Groq       — still genuinely free, no card required. Real limits are
+ *                per-model, at the ORG level (not per-key — extra keys do
+ *                NOT raise the ceiling): gpt-oss-120b is 30 RPM / 1,000 RPD
+ *                / 8,000 TPM / 200,000 TPD; llama-3.3-70b-versatile is a
+ *                SEPARATE bucket at 30 RPM / 1,000 RPD / 12,000 TPM /
+ *                100,000 TPD. Because these are independent buckets, using
+ *                both models (not just falling back to the second one after
+ *                the first fails) roughly doubles the effective free daily
+ *                token budget — see getFastChain() below.
+ *   Cerebras   — FIX: as of August 2026 Cerebras ended its no-card free
+ *                tier. New/existing accounts without a payment method on
+ *                file now get 402 on every call; adding a card grants $5 in
+ *                credit that expires after 30 days, which is not a
+ *                sustainable free tier. Demoted to last resort in every
+ *                chain below rather than removed outright, in case a card
+ *                gets added later — do not rely on it being reachable.
+ *   OpenRouter — FIX: the hardcoded default model, deepseek/deepseek-r1:free,
+ *                is DEAD — every DeepSeek model on OpenRouter went paid-only
+ *                around July 2026, and calls to the old slug 404. Switched
+ *                the default to openrouter/free, OpenRouter's "Free Models
+ *                Router" alias, which auto-selects whatever free model is
+ *                currently live instead of pinning a specific slug that can
+ *                (and did) get retired without notice.
+ *   Gemini     — unreliable right now: gemini-2.5-flash has been reported
+ *                returning 404 ("no longer available") ahead of its
+ *                official Oct 16 2026 deprecation date, and free-tier
+ *                access is card-gated in some regions regardless. Kept in
+ *                the chain as opportunistic/best-effort, not a leg to
+ *                depend on — if GEMINI_API_KEY calls keep 404ing, check
+ *                Google AI Studio's current model list and set GEMINI_MODEL
+ *                to whatever's currently live rather than assuming this
+ *                default stays correct.
+ *
+ * NET EFFECT for a small (10-30 person) free deployment: Groq alone,
+ * spread across its two independent model buckets, comfortably covers that
+ * scale at the CORE_DAILY_LIMITS/PLAN_DAILY_LIMITS sizing already in
+ * app/api/ai/_utils.ts (do the math before raising those limits — TPD is
+ * the binding constraint, not RPD, once prompts get long). OpenRouter's
+ * fixed free-router is the real second leg. Cerebras and Gemini are
+ * bonus-if-reachable, not guaranteed capacity.
+ *
  * Provider priority per role:
  *
  * FAST (Generator, Refiner, Parser):
  *   1. Groq — openai/gpt-oss-120b  (MoE 120B, near o4-mini reasoning, free tier)
- *   2. Groq — llama-3.3-70b-versatile (fast fallback)
- *   3. Cerebras — gpt-oss-120b  (same model, 1,854 t/s on wafer silicon)
- *   4. Gemini 2.5 Flash
+ *   2. Groq — llama-3.3-70b-versatile (separate free-tier token bucket, not just a fallback)
+ *   3. OpenRouter — openrouter/free (auto-routing free model, no pinned slug to rot)
+ *   4. Gemini 2.5 Flash (best-effort — see PROVIDER STATUS above)
+ *   5. Cerebras — gpt-oss-120b (best-effort — card-gated as of Aug 2026, see above)
  *
  * REASONING (Critic, Verifier — Stages 4 & 5 of Reflexion loop):
  *   1. Groq — openai/gpt-oss-120b  (native CoT, reasoning_effort=high, free)
- *   2. Groq — qwen/qwen3-32b       (strong math/logic, free)
- *   3. Cerebras — gpt-oss-120b     (1,854 t/s throughput fallback)
- *   4. Gemini 2.5 Flash
+ *   2. Groq — qwen/qwen3-32b       (strong math/logic, free, separate bucket)
+ *   3. OpenRouter — openrouter/free
+ *   4. Gemini 2.5 Flash (best-effort)
+ *   5. Cerebras — gpt-oss-120b (best-effort)
  *
  * FALLBACK:
- *   1. Gemini 2.5 Flash (if API key present)
- *   2. Cerebras gpt-oss-120b (always free, no card required)
+ *   1. OpenRouter — openrouter/free
+ *   2. Groq — openai/gpt-oss-120b
+ *   3. Gemini 2.5 Flash (best-effort)
+ *   4. Cerebras — gpt-oss-120b (best-effort)
  *
  * Rate limit detection:
  *   Any 429, 503, or decommissioned/deprecated response triggers immediate rotation.
@@ -84,11 +132,18 @@ const GEMINI_MODEL         = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
 // OPENROUTER — no-card alternative for genuine model diversity. Google AI Studio's
 // API now requires a card on file in many regions even for free-tier Gemini models;
-// OpenRouter fronts the same Gemini Flash (and DeepSeek, Qwen3, Llama 4) for free
-// with no card required at signup. This is the diversity source for the Critic
-// stage when GEMINI_API_KEY direct access isn't available.
+// OpenRouter fronts free models for genuine architecture diversity, no card required.
+//
+// FIX (Aug 2026): this used to default to deepseek/deepseek-r1:free — that specific
+// slug is dead, every DeepSeek model on OpenRouter went paid-only around July 2026,
+// and calls to it return 404. openrouter/free is OpenRouter's "Free Models Router"
+// alias: it auto-selects whichever free model is currently live (Llama, etc.)
+// instead of pinning one slug that rots the next time a provider changes its free
+// lineup. If you need a SPECIFIC model rather than "whatever's free right now",
+// set OPENROUTER_MODEL explicitly — but check openrouter.ai/models first, since
+// free-tier availability changes without notice.
 const OPENROUTER_API_KEY   = readApiKey("OPENROUTER_API_KEY");
-const OPENROUTER_MODEL     = process.env.OPENROUTER_MODEL || "deepseek/deepseek-r1:free";
+const OPENROUTER_MODEL     = process.env.OPENROUTER_MODEL || "openrouter/free";
 
 const cerebrasClient = CEREBRAS_API_KEY
   ? new Cerebras({ apiKey: CEREBRAS_API_KEY, timeout: 20000, maxRetries: 0 })
@@ -99,22 +154,22 @@ export function getAIProviderStatus() {
     fast: [
       GROQ_API_KEY ? { provider: "groq", model: GROQ_MODEL, configured: true } : null,
       GROQ_API_KEY ? { provider: "groq", model: "llama-3.3-70b-versatile", configured: true } : null,
-      CEREBRAS_API_KEY ? { provider: "cerebras", model: CEREBRAS_MODEL, configured: true } : null,
       OPENROUTER_API_KEY ? { provider: "openrouter", model: OPENROUTER_MODEL, configured: true } : null,
       GEMINI_API_KEY ? { provider: "gemini", model: GEMINI_MODEL, configured: true } : null,
+      CEREBRAS_API_KEY ? { provider: "cerebras", model: CEREBRAS_MODEL, configured: true, note: "requires card on file as of Aug 2026" } : null,
     ].filter(Boolean),
     reasoning: [
       GROQ_API_KEY ? { provider: "groq", model: GROQ_REASONING_MODEL, configured: true } : null,
       OPENROUTER_API_KEY ? { provider: "openrouter", model: OPENROUTER_MODEL, configured: true } : null,
       GEMINI_API_KEY ? { provider: "gemini", model: GEMINI_MODEL, configured: true } : null,
       GROQ_API_KEY ? { provider: "groq", model: "qwen/qwen3-32b", configured: true } : null,
-      CEREBRAS_API_KEY ? { provider: "cerebras", model: CEREBRAS_REASONING_MODEL, configured: true } : null,
+      CEREBRAS_API_KEY ? { provider: "cerebras", model: CEREBRAS_REASONING_MODEL, configured: true, note: "requires card on file as of Aug 2026" } : null,
     ].filter(Boolean),
     fallback: [
-      GEMINI_API_KEY ? { provider: "gemini", model: GEMINI_MODEL, configured: true } : null,
       OPENROUTER_API_KEY ? { provider: "openrouter", model: OPENROUTER_MODEL, configured: true } : null,
-      CEREBRAS_API_KEY ? { provider: "cerebras", model: CEREBRAS_MODEL, configured: true } : null,
       GROQ_API_KEY ? { provider: "groq", model: GROQ_MODEL, configured: true } : null,
+      GEMINI_API_KEY ? { provider: "gemini", model: GEMINI_MODEL, configured: true } : null,
+      CEREBRAS_API_KEY ? { provider: "cerebras", model: CEREBRAS_MODEL, configured: true, note: "requires card on file as of Aug 2026" } : null,
     ].filter(Boolean),
   };
 }
@@ -407,18 +462,25 @@ function getFastChain(): ProviderFn[] {
   if (GROQ_API_KEY) {
     // gpt-oss-120b first — strongest reasoning of any free model
     chain.push({ label: `groq:${GROQ_MODEL}`, call: (m, t, mt, j) => groqCall(m, GROQ_MODEL, t, mt, j) });
-    // Llama 3.3 70B as fast fallback on the same provider
+    // Llama 3.3 70B — NOT just a fallback: Groq's rate limits are per-model,
+    // so this is a genuinely separate 1,000 RPD / 100,000 TPD bucket, not a
+    // second attempt against the same ceiling gpt-oss-120b just hit.
     chain.push({ label: "groq:llama-3.3-70b-versatile", call: (m, t, mt, j) => groqCall(m, "llama-3.3-70b-versatile", t, mt, j) });
   }
-  if (CEREBRAS_API_KEY) {
-    // Cerebras runs gpt-oss-120b at 1,854 t/s — world's fastest for this model
-    chain.push({ label: `cerebras:${CEREBRAS_MODEL}`, call: (m, t, mt, j) => cerebrasCall(m, CEREBRAS_MODEL, t, mt, j) });
-  }
   if (OPENROUTER_API_KEY) {
+    // Fixed free-router (see PROVIDER STATUS at top of file) — the real
+    // second leg, ahead of the two providers below that now require a card
+    // (Cerebras) or are unreliable (Gemini) as of Aug 2026.
     chain.push({ label: `openrouter:${OPENROUTER_MODEL}`, call: (m, t, mt, j) => openRouterCall(m, OPENROUTER_MODEL, t, mt, j) });
   }
   if (GEMINI_API_KEY) {
     chain.push({ label: `gemini:${GEMINI_MODEL}`, call: (m, t, mt, j) => geminiCall(m, t, mt, j) });
+  }
+  if (CEREBRAS_API_KEY) {
+    // Best-effort last resort — no-card free tier ended Aug 2026, see
+    // PROVIDER STATUS at top of file. Only reachable if a card + credits
+    // have been added.
+    chain.push({ label: `cerebras:${CEREBRAS_MODEL}`, call: (m, t, mt, j) => cerebrasCall(m, CEREBRAS_MODEL, t, mt, j) });
   }
   return chain;
 }
@@ -430,24 +492,24 @@ function getReasoningChain(): ProviderFn[] {
     chain.push({ label: `groq:${GROQ_REASONING_MODEL}`, call: (m, t, mt, j) => groqCall(m, GROQ_REASONING_MODEL, t, mt, j, true) });
   }
   // CRITIC DIVERSITY FIX: gpt-oss critiquing gpt-oss shares blind spots — a model
-  // rarely catches its own failure modes. OpenRouter's free DeepSeek R1 is a
+  // rarely catches its own failure modes. OpenRouter's free-router is a
   // genuinely different architecture/training lineage and requires NO credit card
   // (unlike Google AI Studio's direct API, which now gates free Gemini behind
-  // billing in many regions). This is the real diversity source for Critic/Verifier.
+  // billing in many regions, and unlike Cerebras, which now requires a card at
+  // all as of Aug 2026). This is the real diversity source for Critic/Verifier.
   if (OPENROUTER_API_KEY) {
     chain.push({ label: `openrouter:${OPENROUTER_MODEL}`, call: (m, t, mt, j) => openRouterCall(m, OPENROUTER_MODEL, t, mt, j) });
   }
-  // Direct Gemini — only reachable if a card is on file with Google. Kept as a
-  // bonus path; not relied upon, since GEMINI_API_KEY may be unusable.
+  // Direct Gemini — best-effort, see PROVIDER STATUS at top of file.
   if (GEMINI_API_KEY) {
     chain.push({ label: `gemini:${GEMINI_MODEL}`, call: (m, t, mt, j) => geminiCall(m, t, mt, j) });
   }
   if (GROQ_API_KEY) {
-    // Qwen3-32b — same-family fallback (strong math/logic)
+    // Qwen3-32b — same-family fallback (strong math/logic), separate token bucket from gpt-oss-120b
     chain.push({ label: "groq:qwen/qwen3-32b", call: (m, t, mt, j) => groqCall(m, "qwen/qwen3-32b", t, mt, j, true) });
   }
   if (CEREBRAS_API_KEY) {
-    // Cerebras gpt-oss-120b — high throughput reasoning fallback
+    // Best-effort last resort — card-gated as of Aug 2026, see PROVIDER STATUS.
     chain.push({ label: `cerebras:${CEREBRAS_REASONING_MODEL}`, call: (m, t, mt, j) => cerebrasCall(m, CEREBRAS_REASONING_MODEL, t, mt, j) });
   }
   return chain;
@@ -457,14 +519,15 @@ function getFallbackChain(): ProviderFn[] {
   if (OPENROUTER_API_KEY) {
     chain.push({ label: `openrouter:${OPENROUTER_MODEL}`, call: (m, t, mt, j) => openRouterCall(m, OPENROUTER_MODEL, t, mt, j) });
   }
+  if (GROQ_API_KEY) {
+    chain.push({ label: `groq:${GROQ_MODEL}`, call: (m, t, mt, j) => groqCall(m, GROQ_MODEL, t, mt, j) });
+  }
   if (GEMINI_API_KEY) {
     chain.push({ label: `gemini:${GEMINI_MODEL}`, call: (m, t, mt, j) => geminiCall(m, t, mt, j) });
   }
   if (CEREBRAS_API_KEY) {
+    // Best-effort last resort — card-gated as of Aug 2026, see PROVIDER STATUS.
     chain.push({ label: `cerebras:${CEREBRAS_MODEL}`, call: (m, t, mt, j) => cerebrasCall(m, CEREBRAS_MODEL, t, mt, j) });
-  }
-  if (GROQ_API_KEY) {
-    chain.push({ label: `groq:${GROQ_MODEL}`, call: (m, t, mt, j) => groqCall(m, GROQ_MODEL, t, mt, j) });
   }
   return chain;
 }
@@ -558,4 +621,4 @@ export async function callModelJSON<T>(
       `callModelJSON: failed to parse provider response as JSON. Raw (truncated): ${clean.slice(0, 120)}`
     );
   }
-}
+                             }
