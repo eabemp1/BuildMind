@@ -12,7 +12,7 @@ import { recordActionOutcome } from "@/lib/learning";
 import { invalidateCognitionCache } from "@/lib/founderCognition";
 import { classifyBlocker, runBlockerIntelligencePipeline } from "@/lib/blockerIntelligence";
 import { momentumOnReflect } from "@/lib/momentum";
-import { compareFounderIntelligenceOutcome } from "@/lib/learningLoop";
+import { compareFounderIntelligenceOutcome, getFounderIntelligenceAccuracy } from "@/lib/learningLoop";
 import { markRecommendationObserved } from "@/lib/recommendationLifecycle";
 
 import { z } from "zod";
@@ -64,6 +64,16 @@ interface ReflectActionOutput {
   causality: string;   // "because you said X → tomorrow is Y"
   nextAction: string;  // personalised next concrete action
   identityLine: string; // who they're becoming ("You're someone who executes.")
+  // Set only when this reflection actually resolved a pending Founder
+  // Intelligence prediction — i.e. compareFounderIntelligenceOutcome found
+  // something to score. Omitted (not zeroed) when there was nothing to
+  // compare, so the UI can tell "no signal yet" apart from "confidence
+  // didn't move."
+  confidenceAdjustment?: {
+    before: number; // rolling average_match_score before this reflection, 0-100
+    after: number;  // rolling average_match_score after this reflection, 0-100
+    trend: "up" | "down" | "flat" | "unknown";
+  };
 }
 
 const FALLBACKS: Record<string, ReflectActionOutput> = {
@@ -227,6 +237,9 @@ export async function POST(request: Request) {
     // momentum change instead of guessing at one.
     let momentumBefore: number | undefined;
     let momentumAfter: number | undefined;
+    // Hoisted for the same reason — set only when this reflection actually
+    // resolved a pending Founder Intelligence prediction (see call site below).
+    let confidenceAdjustment: ReflectActionOutput["confidenceAdjustment"];
 
     // If Supabase is wired, pull project context for deeper personalisation
     if (verifiedUserId && projectId && hasAdminEnv()) {
@@ -441,12 +454,31 @@ Target users: ${project.target_users ?? "Not specified"}`;
           .filter((v): v is string => Boolean(v?.trim()))
           .join(" — ")
           .trim();
-        compareFounderIntelligenceOutcome(supabase, {
-          userId: verifiedUserId,
-          taskTitle: todayAction ?? note ?? "",
-          outcome,
-          reflectionText: reflectionEvidenceText,
-        }).catch(() => {});
+        // Awaited (unlike the other fire-and-forget calls below) because the
+        // Reflection Recorded screen shows a real before/after confidence
+        // delta when this reflection resolved a pending prediction — that
+        // requires reading accuracy on both sides of the comparison.
+        try {
+          const accuracyBefore = await getFounderIntelligenceAccuracy(supabase, verifiedUserId);
+          const comparison = await compareFounderIntelligenceOutcome(supabase, {
+            userId: verifiedUserId,
+            taskTitle: todayAction ?? note ?? "",
+            outcome,
+            reflectionText: reflectionEvidenceText,
+          });
+          if (comparison) {
+            // compareFounderIntelligenceOutcome already recomputed and cached
+            // the rolling accuracy as part of resolving this prediction.
+            const accuracyAfter = await getFounderIntelligenceAccuracy(supabase, verifiedUserId);
+            confidenceAdjustment = {
+              before: Math.round(accuracyBefore.average_match_score * 100),
+              after: Math.round(accuracyAfter.average_match_score * 100),
+              trend: accuracyAfter.trend,
+            };
+          }
+        } catch {
+          // Confidence delta is a bonus display, never block the reflection save.
+        }
         markRecommendationObserved(supabase, {
           userId: verifiedUserId,
           taskTitle: todayAction ?? note ?? "",
@@ -563,10 +595,11 @@ ${projectContext}`,
         momentum: momentumBefore !== undefined && momentumAfter !== undefined
           ? { before: momentumBefore, after: momentumAfter }
           : undefined,
+        confidenceAdjustment,
       },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Reflect action failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+    }
