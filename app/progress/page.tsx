@@ -89,7 +89,7 @@ function ProgressContent() {
 
   return (
     <>
-      <div style={{ maxWidth: 1040, margin: "0 auto", padding: "28px 24px 24px" }}>
+      <div style={{ maxWidth: 760, margin: "0 auto", padding: "28px 16px 24px" }}>
         {/* Page header */}
         <div style={{ marginBottom: 24 }}>
           <p style={{
@@ -173,7 +173,7 @@ function ProgressContent() {
       </div>
 
       {/* Tab content */}
-      <div style={{ maxWidth: 1040, margin: "0 auto", padding: "0 24px 32px" }}>
+      <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 16px 24px" }}>
         <AnimatePresence mode="wait">
           <motion.div
             key={activeTab}
