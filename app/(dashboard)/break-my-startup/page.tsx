@@ -603,7 +603,7 @@ export default function BreakMyStartupPage() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 flex flex-col gap-8">
+    <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-6 px-0 py-5 sm:px-6 sm:py-8">
 
       {/* Header */}
       <motion.div
@@ -612,10 +612,11 @@ export default function BreakMyStartupPage() {
         transition={{ duration: 0.2 }}
       >
         <PageHeader
+          eyebrow="Adversarial review"
           title="Break My Startup"
-          subtitle="Run a brutal, honest stress-test on your current project or any idea. No sugarcoating. The goal is to make you stronger, not scare you."
+          subtitle="Find what breaks first before you invest more time. The useful answer is the uncomfortable one."
           action={
-            <span className="inline-flex h-9 items-center gap-2 rounded-[var(--r-xl)] border border-[var(--bm-border)] bg-[var(--bm-bg2)] px-3 text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--bm-red)]">
+            <span className="inline-flex h-8 items-center gap-2 rounded-[var(--r-sm)] border border-[var(--bm-red-bd)] bg-[var(--bm-red-dim)] px-3 font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--bm-red)]">
               <Shield size={15} />
               Stress test
             </span>
@@ -635,7 +636,7 @@ export default function BreakMyStartupPage() {
           >
             {/* Project selector */}
             {!projectsLoading && projects.length > 0 && (
-              <Card className="p-4 flex flex-col gap-3">
+              <Card variant="data" className="flex flex-col gap-3 p-4">
                 <label className="text-xs font-medium text-[var(--bm-text2)] uppercase tracking-widest">
                   Select a Project (optional)
                 </label>
@@ -658,7 +659,7 @@ export default function BreakMyStartupPage() {
                       // ever hit submit. Never force-clear text the founder
                       // typed themselves.
                     }}
-                    className="w-full h-10 rounded-lg pl-3 pr-8 text-sm outline-none appearance-none cursor-pointer"
+                    className="h-10 w-full cursor-pointer appearance-none rounded-[var(--r-sm)] pl-3 pr-8 text-sm outline-none"
                     style={{
                       background: "var(--bm-bg3)",
                       border: "1px solid var(--bm-border2)",
@@ -719,7 +720,7 @@ export default function BreakMyStartupPage() {
                 <button
                   type="button"
                   onClick={() => setExecutionMode((value) => !value)}
-                  className="w-full rounded-lg px-3 py-1.5 text-xs font-semibold sm:w-auto"
+                      className="w-full rounded-[var(--r-sm)] px-3 py-1.5 text-xs font-semibold sm:w-auto"
                   style={{
                     border: "1px solid var(--bm-border)",
                     background: executionMode ? "rgba(92,200,138,0.12)" : "var(--bm-bg3)",
@@ -736,7 +737,7 @@ export default function BreakMyStartupPage() {
                     <button
                       key={area}
                       onClick={() => toggleFocus(area)}
-                      className="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-150"
+                      className="rounded-[var(--r-sm)] border px-3 py-1.5 text-xs font-medium transition-all duration-150"
                       style={{
                         background: active ? "rgba(92,200,138,0.10)" : "var(--bm-bg3)",
                         borderColor: active ? "var(--bm-green-bd)" : "var(--bm-border)",
@@ -776,7 +777,7 @@ export default function BreakMyStartupPage() {
                 {[1, 2, 3].map((i) => (
                   <div
                     key={i}
-                    className="rounded-[var(--r-xl)] p-5 border border-[var(--bm-border)] bg-[var(--bm-bg2)] animate-pulse flex flex-col gap-2"
+                    className="flex flex-col gap-2 rounded-[var(--r-lg)] border border-[var(--bm-border)] bg-[var(--bm-bg2)] p-5 animate-pulse"
                   >
                     <div className="h-4 w-36 rounded-full bg-[var(--bm-bg3)]" />
                     <div className="h-3 w-full rounded-full bg-[var(--bm-bg3)] opacity-70" />
@@ -809,7 +810,7 @@ export default function BreakMyStartupPage() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.35 }}
-            className="flex flex-col gap-5"
+                className="flex flex-col gap-4"
           >
             {/* Overall verdict — visceral, full-width */}
             <motion.div
@@ -817,11 +818,11 @@ export default function BreakMyStartupPage() {
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.4 }}
               style={{
-                borderRadius: "var(--r-xl)",
+                borderRadius: "var(--r-lg)",
                 padding: "clamp(16px, 4vw, 24px)",
                 background: "var(--bm-bg2)",
                 border: `1px solid ${overallColor(result.overallRisk)}40`,
-                boxShadow: `0 0 32px ${overallColor(result.overallRisk)}18`,
+                boxShadow: "none",
               }}
             >
               <div style={{ display: "flex", alignItems: "flex-start", gap: 20, flexWrap: "wrap" }}>
@@ -838,8 +839,8 @@ export default function BreakMyStartupPage() {
                   />
                 )}
                 <div style={{ flex: "1 1 220px", minWidth: 0 }}>
-                  <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: "var(--bm-text3)", letterSpacing: "0.07em", marginBottom: 10 }}>
-                    Survival score · Moat strength · Market timing
+                    <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: "var(--bm-text3)", letterSpacing: "0.07em", marginBottom: 10, textTransform: "uppercase" }}>
+                    Stress-test verdict
                   </div>
                   <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: "var(--bm-text4)", letterSpacing: "0.06em", marginBottom: 12 }}>
                     The uncomfortable ones are the useful ones.
@@ -937,8 +938,8 @@ export default function BreakMyStartupPage() {
 
             {/* Risk breakdown cards */}
             {result.agents && result.agents.length > 0 && (
-              <Card className="p-4 flex flex-col gap-3">
-                <h3 className="text-sm font-semibold text-[var(--bm-text)]">Five-Agent Analysis</h3>
+            <Card variant="data" className="flex flex-col gap-3 p-4">
+                <h3 className="font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--bm-text3)]">Analysis lenses</h3>
                 <div className="grid gap-2 sm:grid-cols-2">
                   {result.agents.map((agent) => (
                     <div key={agent.name} className="rounded-lg p-3" style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)" }}>
@@ -961,8 +962,8 @@ export default function BreakMyStartupPage() {
             )}
 
             {result.executionPlan && (
-              <Card className="p-4 flex flex-col gap-3">
-                <h3 className="text-sm font-semibold text-[var(--bm-text)]">Focus Mode Plan</h3>
+              <Card variant="data" className="flex flex-col gap-3 p-4">
+                <h3 className="font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--bm-text3)]">Execution plan</h3>
                 <div className="grid gap-3 sm:grid-cols-3">
                   {[
                     ["MVP Roadmap", result.executionPlan.mvp_roadmap],
@@ -981,7 +982,7 @@ export default function BreakMyStartupPage() {
             )}
 
             {result.reflexionAction && (
-              <Card className="p-4 flex flex-col gap-3">
+              <Card variant="insight" className="flex flex-col gap-3 p-4">
                 <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                   <h3 className="text-sm font-semibold text-[var(--bm-text)]">Reflexion Loop</h3>
                   {typeof result.reflexionAction.confidence === "number" && (
@@ -1089,7 +1090,7 @@ export default function BreakMyStartupPage() {
                 Pivot Engine (lib/agents generatePivots) on every run, but
                 previously dropped before it reached this page. */}
             {result.pivots && result.pivots.length > 0 && (
-              <Card className="p-4 flex flex-col gap-3">
+              <Card variant="data" className="flex flex-col gap-3 p-4">
                 <div className="flex items-center gap-2">
                   <RefreshCw size={13} style={{ color: "var(--bm-accent)" }} />
                   <h3 className="text-sm font-semibold text-[var(--bm-text)]">
