@@ -40,6 +40,10 @@ import { WhatChangedCard } from "./components/WhatChangedCard";
 import { RisksGapsCard } from "./components/RisksGapsCard";
 import { EvidenceDisclosure } from "./components/EvidenceDisclosure";
 import { RiskInterrupt } from "./components/RiskInterrupt";
+import { ChurnRiskInterrupt } from "./components/ChurnRiskInterrupt";
+import { SignalCaptureForm } from "./components/SignalCaptureForm";
+import { SignalHistoryList } from "./components/SignalHistoryList";
+import { shouldTriggerRiskInterrupt, type ChurnRiskAssessment } from "@/lib/riskSignals";
 import { SignalList } from "./components/SignalList";
 import { DecisionBrief } from "./components/DecisionBrief";
 import { ContextAlignmentCard } from "./components/ContextAlignmentCard";
@@ -423,6 +427,7 @@ function TodayContent() {
   const project = useMemo(() => selectActiveProject(summaries, activeProjectId), [summaries, activeProjectId]);
   const [copied, setCopied] = useState(false);
   const [shared, setShared] = useState(false);
+  const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
   const [streak, setStreak] = useState(0);
@@ -493,8 +498,15 @@ function TodayContent() {
   const [morningBriefing, setMorningBriefing] = useState<MorningBriefing | null>(null);
   const [showBriefingModal, setShowBriefingModal] = useState(false);
 
-  // Recovery Mode — shown when founder has 3+ days of momentum decay
+  // Recovery Mode — shown when founder has 3+ days of momentum decay,
+  // or when a churn-risk signal cluster crosses shouldTriggerRiskInterrupt()
+  // (lib/riskSignals.ts). recoveryActive gates RecoveryModeCard (the
+  // ongoing active state); riskAssessment + the dismiss flag gate
+  // ChurnRiskInterrupt (the one-time detection prompt).
   const [recoveryActive, setRecoveryActive] = useState(false);
+  const [riskAssessment, setRiskAssessment] = useState<ChurnRiskAssessment | null>(null);
+  const [riskInterruptDismissed, setRiskInterruptDismissed] = useState(false);
+  const [signalHistoryRefreshKey, setSignalHistoryRefreshKey] = useState(0);
   const [blockerInsight, setBlockerInsight] = useState<{
     id: string; title: string; body: string; action_redirect: string | null;
   } | null>(null);
@@ -600,6 +612,22 @@ function TodayContent() {
       : null;
     if (savedCogLoad) { setCogLoad(savedCogLoad); setCogLoadSaved(true); }
   }, []);
+
+  // ── Churn risk check — project-scoped, so it re-runs when the active
+  // project changes. Drives ChurnRiskInterrupt (see lib/riskSignals.ts). ──
+  useEffect(() => {
+    if (!project?.id) { setRiskAssessment(null); return; }
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const dismissedKey = `bm_risk_interrupt_dismissed_${project.id}_${todayKey}`;
+    setRiskInterruptDismissed(storage.get(dismissedKey) === "1");
+
+    fetch(`/api/risk-signals?projectId=${encodeURIComponent(project.id)}`, { cache: "no-store" })
+      .then(r => r.ok ? r.json() : null)
+      .then((d: { ok?: boolean; assessment?: ChurnRiskAssessment } | null) => {
+        if (d?.ok && d.assessment) setRiskAssessment(d.assessment);
+      })
+      .catch(() => {});
+  }, [project?.id]);
 
   // Founder archetype — isolated fetch, doesn't gate or block anything else on this page.
   useEffect(() => {
@@ -1573,6 +1601,48 @@ function TodayContent() {
           {summaries.length > 0 ? "Choose a project" : "Create a plan"}
         </a>
       </div>
+    );
+  }
+
+  // ── Recovery Mode active — takes priority over everything else on this
+  // page (milestone breaks included): "Normal recommendations paused
+  // until this is resolved" is the whole point, matching the Figma copy.
+  // Covers both triggers (inactivity decay + churn risk) — see
+  // components/RecoveryModeCard.tsx for how it tells them apart. ──
+  if (recoveryActive) {
+    return (
+      <div style={{ maxWidth: 820, margin: "0 auto", padding: "24px 24px" }}>
+        <RecoveryModeCard
+          onComplete={() => setRecoveryActive(false)}
+          onDismiss={() => setRecoveryActive(false)}
+        />
+      </div>
+    );
+  }
+
+  // ── Risk Interrupt — the detection moment for a churn-risk signal
+  // cluster (lib/riskSignals.ts). Shown once per project per day unless
+  // dismissed; choosing "Begin recovery" activates Recovery Mode above. ──
+  if (project?.id && riskAssessment && shouldTriggerRiskInterrupt(riskAssessment) && !riskInterruptDismissed) {
+    const dismissedKey = `bm_risk_interrupt_dismissed_${project.id}_${new Date().toISOString().slice(0, 10)}`;
+    return (
+      <ChurnRiskInterrupt
+        assessment={riskAssessment}
+        onBeginRecovery={async () => {
+          try {
+            const res = await fetch("/api/recovery-mode", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ trigger: "risk", projectId: project.id }),
+            });
+            if (res.ok) setRecoveryActive(true);
+          } catch {}
+        }}
+        onDismiss={() => {
+          storage.set(dismissedKey, "1");
+          setRiskInterruptDismissed(true);
+        }}
+      />
     );
   }
 
@@ -2592,7 +2662,7 @@ function TodayContent() {
       </>
       )}
 
-      {/* ── Destinations ── */}
+      {/* ── Choose channel & audience ── */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}
         style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-3xl)", padding: isMobile ? "var(--space-5)" : "var(--space-5) var(--space-6)", marginBottom: "var(--space-4)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-1)" }}>
@@ -2602,51 +2672,84 @@ function TodayContent() {
             display: "flex", alignItems: "center", justifyContent: "center",
             fontSize: "var(--text-xs)", fontWeight: 800, flexShrink: 0,
           }}>3</div>
-          <div style={{ fontSize: "var(--text-sm)", fontWeight: 600, color: "var(--bm-text2)" }}>Send it — pick one channel below</div>
+          <div style={{ fontSize: "var(--text-sm)", fontWeight: 600, color: "var(--bm-text2)" }}>Choose channel &amp; audience</div>
         </div>
         <p style={{ fontSize: "var(--text-xs)", color: "var(--bm-text3)", marginBottom: "var(--space-4)", lineHeight: "var(--leading-normal)", paddingLeft: 30 }}>
           {targetUsers
             ? <>Reach your <strong style={{ color: "var(--bm-text3)", fontWeight: 500 }}>{targetUsers}</strong> directly. At least 3 people. Done counts even if they don't reply.</>
             : "At least 3 people. Done counts as done even if they don't reply. Replies are a bonus."}
         </p>
-        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(4, 1fr)", gap: "var(--space-2)" }}>
-          {destinations.map(d => {
-            // "Email personally" has no compose URL in DESTINATIONS (no
-            // fixed recipient to link to), but we do have real content —
-            // the same draft message already shown above — so it gets a
-            // real mailto: instead of sitting inert. Everything else
-            // without a url (Call directly, WhatsApp, LinkedIn DM, Loom,
-            // Text 3 people) has no real target data behind it (no phone
-            // number, no profile URL) — those stay as non-interactive
-            // labels rather than linking to nothing or a fabricated target.
+        {(() => {
+          // Same honesty constraint as the tile grid this replaces: only
+          // "Email personally" gets a synthesized mailto: (real draft
+          // content behind it). Everything else either has a real url in
+          // DESTINATIONS or has no real target data (no phone number, no
+          // profile URL) — those stay selectable but inert, same as before,
+          // never a fabricated link or a fabricated recipient count.
+          const channels = destinations.map(d => {
             const isEmail = d.label === "Email personally";
             const mailHref = isEmail
               ? `mailto:?subject=${encodeURIComponent(project?.name ? `Quick question about ${project.name}` : "Quick question")}&body=${encodeURIComponent(draftMessage ?? actionData?.message ?? "")}`
               : undefined;
             const href = d.url ?? mailHref;
-            const inert = !href;
-            return (
+            return { ...d, href, inert: !href };
+          });
+          const defaultChannel = channels.find(c => !c.inert) ?? channels[0];
+          const active = channels.find(c => c.label === selectedChannel) ?? defaultChannel;
+
+          return (
+            <>
+              <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap", marginBottom: "var(--space-4)" }}>
+                {channels.map(c => {
+                  const isActive = active?.label === c.label;
+                  return (
+                    <button
+                      key={c.label}
+                      type="button"
+                      onClick={() => setSelectedChannel(c.label)}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 8,
+                        padding: "8px 14px", borderRadius: "var(--r-full, 999px)",
+                        border: `1px solid ${isActive ? "var(--bm-accent-bd)" : "var(--bm-border2)"}`,
+                        background: isActive ? "var(--bm-accent-dim)" : "var(--bm-bg3)",
+                        cursor: "pointer", fontFamily: "inherit", textAlign: "left",
+                      }}
+                    >
+                      <span aria-hidden style={{
+                        width: 7, height: 7, borderRadius: "50%", flexShrink: 0,
+                        background: isActive ? "var(--bm-accent)" : "var(--bm-border3)",
+                      }} />
+                      <span>
+                        <span style={{ display: "block", fontSize: "var(--text-xs)", fontWeight: 600, color: isActive ? "var(--bm-text)" : "var(--bm-text2)" }}>
+                          {c.icon} {c.label}
+                        </span>
+                        <span style={{ display: "block", fontSize: 10, color: "var(--bm-text4)", marginTop: 1 }}>
+                          {c.inert ? "No linked destination — do this one manually" : targetUsers ? `Reach ${targetUsers}` : "Opens in a new tab"}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
               <a
-                key={d.label}
-                href={href}
-                target={href ? "_blank" : undefined}
-                rel={href ? "noopener noreferrer" : undefined}
-                className="bm-tile"
-                onClick={inert ? (e) => e.preventDefault() : undefined}
+                href={active?.href}
+                target={active?.href ? "_blank" : undefined}
+                rel={active?.href ? "noopener noreferrer" : undefined}
+                onClick={!active?.href ? (e) => e.preventDefault() : undefined}
                 style={{
-                  textDecoration: "none",
-                  padding: isMobile ? "var(--space-4) var(--space-2)" : "var(--space-3) var(--space-2)",
-                  opacity: inert ? 0.55 : 1,
-                  cursor: inert ? "default" : "pointer",
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  padding: "10px 20px", borderRadius: "var(--r-lg)",
+                  background: active?.href ? "var(--bm-accent)" : "var(--bm-bg4)",
+                  color: active?.href ? "var(--bm-bg)" : "var(--bm-text4)",
+                  fontSize: "var(--text-sm)", fontWeight: 700, textDecoration: "none",
+                  cursor: active?.href ? "pointer" : "default",
                 }}
-                title={inert ? "No linked destination yet — do this one manually" : undefined}
               >
-                <span style={{ fontSize: "var(--text-2xl)" }}>{d.icon}</span>
-                <span style={{ fontSize: "var(--text-xs)", color: "var(--bm-text3)", textAlign: "center", lineHeight: "var(--leading-tight)" }}>{d.label}</span>
+                {active ? `Send via ${active.label}` : "Send"}
               </a>
-            );
-          })}
-        </div>
+            </>
+          );
+        })()}
       </motion.div>
 
       {/* ── Check-in ── */}
@@ -2892,6 +2995,27 @@ function TodayContent() {
               .catch((err) => console.error("Failed to persist briefing dismissal:", err));
           }}
         />
+      )}
+      {project?.id && !recoveryActive && (
+        <div style={{ maxWidth: 820, margin: "0 auto", padding: "0 24px 24px" }}>
+          <SignalCaptureForm
+            projectId={project.id}
+            onLogged={() => {
+              fetch(`/api/risk-signals?projectId=${encodeURIComponent(project.id)}`, { cache: "no-store" })
+                .then(r => r.ok ? r.json() : null)
+                .then((d: { ok?: boolean; assessment?: ChurnRiskAssessment } | null) => {
+                  if (d?.ok && d.assessment) setRiskAssessment(d.assessment);
+                })
+                .catch(() => {});
+              setSignalHistoryRefreshKey((k) => k + 1);
+            }}
+          />
+          <SignalHistoryList
+            projectId={project.id}
+            refreshKey={signalHistoryRefreshKey}
+            onAssessmentChange={setRiskAssessment}
+          />
+        </div>
       )}
     </div>
   );
