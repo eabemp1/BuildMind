@@ -602,4 +602,4 @@ ${projectContext}`,
     const message = error instanceof Error ? error.message : "Reflect action failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-    }
+}
