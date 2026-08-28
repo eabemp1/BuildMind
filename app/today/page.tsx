@@ -504,6 +504,7 @@ function TodayContent() {
   // ongoing active state); riskAssessment + the dismiss flag gate
   // ChurnRiskInterrupt (the one-time detection prompt).
   const [recoveryActive, setRecoveryActive] = useState(false);
+  const [momentumScoreForTicker, setMomentumScoreForTicker] = useState<number | null>(null);
   const [riskAssessment, setRiskAssessment] = useState<ChurnRiskAssessment | null>(null);
   const [riskInterruptDismissed, setRiskInterruptDismissed] = useState(false);
   const [signalHistoryRefreshKey, setSignalHistoryRefreshKey] = useState(0);
@@ -597,6 +598,7 @@ function TodayContent() {
       .then(r => r.ok ? r.json() : null)
       .then((d: { recoveryActive?: boolean; momentumScore?: number; daysInactive?: number } | null) => {
         if (d?.recoveryActive) setRecoveryActive(true);
+        if (typeof d?.momentumScore === "number") setMomentumScoreForTicker(d.momentumScore);
         // Decay banner: if momentum < 50 and days_inactive > 0
         if (d && !d.recoveryActive && typeof d.momentumScore === "number" && d.momentumScore < 50) {
           setDecayDrop(50 - d.momentumScore);
@@ -1937,6 +1939,28 @@ function TodayContent() {
           </div>
         </div>
 
+        {(streak > 0 || momentumScoreForTicker !== null || actionData?.action) && (
+          <div style={{
+            display: "flex", flexWrap: "wrap", gap: "6px 16px", alignItems: "center",
+            padding: "8px 0 14px", fontSize: 11, color: "var(--bm-text3)",
+            fontFamily: "'DM Mono', monospace",
+          }}>
+            {streak > 0 && (
+              <span>🔥 {streak} day{streak === 1 ? "" : "s"} streak</span>
+            )}
+            {momentumScoreForTicker !== null && (
+              <span style={{ color: momentumScoreForTicker >= 50 ? "var(--bm-green)" : "var(--bm-amber, #F0B429)" }}>
+                Momentum {momentumScoreForTicker}%
+              </span>
+            )}
+            {actionData?.action && (
+              <span style={{ color: "var(--bm-text4)" }}>
+                Focus: {sanitizeOutput(actionData.action).slice(0, 60)}{actionData.action.length > 60 ? "…" : ""}
+              </span>
+            )}
+          </div>
+        )}
+
         <div style={{ paddingBottom: 18, borderBottom: "1px solid var(--bm-border)" }}>
           <p
             style={{
@@ -2590,34 +2614,35 @@ function TodayContent() {
             </div>
           </div>
 
-          {/* Why — with reflexion rationale */}
-          <div style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-xl)", padding: isMobile ? "var(--space-4)" : "var(--space-4) var(--space-4)", marginBottom: "var(--space-5)" }}>
-            <div style={{ fontSize: "var(--text-xs)", fontWeight: 400, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "var(--space-2)", display: "flex", alignItems: "center", gap: 5, fontFamily: "'DM Mono', monospace" }}>
-              <Brain size={10} color="var(--bm-text3)" /> Strategic rationale
-            </div>
-            <p style={{ fontSize: "var(--text-md)", color: "var(--bm-text2)", margin: "0 0 var(--space-3)", lineHeight: "var(--leading-relaxed)" }}>
-              {sanitizeOutput(actionData.reflexion?.rationale ?? actionData.why)}
-            </p>
-            {actionData.reflexion?.lastReflectionUsed && (
-              <div style={{ fontSize: "var(--text-xs)", color: "var(--bm-text3)", borderTop: "1px solid var(--bm-border)", paddingTop: "var(--space-3)" }}>
-                Your yesterday's reflection shaped this recommendation.
+          {/* Supplementary context — the rationale text itself now lives
+              only in DecisionBrief's "Why now" section above (line ~2533);
+              this used to repeat the identical paragraph a second time
+              under "Strategic rationale" right below it. Kept here: the
+              genuinely additional bits that aren't in DecisionBrief. */}
+          {(actionData.reflexion?.lastReflectionUsed || actionData.reflexion?.wasHardFallback || uiMode === "pro") && (
+            <div style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-xl)", padding: isMobile ? "var(--space-4)" : "var(--space-4) var(--space-4)", marginBottom: "var(--space-5)" }}>
+              <div style={{ fontSize: "var(--text-xs)", fontWeight: 400, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "var(--space-2)", display: "flex", alignItems: "center", gap: 5, fontFamily: "'DM Mono', monospace" }}>
+                <Brain size={10} color="var(--bm-text3)" /> Context
               </div>
-            )}
-            {actionData.reflexion?.wasHardFallback && (
-              <div style={{ fontSize: "var(--text-xs)", color: "var(--bm-text3)", borderTop: "1px solid var(--bm-border)", paddingTop: "var(--space-3)", display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-                <AlertCircle size={11} color="var(--bm-text3)" />
-                Today's AI draft didn't meet our concreteness bar, so this is a proven fallback task instead — still real, just not freshly composed.
-              </div>
-            )}
-            {uiMode === "pro" ? (
-              <div style={{ marginTop: "var(--space-3)" }}>
+              {actionData.reflexion?.lastReflectionUsed && (
+                <div style={{ fontSize: "var(--text-xs)", color: "var(--bm-text3)", marginBottom: "var(--space-2)" }}>
+                  Your yesterday's reflection shaped this recommendation.
+                </div>
+              )}
+              {actionData.reflexion?.wasHardFallback && (
+                <div style={{ fontSize: "var(--text-xs)", color: "var(--bm-text3)", marginBottom: "var(--space-2)", display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+                  <AlertCircle size={11} color="var(--bm-text3)" />
+                  Today's AI draft didn't meet our concreteness bar, so this is a proven fallback task instead — still real, just not freshly composed.
+                </div>
+              )}
+              {uiMode === "pro" ? (
                 <EvidenceDisclosure
                   expectedEvidence={actionData.intelligence?.decision?.top_candidate?.expected_evidence}
                   uncertainty={actionData.isLowConfidence ? "This recommendation is intended to gather a concrete signal before stronger guidance is given." : undefined}
                 />
-              </div>
-            ) : null}
-          </div>
+              ) : null}
+            </div>
+          )}
 
           {/* ── Message template — pre-filled with real project values ── */}
           <div ref={executionScriptRef} style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: "var(--r-xl)", padding: isMobile ? "var(--space-4)" : "var(--space-4) var(--space-4)" }}>
@@ -3027,4 +3052,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-        }
+    }
