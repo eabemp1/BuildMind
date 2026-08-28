@@ -16,22 +16,54 @@ export interface ResetMission {
   estimatedMinutes: number;
 }
 
-interface Props {
-  onComplete?: (newScore: number) => void;
+export interface RiskRecoveryMission {
+  title: string;
+  contextParagraph: string;
+  requiredSteps: string[];
+  churnProbability: number;
+  burnAtRisk: number;
+  evidence: { label: string; createdAt: string }[];
 }
 
-function RecoveryModeCardInner({ onComplete }: Props) {
+interface Props {
+  onComplete?: (newScore: number) => void;
+  onDismiss?: () => void;
+}
+
+function RecoveryModeCardInner({ onComplete, onDismiss }: Props) {
   const router = useRouter();
   const [mission, setMission] = useState<ResetMission | null>(null);
+  const [riskMission, setRiskMission] = useState<RiskRecoveryMission | null>(null);
+  const [trigger, setTrigger] = useState<"inactivity" | "risk" | null>(null);
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState(false);
+  const [dismissing, setDismissing] = useState(false);
   const [done, setDone] = useState(false);
   const [daysInactive, setDaysInactive] = useState(3);
 
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch("/api/recovery-mode", { method: "POST" });
+        // Check what's already active first — a risk-triggered recovery
+        // already has its mission persisted (see /api/risk-signals +
+        // /api/recovery-mode POST with trigger:"risk"). POSTing blind here
+        // would always take the inactivity branch and silently overwrite
+        // that churn mission with a freshly generated, unrelated one.
+        const statusRes = await fetch("/api/recovery-mode", { cache: "no-store" });
+        const status = statusRes.ok ? await statusRes.json() : null;
+
+        if (status?.recoveryTrigger === "risk" && status?.recoveryMission) {
+          setTrigger("risk");
+          setRiskMission(status.recoveryMission);
+          setLoading(false);
+          return;
+        }
+
+        // Inactivity path (or first activation): the Reset Mission text
+        // isn't persisted, so this POST both activates Recovery Mode and
+        // generates the mission in one call — matches original behavior.
+        setTrigger("inactivity");
+        const res = await fetch("/api/recovery-mode", { method: "POST", body: JSON.stringify({}) });
         if (res.ok) {
           const data = await res.json();
           setMission(data.resetMission);
@@ -45,7 +77,7 @@ function RecoveryModeCardInner({ onComplete }: Props) {
   const handleComplete = async () => {
     setCompleting(true);
     try {
-      const res = await fetch("/api/recovery-mode", { method: "PATCH" });
+      const res = await fetch("/api/recovery-mode", { method: "PATCH", body: JSON.stringify({ action: "complete" }) });
       if (res.ok) {
         const { momentumScore } = await res.json();
         setDone(true);
@@ -53,6 +85,15 @@ function RecoveryModeCardInner({ onComplete }: Props) {
       }
     } catch {}
     setCompleting(false);
+  };
+
+  const handleDismiss = async () => {
+    setDismissing(true);
+    try {
+      const res = await fetch("/api/recovery-mode", { method: "PATCH", body: JSON.stringify({ action: "dismiss" }) });
+      if (res.ok) onDismiss?.();
+    } catch {}
+    setDismissing(false);
   };
 
   // ── Completion state — the product's most important emotional moment ─────────
@@ -85,6 +126,112 @@ function RecoveryModeCardInner({ onComplete }: Props) {
         <div style={{ fontSize: 13, color: "var(--bm-text3)", lineHeight: 1.6, maxWidth: 280, margin: "0 auto" }}>
           That&apos;s the hardest part — starting again. Full mode resumes tomorrow.
           Momentum +4.
+        </div>
+      </motion.div>
+    );
+  }
+
+  // ── Risk-triggered recovery — a churn mission built from the founder's
+  // own logged signals (lib/riskSignals.ts), not a generated Reset Mission. ──
+  if (trigger === "risk" && riskMission) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35 }}
+        style={{ marginBottom: 16 }}
+      >
+        <div style={{
+          background: "var(--bm-red-dim, rgba(239,68,68,0.08))",
+          border: "1px solid var(--bm-red-bd)",
+          borderRadius: "14px 14px 0 0",
+          padding: "16px 20px",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--bm-red)", marginBottom: 6, fontWeight: 700 }}>
+            <span className="bm-status-dot" style={{ background: "var(--bm-red)", marginTop: 0 }} />
+            Recovery mode active · Normal recommendations paused
+          </div>
+          <div style={{ fontSize: 15, color: "var(--bm-text)", fontWeight: 600, lineHeight: 1.4 }}>
+            {sanitizeOutput(riskMission.title)}
+          </div>
+        </div>
+        <div style={{
+          background: "var(--bm-bg2)",
+          border: "1px solid var(--bm-border)",
+          borderTop: "none",
+          borderRadius: "0 0 14px 14px",
+          padding: "20px 20px",
+        }}>
+          <div style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--bm-text4)", marginBottom: 8, fontWeight: 700 }}>
+            Context &amp; burn impact
+          </div>
+          <p style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.6, marginBottom: 16 }}>
+            {sanitizeOutput(riskMission.contextParagraph)}
+          </p>
+
+          <div style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--bm-text4)", marginBottom: 8, fontWeight: 700 }}>
+            Required intervention steps
+          </div>
+          <ol style={{ margin: "0 0 20px", padding: 0, listStyle: "none" }}>
+            {riskMission.requiredSteps.map((step, i) => (
+              <li key={i} style={{ display: "flex", gap: 8, fontSize: 13, color: "var(--bm-text2)", marginBottom: 8, lineHeight: 1.5 }}>
+                <span style={{ color: "var(--bm-text4)", fontFamily: "'DM Mono', monospace", fontSize: 12 }}>[{i + 1}]</span>
+                {sanitizeOutput(step)}
+              </li>
+            ))}
+          </ol>
+
+          {riskMission.evidence.length > 0 && (
+            <div style={{ marginBottom: 20, padding: "10px 12px", background: "var(--bm-bg3)", borderRadius: 8 }}>
+              <div style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--bm-text4)", marginBottom: 6, fontWeight: 700 }}>
+                Recovery evidence
+              </div>
+              {riskMission.evidence.map((e, i) => (
+                <div key={i} style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.7, fontFamily: "'DM Mono', monospace" }}>
+                  {new Date(e.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · {sanitizeOutput(e.label)}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 8 }}>
+            <motion.button
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={handleComplete}
+              disabled={completing}
+              style={{
+                flex: 1,
+                padding: "15px 0",
+                borderRadius: 12,
+                border: "none",
+                background: completing ? "rgba(240,180,41,0.3)" : "var(--bm-accent)",
+                color: "#000",
+                fontWeight: 700,
+                fontSize: 15,
+                cursor: completing ? "wait" : "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              {completing ? "Saving…" : "Mark resolved"}
+            </motion.button>
+            <button
+              onClick={handleDismiss}
+              disabled={dismissing}
+              style={{
+                padding: "15px 18px",
+                borderRadius: 12,
+                border: "1px solid var(--bm-border2)",
+                background: "none",
+                color: "var(--bm-text3)",
+                fontSize: 14,
+                cursor: dismissing ? "wait" : "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              Dismiss
+            </button>
+          </div>
         </div>
       </motion.div>
     );
@@ -206,10 +353,10 @@ function RecoveryModeCardInner({ onComplete }: Props) {
   );
 }
 
-export default function RecoveryModeCard({ onComplete }: Props) {
+export default function RecoveryModeCard({ onComplete, onDismiss }: Props) {
   return (
     <AIErrorBoundary feature="Recovery Mode">
-      <RecoveryModeCardInner onComplete={onComplete} />
+      <RecoveryModeCardInner onComplete={onComplete} onDismiss={onDismiss} />
     </AIErrorBoundary>
   );
 }
