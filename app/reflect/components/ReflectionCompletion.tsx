@@ -1,10 +1,455 @@
 "use client";
 
-import { Brain, CheckCircle2, TrendingUp, TrendingDown, Minus } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { motion, AnimatePresence } from "framer-motion";
+import { updateAchievementStats, checkAndUnlockAchievements, getAchievementStats } from "@/lib/achievements";
+import { incrementDailyStreak, getStoredStreak } from "@/lib/plan";
+import { notifyStreakMilestone } from "@/lib/notifications";
+import { trackFunnelStep } from "@/lib/onboarding-analytics";
+import { ChevronRight, Flame, Brain, ArrowRight, X } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
+import { storage } from "@/lib/storage";
+import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
+import { broadcastTabEvent } from "@/lib/tabSync";
+import TestimonialModal, {
+  shouldShowTestimonialModal,
+  markTestimonialAsked,
+  type TestimonialSource,
+} from "@/components/TestimonialModal";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { sanitizeOutput } from "@/lib/sanitizeOutput";
+import ReflectionCelebration from "@/components/ReflectionCelebration";
+import { ReflectionField } from "./components/ReflectionField";
+import { ConfidenceSelector } from "./components/ConfidenceSelector";
+import { OutcomePicker, type ReflectionOutcome } from "./components/OutcomePicker";
+import { ReflectionCompletion } from "./components/ReflectionCompletion";
 
-export function ReflectionCompletion({ witnessed, causality, nextAction, confidenceAdjustment, onToday, onOverview }: { witnessed?: string; causality?: string; nextAction: string; confidenceAdjustment?: { before: number; after: number; trend: "up" | "down" | "flat" | "unknown" }; onToday: () => void; onOverview: () => void }) {
-  const trendIcon = confidenceAdjustment?.trend === "up" ? <TrendingUp size={11} /> : confidenceAdjustment?.trend === "down" ? <TrendingDown size={11} /> : <Minus size={11} />;
-  return <div className="mx-auto max-w-[560px] px-3 py-8 text-center sm:px-6 sm:py-10"><div className="mx-auto grid size-14 place-items-center rounded-full border border-[var(--bm-green-bd)] bg-[var(--bm-green-dim)]"><CheckCircle2 size={24} className="text-[var(--bm-green)]" /></div><p className="mt-4 font-mono text-[10px] font-medium uppercase tracking-[0.1em] text-[var(--bm-text3)]">Learning captured</p><h2 className="mt-1 text-[22px] font-bold text-[var(--bm-text)]">Reflection saved</h2><p className="mt-2 text-[13px] leading-relaxed text-[var(--bm-text3)]">Tomorrow&apos;s decision will use what you learned today.</p><div className="mt-6 space-y-3 text-left">{witnessed ? <Card variant="insight" className="rounded-[var(--r-xl)] p-4 text-sm leading-relaxed text-[var(--bm-text)]">{witnessed}</Card> : null}{confidenceAdjustment ? <Card className="rounded-[var(--r-xl)] p-4"><p className="font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--bm-intel)]">Confidence adjustment</p><div className="mt-2 flex items-baseline gap-2"><span className="text-lg font-bold text-[var(--bm-text2)]">{confidenceAdjustment.before}%</span><span className="text-[var(--bm-text4)]">→</span><span className="text-lg font-bold text-[var(--bm-text)]">{confidenceAdjustment.after}%</span><span className="ml-1 flex items-center gap-1 text-[11px] font-medium text-[var(--bm-text3)]">{trendIcon}{confidenceAdjustment.trend === "unknown" ? "" : confidenceAdjustment.trend}</span></div><p className="mt-2 text-[12px] leading-relaxed text-[var(--bm-text3)]">This reflection resolved a pending prediction — BuildMind's rolling accuracy for what it recommends you updated to match.</p></Card> : null}{causality ? <Card variant="insight" className="rounded-[var(--r-xl)] p-4"><p className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--bm-intel)]"><Brain size={11} /> What changes next</p><p className="mt-2 text-sm leading-relaxed text-[var(--bm-text2)]">{causality}</p></Card> : null}<Card className="rounded-[var(--r-xl)] p-4"><p className="font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--bm-text3)]">Tomorrow&apos;s focus</p><p className="mt-2 text-sm leading-relaxed text-[var(--bm-text2)]">{nextAction}</p></Card></div><div className="mt-5 flex flex-col gap-2 sm:flex-row"><Button variant="secondary" fullWidth onClick={onOverview}>Back to dashboard</Button><Button fullWidth onClick={onToday}>Back to Today</Button></div></div>;
+type Outcome = ReflectionOutcome;
+type ReflectionHistoryEntry = {
+  date: number;
+  outcome: string;
+  note: string;
+  confidence: number;
+  causality: string;
+};
+
+const OUTCOME_CHIPS: { id: Outcome; label: string; sublabel: string; color: string; bg: string; border: string; icon: string }[] = [
+  { id: "completed", label: "Nailed it",         sublabel: "Made real progress",  color: "var(--bm-green)", bg: "var(--bm-accent-dim)",   border: "var(--bm-accent-bd)",         icon: "✓" },
+  { id: "partial",   label: "Partly done",       sublabel: "Made some progress",  color: "var(--bm-amber)", bg: "rgba(232,160,32,0.08)",  border: "rgba(232,160,32,0.22)",       icon: "◐" },
+  { id: "blocked",   label: "Got blocked",       sublabel: "Hit a roadblock",     color: "var(--bm-red)",   bg: "rgba(224,85,85,0.08)",   border: "rgba(224,85,85,0.22)",        icon: "✕" },
+  { id: "learned",   label: "Learned something", sublabel: "New insight",         color: "#A78BFA",         bg: "rgba(167,139,250,0.08)", border: "rgba(167,139,250,0.22)",      icon: "↯" },
+];
+
+const CONFIDENCE_LABELS = ["", "Lost", "Uncertain", "Steady", "Confident", "Unstoppable"];
+const CONFIDENCE_COLORS = ["", "var(--bm-red)", "var(--bm-amber)", "var(--bm-text2)", "var(--bm-teal)", "var(--bm-accent)"];
+
+function buildFallbackCausality(o: Outcome, n: string, c: number): string {
+  if (o === "completed" && c >= 4) return "You executed with high confidence → tomorrow builds on that momentum and goes one level deeper.";
+  if (o === "completed") return "You got it done → that's the baseline. Tomorrow we sharpen the approach.";
+  if (o === "partial") return "Partial progress is still progress → tomorrow the focus is removing the last blocker.";
+  if (o === "blocked") return n ? `Blocked by: "${n}" → tomorrow the first task is removing this specific obstacle before anything else.` : "You hit a wall → tomorrow starts by naming and removing the obstacle specifically.";
+  return "You gained an insight → tomorrow we apply it. Knowledge without action is just trivia.";
+}
+
+function buildFallbackWitness(o: Outcome, whatTried: string): string {
+  const specific = whatTried?.trim();
+  if (o === "completed") return specific ? `You said you'd try "${specific.slice(0, 60)}" — and you actually did it today.` : "You said you'd do it, and you did — on a day nobody was checking but you.";
+  if (o === "partial") return "You showed up and moved it forward, even without finishing — that's still real progress logged.";
+  if (o === "blocked") return "You hit a wall today and told the system instead of pretending it didn't happen. That matters.";
+  return "Today wasn't a shipped feature, but you're leaving it with something you didn't have this morning.";
+}
+
+export default function ReflectPage() {
+  const router = useRouter();
+  const [outcome, setOutcome] = useState<Outcome | null>(null);
+  // FIX: outcome used to be freely re-pickable here even when it arrived
+  // pre-filled from Today's check-in — but by the time a founder reaches
+  // this page, task-complete has already run the full momentum/streak/XP/
+  // pattern-detection pipeline for whatever outcome they tapped on Today.
+  // Letting them silently pick a different one here only changed the task's
+  // stored status, leaving those stats permanently mismatched with no
+  // reconciliation. Lock the choice instead — matches how the reward was
+  // actually calculated.
+  const [outcomeLocked, setOutcomeLocked] = useState(false);
+  const [whatTried, setWhatTried] = useState("");
+  const [whatHappened, setWhatHappened] = useState("");
+  const [whatLearned, setWhatLearned] = useState("");
+  const [blocker, setBlocker] = useState("");
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [extracting, setExtracting] = useState(false);
+  const [confidence, setConfidence] = useState(3);
+  const [submitting, setSubmitting] = useState(false);
+  const [done, setDone] = useState(false);
+  const [causality, setCausality] = useState("");
+  const [witnessed, setWitnessed] = useState("");
+  const [nextAction, setNextAction] = useState("");
+  const [userId, setUserId] = useState<string | null>(null);
+
+  const NEXT_ACTION_FALLBACK: Record<string, string> = {
+    Idea:       "Tomorrow: find one more person who has this problem and ask them about their current workaround.",
+    Validation: "Tomorrow: convert one opinion into a commitment — time, money, or workflow change.",
+    MVP:        "Tomorrow: put the working link in front of one person you haven't shown it to yet.",
+    Launch:     "Tomorrow: post once, measure the response, iterate the message.",
+    Growth:     "Tomorrow: talk to one churned user.",
+    Revenue:    "Tomorrow: map the biggest drop-off between awareness and payment.",
+  };
+  const [todayAction, setTodayAction] = useState("");
+  const [history, setHistory] = useState<ReflectionHistoryEntry[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [streak, setStreak] = useState(0);
+  const [startupStage, setStartupStage] = useState("Idea");
+  const displayNextAction = nextAction || NEXT_ACTION_FALLBACK[startupStage] || "Tomorrow: do the one thing that would most reduce your biggest current risk.";
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [testimonialSource, setTestimonialSource] = useState<TestimonialSource | null>(null);
+  const [historySynthesis, setHistorySynthesis] = useState<string | null>(null);
+  const canSubmit = outcome !== null && whatTried.trim().length > 0;
+  const [showCelebration, setShowCelebration] = useState(false);
+  const [celebrationMomentum, setCelebrationMomentum] = useState<{ before: number; after: number } | undefined>(undefined);
+  const [confidenceAdjustment, setConfidenceAdjustment] = useState<{ before: number; after: number; trend: "up" | "down" | "flat" | "unknown" } | undefined>(undefined);
+  const [celebrationStreak, setCelebrationStreak] = useState(0);
+  const [streakExtended, setStreakExtended] = useState(false);
+
+  useEffect(() => {
+    // Pre-fill outcome from today page redirect
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const preOutcome = params.get("outcome") as Outcome | null;
+      if (preOutcome && ["completed", "partial", "blocked", "learned"].includes(preOutcome)) {
+        setOutcome(preOutcome);
+        setOutcomeLocked(true);
+      }
+    }
+    try {
+      const saved = storage.getJSON("bm_reflect_history", []);
+      setHistory(saved);
+      const action = storage.getJSON<{ action?: string }>("bm_today_action", {});
+      setTodayAction(action?.action ?? "");
+      setStreak(0); // Server is source of truth — will be set correctly in the async fetch below
+    } catch {}
+    fetchBehaviorState<{ today_action: { action?: string }; reflect_done_date: string }>(["today_action", "reflect_done_date"]).then(values => {
+      if (values.today_action?.action) {
+        storage.setJSON("bm_today_action", values.today_action);
+        setTodayAction(values.today_action.action);
+      }
+      const today = new Date().toISOString().slice(0, 10);
+      if (values.reflect_done_date === today) {
+        const rfKey = `bm_reflect_done_${today}`;
+        storage.set(rfKey, "1");
+        storage.set("bm_reflect_pending", "false");
+        setDone(true);
+      }
+    }).catch(() => {});
+    (async () => {
+      try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          setUserId(user.id);
+          const [summariesRes, reflectionsRes, founderCtxRes] = await Promise.allSettled([
+            supabase
+              .from("project_summaries")
+              .select("id, startup_stage")
+              .eq("user_id", user.id)
+              .order("updated_at", { ascending: false })
+              .limit(1),
+            supabase
+              .from("reflections")
+              .select("outcome, note, confidence, today_action, created_at")
+              .eq("user_id", user.id)
+              .order("created_at", { ascending: false })
+              .limit(30),
+            supabase
+              .from("founder_context")
+              .select("streak")
+              .eq("user_id", user.id)
+              .maybeSingle(),
+          ]);
+
+          // Streak: server is always the authority. getStoredStreak() can be
+          // stale or 0 cross-device — don't Math.max it against server, just use server.
+          // If server has no streak yet (new user), fall back to 0 honestly.
+          let resolvedStreak = 0;
+          if (founderCtxRes.status === "fulfilled" && founderCtxRes.value.data !== null) {
+            const serverStreak = founderCtxRes.value.data?.streak;
+            resolvedStreak = typeof serverStreak === "number" ? serverStreak : 0;
+          }
+          setStreak(resolvedStreak);
+
+          if (summariesRes.status === "fulfilled" && summariesRes.value.data?.[0]?.startup_stage) {
+            setStartupStage(summariesRes.value.data[0].startup_stage);
+          }
+          if (summariesRes.status === "fulfilled" && summariesRes.value.data?.[0]?.id) {
+            setActiveProjectId(summariesRes.value.data[0].id);
+          }
+
+          if (reflectionsRes.status === "fulfilled" && reflectionsRes.value.data?.length) {
+            const serverHistory = reflectionsRes.value.data.map((r) => ({
+              date: new Date(r.created_at).getTime(),
+              outcome: r.outcome,
+              note: r.note ?? "",
+              confidence: r.confidence ?? 3,
+              causality: "",
+            })).reverse();
+            setHistory(serverHistory);
+            storage.setJSON("bm_reflect_history", serverHistory);
+
+            const reflectionCount = reflectionsRes.status === "fulfilled"
+              ? (reflectionsRes.value.data?.length ?? 0)
+              : 0;
+            if (reflectionCount >= 5) {
+              try {
+                const synthRes = await fetch("/api/ai/reflect-synthesis", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    history: serverHistory.slice(-10).map((h: { outcome: string; note: string; confidence: number; date: number }) => ({
+                      outcome: h.outcome,
+                      note: h.note,
+                      confidence: h.confidence,
+                      daysAgo: Math.round((Date.now() - h.date) / (1000 * 60 * 60 * 24)),
+                    })),
+                    stage: summariesRes.status === "fulfilled"
+                      ? summariesRes.value.data?.[0]?.startup_stage ?? "Idea"
+                      : "Idea",
+                    streak: resolvedStreak,
+                  }),
+                });
+                if (synthRes.ok) {
+                  const synthData = await synthRes.json();
+                  const synthesis = (synthData.data ?? synthData).synthesis ?? "";
+                  if (synthesis) {
+                    setHistorySynthesis(synthesis);
+                    fetch("/api/founder-context", {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ last_insight: synthesis }),
+                    }).catch(() => {});
+                  }
+                }
+              } catch {}
+            }
+          }
+        }
+      } catch {}
+    })();
+  }, []);
+
+  async function handleFileExtract(file: File) {
+    setExtracting(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/reflect/extract", { method: "POST", body: formData });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.what_tried)    setWhatTried(prev    => prev || data.what_tried);
+        if (data.what_happened) setWhatHappened(prev => prev || data.what_happened);
+        if (data.what_learned)  setWhatLearned(prev  => prev || data.what_learned);
+        if (data.blocker)       setBlocker(prev       => prev || data.blocker);
+        if (data.outcome)       setOutcome(prev       => prev || data.outcome);
+      }
+    } catch {}
+    setExtracting(false);
+  }
+
+  async function handleSubmit() {
+    if (!canSubmit) return;
+    setSubmitting(true);
+    try {
+      const richNote = [
+        whatTried    ? `Tried: ${whatTried}` : "",
+        whatHappened ? `Result: ${whatHappened}` : "",
+        whatLearned  ? `Learned: ${whatLearned}` : "",
+        blocker      ? `Blocker: ${blocker}` : "",
+      ].filter(Boolean).join(" | ");
+
+      let caus = buildFallbackCausality(outcome, richNote, confidence);
+      let next = "";
+      let witness = buildFallbackWitness(outcome, whatTried);
+      try {
+        const res = await fetch("/api/ai/reflect-action", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            outcome,
+            note: richNote,
+            what_tried: whatTried,
+            what_happened: whatHappened,
+            what_learned: whatLearned,
+            blocker: blocker || undefined,
+            confidence,
+            stage: startupStage,
+            todayAction,
+            streak,
+            projectId: activeProjectId,
+          }),
+        });
+        if (res.ok) {
+          const d = await res.json();
+          const payload = d.data ?? d;
+          caus = payload.causality || caus;
+          next = payload.nextAction || "";
+          witness = payload.witnessed || witness;
+          const newStreak = typeof payload.streak === "number" ? payload.streak : streak;
+          setStreakExtended(newStreak > streak);
+          setCelebrationStreak(newStreak);
+          setStreak(newStreak);
+          if (payload.momentum) setCelebrationMomentum(payload.momentum);
+          if (payload.confidenceAdjustment) setConfidenceAdjustment(payload.confidenceAdjustment);
+        }
+      } catch {}
+      setCausality(caus);
+      setWitnessed(witness);
+      setNextAction(next);
+      const entry = { date: Date.now(), outcome, note: richNote, confidence, causality: caus };
+      const newHistory = [...history, entry].slice(-30);
+      setHistory(newHistory);
+      storage.setJSON("bm_reflect_history", newHistory);
+      persistBehaviorState({
+        today_action: { action: todayAction, outcome, note: richNote, confidence, witnessed },
+        reflect_done_date: new Date().toISOString().slice(0, 10),
+      });
+      const stats = getAchievementStats();
+      updateAchievementStats({ ...stats, reflectionsLogged: (stats.reflectionsLogged ?? 0) + 1 });
+      checkAndUnlockAchievements();
+
+      const currentStreakForAchievements = getStoredStreak();
+      updateAchievementStats({ ...getAchievementStats(), streak: currentStreakForAchievements });
+      notifyStreakMilestone(currentStreakForAchievements);
+
+      trackFunnelStep("first_reflect");
+      const rfKey = `bm_reflect_done_${new Date().toISOString().slice(0, 10)}`;
+      storage.set(rfKey, "1");
+      const todayStr = new Date().toISOString().slice(0, 10);
+      try {
+        const prev = parseInt(storage.get(`bm_reflection_count_${todayStr}`) ?? "0", 10);
+        storage.set(`bm_reflection_count_${todayStr}`, String(prev + 1));
+      } catch {}
+      if (userId) storage.set(`bm_last_reflection_ts_${userId}`, Date.now().toString());
+      broadcastTabEvent({ type: "reflection_done", date: new Date().toISOString().slice(0, 10) });
+
+      const currentStreak = getStoredStreak();
+      const modalSource = shouldShowTestimonialModal(currentStreak, outcome, confidence);
+      if (modalSource) setTestimonialSource(modalSource);
+
+      setDone(true);
+      setShowCelebration(true);
+    } finally { setSubmitting(false); }
+  }
+
+  if (done) {
+    return (
+      <div style={{ maxWidth: 560, margin: "0 auto", padding: "48px clamp(12px, 5vw, 24px)" }}>
+        <ReflectionCelebration
+          open={showCelebration}
+          streak={celebrationStreak}
+          streakExtended={streakExtended}
+          momentum={celebrationMomentum}
+          onDismiss={() => setShowCelebration(false)}
+        />
+        <ReflectionCompletion
+          witnessed={sanitizeOutput(witnessed)}
+          causality={sanitizeOutput(causality)}
+          nextAction={sanitizeOutput(displayNextAction)}
+          confidenceAdjustment={confidenceAdjustment}
+          onOverview={() => router.push("/overview")}
+          onToday={() => router.push("/today")}
+        />
+
+        {testimonialSource && (
+          <TestimonialModal
+            source={testimonialSource}
+            streak={streak}
+            stage={startupStage}
+            onClose={() => {
+              markTestimonialAsked(testimonialSource);
+              setTestimonialSource(null);
+            }}
+          />
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-[720px] px-3 py-5 sm:px-6 sm:py-7">
+      <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className="mb-6">
+        <PageHeader
+          eyebrow="Decision loop"
+          title="Close the loop"
+          subtitle={todayAction ? "Record what happened so tomorrow's decision can adapt." : "Record the evidence from today's work."}
+          action={
+            streak > 0 ? (
+              <span className="inline-flex h-9 items-center gap-1.5 rounded-[var(--r-xl)] border border-[var(--bm-border)] bg-[var(--bm-bg2)] px-3 text-[11px] font-bold text-[var(--bm-amber)]">
+                <Flame size={13} />
+                {streak}d
+              </span>
+            ) : null
+          }
+        />
+      </motion.div>
+
+      {historySynthesis && (
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.04 }}
+          style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: "16px 18px", marginBottom: 16 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-accent)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8, display: "flex", alignItems: "center", gap: 5 }}>
+            <Brain size={10} /> Pattern across your reflections
+          </div>
+          <p style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.6, margin: 0 }}>{sanitizeOutput(historySynthesis)}</p>
+        </motion.div>
+      )}
+
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.06 }}
+        style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 12, overflow: "hidden", marginBottom: 12 }}>
+        <div style={{ padding: "11px clamp(14px, 4vw, 22px)", borderBottom: "1px solid var(--bm-border)", fontFamily: "'DM Mono', monospace", fontSize: 10, fontWeight: 600, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+          Today&apos;s outcome
+        </div>
+        <div style={{ padding: "16px clamp(14px, 4vw, 22px) 18px" }}>
+        <div style={{ fontSize: 14, fontWeight: 650, color: "var(--bm-text)", marginBottom: 4 }}>What happened?</div>
+        {outcomeLocked && (
+          <div style={{ fontSize: 11, color: "var(--bm-text3)", marginBottom: 10 }}>
+            Set from today's check-in — your momentum and streak were already updated for this outcome.
+          </div>
+        )}
+        <div style={{ marginTop: outcomeLocked ? 0 : 14 }}>
+          <OutcomePicker outcome={outcome} locked={outcomeLocked} onChange={setOutcome} />
+        </div>
+        </div>
+      </motion.div>
+
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.10 }}
+        style={{ border: "1px dashed var(--bm-border2)", borderRadius: 12, padding: "12px 16px", marginBottom: 12, display: "flex", alignItems: "center", gap: 10, cursor: "pointer", background: uploadedFile ? "var(--bm-bg2)" : "transparent" }}
+        onClick={() => document.getElementById("reflect-file-input")?.click()}>
+        <span style={{ fontSize: 18 }}>📎</span>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)" }}>
+            {extracting ? "Extracting data from file…" : uploadedFile ? uploadedFile.name : "Upload markdown, CSV, or text log"}
+          </div>
+          <div style={{ fontSize: 11, color: "var(--bm-text4)", marginTop: 2 }}>AI will extract your data points automatically</div>
+        </div>
+        {uploadedFile && !extracting && <span style={{ fontSize: 11, color: "var(--bm-green)", fontWeight: 700 }}>✓ Done</span>}
+      </motion.div>
+
+      <input id="reflect-file-input" type="file" accept=".md,.csv,.txt" style={{ display: "none" }}
+        onChange={async (e) => { const file = e.target.files?.[0]; if (!file) return; setUploadedFile(file); await handleFileExtract(file); }} />
+
+      {(["what_tried", "what_happened", "what_learned", ...(outcome === "blocked" ? ["blocker"] : [])] as const).map((field) => {
+        const cfg = {
+          what_tried:    { label: "What did you actually try?",     required: true,  placeholder: "Specific action: posted on Reddit r/indiehackers, cold-emailed 5 founders…", value: whatTried,     set: setWhatTried },
+          what_happened: { label: "What concretely happened?",      required: false, placeholder: "Numbers if possible: 3 replies, 0 signups, 1 interested DM, post got 47 upvotes…", value: whatHappened,  set: setWhatHappened },
+          what_learned:  { label: "What did you learn?",            required: false, placeholder: "Insight you can act on tomorrow: founders want X not Y, the problem is actually Z…", value: whatLearned,   set: setWhatLearned },
+          blocker:       { label: "What exactly is blocking you?",  required: false, placeholder: "Specific blocker — not 'motivation', but: can't find users, auth keeps failing…", value: blocker,       set: setBlocker },
+        }[field];
+        if (!cfg) return null;
+        return <ReflectionField key={field} label={cfg.label} required={cfg.required} placeholder={cfg.placeholder} value={cfg.value} onChange={cfg.set} />;
+      })}
+
+      <ConfidenceSelector value={confidence} onChange={setConfidence} />
+
+      <motion.button whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }} onClick={handleSubmit} disabled={!canSubmit || submitting}
+        style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", padding: "13px 0", borderRadius: 8, border: "none", background: !canSubmit ? "var(--bm-bg4)" : "var(--bm-accent)", color: !canSubmit ? "var(--bm-text3)" : "#fff", fontWeight: 700, fontSize: 14, cursor: !canSubmit || submitting ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+        {submitting ? "Saving reflection…" : <>Save reflection <ArrowRight size={16} /></>}
+      </motion.button>
+    </div>
+  );
 }
