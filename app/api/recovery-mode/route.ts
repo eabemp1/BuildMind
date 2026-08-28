@@ -19,6 +19,7 @@ import {
   getRecoveryModeMessage,
   generateResetMission,
 } from "@/lib/recoveryMode";
+import { computeChurnRisk, shouldTriggerRiskInterrupt, buildRecoveryMission, type RiskSignal } from "@/lib/riskSignals";
 import type { ReflexionContext } from "@/lib/reflexion";
 import { logError } from "@/lib/server/logger";
 import { recordActionShown } from "@/lib/learning";
@@ -34,7 +35,7 @@ export async function GET() {
   const admin = createAdminClient();
   const { data: ctx } = await admin
     .from("founder_context")
-    .select("momentum_score, days_inactive, recovery_mode_active, reset_mission_complete")
+    .select("momentum_score, days_inactive, recovery_mode_active, reset_mission_complete, recovery_trigger, recovery_mission")
     .eq("user_id", user.id)
     .maybeSingle();
 
@@ -48,10 +49,12 @@ export async function GET() {
     resetMissionComplete: ctx.reset_mission_complete ?? false,
     daysInactive: ctx.days_inactive ?? 0,
     momentumScore: ctx.momentum_score ?? 50,
+    recoveryTrigger: ctx.recovery_trigger ?? null,
+    recoveryMission: ctx.recovery_mission ?? null,
   });
 }
 
-export async function POST() {
+export async function POST(req: Request) {
   const supabase = await createClient();
   const { data: { user }, error } = await supabase.auth.getUser();
   if (error || !user) {
@@ -65,6 +68,11 @@ export async function POST() {
     return NextResponse.json({ ok: false, error: "Builder plan required", upgradeUrl: "/upgrade" }, { status: 403 });
   }
 
+  const { trigger, projectId } = await req.json().catch(() => ({ trigger: undefined, projectId: undefined })) as {
+    trigger?: "risk";
+    projectId?: string;
+  };
+
   const admin = createAdminClient();
 
   const { data: ctx } = await admin
@@ -77,7 +85,63 @@ export async function POST() {
     return NextResponse.json({ ok: false, error: "Context not found" }, { status: 404 });
   }
 
-  // ── Check if Recovery Mode should activate ────────────────────────────────
+  // ── Risk-triggered path — deterministic, built from the founder's own
+  // logged signals (see lib/riskSignals.ts). No AI call: the founder
+  // already told BuildMind what happened, the mission should say it back
+  // exactly, not paraphrase it. ──
+  if (trigger === "risk") {
+    if (!projectId) {
+      return NextResponse.json({ ok: false, error: "projectId is required for a risk-triggered recovery" }, { status: 400 });
+    }
+    const { data: signalRows, error: signalError } = await admin
+      .from("project_risk_signals")
+      .select("id, signal_type, severity, value, note, customer_name, mrr_at_risk, created_at")
+      .eq("user_id", user.id)
+      .eq("project_id", projectId)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (signalError) {
+      logError("recovery-mode/POST(risk)", signalError, { userId: user.id, projectId });
+      return NextResponse.json({ ok: false, error: signalError.message }, { status: 500 });
+    }
+
+    const assessment = computeChurnRisk((signalRows ?? []) as RiskSignal[]);
+    if (!shouldTriggerRiskInterrupt(assessment) && !ctx.recovery_mode_active) {
+      return NextResponse.json({
+        ok: false,
+        error: "Risk conditions not met — no critical signal cluster in the last 14 days.",
+      }, { status: 400 });
+    }
+
+    const mission = buildRecoveryMission(assessment);
+
+    await admin
+      .from("founder_context")
+      .update({
+        recovery_mode_active: true,
+        reset_mission_complete: false,
+        recovery_trigger: "risk",
+        recovery_mission: mission,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("user_id", user.id);
+    markRecommendationObserved(admin, {
+      userId: user.id,
+      taskTitle: "Recovery Mode risk mission",
+      outcome: "completed",
+      founderExplanation: "Risk-triggered Recovery Mode activated",
+      evidenceProduced: mission.title,
+    }).catch(() => {});
+
+    return NextResponse.json({
+      ok: true,
+      recoveryActive: true,
+      trigger: "risk",
+      mission,
+    });
+  }
+
+  // ── Inactivity-triggered path (unchanged) ──────────────────────────────
   const previousScore = (ctx.momentum_score ?? 50) + 4; // approximate previous
   const shouldActivate = shouldActivateRecoveryMode(
     ctx.days_inactive ?? 0,
@@ -120,6 +184,8 @@ export async function POST() {
     .update({
       recovery_mode_active: true,
       reset_mission_complete: false,
+      recovery_trigger: "inactivity",
+      recovery_mission: null,
       updated_at: new Date().toISOString(),
     })
     .eq("user_id", user.id);
@@ -134,13 +200,18 @@ export async function POST() {
   return NextResponse.json({
     ok: true,
     recoveryActive: true,
+    trigger: "inactivity",
     message: getRecoveryModeMessage(),
     resetMission,
   });
 }
 
 export async function PATCH(req: Request) {
-  // Mark Reset Mission as complete and resume normal mode
+  // Mark the mission as complete (default) and resume normal mode, or —
+  // when action is "dismiss" — close Recovery Mode without the momentum
+  // bump. Dismissing a risk-triggered recovery doesn't mean the risk was
+  // resolved, so it shouldn't reward momentum the way completing a
+  // mission does.
   const supabase = await createClient();
   const { data: { user }, error } = await supabase.auth.getUser();
   if (error || !user) {
@@ -148,7 +219,23 @@ export async function PATCH(req: Request) {
   }
 
   const admin = createAdminClient();
-  const { projectId = null } = await req.json().catch(() => ({}));
+  const { projectId = null, action = "complete" } = await req.json().catch(() => ({})) as {
+    projectId?: string | null;
+    action?: "complete" | "dismiss";
+  };
+
+  if (action === "dismiss") {
+    await admin
+      .from("founder_context")
+      .update({
+        recovery_mode_active: false,
+        recovery_trigger: null,
+        recovery_mission: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("user_id", user.id);
+    return NextResponse.json({ ok: true, message: "Recovery dismissed." });
+  }
 
   const { data: ctx } = await admin
     .from("founder_context")
@@ -182,6 +269,8 @@ export async function PATCH(req: Request) {
       recovery_mode_active: false,
       reset_mission_complete: true,
       days_inactive: 0,
+      recovery_trigger: null,
+      recovery_mission: null,
       updated_at: new Date().toISOString(),
     })
     .eq("user_id", user.id);
