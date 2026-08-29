@@ -2,12 +2,12 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { motion, useAnimation } from "framer-motion";
+import { motion, useAnimation, AnimatePresence } from "framer-motion";
 import {
   type BuildMindMilestone, type BuildMindTask,
   computeStartupScore, updateMilestoneForCurrentUser,
 } from "@/lib/buildmind";
-import { useDeleteProjectMutation, useProjectDetailQuery, useUpdateTaskMutation, useFounderScorecardQuery } from "@/lib/queries";
+import { useDeleteProjectMutation, useProjectDetailQuery, useUpdateTaskMutation, useFounderScorecardQuery, useUpdateProjectMutation } from "@/lib/queries";
 import { setActiveProjectId } from "@/lib/api";
 import { createClient } from "@/lib/supabase/client";
 import { storage } from "@/lib/storage";
@@ -19,6 +19,9 @@ import { queryKeys } from "@/lib/queries";
 import { ScoreBreakdown } from "@/components/ui/ScoreBreakdown";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
+import { Input, Textarea } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { X } from "lucide-react";
 
 type Tab = "milestones" | "tasks" | "validation" | "roadmap";
 
@@ -377,6 +380,106 @@ function ValidationTab({ projectId,strengths,weaknesses,suggestions,router }: {
     );
   }
 
+// ─── Edit project modal ─────────────────────────────────────────────────────
+// Figma shows an "Edit project" action on the detail page that this codebase
+// never had — confirmed absent by grep before adding. Reuses the same field
+// set as the Create Project page (including the new key_metric /
+// current_hypothesis columns) so a project created before those fields
+// existed can still pick them up.
+function EditProjectModal({
+  initial,
+  onClose,
+  onSave,
+  isPending,
+}: {
+  initial: { title: string; problem: string; targetUsers: string; keyMetric: string; currentHypothesis: string };
+  onClose: () => void;
+  onSave: (data: { title: string; problem: string; targetUsers: string; keyMetric: string; currentHypothesis: string }) => void;
+  isPending: boolean;
+}) {
+  const [title, setTitle] = useState(initial.title);
+  const [problem, setProblem] = useState(initial.problem);
+  const [targetUsers, setTargetUsers] = useState(initial.targetUsers);
+  const [keyMetric, setKeyMetric] = useState(initial.keyMetric);
+  const [currentHypothesis, setCurrentHypothesis] = useState(initial.currentHypothesis);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.72)", backdropFilter: "blur(6px)" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.96, y: 12 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96 }}
+        transition={{ duration: 0.18 }}
+        className="w-full max-w-md rounded-[var(--r-xl)] p-5 sm:p-7 flex flex-col gap-5"
+        style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)" }}
+      >
+        <div className="flex items-start justify-between">
+          <div>
+            <h2 className="text-xl font-bold text-[var(--bm-text)] tracking-tight">Edit Project</h2>
+            <p className="text-sm text-[var(--bm-text3)] mt-1">Keep BuildMind's context up to date.</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-[var(--bm-text3)] hover:bg-[var(--bm-bg3)] transition-colors">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="flex flex-col gap-4">
+          <Input label="Project Name" value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
+          <Textarea label="Problem You're Solving" value={problem} onChange={(e) => setProblem(e.target.value)} rows={3} />
+          <Input label="Who Is This For?" value={targetUsers} onChange={(e) => setTargetUsers(e.target.value)} />
+          <Input
+            label="Key Metric"
+            placeholder="e.g. Waitlist signups or active users"
+            value={keyMetric}
+            onChange={(e) => setKeyMetric(e.target.value)}
+            helperText="Use a metric that clearly indicates validation proof points."
+          />
+          <Textarea
+            label="Current Hypothesis"
+            placeholder="What core belief are you testing in this validation cycle?"
+            value={currentHypothesis}
+            onChange={(e) => setCurrentHypothesis(e.target.value)}
+            rows={2}
+          />
+        </div>
+
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <Button variant="secondary" fullWidth onClick={onClose} disabled={isPending}>Cancel</Button>
+          <Button
+            fullWidth
+            loading={isPending}
+            disabled={!title.trim()}
+            onClick={() => onSave({ title: title.trim(), problem: problem.trim(), targetUsers: targetUsers.trim(), keyMetric: keyMetric.trim(), currentHypothesis: currentHypothesis.trim() })}
+          >
+            Save changes
+          </Button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+type ActivityEvent = { label: string; occurredAt: string };
+
+function formatActivityTime(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
+  const isYesterday = d.toDateString() === yesterday.toDateString();
+  const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  if (sameDay) return `Today ${time}`;
+  if (isYesterday) return `Yesterday ${time}`;
+  return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })} ${time}`;
+}
+
 // ─── Main page ──────────────────────────────────────────────────────────────
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -407,6 +510,9 @@ export default function ProjectDetailPage() {
     currentStage: string; nextStage: string | null; reason: string;
   } | null>(null);
   const [stageTransitionDismissed, setStageTransitionDismissed] = useState(false);
+  const updateProjectMutation = useUpdateProjectMutation();
+  const [showEditProject, setShowEditProject] = useState(false);
+  const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([]);
 
   // Close stage picker when clicking outside
   useEffect(() => {
@@ -417,6 +523,17 @@ export default function ProjectDetailPage() {
   }, [stagePickerOpen]);
 
   useEffect(() => { if (id) setActiveProjectId(id); }, [id]);
+
+  // Last activity feed (real data — activity_log filtered to this project).
+  useEffect(() => {
+    if (!id) return;
+    fetch(`/api/projects/${id}/activity`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { ok?: boolean; events?: ActivityEvent[] }) => {
+        if (d.ok && Array.isArray(d.events)) setActivityEvents(d.events);
+      })
+      .catch(() => {});
+  }, [id]);
 
   // Sync streak from server — Today page is where streaks are earned; projects page
   // must read the same source, not a stale localStorage snapshot.
@@ -729,6 +846,25 @@ export default function ProjectDetailPage() {
     }
   }
 
+  async function handleSaveProjectEdit(vals: { title: string; problem: string; targetUsers: string; keyMetric: string; currentHypothesis: string }) {
+    if (!id) return;
+    try {
+      await updateProjectMutation.mutateAsync({
+        projectId: id,
+        updates: {
+          title: vals.title,
+          problem: vals.problem,
+          target_users: vals.targetUsers,
+          key_metric: vals.keyMetric,
+          current_hypothesis: vals.currentHypothesis,
+        },
+      });
+      setShowEditProject(false);
+    } catch {
+      // Non-fatal — modal stays open so the founder can retry
+    }
+  }
+
   const toggleTask = (task: BuildMindTask) => {
     const newCompleted = !task.is_completed;
     updateMutation.mutate({ taskId: task.id, isCompleted: newCompleted, notes: task.notes ?? "" });
@@ -832,18 +968,24 @@ export default function ProjectDetailPage() {
           check" banner above (both now driven by the same shared function). */}
 
       <div className="mb-5 border-b border-[var(--bm-border)] pb-[18px]">
-        <button onClick={() => router.back()}
-          className="mb-3.5 border-none bg-transparent p-0 text-[11px] text-[var(--bm-text3)]">
-          ← Projects
+        <button onClick={() => router.push("/projects")}
+          className="mb-3.5 border-none bg-transparent p-0 font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--bm-text4)] hover:text-[var(--bm-text3)]">
+          Projects / {String(project.title ?? "Untitled project")}
         </button>
         <PageHeader
           title={String(project.title ?? "Untitled project")}
           subtitle={narrativeSentence ?? `${completedCount}/${tasks.length} tasks · ${progress}% complete`}
           action={
-            <button onClick={() => router.push("/today")}
-              className="w-full rounded-lg border-none bg-[var(--bm-text)] px-3.5 py-2 text-[12px] font-bold text-[var(--bm-bg)] sm:w-auto">
-              Today&apos;s action
-            </button>
+            <div className="flex w-full items-center gap-2 sm:w-auto">
+              <button onClick={() => setShowEditProject(true)}
+                className="rounded-lg border border-[var(--bm-border2)] bg-transparent px-3.5 py-2 text-[12px] font-medium text-[var(--bm-text2)] hover:bg-[var(--bm-bg3)]">
+                Edit project
+              </button>
+              <button onClick={() => router.push("/today")}
+                className="w-full rounded-lg border-none bg-[var(--bm-text)] px-3.5 py-2 text-[12px] font-bold text-[var(--bm-bg)] sm:w-auto">
+                Today&apos;s action
+              </button>
+            </div>
           }
         />
         <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -1099,7 +1241,38 @@ export default function ProjectDetailPage() {
               <span style={{ color: "var(--bm-text3)" }}>Current stage</span>
               <span style={{ color: "var(--bm-accent)", fontFamily: "'DM Mono', monospace" }}>{String(stage)}</span>
             </div>
+            {project.key_metric ? (
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                <span style={{ color: "var(--bm-text3)" }}>{project.key_metric}</span>
+              </div>
+            ) : null}
           </div>
+          {project.current_hypothesis ? (
+            <p style={{ fontSize: 11, lineHeight: 1.5, color: "var(--bm-text2)", margin: "10px 0 0" }}>
+              <span style={{ color: "var(--bm-accent)", fontWeight: 700 }}>Current hypothesis: </span>
+              {project.current_hypothesis}
+            </p>
+          ) : null}
+        </div>
+
+        <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 10, padding: "14px 16px" }}>
+          <div style={{ fontSize: 9, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "'DM Mono', monospace", marginBottom: 10 }}>
+            Last activity
+          </div>
+          {activityEvents.length > 0 ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {activityEvents.map((ev, i) => (
+                <div key={`${ev.occurredAt}-${i}`} style={{ fontSize: 11, lineHeight: 1.45 }}>
+                  <div style={{ color: "var(--bm-text2)" }}>{ev.label}</div>
+                  <div style={{ fontSize: 9, color: "var(--bm-text4)", fontFamily: "'DM Mono', monospace", marginTop: 1 }}>
+                    {formatActivityTime(ev.occurredAt)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p style={{ fontSize: 11, color: "var(--bm-text4)", margin: 0, lineHeight: 1.5 }}>No activity logged for this project yet.</p>
+          )}
         </div>
 
         <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 10, padding: "14px 16px" }}>
@@ -1139,6 +1312,23 @@ export default function ProjectDetailPage() {
         </div>
       </aside>
       </div>
+
+      <AnimatePresence>
+        {showEditProject && (
+          <EditProjectModal
+            initial={{
+              title: String(project.title ?? ""),
+              problem: project.problem ?? "",
+              targetUsers: project.target_users ?? "",
+              keyMetric: project.key_metric ?? "",
+              currentHypothesis: project.current_hypothesis ?? "",
+            }}
+            onClose={() => setShowEditProject(false)}
+            onSave={handleSaveProjectEdit}
+            isPending={updateProjectMutation.isPending}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
-                                                                                      }
+      }
