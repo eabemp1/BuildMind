@@ -179,6 +179,8 @@ export async function getProjectsForCurrentUser(): Promise<BuildMindProject[]> {
       momentum_score: project.momentum_score ?? 50,
       target_users: null,
       problem: null,
+      key_metric: project.key_metric ?? null,
+      current_hypothesis: project.current_hypothesis ?? null,
       validation_strengths: project.validation_strengths,
       validation_weaknesses: [],
       validation_suggestions: [],
@@ -358,6 +360,8 @@ export async function getProjectSummaries(): Promise<ProjectSummary[]> {
       lastActivity: current.lastActivity,
       problem: project.problem ?? null,
       target_users: project.target_users ?? null,
+      key_metric: project.key_metric ?? null,
+      current_hypothesis: project.current_hypothesis ?? null,
       pendingMilestones,
       pendingTasks,
     };
@@ -391,6 +395,8 @@ export async function updateProjectDetails(
     problem?: string;
     description?: string;
     title?: string;
+    key_metric?: string;
+    current_hypothesis?: string;
   },
 ): Promise<void> {
   const user = await getCurrentUser();
@@ -538,6 +544,8 @@ export async function createProjectWithRoadmap(params: {
   problem: string;
   startup_stage?: string;
   blocker_type?: string;
+  key_metric?: string;
+  current_hypothesis?: string;
 }) {
   const user = await getCurrentUser();
   if (!user) throw new Error("Not authenticated");
@@ -551,6 +559,8 @@ export async function createProjectWithRoadmap(params: {
     description: params.idea_description,
     target_users: params.target_users,
     problem: params.problem,
+    key_metric: params.key_metric?.trim() || null,
+    current_hypothesis: params.current_hypothesis?.trim() || null,
     startup_stage: params.startup_stage ?? "Idea",
     validation_strengths: [],
     validation_weaknesses: [],
