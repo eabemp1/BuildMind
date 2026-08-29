@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { selectActiveProject, useActiveProjectId, useProjectSummariesQuery, useDashboardOverviewQuery } from "@/lib/queries";
 import { computeStartupScore } from "@/lib/buildmind";
@@ -29,6 +30,10 @@ type ChatMessage = {
   error?: boolean;
   /** Reflexion confidence_score (0–1). Badge renders when < 0.75 */
   confidence_score?: number | null;
+  /** Optional structured action the coach converged on — only present when
+   *  the model named one concrete, time-boxed next step (see coach route's
+   *  recommended_action contract). Absent on most replies by design. */
+  recommendedAction?: { what_to_do: string; why_now: string; expected_evidence?: string };
 };
 
 function buildPlaceholderReasoning(message: string, projectTitle?: string, score?: number): string[] {
@@ -54,11 +59,11 @@ function buildPlaceholderReasoning(message: string, projectTitle?: string, score
 }
 
 const QUICK_PROMPTS = [
-  "What am I actually avoiding right now?",
-  "What's the one thing that would change everything this week?",
-  "Be honest — am I making real progress or just staying busy?",
-  "What would you do if you were me right now?",
-  "What pattern do you see in how I work that I probably can not see?",
+  "Am I avoiding the hardest work right now?",
+  "What is the single highest-leverage move this week?",
+  "Is my recent progress real or just busyness?",
+  "If you were the founder, what would you do today?",
+  "What behavioral patterns should I be worried about?",
 ];
 
 // FIX: renamed from *_PER_WEEK — the server (app/api/ai/coach/route.ts,
@@ -100,7 +105,7 @@ function useIsMobile() {
   return isMobile;
 }
 
-function MessageBubble({ msg }: { msg: ChatMessage }) {
+function MessageBubble({ msg, onStartAction }: { msg: ChatMessage; onStartAction: () => void }) {
   const isUser = msg.role === "user";
   const [expanded, setExpanded] = useState(false);
   const isMobile = useIsMobile();
@@ -142,6 +147,36 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
         >
           {msg.phase === "thinking" ? <ThinkingDots /> : <span style={{ whiteSpace: "pre-wrap" }}>{sanitizeOutput(msg.content)}</span>}
         </div>
+
+        {!isUser && msg.phase === "done" && msg.recommendedAction && (
+          <div className="w-full rounded-[var(--r-lg)] p-3.5" style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-amber-bd, rgba(232,160,32,0.25))" }}>
+            <div className="mb-2 font-mono text-[9px] font-bold uppercase tracking-[0.06em] text-[var(--bm-amber)]">
+              Recommended action
+            </div>
+            <div className="mb-2">
+              <div className="text-[11px] font-semibold text-[var(--bm-text2)]">What to do</div>
+              <p className="mt-0.5 text-[12px] leading-relaxed text-[var(--bm-text3)]">{sanitizeOutput(msg.recommendedAction.what_to_do)}</p>
+            </div>
+            <div className="mb-2">
+              <div className="text-[11px] font-semibold text-[var(--bm-text2)]">Why now</div>
+              <p className="mt-0.5 text-[12px] leading-relaxed text-[var(--bm-text3)]">{sanitizeOutput(msg.recommendedAction.why_now)}</p>
+            </div>
+            {msg.recommendedAction.expected_evidence && (
+              <div className="mb-3">
+                <div className="text-[11px] font-semibold text-[var(--bm-text2)]">Expected evidence</div>
+                <p className="mt-0.5 text-[12px] leading-relaxed text-[var(--bm-text3)]">{sanitizeOutput(msg.recommendedAction.expected_evidence)}</p>
+              </div>
+            )}
+            <button
+              onClick={onStartAction}
+              className="w-full rounded-[var(--r-sm)] border-0 py-2 text-[12px] font-bold"
+              style={{ background: "var(--bm-accent)", color: "#15130a" }}
+            >
+              Start this now
+            </button>
+          </div>
+        )}
+
         <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-[var(--bm-text3)]">
           <Clock size={9} />
           {new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
@@ -155,10 +190,11 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
 }
 
 function AICoachPageInner() {
+  const router = useRouter();
   const isMobile = useIsMobile();
   const { plan, isLoading: planLoading } = usePlan();
   const { showLimitModal } = useLimitModal();
-  const { data: summaries = [] } = useProjectSummariesQuery();
+  const { data: summaries = [], isLoading: summariesLoading } = useProjectSummariesQuery();
   const activeProjectId = useActiveProjectId();
   const activeProject = selectActiveProject(summaries, activeProjectId);
   const { data: overview } = useDashboardOverviewQuery(activeProject?.id);
@@ -169,6 +205,7 @@ function AICoachPageInner() {
   const [memory, setMemory] = useState<string[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
   const [coachMessagesToday, setCoachMessagesToday] = useState(0);
+  const [activityEvents, setActivityEvents] = useState<Array<{ label: string; occurredAt: string }>>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -206,6 +243,21 @@ function AICoachPageInner() {
   }, []);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
+  // Real recent activity for the active project — same activity_log-backed
+  // route added for the Projects detail page's "Last activity" card, reused
+  // here for Figma's "Recent outcomes" concept. No separate metric-tracking
+  // (e.g. "waitlist +40%") exists anywhere, so this shows what's actually
+  // logged rather than inventing business-outcome numbers.
+  useEffect(() => {
+    if (!activeProject?.id) { setActivityEvents([]); return; }
+    fetch(`/api/projects/${activeProject.id}/activity`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { ok?: boolean; events?: Array<{ label: string; occurredAt: string }> }) => {
+        if (d.ok && Array.isArray(d.events)) setActivityEvents(d.events);
+      })
+      .catch(() => {});
+  }, [activeProject?.id]);
+
   async function sendMessage(text?: string) {
     const msg = (text ?? input).trim();
     if (!msg || loading) return;
@@ -242,11 +294,15 @@ function AICoachPageInner() {
       if (!res.ok || !payload?.success) throw new Error(payload?.error ?? "Coach unavailable");
       const reply = payload?.data?.reply ?? payload?.data?.answer ?? "I'm having trouble responding right now. Please try again.";
       const confidence_score = typeof payload?.data?.confidence_score === "number" ? payload.data.confidence_score : null;
+      const ra = payload?.data?.recommended_action;
+      const recommendedAction = ra && typeof ra.what_to_do === "string" && typeof ra.why_now === "string"
+        ? { what_to_do: ra.what_to_do, why_now: ra.why_now, expected_evidence: typeof ra.expected_evidence === "string" ? ra.expected_evidence : undefined }
+        : undefined;
       const newMemory = [...memory, msg].slice(-10);
       setMemory(newMemory);
       storage.setJSON("bm_coach_memory", newMemory);
       persistBehaviorState({ coach_memory: newMemory });
-      setMessages(prev => prev.map(m => m.id === thinkingMsg.id ? { ...m, content: reply, reasoning: payload?.data?.reasoning ?? m.reasoning, phase: "done", confidence_score } : m));
+      setMessages(prev => prev.map(m => m.id === thinkingMsg.id ? { ...m, content: reply, reasoning: payload?.data?.reasoning ?? m.reasoning, phase: "done", confidence_score, recommendedAction } : m));
       recordCoachMessage();
       setCoachMessagesToday(getCoachMessagesToday());
       const stats = getAchievementStats();
@@ -276,6 +332,26 @@ function AICoachPageInner() {
     { id: "challenger" as const, label: "Challenger" },
   ];
 
+  // No active project = genuinely nothing real to coach against. Rather than
+  // let the founder type into a chat that will just bounce their first
+  // message back as an error, say so up front — matching the reference
+  // design's dedicated unavailable state, and true to what's actually wrong.
+  if (!summariesLoading && !activeProject) {
+    return (
+      <div className="mx-auto flex w-full max-w-[1120px] flex-col items-center justify-center gap-3 px-5 py-24 text-center" style={{ minHeight: "60vh" }}>
+        <div className="flex h-11 w-11 items-center justify-center rounded-full" style={{ background: "rgba(224,85,85,0.12)" }}>
+          <span className="block h-2.5 w-2.5 rounded-full" style={{ background: "var(--bm-red)" }} />
+        </div>
+        <h2 className="text-[15px] font-semibold text-[var(--bm-text)]">Intelligence temporarily unavailable</h2>
+        <p className="max-w-[360px] text-[12.5px] leading-relaxed text-[var(--bm-text3)]">
+          BuildMind coaching requires access to your project state and behavior data. Create or select a project to pick this back up.
+        </p>
+        <a href="/projects" className="mt-1 rounded-[var(--r-sm)] px-3.5 py-2 text-[12px] font-semibold" style={{ background: "var(--bm-accent)", color: "#15130a" }}>
+          Go to Projects
+        </a>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-5 px-0 py-1 sm:px-6 sm:py-7" style={{ minHeight: isMobile ? "auto" : "calc(100vh - 80px)", height: isMobile ? "auto" : "calc(100vh - 80px)" }}>
@@ -299,6 +375,38 @@ function AICoachPageInner() {
           }
         />
       </motion.div>
+
+      {/* Free plan limit reached — same pattern as the Projects list banner */}
+      {plan === "free" && remaining <= 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="shrink-0 rounded-[var(--r-lg)] p-4"
+          style={{ borderLeft: "2px solid var(--bm-accent)", background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)" }}
+        >
+          <p className="font-mono text-[9px] font-semibold uppercase tracking-[0.1em] text-[var(--bm-accent)]">
+            Free plan limit reached
+          </p>
+          <p className="mt-1.5 text-[13px] font-semibold text-[var(--bm-text)]">
+            You&apos;ve used all {coachLimit} coaching questions today
+          </p>
+          <p className="mt-1 text-[12px] leading-relaxed text-[var(--bm-text3)]">
+            Upgrade to Pro for unlimited coaching conversations with deeper behavioral analysis.
+          </p>
+          <div className="mt-3 flex items-center gap-4">
+            <button
+              onClick={() => showLimitModal("aiCoach")}
+              className="rounded-[var(--r-sm)] border-0 px-3.5 py-2 text-[12px] font-bold"
+              style={{ background: "var(--bm-accent)", color: "#15130a" }}
+            >
+              Upgrade plan
+            </button>
+            <a href="/upgrade" className="text-[12px] font-medium text-[var(--bm-text2)] hover:text-[var(--bm-text)]">
+              Learn more
+            </a>
+          </div>
+        </motion.div>
+      )}
 
       {/* Split layout */}
       <div className="flex min-h-0 flex-1 flex-col gap-5 lg:flex-row">
@@ -359,7 +467,7 @@ function AICoachPageInner() {
                 </div>
               </motion.div>
             )}
-            {messages.map(msg => <MessageBubble key={msg.id} msg={msg} />)}
+            {messages.map(msg => <MessageBubble key={msg.id} msg={msg} onStartAction={() => router.push("/today")} />)}
             <div ref={bottomRef} />
           </div>
 
@@ -391,7 +499,43 @@ function AICoachPageInner() {
               <div className="mb-2 font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--bm-text3)]">Current context</div>
               <div className="mb-1.5 text-[13px] font-semibold text-[var(--bm-text)]">{activeProject.title}</div>
               <div className="text-[12px] text-[var(--bm-text3)]">{activeProject.startup_stage ?? "Stage not set"}</div>
-              {score > 0 && <div className="mt-3 border-t border-[var(--bm-border)] pt-3 text-[11px] text-[var(--bm-text3)]">Execution score <span className="bm-data ml-1 text-[var(--bm-accent)]">{score}/100</span></div>}
+            </Card>
+          )}
+
+          {activeProject && score > 0 && (
+            <Card variant="data" className="p-4">
+              <div className="mb-2 font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--bm-text3)]">Execution score</div>
+              <div className="flex items-baseline gap-1.5">
+                <span
+                  className="text-[26px] font-bold"
+                  style={{ color: score >= 65 ? "var(--bm-green)" : score >= 35 ? "var(--bm-amber)" : "var(--bm-red)" }}
+                >
+                  {score}
+                </span>
+                <span className="text-[12px] text-[var(--bm-text4)]">/100</span>
+              </div>
+              <p className="mt-1 text-[11px] text-[var(--bm-text3)]">
+                {score >= 65 ? "High — momentum is real" : score >= 35 ? "Building — keep the streak going" : "Low — mostly maintenance tasks"}
+              </p>
+            </Card>
+          )}
+
+          {activeProject && activityEvents.length > 0 && (
+            <Card variant="data" className="p-4">
+              <div className="mb-3 font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--bm-text3)]">Recent activity</div>
+              <div className="flex flex-col gap-2.5">
+                {activityEvents.slice(0, 3).map((ev, i) => (
+                  <div key={`${ev.occurredAt}-${i}`} className="flex items-start gap-2">
+                    <div className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--bm-intel)] opacity-60" />
+                    <div>
+                      <div className="text-[11px] leading-relaxed text-[var(--bm-text3)]">{ev.label}</div>
+                      <div className="mt-0.5 font-mono text-[9px] text-[var(--bm-text4)]">
+                        {new Date(ev.occurredAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </Card>
           )}
 
