@@ -73,6 +73,12 @@ export interface WeeklyPulseResponse {
   archetype: string | null;
   day_of_week: Record<string, { completed: number; total: number }>;
   confidence_by_outcome: Record<string, number>;
+  /** Overall confidence index (0-100) — same reflections.confidence values
+   *  (1-5 scale) behind confidence_by_outcome above, flattened into one
+   *  founder-facing number instead of bucketed per outcome. Added for the
+   *  "This Week" hero card; confidence_by_outcome itself was already
+   *  returned but never rendered anywhere on the client. */
+  confidence_index: number | null;
   top_override_reason: string | null;
   weekly_goal: { goal_text: string; target_score: number; current_score: number; target_tasks: number; tasks_done: number; status: string } | null;
   sparkline: SparklinePoint[];
@@ -300,6 +306,15 @@ export async function getWeeklyPulseData(userId: string, projectId?: string): Pr
   for (const [k, vals] of Object.entries(confByOutcome)) {
     confidenceByOutcome[k] = parseFloat((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1));
   }
+  // Flat overall figure across every reflection this week, regardless of
+  // outcome bucket — reflections.confidence is a 1-5 self-report, scaled to
+  // 0-100 for a single at-a-glance number.
+  const allConfidences: number[] = (reflections as Array<{ confidence?: number }>)
+    .map((r) => r.confidence)
+    .filter((c): c is number => typeof c === "number");
+  const confidenceIndex: number | null = allConfidences.length > 0
+    ? Math.round((allConfidences.reduce((a, b) => a + b, 0) / allConfidences.length) * 20)
+    : null;
 
   const overrideReasonCounts: Record<string, number> = {};
   for (const log of overrideLogs as Array<{ outcome_note?: string | null }>) {
@@ -408,7 +423,7 @@ Write a 2-3 sentence story-style summary of the founder's week. Brief, specific,
     momentum_score: momentumScore, momentum_delta: momentumDelta, streak,
     tasks_completed: tasksCompleted, tasks_total: tasksTotal, completion_rate: completionRate,
     active_days: activeDays, un_ghosted: unGhosted, milestones, archetype,
-    day_of_week: dayOfWeek, confidence_by_outcome: confidenceByOutcome, top_override_reason: topOverrideReason,
+    day_of_week: dayOfWeek, confidence_by_outcome: confidenceByOutcome, confidence_index: confidenceIndex, top_override_reason: topOverrideReason,
     weekly_goal: weeklyGoal, sparkline, grades, story, generated_at: new Date().toISOString(),
   };
-}
+                                                                                              }
