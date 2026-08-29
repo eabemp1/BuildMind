@@ -21,6 +21,8 @@ export type BuildMindProject = {
   momentum_score: number | null;
   target_users: string | null;
   problem: string | null;
+  key_metric: string | null;
+  current_hypothesis: string | null;
   validation_strengths: string[];
   validation_weaknesses: string[];
   validation_suggestions: string[];
@@ -48,6 +50,8 @@ export type ProjectSummary = {
   lastActivity: string;
   problem?: string | null;
   target_users?: string | null;
+  key_metric?: string | null;
+  current_hypothesis?: string | null;
   // Populated by getProjectSummaries — used by Today page & AI routes
   pendingMilestones?: string[];
   pendingTasks?: string[];
