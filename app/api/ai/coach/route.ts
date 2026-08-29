@@ -409,11 +409,16 @@ WHAT YOU ALWAYS DO:
 REASONING FORMAT:
 The reasoning array shows your actual thought process — what you noticed, what pattern you recognised, what you decided to lead with. Make it real, not performative.
 
+RECOMMENDED ACTION (optional):
+Only when your answer converges on one concrete, time-boxed action — not for open-ended or reflective questions — include a recommended_action object naming exactly what to do, why it matters right now (tie it to something real from his data, not generic advice), and what evidence within a short window would tell him it worked. Omit the field entirely rather than force one.
+
 You must return ONLY valid JSON:
 {
   "reasoning": ["what I noticed about his situation", "what pattern this connects to", "what matters most to say first"],
-  "answer": "your response — direct, specific, under 180 words"
+  "answer": "your response — direct, specific, under 180 words",
+  "recommended_action": { "what_to_do": "...", "why_now": "...", "expected_evidence": "..." }
 }
+recommended_action is optional — omit the key entirely when no single action stands out.
 ${spiralInstruction}${proactiveObservation}
 
 ${projectContext ? `FOUNDER CONTEXT (real data):\n${projectContext}` : ""}${founderMemoryContext}${intelligenceBlock ? `\n\n${intelligenceBlock}` : ""}${morningNoteContext}${blockerContext}${domainContext}${historyContext}
@@ -425,7 +430,7 @@ Return ONLY the JSON. No preamble. No markdown fences.`;
     // Inject cross-feature continuity block before the base system prompt
     const systemPrompt = injectContinuityIntoSystemPrompt(baseSystemPrompt, recentInteractions);
 
-    const result = await groqJSON<{ reasoning: string[]; answer: string }>(systemPrompt, message);
+    const result = await groqJSON<{ reasoning: string[]; answer: string; recommended_action?: { what_to_do?: string; why_now?: string; expected_evidence?: string } }>(systemPrompt, message);
 
     const reasoning = Array.isArray(result?.reasoning) && result.reasoning.length > 0
       ? result.reasoning.slice(0, 4).map((r) => String(r).trim()).filter(Boolean)
@@ -434,6 +439,17 @@ Return ONLY the JSON. No preamble. No markdown fences.`;
     const answer = typeof result?.answer === "string" && result.answer.trim().length > 10
       ? result.answer.trim()
       : "BuildMind couldn't generate a response right now. Focus on your most important open task.";
+
+    // Only pass through when the model actually gave a concrete action —
+    // partial/malformed objects are dropped rather than rendered half-empty.
+    const ra = result?.recommended_action;
+    const recommendedAction = ra && typeof ra.what_to_do === "string" && ra.what_to_do.trim().length > 3 && typeof ra.why_now === "string" && ra.why_now.trim().length > 3
+      ? {
+          what_to_do: ra.what_to_do.trim(),
+          why_now: ra.why_now.trim(),
+          expected_evidence: typeof ra.expected_evidence === "string" ? ra.expected_evidence.trim() : undefined,
+        }
+      : undefined;
 
     await createUserNotification(userId, "BuildMind has a new coaching response for you.", "ai_recommendation");
 
@@ -487,7 +503,7 @@ Return ONLY the JSON. No preamble. No markdown fences.`;
 
     return NextResponse.json({
       success: true,
-      data: { reasoning, answer, reply: answer, spiralDetected: effectiveSpiralDetected, spiralSignal: effectiveSpiralSignal, confidence_score: confidenceScore },
+      data: { reasoning, answer, reply: answer, recommended_action: recommendedAction, spiralDetected: effectiveSpiralDetected, spiralSignal: effectiveSpiralSignal, confidence_score: confidenceScore },
     });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Coach failed";
@@ -504,4 +520,4 @@ Return ONLY the JSON. No preamble. No markdown fences.`;
       },
     }, { status });
   }
-                                            }
+    }
