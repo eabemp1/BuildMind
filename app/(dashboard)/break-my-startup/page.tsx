@@ -46,6 +46,13 @@ interface PivotItem {
   key_change: string;
 }
 
+interface CompetitorRow {
+  name: string;
+  url?: string;
+  weakness: string;
+  threat_level: "low" | "medium" | "high";
+}
+
 interface BreakResult {
   overallRisk: RiskSeverity;
   summary: string;
@@ -67,6 +74,19 @@ interface BreakResult {
    *  wrong direction" signal — but it was dropped before reaching the UI.
    *  Now surfaced as its own card. */
   pivots?: PivotItem[];
+  /** Real per-competitor breakdown from the Competitor agent
+   *  (agent_outputs.competitor.direct_competitors) — computed on every run,
+   *  but only ever reduced to a generic paragraph (competitor_summary)
+   *  before reaching this page. Feeds the Competitive Landscape table. */
+  competitorTable?: CompetitorRow[];
+  /** Real opportunities the pipeline found (signals.all_opportunities on the
+   *  backend), returned as survive_reasons on every response but never read
+   *  here before. Feeds "What Could Still Work". */
+  surviveReasons?: string[];
+  /** Raw (non-inverted) 0-100 scores for the five stress-test dimensions —
+   *  same signal_summary the radar chart uses, kept un-inverted here so the
+   *  tiles read the same numbers a founder would recognize from the model. */
+  signalScores?: { demand: number; competition: number; timing: number; uniqueness: number; risk: number };
   reflexionAction?: {
     action?: string;
     rationale?: string;
@@ -293,6 +313,22 @@ export default function BreakMyStartupPage() {
       | { top_risks?: Array<{ mitigation?: string }> }
       | undefined;
 
+    // Real per-competitor data the Competitor agent already computes on
+    // every run — confirmed via grep that it reaches agent_outputs.competitor
+    // but nothing before this read direct_competitors back out; only the
+    // generic competitor_summary paragraph was ever shown.
+    const competitorAgentOutput = data.agent_outputs?.competitor as
+      | { direct_competitors?: Array<{ name?: string; url?: string; weakness?: string; threat_level?: string }> }
+      | undefined;
+    const competitorTable: CompetitorRow[] | undefined = competitorAgentOutput?.direct_competitors?.length
+      ? competitorAgentOutput.direct_competitors.slice(0, 5).map((c) => ({
+          name: cleanAIText(c.name) || "Unnamed competitor",
+          url: c.url,
+          weakness: cleanAIText(c.weakness) || "No specific gap identified yet.",
+          threat_level: (c.threat_level === "high" || c.threat_level === "low") ? c.threat_level : "medium",
+        }))
+      : undefined;
+
     const usedDiffIndices = new Set<number>();
     function nextDifferentiationEntry(): string | undefined {
       for (let i = 0; i < differentiationPlan.length; i++) {
@@ -361,6 +397,20 @@ export default function BreakMyStartupPage() {
             { key: "risk", label: "Safety", value: 100 - (ss.risk_score ?? 100), tip: "Inverted risk score — higher means lower execution risk" },
           ]
         : undefined;
+    // Un-inverted counterpart of the above, for the at-a-glance score tiles —
+    // same source numbers, just literal (Competition/Risk read as-is, not
+    // flipped for the "more filled = better" radar convention).
+    const signalScores = ss && [ss.demand_score, ss.competition_score, ss.timing_score, ss.uniqueness_score, ss.risk_score].some(
+      (v) => typeof v === "number"
+    )
+      ? {
+          demand: Math.round(ss.demand_score ?? 0),
+          competition: Math.round(ss.competition_score ?? 0),
+          timing: Math.round(ss.timing_score ?? 0),
+          uniqueness: Math.round(ss.uniqueness_score ?? 0),
+          risk: Math.round(ss.risk_score ?? 0),
+        }
+      : undefined;
 
     return {
       overallRisk,
@@ -376,6 +426,9 @@ export default function BreakMyStartupPage() {
           ).join(" | ") || "Calculated from execution data, validation signals, stage, and competitor context.",
       agents,
       signalBreakdown,
+      signalScores,
+      competitorTable,
+      surviveReasons: cleanAIList(data.survive_reasons),
       isSynthetic,
       focusAreas: cleanAIList(data.focus_areas),
       pivots: Array.isArray(data.pivots)
@@ -585,6 +638,23 @@ export default function BreakMyStartupPage() {
     setProjectExplicitlySelected(false);
     setAddedProjectId(null);
     setAddProjectError(null);
+  }
+
+  // "Explore Pivot" — takes the founder from a pivot suggestion straight
+  // into a fresh stress test on that pivot, instead of leaving it as a
+  // dead-end card. Composes the re-run idea from the pivot's own real
+  // fields (title/description/target_niche/key_change) rather than any
+  // separately generated copy.
+  function handleExplorePivot(pivot: PivotItem) {
+    setResult(null);
+    setError(null);
+    setSaved(false);
+    setSelectedProjectId("");
+    setProjectExplicitlySelected(false);
+    setCustomIdea(
+      `${pivot.title}: ${pivot.description}\n\nTarget users: ${pivot.target_niche}\nKey change from current approach: ${pivot.key_change}`
+    );
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   async function handleOutcome(outcome: "completed" | "partial" | "overridden") {
@@ -884,6 +954,37 @@ export default function BreakMyStartupPage() {
               </div>
             </motion.div>
 
+            {/* At-a-glance score tiles — same signal_summary numbers behind
+                the radar chart further down, shown literally (not inverted)
+                the way the model actually scored each dimension. */}
+            {result.signalScores && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1 }}
+                className="grid grid-cols-2 gap-2.5 sm:grid-cols-5"
+              >
+                {([
+                  ["Demand", result.signalScores.demand, "var(--bm-intel)"],
+                  ["Competition", result.signalScores.competition, "var(--bm-red)"],
+                  ["Timing", result.signalScores.timing, "var(--bm-green)"],
+                  ["Uniqueness", result.signalScores.uniqueness, "var(--bm-amber)"],
+                  ["Risk", result.signalScores.risk, "var(--bm-red)"],
+                ] as const).map(([label, value, color]) => (
+                  <Card key={label} variant="data" className="p-3">
+                    <div className="font-mono text-[9px] uppercase tracking-[0.06em] text-[var(--bm-text4)]">{label}</div>
+                    <div className="mt-1 flex items-baseline gap-1">
+                      <span className="text-xl font-bold text-[var(--bm-text)]">{value}</span>
+                      <span className="text-[10px] text-[var(--bm-text4)]">/100</span>
+                    </div>
+                    <div className="mt-2 h-1 overflow-hidden rounded-full bg-[var(--bm-bg3)]">
+                      <div className="h-full rounded-full" style={{ width: `${Math.min(100, Math.max(0, value))}%`, background: color }} />
+                    </div>
+                  </Card>
+                ))}
+              </motion.div>
+            )}
+
             {/* Brutal advice — high contrast */}
             {result.brutal_advice && (
               <motion.div
@@ -963,7 +1064,7 @@ export default function BreakMyStartupPage() {
 
             {result.executionPlan && (
               <Card variant="data" className="flex flex-col gap-3 p-4">
-                <h3 className="font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--bm-text3)]">Execution plan</h3>
+                <h3 className="font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--bm-text3)]">Execution Recovery Plan</h3>
                 <div className="grid gap-3 sm:grid-cols-3">
                   {[
                     ["MVP Roadmap", result.executionPlan.mvp_roadmap],
@@ -1016,7 +1117,7 @@ export default function BreakMyStartupPage() {
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
                 <h3 style={{ fontSize: 12, fontWeight: 700, color: "var(--bm-text)", margin: 0, textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                  Kill reasons
+                  What Breaks First
                 </h3>
                 <span style={{
                   fontSize: 10, fontWeight: 600, color: "var(--bm-red)",
@@ -1065,6 +1166,9 @@ export default function BreakMyStartupPage() {
                         {risk.severity}
                       </Badge>
                     </div>
+                    <div style={{ fontSize: 9, fontWeight: 700, color: "var(--bm-intel)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4, fontFamily: "'DM Mono', monospace" }}>
+                      Failure mechanism
+                    </div>
                     <div style={{ margin: "0 0 10px 0" }}>
                       <Markdown textSize={13}>{sanitizeMarkdown(risk.description)}</Markdown>
                     </div>
@@ -1085,6 +1189,77 @@ export default function BreakMyStartupPage() {
               ))}
             </div>
 
+            {/* What Could Still Work — real opportunity signals
+                (signals.all_opportunities on the backend) returned on every
+                response as survive_reasons but never rendered before. No
+                per-item confidence score exists in the real data, so none is
+                shown here — only the categories/severity levels above the
+                risk cards are ever assigned an actual number. */}
+            {result.surviveReasons && result.surviveReasons.length > 0 && (
+              <div className="flex flex-col gap-2.5">
+                <h3 className="m-0 text-xs font-bold uppercase tracking-[0.08em] text-[var(--bm-text)]">
+                  What Could Still Work
+                </h3>
+                <div className="grid gap-2.5 sm:grid-cols-2">
+                  {result.surviveReasons.map((reason, i) => (
+                    <div
+                      key={i}
+                      className="rounded-[var(--r-md)] p-3"
+                      style={{ borderLeft: "2px solid var(--bm-green)", background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderLeftWidth: 2, borderLeftColor: "var(--bm-green)" }}
+                    >
+                      <Markdown textSize={12}>{sanitizeMarkdown(reason)}</Markdown>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Competitive Landscape — real per-competitor data from the
+                Competitor agent (agent_outputs.competitor.direct_competitors),
+                computed on every run but previously reduced to a generic
+                paragraph before reaching the UI. Only columns backed by real
+                per-competitor fields are shown (name, exploitable weakness,
+                threat level) — no invented "core strength" column, since
+                nothing in the agent output states one per competitor. */}
+            {result.competitorTable && result.competitorTable.length > 0 && (
+              <Card variant="data" className="flex flex-col gap-3 p-4">
+                <h3 className="font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--bm-text3)]">
+                  Competitive Landscape
+                </h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-left text-xs">
+                    <thead>
+                      <tr style={{ borderBottom: "1px solid var(--bm-border)" }}>
+                        <th className="px-2 py-1.5 font-mono text-[9px] uppercase tracking-[0.06em] text-[var(--bm-text4)]">Competitor</th>
+                        <th className="px-2 py-1.5 font-mono text-[9px] uppercase tracking-[0.06em] text-[var(--bm-text4)]">Exploitable weakness</th>
+                        <th className="px-2 py-1.5 font-mono text-[9px] uppercase tracking-[0.06em] text-[var(--bm-text4)]">Threat</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {result.competitorTable.map((row) => (
+                        <tr key={row.name} style={{ borderBottom: "1px solid var(--bm-border)" }}>
+                          <td className="px-2 py-2 align-top font-semibold text-[var(--bm-text)]">
+                            {row.url ? (
+                              <a href={row.url} target="_blank" rel="noopener noreferrer" className="hover:underline">{row.name}</a>
+                            ) : row.name}
+                          </td>
+                          <td className="px-2 py-2 align-top leading-relaxed text-[var(--bm-text3)]">{row.weakness}</td>
+                          <td className="px-2 py-2 align-top">
+                            <Badge
+                              variant={row.threat_level === "high" ? "danger" : row.threat_level === "low" ? "success" : "warning"}
+                              size="sm"
+                            >
+                              {row.threat_level}
+                            </Badge>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            )}
+
             {/* Pivot suggestions — the system's actual "you might be going in
                 the wrong direction" signal. Computed server-side by the
                 Pivot Engine (lib/agents generatePivots) on every run, but
@@ -1094,7 +1269,7 @@ export default function BreakMyStartupPage() {
                 <div className="flex items-center gap-2">
                   <RefreshCw size={13} style={{ color: "var(--bm-accent)" }} />
                   <h3 className="text-sm font-semibold text-[var(--bm-text)]">
-                    Consider a different direction
+                    Pivot Candidates
                   </h3>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-3">
@@ -1107,12 +1282,7 @@ export default function BreakMyStartupPage() {
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-xs font-semibold text-[var(--bm-text)]">{pivot.title}</span>
                         {pivot.estimated_score_delta > 0 && (
-                          <span
-                            className="text-[10px] font-semibold"
-                            style={{ color: "var(--bm-green)" }}
-                          >
-                            +{pivot.estimated_score_delta} viability
-                          </span>
+                          <Badge variant="success" size="sm">+{pivot.estimated_score_delta} score</Badge>
                         )}
                       </div>
                       <p className="text-xs leading-relaxed text-[var(--bm-text3)]">{pivot.description}</p>
@@ -1122,6 +1292,18 @@ export default function BreakMyStartupPage() {
                       <p className="text-[11px] leading-relaxed text-[var(--bm-text3)]">
                         <span className="font-semibold text-[var(--bm-text2)]">Why: </span>{pivot.why_better}
                       </p>
+                      {pivot.key_change && (
+                        <p className="text-[11px] leading-relaxed text-[var(--bm-text3)]">
+                          <span className="font-semibold text-[var(--bm-text2)]">Required change: </span>{pivot.key_change}
+                        </p>
+                      )}
+                      <button
+                        onClick={() => handleExplorePivot(pivot)}
+                        className="mt-1 w-full rounded-md border py-1.5 text-[11px] font-semibold uppercase tracking-[0.04em] transition-colors"
+                        style={{ borderColor: "var(--bm-accent-bd)", color: "var(--bm-accent)", background: "transparent" }}
+                      >
+                        Explore pivot →
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -1197,4 +1379,4 @@ export default function BreakMyStartupPage() {
       </AnimatePresence>
     </div>
   );
-}
+      }
