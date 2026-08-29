@@ -14,6 +14,7 @@ import {
   getProjectsForCurrentUser,
   getProjectSummaries,
   markNotificationAsRead,
+  updateProjectDetails,
   updateTaskStatus,
   type BuildMindNotification,
   type ProjectSummary,
@@ -119,6 +120,28 @@ export function useCreateProjectMutation() {
       void qc.invalidateQueries({ queryKey: queryKeys.projectSummaries });
       void qc.invalidateQueries({ queryKey: queryKeys.overviewRoot });
       void qc.invalidateQueries({ queryKey: queryKeys.notifications });
+    },
+  });
+}
+
+export function useUpdateProjectMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: {
+      projectId: string;
+      updates: {
+        target_users?: string;
+        problem?: string;
+        description?: string;
+        title?: string;
+        key_metric?: string;
+        current_hypothesis?: string;
+      };
+    }) => updateProjectDetails(args.projectId, args.updates),
+    onSuccess: (_data, variables) => {
+      void qc.invalidateQueries({ queryKey: queryKeys.project(variables.projectId) });
+      void qc.invalidateQueries({ queryKey: queryKeys.projectSummaries });
+      void qc.invalidateQueries({ queryKey: queryKeys.overviewRoot });
     },
   });
 }
@@ -282,4 +305,4 @@ export function useFounderScorecardQuery(validationStrengths: string[] = []) {
     },
     staleTime: 60_000,
   });
-                                                }
+    }
