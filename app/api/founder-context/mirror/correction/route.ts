@@ -11,6 +11,26 @@ const correctionSchema = z.object({
   evidence: z.string().trim().max(1000).optional(),
 });
 
+// GET — the "View past corrections" list on the Founder Mirror page.
+// founder_corrections has been written to by POST below since this route's
+// creation; nothing previously read it back for the founder to see it again.
+export async function GET() {
+  const supabase = await createClient();
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error || !user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+
+  const admin = createAdminClient();
+  const { data: memory, error: readError } = await admin
+    .from("founder_memory")
+    .select("founder_corrections")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (readError) return NextResponse.json({ ok: false, error: "Could not load founder memory" }, { status: 500 });
+
+  const corrections = Array.isArray(memory?.founder_corrections) ? memory.founder_corrections : [];
+  return NextResponse.json({ ok: true, corrections: [...corrections].reverse() });
+}
+
 export async function POST(request: Request) {
   const supabase = await createClient();
   const { data: { user }, error } = await supabase.auth.getUser();
