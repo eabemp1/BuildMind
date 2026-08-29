@@ -1,33 +1,26 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { z } from "zod";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { computeStartupScore } from "@/lib/buildmind";
 import { getActiveProjectId, setActiveProjectId } from "@/lib/api";
 import {
-  useCreateProjectMutation,
   useDeleteProjectMutation,
   useProjectSummariesQuery,
 } from "@/lib/queries";
-import { projectCreateSchema } from "@/lib/validation";
 import { getLimits } from "@/lib/plan";
 import { usePlan } from "@/lib/usePlan";
 import { useLimitModal } from "@/components/LimitModal";
 import {
-  Plus, Trash2, ChevronRight, Check, X, ArrowRight, Clock, FolderKanban,
+  Plus, Trash2, ChevronRight, Check, FolderKanban, Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Input, Textarea } from "@/components/ui/input";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { SectionHeader } from "@/components/ui/SectionHeader";
-import { ScoreRing } from "@/components/ui/ScoreRing";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 const STAGE_OPTIONS = ["Idea", "Validation", "MVP", "Launch", "Growth", "Revenue"] as const;
@@ -107,161 +100,32 @@ function ProgressBar({
   );
 }
 
-function SkeletonRow() {
+// ── Loading state — Figma shows a centered spinner + status copy here
+//    rather than a skeleton list; matches that per-state arrangement. ──────
+function LoadingState() {
   return (
-    <div className="h-16 rounded-[var(--r-xl)] bg-[var(--bm-bg3)] animate-pulse" />
-  );
-}
-
-// ── Create Modal ──────────────────────────────────────────────────────────────
-function CreateModal({
-  onClose,
-  onCreate,
-  isPending,
-}: {
-  onClose: () => void;
-  onCreate: (data: { title: string; problem: string; stage: StartupStage; targetUsers: string }) => void;
-  isPending: boolean;
-}) {
-  const [title, setTitle] = useState("");
-  const [problem, setProblem] = useState("");
-  const [targetUsers, setTargetUsers] = useState("");
-  const [stage, setStage] = useState<StartupStage>("Idea");
-  const [error, setError] = useState("");
-
-  function handleSubmit() {
-    setError("");
-    if (!title.trim()) { setError("Project name is required."); return; }
-    try {
-      // FIX: was hardcoded to "Founders" here, so this check always passed
-      // regardless of what the founder actually typed (or didn't type) for
-      // targeting — meaning this project's target_users fed into every AI
-      // prompt from day one was a lie. Validate the real field.
-      projectCreateSchema.parse({
-        projectName: title.trim(),
-        ideaDescription: problem.trim(),
-        targetUsers: targetUsers.trim(),
-      });
-    } catch (e: unknown) {
-      const msg = (e as { errors?: { message: string }[] })?.errors?.[0]?.message;
-      setError(msg ?? "Invalid input");
-      return;
-    }
-    onCreate({ title, problem, stage, targetUsers: targetUsers.trim() });
-  }
-
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: "rgba(0,0,0,0.72)", backdropFilter: "blur(6px)" }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <motion.div
-        initial={{ opacity: 0, scale: 0.96, y: 12 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.96 }}
-        transition={{ duration: 0.18 }}
-        className="w-full max-w-md rounded-[var(--r-xl)] p-5 sm:p-7 flex flex-col gap-5"
-        style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)" }}
-      >
-        <div className="flex items-start justify-between">
-          <div>
-            <h2 className="text-xl font-bold text-[var(--bm-text)] tracking-tight">New Project</h2>
-            <p className="text-sm text-[var(--bm-text3)] mt-1">Start with a clear problem statement.</p>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-[var(--bm-text3)] hover:bg-[var(--bm-bg3)] transition-colors"
-          >
-            <X size={16} />
-          </button>
-        </div>
-
-        <div className="flex flex-col gap-4">
-          <Input
-            label="Project Name"
-            placeholder="e.g. BuildMind, TaskFlow AI…"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            autoFocus
-          />
-
-          <Textarea
-            label="Problem You're Solving"
-            placeholder="Who has this problem? What happens when they can't solve it?"
-            value={problem}
-            onChange={(e) => setProblem(e.target.value)}
-            rows={3}
-          />
-
-          <Input
-            label="Who Is This For?"
-            placeholder="e.g. solo founders juggling multiple ventures"
-            value={targetUsers}
-            onChange={(e) => setTargetUsers(e.target.value)}
-          />
-
-          <div className="flex flex-col gap-2">
-            <label className="text-xs font-medium text-[var(--bm-text2)] uppercase tracking-widest">
-              Current Stage
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {STAGE_OPTIONS.map((s) => {
-                const isActive = stage === s;
-                const color = STAGE_COLORS[s] ?? "var(--bm-text3)";
-                return (
-                  <button
-                    key={s}
-                    onClick={() => setStage(s)}
-                    className="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-150"
-                    style={{
-                      background: isActive ? `${color}15` : "transparent",
-                      borderColor: isActive ? `${color}55` : "var(--bm-border)",
-                      color: isActive ? color : "var(--bm-text3)",
-                    }}
-                  >
-                    {s}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {error && (
-            <p className="text-xs p-3 rounded-lg" style={{ background: "rgba(224,85,85,0.08)", color: "var(--bm-red)", border: "1px solid rgba(224,85,85,0.2)" }}>
-              {error}
-            </p>
-          )}
-        </div>
-
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <Button variant="secondary" fullWidth onClick={onClose} disabled={isPending}>
-            Cancel
-          </Button>
-          <Button fullWidth onClick={handleSubmit} loading={isPending} disabled={!title.trim()}>
-            Create Project <ArrowRight size={13} />
-          </Button>
-        </div>
-      </motion.div>
-    </motion.div>
+    <div className="flex min-h-[320px] flex-col items-center justify-center gap-3 text-center">
+      <Loader2 size={22} className="animate-spin text-[var(--bm-accent)]" />
+      <div>
+        <p className="text-[13px] font-semibold text-[var(--bm-text2)]">Loading your projects…</p>
+        <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--bm-text4)]">
+          Syncing project data
+        </p>
+      </div>
+    </div>
   );
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function ProjectsPage() {
-  const router = useRouter();
   const { plan } = usePlan();
   const { showLimitModal } = useLimitModal();
   const { data: summaries = [], isLoading } = useProjectSummariesQuery();
-  const createMut = useCreateProjectMutation();
   const deleteMut = useDeleteProjectMutation();
 
   const [activeId, setActiveId] = useState<string>("");
-  const [showCreate, setShowCreate] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [stageFilter, setStageFilter] = useState<string>("all");
   // Fix #1: server-authoritative streak + xp so score is consistent across pages/devices
   const [serverStreak, setServerStreak] = useState(0);
   const [serverXP, setServerXP] = useState(0);
@@ -290,25 +154,6 @@ export default function ProjectsPage() {
       .catch(() => {});
   }, []);
 
-  async function handleCreate(data: { title: string; problem: string; stage: StartupStage; targetUsers: string }) {
-    if (!canCreateProject) {
-      showLimitModal("projects");
-      return;
-    }
-    try {
-      await createMut.mutateAsync({
-        project_name: data.title.trim(),
-        idea_description: data.problem.trim(),
-        target_users: data.targetUsers,
-        problem: data.problem.trim(),
-        startup_stage: data.stage,
-      });
-      setShowCreate(false);
-    } catch {
-      /* errors handled in modal */
-    }
-  }
-
   async function handleDelete(id: string) {
     await deleteMut.mutateAsync(id);
     if (activeId === id) setActiveId("");
@@ -318,6 +163,29 @@ export default function ProjectsPage() {
   async function handleSetActive(id: string) {
     await setActiveProjectId(id);
     setActiveId(id);
+  }
+
+  // Quick filters — only offer stages actually present in the founder's
+  // projects, so "Growth" never shows up as a filter option for someone
+  // with zero Growth-stage projects.
+  const stagesPresent = useMemo(() => {
+    const set = new Set<string>();
+    summaries.forEach((s) => set.add(normalizeStage(s.startup_stage ?? "")));
+    return STAGE_OPTIONS.filter((s) => set.has(s));
+  }, [summaries]);
+
+  const filteredSummaries = useMemo(() => {
+    if (stageFilter === "all") return summaries;
+    return summaries.filter((s) => normalizeStage(s.startup_stage ?? "") === stageFilter);
+  }, [summaries, stageFilter]);
+
+  const createHref = canCreateProject ? "/projects/new" : undefined;
+
+  function handleCreateClick(e: React.MouseEvent) {
+    if (!canCreateProject) {
+      e.preventDefault();
+      showLimitModal("projects");
+    }
   }
 
   return (
@@ -334,36 +202,63 @@ export default function ProjectsPage() {
           title="Your Projects"
           subtitle="The hypotheses and workstreams BuildMind is tracking."
           action={
-            <>
-              <Button size="sm" onClick={() => setShowCreate(true)}>
+            <Link href={createHref ?? "#"} onClick={handleCreateClick}>
+              <Button size="sm" disabled={!canCreateProject}>
                 <Plus size={14} />
                 Create project
               </Button>
-            </>
+            </Link>
           }
         />
       </motion.div>
 
+      {/* Plan limit reached banner */}
+      {!isLoading && !hasUnlimitedProjects && !canCreateProject && (
+        <motion.div
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.2, delay: 0.05 }}
+          className="mt-5 rounded-[var(--r-lg)] border-l-2 p-4"
+          style={{ borderLeftColor: "var(--bm-accent)", background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)" }}
+        >
+          <p className="font-mono text-[9px] font-semibold uppercase tracking-[0.1em] text-[var(--bm-accent)]">
+            Free plan limit reached
+          </p>
+          <p className="mt-1.5 text-[13px] font-semibold text-[var(--bm-text)]">
+            You&apos;ve reached your project limit ({summaries.length}/{limits.maxProjects})
+          </p>
+          <p className="mt-1 text-[12px] leading-relaxed text-[var(--bm-text3)]">
+            Upgrade to add more projects and unlock advanced validation intelligence loops.
+          </p>
+          <div className="mt-3 flex items-center gap-4">
+            <Button size="sm" onClick={() => showLimitModal("projects")}>
+              Upgrade plan
+            </Button>
+            <a href="/upgrade" className="text-[12px] font-medium text-[var(--bm-text2)] hover:text-[var(--bm-text)]">
+              Learn more
+            </a>
+          </div>
+        </motion.div>
+      )}
+
       <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_250px] lg:items-start">
         <main className="min-w-0">
           {/* Loading */}
-          {isLoading && (
-            <div className="flex flex-col gap-2">
-              {[1, 2, 3].map((i) => <SkeletonRow key={i} />)}
-            </div>
-          )}
+          {isLoading && <LoadingState />}
 
           {/* Empty state */}
           {!isLoading && summaries.length === 0 && (
             <EmptyState
               icon={FolderKanban}
               title="No projects yet"
-              body="Create your first project to give BuildMind enough context for sharper recommendations."
+              body="Create your first project to give BuildMind context for better recommendations."
               action={
-                <Button onClick={() => setShowCreate(true)}>
-                  <Plus size={14} />
-                  Create your first project
-                </Button>
+                <Link href={createHref ?? "#"} onClick={handleCreateClick}>
+                  <Button disabled={!canCreateProject}>
+                    <Plus size={14} />
+                    Create your first project
+                  </Button>
+                </Link>
               }
             />
           )}
@@ -371,7 +266,7 @@ export default function ProjectsPage() {
           {/* Project list */}
           {!isLoading && summaries.length > 0 && (
             <div className="flex flex-col gap-2">
-          {summaries.map((s, i) => {
+          {filteredSummaries.map((s, i) => {
             const score = computeStartupScore({
               ...s,
               streak: serverStreak,
@@ -385,6 +280,7 @@ export default function ProjectsPage() {
               : 0;
             const health = deriveProjectHealth(s, score);
             const healthMeta = HEALTH_META[health];
+            const activeTasks = Math.max(0, (s.tasksTotal ?? 0) - (s.tasksCompleted ?? 0));
 
             return (
               <motion.div
@@ -406,17 +302,29 @@ export default function ProjectsPage() {
                   <div className="p-4 sm:p-4.5">
                     <div className="flex gap-3">
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-[13px] font-semibold text-[var(--bm-text)]">
-                            {s.name ?? s.title}
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex min-w-0 items-center gap-2 flex-wrap">
+                            <span className="text-[13px] font-semibold text-[var(--bm-text)]">
+                              {s.name ?? s.title}
+                            </span>
+                            <Badge variant={stageVariant} size="sm">{stageNorm}</Badge>
+                            <Badge variant={healthMeta.variant} size="sm" dot>{healthMeta.label}</Badge>
+                            {isActive ? <Badge variant="success" size="sm" dot>Active</Badge> : null}
+                          </div>
+                          <span className="shrink-0 font-mono text-[10px] text-[var(--bm-text4)]">
+                            {activeTasks} active task{activeTasks === 1 ? "" : "s"}
                           </span>
-                          <Badge variant={stageVariant} size="sm">{stageNorm}</Badge>
-                          {isActive ? <Badge variant="success" size="sm" dot>Active</Badge> : null}
                         </div>
 
                         {s.problem && (
                           <p className="mt-2 text-[11px] leading-relaxed text-[var(--bm-text3)] line-clamp-1">
-                            {s.problem}
+                            Problem: {s.problem}
+                          </p>
+                        )}
+
+                        {s.target_users && (
+                          <p className="mt-1.5 font-mono text-[9px] uppercase tracking-[0.06em] text-[var(--bm-text4)] line-clamp-1">
+                            Targets: <span className="normal-case tracking-normal text-[var(--bm-text3)]">{s.target_users}</span>
                           </p>
                         )}
 
@@ -506,37 +414,44 @@ export default function ProjectsPage() {
             );
           })}
 
+          {filteredSummaries.length === 0 && (
+            <p className="py-8 text-center text-[12px] text-[var(--bm-text3)]">
+              No {stageFilter === "all" ? "" : `${stageFilter} `}projects match this filter.
+            </p>
+          )}
+
           {/* Add more nudge */}
           {canCreateProject && (
-            <motion.button
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.4 }}
-              onClick={() => setShowCreate(true)}
-              className="w-full rounded-[var(--r-lg)] py-4 text-xs flex items-center justify-center gap-2 transition-all duration-150"
-              style={{
-                border: "2px dashed var(--bm-border)",
-                background: "transparent",
-                color: "var(--bm-text3)",
-                cursor: "pointer",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = "var(--bm-accent-bd)";
-                e.currentTarget.style.color = "var(--bm-accent)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = "var(--bm-border)";
-                e.currentTarget.style.color = "var(--bm-text3)";
-              }}
-            >
-              <Plus size={14} /> Create another project
-            </motion.button>
+            <Link href="/projects/new">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.4 }}
+                className="w-full rounded-[var(--r-lg)] py-4 text-xs flex items-center justify-center gap-2 transition-all duration-150"
+                style={{
+                  border: "2px dashed var(--bm-border)",
+                  background: "transparent",
+                  color: "var(--bm-text3)",
+                  cursor: "pointer",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = "var(--bm-accent-bd)";
+                  e.currentTarget.style.color = "var(--bm-accent)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = "var(--bm-border)";
+                  e.currentTarget.style.color = "var(--bm-text3)";
+                }}
+              >
+                <Plus size={14} /> Create another project
+              </motion.div>
+            </Link>
           )}
         </div>
           )}
         </main>
 
-        <aside className="order-first lg:order-none">
+        <aside className="order-first flex flex-col gap-3 lg:order-none">
           <Card variant="data" className="p-4">
             <p className="font-mono text-[9px] font-medium uppercase tracking-[0.1em] text-[var(--bm-text4)]">
               Project overview
@@ -567,19 +482,25 @@ export default function ProjectsPage() {
               </button>
             ) : null}
           </Card>
+
+          {/* Quick filters — only shown once there's more than one stage to filter between */}
+          {summaries.length > 0 && stagesPresent.length > 1 && (
+            <Card variant="data" className="p-4">
+              <p className="font-mono text-[9px] font-medium uppercase tracking-[0.1em] text-[var(--bm-text4)]">
+                Quick filters
+              </p>
+              <Tabs value={stageFilter} onValueChange={setStageFilter} variant="pill" className="mt-3">
+                <TabsList className="flex-wrap">
+                  <TabsTrigger value="all">All</TabsTrigger>
+                  {stagesPresent.map((s) => (
+                    <TabsTrigger key={s} value={s}>{s}</TabsTrigger>
+                  ))}
+                </TabsList>
+              </Tabs>
+            </Card>
+          )}
         </aside>
       </div>
-
-      {/* Create modal */}
-      <AnimatePresence>
-        {showCreate && (
-          <CreateModal
-            onClose={() => setShowCreate(false)}
-            onCreate={handleCreate}
-            isPending={createMut.isPending}
-          />
-        )}
-      </AnimatePresence>
     </div>
   );
-  }
+      }
