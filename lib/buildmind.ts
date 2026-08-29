@@ -48,6 +48,7 @@ export {
   updateProjectStage,
   getProjectDetail,
   createProjectWithRoadmap,
+  updateProjectDetails,
   getDashboardOverview,
   getWeeklyReportMetrics,
   calculateDashboardStats,
