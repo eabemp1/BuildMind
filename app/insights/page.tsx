@@ -778,6 +778,50 @@ export default function InsightsPage() {
             </Section>
           )}
 
+          {/* ── Reveal Mirror — Figma's closing element for Patterns: this
+                 tab is the lighter-weight teaser, Founder Mirror is the deep
+                 dive with confidence-scored beliefs and evidence. Real
+                 navigation to a page that already exists and already works. */}
+          {tab === "patterns" && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              style={{
+                background: "var(--bm-intel-dim, rgba(155,135,245,0.06))",
+                border: "1px solid var(--bm-intel-bd, rgba(155,135,245,0.25))",
+                borderRadius: 14,
+                padding: "18px 20px",
+              }}
+            >
+              <div style={{
+                display: "flex", alignItems: "center", gap: 7,
+                fontSize: 9, fontWeight: 700, letterSpacing: "0.1em",
+                textTransform: "uppercase", color: "var(--bm-intel, #9B87F5)",
+                fontFamily: "'DM Mono', monospace", marginBottom: 10,
+              }}>
+                Cognitive mirror report
+              </div>
+              <p style={{ fontSize: 15, fontWeight: 700, color: "var(--bm-text)", margin: "0 0 6px", fontFamily: "'Syne', sans-serif" }}>
+                Generate Founder Mirror Reflection
+              </p>
+              <p style={{ fontSize: 11.5, color: "var(--bm-text3)", margin: "0 0 14px", lineHeight: 1.6 }}>
+                Compile all active strengths, cognitive loops, and avoidance trends into a permanent, revisable view of your operating model.
+              </p>
+              <a
+                href="/founder-mirror"
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 6, padding: "9px 18px",
+                  borderRadius: "var(--r-md, 10px)", border: "none",
+                  background: "var(--bm-intel, #9B87F5)", color: "#0f0d1a",
+                  fontFamily: "'Inter', sans-serif", fontSize: 12.5, fontWeight: 700, textDecoration: "none",
+                }}
+              >
+                Reveal Mirror →
+              </a>
+            </motion.div>
+          )}
+
+
           {/* ── Top skip reason ──────────────────────────────────────────── */}
           {tab === "signals" && data.topOverrideReason && (
             <Section label="Why you skip" accent="var(--bm-red)">
@@ -893,4 +937,4 @@ export default function InsightsPage() {
       )}
     </div>
   );
-  }
+    }
