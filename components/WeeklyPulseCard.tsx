@@ -38,7 +38,7 @@ interface WeeklyPulseData {
   tasks_completed: number; tasks_total: number; completion_rate: number; active_days: number;
   un_ghosted: string[]; milestones: MilestonePacing[]; archetype: string | null;
   day_of_week: Record<string, { completed: number; total: number }>;
-  confidence_by_outcome: Record<string, number>; top_override_reason: string | null;
+  confidence_by_outcome: Record<string, number>; confidence_index: number | null; top_override_reason: string | null;
   weekly_goal: { goal_text: string; target_score: number; current_score: number; target_tasks: number; tasks_done: number; status: string } | null;
   sparkline: SparklinePoint[]; grades: GradedDimension[]; story: string; generated_at: string;
 }
@@ -115,6 +115,26 @@ function GradeBadge({ g }: { g: GradedDimension }) {
   );
 }
 
+function confidenceLabel(index: number): { label: string; color: string } {
+  if (index >= 75) return { label: "High", color: "var(--bm-green)" };
+  if (index >= 50) return { label: "Medium", color: "var(--bm-amber, #d9a441)" };
+  return { label: "Low", color: "var(--bm-red)" };
+}
+
+/** Best day of the week by completion rate — computed from day_of_week,
+ *  which the API already returns but nothing on this card ever rendered.
+ *  Requires at least 2 logged actions on a day before it counts, so a
+ *  single lucky task doesn't get called out as "your best day". */
+function bestDay(dayOfWeek: Record<string, { completed: number; total: number }>): { day: string; rate: number } | null {
+  let best: { day: string; rate: number } | null = null;
+  for (const [day, { completed, total }] of Object.entries(dayOfWeek)) {
+    if (total < 2) continue;
+    const rate = Math.round((completed / total) * 100);
+    if (!best || rate > best.rate) best = { day, rate };
+  }
+  return best;
+}
+
 export function WeeklyPulseCard() {
   const [data, setData] = useState<WeeklyPulseData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -186,11 +206,11 @@ export function WeeklyPulseCard() {
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {/* 1. STORY */}
-      <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderLeft: "3px solid var(--bm-amber)", borderRadius: "var(--r-lg)", padding: "20px 20px 16px" }}>
+      <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-lg)", padding: "20px 20px 16px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
           <Sparkles size={14} style={{ color: "var(--bm-text3)" }} />
           <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.10em", color: "var(--bm-text3)" }}>
-            Weekly conclusion
+            Your week
           </span>
           {data.archetype && (
             <a
@@ -211,6 +231,29 @@ export function WeeklyPulseCard() {
           {sanitizeOutput(data.story)}
         </p>
       </div>
+
+      {/* Confidence index — reflections.confidence values were already
+          returned as confidence_by_outcome but never surfaced; this is the
+          same signal flattened into one founder-facing number. */}
+      {data.confidence_index !== null && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-lg)", padding: "12px 18px" }}>
+          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "var(--bm-text3)" }}>Confidence index</span>
+          <span style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color: "var(--bm-text)" }}>{data.confidence_index}%</span>
+          <span
+            className="bm-badge"
+            style={{
+              fontFamily: "'DM Mono', monospace", fontSize: 9.5, textTransform: "uppercase", letterSpacing: "0.05em",
+              padding: "2px 8px", borderRadius: 999, color: confidenceLabel(data.confidence_index).color,
+              background: "var(--bm-bg3)", border: `1px solid ${confidenceLabel(data.confidence_index).color}33`,
+            }}
+          >
+            {confidenceLabel(data.confidence_index).label}
+          </span>
+          <span style={{ marginLeft: "auto", fontFamily: "'Inter', sans-serif", fontSize: 10.5, color: "var(--bm-text4)" }}>
+            From this week&apos;s reflections
+          </span>
+        </div>
+      )}
 
       {/* 2. EVIDENCE — ghost vs real sparkline, the founder's requested visual */}
       <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-lg)", padding: "16px 18px 8px" }}>
@@ -247,6 +290,74 @@ export function WeeklyPulseCard() {
           </div>
         </div>
       )}
+
+      {/* Cognitive matrix — both halves are data the API already computed
+          (day_of_week, top_override_reason) but nothing on this card ever
+          rendered before. "Verified known" needs 2+ logged actions on the
+          best day before it's shown, same as bestDay()'s own guard. */}
+      {(bestDay(data.day_of_week) || data.top_override_reason) && (
+        <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-lg)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: 14 }}>
+          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, fontWeight: 600, color: "var(--bm-text)" }}>Cognitive matrix</span>
+          {bestDay(data.day_of_week) && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 9.5, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--bm-green)" }}>
+                ● Verified known
+              </span>
+              <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "var(--bm-text)", margin: 0, lineHeight: 1.5 }}>
+                You get the most done on {bestDay(data.day_of_week)!.day}s ({bestDay(data.day_of_week)!.rate}% completion rate this week).
+              </p>
+            </div>
+          )}
+          {data.top_override_reason && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 9.5, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--bm-amber, #d9a441)" }}>
+                ● Active blindspot
+              </span>
+              <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "var(--bm-text)", margin: 0, lineHeight: 1.5 }}>
+                Your most common reason for skipped or partial tasks: &ldquo;{sanitizeOutput(data.top_override_reason)}&rdquo;
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Recommended directive — derived from whatever real signal is most
+          urgent (behind-pace goal > at-risk milestone > recurring skip
+          reason). Omitted entirely when none of those apply, rather than
+          forcing generic advice onto a good week. */}
+      {(() => {
+        const goal = data.weekly_goal;
+        const atRiskMilestone = data.milestones.find((m) => m.risk === "high" || m.risk === "medium");
+        const directive =
+          goal && goal.status !== "on_track" && goal.status !== "completed"
+            ? `You're behind on "${goal.goal_text}" — ${goal.tasks_done}/${goal.target_tasks} tasks done this week. Close the gap today.`
+            : atRiskMilestone
+              ? `"${atRiskMilestone.title}" is at risk — ${atRiskMilestone.reason}`
+              : data.top_override_reason
+                ? `Naming your top skip reason is step one. Pick one task today where "${data.top_override_reason}" doesn't get to win.`
+                : null;
+        if (!directive) return null;
+        return (
+          <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-accent-bd, var(--bm-border))", borderRadius: "var(--r-lg)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
+            <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 9.5, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--bm-accent)" }}>
+              Recommended directive
+            </span>
+            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, fontWeight: 600, color: "var(--bm-text)", margin: 0, lineHeight: 1.5 }}>
+              {sanitizeOutput(directive)}
+            </p>
+            <a
+              href="/today"
+              style={{
+                alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px",
+                borderRadius: "var(--r-md, 10px)", border: "none", background: "var(--bm-accent)", color: "#15130a",
+                fontFamily: "'Inter', sans-serif", fontSize: 12.5, fontWeight: 700, textDecoration: "none",
+              }}
+            >
+              Execute /today
+            </a>
+          </div>
+        );
+      })()}
 
       {/* 3. METRICS */}
       <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: 14, alignItems: "center", background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-lg)", padding: 18 }}>
@@ -288,21 +399,6 @@ export function WeeklyPulseCard() {
             </div>
             <span style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color: "var(--bm-text)" }}>{data.streak}d</span>
           </div>
-        </div>
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12 }}>
-        <div style={{ background: "rgba(155,135,245,0.10)", border: "1px solid rgba(155,135,245,0.55)", borderRadius: "var(--r-lg)", padding: "16px 18px" }}>
-          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: "var(--bm-intel, #9b87f5)", textTransform: "uppercase", letterSpacing: ".08em" }}>Intelligence / confidence</span>
-          <h3 style={{ margin: "8px 0 6px", fontSize: 16, color: "var(--bm-text)" }}>{data.active_days >= 4 ? "Useful, not complete" : "Early signal"}</h3>
-          <p style={{ margin: 0, fontSize: 12, lineHeight: 1.5, color: "var(--bm-text3)" }}>{data.active_days >= 4 ? "Your execution pattern is grounded in multiple active days. Missing reflections still limit what can be inferred about outcomes." : "There is not enough activity yet to make a high-confidence read of your execution."}</p>
-          <span style={{ display: "inline-block", marginTop: 10, fontFamily: "'DM Mono', monospace", fontSize: 9, color: "var(--bm-intel, #9b87f5)" }}>{data.active_days >= 4 ? "MODERATE CONFIDENCE" : "LOW-EVIDENCE CLAIMS HIDDEN"}</span>
-        </div>
-        <div style={{ background: "rgba(232,160,32,0.08)", border: "1px solid rgba(232,160,32,0.45)", borderRadius: "var(--r-lg)", padding: "16px 18px" }}>
-          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: "var(--bm-amber)", textTransform: "uppercase", letterSpacing: ".08em" }}>Next action</span>
-          <h3 style={{ margin: "8px 0 6px", fontSize: 16, color: "var(--bm-text)" }}>Protect the next focused block.</h3>
-          <p style={{ margin: "0 0 12px", fontSize: 12, lineHeight: 1.5, color: "var(--bm-text3)" }}>Open Today to act on the current recommendation from your existing plan.</p>
-          <a href="/today" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 12px", borderRadius: 6, background: "var(--bm-amber)", color: "#17130a", textDecoration: "none", fontSize: 11, fontWeight: 700 }}>→ Open Today</a>
         </div>
       </div>
 
@@ -399,4 +495,4 @@ export function WeeklyPulseCard() {
       </a>
     </motion.div>
   );
-  }
+           }
