@@ -25,10 +25,11 @@ import {
 import { getDashboardOverview } from "@/lib/buildmind";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
 import { trackEvent } from "@/lib/analytics";
+import { CofounderAvatar } from "./CofounderAvatar";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type PulseMode =
+export type PulseMode =
   | "observing"    // quiet, watching
   | "alert"        // something needs attention now
   | "insight"      // non-obvious pattern surfaced
@@ -77,63 +78,9 @@ const STYLE_META: Record<CofounderStyle, {
 };
 
 // ─── Avatar ───────────────────────────────────────────────────────────────────
-
-function CofounderAvatar({
-  style,
-  pulsing,
-  mode,
-}: {
-  style: CofounderStyle;
-  pulsing: boolean;
-  mode: PulseMode;
-}) {
-  const meta = STYLE_META[style];
-  const modeColors: Record<PulseMode, string> = {
-    observing: "#444",
-    alert: "#ef4444",
-    insight: "var(--bm-text2)",
-    challenge: "#f59e0b",
-    celebrate: "#22c55e",
-  };
-
-  return (
-    <div style={{ position: "relative", flexShrink: 0 }}>
-      <motion.div
-        animate={pulsing ? { scale: [1, 1.06, 1] } : {}}
-        transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
-        style={{
-          width: 40,
-          height: 40,
-          borderRadius: 12,
-          background: `${meta.color}18`,
-          border: `1.5px solid ${meta.color}44`,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: 18,
-          color: meta.color,
-        }}
-      >
-        {style === "direct-challenger" ? "⚡" :
-         style === "strategic-partner" ? "◈" :
-         style === "execution-coach" ? "▶" : "◉"}
-      </motion.div>
-      {pulsing && (
-        <motion.div
-          animate={{ scale: [1, 1.8], opacity: [0.4, 0] }}
-          transition={{ duration: 1.5, repeat: Infinity }}
-          style={{
-            position: "absolute",
-            inset: -4,
-            borderRadius: 14,
-            border: `1px solid ${modeColors[mode]}`,
-            pointerEvents: "none",
-          }}
-        />
-      )}
-    </div>
-  );
-}
+// Extracted to components/CofounderAvatar.tsx — documented there as the
+// single swap point for a future real mascot (Rive/Lottie), so nothing here
+// needs to change when that asset exists.
 
 // ─── Feedback row ─────────────────────────────────────────────────────────────
 
@@ -282,7 +229,7 @@ export default function CofounderPulse() {
           textAlign: "left",
         }}
       >
-        <CofounderAvatar style={activeStyle} pulsing={mode !== "observing"} mode={mode} />
+        <CofounderAvatar style={activeStyle} color={STYLE_META[activeStyle].color} pulsing={mode !== "observing"} mode={mode} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text)" }}>
@@ -529,4 +476,4 @@ function pickAction(memory: FounderMemory): PulseMessage["action"] | undefined {
     label: "What's my one thing today?",
     prompt: "Given everything you know about my startup and my patterns, what is the single most important thing I should do today?",
   };
-                         }
+                }
