@@ -27,11 +27,14 @@ export async function GET() {
     const userId = userResult.user.id;
 
     const supabase = createAdminClient();
-    const { data, error } = await supabase
-      .from("user_achievements")
-      .select("achievement_id, unlocked_at")
-      .eq("user_id", userId)
-      .order("unlocked_at", { ascending: false });
+    const [{ data, error }, stats] = await Promise.all([
+      supabase
+        .from("user_achievements")
+        .select("achievement_id, unlocked_at")
+        .eq("user_id", userId)
+        .order("unlocked_at", { ascending: false }),
+      getServerAchievementStats(userId, userResult.plan),
+    ]);
 
     if (error) {
       return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
@@ -41,6 +44,10 @@ export async function GET() {
       ok: true,
       ids: (data ?? []).map((r) => r.achievement_id),
       records: data ?? [], // includes unlocked_at for display
+      // Real server-authoritative stats — lets the client compute real
+      // {current, target} progress bars per achievement/track instead of
+      // only locked/unlocked. Same source POST already verifies against.
+      stats,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "achievements GET failed";
