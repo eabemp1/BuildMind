@@ -16,11 +16,28 @@ export interface Achievement {
   label: string;
   description: string;
   emoji: string;
+  /** Path to real badge artwork (e.g. "/badges/streak-3.png"), once
+   *  produced — emoji stays as the fallback for any achievement that
+   *  doesn't have one yet, so this can be filled in incrementally. */
+  badgeImage?: string;
   rarity: AchievementRarity;
   category: AchievementCategory;
   xp: number;
   secret?: boolean; // hidden until unlocked
   condition: (stats: AchievementStats) => boolean;
+  /** Real progress toward this achievement as {current, target} — both
+   *  drawn from the same AchievementStats condition already uses, just
+   *  exposed as numbers instead of a boolean so the UI can show "2/5"
+   *  instead of only locked/unlocked. Omitted for achievements with no
+   *  natural numeric threshold (a one-off action like "viewed a report"). */
+  progress?: (stats: AchievementStats) => { current: number; target: number };
+  /** Groups related achievements into one leveled "mini-achievement" track
+   *  for display (e.g. every streak_* id shares track "streak"). Achievements
+   *  without a track render standalone, same as before this field existed. */
+  track?: string;
+  /** 1-based position within the track, ascending difficulty. Required
+   *  alongside `track`, unused otherwise. */
+  tier?: number;
 }
 
 export interface AchievementStats {
@@ -62,77 +79,91 @@ export const ACHIEVEMENTS: Achievement[] = [
   // ── Streak ──────────────────────────────────────────────────────────────────
   {
     id: "streak_1", label: "First Flame", description: "Complete your first daily check-in", emoji: "🔥",
-    rarity: "common", category: "streak", xp: 50,
+    rarity: "common", category: "streak", xp: 50, track: "streak", tier: 1,
     condition: s => s.checkInsDone >= 1,
+    progress: s => ({ current: s.checkInsDone, target: 1 }),
   },
   {
     id: "streak_3", label: "On Fire", description: "3-day streak", emoji: "🔥",
-    rarity: "common", category: "streak", xp: 100,
+    rarity: "common", category: "streak", xp: 100, track: "streak", tier: 2,
     condition: s => s.streak >= 3,
+    progress: s => ({ current: s.streak, target: 3 }),
   },
   {
     id: "streak_7", label: "Week Warrior", description: "7-day streak — you're building a habit", emoji: "⚔️",
-    rarity: "rare", category: "streak", xp: 250,
+    rarity: "rare", category: "streak", xp: 250, track: "streak", tier: 3,
     condition: s => s.streak >= 7,
+    progress: s => ({ current: s.streak, target: 7 }),
   },
   {
     id: "streak_14", label: "Two Week Founder", description: "14-day streak — real founders don't quit", emoji: "🛡️",
-    rarity: "rare", category: "streak", xp: 500,
+    rarity: "rare", category: "streak", xp: 500, track: "streak", tier: 4,
     condition: s => s.streak >= 14,
+    progress: s => ({ current: s.streak, target: 14 }),
   },
   {
     id: "streak_30", label: "Iron Founder", description: "30-day streak. Consistency is a superpower.", emoji: "💎",
-    rarity: "epic", category: "streak", xp: 1000,
+    rarity: "epic", category: "streak", xp: 1000, track: "streak", tier: 5,
     condition: s => s.streak >= 30,
+    progress: s => ({ current: s.streak, target: 30 }),
   },
   {
     id: "streak_100", label: "Centurion", description: "100 consecutive days. Legendary.", emoji: "🏆",
-    rarity: "legendary", category: "streak", xp: 5000, secret: true,
+    rarity: "legendary", category: "streak", xp: 5000, secret: true, track: "streak", tier: 6,
     condition: s => s.streak >= 100,
+    progress: s => ({ current: s.streak, target: 100 }),
   },
 
   // ── Tasks ───────────────────────────────────────────────────────────────────
   {
     id: "tasks_5", label: "Getting Started", description: "5 daily check-ins completed", emoji: "✅",
-    rarity: "common", category: "tasks", xp: 75,
+    rarity: "common", category: "tasks", xp: 75, track: "tasks", tier: 1,
     condition: s => s.checkInsDone >= 5,
+    progress: s => ({ current: s.checkInsDone, target: 5 }),
   },
   {
     id: "tasks_10", label: "Action Taker", description: "10 daily check-ins — you show up", emoji: "⚡",
-    rarity: "common", category: "tasks", xp: 150,
+    rarity: "common", category: "tasks", xp: 150, track: "tasks", tier: 2,
     condition: s => s.checkInsDone >= 10,
+    progress: s => ({ current: s.checkInsDone, target: 10 }),
   },
   {
     id: "tasks_25", label: "Momentum Builder", description: "25 check-ins — momentum is real", emoji: "🚀",
-    rarity: "rare", category: "tasks", xp: 400,
+    rarity: "rare", category: "tasks", xp: 400, track: "tasks", tier: 3,
     condition: s => s.checkInsDone >= 25,
+    progress: s => ({ current: s.checkInsDone, target: 25 }),
   },
   {
     id: "tasks_50", label: "Half Century", description: "50 check-ins. You're serious.", emoji: "💪",
-    rarity: "epic", category: "tasks", xp: 800,
+    rarity: "epic", category: "tasks", xp: 800, track: "tasks", tier: 4,
     condition: s => s.checkInsDone >= 50,
+    progress: s => ({ current: s.checkInsDone, target: 50 }),
   },
   {
     id: "tasks_100", label: "Century Founder", description: "100 actions. You've built something real.", emoji: "🎯",
-    rarity: "legendary", category: "tasks", xp: 3000, secret: true,
+    rarity: "legendary", category: "tasks", xp: 3000, secret: true, track: "tasks", tier: 5,
     condition: s => s.checkInsDone >= 100,
+    progress: s => ({ current: s.checkInsDone, target: 100 }),
   },
 
   // ── AI ──────────────────────────────────────────────────────────────────────
   {
     id: "ai_first", label: "First Question", description: "Asked AI Coach your first question", emoji: "🤖",
-    rarity: "common", category: "ai", xp: 50,
+    rarity: "common", category: "ai", xp: 50, track: "ai", tier: 1,
     condition: s => s.aiMessages >= 1,
+    progress: s => ({ current: s.aiMessages, target: 1 }),
   },
   {
     id: "ai_10", label: "AI Native", description: "10 AI coach conversations", emoji: "🧠",
-    rarity: "rare", category: "ai", xp: 200,
+    rarity: "rare", category: "ai", xp: 200, track: "ai", tier: 2,
     condition: s => s.aiMessages >= 10,
+    progress: s => ({ current: s.aiMessages, target: 10 }),
   },
   {
     id: "ai_50", label: "Thought Partner", description: "50 AI conversations — you think out loud", emoji: "💭",
-    rarity: "epic", category: "ai", xp: 700,
+    rarity: "epic", category: "ai", xp: 700, track: "ai", tier: 3,
     condition: s => s.aiMessages >= 50,
+    progress: s => ({ current: s.aiMessages, target: 50 }),
   },
 
   // ── Explorer ─────────────────────────────────────────────────────────────────
@@ -145,6 +176,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     id: "explorer_reflect", label: "Self-Aware", description: "Logged your first reflection", emoji: "🧘",
     rarity: "common", category: "explorer", xp: 75,
     condition: s => s.reflectionsLogged >= 1,
+    progress: s => ({ current: s.reflectionsLogged, target: 1 }),
   },
   {
     id: "explorer_report", label: "Data Driven", description: "Viewed your weekly report", emoji: "📊",
@@ -165,13 +197,15 @@ export const ACHIEVEMENTS: Achievement[] = [
   // ── Projects ─────────────────────────────────────────────────────────────────
   {
     id: "projects_1", label: "Idea Born", description: "Created your first project", emoji: "💡",
-    rarity: "common", category: "projects", xp: 100,
+    rarity: "common", category: "projects", xp: 100, track: "projects", tier: 1,
     condition: s => s.projectsCreated >= 1,
+    progress: s => ({ current: s.projectsCreated, target: 1 }),
   },
   {
     id: "projects_3", label: "Serial Builder", description: "Running 3 projects — ambitious", emoji: "🏗️",
-    rarity: "epic", category: "projects", xp: 600, secret: true,
+    rarity: "epic", category: "projects", xp: 600, secret: true, track: "projects", tier: 2,
     condition: s => s.projectsCreated >= 3,
+    progress: s => ({ current: s.projectsCreated, target: 3 }),
   },
 
   // ── Founder ──────────────────────────────────────────────────────────────────
@@ -182,13 +216,15 @@ export const ACHIEVEMENTS: Achievement[] = [
   },
   {
     id: "founder_days_7", label: "Week One Survivor", description: "Active across 7 different days", emoji: "📅",
-    rarity: "rare", category: "founder", xp: 300,
+    rarity: "rare", category: "founder", xp: 300, track: "founder_days", tier: 1,
     condition: s => s.daysActive >= 7,
+    progress: s => ({ current: s.daysActive, target: 7 }),
   },
   {
     id: "founder_days_30", label: "Habitual Founder", description: "30 days of activity — this is who you are now", emoji: "🧬",
-    rarity: "legendary", category: "founder", xp: 2000, secret: true,
+    rarity: "legendary", category: "founder", xp: 2000, secret: true, track: "founder_days", tier: 2,
     condition: s => s.daysActive >= 30,
+    progress: s => ({ current: s.daysActive, target: 30 }),
   },
   {
     id: "founder_max_streak", label: "Unbroken", description: "Never let your streak die (max streak ≥ current + 10)", emoji: "♾️",
@@ -197,7 +233,58 @@ export const ACHIEVEMENTS: Achievement[] = [
   },
 ];
 
-// ── XP Level system ───────────────────────────────────────────────────────────
+// ── Tracks (mini-achievements) ──────────────────────────────────────────────
+export interface AchievementTrack {
+  track: string;
+  category: AchievementCategory;
+  /** Ascending by tier — [0] is the easiest, [length-1] the hardest. */
+  achievements: Achievement[];
+}
+
+/** Groups every achievement that declares a `track` into ordered tiers, so
+ *  e.g. all 6 streak_* achievements can render as one leveled card instead
+ *  of 6 separate ones. Achievements without a track (one-off actions like
+ *  "viewed a report") are returned separately, unchanged. */
+export function getAchievementTracks(): { tracks: AchievementTrack[]; standalone: Achievement[] } {
+  const byTrack = new Map<string, Achievement[]>();
+  const standalone: Achievement[] = [];
+  for (const a of ACHIEVEMENTS) {
+    if (a.track) {
+      const list = byTrack.get(a.track) ?? [];
+      list.push(a);
+      byTrack.set(a.track, list);
+    } else {
+      standalone.push(a);
+    }
+  }
+  const tracks: AchievementTrack[] = Array.from(byTrack.entries()).map(([track, achievements]) => ({
+    track,
+    category: achievements[0].category,
+    achievements: achievements.slice().sort((a, b) => (a.tier ?? 0) - (b.tier ?? 0)),
+  }));
+  return { tracks, standalone };
+}
+
+/** Real tier state for one track: how many tiers are unlocked, which tier is
+ *  next, and real {current, target} progress toward it — all derived from
+ *  the founder's actual stats and unlocked set, nothing invented. */
+export function getTrackLevel(
+  track: AchievementTrack,
+  stats: AchievementStats,
+  unlockedIds: Set<string>,
+): {
+  level: number;
+  isMaxed: boolean;
+  next: Achievement | null;
+  progress: { current: number; target: number } | null;
+} {
+  const level = track.achievements.filter(a => unlockedIds.has(a.id)).length;
+  const next = track.achievements.find(a => !unlockedIds.has(a.id)) ?? null;
+  const progress = next?.progress ? next.progress(stats) : null;
+  return { level, isMaxed: next === null, next, progress };
+}
+
+
 export function xpToLevel(xp: number): { level: number; title: string; nextXp: number; progress: number } {
   const thresholds = [
     { level: 1, xp: 0,    title: "Aspiring Founder" },
@@ -404,4 +491,4 @@ if (typeof window !== "undefined") {
       if (process.env.NODE_ENV === "development") console.log("Achievements reset.");
     },
   };
-              }
+    }
