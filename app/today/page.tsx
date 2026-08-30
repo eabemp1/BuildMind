@@ -38,13 +38,11 @@ import type { MorningBriefing } from "@/lib/founderContext";
 import { IntelligencePanel, type TodayIntelligenceSummary } from "./components/IntelligencePanel";
 import { WhatChangedCard } from "./components/WhatChangedCard";
 import { RisksGapsCard } from "./components/RisksGapsCard";
-import { EvidenceDisclosure } from "./components/EvidenceDisclosure";
 import { RiskInterrupt } from "./components/RiskInterrupt";
 import { ChurnRiskInterrupt } from "./components/ChurnRiskInterrupt";
 import { SignalCaptureForm } from "./components/SignalCaptureForm";
 import { SignalHistoryList } from "./components/SignalHistoryList";
 import { shouldTriggerRiskInterrupt, type ChurnRiskAssessment } from "@/lib/riskSignals";
-import { SignalList } from "./components/SignalList";
 import { DecisionBrief } from "./components/DecisionBrief";
 import { ContextAlignmentCard } from "./components/ContextAlignmentCard";
 import { IntelligenceUnavailableCard } from "./components/IntelligenceUnavailableCard";
@@ -434,6 +432,7 @@ function TodayContent() {
   // Ref guard — prevents iOS double-tap from firing handleCheckIn twice
   const checkInFired = useRef(false);
   const executionScriptRef = useRef<HTMLDivElement | null>(null);
+  const actionCardRef = useRef<HTMLDivElement | null>(null);
   const [isContextOpen, setIsContextOpen] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState<string | null>(null);
@@ -1178,6 +1177,19 @@ function TodayContent() {
     return null;
   // Re-evaluate once per hour is sufficient; userId dependency ensures it
   // re-runs after storage namespace is initialized for the current user.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
+
+  // Evening check pill — after 7pm, if today's task is still undone, replace
+  // the usual passive framing with a direct nudge back to it. Reuses the
+  // same bm_task_done_<day> flag the reflection flow already writes on
+  // completion (line ~1344) — no new tracking, just a new read of it.
+  const isEveningTaskPending = useMemo(() => {
+    const h = new Date().getHours();
+    if (h < 19) return false;
+    const todayKey = `bm_task_done_${localDayKey()}`;
+    return !storage.get(todayKey);
+  // Re-evaluate once per hour is sufficient, same rationale as checkinSlot above.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
@@ -2023,6 +2035,36 @@ function TodayContent() {
         )}
       </motion.div>
 
+      {/* ── Evening check pill — 7pm+, today's task still undone. Replaces
+             passive framing with a direct "go do it" nudge, matching the
+             pill treatment used for other status chips on this page. ── */}
+      {isEveningTaskPending && actionData && (
+        <motion.div
+          initial={{ opacity: 0, y: -6 }}
+          animate={{ opacity: 1, y: 0 }}
+          style={{
+            display: "flex", alignItems: "center", gap: 10,
+            padding: "8px 8px 8px 14px", borderRadius: 999, marginBottom: 16,
+            background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)",
+          }}
+        >
+          <Clock size={13} color="var(--bm-accent)" style={{ flexShrink: 0 }} />
+          <span style={{ fontSize: 12, color: "var(--bm-text2)", flex: 1, fontWeight: 500 }}>
+            It&apos;s evening and today&apos;s task is still open.
+          </span>
+          <button
+            onClick={() => actionCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+            style={{
+              flexShrink: 0, border: "none", borderRadius: 999, padding: "6px 14px",
+              background: "var(--bm-accent)", color: "#15130a", fontSize: 12, fontWeight: 700,
+              fontFamily: "inherit", cursor: "pointer",
+            }}
+          >
+            Show task
+          </button>
+        </motion.div>
+      )}
+
       {/* ── Founder archetype — compact, non-blocking presence on the daily
           page. Deliberately not a modal or a dismiss-to-proceed gate (that
           was the problem with the old Initial Analysis card) — just a small
@@ -2490,6 +2532,7 @@ function TodayContent() {
         <>
         {uiMode === "pro" && criticalSignal ? <RiskInterrupt signal={criticalSignal} /> : null}
         <motion.div
+        ref={actionCardRef}
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.08 }}
@@ -2635,12 +2678,27 @@ function TodayContent() {
                   Today's AI draft didn't meet our concreteness bar, so this is a proven fallback task instead — still real, just not freshly composed.
                 </div>
               )}
-              {uiMode === "pro" ? (
-                <EvidenceDisclosure
-                  expectedEvidence={actionData.intelligence?.decision?.top_candidate?.expected_evidence}
-                  uncertainty={actionData.isLowConfidence ? "This recommendation is intended to gather a concrete signal before stronger guidance is given." : undefined}
-                />
-              ) : null}
+              {uiMode === "pro" ? (() => {
+                const items = [
+                  ...(actionData.intelligence?.decision?.top_candidate?.expected_evidence
+                    ? [{ label: "Expected evidence", value: actionData.intelligence.decision.top_candidate.expected_evidence }]
+                    : []),
+                  ...(actionData.isLowConfidence
+                    ? [{ label: "Uncertainty", value: "This recommendation is intended to gather a concrete signal before stronger guidance is given." }]
+                    : []),
+                ];
+                if (!items.length) return null;
+                return (
+                  <div style={{ marginTop: "var(--space-2)", padding: "10px 12px", borderRadius: "var(--r-md)", background: "var(--bm-intel-dim)", border: "1px solid var(--bm-intel-bd)", display: "flex", flexDirection: "column", gap: 6 }}>
+                    {items.map((item, i) => (
+                      <div key={i} style={{ display: "flex", gap: 8, fontSize: 12, lineHeight: 1.5 }}>
+                        <span style={{ color: "var(--bm-text3)", flexShrink: 0, minWidth: 90 }}>{item.label}</span>
+                        <span style={{ color: "var(--bm-text)" }}>{item.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })() : null}
             </div>
           )}
 
@@ -2681,7 +2739,7 @@ function TodayContent() {
       {uiMode === "pro" && actionData.intelligence ? (
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1fr) 304px", gap: 14, marginTop: 14 }}>
           <div><WhatChangedCard items={actionData.intelligence.what_changed} /><div style={{ marginTop: 14 }}><IntelligencePanel data={actionData.intelligence} onSwap={handleSwapAlternative} recentOutcomes={recentOutcomes} /></div></div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}><SignalList signals={supportingSignals} /><RisksGapsCard signals={supportingSignals} /></div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}><RisksGapsCard signals={supportingSignals} /></div>
         </div>
       ) : null}
       </>
@@ -3052,4 +3110,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-    }
+}
