@@ -24,7 +24,6 @@ import { Clock, CheckCircle2, Copy, Check, Flame, Brain, Sparkles, AlertCircle, 
 import { storage } from "@/lib/storage";
 import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
 import { MobileCheckin } from "@/components/MobileCheckin";
-import { ProfileCompletenessBar } from "@/components/ProfileCompletenessBar";
 import { LoopNarrative } from "@/components/LoopNarrative";
 import { broadcastTabEvent, useTabSync } from "@/lib/tabSync";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
@@ -299,33 +298,6 @@ const OUTCOME_META: Record<Outcome, { icon: string; label: string; color: string
 };
 
 /**
- * Build a human-readable causal sentence explaining WHY yesterday's outcome
- * shapes today's task. This is the key personalisation signal that was
- * previously invisible to the founder.
- */
-function buildYesterdayCausalLine(reflection: StoredReflection): string {
-  const { outcome, confidence = 3, note } = reflection;
-  const noteClip = note ? ` ("${note.slice(0, 60)}${note.length > 60 ? "…" : ""}")` : "";
-
-  if (outcome === "blocked") {
-    return `You got blocked yesterday${noteClip}. Today's action is designed to remove that specific blocker — not route around it.`;
-  }
-  if (outcome === "completed" && confidence >= 4) {
-    return `You nailed it yesterday${noteClip}. Today goes one level deeper on the same thread — keep the momentum.`;
-  }
-  if (outcome === "completed" && confidence < 3) {
-    return `You completed it yesterday but confidence was low${noteClip}. Today starts with a confidence-building step first.`;
-  }
-  if (outcome === "partial") {
-    return `You partly got there yesterday${noteClip}. Today's task picks up exactly where you left off.`;
-  }
-  if (outcome === "learned") {
-    return `You learned something important yesterday${noteClip}. Today's action applies that insight to a real person.`;
-  }
-  return `Based on your reflection yesterday, today's action is calibrated to where you actually are.`;
-}
-
-/**
  * Fill the outreach script template with real project values so founders
  * can copy and send immediately without editing brackets.
  */
@@ -433,7 +405,6 @@ function TodayContent() {
   const checkInFired = useRef(false);
   const executionScriptRef = useRef<HTMLDivElement | null>(null);
   const actionCardRef = useRef<HTMLDivElement | null>(null);
-  const [isContextOpen, setIsContextOpen] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState<string | null>(null);
   const [accountAgeDays, setAccountAgeDays] = useState(0);
@@ -487,7 +458,6 @@ function TodayContent() {
   const [draftMessage, setDraftMessage] = useState<string | null>(null);
 
   // Yesterday's stored reflection — drives the causal thread UI
-  const [yesterdayReflection, setYesterdayReflection] = useState<StoredReflection | null>(null);
 
   // Pattern detection — surfaces after check-in
   const [activePattern, setActivePattern] = useState<{ signal: string; message: string; severity: string } | null>(null);
@@ -729,7 +699,6 @@ function TodayContent() {
           }
           if (values.today_action?.outcome) {
             storage.setJSON("bm_today_action", values.today_action);
-            setYesterdayReflection(values.today_action);
           }
           if (
             values.today_action_cache?.date === today &&
@@ -742,13 +711,6 @@ function TodayContent() {
       }
     });
 
-    // Load cached reflection instantly; server behavior state hydrates above.
-    try {
-      const stored = storage.getJSON("bm_today_action", null) as StoredReflection | null;
-      if (stored?.outcome) {
-        setYesterdayReflection(stored);
-      }
-    } catch {}
   }, []);
 
   // Fetch personalised action from AI once we have project data
@@ -1180,18 +1142,14 @@ function TodayContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
-  // Evening check pill — after 7pm, if today's task is still undone, replace
-  // the usual passive framing with a direct nudge back to it. Reuses the
-  // same bm_task_done_<day> flag the reflection flow already writes on
-  // completion (line ~1344) — no new tracking, just a new read of it.
-  const isEveningTaskPending = useMemo(() => {
-    const h = new Date().getHours();
-    if (h < 19) return false;
-    const todayKey = `bm_task_done_${localDayKey()}`;
-    return !storage.get(todayKey);
-  // Re-evaluate once per hour is sufficient, same rationale as checkinSlot above.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId]);
+  // Evening mode — reuses the SAME evening window checkinSlot already
+  // computes (18:00-22:00, not yet submitted) rather than a second,
+  // separate "is it evening" rule. When true: the evening check-in surfaces
+  // directly on the page instead of staying inside "Why this task?", and
+  // the task recommendation collapses into a "Show task" pill so the page
+  // doesn't just accumulate more sections on top of each other.
+  const isEveningSurfaced = checkinSlot?.type === "evening";
+  const [taskPillExpanded, setTaskPillExpanded] = useState(false);
 
   const OUTREACH_KEYWORDS = ["dm", "message", "send", "email", "outreach", "call", "text", "reach out", "post", "tweet", "share"];
   const isOutreachAction = actionData ? OUTREACH_KEYWORDS.some(kw =>
@@ -1826,10 +1784,6 @@ function TodayContent() {
     ? `${getGreeting()}, ${firstName}`
     : getGreeting();
 
-  // ── Yesterday causal sentence ─────────────────────────────────────────────
-  const yesterdayCausal = yesterdayReflection
-    ? buildYesterdayCausalLine(yesterdayReflection)
-    : null;
   const isDayOneColdStart = accountAgeDays <= 1 && streak === 0 && !done;
   const weekOneStageKey = (project?.startup_stage ?? "Idea").toLowerCase();
   const weekOneMilestones = WEEK_ONE_MILESTONES[weekOneStageKey] ?? WEEK_ONE_MILESTONES.idea;
@@ -2035,32 +1989,47 @@ function TodayContent() {
         )}
       </motion.div>
 
-      {/* ── Evening check pill — 7pm+, today's task still undone. Replaces
-             passive framing with a direct "go do it" nudge, matching the
-             pill treatment used for other status chips on this page. ── */}
-      {isEveningTaskPending && actionData && (
+      {/* ── Evening mode — surfaces the evening check-in directly (it used to
+             be reachable only inside the "Why this task?" drawer) and
+             collapses the task recommendation into a single "Show task"
+             pill, so the page gains one clear evening focus instead of
+             stacking the check-in on top of everything else. ── */}
+      {isEveningSurfaced && !taskPillExpanded && (
         <motion.div
           initial={{ opacity: 0, y: -6 }}
           animate={{ opacity: 1, y: 0 }}
-          style={{
-            display: "flex", alignItems: "center", gap: 10,
-            padding: "8px 8px 8px 14px", borderRadius: 999, marginBottom: 16,
-            background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)",
-          }}
+          style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 16 }}
         >
-          <Clock size={13} color="var(--bm-accent)" style={{ flexShrink: 0 }} />
-          <span style={{ fontSize: 12, color: "var(--bm-text2)", flex: 1, fontWeight: 500 }}>
-            It&apos;s evening and today&apos;s task is still open.
-          </span>
+          <MobileCheckin type="evening" onComplete={(note) => {
+            storage.set(checkinSlot!.key, "1");
+            fetch("/api/evening-checkin", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ note }),
+            }).catch(() => {});
+          }} />
           <button
-            onClick={() => actionCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+            onClick={() => {
+              setTaskPillExpanded(true);
+              // Card isn't in the DOM yet this tick — wait one frame.
+              requestAnimationFrame(() => actionCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+            }}
             style={{
-              flexShrink: 0, border: "none", borderRadius: 999, padding: "6px 14px",
-              background: "var(--bm-accent)", color: "#15130a", fontSize: 12, fontWeight: 700,
-              fontFamily: "inherit", cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+              padding: "10px 8px 10px 14px", borderRadius: 999,
+              background: "var(--bm-bg2)", border: "1px solid var(--bm-border)",
+              cursor: "pointer", width: "100%", textAlign: "left",
             }}
           >
-            Show task
+            <span style={{ fontSize: 12, color: "var(--bm-text3)", fontWeight: 500 }}>
+              Today&apos;s task is still here if you want it.
+            </span>
+            <span style={{
+              flexShrink: 0, borderRadius: 999, padding: "6px 14px",
+              background: "var(--bm-accent)", color: "#15130a", fontSize: 12, fontWeight: 700,
+            }}>
+              Show task
+            </span>
           </button>
         </motion.div>
       )}
@@ -2172,249 +2141,6 @@ function TodayContent() {
         </div>
       )}
 
-      {/* ── Context drawer (collapsed by default) — everything below wraps here ── */}
-      {isContextOpen && (<>
-
-      {/* ── Reflexion Strike Replay — day one causal thread (same visual as yesterdayReflection) ── */}
-      {isFirstSession && !yesterdayReflection && (
-        <motion.div
-          initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
-          style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)", borderRadius: 10, padding: "14px 16px", marginBottom: 14 }}
-        >
-          <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-            {/* Left: icon + connector — identical to yesterdayReflection */}
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0, paddingTop: 2 }}>
-              <div style={{ width: 28, height: 28, borderRadius: "50%", background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "var(--bm-text3)", flexShrink: 0 }}>
-                ⚡
-              </div>
-              <div style={{ width: 1, flex: 1, minHeight: 16, background: "var(--bm-border2)", margin: "4px 0" }} />
-              <RotateCcw size={12} color="var(--bm-text3)" />
-            </div>
-            {/* Right: content */}
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                <span style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.08em" }}>From your Reflexion Strike</span>
-                <span className="bm-badge bm-badge-accent">
-                  Market gap identified
-                </span>
-              </div>
-              {project?.problem && (
-                <p style={{ fontSize: 12, color: "var(--bm-text3)", marginBottom: 6, lineHeight: 1.5, fontStyle: "italic" }}>
-                  &ldquo;{sanitizeOutput(project.problem).slice(0, 100)}{sanitizeOutput(project.problem).length > 100 ? "…" : ""}&rdquo;
-                </p>
-              )}
-              {/* Causal link inset — identical structure to yesterdayReflection */}
-              <div style={{ display: "flex", gap: 6, alignItems: "flex-start", padding: "8px 10px", borderRadius: 8, background: "var(--bm-bg3)", border: "1px solid var(--bm-border)" }}>
-                <RotateCcw size={10} color="var(--bm-text3)" style={{ flexShrink: 0, marginTop: 1 }} />
-                <p style={{ fontSize: 11, color: "var(--bm-text2)", margin: 0, lineHeight: 1.55 }}>
-                  This is your starting baseline. The system has no history on you yet — every reflection you log tonight makes tomorrow&apos;s task sharper.
-                </p>
-              </div>
-            </div>
-          </div>
-        </motion.div>
-      )}
-
-      {/* ── Profile completeness ── */}
-      <ProfileCompletenessBar
-        asBanner
-        fields={{
-          startupSummary: project?.description ?? project?.startup_summary ?? "",
-          stage:          project?.startup_stage ?? "",
-          targetUsers:    project?.target_users ?? "",
-          avoidanceZones: [],
-          mrr:            project?.current_mrr ?? 0,
-          displayName:    project?.name ?? "",
-          tasksCompleted: project?.tasksCompleted ?? 0,
-        }}
-      />
-
-      {/* ── Morning / evening mobile check-in ── */}
-      {checkinSlot && (
-        <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 16 }}>
-          <MobileCheckin type={checkinSlot.type} onComplete={(note) => {
-            storage.set(checkinSlot.key, "1");
-            const endpoint = checkinSlot.type === "morning" ? "/api/morning-checkin" : "/api/evening-checkin";
-            fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ note }) }).catch(() => {});
-          }} />
-        </motion.div>
-      )}
-
-      {/* ── Pre-check-in paywall ── */}
-
-      {/* ══════════════════════════════════════════════════════════════════════
-          YESTERDAY'S REFLECTION THREAD
-          Shows the causal link between yesterday's outcome and today's task.
-          Previously invisible — now the first thing the founder sees.
-      ══════════════════════════════════════════════════════════════════════ */}
-      {yesterdayReflection && (
-        <motion.div
-          initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
-          style={{
-            background: "var(--bm-bg2)",
-            border: "1px solid var(--bm-border2)",
-            borderRadius: 10,
-            padding: "14px 16px",
-            marginBottom: 14,
-          }}
-        >
-          <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-            {/* Left: outcome dot + connector */}
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0, paddingTop: 2 }}>
-              <div style={{
-                width: 28, height: 28, borderRadius: "50%",
-                background: "var(--bm-bg3)",
-                border: "1px solid var(--bm-border)",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 12, fontWeight: 700,
-                color: OUTCOME_META[yesterdayReflection.outcome].color,
-                flexShrink: 0,
-              }}>
-                {OUTCOME_META[yesterdayReflection.outcome].icon}
-              </div>
-              <div style={{ width: 1, flex: 1, minHeight: 16, background: "var(--bm-border2)", margin: "4px 0" }} />
-              <RotateCcw size={12} color="var(--bm-text3)" />
-            </div>
-
-            {/* Right: content */}
-            <div style={{ flex: 1, minWidth: 0 }}>
-              {/* Witnessed — rendered FIRST, above everything else, distinct styling.
-                  This is the acknowledgment line, not analysis — it should read
-                  differently from the outcome badge and causal link below it. */}
-              {yesterdayReflection.witnessed && (
-                <p style={{
-                  fontSize: 13,
-                  color: "var(--bm-text)",
-                  marginBottom: 8,
-                  lineHeight: 1.5,
-                  fontWeight: 500,
-                }}>
-                  {sanitizeOutput(yesterdayReflection.witnessed)}
-                </p>
-              )}
-
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                <span style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Yesterday</span>
-                <span className="bm-badge" style={{
-                  color: OUTCOME_META[yesterdayReflection.outcome].color,
-                  background: "var(--bm-bg3)",
-                  border: "1px solid var(--bm-border)",
-                }}>
-                  {OUTCOME_META[yesterdayReflection.outcome].label}
-                </span>
-              </div>
-
-              {yesterdayReflection.action && (
-                <p style={{ fontSize: 12, color: "var(--bm-text3)", marginBottom: 6, lineHeight: 1.5, fontStyle: "italic" }}>
-                  "{sanitizeOutput(yesterdayReflection.action).slice(0, 100)}{sanitizeOutput(yesterdayReflection.action).length > 100 ? "…" : ""}"
-                </p>
-              )}
-
-              {/* The causal link — the key personalisation signal */}
-              <div style={{
-                display: "flex", gap: 6, alignItems: "flex-start",
-                padding: "8px 10px", borderRadius: 8,
-                background: "var(--bm-bg3)", border: "1px solid var(--bm-border)",
-              }}>
-                <RotateCcw size={10} color="var(--bm-text3)" style={{ flexShrink: 0, marginTop: 1 }} />
-                <p style={{ fontSize: 11, color: "var(--bm-text2)", margin: 0, lineHeight: 1.55 }}>
-                  {sanitizeOutput(yesterdayCausal)}
-                </p>
-              </div>
-            </div>
-          </div>
-        </motion.div>
-      )}
-
-      {/* ══ FOCUS CALLOUT ══════════════════════════════════════════════════════ */}
-      {!yesterdayReflection && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.05 }}
-          style={{ padding: "10px 14px", borderRadius: 10, marginBottom: 14, background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", display: "flex", alignItems: "center", gap: 10 }}
-        >
-          <TrendingUp size={13} color="var(--bm-text3)" style={{ flexShrink: 0 }} />
-          {isFirstSession ? (
-            <div>
-              <p style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text)", margin: "0 0 4px" }}>
-                Day one. No history yet — this is how BuildMind learns.
-              </p>
-              <p style={{ fontSize: 12, color: "var(--bm-text3)", margin: 0, lineHeight: 1.55 }}>
-                Complete today&apos;s action and reflect tonight. That reflection becomes the input for tomorrow&apos;s task.
-                After 3 sessions, you&apos;ll start seeing behavioral patterns specific to how <em>you</em> build.
-              </p>
-            </div>
-          ) : (
-            <p style={{ fontSize: 12, color: "var(--bm-text3)", margin: 0, lineHeight: 1.5 }}>
-              BuildMind gives you <strong style={{ color: "var(--bm-text2)" }}>one action per day</strong> - calibrated to your stage, your roadmap, and what you did yesterday. Do it before anything else.
-            </p>
-          )}
-        </motion.div>
-      )}
-
-      {/* ══════════════════════════════════════════════════════════════════════
-          PENDING CONTEXT STRIP — what's powering this recommendation
-      ══════════════════════════════════════════════════════════════════════ */}
-      {(project?.pendingMilestones?.length ?? 0) > 0 || (project?.pendingTasks?.length ?? 0) > 0 ? (
-        <motion.div
-          initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
-          style={{
-            padding: "10px 14px", borderRadius: 12, marginBottom: 14,
-            background: "var(--bm-bg3)", border: "1px solid var(--bm-border)",
-            display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center",
-          }}
-        >
-          <span style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.08em", flexShrink: 0 }}>
-            From your roadmap
-          </span>
-          {project?.pendingMilestones?.slice(0, 2).map((m: string, i: number) => (
-            <span key={i} className="bm-badge bm-badge-neutral" style={{ fontWeight: 600 }}>
-              ◎ {m}
-            </span>
-          ))}
-          {project?.pendingTasks?.slice(0, 2).map((t: string, i: number) => (
-            <span key={i} className="bm-badge bm-badge-neutral" style={{ fontWeight: 500 }}>
-              ✦ {t}
-            </span>
-          ))}
-          <button
-            onClick={() => router.push("/projects")}
-            style={{
-              marginLeft: "auto", fontSize: 10, color: "var(--bm-text4)", background: "none",
-              border: "none", cursor: "pointer", fontFamily: "inherit", padding: 0,
-            }}
-          >
-            Edit tasks →
-          </button>
-        </motion.div>
-      ) : null}
-
-      </>)}
-
-      {/* ── "Why this task?" disclosure toggle — visually matches .bm-disclosure
-             summary styling; kept as a manual toggle (not native <details>) because
-             its content block renders earlier in the DOM (line ~1964), driven by
-             the same isContextOpen state — restructuring into a literal <details>
-             would require moving that block, too risky to do blind in this file. ── */}
-      <button
-        onClick={() => setIsContextOpen(o => !o)}
-        style={{
-          display: "flex", alignItems: "center", gap: 8, marginBottom: 14,
-          background: "none", border: "none", cursor: "pointer",
-          color: "var(--bm-text3)", fontSize: "var(--text-sm)", fontFamily: "inherit", padding: 0,
-        }}
-      >
-        <span style={{
-          width: 0, height: 0,
-          borderLeft: "4px solid transparent", borderRight: "4px solid transparent",
-          borderTop: "5px solid var(--bm-text4)",
-          transform: isContextOpen ? "rotate(180deg)" : "none", transition: "transform 0.15s ease",
-          display: "inline-block", flexShrink: 0,
-        }} />
-        {isContextOpen ? "Hide context" : "Why this task?"}
-      </button>
-
       {debtSuppression && !aiAction && (
         <motion.div
           initial={{ opacity: 0, y: 10 }}
@@ -2464,7 +2190,10 @@ function TodayContent() {
 
       {/* ══════════════════════════════════════════════════════════════════════
           ACTION CARD — first real content block (task-first layout)
+          Collapsed behind the "Show task" pill above during evening mode,
+          until the founder explicitly expands it.
       ══════════════════════════════════════════════════════════════════════ */}
+      {(!isEveningSurfaced || taskPillExpanded) && (<>
       {!actionData ? (
         /* Loading skeleton — shown while AI fetch is in flight */
         /* Never shows generic task; waits for the real personalised task */
@@ -2965,6 +2694,7 @@ function TodayContent() {
           Your outcome selection will feed into /reflect for learning capture.
         </p>
       </motion.div>
+      </>)}
       {/* Beyond the 3 changes — Loop Narrative (the 8.5 unlock) */}
       <LoopNarrative
         reflectionCount={(() => {
