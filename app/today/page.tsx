@@ -2188,6 +2188,11 @@ function TodayContent() {
         </motion.div>
       )}
 
+      {/* Risk Interrupt — same reasoning as the intelligence grid below: a
+          critical live signal shouldn't go dark just because the task
+          recommendation is tucked behind the evening pill. */}
+      {uiMode === "pro" && criticalSignal ? <RiskInterrupt signal={criticalSignal} /> : null}
+
       {/* ══════════════════════════════════════════════════════════════════════
           ACTION CARD — first real content block (task-first layout)
           Collapsed behind the "Show task" pill above during evening mode,
@@ -2259,7 +2264,6 @@ function TodayContent() {
         />
       ) : (
         <>
-        {uiMode === "pro" && criticalSignal ? <RiskInterrupt signal={criticalSignal} /> : null}
         <motion.div
         ref={actionCardRef}
         initial={{ opacity: 0, y: 10 }}
@@ -2465,12 +2469,6 @@ function TodayContent() {
           </div>
         </div>
       </motion.div>
-      {uiMode === "pro" && actionData.intelligence ? (
-        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1fr) 304px", gap: 14, marginTop: 14 }}>
-          <div><WhatChangedCard items={actionData.intelligence.what_changed} /><div style={{ marginTop: 14 }}><IntelligencePanel data={actionData.intelligence} onSwap={handleSwapAlternative} recentOutcomes={recentOutcomes} /></div></div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}><RisksGapsCard signals={supportingSignals} /></div>
-        </div>
-      ) : null}
       </>
       )}
 
@@ -2695,6 +2693,19 @@ function TodayContent() {
         </p>
       </motion.div>
       </>)}
+
+      {/* ── Pro-mode intelligence — deliberately OUTSIDE the evening "Show
+             task" collapse above. Pro is the founder's own persistent
+             choice (the toggle in the header), not something that should
+             go dark just because the task recommendation is tucked behind
+             a pill for the evening. ── */}
+      {uiMode === "pro" && actionData?.intelligence ? (
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1fr) 304px", gap: 14, marginTop: 14, marginBottom: 14 }}>
+          <div><WhatChangedCard items={actionData.intelligence.what_changed} /><div style={{ marginTop: 14 }}><IntelligencePanel data={actionData.intelligence} onSwap={handleSwapAlternative} recentOutcomes={recentOutcomes} /></div></div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}><RisksGapsCard signals={supportingSignals} /></div>
+        </div>
+      ) : null}
+
       {/* Beyond the 3 changes — Loop Narrative (the 8.5 unlock) */}
       <LoopNarrative
         reflectionCount={(() => {
@@ -2840,4 +2851,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-}
+        }
