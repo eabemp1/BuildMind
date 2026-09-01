@@ -39,6 +39,7 @@ const ReflectActionSchema = z.object({
   // that genuinely aren't tied to a specific roadmap task (e.g. an ad-hoc
   // daily action that isn't in the tasks table at all).
   taskId:        z.string().uuid().optional(),
+  recommendationId: z.string().uuid().optional(),
 });
 
 interface ReflectActionInput {
@@ -55,6 +56,7 @@ interface ReflectActionInput {
   userId?:       string;
   projectId?:    string;
   taskId?:       string;
+  recommendationId?: string;
 }
 
 interface ReflectActionOutput {
@@ -222,7 +224,7 @@ export async function POST(request: Request) {
       );
     }
     const body: ReflectActionInput = parseResult.data;
-    const { outcome, note, what_tried, what_happened, what_learned, blocker, confidence, stage, todayAction, streak, userId, projectId, taskId } = body;
+    const { outcome, note, what_tried, what_happened, what_learned, blocker, confidence, stage, todayAction, streak, userId, projectId, taskId, recommendationId } = body;
 
     // Use the server-verified userId from auth, fall back to body for backwards compat
     const verifiedUserId = routeUser.userId ?? userId;
@@ -264,7 +266,7 @@ Target users: ${project.target_users ?? "Not specified"}`;
         const blockerCategory = blocker ? classifyBlocker(blocker) : null;
 
         // Write reflection to Supabase for future personalisation
-        await supabase.from("reflections").insert({
+        const { data: reflectionRow } = await supabase.from("reflections").insert({
           user_id:      verifiedUserId,
           project_id:   projectId,
           task_id:      taskId ?? null,
@@ -279,7 +281,7 @@ Target users: ${project.target_users ?? "Not specified"}`;
           confidence,
           today_action:  todayAction,
           created_at:    new Date().toISOString(),
-        });
+        }).select("id").maybeSingle();
 
         // FIX: reflect-action previously never touched the tasks table at
         // all — confirmed via real founder data showing has_reflection=true
@@ -459,12 +461,38 @@ Target users: ${project.target_users ?? "Not specified"}`;
         // delta when this reflection resolved a pending prediction — that
         // requires reading accuracy on both sides of the comparison.
         try {
+          // The client only reliably carries recommendationId through the
+          // Today -> task-complete -> reflect handoff when the founder
+          // completes a task inline; other reflect entry points (the
+          // standalone /reflect page, cached/rehydrated Today state) don't
+          // always have it in hand. task-complete already caches the shown
+          // recommendation's identity into user_behavior_state for exactly
+          // this handoff (see app/api/founder-context/task-complete/route.ts)
+          // — fall back to that cache instead of leaving the outcome
+          // unattributed whenever the request body doesn't supply one.
+          let effectiveRecommendationId = recommendationId ?? null;
+          if (!effectiveRecommendationId) {
+            try {
+              const { data: cachedRecRow } = await supabase
+                .from("user_behavior_state")
+                .select("value")
+                .eq("user_id", verifiedUserId)
+                .eq("key", "today_recommendation_id")
+                .maybeSingle();
+              if (typeof cachedRecRow?.value === "string" && cachedRecRow.value) {
+                effectiveRecommendationId = cachedRecRow.value;
+              }
+            } catch { /* non-fatal — outcome stays unattributed, not mis-attributed */ }
+          }
+
           const accuracyBefore = await getFounderIntelligenceAccuracy(supabase, verifiedUserId);
           const comparison = await compareFounderIntelligenceOutcome(supabase, {
             userId: verifiedUserId,
+            recommendationId: effectiveRecommendationId,
             taskTitle: todayAction ?? note ?? "",
             outcome,
             reflectionText: reflectionEvidenceText,
+            evidenceReferences: reflectionRow?.id ? [{ source: "reflection", recordId: String(reflectionRow.id) }] : undefined,
           });
           if (comparison) {
             // compareFounderIntelligenceOutcome already recomputed and cached
