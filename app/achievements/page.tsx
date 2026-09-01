@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
-  ACHIEVEMENTS, getUnlocked, getAchievementTracks, getTrackLevel,
+  ACHIEVEMENTS, getUnlocked, getAchievementTracks, getTrackLevel, getProgressState,
   type Achievement, type AchievementStats, type AchievementTrack,
 } from "@/lib/achievements";
 import { Trophy, Lock, Star, Zap, Flame } from "lucide-react";
@@ -33,17 +33,19 @@ function AchievementCard({ a, unlocked, unlockedAt, stats }: { a: Achievement; u
     return mo === 1 ? "1 month ago" : `${mo} months ago`;
   })() : null;
   const prog = !unlocked && stats && a.progress ? a.progress(stats) : null;
+  const cardState = getProgressState(unlocked, prog);
+  const isNearlyThere = cardState === "nearly_there";
   return (
     <motion.div
       whileHover={{ y: -2 }}
       transition={{ duration: 0.15 }}
       style={{
         background: "var(--bm-bg2)",
-        border: `1px solid ${unlocked ? "var(--bm-accent-bd)" : "var(--bm-border)"}`,
+        border: `1px solid ${unlocked ? "var(--bm-accent-bd)" : isNearlyThere ? "var(--bm-amber, #d9a441)" : "var(--bm-border)"}`,
         borderRadius: 14,
         // Consistent padding — no horizontal overflow on small screens
         padding: "14px",
-        opacity: unlocked ? 1 : 0.55,
+        opacity: unlocked ? 1 : isNearlyThere ? 0.85 : 0.55,
         position: "relative",
         overflow: "hidden",
         // Ensure card never overflows its grid cell
@@ -54,6 +56,9 @@ function AchievementCard({ a, unlocked, unlockedAt, stats }: { a: Achievement; u
       {/* Top accent bar */}
       {unlocked && (
         <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: "var(--grad-primary)", borderRadius: "14px 14px 0 0" }} />
+      )}
+      {isNearlyThere && (
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: "var(--bm-amber, #d9a441)", borderRadius: "14px 14px 0 0" }} />
       )}
 
       {/* Icon + content — stacked on very narrow cells, row on wider */}
@@ -120,8 +125,8 @@ function AchievementCard({ a, unlocked, unlockedAt, stats }: { a: Achievement; u
               progress accessor) stay a plain lock, no fake bar. */}
           {prog && (
             <div style={{ marginTop: 8 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--bm-text4)", marginBottom: 2 }}>
-                <span>Progress</span>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: isNearlyThere ? "var(--bm-amber, #d9a441)" : "var(--bm-text4)", marginBottom: 2 }}>
+                <span>{isNearlyThere ? "Almost there!" : "Progress"}</span>
                 <span className="bm-data">{Math.min(prog.current, prog.target)}/{prog.target}</span>
               </div>
               <ProgressBar value={prog.current} max={prog.target} />
@@ -141,6 +146,7 @@ function TrackCard({ track, stats, unlocked }: { track: AchievementTrack; stats:
   const { level, isMaxed, next, progress } = getTrackLevel(track, stats ?? EMPTY_STATS, unlocked);
   const top = track.achievements[track.achievements.length - 1];
   const display = isMaxed ? top : next!;
+  const isNearlyThere = !isMaxed && progress ? progress.current / progress.target >= 0.8 : false;
 
   return (
     <motion.div
@@ -148,12 +154,15 @@ function TrackCard({ track, stats, unlocked }: { track: AchievementTrack; stats:
       transition={{ duration: 0.15 }}
       style={{
         background: "var(--bm-bg2)",
-        border: `1px solid ${level > 0 ? "var(--bm-accent-bd)" : "var(--bm-border)"}`,
+        border: `1px solid ${level > 0 ? "var(--bm-accent-bd)" : isNearlyThere ? "var(--bm-amber, #d9a441)" : "var(--bm-border)"}`,
         borderRadius: 14, padding: "14px", position: "relative", overflow: "hidden", minWidth: 0, boxSizing: "border-box",
       }}
     >
       {level > 0 && (
         <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: "var(--grad-primary)", borderRadius: "14px 14px 0 0" }} />
+      )}
+      {level === 0 && isNearlyThere && (
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: "var(--bm-amber, #d9a441)", borderRadius: "14px 14px 0 0" }} />
       )}
       <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
         <div style={{
@@ -183,8 +192,8 @@ function TrackCard({ track, stats, unlocked }: { track: AchievementTrack; stats:
           </div>
           {progress && !isMaxed && (
             <div style={{ marginTop: 8 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--bm-text4)", marginBottom: 2 }}>
-                <span>Next: {next!.label}</span>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: isNearlyThere ? "var(--bm-amber, #d9a441)" : "var(--bm-text4)", marginBottom: 2 }}>
+                <span>{isNearlyThere ? `Almost there! Next: ${next!.label}` : `Next: ${next!.label}`}</span>
                 <span className="bm-data">{Math.min(progress.current, progress.target)}/{progress.target}</span>
               </div>
               <ProgressBar value={progress.current} max={progress.target} />
@@ -222,6 +231,11 @@ export default function AchievementsPage() {
   const [unlockedTimestamps, setUnlockedTimestamps] = useState<Record<string, string>>({});
   const [stats, setStats] = useState<AchievementStats | null>(null);
   const [filter, setFilter] = useState("all");
+  // "Level Up!" celebration — the 5th real card state. Driven by the
+  // bm_achievement_unlocked event lib/achievements.ts already dispatches
+  // from Today/Reflect/AI Coach/Break My Startup/Ventures/Owner — nothing
+  // was ever listening for it anywhere in the app before this.
+  const [justUnlocked, setJustUnlocked] = useState<Achievement[]>([]);
 
   useEffect(() => {
     setAll(ACHIEVEMENTS);
@@ -249,6 +263,17 @@ export default function AchievementsPage() {
         if (data.stats) setStats(data.stats);
       })
       .catch(() => {});
+
+    const onUnlock = (e: Event) => {
+      const detail = (e as CustomEvent<{ newlyUnlocked?: Achievement[] }>).detail;
+      const fresh = detail?.newlyUnlocked ?? [];
+      if (fresh.length === 0) return;
+      setUnlocked((prev) => new Set([...prev, ...fresh.map((a) => a.id)]));
+      setJustUnlocked(fresh);
+      setTimeout(() => setJustUnlocked([]), 5000);
+    };
+    window.addEventListener("bm_achievement_unlocked", onUnlock);
+    return () => window.removeEventListener("bm_achievement_unlocked", onUnlock);
   }, []);
 
   const { tracks, standalone } = getAchievementTracks();
@@ -258,6 +283,39 @@ export default function AchievementsPage() {
 
   return (
     <div style={{ maxWidth: 840, margin: "0 auto", padding: "20px 16px" }}>
+
+      {/* "Level Up!" — the 5th real card state, only rendered when a real
+          unlock event fires while this page is open. Auto-dismisses after
+          5s; also just tapable to dismiss early. */}
+      <AnimatePresence>
+        {justUnlocked.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -12, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -8, scale: 0.98 }}
+            onClick={() => setJustUnlocked([])}
+            style={{
+              marginBottom: 16, padding: "14px 16px", borderRadius: 14, cursor: "pointer",
+              background: "var(--bm-accent-dim, rgba(232,197,71,0.08))",
+              border: "1px solid var(--bm-accent-bd, rgba(232,197,71,0.3))",
+              display: "flex", alignItems: "center", gap: 12,
+            }}
+          >
+            <div style={{ fontSize: 24, flexShrink: 0 }}>{justUnlocked[0].emoji}</div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 9, fontWeight: 700, color: "var(--bm-accent)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                Level up!
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--bm-text)" }}>
+                {justUnlocked.map((a) => a.label).join(", ")}
+              </div>
+              <div style={{ fontSize: 11, color: "var(--bm-text3)" }}>
+                {justUnlocked.length === 1 ? justUnlocked[0].description : `${justUnlocked.length} achievements unlocked`}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Header */}
       <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 20 }}>
@@ -390,4 +448,4 @@ export default function AchievementsPage() {
       `}</style>
     </div>
   );
-      }
+  }
