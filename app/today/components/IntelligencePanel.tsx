@@ -14,6 +14,12 @@ export type Signal = {
 };
 
 export interface TodayIntelligenceSummary {
+  // Learning-loop attribution identity for the currently shown Founder
+  // Intelligence candidate (reflexion_learning_log row id). Threaded through
+  // task-complete -> reflect-action so outcome comparison can attribute to
+  // the recommendation that was actually shown, instead of guessing the
+  // most recent pending row. Absent when no prediction was recorded.
+  recommendation_id?: string | null;
   generated_at: string;
   current_goal: string | null;
   top_signals: Signal[];
