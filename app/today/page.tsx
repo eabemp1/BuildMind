@@ -422,6 +422,11 @@ function TodayContent() {
 
   // AI-personalised action state
   const [aiAction, setAiAction] = useState<ActionData | null>(null);
+  // Founder Intelligence recommendation identity for the currently shown
+  // action (reflexion_learning_log row id from data.intelligence.recommendation_id).
+  // Carried into task-complete -> user_behavior_state -> reflect-action so
+  // outcome learning attributes to the recommendation actually shown here.
+  const [recommendationId, setRecommendationId] = useState<string | null>(null);
   const [recentOutcomes, setRecentOutcomes] = useState<Array<{ action_shown: string; outcome: string; outcome_note: string | null; evidence_match_score: number | null; outcome_recorded_at: string | null }>>([]);
   const [debtSuppression, setDebtSuppression] = useState<DebtSuppression | null>(null);
   const [aiUsage, setAiUsage] = useState<{ monthlyUsed: number; monthlyLimit: number; unlimited: boolean } | null>(null);
@@ -789,6 +794,7 @@ function TodayContent() {
           isActionData(cached.data)
         ) {
           setAiAction({ ...cached.data, isAI: true }); setAiFetchFailed(false); lastGoodActionRef.current = { ...cached.data, isAI: true };
+          setRecommendationId(cached.data.intelligence?.recommendation_id ?? null);
           // Still sync server cache in background — non-blocking
           void fetchBehaviorState<{ today_action_cache: CachedTodayAction & { generatedAt?: string } }>(["today_action_cache"])
             .then((serverCache) => {
@@ -806,6 +812,7 @@ function TodayContent() {
                 storage.setJSON(cacheKey, serverCache.today_action_cache);
                 storage.set(`bm_today_action_cache_ts_${userId}`, String(serverTs));
                 setAiAction({ ...serverCache.today_action_cache.data, isAI: true }); setAiFetchFailed(false); lastGoodActionRef.current = { ...serverCache.today_action_cache.data, isAI: true };
+                setRecommendationId(serverCache.today_action_cache.data.intelligence?.recommendation_id ?? null);
               }
             })
             .catch(() => {});
@@ -866,6 +873,7 @@ function TodayContent() {
         storage.setJSON(cacheKey, serverCache.today_action_cache);
         if (serverCacheTs > 0) storage.set(`bm_today_action_cache_ts_${userId}`, String(serverCacheTs));
         setAiAction({ ...serverCache.today_action_cache.data, isAI: true }); setAiFetchFailed(false); lastGoodActionRef.current = { ...serverCache.today_action_cache.data, isAI: true };
+        setRecommendationId(serverCache.today_action_cache.data.intelligence?.recommendation_id ?? null);
         return;
       }
       // Server cache exists but is stale — clear both server and localStorage
@@ -956,6 +964,8 @@ function TodayContent() {
               if (!actionData) break outer;
               if (!signal.aborted) {
                 setAiAction(actionData);
+                const streamRecId = (p as { intelligence?: { recommendation_id?: string | null } }).intelligence?.recommendation_id;
+                setRecommendationId(typeof streamRecId === "string" ? streamRecId : null);
                 setAiFetchFailed(false);
                 lastGoodActionRef.current = actionData;
                 setStreamLabel(null);
@@ -1000,6 +1010,8 @@ function TodayContent() {
           if (json?.success && actionData) {
             setDebtSuppression(null);
             setAiAction(actionData);
+            const fallbackRecId = (json as { data?: { intelligence?: { recommendation_id?: string | null } } })?.data?.intelligence?.recommendation_id;
+            setRecommendationId(typeof fallbackRecId === "string" ? fallbackRecId : null);
             setAiFetchFailed(false);
             lastGoodActionRef.current = actionData;
             lastRejectedActionRef.current = null;
@@ -1240,6 +1252,7 @@ function TodayContent() {
     }
     // Always clear cache and fetch a new task regardless of plan or API response
     setAiAction(null);
+    setRecommendationId(null);
     setDebtSuppression(null);
     setStreamLabel("Fetching a better-fit task...");
     storage.remove(`bm_today_action_cache_${userId}`);
@@ -1273,6 +1286,8 @@ function TodayContent() {
       if (json?.success && nextAction) {
         setDebtSuppression(null);
         setAiAction(nextAction);
+        const debtAckRecId = (json as { data?: { intelligence?: { recommendation_id?: string | null } } })?.data?.intelligence?.recommendation_id;
+        setRecommendationId(typeof debtAckRecId === "string" ? debtAckRecId : null);
       }
     } catch {
       // Keep the debt card visible if generation fails.
@@ -1298,7 +1313,7 @@ function TodayContent() {
     void fetch("/api/founder-context/swap-action", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ candidate: alt }),
+      body: JSON.stringify({ candidate: alt, recommendationId }),
     }).catch(() => {});
   }
 
@@ -1332,6 +1347,11 @@ function TodayContent() {
             // task-complete's own reflexion_learning_log insert now skips
             // itself in that case instead of writing a duplicate row.
             log_row_id: aiAction?.log_row_id ?? null,
+            // Carries the Founder Intelligence recommendation identity so
+            // task-complete can cache it into user_behavior_state for
+            // reflect-action to attribute the outcome correctly instead of
+            // guessing the most recent pending prediction.
+            recommendation_id: recommendationId,
           }),
         });
         if (tcRes.ok) {
