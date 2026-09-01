@@ -8,7 +8,7 @@
 import { storage } from "@/lib/storage";
 import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
 
-export type AchievementRarity = "common" | "rare" | "epic" | "legendary";
+export type AchievementRarity = "common" | "uncommon" | "rare" | "epic" | "legendary";
 export type AchievementCategory = "streak" | "tasks" | "ai" | "projects" | "social" | "explorer" | "founder";
 
 export interface Achievement {
@@ -64,13 +64,14 @@ export interface UnlockedAchievement {
 // ── Rarity colours ────────────────────────────────────────────────────────────
 export const RARITY_COLORS: Record<AchievementRarity, { bg: string; border: string; text: string; glow: string }> = {
   common:    { bg: "#1c1c1c",      border: "#2a2a2a",      text: "#a0a0a0", glow: "rgba(160,160,160,0.12)" },
+  uncommon:  { bg: "#0f2d1a",      border: "#1e5c34",      text: "#4ade80", glow: "rgba(74,222,128,0.16)"  },
   rare:      { bg: "#0f1f3d",      border: "#1e3a6e",      text: "#60a5fa", glow: "rgba(96,165,250,0.18)"  },
   epic:      { bg: "#1a0f3d",      border: "#3b1f7a",      text: "#a78bfa", glow: "rgba(167,139,250,0.22)" },
   legendary: { bg: "#2d1a00",      border: "#7c4a00",      text: "#fbbf24", glow: "rgba(251,191,36,0.28)"  },
 };
 
 export const RARITY_LABELS: Record<AchievementRarity, string> = {
-  common: "Common", rare: "Rare", epic: "Epic", legendary: "Legendary",
+  common: "Common", uncommon: "Uncommon", rare: "Rare", epic: "Epic", legendary: "Legendary",
 };
 
 // ── Achievement definitions ───────────────────────────────────────────────────
@@ -85,7 +86,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   },
   {
     id: "streak_3", label: "On Fire", description: "3-day streak", emoji: "🔥",
-    rarity: "common", category: "streak", xp: 100, track: "streak", tier: 2,
+    rarity: "uncommon", category: "streak", xp: 100, track: "streak", tier: 2,
     condition: s => s.streak >= 3,
     progress: s => ({ current: s.streak, target: 3 }),
   },
@@ -123,7 +124,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   },
   {
     id: "tasks_10", label: "Action Taker", description: "10 daily check-ins — you show up", emoji: "⚡",
-    rarity: "common", category: "tasks", xp: 150, track: "tasks", tier: 2,
+    rarity: "uncommon", category: "tasks", xp: 150, track: "tasks", tier: 2,
     condition: s => s.checkInsDone >= 10,
     progress: s => ({ current: s.checkInsDone, target: 10 }),
   },
@@ -282,6 +283,23 @@ export function getTrackLevel(
   const next = track.achievements.find(a => !unlockedIds.has(a.id)) ?? null;
   const progress = next?.progress ? next.progress(stats) : null;
   return { level, isMaxed: next === null, next, progress };
+}
+
+/** Which of the 5 real states a card should render in — purely derived from
+ *  real progress numbers, no new tracking. "Nearly there" is anything at or
+ *  above 80% but not yet complete; the actual unlock moment itself (a brief
+ *  celebration) is handled separately by the caller comparing against the
+ *  previously-seen unlocked set, not stored here. */
+export type AchievementCardState = "locked" | "in_progress" | "nearly_there" | "unlocked";
+
+export function getProgressState(
+  unlocked: boolean,
+  progress: { current: number; target: number } | null,
+): AchievementCardState {
+  if (unlocked) return "unlocked";
+  if (!progress || progress.current <= 0) return "locked";
+  const ratio = progress.current / progress.target;
+  return ratio >= 0.8 ? "nearly_there" : "in_progress";
 }
 
 
@@ -491,4 +509,4 @@ if (typeof window !== "undefined") {
       if (process.env.NODE_ENV === "development") console.log("Achievements reset.");
     },
   };
-    }
+              }
