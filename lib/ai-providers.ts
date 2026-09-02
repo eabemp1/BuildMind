@@ -3,18 +3,24 @@
  *
  * Multi-provider rotation with automatic fallback.
  *
- * PROVIDER STATUS — verified August 26, 2026 (provider policies change
+ * PROVIDER STATUS — verified September 2, 2026 (provider policies change
  * often; re-verify before assuming any of this is still true):
  *
  *   Groq       — still genuinely free, no card required. Real limits are
  *                per-model, at the ORG level (not per-key — extra keys do
  *                NOT raise the ceiling): gpt-oss-120b is 30 RPM / 1,000 RPD
- *                / 8,000 TPM / 200,000 TPD; llama-3.3-70b-versatile is a
- *                SEPARATE bucket at 30 RPM / 1,000 RPD / 12,000 TPM /
- *                100,000 TPD. Because these are independent buckets, using
- *                both models (not just falling back to the second one after
- *                the first fails) roughly doubles the effective free daily
+ *                / 8,000 TPM / 200,000 TPD; qwen/qwen3.6-27b is a SEPARATE
+ *                bucket. Because these are independent buckets, using both
+ *                models (not just falling back to the second one after the
+ *                first fails) roughly doubles the effective free daily
  *                token budget — see getFastChain() below.
+ *                FIX (Sept 2026): llama-3.3-70b-versatile (shutdown
+ *                08/16/26) and qwen/qwen3-32b (shutdown 07/17/26) were both
+ *                decommissioned by Groq — see console.groq.com/docs/deprecations.
+ *                Both hardcoded second-bucket slots below now use
+ *                qwen/qwen3.6-27b, Groq's listed replacement for the old
+ *                Llama 3.3 70B slot, so this still stays a genuinely
+ *                separate bucket from gpt-oss-120b rather than reusing it.
  *   Cerebras   — FIX: as of August 2026 Cerebras ended its no-card free
  *                tier. New/existing accounts without a payment method on
  *                file now get 402 on every call; adding a card grants $5 in
@@ -38,36 +44,46 @@
  *                Google AI Studio's current model list and set GEMINI_MODEL
  *                to whatever's currently live rather than assuming this
  *                default stays correct.
+ *   Mistral    — NEW Sept 2026: La Plateforme's "Experiment" free tier —
+ *                genuinely free, no credit card (phone verification only
+ *                at signup), OpenAI-compatible endpoint, roughly 1B
+ *                tokens/month at a low RPM ceiling. A real additional leg,
+ *                not another router over the same free models the other
+ *                legs already reach. Re-verify at console.mistral.ai before
+ *                assuming these limits/model IDs still hold.
  *
  * NET EFFECT for a small (10-30 person) free deployment: Groq alone,
  * spread across its two independent model buckets, comfortably covers that
  * scale at the CORE_DAILY_LIMITS/PLAN_DAILY_LIMITS sizing already in
  * app/api/ai/_utils.ts (do the math before raising those limits — TPD is
  * the binding constraint, not RPD, once prompts get long). OpenRouter's
- * fixed free-router is the real second leg. Cerebras and Gemini are
- * bonus-if-reachable, not guaranteed capacity.
+ * fixed free-router is the real second leg, Mistral a genuine third.
+ * Cerebras and Gemini are bonus-if-reachable, not guaranteed capacity.
  *
  * Provider priority per role:
  *
  * FAST (Generator, Refiner, Parser):
  *   1. Groq — openai/gpt-oss-120b  (MoE 120B, near o4-mini reasoning, free tier)
- *   2. Groq — llama-3.3-70b-versatile (separate free-tier token bucket, not just a fallback)
+ *   2. Groq — qwen/qwen3.6-27b (separate free-tier token bucket, not just a fallback)
  *   3. OpenRouter — openrouter/free (auto-routing free model, no pinned slug to rot)
- *   4. Gemini 2.5 Flash (best-effort — see PROVIDER STATUS above)
- *   5. Cerebras — gpt-oss-120b (best-effort — card-gated as of Aug 2026, see above)
+ *   4. Mistral — mistral-small-latest (free "Experiment" tier, no card)
+ *   5. Gemini 2.5 Flash (best-effort — see PROVIDER STATUS above)
+ *   6. Cerebras — gpt-oss-120b (best-effort — card-gated as of Aug 2026, see above)
  *
  * REASONING (Critic, Verifier — Stages 4 & 5 of Reflexion loop):
  *   1. Groq — openai/gpt-oss-120b  (native CoT, reasoning_effort=high, free)
- *   2. Groq — qwen/qwen3-32b       (strong math/logic, free, separate bucket)
- *   3. OpenRouter — openrouter/free
- *   4. Gemini 2.5 Flash (best-effort)
- *   5. Cerebras — gpt-oss-120b (best-effort)
+ *   2. OpenRouter — openrouter/free
+ *   3. Gemini 2.5 Flash (best-effort)
+ *   4. Mistral — mistral-small-latest (free, no card)
+ *   5. Groq — qwen/qwen3.6-27b     (strong math/logic, free, separate bucket)
+ *   6. Cerebras — gpt-oss-120b (best-effort)
  *
  * FALLBACK:
  *   1. OpenRouter — openrouter/free
  *   2. Groq — openai/gpt-oss-120b
  *   3. Gemini 2.5 Flash (best-effort)
- *   4. Cerebras — gpt-oss-120b (best-effort)
+ *   4. Mistral — mistral-small-latest (free, no card)
+ *   5. Cerebras — gpt-oss-120b (best-effort)
  *
  * Rate limit detection:
  *   Any 429, 503, or decommissioned/deprecated response triggers immediate rotation.
@@ -145,6 +161,14 @@ const GEMINI_MODEL         = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 const OPENROUTER_API_KEY   = readApiKey("OPENROUTER_API_KEY");
 const OPENROUTER_MODEL     = process.env.OPENROUTER_MODEL || "openrouter/free";
 
+// MISTRAL — La Plateforme's "Experiment" tier: genuinely free, no credit card
+// (phone verification only), OpenAI-compatible endpoint, ~1B tokens/month at a
+// low RPM ceiling. A real fifth leg, not another router in front of the same
+// free models the other legs already reach. Verified Sept 2026 — re-check
+// console.mistral.ai before assuming these limits/model IDs still hold.
+const MISTRAL_API_KEY      = readApiKey("MISTRAL_API_KEY");
+const MISTRAL_MODEL        = process.env.MISTRAL_MODEL || "mistral-small-latest";
+
 const cerebrasClient = CEREBRAS_API_KEY
   ? new Cerebras({ apiKey: CEREBRAS_API_KEY, timeout: 20000, maxRetries: 0 })
   : null;
@@ -153,8 +177,9 @@ export function getAIProviderStatus() {
   return {
     fast: [
       GROQ_API_KEY ? { provider: "groq", model: GROQ_MODEL, configured: true } : null,
-      GROQ_API_KEY ? { provider: "groq", model: "llama-3.3-70b-versatile", configured: true } : null,
+      GROQ_API_KEY ? { provider: "groq", model: "qwen/qwen3.6-27b", configured: true } : null,
       OPENROUTER_API_KEY ? { provider: "openrouter", model: OPENROUTER_MODEL, configured: true } : null,
+      MISTRAL_API_KEY ? { provider: "mistral", model: MISTRAL_MODEL, configured: true } : null,
       GEMINI_API_KEY ? { provider: "gemini", model: GEMINI_MODEL, configured: true } : null,
       CEREBRAS_API_KEY ? { provider: "cerebras", model: CEREBRAS_MODEL, configured: true, note: "requires card on file as of Aug 2026" } : null,
     ].filter(Boolean),
@@ -162,13 +187,15 @@ export function getAIProviderStatus() {
       GROQ_API_KEY ? { provider: "groq", model: GROQ_REASONING_MODEL, configured: true } : null,
       OPENROUTER_API_KEY ? { provider: "openrouter", model: OPENROUTER_MODEL, configured: true } : null,
       GEMINI_API_KEY ? { provider: "gemini", model: GEMINI_MODEL, configured: true } : null,
-      GROQ_API_KEY ? { provider: "groq", model: "qwen/qwen3-32b", configured: true } : null,
+      MISTRAL_API_KEY ? { provider: "mistral", model: MISTRAL_MODEL, configured: true } : null,
+      GROQ_API_KEY ? { provider: "groq", model: "qwen/qwen3.6-27b", configured: true } : null,
       CEREBRAS_API_KEY ? { provider: "cerebras", model: CEREBRAS_REASONING_MODEL, configured: true, note: "requires card on file as of Aug 2026" } : null,
     ].filter(Boolean),
     fallback: [
       OPENROUTER_API_KEY ? { provider: "openrouter", model: OPENROUTER_MODEL, configured: true } : null,
       GROQ_API_KEY ? { provider: "groq", model: GROQ_MODEL, configured: true } : null,
       GEMINI_API_KEY ? { provider: "gemini", model: GEMINI_MODEL, configured: true } : null,
+      MISTRAL_API_KEY ? { provider: "mistral", model: MISTRAL_MODEL, configured: true } : null,
       CEREBRAS_API_KEY ? { provider: "cerebras", model: CEREBRAS_MODEL, configured: true, note: "requires card on file as of Aug 2026" } : null,
     ].filter(Boolean),
   };
@@ -181,12 +208,14 @@ export function getAIProviderDiagnostics() {
     cerebras: Boolean(CEREBRAS_API_KEY),
     openrouter: Boolean(OPENROUTER_API_KEY),
     gemini: Boolean(GEMINI_API_KEY),
+    mistral: Boolean(MISTRAL_API_KEY),
   };
   const missingEnv = [
     configured.groq ? null : "GROQ_API_KEY",
     configured.cerebras ? null : "CEREBRAS_API_KEY",
     configured.openrouter ? null : "OPENROUTER_API_KEY",
     configured.gemini ? null : "GEMINI_API_KEY",
+    configured.mistral ? null : "MISTRAL_API_KEY",
   ].filter(Boolean) as string[];
 
   return {
@@ -400,6 +429,45 @@ async function openRouterCall(
   return sanitizeModelOutput(text);
 }
 
+/**
+ * mistralCall — La Plateforme's OpenAI-compatible endpoint, "Experiment" free
+ * tier. No credit card required (phone verification only at signup). A
+ * genuinely separate free-tier ceiling from Groq/OpenRouter/Gemini, not
+ * another router in front of the same underlying free models.
+ */
+async function mistralCall(
+  messages: ChatMessage[],
+  model: string,
+  temperature: number,
+  maxTokens: number,
+  jsonMode: boolean,
+): Promise<string> {
+  if (!MISTRAL_API_KEY) throw new Error("MISTRAL_API_KEY not set");
+  const res = await fetch("https://api.mistral.ai/v1/chat/completions", {
+    method: "POST",
+    signal: AbortSignal.timeout(20000),
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${MISTRAL_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model,
+      temperature,
+      max_tokens: maxTokens,
+      ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
+      messages,
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`MISTRAL_${res.status}: ${text.slice(0, 150)}`);
+  }
+  const body = await res.json();
+  const text: string = body?.choices?.[0]?.message?.content;
+  if (!text) throw new Error("Mistral empty response");
+  return sanitizeModelOutput(text);
+}
+
 // ── Rate limit detection ──────────────────────────────────────────────────────
 
 function isRetryableProviderError(err: unknown): boolean {
@@ -462,16 +530,24 @@ function getFastChain(): ProviderFn[] {
   if (GROQ_API_KEY) {
     // gpt-oss-120b first — strongest reasoning of any free model
     chain.push({ label: `groq:${GROQ_MODEL}`, call: (m, t, mt, j) => groqCall(m, GROQ_MODEL, t, mt, j) });
-    // Llama 3.3 70B — NOT just a fallback: Groq's rate limits are per-model,
-    // so this is a genuinely separate 1,000 RPD / 100,000 TPD bucket, not a
-    // second attempt against the same ceiling gpt-oss-120b just hit.
-    chain.push({ label: "groq:llama-3.3-70b-versatile", call: (m, t, mt, j) => groqCall(m, "llama-3.3-70b-versatile", t, mt, j) });
+    // FIX (Sept 2026): llama-3.3-70b-versatile was decommissioned by Groq on
+    // 08/16/26 (see console.groq.com/docs/deprecations). qwen/qwen3.6-27b is
+    // Groq's listed replacement — using it instead of gpt-oss-120b again
+    // keeps this a genuinely SEPARATE rate-limit bucket from the line above,
+    // preserving the doubled-daily-budget effect this second chain entry
+    // exists for in the first place.
+    chain.push({ label: "groq:qwen/qwen3.6-27b", call: (m, t, mt, j) => groqCall(m, "qwen/qwen3.6-27b", t, mt, j) });
   }
   if (OPENROUTER_API_KEY) {
     // Fixed free-router (see PROVIDER STATUS at top of file) — the real
     // second leg, ahead of the two providers below that now require a card
     // (Cerebras) or are unreliable (Gemini) as of Aug 2026.
     chain.push({ label: `openrouter:${OPENROUTER_MODEL}`, call: (m, t, mt, j) => openRouterCall(m, OPENROUTER_MODEL, t, mt, j) });
+  }
+  if (MISTRAL_API_KEY) {
+    // La Plateforme's free "Experiment" tier — a genuinely separate ceiling
+    // from every provider above, not another router over the same models.
+    chain.push({ label: `mistral:${MISTRAL_MODEL}`, call: (m, t, mt, j) => mistralCall(m, MISTRAL_MODEL, t, mt, j) });
   }
   if (GEMINI_API_KEY) {
     chain.push({ label: `gemini:${GEMINI_MODEL}`, call: (m, t, mt, j) => geminiCall(m, t, mt, j) });
@@ -504,9 +580,15 @@ function getReasoningChain(): ProviderFn[] {
   if (GEMINI_API_KEY) {
     chain.push({ label: `gemini:${GEMINI_MODEL}`, call: (m, t, mt, j) => geminiCall(m, t, mt, j) });
   }
+  if (MISTRAL_API_KEY) {
+    chain.push({ label: `mistral:${MISTRAL_MODEL}`, call: (m, t, mt, j) => mistralCall(m, MISTRAL_MODEL, t, mt, j) });
+  }
   if (GROQ_API_KEY) {
-    // Qwen3-32b — same-family fallback (strong math/logic), separate token bucket from gpt-oss-120b
-    chain.push({ label: "groq:qwen/qwen3-32b", call: (m, t, mt, j) => groqCall(m, "qwen/qwen3-32b", t, mt, j, true) });
+    // FIX (Sept 2026): qwen/qwen3-32b was decommissioned by Groq on 07/17/26
+    // (see console.groq.com/docs/deprecations). qwen/qwen3.6-27b is the
+    // current model in that family and, like the old qwen3-32b slot, is a
+    // separate token bucket from gpt-oss-120b above.
+    chain.push({ label: "groq:qwen/qwen3.6-27b", call: (m, t, mt, j) => groqCall(m, "qwen/qwen3.6-27b", t, mt, j, true) });
   }
   if (CEREBRAS_API_KEY) {
     // Best-effort last resort — card-gated as of Aug 2026, see PROVIDER STATUS.
@@ -524,6 +606,9 @@ function getFallbackChain(): ProviderFn[] {
   }
   if (GEMINI_API_KEY) {
     chain.push({ label: `gemini:${GEMINI_MODEL}`, call: (m, t, mt, j) => geminiCall(m, t, mt, j) });
+  }
+  if (MISTRAL_API_KEY) {
+    chain.push({ label: `mistral:${MISTRAL_MODEL}`, call: (m, t, mt, j) => mistralCall(m, MISTRAL_MODEL, t, mt, j) });
   }
   if (CEREBRAS_API_KEY) {
     // Best-effort last resort — card-gated as of Aug 2026, see PROVIDER STATUS.
