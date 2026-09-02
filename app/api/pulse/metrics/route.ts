@@ -28,10 +28,11 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getPulseMetrics, getPulseWeekSummary } from "@/lib/pulse";
+import { loadFounderIntelligence, summarizeFounderIntelligenceForClient } from "@/lib/founderIntelligence";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   const supabase = await createClient();
   const { data: { user }, error } = await supabase.auth.getUser();
   if (error || !user) {
@@ -42,6 +43,26 @@ export async function GET() {
     getPulseMetrics(user.id),
     getPulseWeekSummary(user.id),
   ]);
+  const projectId = new URL(request.url).searchParams.get("projectId") || undefined;
+  // Pulse is a consumer of the existing intelligence read model. It does not
+  // derive a second slippage interpretation from pulse score data.
+  let intelligence: ReturnType<typeof summarizeFounderIntelligenceForClient> | undefined;
+  if (projectId) {
+    // Prefer the exact intelligence payload that produced Today's shown
+    // recommendation. This preserves the same signal/recommendation IDs for
+    // Pulse instead of rendering a second request-time interpretation.
+    const { data: cacheRow } = await supabase
+      .from("user_behavior_state")
+      .select("value")
+      .eq("user_id", user.id)
+      .eq("key", "today_action_cache")
+      .maybeSingle();
+    const cached = cacheRow?.value as { date?: string; projectId?: string; data?: { intelligence?: ReturnType<typeof summarizeFounderIntelligenceForClient> } } | null;
+    const today = new Date().toISOString().slice(0, 10);
+    intelligence = cached?.date === today && cached.projectId === projectId
+      ? cached.data?.intelligence
+      : await loadFounderIntelligence(supabase, user.id, projectId).then(summarizeFounderIntelligenceForClient).catch(() => undefined);
+  }
 
   return NextResponse.json({
     ok: true,
@@ -63,6 +84,7 @@ export async function GET() {
               weekSummary.reflectionQualities.length * 10
             ) / 10
           : null,
+      intelligence,
     },
   });
 }
