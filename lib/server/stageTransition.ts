@@ -89,6 +89,7 @@ export async function evaluateAndCacheStageTransition(
       .from("weekly_goals")
       .select("tasks_done, target_tasks")
       .eq("project_id", projectId)
+      .eq("user_id", userId)
       .eq("week_start", weekStart(new Date()))
       .maybeSingle(),
   ]);
