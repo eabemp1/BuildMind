@@ -28,9 +28,18 @@ export interface SignalEvidence {
   detail: string;
   count?: number;
   window?: string;
+  /** Present only when the underlying source row is available. */
+  record_id?: string;
+  field?: string;
+  observed_at?: string;
+  /** A fact, never an interpretation. Kept alongside `detail` for compatibility. */
+  fact?: string;
+  value?: string | number | boolean | null;
 }
 
 export interface IntelligenceSignal {
+  /** Deterministic identity for the same currently-observed condition. */
+  id: string;
   type: IntelligenceSignalType;
   severity: SignalSeverity;
   confidence: number;
@@ -42,6 +51,33 @@ export interface IntelligenceSignal {
   affected_goal?: string | null;
   affected_assumption?: string | null;
   recommended_response: string;
+  coverage: { task_events: number; reflections: number; activity_events: number; recommendation_outcomes: number };
+  observation_count: number;
+  limitations: string[];
+  lifecycle: "active" | "acknowledged" | "resolved" | "expired";
+}
+
+/**
+ * Read-only execution projection. This deliberately composes existing rows;
+ * it is not another mutable founder-state store.
+ */
+export interface FounderExecutionState {
+  as_of: string;
+  scope: { user_id?: string; project_id?: string | null };
+  commitments: { active_milestone_id?: string | null; active_milestone?: string | null; overdue_tasks: number; pending_tasks: number };
+  execution: {
+    completed_actions_7d: number;
+    completed_tasks_7d: number;
+    task_velocity_7d: number | null;
+    milestone_velocity_30d: number | null;
+    repeated_postponements: number;
+    stall_days: number | null;
+    inactivity_days: number | null;
+    focus_distribution: Array<{ category: string; count: number }>;
+  };
+  alignment: { stated_priority?: string | null; observed_priority?: string | null; confidence: number };
+  momentum: { score?: number | null; trend: "rising" | "stable" | "falling" | "unknown"; streak_days?: number | null };
+  coverage: IntelligenceSignal["coverage"];
 }
 
 export interface FounderState {
@@ -127,6 +163,7 @@ export interface DecisionState {
 }
 
 export interface FounderIntelligenceState {
+  execution_state: FounderExecutionState;
   founder: FounderState;
   startup: StartupState;
   strategy: StrategyState;
@@ -157,6 +194,8 @@ export interface FounderIntelligenceState {
 }
 
 export interface FounderIntelligenceInput {
+  userId?: string;
+  projectId?: string | null;
   founderContext?: Record<string, any> | null;
   founderMemory?: Record<string, any> | null;
   project?: Record<string, any> | null;
@@ -235,10 +274,29 @@ function weightedCompletedEvidence(reflections: Array<Record<string, any>>, now:
   }, 0);
 }
 
-function signal(params: Omit<IntelligenceSignal, "detected_at"> & { now: Date }): IntelligenceSignal {
+function stableSignalId(type: IntelligenceSignalType, affectedGoal: string | null | undefined): string {
+  const scope = String(affectedGoal ?? "founder").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "founder";
+  return `fei:${type.toLowerCase()}:${scope}`;
+}
+
+function computeMomentumTrendFromContext(context: Record<string, any>): FounderExecutionState["momentum"]["trend"] {
+  const current = Number(context.momentum_score);
+  const previous = Number(context.momentum_last_week);
+  if (!Number.isFinite(current) || !Number.isFinite(previous)) return "unknown";
+  if (current >= previous + 5) return "rising";
+  if (current <= previous - 5) return "falling";
+  return "stable";
+}
+
+function signal(params: Omit<IntelligenceSignal, "detected_at" | "id" | "coverage" | "observation_count" | "limitations" | "lifecycle"> & { now: Date; stable_id?: string; coverage?: IntelligenceSignal["coverage"]; observation_count?: number; limitations?: string[] }): IntelligenceSignal {
   return {
     ...params,
+    id: params.stable_id ?? stableSignalId(params.type, params.affected_goal),
     detected_at: params.now.toISOString(),
+    coverage: params.coverage ?? { task_events: 0, reflections: 0, activity_events: 0, recommendation_outcomes: 0 },
+    observation_count: params.observation_count ?? params.evidence.reduce((total, item) => total + (item.count ?? 1), 0),
+    limitations: params.limitations ?? [],
+    lifecycle: "active",
   };
 }
 
@@ -397,19 +455,59 @@ export function deriveIntelligenceSignals(params: {
   }
 
   const activeMilestones = milestones.filter((m) => m.status !== "completed" && m.status !== "abandoned");
-  const stalled = activeMilestones.filter((m) => daysBetween(now, m.updated_at ?? m.created_at) >= 7);
-  if (stalled.length > 0) {
-    signals.push(signal({
-      now,
-      type: "GOAL_SLIPPAGE",
-      severity: stalled.length >= 2 ? "high" : "medium",
-      confidence: confidenceFromCounts(stalled.length, 3),
-      title: "Goal slippage",
-      summary: `${stalled.length} active milestone${stalled.length === 1 ? "" : "s"} have not visibly moved in at least 7 days.`,
-      evidence: stalled.slice(0, 3).map((m) => ({ source: "milestones", detail: `${m.title} last updated ${daysBetween(now, m.updated_at ?? m.created_at)} days ago` })),
-      affected_goal: stalled[0]?.title ?? null,
-      recommended_response: "Pick a next action that directly advances or revalidates the stalest active milestone.",
-    }));
+  const activeForSlippage = activeMilestones.find((m) => Boolean(m.id)) ?? null;
+  if (activeForSlippage) {
+    const milestoneId = String(activeForSlippage.id);
+    const lastMovementAt = activeForSlippage.updated_at ?? activeForSlippage.created_at ?? null;
+    const stallDays = lastMovementAt ? daysBetween(now, lastMovementAt) : null;
+    const linkedTasks = tasks.filter((task) => String(task.milestone_id ?? "") === milestoneId);
+    const relevantActivity = activityEvents.filter((event) => {
+      const metadata = (event as Record<string, any>).metadata ?? {};
+      return String(metadata.milestoneId ?? metadata.milestone_id ?? "") === milestoneId;
+    });
+    const recentMovement = [
+      ...linkedTasks.filter((task) => task.is_completed && daysBetween(now, task.updated_at ?? task.completed_at ?? task.created_at) < 7),
+      ...relevantActivity.filter((event) => daysBetween(now, event.occurred_at) < 7),
+    ];
+    // Two linked task/activity observations establish that this is an active
+    // commitment. A stale timestamp alone is not enough to diagnose slippage.
+    const observationCount = linkedTasks.length + relevantActivity.length;
+    if (stallDays !== null && stallDays >= 7 && observationCount >= 2 && recentMovement.length === 0) {
+      const limitations = [
+        !activityEvents.length ? "No activity events were available; the conclusion relies on linked milestone and task records." : null,
+        !linkedTasks.length ? "No task rows were linked to this milestone." : null,
+      ].filter((item): item is string => Boolean(item));
+      signals.push(signal({
+        now,
+        stable_id: `GOAL_SLIPPAGE:${input.projectId ?? project.id ?? "unknown"}:${milestoneId}`,
+        type: "GOAL_SLIPPAGE",
+        severity: stallDays >= 14 ? "high" : "medium",
+        confidence: confidenceFromCounts(observationCount, 5),
+        title: "Goal slippage",
+        summary: `${activeForSlippage.title} has had no recorded movement for ${stallDays} days despite ${observationCount} linked execution observations. This may indicate goal slippage.`,
+        evidence: [
+          {
+            source: "milestone", record_id: milestoneId, field: "updated_at", observed_at: lastMovementAt,
+            fact: `${activeForSlippage.title} has no recorded milestone update for ${stallDays} days.`,
+            detail: `${activeForSlippage.title} last updated ${stallDays} days ago`, value: stallDays, window: "7 days",
+          },
+          ...linkedTasks.slice(0, 4).map((task) => ({
+            source: "task", record_id: task.id ? String(task.id) : undefined, field: "milestone_id", observed_at: task.updated_at ?? task.created_at,
+            fact: `Task is linked to ${activeForSlippage.title}: ${String(task.title ?? "untitled task")}.`,
+            detail: `Linked task: ${String(task.title ?? "untitled task")}`, value: task.is_completed ?? null, window: "7 days",
+          })),
+          ...relevantActivity.slice(0, 3).map((event) => ({
+            source: "activity", field: "event_type", observed_at: event.occurred_at,
+            fact: `Recorded milestone activity: ${String(event.event_type ?? "activity")}.`,
+            detail: `Milestone activity: ${String(event.event_type ?? "activity")}`, window: "7 days",
+          })),
+        ],
+        affected_goal: String(activeForSlippage.title ?? "") || null,
+        recommended_response: "Pick one action that directly advances or revalidates this milestone and record the result.",
+        observation_count: observationCount,
+        limitations,
+      }));
+    }
   }
 
   const priority = stagePriority(stage);
@@ -528,7 +626,14 @@ export function buildFounderIntelligenceState(input: FounderIntelligenceInput): 
   const executionSignature = buildExecutionSignature(taskRecords, Number(founderContext.momentum_score ?? 50));
   const learnedPatterns = deriveLearnedPatterns(learningLogs);
   const temporal = deriveTemporalCoherence(input);
-  const signals = deriveIntelligenceSignals({ input, executionSignature, temporalProfile, learnedPatterns, temporal });
+  const coverage = {
+    task_events: tasks.length,
+    reflections: reflections.length,
+    activity_events: activityEvents.length,
+    recommendation_outcomes: learningLogs.filter((row) => row.outcome && row.outcome !== "pending").length,
+  };
+  const signals = deriveIntelligenceSignals({ input, executionSignature, temporalProfile, learnedPatterns, temporal })
+    .map((item) => ({ ...item, coverage }));
   const thisWeek = recentWithin(reflections, now, 7);
   const completedThisWeek = thisWeek.filter((r) => r.outcome === "completed" || r.outcome === "done");
   const skippedThisWeek = thisWeek.filter((r) => ["blocked", "abandoned", "skipped"].includes(String(r.outcome)));
@@ -555,6 +660,41 @@ export function buildFounderIntelligenceState(input: FounderIntelligenceInput): 
   const statedPriorities = unique([stagePriority(stage), ...activeMilestones.slice(0, 3).map((m) => m.title)]);
   const observedPriorities = unique(completedThisWeek.map((r) => actionCategory(String(r.today_action ?? r.note ?? ""))));
   const contradictionSignals = signals.filter((s) => s.type === "BEHAVIOR_STRATEGY_CONTRADICTION");
+
+  const activeMilestone = meaningfulActiveMilestones[0] ?? activeMilestones[0] ?? null;
+  const focusCounts = new Map<string, number>();
+  for (const reflection of completedThisWeek) {
+    const category = actionCategory(String(reflection.today_action ?? reflection.note ?? ""));
+    focusCounts.set(category, (focusCounts.get(category) ?? 0) + 1);
+  }
+  const completedTaskRows7d = tasks.filter((task) => task.is_completed && Boolean(task.updated_at ?? task.completed_at ?? task.created_at) && daysBetween(now, task.updated_at ?? task.completed_at ?? task.created_at) <= 7);
+  const taskTimestampCoverage = tasks.some((task) => Boolean(task.updated_at ?? task.completed_at ?? task.created_at));
+  const milestoneTimestampCoverage = milestones.some((milestone) => Boolean(milestone.updated_at ?? milestone.created_at));
+  const activeMilestoneTimestamp = activeMilestone?.updated_at ?? activeMilestone?.created_at ?? null;
+  const executionState: FounderExecutionState = {
+    as_of: now.toISOString(),
+    scope: { user_id: input.userId, project_id: input.projectId ?? (project.id ? String(project.id) : null) },
+    commitments: {
+      active_milestone_id: activeMilestone?.id ? String(activeMilestone.id) : null,
+      active_milestone: activeMilestone?.title ? String(activeMilestone.title) : null,
+      // The existing task contract has no due-date guarantee, so never infer overdue work from creation time.
+      overdue_tasks: tasks.filter((task) => !task.is_completed && task.due_date && new Date(task.due_date).getTime() < now.getTime()).length,
+      pending_tasks: tasks.filter((task) => !task.is_completed && task.status !== "completed").length,
+    },
+    execution: {
+      completed_actions_7d: completedThisWeek.length,
+      completed_tasks_7d: completedTaskRows7d.length,
+      task_velocity_7d: taskTimestampCoverage ? completedTaskRows7d.length : null,
+      milestone_velocity_30d: milestoneTimestampCoverage ? milestones.filter((milestone) => milestone.status === "completed" && daysBetween(now, milestone.updated_at ?? milestone.created_at) <= 30).length : null,
+      repeated_postponements: learningLogs.filter((row) => row.outcome === "overridden" || row.outcome === "ignored").length,
+      stall_days: activeMilestoneTimestamp ? daysBetween(now, activeMilestoneTimestamp) : null,
+      inactivity_days: typeof founderContext.days_inactive === "number" ? founderContext.days_inactive : null,
+      focus_distribution: Array.from(focusCounts, ([category, count]) => ({ category, count })),
+    },
+    alignment: { stated_priority: statedPriorities[0] ?? null, observed_priority: observedPriorities[0] ?? null, confidence: clampScore((activeMilestones.length ? 50 : 0) + Math.min(completedThisWeek.length, 5) * 10) },
+    momentum: { score: typeof founderContext.momentum_score === "number" ? founderContext.momentum_score : null, trend: computeMomentumTrendFromContext(founderContext), streak_days: typeof founderContext.streak === "number" ? founderContext.streak : null },
+    coverage,
+  };
 
   // Phase 11 learning loop feedback: intelligence_accuracy is written by
   // lib/learningLoop.ts after each resolved Founder Intelligence prediction.
@@ -648,6 +788,7 @@ export function buildFounderIntelligenceState(input: FounderIntelligenceInput): 
   };
 
   const stateWithoutDecision = {
+    execution_state: executionState,
     founder,
     startup,
     strategy,
@@ -1049,6 +1190,8 @@ export async function loadFounderIntelligence(
       : null;
 
     const result = buildFounderIntelligenceState({
+      userId,
+      projectId: projectId ?? null,
       founderContext: founderContextRow,
       founderMemory: data(memoryRes as PromiseSettledResult<{ data: Record<string, any> | null }>, null),
       project: data(projectRes as PromiseSettledResult<{ data: Record<string, any> | null }>, null),
