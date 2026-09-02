@@ -25,7 +25,7 @@ import {
 import { getDashboardOverview } from "@/lib/buildmind";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
 import { trackEvent } from "@/lib/analytics";
-import { CofounderAvatar } from "./CofounderAvatar";
+import { CofounderAvatar, CofounderMascot } from "./CofounderAvatar";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -264,6 +264,13 @@ export default function CofounderPulse() {
             style={{ overflow: "hidden" }}
           >
             <div style={{ padding: "0 14px 14px" }}>
+              {/* Full mascot — the same real mode/style state as the compact
+                  header avatar, just given room to actually read as a
+                  character once the panel is open. */}
+              <div style={{ display: "flex", justifyContent: "center", marginBottom: 10 }}>
+                <CofounderMascot style={activeStyle} color={meta.color} pulsing={mode !== "observing"} mode={mode} size={72} />
+              </div>
+
               {/* Mode badge */}
               <div style={{ marginBottom: 10 }}>
                 <span style={{
@@ -476,4 +483,4 @@ function pickAction(memory: FounderMemory): PulseMessage["action"] | undefined {
     label: "What's my one thing today?",
     prompt: "Given everything you know about my startup and my patterns, what is the single most important thing I should do today?",
   };
-                }
+                         }
