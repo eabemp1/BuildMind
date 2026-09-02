@@ -387,6 +387,12 @@ export function deriveIntelligenceSignals(params: {
   const learningLogs = input.learningLogs ?? [];
   const milestones = input.milestones ?? [];
   const tasks = input.tasks ?? [];
+  // FIX: GOAL_SLIPPAGE's relevantActivity lookup below referenced
+  // `activityEvents` without ever deriving it in this function's scope —
+  // it's only pulled from `input.activityEvents` in the outer caller
+  // (see the identical `input.activityEvents ?? []` pattern used there).
+  // Same optional/empty-array fallback as everywhere else this field is read.
+  const activityEvents = input.activityEvents ?? [];
   const signals: IntelligenceSignal[] = [];
   const stage = String(project.startup_stage ?? founderContext.current_stage ?? "Idea");
   const activeMilestone = milestones.find((m) => m.status !== "completed" && m.status !== "abandoned");
