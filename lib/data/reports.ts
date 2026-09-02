@@ -184,16 +184,20 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
     action_shown?: string | null;
     outcome_recorded_at?: string | null;
     outcome?: string | null;
+    session_id?: string | null;
   }> = [];
   try {
     let reflexionQuery = supabase
       .from("reflexion_learning_log")
-      .select("action_shown, outcome_recorded_at, outcome")
+      .select("action_shown, outcome_recorded_at, outcome, session_id")
       .eq("user_id", user.id)
       .gte("outcome_recorded_at", previousStart.toISOString());
     if (activeProjectId) reflexionQuery = reflexionQuery.eq("project_id", activeProjectId);
     const { data } = await reflexionQuery;
-    reflexionRows = data ?? [];
+    // This report's execution rate is about Today actions. The learning-log
+    // table is shared with other features, such as Break My Startup, whose
+    // runs must not increase a founder's daily-action completion totals.
+    reflexionRows = (data ?? []).filter((row) => (row.session_id ?? "").startsWith("today_action"));
   } catch { /* non-fatal */ }
 
   const taskData = [0, 0, 0, 0, 0, 0, 0];
@@ -492,7 +496,7 @@ export async function getDashboardOverview(activeProjectId?: string): Promise<Da
     const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
     let learningQuery = supabase
       .from("reflexion_learning_log")
-      .select("outcome_recorded_at")
+      .select("outcome_recorded_at, session_id")
       .eq("user_id", user.id)
       .eq("outcome", "completed")
       .gte("outcome_recorded_at", fourteenDaysAgo);
@@ -506,8 +510,11 @@ export async function getDashboardOverview(activeProjectId?: string): Promise<Da
       .gte("created_at", fourteenDaysAgo);
     const { data: completedReflections } = await reflectionsQuery;
 
+    const todayActionRows = (learningRows ?? []).filter((row) =>
+      (row.session_id ?? "").startsWith("today_action"),
+    );
     todayCompletedDates = [
-      ...(learningRows ?? []).map((row) => row.outcome_recorded_at).filter(Boolean),
+      ...todayActionRows.map((row) => row.outcome_recorded_at).filter(Boolean),
       ...(completedReflections ?? []).map((row) => row.created_at).filter(Boolean),
     ];
     todayCompletedTasks = new Set(todayCompletedDates.map((date) => toLocalDateStr(date))).size;
