@@ -1014,14 +1014,14 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
           date: new Date().toISOString().slice(0, 10),
           projectId,
           stage,
-          data: { ...finalResult, stage, isAI: true, reflexion_status: reflexionStatus },
+          data: { ...finalResult, stage, isAI: true, reflexion_status: reflexionStatus, intelligence: tctx.intelligenceSummary },
           generatedAt: new Date().toISOString(),
           source: "today-action",
         }).catch((err) => logError("today-action/cache", err, { route: "/api/ai/today-action", userId, requestId }));
       }
     }
 
-    return NextResponse.json({ success: true, data: { ...finalResult, stage, reflexion_status: reflexionStatus, intelligence: founderIntelligence ? summarizeFounderIntelligenceForClient(founderIntelligence) : undefined } });
+    return NextResponse.json({ success: true, data: { ...finalResult, stage, reflexion_status: reflexionStatus, intelligence: tctx.intelligenceSummary } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Today action failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
