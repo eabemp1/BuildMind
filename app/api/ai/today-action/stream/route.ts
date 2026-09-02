@@ -804,7 +804,7 @@ ${JSON.stringify(structuredA)}`,
           // Today experience without replacing it — "what changed / what
           // BuildMind detected / why it matters / predicted top action" for
           // any UI that wants to surface it (see lib/founderIntelligence.ts).
-          intelligence: founderIntelligence ? summarizeFounderIntelligenceForClient(founderIntelligence) : undefined,
+          intelligence: tctx.intelligenceSummary,
         };
 
         // Quality log (fire-and-forget)
