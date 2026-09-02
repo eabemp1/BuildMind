@@ -131,20 +131,10 @@ export async function recordFounderIntelligencePrediction(
  */
 export async function swapPredictionCandidate(
   supabase: SupabaseLike,
-  params: { userId: string; candidate: DecisionCandidate },
+  params: { userId: string; recommendationId?: string | null; candidate: DecisionCandidate },
 ): Promise<boolean> {
   try {
-    const { data: pending, error: findErr } = await supabase
-      .from("reflexion_learning_log")
-      .select("id")
-      .eq("user_id", params.userId)
-      .eq("prediction_source", "founder_intelligence")
-      .eq("outcome", "pending")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (findErr) throw findErr;
-    if (!pending?.id) return false;
+    if (!params.recommendationId) return false;
 
     const { error: updateErr } = await supabase
       .from("reflexion_learning_log")
@@ -160,7 +150,10 @@ export async function swapPredictionCandidate(
         },
         review_condition: params.candidate.expected_evidence,
       })
-      .eq("id", pending.id);
+      .eq("id", params.recommendationId)
+      .eq("user_id", params.userId)
+      .eq("prediction_source", "founder_intelligence")
+      .eq("outcome", "pending");
     if (updateErr) throw updateErr;
     return true;
   } catch (err) {
@@ -222,15 +215,24 @@ export async function compareFounderIntelligenceOutcome(
   supabase: SupabaseLike,
   params: {
     userId: string;
+    /** Explicit lifecycle identity; legacy outcomes are not attributed. */
+    recommendationId?: string | null;
     taskTitle: string;
     outcome: string;
     reflectionText?: string;
+    /** Server-created evidence rows, never browser-supplied references. */
+    evidenceReferences?: Array<{ source: "reflection" | "task" | "activity"; recordId: string }>;
   },
 ): Promise<{ matched: boolean; score: number } | null> {
   try {
+    // Legacy outcomes have no durable recommendation identity. Do not guess
+    // with "latest pending": a late reflection or concurrent recommendation
+    // can otherwise train the wrong candidate.
+    if (!params.recommendationId || !params.reflectionText?.trim()) return null;
     const { data: pending, error: findError } = await supabase
       .from("reflexion_learning_log")
       .select("id, predicted_evidence, action_shown, created_at")
+      .eq("id", params.recommendationId)
       .eq("user_id", params.userId)
       .eq("prediction_source", "founder_intelligence")
       .eq("outcome", "pending")
@@ -241,11 +243,16 @@ export async function compareFounderIntelligenceOutcome(
     if (findError) throw findError;
     if (!pending) return null;
 
-    const observedText = `${params.taskTitle} ${params.reflectionText ?? ""}`.trim();
+    const observedText = `${params.taskTitle} ${params.reflectionText}`.trim();
     const actionOverlap = keywordOverlapScore(String(pending.action_shown ?? ""), observedText);
     const evidenceOverlap = keywordOverlapScore(String(pending.predicted_evidence ?? ""), observedText);
     const completed = mapOutcome(params.outcome) === "completed";
-    const score = Math.max(0, Math.min(1, actionOverlap * 0.4 + evidenceOverlap * 0.4 + (completed ? 0.2 : 0)));
+    // A server-created evidence reference confirms an actual durable outcome
+    // row exists. It improves evidence quality but does not itself claim the
+    // predicted evidence occurred; textual comparison remains the fallback
+    // for semantic match until structured expected-evidence fields exist.
+    const hasStructuredEvidence = Boolean(params.evidenceReferences?.length);
+    const score = Math.max(0, Math.min(1, actionOverlap * 0.35 + evidenceOverlap * 0.45 + (completed ? 0.1 : 0) + (hasStructuredEvidence ? 0.1 : 0)));
 
     const { error: updateError } = await supabase
       .from("reflexion_learning_log")
