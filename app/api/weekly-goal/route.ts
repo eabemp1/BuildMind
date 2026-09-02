@@ -18,6 +18,30 @@ function weekStart(d: Date): string {
   return monday.toISOString().slice(0, 10);
 }
 
+function clampFiniteNumber(value: unknown, fallback: number, min: number, max: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(min, value));
+}
+
+/**
+ * Every weekly-goal mutation uses the admin client, so ownership must be
+ * asserted before querying or changing a project-scoped goal.
+ */
+async function projectIsOwnedByUser(
+  admin: ReturnType<typeof createAdminClient>,
+  projectId: string,
+  userId: string,
+): Promise<boolean> {
+  const { data, error } = await admin
+    .from("projects")
+    .select("id")
+    .eq("id", projectId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  return !error && Boolean(data?.id);
+}
+
 export async function GET(req: Request) {
   const supabase = await createClient();
   const { data: { user }, error } = await supabase.auth.getUser();
@@ -28,12 +52,16 @@ export async function GET(req: Request) {
   if (!projectId) return NextResponse.json({ ok: false, error: "project_id required" }, { status: 400 });
 
   const admin = createAdminClient();
+  if (!await projectIsOwnedByUser(admin, projectId, user.id)) {
+    return NextResponse.json({ ok: false, error: "Project not found" }, { status: 404 });
+  }
   const week = weekStart(new Date());
 
   const { data, error: dbErr } = await admin
     .from("weekly_goals")
     .select("*")
     .eq("project_id", projectId)
+    .eq("user_id", user.id)
     .eq("week_start", week)
     .maybeSingle();
 
@@ -52,14 +80,25 @@ export async function POST(req: Request) {
     goal_type?: "custom" | "ai_calibrated";
     target_score?: number;
     target_tasks?: number;
+    current_score?: number;
   };
 
-  const { project_id, goal_text, goal_type = "custom", target_score = 70, target_tasks = 5 } = body;
+  const {
+    project_id,
+    goal_text,
+    goal_type = "custom",
+    target_score = 70,
+    target_tasks = 5,
+    current_score = 0,
+  } = body;
   if (!project_id || !goal_text) {
     return NextResponse.json({ ok: false, error: "project_id and goal_text required" }, { status: 400 });
   }
 
   const admin = createAdminClient();
+  if (!await projectIsOwnedByUser(admin, project_id, user.id)) {
+    return NextResponse.json({ ok: false, error: "Project not found" }, { status: 404 });
+  }
   const week = weekStart(new Date());
 
   // FIX: this previously always wrote tasks_done: 0, even when the founder
@@ -82,6 +121,15 @@ export async function POST(req: Request) {
   const backfilledTasksDone = (weekLogs ?? []).filter(
     (r) => (r.session_id ?? "").startsWith("today_action") && r.outcome === "completed",
   ).length;
+  const normalizedTargetScore = clampFiniteNumber(target_score, 70, 0, 100);
+  const normalizedTargetTasks = Math.floor(clampFiniteNumber(target_tasks, 5, 1, Number.MAX_SAFE_INTEGER));
+  const normalizedCurrentScore = clampFiniteNumber(current_score, 0, 0, 100);
+  let initialStatus: "active" | "surpassed" | "on_track" = "active";
+  if (normalizedCurrentScore >= normalizedTargetScore && backfilledTasksDone >= normalizedTargetTasks) {
+    initialStatus = "surpassed";
+  } else if (normalizedCurrentScore >= normalizedTargetScore * 0.7) {
+    initialStatus = "on_track";
+  }
 
   const { data, error: dbErr } = await admin
     .from("weekly_goals")
@@ -91,11 +139,11 @@ export async function POST(req: Request) {
       week_start:   week,
       goal_text,
       goal_type,
-      target_score: Math.min(100, Math.max(0, target_score)),
-      target_tasks: Math.max(1, target_tasks),
+      target_score: normalizedTargetScore,
+      target_tasks: normalizedTargetTasks,
       tasks_done:   backfilledTasksDone,
-      current_score: 0,
-      status:       "active",
+      current_score: normalizedCurrentScore,
+      status:       initialStatus,
     }, { onConflict: "project_id,week_start" })
     .select()
     .maybeSingle();
@@ -129,36 +177,50 @@ export async function PATCH(req: Request) {
   if (!project_id) return NextResponse.json({ ok: false, error: "project_id required" }, { status: 400 });
 
   const admin = createAdminClient();
+  if (!await projectIsOwnedByUser(admin, project_id, user.id)) {
+    return NextResponse.json({ ok: false, error: "Project not found" }, { status: 404 });
+  }
   const week = weekStart(new Date());
 
-  // First fetch the current goal
-  const { data: goal } = await admin
-    .from("weekly_goals")
-    .select("*")
-    .eq("project_id", project_id)
-    .eq("week_start", week)
-    .maybeSingle();
+  // `increment_tasks_done` must not lose a completion when two check-ins
+  // arrive together. There is no checked-in increment RPC, so use a bounded
+  // compare-and-swap retry against the observed count. Absolute caller-supplied
+  // corrections retain their existing last-write-wins semantics.
+  for (let attempt = 0; attempt < (increment_tasks_done ? 3 : 1); attempt += 1) {
+    const { data: goal, error: goalError } = await admin
+      .from("weekly_goals")
+      .select("*")
+      .eq("project_id", project_id)
+      .eq("user_id", user.id)
+      .eq("week_start", week)
+      .maybeSingle();
 
-  if (!goal) return NextResponse.json({ ok: false, error: "No active goal" }, { status: 404 });
+    if (goalError) return NextResponse.json({ ok: false, error: goalError.message }, { status: 500 });
+    if (!goal) return NextResponse.json({ ok: false, error: "No active goal" }, { status: 404 });
 
-  const newTasksDone   = increment_tasks_done ? (goal.tasks_done ?? 0) + 1 : (tasks_done ?? goal.tasks_done);
-  const newScore       = current_score ?? goal.current_score;
+    const previousTasksDone = Math.floor(clampFiniteNumber(goal.tasks_done, 0, 0, Number.MAX_SAFE_INTEGER));
+    const newTasksDone = increment_tasks_done
+      ? previousTasksDone + 1
+      : Math.floor(clampFiniteNumber(tasks_done, previousTasksDone, 0, Number.MAX_SAFE_INTEGER));
+    const newScore = clampFiniteNumber(current_score, clampFiniteNumber(goal.current_score, 0, 0, 100), 0, 100);
+    let status: "active" | "surpassed" | "missed" | "on_track" = "active";
+    const scoreSurpassed = newScore >= (goal.target_score ?? 70);
+    const tasksSurpassed = newTasksDone >= (goal.target_tasks ?? 5);
+    if (scoreSurpassed && tasksSurpassed) status = "surpassed";
+    else if (newScore >= (goal.target_score ?? 70) * 0.7) status = "on_track";
 
-  // Compute status
-  let status: "active" | "surpassed" | "missed" | "on_track" = "active";
-  const scoreSurpassed  = newScore  >= (goal.target_score ?? 70);
-  const tasksSurpassed  = newTasksDone >= (goal.target_tasks ?? 5);
-  if (scoreSurpassed && tasksSurpassed) status = "surpassed";
-  else if (newScore >= (goal.target_score ?? 70) * 0.7) status = "on_track";
+    let update = admin
+      .from("weekly_goals")
+      .update({ tasks_done: newTasksDone, current_score: newScore, status })
+      .eq("project_id", project_id)
+      .eq("user_id", user.id)
+      .eq("week_start", week);
+    if (increment_tasks_done) update = update.eq("tasks_done", previousTasksDone);
 
-  const { data, error: dbErr } = await admin
-    .from("weekly_goals")
-    .update({ tasks_done: newTasksDone, current_score: newScore, status })
-    .eq("project_id", project_id)
-    .eq("week_start", week)
-    .select()
-    .maybeSingle();
+    const { data, error: updateError } = await update.select().maybeSingle();
+    if (updateError) return NextResponse.json({ ok: false, error: updateError.message }, { status: 500 });
+    if (data) return NextResponse.json({ ok: true, data });
+  }
 
-  if (dbErr) return NextResponse.json({ ok: false, error: dbErr.message }, { status: 500 });
-  return NextResponse.json({ ok: true, data });
-    }
+  return NextResponse.json({ ok: false, error: "Goal changed concurrently; please retry" }, { status: 409 });
+}
