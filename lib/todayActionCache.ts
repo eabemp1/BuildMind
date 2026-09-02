@@ -1,4 +1,5 @@
 import { buildPersonalizedTodayDraft } from "@/lib/todayDrafts";
+import type { summarizeFounderIntelligenceForClient } from "@/lib/founderIntelligence";
 
 export type TodayActionData = {
   action: string;
@@ -28,6 +29,12 @@ export type TodayActionData = {
     hardFallbackReasons?: string[];
   };
   reflexion_status?: string;
+  /** Founder Intelligence summary + recommendation identity attached to
+   *  this cached action — same shape today-action/route.ts and
+   *  today-action/stream/route.ts already return to the client, cached
+   *  alongside the action so a reload/rehydration doesn't lose the
+   *  recommendation identity needed to attribute a later reflection. */
+  intelligence?: (ReturnType<typeof summarizeFounderIntelligenceForClient> & { recommendation_id?: string | null }) | undefined;
 };
 
 export type TodayActionCache = {
