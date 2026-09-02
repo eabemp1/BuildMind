@@ -24,6 +24,7 @@ function baseInput(overrides: Partial<FounderIntelligenceInput> = {}): FounderIn
       avoidance_zones: ["pricing conversations"],
     },
     project: {
+      id: "p1",
       name: "ConsentFlow",
       startup_stage: "Validation",
       problem: "consent tracking is painful",
@@ -31,10 +32,11 @@ function baseInput(overrides: Partial<FounderIntelligenceInput> = {}): FounderIn
       current_mrr: 0,
     },
     milestones: [
-      { title: "Validate consent pain", status: "in_progress", created_at: "2026-07-20T00:00:00.000Z", updated_at: "2026-07-24T00:00:00.000Z" },
+      { id: "m1", title: "Validate consent pain", status: "in_progress", created_at: "2026-07-20T00:00:00.000Z", updated_at: "2026-07-24T00:00:00.000Z" },
     ],
     tasks: [
-      { title: "Interview privacy officers", status: "pending", is_completed: false, created_at: "2026-07-15T00:00:00.000Z", updated_at: "2026-07-18T00:00:00.000Z" },
+      { id: "t1", milestone_id: "m1", title: "Interview privacy officers", status: "pending", is_completed: false, created_at: "2026-07-15T00:00:00.000Z", updated_at: "2026-07-18T00:00:00.000Z" },
+      { id: "t2", milestone_id: "m1", title: "Record interview evidence", status: "pending", is_completed: false, created_at: "2026-07-15T00:00:00.000Z", updated_at: "2026-07-18T00:00:00.000Z" },
     ],
     reflections: [
       { today_action: "Polish onboarding UI", outcome: "completed", confidence: 4, note: "Made the UI nicer", created_at: "2026-08-04T10:00:00.000Z" },
@@ -111,5 +113,31 @@ describe("Founder Intelligence coherence layer", () => {
 
     expect(temporal.week_changes.join(" ")).toContain("External evidence actions moved");
     expect(temporal.increasing_behaviors).toContain("external evidence seeking");
+  });
+
+  it("uses a stable, row-addressable signal identity for a genuine milestone stall", () => {
+    const state = buildFounderIntelligenceState(baseInput({ userId: "u1", projectId: "p1" }));
+    const signal = state.signals.find((item) => item.type === "GOAL_SLIPPAGE");
+    expect(signal?.id).toBe("GOAL_SLIPPAGE:p1:m1");
+    expect(signal?.evidence.some((item) => item.record_id === "m1")).toBe(true);
+    expect(signal?.observation_count).toBeGreaterThanOrEqual(2);
+  });
+
+  it("does not report slippage when linked task movement is recent", () => {
+    const state = buildFounderIntelligenceState(baseInput({
+      tasks: [
+        { id: "t1", milestone_id: "m1", title: "Interview privacy officers", is_completed: true, status: "completed", created_at: "2026-08-04T09:00:00.000Z", updated_at: "2026-08-04T09:00:00.000Z" },
+        { id: "t2", milestone_id: "m1", title: "Record interview evidence", is_completed: false, status: "pending", created_at: "2026-07-15T00:00:00.000Z" },
+      ],
+    }));
+    expect(state.signals.some((item) => item.type === "GOAL_SLIPPAGE")).toBe(false);
+  });
+
+  it("does not turn a stale timestamp into slippage when linked execution coverage is low", () => {
+    const state = buildFounderIntelligenceState(baseInput({
+      tasks: [{ id: "t1", milestone_id: "m1", title: "Interview privacy officers", is_completed: false, status: "pending", created_at: "2026-07-15T00:00:00.000Z" }],
+      activityEvents: [],
+    }));
+    expect(state.signals.some((item) => item.type === "GOAL_SLIPPAGE")).toBe(false);
   });
 });
