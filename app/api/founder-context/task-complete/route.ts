@@ -27,7 +27,7 @@ export async function POST(req: Request) {
   const { data: { user }, error } = await supabase.auth.getUser();
   if (error || !user) return NextResponse.json({ ok: false }, { status: 401 });
 
-  const { stage = "", projectId = "", taskTitle = "", outcome = "completed", log_row_id = "" } = await req.json().catch(() => ({}));
+  const { stage = "", projectId = "", taskTitle = "", outcome = "completed", log_row_id = "", recommendation_id = "" } = await req.json().catch(() => ({}));
   const admin = createAdminClient();
 
   // Fetch context + founder_memory + recent task titles in parallel for pattern detection
@@ -320,6 +320,18 @@ export async function POST(req: Request) {
     founderExplanation: taskTitle || undefined,
     evidenceProduced: outcome === "completed" ? taskTitle || undefined : undefined,
   }).catch(() => {});
+
+  // Preserve the recommendation identity across the Today -> Reflect handoff.
+  // This is deliberately non-blocking: task completion must remain resilient
+  // when the behavior-state cache is unavailable.
+  if (typeof recommendation_id === "string" && recommendation_id) {
+    admin.from("user_behavior_state").upsert({
+      user_id: user.id,
+      key: "today_recommendation_id",
+      value: recommendation_id,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "user_id,key" }).then(() => {}, () => {});
+  }
 
   // Deliberately NOT calling compareFounderIntelligenceOutcome here. This
   // fires immediately on tap, before the founder has typed anything — it
