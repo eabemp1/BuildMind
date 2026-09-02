@@ -34,6 +34,7 @@ export async function POST(req: Request) {
   const candidate = body?.candidate as Partial<DecisionCandidate> | undefined;
   const projectId = typeof body?.projectId === "string" ? body.projectId : "";
   const stage = typeof body?.stage === "string" ? body.stage : "Idea";
+  const recommendationId = typeof body?.recommendationId === "string" ? body.recommendationId : null;
 
   // Minimal shape check — we only strictly need id/action/expected_evidence
   // for swapPredictionCandidate to do anything useful; scores/rationale are
@@ -58,7 +59,7 @@ export async function POST(req: Request) {
     },
   };
 
-  const swapped = await swapPredictionCandidate(admin, { userId: user.id, candidate: fullCandidate });
+  const swapped = await swapPredictionCandidate(admin, { userId: user.id, recommendationId, candidate: fullCandidate });
 
   // ── Persist the swap where the Today page actually reads from ──────────
   // Previously this was the missing piece: founder_context.decision_cache
