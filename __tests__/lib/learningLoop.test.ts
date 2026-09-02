@@ -32,9 +32,11 @@ function makeSupabase(overrides: {
                 eq: () => ({
                   eq: () => ({
                     eq: () => ({
-                      order: () => ({
-                        limit: () => ({
-                          maybeSingle: vi.fn().mockResolvedValue(overrides.selectPendingResult ?? { data: null, error: null }),
+                      eq: () => ({
+                        order: () => ({
+                          limit: () => ({
+                            maybeSingle: vi.fn().mockResolvedValue(overrides.selectPendingResult ?? { data: null, error: null }),
+                          }),
                         }),
                       }),
                     }),
@@ -107,7 +109,7 @@ describe("learningLoop: recordFounderIntelligencePrediction (PREDICT)", () => {
 describe("learningLoop: compareFounderIntelligenceOutcome (COMPARE)", () => {
   it("returns null when there is no pending prediction", async () => {
     const { builder } = makeSupabase({ selectPendingResult: { data: null, error: null } });
-    const result = await compareFounderIntelligenceOutcome(builder, { userId: "u1", taskTitle: "Something unrelated", outcome: "completed" });
+    const result = await compareFounderIntelligenceOutcome(builder, { userId: "u1", recommendationId: "log-1", taskTitle: "Something unrelated", outcome: "completed" });
     expect(result).toBeNull();
   });
 
@@ -120,6 +122,7 @@ describe("learningLoop: compareFounderIntelligenceOutcome (COMPARE)", () => {
     });
     const result = await compareFounderIntelligenceOutcome(builder, {
       userId: "u1",
+      recommendationId: "log-1",
       taskTitle: "Message a privacy officer",
       outcome: "completed",
       reflectionText: "Got a response from a privacy officer about audit trail requirements",
@@ -138,12 +141,31 @@ describe("learningLoop: compareFounderIntelligenceOutcome (COMPARE)", () => {
     });
     const result = await compareFounderIntelligenceOutcome(builder, {
       userId: "u1",
+      recommendationId: "log-1",
       taskTitle: "Fixed a CSS bug on the landing page",
       outcome: "blocked",
     });
     expect(result).not.toBeNull();
     expect(result!.score).toBeLessThan(0.5);
     expect(result!.matched).toBe(false);
+  });
+
+  it("does not train against a legacy outcome without an explicit recommendation ID", async () => {
+    const { builder } = makeSupabase({
+      selectPendingResult: { data: { id: "log-1" }, error: null },
+    });
+    await expect(compareFounderIntelligenceOutcome(builder, {
+      userId: "u1", taskTitle: "Message a privacy officer", outcome: "completed",
+    })).resolves.toBeNull();
+  });
+
+  it("does not resolve an attributed recommendation without founder-provided evidence", async () => {
+    const { builder } = makeSupabase({
+      selectPendingResult: { data: { id: "log-1" }, error: null },
+    });
+    await expect(compareFounderIntelligenceOutcome(builder, {
+      userId: "u1", recommendationId: "log-1", taskTitle: "Message a privacy officer", outcome: "completed",
+    })).resolves.toBeNull();
   });
 });
 
