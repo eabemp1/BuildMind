@@ -200,7 +200,7 @@ export async function getWeeklyPulseData(userId: string, projectId?: string): Pr
       return q;
     })(),
     projectId
-      ? admin.from("weekly_goals").select("*").eq("project_id", projectId).eq("week_start", weekStart).maybeSingle()
+      ? admin.from("weekly_goals").select("*").eq("project_id", projectId).eq("user_id", userId).eq("week_start", weekStart).maybeSingle()
       : Promise.resolve({ data: null, error: null }),
     admin.from("reflections").select("confidence, outcome, created_at").eq("user_id", userId).gte("created_at", weekAgoIso),
     admin.from("action_logs").select("outcome, created_at").eq("user_id", userId).gte("created_at", weekAgoIso),
