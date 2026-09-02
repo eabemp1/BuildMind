@@ -89,7 +89,9 @@ export interface TodayActionContext {
     activeGoals: string[];
   };
   founderIntelligence: FounderIntelligenceState | null;
-  intelligenceSummary: ReturnType<typeof summarizeFounderIntelligenceForClient> | undefined;
+  intelligenceSummary: (ReturnType<typeof summarizeFounderIntelligenceForClient> & { recommendation_id?: string | null }) | undefined;
+  /** `reflexion_learning_log.id` for the recommendation shown in this response. */
+  recommendationId: string | null;
 
   // Debt suppression gate — when truthy the caller should short-circuit and
   // surface the debt interstitial instead of generating a task.
@@ -139,6 +141,7 @@ export async function loadTodayActionContext(params: {
     personalisationCtx: { recentActionsBlock: "", recentReflectionsBlock: "", recurringBlockers: [], activeGoals: [] },
     founderIntelligence: null,
     intelligenceSummary: undefined,
+    recommendationId: null,
     debtSuppression: { suppressed: false },
     adminClient: null,
   };
@@ -495,14 +498,21 @@ export async function loadTodayActionContext(params: {
     }
 
     if (ctx.founderIntelligence.decision.top_candidate) {
-      recordFounderIntelligencePrediction(supabase, {
+      // The row ID is the recommendation identity. It is returned to Today so
+      // later actions can explicitly attribute an outcome instead of selecting
+      // the latest pending recommendation for this founder.
+      ctx.recommendationId = await recordFounderIntelligencePrediction(supabase, {
         userId,
         projectId,
         stage: ctx.stage,
         sessionId,
         candidate: ctx.founderIntelligence.decision.top_candidate,
         alternatives: ctx.founderIntelligence.decision.candidates.slice(1, 4),
-      }).catch(() => {});
+      });
+      ctx.intelligenceSummary = {
+        ...ctx.intelligenceSummary,
+        recommendation_id: ctx.recommendationId,
+      };
     }
   } catch (err) {
     logError("todayActionContext/founderIntelligence", err, { userId });
