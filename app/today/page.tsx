@@ -47,6 +47,7 @@ import { ContextAlignmentCard } from "./components/ContextAlignmentCard";
 import { IntelligenceUnavailableCard } from "./components/IntelligenceUnavailableCard";
 import { useUIMode } from "@/lib/uiMode";
 import { UIModeToggle } from "@/components/ui/UIModeToggle";
+import { RadialGauge } from "@/components/charts/RadialGauge";
 
 type Outcome = "completed" | "blocked" | "partial" | "learned";
 type ReflexionMeta = {
@@ -414,7 +415,10 @@ function TodayContent() {
   // deliberately separate from the big data-loading effects below so it
   // can't interfere with task loading if it ever fails.
   const [archetypeTags, setArchetypeTags] = useState<string[]>([]);
-  const [stageNudge, setStageNudge] = useState<{ currentStage: string; nextStage: string; projectId: string | null } | null>(null);
+  const [stageNudge, setStageNudge] = useState<{
+    currentStage: string; nextStage: string; projectId: string | null;
+    completed: number; total: number;
+  } | null>(null);
   // Page-coherence: XP/level chip in the always-visible header, so leveling
   // up feels like a consequence of using Today rather than a fact you only
   // discover by remembering Achievements exists as a separate page.
@@ -451,7 +455,9 @@ function TodayContent() {
   const [milestoneBreakDismissed, setMilestoneBreakDismissed] = useState(false);
 
   // Stage eligibility is a review prompt, never an automatic mutation.
-  const [transitionEligible, setTransitionEligible] = useState<{ current_stage: string; next_stage: string } | null>(null);
+  const [transitionEligible, setTransitionEligible] = useState<{
+    current_stage: string; next_stage: string; completed: number; total: number;
+  } | null>(null);
 
   // Editable draft — pre-filled with real project values
   const [draftMessage, setDraftMessage] = useState<string | null>(null);
@@ -627,9 +633,16 @@ function TodayContent() {
       .then(({ data }) => {
         const pending = (data as { pending_stage_transition?: {
           project_id?: string; current_stage?: string; recommended_stage?: string | null;
+          stage_milestones_completed?: number; stage_milestones_total?: number;
         } | null } | null)?.pending_stage_transition;
         if (pending?.recommended_stage) {
-          setStageNudge({ currentStage: pending.current_stage ?? "", nextStage: pending.recommended_stage, projectId: pending.project_id ?? null });
+          setStageNudge({
+            currentStage: pending.current_stage ?? "",
+            nextStage: pending.recommended_stage,
+            projectId: pending.project_id ?? null,
+            completed: pending.stage_milestones_completed ?? 0,
+            total: pending.stage_milestones_total ?? 0,
+          });
         }
       })
       .catch(() => {});
@@ -1421,9 +1434,17 @@ function TodayContent() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ project_id: project.id }),
           }).then(r => r.ok ? r.json() : null)
-            .then((d: { eligible?: boolean; current_stage?: string; next_stage?: string } | null) => {
+            .then((d: {
+              eligible?: boolean; current_stage?: string; next_stage?: string;
+              stage_progress?: { completedMilestones: number; totalMilestones: number };
+            } | null) => {
               if (d?.eligible && d.current_stage && d.next_stage) {
-                setTransitionEligible({ current_stage: d.current_stage, next_stage: d.next_stage });
+                setTransitionEligible({
+                  current_stage: d.current_stage,
+                  next_stage: d.next_stage,
+                  completed: d.stage_progress?.completedMilestones ?? 0,
+                  total: d.stage_progress?.totalMilestones ?? 0,
+                });
               }
             }).catch(() => {});
 
@@ -1859,6 +1880,29 @@ function TodayContent() {
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {/* Ongoing, honest stage-progress indicator — real milestone
+              counts from lib/server/stageProgress.ts, visible continuously
+              (not just at 100%) so completing today's task visibly moves
+              a real number, the way a Duolingo unit fills in as you go. */}
+          {project && (project.stageMilestonesTotal ?? 0) > 0 && (
+            <div
+              title={`${project.stageMilestonesCompleted ?? 0} of ${project.stageMilestonesTotal ?? 0} ${project.startup_stage ?? ""} milestones complete`}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                fontSize: 11, color: "var(--bm-text3)",
+              }}
+            >
+              <span style={{ fontWeight: 700, color: "var(--bm-text2)" }}>{project.startup_stage}</span>
+              <div style={{ width: 44, height: 5, borderRadius: 3, background: "var(--bm-border2)", overflow: "hidden" }}>
+                <div style={{
+                  width: `${project.stageProgressPercent ?? 0}%`, height: "100%",
+                  background: (project.stageProgressPercent ?? 0) >= 100 ? "var(--bm-green)" : "var(--bm-accent)",
+                  borderRadius: 3, transition: "width 0.5s ease",
+                }} />
+              </div>
+              <span>{project.stageMilestonesCompleted ?? 0}/{project.stageMilestonesTotal ?? 0}</span>
+            </div>
+          )}
           <UIModeToggle mode={uiMode} onChange={setUIMode} />
           {isDayOneColdStart ? (
             <div
@@ -2078,43 +2122,52 @@ function TodayContent() {
       {/* ── Stage-transition nudge — one line, links to the full prompt on
           the project page rather than duplicating it here. See
           lib/server/stageTransition.ts for how this gets computed. ── */}
-      {stageNudge && (
-        <a
-          href={stageNudge.projectId ? `/projects/${stageNudge.projectId}` : "/projects"}
-          style={{
-            display: "flex", alignItems: "center", gap: 8,
-            padding: "9px 14px", marginBottom: 22,
-            borderRadius: 10, border: "1px solid var(--bm-green-bd)", background: "var(--bm-green-dim)",
-            textDecoration: "none", fontSize: 12, color: "var(--bm-green)",
-          }}
-        >
-          <span style={{ flex: 1 }}>
-            You're hitting {stageNudge.nextStage}-stage signals — ready to move up?
-          </span>
-          <span style={{ fontSize: 11, flexShrink: 0 }}>See why →</span>
-        </a>
-      )}
-
-      {transitionEligible && !stageNudge && project && (
-        <a
-          href={`/projects/${project.id}`}
-          style={{
-            display: "flex", alignItems: "center", gap: 8,
-            padding: "9px 14px", marginBottom: 22,
-            borderRadius: 10, border: "1px solid var(--bm-green-bd)", background: "var(--bm-green-dim)",
-            textDecoration: "none", fontSize: 12, color: "var(--bm-green)",
-          }}
-        >
-          <span style={{ flex: 1 }}>
-            Your completed work qualifies {transitionEligible.current_stage} for a {transitionEligible.next_stage} review.
-            {/* Every forward transition now has a real evidence review (see
-                lib/server/stageEvidence.ts) — say so generically rather than
-                naming one specific transition. */}
-            {" Bring evidence, not just a task count."}
-          </span>
-          <span style={{ fontSize: 11, flexShrink: 0 }}>Review stage →</span>
-        </a>
-      )}
+      {(() => {
+        // Unified stage-complete moment. stageNudge (lib/server/stageTransition.ts,
+        // fired after every task/reflection) and transitionEligible
+        // (POST /api/project/level-up, fired once per Today load) are now
+        // the SAME underlying signal — both read computeStageProgress()
+        // and can't disagree — so this renders once from whichever loaded
+        // first instead of two banners that used to show different things.
+        const moment = stageNudge
+          ? { nextStage: stageNudge.nextStage, projectId: stageNudge.projectId, completed: stageNudge.completed, total: stageNudge.total }
+          : transitionEligible && project
+            ? { nextStage: transitionEligible.next_stage, projectId: project.id, completed: transitionEligible.completed, total: transitionEligible.total }
+            : null;
+        if (!moment) return null;
+        const pct = moment.total > 0 ? Math.round((moment.completed / moment.total) * 100) : 100;
+        return (
+          <a
+            href={moment.projectId ? `/projects/${moment.projectId}` : "/projects"}
+            style={{
+              display: "flex", alignItems: "center", gap: 14,
+              padding: "16px 18px", marginBottom: 22,
+              borderRadius: 14, border: "1px solid var(--bm-green-bd)", background: "var(--bm-green-dim)",
+              textDecoration: "none",
+            }}
+          >
+            <div style={{ flexShrink: 0 }}>
+              <RadialGauge
+                value={moment.completed}
+                max={Math.max(moment.total, 1)}
+                size={52}
+                strokeWidth={5}
+                thresholds={[{ min: 0, color: "var(--bm-green)" }]}
+                duration={0.8}
+              />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: "var(--bm-green)" }}>
+                Stage complete{moment.total > 0 ? ` — ${moment.completed}/${moment.total} milestones` : ""}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--bm-text3)", marginTop: 2 }}>
+                You've done the work for this stage. Ready to review {moment.nextStage}?
+              </div>
+            </div>
+            <span style={{ fontSize: 11, flexShrink: 0, color: "var(--bm-green)", fontWeight: 700 }}>Review →</span>
+          </a>
+        );
+      })()}
 
       {/* ══ PRODUCT IMPROVEMENT #2 — TASK-FIRST LAYOUT ══
           Project badge is 1 line, then ACTION CARD is the first full block.
@@ -2887,4 +2940,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-        }
+  }
