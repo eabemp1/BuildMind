@@ -169,8 +169,25 @@ const OPENROUTER_MODEL     = process.env.OPENROUTER_MODEL || "openrouter/free";
 const MISTRAL_API_KEY      = readApiKey("MISTRAL_API_KEY");
 const MISTRAL_MODEL        = process.env.MISTRAL_MODEL || "mistral-small-latest";
 
+// FIX (Sept 3, 2026): production logs (Vercel function export,
+// 2026-09-03T08-48-40) showed the OpenRouter free-router leg alone taking
+// the full 20s to fail ("The operation was aborted due to timeout") inside
+// a route hard-capped at maxDuration=30 (see today-action/route.ts and
+// today-action/stream/route.ts). With Gemini currently 404ing outright and
+// Groq/OpenRouter both unreliable for the reasoning role, a full rotation
+// through 4-5 legs at 20s each could exceed the 30s ceiling on its own —
+// confirmed in the same log export: one request hit
+// "Vercel Runtime Timeout Error: Task timed out after 30 seconds" after
+// OpenRouter alone ate 20 of those seconds, and a "successful" request
+// still took 21.8s. 8s per leg lets a full 5-leg rotation finish in <=40s
+// worst case while still giving a real provider time to respond — tune
+// down further if 504s persist, but don't go so low that a slow-but-live
+// provider (any provider under real production load, not a dead endpoint)
+// gets cut off before it can succeed.
+const PROVIDER_TIMEOUT_MS = 8000;
+
 const cerebrasClient = CEREBRAS_API_KEY
-  ? new Cerebras({ apiKey: CEREBRAS_API_KEY, timeout: 20000, maxRetries: 0 })
+  ? new Cerebras({ apiKey: CEREBRAS_API_KEY, timeout: PROVIDER_TIMEOUT_MS, maxRetries: 0 })
   : null;
 
 export function getAIProviderStatus() {
@@ -294,7 +311,7 @@ async function groqCall(
   const useProviderJSONMode = jsonMode && !isQwen3 && !isGptOss;
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
-    signal: AbortSignal.timeout(20000),
+    signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${GROQ_API_KEY}`,
@@ -375,7 +392,7 @@ async function geminiCall(
   };
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
-    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(20000) },
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS) },
   );
   if (!res.ok) {
     const text = await res.text();
@@ -403,7 +420,7 @@ async function openRouterCall(
   if (!OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY not set");
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
-    signal: AbortSignal.timeout(20000),
+    signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${OPENROUTER_API_KEY}`,
@@ -445,7 +462,7 @@ async function mistralCall(
   if (!MISTRAL_API_KEY) throw new Error("MISTRAL_API_KEY not set");
   const res = await fetch("https://api.mistral.ai/v1/chat/completions", {
     method: "POST",
-    signal: AbortSignal.timeout(20000),
+    signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${MISTRAL_API_KEY}`,
