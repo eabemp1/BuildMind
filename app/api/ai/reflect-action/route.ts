@@ -11,7 +11,7 @@ import { evaluateAndCacheStageTransition } from "@/lib/server/stageTransition";
 import { recordActionOutcome } from "@/lib/learning";
 import { invalidateCognitionCache } from "@/lib/founderCognition";
 import { classifyBlocker, runBlockerIntelligencePipeline } from "@/lib/blockerIntelligence";
-import { momentumOnReflect } from "@/lib/momentum";
+import { updateMomentum } from "@/lib/scorecard";
 import { compareFounderIntelligenceOutcome, getFounderIntelligenceAccuracy } from "@/lib/learningLoop";
 import { markRecommendationObserved } from "@/lib/recommendationLifecycle";
 
@@ -330,10 +330,18 @@ Target users: ${project.target_users ?? "Not specified"}`;
           nextStreak = streakRpcData ?? undefined;
         }
 
-        // FIX: reflections previously never touched momentum_score at all —
-        // momentumOnReflect() existed in lib/momentum.ts but had no caller.
-        // Read the current value, apply the same EMA every other momentum
-        // mutation uses, and write it back in the same update as last_active.
+        // FIX (audit finding): this used to read momentum_score in JS, run
+        // momentumOnReflect() locally, and write the result back with a
+        // plain update — a second, disconnected momentum writer alongside
+        // the one in lib/scorecard.ts (which itself was defined but had
+        // zero callers). That meant two independent implementations of the
+        // same EMA math and no row lock against a concurrent
+        // override/decay write. updateMomentum() is the ONLY function
+        // permitted to write founder_context.momentum_score — it calls the
+        // atomic update_momentum_atomic RPC, so this is now the same call
+        // path override and evening-check use. The pre-read below is only
+        // for the founder-facing "momentum before/after" message; it is not
+        // the value that gets written.
         try {
           const { data: fc } = await supabase
             .from("founder_context")
@@ -347,9 +355,12 @@ Target users: ${project.target_users ?? "Not specified"}`;
           const daysSince = lastUpdated
             ? Math.max(1, Math.round((Date.now() - lastUpdated.getTime()) / (1000 * 60 * 60 * 24)))
             : 1;
-          momentumAfter = momentumOnReflect(current, daysSince);
+          // Reflection signal (35) mirrors momentumOnReflect()'s constant in
+          // lib/momentum.ts — a reflection with no task is a smaller
+          // positive signal than a completed task, but still counts.
+          momentumAfter = await updateMomentum(verifiedUserId, projectId ?? null, 35, daysSince);
         } catch (err) {
-          logError("reflect-action/momentum-read", err, { verifiedUserId });
+          logError("reflect-action/momentum-write", err, { verifiedUserId });
         }
 
         await supabase
@@ -357,9 +368,6 @@ Target users: ${project.target_users ?? "Not specified"}`;
           .update({
             last_active: todayDate,
             days_inactive: 0,
-            ...(momentumAfter !== undefined
-              ? { momentum_score: momentumAfter, momentum_updated_at: new Date().toISOString() }
-              : {}),
           })
           .eq("user_id", verifiedUserId);
 
@@ -386,48 +394,8 @@ Target users: ${project.target_users ?? "Not specified"}`;
             },
           ], { onConflict: "user_id,key" });
 
-        try {
-          // FIX: previously required outcome = 'pending' here. Confirmed via
-          // trace that app/today/page.tsx's handleCheckIn already calls
-          // /api/ai/reflexion-outcome immediately on check-in — BEFORE the
-          // founder ever reaches this page — which sets this same row's
-          // outcome away from 'pending' (e.g. to 'overridden') with
-          // outcome_note left undefined. By the time this code ran, no row
-          // with outcome='pending' existed anymore for today, so this query
-          // silently found nothing and the blocker/note text typed here
-          // never reached reflexion_learning_log.outcome_note — the real
-          // reason "Why you skip" stayed empty even after the table the
-          // frontend reads from was corrected. Match on "most recent row for
-          // this user today" instead of a status Today's own check-in flow
-          // already consumes. Updating the same outcome again here is
-          // harmless (idempotent) — the real fix is that outcome_note now
-          // actually gets attached.
-          const { data: pendingLog } = await supabase
-            .from("reflexion_learning_log")
-            .select("id")
-            .eq("user_id", verifiedUserId)
-            .gte("created_at", todayDate)
-            .order("created_at", { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
-          if (pendingLog?.id) {
-            const mappedOutcome =
-              outcome === "completed" ? "completed" :
-              outcome === "blocked" ? "overridden" :
-              "partial";
-            await recordActionOutcome({
-              logRowId: pendingLog.id,
-              userId: verifiedUserId,
-              outcome: mappedOutcome,
-              outcomeNote: note || blocker || undefined,
-            });
-          }
-        } catch {
-          // Learning-log closure is best-effort; reflection is already saved.
-        }
-
         // Bust the today_action_cache so the next page load regenerates with fresh reflection data.
+        let founderIntelligenceResolved = false;
         try {
           await supabase
             .from("user_behavior_state")
@@ -461,40 +429,17 @@ Target users: ${project.target_users ?? "Not specified"}`;
         // delta when this reflection resolved a pending prediction — that
         // requires reading accuracy on both sides of the comparison.
         try {
-          // The client only reliably carries recommendationId through the
-          // Today -> task-complete -> reflect handoff when the founder
-          // completes a task inline; other reflect entry points (the
-          // standalone /reflect page, cached/rehydrated Today state) don't
-          // always have it in hand. task-complete already caches the shown
-          // recommendation's identity into user_behavior_state for exactly
-          // this handoff (see app/api/founder-context/task-complete/route.ts)
-          // — fall back to that cache instead of leaving the outcome
-          // unattributed whenever the request body doesn't supply one.
-          let effectiveRecommendationId = recommendationId ?? null;
-          if (!effectiveRecommendationId) {
-            try {
-              const { data: cachedRecRow } = await supabase
-                .from("user_behavior_state")
-                .select("value")
-                .eq("user_id", verifiedUserId)
-                .eq("key", "today_recommendation_id")
-                .maybeSingle();
-              if (typeof cachedRecRow?.value === "string" && cachedRecRow.value) {
-                effectiveRecommendationId = cachedRecRow.value;
-              }
-            } catch { /* non-fatal — outcome stays unattributed, not mis-attributed */ }
-          }
-
           const accuracyBefore = await getFounderIntelligenceAccuracy(supabase, verifiedUserId);
           const comparison = await compareFounderIntelligenceOutcome(supabase, {
             userId: verifiedUserId,
-            recommendationId: effectiveRecommendationId,
+            recommendationId,
             taskTitle: todayAction ?? note ?? "",
             outcome,
             reflectionText: reflectionEvidenceText,
             evidenceReferences: reflectionRow?.id ? [{ source: "reflection", recordId: String(reflectionRow.id) }] : undefined,
           });
           if (comparison) {
+            founderIntelligenceResolved = true;
             // compareFounderIntelligenceOutcome already recomputed and cached
             // the rolling accuracy as part of resolving this prediction.
             const accuracyAfter = await getFounderIntelligenceAccuracy(supabase, verifiedUserId);
@@ -507,13 +452,37 @@ Target users: ${project.target_users ?? "Not specified"}`;
         } catch {
           // Confidence delta is a bonus display, never block the reflection save.
         }
-        markRecommendationObserved(supabase, {
-          userId: verifiedUserId,
-          taskTitle: todayAction ?? note ?? "",
-          outcome,
-          founderExplanation: note || blocker || undefined,
-          evidenceProduced: reflectionEvidenceText || undefined,
-        }).catch(() => {});
+        let isFounderIntelligenceRecommendation = false;
+        if (recommendationId && !founderIntelligenceResolved) {
+          const { data: recommendation } = await supabase
+            .from("reflexion_learning_log")
+            .select("prediction_source")
+            .eq("id", recommendationId)
+            .eq("user_id", verifiedUserId)
+            .maybeSingle();
+          isFounderIntelligenceRecommendation = recommendation?.prediction_source === "founder_intelligence";
+        }
+        if (recommendationId && !founderIntelligenceResolved && !isFounderIntelligenceRecommendation) {
+          // Non-Founder-Intelligence recommendations still keep their
+          // existing action lifecycle. A Founder Intelligence row without
+          // sufficient evidence stays pending rather than being trained from
+          // a bare outcome selection.
+          const mappedOutcome = outcome === "completed" ? "completed" : outcome === "blocked" ? "overridden" : "partial";
+          await markRecommendationObserved(supabase, {
+            userId: verifiedUserId,
+            recommendationId,
+            taskTitle: todayAction ?? note ?? "",
+            outcome,
+            founderExplanation: note || blocker || undefined,
+            evidenceProduced: reflectionEvidenceText || undefined,
+          });
+          await recordActionOutcome({
+            logRowId: recommendationId,
+            userId: verifiedUserId,
+            outcome: mappedOutcome,
+            outcomeNote: note || blocker || undefined,
+          }).catch((err) => logError("reflect-action/recordActionOutcome", err, { verifiedUserId, recommendationId }));
+        }
         recordActivity(verifiedUserId, "reflection_done", { projectId, outcome, confidence }).catch(() => {});
         // CONSOLIDATION: was checkAndCacheStageTransition() — see
         // lib/server/stageTransition.ts for why there's now one detector.
