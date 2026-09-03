@@ -17,6 +17,7 @@
 import { createClient } from "@/lib/supabase/client";
 import { trackEvent } from "@/lib/analytics";
 import { inferStageFromMilestones } from "@/lib/stages";
+import { computeStageProgress } from "@/lib/server/stageProgress";
 import { computeStartupScore } from "@/lib/scoring";
 import { callModel } from "@/lib/ai-providers";
 import type {
@@ -236,12 +237,12 @@ export async function getProjectSummaries(): Promise<ProjectSummary[]> {
   const milestoneResults = await Promise.all(projectBatches.map((batchIds) => {
     const milestonesQuery = supabase
       .from("milestones")
-      .select("id, title, project_id, status, order_index");
+      .select("id, title, project_id, status, order_index, stage");
     return batchIds.length === 1
       ? milestonesQuery.eq("project_id", batchIds[0])
       : milestonesQuery.in("project_id", batchIds);
   }));
-  const allMilestones: Array<{ id: string; title: string; project_id: string; status?: string | null; order_index?: number | null }> =
+  const allMilestones: Array<{ id: string; title: string; project_id: string; status?: string | null; order_index?: number | null; stage?: string | null }> =
     milestoneResults.flatMap((result) => result.data ?? []);
 
   const milestoneIds = allMilestones.map((m) => m.id);
@@ -330,6 +331,15 @@ export async function getProjectSummaries(): Promise<ProjectSummary[]> {
     const displayStage = userStage || computedStage || "Idea";
     const validationStrengths = normalizeTextArray(project.validation_strengths);
 
+    // Real, stage-scoped completion — the same computeStageProgress() that
+    // lib/server/stageTransition.ts and app/api/project/level-up/route.ts
+    // use, so the Today progress ring, the Projects list card, and the
+    // stage-nudge banner all read one number and can't disagree. This is
+    // deliberately NOT the same as `progress` above, which is ALL tasks
+    // across the project's whole history — stageProgress is scoped to
+    // whichever milestones actually belong to the current stage.
+    const stageProgress = computeStageProgress(projectMilestones, displayStage);
+
     // Pending milestones and tasks — used by Today page for AI personalization
     const pendingMilestones = projectMilestones
       .filter((m) => m.status !== "completed")
@@ -349,6 +359,10 @@ export async function getProjectSummaries(): Promise<ProjectSummary[]> {
       created_at: project.created_at,
       industry: project.industry ?? null,
       startup_stage: displayStage,
+      stageMilestonesCompleted: stageProgress.completedMilestones,
+      stageMilestonesTotal: stageProgress.totalMilestones,
+      stageProgressPercent: stageProgress.percent,
+      stageComplete: stageProgress.isComplete,
       validation_score: project.validation_score ?? null,
       execution_score: project.execution_score ?? null,
       momentum_score: project.momentum_score ?? null,
@@ -753,4 +767,4 @@ export async function updateProjectMRR(
     .update({ current_mrr: mrrPesewas, mrr_updated_at: new Date().toISOString() })
     .eq("id", projectId)
     .eq("user_id", user.id);
-}
+                              }
