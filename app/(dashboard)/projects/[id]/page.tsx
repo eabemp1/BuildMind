@@ -468,6 +468,29 @@ function EditProjectModal({
 
 type ActivityEvent = { label: string; occurredAt: string };
 
+// Mirrors app/api/project/stage-evidence/route.ts response shapes. Kept as
+// plain local types (not imported from lib/server/stageEvidence.ts) since
+// this is a client component — the requirement/completeness objects arrive
+// pre-computed from the server, the client never needs the evaluation logic.
+type StageEvidenceType = "metric" | "artifact" | "experiment" | "founder_judgment";
+type StageEvidenceRow = {
+  id: string;
+  evidence_type: StageEvidenceType;
+  metric_name: string | null;
+  metric_value: string | null;
+  metric_date: string | null;
+  artifact_description: string | null;
+  artifact_url: string | null;
+  experiment_channel: string | null;
+  experiment_hypothesis: string | null;
+  experiment_outcome: string | null;
+  judgment_text: string | null;
+  created_at: string;
+};
+type StageEvidenceSlot = { key: string; label: string; helpText: string; acceptedTypes: StageEvidenceType[] };
+type StageEvidenceRequirement = { fromStage: string; toStage: string; framing: string; slots: StageEvidenceSlot[] };
+type StageEvidenceCompleteness = { filledSlotKeys: string[]; missingSlotKeys: string[]; isComplete: boolean };
+
 function formatActivityTime(iso: string): string {
   const d = new Date(iso);
   const now = new Date();
@@ -499,6 +522,23 @@ export default function ProjectDetailPage() {
   // Stage selector — lets founder manually set stage, waiving prior stages automatically
   const [stagePickerOpen, setStagePickerOpen] = useState(false);
   const [stageChanging, setStageChanging] = useState(false);
+  // Stage-transition evidence review — built for every FORWARD stage move
+  // (Idea->Validation, Validation->MVP, MVP->Launch, Launch->Growth,
+  // Growth->Revenue), each with its own requirement spec, same rigor as the
+  // original Launch->Growth build. See lib/server/stageEvidence.ts.
+  // `stageEvidenceTarget` holds the stage the founder picked while the
+  // review modal is open; null means the modal is closed. A backward move
+  // proceeds directly, unchanged from before — moving back is a
+  // correction, not a transition, so there's nothing to review.
+  const [stageEvidenceFrom, setStageEvidenceFrom] = useState<string | null>(null);
+  const [stageEvidenceTarget, setStageEvidenceTarget] = useState<string | null>(null);
+  const [stageEvidenceRows, setStageEvidenceRows] = useState<StageEvidenceRow[]>([]);
+  const [stageEvidenceRequirement, setStageEvidenceRequirement] = useState<StageEvidenceRequirement | null>(null);
+  const [stageEvidenceCompleteness, setStageEvidenceCompleteness] = useState<StageEvidenceCompleteness | null>(null);
+  const [stageEvidenceLoading, setStageEvidenceLoading] = useState(false);
+  const [stageEvidenceSlotDraft, setStageEvidenceSlotDraft] = useState<string | null>(null);
+  const [stageEvidenceForm, setStageEvidenceForm] = useState<Record<string, string>>({});
+  const [stageEvidenceSubmitting, setStageEvidenceSubmitting] = useState(false);
   // REC 3.2 + 2.3 + 3.1: narrative sentence, transition challenge, readiness prompt
   const [narrativeSentence, setNarrativeSentence] = useState<string | null>(null);
   const [transitionChallenge, setTransitionChallenge] = useState<{
@@ -558,6 +598,45 @@ export default function ProjectDetailPage() {
     setStagePickerOpen(false);
     if (newStage === project.startup_stage) return;
 
+    // Every FORWARD move now gets an evidence review before it proceeds —
+    // Idea->Validation, Validation->MVP, MVP->Launch, Launch->Growth, and
+    // Growth->Revenue each have their own requirement spec (see
+    // lib/server/stageEvidence.ts). A BACKWARD move (correcting an
+    // over-advanced stage) skips the review and goes straight through to
+    // executeStageTransition, same as before — there's nothing to prove
+    // when walking a stage back.
+    const previousStage = project.startup_stage ?? "Idea";
+    const prevIdx = STAGE_ORDER.indexOf(previousStage as typeof STAGE_ORDER[number]);
+    const nextIdx = STAGE_ORDER.indexOf(newStage as typeof STAGE_ORDER[number]);
+    if (nextIdx > prevIdx) {
+      setStageEvidenceFrom(previousStage);
+      setStageEvidenceTarget(newStage);
+      setStageEvidenceLoading(true);
+      try {
+        const res = await fetch(
+          `/api/project/stage-evidence?projectId=${id}&fromStage=${encodeURIComponent(previousStage)}&toStage=${encodeURIComponent(newStage)}`,
+        );
+        const json = await res.json().catch(() => null);
+        if (json?.ok) {
+          setStageEvidenceRows(json.rows ?? []);
+          setStageEvidenceRequirement(json.requirement ?? null);
+          setStageEvidenceCompleteness(json.completeness ?? null);
+        }
+      } catch {
+        // Evidence review is a review aid, not a gate — if it fails to
+        // load, the founder can still proceed via "Confirm without full evidence".
+      } finally {
+        setStageEvidenceLoading(false);
+      }
+      return;
+    }
+
+    await executeStageTransition(newStage);
+  }
+
+  /** Actually performs the transition — the same logic every stage change runs, evidence-reviewed or not. */
+  async function executeStageTransition(newStage: string) {
+    if (!project || !id) return;
     setStageChanging(true);
     try {
       const supabase = createClient();
@@ -611,18 +690,62 @@ export default function ProjectDetailPage() {
         : [];
 
       // Update project stage
-      await supabase.from("projects").update({
+      const previousStage = project.startup_stage ?? "Idea";
+      const { error: stageUpdateError } = await supabase.from("projects").update({
         startup_stage: newStage,
         stage_history: [
           ...previousHistory,
-          { from: project.startup_stage ?? "Idea", to: newStage, set_at: new Date().toISOString(), source: "manual" },
+          { from: previousStage, to: newStage, set_at: new Date().toISOString(), source: "manual" },
         ],
         updated_at: new Date().toISOString(),
       }).eq("id", id);
+      if (stageUpdateError) throw stageUpdateError;
 
-      await supabase.from("founder_context").update({
-        pending_stage_transition: null,
-      }).eq("user_id", project.user_id);
+      // A manual stage change is a real transition, not merely a label edit.
+      // Keep the legacy founder-context projection aligned and clear the
+      // server-owned Today cache before any client can reuse an old-stage task.
+      const [contextResponse, cacheResponse] = await Promise.all([
+        fetch("/api/founder-context", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ current_stage: newStage }),
+        }),
+        fetch("/api/user/behavior-state", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ values: { today_action_cache: null } }),
+        }),
+      ]);
+      if (!contextResponse.ok || !cacheResponse.ok) {
+        throw new Error("Could not synchronize the stage transition");
+      }
+      storage.remove(`bm_today_action_cache_${project.user_id}`);
+      storage.remove(`bm_today_action_cache_ts_${project.user_id}`);
+
+      // These are the existing transition products. Previously only Today
+      // detected a stage change, so a founder who advanced from Projects did
+      // not get either the transition challenge or the Break My Startup
+      // interstitial until another unrelated Today update happened.
+      const transitionPayload = {
+        projectId: id,
+        previousStage,
+        currentStage: newStage,
+        triggerType: "stage_transition",
+      };
+      await Promise.allSettled([
+        fetch("/api/ai/stage-transition-challenge", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(transitionPayload),
+        }),
+        fetch("/api/ai/milestone-break", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(transitionPayload),
+        }),
+      ]);
+      // Prevent Today's detector from duplicating the just-created transition.
+      storage.set(`bm_last_stage_${id}`, newStage);
 
       // Refresh all project data
       // FIX: this never invalidated queryKeys.projectSummaries — the query
@@ -636,14 +759,84 @@ export default function ProjectDetailPage() {
       // but Today's client-side cache-validity check compares against this
       // stale client stage, found a false "match", and never busted the
       // cached (wrong-stage) action.
-      void qc.invalidateQueries({ queryKey: queryKeys.project(id) });
-      void qc.invalidateQueries({ queryKey: queryKeys.projects });
-      void qc.invalidateQueries({ queryKey: queryKeys.projectSummaries });
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: queryKeys.project(id) }),
+        qc.invalidateQueries({ queryKey: queryKeys.projects }),
+        qc.invalidateQueries({ queryKey: queryKeys.projectSummaries }),
+      ]);
     } catch (err) {
       console.error("[projects] stage select failed:", err);
     } finally {
       setStageChanging(false);
     }
+  }
+
+  function closeStageEvidenceModal() {
+    setStageEvidenceFrom(null);
+    setStageEvidenceTarget(null);
+    setStageEvidenceRows([]);
+    setStageEvidenceRequirement(null);
+    setStageEvidenceCompleteness(null);
+    setStageEvidenceSlotDraft(null);
+    setStageEvidenceForm({});
+  }
+
+  async function submitStageEvidence(evidenceType: StageEvidenceType) {
+    if (!id || !stageEvidenceFrom || !stageEvidenceTarget || stageEvidenceSubmitting) return;
+    setStageEvidenceSubmitting(true);
+    try {
+      const res = await fetch("/api/project/stage-evidence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: id,
+          fromStage: stageEvidenceFrom,
+          toStage: stageEvidenceTarget,
+          evidence_type: evidenceType,
+          ...stageEvidenceForm,
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (json?.ok) {
+        setStageEvidenceRows(json.rows ?? []);
+        setStageEvidenceCompleteness(json.completeness ?? null);
+        setStageEvidenceSlotDraft(null);
+        setStageEvidenceForm({});
+      }
+    } catch {
+      // Leave the draft open — founder can retry without losing what they typed.
+    } finally {
+      setStageEvidenceSubmitting(false);
+    }
+  }
+
+  async function deleteStageEvidence(rowId: string) {
+    if (!id) return;
+    try {
+      await fetch(`/api/project/stage-evidence?id=${rowId}&projectId=${id}`, { method: "DELETE" });
+      const remaining = stageEvidenceRows.filter(r => r.id !== rowId);
+      setStageEvidenceRows(remaining);
+      if (stageEvidenceRequirement) {
+        const submittedTypes = new Set(remaining.map(r => r.evidence_type));
+        const missingSlotKeys = stageEvidenceRequirement.slots
+          .filter(s => !s.acceptedTypes.some(t => submittedTypes.has(t)))
+          .map(s => s.key);
+        setStageEvidenceCompleteness({
+          filledSlotKeys: stageEvidenceRequirement.slots.map(s => s.key).filter(k => !missingSlotKeys.includes(k)),
+          missingSlotKeys,
+          isComplete: missingSlotKeys.length === 0,
+        });
+      }
+    } catch {
+      // Non-fatal — the row is still shown; founder can retry the delete.
+    }
+  }
+
+  async function confirmStageEvidenceTransition() {
+    if (!stageEvidenceTarget) return;
+    const target = stageEvidenceTarget;
+    closeStageEvidenceModal();
+    await executeStageTransition(target);
   }
 
   /** Normalize a raw stage string to STAGE_ORDER value, or null if unrecognizable */
@@ -1327,6 +1520,197 @@ export default function ProjectDetailPage() {
             onSave={handleSaveProjectEdit}
             isPending={updateProjectMutation.isPending}
           />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {stageEvidenceTarget && (
+          <div
+            style={{
+              position: "fixed", inset: 0, zIndex: 200,
+              background: "rgba(0,0,0,0.6)", display: "flex",
+              alignItems: "center", justifyContent: "center", padding: 16,
+            }}
+            onClick={closeStageEvidenceModal}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)",
+                borderRadius: 14, padding: 22, maxWidth: 560, width: "100%",
+                maxHeight: "85vh", overflowY: "auto",
+              }}
+            >
+              <div style={{ fontSize: 14, fontWeight: 800, color: "var(--bm-text)", marginBottom: 6 }}>
+                Review: {stageEvidenceFrom} → {stageEvidenceTarget}
+              </div>
+              <p style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.55, marginBottom: 16 }}>
+                {stageEvidenceRequirement?.framing ??
+                  `${stageEvidenceFrom} is a different operating reality than ${stageEvidenceTarget}. Capture what actually changed before this project moves.`}
+              </p>
+
+              {stageEvidenceLoading ? (
+                <div style={{ fontSize: 12, color: "var(--bm-text4)" }}>Loading evidence…</div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {(stageEvidenceRequirement?.slots ?? []).map((slot) => {
+                    const filled = stageEvidenceCompleteness?.filledSlotKeys.includes(slot.key) ?? false;
+                    const rowsForSlot = stageEvidenceRows.filter(r => slot.acceptedTypes.includes(r.evidence_type));
+                    const isDrafting = stageEvidenceSlotDraft === slot.key;
+                    return (
+                      <div key={slot.key} style={{
+                        border: `1px solid ${filled ? "var(--bm-green-bd)" : "var(--bm-border)"}`,
+                        borderRadius: 10, padding: 12,
+                        background: filled ? "var(--bm-green-dim)" : "transparent",
+                      }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: filled ? "var(--bm-green)" : "var(--bm-text2)" }}>
+                              {filled ? "✓ " : ""}{slot.label}
+                            </div>
+                            <div style={{ fontSize: 11, color: "var(--bm-text4)", marginTop: 2, lineHeight: 1.45 }}>
+                              {slot.helpText}
+                            </div>
+                          </div>
+                          {!isDrafting && (
+                            <button
+                              onClick={() => { setStageEvidenceSlotDraft(slot.key); setStageEvidenceForm({}); }}
+                              style={{
+                                flexShrink: 0, background: "none", border: "1px solid var(--bm-border2)",
+                                color: "var(--bm-text2)", borderRadius: 8, padding: "5px 10px",
+                                fontSize: 11, cursor: "pointer", fontFamily: "inherit",
+                              }}
+                            >
+                              {filled ? "Add another" : "Add evidence"}
+                            </button>
+                          )}
+                        </div>
+
+                        {rowsForSlot.length > 0 && (
+                          <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
+                            {rowsForSlot.map(row => (
+                              <div key={row.id} style={{
+                                display: "flex", alignItems: "center", justifyContent: "space-between",
+                                fontSize: 11, color: "var(--bm-text3)", gap: 8,
+                              }}>
+                                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                  {row.evidence_type === "metric" && `${row.metric_name}: ${row.metric_value}${row.metric_date ? ` (${row.metric_date})` : ""}`}
+                                  {row.evidence_type === "artifact" && row.artifact_description}
+                                  {row.evidence_type === "experiment" && `${row.experiment_channel} → ${row.experiment_outcome}`}
+                                  {row.evidence_type === "founder_judgment" && row.judgment_text}
+                                </span>
+                                <button
+                                  onClick={() => void deleteStageEvidence(row.id)}
+                                  style={{ background: "none", border: "none", color: "var(--bm-text4)", cursor: "pointer", fontSize: 11, flexShrink: 0 }}
+                                >
+                                  remove
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {isDrafting && (
+                          <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+                            {slot.acceptedTypes.length > 1 && (
+                              <select
+                                value={stageEvidenceForm._type ?? slot.acceptedTypes[0]}
+                                onChange={(e) => setStageEvidenceForm(f => ({ ...f, _type: e.target.value }))}
+                                style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: 6, color: "var(--bm-text2)", fontSize: 11, padding: "6px 8px" }}
+                              >
+                                {slot.acceptedTypes.map(t => <option key={t} value={t}>{t.replace("_", " ")}</option>)}
+                              </select>
+                            )}
+                            {(() => {
+                              const activeType = (stageEvidenceForm._type as StageEvidenceType) ?? slot.acceptedTypes[0];
+                              const inputStyle = {
+                                background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: 6,
+                                color: "var(--bm-text2)", fontSize: 12, padding: "7px 9px", fontFamily: "inherit", width: "100%",
+                              } as const;
+                              if (activeType === "metric") return (
+                                <>
+                                  <input placeholder="Metric name (e.g. weekly signups)" value={stageEvidenceForm.metric_name ?? ""} onChange={e => setStageEvidenceForm(f => ({ ...f, metric_name: e.target.value }))} style={inputStyle} />
+                                  <input placeholder="Value (e.g. 42)" value={stageEvidenceForm.metric_value ?? ""} onChange={e => setStageEvidenceForm(f => ({ ...f, metric_value: e.target.value }))} style={inputStyle} />
+                                  <input type="date" value={stageEvidenceForm.metric_date ?? ""} onChange={e => setStageEvidenceForm(f => ({ ...f, metric_date: e.target.value }))} style={inputStyle} />
+                                </>
+                              );
+                              if (activeType === "artifact") return (
+                                <>
+                                  <textarea placeholder={slot.helpText} value={stageEvidenceForm.artifact_description ?? ""} onChange={e => setStageEvidenceForm(f => ({ ...f, artifact_description: e.target.value }))} rows={2} style={inputStyle} />
+                                  <input placeholder="Link (optional)" value={stageEvidenceForm.artifact_url ?? ""} onChange={e => setStageEvidenceForm(f => ({ ...f, artifact_url: e.target.value }))} style={inputStyle} />
+                                </>
+                              );
+                              if (activeType === "experiment") return (
+                                <>
+                                  <input placeholder="Channel or experiment (e.g. cold outreach, a pricing test)" value={stageEvidenceForm.experiment_channel ?? ""} onChange={e => setStageEvidenceForm(f => ({ ...f, experiment_channel: e.target.value }))} style={inputStyle} />
+                                  <input placeholder="What you expected (optional)" value={stageEvidenceForm.experiment_hypothesis ?? ""} onChange={e => setStageEvidenceForm(f => ({ ...f, experiment_hypothesis: e.target.value }))} style={inputStyle} />
+                                  <textarea placeholder="What actually happened" value={stageEvidenceForm.experiment_outcome ?? ""} onChange={e => setStageEvidenceForm(f => ({ ...f, experiment_outcome: e.target.value }))} rows={2} style={inputStyle} />
+                                </>
+                              );
+                              return (
+                                <textarea placeholder={slot.helpText} value={stageEvidenceForm.judgment_text ?? ""} onChange={e => setStageEvidenceForm(f => ({ ...f, judgment_text: e.target.value }))} rows={3} style={inputStyle} />
+                              );
+                            })()}
+                            <div style={{ display: "flex", gap: 6 }}>
+                              <button
+                                disabled={stageEvidenceSubmitting}
+                                onClick={() => void submitStageEvidence((stageEvidenceForm._type as StageEvidenceType) ?? slot.acceptedTypes[0])}
+                                style={{
+                                  background: "var(--bm-text)", color: "var(--bm-bg)", border: "none",
+                                  borderRadius: 6, padding: "6px 12px", fontSize: 11, fontWeight: 700,
+                                  cursor: stageEvidenceSubmitting ? "wait" : "pointer", fontFamily: "inherit",
+                                }}
+                              >
+                                {stageEvidenceSubmitting ? "Saving…" : "Save"}
+                              </button>
+                              <button
+                                onClick={() => { setStageEvidenceSlotDraft(null); setStageEvidenceForm({}); }}
+                                style={{ background: "none", border: "none", color: "var(--bm-text4)", cursor: "pointer", fontSize: 11, fontFamily: "inherit" }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 18 }}>
+                <span style={{ fontSize: 11, color: "var(--bm-text4)" }}>
+                  {stageEvidenceCompleteness
+                    ? `${stageEvidenceCompleteness.filledSlotKeys.length} of ${stageEvidenceRequirement?.slots.length ?? 4} captured`
+                    : ""}
+                </span>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    onClick={closeStageEvidenceModal}
+                    style={{ background: "none", border: "1px solid var(--bm-border2)", color: "var(--bm-text3)", borderRadius: 8, padding: "8px 14px", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}
+                  >
+                    Not now
+                  </button>
+                  <button
+                    onClick={() => void confirmStageEvidenceTransition()}
+                    disabled={stageChanging}
+                    style={{
+                      background: stageEvidenceCompleteness?.isComplete ? "var(--bm-green)" : "var(--bm-text)",
+                      color: "var(--bm-bg)", border: "none", borderRadius: 8, padding: "8px 14px",
+                      fontSize: 12, fontWeight: 700, cursor: stageChanging ? "wait" : "pointer", fontFamily: "inherit",
+                    }}
+                  >
+                    {stageEvidenceCompleteness?.isComplete
+                      ? `Confirm transition to ${stageEvidenceTarget}`
+                      : "Confirm without full evidence"}
+                  </button>
+                </div>
+              </div>
+              {/* Manual stage selection is intentionally an override, per
+                  stage-transition-product-design.md — this review surfaces
+                  missing evidence, it never blocks the founder's own call. */}
+            </div>
+          </div>
         )}
       </AnimatePresence>
     </div>
