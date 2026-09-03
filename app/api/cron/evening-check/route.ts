@@ -4,6 +4,7 @@ import webpush from "web-push";
 import { planFromUserMetadata } from "@/lib/plan";
 import { enqueueBatch } from "@/lib/queue";
 import { reclassifyFounderArchetypeIfEligible } from "@/lib/founderArchetype";
+import { updateMomentum } from "@/lib/scorecard";
 
 // ── Deterministic evening nudge variants ──────────────────────────────────────
 // Segmented by context so the message is always relevant.
@@ -158,6 +159,13 @@ export async function GET(req: NextRequest) {
   let hasMore = true;
   let totalRows = 0;
   const allUserIds: string[] = [];
+  // FIX: the QStash fan-out below previously enqueued only { userId }, but
+  // the worker requires subscriptionJson and returned a 400 for every
+  // queued job at scale — silently dropping the entire evening-check flow
+  // above ~500 DAU (the exact threshold this file's own comments say
+  // requires QSTASH_TOKEN). Captured here, alongside userId, in the same
+  // first pass so the queue payload can carry it.
+  const subscriptionByUserId = new Map<string, webpush.PushSubscription>();
 
   // First pass: collect all user IDs (pagination stays fast — no AI calls here)
   const fetchSubscriptionPage = async (from: number) => {
@@ -181,7 +189,10 @@ export async function GET(req: NextRequest) {
 
     const rows = subs ?? [];
     totalRows += rows.length;
-    rows.forEach(r => allUserIds.push(r.user_id));
+    rows.forEach(r => {
+      allUserIds.push(r.user_id);
+      if (r.subscription) subscriptionByUserId.set(r.user_id, r.subscription);
+    });
     hasMore = rows.length === PAGE_SIZE;
     pageFrom += PAGE_SIZE;
   }
@@ -215,8 +226,21 @@ export async function GET(req: NextRequest) {
   // This keeps the orchestrator function fast and lets each worker run within its own timeout.
   if (process.env.QSTASH_TOKEN && actionableUserIds.length > 0) {
     try {
-      await enqueueBatch("evening-check", actionableUserIds.map(userId => ({ userId })));
-      return NextResponse.json({ ok: true, queued: actionableUserIds.length, processed: actionableUserIds.length, mode: "queue", durationMs: Date.now() - start });
+      // Every actionable user came from the push_subscriptions table, so a
+      // subscription should exist — but skip (not enqueue-with-empty-body)
+      // anyone it's missing for defensively rather than sending the worker
+      // a payload it will 400 on.
+      const queuePayloads = actionableUserIds
+        .map(userId => {
+          const subscription = subscriptionByUserId.get(userId);
+          return subscription
+            ? { userId, subscriptionJson: JSON.stringify(subscription) }
+            : null;
+        })
+        .filter((p): p is { userId: string; subscriptionJson: string } => p !== null);
+
+      await enqueueBatch("evening-check", queuePayloads);
+      return NextResponse.json({ ok: true, queued: queuePayloads.length, skippedNoSubscription: actionableUserIds.length - queuePayloads.length, processed: queuePayloads.length, mode: "queue", durationMs: Date.now() - start });
     } catch (queueErr) {
       console.error("[evening-check] QStash enqueue failed, falling back to inline:", queueErr);
       // Fall through to inline processing
@@ -438,11 +462,24 @@ export async function GET(req: NextRequest) {
 
       await supabase
         .from("founder_context")
-        .update({
-          days_inactive: daysInactive,
-          momentum_last_week: ctx?.momentum_score ?? 50,
-        })
+        .update({ days_inactive: daysInactive })
         .eq("user_id", row.user_id);
+
+      // FIX: this used to overwrite momentum_last_week with *today's*
+      // momentum_score on every nightly run, which silently turned the
+      // weekly baseline into a same-day comparison — isMomentumDecaying()
+      // and any "vs last week" copy were comparing today to itself. The
+      // weekly baseline is sunday-email's job (setWeeklyMomentumBaseline in
+      // lib/scorecard.ts); this cron's job is decay. It previously did not
+      // apply any: momentum_score was untouched all night regardless of
+      // inactivity. updateMomentum() with signal=0 reproduces
+      // momentumDecay() through the same atomic path reflect-action and
+      // override now use.
+      try {
+        await updateMomentum(row.user_id, null, 0, daysInactive);
+      } catch (momentumErr) {
+        console.error("[evening-check] momentum decay failed:", momentumErr);
+      }
 
       sent += 1;
     } catch (err) {
