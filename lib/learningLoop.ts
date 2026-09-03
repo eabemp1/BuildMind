@@ -261,6 +261,9 @@ export async function compareFounderIntelligenceOutcome(
         outcome_recorded_at: new Date().toISOString(),
         evidence_match_score: score,
         outcome_note: params.reflectionText?.trim() ? params.reflectionText.trim().slice(0, 200) : null,
+        evidence_produced: params.reflectionText.trim().slice(0, 500),
+        outcome_quality: hasStructuredEvidence ? "strong" : "useful",
+        evidence_references: params.evidenceReferences ?? [],
       })
       .eq("id", pending.id);
 
@@ -385,4 +388,4 @@ export async function getCandidateArchetypeStats(supabase: SupabaseLike, userId:
     logError("learningLoop/getCandidateArchetypeStats", err, { userId });
     return {};
   }
-          }
+}
