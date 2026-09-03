@@ -8,8 +8,22 @@
  * Validates QStash signature before processing. Each invocation handles
  * exactly one user — no pagination, no timeout risk.
  *
- * Payload: { userId: string; subscriptionJson: string; daysInactive: number;
- *             patternMessage?: string; usePattern?: boolean }
+ * Payload: { userId: string; subscriptionJson?: string }
+ *
+ * FIX (audit finding): the orchestrator (../route.ts) only ever enqueued
+ * { userId } — daysInactive, subscriptionJson, patternMessage, and
+ * usePattern were never sent, despite subscriptionJson being required below.
+ * Every queued job therefore 400'd before doing anything: no notification,
+ * no days_inactive update, no momentum decay. This closed silently — no
+ * queued run ever surfaced an error to the cron caller, it just processed 0
+ * users. The orchestrator now sends subscriptionJson; everything else this
+ * worker previously expected the orchestrator to precompute (same-day
+ * reflection check, daysInactive, momentum decay) it now computes itself,
+ * matching the inline path in ../route.ts rather than depending on payload
+ * fields the orchestrator's fan-out step has no cheap way to produce for
+ * every user. subscriptionJson is optional here (not just doesn't 400): a
+ * missing/expired subscription should still get its inactivity and momentum
+ * bookkeeping done, it just skips the push send.
  *
  * Security: QStash signs every request with HMAC-SHA256. We verify via
  * QSTASH_CURRENT_SIGNING_KEY / QSTASH_NEXT_SIGNING_KEY (rolling rotation).
@@ -20,6 +34,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import webpush from "web-push";
 import { verifyQStashSignature } from "@/lib/queue";
+import { updateMomentum } from "@/lib/scorecard";
 
 export const runtime  = "nodejs";
 export const dynamic  = "force-dynamic";
@@ -69,29 +84,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Supabase env vars missing" }, { status: 500 });
   }
 
-  let payload: {
-    userId?: string;
-    subscriptionJson?: string;
-    daysInactive?: number;
-    patternMessage?: string;
-    usePattern?: boolean;
-  };
+  let payload: { userId?: string; subscriptionJson?: string };
   try {
     payload = JSON.parse(rawBody);
   } catch {
     return NextResponse.json({ ok: false, error: "Invalid JSON payload" }, { status: 400 });
   }
 
-  const { userId, subscriptionJson, daysInactive = 0, patternMessage, usePattern } = payload;
-  if (!userId || !subscriptionJson) {
-    return NextResponse.json({ ok: false, error: "userId and subscriptionJson required" }, { status: 400 });
+  const { userId, subscriptionJson } = payload;
+  if (!userId) {
+    return NextResponse.json({ ok: false, error: "userId required" }, { status: 400 });
   }
 
-  let subscription: webpush.PushSubscription;
-  try {
-    subscription = JSON.parse(subscriptionJson) as webpush.PushSubscription;
-  } catch {
-    return NextResponse.json({ ok: false, error: "Invalid subscription JSON" }, { status: 400 });
+  // subscriptionJson is best-effort: a missing or malformed value means we
+  // skip the push send, not the user's inactivity/momentum bookkeeping.
+  let subscription: webpush.PushSubscription | null = null;
+  if (subscriptionJson) {
+    try {
+      subscription = JSON.parse(subscriptionJson) as webpush.PushSubscription;
+    } catch {
+      console.error("[evening-check/worker] Invalid subscription JSON for user", userId);
+    }
   }
 
   configureVapid();
@@ -109,7 +122,48 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ skipped: true, reason: "no records", processed: 0, durationMs: Date.now() - start });
   }
 
-  const body = usePattern && patternMessage ? patternMessage : eveningNudge(daysInactive);
+  // Mirrors the inline path's reflectedToday short-circuit in ../route.ts:
+  // a reflection already filed today means no nudge and no decay.
+  const today = new Date().toISOString().split("T")[0];
+  const { data: reflectedToday } = await supabase
+    .from("reflections")
+    .select("id")
+    .eq("user_id", userId)
+    .gte("created_at", `${today}T00:00:00Z`)
+    .limit(1)
+    .maybeSingle();
+
+  if (reflectedToday) {
+    await supabase.from("founder_context").update({ days_inactive: 0 }).eq("user_id", userId);
+    return NextResponse.json({ ok: true, userId, skipped: "reflected_today", processed: 1, durationMs: Date.now() - start });
+  }
+
+  const { data: ctx } = await supabase
+    .from("founder_context")
+    .select("days_inactive")
+    .eq("user_id", userId)
+    .maybeSingle();
+  const daysInactive = Math.max(1, (ctx?.days_inactive ?? 0) + 1);
+
+  const body = eveningNudge(daysInactive);
+
+  await supabase.from("founder_context").update({ days_inactive: daysInactive }).eq("user_id", userId);
+
+  try {
+    await updateMomentum(userId, null, 0, daysInactive);
+  } catch (momentumErr) {
+    console.error("[evening-check/worker] momentum decay failed:", momentumErr);
+  }
+
+  if (!subscription) {
+    await supabase.from("evening_checks").insert({
+      user_id: userId,
+      task_completed: false,
+      nudge_sent: false,
+      nudge_text: body,
+    });
+    return NextResponse.json({ ok: true, userId, sent: false, reason: "no_subscription", processed: 1, durationMs: Date.now() - start });
+  }
 
   try {
     await webpush.sendNotification(subscription, JSON.stringify({
@@ -134,9 +188,6 @@ export async function POST(req: NextRequest) {
         nudge_sent: true,
         nudge_text: body,
       }),
-      supabase.from("founder_context")
-        .update({ days_inactive: daysInactive })
-        .eq("user_id", userId),
     ]);
 
     return NextResponse.json({ ok: true, userId, sent: true, processed: 1, durationMs: Date.now() - start });
