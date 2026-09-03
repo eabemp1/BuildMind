@@ -18,7 +18,6 @@ import { detectPattern, shouldSurfacePattern, type PatternResult } from "@/lib/p
 import { recordActivity } from "@/lib/server/activityLog";
 import { evaluateAndCacheStageTransition } from "@/lib/server/stageTransition";
 import { invalidateCognitionCache } from "@/lib/founderCognition";
-import { markRecommendationObserved } from "@/lib/recommendationLifecycle";
 import { actionCategoryLabel } from "@/lib/actionClassification";
 import { deduplicateTags } from "@/lib/founderMemory";
 
@@ -313,14 +312,6 @@ export async function POST(req: Request) {
     // Non-fatal — backfilled from reflexion_learning_log if missing
   }
 
-  markRecommendationObserved(admin, {
-    userId: user.id,
-    taskTitle: taskTitle || "",
-    outcome,
-    founderExplanation: taskTitle || undefined,
-    evidenceProduced: outcome === "completed" ? taskTitle || undefined : undefined,
-  }).catch(() => {});
-
   // Preserve the recommendation identity across the Today -> Reflect handoff.
   // This is deliberately non-blocking: task completion must remain resilient
   // when the behavior-state cache is unavailable.
@@ -333,16 +324,10 @@ export async function POST(req: Request) {
     }, { onConflict: "user_id,key" }).then(() => {}, () => {});
   }
 
-  // Deliberately NOT calling compareFounderIntelligenceOutcome here. This
-  // fires immediately on tap, before the founder has typed anything — it
-  // was resolving the pending Founder Intelligence prediction using just
-  // the task's own title as "evidence" (reflectionText: taskTitle), and
-  // since compareFounderIntelligenceOutcome resolves the most recent
-  // PENDING row, that always won the race against app/api/ai/reflect-action's
-  // later call — which has the founder's real what_happened/what_learned
-  // text — leaving nothing pending for it to attach to. Outcome resolution
-  // for Founder Intelligence predictions now happens exactly once, in
-  // reflect-action, with genuine evidence instead of a self-echo.
+  // Do not resolve a recommendation at check-in. A check-in confirms an
+  // attempted action, not the evidence it produced. Founder Intelligence
+  // resolution happens exactly once in reflect-action after the founder has
+  // recorded what happened and what they learned.
 
   // ── PATCH 2: Write checkin_done_date to user_behavior_state (AWAITED) ────
   // This was previously fire-and-forget. Awaiting it guarantees that by the time
@@ -378,4 +363,4 @@ export async function POST(req: Request) {
       severity: activePattern.severity,
     } : null,
   });
-    }
+                     }
