@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { recordActivity } from "@/lib/server/activityLog";
 import { logError } from "@/lib/server/logger";
+import { updateMomentum } from "@/lib/scorecard";
 
 export async function POST(req: Request) {
   const supabase = await createClient();
@@ -29,27 +30,27 @@ export async function POST(req: Request) {
     .eq("user_id", user.id)
     .maybeSingle();
 
-  // FIX (audit finding, High severity): this route previously read
-  // momentum_score directly, computed momentumOnOverride() locally in JS,
-  // and wrote it back with a plain upsert — the FIFTH independent,
-  // disconnected momentum writer found this session (alongside
-  // complete_task_atomic, reflect-action, the dedicated /streak route, and
-  // the Deno scheduled-jobs decay, all already consolidated earlier).
-  // This one also skipped the projects-table mirror entirely, meaning an
-  // override event's momentum change would never show up on pages reading
-  // the mirror — directly contributing to the "momentum differs across
-  // pages" issue. momentumOnOverride(current) always resolves to the same
-  // fixed signal (40 — "soft signal, not punitive", see
-  // lib/momentum.ts:dailyActivitySignal), so it's passed as a constant here
-  // rather than recomputed — same math, now through the shared, atomic,
-  // row-locked path.
-  const { data: newMomentum, error: momentumErr } = await admin.rpc("update_momentum_atomic", {
-    p_user_id: user.id,
-    p_project_id: projectId,
-    p_signal: 40,
-    p_days_since_last_update: 1,
-  });
-  if (momentumErr) {
+  // Override is a soft, non-punitive signal by design — momentumOnOverride()
+  // in lib/momentum.ts always resolves to a flat 40 regardless of current
+  // score ("soft signal, not punitive"; see dailyActivitySignal()), so this
+  // does not derive a below-current value on purpose, not by oversight. Note
+  // for anyone reconciling this against the audit doc: that doc's proposed
+  // correction ("override derives a below-current signal so an override
+  // cannot increase a low score") is a different design decision than what
+  // lib/momentum.ts actually implements — it was not applied here, since
+  // changing the signal's meaning is a product call, not a bug fix. Flag if
+  // you want the punitive version instead.
+  //
+  // This previously called admin.rpc("update_momentum_atomic") directly,
+  // duplicating the RPC-call plumbing that lib/scorecard.ts's
+  // updateMomentum() already owns (the comment there calls it "the ONLY
+  // function permitted to write founder_context.momentum_score" — this
+  // route was the one caller still bypassing it). Routed through the shared
+  // helper now so there is exactly one call site for the RPC, not two.
+  let newMomentum: number | null = null;
+  try {
+    newMomentum = await updateMomentum(user.id, projectId, 40, 1);
+  } catch (momentumErr) {
     logError("founder-context/override/momentum", momentumErr, { userId: user.id });
   }
 
