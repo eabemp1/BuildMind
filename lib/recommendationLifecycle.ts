@@ -62,14 +62,16 @@ function mapOutcomeToLifecycle(outcome: string): {
   return { outcome: "partial", event: "started", quality: "weak" };
 }
 
-async function updateLatestPending(
+async function updateRecommendationById(
   supabase: SupabaseLike,
   userId: string,
+  recommendationId: string,
   patch: Record<string, unknown>,
 ): Promise<string | null> {
   const { data: pending, error: findError } = await supabase
     .from("reflexion_learning_log")
     .select("id, lifecycle_events")
+    .eq("id", recommendationId)
     .eq("user_id", userId)
     .eq("outcome", "pending")
     .order("created_at", { ascending: false })
@@ -88,7 +90,8 @@ async function updateLatestPending(
   const { error: updateError } = await supabase
     .from("reflexion_learning_log")
     .update(nextPatch)
-    .eq("id", pending.id);
+    .eq("id", pending.id)
+    .eq("user_id", userId);
 
   if (updateError) throw updateError;
   return pending.id as string;
@@ -101,6 +104,8 @@ export async function markRecommendationLifecycle(
     event: RecommendationLifecycleEventType;
     note?: string;
     metadata?: Record<string, unknown>;
+    /** Explicit identity. Legacy events are recorded elsewhere but never guessed onto a prediction. */
+    recommendationId?: string | null;
     delayedUntil?: string;
     replacedBy?: string;
     evidenceProduced?: string;
@@ -109,6 +114,7 @@ export async function markRecommendationLifecycle(
   },
 ): Promise<string | null> {
   try {
+    if (!params.recommendationId) return null;
     const now = new Date().toISOString();
     const event: RecommendationLifecycleEvent = {
       type: params.event,
@@ -141,7 +147,7 @@ export async function markRecommendationLifecycle(
       patch.outcome_quality = params.evidenceProduced ? "strong" : mapped.quality;
     }
 
-    return await updateLatestPending(supabase, params.userId, patch);
+    return await updateRecommendationById(supabase, params.userId, params.recommendationId, patch);
   } catch (err) {
     logError("recommendationLifecycle/markRecommendationLifecycle", err, { userId: params.userId, event: params.event });
     return null;
@@ -152,6 +158,7 @@ export async function markRecommendationObserved(
   supabase: SupabaseLike,
   params: {
     userId: string;
+    recommendationId?: string | null;
     taskTitle: string;
     outcome: string;
     founderExplanation?: string;
@@ -161,6 +168,7 @@ export async function markRecommendationObserved(
   const mapped = mapOutcomeToLifecycle(params.outcome);
   return markRecommendationLifecycle(supabase, {
     userId: params.userId,
+    recommendationId: params.recommendationId,
     event: mapped.event,
     note: params.taskTitle,
     outcome: params.outcome,
