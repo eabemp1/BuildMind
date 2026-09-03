@@ -339,6 +339,38 @@ export default function ProjectsPage() {
                             {s.tasksCompleted ?? 0}/{s.tasksTotal ?? 0}
                           </span>
                         </div>
+
+                        {/* Real, stage-scoped completion — separate from the
+                            lifetime "Progress" line above on purpose. That
+                            line covers every task across the whole project's
+                            history; this one answers "am I done with THIS
+                            stage" using the same lib/server/stageProgress.ts
+                            numbers Today's stage-complete banner reads, so
+                            the two surfaces never disagree. Only shown once
+                            the current stage actually has milestones to count. */}
+                        {(s.stageMilestonesTotal ?? 0) > 0 && (
+                          <div className="mt-1.5 flex items-center gap-3">
+                            <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-[var(--bm-text4)]">
+                              {stageNorm} stage ({s.stageProgressPercent ?? 0}%)
+                            </span>
+                            <div className="max-w-[110px] flex-1">
+                              <div className="w-full h-1.5 rounded-full" style={{ background: "var(--bm-bg4)" }}>
+                                <div
+                                  className="h-full rounded-full"
+                                  style={{
+                                    width: `${s.stageProgressPercent ?? 0}%`,
+                                    background: s.stageComplete ? "var(--bm-green)" : "var(--grad-primary)",
+                                    transition: "width 0.5s ease",
+                                  }}
+                                />
+                              </div>
+                            </div>
+                            <span className="font-mono text-[9px] text-[var(--bm-text4)]">
+                              {s.stageMilestonesCompleted ?? 0}/{s.stageMilestonesTotal ?? 0}
+                              {s.stageComplete ? " ✓" : ""}
+                            </span>
+                          </div>
+                        )}
                       </div>
 
                       {/* Actions */}
@@ -503,4 +535,4 @@ export default function ProjectsPage() {
       </div>
     </div>
   );
-      }
+  }
