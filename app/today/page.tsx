@@ -422,11 +422,6 @@ function TodayContent() {
 
   // AI-personalised action state
   const [aiAction, setAiAction] = useState<ActionData | null>(null);
-  // Founder Intelligence recommendation identity for the currently shown
-  // action (reflexion_learning_log row id from data.intelligence.recommendation_id).
-  // Carried into task-complete -> user_behavior_state -> reflect-action so
-  // outcome learning attributes to the recommendation actually shown here.
-  const [recommendationId, setRecommendationId] = useState<string | null>(null);
   const [recentOutcomes, setRecentOutcomes] = useState<Array<{ action_shown: string; outcome: string; outcome_note: string | null; evidence_match_score: number | null; outcome_recorded_at: string | null }>>([]);
   const [debtSuppression, setDebtSuppression] = useState<DebtSuppression | null>(null);
   const [aiUsage, setAiUsage] = useState<{ monthlyUsed: number; monthlyLimit: number; unlimited: boolean } | null>(null);
@@ -455,9 +450,8 @@ function TodayContent() {
   const [milestoneBreak, setMilestoneBreak] = useState<MilestoneBreakResult | null>(null);
   const [milestoneBreakDismissed, setMilestoneBreakDismissed] = useState(false);
 
-  // Auto level-up — fires when founder earns a stage promotion
-  const [leveledUp, setLeveledUp] = useState<{ old_stage: string; new_stage: string } | null>(null);
-  const [levelUpDismissed, setLevelUpDismissed] = useState(false);
+  // Stage eligibility is a review prompt, never an automatic mutation.
+  const [transitionEligible, setTransitionEligible] = useState<{ current_stage: string; next_stage: string } | null>(null);
 
   // Editable draft — pre-filled with real project values
   const [draftMessage, setDraftMessage] = useState<string | null>(null);
@@ -794,7 +788,6 @@ function TodayContent() {
           isActionData(cached.data)
         ) {
           setAiAction({ ...cached.data, isAI: true }); setAiFetchFailed(false); lastGoodActionRef.current = { ...cached.data, isAI: true };
-          setRecommendationId(cached.data.intelligence?.recommendation_id ?? null);
           // Still sync server cache in background — non-blocking
           void fetchBehaviorState<{ today_action_cache: CachedTodayAction & { generatedAt?: string } }>(["today_action_cache"])
             .then((serverCache) => {
@@ -812,7 +805,6 @@ function TodayContent() {
                 storage.setJSON(cacheKey, serverCache.today_action_cache);
                 storage.set(`bm_today_action_cache_ts_${userId}`, String(serverTs));
                 setAiAction({ ...serverCache.today_action_cache.data, isAI: true }); setAiFetchFailed(false); lastGoodActionRef.current = { ...serverCache.today_action_cache.data, isAI: true };
-                setRecommendationId(serverCache.today_action_cache.data.intelligence?.recommendation_id ?? null);
               }
             })
             .catch(() => {});
@@ -873,7 +865,6 @@ function TodayContent() {
         storage.setJSON(cacheKey, serverCache.today_action_cache);
         if (serverCacheTs > 0) storage.set(`bm_today_action_cache_ts_${userId}`, String(serverCacheTs));
         setAiAction({ ...serverCache.today_action_cache.data, isAI: true }); setAiFetchFailed(false); lastGoodActionRef.current = { ...serverCache.today_action_cache.data, isAI: true };
-        setRecommendationId(serverCache.today_action_cache.data.intelligence?.recommendation_id ?? null);
         return;
       }
       // Server cache exists but is stale — clear both server and localStorage
@@ -964,8 +955,6 @@ function TodayContent() {
               if (!actionData) break outer;
               if (!signal.aborted) {
                 setAiAction(actionData);
-                const streamRecId = (p as { intelligence?: { recommendation_id?: string | null } }).intelligence?.recommendation_id;
-                setRecommendationId(typeof streamRecId === "string" ? streamRecId : null);
                 setAiFetchFailed(false);
                 lastGoodActionRef.current = actionData;
                 setStreamLabel(null);
@@ -1010,8 +999,6 @@ function TodayContent() {
           if (json?.success && actionData) {
             setDebtSuppression(null);
             setAiAction(actionData);
-            const fallbackRecId = (json as { data?: { intelligence?: { recommendation_id?: string | null } } })?.data?.intelligence?.recommendation_id;
-            setRecommendationId(typeof fallbackRecId === "string" ? fallbackRecId : null);
             setAiFetchFailed(false);
             lastGoodActionRef.current = actionData;
             lastRejectedActionRef.current = null;
@@ -1252,7 +1239,6 @@ function TodayContent() {
     }
     // Always clear cache and fetch a new task regardless of plan or API response
     setAiAction(null);
-    setRecommendationId(null);
     setDebtSuppression(null);
     setStreamLabel("Fetching a better-fit task...");
     storage.remove(`bm_today_action_cache_${userId}`);
@@ -1286,8 +1272,6 @@ function TodayContent() {
       if (json?.success && nextAction) {
         setDebtSuppression(null);
         setAiAction(nextAction);
-        const debtAckRecId = (json as { data?: { intelligence?: { recommendation_id?: string | null } } })?.data?.intelligence?.recommendation_id;
-        setRecommendationId(typeof debtAckRecId === "string" ? debtAckRecId : null);
       }
     } catch {
       // Keep the debt card visible if generation fails.
@@ -1313,7 +1297,12 @@ function TodayContent() {
     void fetch("/api/founder-context/swap-action", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ candidate: alt, recommendationId }),
+      body: JSON.stringify({
+        candidate: alt,
+        projectId: project?.id,
+        stage: project?.startup_stage,
+        recommendationId: actionData?.intelligence?.recommendation_id ?? null,
+      }),
     }).catch(() => {});
   }
 
@@ -1347,11 +1336,7 @@ function TodayContent() {
             // task-complete's own reflexion_learning_log insert now skips
             // itself in that case instead of writing a duplicate row.
             log_row_id: aiAction?.log_row_id ?? null,
-            // Carries the Founder Intelligence recommendation identity so
-            // task-complete can cache it into user_behavior_state for
-            // reflect-action to attribute the outcome correctly instead of
-            // guessing the most recent pending prediction.
-            recommendation_id: recommendationId,
+            recommendation_id: actionData?.intelligence?.recommendation_id ?? null,
           }),
         });
         if (tcRes.ok) {
@@ -1384,7 +1369,13 @@ function TodayContent() {
       notifyReflectPending();
 
       const todayDate = localDayKey();
-      const todayActionState = { action: actionData?.action ?? "", outcome: selectedOutcome, note: "", confidence: 3 };
+      const todayActionState = {
+        action: actionData?.action ?? "",
+        outcome: selectedOutcome,
+        note: "",
+        confidence: 3,
+        recommendation_id: actionData?.intelligence?.recommendation_id ?? null,
+      };
       storage.setJSON("bm_today_action", todayActionState);
       if (userId) {
         storage.remove(`bm_today_action_cache_${userId}`);
@@ -1424,17 +1415,15 @@ function TodayContent() {
           void queryClient.invalidateQueries({ queryKey: queryKeys.projectSummaries });
           void queryClient.invalidateQueries({ queryKey: queryKeys.overviewRoot });
 
-          // ── Auto level-up check ─────────────────────────────────────────────
+          // ── Stage-transition eligibility ────────────────────────────────────
           fetch("/api/project/level-up", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ project_id: project.id, new_execution_score: newComputedScore }),
+            body: JSON.stringify({ project_id: project.id }),
           }).then(r => r.ok ? r.json() : null)
-            .then((d: { leveled_up?: boolean; old_stage?: string; new_stage?: string } | null) => {
-              if (d?.leveled_up && d.old_stage && d.new_stage) {
-                setLeveledUp({ old_stage: d.old_stage, new_stage: d.new_stage });
-                setLevelUpDismissed(false);
-                void queryClient.invalidateQueries({ queryKey: queryKeys.projectSummaries });
+            .then((d: { eligible?: boolean; current_stage?: string; next_stage?: string } | null) => {
+              if (d?.eligible && d.current_stage && d.next_stage) {
+                setTransitionEligible({ current_stage: d.current_stage, next_stage: d.next_stage });
               }
             }).catch(() => {});
 
@@ -2106,6 +2095,27 @@ function TodayContent() {
         </a>
       )}
 
+      {transitionEligible && !stageNudge && project && (
+        <a
+          href={`/projects/${project.id}`}
+          style={{
+            display: "flex", alignItems: "center", gap: 8,
+            padding: "9px 14px", marginBottom: 22,
+            borderRadius: 10, border: "1px solid var(--bm-green-bd)", background: "var(--bm-green-dim)",
+            textDecoration: "none", fontSize: 12, color: "var(--bm-green)",
+          }}
+        >
+          <span style={{ flex: 1 }}>
+            Your completed work qualifies {transitionEligible.current_stage} for a {transitionEligible.next_stage} review.
+            {/* Every forward transition now has a real evidence review (see
+                lib/server/stageEvidence.ts) — say so generically rather than
+                naming one specific transition. */}
+            {" Bring evidence, not just a task count."}
+          </span>
+          <span style={{ fontSize: 11, flexShrink: 0 }}>Review stage →</span>
+        </a>
+      )}
+
       {/* ══ PRODUCT IMPROVEMENT #2 — TASK-FIRST LAYOUT ══
           Project badge is 1 line, then ACTION CARD is the first full block.
           All context (yesterday, analysis, check-ins) moves into a
@@ -2671,7 +2681,13 @@ function TodayContent() {
                 // server-side bookkeeping run in the background is what
                 // actually cuts the wait — the bookkeeping doesn't block
                 // anything /reflect renders.
-                storage.setJSON("bm_today_action", { action: actionData?.action ?? "", outcome: chip.id, note: "", confidence: 3 });
+                storage.setJSON("bm_today_action", {
+                  action: actionData?.action ?? "",
+                  outcome: chip.id,
+                  note: "",
+                  confidence: 3,
+                  recommendation_id: actionData?.intelligence?.recommendation_id ?? null,
+                });
                 void handleCheckIn(chip.id).catch(() => {
                   setSubmitting(false);
                 });
