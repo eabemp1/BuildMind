@@ -72,9 +72,12 @@
  *
  * REASONING (Critic, Verifier — Stages 4 & 5 of Reflexion loop):
  *   1. Groq — openai/gpt-oss-120b  (native CoT, reasoning_effort=high, free)
- *   2. OpenRouter — openrouter/free
- *   3. Gemini 2.5 Flash (best-effort)
- *   4. Mistral — mistral-small-latest (free, no card)
+ *   2. Mistral — mistral-small-latest (TEMPORARY, see FIX in getReasoningChain()
+ *      below — moved ahead of OpenRouter/Gemini on 09/03/26 because both are
+ *      currently failing every reasoning call in production logs; move back
+ *      once they're confirmed working again)
+ *   3. OpenRouter — openrouter/free
+ *   4. Gemini 2.5 Flash (best-effort)
  *   5. Groq — qwen/qwen3.6-27b     (strong math/logic, free, separate bucket)
  *   6. Cerebras — gpt-oss-120b (best-effort)
  *
@@ -581,24 +584,41 @@ function getFastChain(): ProviderFn[] {
 function getReasoningChain(): ProviderFn[] {
   const chain: ProviderFn[] = [];
   if (GROQ_API_KEY) {
-    // gpt-oss-120b with reasoning_effort=high — native CoT, near o4-mini quality
+    // gpt-oss-120b with reasoning_effort=high — native CoT, near o4-mini quality.
+    // Kept first despite currently failing every reasoning call (see FIX below)
+    // because its own failure is fast (~2-3s, not a timeout) — cheap to try,
+    // and picks the best model automatically the moment Groq's reasoning path
+    // recovers, with no code change needed.
     chain.push({ label: `groq:${GROQ_REASONING_MODEL}`, call: (m, t, mt, j) => groqCall(m, GROQ_REASONING_MODEL, t, mt, j, true) });
   }
-  // CRITIC DIVERSITY FIX: gpt-oss critiquing gpt-oss shares blind spots — a model
+  // FIX (Sept 3, 2026): production logs (Vercel function export,
+  // 2026-09-03T08-48-40) show OpenRouter's free-router and direct Gemini
+  // BOTH currently failing on every single reasoning call — OpenRouter with
+  // either an empty response or (worse) a ~20s hang before erroring, Gemini
+  // with a hard 404 (gemini-2.0-flash was shut down by Google 06/01/26; fix
+  // the GEMINI_MODEL env var separately). Mistral is the only leg that has
+  // succeeded on every logged reasoning call. Moved ahead of both broken
+  // legs so a real request doesn't pay their failure cost every time —
+  // reorder back once OpenRouter/Gemini are confirmed working again, this
+  // is a response to their CURRENT breakage, not a permanent quality
+  // ranking (gpt-oss-120b/OpenRouter's critic diversity are still the
+  // better choice when actually reachable).
+  if (MISTRAL_API_KEY) {
+    chain.push({ label: `mistral:${MISTRAL_MODEL}`, call: (m, t, mt, j) => mistralCall(m, MISTRAL_MODEL, t, mt, j) });
+  }
+  // CRITIC DIVERSITY: gpt-oss critiquing gpt-oss shares blind spots — a model
   // rarely catches its own failure modes. OpenRouter's free-router is a
   // genuinely different architecture/training lineage and requires NO credit card
   // (unlike Google AI Studio's direct API, which now gates free Gemini behind
   // billing in many regions, and unlike Cerebras, which now requires a card at
-  // all as of Aug 2026). This is the real diversity source for Critic/Verifier.
+  // all as of Aug 2026). This is the real diversity source for Critic/Verifier
+  // — demoted below Mistral only while it's actively broken, see FIX above.
   if (OPENROUTER_API_KEY) {
     chain.push({ label: `openrouter:${OPENROUTER_MODEL}`, call: (m, t, mt, j) => openRouterCall(m, OPENROUTER_MODEL, t, mt, j) });
   }
   // Direct Gemini — best-effort, see PROVIDER STATUS at top of file.
   if (GEMINI_API_KEY) {
     chain.push({ label: `gemini:${GEMINI_MODEL}`, call: (m, t, mt, j) => geminiCall(m, t, mt, j) });
-  }
-  if (MISTRAL_API_KEY) {
-    chain.push({ label: `mistral:${MISTRAL_MODEL}`, call: (m, t, mt, j) => mistralCall(m, MISTRAL_MODEL, t, mt, j) });
   }
   if (GROQ_API_KEY) {
     // FIX (Sept 2026): qwen/qwen3-32b was decommissioned by Groq on 07/17/26
