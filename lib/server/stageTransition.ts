@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { shouldPromptStageTransition, STAGE_ORDER, normalizeStage } from "@/lib/stages";
+import { computeStageProgress, type StageProgress } from "@/lib/server/stageProgress";
 
 /**
  * evaluateAndCacheStageTransition — the SINGLE stage-transition detector.
@@ -39,6 +40,8 @@ export interface StageTransitionEvaluation {
   reflectionCount: number;
   avgConfidence: number | null;
   overrides: number;
+  /** Real, stage-scoped milestone counts — same numbers a progress ring shows, not just a boolean. */
+  stageProgress: StageProgress;
 }
 
 /** Monday of the week containing `d`, as an ISO date string — matches the
@@ -71,7 +74,7 @@ export async function evaluateAndCacheStageTransition(
   const nextStage = currentStageIdx < STAGE_ORDER.length - 1 ? STAGE_ORDER[currentStageIdx + 1] : null;
 
   const [{ data: milestones }, { data: reflections }, { count: overrideCount }, { data: goal }] = await Promise.all([
-    supabase.from("milestones").select("id, title, status, order_index").eq("project_id", projectId).eq("user_id", userId),
+    supabase.from("milestones").select("id, title, status, order_index, stage").eq("project_id", projectId).eq("user_id", userId),
     supabase
       .from("reflections")
       .select("confidence, outcome")
@@ -94,10 +97,14 @@ export async function evaluateAndCacheStageTransition(
       .maybeSingle(),
   ]);
 
-  const stageMilestones = (milestones ?? []).filter((m) =>
-    normalizeStage(m.title) === currentStage || m.title?.toLowerCase().includes(currentStage.toLowerCase()),
-  );
-  const stageMilestonesComplete = stageMilestones.length > 0 ? stageMilestones.every((m) => m.status === "completed") : false;
+  // FIX (coherence bug — see lib/server/stageProgress.ts header): this used
+  // to match milestones to the current stage by fuzzy title search only,
+  // never reading the real `stage` column, so it was frequently wrong for
+  // any milestone not literally titled with the stage name. Now shares the
+  // same resolution logic as the Projects-page waiving picker and the
+  // level-up eligibility check — one function, one answer, everywhere.
+  const stageProgress = computeStageProgress(milestones ?? [], currentStage);
+  const stageMilestonesComplete = stageProgress.isComplete;
 
   const result = shouldPromptStageTransition({
     stageMilestonesComplete,
@@ -131,6 +138,7 @@ export async function evaluateAndCacheStageTransition(
     reflectionCount,
     avgConfidence,
     overrides: overrideCount ?? 0,
+    stageProgress,
   };
 
   // Single write target — same field name as the old cache-based detector
@@ -145,6 +153,10 @@ export async function evaluateAndCacheStageTransition(
             recommended_stage: nextStage,
             reason: evaluation.reason,
             computed_at: new Date().toISOString(),
+            // Real counts, not just the boolean, so the UI can show "9/9
+            // milestones" instead of a bare "you're eligible" claim.
+            stage_milestones_completed: stageProgress.completedMilestones,
+            stage_milestones_total: stageProgress.totalMilestones,
           }
         : null,
       updated_at: new Date().toISOString(),
