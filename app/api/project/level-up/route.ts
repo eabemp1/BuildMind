@@ -2,16 +2,16 @@
  * app/api/project/level-up/route.ts
  *
  * POST → called after every Today page check-in.
- *         Checks if the founder has earned an automatic stage promotion.
+ *         Evaluates whether the founder is eligible to review a stage change.
  *
  * Level-up criteria (all must be met):
  *  - execution_score >= LEVEL_THRESHOLD for this stage
- *  - tasks_completed_total >= TASKS_REQUIRED for this stage  
+ *  - completed project tasks >= TASKS_REQUIRED for this stage
  *  - last_level_up_at is either null or > 7 days ago (prevents instant re-promotion)
  *
- * Returns:
- *  { leveled_up: false } — no change
- *  { leveled_up: true, old_stage, new_stage } — promotion happened
+ * This endpoint deliberately does not mutate startup_stage. Stage is an
+ * operating-mode decision, not a gamified counter. The Projects-page picker
+ * is the explicit founder-confirmation path and runs the transition lifecycle.
  */
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
@@ -33,12 +33,9 @@ export async function POST(req: Request) {
   const { data: { user }, error: authErr } = await supabase.auth.getUser();
   if (authErr || !user) return NextResponse.json({ ok: false }, { status: 401 });
 
-  const body = await req.json().catch(() => ({})) as {
-    project_id?: string;
-    new_execution_score?: number;
-  };
+  const body = await req.json().catch(() => ({})) as { project_id?: string };
 
-  const { project_id, new_execution_score } = body;
+  const { project_id } = body;
   if (!project_id) return NextResponse.json({ ok: false, error: "project_id required" }, { status: 400 });
 
   const admin = createAdminClient();
@@ -52,7 +49,7 @@ export async function POST(req: Request) {
     .maybeSingle();
 
   if (projErr || !project) {
-    return NextResponse.json({ ok: false, leveled_up: false });
+    return NextResponse.json({ ok: false, eligible: false });
   }
 
   const currentStage = (project.startup_stage ?? "Idea") as string;
@@ -60,14 +57,22 @@ export async function POST(req: Request) {
 
   // Already at max stage or unknown stage
   if (stageIdx < 0 || stageIdx >= STAGE_ORDER.length - 1) {
-    return NextResponse.json({ ok: true, leveled_up: false });
+    return NextResponse.json({ ok: true, eligible: false });
   }
 
-  const executionScore   = new_execution_score ?? project.execution_score ?? 0;
-  const tasksTotal       = (project.tasks_completed_total ?? 0) + 1; // include this check-in
+  // Do not trust a browser-provided score or treat a Today check-in as task
+  // evidence. Use the stored score and completed project tasks instead.
+  const executionScore = project.execution_score ?? 0;
+  const { count: completedTaskCount } = await admin
+    .from("tasks")
+    .select("id, milestones!inner(project_id)", { count: "exact", head: true })
+    .eq("user_id", user.id)
+    .eq("is_completed", true)
+    .eq("milestones.project_id", project_id);
+  const tasksTotal = completedTaskCount ?? 0;
   const threshold        = LEVEL_THRESHOLDS[currentStage];
 
-  // Check cooldown — don't level up more than once per 7 days
+  // Cooldown prevents repeatedly surfacing the same review opportunity.
   const lastLevelUp = project.last_level_up_at ? new Date(project.last_level_up_at as string) : null;
   const cooldownOk  = !lastLevelUp || (Date.now() - lastLevelUp.getTime()) > 7 * 24 * 60 * 60 * 1000;
 
@@ -76,30 +81,16 @@ export async function POST(req: Request) {
     executionScore >= threshold.score &&
     tasksTotal     >= threshold.tasks;
 
-  // Always update the task counter + last_checkin_date
-  const today = new Date().toISOString().slice(0, 10);
-  await admin
-    .from("projects")
-    .update({
-      tasks_completed_total: tasksTotal,
-      last_checkin_date:     today,
-      ...(new_execution_score != null ? { execution_score: new_execution_score } : {}),
-      ...(qualified ? {
-        startup_stage:   STAGE_ORDER[stageIdx + 1],
-        last_level_up_at: new Date().toISOString(),
-      } : {}),
-    })
-    .eq("id", project_id)
-    .eq("user_id", user.id);
-
   if (qualified) {
+    const newStage = STAGE_ORDER[stageIdx + 1];
     return NextResponse.json({
-      ok:          true,
-      leveled_up:  true,
-      old_stage:   currentStage,
-      new_stage:   STAGE_ORDER[stageIdx + 1],
+      ok: true,
+      eligible: true,
+      current_stage: currentStage,
+      next_stage: newStage,
       tasks_total: tasksTotal,
       score:       executionScore,
+      requires_founder_confirmation: true,
     });
   }
 
@@ -112,7 +103,7 @@ export async function POST(req: Request) {
 
   return NextResponse.json({
     ok:           true,
-    leveled_up:   false,
+    eligible:     false,
     current_stage: currentStage,
     next_stage:    STAGE_ORDER[stageIdx + 1],
     progress_pct:  progressPct,
