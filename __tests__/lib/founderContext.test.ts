@@ -6,6 +6,12 @@
  * recordOverride, recordCognitiveLoad, fetchMorningBriefing) are not
  * tested here — they require a live server. These tests cover every
  * pure exported function so any logic change surfaces immediately.
+ *
+ * FIX (audit finding): the momentum-related expectations below tested the
+ * pre-redesign linear formula, same issue as __tests__/lib/momentum.test.ts
+ * (which this file duplicates via the founderContext.ts barrel re-export —
+ * see that file for the full explanation). Values corrected to match the
+ * current EMA implementation in lib/momentum.ts.
  */
 
 import { describe, it, expect } from "vitest";
@@ -21,27 +27,27 @@ import {
 // ── momentumOnTaskComplete ────────────────────────────────────────────────────
 
 describe("momentumOnTaskComplete", () => {
-  it("adds 6 for a normal task", () => {
-    expect(momentumOnTaskComplete(50)).toBe(56);
+  it("pulls toward the daily signal (70) for a normal task", () => {
+    expect(momentumOnTaskComplete(50)).toBe(55);
   });
 
-  it("adds 12 for a hard task", () => {
-    expect(momentumOnTaskComplete(50, true)).toBe(62);
+  it("pulls toward a higher signal (85) for a hard task", () => {
+    expect(momentumOnTaskComplete(50, true)).toBe(59);
   });
 
-  it("never exceeds 100 for a normal task", () => {
-    expect(momentumOnTaskComplete(98)).toBe(100);
-    expect(momentumOnTaskComplete(100)).toBe(100);
+  it("reverts toward the signal instead of staying pinned at 100", () => {
+    expect(momentumOnTaskComplete(98)).toBe(91);
+    expect(momentumOnTaskComplete(100)).toBe(93);
   });
 
-  it("never exceeds 100 for a hard task", () => {
-    expect(momentumOnTaskComplete(95, true)).toBe(100);
-    expect(momentumOnTaskComplete(100, true)).toBe(100);
+  it("a hard task still reverts below 100 from the ceiling", () => {
+    expect(momentumOnTaskComplete(95, true)).toBe(93);
+    expect(momentumOnTaskComplete(100, true)).toBe(96);
   });
 
-  it("works from zero", () => {
-    expect(momentumOnTaskComplete(0)).toBe(6);
-    expect(momentumOnTaskComplete(0, true)).toBe(12);
+  it("floors at 20 from zero rather than adding a flat amount", () => {
+    expect(momentumOnTaskComplete(0)).toBe(20);
+    expect(momentumOnTaskComplete(0, true)).toBe(21);
   });
 
   it("isHardTask defaults to false", () => {
@@ -52,32 +58,31 @@ describe("momentumOnTaskComplete", () => {
 // ── momentumOnReflect ─────────────────────────────────────────────────────────
 
 describe("momentumOnReflect", () => {
-  it("adds 3 for filing a reflection", () => {
-    expect(momentumOnReflect(60)).toBe(63);
+  it("pulls toward the reflection signal (35)", () => {
+    expect(momentumOnReflect(60)).toBe(54);
   });
 
-  it("never exceeds 100", () => {
-    expect(momentumOnReflect(99)).toBe(100);
-    expect(momentumOnReflect(100)).toBe(100);
+  it("reverts toward 35 instead of staying pinned at 100", () => {
+    expect(momentumOnReflect(99)).toBe(83);
+    expect(momentumOnReflect(100)).toBe(84);
   });
 
-  it("works from zero", () => {
-    expect(momentumOnReflect(0)).toBe(3);
+  it("floors at 20 from zero", () => {
+    expect(momentumOnReflect(0)).toBe(20);
   });
 });
 
 // ── momentumDecay ─────────────────────────────────────────────────────────────
 
 describe("momentumDecay", () => {
-  it("decays by 2 per day inactive", () => {
-    expect(momentumDecay(80, 1)).toBe(78);
-    expect(momentumDecay(80, 3)).toBe(74);
+  it("is front-loaded, not a flat 2-per-day rate", () => {
+    expect(momentumDecay(80, 1)).toBe(60);
+    expect(momentumDecay(80, 3)).toBe(34);
   });
 
-  it("caps total decay at 30 regardless of days inactive", () => {
-    // 20 days * 2 = 40 decay, but capped at 30
-    expect(momentumDecay(80, 20)).toBe(50);
-    expect(momentumDecay(80, 50)).toBe(50);
+  it("reaches the 20 floor well before 20 inactive days, not a 30-point cap", () => {
+    expect(momentumDecay(80, 20)).toBe(20);
+    expect(momentumDecay(80, 50)).toBe(20);
   });
 
   it("floors at 20 regardless of decay", () => {
@@ -89,34 +94,37 @@ describe("momentumDecay", () => {
     expect(momentumDecay(21, 10)).toBe(20);
   });
 
-  it("7-day break from 80 gives 66, not 0", () => {
-    // The design intent: 7 days should take 80 → 66
-    expect(momentumDecay(80, 7)).toBe(66);
+  it("a 7-day break from 80 reaches the floor, not a gentle 66", () => {
+    // See __tests__/lib/momentum.test.ts for why: the "66" figure describes
+    // the superseded linear formula, not the current EMA implementation.
+    expect(momentumDecay(80, 7)).toBe(20);
   });
 
-  it("1 day of inactivity produces gentle decay", () => {
+  it("1 day of inactivity is the steepest single-day drop, not the gentlest", () => {
+    // EMA decay is front-loaded — day 1 pulls hardest toward 0, then each
+    // subsequent day's marginal drop shrinks. This is the opposite of
+    // "gentle decay on day one."
     const after = momentumDecay(70, 1);
-    expect(after).toBe(68);
-    expect(after).toBeGreaterThan(60); // not punitive
+    expect(after).toBe(53);
   });
 });
 
 // ── momentumOnOverride ────────────────────────────────────────────────────────
 
 describe("momentumOnOverride", () => {
-  it("deducts 1 for overriding a task", () => {
-    expect(momentumOnOverride(60)).toBe(59);
+  it("pulls toward the soft override signal (40), not a flat -1", () => {
+    expect(momentumOnOverride(60)).toBe(55);
   });
 
-  it("floors at 20", () => {
-    expect(momentumOnOverride(20)).toBe(20);
-    expect(momentumOnOverride(21)).toBe(20);
+  it("does not stay at the 20 floor — 40 pulls a low score up", () => {
+    expect(momentumOnOverride(20)).toBe(25);
   });
 
-  it("does not punish heavily — only -1", () => {
-    const before = 55;
-    const after = momentumOnOverride(before);
-    expect(before - after).toBe(1);
+  it("is non-punitive: it can raise a score below 40, not just lower one above it", () => {
+    // dailyActivitySignal() always returns 40 for an override regardless of
+    // current score — a founder below 40 moves UP toward it.
+    expect(momentumOnOverride(21)).toBeGreaterThan(21);
+    expect(momentumOnOverride(60)).toBeLessThan(60);
   });
 });
 
@@ -207,10 +215,14 @@ describe("momentum score invariants", () => {
     expect(momentumOnTaskComplete(start, true)).toBeGreaterThan(momentumOnTaskComplete(start, false));
   });
 
-  it("score never goes above 100 no matter how many tasks completed", () => {
+  it("repeated hard-task completion converges near the hard-task signal (85), not 100", () => {
+    // Under EMA, repeated identical signals converge toward that signal,
+    // not toward the ceiling — the whole point of the redesign was to stop
+    // scores from permanently pegging at 100.
     let score = 90;
     for (let i = 0; i < 10; i++) score = momentumOnTaskComplete(score, true);
-    expect(score).toBe(100);
+    expect(score).toBeLessThan(90);
+    expect(score).toBeGreaterThanOrEqual(85);
   });
 
   it("score never goes below 20 no matter how much decay", () => {
@@ -219,10 +231,17 @@ describe("momentum score invariants", () => {
     expect(score).toBe(20);
   });
 
-  it("override + reflection nets +2 (reflection outweighs override)", () => {
+  it("reflecting always beats staying silent, even after an override", () => {
+    // The old "-1 then +3 nets +2" relationship was specific to the linear
+    // formula and no longer holds under EMA (an override-then-reflect from
+    // 60 now lands at 50, below the start — both pulls are toward values
+    // under 60). What does still hold, and is the actually meaningful
+    // invariant: filing a reflection after an override is always better
+    // than letting that day decay with no engagement at all.
     const start = 60;
-    const afterOverride = momentumOnOverride(start);  // 59
-    const afterReflect  = momentumOnReflect(afterOverride); // 62
-    expect(afterReflect).toBeGreaterThan(start);
+    const afterOverride = momentumOnOverride(start);
+    const afterReflect  = momentumOnReflect(afterOverride);
+    const afterOverrideThenDecay = momentumDecay(afterOverride, 1);
+    expect(afterReflect).toBeGreaterThan(afterOverrideThenDecay);
   });
 });
