@@ -39,6 +39,13 @@ export type ProjectSummary = {
   stage?: string | null;
   startup_summary?: string | null;
   startup_stage?: string | null;
+  // Real, stage-scoped completion — see lib/server/stageProgress.ts. Not
+  // the same as `progress`/`completion_rate` above, which cover the
+  // project's whole task history, not just the current stage.
+  stageMilestonesCompleted?: number;
+  stageMilestonesTotal?: number;
+  stageProgressPercent?: number;
+  stageComplete?: boolean;
   current_mrr?: number | null;
   validation_score?: number | null;
   execution_score?: number | null;
