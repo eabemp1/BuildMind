@@ -17,7 +17,7 @@ import { evaluateAIOutput } from "@/lib/aiEvaluator";
 import { getPromptForRequest, loadActivePrompts } from "@/lib/promptRegistry";
 import { loadFounderIntelligence, buildFounderIntelligencePromptBlock } from "@/lib/founderIntelligence";
 import { recordActionShown } from "@/lib/learning";
-import { buildCofounderJudgmentPromptBlock, evaluateFounderProposal, buildCofounderJudgment } from "@/lib/cofounderJudgment";
+import { buildCofounderJudgmentPromptBlock, buildCofounderJudgment } from "@/lib/cofounderJudgment";
 
 const FREE_COACH_MESSAGES_PER_DAY = 3;
 
@@ -193,11 +193,19 @@ export async function POST(request: Request) {
     const message = String(body?.message ?? "").trim().slice(0, 2000);
     const blockerType = String(body?.blockerType ?? "").trim().slice(0, 200);
     const domain = String(body?.domain ?? "").trim().slice(0, 200);
+    // FIX (Sept 2026): coach traffic shares the same 8,000 TPM free-tier
+    // ceiling as Today's action generation (both use the "fast" role in
+    // getFastChain()) — see PROVIDER STATUS in lib/ai-providers.ts. History
+    // was 8 messages / 1000 chars each (up to ~8,000 chars / ~2,000 tokens
+    // on its own, on top of project context, behavioral context, and the
+    // Founder Intelligence + Cofounder Judgment blocks below). Halved on
+    // both axes — this compounds with every follow-up message, unlike the
+    // other context blocks which are roughly constant per request.
     const history = Array.isArray(body?.messages)
       ? (body.messages as { role?: string; content?: string }[])
-          .map((m) => ({ role: (m?.role === "assistant" ? "assistant" : "user") as "user" | "assistant", content: String(m?.content ?? "").trim().slice(0, 1000) }))
+          .map((m) => ({ role: (m?.role === "assistant" ? "assistant" : "user") as "user" | "assistant", content: String(m?.content ?? "").trim().slice(0, 500) }))
           .filter((m) => m.content)
-          .slice(-8)
+          .slice(-4)
       : [];
 
     if (userId !== routeUser.userId) {
@@ -252,7 +260,7 @@ export async function POST(request: Request) {
         const behavioral = behavioralResult.status === "fulfilled" ? behavioralResult.value : null;
         const intelligenceState = intelligenceResult?.status === "fulfilled" ? intelligenceResult.value : null;
         intelligenceBlock = intelligenceState
-          ? `${buildFounderIntelligencePromptBlock(intelligenceState)}\n\n${buildCofounderJudgmentPromptBlock(buildCofounderJudgment(intelligenceState))}\n\nFOUNDER PROPOSAL EVALUATION:\n${JSON.stringify(evaluateFounderProposal(message, intelligenceState))}`
+          ? `${buildFounderIntelligencePromptBlock(intelligenceState)}\n\n${buildCofounderJudgmentPromptBlock(buildCofounderJudgment(intelligenceState))}`
           : "";
 
         // Still read memory for spiral persistence (write path only)
