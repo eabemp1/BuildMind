@@ -418,6 +418,8 @@ function TodayContent() {
   const [stageNudge, setStageNudge] = useState<{
     currentStage: string; nextStage: string; projectId: string | null;
     completed: number; total: number;
+    tier: "checklist_only" | "ready"; evidenceFilled: number | null; evidenceTotal: number | null;
+    reason: string;
   } | null>(null);
   // Page-coherence: XP/level chip in the always-visible header, so leveling
   // up feels like a consequence of using Today rather than a fact you only
@@ -457,6 +459,8 @@ function TodayContent() {
   // Stage eligibility is a review prompt, never an automatic mutation.
   const [transitionEligible, setTransitionEligible] = useState<{
     current_stage: string; next_stage: string; completed: number; total: number;
+    tier: "checklist_only" | "ready"; evidenceFilled: number | null; evidenceTotal: number | null;
+    reason: string;
   } | null>(null);
 
   // Editable draft — pre-filled with real project values
@@ -634,6 +638,8 @@ function TodayContent() {
         const pending = (data as { pending_stage_transition?: {
           project_id?: string; current_stage?: string; recommended_stage?: string | null;
           stage_milestones_completed?: number; stage_milestones_total?: number;
+          readiness_tier?: string; evidence_filled?: number | null; evidence_total?: number | null;
+          reason?: string;
         } | null } | null)?.pending_stage_transition;
         if (pending?.recommended_stage) {
           setStageNudge({
@@ -642,6 +648,10 @@ function TodayContent() {
             projectId: pending.project_id ?? null,
             completed: pending.stage_milestones_completed ?? 0,
             total: pending.stage_milestones_total ?? 0,
+            tier: pending.readiness_tier === "ready" ? "ready" : "checklist_only",
+            evidenceFilled: pending.evidence_filled ?? null,
+            evidenceTotal: pending.evidence_total ?? null,
+            reason: pending.reason ?? "",
           });
         }
       })
@@ -1435,8 +1445,9 @@ function TodayContent() {
             body: JSON.stringify({ project_id: project.id }),
           }).then(r => r.ok ? r.json() : null)
             .then((d: {
-              eligible?: boolean; current_stage?: string; next_stage?: string;
+              eligible?: boolean; tier?: string; current_stage?: string; next_stage?: string;
               stage_progress?: { completedMilestones: number; totalMilestones: number };
+              readiness?: { evidence?: { filledSlots: number; totalSlots: number } | null; headline?: string; detail?: string };
             } | null) => {
               if (d?.eligible && d.current_stage && d.next_stage) {
                 setTransitionEligible({
@@ -1444,6 +1455,10 @@ function TodayContent() {
                   next_stage: d.next_stage,
                   completed: d.stage_progress?.completedMilestones ?? 0,
                   total: d.stage_progress?.totalMilestones ?? 0,
+                  tier: d.tier === "ready" ? "ready" : "checklist_only",
+                  evidenceFilled: d.readiness?.evidence?.filledSlots ?? null,
+                  evidenceTotal: d.readiness?.evidence?.totalSlots ?? null,
+                  reason: [d.readiness?.headline, d.readiness?.detail].filter(Boolean).join(" "),
                 });
               }
             }).catch(() => {});
@@ -1880,13 +1895,16 @@ function TodayContent() {
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {/* Ongoing, honest stage-progress indicator — real milestone
-              counts from lib/server/stageProgress.ts, visible continuously
-              (not just at 100%) so completing today's task visibly moves
-              a real number, the way a Duolingo unit fills in as you go. */}
-          {project && (project.stageMilestonesTotal ?? 0) > 0 && (
+          {/* Ongoing, honest stage-progress indicator. The bar fill is
+              TASK-level (moves on every ordinary task completion — most
+              days won't finish a whole milestone, so a milestone-only bar
+              barely moves). The label stays milestone-level, since that's
+              the unit that actually gates the stage-complete celebration
+              and evidence review — the two are deliberately different
+              granularities of the same lib/server/stageProgress.ts data. */}
+          {project && ((project.stageMilestonesTotal ?? 0) > 0 || (project.stageTasksTotal ?? 0) > 0) && (
             <div
-              title={`${project.stageMilestonesCompleted ?? 0} of ${project.stageMilestonesTotal ?? 0} ${project.startup_stage ?? ""} milestones complete`}
+              title={`${project.stageMilestonesCompleted ?? 0} of ${project.stageMilestonesTotal ?? 0} ${project.startup_stage ?? ""} milestones · ${project.stageTasksCompleted ?? 0} of ${project.stageTasksTotal ?? 0} tasks`}
               style={{
                 display: "flex", alignItems: "center", gap: 6,
                 fontSize: 11, color: "var(--bm-text3)",
@@ -1895,7 +1913,7 @@ function TodayContent() {
               <span style={{ fontWeight: 700, color: "var(--bm-text2)" }}>{project.startup_stage}</span>
               <div style={{ width: 44, height: 5, borderRadius: 3, background: "var(--bm-border2)", overflow: "hidden" }}>
                 <div style={{
-                  width: `${project.stageProgressPercent ?? 0}%`, height: "100%",
+                  width: `${project.stageTaskPercent ?? project.stageProgressPercent ?? 0}%`, height: "100%",
                   background: (project.stageProgressPercent ?? 0) >= 100 ? "var(--bm-green)" : "var(--bm-accent)",
                   borderRadius: 3, transition: "width 0.5s ease",
                 }} />
@@ -2123,26 +2141,44 @@ function TodayContent() {
           the project page rather than duplicating it here. See
           lib/server/stageTransition.ts for how this gets computed. ── */}
       {(() => {
-        // Unified stage-complete moment. stageNudge (lib/server/stageTransition.ts,
-        // fired after every task/reflection) and transitionEligible
-        // (POST /api/project/level-up, fired once per Today load) are now
-        // the SAME underlying signal — both read computeStageProgress()
-        // and can't disagree — so this renders once from whichever loaded
-        // first instead of two banners that used to show different things.
+        // Merged 3-signal readiness — both stageNudge (stageTransition.ts,
+        // fired after task/reflection) and transitionEligible (level-up
+        // POST, fired once per Today load) now compute the SAME tier via
+        // lib/server/stageReadiness.ts, so they can't disagree — this
+        // renders once from whichever loaded first. The tier itself
+        // decides the color/copy: milestone completion alone is shown
+        // honestly as "checklist done, evidence thin," not dressed up as
+        // the same green "ready" state a founder with real evidence and
+        // solid reflections would see.
         const moment = stageNudge
-          ? { nextStage: stageNudge.nextStage, projectId: stageNudge.projectId, completed: stageNudge.completed, total: stageNudge.total }
+          ? {
+              currentStageLabel: stageNudge.currentStage,
+              nextStage: stageNudge.nextStage, projectId: stageNudge.projectId,
+              completed: stageNudge.completed, total: stageNudge.total, tier: stageNudge.tier,
+              evidenceFilled: stageNudge.evidenceFilled, evidenceTotal: stageNudge.evidenceTotal,
+              reason: stageNudge.reason,
+            }
           : transitionEligible && project
-            ? { nextStage: transitionEligible.next_stage, projectId: project.id, completed: transitionEligible.completed, total: transitionEligible.total }
+            ? {
+                currentStageLabel: transitionEligible.current_stage,
+                nextStage: transitionEligible.next_stage, projectId: project.id,
+                completed: transitionEligible.completed, total: transitionEligible.total, tier: transitionEligible.tier,
+                evidenceFilled: transitionEligible.evidenceFilled, evidenceTotal: transitionEligible.evidenceTotal,
+                reason: transitionEligible.reason,
+              }
             : null;
         if (!moment) return null;
-        const pct = moment.total > 0 ? Math.round((moment.completed / moment.total) * 100) : 100;
+        const isReady = moment.tier === "ready";
+        const color = isReady ? "var(--bm-green)" : "var(--bm-amber)";
+        const borderVar = isReady ? "var(--bm-green-bd)" : "var(--bm-amber)";
+        const bgVar = isReady ? "var(--bm-green-dim)" : "var(--bm-bg3)";
         return (
           <a
             href={moment.projectId ? `/projects/${moment.projectId}` : "/projects"}
             style={{
               display: "flex", alignItems: "center", gap: 14,
               padding: "16px 18px", marginBottom: 22,
-              borderRadius: 14, border: "1px solid var(--bm-green-bd)", background: "var(--bm-green-dim)",
+              borderRadius: 14, border: `1px solid ${borderVar}`, background: bgVar,
               textDecoration: "none",
             }}
           >
@@ -2152,19 +2188,26 @@ function TodayContent() {
                 max={Math.max(moment.total, 1)}
                 size={52}
                 strokeWidth={5}
-                thresholds={[{ min: 0, color: "var(--bm-green)" }]}
+                thresholds={[{ min: 0, color }]}
                 duration={0.8}
               />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 800, color: "var(--bm-green)" }}>
-                Stage complete{moment.total > 0 ? ` — ${moment.completed}/${moment.total} milestones` : ""}
+              <div style={{ fontSize: 13, fontWeight: 800, color }}>
+                {isReady
+                  ? `Ready for ${moment.nextStage} — ${moment.completed}/${moment.total} milestones`
+                  : `Checklist done for ${moment.currentStageLabel ?? ""} — evidence still thin`}
               </div>
               <div style={{ fontSize: 12, color: "var(--bm-text3)", marginTop: 2 }}>
-                You've done the work for this stage. Ready to review {moment.nextStage}?
+                {isReady
+                  ? `Milestones done, evidence captured, reflections back it up. Ready to review ${moment.nextStage}?`
+                  : moment.reason ||
+                    (moment.evidenceTotal
+                      ? `${moment.evidenceFilled ?? 0}/${moment.evidenceTotal} evidence items captured so far — this is necessary work, not proof yet.`
+                      : `You've finished the checklist — that's necessary, not proof. See what's missing.`)}
               </div>
             </div>
-            <span style={{ fontSize: 11, flexShrink: 0, color: "var(--bm-green)", fontWeight: 700 }}>Review →</span>
+            <span style={{ fontSize: 11, flexShrink: 0, color, fontWeight: 700 }}>Review →</span>
           </a>
         );
       })()}
