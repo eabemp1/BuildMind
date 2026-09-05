@@ -522,6 +522,23 @@ export default function ProjectDetailPage() {
   // Stage selector — lets founder manually set stage, waiving prior stages automatically
   const [stagePickerOpen, setStagePickerOpen] = useState(false);
   const [stageChanging, setStageChanging] = useState(false);
+  // On-demand readiness check — decoupled from the Today check-in flow and
+  // from reflection confidence entirely, so it can be tested any time.
+  // Calls the same /api/project/level-up endpoint Today's check-in flow
+  // calls, which reads real stage-milestone completion only (see
+  // lib/server/stageProgress.ts) — it does not require reflections,
+  // confidence, or a check-in to have happened today.
+  // On-demand readiness check — decoupled from the Today check-in flow and
+  // from reflection confidence entirely, so it can be tested any time.
+  // Calls /api/project/level-up, which now merges milestone completion,
+  // typed evidence capture, and reflection conviction into one honest tier
+  // (lib/server/stageReadiness.ts) — not just "milestones done or not."
+  const [readinessChecking, setReadinessChecking] = useState(false);
+  const [readinessResult, setReadinessResult] = useState<{
+    eligible: boolean; tier: "not_ready" | "checklist_only" | "ready";
+    nextStage: string; completed: number; total: number;
+    headline: string; detail: string;
+  } | null>(null);
   // Stage-transition evidence review — built for every FORWARD stage move
   // (Idea->Validation, Validation->MVP, MVP->Launch, Launch->Growth,
   // Growth->Revenue), each with its own requirement spec, same rigor as the
@@ -593,6 +610,35 @@ export default function ProjectDetailPage() {
    * When a stage is selected that is BEHIND the current one, we just update
    * the stage without touching milestones (no un-waiving).
    */
+  async function checkStageReadiness() {
+    if (!id || readinessChecking) return;
+    setReadinessChecking(true);
+    setReadinessResult(null);
+    try {
+      const res = await fetch("/api/project/level-up", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project_id: id }),
+      });
+      const json = await res.json().catch(() => null);
+      if (json?.ok) {
+        setReadinessResult({
+          eligible: !!json.eligible,
+          tier: json.tier === "ready" ? "ready" : json.tier === "checklist_only" ? "checklist_only" : "not_ready",
+          nextStage: json.next_stage ?? "",
+          completed: json.stage_progress?.completedMilestones ?? 0,
+          total: json.stage_progress?.totalMilestones ?? 0,
+          headline: json.readiness?.headline ?? "",
+          detail: json.readiness?.detail ?? "",
+        });
+      }
+    } catch {
+      // Leave readinessResult null — the button can just be retried.
+    } finally {
+      setReadinessChecking(false);
+    }
+  }
+
   async function handleStageSelect(newStage: string) {
     if (!project || !id || stageChanging) return;
     setStagePickerOpen(false);
@@ -1240,6 +1286,46 @@ export default function ProjectDetailPage() {
               </div>
             )}
           </div>
+
+          {/* On-demand readiness check — real stage-milestone completion
+              only, no reflection/confidence/check-in requirement. Exists
+              specifically so readiness can be verified independent of
+              Today's stricter 3-signal nudge, which needs 3+ reflections
+              averaging above 3.5 confidence and won't fire without them. */}
+          <button
+            onClick={() => void checkStageReadiness()}
+            disabled={readinessChecking}
+            style={{
+              fontSize: 10, padding: "2px 9px", borderRadius: 20,
+              background: "none", color: "var(--bm-text4)",
+              border: "1px solid var(--bm-border)", fontWeight: 600,
+              cursor: readinessChecking ? "wait" : "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            {readinessChecking ? "Checking…" : "Check stage readiness"}
+          </button>
+          {readinessResult && (
+            <div style={{
+              display: "flex", flexDirection: "column", gap: 2, maxWidth: 340,
+            }}>
+              <span style={{
+                fontSize: 11, fontWeight: 700,
+                color: readinessResult.tier === "ready" ? "var(--bm-green)"
+                  : readinessResult.tier === "checklist_only" ? "var(--bm-amber)"
+                  : "var(--bm-text4)",
+              }}>
+                {readinessResult.tier === "ready" && `✓ Ready for ${readinessResult.nextStage}`}
+                {readinessResult.tier === "checklist_only" && `Checklist done, evidence thin`}
+                {readinessResult.tier === "not_ready" && `Not yet — ${readinessResult.completed}/${readinessResult.total} milestones done`}
+              </span>
+              {readinessResult.tier !== "not_ready" && readinessResult.detail && (
+                <span style={{ fontSize: 10, color: "var(--bm-text4)", lineHeight: 1.4 }}>
+                  {readinessResult.detail}
+                </span>
+              )}
+            </div>
+          )}
           <a
             href="/progress?tab=patterns"
             title="See what moves your score"
@@ -1715,4 +1801,4 @@ export default function ProjectDetailPage() {
       </AnimatePresence>
     </div>
   );
-      }
+                      }
