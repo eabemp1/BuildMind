@@ -1,26 +1,31 @@
 /**
  * app/api/project/level-up/route.ts
  *
- * POST → called after every Today page check-in and reflection.
- *         Evaluates whether the founder is eligible to review a stage change.
+ * POST → called after every Today page check-in, and on demand from the
+ *         Projects-page "Check stage readiness" button.
+ *         Evaluates whether the founder is ready to review a stage change.
  *
- * FIX (coherence bug): this used to gate eligibility on
+ * FIX (coherence bug, first pass): this used to gate eligibility on
  * `execution_score >= threshold` (a column only recomputed once a day, in
  * the morning-briefing cron) and `completed tasks >= flat number` counted
- * across the PROJECT'S ENTIRE HISTORY, not the current stage — so a
- * founder could finish 100% of their current stage's real checklist and
- * still see nothing, while an unrelated cumulative counter decided
- * whether they were "eligible." Score and task volume were also two
- * numbers already documented as "supporting evidence, not a gate"
- * elsewhere in this codebase (see lib/server/stageTransition.ts) — this
- * route was the one place that still used them as the actual gate.
+ * across the PROJECT'S ENTIRE HISTORY, not the current stage. Rewritten to
+ * use lib/server/stageProgress.ts's real, stage-scoped milestone count.
  *
- * Eligibility is now the same real signal every other surface uses —
- * lib/server/stageProgress.ts's computeStageProgress() — so this route,
- * the Today-page progress ring, the Projects-list card, and
- * lib/server/stageTransition.ts's stage-nudge detector can never disagree
- * about whether a stage is actually done. execution_score and lifetime
- * task count are still returned for context, not as gates.
+ * FIX (product gap, second pass): stage-milestone completion alone was
+ * then treated as "eligible" — which meant a founder who finished every
+ * task with zero real evidence and a string of low-confidence reflections
+ * got the exact same green "eligible" response as a founder who'd actually
+ * proven something changed. This route now calls the same
+ * lib/server/stageReadiness.ts composite lib/server/stageTransition.ts
+ * uses — milestones + typed evidence + reflection conviction merged into
+ * one 3-tier answer (not_ready / checklist_only / ready) — so this button
+ * and Today's banner can never tell two different stories about the same
+ * founder's readiness.
+ *
+ * `eligible` is kept as a boolean for backward compatibility with existing
+ * callers (true whenever tier is "checklist_only" or "ready" — milestones
+ * complete is enough to surface something) but the real signal is now
+ * `tier` and `readiness`, which callers should prefer.
  *
  * This endpoint still deliberately does not mutate startup_stage. Stage
  * is an operating-mode decision, not a gamified counter. The
@@ -32,6 +37,8 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { STAGE_ORDER } from "@/lib/stages";
 import { computeStageProgress } from "@/lib/server/stageProgress";
+import { computeStageReadiness } from "@/lib/server/stageReadiness";
+import type { StageEvidenceType } from "@/lib/server/stageEvidence";
 
 export async function POST(req: Request) {
   const supabase = await createClient();
@@ -61,48 +68,49 @@ export async function POST(req: Request) {
 
   // Already at max stage or unknown stage
   if (stageIdx < 0 || stageIdx >= STAGE_ORDER.length - 1) {
-    return NextResponse.json({ ok: true, eligible: false });
+    return NextResponse.json({ ok: true, eligible: false, tier: "not_ready" });
   }
 
-  const { data: milestones } = await admin
-    .from("milestones")
-    .select("id, title, status, stage")
-    .eq("project_id", project_id)
-    .eq("user_id", user.id);
+  const nextStage = STAGE_ORDER[stageIdx + 1];
 
-  const stageProgress = computeStageProgress(milestones ?? [], currentStage);
+  const [{ data: milestones }, { data: tasks }, { data: evidenceRows }, { data: reflections }, { count: overrideCount }, { count: lifetimeCompletedTasks }] = await Promise.all([
+    admin.from("milestones").select("id, title, status, stage").eq("project_id", project_id).eq("user_id", user.id),
+    admin.from("tasks").select("milestone_id, is_completed, milestones!inner(project_id)").eq("milestones.project_id", project_id),
+    admin.from("project_stage_evidence").select("evidence_type").eq("project_id", project_id).eq("user_id", user.id).eq("from_stage", currentStage).eq("to_stage", nextStage),
+    admin.from("reflections").select("confidence, outcome").eq("user_id", user.id).gte("created_at", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()).order("created_at", { ascending: false }).limit(10),
+    admin.from("reflections").select("id", { count: "exact", head: true }).eq("user_id", user.id).in("outcome", ["skipped", "overridden", "blocked"]).gte("created_at", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()),
+    // Supporting context only — never gates readiness. Kept in the
+    // response because it's still useful to show alongside the real
+    // milestone count (e.g. "and your execution score backs it up").
+    admin.from("tasks").select("id, milestones!inner(project_id)", { count: "exact", head: true }).eq("user_id", user.id).eq("is_completed", true).eq("milestones.project_id", project_id),
+  ]);
 
-  // Supporting context only — never gates eligibility. Kept in the
-  // response because it's still useful to show alongside the real
-  // milestone count (e.g. "and your execution score backs it up").
-  const { count: lifetimeCompletedTasks } = await admin
-    .from("tasks")
-    .select("id, milestones!inner(project_id)", { count: "exact", head: true })
-    .eq("user_id", user.id)
-    .eq("is_completed", true)
-    .eq("milestones.project_id", project_id);
+  const stageProgress = computeStageProgress(milestones ?? [], currentStage, tasks ?? []);
 
-  if (stageProgress.isComplete) {
-    const newStage = STAGE_ORDER[stageIdx + 1];
-    return NextResponse.json({
-      ok: true,
-      eligible: true,
-      current_stage: currentStage,
-      next_stage: newStage,
-      stage_progress: stageProgress,
-      execution_score: project.execution_score ?? 0,
-      lifetime_completed_tasks: lifetimeCompletedTasks ?? 0,
-      requires_founder_confirmation: true,
-    });
-  }
+  const reflectionCount = (reflections ?? []).length;
+  const avgConfidence = reflectionCount > 0
+    ? Math.round(((reflections ?? []).reduce((s, r) => s + (r.confidence ?? 3), 0) / reflectionCount) * 10) / 10
+    : null;
+
+  const readiness = computeStageReadiness({
+    stageProgress,
+    nextStage,
+    evidenceRows: (evidenceRows ?? []) as { evidence_type: StageEvidenceType }[],
+    reflectionCount,
+    avgConfidence,
+    overrides: overrideCount ?? 0,
+  });
 
   return NextResponse.json({
-    ok:            true,
-    eligible:      false,
+    ok: true,
+    eligible: readiness.tier !== "not_ready",
+    tier: readiness.tier,
     current_stage: currentStage,
-    next_stage:    STAGE_ORDER[stageIdx + 1],
+    next_stage: nextStage,
     stage_progress: stageProgress,
+    readiness,
     execution_score: project.execution_score ?? 0,
     lifetime_completed_tasks: lifetimeCompletedTasks ?? 0,
+    requires_founder_confirmation: true,
   });
 }
