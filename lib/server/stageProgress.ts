@@ -37,6 +37,11 @@ export interface StageProgressMilestoneInput {
   stage?: string | null;
 }
 
+export interface StageProgressTaskInput {
+  milestone_id: string | null;
+  is_completed?: boolean | null;
+}
+
 export interface StageProgress {
   stage: string;
   totalMilestones: number;
@@ -46,6 +51,19 @@ export interface StageProgress {
   /** True only when there's at least one stage milestone and every one of them is complete. */
   isComplete: boolean;
   remainingTitles: string[];
+  /**
+   * Task-level counts within the same stage-scoped milestones — deliberately
+   * separate from `percent`/`isComplete` above, which stay milestone-only and
+   * remain the actual gate for "stage complete." A milestone with 8 tasks
+   * doesn't complete until the 8th is checked off, so a percent computed from
+   * milestones alone barely moves on an ordinary day — most real work is task
+   * completion, not milestone completion. These fields exist so a progress
+   * indicator can move continuously as tasks are finished, without changing
+   * what actually triggers the stage-complete celebration or evidence review.
+   */
+  totalTasks: number;
+  completedTasks: number;
+  taskPercent: number;
 }
 
 function normalizeStageValue(raw: string): string | null {
@@ -91,10 +109,16 @@ export function resolveMilestoneStage(milestone: StageProgressMilestoneInput): s
 export function computeStageProgress(
   milestones: StageProgressMilestoneInput[],
   currentStage: string,
+  tasks: StageProgressTaskInput[] = [],
 ): StageProgress {
   const stageMilestones = milestones.filter(m => resolveMilestoneStage(m) === currentStage);
   const completed = stageMilestones.filter(m => m.status === "completed");
   const total = stageMilestones.length;
+
+  const stageMilestoneIds = new Set(stageMilestones.map(m => m.id));
+  const stageTasks = tasks.filter(t => t.milestone_id && stageMilestoneIds.has(t.milestone_id));
+  const completedTasks = stageTasks.filter(t => t.is_completed);
+
   return {
     stage: currentStage,
     totalMilestones: total,
@@ -102,5 +126,8 @@ export function computeStageProgress(
     percent: total > 0 ? Math.round((completed.length / total) * 100) : 0,
     isComplete: total > 0 && completed.length === total,
     remainingTitles: stageMilestones.filter(m => m.status !== "completed").map(m => m.title),
+    totalTasks: stageTasks.length,
+    completedTasks: completedTasks.length,
+    taskPercent: stageTasks.length > 0 ? Math.round((completedTasks.length / stageTasks.length) * 100) : 0,
   };
 }
