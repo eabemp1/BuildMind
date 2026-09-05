@@ -46,6 +46,9 @@ export type ProjectSummary = {
   stageMilestonesTotal?: number;
   stageProgressPercent?: number;
   stageComplete?: boolean;
+  stageTasksCompleted?: number;
+  stageTasksTotal?: number;
+  stageTaskPercent?: number;
   current_mrr?: number | null;
   validation_score?: number | null;
   execution_score?: number | null;
