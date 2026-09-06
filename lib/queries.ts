@@ -324,12 +324,15 @@ export function useFounderScorecardQuery(validationStrengths: string[] = []) {
  * page-to-page navigation without meaningfully delaying a real update.
  * Revisit if that turns out to feel stale in practice.
  */
-export function useFounderStandingQuery(projectId?: string | null) {
+export function useFounderStandingQuery(projectId?: string | null, withTrend = false) {
   return useQuery({
-    queryKey: queryKeys.standing(projectId),
+    queryKey: withTrend ? [...queryKeys.standing(projectId), "trend"] : queryKeys.standing(projectId),
     queryFn: async () => {
-      const params = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
-      const res = await fetch(`/api/founder-context/standing${params}`, { cache: "no-store" });
+      const params = new URLSearchParams();
+      if (projectId) params.set("projectId", projectId);
+      if (withTrend) params.set("trend", "true");
+      const qs = params.toString();
+      const res = await fetch(`/api/founder-context/standing${qs ? `?${qs}` : ""}`, { cache: "no-store" });
       if (!res.ok) throw new Error("Could not load standing");
       const json = await res.json();
       if (!json?.ok) throw new Error(json?.error ?? "Could not load standing");
@@ -338,8 +341,9 @@ export function useFounderStandingQuery(projectId?: string | null) {
         engagement: "healthy" | "at-risk" | "stalled";
         daysInactive: number;
         projectId: string;
+        trend: { readinessTier: "not_ready" | "checklist_only" | "ready"; engagement: "healthy" | "at-risk" | "stalled"; daysInactive: number; recordedAt: string }[] | null;
       };
     },
     staleTime: 60_000,
   });
-}
+        }
