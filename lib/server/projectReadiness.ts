@@ -150,24 +150,15 @@ export interface StandingLogEntry {
  * the full reasoning.
  *
  * IMPORTANT — does NOT use .upsert() with onConflict on a date
- * expression. score_history already tried exactly that (`ON CONFLICT`
- * against `(recorded_at::date)`, an expression-based unique index) and it
- * has been silently failing on every single call since it was written —
- * confirmed via that table having zero rows for any user, ever, which is
- * also why the Progress page's score sparkline has never drawn (see
- * app/api/founder-context/task-complete/route.ts's FIX comment for the
- * full story). This function uses the same explicit
- * check-then-insert-or-update pattern that fixed score_history, so it
- * doesn't inherit that bug on day one.
- *
- * Called from the /api/founder-context/standing route after computing
- * standing. That route documents itself as read-only/side-effect-free —
- * this is the one deliberate exception, and it's a safe one: an
- * idempotent daily upsert keyed by (project_id, day) is not a stateful
- * decision cache like pending_stage_transition, and calling it many
- * times in one day just overwrites the same row with the latest values.
- * Never awaited by the route in a way that can fail the response — see
- * the route's own comment at the call site.
+ * expression, and does NOT use a gte/lt timestamp-range query to find
+ * "today's row" either. score_history tried the expression-index version
+ * of this and it fails at CREATE INDEX time with Postgres error 42P17
+ * (casting timestamptz to date isn't IMMUTABLE, so it can't back an
+ * index) — see the migration file's header for the full story, including
+ * why score_history's own index may never have existed at all. The fix
+ * there was a real, plain `recorded_date` column with a plain (non-
+ * expression) unique index, and this function writes to that column
+ * explicitly rather than relying on its DEFAULT to agree with recorded_at.
  */
 export async function logStandingSnapshot(
   userId: string,
@@ -175,22 +166,22 @@ export async function logStandingSnapshot(
   standing: { readiness: StageReadiness; engagement: import("@/lib/server/founderStanding").EngagementTier; daysInactive: number },
 ): Promise<void> {
   const supabase = createAdminClient();
-  const dayStart = new Date(); dayStart.setUTCHours(0, 0, 0, 0);
-  const dayEnd = new Date(dayStart); dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
+  const now = new Date();
+  const recordedDate = now.toISOString().slice(0, 10); // UTC yyyy-mm-dd — matches the column's DEFAULT expression's UTC basis
 
   const { data: existing } = await supabase
     .from("founder_standing_log")
     .select("id")
     .eq("project_id", projectId)
-    .gte("recorded_at", dayStart.toISOString())
-    .lt("recorded_at", dayEnd.toISOString())
+    .eq("recorded_date", recordedDate)
     .maybeSingle();
 
   const row = {
     readiness_tier: standing.readiness.tier,
     engagement: standing.engagement,
     days_inactive: standing.daysInactive,
-    recorded_at: new Date().toISOString(),
+    recorded_at: now.toISOString(),
+    recorded_date: recordedDate,
   };
 
   if (existing?.id) {
@@ -212,13 +203,13 @@ export async function getStandingTrend(
   days = 14,
 ): Promise<StandingLogEntry[]> {
   const supabase = createAdminClient();
-  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  const sinceDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const { data } = await supabase
     .from("founder_standing_log")
-    .select("readiness_tier, engagement, days_inactive, recorded_at")
+    .select("readiness_tier, engagement, days_inactive, recorded_at, recorded_date")
     .eq("project_id", projectId)
-    .gte("recorded_at", since)
-    .order("recorded_at", { ascending: true });
+    .gte("recorded_date", sinceDate)
+    .order("recorded_date", { ascending: true });
 
   return (data ?? []).map((r) => ({
     readinessTier: r.readiness_tier as StageReadiness["tier"],
