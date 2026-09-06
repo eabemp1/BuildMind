@@ -1,8 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { STAGE_ORDER, normalizeStage } from "@/lib/stages";
-import { computeStageProgress, type StageProgress } from "@/lib/server/stageProgress";
-import { computeStageReadiness, type ReadinessTier } from "@/lib/server/stageReadiness";
-import type { StageEvidenceType } from "@/lib/server/stageEvidence";
+import type { StageProgress } from "@/lib/server/stageProgress";
+import type { ReadinessTier } from "@/lib/server/stageReadiness";
+import { getProjectReadiness } from "@/lib/server/projectReadiness";
 
 /**
  * evaluateAndCacheStageTransition — the SINGLE stage-transition detector.
@@ -85,85 +84,36 @@ export async function evaluateAndCacheStageTransition(
   if (!userId || !projectId) return null;
   const supabase = createAdminClient();
 
-  const { data: project } = await supabase
-    .from("projects")
-    .select("startup_stage")
-    .eq("id", projectId)
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (!project) return null;
-
-  const currentStage = normalizeStage(project.startup_stage);
-  const currentStageIdx = STAGE_ORDER.indexOf(currentStage);
-  const nextStage = currentStageIdx < STAGE_ORDER.length - 1 ? STAGE_ORDER[currentStageIdx + 1] : null;
-
-  const [{ data: milestones }, { data: reflections }, { count: overrideCount }, { data: goal }, { data: evidenceRows }] = await Promise.all([
-    supabase.from("milestones").select("id, title, status, order_index, stage").eq("project_id", projectId).eq("user_id", userId),
-    supabase
-      .from("reflections")
-      .select("confidence, outcome")
-      .eq("user_id", userId)
-      .gte("created_at", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
-      .order("created_at", { ascending: false })
-      .limit(10),
-    supabase
-      .from("reflections")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", userId)
-      .in("outcome", ["skipped", "overridden", "blocked"])
-      .gte("created_at", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()),
-    supabase
-      .from("weekly_goals")
-      .select("tasks_done, target_tasks")
-      .eq("project_id", projectId)
-      .eq("user_id", userId)
-      .eq("week_start", weekStart(new Date()))
-      .maybeSingle(),
-    nextStage
-      ? supabase
-          .from("project_stage_evidence")
-          .select("evidence_type")
-          .eq("project_id", projectId)
-          .eq("user_id", userId)
-          .eq("from_stage", currentStage)
-          .eq("to_stage", nextStage)
-      : Promise.resolve({ data: [] as { evidence_type: string }[] }),
-  ]);
-
-  // FIX (coherence bug — see lib/server/stageProgress.ts header): this used
-  // to match milestones to the current stage by fuzzy title search only,
-  // never reading the real `stage` column, so it was frequently wrong for
-  // any milestone not literally titled with the stage name. Now shares the
-  // same resolution logic as the Projects-page waiving picker and the
-  // level-up eligibility check — one function, one answer, everywhere.
-  const stageProgress = computeStageProgress(milestones ?? [], currentStage);
+  // FIX (this pass): this function used to run its own copy of the
+  // project/milestones/reflections/evidence fetch and its own
+  // computeStageReadiness() call — the same 5 queries the new
+  // /api/founder-context/standing route needed too, for the co-founder
+  // mascot and Execution page. Rather than write a third copy, both now
+  // call this shared, side-effect-free fetch. Only the cache write below
+  // (pending_stage_transition) stays local to this function, since that's
+  // the one part that's only correct to run at this function's own
+  // cadence (Today's automatic nudge, the "Check stage readiness"
+  // button) — not on every high-frequency standing poll.
+  const result = await getProjectReadiness(userId, projectId);
+  if (!result) return null;
+  const { readiness, currentStage, nextStage } = result;
+  const stageProgress = readiness.stageProgress;
   const stageMilestonesComplete = stageProgress.isComplete;
+  const reflectionCount = readiness.reflection.count;
+  const avgConfidence = readiness.reflection.avgConfidence;
+  const overrideCount = readiness.reflection.overrides;
 
-  const reflectionCount = (reflections ?? []).length;
-  const avgConfidence = reflectionCount > 0
-    ? Math.round(((reflections ?? []).reduce((s, r) => s + (r.confidence ?? 3), 0) / reflectionCount) * 10) / 10
-    : null;
-
-  // FIX (product gap): milestone completion alone used to decide
-  // shouldPrompt via shouldPromptStageTransition(). That conflated "the
-  // founder ticked every box" with "this is a real, evidenced transition" —
-  // a founder finishing a checklist with zero real evidence and a string
-  // of low-confidence reflections would still get told they were ready.
-  // computeStageReadiness() now merges milestone completion, typed
-  // evidence capture, and reflection conviction into one honest 3-tier
-  // answer instead of a binary. shouldPrompt is true once milestones are
-  // complete (tier is "checklist_only" or "ready") — the banner now
-  // surfaces the honest "checklist done, evidence thin" state instead of
-  // staying silent until every signal lines up, which is what made this
-  // look like nothing was happening at all.
-  const readiness = computeStageReadiness({
-    stageProgress,
-    nextStage,
-    evidenceRows: (evidenceRows ?? []) as { evidence_type: StageEvidenceType }[],
-    reflectionCount,
-    avgConfidence,
-    overrides: overrideCount ?? 0,
-  });
+  // Ghost Goal pace is genuinely a stage-transition-only concern (it only
+  // ever appends supporting text to the "ready" reason, never feeds
+  // readiness itself), so it stays fetched here rather than moving into
+  // the shared getProjectReadiness().
+  const { data: goal } = await supabase
+    .from("weekly_goals")
+    .select("tasks_done, target_tasks")
+    .eq("project_id", projectId)
+    .eq("user_id", userId)
+    .eq("week_start", weekStart(new Date()))
+    .maybeSingle();
 
   const shouldPrompt = stageMilestonesComplete && !!nextStage;
   let reason = readiness.headline + (readiness.detail ? ` ${readiness.detail}` : "");
@@ -187,7 +137,7 @@ export async function evaluateAndCacheStageTransition(
     stageMilestonesComplete,
     reflectionCount,
     avgConfidence,
-    overrides: overrideCount ?? 0,
+    overrides: overrideCount,
     stageProgress,
     readinessTier: readiness.tier,
   };
@@ -222,4 +172,4 @@ export async function evaluateAndCacheStageTransition(
   );
 
   return evaluation;
-}
+      }
