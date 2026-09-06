@@ -11,6 +11,17 @@
  *   - Learns what kind of partner the founder needs and becomes that
  *
  * This is what separates BuildMind from a task manager with AI sprinkled on it.
+ *
+ * Status: mode selection previously came from a local pickModeFromMemory()
+ * thresholding momentum/streak/daysInactive on its own — a fourth
+ * independent verdict, disagreeing-by-construction with Overview,
+ * Projects-list, and the real stage-readiness tier, since it never read any
+ * of them, and its "daysInactive" was actually daysSinceLastReflection (a
+ * narrower thing than activity). Now reads FounderStanding from
+ * /api/founder-context/standing — same signal every other surface reads —
+ * via deriveCofounderMode() in lib/server/founderStanding.ts. Re-derivation
+ * is now event-driven (tab refocus, a pulse-refresh event real actions
+ * dispatch) instead of a passive 4-hour timer — see the effect below.
  */
 
 import { useEffect, useState, useCallback, useRef } from "react";
@@ -23,6 +34,10 @@ import {
   type CofounderStyle,
 } from "@/lib/founderMemory";
 import { getDashboardOverview } from "@/lib/buildmind";
+import { deriveCofounderMode, type FounderStanding } from "@/lib/server/founderStanding";
+// Type-only import of PulseMode flows the other way (founderStanding.ts →
+// this file) — using `import type` there keeps it erased at compile time,
+// so this isn't a real runtime circular dependency, just a shared type.
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
 import { trackEvent } from "@/lib/analytics";
 import { CofounderAvatar, CofounderMascot } from "./CofounderAvatar";
@@ -143,17 +158,49 @@ export default function CofounderPulse() {
     setLoading(false);
   }
 
-  // Periodic re-surface (every 4 hours if page stays open)
+  // ── Presence, not polling ──────────────────────────────────────────────
+  // The old version only re-derived on mount and then again 4 hours later
+  // if the tab happened to stay open — so a founder could complete a task,
+  // log evidence, or go quiet for a week, and the mascot in the sidebar
+  // would keep showing whatever it thought 4 hours ago. That's a status
+  // widget, not a co-founder who's actually paying attention.
+  //
+  // Two real triggers replace the dumb timer:
+  //   1. Tab regains focus — catches "came back after being away," which
+  //      is exactly the moment a stale mood is most noticeable and most
+  //      wrong.
+  //   2. A "bm:pulse-refresh" event, dispatched by the actual places state
+  //      changes — task completion, reflection submission, stage
+  //      transition, evidence logged. This file only listens; the
+  //      dispatch calls themselves need adding at each mutation site (see
+  //      pulse-refresh-dispatch.patch.md for the worked example and the
+  //      remaining call sites).
+  // The 4-hour interval stays, but only as a dead-man's-switch fallback in
+  // case a founder leaves a tab open for hours without touching anything —
+  // it should rarely be the thing that actually fires. This is meant to
+  // make the co-founder feel present when something real happened, not to
+  // manufacture reasons to check in — no new interval was added, no new
+  // notification channel, nothing that nags on a timer.
   useEffect(() => {
-    pulseTimer.current = setInterval(() => {
+    function handleRefresh() {
       if (memory) {
         deriveCofounderMessage(memory).then((msg) => {
           setCurrentMessage(msg);
           setMode(msg.mode);
         });
       }
-    }, 4 * 60 * 60 * 1000);
-    return () => { if (pulseTimer.current) clearInterval(pulseTimer.current); };
+    }
+    function handleVisibility() {
+      if (document.visibilityState === "visible") handleRefresh();
+    }
+    window.addEventListener("bm:pulse-refresh", handleRefresh);
+    document.addEventListener("visibilitychange", handleVisibility);
+    pulseTimer.current = setInterval(handleRefresh, 4 * 60 * 60 * 1000);
+    return () => {
+      window.removeEventListener("bm:pulse-refresh", handleRefresh);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      if (pulseTimer.current) clearInterval(pulseTimer.current);
+    };
   }, [memory]);
 
   const handleFeedback = useCallback(async (
@@ -372,40 +419,43 @@ export default function CofounderPulse() {
 async function deriveCofounderMessage(memory: FounderMemory): Promise<PulseMessage> {
   const now = new Date().toISOString();
 
-  // Fetch live signals from getDashboardOverview to power dynamic mode selection
-  let liveSignals: { momentumScore?: number; streak?: number; daysInactive?: number } = {};
-  try {
-    const overview = await getDashboardOverview();
-    // DashboardOverview doesn't expose momentumScore directly — read streak and inactivity
-    liveSignals = {
-      momentumScore: undefined,  // fetched separately below
-      streak:        overview?.founderStreakDays ?? undefined,
-      daysInactive:  overview?.daysSinceLastReflection ?? undefined,
-    };
-    // FIX (High #8): was a raw `founder_context.momentum_score` query, run
-    // independently of the rest of the app's Pulse engine (lib/pulse.ts,
-    // /api/pulse/metrics) — a second, divergent momentum concept living
-    // right next to the real one. Confirmed live (2026-08) that pulse_events,
-    // pulse_scores, pulse_event_weights tables and get_pulse_streak /
-    // upsert_pulse_score functions all exist, so this now reads the same
-    // canonical pulseScore every other Pulse-aware surface uses.
-    const res = await fetch("/api/pulse/metrics");
-    if (res.ok) {
-      const body = await res.json() as { ok?: boolean; data?: { pulseScore?: number } };
-      if (body.ok && typeof body.data?.pulseScore === "number") {
-        liveSignals.momentumScore = body.data.pulseScore;
-      }
-    }
-  } catch { /* non-fatal */ }
+  // Fetch live signals: standing (real readiness + engagement, shared with
+  // Execution and Projects-list) and the canonical Pulse momentum score.
+  // Both are fetched in parallel — neither is allowed to block the other,
+  // since a slow readiness query shouldn't delay a momentum-based alert
+  // and vice versa.
+  let standing: FounderStanding | null = null;
+  let momentumScore: number | undefined;
+  let streak: number | undefined;
 
-  const mode = pickModeFromMemory(memory, liveSignals);
+  try {
+    const [standingRes, pulseRes, overview] = await Promise.all([
+      fetch("/api/founder-context/standing").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      fetch("/api/pulse/metrics").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      getDashboardOverview().catch(() => null),
+    ]);
+    if (standingRes?.ok && standingRes.data) standing = standingRes.data as FounderStanding;
+    if (pulseRes?.ok && typeof pulseRes.data?.pulseScore === "number") momentumScore = pulseRes.data.pulseScore;
+    streak = overview?.founderStreakDays ?? undefined;
+  } catch { /* non-fatal — deriveCofounderMode handles a null standing below */ }
+
+  // FIX (this pass): mode used to come from pickModeFromMemory() thresholding
+  // raw momentum/streak/daysInactive independently of Overview, Projects-list,
+  // and the real readiness tier — a fourth, disagreeing verdict. Now it reads
+  // the same FounderStanding those surfaces read. If the standing fetch
+  // failed (offline, cold start), fall back to "observing" rather than
+  // guessing at a mood from partial data — the fallback path below already
+  // has honest observing/challenge copy for exactly that case.
+  const mode: PulseMode = standing
+    ? deriveCofounderMode(standing, memory, momentumScore)
+    : "observing";
 
   // Dynamic alert messages for live signals — don't use stale insight for these
   if (mode === "alert") {
-    const { daysInactive = 0, momentumScore = 50 } = liveSignals;
-    const alertText = daysInactive >= 3
-      ? `${daysInactive} days without a check-in. That's not a break — that's drift. What's actually blocking you?`
-      : momentumScore < 35
+    const daysInactive = standing?.daysInactive ?? 0;
+    const alertText = standing?.engagement === "stalled"
+      ? `${daysInactive} days without activity on this project. That's not a break — that's drift. What's actually blocking you?`
+      : typeof momentumScore === "number" && momentumScore < 35
       ? `Momentum is at ${momentumScore}. That's not a plateau — it's a slide. Today's task is the only thing that reverses it.`
       : `Something's off. Come back and log it before it compounds.`;
     return { mode: "alert", text: alertText, action: pickAction(memory), timestamp: now };
@@ -427,31 +477,16 @@ async function deriveCofounderMessage(memory: FounderMemory): Promise<PulseMessa
   }
 
   // Fallback
-  const { momentumScore = 50 } = liveSignals;
+  const readinessNote = standing?.readiness.tier === "checklist_only"
+    ? " Milestones are done — evidence is what's thin."
+    : "";
   return {
     mode: "observing",
     text: memory.avoidance_zones.length > 0
-      ? `Still watching. You've been avoiding ${memory.avoidance_zones[0]} — momentum is at ${momentumScore}. We should address that.`
-      : `Watching. Momentum at ${momentumScore}. Keep building.`,
+      ? `Still watching. You've been avoiding ${memory.avoidance_zones[0]}.${readinessNote}`
+      : `Watching.${streak ? ` ${streak}-day streak.` : ""}${readinessNote || " Keep building."}`,
     timestamp: now,
   };
-}
-
-function pickModeFromMemory(memory: FounderMemory, overview?: { momentumScore?: number; streak?: number; daysInactive?: number }): PulseMode {
-  const momentum    = overview?.momentumScore ?? 50;
-  const streak      = overview?.streak ?? 0;
-  const daysInactive = overview?.daysInactive ?? 0;
-
-  // Live signals take priority over memory patterns
-  if (daysInactive >= 3) return "alert";
-  if (momentum < 35) return "alert";
-  if (momentum < 50 && streak === 0) return "challenge";
-  if (memory.avoidance_zones.length >= 3) return "challenge";
-  if (streak >= 7 && momentum >= 65) return "celebrate";
-  if (memory.strengths.length >= 3 && momentum >= 60) return "celebrate";
-  if (memory.decision_patterns.some((p) => p.count >= 5 && p.pattern.includes("overdue"))) return "alert";
-  if (memory.last_insight) return "insight";
-  return "observing";
 }
 
 function pickAction(memory: FounderMemory): PulseMessage["action"] | undefined {
@@ -483,4 +518,4 @@ function pickAction(memory: FounderMemory): PulseMessage["action"] | undefined {
     label: "What's my one thing today?",
     prompt: "Given everything you know about my startup and my patterns, what is the single most important thing I should do today?",
   };
-                         }
+                  }
