@@ -1363,6 +1363,11 @@ function TodayContent() {
           }),
         });
         if (tcRes.ok) {
+          // Lets CofounderPulse (sidebar) react to this task completion
+          // immediately instead of waiting for its 4-hour fallback timer
+          // or the next tab refocus — see CofounderPulse.tsx's header for
+          // why event-driven refresh replaced the old passive timer.
+          window.dispatchEvent(new CustomEvent("bm:pulse-refresh"));
           const tcData = await tcRes.json();
           if (tcData.tasksCompletedTotal != null) {
             const localTotal = parseInt(storage.get("bm_tasks_completed_total") ?? "0", 10) || 0;
@@ -2983,4 +2988,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-  }
+    }
