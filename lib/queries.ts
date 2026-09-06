@@ -36,6 +36,7 @@ export const queryKeys = {
   coach: (projectId: string) => ["coach", projectId] as const,
   projectSummaries: ["project-summaries"] as const,
   scorecard: ["founder-scorecard"] as const,
+  standing: (projectId?: string | null) => ["founder-standing", projectId ?? "default"] as const,
 };
 
 export function selectActiveProject(summaries: ProjectSummary[], activeProjectId?: string | null) {
@@ -306,3 +307,39 @@ export function useFounderScorecardQuery(validationStrengths: string[] = []) {
     staleTime: 60_000,
   });
     }
+
+/**
+ * useFounderStandingQuery — real stage readiness + engagement, shared by
+ * Execution and Projects-list's badge instead of each deriving its own
+ * (Overview's old flat score-threshold verdict, Projects-list's local
+ * deriveProjectHealth()). Backed by GET /api/founder-context/standing,
+ * which shares its fetch with the stage-transition evaluator via
+ * lib/server/projectReadiness.ts::getProjectReadiness() — see that file's
+ * header for why the fetch isn't duplicated a third time.
+ *
+ * staleTime is longer than the scorecard's (1min vs effectively none) —
+ * a deliberate choice, not copied over: standing changes on
+ * milestone/evidence/reflection events, not every task tick, so a
+ * minute of cache avoids a redundant readiness recompute on rapid
+ * page-to-page navigation without meaningfully delaying a real update.
+ * Revisit if that turns out to feel stale in practice.
+ */
+export function useFounderStandingQuery(projectId?: string | null) {
+  return useQuery({
+    queryKey: queryKeys.standing(projectId),
+    queryFn: async () => {
+      const params = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+      const res = await fetch(`/api/founder-context/standing${params}`, { cache: "no-store" });
+      if (!res.ok) throw new Error("Could not load standing");
+      const json = await res.json();
+      if (!json?.ok) throw new Error(json?.error ?? "Could not load standing");
+      return json.data as {
+        readiness: import("@/lib/server/stageReadiness").StageReadiness;
+        engagement: "healthy" | "at-risk" | "stalled";
+        daysInactive: number;
+        projectId: string;
+      };
+    },
+    staleTime: 60_000,
+  });
+}
