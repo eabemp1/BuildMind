@@ -187,7 +187,7 @@ export default function OverviewPage() {
   }, []);
 
   const { data: scorecard } = useFounderScorecardQuery();
-  const { data: standing } = useFounderStandingQuery(activeProject?.id);
+  const { data: standing } = useFounderStandingQuery(activeProject?.id, true);
 
   const streak = overview?.founderStreakDays ?? localStreak;
 
@@ -374,7 +374,30 @@ export default function OverviewPage() {
               ? `${standing.readiness.headline}${standing.readiness.detail ? ` ${standing.readiness.detail}` : ""}`
               : (milestonesCompleted > 0 ? `Milestones are moving, with ${milestonesCompleted} completed so far.` : "Your startup is still establishing its first measurable milestone.") + " " + (doneTasks > 0 ? `${doneTasks} tasks completed across the current operating cycle.` : "No completed tasks have been recorded yet.")}
           </p>
+          {standing?.trend && standing.trend.length > 1 && (
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--bm-border)", display: "flex", gap: 3, alignItems: "flex-end" }} title="Readiness and engagement, last 14 days">
+              {standing.trend.map((day, i) => {
+                const dotColor = day.engagement === "stalled" ? "var(--bm-red)" : day.readinessTier === "ready" ? "var(--bm-green)" : day.readinessTier === "checklist_only" ? "var(--bm-amber)" : "var(--bm-text4)";
+                return <div key={i} title={new Date(day.recordedAt).toLocaleDateString()} style={{ flex: 1, height: 5, borderRadius: 2, background: dotColor, opacity: 0.35 + (i / standing.trend!.length) * 0.65 }} />;
+              })}
+            </div>
+          )}
         </motion.div>
+      )}
+
+      {/* ── What needs a decision — merged with the old separate "Needs
+           attention" card, which repeated attentionMessage as its own
+           first bullet. One decision block, directly under the verdict
+           it belongs to, instead of two cards a founder has to notice
+           are talking about the same thing. ── */}
+      {activeProject && (
+        <section style={{ border: "1px solid var(--bm-border)", borderRadius: 10, background: "var(--bm-bg2)", padding: "16px 18px", marginBottom: 22 }}>
+          <p style={{ margin: "0 0 10px", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: ".08em" }}>What needs a decision</p>
+          {[attentionMessage, noReflectIn3Days ? "Reflection cadence is below target." : null, totalTasks > 0 && doneTasks / totalTasks < .5 ? "Completion rate is below 50%." : null].filter(Boolean).map((item, i) => (
+            <p key={i} style={{ margin: "0 0 10px", fontSize: 14, color: i === 0 ? "var(--bm-text)" : "var(--bm-text2)" }}><span style={{ color: i === 0 ? "var(--bm-red)" : "var(--bm-amber)", marginRight: 8 }}>•</span>{item}</p>
+          ))}
+          <button onClick={() => router.push("/today")} style={{ marginTop: 4, background: "none", border: 0, padding: 0, color: "var(--bm-accent)", cursor: "pointer", fontSize: 12 }}>Open today's brief →</button>
+        </section>
       )}
 
       {/* ── Operating picture ── */}
@@ -402,32 +425,37 @@ export default function OverviewPage() {
               </div>
             </section>
 
-            <section style={{ border: "1px solid var(--bm-border)", borderRadius: 10, background: "var(--bm-bg2)", padding: "16px 22px" }}>
-              <p style={{ margin: "0 0 8px", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: ".08em" }}>Current objective</p>
-              <p style={{ margin: 0, fontSize: 16, color: "var(--bm-text)" }}>{activeProject.pendingTasks?.[0] ?? nudge.action}</p>
-              <p style={{ margin: "8px 0 0", fontSize: 12, color: "var(--bm-text4)" }}>Derived from the current execution state.</p>
-            </section>
-
-            <section style={{ border: "1px solid var(--bm-border)", borderRadius: 10, background: "var(--bm-bg2)", padding: "16px 22px" }}>
-              <p style={{ margin: "0 0 8px", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: ".08em" }}>Next action</p>
-              <p style={{ margin: "0 0 12px", fontSize: 16, color: "var(--bm-text)" }}>{nudge.action}</p>
-              <Button size="sm" onClick={() => router.push("/today")} style={{ background: "var(--bm-amber)", color: "#111" }}>Go to Today <ArrowRight size={14} /></Button>
-            </section>
-
-            <section style={{ border: "1px solid var(--bm-border)", borderRadius: 10, background: "var(--bm-bg2)", padding: "16px 22px" }}>
-              <p style={{ margin: "0 0 12px", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: ".08em" }}>What changed</p>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div><span style={{ fontSize: 11, color: "var(--bm-text4)" }}>Since yesterday</span><p style={{ margin: "6px 0 0", color: "var(--bm-green)", fontSize: 13 }}>{doneTasks} tasks completed</p><p style={{ margin: "4px 0 0", color: "var(--bm-text3)", fontSize: 13 }}>{todayDone ? "Today's check-in recorded" : "Today's check-in still open"}</p></div>
-                <div><span style={{ fontSize: 11, color: "var(--bm-text4)" }}>Current signal</span><p style={{ margin: "6px 0 0", color: scoreDelta != null && scoreDelta < 0 ? "var(--bm-amber)" : "var(--bm-green)", fontSize: 13 }}>{scoreDelta == null ? "Baseline established" : `Score ${scoreDelta >= 0 ? "up" : "down"} ${Math.abs(scoreDelta)} points`}</p><p style={{ margin: "4px 0 0", color: "var(--bm-text3)", fontSize: 13 }}>{milestonesCompleted} milestones completed</p></div>
+            {/* FIX (hierarchy pass): "Current objective," "Next action," and
+                "What changed" all real, all correct, none of it is what a
+                founder needs in the first three seconds — this is the part
+                that made the page feel like "a lot going on." Collapsed by
+                default; nothing here is hidden, just not competing with the
+                verdict above for attention. */}
+            <details style={{ border: "1px solid var(--bm-border)", borderRadius: 10, background: "var(--bm-bg2)" }}>
+              <summary style={{ cursor: "pointer", padding: "14px 22px", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: ".08em", listStyle: "none" }}>Full picture</summary>
+              <div style={{ padding: "0 22px 18px", display: "flex", flexDirection: "column", gap: 14 }}>
+                <div>
+                  <p style={{ margin: "0 0 8px", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: ".08em" }}>Current objective</p>
+                  <p style={{ margin: 0, fontSize: 16, color: "var(--bm-text)" }}>{activeProject.pendingTasks?.[0] ?? nudge.action}</p>
+                  <p style={{ margin: "8px 0 0", fontSize: 12, color: "var(--bm-text4)" }}>Derived from the current execution state.</p>
+                </div>
+                <div>
+                  <p style={{ margin: "0 0 8px", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: ".08em" }}>Next action</p>
+                  <p style={{ margin: "0 0 12px", fontSize: 16, color: "var(--bm-text)" }}>{nudge.action}</p>
+                  <Button size="sm" onClick={() => router.push("/today")} style={{ background: "var(--bm-amber)", color: "#111" }}>Go to Today <ArrowRight size={14} /></Button>
+                </div>
+                <div>
+                  <p style={{ margin: "0 0 12px", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: ".08em" }}>What changed</p>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div><span style={{ fontSize: 11, color: "var(--bm-text4)" }}>Since yesterday</span><p style={{ margin: "6px 0 0", color: "var(--bm-green)", fontSize: 13 }}>{doneTasks} tasks completed</p><p style={{ margin: "4px 0 0", color: "var(--bm-text3)", fontSize: 13 }}>{todayDone ? "Today's check-in recorded" : "Today's check-in still open"}</p></div>
+                    <div><span style={{ fontSize: 11, color: "var(--bm-text4)" }}>Current signal</span><p style={{ margin: "6px 0 0", color: scoreDelta != null && scoreDelta < 0 ? "var(--bm-amber)" : "var(--bm-green)", fontSize: 13 }}>{scoreDelta == null ? "Baseline established" : `Score ${scoreDelta >= 0 ? "up" : "down"} ${Math.abs(scoreDelta)} points`}</p><p style={{ margin: "4px 0 0", color: "var(--bm-text3)", fontSize: 13 }}>{milestonesCompleted} milestones completed</p></div>
+                  </div>
+                </div>
               </div>
-            </section>
+            </details>
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <section style={{ border: "1px solid var(--bm-border)", borderRadius: 10, background: "var(--bm-bg2)", padding: "16px 18px" }}>
-              <p style={{ margin: "0 0 12px", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: ".08em" }}>Needs attention</p>
-              {[attentionMessage, noReflectIn3Days ? "Reflection cadence is below target." : null, totalTasks > 0 && doneTasks / totalTasks < .5 ? "Completion rate is below 50%." : null].filter(Boolean).map((item, i) => <p key={i} style={{ margin: "0 0 10px", fontSize: 13, color: "var(--bm-text2)" }}><span style={{ color: i === 0 ? "var(--bm-red)" : "var(--bm-amber)", marginRight: 8 }}>•</span>{item}</p>)}
-            </section>
             <section style={{ border: "1px solid var(--bm-border)", borderRadius: 10, background: "var(--bm-bg2)", padding: "16px 18px" }}>
               <p style={{ margin: "0 0 12px", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: ".08em" }}>Evidence</p>
               {standing?.readiness.evidence ? (
@@ -443,7 +471,6 @@ export default function OverviewPage() {
               <p style={{ margin: 0, fontSize: 12, color: "var(--bm-text4)" }}>Activity: {doneTasks} of {totalTasks || 0} tasks · {milestonesCompleted} milestones · {todayDone ? "checked in today" : "no check-in yet today"}</p>
               <div style={{ marginTop: 14, borderTop: "1px solid var(--bm-border)", paddingTop: 12 }}><span style={{ color: "var(--bm-accent)", fontFamily: "'DM Mono', monospace", fontSize: 10 }}>BUILDMIND INTERPRETATION</span><p style={{ margin: "6px 0 0", fontSize: 13, color: "var(--bm-text3)" }}>{nudge.text}</p></div>
             </section>
-            <section style={{ border: "1px solid var(--bm-border)", borderRadius: 10, background: "var(--bm-bg2)", padding: "16px 18px" }}><p style={{ margin: "0 0 10px", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: ".08em" }}>What needs a decision</p><p style={{ margin: 0, fontSize: 14, color: "var(--bm-text)" }}>{attentionMessage}</p><button onClick={() => router.push("/today")} style={{ marginTop: 12, background: "none", border: 0, padding: 0, color: "var(--bm-accent)", cursor: "pointer", fontSize: 12 }}>Open today's brief →</button></section>
           </div>
         </div>
       )}
@@ -617,4 +644,4 @@ export default function OverviewPage() {
       )}
     </div>
   );
-      }
+                        }
