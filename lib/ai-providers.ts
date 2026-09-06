@@ -253,6 +253,71 @@ export function hasAIProvider(): boolean {
   return Boolean(GROQ_API_KEY || CEREBRAS_API_KEY || OPENROUTER_API_KEY || GEMINI_API_KEY);
 }
 
+/**
+ * checkAllProviders — real, live health check.
+ *
+ * getAIProviderStatus()/getAIProviderDiagnostics() above only check
+ * whether an API key env var is SET — not whether the provider is
+ * actually reachable right now. That's exactly the gap that let
+ * Cerebras's free tier ending, OpenRouter's pinned free model dying, and
+ * Gemini's free tier 404ing all go unnoticed until production calls
+ * started failing (see this file's PROVIDER STATUS header — all three
+ * happened within the last two months without anyone finding out until
+ * a founder hit "intelligence unavailable").
+ *
+ * This function costs a handful of real tokens per call (5 providers ×
+ * ~10 tokens each) — trivial, but not zero, so it's meant to be run on
+ * demand (a debug page, a manual check) or on a slow cron (e.g. hourly),
+ * never on the hot path of an actual founder request. It bypasses the
+ * rotation chains entirely and calls every configured provider directly,
+ * in parallel, so one dead leg can't hide behind an earlier one
+ * succeeding — which is exactly what the chain's own "rotate first,
+ * retry never" design would otherwise do.
+ */
+export interface ProviderHealth {
+  provider: string;
+  model: string;
+  configured: boolean;
+  ok: boolean;
+  latencyMs: number | null;
+  error: string | null;
+}
+
+export async function checkAllProviders(): Promise<ProviderHealth[]> {
+  const ping: ChatMessage[] = [{ role: "user", content: "Reply with exactly: ok" }];
+
+  async function probe(
+    provider: string,
+    model: string,
+    configured: boolean,
+    fn: () => Promise<string>,
+  ): Promise<ProviderHealth> {
+    if (!configured) return { provider, model, configured: false, ok: false, latencyMs: null, error: "not configured" };
+    const start = Date.now();
+    try {
+      await fn();
+      return { provider, model, configured: true, ok: true, latencyMs: Date.now() - start, error: null };
+    } catch (err) {
+      return {
+        provider, model, configured: true, ok: false,
+        latencyMs: Date.now() - start,
+        error: err instanceof Error ? err.message.slice(0, 200) : "unknown error",
+      };
+    }
+  }
+
+  const results = await Promise.all([
+    probe("groq", GROQ_MODEL, Boolean(GROQ_API_KEY), () => groqCall(ping, GROQ_MODEL, 0, 8, false)),
+    probe("groq", "qwen/qwen3.6-27b", Boolean(GROQ_API_KEY), () => groqCall(ping, "qwen/qwen3.6-27b", 0, 8, false)),
+    probe("openrouter", OPENROUTER_MODEL, Boolean(OPENROUTER_API_KEY), () => openRouterCall(ping, OPENROUTER_MODEL, 0, 8, false)),
+    probe("mistral", MISTRAL_MODEL, Boolean(MISTRAL_API_KEY), () => mistralCall(ping, MISTRAL_MODEL, 0, 8, false)),
+    probe("gemini", GEMINI_MODEL, Boolean(GEMINI_API_KEY), () => geminiCall(ping, 0, 8, false)),
+    probe("cerebras", CEREBRAS_MODEL, Boolean(CEREBRAS_API_KEY), () => cerebrasCall(ping, CEREBRAS_MODEL, 0, 8, false)),
+  ]);
+
+  return results;
+}
+
 export function sanitizeModelOutput(text: string): string {
   return text
     .replace(/<think>[\s\S]*?<\/think>/gi, "")
@@ -743,4 +808,4 @@ export async function callModelJSON<T>(
       `callModelJSON: failed to parse provider response as JSON. Raw (truncated): ${clean.slice(0, 120)}`
     );
   }
-                             }
+          }
