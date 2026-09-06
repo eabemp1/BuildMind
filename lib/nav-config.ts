@@ -77,6 +77,7 @@ export const NAV: readonly NavItemConfig[] = [
   // stays alive (Progress imports the page component directly) — only the
   // sidebar entry is gone.
   { href: "/today",    label: "Today",    icon: CircleDot,    enabled: true, section: null, badge: null, showDot: false, unlocksAt: 0 },
+  { href: "/overview", label: "Execution", icon: Gauge,       enabled: true, hidden: false, section: null, badge: null, showDot: false, unlocksAt: 3 },
   { href: "/progress", label: "Progress", icon: TrendingUp,   enabled: true, section: null, badge: null, showDot: false, unlocksAt: 1 },
   { href: "/projects", label: "Projects", icon: FolderKanban, enabled: true, section: null, badge: null, showDot: false, unlocksAt: 0 },
   { href: "/settings", label: "Settings", icon: Settings,     enabled: true, section: null, badge: null, showDot: false, unlocksAt: 0 },
@@ -94,7 +95,6 @@ export const NAV: readonly NavItemConfig[] = [
   { href: "/upgrade",          label: "Upgrade",         icon: Rocket,         enabled: true,  hidden: false, section: "Settings", badge: null, showDot: false, unlocksAt: 0 },
 
   // ── Hidden / routable-only ────────────────────────────────────────────────
-  { href: "/overview",         label: "Execution",       icon: Gauge,          enabled: true,  hidden: true, section: null, badge: null, showDot: false, unlocksAt: 3 },
   { href: "/ventures",         label: "Ventures",        icon: Briefcase,      enabled: false, hidden: true, section: null, badge: null, requiredPlan: "builder" as Plan, showDot: false, unlocksAt: 7 },
   { href: "/startup-kit",      label: "Startup Kit",     icon: Package,        enabled: false, hidden: true, section: null, badge: null, requiredPlan: "builder" as Plan, showDot: false, unlocksAt: 7 },
   { href: "/invite",           label: "Invite",          icon: UserPlus,       enabled: false, hidden: true, section: null, badge: null, showDot: false, unlocksAt: 7 },
@@ -138,4 +138,4 @@ export async function syncTasksCompletedFromServer(): Promise<void> {
   } catch {
     // Non-fatal
   }
-    }
+                  }
