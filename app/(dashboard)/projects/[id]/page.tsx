@@ -747,6 +747,14 @@ export default function ProjectDetailPage() {
       }).eq("id", id);
       if (stageUpdateError) throw stageUpdateError;
 
+      // The actual state change just committed — dispatch now rather than
+      // waiting for the auxiliary context-sync/challenge calls below.
+      // This is the clearest "earned moment" case for the mascot's
+      // celebrate mode: readiness.tier just became moot (stage advanced)
+      // and engagement is whatever it already was — deriveCofounderMode()
+      // decides the rest once it re-fetches standing.
+      window.dispatchEvent(new CustomEvent("bm:pulse-refresh"));
+
       // A manual stage change is a real transition, not merely a label edit.
       // Keep the legacy founder-context projection aligned and clear the
       // server-owned Today cache before any client can reuse an old-stage task.
@@ -1801,4 +1809,4 @@ export default function ProjectDetailPage() {
       </AnimatePresence>
     </div>
   );
-                      }
+                                                         }
