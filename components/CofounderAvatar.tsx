@@ -42,6 +42,15 @@ import type { PulseMode } from "./CofounderPulse";
  * integration surface. Swap the return of this component for a <RiveComponent
  * stateMachineName="cofounder" inputs={{style, mode}} /> and every existing
  * call site keeps working unchanged.
+ *
+ * Status: "insight" previously had no distinct rendering at all — it fell
+ * through to the same branch as "observing" despite this contract already
+ * promising one, so the two were visually identical. Now implemented (raised
+ * brow arcs + upward gaze + slow lean-in). "challenge" also gained real
+ * posture (a held skeptical tilt) instead of relying on eye-height asymmetry
+ * alone. Mode itself should now come from deriveCofounderMode() in
+ * lib/server/founderStanding.ts, not CofounderPulse's old local thresholds —
+ * see that file's header for why.
  */
 
 const MODE_COLOR: Record<PulseMode, string> = {
@@ -70,13 +79,21 @@ export function CofounderAvatar({
   const isCelebrating = mode === "celebrate";
   const isAlert = mode === "alert";
   const isChallenge = mode === "challenge";
+  // "insight" previously fell through to the same rendering as "observing"
+  // despite the contract above promising a distinct "thoughtful/attentive"
+  // look — this was the actual gap, not a missing animation in general.
+  const isInsight = mode === "insight";
   const eyeColor = color;
 
   return (
     <div style={{ position: "relative", flexShrink: 0, width: size, height: size }}>
       <motion.div
-        animate={pulsing ? { scale: [1, 1.06, 1] } : {}}
-        transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
+        animate={
+          isChallenge
+            ? { scale: pulsing ? [1, 1.06, 1] : 1, rotate: [0, -5, 0] } // skeptical head-tilt
+            : pulsing ? { scale: [1, 1.06, 1] } : {}
+        }
+        transition={{ duration: isChallenge ? 3.2 : 2.5, repeat: Infinity, ease: "easeInOut" }}
         style={{
           width: size,
           height: size,
@@ -94,6 +111,21 @@ export function CofounderAvatar({
             <>
               <path d="M2 10 Q6 4 10 10" stroke={eyeColor} strokeWidth="2" strokeLinecap="round" fill="none" />
               <path d="M12 10 Q16 4 20 10" stroke={eyeColor} strokeWidth="2" strokeLinecap="round" fill="none" />
+            </>
+          ) : isInsight ? (
+            // Thoughtful — narrowed, tilted-up gaze plus a small raised
+            // "brow" arc, like noticing something rather than watching
+            // passively. Slow upward drift instead of the resting blink.
+            <>
+              <motion.g
+                animate={{ y: [0, -0.8, 0] }}
+                transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+              >
+                <path d="M3 6.5 Q6 5 9 6.5" stroke={eyeColor} strokeWidth="1.3" strokeLinecap="round" fill="none" opacity="0.55" />
+                <ellipse cx="6" cy="9" rx="2.2" ry="1.6" fill={eyeColor} />
+                <path d="M13 6.5 Q16 5 19 6.5" stroke={eyeColor} strokeWidth="1.3" strokeLinecap="round" fill="none" opacity="0.55" />
+                <ellipse cx="16" cy="9" rx="2.2" ry="1.6" fill={eyeColor} />
+              </motion.g>
             </>
           ) : (
             <>
@@ -164,6 +196,7 @@ export function CofounderMascot({
   const isAlert = mode === "alert";
   const isChallenge = mode === "challenge";
   const isObserving = mode === "observing";
+  const isInsight = mode === "insight";
 
   return (
     <div style={{ position: "relative", width: size, height: size * 1.15, flexShrink: 0 }}>
@@ -192,20 +225,30 @@ export function CofounderMascot({
           <circle cx="30" cy="20" r="2.5" fill="var(--bm-intel, #9B87F5)" />
         </motion.g>
 
-        {/* Body — simple rounded capsule, breathes gently when idle */}
+        {/* Body — simple rounded capsule, breathes gently when idle.
+            Each mode gets its own posture now, not just its own eyes:
+            observing breathes, celebrate bounces, challenge holds a slow
+            skeptical tilt (leaning back slightly, arms-crossed energy
+            without literally crossing arms at this fidelity), and insight
+            leans in — a small forward tilt, like noticing something. */}
         <motion.g
           animate={
             isObserving
               ? { y: [0, -1.5, 0] }
               : isCelebrating
                 ? { y: [0, -4, 0], rotate: [0, -3, 3, 0] }
-                : {}
+                : isChallenge
+                  ? { rotate: [0, -4, 0], y: [0, 1, 0] }
+                  : isInsight
+                    ? { rotate: [0, 3, 0], y: [0, -1, 0] }
+                    : {}
           }
           transition={{
-            duration: isCelebrating ? 0.5 : 3,
+            duration: isCelebrating ? 0.5 : isChallenge ? 3.4 : isInsight ? 2.6 : 3,
             repeat: Infinity,
             ease: "easeInOut",
           }}
+          style={{ transformOrigin: "50px 75px" }}
         >
           {/* Torso */}
           <rect x="28" y="58" width="44" height="42" rx="16" fill="#e9e9ee" stroke="#c9c9d4" strokeWidth="1.5" />
@@ -237,12 +280,25 @@ export function CofounderMascot({
           {/* Face screen */}
           <rect x="32" y="28" width="36" height="24" rx="10" fill="#15131e" />
 
-          {/* Eyes — same blink logic as the compact avatar */}
+          {/* Eyes — same blink logic as the compact avatar, plus the
+              insight expression that was previously missing entirely:
+              a raised brow arc over each eye and a slight upward gaze,
+              distinct from observing's plain resting blink. */}
           {isCelebrating ? (
             <>
               <path d="M40 42 Q44 36 48 42" stroke={color} strokeWidth="2.2" strokeLinecap="round" fill="none" />
               <path d="M52 42 Q56 36 60 42" stroke={color} strokeWidth="2.2" strokeLinecap="round" fill="none" />
             </>
+          ) : isInsight ? (
+            <motion.g
+              animate={{ y: [0, -1.2, 0] }}
+              transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+            >
+              <path d="M38 34 Q43 31 48 34" stroke={color} strokeWidth="1.6" strokeLinecap="round" fill="none" opacity="0.6" />
+              <path d="M52 34 Q57 31 62 34" stroke={color} strokeWidth="1.6" strokeLinecap="round" fill="none" opacity="0.6" />
+              <ellipse cx="43" cy="41" rx="3.4" ry="2.4" fill={color} />
+              <ellipse cx="57" cy="41" rx="3.4" ry="2.4" fill={color} />
+            </motion.g>
           ) : (
             <>
               <motion.circle
