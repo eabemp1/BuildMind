@@ -285,6 +285,11 @@ export default function ReflectPage() {
           }),
         });
         if (res.ok) {
+          // confidence/outcome here feed computeStageReadiness's reflection
+          // signal directly — a submitted reflection can flip readiness
+          // from checklist_only to ready in one action, so the mascot
+          // should react now, not on next tab refocus.
+          window.dispatchEvent(new CustomEvent("bm:pulse-refresh"));
           const d = await res.json();
           const payload = d.data ?? d;
           caus = payload.causality || caus;
@@ -452,4 +457,4 @@ export default function ReflectPage() {
       </motion.button>
     </div>
   );
-}
+                                }
