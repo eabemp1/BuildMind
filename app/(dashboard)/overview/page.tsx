@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { computeStartupScore } from "@/lib/buildmind";
-import { selectActiveProject, useActiveProjectId, useProjectSummariesQuery, useDashboardOverviewQuery, useFounderScorecardQuery } from "@/lib/queries";
+import { selectActiveProject, useActiveProjectId, useProjectSummariesQuery, useDashboardOverviewQuery, useFounderScorecardQuery, useFounderStandingQuery } from "@/lib/queries";
 import { recordScore, markActiveToday, recordPendingTasks, syncUrgencyFromServer } from "@/lib/urgency";
 import { getStoredStreak, syncStreakFromServer } from "@/lib/plan";
 import { getScoreHistory, syncScoreHistory, syncXP, computeConsistencyBonus } from "@/lib/scoring";
@@ -187,6 +187,7 @@ export default function OverviewPage() {
   }, []);
 
   const { data: scorecard } = useFounderScorecardQuery();
+  const { data: standing } = useFounderStandingQuery(activeProject?.id);
 
   const streak = overview?.founderStreakDays ?? localStreak;
 
@@ -212,6 +213,25 @@ export default function OverviewPage() {
   const totalTasks = activeProject?.tasksTotal ?? 0;
   const doneTasks = overview?.completedTasks ?? activeProject?.tasksCompleted ?? 0;
   const nudge = NUDGE[stage] ?? NUDGE.Idea;
+
+  // FIX (this pass): this badge used to be a flat score >=70/>=45 cutoff —
+  // "Strong/Moderate/Needs attention momentum" — computed independently of
+  // the real 3-signal readiness tier Today and Projects-detail already
+  // show (computeStageReadiness: milestones + typed evidence + reflection
+  // trend). A founder could see "Strong momentum" here and "checklist
+  // done, evidence thin" on Today for the same project at the same
+  // moment. Now both read the same standing.
+  const readinessTier = standing?.readiness.tier;
+  const readinessLabel =
+    readinessTier === "ready" ? "Ready to advance"
+    : readinessTier === "checklist_only" ? "Checklist done, evidence thin"
+    : readinessTier === "not_ready" ? "Not yet ready"
+    : "Loading";
+  const readinessColor =
+    readinessTier === "ready" ? "var(--bm-green)"
+    : readinessTier === "checklist_only" ? "var(--bm-amber)"
+    : readinessTier === "not_ready" ? "var(--bm-text3)"
+    : "var(--bm-text4)";
 
   // Is today's check-in done?
   const todayStr = now.toLocaleDateString("en-CA");
@@ -345,12 +365,14 @@ export default function OverviewPage() {
               <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 19, margin: 0, color: "var(--bm-text)" }}>{activeProject.title}</h2>
               <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-text3)", border: "1px solid var(--bm-border)", borderRadius: 4, padding: "3px 7px" }}>{stage}</span>
             </div>
-            <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: score >= 70 ? "var(--bm-green)" : score >= 45 ? "var(--bm-amber)" : "var(--bm-red)", border: "1px solid var(--bm-border)", borderRadius: 5, padding: "5px 9px" }}>
-              {score >= 70 ? "Strong momentum" : score >= 45 ? "Moderate momentum" : "Needs attention"}
+            <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: readinessColor, border: "1px solid var(--bm-border)", borderRadius: 5, padding: "5px 9px" }}>
+              {readinessLabel}
             </span>
           </div>
           <p style={{ fontSize: 13, color: "var(--bm-text3)", margin: 0, lineHeight: 1.6 }}>
-            {milestonesCompleted > 0 ? `Milestones are moving, with ${milestonesCompleted} completed so far.` : "Your startup is still establishing its first measurable milestone."} {doneTasks > 0 ? `${doneTasks} tasks completed across the current operating cycle.` : "No completed tasks have been recorded yet."}
+            {standing
+              ? `${standing.readiness.headline}${standing.readiness.detail ? ` ${standing.readiness.detail}` : ""}`
+              : (milestonesCompleted > 0 ? `Milestones are moving, with ${milestonesCompleted} completed so far.` : "Your startup is still establishing its first measurable milestone.") + " " + (doneTasks > 0 ? `${doneTasks} tasks completed across the current operating cycle.` : "No completed tasks have been recorded yet.")}
           </p>
         </motion.div>
       )}
@@ -408,7 +430,17 @@ export default function OverviewPage() {
             </section>
             <section style={{ border: "1px solid var(--bm-border)", borderRadius: 10, background: "var(--bm-bg2)", padding: "16px 18px" }}>
               <p style={{ margin: "0 0 12px", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: ".08em" }}>Evidence</p>
-              <p style={{ margin: "0 0 8px", fontSize: 13, color: "var(--bm-text2)" }}>• {doneTasks} of {totalTasks || 0} tasks completed</p><p style={{ margin: "0 0 8px", fontSize: 13, color: "var(--bm-text2)" }}>• {milestonesCompleted} milestones completed</p><p style={{ margin: 0, fontSize: 13, color: "var(--bm-text2)" }}>• {todayDone ? "Check-in recorded today" : "No check-in recorded today"}</p>
+              {standing?.readiness.evidence ? (
+                <p style={{ margin: "0 0 8px", fontSize: 13, color: "var(--bm-text2)" }}>
+                  • {standing.readiness.evidence.filledSlots} of {standing.readiness.evidence.totalSlots} slots filled
+                  {standing.readiness.evidence.missingLabels.length > 0 && (
+                    <span style={{ color: "var(--bm-text4)" }}> — still missing {standing.readiness.evidence.missingLabels.slice(0, 2).join(", ")}{standing.readiness.evidence.missingLabels.length > 2 ? ", and more" : ""}</span>
+                  )}
+                </p>
+              ) : (
+                <p style={{ margin: "0 0 8px", fontSize: 13, color: "var(--bm-text4)" }}>Evidence collection starts once this stage's milestones are complete.</p>
+              )}
+              <p style={{ margin: 0, fontSize: 12, color: "var(--bm-text4)" }}>Activity: {doneTasks} of {totalTasks || 0} tasks · {milestonesCompleted} milestones · {todayDone ? "checked in today" : "no check-in yet today"}</p>
               <div style={{ marginTop: 14, borderTop: "1px solid var(--bm-border)", paddingTop: 12 }}><span style={{ color: "var(--bm-accent)", fontFamily: "'DM Mono', monospace", fontSize: 10 }}>BUILDMIND INTERPRETATION</span><p style={{ margin: "6px 0 0", fontSize: 13, color: "var(--bm-text3)" }}>{nudge.text}</p></div>
             </section>
             <section style={{ border: "1px solid var(--bm-border)", borderRadius: 10, background: "var(--bm-bg2)", padding: "16px 18px" }}><p style={{ margin: "0 0 10px", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: ".08em" }}>What needs a decision</p><p style={{ margin: 0, fontSize: 14, color: "var(--bm-text)" }}>{attentionMessage}</p><button onClick={() => router.push("/today")} style={{ marginTop: 12, background: "none", border: 0, padding: 0, color: "var(--bm-accent)", cursor: "pointer", fontSize: 12 }}>Open today's brief →</button></section>
@@ -585,4 +617,4 @@ export default function OverviewPage() {
       )}
     </div>
   );
-}
+      }
