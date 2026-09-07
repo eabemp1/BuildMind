@@ -9,6 +9,12 @@
  *
  * Both tabs respect the BuildMindCalibrating gate (<7 reflections → show
  * the calibrating component instead of thin content).
+ *
+ * /reports itself is now hidden from the persistent sidebar (lib/nav-config.ts)
+ * rather than removed — it still does the one thing this tab doesn't
+ * attempt (PDF/CSV/image export, 4-week heatmap), same treatment /insights
+ * got earlier: a tab away, reachable via the link in ThisWeekTab below,
+ * not a competing top-level destination.
  */
 
 "use client";
@@ -33,9 +39,27 @@ function ThisWeekTab({ reflectionCount }: { reflectionCount: number }) {
   // dedicated weekly pulse (Story → Insights → Evidence → Metrics → Share),
   // backed by app/api/ai/weekly-pulse/route.ts, which borrows every metric
   // from wherever it's already computed rather than recomputing anything.
-  // /reports stays a separate, still-live nav destination for the export/
-  // reporting use case (PDF/CSV/image export, 4-week heatmap).
-  return <WeeklyPulseCard />;
+  //
+  // FIX (checklist item — Reports demotion): /reports still exists and is
+  // still the right place for the export/reporting use case (PDF/CSV/image
+  // export, 4-week heatmap) that this tab doesn't attempt — but it's no
+  // longer a persistent sidebar item (lib/nav-config.ts now marks it
+  // hidden), since its content overlapped almost entirely with this tab.
+  // The link below is its one remaining discovery path, same move already
+  // made for /insights (a tab away, not a separate nav destination).
+  return (
+    <>
+      <WeeklyPulseCard />
+      <div style={{ marginTop: 18, textAlign: "center" }}>
+        <a
+          href="/reports"
+          style={{ fontSize: 12, color: "var(--bm-text3)", textDecoration: "none" }}
+        >
+          Full report &amp; export (PDF, CSV, 4-week heatmap) →
+        </a>
+      </div>
+    </>
+  );
 }
 
 function PatternsTab({ reflectionCount }: { reflectionCount: number }) {
