@@ -18,15 +18,27 @@
  * model dying, and Gemini's free tier 404oing (all documented in
  * lib/ai-providers.ts's PROVIDER STATUS header) each stayed
  * "configured: true" the whole time they were silently dead.
+ *
+ * FIX: gated on isAdminUser now, matching every sibling route under
+ * app/api/admin/ (health-check, dashboard, cleanup-avoidance-zones all
+ * do this) — this one only checked for a logged-in user, not an admin,
+ * which was fine when nothing surfaced it in the UI but stopped being
+ * fine once a real page (app/admin/ai-provider-status/page.tsx) started
+ * linking to it. ?live=true costs real tokens per call and reveals
+ * infrastructure details; no reason any founder account should be able
+ * to trigger that.
  */
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { isAdminUser } from "@/lib/server/adminAuth";
 import { getAIProviderDiagnostics, checkAllProviders } from "@/lib/ai-providers";
 
 export async function GET(req: Request) {
   const supabase = await createClient();
   const { data: { user }, error } = await supabase.auth.getUser();
-  if (error || !user) return NextResponse.json({ ok: false }, { status: 401 });
+  if (error || !user || !(await isAdminUser(user.id))) {
+    return NextResponse.json({ ok: false }, { status: 401 });
+  }
 
   const diagnostics = getAIProviderDiagnostics();
   const wantsLive = new URL(req.url).searchParams.get("live") === "true";
