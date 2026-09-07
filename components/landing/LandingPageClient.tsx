@@ -1002,7 +1002,16 @@ function PricingSection() {
 
       {/* Founders already building — real week-one users */}
       <div className="mt-14 border-t pt-12" style={{ borderColor: "var(--bm-border)" }}>
-        <p className="text-[11px] font-bold uppercase tracking-widest mb-8" style={{ color: "var(--bm-text3)" }}>What founders say</p>
+        <p className="text-[11px] font-bold uppercase tracking-widest mb-2" style={{ color: "var(--bm-text3)" }}>What early testers say</p>
+        {/* FIX (checklist item): was "What founders say," presenting these
+            three as independent early adopters with no distinction from
+            strangers who found and chose the product. In reality they're
+            close friends and family who tried it as a favor — real
+            feedback, real people, but a different kind of evidence than
+            independent traction, and worth being upfront about rather than
+            letting the framing imply otherwise. Costs nothing to say
+            plainly and reads as more credible, not less. */}
+        <p className="text-[12px] mb-8" style={{ color: "var(--bm-text4)" }}>Early feedback from friends and family who tried an early build.</p>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           {[
             { quote: "BuildMind helped me move from scattered ideas to a focused daily execution rhythm.", name: "Julius Abbey" },
@@ -2604,4 +2613,4 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
       {demoOpen && <DemoModal onClose={() => setDemoOpen(false)} />}
     </div>
   );
-    }
+  }
