@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { selectActiveProject, useActiveProjectId, useProjectSummariesQuery, useDashboardOverviewQuery } from "@/lib/queries";
-import { computeStartupScore } from "@/lib/buildmind";
 import { fetchAndSyncStoredPlanFromBillingStatus, getLimits, incrementDailyStreak } from "@/lib/plan";
 import { usePlan } from "@/lib/usePlan";
 import { useLimitModal } from "@/components/LimitModal";
@@ -209,7 +208,15 @@ function AICoachPageInner() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  const score = activeProject ? computeStartupScore(activeProject) : 0;
+  // FIX (checklist item): this used to call computeStartupScore(activeProject)
+  // directly, without xp/streak — the same score displayed on Today/Overview
+  // for the identical project, at the identical moment, would be up to ~30
+  // points higher (xp boost 0-20, streak boost 0-10; see lib/scoring/index.ts).
+  // Rather than fix the inputs, the score widget itself is removed below —
+  // a chat surface doesn't need a status widget, and deleting it is safer
+  // than patching it: no more mismatch, no surface for a duplicate verdict
+  // to grow back. buildPlaceholderReasoning falls back to its non-numeric
+  // flavor text when score is undefined.
   const limits = getLimits(plan);
   const coachLimit = plan === "free" ? FREE_COACH_MESSAGES_PER_DAY : limits.aiMessagesPerDay;
   const remaining = plan === "free" ? Math.max(0, coachLimit - coachMessagesToday) : Infinity;
@@ -272,7 +279,7 @@ function AICoachPageInner() {
     }
     setInput("");
     const userMsg: ChatMessage = { id: Date.now().toString(), role: "user", content: msg };
-    const placeholderReasoning = buildPlaceholderReasoning(msg, activeProject?.title, score);
+    const placeholderReasoning = buildPlaceholderReasoning(msg, activeProject?.title);
     const thinkingMsg: ChatMessage = { id: (Date.now() + 1).toString(), role: "assistant", content: "", phase: "thinking", reasoning: placeholderReasoning };
     setMessages(prev => [...prev, userMsg, thinkingMsg]);
     setLoading(true);
@@ -499,24 +506,6 @@ function AICoachPageInner() {
               <div className="mb-2 font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--bm-text3)]">Current context</div>
               <div className="mb-1.5 text-[13px] font-semibold text-[var(--bm-text)]">{activeProject.title}</div>
               <div className="text-[12px] text-[var(--bm-text3)]">{activeProject.startup_stage ?? "Stage not set"}</div>
-            </Card>
-          )}
-
-          {activeProject && score > 0 && (
-            <Card variant="data" className="p-4">
-              <div className="mb-2 font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--bm-text3)]">Execution score</div>
-              <div className="flex items-baseline gap-1.5">
-                <span
-                  className="text-[26px] font-bold"
-                  style={{ color: score >= 65 ? "var(--bm-green)" : score >= 35 ? "var(--bm-amber)" : "var(--bm-red)" }}
-                >
-                  {score}
-                </span>
-                <span className="text-[12px] text-[var(--bm-text4)]">/100</span>
-              </div>
-              <p className="mt-1 text-[11px] text-[var(--bm-text3)]">
-                {score >= 65 ? "High — momentum is real" : score >= 35 ? "Building — keep the streak going" : "Low — mostly maintenance tasks"}
-              </p>
             </Card>
           )}
 
