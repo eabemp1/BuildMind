@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueries, useQueryClient } from "@tanstack/react-query";
 import {
   createProjectWithRoadmap,
   deleteProjectForCurrentUser,
@@ -263,7 +263,7 @@ export function useAICoachQuery(projectId: string) {
 
 /**
  * useFounderScorecardQuery — THE canonical source for momentum, streak, xp,
- * executionScore, and projectScore across the whole app.
+ * and executionScore across the whole app.
  *
  * FIX: overview, reports, today, and project-detail pages each
  * independently reconstructed a score by pulling XP/streak from browser
@@ -278,6 +278,11 @@ export function useAICoachQuery(projectId: string) {
  * lib/scorecard.ts's getFounderScorecard(), the same function
  * task-complete/streak/xp routes already write through) — one number,
  * everywhere, always.
+ *
+ * No `projectScore` field — that was removed from the API, not just this
+ * type. See lib/scorecard.ts's FIX comment for why: it was a founder-wide
+ * proxy nobody actually read, since every real consumer needs the
+ * specific project's own score, not a representative one.
  */
 export function useFounderScorecardQuery(validationStrengths: string[] = []) {
   return useQuery({
@@ -297,7 +302,6 @@ export function useFounderScorecardQuery(validationStrengths: string[] = []) {
         executionScore: number;
         tasksCompletedTotal: number;
         tasksCompletedToday: number;
-        projectScore: number;
         momentumLabel: { label: string; color: string; emoji: string };
         isDecaying: boolean;
         momentumDelta: number | null;
@@ -346,4 +350,41 @@ export function useFounderStandingQuery(projectId?: string | null, withTrend = f
     },
     staleTime: 60_000,
   });
-        }
+}
+
+/**
+ * useFounderStandingBatchQuery — the same standing data as above, for
+ * every project in a list at once. Projects-list renders many project
+ * cards in a single .map(), so useFounderStandingQuery can't be called
+ * per-card directly (that's a hook inside a loop). useQueries is the
+ * correct tool for "N independent, individually-cached queries decided
+ * at render time" — each project's standing is still its own cache
+ * entry (same queryKey as calling useFounderStandingQuery(id) directly
+ * would produce), so this doesn't create a second, differently-cached
+ * copy of the same data.
+ *
+ * Returns a plain lookup map instead of the raw useQueries result so
+ * call sites can just do `standingByProject[project.id]?.engagement`
+ * without reaching into react-query's per-query result shape.
+ */
+export function useFounderStandingBatchQuery(projectIds: string[]) {
+  const results = useQueries({
+    queries: projectIds.map((id) => ({
+      queryKey: queryKeys.standing(id),
+      queryFn: async () => {
+        const res = await fetch(`/api/founder-context/standing?projectId=${encodeURIComponent(id)}`, { cache: "no-store" });
+        if (!res.ok) throw new Error("Could not load standing");
+        const json = await res.json();
+        if (!json?.ok) throw new Error(json?.error ?? "Could not load standing");
+        return json.data as { engagement: "healthy" | "at-risk" | "stalled"; daysInactive: number };
+      },
+      staleTime: 60_000,
+    })),
+  });
+
+  const byProject: Record<string, { engagement: "healthy" | "at-risk" | "stalled"; daysInactive: number } | undefined> = {};
+  projectIds.forEach((id, i) => {
+    byProject[id] = results[i]?.data;
+  });
+  return byProject;
+}
