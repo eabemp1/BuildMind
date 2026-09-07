@@ -4,9 +4,17 @@
  * GET → returns the founder's consolidated scorecard via lib/scorecard.ts.
  *
  * This is the ONE endpoint client pages should call for momentum, streak,
- * xp, executionScore, and the composite projectScore. Replaces the pattern
- * of pages independently calling getXP()/getStoredStreak()/computeStartupScore()
- * with manually-assembled (and frequently incomplete) input objects.
+ * xp, and executionScore. Replaces the pattern of pages independently
+ * calling getXP()/getStoredStreak()/computeStartupScore() with
+ * manually-assembled (and frequently incomplete) input objects.
+ *
+ * No longer returns a composite `projectScore` — that field used to be
+ * computed here from a founder-wide "most recently updated project" proxy,
+ * documented as used by dashboard/reports/weekly-share but actually read
+ * by none of them; every real consumer computes its own score from the
+ * SPECIFIC project it's displaying, using this scorecard's xp/streak plus
+ * that project's own execution_score/momentum_score. See lib/scorecard.ts's
+ * FIX comment for the full reasoning.
  */
 
 import { NextResponse } from "next/server";
