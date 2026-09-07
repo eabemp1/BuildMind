@@ -33,7 +33,9 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { momentumLabel, isMomentumDecaying } from "@/lib/momentum";
-import { computeStartupScore } from "@/lib/scoring";
+// computeStartupScore is no longer imported here — see the FIX comment
+// below getFounderScorecard's raw fields for why projectScore (which
+// used to need it) was removed rather than fixed.
 
 export interface FounderScorecard {
   // Raw signals — the truth, straight from founder_context
@@ -45,14 +47,13 @@ export interface FounderScorecard {
   tasksCompletedToday: number;
 
   // Derived / display values — computed ONCE here, used everywhere
-  projectScore: number;      // composite 0-100 used by dashboard/reports/weekly-share
   momentumLabel: { label: string; color: string; emoji: string };
   isDecaying: boolean;       // momentum dropped ≥5 pts since last check — triggers AI warning copy
   momentumDelta: number | null;   // momentum - momentum_last_week, null if no baseline yet
   momentumTrend: "up" | "down" | "flat" | "unknown"; // for UI arrows/color, e.g. Behavioral Patterns
 }
 
-const DEFAULT_SCORECARD: Omit<FounderScorecard, "projectScore" | "momentumLabel" | "isDecaying" | "momentumDelta" | "momentumTrend"> = {
+const DEFAULT_SCORECARD: Omit<FounderScorecard, "momentumLabel" | "isDecaying" | "momentumDelta" | "momentumTrend"> = {
   momentum: 50,
   streak: 0,
   xp: 0,
@@ -66,7 +67,9 @@ const DEFAULT_SCORECARD: Omit<FounderScorecard, "projectScore" | "momentumLabel"
  * scores. Single Supabase round-trip, single set of derived calculations.
  *
  * @param userId            authenticated user id
- * @param validationStrengths  optional — from project, feeds into projectScore boost
+ * @param validationStrengths  optional — no longer used here (see FIX below);
+ *                              kept as a parameter so existing call sites
+ *                              that pass it don't need to change.
  */
 export async function getFounderScorecard(
   userId: string,
@@ -99,13 +102,25 @@ export async function getFounderScorecard(
     tasksCompletedToday:  ctx?.tasks_completed_today ?? DEFAULT_SCORECARD.tasksCompletedToday,
   };
 
-  const projectScore = computeStartupScore({
-    execution_score: raw.executionScore,
-    momentum_score:  raw.momentum,
-    xp:              raw.xp,
-    streak:          raw.streak,
-    validation_strengths: validationStrengths,
-  });
+  // FIX (checklist item): this used to also compute and return a
+  // `projectScore` field here, documented as "used by dashboard/reports/
+  // weekly-share." It never actually was — a grep across the app found
+  // zero components reading `.projectScore`; Overview, Projects list,
+  // Projects detail, Today, Reports, and AI Coach all called
+  // computeStartupScore() themselves instead, using the SPECIFIC
+  // project they were displaying (this.execution_score/momentum_score),
+  // not this function's founder-wide "most recently updated project"
+  // proxy above. That's not a bug to fix by wiring this field up —
+  // per-project computation is the more correct choice for any page
+  // showing a specific project, since the proxy above is deliberately
+  // coarse (representative, not exact) for founder-wide display.
+  // Removed rather than left dead: a promised-but-unread field is
+  // exactly the "computed but never rendered" pattern this project has
+  // hit repeatedly, and leaving it would invite a future caller to use
+  // the wrong (coarser) number by mistake. Any page that wants the
+  // startup score for a specific project should call
+  // computeStartupScore() itself with that project's own fields plus
+  // this scorecard's xp/streak — the pattern Overview/Today already use.
 
   const hasBaseline = typeof ctx?.momentum_last_week === "number";
   const momentumDelta = hasBaseline ? raw.momentum - (ctx!.momentum_last_week as number) : null;
@@ -117,7 +132,6 @@ export async function getFounderScorecard(
 
   return {
     ...raw,
-    projectScore,
     momentumLabel: momentumLabel(raw.momentum),
     isDecaying: hasBaseline ? isMomentumDecaying(raw.momentum, ctx!.momentum_last_week as number) : false,
     momentumDelta,
