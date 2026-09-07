@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence, type Variants } from "framer-motion";
 import {
   Activity, AlertTriangle, ArrowUpRight, Brain, ChevronDown,
-  CircleHelp, Clock3, Eye, GitBranch, History, Loader2, RefreshCw,
+  CircleHelp, Clock3, Download, Eye, GitBranch, History, Loader2, RefreshCw,
   ShieldCheck, TrendingUp, TrendingDown, Users, Calculator, Cpu,
   MessagesSquare, ListChecks, HeartHandshake, Sparkles,
 } from "lucide-react";
@@ -391,7 +391,7 @@ export default function FounderMirrorPage() {
 
       {/* ── Changes + Uncertainty ────────────────────────────────────────── */}
       <motion.div initial="hidden" animate="show" variants={fadeUp} custom={4} className="mt-7 grid grid-cols-1 gap-3.5 lg:grid-cols-2">
-        <Card className="p-4.5">
+        <Card className="p-5">
           <div className="mb-3 flex items-center gap-2">
             <Activity size={15} color="var(--bm-intel)" />
             <div>
@@ -421,7 +421,7 @@ export default function FounderMirrorPage() {
           )}
         </Card>
 
-        <Card variant="data" className="p-4.5">
+        <Card variant="data" className="p-5">
           <div className="mb-3 flex items-center gap-2">
             <AlertTriangle size={15} color="var(--bm-amber)" />
             <div>
@@ -444,7 +444,7 @@ export default function FounderMirrorPage() {
 
       {/* ── Correct the model ────────────────────────────────────────────── */}
       <motion.div initial="hidden" animate="show" variants={fadeUp} custom={5} className="mt-3.5">
-        <Card className="p-4.5 sm:p-5">
+        <Card className="p-5">
           <div className="mb-3 flex items-center gap-2">
             <History size={15} color="var(--bm-text3)" />
             <div>
@@ -519,7 +519,7 @@ export default function FounderMirrorPage() {
 
       {/* ── Decision continuity footer ───────────────────────────────────── */}
       <motion.div initial="hidden" animate="show" variants={fadeUp} custom={6} className="mt-3.5">
-        <Card className="p-4.5">
+        <Card className="p-5">
           <div className="mb-2 flex items-center gap-2">
             <GitBranch size={15} color="var(--bm-intel)" />
             <div>
@@ -530,12 +530,47 @@ export default function FounderMirrorPage() {
           <p className="m-0 mb-2.5 text-[13px] leading-relaxed text-[var(--bm-text3)]">
             {chain.narrative || "No decision relationship chain is available yet."}
           </p>
-          <div className="flex gap-4.5 text-[12px] text-[var(--bm-text4)]">
+          <div className="flex gap-4 text-[12px] text-[var(--bm-text4)]">
             <span className="inline-flex items-center gap-1.5"><Clock3 size={13} />{graph.nodes} observed entities</span>
             <span className="inline-flex items-center gap-1.5"><ArrowUpRight size={13} />{graph.edges} connected relationships</span>
           </div>
         </Card>
       </motion.div>
+
+      {/* ── Your data ─────────────────────────────────────────────────────
+           Everything above this line — beliefs, accuracy, archetype stats,
+           decision continuity — is real, computed, and until now had no
+           way out of this page. This is the actual export: the same
+           report this page is built from, downloadable directly. Not a
+           new synthesis, just a door to the one that already exists. */}
+      <motion.div initial="hidden" animate="show" variants={fadeUp} custom={7} className="mt-3.5">
+        <Card className="p-5">
+          <div className="mb-2 flex items-center gap-2">
+            <Download size={15} color="var(--bm-text3)" />
+            <div>
+              <Eyebrow color="var(--bm-text3)">Your data</Eyebrow>
+              <div className="font-[Syne] text-[15px] font-bold text-[var(--bm-text)]">Export the intelligence built about your startup</div>
+            </div>
+          </div>
+          <p className="m-0 mb-3 text-[12px] leading-relaxed text-[var(--bm-text3)]">
+            The full report BuildMind has built — readiness, engagement, prediction accuracy, and the underlying intelligence state — as raw data you can keep, analyze, or move elsewhere.
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <a
+              href="/api/founder-context/intelligence-export"
+              className="inline-flex items-center gap-1.5 rounded-[6px] border border-[var(--bm-border)] px-3 py-1.5 text-[12px] text-[var(--bm-text2)] no-underline hover:text-[var(--bm-text)]"
+            >
+              <Download size={12} /> Full report (JSON)
+            </a>
+            <a
+              href="/api/founder-context/intelligence-export?format=csv"
+              className="inline-flex items-center gap-1.5 rounded-[6px] border border-[var(--bm-border)] px-3 py-1.5 text-[12px] text-[var(--bm-text2)] no-underline hover:text-[var(--bm-text)]"
+            >
+              <Download size={12} /> Standing trend (CSV)
+            </a>
+          </div>
+        </Card>
+      </motion.div>
     </div>
   );
-}
+                    }
