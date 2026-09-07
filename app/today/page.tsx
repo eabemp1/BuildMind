@@ -1363,11 +1363,6 @@ function TodayContent() {
           }),
         });
         if (tcRes.ok) {
-          // Lets CofounderPulse (sidebar) react to this task completion
-          // immediately instead of waiting for its 4-hour fallback timer
-          // or the next tab refocus — see CofounderPulse.tsx's header for
-          // why event-driven refresh replaced the old passive timer.
-          window.dispatchEvent(new CustomEvent("bm:pulse-refresh"));
           const tcData = await tcRes.json();
           if (tcData.tasksCompletedTotal != null) {
             const localTotal = parseInt(storage.get("bm_tasks_completed_total") ?? "0", 10) || 0;
@@ -1870,6 +1865,8 @@ function TodayContent() {
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
+            flexWrap: "wrap",
+            rowGap: 10,
             marginBottom: 16,
           }}
         >
@@ -1899,7 +1896,7 @@ function TodayContent() {
             </span>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", rowGap: 8 }}>
           {/* Ongoing, honest stage-progress indicator. The bar fill is
               TASK-level (moves on every ordinary task completion — most
               days won't finish a whole milestone, so a milestone-only bar
@@ -1910,8 +1907,9 @@ function TodayContent() {
           {project && ((project.stageMilestonesTotal ?? 0) > 0 || (project.stageTasksTotal ?? 0) > 0) && (
             <div
               title={`${project.stageMilestonesCompleted ?? 0} of ${project.stageMilestonesTotal ?? 0} ${project.startup_stage ?? ""} milestones · ${project.stageTasksCompleted ?? 0} of ${project.stageTasksTotal ?? 0} tasks`}
+              className="hidden sm:flex"
               style={{
-                display: "flex", alignItems: "center", gap: 6,
+                alignItems: "center", gap: 6,
                 fontSize: 11, color: "var(--bm-text3)",
               }}
             >
@@ -1969,11 +1967,14 @@ function TodayContent() {
                 display: "flex", alignItems: "center", gap: 5,
                 padding: "4px 9px", borderRadius: 5,
                 background: "var(--bm-intel-dim)", border: "1px solid var(--bm-intel-bd)",
-                textDecoration: "none",
+                textDecoration: "none", maxWidth: "100%",
               }}
             >
-              <Trophy size={11} color="var(--bm-intel2)" />
-              <span style={{ fontSize: 11, fontWeight: 400, color: "var(--bm-intel2)", fontFamily: "'DM Mono', monospace" }}>
+              <Trophy size={11} color="var(--bm-intel2)" style={{ flexShrink: 0 }} />
+              <span style={{
+                fontSize: 11, fontWeight: 400, color: "var(--bm-intel2)", fontFamily: "'DM Mono', monospace",
+                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+              }}>
                 Lv {levelInfo.level} · {levelInfo.title}
               </span>
             </a>
