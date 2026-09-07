@@ -8,6 +8,7 @@ import { getActiveProjectId, setActiveProjectId } from "@/lib/api";
 import {
   useDeleteProjectMutation,
   useProjectSummariesQuery,
+  useFounderStandingBatchQuery,
 } from "@/lib/queries";
 import { getLimits } from "@/lib/plan";
 import { usePlan } from "@/lib/usePlan";
@@ -56,10 +57,13 @@ function normalizeStage(input: string): StartupStage {
 }
 
 // ── Project health (spec §15 — "make it obvious which projects are healthy,
-//    at risk, stalled, or completed"). Derived entirely client-side from
-//    fields already present on the project summary (lastActivity,
-//    tasksCompleted/Total, computed score) — no backend/API change, no new
-//    intelligence logic, just a presentational read of existing data. ──────
+//    at risk, stalled, or completed"). "Completed" stays a local,
+//    presentational check (task-completion state). The stalled/at-risk/
+//    healthy verdict itself now comes from useFounderStandingBatchQuery
+//    (lib/queries.ts), the same engagement signal Execution and the
+//    co-founder mascot read — this list used to recompute that from
+//    lastActivity/score locally, which is exactly the kind of duplicate
+//    verdict this whole redesign has been removing. ──────────────────────
 type ProjectHealth = "completed" | "healthy" | "at-risk" | "stalled";
 
 const HEALTH_META: Record<ProjectHealth, { label: string; variant: "success" | "warning" | "danger" | "neutral"; dot: string }> = {
@@ -69,17 +73,22 @@ const HEALTH_META: Record<ProjectHealth, { label: string; variant: "success" | "
   stalled:   { label: "Stalled",   variant: "danger",  dot: "var(--bm-red)" },
 };
 
-function deriveProjectHealth(s: { tasksCompleted?: number | null; tasksTotal?: number | null; lastActivity?: string | null }, score: number): ProjectHealth {
+// FIX (checklist item): deriveProjectHealth's recency branch used to
+// recompute engagement itself (days-since-activity thresholds) — a
+// second, locally-owned copy of exactly what standing.engagement (see
+// lib/server/founderStanding.ts) already provides. "completed" is kept
+// as its own local, presentational check — task-completion state isn't
+// part of engagement and doesn't belong in the shared signal — but the
+// stalled/at-risk/healthy branch now takes engagement directly rather
+// than recomputing it, so this list can't disagree with Execution or the
+// mascot about the same project's engagement again.
+function deriveProjectHealth(
+  s: { tasksCompleted?: number | null; tasksTotal?: number | null },
+  engagement: "healthy" | "at-risk" | "stalled" | undefined,
+): ProjectHealth {
   const completed = s.tasksTotal && s.tasksTotal > 0 && s.tasksCompleted === s.tasksTotal;
   if (completed) return "completed";
-
-  const daysSinceActivity = s.lastActivity
-    ? Math.floor((Date.now() - new Date(s.lastActivity).getTime()) / 86_400_000)
-    : Infinity;
-
-  if (daysSinceActivity >= 7) return "stalled";
-  if (daysSinceActivity >= 3 || score < 40) return "at-risk";
-  return "healthy";
+  return engagement ?? "healthy"; // "healthy" only as a pre-load fallback, never a real verdict
 }
 
 // ── Progress bar ──────────────────────────────────────────────────────────────
@@ -178,6 +187,14 @@ export default function ProjectsPage() {
     if (stageFilter === "all") return summaries;
     return summaries.filter((s) => normalizeStage(s.startup_stage ?? "") === stageFilter);
   }, [summaries, stageFilter]);
+
+  // FIX (checklist item): batch-fetched once for every project on the
+  // page, not recomputed per-card locally — see deriveProjectHealth's
+  // updated header for why. useFounderStandingBatchQuery is the
+  // useQueries-based tool for this specifically because a plain
+  // useFounderStandingQuery(id) call can't live inside the .map() below
+  // (hooks can't be called in a loop).
+  const standingByProject = useFounderStandingBatchQuery(summaries.map((s) => s.id));
 
   const createHref = canCreateProject ? "/projects/new" : undefined;
 
@@ -278,7 +295,7 @@ export default function ProjectsPage() {
             const completion = s.tasksTotal > 0
               ? Math.round((s.tasksCompleted / s.tasksTotal) * 100)
               : 0;
-            const health = deriveProjectHealth(s, score);
+            const health = deriveProjectHealth(s, standingByProject[s.id]?.engagement);
             const healthMeta = HEALTH_META[health];
             const activeTasks = Math.max(0, (s.tasksTotal ?? 0) - (s.tasksCompleted ?? 0));
 
