@@ -147,7 +147,23 @@ const CEREBRAS_MODEL       = process.env.CEREBRAS_MODEL || "gpt-oss-120b";
 const CEREBRAS_REASONING_MODEL = "gpt-oss-120b";
 const GEMINI_API_KEY       = readApiKey("GEMINI_API_KEY");
 // Upgrade to Gemini 2.5 Flash — stronger reasoning and lower hallucination rate
-const GEMINI_MODEL         = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+// FIX (checklist item): live health-check output showed the ACTUAL runtime
+// model being called was "gemini-2.0-flash" — despite this default already
+// being "gemini-2.5-flash" — meaning the live deployment's GEMINI_MODEL
+// env var was set to the dead value and had drifted from both this default
+// and .env.example without anyone noticing until it 404'd. That env var
+// needs updating directly on the deployment platform; this file can't fix
+// that from here.
+//
+// Also bumping the default itself: per Google's own deprecation docs
+// (ai.google.dev/gemini-api/docs/deprecations), gemini-2.5-flash's own
+// shutdown is imminent/already passed depending on exactly when this is
+// read — Gemini's deprecation cadence is unusually aggressive (multiple
+// forced migrations within the same year). Verify the current live model
+// name directly at that URL before deploying, don't trust this string
+// blindly — it is expected to go stale again within months, not a
+// one-time fix.
+const GEMINI_MODEL         = process.env.GEMINI_MODEL || "gemini-3-flash-preview";
 
 // OPENROUTER — no-card alternative for genuine model diversity. Google AI Studio's
 // API now requires a card on file in many regions even for free-tier Gemini models;
@@ -808,4 +824,4 @@ export async function callModelJSON<T>(
       `callModelJSON: failed to parse provider response as JSON. Raw (truncated): ${clean.slice(0, 120)}`
     );
   }
-          }
+                             }
