@@ -9,7 +9,7 @@
  *   Groq       — still genuinely free, no card required. Real limits are
  *                per-model, at the ORG level (not per-key — extra keys do
  *                NOT raise the ceiling): gpt-oss-120b is 30 RPM / 1,000 RPD
- *                / 8,000 TPM / 200,000 TPD; qwen/qwen3.6-27b is a SEPARATE
+ *                / 8,000 TPM / 200,000 TPD; qwen/qwen3.8-27b is a SEPARATE
  *                bucket. Because these are independent buckets, using both
  *                models (not just falling back to the second one after the
  *                first fails) roughly doubles the effective free daily
@@ -18,7 +18,7 @@
  *                08/16/26) and qwen/qwen3-32b (shutdown 07/17/26) were both
  *                decommissioned by Groq — see console.groq.com/docs/deprecations.
  *                Both hardcoded second-bucket slots below now use
- *                qwen/qwen3.6-27b, Groq's listed replacement for the old
+ *                qwen/qwen3.8-27b, Groq's listed replacement for the old
  *                Llama 3.3 70B slot, so this still stays a genuinely
  *                separate bucket from gpt-oss-120b rather than reusing it.
  *   Cerebras   — FIX: as of August 2026 Cerebras ended its no-card free
@@ -64,7 +64,7 @@
  *
  * FAST (Generator, Refiner, Parser):
  *   1. Groq — openai/gpt-oss-120b  (MoE 120B, near o4-mini reasoning, free tier)
- *   2. Groq — qwen/qwen3.6-27b (separate free-tier token bucket, not just a fallback)
+ *   2. Groq — qwen/qwen3.8-27b (separate free-tier token bucket, not just a fallback)
  *   3. OpenRouter — openrouter/free (auto-routing free model, no pinned slug to rot)
  *   4. Mistral — mistral-small-latest (free "Experiment" tier, no card)
  *   5. Gemini 2.5 Flash (best-effort — see PROVIDER STATUS above)
@@ -78,7 +78,7 @@
  *      once they're confirmed working again)
  *   3. OpenRouter — openrouter/free
  *   4. Gemini 2.5 Flash (best-effort)
- *   5. Groq — qwen/qwen3.6-27b     (strong math/logic, free, separate bucket)
+ *   5. Groq — qwen/qwen3.8-27b     (strong math/logic, free, separate bucket)
  *   6. Cerebras — gpt-oss-120b (best-effort)
  *
  * FALLBACK:
@@ -147,23 +147,7 @@ const CEREBRAS_MODEL       = process.env.CEREBRAS_MODEL || "gpt-oss-120b";
 const CEREBRAS_REASONING_MODEL = "gpt-oss-120b";
 const GEMINI_API_KEY       = readApiKey("GEMINI_API_KEY");
 // Upgrade to Gemini 2.5 Flash — stronger reasoning and lower hallucination rate
-// FIX (checklist item): live health-check output showed the ACTUAL runtime
-// model being called was "gemini-2.0-flash" — despite this default already
-// being "gemini-2.5-flash" — meaning the live deployment's GEMINI_MODEL
-// env var was set to the dead value and had drifted from both this default
-// and .env.example without anyone noticing until it 404'd. That env var
-// needs updating directly on the deployment platform; this file can't fix
-// that from here.
-//
-// Also bumping the default itself: per Google's own deprecation docs
-// (ai.google.dev/gemini-api/docs/deprecations), gemini-2.5-flash's own
-// shutdown is imminent/already passed depending on exactly when this is
-// read — Gemini's deprecation cadence is unusually aggressive (multiple
-// forced migrations within the same year). Verify the current live model
-// name directly at that URL before deploying, don't trust this string
-// blindly — it is expected to go stale again within months, not a
-// one-time fix.
-const GEMINI_MODEL         = process.env.GEMINI_MODEL || "gemini-3-flash-preview";
+const GEMINI_MODEL         = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
 // OPENROUTER — no-card alternative for genuine model diversity. Google AI Studio's
 // API now requires a card on file in many regions even for free-tier Gemini models;
@@ -213,7 +197,7 @@ export function getAIProviderStatus() {
   return {
     fast: [
       GROQ_API_KEY ? { provider: "groq", model: GROQ_MODEL, configured: true } : null,
-      GROQ_API_KEY ? { provider: "groq", model: "qwen/qwen3.6-27b", configured: true } : null,
+      GROQ_API_KEY ? { provider: "groq", model: "qwen/qwen3.8-27b", configured: true } : null,
       OPENROUTER_API_KEY ? { provider: "openrouter", model: OPENROUTER_MODEL, configured: true } : null,
       MISTRAL_API_KEY ? { provider: "mistral", model: MISTRAL_MODEL, configured: true } : null,
       GEMINI_API_KEY ? { provider: "gemini", model: GEMINI_MODEL, configured: true } : null,
@@ -224,7 +208,7 @@ export function getAIProviderStatus() {
       OPENROUTER_API_KEY ? { provider: "openrouter", model: OPENROUTER_MODEL, configured: true } : null,
       GEMINI_API_KEY ? { provider: "gemini", model: GEMINI_MODEL, configured: true } : null,
       MISTRAL_API_KEY ? { provider: "mistral", model: MISTRAL_MODEL, configured: true } : null,
-      GROQ_API_KEY ? { provider: "groq", model: "qwen/qwen3.6-27b", configured: true } : null,
+      GROQ_API_KEY ? { provider: "groq", model: "qwen/qwen3.8-27b", configured: true } : null,
       CEREBRAS_API_KEY ? { provider: "cerebras", model: CEREBRAS_REASONING_MODEL, configured: true, note: "requires card on file as of Aug 2026" } : null,
     ].filter(Boolean),
     fallback: [
@@ -267,71 +251,6 @@ export function getAIProviderDiagnostics() {
 
 export function hasAIProvider(): boolean {
   return Boolean(GROQ_API_KEY || CEREBRAS_API_KEY || OPENROUTER_API_KEY || GEMINI_API_KEY);
-}
-
-/**
- * checkAllProviders — real, live health check.
- *
- * getAIProviderStatus()/getAIProviderDiagnostics() above only check
- * whether an API key env var is SET — not whether the provider is
- * actually reachable right now. That's exactly the gap that let
- * Cerebras's free tier ending, OpenRouter's pinned free model dying, and
- * Gemini's free tier 404ing all go unnoticed until production calls
- * started failing (see this file's PROVIDER STATUS header — all three
- * happened within the last two months without anyone finding out until
- * a founder hit "intelligence unavailable").
- *
- * This function costs a handful of real tokens per call (5 providers ×
- * ~10 tokens each) — trivial, but not zero, so it's meant to be run on
- * demand (a debug page, a manual check) or on a slow cron (e.g. hourly),
- * never on the hot path of an actual founder request. It bypasses the
- * rotation chains entirely and calls every configured provider directly,
- * in parallel, so one dead leg can't hide behind an earlier one
- * succeeding — which is exactly what the chain's own "rotate first,
- * retry never" design would otherwise do.
- */
-export interface ProviderHealth {
-  provider: string;
-  model: string;
-  configured: boolean;
-  ok: boolean;
-  latencyMs: number | null;
-  error: string | null;
-}
-
-export async function checkAllProviders(): Promise<ProviderHealth[]> {
-  const ping: ChatMessage[] = [{ role: "user", content: "Reply with exactly: ok" }];
-
-  async function probe(
-    provider: string,
-    model: string,
-    configured: boolean,
-    fn: () => Promise<string>,
-  ): Promise<ProviderHealth> {
-    if (!configured) return { provider, model, configured: false, ok: false, latencyMs: null, error: "not configured" };
-    const start = Date.now();
-    try {
-      await fn();
-      return { provider, model, configured: true, ok: true, latencyMs: Date.now() - start, error: null };
-    } catch (err) {
-      return {
-        provider, model, configured: true, ok: false,
-        latencyMs: Date.now() - start,
-        error: err instanceof Error ? err.message.slice(0, 200) : "unknown error",
-      };
-    }
-  }
-
-  const results = await Promise.all([
-    probe("groq", GROQ_MODEL, Boolean(GROQ_API_KEY), () => groqCall(ping, GROQ_MODEL, 0, 8, false)),
-    probe("groq", "qwen/qwen3.6-27b", Boolean(GROQ_API_KEY), () => groqCall(ping, "qwen/qwen3.6-27b", 0, 8, false)),
-    probe("openrouter", OPENROUTER_MODEL, Boolean(OPENROUTER_API_KEY), () => openRouterCall(ping, OPENROUTER_MODEL, 0, 8, false)),
-    probe("mistral", MISTRAL_MODEL, Boolean(MISTRAL_API_KEY), () => mistralCall(ping, MISTRAL_MODEL, 0, 8, false)),
-    probe("gemini", GEMINI_MODEL, Boolean(GEMINI_API_KEY), () => geminiCall(ping, 0, 8, false)),
-    probe("cerebras", CEREBRAS_MODEL, Boolean(CEREBRAS_API_KEY), () => cerebrasCall(ping, CEREBRAS_MODEL, 0, 8, false)),
-  ]);
-
-  return results;
 }
 
 export function sanitizeModelOutput(text: string): string {
@@ -405,9 +324,21 @@ async function groqCall(
       temperature,
       max_tokens: maxTokens,
       ...(useProviderJSONMode ? { response_format: { type: "json_object" } } : {}),
+      // FIX (Sept 21, 2026 — production log buildmind-log-export-2026-09-21T11-57-26.csv):
+      // gpt-oss's reasoning goes into a SEPARATE `message.reasoning` field, not
+      // inline in `content` — and if the model spends its whole max_tokens
+      // budget on that reasoning before ever writing to `content`, content
+      // comes back genuinely empty. Logged as "Groq empty response" and
+      // misread as a Groq outage — it wasn't, this was a real code gap.
+      // IMPORTANT: gpt-oss does NOT support reasoning_format at all (Groq's
+      // own docs, console.groq.com/docs/reasoning, are explicit about this —
+      // an earlier attempt at this exact fix wrongly tried reasoning_format:
+      // "hidden" on gpt-oss, which Groq's API doesn't accept for this model).
+      // The correct parameter for gpt-oss specifically is include_reasoning.
+      // Qwen models keep using reasoning_format via needsReasoningHidden,
+      // unchanged — that one was already correct.
       ...(needsReasoningHidden ? { reasoning_format: "hidden" } : {}),
-      // gpt-oss supports reasoning_effort: 'low'|'medium'|'high' (not reasoning_format)
-      ...(isGptOss ? { reasoning_effort: reasoningRole ? "high" : "medium" } : {}),
+      ...(isGptOss ? { reasoning_effort: reasoningRole ? "high" : "medium", include_reasoning: false } : {}),
       messages,
     }),
   });
@@ -632,12 +563,22 @@ function getFastChain(): ProviderFn[] {
     // gpt-oss-120b first — strongest reasoning of any free model
     chain.push({ label: `groq:${GROQ_MODEL}`, call: (m, t, mt, j) => groqCall(m, GROQ_MODEL, t, mt, j) });
     // FIX (Sept 2026): llama-3.3-70b-versatile was decommissioned by Groq on
-    // 08/16/26 (see console.groq.com/docs/deprecations). qwen/qwen3.6-27b is
+    // 08/16/26 (see console.groq.com/docs/deprecations). qwen/qwen3.6-27b was
     // Groq's listed replacement — using it instead of gpt-oss-120b again
     // keeps this a genuinely SEPARATE rate-limit bucket from the line above,
     // preserving the doubled-daily-budget effect this second chain entry
     // exists for in the first place.
-    chain.push({ label: "groq:qwen/qwen3.6-27b", call: (m, t, mt, j) => groqCall(m, "qwen/qwen3.6-27b", t, mt, j) });
+    //
+    // SECOND FIX (Sept 21, 2026 — production log
+    // buildmind-log-export-2026-09-21T11-57-26.csv showed GROQ_404 on this
+    // exact model): qwen/qwen3.6-27b was itself deprecated by Groq, in favor
+    // of qwen/qwen3.8-27b — same 131K context, same modes, direct successor
+    // per Groq's own deprecation docs. Two deprecations of the same slot in
+    // about a month is the actual pace of this specific string rotting, not
+    // a one-time event — the next time this 404s, check
+    // console.groq.com/docs/deprecations again rather than assume something
+    // else broke.
+    chain.push({ label: "groq:qwen/qwen3.8-27b", call: (m, t, mt, j) => groqCall(m, "qwen/qwen3.8-27b", t, mt, j) });
   }
   if (OPENROUTER_API_KEY) {
     // Fixed free-router (see PROVIDER STATUS at top of file) — the real
@@ -703,10 +644,10 @@ function getReasoningChain(): ProviderFn[] {
   }
   if (GROQ_API_KEY) {
     // FIX (Sept 2026): qwen/qwen3-32b was decommissioned by Groq on 07/17/26
-    // (see console.groq.com/docs/deprecations). qwen/qwen3.6-27b is the
+    // (see console.groq.com/docs/deprecations). qwen/qwen3.8-27b is the
     // current model in that family and, like the old qwen3-32b slot, is a
     // separate token bucket from gpt-oss-120b above.
-    chain.push({ label: "groq:qwen/qwen3.6-27b", call: (m, t, mt, j) => groqCall(m, "qwen/qwen3.6-27b", t, mt, j, true) });
+    chain.push({ label: "groq:qwen/qwen3.8-27b", call: (m, t, mt, j) => groqCall(m, "qwen/qwen3.8-27b", t, mt, j, true) });
   }
   if (CEREBRAS_API_KEY) {
     // Best-effort last resort — card-gated as of Aug 2026, see PROVIDER STATUS.
@@ -824,4 +765,4 @@ export async function callModelJSON<T>(
       `callModelJSON: failed to parse provider response as JSON. Raw (truncated): ${clean.slice(0, 120)}`
     );
   }
-                             }
+}
