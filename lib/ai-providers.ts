@@ -253,6 +253,77 @@ export function hasAIProvider(): boolean {
   return Boolean(GROQ_API_KEY || CEREBRAS_API_KEY || OPENROUTER_API_KEY || GEMINI_API_KEY);
 }
 
+/**
+ * checkAllProviders — real, live health check.
+ *
+ * RESTORED (Sept 21, 2026): this function was dropped from a prior deploy
+ * because it only ever existed in an earlier session's delivered output,
+ * not in this repo — a sandbox reset meant the file handed over next time
+ * was reconstructed from the original source and silently didn't include
+ * it, breaking app/api/admin/ai-provider-status/route.ts's import at build
+ * time. Restoring it here, in the repo itself this time, specifically so
+ * this can't happen again the same way.
+ *
+ * getAIProviderDiagnostics() above only checks whether an API key env var
+ * is SET — not whether the provider is actually reachable right now. This
+ * function bypasses the rotation chains and calls every configured
+ * provider directly, in parallel, so one dead leg can't hide behind an
+ * earlier one succeeding.
+ *
+ * maxTokens is 120, not the 8 this function originally shipped with — 8
+ * was too small for reasoning-capable models (gpt-oss, whatever
+ * "openrouter/free" currently routes to) and produced false-negative
+ * "empty response" results purely from the health check itself, not from
+ * the provider actually being down. 120 matches the budget the
+ * pre-existing /api/ai/provider-test route already used successfully.
+ *
+ * Costs a handful of real tokens per call — run on demand, never on a hot
+ * path.
+ */
+export interface ProviderHealth {
+  provider: string;
+  model: string;
+  configured: boolean;
+  ok: boolean;
+  latencyMs: number | null;
+  error: string | null;
+}
+
+export async function checkAllProviders(): Promise<ProviderHealth[]> {
+  const ping: ChatMessage[] = [{ role: "user", content: "Reply with exactly: ok" }];
+
+  async function probe(
+    provider: string,
+    model: string,
+    configured: boolean,
+    fn: () => Promise<string>,
+  ): Promise<ProviderHealth> {
+    if (!configured) return { provider, model, configured: false, ok: false, latencyMs: null, error: "not configured" };
+    const start = Date.now();
+    try {
+      await fn();
+      return { provider, model, configured: true, ok: true, latencyMs: Date.now() - start, error: null };
+    } catch (err) {
+      return {
+        provider, model, configured: true, ok: false,
+        latencyMs: Date.now() - start,
+        error: err instanceof Error ? err.message.slice(0, 200) : "unknown error",
+      };
+    }
+  }
+
+  const results = await Promise.all([
+    probe("groq", GROQ_MODEL, Boolean(GROQ_API_KEY), () => groqCall(ping, GROQ_MODEL, 0, 120, false)),
+    probe("groq", "qwen/qwen3.8-27b", Boolean(GROQ_API_KEY), () => groqCall(ping, "qwen/qwen3.8-27b", 0, 120, false)),
+    probe("openrouter", OPENROUTER_MODEL, Boolean(OPENROUTER_API_KEY), () => openRouterCall(ping, OPENROUTER_MODEL, 0, 120, false)),
+    probe("mistral", MISTRAL_MODEL, Boolean(MISTRAL_API_KEY), () => mistralCall(ping, MISTRAL_MODEL, 0, 120, false)),
+    probe("gemini", GEMINI_MODEL, Boolean(GEMINI_API_KEY), () => geminiCall(ping, 0, 120, false)),
+    probe("cerebras", CEREBRAS_MODEL, Boolean(CEREBRAS_API_KEY), () => cerebrasCall(ping, CEREBRAS_MODEL, 0, 120, false)),
+  ]);
+
+  return results;
+}
+
 export function sanitizeModelOutput(text: string): string {
   return text
     .replace(/<think>[\s\S]*?<\/think>/gi, "")
