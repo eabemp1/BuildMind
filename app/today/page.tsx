@@ -1050,7 +1050,29 @@ function TodayContent() {
     })();
 
     return () => { abortController.abort(); };
-  }, [project, userId, forceActionRefresh]);
+    // FIX (Sept 22, 2026 — stream requests never appearing in Vercel logs at
+    // all, only the JSON fallback showing up): this depended on the whole
+    // `project` OBJECT, not project?.id. project comes from
+    // useMemo(() => selectActiveProject(summaries, activeProjectId), [summaries, activeProjectId])
+    // — its stability rides entirely on whether `summaries` (a React Query
+    // result) returns a referentially stable array between fetches. Any
+    // background refetch (window refocus is the common one — very
+    // plausible on mobile, where switching apps and coming back happens
+    // constantly) produces a new `summaries` array even when nothing
+    // meaningful changed, which produces a new `project` object via
+    // useMemo, which re-ran this effect, which aborted whatever stream
+    // request was in flight — often before it got far enough to register
+    // as a real logged invocation at all. That's consistent with what was
+    // actually observed: /stream never showing up in logs, while the
+    // faster JSON fallback (POST /api/ai/today-action) did.
+    //
+    // Genuine content changes (task completion, milestone changes) don't
+    // need project-object-identity to trigger a refresh — they already go
+    // through the explicit forceActionRefresh counter (see
+    // setForceActionRefresh calls elsewhere in this file), so narrowing
+    // this to project?.id doesn't silently drop that behavior; it removes
+    // an accidental, fragile trigger that was never the intended mechanism.
+  }, [project?.id, userId, forceActionRefresh]);
 
   useEffect(() => {
     if (replacingTask && !actionLoading && (aiAction || debtSuppression)) {
@@ -1865,8 +1887,6 @@ function TodayContent() {
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            flexWrap: "wrap",
-            rowGap: 10,
             marginBottom: 16,
           }}
         >
@@ -1896,7 +1916,7 @@ function TodayContent() {
             </span>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", rowGap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {/* Ongoing, honest stage-progress indicator. The bar fill is
               TASK-level (moves on every ordinary task completion — most
               days won't finish a whole milestone, so a milestone-only bar
@@ -1907,9 +1927,8 @@ function TodayContent() {
           {project && ((project.stageMilestonesTotal ?? 0) > 0 || (project.stageTasksTotal ?? 0) > 0) && (
             <div
               title={`${project.stageMilestonesCompleted ?? 0} of ${project.stageMilestonesTotal ?? 0} ${project.startup_stage ?? ""} milestones · ${project.stageTasksCompleted ?? 0} of ${project.stageTasksTotal ?? 0} tasks`}
-              className="hidden sm:flex"
               style={{
-                alignItems: "center", gap: 6,
+                display: "flex", alignItems: "center", gap: 6,
                 fontSize: 11, color: "var(--bm-text3)",
               }}
             >
@@ -1967,14 +1986,11 @@ function TodayContent() {
                 display: "flex", alignItems: "center", gap: 5,
                 padding: "4px 9px", borderRadius: 5,
                 background: "var(--bm-intel-dim)", border: "1px solid var(--bm-intel-bd)",
-                textDecoration: "none", maxWidth: "100%",
+                textDecoration: "none",
               }}
             >
-              <Trophy size={11} color="var(--bm-intel2)" style={{ flexShrink: 0 }} />
-              <span style={{
-                fontSize: 11, fontWeight: 400, color: "var(--bm-intel2)", fontFamily: "'DM Mono', monospace",
-                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-              }}>
+              <Trophy size={11} color="var(--bm-intel2)" />
+              <span style={{ fontSize: 11, fontWeight: 400, color: "var(--bm-intel2)", fontFamily: "'DM Mono', monospace" }}>
                 Lv {levelInfo.level} · {levelInfo.title}
               </span>
             </a>
