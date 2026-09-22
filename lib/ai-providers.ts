@@ -784,7 +784,39 @@ export async function callModel(
 
   const errors: string[] = [];
 
+  // FIX (Sept 21, 2026 — production log buildmind-log-export-2026-09-21T11-57-26.csv
+  // showed "Vercel Runtime Timeout Error: Task timed out after 30 seconds"):
+  // this loop previously had no awareness of wall-clock time at all — it would
+  // keep trying every remaining chain entry regardless of how much time had
+  // already been spent on earlier failures. With up to 6 providers in a chain
+  // and an 8s PROVIDER_TIMEOUT_MS each, a bad run (several slow-failing legs
+  // in a row — OpenRouter in particular can hang near its full timeout before
+  // erroring, per that provider's own comment above) could exceed 30 seconds
+  // on its OWN, before even accounting for Today's action-generation flow
+  // calling this three times in sequence (Agent A, Critic, Refiner).
+  //
+  // CALL_BUDGET_MS caps how long THIS SINGLE callModel invocation is allowed
+  // to keep trying providers. It intentionally leaves real margin below the
+  // 30s function limit — 9s was chosen so three sequential stages (27s worst
+  // case) still fit under 30s with room to spare, not because 9s is special
+  // on its own. If Today's flow changes to fewer or more sequential AI
+  // calls, this number should move with it.
+  //
+  // This does NOT solve the deeper version of the same problem: the three
+  // stages in today-action/stream/route.ts don't share a single deadline —
+  // each gets its own fresh 9s budget, so a genuinely unlucky run (each
+  // stage separately spending close to its full budget) can still approach
+  // 27s+ combined. A real fix for that needs a deadline threaded through
+  // all three calls from that route, which this change does not attempt —
+  // flagging the boundary rather than implying this is fully solved.
+  const CALL_BUDGET_MS = 9000;
+  const loopStart = Date.now();
+
   for (const provider of chain) {
+    if (Date.now() - loopStart > CALL_BUDGET_MS) {
+      console.warn(`[ai-providers] ${role} call budget (${CALL_BUDGET_MS}ms) exhausted before trying ${provider.label} — stopping early rather than risk the function timeout`);
+      break;
+    }
     try {
       const text = await provider.call(messages, temperature, maxTokens, jsonMode);
       if (jsonMode) assertValidJSONModeOutput(text);
