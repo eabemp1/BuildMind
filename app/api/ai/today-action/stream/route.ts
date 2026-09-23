@@ -350,6 +350,19 @@ function composeConcreteTask(structured: StructuredAction): { task: string; plat
 
 export async function POST(request: Request) {
   const encoder = new TextEncoder();
+  // FIX (Sept 22, 2026 — confirmed in production logs: stream timed out at
+  // 30s with "all models failed except Groq's qwen" — meaning qwen was
+  // likely still in flight, or had just succeeded, when Vercel killed the
+  // function). This route makes THREE sequential callModel/callModelJSON
+  // calls (Agent A, Critic, Refiner), and each one previously got its own
+  // fresh internal budget — three independently-budgeted stages can still
+  // sum past what's actually left in the 30s function window even if no
+  // single stage looks slow on its own. One deadline, computed once here
+  // and threaded through all three calls below, means stage 2 knows how
+  // much stage 1 actually used instead of assuming an allowance it may not
+  // have. 24s leaves ~6s of margin for request parsing, SSE setup, and
+  // response writing outside the AI calls themselves.
+  const requestDeadline = Date.now() + 24000;
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -570,7 +583,7 @@ HARD RULES:
         try {
           structuredA = await callModelJSON<StructuredAction>(
             [{ role: "system", content: systemA }, { role: "user", content: "Give me today's single most important task. Return JSON only." }],
-            { role: "reasoning", temperature: 0.6, maxTokens: 700 },
+            { role: "reasoning", temperature: 0.6, maxTokens: 700, deadlineMs: requestDeadline },
           );
         } catch (err) {
           logError("today-action-stream/agentA", err, { userId, stage, provider: "callModelJSON" });
@@ -632,7 +645,7 @@ Context: Stage=${stage}, Target users=${targetUsers || "unknown"}, Product=${tit
               },
               { role: "user", content: `Evaluate:\n${agentAOutput}` },
             ],
-            { role: "reasoning", temperature: 0.3, maxTokens: 300 },
+            { role: "reasoning", temperature: 0.3, maxTokens: 300, deadlineMs: requestDeadline },
           );
           criticVerdict = (parsed.verdict === "fail" ? "fail" : "pass") as "pass" | "fail";
           criticReason = parsed.reason ?? "OK";
@@ -685,7 +698,7 @@ Critique: ${criticReason}
 Input to refine:
 ${JSON.stringify(structuredA)}`,
               }, { role: "user", content: "Refine and return JSON only." }],
-              { role: "reasoning", temperature: 0.3, maxTokens: 700 },
+              { role: "reasoning", temperature: 0.3, maxTokens: 700, deadlineMs: requestDeadline },
             );
           } catch (err) {
             logError("today-action-stream/agentC-refiner", err, { userId, stage, provider: "callModelJSON" });
