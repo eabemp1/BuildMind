@@ -761,6 +761,15 @@ export async function callModel(
     temperature?: number;
     maxTokens?: number;
     jsonMode?: boolean;
+    /**
+     * Absolute deadline (Date.now()-style timestamp), not a duration. Lets a
+     * caller making several sequential callModel invocations in one request
+     * (today-action/stream/route.ts's Agent A → Critic → Refiner) share ONE
+     * real time budget instead of each call getting its own fresh allowance
+     * — see the FIX comment below for why that distinction turned out to
+     * matter in practice, not just in theory.
+     */
+    deadlineMs?: number;
   } = {},
 ): Promise<string> {
   const {
@@ -768,6 +777,7 @@ export async function callModel(
     temperature = 0.3,
     maxTokens = 600,
     jsonMode = false,
+    deadlineMs,
   } = options;
 
   const chain =
@@ -795,26 +805,24 @@ export async function callModel(
   // on its OWN, before even accounting for Today's action-generation flow
   // calling this three times in sequence (Agent A, Critic, Refiner).
   //
-  // CALL_BUDGET_MS caps how long THIS SINGLE callModel invocation is allowed
-  // to keep trying providers. It intentionally leaves real margin below the
-  // 30s function limit — 9s was chosen so three sequential stages (27s worst
-  // case) still fit under 30s with room to spare, not because 9s is special
-  // on its own. If Today's flow changes to fewer or more sequential AI
-  // calls, this number should move with it.
-  //
-  // This does NOT solve the deeper version of the same problem: the three
-  // stages in today-action/stream/route.ts don't share a single deadline —
-  // each gets its own fresh 9s budget, so a genuinely unlucky run (each
-  // stage separately spending close to its full budget) can still approach
-  // 27s+ combined. A real fix for that needs a deadline threaded through
-  // all three calls from that route, which this change does not attempt —
-  // flagging the boundary rather than implying this is fully solved.
-  const CALL_BUDGET_MS = 9000;
-  const loopStart = Date.now();
+  // FIX #2 (Sept 22, 2026 — CONFIRMED in production, not just a theoretical
+  // risk): the first version of this fix gave every callModel invocation its
+  // own fresh 9s budget. Today's real logs showed exactly the gap that left
+  // open — individual providers failed fast, the loop reached Groq's qwen
+  // model near the end of the reasoning chain, and the FUNCTION was killed
+  // by Vercel's 30s limit before that attempt could return, because three
+  // separately-budgeted 9s stages still summed past what was actually left.
+  // A caller can now pass an absolute deadlineMs, computed ONCE at the start
+  // of the whole request and threaded through all three sequential calls, so
+  // stage 2 knows how much time stage 1 actually used rather than assuming a
+  // fresh allowance it may not really have. Falls back to a fresh 9s budget
+  // when no deadline is passed, so existing single-call callers are
+  // unaffected.
+  const effectiveDeadline = deadlineMs ?? (Date.now() + 9000);
 
   for (const provider of chain) {
-    if (Date.now() - loopStart > CALL_BUDGET_MS) {
-      console.warn(`[ai-providers] ${role} call budget (${CALL_BUDGET_MS}ms) exhausted before trying ${provider.label} — stopping early rather than risk the function timeout`);
+    if (Date.now() >= effectiveDeadline) {
+      console.warn(`[ai-providers] ${role} call deadline reached before trying ${provider.label} — stopping early rather than risk the function timeout`);
       break;
     }
     try {
@@ -868,4 +876,4 @@ export async function callModelJSON<T>(
       `callModelJSON: failed to parse provider response as JSON. Raw (truncated): ${clean.slice(0, 120)}`
     );
   }
-}
+      }
