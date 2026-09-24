@@ -374,7 +374,7 @@ async function groqCall(
   temperature: number,
   maxTokens: number,
   jsonMode: boolean,
-  reasoningRole = false,
+  reasoningRole = false, // currently unused in this function's body — kept for call-site signature stability; reasoning_effort is now hardcoded to "low" for gpt-oss regardless of role (see FIX #2 below)
 ): Promise<string> {
   if (!GROQ_API_KEY) throw new Error("GROQ_API_KEY not set");
   const isQwen3 = isQwen3ReasoningModel(model);
@@ -402,14 +402,29 @@ async function groqCall(
       // comes back genuinely empty. Logged as "Groq empty response" and
       // misread as a Groq outage — it wasn't, this was a real code gap.
       // IMPORTANT: gpt-oss does NOT support reasoning_format at all (Groq's
-      // own docs, console.groq.com/docs/reasoning, are explicit about this —
-      // an earlier attempt at this exact fix wrongly tried reasoning_format:
-      // "hidden" on gpt-oss, which Groq's API doesn't accept for this model).
-      // The correct parameter for gpt-oss specifically is include_reasoning.
-      // Qwen models keep using reasoning_format via needsReasoningHidden,
-      // unchanged — that one was already correct.
+      // FIX #2 (Sept 23, 2026 — production log buildmind-log-export-2026-09-23,
+      // gpt-oss STILL failing with "Groq empty response" even after the
+      // include_reasoning:false fix above): that fix addressed the wrong
+      // lever. include_reasoning controls whether reasoning tokens are
+      // DISPLAYED in the response — it does not stop the model from
+      // SPENDING max_tokens budget on reasoning internally before ever
+      // writing to `content`. Found the real fix via a different project
+      // that hit this exact bug from the exact same root cause (Groq
+      // retiring llama-3.3-70b-versatile on 08/16/26, gpt-oss-120b as the
+      // reasoning-model replacement): their fix was lowering
+      // reasoning_effort itself, not hiding the output. finish_reason:
+      // "length" with the entire token budget shown as reasoning_tokens
+      // and empty content is the exact signature of this failure — the
+      // model runs out of budget while still reasoning, never reaches the
+      // answer. "low" leaves enough headroom for content at the maxTokens
+      // levels this app actually uses (300-700); "medium"/"high" were
+      // eating that budget on internal reasoning before any of these
+      // prompts (which don't need deep reasoning — they're mostly
+      // structured extraction/evaluation tasks) got a chance to answer.
+      // include_reasoning:false is kept — it's still correct to exclude
+      // reasoning content from the payload, it just wasn't the actual fix.
       ...(needsReasoningHidden ? { reasoning_format: "hidden" } : {}),
-      ...(isGptOss ? { reasoning_effort: reasoningRole ? "high" : "medium", include_reasoning: false } : {}),
+      ...(isGptOss ? { reasoning_effort: "low", include_reasoning: false } : {}),
       messages,
     }),
   });
@@ -678,11 +693,34 @@ function getReasoningChain(): ProviderFn[] {
   const chain: ProviderFn[] = [];
   if (GROQ_API_KEY) {
     // gpt-oss-120b with reasoning_effort=high — native CoT, near o4-mini quality.
-    // Kept first despite currently failing every reasoning call (see FIX below)
+    // Kept first despite recently failing every reasoning call (see FIX below)
     // because its own failure is fast (~2-3s, not a timeout) — cheap to try,
     // and picks the best model automatically the moment Groq's reasoning path
-    // recovers, with no code change needed.
+    // recovers, with no code change needed. As of Sept 23, 2026 this should
+    // actually start succeeding again — see the reasoning_effort fix in
+    // groqCall above (it was burning its whole token budget on internal
+    // reasoning before ever writing an answer; lowered to "low").
     chain.push({ label: `groq:${GROQ_REASONING_MODEL}`, call: (m, t, mt, j) => groqCall(m, GROQ_REASONING_MODEL, t, mt, j, true) });
+
+    // FIX (Sept 23, 2026 — production log buildmind-log-export-2026-09-23):
+    // moved qwen up from 5th to 2nd position. Mistral was placed ahead of
+    // OpenRouter/Gemini on Sept 3 because it was, at that time, the only leg
+    // succeeding on every logged call — that assessment is now stale and
+    // actively counterproductive. Today's log shows Mistral persistently
+    // rate-limited, OpenRouter alternating between empty response and an
+    // ~8-20s timeout, and Gemini hard-404ing (env var still pointing at a
+    // retired model, unresolved — see PROVIDER STATUS at top of file) — on
+    // EVERY single attempt, both times this chain ran. Meanwhile
+    // groq:qwen/qwen3.8-27b succeeded on every attempt in that same log.
+    // Every stage was burning 6-10 seconds fighting through three
+    // consistently-dead legs before reaching the one that actually works —
+    // directly responsible for the shared request deadline running out
+    // before a 3rd sequential stage could even start. This is the same
+    // "respond to current reality, not a permanent ranking" pattern as the
+    // Sept 3 reorder below — re-check next time any of Mistral/OpenRouter/
+    // Gemini are confirmed reliable again, don't leave qwen pinned here
+    // out of habit once the picture changes.
+    chain.push({ label: "groq:qwen/qwen3.8-27b", call: (m, t, mt, j) => groqCall(m, "qwen/qwen3.8-27b", t, mt, j, true) });
   }
   // FIX (Sept 3, 2026): production logs (Vercel function export,
   // 2026-09-03T08-48-40) show OpenRouter's free-router and direct Gemini
@@ -696,6 +734,9 @@ function getReasoningChain(): ProviderFn[] {
   // is a response to their CURRENT breakage, not a permanent quality
   // ranking (gpt-oss-120b/OpenRouter's critic diversity are still the
   // better choice when actually reachable).
+  //
+  // STILL HERE, still worth trying, now 3rd/4th/5th rather than 2nd — see
+  // the Sept 23 fix above for why qwen jumped ahead of all three of these.
   if (MISTRAL_API_KEY) {
     chain.push({ label: `mistral:${MISTRAL_MODEL}`, call: (m, t, mt, j) => mistralCall(m, MISTRAL_MODEL, t, mt, j) });
   }
@@ -705,20 +746,13 @@ function getReasoningChain(): ProviderFn[] {
   // (unlike Google AI Studio's direct API, which now gates free Gemini behind
   // billing in many regions, and unlike Cerebras, which now requires a card at
   // all as of Aug 2026). This is the real diversity source for Critic/Verifier
-  // — demoted below Mistral only while it's actively broken, see FIX above.
+  // — demoted below Mistral (and now qwen) only while it's actively broken.
   if (OPENROUTER_API_KEY) {
     chain.push({ label: `openrouter:${OPENROUTER_MODEL}`, call: (m, t, mt, j) => openRouterCall(m, OPENROUTER_MODEL, t, mt, j) });
   }
   // Direct Gemini — best-effort, see PROVIDER STATUS at top of file.
   if (GEMINI_API_KEY) {
     chain.push({ label: `gemini:${GEMINI_MODEL}`, call: (m, t, mt, j) => geminiCall(m, t, mt, j) });
-  }
-  if (GROQ_API_KEY) {
-    // FIX (Sept 2026): qwen/qwen3-32b was decommissioned by Groq on 07/17/26
-    // (see console.groq.com/docs/deprecations). qwen/qwen3.8-27b is the
-    // current model in that family and, like the old qwen3-32b slot, is a
-    // separate token bucket from gpt-oss-120b above.
-    chain.push({ label: "groq:qwen/qwen3.8-27b", call: (m, t, mt, j) => groqCall(m, "qwen/qwen3.8-27b", t, mt, j, true) });
   }
   if (CEREBRAS_API_KEY) {
     // Best-effort last resort — card-gated as of Aug 2026, see PROVIDER STATUS.
@@ -876,4 +910,4 @@ export async function callModelJSON<T>(
       `callModelJSON: failed to parse provider response as JSON. Raw (truncated): ${clean.slice(0, 120)}`
     );
   }
-      }
+          }
