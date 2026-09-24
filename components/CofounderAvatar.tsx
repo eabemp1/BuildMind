@@ -45,12 +45,22 @@ import type { PulseMode } from "./CofounderPulse";
  *
  * Status: "insight" previously had no distinct rendering at all — it fell
  * through to the same branch as "observing" despite this contract already
- * promising one, so the two were visually identical. Now implemented (raised
+ * promising one, so the two were visually identical. Implemented (raised
  * brow arcs + upward gaze + slow lean-in). "challenge" also gained real
  * posture (a held skeptical tilt) instead of relying on eye-height asymmetry
- * alone. Mode itself should now come from deriveCofounderMode() in
- * lib/server/founderStanding.ts, not CofounderPulse's old local thresholds —
- * see that file's header for why.
+ * alone.
+ *
+ * FIX (Sept 24, 2026 — reported as "the mascot never moves," traced to a
+ * founder who has genuinely had 17 days without project activity, i.e. has
+ * been looking at "alert" mode this entire time): "alert" was the one mode
+ * that NEVER had body movement — not in the original version, and not in
+ * the insight/challenge fix above either, since alert already had a
+ * distinguishing visual (bigger eyes) and wasn't reconsidered when the
+ * other two modes got posture. A founder who's actually in "alert" the
+ * whole time was staring at the one mode still missing motion. Given a
+ * short, sharp shake — distinct from observing's slow breathe, challenge's
+ * held tilt, insight's slow lean-in, and celebrate's bounce — meant to read
+ * as urgency, not danger.
  */
 
 const MODE_COLOR: Record<PulseMode, string> = {
@@ -79,9 +89,6 @@ export function CofounderAvatar({
   const isCelebrating = mode === "celebrate";
   const isAlert = mode === "alert";
   const isChallenge = mode === "challenge";
-  // "insight" previously fell through to the same rendering as "observing"
-  // despite the contract above promising a distinct "thoughtful/attentive"
-  // look — this was the actual gap, not a missing animation in general.
   const isInsight = mode === "insight";
   const eyeColor = color;
 
@@ -89,11 +96,13 @@ export function CofounderAvatar({
     <div style={{ position: "relative", flexShrink: 0, width: size, height: size }}>
       <motion.div
         animate={
-          isChallenge
-            ? { scale: pulsing ? [1, 1.06, 1] : 1, rotate: [0, -5, 0] } // skeptical head-tilt
-            : pulsing ? { scale: [1, 1.06, 1] } : {}
+          isAlert
+            ? { scale: pulsing ? [1, 1.06, 1] : 1, x: [0, -1.5, 1.5, -1.5, 0] } // short, sharp shake — urgency, not danger
+            : isChallenge
+              ? { scale: pulsing ? [1, 1.06, 1] : 1, rotate: [0, -5, 0] } // skeptical head-tilt
+              : pulsing ? { scale: [1, 1.06, 1] } : {}
         }
-        transition={{ duration: isChallenge ? 3.2 : 2.5, repeat: Infinity, ease: "easeInOut" }}
+        transition={{ duration: isAlert ? 0.6 : isChallenge ? 3.2 : 2.5, repeat: Infinity, ease: "easeInOut" }}
         style={{
           width: size,
           height: size,
@@ -225,12 +234,14 @@ export function CofounderMascot({
           <circle cx="30" cy="20" r="2.5" fill="var(--bm-intel, #9B87F5)" />
         </motion.g>
 
-        {/* Body — simple rounded capsule, breathes gently when idle.
-            Each mode gets its own posture now, not just its own eyes:
-            observing breathes, celebrate bounces, challenge holds a slow
-            skeptical tilt (leaning back slightly, arms-crossed energy
-            without literally crossing arms at this fidelity), and insight
-            leans in — a small forward tilt, like noticing something. */}
+        {/* Body — simple rounded capsule. Each mode gets its own posture now,
+            not just its own eyes: observing breathes, celebrate bounces,
+            challenge holds a slow skeptical tilt, insight leans in, and
+            alert — the one mode that had NOTHING here before this fix —
+            gets a short, sharp shake. That gap is exactly why this was
+            reported as "the mascot never moves": a founder actually in
+            alert mode the whole time was looking at the one state with no
+            motion at all. */}
         <motion.g
           animate={
             isObserving
@@ -241,10 +252,12 @@ export function CofounderMascot({
                   ? { rotate: [0, -4, 0], y: [0, 1, 0] }
                   : isInsight
                     ? { rotate: [0, 3, 0], y: [0, -1, 0] }
-                    : {}
+                    : isAlert
+                      ? { x: [0, -2.5, 2.5, -2.5, 0] }
+                      : {}
           }
           transition={{
-            duration: isCelebrating ? 0.5 : isChallenge ? 3.4 : isInsight ? 2.6 : 3,
+            duration: isCelebrating ? 0.5 : isAlert ? 0.6 : isChallenge ? 3.4 : isInsight ? 2.6 : 3,
             repeat: Infinity,
             ease: "easeInOut",
           }}
@@ -281,9 +294,9 @@ export function CofounderMascot({
           <rect x="32" y="28" width="36" height="24" rx="10" fill="#15131e" />
 
           {/* Eyes — same blink logic as the compact avatar, plus the
-              insight expression that was previously missing entirely:
-              a raised brow arc over each eye and a slight upward gaze,
-              distinct from observing's plain resting blink. */}
+              insight expression: a raised brow arc over each eye and a
+              slight upward gaze, distinct from observing's plain resting
+              blink. */}
           {isCelebrating ? (
             <>
               <path d="M40 42 Q44 36 48 42" stroke={color} strokeWidth="2.2" strokeLinecap="round" fill="none" />
