@@ -90,7 +90,7 @@ export interface FounderState {
   behavioral_trends: string[];
   confidence: number;
   recent_changes: string[];
-  corrections: Array<{ belief: string; correction: string; evidence?: string; created_at?: string }>;
+  corrections: Array<{ belief: string; correction: string; evidence?: string; created_at?: string; belief_key?: string }>;
 }
 
 export interface StartupState {
@@ -736,8 +736,18 @@ export function buildFounderIntelligenceState(input: FounderIntelligenceInput): 
       + accuracyAdjustment,
     ),
     recent_changes: temporal.week_changes.slice(0, 5),
+    // Was slice(-5): fine for the old cosmetic "recent corrections" display,
+    // too tight once lib/founderMirror.ts started matching corrections to
+    // the specific belief they targeted (a founder who's corrected several
+    // different beliefs could lose the older ones before they ever get
+    // weighted). Widened to 20; decay in founderMirror.ts's Beta-posterior
+    // weighting already handles staleness, so this doesn't need a tight cap.
     corrections: Array.isArray(founderMemory.founder_corrections)
-      ? founderMemory.founder_corrections.slice(-5).filter((item: unknown): item is { belief: string; correction: string; evidence?: string; created_at?: string } => Boolean(item && typeof item === "object" && "correction" in item))
+      ? founderMemory.founder_corrections
+          .slice(-20)
+          .filter((item: unknown): item is { belief: string; correction: string; evidence?: string; created_at?: string; belief_key?: string } =>
+            Boolean(item && typeof item === "object" && "correction" in item),
+          )
       : [],
   };
 
@@ -890,7 +900,11 @@ function sampleGamma(shape: number): number {
   return d; // fallback — practically unreachable, keeps this total
 }
 
-function sampleBeta(alpha: number, beta: number): number {
+// Exported (unchanged behavior) so other consumers that want the same
+// Beta-posterior / Thompson Sampling treatment — e.g. lib/founderMirror.ts
+// weighting a belief's confidence by founder corrections — reuse this
+// exact primitive instead of a second copy that could quietly drift from it.
+export function sampleBeta(alpha: number, beta: number): number {
   const x = sampleGamma(alpha);
   const y = sampleGamma(beta);
   return x / (x + y);
@@ -910,7 +924,7 @@ function sampleBeta(alpha: number, beta: number): number {
 const SIGNAL_HALF_LIFE_DAYS = 10;
 const SIGNAL_ACTIVE_THRESHOLD = 0.3;
 
-function decayedSignalConfidence(signal: IntelligenceSignal, asOf: Date): number {
+export function decayedSignalConfidence(signal: IntelligenceSignal, asOf: Date): number {
   const detected = new Date(signal.detected_at).getTime();
   if (!Number.isFinite(detected)) return signal.confidence;
   const daysSince = Math.max(0, (asOf.getTime() - detected) / 86_400_000);
@@ -932,7 +946,10 @@ function decayedSignalConfidence(signal: IntelligenceSignal, asOf: Date): number
  * signal that's aged out shouldn't gate a candidate into existence or prop
  * up its confidence score just because it was true once.
  */
-function activeSignals(signals: IntelligenceSignal[], asOf: Date): Array<IntelligenceSignal & { decayed_confidence: number }> {
+// Exported read-only: lib/founderMirror.ts uses this so the Founder Mirror's
+// "signals" section can never disagree with what actually gates decisions
+// here — same decay, same active/expired line, one function.
+export function activeSignals(signals: IntelligenceSignal[], asOf: Date): Array<IntelligenceSignal & { decayed_confidence: number }> {
   return signals
     .map((s) => ({ ...s, decayed_confidence: decayedSignalConfidence(s, asOf) }))
     .filter((s) => s.decayed_confidence >= SIGNAL_ACTIVE_THRESHOLD)
