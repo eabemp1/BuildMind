@@ -6,7 +6,8 @@ import {
   Activity, AlertTriangle, ArrowUpRight, Brain, ChevronDown,
   CircleHelp, Clock3, Download, Eye, GitBranch, History, Loader2, RefreshCw,
   ShieldCheck, TrendingUp, TrendingDown, Users, Calculator, Cpu,
-  MessagesSquare, ListChecks, HeartHandshake, Sparkles,
+  MessagesSquare, ListChecks, HeartHandshake, Sparkles, Pencil, X,
+  Radar, Share2, ScrollText, Compass, AlertOctagon,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge, type BadgeVariant } from "@/components/ui/badge";
@@ -16,15 +17,55 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Textarea } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { RelationshipGraph, type StartupRelationshipGraph } from "@/components/founder-mirror/RelationshipGraph";
 
 type Belief = {
   belief: string;
+  belief_key: string;
   why: string;
   evidence: string[];
   confidence: number;
   trend: "strengthening" | "weakening" | "persistent" | "emerging";
   last_updated: string;
   contradictory_evidence: string[];
+  correction_effect: { corrections_applied: number; confidence_before: number; confidence_after: number } | null;
+};
+
+type MirrorSignal = {
+  id: string;
+  type: string;
+  severity: string;
+  title: string;
+  summary: string;
+  recommended_response: string;
+  evidence: Array<{ source: string; detail: string }>;
+  decayed_confidence: number;
+  lifecycle: string;
+};
+
+type DecisionTop = { id: string; action: string; rationale: string; why_it_beats_alternatives: string; score: number };
+type DecisionAlternative = { id: string; action: string; rationale: string; score: number; gap_to_top: number };
+
+type FounderArchetype = { id: string; name: string; tagline: string; strength: string; blindSpot: string; shadowBehavior: string };
+type SignatureCard = {
+  founderName: string | null; dayCount: number; archetypeName: string; archetypeTagline: string;
+  statLine: string; avoidanceZone: string | null; peakHour: string | null; shareText: string;
+};
+type PatternReportSection = { title: string; content: string };
+type PatternReport = {
+  founderName: string | null; archetype: FounderArchetype; executiveSummary: string;
+  avoidanceZones: string[]; executionStrengths: string[]; peakExecutionWindow: string | null;
+  confidenceCalibration: string | null; topBlocker: string | null; sentimentTrajectory: string;
+  recommendedFocus: string; sections: PatternReportSection[];
+};
+type BehavioralData = {
+  archetype: FounderArchetype | null;
+  milestone: "first_insight" | "signature_card" | "pattern_report" | null;
+  first_insight: { archetype: FounderArchetype; observation: string; prompt: string } | null;
+  signature_card: SignatureCard | null;
+  pattern_report: PatternReport | null;
+  checkins_total: number;
+  days_since_start: number;
 };
 
 type Skill = {
@@ -50,15 +91,24 @@ type MirrorResponse = {
       strengthening_patterns: string[];
       weakening_patterns: string[];
       may_be_wrong_about: string[];
+      signals: MirrorSignal[];
+      decision: { top: DecisionTop | null; alternatives: DecisionAlternative[] };
+      suppressed_beliefs: Array<{ belief: string; reason: string }>;
       self_reported_accuracy: { sample_size: number; accuracy_pct: number | null; trend: string; summary: string };
       generated_at: string;
     };
     relationship_chain: { narrative: string };
     relationship_graph_summary: { nodes: number; edges: number };
+    relationship_graph: StartupRelationshipGraph;
+    behavioral: BehavioralData | null;
   };
 };
 
-type PastCorrection = { belief: string; correction: string; evidence?: string; created_at: string };
+type PastCorrection = { belief: string; belief_key?: string; correction: string; evidence?: string; created_at: string };
+
+const signalSeverityColor: Record<string, string> = {
+  critical: "var(--bm-red)", high: "var(--bm-red)", medium: "var(--bm-amber)", low: "var(--bm-text3)",
+};
 
 const trendMeta: Record<Belief["trend"], { color: string; variant: BadgeVariant; bar: string }> = {
   strengthening: { color: "var(--bm-green)", variant: "success", bar: "var(--bm-green)" },
@@ -120,12 +170,27 @@ export default function FounderMirrorPage() {
   const [pastCorrections, setPastCorrections] = useState<PastCorrection[] | null>(null);
   const [showPastCorrections, setShowPastCorrections] = useState(false);
   const [loadingPast, setLoadingPast] = useState(false);
+  // When set, the correction textarea is targeting one specific belief
+  // (via its belief_key) instead of applying generally at reduced weight —
+  // see lib/founderMirror.ts's GENERAL_CORRECTION_WEIGHT.
+  const [targetBelief, setTargetBelief] = useState<{ text: string; key: string } | null>(null);
+  // Shown briefly after a correction lands, so the effect of "Correct the
+  // model" is visible instead of the correction just being stored silently.
+  const [correctionDelta, setCorrectionDelta] = useState<{ belief: string; before: number; after: number } | null>(null);
+
+  async function loadMirror() {
+    try {
+      const response = await fetch("/api/founder-context/mirror", { cache: "no-store" });
+      const json: MirrorResponse = await response.json();
+      return json.data ?? null;
+    } catch {
+      return null;
+    }
+  }
 
   useEffect(() => {
-    fetch("/api/founder-context/mirror", { cache: "no-store" })
-      .then((response) => response.json())
-      .then((json: MirrorResponse) => setData(json.data ?? null))
-      .catch(() => setData(null))
+    loadMirror()
+      .then((next) => setData(next))
       .finally(() => setLoading(false));
   }, []);
 
@@ -133,21 +198,44 @@ export default function FounderMirrorPage() {
     const text = correction.trim();
     if (!text) return;
     setCorrectionStatus("saving");
+    const belief = targetBelief?.text ?? "General Founder Mirror model";
+    const beliefKey = targetBelief?.key ?? "general";
+    // Snapshot the targeted belief's current confidence so we can show the
+    // before/after once the correction has actually been applied server-side.
+    const before = targetBelief ? data?.mirror.beliefs.find((b) => b.belief_key === targetBelief.key)?.confidence ?? null : null;
     try {
       const response = await fetch("/api/founder-context/mirror/correction", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ belief: "General Founder Mirror model", correction: text }),
+        body: JSON.stringify({ belief, belief_key: beliefKey, correction: text }),
       });
       if (!response.ok) throw new Error("Correction failed");
       setCorrection("");
       setCorrectionStatus("saved");
-      // Invalidate any already-loaded past-corrections list so it refetches next open
       setPastCorrections(null);
+
+      const refreshed = await loadMirror();
+      if (refreshed) {
+        setData(refreshed);
+        if (targetBelief && before != null) {
+          const after = refreshed.mirror.beliefs.find((b) => b.belief_key === targetBelief.key)?.confidence;
+          if (after != null) {
+            setCorrectionDelta({ belief: targetBelief.text, before, after });
+            setTimeout(() => setCorrectionDelta(null), 7000);
+          }
+        }
+      }
+      setTargetBelief(null);
       setTimeout(() => setCorrectionStatus("idle"), 2800);
     } catch {
       setCorrectionStatus("error");
     }
+  }
+
+  function startCorrectingBelief(belief: Belief) {
+    setTargetBelief({ text: belief.belief, key: belief.belief_key });
+    setCorrection("");
+    document.getElementById("correct-the-model")?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
   async function togglePastCorrections() {
@@ -209,7 +297,7 @@ export default function FounderMirrorPage() {
     );
   }
 
-  const { mirror, relationship_chain: chain, relationship_graph_summary: graph } = data;
+  const { mirror, relationship_chain: chain, relationship_graph_summary: graphSummary, relationship_graph: graph, behavioral } = data;
 
   return (
     <div className="mx-auto max-w-[1120px] px-3 py-5 sm:px-6 sm:py-7">
@@ -272,6 +360,76 @@ export default function FounderMirrorPage() {
           </div>
         </Card>
       </motion.div>
+
+      {/* ── Behavioral archetype (Mirror Moment) ─────────────────────────────
+           Surfaced from lib/mirrorMoment.ts via lib/behavioralLayers.ts — a
+           separate founder-modeling pipeline from the beliefs above (see
+           docs/known-issue-dual-founder-modeling-systems.md). Shown as its
+           own clearly-labeled section rather than blended into the beliefs
+           so the two are never mistaken for one unified claim. */}
+      {behavioral?.archetype && (
+        <motion.div initial="hidden" animate="show" variants={fadeUp} custom={1.5} className="mt-3.5">
+          <Card
+            variant="alert"
+            className="relative overflow-hidden p-5 sm:p-6"
+            style={{ background: "radial-gradient(120% 140% at 88% 10%, var(--bm-purple-dim, rgba(155,135,245,0.08)), var(--bm-bg2) 60%)" }}
+          >
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="min-w-[240px] flex-1">
+                <span className="inline-flex items-center gap-1.5">
+                  <Radar size={13} color="var(--bm-purple)" />
+                  <Eyebrow color="var(--bm-purple)">Behavioral signature · separate from the beliefs below</Eyebrow>
+                </span>
+                <div className="mt-1 font-[Syne] text-[20px] font-bold text-[var(--bm-text)]">{behavioral.archetype.name}</div>
+                <p className="mt-1 text-[13px] leading-relaxed text-[var(--bm-text2)]">{behavioral.archetype.tagline}</p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <div className="rounded-[var(--r-md)] border border-[var(--bm-border)] bg-[var(--bm-bg3)] p-2.5">
+                    <Eyebrow color="var(--bm-green)">Strength</Eyebrow>
+                    <p className="mt-1 text-[12px] leading-relaxed text-[var(--bm-text3)]">{behavioral.archetype.strength}</p>
+                  </div>
+                  <div className="rounded-[var(--r-md)] border border-[var(--bm-border)] bg-[var(--bm-bg3)] p-2.5">
+                    <Eyebrow color="var(--bm-amber)">Blind spot</Eyebrow>
+                    <p className="mt-1 text-[12px] leading-relaxed text-[var(--bm-text3)]">{behavioral.archetype.blindSpot}</p>
+                  </div>
+                </div>
+              </div>
+              {behavioral.signature_card && (
+                <div className="flex min-w-[200px] flex-col gap-2 rounded-[var(--r-md)] border border-[var(--bm-purple-bd,var(--bm-border2))] bg-[var(--bm-bg3)] p-3.5">
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[var(--bm-text3)]">
+                    <Share2 size={11} /> Day {behavioral.signature_card.dayCount} signature
+                  </span>
+                  {behavioral.signature_card.statLine && (
+                    <p className="m-0 text-[12px] leading-relaxed text-[var(--bm-text2)]">{behavioral.signature_card.statLine}</p>
+                  )}
+                  {behavioral.signature_card.avoidanceZone && (
+                    <p className="m-0 text-[11px] text-[var(--bm-text4)]">Avoidance zone: {behavioral.signature_card.avoidanceZone}</p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {behavioral.pattern_report && (
+              <div className="mt-4 border-t border-[var(--bm-border)] pt-3.5">
+                <span className="inline-flex items-center gap-1.5">
+                  <ScrollText size={12} color="var(--bm-purple)" />
+                  <Eyebrow color="var(--bm-purple)">30-day pattern report</Eyebrow>
+                </span>
+                <p className="mt-1.5 text-[13px] leading-relaxed text-[var(--bm-text2)]">{behavioral.pattern_report.executiveSummary}</p>
+                <div className="mt-2.5 flex items-start gap-2 rounded-[var(--r-md)] border border-[var(--bm-border)] bg-[var(--bm-bg3)] p-2.5">
+                  <Compass size={13} color="var(--bm-intel)" className="mt-0.5 shrink-0" />
+                  <p className="m-0 text-[12px] leading-relaxed text-[var(--bm-text2)]"><strong className="text-[var(--bm-text)]">The one change: </strong>{behavioral.pattern_report.recommendedFocus}</p>
+                </div>
+              </div>
+            )}
+
+            {!behavioral.signature_card && behavioral.first_insight && (
+              <p className="mt-3 text-[12px] leading-relaxed text-[var(--bm-text3)]">
+                {behavioral.first_insight.observation} A signature card unlocks after 7 days, a full pattern report after 30.
+              </p>
+            )}
+          </Card>
+        </motion.div>
+      )}
 
       {/* ── Skills ───────────────────────────────────────────────────────── */}
       {mirror.skills.length > 0 && (
@@ -373,6 +531,13 @@ export default function FounderMirrorPage() {
                   </div>
                 </div>
 
+                {belief.correction_effect && (
+                  <div className="flex items-center gap-1.5 rounded-[var(--r-sm)] bg-[var(--bm-amber-dim,rgba(181,131,58,0.08))] px-2 py-1 text-[10.5px] text-[var(--bm-amber)]">
+                    <Pencil size={10} />
+                    Softened by {belief.correction_effect.corrections_applied} correction{belief.correction_effect.corrections_applied === 1 ? "" : "s"}: {Math.round(belief.correction_effect.confidence_before * 100)}% → {Math.round(belief.correction_effect.confidence_after * 100)}%
+                  </div>
+                )}
+
                 {(belief.evidence.length > 0 || belief.contradictory_evidence.length > 0) && (
                   <div className="border-t border-[var(--bm-border)] pt-2.5">
                     <WhyReveal
@@ -383,11 +548,104 @@ export default function FounderMirrorPage() {
                     />
                   </div>
                 )}
+
+                <button
+                  type="button"
+                  onClick={() => startCorrectingBelief(belief)}
+                  className="mt-0.5 inline-flex w-fit items-center gap-1 border-none bg-transparent p-0 text-[11px] font-medium text-[var(--bm-text4)] hover:text-[var(--bm-intel)]"
+                >
+                  <Pencil size={11} /> Correct this
+                </button>
               </Card>
             );
           })}
         </div>
+
+        {mirror.suppressed_beliefs.length > 0 && (
+          <div className="mt-3 rounded-[var(--r-md)] border border-dashed border-[var(--bm-border)] p-3">
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[var(--bm-text4)]">
+              <AlertOctagon size={11} /> Softened out of the list above
+            </span>
+            <div className="mt-1.5 flex flex-col gap-1">
+              {mirror.suppressed_beliefs.map((s, i) => (
+                <p key={i} className="m-0 text-[11px] leading-relaxed text-[var(--bm-text4)]">
+                  &ldquo;{s.belief}&rdquo; — {s.reason}
+                </p>
+              ))}
+            </div>
+          </div>
+        )}
       </motion.section>
+
+      {/* ── Signals ──────────────────────────────────────────────────────── */}
+      {mirror.signals.length > 0 && (
+        <motion.section initial="hidden" animate="show" variants={fadeUp} custom={3.3} className="mt-7">
+          <div className="mb-3 flex items-center gap-2">
+            <AlertTriangle size={15} color="var(--bm-intel)" />
+            <div>
+              <Eyebrow color="var(--bm-intel)">Detected patterns</Eyebrow>
+              <div className="font-[Syne] text-[16px] font-bold text-[var(--bm-text)]">Signals behind today&apos;s recommendation</div>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            {mirror.signals.map((signal) => (
+              <Card key={signal.id} className="flex flex-col gap-2 p-4" style={{ borderLeft: `2px solid ${signalSeverityColor[signal.severity] ?? "var(--bm-text3)"}` }}>
+                <div className="flex items-start justify-between gap-2">
+                  <h3 className="m-0 text-[13.5px] font-semibold leading-snug text-[var(--bm-text)]">{signal.title}</h3>
+                  <Badge variant={signal.severity === "critical" || signal.severity === "high" ? "danger" : signal.severity === "medium" ? "warning" : "neutral"} size="sm">
+                    {signal.severity}
+                  </Badge>
+                </div>
+                <p className="m-0 text-[12px] leading-relaxed text-[var(--bm-text3)]">{signal.summary}</p>
+                {signal.evidence.length > 0 && (
+                  <WhyReveal items={signal.evidence.map((e) => ({ label: e.source, value: e.detail }))} />
+                )}
+                <div className="mt-1 flex items-center gap-2 border-t border-[var(--bm-border)] pt-2 text-[11px] text-[var(--bm-text3)]">
+                  <ArrowUpRight size={11} color="var(--bm-intel)" />
+                  {signal.recommended_response}
+                </div>
+              </Card>
+            ))}
+          </div>
+        </motion.section>
+      )}
+
+      {/* ── Decision reasoning ──────────────────────────────────────────────
+           state.decision.candidates isn't just the winning pick — showing
+           what almost won, and why it didn't, is one of the clearer ways to
+           demonstrate this is reasoning rather than a black-box choice. */}
+      {mirror.decision.top && (
+        <motion.section initial="hidden" animate="show" variants={fadeUp} custom={3.5} className="mt-7">
+          <div className="mb-3 flex items-center gap-2">
+            <Brain size={15} color="var(--bm-intel)" />
+            <div>
+              <Eyebrow color="var(--bm-intel)">How it decided</Eyebrow>
+              <div className="font-[Syne] text-[16px] font-bold text-[var(--bm-text)]">Today&apos;s recommendation, and what it beat</div>
+            </div>
+          </div>
+          <Card variant="insight" className="p-4">
+            <div className="flex items-start justify-between gap-3">
+              <h3 className="m-0 text-[14px] font-semibold leading-snug text-[var(--bm-text)]">{mirror.decision.top.action}</h3>
+              <Badge variant="intel" size="sm">{Math.round(mirror.decision.top.score)} score</Badge>
+            </div>
+            <p className="mt-1.5 text-[12px] leading-relaxed text-[var(--bm-text3)]">{mirror.decision.top.rationale}</p>
+            <p className="mt-1.5 text-[12px] italic leading-relaxed text-[var(--bm-intel)]">{mirror.decision.top.why_it_beats_alternatives}</p>
+          </Card>
+          {mirror.decision.alternatives.length > 0 && (
+            <div className="mt-2.5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {mirror.decision.alternatives.map((alt) => (
+                <div key={alt.id} className="rounded-[var(--r-md)] border border-[var(--bm-border)] bg-[var(--bm-bg3)] p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="m-0 text-[12.5px] font-medium leading-snug text-[var(--bm-text2)]">{alt.action}</p>
+                    <span className="shrink-0 font-mono text-[10px] text-[var(--bm-text4)]">−{alt.gap_to_top}</span>
+                  </div>
+                  <p className="mt-1 text-[11px] leading-relaxed text-[var(--bm-text4)]">{alt.rationale}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </motion.section>
+      )}
 
       {/* ── Changes + Uncertainty ────────────────────────────────────────── */}
       <motion.div initial="hidden" animate="show" variants={fadeUp} custom={4} className="mt-7 grid grid-cols-1 gap-3.5 lg:grid-cols-2">
@@ -443,22 +701,46 @@ export default function FounderMirrorPage() {
       </motion.div>
 
       {/* ── Correct the model ────────────────────────────────────────────── */}
-      <motion.div initial="hidden" animate="show" variants={fadeUp} custom={5} className="mt-3.5">
+      <motion.div initial="hidden" animate="show" variants={fadeUp} custom={5} className="mt-3.5" id="correct-the-model">
         <Card className="p-5">
           <div className="mb-3 flex items-center gap-2">
             <History size={15} color="var(--bm-text3)" />
             <div>
               <div className="font-[Syne] text-[15px] font-bold text-[var(--bm-text)]">Correct the model</div>
               <p className="mt-0.5 text-[12px] leading-relaxed text-[var(--bm-text3)]">
-                Tell BuildMind what it&apos;s getting wrong. Your corrections are weighted heavily and applied immediately.
+                {targetBelief
+                  ? "Corrections are weighted heavily and decay over roughly three weeks — sustained fresh evidence can pull confidence back up, but repeated corrections push a belief off the list entirely."
+                  : "Tell BuildMind what it's getting wrong generally, or use \"Correct this\" on a specific belief above to target just that one."}
               </p>
             </div>
           </div>
 
+          {targetBelief && (
+            <div className="mb-2.5 flex items-center justify-between gap-2 rounded-[var(--r-md)] border border-[var(--bm-intel-bd)] bg-[var(--bm-intel-dim)] px-3 py-2">
+              <span className="text-[12px] leading-snug text-[var(--bm-intel)]">
+                Correcting: &ldquo;{targetBelief.text}&rdquo;
+              </span>
+              <button type="button" onClick={() => setTargetBelief(null)} className="shrink-0 text-[var(--bm-intel)] hover:opacity-70">
+                <X size={13} />
+              </button>
+            </div>
+          )}
+
+          {correctionDelta && (
+            <motion.div
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-2.5 flex items-center gap-1.5 rounded-[var(--r-md)] bg-[var(--bm-green-dim,rgba(56,137,106,0.1))] px-3 py-2 text-[12px] text-[var(--bm-green)]"
+            >
+              <CircleHelp size={12} />
+              Applied — confidence on &ldquo;{correctionDelta.belief}&rdquo; moved {Math.round(correctionDelta.before * 100)}% → {Math.round(correctionDelta.after * 100)}%
+            </motion.div>
+          )}
+
           <Textarea
             value={correction}
             onChange={(event) => setCorrection(event.target.value)}
-            placeholder="e.g. I don't actually avoid difficult conversations — I prepare extensively before having them, which looks like delay…"
+            placeholder={targetBelief ? "e.g. I don't actually avoid this — what looks like avoidance is actually…" : "e.g. I don't actually avoid difficult conversations — I prepare extensively before having them, which looks like delay…"}
             rows={3}
           />
 
@@ -517,7 +799,12 @@ export default function FounderMirrorPage() {
         </Card>
       </motion.div>
 
-      {/* ── Decision continuity footer ───────────────────────────────────── */}
+      {/* ── Decision continuity / relationship graph ─────────────────────────
+           Was: two counts and one text narrative for a single milestone.
+           Now: the actual graph buildStartupRelationshipGraph() produces —
+           pan, zoom, click any node to trace what feeds it and what it
+           feeds. The narrative chain stays as a plain-language caption for
+           the same data. */}
       <motion.div initial="hidden" animate="show" variants={fadeUp} custom={6} className="mt-3.5">
         <Card className="p-5">
           <div className="mb-2 flex items-center gap-2">
@@ -527,13 +814,14 @@ export default function FounderMirrorPage() {
               <div className="font-[Syne] text-[15px] font-bold text-[var(--bm-text)]">The evidence chain behind the current model</div>
             </div>
           </div>
-          <p className="m-0 mb-2.5 text-[13px] leading-relaxed text-[var(--bm-text3)]">
+          <p className="m-0 mb-3 text-[13px] leading-relaxed text-[var(--bm-text3)]">
             {chain.narrative || "No decision relationship chain is available yet."}
           </p>
-          <div className="flex gap-4 text-[12px] text-[var(--bm-text4)]">
-            <span className="inline-flex items-center gap-1.5"><Clock3 size={13} />{graph.nodes} observed entities</span>
-            <span className="inline-flex items-center gap-1.5"><ArrowUpRight size={13} />{graph.edges} connected relationships</span>
+          <div className="mb-3 flex gap-4 text-[12px] text-[var(--bm-text4)]">
+            <span className="inline-flex items-center gap-1.5"><Clock3 size={13} />{graphSummary.nodes} observed entities</span>
+            <span className="inline-flex items-center gap-1.5"><ArrowUpRight size={13} />{graphSummary.edges} connected relationships</span>
           </div>
+          <RelationshipGraph graph={graph} />
         </Card>
       </motion.div>
 
@@ -573,4 +861,4 @@ export default function FounderMirrorPage() {
       </motion.div>
     </div>
   );
-                    }
+  }
