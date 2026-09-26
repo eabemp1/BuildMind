@@ -32,7 +32,7 @@
  */
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { momentumLabel, isMomentumDecaying } from "@/lib/momentum";
+import { momentumLabel, isMomentumDecaying, computeMomentumTrendFromDelta } from "@/lib/momentum";
 // computeStartupScore is no longer imported here — see the FIX comment
 // below getFounderScorecard's raw fields for why projectScore (which
 // used to need it) was removed rather than fixed.
@@ -124,11 +124,14 @@ export async function getFounderScorecard(
 
   const hasBaseline = typeof ctx?.momentum_last_week === "number";
   const momentumDelta = hasBaseline ? raw.momentum - (ctx!.momentum_last_week as number) : null;
-  const momentumTrend: FounderScorecard["momentumTrend"] =
-    momentumDelta == null ? "unknown" :
-    momentumDelta >= 2    ? "up" :
-    momentumDelta <= -2   ? "down" :
-    "flat";
+  // Was an inline ±2 threshold defined only here — moved to
+  // lib/momentum.ts so lib/founderIntelligence.ts computes the identical
+  // trend from the identical two numbers instead of running its own,
+  // previously-different (±5, "rising"/"falling"/"stable") calculation.
+  const momentumTrend: FounderScorecard["momentumTrend"] = computeMomentumTrendFromDelta(
+    raw.momentum,
+    hasBaseline ? (ctx!.momentum_last_week as number) : null,
+  );
 
   return {
     ...raw,
@@ -258,4 +261,4 @@ export async function setWeeklyMomentumBaseline(userId: string): Promise<void> {
       .update({ momentum_last_week: ctx.momentum_score })
       .eq("user_id", userId);
   }
-}
+        }
