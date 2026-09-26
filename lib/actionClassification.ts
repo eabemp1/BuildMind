@@ -93,6 +93,36 @@ const ACTION_TYPE_LABELS: Record<ActionType, string> = {
 };
 
 /**
+ * ACTION_TYPE_WEIGHT — a stated heuristic (0-100), not a model-generated
+ * score: how much evidence-producing signal a completed action of this
+ * type typically carries. Not invented for this purpose — it's the same
+ * priority this codebase already states elsewhere (direct customer
+ * contact and strategic/revenue-defining work outrank content/research
+ * busywork): see lib/cofounderJudgment.ts's "evidence-producing next
+ * step" framing and lib/founderIntelligence.ts's own signal system, both
+ * of which already treat customer conversations and strategic pivots as
+ * higher-value than content or research. This table just makes that
+ * ranking explicit and citable instead of leaving it implicit in prose.
+ *
+ * Used by lib/weeklyPulseData.ts's per-day activity canvas (how "crucial"
+ * a completed action was, for intensity/depth on that day's cell) — never
+ * to gate or block anything, purely descriptive weighting for that one
+ * visual. action_type is always populated (inferActionType runs
+ * unconditionally inside recordActionShown), so this needs no new writes
+ * and applies to historical completions too, not just future ones.
+ */
+export const ACTION_TYPE_WEIGHT: Record<ActionType, number> = {
+  user_interview: 100, // direct customer evidence — the highest-value signal this product tracks
+  pivot: 90,            // strategic direction change
+  pricing: 85,          // revenue/willingness-to-pay validation
+  build: 65,
+  outreach: 55,
+  content: 45,
+  research: 40,
+  other: 30,
+};
+
+/**
  * SPECIFIC_LABELS — a much richer, differentiated layer on top of the
  * 8-bucket ActionType system above. That system stays untouched (nothing
  * else that reads inferActionType/inferActionPlatform is affected), but
@@ -190,4 +220,4 @@ export function actionCategoryLabel(action: string): string {
   const type = inferActionType(action);
   const typeLabel = ACTION_TYPE_LABELS[type];
   return platform === "other" ? typeLabel : `${typeLabel} (${platform})`;
-}
+    }
