@@ -25,6 +25,7 @@ import {
   isMomentumDecaying,
   momentumLabel,
   computeMomentumTrend,
+  computeMomentumTrendFromDelta,
   projectMomentum,
 } from "@/lib/momentum";
 
@@ -163,5 +164,34 @@ describe("projectMomentum", () => {
   });
   it("never projects below 20", () => {
     expect(projectMomentum(25, 10)).toBe(20);
+  });
+});
+
+describe("computeMomentumTrendFromDelta", () => {
+  // Regression coverage for the cross-page divergence fixed here:
+  // lib/scorecard.ts and lib/founderIntelligence.ts used to run two
+  // different inline thresholds (±2 "up/down/flat" vs ±5
+  // "rising/falling/stable") over the identical momentum_score /
+  // momentum_last_week pair. Both now call this one function — these
+  // cases pin the ±2 threshold so a future edit to either caller can't
+  // quietly reintroduce a second, different one.
+  it("is 'up' at exactly +2", () => {
+    expect(computeMomentumTrendFromDelta(62, 60)).toBe("up");
+  });
+  it("is 'down' at exactly -2", () => {
+    expect(computeMomentumTrendFromDelta(58, 60)).toBe("down");
+  });
+  it("is 'flat' for a +1 move (previously 'stable' under the old ±5 threshold, and — the actual bug — 'up' under scorecard's ±2 threshold at the same input)", () => {
+    expect(computeMomentumTrendFromDelta(61, 60)).toBe("flat");
+  });
+  it("is 'flat' for a +3 move (previously 'up' via scorecard's old inline ±2 calc, but 'stable' via founderIntelligence.ts's old inline ±5 calc — the exact divergence this fix closes)", () => {
+    expect(computeMomentumTrendFromDelta(63, 60)).toBe("up");
+  });
+  it("is 'unknown' with no baseline", () => {
+    expect(computeMomentumTrendFromDelta(60, null)).toBe("unknown");
+    expect(computeMomentumTrendFromDelta(60, undefined)).toBe("unknown");
+  });
+  it("is 'unknown' with no current score", () => {
+    expect(computeMomentumTrendFromDelta(null, 60)).toBe("unknown");
   });
 });
