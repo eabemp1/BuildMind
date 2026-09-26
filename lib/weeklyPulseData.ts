@@ -56,18 +56,47 @@ import { callModelJSON, hasAIProvider } from "@/lib/ai-providers";
 import { getFounderScorecard } from "@/lib/scorecard";
 import { computeMilestonePacing, type MilestonePacingResult } from "@/lib/milestonePacing";
 import { computeWeeklyGrades, type GradedDimension } from "@/lib/patternGrading";
+import { actionCategoryLabel, ACTION_TYPE_WEIGHT, type ActionType } from "@/lib/actionClassification";
 
 export interface SparklinePoint { date: string; real: number | null; ghost: number | null; }
+
+/** One completed action within a DayActivity cell. `weight` is
+ *  ACTION_TYPE_WEIGHT[type] (lib/actionClassification.ts) — a stated
+ *  heuristic, not a model score; see that table's own comment. */
+export interface DayActivityEntry { title: string; type: string; weight: number; }
+
+/** One day of the current calendar week (Monday-anchored, matches
+ *  weekStartMonday() below and the Ghost Goals weekly_goals window — same
+ *  week boundary as everything else on this card, not a rolling 7 days). */
+export interface DayActivity {
+  date: string;       // YYYY-MM-DD
+  day_label: string;  // "Mon".."Sun"
+  activities: DayActivityEntry[]; // every distinct completed action that day
+  total_weight: number; // sum of activities[].weight — the day cell's intensity
+}
 
 export interface WeeklyPulseResponse {
   is_quiet_week: boolean;
   momentum_score: number;
   momentum_delta: number | null;
   streak: number;
+  /** Ghost Goal semantics, NOT a raw row count — see the FIX note above
+   *  `tasksCompleted`/`tasksTotal`'s computation below for why raw counts
+   *  from reflexion_learning_log could exceed 7 well before the week
+   *  ended (every Today regeneration wrote a new row) while completions
+   *  stayed stuck at 0 even after a real completion (a separate,
+   *  now-fixed bug in how the outcome got recorded). tasks_completed =
+   *  distinct days this week with >=1 completed action; tasks_total =
+   *  distinct calendar days that have occurred so far this week (<=7). */
   tasks_completed: number;
   tasks_total: number;
   completion_rate: number;
   active_days: number;
+  /** Per-day breakdown for the activity canvas — see DayActivity. Always
+   *  7 entries, Monday first, including days that haven't happened yet
+   *  this week (empty activities array) so the canvas layout never shifts
+   *  mid-week. */
+  day_activity: DayActivity[];
   un_ghosted: string[];
   milestones: MilestonePacingResult[];
   archetype: string | null;
@@ -192,7 +221,7 @@ export async function getWeeklyPulseData(userId: string, projectId?: string): Pr
     // app/api/ai/today-action/route.ts and .../stream/route.ts), so we can
     // filter to just those without touching the shared table or the other
     // callers that legitimately need their own rows there.
-    admin.from("reflexion_learning_log").select("outcome, action_shown, outcome_note, created_at, session_id").eq("user_id", userId).gte("created_at", weekAgoIso),
+    admin.from("reflexion_learning_log").select("outcome, action_shown, action_type, outcome_note, created_at, session_id").eq("user_id", userId).gte("created_at", weekAgoIso),
     admin.from("tasks").select("id, status, updated_at").eq("user_id", userId).lt("created_at", weekAgoIso),
     (() => {
       let q = admin.from("milestones").select("id, title, target_date, status, created_at, project_id").eq("user_id", userId).neq("status", "abandoned");
@@ -232,13 +261,90 @@ export async function getWeeklyPulseData(userId: string, projectId?: string): Pr
   // from reflexion_learning_log) instead of a second, redundant query.
   const overrideLogs = weekTasks;
 
-  const tasksCompleted = weekTasks.filter((t) => t.outcome === "completed").length;
-  const tasksTotal = weekTasks.length;
-  const completionRate = tasksTotal > 0 ? Math.round((tasksCompleted / tasksTotal) * 100) : 0;
   const activeDaySet = new Set(
     weekTasks.filter((t) => t.outcome === "completed").map((t) => (t.created_at ?? "").slice(0, 10)),
   );
   const activeDays = activeDaySet.size;
+
+  // ── Ghost Goal semantics (FIX) ──────────────────────────────────────────
+  // tasksCompleted/tasksTotal used to be raw reflexion_learning_log row
+  // counts. Two founder-reported symptoms traced to that: (1) the total
+  // could already exceed 7 well before the week ended, because a new
+  // "shown" row gets written on every Today regeneration/swap, not once
+  // per day — the count was really "how many times a recommendation was
+  // generated," not "how many days had a task." (2) a genuine same-day
+  // completion could still read 0/N even after the outcome-recording bug
+  // above was fixed, if the FOUNDER expected "tasks" to mean "the one
+  // Ghost Goal for today," not "every logged row."
+  //
+  // Ghost Goals (weekly_goals, app/api/weekly-goal/route.ts) are
+  // inherently a per-day target — the "ghost" line the sparkline above
+  // already renders is a pace independent of whether the founder opened
+  // the app that day. So the denominator here is calendar days elapsed
+  // this week (fixed, not contingent on activity), and the numerator is
+  // activeDays (already correctly day-deduplicated, unchanged) — matching
+  // that same target-independent-of-engagement framing instead of a
+  // count that regeneration could inflate arbitrarily.
+  const nowDateStr = now.toISOString().slice(0, 10);
+  const daysElapsedThisWeek = Math.min(
+    7,
+    Math.floor(
+      (new Date(`${nowDateStr}T00:00:00.000Z`).getTime() - new Date(`${weekStart}T00:00:00.000Z`).getTime())
+        / 86_400_000,
+    ) + 1,
+  );
+  const tasksCompleted = activeDays;
+  // 0 only when there was truly no Today engagement this week at all (no
+  // shown rows, let alone completions) — preserves the exact meaning
+  // hasAnyGradableSignal() and gradeExecutionConsistency()'s own N/A gate
+  // already depend on (tasksTotal === 0 means "nothing to grade here"),
+  // while fixing the actual bug: when there WAS engagement, the
+  // denominator is real elapsed days (<=7), not an inflatable row count.
+  const tasksTotal = weekTasks.length > 0 ? daysElapsedThisWeek : 0;
+  const completionRate = tasksTotal > 0 ? Math.round((tasksCompleted / tasksTotal) * 100) : 0;
+
+  // ── Per-day activity canvas ──────────────────────────────────────────────
+  // Every distinct completed action this week, grouped by the calendar day
+  // it was completed on. `weight` (ACTION_TYPE_WEIGHT — a stated heuristic,
+  // see lib/actionClassification.ts) is how "crucial" that one action was;
+  // a day's total_weight is the sum across everything completed that day,
+  // so a day with three high-signal customer interviews reads as far more
+  // intense than a day with three quick content edits, not just "3 done"
+  // either way. action_type is populated for every historical row already
+  // (inferActionType runs unconditionally in recordActionShown), so this
+  // needs no backfill.
+  const MON_FIRST_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const weekDates: string[] = (() => {
+    const start = new Date(`${weekStart}T00:00:00.000Z`);
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(start);
+      d.setUTCDate(start.getUTCDate() + i);
+      return d.toISOString().slice(0, 10);
+    });
+  })();
+  const activityByDate = new Map<string, DayActivityEntry[]>();
+  for (const t of weekTasks as Array<{ outcome?: string; action_shown?: string; action_type?: string; created_at?: string }>) {
+    if (t.outcome !== "completed") continue;
+    const date = (t.created_at ?? "").slice(0, 10);
+    if (!date) continue;
+    const type = (t.action_type as ActionType) ?? "other";
+    const entry: DayActivityEntry = {
+      title: actionCategoryLabel(t.action_shown ?? "Completed action"),
+      type,
+      weight: ACTION_TYPE_WEIGHT[type] ?? ACTION_TYPE_WEIGHT.other,
+    };
+    if (!activityByDate.has(date)) activityByDate.set(date, []);
+    activityByDate.get(date)!.push(entry);
+  }
+  const dayActivity: DayActivity[] = weekDates.map((date, i) => {
+    const activities = activityByDate.get(date) ?? [];
+    return {
+      date,
+      day_label: MON_FIRST_LABELS[i],
+      activities,
+      total_weight: activities.reduce((sum, a) => sum + a.weight, 0),
+    };
+  });
 
   const backlogStillOpenOrClearedThisWeek = backlogTasks.filter(
     (t) => t.status !== "completed" || (t.updated_at ?? "") >= weekAgoIso,
@@ -422,8 +528,8 @@ Write a 2-3 sentence story-style summary of the founder's week. Brief, specific,
     is_quiet_week: isQuietWeek,
     momentum_score: momentumScore, momentum_delta: momentumDelta, streak,
     tasks_completed: tasksCompleted, tasks_total: tasksTotal, completion_rate: completionRate,
-    active_days: activeDays, un_ghosted: unGhosted, milestones, archetype,
+    active_days: activeDays, day_activity: dayActivity, un_ghosted: unGhosted, milestones, archetype,
     day_of_week: dayOfWeek, confidence_by_outcome: confidenceByOutcome, confidence_index: confidenceIndex, top_override_reason: topOverrideReason,
     weekly_goal: weeklyGoal, sparkline, grades, story, generated_at: new Date().toISOString(),
   };
-                                                                                              }
+    }
