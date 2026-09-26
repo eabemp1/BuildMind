@@ -1520,30 +1520,18 @@ function TodayContent() {
         } catch {}
       }
 
-      // ── Close the learning loop ───────────────────────────────────────────
-      // Fire reflexion-outcome so the behavioral learning system records what
-      // the founder actually did with today's AI-generated task. Without this
-      // call, recordActionShown() fires but recordActionOutcome() never does,
-      // meaning the learning loop has no signal from the highest-frequency interaction.
-      if (aiAction?.log_row_id) {
-        // Map today page outcomes to the reflexion-outcome schema
-        const outcomeMap: Record<string, "completed" | "overridden" | "partial"> = {
-          completed: "completed",
-          partial:   "partial",
-          blocked:   "overridden",
-          learned:   "partial",
-        };
-        const mappedOutcome = outcomeMap[selectedOutcome as string] ?? "partial";
-        fetch("/api/ai/reflexion-outcome", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            log_row_id:   aiAction.log_row_id,
-            outcome:      mappedOutcome,
-            outcome_note: undefined,
-          }),
-        }).catch(() => {}); // best-effort — never blocks the check-in
-      }
+      // ── Learning loop closure moved server-side ───────────────────────────
+      // Used to fire a separate, unawaited POST /api/ai/reflexion-outcome
+      // here so recordActionOutcome() would run (recordActionShown() alone
+      // doesn't record what happened, only that something was shown). That
+      // call was never awaited and never checked for success — any
+      // navigation or network hiccup in this window could silently drop it,
+      // which is the confirmed cause of completions not showing up in this
+      // week's count even though the founder genuinely completed the task.
+      // app/api/founder-context/task-complete/route.ts now calls
+      // recordActionOutcome() itself, inside the request this code already
+      // awaits above (`await fetch(...task-complete)`), so it can't be
+      // dropped the same way. Nothing else to do here.
 
       // ── Write to founder_memory (avoidance_zones / strengths) ─────────────
       // This is the missing call that was designed but never wired.
