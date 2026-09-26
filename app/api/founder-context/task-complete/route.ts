@@ -20,6 +20,7 @@ import { evaluateAndCacheStageTransition } from "@/lib/server/stageTransition";
 import { invalidateCognitionCache } from "@/lib/founderCognition";
 import { actionCategoryLabel } from "@/lib/actionClassification";
 import { deduplicateTags } from "@/lib/founderMemory";
+import { recordActionOutcome, markIgnoredAfter24h } from "@/lib/learning";
 
 export async function POST(req: Request) {
   const supabase = await createClient();
@@ -263,28 +264,59 @@ export async function POST(req: Request) {
   // there's now exactly one detector instead of two disagreeing ones.
   if (projectId) evaluateAndCacheStageTransition(user.id, projectId).catch(() => {});
 
-  // ── PATCH 1: Write completion to reflexion_learning_log (AWAITED) ─────────
-  // FIX (duplicate-write bug): this used to insert UNCONDITIONALLY on every
-  // completion — "just in case" the stream route hadn't already logged a
-  // "shown" row. But app/today/page.tsx ALSO independently calls
-  // POST /api/ai/reflexion-outcome with the same log_row_id, which UPDATES
-  // that existing row's outcome in place. When log_row_id is present, both
-  // paths were firing: one UPDATE (correct) and one unconditional INSERT
-  // (a genuine duplicate row for the same single task completion) — which
-  // is why Progress's "X of Y tasks this week" total crept up on every
-  // check-in even though the founder only ever sees Today's Ghost Goal
-  // count reflect the real task. Now this insert only runs as a true
-  // fallback, when there's no existing row to update.
-  if (!log_row_id) {
+  // ── PATCH 1 + PATCH 2: Write completion to reflexion_learning_log (AWAITED) ─
+  // FIX (duplicate-write bug, June 2026): this used to insert UNCONDITIONALLY
+  // on every completion — "just in case" the stream route hadn't already
+  // logged a "shown" row. But app/today/page.tsx ALSO independently called
+  // POST /api/ai/reflexion-outcome with the same log_row_id, which UPDATEs
+  // that existing row's outcome in place. When log_row_id was present, both
+  // paths fired: one UPDATE (correct) and one unconditional INSERT (a
+  // genuine duplicate row) — fixed by only inserting as a true fallback.
+  //
+  // FIX (this pass — the outcome never landing at all): the UPDATE side of
+  // that fix was a SEPARATE, unawaited fetch from the browser
+  // (app/today/page.tsx → POST /api/ai/reflexion-outcome, wrapped in
+  // .catch(() => {}), never checked for success). Any navigation, tab
+  // backgrounding, or network hiccup in that window could drop it silently
+  // — the "shown" row would just never get marked "completed," even though
+  // the founder genuinely completed the task and task-complete's OTHER
+  // writes (momentum, streak, action_logs below) all landed fine. That's
+  // the confirmed cause of Progress showing real momentum/streak movement
+  // alongside 0 completed tasks for a day work actually happened.
+  //
+  // Fix: do the outcome update HERE instead, inside the one call the client
+  // already awaits before doing anything else (`await fetch(...
+  // task-complete)` in app/today/page.tsx) — via the exact same
+  // recordActionOutcome() function reflexion-outcome/route.ts calls (not a
+  // second copy of the update logic), so the "re-derive and cache learned
+  // patterns" side effect stays intact too. The client no longer needs to
+  // fire reflexion-outcome itself for Today's completion flow (removed from
+  // app/today/page.tsx) — this is now the one, awaited, verified path.
+  //
+  // Mapping note: this block's `outcome` param comes from app/today/page.tsx's
+  // `Outcome` type — "completed" | "blocked" | "partial" | "learned" — never
+  // "skipped". The mapping below was previously
+  // `outcome === "blocked" ? "partial" : outcome === "skipped" ? "overridden" : "completed"`,
+  // which — since "skipped" never actually arrives from Today — silently
+  // recorded every real "partial" and "learned" outcome as "completed" in
+  // reflexion_learning_log. Replaced with the mapping app/today/page.tsx's
+  // own (now-removed) reflexion-outcome call used, which is the one that
+  // actually matches ActionOutcome's real cases.
+  const mappedOutcome: "completed" | "overridden" | "partial" =
+    outcome === "completed" ? "completed" :
+    outcome === "blocked"   ? "overridden" :
+    "partial"; // "partial" and "learned" both count as partial signal, not a full completion
+
+  async function insertFallbackLog(userId: string) {
     try {
       await admin.from("reflexion_learning_log").insert({
-        user_id: user.id,
+        user_id: userId,
         project_id: projectId || null,
         stage: stage || ctx?.current_stage || null,
         action_shown: taskTitle || null,
-        outcome: outcome === "blocked" ? "partial" : outcome === "skipped" ? "overridden" : "completed",
+        outcome: mappedOutcome,
         outcome_recorded_at: new Date().toISOString(),
-        session_id: `task_complete:${user.id}:${Date.now()}`,
+        session_id: `task_complete:${userId}:${Date.now()}`,
         evidence_produced: outcome === "completed" ? taskTitle || null : null,
         outcome_quality: outcome === "completed" ? "useful" : "none",
         lifecycle_events: [{
@@ -297,6 +329,27 @@ export async function POST(req: Request) {
       // Non-fatal — table may not exist in all envs
     }
   }
+
+  if (log_row_id) {
+    const updated = await recordActionOutcome({
+      logRowId: log_row_id,
+      userId: user.id,
+      outcome: mappedOutcome,
+    }).catch(() => false);
+    // The row the client referenced didn't update (wrong id, RLS mismatch,
+    // or it genuinely doesn't exist) — fall through to the same fallback
+    // insert used when there was no log_row_id at all, so the completion
+    // still gets recorded somewhere rather than silently vanishing a
+    // second way.
+    if (!updated) await insertFallbackLog(user.id);
+  } else {
+    await insertFallbackLog(user.id);
+  }
+
+  // Lazy cleanup that used to only run when reflexion-outcome was hit from
+  // the client (it no longer is, for Today's flow) — moved here so stale
+  // pending rows still age out without needing a cron.
+  markIgnoredAfter24h(user.id).catch(() => {});
 
   // Also write to action_logs — the source crons (sunday-email, meta-critic, weekly-report) read.
   try {
@@ -363,4 +416,4 @@ export async function POST(req: Request) {
       severity: activePattern.severity,
     } : null,
   });
-                     }
+        }
