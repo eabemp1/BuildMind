@@ -4,6 +4,7 @@ import { deriveLearnedPatterns, type LearnedPatterns, type LearningLogRow } from
 import { logError } from "@/lib/server/logger";
 import { buildTemporalComparison } from "@/lib/temporalCoherence";
 import { buildCofounderJudgment } from "@/lib/cofounderJudgment";
+import { computeMomentumTrendFromDelta, type MomentumTrendDirection } from "@/lib/momentum";
 
 type SupabaseLike = {
   from: (table: string) => any;
@@ -76,7 +77,12 @@ export interface FounderExecutionState {
     focus_distribution: Array<{ category: string; count: number }>;
   };
   alignment: { stated_priority?: string | null; observed_priority?: string | null; confidence: number };
-  momentum: { score?: number | null; trend: "rising" | "stable" | "falling" | "unknown"; streak_days?: number | null };
+  // "up"/"down"/"flat"/"unknown" — matches lib/scorecard.ts's vocabulary
+  // exactly, because both now compute this via the same function
+  // (lib/momentum.ts's computeMomentumTrendFromDelta) instead of two
+  // independently-thresholded calculations. See that function's comment
+  // for what used to diverge.
+  momentum: { score?: number | null; trend: MomentumTrendDirection; delta?: number | null; streak_days?: number | null };
   coverage: IntelligenceSignal["coverage"];
 }
 
@@ -277,15 +283,6 @@ function weightedCompletedEvidence(reflections: Array<Record<string, any>>, now:
 function stableSignalId(type: IntelligenceSignalType, affectedGoal: string | null | undefined): string {
   const scope = String(affectedGoal ?? "founder").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "founder";
   return `fei:${type.toLowerCase()}:${scope}`;
-}
-
-function computeMomentumTrendFromContext(context: Record<string, any>): FounderExecutionState["momentum"]["trend"] {
-  const current = Number(context.momentum_score);
-  const previous = Number(context.momentum_last_week);
-  if (!Number.isFinite(current) || !Number.isFinite(previous)) return "unknown";
-  if (current >= previous + 5) return "rising";
-  if (current <= previous - 5) return "falling";
-  return "stable";
 }
 
 function signal(params: Omit<IntelligenceSignal, "detected_at" | "id" | "coverage" | "observation_count" | "limitations" | "lifecycle"> & { now: Date; stable_id?: string; coverage?: IntelligenceSignal["coverage"]; observation_count?: number; limitations?: string[] }): IntelligenceSignal {
@@ -698,7 +695,15 @@ export function buildFounderIntelligenceState(input: FounderIntelligenceInput): 
       focus_distribution: Array.from(focusCounts, ([category, count]) => ({ category, count })),
     },
     alignment: { stated_priority: statedPriorities[0] ?? null, observed_priority: observedPriorities[0] ?? null, confidence: clampScore((activeMilestones.length ? 50 : 0) + Math.min(completedThisWeek.length, 5) * 10) },
-    momentum: { score: typeof founderContext.momentum_score === "number" ? founderContext.momentum_score : null, trend: computeMomentumTrendFromContext(founderContext), streak_days: typeof founderContext.streak === "number" ? founderContext.streak : null },
+    momentum: {
+      score: typeof founderContext.momentum_score === "number" ? founderContext.momentum_score : null,
+      trend: computeMomentumTrendFromDelta(founderContext.momentum_score, founderContext.momentum_last_week),
+      delta:
+        typeof founderContext.momentum_score === "number" && typeof founderContext.momentum_last_week === "number"
+          ? founderContext.momentum_score - founderContext.momentum_last_week
+          : null,
+      streak_days: typeof founderContext.streak === "number" ? founderContext.streak : null,
+    },
     coverage,
   };
 
@@ -1249,4 +1254,4 @@ export async function loadFounderIntelligence(
     logError("founderIntelligence/loadFounderIntelligence", err, { userId, projectId });
     return buildFounderIntelligenceState({ ...preloaded, now });
   }
-  }
+          }
