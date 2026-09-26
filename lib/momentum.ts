@@ -149,10 +149,57 @@ export function computeMomentumTrend(history: number[]): MomentumTrend {
 }
 
 /**
+ * computeMomentumTrendFromDelta — the single place the current-vs-baseline
+ * trend threshold lives.
+ *
+ * ── Why this exists ──────────────────────────────────────────────────────
+ * lib/scorecard.ts (the documented single source of truth for founder-
+ * facing scores) computed its momentumTrend ("up"/"down"/"flat") inline,
+ * with a ±2 threshold. lib/founderIntelligence.ts separately computed its
+ * own execution_state.momentum.trend ("rising"/"falling"/"stable") inline,
+ * with a ±5 threshold — unrelated code, unrelated vocabulary, unrelated
+ * threshold, both reading the same two columns
+ * (momentum_score, momentum_last_week). A founder whose momentum moved by,
+ * say, +3 points would see "up" wherever the scorecard-backed reading
+ * rendered and "stable" wherever founderIntelligence.ts's reading rendered
+ * — same underlying numbers, two different-looking answers, on pages that
+ * link directly to each other (Insights/Progress vs. Founder Mirror/Today).
+ * This is the same "duplicate systems computing the same thing
+ * differently" failure class already logged for the founder-modeling
+ * pipelines, just for one metric instead of a whole belief system — see
+ * docs/known-issue-dual-founder-modeling-systems.md for the sibling issue.
+ *
+ * Both lib/scorecard.ts and lib/founderIntelligence.ts now call this one
+ * function instead of each defining the threshold themselves. The ±2 /
+ * up-down-flat convention was kept (not the older ±5 rising/falling/stable
+ * one) because lib/scorecard.ts is the more recently established, explicitly-
+ * documented "single source of truth" — see its file header.
+ *
+ * Deliberately a different function from computeMomentumTrend() above:
+ * that one takes a multi-point history array for a 7-day display trend;
+ * this one takes exactly the two values (current, last-week baseline)
+ * that founder_context actually stores. Different inputs, so kept as two
+ * functions rather than forcing one signature to serve both callers.
+ */
+export type MomentumTrendDirection = "up" | "down" | "flat" | "unknown";
+export function computeMomentumTrendFromDelta(
+  current: number | null | undefined,
+  previous: number | null | undefined,
+): MomentumTrendDirection {
+  if (typeof current !== "number" || typeof previous !== "number" || !Number.isFinite(current) || !Number.isFinite(previous)) {
+    return "unknown";
+  }
+  const delta = current - previous;
+  if (delta >= 2) return "up";
+  if (delta <= -2) return "down";
+  return "flat";
+}
+
+/**
  * projectMomentum — given current score and days inactive,
  * returns what the score will be after N more inactive days.
  * Used by Recovery Mode to frame urgency: "In 3 days you'll hit 35."
  */
 export function projectMomentum(current: number, additionalDaysInactive: number): number {
   return momentumDecay(current, additionalDaysInactive);
-                          }
+}
