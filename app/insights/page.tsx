@@ -60,7 +60,7 @@ interface InsightData {
   archetypeClassifiedAt:     string | null;
 }
 
-type AiInsightItem = { type: "warning" | "positive" | "insight"; text: string };
+type AiInsightItem = { type: "warning" | "positive" | "insight"; text: string; basis: string | null; evidence: string | null };
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -909,9 +909,27 @@ export default function InsightsPage() {
                         item.type === "positive" ? "var(--bm-green)" :
                         "var(--bm-accent)"
                     }} />
-                    <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.65 }}>
-                      {sanitizeOutput(item.text)}
-                    </p>
+                    <div style={{ flex: 1 }}>
+                      <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.65 }}>
+                        {sanitizeOutput(item.text)}
+                      </p>
+                      {/* Evidence attribution — the server-computed fact this
+                          insight was actually built from (see
+                          app/api/ai/insights/route.ts's buildEvidenceMap),
+                          not the model's own paraphrase of it. Insights with
+                          no evidence are the generic no-data fallback, not a
+                          claim about this founder — labeled as such rather
+                          than left looking equally specific. */}
+                      {item.evidence ? (
+                        <p style={{ fontSize: 11, color: "var(--bm-text4)", margin: "3px 0 0", lineHeight: 1.5 }}>
+                          Based on: {item.evidence}
+                        </p>
+                      ) : (
+                        <p style={{ fontSize: 11, color: "var(--bm-text4)", fontStyle: "italic", margin: "3px 0 0", lineHeight: 1.5 }}>
+                          General guidance — not tied to your specific data yet
+                        </p>
+                      )}
+                    </div>
                   </motion.div>
                 ))}
               </div>
@@ -969,4 +987,4 @@ export default function InsightsPage() {
       )}
     </div>
   );
-        }
+              }
