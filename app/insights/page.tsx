@@ -7,7 +7,11 @@
  * gate. The "calibrating" state is contextual per-section, not a full block.
  *
  * Data sources:
- *   founder_memory  → avoidance_zones, strengths, personality_tags
+ *   /api/founder-context/patterns → strengths, avoidance_patterns (the
+ *     SAME merged/deduped lists Founder Mirror's beliefs derive from —
+ *     founder_memory + founder_context.avoidance_zones + execution-signature
+ *     categories + learned patterns; see that route's own comment)
+ *   founder_memory  → personality_tags, last_insight, archetype_classified_at
  *   founder_context → momentum_score, streak, patterns
  *   reflections     → confidence by outcome, day-of-week heatmap
  *   action_logs     → completion rates, override reasons
@@ -224,7 +228,7 @@ export default function InsightsPage() {
         ? projQ.eq("id", activeProjectId)
         : projQ.order("created_at", { ascending: false }).limit(1);
 
-      const [memRes, ctxRes, reflRes, logRes, projRes, scorecardRes, overrideRes] = await Promise.allSettled([
+      const [memRes, ctxRes, reflRes, logRes, projRes, scorecardRes, overrideRes, patternsRes] = await Promise.allSettled([
         supabase.from("founder_memory")
           .select("avoidance_zones,strengths,personality_tags,last_insight,archetype_classified_at")
           .eq("user_id", user.id).maybeSingle(),
@@ -264,6 +268,19 @@ export default function InsightsPage() {
           .eq("user_id", user.id).eq("outcome", "overridden")
           .not("outcome_note", "is", null)
           .gte("created_at", thirtyDaysAgo),
+        // ── Single source of truth for strengths/avoidance — see
+        // app/api/founder-context/patterns/route.ts ── Previously this page
+        // read founder_memory.strengths/avoidance_zones directly, which is
+        // only one of up to four sources lib/founderIntelligence.ts merges
+        // into state.founder.strengths/avoidance_patterns (also folds in
+        // founder_context.avoidance_zones, execution-signature categories,
+        // and learned action-type patterns). Founder Mirror shows the
+        // merged list; this page showed the narrower raw one — same founder,
+        // two pages that link to each other, two different answers for
+        // "what are you avoiding." Falls back to the raw founder_memory
+        // fields below if this fetch fails, so the page degrades instead of
+        // going blank.
+        fetch(`/api/founder-context/patterns${activeProjectId ? `?projectId=${activeProjectId}` : ""}`, { cache: "no-store" }),
       ]);
 
       const mem   = memRes.status  === "fulfilled" ? memRes.value.data  : null;
@@ -287,6 +304,21 @@ export default function InsightsPage() {
             scorecardMomentumTrend = scorecardJson.data.momentumTrend;
           }
         } catch { /* fall through to defaults */ }
+      }
+
+      // Falls back to the raw founder_memory fields if the merged-pattern
+      // fetch fails — same graceful-degradation approach as scorecard above
+      // — rather than the page going blank for this section.
+      let mergedStrengths = (mem?.strengths ?? []) as string[];
+      let mergedAvoidance = (mem?.avoidance_zones ?? []) as string[];
+      if (patternsRes.status === "fulfilled" && patternsRes.value.ok) {
+        try {
+          const patternsJson = await patternsRes.value.json();
+          if (patternsJson?.ok) {
+            mergedStrengths = (patternsJson.data.strengths ?? mergedStrengths) as string[];
+            mergedAvoidance = (patternsJson.data.avoidance_patterns ?? mergedAvoidance) as string[];
+          }
+        } catch { /* fall through to founder_memory's raw lists */ }
       }
 
       // Day-of-week completion
@@ -323,8 +355,8 @@ export default function InsightsPage() {
       const totalTasksCompleted = (logs as Array<{ outcome?: string }>).filter(l => l.outcome === "completed").length;
 
       const resolved: InsightData = {
-        avoidanceZones:         (mem?.avoidance_zones  ?? []) as string[],
-        strengths:              (mem?.strengths         ?? []) as string[],
+        avoidanceZones:         mergedAvoidance,
+        strengths:              mergedStrengths,
         personalityTags:        (mem?.personality_tags  ?? []) as string[],
         momentumScore:          scorecardMomentum,
         momentumDelta:          scorecardMomentumDelta,
@@ -354,8 +386,8 @@ export default function InsightsPage() {
       // AI insights — fire when ANY meaningful data exists (lowered gate)
       const hasEnoughData =
         totalTasksCompleted >= 1 ||
-        (mem?.avoidance_zones ?? []).length > 0 ||
-        (mem?.strengths ?? []).length > 0 ||
+        mergedAvoidance.length > 0 ||
+        mergedStrengths.length > 0 ||
         refs.length > 0;
 
       if (hasEnoughData) {
@@ -366,8 +398,8 @@ export default function InsightsPage() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            avoidanceZones:         (mem?.avoidance_zones ?? []),
-            strengths:              (mem?.strengths ?? []),
+            avoidanceZones:         mergedAvoidance,
+            strengths:              mergedStrengths,
             completionByDay,
             avgConfidenceByOutcome,
             topOverrideReason,
@@ -937,4 +969,4 @@ export default function InsightsPage() {
       )}
     </div>
   );
-    }
+        }
