@@ -24,6 +24,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useActiveProjectId } from "@/lib/queries";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
 import { ARCHETYPE_DISPLAY, type FounderArchetype } from "@/lib/founderArchetypeDisplay";
+import { DayActivityCanvas, type DayActivity } from "@/components/DayActivityCanvas";
 
 interface MilestonePacing {
   id: string; title: string; targetDate: string | null; projectedDate: string | null;
@@ -36,6 +37,7 @@ interface WeeklyPulseData {
   is_quiet_week: boolean;
   momentum_score: number; momentum_delta: number | null; streak: number;
   tasks_completed: number; tasks_total: number; completion_rate: number; active_days: number;
+  day_activity: DayActivity[];
   un_ghosted: string[]; milestones: MilestonePacing[]; archetype: string | null;
   day_of_week: Record<string, { completed: number; total: number }>;
   confidence_by_outcome: Record<string, number>; confidence_index: number | null; top_override_reason: string | null;
@@ -400,6 +402,18 @@ export function WeeklyPulseCard() {
             <span style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color: "var(--bm-text)" }}>{data.streak}d</span>
           </div>
         </div>
+      </div>
+
+      {/* Day activity canvas — one unified square, not 7 separate cards.
+          Pairs with the ring above: the ring is this week's aggregate,
+          this is the per-day breakdown of what actually made it up, with
+          each band's depth of color showing how crucial that one action
+          was (ACTION_TYPE_WEIGHT — see components/DayActivityCanvas.tsx). */}
+      <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-lg)", padding: 18 }}>
+        <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, fontWeight: 600, color: "var(--bm-text)", display: "block", marginBottom: 12 }}>
+          This week, by day
+        </span>
+        <DayActivityCanvas days={data.day_activity} />
       </div>
 
       {/* Grades */}
