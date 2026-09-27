@@ -216,11 +216,11 @@ export async function getWeeklyPulseData(userId: string, projectId?: string): Pr
     // running an analysis, not completing a daily task, silently bumped
     // "X of Y tasks completed this week" on Progress — confirmed: running
     // Break My Startup once incremented the total by 1 with zero tasks
-    // actually completed. Today's own rows are session_id-prefixed
-    // "today_action" (see recordActionShown() call sites in
-    // app/api/ai/today-action/route.ts and .../stream/route.ts), so we can
-    // filter to just those without touching the shared table or the other
-    // callers that legitimately need their own rows there.
+    // actually completed. Excluded by session_id below (see the filter
+    // right after this query resolves) rather than allowlisted to a single
+    // prefix — Today's flow legitimately writes more than one prefix (see
+    // that filter's own comment for why an allowlist here caused a second,
+    // separate bug).
     admin.from("reflexion_learning_log").select("outcome, action_shown, action_type, outcome_note, created_at, session_id").eq("user_id", userId).gte("created_at", weekAgoIso),
     admin.from("tasks").select("id, status, updated_at").eq("user_id", userId).lt("created_at", weekAgoIso),
     (() => {
@@ -246,12 +246,24 @@ export async function getWeeklyPulseData(userId: string, projectId?: string): Pr
   const memory = memoryResult.status === "fulfilled" ? memoryResult.value.data : null;
   // "weekTasks" here now means reflexion_learning_log rows for this week —
   // each represents one shown/answered Today action, not a `tasks` table row.
-  // Filtered to session_id starting with "today_action" so Break My Startup
-  // runs (session_id "bms_...") and task-complete's rare fallback rows
-  // (session_id "task_complete:...") don't count as Today tasks here — see
-  // the FIX comment on the query above for why this matters.
+  //
+  // FIX (found from a founder's live repro — completed a task, count stayed
+  // at 0/7): this used to be an ALLOWLIST — only session_id starting with
+  // "today_action" counted, specifically to keep Break My Startup's rows
+  // ("bms_...") out (see the query comment above). But
+  // app/api/founder-context/task-complete/route.ts ALSO writes here as a
+  // fallback, under session_id "task_complete:...", whenever the client
+  // didn't have a log_row_id to update in place (recordActionShown()
+  // failing, a stale cached action predating log_row_id, etc.) — and that
+  // allowlist excluded those fallback rows too, even though they're
+  // genuine completions from the exact same flow. task-complete is ONLY
+  // ever called from app/today/page.tsx (confirmed — no other caller), so
+  // "task_complete:"-prefixed rows are just as real as "today_action:"
+  // ones; only "bms_" actually needs excluding. Switched to a blocklist so
+  // a completion that took the fallback path still counts instead of
+  // silently vanishing a second way.
   const weekTasks = (weekTasksResult.status === "fulfilled" ? (weekTasksResult.value.data ?? []) : [])
-    .filter((t: { session_id?: string | null }) => (t.session_id ?? "").startsWith("today_action"));
+    .filter((t: { session_id?: string | null }) => !(t.session_id ?? "").startsWith("bms_"));
   const backlogTasks = backlogTasksResult.status === "fulfilled" ? (backlogTasksResult.value.data ?? []) : [];
   const milestoneRows = milestonesResult.status === "fulfilled" ? (milestonesResult.value.data ?? []) : [];
   const weeklyGoalRow = weeklyGoalResult.status === "fulfilled" ? (weeklyGoalResult.value as { data: any })?.data ?? null : null;
@@ -546,4 +558,4 @@ Write a 2-3 sentence story-style summary of the founder's week. Brief, specific,
     day_of_week: dayOfWeek, confidence_by_outcome: confidenceByOutcome, confidence_index: confidenceIndex, top_override_reason: topOverrideReason,
     weekly_goal: weeklyGoal, sparkline, grades, story, generated_at: new Date().toISOString(),
   };
-         }
+      }
