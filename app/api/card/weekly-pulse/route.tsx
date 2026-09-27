@@ -29,7 +29,7 @@
 
 import { ImageResponse } from "next/og";
 import { createClient } from "@/lib/supabase/server";
-import { getWeeklyPulseData, type SparklinePoint } from "@/lib/weeklyPulseData";
+import { getWeeklyPulseData, type SparklinePoint, type DayActivity } from "@/lib/weeklyPulseData";
 import { getLogoDataUri } from "@/lib/cardLogo";
 
 export const runtime = "nodejs";
@@ -79,6 +79,31 @@ function buildSparklineChart(points: SparklinePoint[], hasGhost: boolean) {
   return { svgWidth: w, svgHeight: h, realPts, ghostPts, min, max, first, last, delta, dayLabels, points };
 }
 
+/**
+ * Static equivalent of components/DayActivityCanvas.tsx for this server-
+ * rendered card. Satori (the renderer behind ImageResponse) can't run
+ * React state, hover handlers, or CSS custom properties (var(--bm-*)) —
+ * same constraint this file's header comment already notes for the rest
+ * of the card — so this is a plain-data, non-interactive re-render of the
+ * same layout logic (band count = distinct activities, band color depth =
+ * ACTION_TYPE_WEIGHT), not a shared component. Keep the two visually in
+ * sync by eye if one changes; the underlying data (lib/weeklyPulseData.ts)
+ * is the single source either way.
+ */
+function bandColorForPng(weight: number): string {
+  const opacity = 0.22 + Math.min(1, Math.max(0, weight / 100)) * 0.68;
+  return `rgba(232, 197, 71, ${opacity.toFixed(2)})`; // COLORS.accent's rgb
+}
+
+function buildDayActivityChart(days: DayActivity[]) {
+  const colW = 108, colGap = 14, bandH = 26, bandGap = 5, labelH = 26;
+  const MAX_BANDS = 5; // fixed-height canvas — cap so one very busy day can't blow out the layout
+  const maxCount = Math.max(3, ...days.map((d) => Math.min(d.activities.length, MAX_BANDS)));
+  const chartH = maxCount * (bandH + bandGap) + labelH;
+  const todayStr = new Date().toISOString().slice(0, 10);
+  return { colW, colGap, bandH, bandGap, labelH, chartH, maxCount, todayStr, maxBands: MAX_BANDS };
+}
+
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const projectId = url.searchParams.get("projectId") ?? undefined;
@@ -94,6 +119,7 @@ export async function GET(request: Request) {
     getLogoDataUri(),
   ]);
   const chart = buildSparklineChart(data.sparkline, Boolean(data.weekly_goal));
+  const dayChart = buildDayActivityChart(data.day_activity);
   const topGrades = data.grades.filter((g) => g.grade !== "N/A").slice(0, 3);
 
   return new ImageResponse(
@@ -211,6 +237,46 @@ export async function GET(request: Request) {
           ))}
         </div>
 
+        {/* Day activity — one row of 7 columns, band count = distinct
+            activities that day, band color depth = how crucial each one
+            was (ACTION_TYPE_WEIGHT). Static equivalent of
+            components/DayActivityCanvas.tsx — see buildDayActivityChart's
+            comment for why this can't just reuse that component. */}
+        <div style={{ display: "flex", flexDirection: "column", marginTop: 36, zIndex: 1 }}>
+          <span style={{ color: COLORS.text2, fontSize: 18, fontWeight: 600, marginBottom: 14 }}>This week, by day</span>
+          <div style={{ display: "flex", gap: dayChart.colGap }}>
+            {data.day_activity.map((day) => {
+              const isToday = day.date === dayChart.todayStr;
+              return (
+                <div key={day.date} style={{ display: "flex", flexDirection: "column", alignItems: "center", width: dayChart.colW }}>
+                  <div style={{
+                    display: "flex", flexDirection: "column", justifyContent: "flex-end",
+                    width: dayChart.colW, height: dayChart.chartH - dayChart.labelH, gap: dayChart.bandGap,
+                    border: isToday ? `2px solid ${COLORS.accent}` : `1px solid transparent`,
+                    borderRadius: 8, padding: 3,
+                  }}>
+                    {day.activities.length === 0 ? (
+                      <div style={{ display: "flex", width: dayChart.colW, height: dayChart.bandH, borderRadius: 6, background: "rgba(255,255,255,0.05)" }} />
+                    ) : (
+                      day.activities.slice(0, dayChart.maxBands).map((a, i) => (
+                        <div key={i} style={{ display: "flex", width: dayChart.colW, height: dayChart.bandH, borderRadius: 6, background: bandColorForPng(a.weight) }} />
+                      ))
+                    )}
+                  </div>
+                  <span style={{ color: isToday ? COLORS.accent : COLORS.text3, fontSize: 15, fontWeight: isToday ? 700 : 500, marginTop: 8 }}>
+                    {day.day_label}
+                  </span>
+                  {day.activities.length > dayChart.maxBands && (
+                    <span style={{ color: COLORS.text3, fontSize: 12, marginTop: 2 }}>
+                      +{day.activities.length - dayChart.maxBands} more
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Grade badges — label + letter, never a bare color */}
         {topGrades.length > 0 && (
           <div style={{ display: "flex", gap: 12, marginTop: 20, zIndex: 1 }}>
@@ -237,4 +303,4 @@ export async function GET(request: Request) {
     ),
     { width: WIDTH, height: HEIGHT },
   );
-}
+                     }
