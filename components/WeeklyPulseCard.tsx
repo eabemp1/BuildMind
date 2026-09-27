@@ -52,38 +52,109 @@ const GRADE_COLOR: Record<GradedDimension["grade"], string> = {
   A: "var(--bm-green)", B: "var(--bm-accent)", C: "var(--bm-amber, #d9a441)", D: "var(--bm-red)", F: "var(--bm-red)", "N/A": "var(--bm-text3)",
 };
 
-/** Ghost-vs-real sparkline: dotted line = target pace, solid line = actual
- *  execution — the literal chart the founder asked for. Pure SVG, no chart
- *  library needed for 7 points. */
-function GhostSparkline({ points, size = { w: 280, h: 88 } }: { points: SparklinePoint[]; size?: { w: number; h: number } }) {
+/** Ghost-vs-real chart: dotted line = target pace, solid filled line =
+ *  actual execution. Was two bare lines with no axis, no day context, and
+ *  no way to read "how far behind/ahead" without eyeballing pixel gaps —
+ *  founder feedback was it read as plain and hard to parse. Now: subtle
+ *  gridlines for scale, a gradient fill under the real line so it reads as
+ *  a shape rather than a wire, day-of-week labels under each point, value
+ *  callouts at the real line's endpoints, and — the part that actually
+ *  answers "how far behind am I" — a dashed connector + labeled gap at the
+ *  most recent day both lines have a value, colored red/green/neutral by
+ *  direction. Pure SVG, no chart library needed for 7 points. */
+function GhostSparkline({ points, size = { w: 300, h: 148 } }: { points: SparklinePoint[]; size?: { w: number; h: number } }) {
   if (points.length < 2) {
     return <div style={{ fontSize: 11, color: "var(--bm-text3)", padding: "20px 0", textAlign: "center" }}>Not enough days logged yet this week.</div>;
   }
   const { w, h } = size;
-  const pad = 8;
+  const padX = 10, padTop = 14, padBottom = 22; // padBottom leaves room for day labels
+  const plotH = h - padTop - padBottom;
   const allValues = points.flatMap((p) => [p.real, p.ghost]).filter((v): v is number => v !== null);
   const min = Math.min(...allValues, 0);
   const max = Math.max(...allValues, 100);
-  const x = (i: number) => pad + (i / (points.length - 1)) * (w - pad * 2);
-  const y = (v: number) => h - pad - ((v - min) / Math.max(1, max - min)) * (h - pad * 2);
+  const span = Math.max(1, max - min);
+  const x = (i: number) => padX + (i / (points.length - 1)) * (w - padX * 2);
+  const y = (v: number) => padTop + plotH - ((v - min) / span) * plotH;
+  const dayLabel = (dateStr: string) => {
+    const d = new Date(`${dateStr}T00:00:00`);
+    return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString("en-US", { weekday: "short" }).slice(0, 1);
+  };
 
-  const realPath = points
-    .map((p, i) => (p.real !== null ? `${i === 0 || points[i - 1]?.real === null ? "M" : "L"}${x(i)},${y(p.real)}` : ""))
-    .filter(Boolean)
-    .join(" ");
-  const hasGhost = points.some((p) => p.ghost !== null);
-  const ghostPath = hasGhost
-    ? points.map((p, i) => (p.ghost !== null ? `${i === 0 || points[i - 1]?.ghost === null ? "M" : "L"}${x(i)},${y(p.ghost)}` : "")).filter(Boolean).join(" ")
+  const realPoints = points.map((p, i) => (p.real !== null ? { i, v: p.real } : null)).filter((p): p is { i: number; v: number } => p !== null);
+  const realPath = realPoints.map((p, k) => `${k === 0 ? "M" : "L"}${x(p.i)},${y(p.v)}`).join(" ");
+  const areaPath = realPoints.length > 1
+    ? `${realPath} L${x(realPoints[realPoints.length - 1].i)},${padTop + plotH} L${x(realPoints[0].i)},${padTop + plotH} Z`
     : "";
+  const hasGhost = points.some((p) => p.ghost !== null);
+  const ghostPoints = points.map((p, i) => (p.ghost !== null ? { i, v: p.ghost } : null)).filter((p): p is { i: number; v: number } => p !== null);
+  const ghostPath = ghostPoints.map((p, k) => `${k === 0 ? "M" : "L"}${x(p.i)},${y(p.v)}`).join(" ");
+
+  // Gap callout: the most recent day where both lines have a value.
+  const gapIndex = [...points.keys()].reverse().find((i) => points[i].real !== null && points[i].ghost !== null);
+  const gap = gapIndex !== undefined ? Math.round((points[gapIndex].real as number) - (points[gapIndex].ghost as number)) : null;
+  const gapColor = gap === null ? "var(--bm-text3)" : gap >= 0 ? "var(--bm-green)" : "var(--bm-red)";
+
+  const gridLines = [0.25, 0.5, 0.75];
 
   return (
     <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="xMidYMid meet">
-      {hasGhost && (
-        <path d={ghostPath} fill="none" stroke="var(--bm-text3)" strokeWidth={1.5} strokeDasharray="4 3" opacity={0.8} />
-      )}
+      <defs>
+        <linearGradient id="ghostRealFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="var(--bm-accent)" stopOpacity={0.28} />
+          <stop offset="100%" stopColor="var(--bm-accent)" stopOpacity={0} />
+        </linearGradient>
+      </defs>
+
+      {/* Gridlines — scale reference, absent before */}
+      {gridLines.map((f) => (
+        <line key={f} x1={padX} x2={w - padX} y1={padTop + plotH * f} y2={padTop + plotH * f} stroke="var(--bm-border)" strokeWidth={1} opacity={0.5} />
+      ))}
+
+      {/* Day labels — which day is which, absent before */}
+      {points.map((p, i) => (
+        <text key={p.date} x={x(i)} y={h - 6} textAnchor="middle" fontFamily="'Inter', sans-serif" fontSize={9} fill="var(--bm-text4)">
+          {dayLabel(p.date)}
+        </text>
+      ))}
+
+      {areaPath && <path d={areaPath} fill="url(#ghostRealFill)" stroke="none" />}
+      {hasGhost && <path d={ghostPath} fill="none" stroke="var(--bm-text3)" strokeWidth={1.5} strokeDasharray="4 3" opacity={0.8} />}
       <path d={realPath} fill="none" stroke="var(--bm-accent)" strokeWidth={2.25} strokeLinecap="round" strokeLinejoin="round" />
-      {points.map((p, i) =>
-        p.real !== null ? <circle key={i} cx={x(i)} cy={y(p.real)} r={2.5} fill="var(--bm-accent)" /> : null,
+
+      {/* Gap connector — the part that actually answers "how far off pace
+          am I", instead of leaving it to be eyeballed between two lines. */}
+      {gapIndex !== undefined && gap !== null && gap !== 0 && (
+        <g>
+          <line
+            x1={x(gapIndex)} x2={x(gapIndex)}
+            y1={y(points[gapIndex].real as number)} y2={y(points[gapIndex].ghost as number)}
+            stroke={gapColor} strokeWidth={1} strokeDasharray="2 2" opacity={0.7}
+          />
+          <text
+            x={Math.min(w - padX - 2, x(gapIndex) + 5)}
+            y={(y(points[gapIndex].real as number) + y(points[gapIndex].ghost as number)) / 2 + 3}
+            fontFamily="'DM Mono', monospace" fontSize={9.5} fontWeight={700} fill={gapColor}
+          >
+            {gap > 0 ? `+${gap}` : gap}
+          </text>
+        </g>
+      )}
+
+      {realPoints.map((p) => (
+        <circle key={p.i} cx={x(p.i)} cy={y(p.v)} r={2.75} fill="var(--bm-accent)" stroke="var(--bm-bg2)" strokeWidth={1.5} />
+      ))}
+
+      {/* Endpoint value callouts on the real line — first and last, so the
+          shape has numbers attached to it, not just a silhouette. */}
+      {realPoints.length > 0 && (
+        <text x={x(realPoints[0].i)} y={Math.max(10, y(realPoints[0].v) - 8)} textAnchor="middle" fontFamily="'DM Mono', monospace" fontSize={9.5} fill="var(--bm-text3)">
+          {Math.round(realPoints[0].v)}
+        </text>
+      )}
+      {realPoints.length > 1 && (
+        <text x={x(realPoints[realPoints.length - 1].i)} y={Math.max(10, y(realPoints[realPoints.length - 1].v) - 8)} textAnchor="middle" fontFamily="'DM Mono', monospace" fontSize={9.5} fontWeight={700} fill="var(--bm-accent)">
+          {Math.round(realPoints[realPoints.length - 1].v)}
+        </text>
       )}
     </svg>
   );
@@ -269,6 +340,19 @@ export function WeeklyPulseCard() {
           </div>
         </div>
         <GhostSparkline points={data.sparkline} />
+        {(() => {
+          const withBoth = [...data.sparkline].reverse().find((p) => p.real !== null && p.ghost !== null);
+          if (!withBoth) return null;
+          const gap = Math.round((withBoth.real as number) - (withBoth.ghost as number));
+          if (gap === 0) return (
+            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 10.5, color: "var(--bm-text3)", margin: "2px 0 8px" }}>Exactly on pace.</p>
+          );
+          return (
+            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 10.5, color: gap > 0 ? "var(--bm-green)" : "var(--bm-red)", margin: "2px 0 8px" }}>
+              {gap > 0 ? `${gap} points ahead of target pace.` : `${Math.abs(gap)} points behind target pace.`}
+            </p>
+          );
+        })()}
         {!data.weekly_goal && (
           <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 10.5, color: "var(--bm-text3)", margin: "4px 0 8px" }}>
             Set a weekly goal on an active project to see the target (ghost) line.
@@ -509,4 +593,4 @@ export function WeeklyPulseCard() {
       </a>
     </motion.div>
   );
-           }
+                                    }
