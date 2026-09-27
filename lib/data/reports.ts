@@ -89,6 +89,28 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
     }
   } catch { /* leave nulls/zero — UI shows "—" honestly rather than a stale guess */ }
 
+  // FIX: avoidance_pattern used to be computed locally here as "which
+  // project stage has the most incomplete tasks" — a real signal, but not
+  // what the UI copy claims it is ("Pattern detected: X. This is being
+  // written to your behavioral profile.") and not the same "avoidance" a
+  // founder sees on Founder Mirror or Insights, which both source it from
+  // state.founder.avoidance_patterns (founder_memory + founder_context +
+  // execution-signature categories + learned patterns, merged and deduped
+  // — see app/api/founder-context/patterns/route.ts). Same fix as
+  // app/insights/page.tsx got: read the real merged list instead of a
+  // third, differently-defined "avoidance."
+  let sharedAvoidancePattern: string | null = null;
+  try {
+    const patternsRes = await fetch(
+      `/api/founder-context/patterns${activeProjectId ? `?projectId=${activeProjectId}` : ""}`,
+      { cache: "no-store" },
+    );
+    if (patternsRes.ok) {
+      const patternsJson = await patternsRes.json();
+      if (patternsJson?.ok) sharedAvoidancePattern = patternsJson.data.avoidance_patterns?.[0] ?? null;
+    }
+  } catch { /* leave null — falls through to "no pattern detected" in the UI */ }
+
   // ── Score history — last 14 days to cover both this and previous week ─────
   let scoreHistoryRows: Array<{ score: number; recorded_at: string }> = [];
   try {
@@ -266,15 +288,13 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
     });
   } catch { /* non-fatal */ }
 
-  let computedStreakFromDates = 0;
-  for (let i = 0; i < 90; i++) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    if (completedDates.has(d.toLocaleDateString("en-CA"))) computedStreakFromDates += 1;
-    else if (i > 0) break;
-  }
-  const dbStreak = serverStreakFromScorecard;
-  const activeStreakDays = Math.max(dbStreak, computedStreakFromDates);
+  // FIX: serverStreakFromScorecard (fetched above) is already the correct,
+  // single-source-of-truth streak — this file's own header comment says as
+  // much. But it was still being Math.max()'d against a second,
+  // independently-computed streak (completedDates, a 90-day backward scan
+  // this function builds itself from tasks/reflexion rows), undermining
+  // that single-source claim. Trust the scorecard fully.
+  const activeStreakDays = serverStreakFromScorecard;
 
   const tasksCompletedThisWeek = taskData.reduce((sum, count) => sum + count, 0);
   const milestonesCompletedThisWeek = (allMilestones ?? []).filter((m) => {
@@ -409,19 +429,11 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
         : "flat"
       : "flat";
 
-  // Avoidance pattern: detect if a stage type dominates incomplete tasks
-  const incompleteByStage = new Map<string, number>();
-  (allTasks ?? []).filter((t) => !t.is_completed).forEach((t) => {
-    const projectId = milestoneToProject.get(t.milestone_id);
-    const project = summaries.find((s) => s.id === projectId);
-    const stage = project?.startup_stage ?? "unknown";
-    incompleteByStage.set(stage, (incompleteByStage.get(stage) ?? 0) + 1);
-  });
-  const topIncompleteStage = Array.from(incompleteByStage.entries()).sort((a, b) => b[1] - a[1])[0];
-  const avoidance_pattern =
-    topIncompleteStage && topIncompleteStage[1] >= 3
-      ? `${topIncompleteStage[1]} incomplete ${topIncompleteStage[0]}-stage tasks`
-      : null;
+  // Was: local "which project stage has the most incomplete tasks"
+  // heuristic — replaced above (sharedAvoidancePattern) with the same
+  // merged avoidance list Founder Mirror/Insights use, fetched near the
+  // scorecard call at the top of this function.
+  const avoidance_pattern = sharedAvoidancePattern;
 
   // ── PATCH 4: activeDays for dot calendar (last 4 weeks) ──────────────────
   // Array of ISO date strings (YYYY-MM-DD) for every day the founder was active.
@@ -703,4 +715,4 @@ export function calculateDashboardStats(projects: BuildMindProject[]) {
       : 0,
     aiUsage: activeProjects ? "Active" : "Getting started",
   };
-}
+                        }
