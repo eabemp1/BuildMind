@@ -18,7 +18,7 @@ import { detectPattern, shouldSurfacePattern, type PatternResult } from "@/lib/p
 import { recordActivity } from "@/lib/server/activityLog";
 import { evaluateAndCacheStageTransition } from "@/lib/server/stageTransition";
 import { invalidateCognitionCache } from "@/lib/founderCognition";
-import { actionCategoryLabel } from "@/lib/actionClassification";
+import { actionCategoryLabel, inferActionType } from "@/lib/actionClassification";
 import { deduplicateTags } from "@/lib/founderMemory";
 import { recordActionOutcome, markIgnoredAfter24h } from "@/lib/learning";
 
@@ -314,6 +314,12 @@ export async function POST(req: Request) {
         project_id: projectId || null,
         stage: stage || ctx?.current_stage || null,
         action_shown: taskTitle || null,
+        // Same classifier recordActionShown() already runs for the normal
+        // path — without it, a fallback-path completion (this insert only
+        // fires when there was no log_row_id to update) would default to
+        // the lowest weight tier in the day-activity heatmap
+        // (ACTION_TYPE_WEIGHT.other) regardless of what it actually was.
+        action_type: inferActionType(taskTitle || ""),
         outcome: mappedOutcome,
         outcome_recorded_at: new Date().toISOString(),
         session_id: `task_complete:${userId}:${Date.now()}`,
@@ -416,4 +422,4 @@ export async function POST(req: Request) {
       severity: activePattern.severity,
     } : null,
   });
-        }
+      }
