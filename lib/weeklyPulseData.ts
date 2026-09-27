@@ -429,11 +429,25 @@ export async function getWeeklyPulseData(userId: string, projectId?: string): Pr
   const topOverrideReason: string | null =
     Object.entries(overrideReasonCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
 
+  // FIX (confirmed by a founder screenshot): the Recommended Directive text
+  // ("You're behind on X — N/M tasks done this week") used to read
+  // weeklyGoalRow.tasks_done — a SEPARATE counter, incremented by its own
+  // fire-and-forget PATCH /api/weekly-goal call from app/today/page.tsx
+  // (increment_tasks_done: true), independent of the reflexion_learning_log
+  // pipeline tasksCompleted/activeDays above. Two different completion
+  // counters for what a founder reasonably reads as the same fact: the
+  // reported symptom was the directive correctly saying "1/7 done" (that
+  // write happened to land) while the ring/heatmap directly below it said
+  // "0/7" (a DIFFERENT write, to a DIFFERENT column, hadn't). tasks_done
+  // is no longer read here — target_tasks (the founder's actual stated
+  // target) still comes from the row, but the "how many" numerator is now
+  // the exact same tasksCompleted this card's ring and heatmap use, so
+  // they can't disagree with each other again.
   const weeklyGoal = weeklyGoalRow
     ? {
         goal_text: weeklyGoalRow.goal_text, target_score: weeklyGoalRow.target_score,
         current_score: weeklyGoalRow.current_score, target_tasks: weeklyGoalRow.target_tasks,
-        tasks_done: weeklyGoalRow.tasks_done, status: weeklyGoalRow.status,
+        tasks_done: tasksCompleted, status: weeklyGoalRow.status,
       }
     : null;
 
@@ -532,4 +546,4 @@ Write a 2-3 sentence story-style summary of the founder's week. Brief, specific,
     day_of_week: dayOfWeek, confidence_by_outcome: confidenceByOutcome, confidence_index: confidenceIndex, top_override_reason: topOverrideReason,
     weekly_goal: weeklyGoal, sparkline, grades, story, generated_at: new Date().toISOString(),
   };
-    }
+         }
