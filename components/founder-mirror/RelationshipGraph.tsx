@@ -56,6 +56,23 @@ const TYPE_META: Record<RelationshipNodeType, { color: string; icon: typeof Targ
   evidence: { color: "var(--bm-violet)", icon: Search, label: "Evidence", layer: 5 },
 };
 
+// Defensive fallback: every real RelationshipNodeType is covered above
+// (verified against lib/founderRelationships.ts's exact 9 literal type
+// strings — goal/assumption/milestone/decision/metric/task/action/
+// outcome/evidence), but this component crashed for at least one founder
+// when clicking into nodes ("Something went wrong" — app/error.tsx, the
+// global boundary, meaning an uncaught render exception). Every
+// TYPE_META[...] lookup below used to assume a match and dereference
+// straight into it (e.g. `TYPE_META[selectedNode.type].color`); if the
+// API ever briefly disagrees with this component's build (a stale client
+// bundle mid-deploy, a future node type added server-side before this
+// file is updated), that throws instead of degrading. metaFor() is the
+// one place that can't throw regardless.
+const FALLBACK_META = { color: "var(--bm-text3)", icon: HelpCircle, label: "Unknown", layer: 6 };
+function metaFor(type: RelationshipNodeType): { color: string; icon: typeof Target; label: string; layer: number } {
+  return TYPE_META[type] ?? FALLBACK_META;
+}
+
 const COLUMN_WIDTH = 200;
 const ROW_HEIGHT = 64;
 const NODE_W = 168;
@@ -70,7 +87,7 @@ interface LaidOutNode extends RelationshipNode {
 function layout(nodes: RelationshipNode[]): LaidOutNode[] {
   const byLayer = new Map<number, RelationshipNode[]>();
   for (const n of nodes) {
-    const layer = TYPE_META[n.type]?.layer ?? 6;
+    const layer = metaFor(n.type).layer;
     if (!byLayer.has(layer)) byLayer.set(layer, []);
     byLayer.get(layer)!.push(n);
   }
@@ -87,7 +104,12 @@ function layout(nodes: RelationshipNode[]): LaidOutNode[] {
   return out;
 }
 
-export function RelationshipGraph({ graph }: { graph: StartupRelationshipGraph }) {
+export function RelationshipGraph({ graph: graphProp }: { graph: StartupRelationshipGraph | null | undefined }) {
+  // Defensive default — see FALLBACK_META's comment above for why this
+  // component shouldn't assume its prop is always well-formed.
+  const graph: StartupRelationshipGraph = graphProp && Array.isArray(graphProp.nodes) && Array.isArray(graphProp.edges)
+    ? graphProp
+    : { nodes: [], edges: [] };
   const [activeTypes, setActiveTypes] = useState<Set<RelationshipNodeType>>(new Set(Object.keys(TYPE_META) as RelationshipNodeType[]));
   const [selected, setSelected] = useState<string | null>(null);
   const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
@@ -140,7 +162,17 @@ export function RelationshipGraph({ graph }: { graph: StartupRelationshipGraph }
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     dragState.current = { startX: e.clientX, startY: e.clientY, ox: transform.x, oy: transform.y };
-    (e.target as Element).setPointerCapture?.(e.pointerId);
+    // Wrapped: setPointerCapture is a real, well-known source of thrown
+    // DOMExceptions on some mobile browsers (an already-released or
+    // multi-touch pointerId) — the `?.()` above only guards the method
+    // not existing, not it existing and throwing when called. Losing
+    // capture here just means the drag/pan gets slightly less smooth,
+    // which is a fair trade against taking down the whole page.
+    try {
+      (e.target as Element).setPointerCapture?.(e.pointerId);
+    } catch {
+      // Non-fatal — see comment above
+    }
   }, [transform]);
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
@@ -183,7 +215,7 @@ export function RelationshipGraph({ graph }: { graph: StartupRelationshipGraph }
       {/* Type filter chips */}
       <div className="flex flex-wrap gap-1.5">
         {typesPresent.map((type) => {
-          const meta = TYPE_META[type];
+          const meta = metaFor(type);
           const Icon = meta.icon;
           const active = activeTypes.has(type);
           const count = graph.nodes.filter((n) => n.type === type).length;
@@ -256,7 +288,7 @@ export function RelationshipGraph({ graph }: { graph: StartupRelationshipGraph }
           </svg>
 
           {laidOut.map((n) => {
-            const meta = TYPE_META[n.type];
+            const meta = metaFor(n.type);
             const Icon = meta.icon;
             const isSelected = selected === n.id;
             const isConnected = connected ? connected.upstream.has(n.id) || connected.downstream.has(n.id) : false;
@@ -297,9 +329,9 @@ export function RelationshipGraph({ graph }: { graph: StartupRelationshipGraph }
         >
           <div className="mb-1.5 flex items-start justify-between gap-2">
             <div className="flex items-center gap-2">
-              {(() => { const M = TYPE_META[selectedNode.type]; const I = M.icon; return <I size={13} color={M.color} />; })()}
-              <span className="font-mono text-[10px] uppercase tracking-[0.08em]" style={{ color: TYPE_META[selectedNode.type].color }}>
-                {TYPE_META[selectedNode.type].label}
+              {(() => { const M = metaFor(selectedNode.type); const I = M.icon; return <I size={13} color={M.color} />; })()}
+              <span className="font-mono text-[10px] uppercase tracking-[0.08em]" style={{ color: metaFor(selectedNode.type).color }}>
+                {metaFor(selectedNode.type).label}
               </span>
               {selectedNode.status && <span className="text-[10px] text-[var(--bm-text4)]">· {selectedNode.status}</span>}
             </div>
@@ -316,4 +348,4 @@ export function RelationshipGraph({ graph }: { graph: StartupRelationshipGraph }
       )}
     </div>
   );
-}
+                  }
