@@ -18,6 +18,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Textarea } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { RelationshipGraph, type StartupRelationshipGraph } from "@/components/founder-mirror/RelationshipGraph";
+import { AIErrorBoundary } from "@/components/AIErrorBoundary";
 
 type Belief = {
   belief: string;
@@ -821,7 +822,16 @@ export default function FounderMirrorPage() {
             <span className="inline-flex items-center gap-1.5"><Clock3 size={13} />{graphSummary.nodes} observed entities</span>
             <span className="inline-flex items-center gap-1.5"><ArrowUpRight size={13} />{graphSummary.edges} connected relationships</span>
           </div>
-          <RelationshipGraph graph={graph} />
+          {/* Scoped error boundary — a decorative graph interaction
+              shouldn't be able to take down the whole page the way an
+              uncaught exception here previously did (app/error.tsx's
+              full-page "Something went wrong"). If this still fires after
+              the defensive fixes in RelationshipGraph.tsx itself, the rest
+              of Founder Mirror (beliefs, skills, corrections) stays usable
+              and the retry button re-mounts just this section. */}
+          <AIErrorBoundary feature="Relationship graph">
+            <RelationshipGraph graph={graph} />
+          </AIErrorBoundary>
         </Card>
       </motion.div>
 
@@ -861,4 +871,4 @@ export default function FounderMirrorPage() {
       </motion.div>
     </div>
   );
-  }
+          }
