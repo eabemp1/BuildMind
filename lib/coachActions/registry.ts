@@ -18,14 +18,33 @@
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Plan } from "@/lib/plan";
+import { loadFounderIntelligence } from "@/lib/founderIntelligence";
+import { buildFounderMirror, type FounderMirror } from "@/lib/founderMirror";
+import { getFounderIntelligenceAccuracy } from "@/lib/learningLoop";
+import { getFounderScorecard, type FounderScorecard } from "@/lib/scorecard";
 import type { CoachActionId, CoachActionResult } from "./types";
-import { fetchBacklog, shapeBacklog, type BacklogView } from "./backlog";
+import { fetchBacklog, shapeBacklog, shapeMilestones, type BacklogView, type MilestoneProgress } from "./backlog";
+import { fetchExecutionLog, shapeExecutionLog, type ExecutionLogView } from "./executionLog";
+import { buildSignalsResult, buildDecisionResult, buildBeliefsResult, buildMomentumResult } from "./intelligenceViews";
 
 export interface CoachActionContext {
   userId: string;
   projectId: string;
   admin: SupabaseClient;
   now?: Date;
+  /** Test seam only — production always uses the real loaders below. */
+  loaders?: {
+    mirror?: (admin: SupabaseClient, userId: string, projectId: string) => Promise<FounderMirror>;
+    scorecard?: (userId: string) => Promise<FounderScorecard>;
+  };
+}
+
+/** Same pipeline /api/founder-context/mirror runs, so what the coach reports
+ *  is what Founder Mirror shows — one computation, two presentations. */
+async function loadMirrorForCoach(admin: SupabaseClient, userId: string, projectId: string): Promise<FounderMirror> {
+  const state = await loadFounderIntelligence(admin, userId, projectId);
+  const accuracy = await getFounderIntelligenceAccuracy(admin, userId);
+  return buildFounderMirror(state, accuracy);
 }
 
 export type RunCoachActionOutcome =
@@ -223,9 +242,208 @@ export function buildBacklogResult(
   };
 }
 
+// ── list_milestones ──────────────────────────────────────────────────────
+const listMilestones = defineAction({
+  id: "list_milestones",
+  label: "List milestones",
+  description: "Milestones in roadmap order with real task progress and target dates.",
+  minPlan: "free",
+  paramsSchema: z.object({ limit: z.number().int().min(1).max(30).default(12) }),
+  async run(ctx, params) {
+    const fetched = await fetchBacklog(ctx.admin, ctx.userId, ctx.projectId);
+    if (!fetched.ok) return { ok: false, status: fetched.status, error: fetched.error };
+    const progress = shapeMilestones(fetched.milestones, fetched.tasks, ctx.now);
+    return { ok: true, result: buildMilestonesResult(progress, params.limit) };
+  },
+});
+
+export function buildMilestonesResult(list: MilestoneProgress[], limit: number): CoachActionResult {
+  if (list.length === 0) {
+    return { actionId: "list_milestones", title: "Milestones", summary: "This project has no milestones yet." };
+  }
+  const targetText = (m: MilestoneProgress) =>
+    m.daysToTarget === null ? "no target date"
+    : m.daysToTarget < 0 ? `overdue by ${plural(-m.daysToTarget, "day")}`
+    : m.daysToTarget === 0 ? "due today"
+    : `${plural(m.daysToTarget, "day")} left`;
+  const isLive = (m: MilestoneProgress) => m.status !== "completed" && m.status !== "abandoned";
+  const overdue = list.filter((m) => isLive(m) && m.daysToTarget !== null && m.daysToTarget < 0).length;
+  const totalTasks = list.reduce((n, m) => n + m.total, 0);
+  const doneTasks = list.reduce((n, m) => n + m.done, 0);
+  const completed = list.filter((m) => m.status === "completed").length;
+
+  return {
+    actionId: "list_milestones",
+    title: "Milestones",
+    summary:
+      `${plural(list.length, "milestone")}, ${completed} completed.` +
+      (overdue ? ` ${plural(overdue, "milestone")} past target date.` : "") +
+      (totalTasks ? ` ${doneTasks} of ${plural(totalTasks, "task")} done overall.` : ""),
+    stats: [
+      { label: "Milestones", value: String(list.length) },
+      { label: "Completed", value: String(completed) },
+      { label: "Past target", value: String(overdue) },
+      { label: "Tasks done", value: totalTasks ? `${doneTasks}/${totalTasks}` : "—" },
+    ],
+    rows: list.slice(0, limit).map((m) => ({
+      primary: m.title,
+      secondary: `${m.total ? `${m.done} of ${m.total} tasks done` : "no tasks yet"} · ${targetText(m)}`,
+      badge: m.status.replace("_", " "),
+    })),
+    note: list.length > limit ? `Showing ${limit} of ${list.length}.` : undefined,
+  };
+}
+
+// ── get_signals / get_decision_reasoning / get_beliefs ───────────────────
+// All three read the same FounderMirror Founder Mirror renders.
+const getSignals = defineAction({
+  id: "get_signals",
+  label: "Active signals",
+  description: "The behavioral signals BuildMind is currently detecting, most severe first.",
+  minPlan: "free",
+  paramsSchema: z.object({ limit: z.number().int().min(1).max(20).default(6) }),
+  async run(ctx, params) {
+    const denied = await assertOwnsProject(ctx);
+    if (denied) return denied;
+    const mirror = await (ctx.loaders?.mirror ?? loadMirrorForCoach)(ctx.admin, ctx.userId, ctx.projectId);
+    return { ok: true, result: buildSignalsResult(mirror.signals, params.limit) };
+  },
+});
+
+const getDecisionReasoning = defineAction({
+  id: "get_decision_reasoning",
+  label: "Decision reasoning",
+  description: "Today's recommendation, what else was scored, and why this one won.",
+  minPlan: "free",
+  paramsSchema: z.object({}),
+  async run(ctx) {
+    const denied = await assertOwnsProject(ctx);
+    if (denied) return denied;
+    const mirror = await (ctx.loaders?.mirror ?? loadMirrorForCoach)(ctx.admin, ctx.userId, ctx.projectId);
+    return { ok: true, result: buildDecisionResult(mirror.decision) };
+  },
+});
+
+const getBeliefs = defineAction({
+  id: "get_beliefs",
+  label: "What BuildMind believes about you",
+  description: "Confidence-scored beliefs about your strengths and avoidance patterns, with evidence counts.",
+  minPlan: "free",
+  paramsSchema: z.object({ limit: z.number().int().min(1).max(20).default(8) }),
+  async run(ctx, params) {
+    const denied = await assertOwnsProject(ctx);
+    if (denied) return denied;
+    const mirror = await (ctx.loaders?.mirror ?? loadMirrorForCoach)(ctx.admin, ctx.userId, ctx.projectId);
+    return { ok: true, result: buildBeliefsResult(mirror.beliefs, mirror.suppressed_beliefs, params.limit) };
+  },
+});
+
+// ── get_momentum ─────────────────────────────────────────────────────────
+// Reads the scorecard (lib/scorecard.ts) — the documented single source of
+// truth for momentum/streak/XP — and deliberately nothing else. It does NOT
+// report tasks-completed counters: several different ones exist in this app
+// and one of them is under investigation, so the coach shouldn't add a voice.
+const getMomentum = defineAction({
+  id: "get_momentum",
+  label: "Momentum",
+  description: "Momentum, change vs. last week, streak, and XP from the scorecard.",
+  minPlan: "free",
+  paramsSchema: z.object({}),
+  async run(ctx) {
+    const scorecard = await (ctx.loaders?.scorecard ?? ((id: string) => getFounderScorecard(id)))(ctx.userId);
+    return { ok: true, result: buildMomentumResult(scorecard) };
+  },
+});
+
+// ── get_execution_log ────────────────────────────────────────────────────
+const getExecutionLog = defineAction({
+  id: "get_execution_log",
+  label: "Execution log",
+  description: "Every Today action logged in a time window, with its outcome, as a JSON/CSV record.",
+  minPlan: "free",
+  paramsSchema: z.object({
+    days: z.number().int().min(1).max(90).default(14),
+    limit: z.number().int().min(1).max(100).default(12),
+    format: z.enum(["json", "csv"]).default("json"),
+  }),
+  async run(ctx, params) {
+    // User-scoped (this table's rows aren't reliably project-scoped), so no
+    // project ownership check — fetchExecutionLog filters by user_id.
+    const fetched = await fetchExecutionLog(ctx.admin, ctx.userId, params.days, ctx.now);
+    if (!fetched.ok) return { ok: false, status: fetched.status, error: fetched.error };
+    const view = shapeExecutionLog(fetched.rows, params.days, ctx.now, fetched.truncated);
+    return { ok: true, result: buildExecutionLogResult(view, params) };
+  },
+});
+
+const OUTCOME_LABEL = { completed: "completed", partial: "partial", skipped: "skipped", ignored: "ignored", pending: "no outcome" } as const;
+const SOURCE_LABEL = { today: "from Today", fallback: "logged on completion" } as const;
+const dayLabel = (iso: string) =>
+  new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+
+export function buildExecutionLogResult(
+  view: ExecutionLogView, params: { days: number; limit: number; format: "json" | "csv" },
+): CoachActionResult {
+  const windowText = params.days === 1 ? "the last day" : `the last ${params.days} days`;
+  const base = `/api/founder-context/execution-log-export?days=${params.days}`;
+  const json = { label: "Execution record (JSON)", href: `${base}&format=json` };
+  const csv = { label: "Spreadsheet (CSV)", href: `${base}&format=csv` };
+  const downloads = params.format === "csv" ? [csv, json] : [json, csv];
+
+  if (view.entries.length === 0) {
+    return {
+      actionId: "get_execution_log",
+      title: "Execution log",
+      summary: `No Today actions were logged in ${windowText}.`,
+      note: "Actions appear here when Today recommends one or you complete one. If you completed something and it's missing, it wasn't recorded — worth knowing.",
+    };
+  }
+
+  const c = view.counts;
+  const parts = [
+    c.completed && `${c.completed} completed`,
+    c.partial && `${c.partial} partial`,
+    c.skipped && `${c.skipped} skipped`,
+    c.ignored && `${c.ignored} ignored`,
+    c.pending && `${c.pending} with no outcome`,
+  ].filter(Boolean) as string[];
+
+  return {
+    actionId: "get_execution_log",
+    title: "Execution log",
+    summary:
+      `In ${windowText}: ${parts.join(", ")}.` +
+      (c.completed ? ` Completions landed on ${plural(view.daysWithCompletion, "different day")}.` : ""),
+    stats: [
+      { label: "Completed", value: String(c.completed) },
+      { label: "Partial", value: String(c.partial) },
+      { label: "Skipped", value: String(c.skipped) },
+      { label: "No outcome", value: String(c.pending) },
+      { label: "Days with a completion", value: String(view.daysWithCompletion) },
+    ],
+    rows: view.entries.slice(0, params.limit).map((e) => ({
+      primary: e.action.length > 140 ? `${e.action.slice(0, 139).trimEnd()}…` : e.action,
+      secondary: `${dayLabel(e.effectiveAt)} · ${SOURCE_LABEL[e.source]}`,
+      badge: OUTCOME_LABEL[e.outcome],
+    })),
+    downloads,
+    note: [
+      view.entries.length > params.limit ? `Showing ${params.limit} of ${view.entries.length} — the downloads include all of them.` : null,
+      view.truncated ? "Very large log: only the most recent rows were read." : null,
+      "Dates are UTC.",
+    ].filter(Boolean).join(" "),
+  };
+}
+
 export const COACH_ACTIONS: Record<CoachActionId, RegisteredAction> = {
   export_intelligence: exportIntelligence,
   list_backlog: listBacklog,
+  list_milestones: listMilestones,
+  get_signals: getSignals,
+  get_decision_reasoning: getDecisionReasoning,
+  get_beliefs: getBeliefs,
+  get_momentum: getMomentum,
+  get_execution_log: getExecutionLog,
 };
 
 const isActionId = (id: unknown): id is CoachActionId =>
@@ -258,4 +476,4 @@ export async function runCoachAction(
     return { ok: false, status: 403, error: `"${action.label}" needs the ${action.minPlan} plan.` };
   }
   return action.execute(ctx, request.params);
-}
+    }
