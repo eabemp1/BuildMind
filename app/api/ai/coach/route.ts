@@ -18,6 +18,8 @@ import { getPromptForRequest, loadActivePrompts } from "@/lib/promptRegistry";
 import { loadFounderIntelligence, buildFounderIntelligencePromptBlock } from "@/lib/founderIntelligence";
 import { recordActionShown } from "@/lib/learning";
 import { buildCofounderJudgmentPromptBlock, buildCofounderJudgment } from "@/lib/cofounderJudgment";
+import { matchCoachAction } from "@/lib/coachActions/matcher";
+import { runCoachAction, parseActionRequest, isCoachActionsEnabled } from "@/lib/coachActions/registry";
 
 const FREE_COACH_MESSAGES_PER_DAY = 3;
 
@@ -174,6 +176,9 @@ const CoachBodySchema = z.object({
   blockerType:  z.string().max(200).optional(),
   domain:       z.string().max(200).optional(),
   messages:     z.array(z.object({ role: z.string().optional(), content: z.string().optional() })).optional(),
+  // Coach Actions chip payload — validated for real by parseActionRequest();
+  // declared here only because z.object() strips undeclared keys.
+  action:       z.unknown().optional(),
 });
 
 export async function POST(request: Request) {
@@ -214,6 +219,43 @@ export async function POST(request: Request) {
 
     if (!userId || !projectId) {
       return NextResponse.json({ success: false, error: "userId and projectId required" }, { status: 400 });
+    }
+
+    // ── Coach Actions (deterministic, read-only — see lib/coachActions/) ──────
+    // Runs BEFORE enforceCoachUsage on purpose: these cost zero AI tokens, so
+    // they don't spend the free plan's daily coaching-message allowance.
+    // A chip sends body.action; typed text is matched by the same pure matcher
+    // the client uses. Spiral-flagged messages never match — a founder in a
+    // spiral needs the coach, not a task list. A typed match that fails falls
+    // through to normal coaching; an explicit chip request reports its error.
+    if (isCoachActionsEnabled() && hasAdminEnv()) {
+      const requested = parseActionRequest(body?.action);
+      const typed = !requested && message && !detectSpiralSignal(message).detected ? matchCoachAction(message) : null;
+      const chosen = requested ?? typed;
+      if (chosen) {
+        const actionAdmin = createAdminClient();
+        const outcome = await runCoachAction({ id: chosen.id, params: chosen.params }, { userId, projectId, admin: actionAdmin }, routeUser.plan);
+        if (outcome.ok) {
+          recordInteractionServer(
+            actionAdmin as Parameters<typeof recordInteractionServer>[0],
+            userId,
+            "ai_coach",
+            `Ran coach action: ${outcome.result.title}`,
+          ).catch(() => {});
+          return NextResponse.json({
+            success: true,
+            data: {
+              kind: "action",
+              reasoning: [],
+              answer: outcome.result.summary,
+              reply: outcome.result.summary,
+              actionResult: outcome.result,
+              spiralDetected: false,
+            },
+          });
+        }
+        if (requested) return NextResponse.json({ success: false, error: outcome.error }, { status: outcome.status });
+      }
     }
 
     await enforceCoachUsage(userId, routeUser.plan);
@@ -393,7 +435,7 @@ Validation gaps: ${valWeaknesses || "None recorded"}`;
         ? "You have some signal on this founder — a few reflections, partial history — but not a full picture yet. Use what you have directly, without pretending it's more than it is. If you're missing something that would change your answer, ask for it in one line, then answer with what you've got."
         : "This is early — you have no track record on this founder yet, no reflections, no completion pattern. Don't claim history you don't have. Ask one sharp question to get oriented, or give your best direct read based on what's in front of you right now.";
 
-    const baseSystemPrompt = `You are BuildMind — not an assistant, not a chatbot. You are the co-founder who stayed up building with Emmanuel and knows exactly where things stand.
+    const baseSystemPrompt = `You are BuildMind — not an assistant, not a chatbot. You are the co-founder who stayed up building alongside this founder and knows exactly where things stand.
 
 ${knowledgeClaim}
 
@@ -419,6 +461,8 @@ The reasoning array shows your actual thought process — what you noticed, what
 
 RECOMMENDED ACTION (optional):
 Only when your answer converges on one concrete, time-boxed action — not for open-ended or reflective questions — include a recommended_action object naming exactly what to do, why it matters right now (tie it to something real from his data, not generic advice), and what evidence within a short window would tell him it worked. Omit the field entirely rather than force one.
+
+THINGS THE FOUNDER CAN ASK YOU TO PULL UP (handled instantly outside this conversation, not by you): their open tasks or backlog (e.g. "show my open tasks", optionally "on the X milestone") and a download of their full Founder Intelligence data (e.g. "export my intelligence data"). If they ask for something like that and it reached you, tell them the exact phrase to type. Never invent task lists, counts, or file contents yourself.
 
 You must return ONLY valid JSON:
 {
@@ -528,4 +572,4 @@ Return ONLY the JSON. No preamble. No markdown fences.`;
       },
     }, { status });
   }
-    }
+          }
