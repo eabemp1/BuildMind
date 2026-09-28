@@ -18,5 +18,11 @@ export interface CoachActionChip {
 
 export const COACH_ACTION_CHIPS: CoachActionChip[] = [
   { id: "list_backlog", label: "Show my open tasks", params: {} },
+  { id: "get_signals", label: "What signals are you seeing?", params: {} },
+  { id: "get_decision_reasoning", label: "Why did you recommend that?", params: {} },
+  { id: "get_beliefs", label: "What do you believe about me?", params: {} },
+  { id: "get_momentum", label: "What's my momentum?", params: {} },
+  { id: "list_milestones", label: "Show my milestones", params: {} },
+  { id: "get_execution_log", label: "Show my execution log", params: {} },
   { id: "export_intelligence", label: "Export my intelligence data", params: {} },
 ];
