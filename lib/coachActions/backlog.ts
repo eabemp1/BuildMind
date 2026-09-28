@@ -16,10 +16,11 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { toCSV } from "./csv";
 
 export type BacklogStatus = "open" | "completed" | "all";
 
-export interface BacklogMilestone { id: string; title: string; status: string; created_at: string; }
+export interface BacklogMilestone { id: string; title: string; status: string; created_at: string; target_date?: string | null; }
 export interface BacklogTaskRow {
   id: string; milestone_id: string; title: string; notes: string | null; is_completed: boolean; created_at: string;
 }
@@ -64,7 +65,7 @@ export async function fetchBacklog(admin: SupabaseClient, userId: string, projec
   if (!project) return { ok: false, status: 404, error: "Project not found." };
 
   const { data: milestoneRows, error: milestoneErr } = await admin
-    .from("milestones").select("id, title, status, created_at")
+    .from("milestones").select("id, title, status, created_at, target_date")
     .eq("project_id", projectId).eq("user_id", userId)
     .order("created_at", { ascending: true });
   if (milestoneErr) return { ok: false, status: 500, error: `Couldn't load milestones: ${milestoneErr.message}` };
@@ -149,18 +150,42 @@ export function shapeBacklog(
   };
 }
 
-// CSV cells beginning with = + - @ are executed as formulas by spreadsheet
-// apps. Task titles are founder- or AI-authored text, so neutralize them.
-function csvCell(value: unknown): string {
-  let s = value == null ? "" : String(value);
-  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+export function backlogToCSV(items: BacklogItem[]): string {
+  return toCSV(
+    ["milestone", "milestone_status", "task", "notes", "completed", "created_at", "age_days"],
+    items.map((i) => [i.milestone, i.milestoneStatus, i.title, i.notes ?? "", i.isCompleted ? "yes" : "no", i.createdAt, i.ageDays]),
+  );
 }
 
-export function backlogToCSV(items: BacklogItem[]): string {
-  const header = ["milestone", "milestone_status", "task", "notes", "completed", "created_at", "age_days"];
-  const lines = items.map((i) =>
-    [i.milestone, i.milestoneStatus, i.title, i.notes ?? "", i.isCompleted ? "yes" : "no", i.createdAt, i.ageDays].map(csvCell).join(","),
-  );
-  return [header.join(","), ...lines].join("\n");
+// ── Milestone progress ─────────────────────────────────────────────────────
+export interface MilestoneProgress {
+  id: string;
+  title: string;
+  status: string;
+  targetDate: string | null;
+  /** Whole days until target (negative = overdue), null with no target date. */
+  daysToTarget: number | null;
+  total: number;
+  done: number;
+  open: number;
+}
+
+/** Pure. Roadmap order (creation order), progress counted from real tasks. */
+export function shapeMilestones(milestones: BacklogMilestone[], tasks: BacklogTaskRow[], now: Date = new Date()): MilestoneProgress[] {
+  const dayMs = 86_400_000;
+  return milestones.map((m) => {
+    const mine = tasks.filter((t) => t.milestone_id === m.id);
+    const done = mine.filter((t) => t.is_completed).length;
+    let daysToTarget: number | null = null;
+    if (m.target_date) {
+      const target = new Date(`${String(m.target_date).slice(0, 10)}T00:00:00Z`).getTime();
+      const today = new Date(`${now.toISOString().slice(0, 10)}T00:00:00Z`).getTime();
+      if (Number.isFinite(target)) daysToTarget = Math.round((target - today) / dayMs);
+    }
+    return {
+      id: m.id, title: m.title, status: m.status,
+      targetDate: m.target_date ? String(m.target_date).slice(0, 10) : null,
+      daysToTarget, total: mine.length, done, open: mine.length - done,
+    };
+  });
 }
