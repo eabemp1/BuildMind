@@ -57,6 +57,7 @@ import { getFounderScorecard } from "@/lib/scorecard";
 import { computeMilestonePacing, type MilestonePacingResult } from "@/lib/milestonePacing";
 import { computeWeeklyGrades, type GradedDimension } from "@/lib/patternGrading";
 import { actionCategoryLabel, ACTION_TYPE_WEIGHT, type ActionType } from "@/lib/actionClassification";
+import { isTodayFlowSession } from "@/lib/todayFlowSessions";
 
 export interface SparklinePoint { date: string; real: number | null; ghost: number | null; }
 
@@ -247,23 +248,15 @@ export async function getWeeklyPulseData(userId: string, projectId?: string): Pr
   // "weekTasks" here now means reflexion_learning_log rows for this week —
   // each represents one shown/answered Today action, not a `tasks` table row.
   //
-  // FIX (found from a founder's live repro — completed a task, count stayed
-  // at 0/7): this used to be an ALLOWLIST — only session_id starting with
-  // "today_action" counted, specifically to keep Break My Startup's rows
-  // ("bms_...") out (see the query comment above). But
-  // app/api/founder-context/task-complete/route.ts ALSO writes here as a
-  // fallback, under session_id "task_complete:...", whenever the client
-  // didn't have a log_row_id to update in place (recordActionShown()
-  // failing, a stale cached action predating log_row_id, etc.) — and that
-  // allowlist excluded those fallback rows too, even though they're
-  // genuine completions from the exact same flow. task-complete is ONLY
-  // ever called from app/today/page.tsx (confirmed — no other caller), so
-  // "task_complete:"-prefixed rows are just as real as "today_action:"
-  // ones; only "bms_" actually needs excluding. Switched to a blocklist so
-  // a completion that took the fallback path still counts instead of
-  // silently vanishing a second way.
+  // Only Today's own rows count here — see lib/todayFlowSessions.ts for the
+  // full story. Short version: this table is shared with the AI coach, weekly
+  // reports, morning briefings, recovery mode, and Break My Startup. An
+  // allowlist of "today_action" alone dropped task-complete's fallback rows
+  // (a real completion vanished — the founder-reported 0/7), and a blocklist
+  // of just "bms_" let every other writer count as a task. The allowlist here
+  // names both prefixes Today's flow actually writes.
   const weekTasks = (weekTasksResult.status === "fulfilled" ? (weekTasksResult.value.data ?? []) : [])
-    .filter((t: { session_id?: string | null }) => !(t.session_id ?? "").startsWith("bms_"));
+    .filter((t: { session_id?: string | null }) => isTodayFlowSession(t.session_id));
   const backlogTasks = backlogTasksResult.status === "fulfilled" ? (backlogTasksResult.value.data ?? []) : [];
   const milestoneRows = milestonesResult.status === "fulfilled" ? (milestonesResult.value.data ?? []) : [];
   const weeklyGoalRow = weeklyGoalResult.status === "fulfilled" ? (weeklyGoalResult.value as { data: any })?.data ?? null : null;
@@ -558,4 +551,4 @@ Write a 2-3 sentence story-style summary of the founder's week. Brief, specific,
     day_of_week: dayOfWeek, confidence_by_outcome: confidenceByOutcome, confidence_index: confidenceIndex, top_override_reason: topOverrideReason,
     weekly_goal: weeklyGoal, sparkline, grades, story, generated_at: new Date().toISOString(),
   };
-      }
+        }
