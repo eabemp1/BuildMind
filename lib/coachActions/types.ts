@@ -13,7 +13,15 @@
  * stored task titles or reflections.
  */
 
-export type CoachActionId = "export_intelligence" | "list_backlog";
+export type CoachActionId =
+  | "export_intelligence"
+  | "list_backlog"
+  | "list_milestones"
+  | "get_signals"
+  | "get_decision_reasoning"
+  | "get_beliefs"
+  | "get_momentum"
+  | "get_execution_log";
 
 export interface CoachActionDownload {
   label: string;
@@ -24,6 +32,8 @@ export interface CoachActionDownload {
 export interface CoachActionRow {
   primary: string;
   secondary?: string;
+  /** A third, accented line — e.g. a signal's recommended response. */
+  detail?: string;
   badge?: string;
 }
 
