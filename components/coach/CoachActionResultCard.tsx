@@ -11,14 +11,25 @@
  * download links are refused unless they're same-origin API paths.
  */
 
-import { Download, ListChecks, Database } from "lucide-react";
-import type { CoachActionResult } from "@/lib/coachActions/types";
+import { Download, ListChecks, Database, Flag, Radar, GitBranch, Brain, TrendingUp, History } from "lucide-react";
+import type { CoachActionId, CoachActionResult } from "@/lib/coachActions/types";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
 
 const isSafeDownload = (href: string) => href.startsWith("/api/") && !href.startsWith("//");
 
+const ICONS: Record<CoachActionId, typeof Database> = {
+  list_backlog: ListChecks,
+  list_milestones: Flag,
+  get_signals: Radar,
+  get_decision_reasoning: GitBranch,
+  get_beliefs: Brain,
+  get_momentum: TrendingUp,
+  get_execution_log: History,
+  export_intelligence: Database,
+};
+
 export function CoachActionResultCard({ result }: { result: CoachActionResult }) {
-  const Icon = result.actionId === "list_backlog" ? ListChecks : Database;
+  const Icon = ICONS[result.actionId] ?? Database;
   const downloads = (result.downloads ?? []).filter((d) => isSafeDownload(d.href));
 
   return (
@@ -51,6 +62,7 @@ export function CoachActionResultCard({ result }: { result: CoachActionResult })
               <div className="min-w-0">
                 <div className="text-[12px] leading-snug text-[var(--bm-text2)]">{sanitizeOutput(row.primary)}</div>
                 {row.secondary && <div className="mt-0.5 text-[10.5px] leading-snug text-[var(--bm-text3)]">{sanitizeOutput(row.secondary)}</div>}
+                {row.detail && <div className="mt-1 text-[10.5px] leading-snug text-[var(--bm-intel2)]">{sanitizeOutput(row.detail)}</div>}
               </div>
               {row.badge && (
                 <span className="shrink-0 rounded-full border border-[var(--bm-border)] px-2 py-0.5 font-mono text-[9.5px] text-[var(--bm-text3)]">
