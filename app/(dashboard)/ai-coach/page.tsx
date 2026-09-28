@@ -19,6 +19,10 @@ import { withAIErrorBoundary } from "@/components/AIErrorBoundary";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/card";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
+import { CoachActionResultCard } from "@/components/coach/CoachActionResultCard";
+import { matchCoachAction } from "@/lib/coachActions/matcher";
+import { COACH_ACTION_CHIPS } from "@/lib/coachActions/chips";
+import type { CoachActionResult } from "@/lib/coachActions/types";
 
 type ChatMessage = {
   id: string;
@@ -33,6 +37,9 @@ type ChatMessage = {
    *  the model named one concrete, time-boxed next step (see coach route's
    *  recommended_action contract). Absent on most replies by design. */
   recommendedAction?: { what_to_do: string; why_now: string; expected_evidence?: string };
+  /** Present when the reply was a Coach Action (lib/coachActions) rather
+   *  than model-written coaching — rendered as a data card, not prose. */
+  actionResult?: CoachActionResult;
 };
 
 function buildPlaceholderReasoning(message: string, projectTitle?: string, score?: number): string[] {
@@ -146,6 +153,10 @@ function MessageBubble({ msg, onStartAction }: { msg: ChatMessage; onStartAction
         >
           {msg.phase === "thinking" ? <ThinkingDots /> : <span style={{ whiteSpace: "pre-wrap" }}>{sanitizeOutput(msg.content)}</span>}
         </div>
+
+        {!isUser && msg.phase === "done" && msg.actionResult && (
+          <CoachActionResultCard result={msg.actionResult} />
+        )}
 
         {!isUser && msg.phase === "done" && msg.recommendedAction && (
           <div className="w-full rounded-[var(--r-lg)] p-3.5" style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-amber-bd, rgba(232,160,32,0.25))" }}>
@@ -265,10 +276,15 @@ function AICoachPageInner() {
       .catch(() => {});
   }, [activeProject?.id]);
 
-  async function sendMessage(text?: string) {
+  async function sendMessage(text?: string, opts?: { action?: { id: string; params: Record<string, unknown> } }) {
     const msg = (text ?? input).trim();
     if (!msg || loading) return;
-    if (remaining <= 0 && !planLoading && plan === "free") { showLimitModal("aiCoach"); return; }
+    // Coach Actions cost no AI tokens, so they don't spend the free plan's
+    // daily coaching allowance — the server skips the cap for them too
+    // (app/api/ai/coach/route.ts). matchCoachAction is the same pure function
+    // the server runs, so the two can't disagree about what counts as one.
+    const isAction = Boolean(opts?.action) || matchCoachAction(msg) !== null;
+    if (remaining <= 0 && !planLoading && plan === "free" && !isAction) { showLimitModal("aiCoach"); return; }
     if (!userId) {
       setMessages(prev => [...prev, { id: Date.now().toString(), role: "assistant", content: "Please sign in again before using AI Coach.", phase: "done", error: true }]);
       return;
@@ -295,10 +311,22 @@ function AICoachPageInner() {
           memory,
           personality,
           messages,
+          action: opts?.action,
         }),
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok || !payload?.success) throw new Error(payload?.error ?? "Coach unavailable");
+
+      // A Coach Action reply: render the data card and stop. Deliberately
+      // skips the coaching-message counter, achievements, streak, and coach
+      // memory below — none of those should move because someone exported a file.
+      if (payload?.data?.kind === "action" && payload.data.actionResult) {
+        const actionResult = payload.data.actionResult as CoachActionResult;
+        setMessages(prev => prev.map(m => m.id === thinkingMsg.id
+          ? { ...m, content: String(payload.data.reply ?? actionResult.summary), reasoning: undefined, phase: "done", actionResult }
+          : m));
+        return;
+      }
       const reply = payload?.data?.reply ?? payload?.data?.answer ?? "I'm having trouble responding right now. Please try again.";
       const confidence_score = typeof payload?.data?.confidence_score === "number" ? payload.data.confidence_score : null;
       const ra = payload?.data?.recommended_action;
@@ -480,6 +508,17 @@ function AICoachPageInner() {
 
           <div className="sticky bottom-0 shrink-0 border-t border-[var(--bm-border)] bg-[var(--bm-bg)]/90 p-3 backdrop-blur-sm sm:p-4">
             {plan === "free" && <div className="mb-2.5"><AIUsageBadge /></div>}
+            <div className="mb-2.5 flex items-center gap-2 overflow-x-auto pb-0.5" style={{ scrollbarWidth: "none" }}>
+              <span className="shrink-0 font-mono text-[9px] uppercase tracking-[0.08em] text-[var(--bm-text4)]">Actions</span>
+              {COACH_ACTION_CHIPS.map(chip => (
+                <button key={chip.label} type="button" disabled={loading}
+                  onClick={() => sendMessage(chip.label, { action: { id: chip.id, params: chip.params } })}
+                  className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-[var(--bm-border2)] bg-transparent px-3 py-1.5 text-[11.5px] text-[var(--bm-text3)] transition-colors hover:border-[var(--bm-intel-bd)] hover:text-[var(--bm-text2)] disabled:cursor-not-allowed disabled:opacity-50">
+                  <Zap size={11} />
+                  {chip.label}
+                </button>
+              ))}
+            </div>
             <div className="flex items-end gap-2.5 rounded-[var(--r-lg)] border border-[var(--bm-border2)] bg-[var(--bm-bg3)] px-3.5 py-3 transition-colors"
               onFocusCapture={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--bm-accent-bd)"; }}
               onBlurCapture={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--bm-border2)"; }}>
