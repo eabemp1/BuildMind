@@ -133,7 +133,7 @@ export async function POST(request: Request) {
 
   // Enforce AI usage limits — synthesis counts as one AI call
   try {
-    await enforceAndTrackAIUsage(routeUser.userId);
+    await enforceAndTrackAIUsage(routeUser.userId, routeUser.plan, "core");
   } catch (usageErr) {
     const msg = usageErr instanceof Error ? usageErr.message : String(usageErr);
     if (msg.toLowerCase().includes("limit reached")) {
