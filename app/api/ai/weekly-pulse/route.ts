@@ -21,6 +21,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getWeeklyPulseData } from "@/lib/weeklyPulseData";
+import { getEffectivePlan } from "@/lib/server/plan";
 
 export const maxDuration = 30;
 
@@ -34,7 +35,10 @@ export async function POST(request: Request) {
     const { data: { user }, error: authErr } = await supabase.auth.getUser();
     if (authErr || !user) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
 
-    const data = await getWeeklyPulseData(user.id, projectId);
+    // Plan gate (light): the AI-written story is Builder/trial only; Free keeps
+    // the same numbers with the deterministic summary line.
+    const plan = await getEffectivePlan(user.id).catch(() => "free" as const);
+    const data = await getWeeklyPulseData(user.id, projectId, { aiStory: plan === "builder" });
     return NextResponse.json({ ok: true, data });
   } catch (err) {
     return NextResponse.json({ ok: false, error: "weekly_pulse_failed" }, { status: 500 });
