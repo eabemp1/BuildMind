@@ -93,7 +93,7 @@ describe("POST /api/ai/reflect-action — auth guard (Fix 1b)", () => {
 
   it("calls enforceAndTrackAIUsage with the authenticated userId", async () => {
     await POST(makeReq());
-    expect(enforceAndTrackAIUsage).toHaveBeenCalledWith("user-reflect");
+    expect(enforceAndTrackAIUsage).toHaveBeenCalledWith("user-reflect", expect.anything(), "core");
   });
 
   it("returns 429 when usage limit reached", async () => {

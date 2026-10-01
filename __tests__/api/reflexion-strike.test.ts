@@ -77,7 +77,7 @@ describe("POST /api/ai/reflexion-strike — auth guard (Fix 1a)", () => {
 
   it("calls enforceAndTrackAIUsage with the correct userId", async () => {
     await POST(makeReq());
-    expect(enforceAndTrackAIUsage).toHaveBeenCalledWith("user-123");
+    expect(enforceAndTrackAIUsage).toHaveBeenCalledWith("user-123", expect.anything(), "core");
   });
 
   it("returns 429 when usage limit is reached", async () => {
