@@ -20,6 +20,7 @@ import { recordActionShown } from "@/lib/learning";
 import { buildCofounderJudgmentPromptBlock, buildCofounderJudgment } from "@/lib/cofounderJudgment";
 import { matchCoachAction } from "@/lib/coachActions/matcher";
 import { runCoachAction, parseActionRequest, isCoachActionsEnabled } from "@/lib/coachActions/registry";
+import { buildAppKnowledgeBlock } from "@/lib/coachAppKnowledge";
 
 const FREE_COACH_MESSAGES_PER_DAY = 3;
 
@@ -472,6 +473,8 @@ You must return ONLY valid JSON:
 }
 recommended_action is optional — omit the key entirely when no single action stands out.
 ${spiralInstruction}${proactiveObservation}
+
+${buildAppKnowledgeBlock(message, routeUser.plan === "builder" ? "builder" : "free")}
 
 ${projectContext ? `FOUNDER CONTEXT (real data):\n${projectContext}` : ""}${founderMemoryContext}${intelligenceBlock ? `\n\n${intelligenceBlock}` : ""}${morningNoteContext}${blockerContext}${domainContext}${historyContext}
 
