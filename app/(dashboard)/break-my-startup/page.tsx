@@ -35,6 +35,9 @@ interface RiskItem {
   severity: RiskSeverity;
   description: string;
   mitigation: string;
+  /** Which of the founder's SELECTED focus areas this risk actually relates
+   *  to (never an unselected one) — see lib/breakMyStartupFocusAreas.ts. */
+  relatedFocusAreas?: string[];
 }
 
 interface PivotItem {
@@ -44,6 +47,7 @@ interface PivotItem {
   why_better: string;
   estimated_score_delta: number;
   key_change: string;
+  relatedFocusAreas?: string[];
 }
 
 interface CompetitorRow {
@@ -83,6 +87,11 @@ interface BreakResult {
    *  backend), returned as survive_reasons on every response but never read
    *  here before. Feeds "What Could Still Work". */
   surviveReasons?: string[];
+  /** Index-aligned with surviveReasons — which selected focus areas each one relates to. */
+  surviveReasonTags?: string[][];
+  /** Which selected focus areas were actually addressed anywhere in the
+   *  result vs. which ones nothing came back on — null when none selected. */
+  focusAreaCoverage?: FocusAreaCoverage | null;
   /** Raw (non-inverted) 0-100 scores for the five stress-test dimensions —
    *  same signal_summary the radar chart uses, kept un-inverted here so the
    *  tiles read the same numbers a founder would recognize from the model. */
@@ -97,14 +106,24 @@ interface BreakResult {
   } | null;
 }
 
+/** Selected focus areas that touched an item, index-aligned with the parent
+ *  list. See lib/breakMyStartupFocusAreas.ts — only ever contains names
+ *  from what the founder actually selected. */
+type FocusAreaCoverage = { selected: string[]; addressed: string[]; unaddressed: string[] };
+
 type BreakApiData = {
   verdict?: string;
   kill_reasons?: string[];
+  kill_reason_tags?: string[][];
   survive_reasons?: string[];
+  survive_reason_tags?: string[][];
   brutal_advice?: string;
   survival_probability?: number;
   competitor_summary?: string;
   differentiation_plan?: string[];
+  differentiation_plan_tags?: string[][];
+  pivot_focus_tags?: string[][];
+  focus_area_coverage?: FocusAreaCoverage | null;
   gated?: boolean;
   reasoning?: string[];
   agent_outputs?: Record<string, Record<string, unknown> | null>;
@@ -133,6 +152,30 @@ const FOCUS_AREAS = [
   "Regulatory Risk",
 ] as const;
 type FocusArea = (typeof FOCUS_AREAS)[number];
+
+/** Small pill row showing which of the founder's selected focus areas an
+ *  item relates to (lib/breakMyStartupFocusAreas.ts tags it server-side) —
+ *  the visible proof that picking a chip actually shaped the result. */
+function FocusAreaTags({ areas }: { areas?: string[] }) {
+  if (!areas || areas.length === 0) return null;
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 8 }}>
+      {areas.map((area) => (
+        <span
+          key={area}
+          style={{
+            fontSize: 9.5, fontWeight: 600, color: "var(--bm-intel)",
+            background: "var(--bm-intel-dim, rgba(93,169,224,0.1))",
+            border: "1px solid var(--bm-intel-bd, rgba(93,169,224,0.25))",
+            borderRadius: 999, padding: "2px 8px",
+          }}
+        >
+          {area}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 function severityVariant(s: RiskSeverity): BadgeVariant {
   if (s === "Critical") return "danger";
@@ -279,7 +322,19 @@ export default function BreakMyStartupPage() {
 
   function mapApiResult(data: BreakApiData): BreakResult {
     const probability = typeof data.survival_probability === "number" ? data.survival_probability : undefined;
-    const killReasons = cleanAIList(data.kill_reasons);
+    // cleanAIList can drop an item entirely (.filter(Boolean), when an item
+    // is nothing but a stripped think-tag/markdown artifact) — pairing text
+    // with its tag BEFORE that filter, not after, so kill_reason_tags[i]
+    // can't end up describing the wrong reason once indices shift.
+    function cleanWithTags(items: string[] | undefined, tags: string[][] | undefined): { texts: string[]; tags: string[][] } {
+      const paired = (items ?? [])
+        .map((item, i) => ({ text: cleanAIText(item), tags: tags?.[i] ?? [] }))
+        .filter((x) => Boolean(x.text));
+      return { texts: paired.map((x) => x.text), tags: paired.map((x) => x.tags) };
+    }
+    const killPaired = cleanWithTags(data.kill_reasons, data.kill_reason_tags);
+    const killReasons = killPaired.texts;
+    const survivePaired = cleanWithTags(data.survive_reasons, data.survive_reason_tags);
     const differentiationPlan = cleanAIList(data.differentiation_plan);
     const brutalAdvice = cleanAIText(data.brutal_advice);
     const overallRisk: RiskSeverity =
@@ -349,6 +404,7 @@ export default function BreakMyStartupPage() {
         nextDifferentiationEntry() ||
         brutalAdvice ||
         "Talk to 5 target users and validate the riskiest assumption before building more.",
+      relatedFocusAreas: killPaired.tags[index]?.length ? killPaired.tags[index] : undefined,
     }));
 
     if (data.competitor_summary) {
@@ -428,17 +484,20 @@ export default function BreakMyStartupPage() {
       signalBreakdown,
       signalScores,
       competitorTable,
-      surviveReasons: cleanAIList(data.survive_reasons),
+      surviveReasons: survivePaired.texts,
+      surviveReasonTags: survivePaired.tags,
+      focusAreaCoverage: data.focus_area_coverage ?? null,
       isSynthetic,
       focusAreas: cleanAIList(data.focus_areas),
       pivots: Array.isArray(data.pivots)
-        ? data.pivots.slice(0, 3).map((p) => ({
+        ? data.pivots.slice(0, 3).map((p, i) => ({
             title: cleanAIText(p.title),
             description: cleanAIText(p.description),
             target_niche: cleanAIText(p.target_niche),
             why_better: cleanAIText(p.why_better),
             estimated_score_delta: typeof p.estimated_score_delta === "number" ? p.estimated_score_delta : 0,
             key_change: cleanAIText(p.key_change),
+            relatedFocusAreas: data.pivot_focus_tags?.[i]?.length ? data.pivot_focus_tags[i] : undefined,
           }))
         : undefined,
       executionPlan: data.execution_plan
@@ -1113,6 +1172,52 @@ export default function BreakMyStartupPage() {
               </Card>
             )}
 
+            {/* Focus area coverage — the at-a-glance proof that selecting
+                chips actually changed something, not just a hope that a
+                line buried in a prompt somewhere got weighted. Built from
+                relatedFocusAreas tags already attached to the risks/survive
+                reasons/pivots below, so this can't disagree with them —
+                same data, just summarized first. Unaddressed areas are
+                shown too, honestly: it means nothing in this run's output
+                touched that dimension, not that the selection was ignored. */}
+            {result.focusAreaCoverage && (
+              <div
+                style={{
+                  display: "flex", flexDirection: "column", gap: 6,
+                  padding: "10px 12px", borderRadius: "var(--r-md)",
+                  border: "1px solid var(--bm-border)", background: "var(--bm-bg2)",
+                }}
+              >
+                <span style={{ fontSize: 9, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: "'DM Mono', monospace" }}>
+                  Focus areas — {result.focusAreaCoverage.addressed.length} of {result.focusAreaCoverage.selected.length} addressed below
+                </span>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                  {result.focusAreaCoverage.selected.map((area) => {
+                    const addressed = result.focusAreaCoverage!.addressed.includes(area);
+                    return (
+                      <span
+                        key={area}
+                        style={{
+                          fontSize: 10.5, fontWeight: 600,
+                          color: addressed ? "var(--bm-green)" : "var(--bm-text4)",
+                          background: addressed ? "var(--bm-green-dim, rgba(92,200,138,0.1))" : "transparent",
+                          border: `1px solid ${addressed ? "var(--bm-green-bd, rgba(92,200,138,0.25))" : "var(--bm-border2)"}`,
+                          borderRadius: 999, padding: "2px 9px",
+                        }}
+                      >
+                        {addressed ? "✓" : "—"} {area}
+                      </span>
+                    );
+                  })}
+                </div>
+                {result.focusAreaCoverage.unaddressed.length > 0 && (
+                  <p style={{ fontSize: 10.5, color: "var(--bm-text4)", margin: 0, lineHeight: 1.5 }}>
+                    Nothing in this run's output touched {result.focusAreaCoverage.unaddressed.join(", ")} specifically — worth a closer look or a re-run.
+                  </p>
+                )}
+              </div>
+            )}
+
             {/* Risk breakdown cards */}
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
@@ -1184,6 +1289,7 @@ export default function BreakMyStartupPage() {
                         <Markdown textSize={12}>{sanitizeMarkdown(risk.mitigation)}</Markdown>
                       </div>
                     </div>
+                    <FocusAreaTags areas={risk.relatedFocusAreas} />
                   </div>
                 </motion.div>
               ))}
@@ -1208,6 +1314,7 @@ export default function BreakMyStartupPage() {
                       style={{ borderLeft: "2px solid var(--bm-green)", background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderLeftWidth: 2, borderLeftColor: "var(--bm-green)" }}
                     >
                       <Markdown textSize={12}>{sanitizeMarkdown(reason)}</Markdown>
+                      <FocusAreaTags areas={result.surviveReasonTags?.[i]} />
                     </div>
                   ))}
                 </div>
@@ -1297,6 +1404,7 @@ export default function BreakMyStartupPage() {
                           <span className="font-semibold text-[var(--bm-text2)]">Required change: </span>{pivot.key_change}
                         </p>
                       )}
+                      <FocusAreaTags areas={pivot.relatedFocusAreas} />
                       <button
                         onClick={() => handleExplorePivot(pivot)}
                         className="mt-1 w-full rounded-md border py-1.5 text-[11px] font-semibold uppercase tracking-[0.04em] transition-colors"
@@ -1379,4 +1487,4 @@ export default function BreakMyStartupPage() {
       </AnimatePresence>
     </div>
   );
-      }
+                     }
