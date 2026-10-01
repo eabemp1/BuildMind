@@ -308,21 +308,25 @@ export async function POST(req: Request) {
     "partial"; // "partial" and "learned" both count as partial signal, not a full completion
 
   async function insertFallbackLog(userId: string) {
+    // FIX: supabase-js does NOT throw on a failed insert — it resolves with
+    // `{ error }`. The previous try/catch therefore never fired, so if the
+    // row was rejected (e.g. a column that exists in code but not in the live
+    // table) the completion vanished silently and Progress stayed at 0.
+    // The result is now checked, and a minimal-column retry guarantees the
+    // completion is recorded even when optional lifecycle columns are absent.
+    const base = {
+      user_id: userId,
+      project_id: projectId || null,
+      stage: stage || ctx?.current_stage || null,
+      action_shown: taskTitle || null,
+      action_type: inferActionType(taskTitle || ""),
+      outcome: mappedOutcome,
+      outcome_recorded_at: new Date().toISOString(),
+      session_id: `task_complete:${userId}:${Date.now()}`,
+    };
     try {
-      await admin.from("reflexion_learning_log").insert({
-        user_id: userId,
-        project_id: projectId || null,
-        stage: stage || ctx?.current_stage || null,
-        action_shown: taskTitle || null,
-        // Same classifier recordActionShown() already runs for the normal
-        // path — without it, a fallback-path completion (this insert only
-        // fires when there was no log_row_id to update) would default to
-        // the lowest weight tier in the day-activity heatmap
-        // (ACTION_TYPE_WEIGHT.other) regardless of what it actually was.
-        action_type: inferActionType(taskTitle || ""),
-        outcome: mappedOutcome,
-        outcome_recorded_at: new Date().toISOString(),
-        session_id: `task_complete:${userId}:${Date.now()}`,
+      const { error } = await admin.from("reflexion_learning_log").insert({
+        ...base,
         evidence_produced: outcome === "completed" ? taskTitle || null : null,
         outcome_quality: outcome === "completed" ? "useful" : "none",
         lifecycle_events: [{
@@ -331,8 +335,12 @@ export async function POST(req: Request) {
           note: taskTitle || null,
         }],
       });
-    } catch {
-      // Non-fatal — table may not exist in all envs
+      if (!error) return;
+      console.error("[task-complete] fallback log insert failed, retrying minimal:", error.message);
+      const retry = await admin.from("reflexion_learning_log").insert(base);
+      if (retry.error) console.error("[task-complete] minimal fallback insert failed:", retry.error.message);
+    } catch (err) {
+      console.error("[task-complete] fallback log insert threw:", err);
     }
   }
 
