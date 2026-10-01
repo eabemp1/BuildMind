@@ -18,6 +18,7 @@ import {
   type ScrapedCompetitor,
 } from "@/lib/agents";
 import { competitorSearch } from "@/lib/search";
+import { buildPreviewFocusInsights, tagFocusAreasForList, buildFocusAreaCoverage } from "@/lib/breakMyStartupFocusAreas";
 import {
   computeViabilityScore,
   computeViabilityBreakdown,
@@ -279,8 +280,35 @@ export async function POST(request: Request) {
     }
 
     // ── Free tier: preview only ───────────────────────────────────────────
+    // FIX: focus areas used to do nothing here beyond a flat +2-per-area
+    // bump to previewScore (capped at +8), with zero regard for WHICH areas
+    // were picked — the rest of this response was static boilerplate that
+    // never named them. That's confirmed as the reported "focus areas don't
+    // really do anything" behavior for any non-Builder run.
+    //
+    // Now: buildPreviewFocusInsights (lib/breakMyStartupFocusAreas.ts) does
+    // two cheap, deterministic, no-LLM-call things per selected area — (1)
+    // says what a real run would actually examine on that dimension, (2)
+    // checks whether the founder's own idea text already mentions it. Both
+    // are free-to-compute and don't reveal idea-specific analysis (the
+    // real paid value — 5 agents, competitor scan, reflexion, pivots — is
+    // still fully locked below), so this doesn't move the paywall, it just
+    // makes clicking a chip visibly change the response.
     if (routeUser.plan !== "builder") {
       const previewScore = previewSignalScore(idea, focusAreas, String(body?.stage ?? "Idea"));
+      const focusInsights = buildPreviewFocusInsights(focusAreas, idea);
+      const killReasons = [
+        ...focusInsights.killReasons,
+        "The preview cannot verify demand, execution history, or competitive pressure without Builder analysis.",
+      ];
+      const surviveReasons = focusInsights.surviveReasons.length
+        ? focusInsights.surviveReasons
+        : [
+            previewScore >= 50
+              ? "Your description includes some useful market signal."
+              : "You are stress-testing before overbuilding, which is already a good sign.",
+          ];
+
       return NextResponse.json({
         success: true,
         data: {
@@ -289,21 +317,18 @@ export async function POST(request: Request) {
             "Free preview uses only your written idea, not full project history",
             "Builder unlocks the 5-agent parallel pipeline with competitor scan",
             "Builder unlocks the Reflexion Loop with Verifier and Pivot Engine",
-            `Preview signal score ${previewScore}`,
+            focusAreas.length
+              ? `Preview signal score ${previewScore} — checked against ${focusAreas.length} selected focus area${focusAreas.length === 1 ? "" : "s"}`
+              : `Preview signal score ${previewScore}`,
           ],
           verdict: "Preview only: this idea has enough signal to inspect, but the full stress test is Builder-only.",
-          kill_reasons: [
-            "The preview cannot verify demand, execution history, or competitive pressure without Builder analysis.",
-          ],
-          survive_reasons: [
-            previewScore >= 50
-              ? "Your description includes some useful market signal."
-              : "You are stress-testing before overbuilding, which is already a good sign.",
-          ],
+          kill_reasons: killReasons,
+          survive_reasons: surviveReasons,
           brutal_advice: "Upgrade to Builder to run the full 5-agent analysis with Reflexion Loop and Pivot Engine.",
           survival_probability: previewScore,
           competitor_summary: "Locked in preview. Builder runs the live competitor scan.",
           differentiation_plan: ["Locked in preview. Builder unlocks the differentiation plan."],
+          focus_areas: focusAreas,
           // New fields — empty in preview
           viability_score: previewScore,
           viability_breakdown: null,
@@ -455,6 +480,23 @@ export async function POST(request: Request) {
         ? `Search found ${competitors.length} related products or pages via ${competitor_data_source}. ${agentPipeline.competitor?.saturation_level === "high" ? "This is a crowded space — differentiation is critical." : "Competitive landscape shows room to differentiate."}`
         : "No competitors found in live search. Try more specific market terms.";
 
+      // ── Visible focus-area tagging ─────────────────────────────────────
+      // The agents were already being told (focusAreaLine in lib/agents) to
+      // prioritize the founder's selected areas — that part worked. Nothing
+      // in the response showed it happened, so a real effect was
+      // indistinguishable from no effect. Tag each generated item against
+      // ONLY the areas the founder actually picked (never invents a tag for
+      // an unselected area) and summarize what got addressed vs. didn't.
+      const killReasons = signals.all_risks.slice(0, 3).map(r => r.description);
+      const surviveReasons = signals.all_opportunities.slice(0, 2);
+      const differentiationPlan = agentPipeline.competitor?.differentiation_opportunities?.slice(0, 3)
+        ?? ["Identify the gap no competitor is addressing", "Own one specific niche", "Price differently"];
+      const killReasonTags = tagFocusAreasForList(killReasons, focusAreas);
+      const surviveReasonTags = tagFocusAreasForList(surviveReasons, focusAreas);
+      const differentiationPlanTags = tagFocusAreasForList(differentiationPlan, focusAreas);
+      const pivotTags = pivots.map((p) => tagFocusAreasForList([p.title, p.description, p.why_better].filter(Boolean), focusAreas).flat());
+      const focusAreaCoverage = buildFocusAreaCoverage(focusAreas, [...killReasonTags, ...surviveReasonTags, ...differentiationPlanTags, ...pivotTags.map((t) => t)]);
+
       return NextResponse.json({
         success: true,
         data: {
@@ -467,13 +509,16 @@ export async function POST(request: Request) {
             `Viability score: ${viabilityResult.viability_score}/100 (${viabilityResult.verdict})`,
           ],
           verdict: viabilityResult.verdict_reason,
-          kill_reasons: signals.all_risks.slice(0, 3).map(r => r.description),
-          survive_reasons: signals.all_opportunities.slice(0, 2),
+          kill_reasons: killReasons,
+          kill_reason_tags: killReasonTags,
+          survive_reasons: surviveReasons,
+          survive_reason_tags: surviveReasonTags,
           brutal_advice: reflexionAction?.action ?? "Talk to 5 target users before writing a single line of code.",
           survival_probability: baseSignal,
           competitor_summary: competitorSummary,
-          differentiation_plan: agentPipeline.competitor?.differentiation_opportunities?.slice(0, 3)
-            ?? ["Identify the gap no competitor is addressing", "Own one specific niche", "Price differently"],
+          differentiation_plan: differentiationPlan,
+          differentiation_plan_tags: differentiationPlanTags,
+          focus_area_coverage: focusAreaCoverage,
           competitors,
           focus_areas: focusAreas,
 
@@ -501,6 +546,7 @@ export async function POST(request: Request) {
           },
           agent_statuses: agentPipeline.agent_statuses,
           pivots,
+          pivot_focus_tags: pivotTags,
           execution_plan: executionPlan,
           reflexion_action: reflexionAction
             ? {
@@ -800,6 +846,18 @@ export async function POST(request: Request) {
       ? `Found ${competitors.length} potential competitors — ${agentPipeline.competitor?.saturation_level === "high" ? "this is a crowded space, differentiation is critical." : "differentiation opportunities identified."}`
       : "No clear competitors found — run with more specific search terms.";
 
+    // ── Visible focus-area tagging — see the idea-mode pipeline above for
+    // why this exists; same treatment, project mode's own field names.
+    const killReasons = signals.all_risks.slice(0, 3).map(r => r.description);
+    const surviveReasons = signals.all_opportunities.slice(0, 2);
+    const differentiationPlan = agentPipeline.competitor?.differentiation_opportunities?.slice(0, 3)
+      ?? ["Identify the gap no competitor addresses", "Own one specific niche for 60 days", "Price based on outcomes, not features"];
+    const killReasonTags = tagFocusAreasForList(killReasons, focusAreas);
+    const surviveReasonTags = tagFocusAreasForList(surviveReasons, focusAreas);
+    const differentiationPlanTags = tagFocusAreasForList(differentiationPlan, focusAreas);
+    const pivotTags = pivots.map((p) => tagFocusAreasForList([p.title, p.description, p.why_better].filter(Boolean), focusAreas).flat());
+    const focusAreaCoverage = buildFocusAreaCoverage(focusAreas, [...killReasonTags, ...surviveReasonTags, ...differentiationPlanTags, ...pivotTags]);
+
     return NextResponse.json({
       success: true,
       data: {
@@ -812,14 +870,17 @@ export async function POST(request: Request) {
           `Viability score: ${viabilityResult.viability_score}/100 — ${viabilityResult.verdict}`,
         ],
         verdict: viabilityResult.verdict_reason,
-        kill_reasons: signals.all_risks.slice(0, 3).map(r => r.description),
-        survive_reasons: signals.all_opportunities.slice(0, 2),
+        kill_reasons: killReasons,
+        kill_reason_tags: killReasonTags,
+        survive_reasons: surviveReasons,
+        survive_reason_tags: surviveReasonTags,
         brutal_advice: reflexionAction?.action
           ?? "Run 5 user interviews this week and report back on willingness to pay.",
         survival_probability: viabilityResult.viability_score,
         competitor_summary: competitorSummary,
-        differentiation_plan: agentPipeline.competitor?.differentiation_opportunities?.slice(0, 3)
-          ?? ["Identify the gap no competitor addresses", "Own one specific niche for 60 days", "Price based on outcomes, not features"],
+        differentiation_plan: differentiationPlan,
+        differentiation_plan_tags: differentiationPlanTags,
+        focus_area_coverage: focusAreaCoverage,
         competitors,
         focus_areas: focusAreas,
 
@@ -847,6 +908,7 @@ export async function POST(request: Request) {
         },
         agent_statuses: agentPipeline.agent_statuses,
         pivots,
+        pivot_focus_tags: pivotTags,
         execution_plan: executionPlan,
         reflexion_action: reflexionAction
           ? {
@@ -936,4 +998,4 @@ export async function POST(request: Request) {
       { status: msg.toLowerCase().includes("limit") ? 429 : 500 },
     );
   }
-}
+      }
