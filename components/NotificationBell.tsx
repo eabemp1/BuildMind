@@ -12,6 +12,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import {
   getAllNotifications, getUnreadCount, markRead, markAllRead, deleteNotification,
+  syncInsightNotifications,
   type AppNotification, type NotifPriority,
 } from "@/lib/notifications";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
@@ -113,6 +114,7 @@ export default function NotificationBell() {
         clearInterval(interval);
       } else {
         refresh();
+        void syncInsightNotifications(); // throttled internally (20 min)
         interval = setInterval(refresh, 15000);
       }
     };

@@ -20,7 +20,7 @@ import { initAnalytics } from "@/lib/analytics";
 import { ThemeProvider } from "@/components/layout/theme-provider";
 import { LimitModalProvider } from "@/components/LimitModal";
 import AchievementToast from "@/components/AchievementToast";
-import { runNotificationChecks, seedScheduledNotifications, syncNotificationsFromServer } from "@/lib/notifications";
+import { runNotificationChecks, seedScheduledNotifications, syncNotificationsFromServer, syncInsightNotifications } from "@/lib/notifications";
 import { syncAchievementsFromServer } from "@/lib/achievements";
 import { fetchAndSyncStoredPlanFromBillingStatus } from "@/lib/plan";
 import { initStorageAuthSync } from "@/lib/storage";
@@ -85,6 +85,7 @@ export default function Providers({ children, nonce }: { children: React.ReactNo
       void syncNotificationsFromServer().finally(() => {
         runNotificationChecks();
         seedScheduledNotifications();
+        void syncInsightNotifications();
       });
       void syncAchievementsFromServer();
     } catch {}
