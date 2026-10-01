@@ -274,6 +274,7 @@ export const FEATURE_GATES: Record<string, Plan> = {
   founderMemory:              "builder",
   weeklyReport:               "builder",  // alias used in existing route
   aiCoach:                    "builder",
+  startupKit:                 "builder",  // page is flagged off (lib/features.ts); gate matches its own canAccess() check
   
   // ── CoFounder Core (Month 2/3, currently builder-only, moving to operator) ──
   competitorReframe:          "builder",  // /api/cofounder/reframe (will move to operator at Day 90)

@@ -168,7 +168,14 @@ export function hasAnyGradableSignal(input: {
   return { any: reasons.length > 0, reasons };
 }
 
-export async function getWeeklyPulseData(userId: string, projectId?: string): Promise<WeeklyPulseResponse> {
+export async function getWeeklyPulseData(
+  userId: string,
+  projectId?: string,
+  /** aiStory=false keeps the deterministic one-line story (Free plan: the
+   *  numbers are identical; only the AI-written narrative is Builder-only,
+   *  which also stops Progress page loads from costing a model call each). */
+  opts: { aiStory?: boolean } = {},
+): Promise<WeeklyPulseResponse> {
   const admin = createAdminClient();
   const now = new Date();
   const weekStart = weekStartMonday(now);
@@ -222,7 +229,7 @@ export async function getWeeklyPulseData(userId: string, projectId?: string): Pr
     // prefix — Today's flow legitimately writes more than one prefix (see
     // that filter's own comment for why an allowlist here caused a second,
     // separate bug).
-    admin.from("reflexion_learning_log").select("outcome, action_shown, action_type, outcome_note, created_at, session_id").eq("user_id", userId).gte("created_at", weekAgoIso),
+    admin.from("reflexion_learning_log").select("outcome, action_shown, action_type, outcome_note, created_at, outcome_recorded_at, session_id").eq("user_id", userId).gte("created_at", weekAgoIso),
     admin.from("tasks").select("id, status, updated_at").eq("user_id", userId).lt("created_at", weekAgoIso),
     (() => {
       let q = admin.from("milestones").select("id, title, target_date, status, created_at, project_id").eq("user_id", userId).neq("status", "abandoned");
@@ -266,9 +273,22 @@ export async function getWeeklyPulseData(userId: string, projectId?: string): Pr
   // from reflexion_learning_log) instead of a second, redundant query.
   const overrideLogs = weekTasks;
 
-  const activeDaySet = new Set(
-    weekTasks.filter((t) => t.outcome === "completed").map((t) => (t.created_at ?? "").slice(0, 10)),
-  );
+  // FIX: a completion is attributed to the day it was COMPLETED
+  // (outcome_recorded_at), not the day the recommendation was generated, and
+  // action_logs (written by task-complete on every completion) is unioned in
+  // as a second source. Before, a completion whose learning-log write was
+  // dropped never appeared, even though task-complete's other writes landed.
+  const activeDaySet = new Set<string>();
+  for (const t of weekTasks as Array<{ outcome?: string | null; created_at?: string | null; outcome_recorded_at?: string | null }>) {
+    if (t.outcome !== "completed") continue;
+    const day = (t.outcome_recorded_at ?? t.created_at ?? "").slice(0, 10);
+    if (day >= weekStart) activeDaySet.add(day);
+  }
+  for (const a of actionLogs as Array<{ outcome?: string | null; created_at?: string | null }>) {
+    if (a.outcome !== "completed") continue;
+    const day = (a.created_at ?? "").slice(0, 10);
+    if (day >= weekStart) activeDaySet.add(day);
+  }
   const activeDays = activeDaySet.size;
 
   // ── Ghost Goal semantics (FIX) ──────────────────────────────────────────
@@ -305,7 +325,7 @@ export async function getWeeklyPulseData(userId: string, projectId?: string): Pr
   // already depend on (tasksTotal === 0 means "nothing to grade here"),
   // while fixing the actual bug: when there WAS engagement, the
   // denominator is real elapsed days (<=7), not an inflatable row count.
-  const tasksTotal = weekTasks.length > 0 ? daysElapsedThisWeek : 0;
+  const tasksTotal = weekTasks.length > 0 || activeDays > 0 ? daysElapsedThisWeek : 0;
   const completionRate = tasksTotal > 0 ? Math.round((tasksCompleted / tasksTotal) * 100) : 0;
 
   // ── Per-day activity canvas ──────────────────────────────────────────────
@@ -486,7 +506,7 @@ export async function getWeeklyPulseData(userId: string, projectId?: string): Pr
     story = tasksTotal > 0
       ? `${tasksCompleted} of ${tasksTotal} tasks completed this week (${completionRate}%). Momentum: ${momentumScore}/100.`
       : `No Today actions logged this week, but real work happened elsewhere — ${backlogCleared > 0 ? `${backlogCleared} backlog task${backlogCleared === 1 ? "" : "s"} cleared` : unGhosted.length > 0 ? `${unGhosted.length} avoidance zone${unGhosted.length === 1 ? "" : "s"} tackled` : "milestone progress tracked"}. Momentum: ${momentumScore}/100.`;
-    if (hasAIProvider()) {
+    if (opts.aiStory !== false && hasAIProvider()) {
       try {
         const gradeLines = grades.filter((g) => g.grade !== "N/A").map((g) => `${g.label}: ${g.grade} — ${g.basis}`).join("\n");
         const factSheet = `

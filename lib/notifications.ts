@@ -25,7 +25,15 @@ export type NotifType =
   | "upgrade_nudge"
   | "achievement"
   | "reflect_pending"
-  | "welcome";
+  | "welcome"
+  // Data-driven types produced by /api/notifications/insights
+  | "today_action"
+  | "weekly_pace"
+  | "momentum_shift"
+  | "milestone_overdue"
+  | "stage_ready"
+  | "avoidance_pattern"
+  | "streak_risk";
 
 export type NotifPriority = "low" | "medium" | "high" | "urgent";
 
@@ -41,6 +49,8 @@ export interface AppNotification {
   actionLabel?: string;
   actionHref?: string;
   expiresAt?: number; // auto-dismiss after this timestamp
+  /** Stable identity for "the same notification". Same key => update in place, never stack. */
+  dedupeKey?: string;
 }
 
 const STORAGE_KEY = "bm_notifications";
@@ -94,11 +104,23 @@ export function addNotification(notif: Omit<AppNotification, "id" | "createdAt">
     createdAt: nowMs(),
   };
   const existing = getAllNotifications();
-  // Deduplicate by type — don't add same type if one exists unread in last 24h
-  const recent = existing.find(n =>
-    n.type === notif.type && !n.readAt && nowMs() - n.createdAt < 24 * 60 * 60 * 1000
-  );
-  if (recent) return recent;
+  // FIX: dedupe used to be by `type` alone, so two different notifications
+  // sharing a type (morning briefing, evening check-in and "close the loop"
+  // are all "reflect_pending") silently swallowed each other. Identity is now
+  // the explicit dedupeKey when given, falling back to type for legacy callers.
+  const sameKind = (n: AppNotification) =>
+    notif.dedupeKey ? n.dedupeKey === notif.dedupeKey : n.type === notif.type && !n.dedupeKey;
+  const recent = existing.find(n => sameKind(n) && (notif.dedupeKey || (!n.readAt && nowMs() - n.createdAt < 24 * 60 * 60 * 1000)));
+  if (recent) {
+    // Keyed notifications refresh their numbers in place (keeps read state).
+    if (notif.dedupeKey && (recent.body !== notif.body || recent.title !== notif.title)) {
+      const updated: AppNotification = { ...recent, title: notif.title, body: notif.body, emoji: notif.emoji, priority: notif.priority, actionLabel: notif.actionLabel, actionHref: notif.actionHref, expiresAt: notif.expiresAt ?? recent.expiresAt, readAt: undefined };
+      saveNotifications(existing.map(n => (n.id === recent.id ? updated : n)));
+      window.dispatchEvent(new Event("bm_notification_added"));
+      return updated;
+    }
+    return recent;
+  }
   saveNotifications([full, ...existing]);
   // Dispatch event so any open NotificationBell updates
   window.dispatchEvent(new Event("bm_notification_added"));
@@ -242,6 +264,58 @@ export function notifyWelcome(): void {
   });
 }
 
+// ── Data-driven insights (server-computed from the founder's real records) ───
+
+const INSIGHT_SYNC_KEY = "bm_insight_notif_synced_at";
+const INSIGHT_SYNC_MIN_GAP_MS = 20 * 60 * 1000;
+
+interface ServerInsight {
+  dedupeKey: string;
+  type: NotifType;
+  emoji: string;
+  title: string;
+  body: string;
+  priority: NotifPriority;
+  actionLabel?: string;
+  actionHref?: string;
+  expiresInMs: number;
+}
+
+/**
+ * syncInsightNotifications — pulls notifications that carry real numbers and
+ * names (today's task, weekly pace, momentum, overdue milestones, stage
+ * readiness, avoidance) and merges them into the local store. Throttled so
+ * navigating around the app doesn't hit the server on every page.
+ */
+export async function syncInsightNotifications(projectId?: string | null, opts: { force?: boolean } = {}): Promise<void> {
+  if (typeof window === "undefined") return;
+  const last = Number(storage.get(INSIGHT_SYNC_KEY) ?? 0) || 0;
+  if (!opts.force && nowMs() - last < INSIGHT_SYNC_MIN_GAP_MS) return;
+  try {
+    const qs = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+    const res = await fetch(`/api/notifications/insights${qs}`, { cache: "no-store" });
+    if (!res.ok) return;
+    const json = (await res.json()) as { ok?: boolean; items?: ServerInsight[] };
+    if (!json.ok || !Array.isArray(json.items)) return;
+    storage.set(INSIGHT_SYNC_KEY, String(nowMs()));
+    for (const it of json.items) {
+      addNotification({
+        type: it.type,
+        dedupeKey: it.dedupeKey,
+        emoji: it.emoji,
+        title: it.title,
+        body: it.body,
+        priority: it.priority,
+        actionLabel: it.actionLabel,
+        actionHref: it.actionHref,
+        expiresAt: nowMs() + it.expiresInMs,
+      });
+    }
+  } catch {
+    // Non-fatal — generic local notifications still work.
+  }
+}
+
 // ── Notification checker (run on app init) ────────────────────────────────────
 export function runNotificationChecks(): void {
   if (typeof window === "undefined") return;
@@ -309,6 +383,7 @@ export function seedMorningBriefing(): void {
 
   addNotification({
     type: "reflect_pending",
+    dedupeKey: `morning_briefing:${today}`,
     emoji: "🌅",
     title: isMorning ? "Morning briefing ready" : "Today's briefing",
     body,
@@ -337,6 +412,7 @@ export function seedEveningCheck(): void {
   storage.set(EVENING_SEED_KEY, today);
   addNotification({
     type: "reflect_pending",
+    dedupeKey: `evening_checkin:${today}`,
     emoji: "🌇",
     title: "Evening check-in",
     body: "Did you make progress today? Log it before tomorrow — the reflexion loop needs your input.",
