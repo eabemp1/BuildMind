@@ -33,25 +33,8 @@ import { callModel, callModelJSON, hasAIProvider } from "@/lib/ai-providers";
 // nothing in practice while guaranteeing the core loop is never blocked by
 // usage on the open-ended, more expensive "general" surfaces (Coach,
 // Break My Startup, reflections), which keep the original tighter limits.
-export const PLAN_MONTHLY_LIMITS: Record<string, number> = {
-  free: 30,
-  builder: 1500,
-};
-
-export const PLAN_DAILY_LIMITS: Record<string, number> = {
-  free: 3,
-  builder: 80,
-};
-
-export const CORE_MONTHLY_LIMITS: Record<string, number> = {
-  free: 45,     // ~1.5/day headroom — generous, but still a real ceiling
-  builder: 3000,
-};
-
-export const CORE_DAILY_LIMITS: Record<string, number> = {
-  free: 6,      // realistically used 1-2x/day; this is slack, not a wall
-  builder: 150,
-};
+import { PLAN_MONTHLY_LIMITS, PLAN_DAILY_LIMITS, CORE_MONTHLY_LIMITS, CORE_DAILY_LIMITS } from "@/lib/aiLimits";
+export { PLAN_MONTHLY_LIMITS, PLAN_DAILY_LIMITS, CORE_MONTHLY_LIMITS, CORE_DAILY_LIMITS };
 
 export type AIUsageFeature = "general" | "core";
 
