@@ -43,7 +43,7 @@ export async function POST(request: Request) {
 
   // ── Usage enforcement ──────────────────────────────────────────────────────
   try {
-    await enforceAndTrackAIUsage(routeUser.userId, routeUser.plan);
+    await enforceAndTrackAIUsage(routeUser.userId, routeUser.plan, "core");
   } catch (usageErr) {
     const msg = usageErr instanceof Error ? usageErr.message : String(usageErr);
     if (msg.toLowerCase().includes("limit reached")) {
