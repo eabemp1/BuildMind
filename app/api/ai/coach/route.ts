@@ -29,35 +29,23 @@ function dayKey(date = new Date()): string {
 }
 
 async function enforceCoachUsage(userId: string, plan: string) {
-  if (plan !== "free") {
+  // FIX: the free plan used to be counted in a SEPARATE per-day counter
+  // (month key "coach:YYYY-MM-DD"), so Coach messages never reduced the monthly
+  // total the usage badge shows and the main AI feature was invisible to it.
+  // Every plan now spends through the shared counter (lib/server/aiUsageStore.ts):
+  // free = FREE_COACH_MESSAGES_PER_DAY per day AND the monthly cap, both counted.
+  try {
     await enforceAndTrackAIUsage(userId, plan);
-    return;
-  }
-  if (!hasAdminEnv()) return;
-
-  const supabase = createAdminClient();
-  const month = `coach:${dayKey()}`;
-
-  // Atomic increment + cap check — avoids the SELECT→UPDATE race condition.
-  // FIX: this call was missing p_feature. Two live overloads of
-  // increment_ai_usage_capped exist in Postgres — one 3-param, one 4-param
-  // (adding p_feature, used correctly by _utils.ts's enforceAndTrackAIUsage
-  // just above/below this function) — and calling with only 3 named params
-  // made Postgres unable to resolve which overload to use, throwing
-  // "Could not choose the best candidate function" for every free-plan
-  // coach message. Adding p_feature disambiguates to the 4-param overload,
-  // matching the other live call site.
-  const { data: newCount, error: rpcError } = await supabase.rpc("increment_ai_usage_capped", {
-    p_user_id: userId,
-    p_month: month,
-    p_limit: FREE_COACH_MESSAGES_PER_DAY,
-    p_feature: "coach",
-  });
-
-  if (rpcError) throw new Error(rpcError.message);
-
-  if (newCount === -1) {
-    throw new Error(`LIMIT_REACHED:coach:That's your 3 AI Coach messages for today. More tomorrow — or upgrade to Builder to keep going right now.`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (plan === "free" && msg.toLowerCase().includes("limit reached")) {
+      throw new Error(
+        msg.toLowerCase().includes("monthly")
+          ? `LIMIT_REACHED:coach:You've used all your free AI messages this month. Upgrade to Builder to keep going.`
+          : `LIMIT_REACHED:coach:That's your ${FREE_COACH_MESSAGES_PER_DAY} AI Coach messages for today. More tomorrow \u2014 or upgrade to Builder to keep going right now.`,
+      );
+    }
+    throw err;
   }
 }
 
@@ -579,4 +567,4 @@ Return ONLY the JSON. No preamble. No markdown fences.`;
       },
     }, { status });
   }
-  }
+              }
