@@ -10,6 +10,7 @@
  *   - One natural daily cap from the shared monthly limit system
  */
 
+import { AIUsageUnavailableError } from "@/lib/server/aiUsageStore";
 import { NextResponse } from "next/server";
 import { groqJSON, enforceAndTrackAIUsage } from "@/app/api/ai/_utils";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
@@ -51,6 +52,10 @@ export async function POST(request: Request) {
         { success: false, error: msg, upgradeUrl: "/upgrade" },
         { status: 429 },
       );
+    }
+    // Counters unreachable: never serve uncounted AI to a free user (thrown only for free).
+    if (usageErr instanceof AIUsageUnavailableError) {
+      return NextResponse.json({ ok: false, success: false, error: usageErr.message }, { status: 503 });
     }
   }
 
