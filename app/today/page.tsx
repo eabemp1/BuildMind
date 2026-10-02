@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import { selectActiveProject, useActiveProjectId, useProjectSummariesQuery, queryKeys, useFounderScorecardQuery } from "@/lib/queries";
 import { useQueryClient } from "@tanstack/react-query";
+import TodayCommandCenter from "@/components/today/TodayCommandCenter";
 import { computeStartupScore } from "@/lib/buildmind";
 import { computeScoreDelta, applyScoreDelta, getXP, recordScore } from "@/lib/scoring";
 import { getStoredStreak, incrementDailyStreak, recordTaskCompletion, syncStreakFromServer } from "@/lib/plan";
@@ -1858,205 +1859,17 @@ function TodayContent() {
   return (
     <div style={{ maxWidth: 920, width: "100%", minWidth: 0, boxSizing: "border-box", margin: "0 auto", padding: isMobile ? "0 2px 28px" : "20px 8px 48px", overflowX: "clip" }}>
 
-      {/* ══ HERO HEADER — logo, UI mode toggle, streak/plan usage, page title.
-          Previously trapped behind a collapsed "context" drawer (collapsed by
-          default), which meant the Simple/Pro toggle — and by extension the
-          Intelligence Panel that toggle controls — was invisible until a
-          founder happened to open "Why this task?". Now always rendered at
-          the top of the page. ══════════════════════════════════════════ */}
+      {/* Task-first top of page. Only the Lite/Pro toggle lives here: streak, momentum,
+          stage progress and the weekly picture are in the Morning Briefing and the
+          Cofounder Pulse, so repeating them above the task was noise. */}
       <motion.div
-        initial={{ opacity: 0, y: -10 }}
+        initial={{ opacity: 0, y: -6 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
-        style={{ marginBottom: 22 }}
+        transition={{ duration: 0.25 }}
+        style={{ marginBottom: 14 }}
       >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginBottom: 16,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div
-              style={{
-                width: 26,
-                height: 26,
-                borderRadius: 7,
-                background: "var(--bm-accent)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Zap size={14} color="#fff" />
-            </div>
-            <span
-              style={{
-                fontSize: 13,
-                fontWeight: 600,
-                color: "var(--bm-text3)",
-                letterSpacing: "-0.01em",
-              }}
-            >
-              BuildMind
-            </span>
-          </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {/* Ongoing, honest stage-progress indicator. The bar fill is
-              TASK-level (moves on every ordinary task completion — most
-              days won't finish a whole milestone, so a milestone-only bar
-              barely moves). The label stays milestone-level, since that's
-              the unit that actually gates the stage-complete celebration
-              and evidence review — the two are deliberately different
-              granularities of the same lib/server/stageProgress.ts data. */}
-          {project && ((project.stageMilestonesTotal ?? 0) > 0 || (project.stageTasksTotal ?? 0) > 0) && (
-            <div
-              title={`${project.stageMilestonesCompleted ?? 0} of ${project.stageMilestonesTotal ?? 0} ${project.startup_stage ?? ""} milestones · ${project.stageTasksCompleted ?? 0} of ${project.stageTasksTotal ?? 0} tasks`}
-              style={{
-                display: "flex", alignItems: "center", gap: 6,
-                fontSize: 11, color: "var(--bm-text3)",
-              }}
-            >
-              <span style={{ fontWeight: 700, color: "var(--bm-text2)" }}>{project.startup_stage}</span>
-              <div style={{ width: 44, height: 5, borderRadius: 3, background: "var(--bm-border2)", overflow: "hidden" }}>
-                <div style={{
-                  width: `${project.stageTaskPercent ?? project.stageProgressPercent ?? 0}%`, height: "100%",
-                  background: (project.stageProgressPercent ?? 0) >= 100 ? "var(--bm-green)" : "var(--bm-accent)",
-                  borderRadius: 3, transition: "width 0.5s ease",
-                }} />
-              </div>
-              <span>{project.stageMilestonesCompleted ?? 0}/{project.stageMilestonesTotal ?? 0}</span>
-            </div>
-          )}
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
           <UIModeToggle mode={uiMode} onChange={setUIMode} />
-          {isDayOneColdStart ? (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 5,
-                padding: "4px 9px",
-                borderRadius: 5,
-                background: "var(--bm-accent-dim)",
-                border: "1px solid var(--bm-accent-bd)",
-              }}
-            >
-              <Flame size={11} color="var(--bm-text3)" />
-              <span className="bm-data" style={{ fontSize: 11, fontWeight: 400, color: "var(--bm-text3)" }}>
-                Start your streak today
-              </span>
-            </div>
-          ) : streak > 0 && (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 5,
-                padding: "4px 9px",
-                borderRadius: 5,
-                background: "var(--bm-bg2)",
-                border: "1px solid var(--bm-border)",
-              }}
-            >
-              <Flame size={11} color="var(--bm-text3)" />
-              <span className="bm-data" style={{ fontSize: 11, fontWeight: 400, color: "var(--bm-text3)" }}>
-                {streak}d streak
-              </span>
-            </div>
-          )}
-          {levelInfo && (
-            <a
-              href="/achievements"
-              style={{
-                display: "flex", alignItems: "center", gap: 5,
-                padding: "4px 9px", borderRadius: 5,
-                background: "var(--bm-intel-dim)", border: "1px solid var(--bm-intel-bd)",
-                textDecoration: "none",
-              }}
-            >
-              <Trophy size={11} color="var(--bm-intel2)" />
-              <span style={{ fontSize: 11, fontWeight: 400, color: "var(--bm-intel2)", fontFamily: "'DM Mono', monospace" }}>
-                Lv {levelInfo.level} · {levelInfo.title}
-              </span>
-            </a>
-          )}
-          </div>
-        </div>
-
-        {(streak > 0 || momentumScoreForTicker !== null || actionData?.action) && (
-          <div style={{
-            display: "flex", flexWrap: "wrap", gap: "6px 16px", alignItems: "center",
-            padding: "8px 0 14px", fontSize: 11, color: "var(--bm-text3)",
-            fontFamily: "'DM Mono', monospace",
-          }}>
-            {streak > 0 && (
-              <span>🔥 {streak} day{streak === 1 ? "" : "s"} streak</span>
-            )}
-            {momentumScoreForTicker !== null && (
-              <span style={{ color: momentumScoreForTicker >= 50 ? "var(--bm-green)" : "var(--bm-amber, #F0B429)" }}>
-                Momentum {momentumScoreForTicker}%
-              </span>
-            )}
-            {actionData?.action && (
-              <span style={{ color: "var(--bm-text4)" }}>
-                Focus: {sanitizeOutput(actionData.action).slice(0, 60)}{actionData.action.length > 60 ? "…" : ""}
-              </span>
-            )}
-          </div>
-        )}
-
-        <div style={{ paddingBottom: 18, borderBottom: "1px solid var(--bm-border)" }}>
-          <p
-            style={{
-              fontFamily: "'DM Mono', monospace",
-              fontSize: 9,
-              color: "var(--bm-text4)",
-              fontWeight: 500,
-              textTransform: "uppercase",
-              letterSpacing: "0.1em",
-              margin: "0 0 4px",
-            }}
-          >
-            Today&apos;s executive line
-          </p>
-          <p
-            style={{
-              fontSize: 12,
-              color: "var(--bm-text3)",
-              fontWeight: 500,
-              textTransform: "uppercase",
-              letterSpacing: "0.08em",
-              margin: "0 0 6px",
-            }}
-          >
-            {project?.startup_stage ? `${project.startup_stage} decision` : greetingLine}
-          </p>
-          <h1
-            style={{
-              fontFamily: "'Syne', sans-serif",
-              fontSize: "clamp(20px, 3.5vw, 26px)",
-              fontWeight: 700,
-              color: "var(--bm-text)",
-              letterSpacing: "-0.025em",
-              lineHeight: 1.2,
-              margin: "0 0 8px",
-            }}
-          >
-            The Decision Brief
-          </h1>
-          <p
-            style={{
-              fontSize: 13,
-              color: "var(--bm-text2)",
-              margin: 0,
-              lineHeight: 1.5,
-            }}
-          >
-            One decision. One action. Let&apos;s get it done.
-          </p>
         </div>
 
         {/* AI usage warning */}
@@ -2115,112 +1928,6 @@ function TodayContent() {
         </motion.div>
       )}
 
-      {/* ── Founder archetype — compact, non-blocking presence on the daily
-          page. Deliberately not a modal or a dismiss-to-proceed gate (that
-          was the problem with the old Initial Analysis card) — just a small
-          persistent badge, since this is a core signal the AI uses on every
-          task and it should be visible somewhere the founder actually looks
-          daily, not just on /memory. Tap through for the full explanation.
-          Kept always-visible alongside the Intelligence Panel per the
-          founder's explicit request — everything else that used to live in
-          this spot moved into (or stayed in) the "Why this task?" drawer. */}
-      {(() => {
-        const archetype = getArchetypeDisplay(archetypeTags);
-        if (!archetype) return null;
-        return (
-          <a
-            href="/memory"
-            style={{
-              display: "flex", alignItems: "center", gap: 10,
-              padding: "10px 14px", marginBottom: 22,
-              borderRadius: 10, border: "1px solid var(--bm-border)", background: "var(--bm-bg2)",
-              textDecoration: "none",
-            }}
-          >
-            <span style={{ fontSize: 18, flexShrink: 0 }}>{archetype.icon}</span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: "var(--bm-text)" }}>{archetype.name}</span>
-              <span style={{ fontSize: 11, color: "var(--bm-text3)", marginLeft: 8 }}>— your founder archetype</span>
-            </div>
-            <span style={{ fontSize: 11, color: "var(--bm-text4)", flexShrink: 0 }}>Learn more →</span>
-          </a>
-        );
-      })()}
-
-      {/* ── Stage-transition nudge — one line, links to the full prompt on
-          the project page rather than duplicating it here. See
-          lib/server/stageTransition.ts for how this gets computed. ── */}
-      {(() => {
-        // Merged 3-signal readiness — both stageNudge (stageTransition.ts,
-        // fired after task/reflection) and transitionEligible (level-up
-        // POST, fired once per Today load) now compute the SAME tier via
-        // lib/server/stageReadiness.ts, so they can't disagree — this
-        // renders once from whichever loaded first. The tier itself
-        // decides the color/copy: milestone completion alone is shown
-        // honestly as "checklist done, evidence thin," not dressed up as
-        // the same green "ready" state a founder with real evidence and
-        // solid reflections would see.
-        const moment = stageNudge
-          ? {
-              currentStageLabel: stageNudge.currentStage,
-              nextStage: stageNudge.nextStage, projectId: stageNudge.projectId,
-              completed: stageNudge.completed, total: stageNudge.total, tier: stageNudge.tier,
-              evidenceFilled: stageNudge.evidenceFilled, evidenceTotal: stageNudge.evidenceTotal,
-              reason: stageNudge.reason,
-            }
-          : transitionEligible && project
-            ? {
-                currentStageLabel: transitionEligible.current_stage,
-                nextStage: transitionEligible.next_stage, projectId: project.id,
-                completed: transitionEligible.completed, total: transitionEligible.total, tier: transitionEligible.tier,
-                evidenceFilled: transitionEligible.evidenceFilled, evidenceTotal: transitionEligible.evidenceTotal,
-                reason: transitionEligible.reason,
-              }
-            : null;
-        if (!moment) return null;
-        const isReady = moment.tier === "ready";
-        const color = isReady ? "var(--bm-green)" : "var(--bm-amber)";
-        const borderVar = isReady ? "var(--bm-green-bd)" : "var(--bm-amber)";
-        const bgVar = isReady ? "var(--bm-green-dim)" : "var(--bm-bg3)";
-        return (
-          <a
-            href={moment.projectId ? `/projects/${moment.projectId}` : "/projects"}
-            style={{
-              display: "flex", alignItems: "center", gap: 14,
-              padding: "16px 18px", marginBottom: 22,
-              borderRadius: 14, border: `1px solid ${borderVar}`, background: bgVar,
-              textDecoration: "none",
-            }}
-          >
-            <div style={{ flexShrink: 0 }}>
-              <RadialGauge
-                value={moment.completed}
-                max={Math.max(moment.total, 1)}
-                size={52}
-                strokeWidth={5}
-                thresholds={[{ min: 0, color }]}
-                duration={0.8}
-              />
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 800, color }}>
-                {isReady
-                  ? `Ready for ${moment.nextStage} — ${moment.completed}/${moment.total} milestones`
-                  : `Checklist done for ${moment.currentStageLabel ?? ""} — evidence still thin`}
-              </div>
-              <div style={{ fontSize: 12, color: "var(--bm-text3)", marginTop: 2 }}>
-                {isReady
-                  ? `Milestones done, evidence captured, reflections back it up. Ready to review ${moment.nextStage}?`
-                  : moment.reason ||
-                    (moment.evidenceTotal
-                      ? `${moment.evidenceFilled ?? 0}/${moment.evidenceTotal} evidence items captured so far — this is necessary work, not proof yet.`
-                      : `You've finished the checklist — that's necessary, not proof. See what's missing.`)}
-              </div>
-            </div>
-            <span style={{ fontSize: 11, flexShrink: 0, color, fontWeight: 700 }}>Review →</span>
-          </a>
-        );
-      })()}
 
       {/* ══ PRODUCT IMPROVEMENT #2 — TASK-FIRST LAYOUT ══
           Project badge is 1 line, then ACTION CARD is the first full block.
@@ -2228,54 +1935,6 @@ function TodayContent() {
           collapsible drawer below the action card.
       ══════════════════════════════════════════════════ */}
 
-      {/* Lightweight project + stage badge — Weekly Vigil and The Reckoning
-          live here as compact chips, not as their own banners. Per the
-          Today-page task-first rule: DecisionBrief is the only element
-          allowed a permanently-open full block. Vigil is a few words,
-          always present once loaded; Reckoning renders nothing at all
-          except the ~1 day a month it has something real to surface. Both
-          open their full detail in a modal on tap, never inline. */}
-      {project && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text2)", letterSpacing: "-0.01em" }}>
-            {project.name ?? "Your startup"}
-          </span>
-          {project.startup_stage && (
-            <span style={{
-              fontFamily: "'DM Mono', monospace",
-              fontSize: 9,
-              padding: "2px 8px",
-              borderRadius: "var(--r-sm)",
-              background: "var(--bm-bg3)",
-              color: "var(--bm-text3)",
-              border: "1px solid var(--bm-border)",
-              textTransform: "uppercase",
-              letterSpacing: "0.08em",
-            }}>
-              {project.startup_stage}
-            </span>
-          )}
-          <GhostGoalBanner
-            projectId={project.id}
-            currentScore={score}
-            stage={project.startup_stage ?? "Idea"}
-            executionScore={project.execution_score ?? 0}
-            streak={streak}
-            startupSummary={(project as unknown as Record<string, unknown>).startup_summary as string | undefined}
-            projectName={project.name ?? project.title ?? ""}
-          />
-          <ReckoningPill projectId={project.id} />
-          {isDayOneColdStart ? (
-            <span style={{ marginLeft: "auto", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-accent)" }}>
-              Start your streak today
-            </span>
-          ) : streak > 0 && (
-            <span style={{ marginLeft: "auto", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-text4)" }}>
-              {streak}d
-            </span>
-          )}
-        </div>
-      )}
 
       {debtSuppression && !aiAction && (
         <motion.div
@@ -2607,6 +2266,14 @@ function TodayContent() {
           </div>
         </div>
       </motion.div>
+
+      {/* Focus block — right under the task it serves. */}
+      <TodayCommandCenter
+        actionTitle={actionData?.action ? sanitizeOutput(actionData.action) : null}
+        timeText={actionData?.time ?? null}
+        done={done}
+        streak={streak}
+      />
       </>
       )}
 
@@ -2837,6 +2504,166 @@ function TodayContent() {
         </p>
       </motion.div>
       </>)}
+      {/* Context — deliberately BELOW the task. Archetype, stage readiness and the
+          project/ghost-goal chips are useful but they are not the decision, so they
+          no longer sit between the founder and today's action. */}
+      <div style={{ marginTop: 22, display: "flex", flexDirection: "column", gap: 0, minWidth: 0 }}>
+      {/* Lightweight project + stage badge — Weekly Vigil and The Reckoning
+          live here as compact chips, not as their own banners. Per the
+          Today-page task-first rule: DecisionBrief is the only element
+          allowed a permanently-open full block. Vigil is a few words,
+          always present once loaded; Reckoning renders nothing at all
+          except the ~1 day a month it has something real to surface. Both
+          open their full detail in a modal on tap, never inline. */}
+      {project && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text2)", letterSpacing: "-0.01em" }}>
+            {project.name ?? "Your startup"}
+          </span>
+          {project.startup_stage && (
+            <span style={{
+              fontFamily: "'DM Mono', monospace",
+              fontSize: 9,
+              padding: "2px 8px",
+              borderRadius: "var(--r-sm)",
+              background: "var(--bm-bg3)",
+              color: "var(--bm-text3)",
+              border: "1px solid var(--bm-border)",
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+            }}>
+              {project.startup_stage}
+            </span>
+          )}
+          <GhostGoalBanner
+            projectId={project.id}
+            currentScore={score}
+            stage={project.startup_stage ?? "Idea"}
+            executionScore={project.execution_score ?? 0}
+            streak={streak}
+            startupSummary={(project as unknown as Record<string, unknown>).startup_summary as string | undefined}
+            projectName={project.name ?? project.title ?? ""}
+          />
+          <ReckoningPill projectId={project.id} />
+          {isDayOneColdStart ? (
+            <span style={{ marginLeft: "auto", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-accent)" }}>
+              Start your streak today
+            </span>
+          ) : streak > 0 && (
+            <span style={{ marginLeft: "auto", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-text4)" }}>
+              {streak}d
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* ── Founder archetype — compact, non-blocking presence on the daily
+          page. Deliberately not a modal or a dismiss-to-proceed gate (that
+          was the problem with the old Initial Analysis card) — just a small
+          persistent badge, since this is a core signal the AI uses on every
+          task and it should be visible somewhere the founder actually looks
+          daily, not just on /memory. Tap through for the full explanation.
+          Kept always-visible alongside the Intelligence Panel per the
+          founder's explicit request — everything else that used to live in
+          this spot moved into (or stayed in) the "Why this task?" drawer. */}
+      {(() => {
+        const archetype = getArchetypeDisplay(archetypeTags);
+        if (!archetype) return null;
+        return (
+          <a
+            href="/memory"
+            style={{
+              display: "flex", alignItems: "center", gap: 10,
+              padding: "10px 14px", marginBottom: 22,
+              borderRadius: 10, border: "1px solid var(--bm-border)", background: "var(--bm-bg2)",
+              textDecoration: "none",
+            }}
+          >
+            <span style={{ fontSize: 18, flexShrink: 0 }}>{archetype.icon}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: "var(--bm-text)" }}>{archetype.name}</span>
+              <span style={{ fontSize: 11, color: "var(--bm-text3)", marginLeft: 8 }}>— your founder archetype</span>
+            </div>
+            <span style={{ fontSize: 11, color: "var(--bm-text4)", flexShrink: 0 }}>Learn more →</span>
+          </a>
+        );
+      })()}
+
+      {/* ── Stage-transition nudge — one line, links to the full prompt on
+          the project page rather than duplicating it here. See
+          lib/server/stageTransition.ts for how this gets computed. ── */}
+      {(() => {
+        // Merged 3-signal readiness — both stageNudge (stageTransition.ts,
+        // fired after task/reflection) and transitionEligible (level-up
+        // POST, fired once per Today load) now compute the SAME tier via
+        // lib/server/stageReadiness.ts, so they can't disagree — this
+        // renders once from whichever loaded first. The tier itself
+        // decides the color/copy: milestone completion alone is shown
+        // honestly as "checklist done, evidence thin," not dressed up as
+        // the same green "ready" state a founder with real evidence and
+        // solid reflections would see.
+        const moment = stageNudge
+          ? {
+              currentStageLabel: stageNudge.currentStage,
+              nextStage: stageNudge.nextStage, projectId: stageNudge.projectId,
+              completed: stageNudge.completed, total: stageNudge.total, tier: stageNudge.tier,
+              evidenceFilled: stageNudge.evidenceFilled, evidenceTotal: stageNudge.evidenceTotal,
+              reason: stageNudge.reason,
+            }
+          : transitionEligible && project
+            ? {
+                currentStageLabel: transitionEligible.current_stage,
+                nextStage: transitionEligible.next_stage, projectId: project.id,
+                completed: transitionEligible.completed, total: transitionEligible.total, tier: transitionEligible.tier,
+                evidenceFilled: transitionEligible.evidenceFilled, evidenceTotal: transitionEligible.evidenceTotal,
+                reason: transitionEligible.reason,
+              }
+            : null;
+        if (!moment) return null;
+        const isReady = moment.tier === "ready";
+        const color = isReady ? "var(--bm-green)" : "var(--bm-amber)";
+        const borderVar = isReady ? "var(--bm-green-bd)" : "var(--bm-amber)";
+        const bgVar = isReady ? "var(--bm-green-dim)" : "var(--bm-bg3)";
+        return (
+          <a
+            href={moment.projectId ? `/projects/${moment.projectId}` : "/projects"}
+            style={{
+              display: "flex", alignItems: "center", gap: 14,
+              padding: "16px 18px", marginBottom: 22,
+              borderRadius: 14, border: `1px solid ${borderVar}`, background: bgVar,
+              textDecoration: "none",
+            }}
+          >
+            <div style={{ flexShrink: 0 }}>
+              <RadialGauge
+                value={moment.completed}
+                max={Math.max(moment.total, 1)}
+                size={52}
+                strokeWidth={5}
+                thresholds={[{ min: 0, color }]}
+                duration={0.8}
+              />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color }}>
+                {isReady
+                  ? `Ready for ${moment.nextStage} — ${moment.completed}/${moment.total} milestones`
+                  : `Checklist done for ${moment.currentStageLabel ?? ""} — evidence still thin`}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--bm-text3)", marginTop: 2 }}>
+                {isReady
+                  ? `Milestones done, evidence captured, reflections back it up. Ready to review ${moment.nextStage}?`
+                  : moment.reason ||
+                    (moment.evidenceTotal
+                      ? `${moment.evidenceFilled ?? 0}/${moment.evidenceTotal} evidence items captured so far — this is necessary work, not proof yet.`
+                      : `You've finished the checklist — that's necessary, not proof. See what's missing.`)}
+              </div>
+            </div>
+            <span style={{ fontSize: 11, flexShrink: 0, color, fontWeight: 700 }}>Review →</span>
+          </a>
+        );
+      })()}
+      </div>
 
       {/* ── Pro-mode intelligence — deliberately OUTSIDE the evening "Show
              task" collapse above. Pro is the founder's own persistent
@@ -2995,4 +2822,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-    }
+      }
