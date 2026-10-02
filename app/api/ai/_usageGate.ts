@@ -8,11 +8,12 @@
  * "core"    = the daily-action loop (Today, Reflect, onboarding analysis).
  * "general" = everything else (Coach, agents, recovery, calibration, ...).
  *
- * A usage-store outage fails OPEN (same behaviour as the existing routes) so
- * a database hiccup never locks founders out of the product.
+ * If the usage counters cannot be reached, free users get a 503 (never free,
+ * uncounted AI); paid users are let through by enforceAndTrackAIUsage itself.
  */
 import { NextResponse } from "next/server";
 import { enforceAndTrackAIUsage, type AIUsageFeature } from "@/app/api/ai/_utils";
+import { AIUsageUnavailableError } from "@/lib/server/aiUsageStore";
 
 export function isLimitError(err: unknown): err is Error {
   return err instanceof Error && err.message.toLowerCase().includes("limit reached");
@@ -26,6 +27,10 @@ export async function gateAIUsage(userId: string, feature: AIUsageFeature = "gen
     if (isLimitError(err)) {
       return NextResponse.json({ ok: false, success: false, error: err.message, upgradeUrl: "/upgrade" }, { status: 429 });
     }
-    return null;
+    if (err instanceof AIUsageUnavailableError) {
+      return NextResponse.json({ ok: false, success: false, error: err.message }, { status: 503 });
+    }
+    // Any other unexpected error: do not let the call through uncounted.
+    return NextResponse.json({ ok: false, success: false, error: "AI usage check failed. Please try again." }, { status: 503 });
   }
 }
