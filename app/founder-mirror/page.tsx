@@ -1,5 +1,6 @@
 "use client";
 
+import { usePlan } from "@/lib/usePlan";
 import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence, type Variants } from "framer-motion";
 import {
@@ -164,6 +165,9 @@ const fadeUp: Variants = {
 };
 
 export default function FounderMirrorPage() {
+  const { plan: userPlan, isLoading: planLoading } = usePlan();
+  // Server enforces this too (intelligence-export returns 403); this only decides what to render.
+  const reportUnlocked = planLoading || userPlan !== "free";
   const [data, setData] = useState<MirrorResponse["data"] | null>(null);
   const [loading, setLoading] = useState(true);
   const [correction, setCorrection] = useState("");
@@ -853,22 +857,29 @@ export default function FounderMirrorPage() {
           <p className="m-0 mb-3 text-[12px] leading-relaxed text-[var(--bm-text3)]">
             The full report BuildMind has built — readiness, engagement, prediction accuracy, and the underlying intelligence state — as raw data you can keep, analyze, or move elsewhere.
           </p>
-          <div className="flex flex-wrap gap-3">
-            <a
-              href="/api/founder-context/intelligence-export"
-              className="inline-flex items-center gap-1.5 rounded-[6px] border border-[var(--bm-border)] px-3 py-1.5 text-[12px] text-[var(--bm-text2)] no-underline hover:text-[var(--bm-text)]"
-            >
-              <Download size={12} /> Full report (JSON)
-            </a>
-            <a
-              href="/api/founder-context/intelligence-export?format=csv"
-              className="inline-flex items-center gap-1.5 rounded-[6px] border border-[var(--bm-border)] px-3 py-1.5 text-[12px] text-[var(--bm-text2)] no-underline hover:text-[var(--bm-text)]"
-            >
-              <Download size={12} /> Standing trend (CSV)
-            </a>
-          </div>
+          {reportUnlocked ? (
+            <div className="flex flex-wrap gap-3">
+              <a
+                href="/api/founder-context/intelligence-export"
+                className="inline-flex items-center gap-1.5 rounded-[6px] border border-[var(--bm-border)] px-3 py-1.5 text-[12px] text-[var(--bm-text2)] no-underline hover:text-[var(--bm-text)]"
+              >
+                <Download size={12} /> Full report (JSON)
+              </a>
+              <a
+                href="/api/founder-context/intelligence-export?format=csv"
+                className="inline-flex items-center gap-1.5 rounded-[6px] border border-[var(--bm-border)] px-3 py-1.5 text-[12px] text-[var(--bm-text2)] no-underline hover:text-[var(--bm-text)]"
+              >
+                <Download size={12} /> Standing trend (CSV)
+              </a>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-3 rounded-[8px] border border-[var(--bm-border)] bg-[var(--bm-bg3)] px-3 py-2.5">
+              <span className="text-[12px] leading-relaxed text-[var(--bm-text2)]">🔒 The Founder Execution Intelligence report is part of the Builder plan.</span>
+              <a href="/upgrade" className="inline-flex items-center rounded-[6px] bg-[var(--bm-accent)] px-3 py-1.5 text-[12px] font-semibold text-white no-underline">Unlock the report</a>
+            </div>
+          )}
         </Card>
       </motion.div>
     </div>
   );
-          }
+}
