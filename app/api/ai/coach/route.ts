@@ -222,9 +222,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: "userId and projectId required" }, { status: 400 });
     }
 
+    // ── Usage: every Coach interaction counts ────────────────────────────────
+    // One-tap actions and typed matches used to run BEFORE this check and were
+    // free. They now spend the same plan allowance as a coached reply, so no
+    // Coach surface bypasses the limit. (Free = FREE_COACH_MESSAGES_PER_DAY.)
+    await enforceCoachUsage(userId, routeUser.plan);
+
     // ── Coach Actions (deterministic, read-only — see lib/coachActions/) ──────
-    // Runs BEFORE enforceCoachUsage on purpose: these cost zero AI tokens, so
-    // they don't spend the free plan's daily coaching-message allowance.
     // A chip sends body.action; typed text is matched by the same pure matcher
     // the client uses. Spiral-flagged messages never match — a founder in a
     // spiral needs the coach, not a task list. A typed match that fails falls
@@ -259,7 +263,7 @@ export async function POST(request: Request) {
       }
     }
 
-    await enforceCoachUsage(userId, routeUser.plan);
+    // (usage already counted above — covers actions and coached replies alike)
 
     // ── Spiral detection (server-side, plan-gated) ──────────────────────────
     const { detected: spiralDetected, signal: spiralSignal } = detectSpiralSignal(message);
@@ -575,4 +579,4 @@ Return ONLY the JSON. No preamble. No markdown fences.`;
       },
     }, { status });
   }
-          }
+  }
