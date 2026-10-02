@@ -1,36 +1,38 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { getEffectivePlan } from "@/lib/server/plan";
+import { readAIUsage } from "@/lib/server/aiUsageStore";
 
+/**
+ * GET /api/user/ai-usage — what the usage badge shows.
+ *
+ * Reads through lib/server/aiUsageStore.ts (the same counters enforcement
+ * writes) and reports the bucket with the FEWEST calls left, because that is
+ * the one that will block the founder first. Limits come from lib/aiLimits.ts,
+ * not a hard-coded 30.
+ */
 export async function GET() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ ok: false }, { status: 401 });
 
-  // Trial-aware plan check — trial users get builder-level unlimited access
+  // Trial-aware: trial users get Builder-level access.
   const plan = await getEffectivePlan(user.id);
   if (plan === "builder") {
     return NextResponse.json({ ok: true, plan: "builder", unlimited: true });
   }
 
-  const admin = createAdminClient();
-  const d = new Date();
-  const month = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-  const { data } = await admin
-    .from("ai_usage")
-    .select("call_count")
-    .eq("user_id", user.id)
-    .eq("month", month)
-    .maybeSingle();
-
-  const used = data?.call_count ?? 0;
-  const limit = 30;
+  const usage = await readAIUsage(user.id, plan);
+  const tighter = usage.core.remaining < usage.general.remaining ? "core" : "general";
+  const b = usage[tighter];
   return NextResponse.json({
     ok: true,
-    plan: "free",
-    used,
-    limit,
-    remaining: Math.max(0, limit - used),
+    plan,
+    unlimited: false,
+    bucket: tighter,
+    used: b.used,
+    limit: b.limit,
+    remaining: b.remaining,
+    buckets: { general: usage.general, core: usage.core },
   });
 }
