@@ -255,19 +255,24 @@ describe("runCoachAction", () => {
   });
 
   it("export_intelligence links to the existing export route, ordering the requested format first", async () => {
-    const base = await runCoachAction({ id: "export_intelligence", params: {} }, ctx(), "free");
+    const base = await runCoachAction({ id: "export_intelligence", params: {} }, ctx(), "builder");
     expect(base.ok && base.result.downloads?.[0].href).toBe("/api/founder-context/intelligence-export?projectId=p1&format=json");
 
-    const csv = await runCoachAction({ id: "export_intelligence", params: { format: "csv" } }, ctx(), "free");
+    const csv = await runCoachAction({ id: "export_intelligence", params: { format: "csv" } }, ctx(), "builder");
     expect(csv.ok && csv.result.downloads?.[0].href).toContain("format=csv");
 
-    const hist = await runCoachAction({ id: "export_intelligence", params: { history: true } }, ctx(), "free");
+    const hist = await runCoachAction({ id: "export_intelligence", params: { history: true } }, ctx(), "builder");
     expect(hist.ok && hist.result.downloads?.[0].href).toContain("history=true");
     expect(hist.ok && new Set(hist.result.downloads?.map((d) => d.href)).size).toBe(3); // no duplicates
   });
 
+  it("export_intelligence is refused on the Free plan", async () => {
+    const r = await runCoachAction({ id: "export_intelligence", params: {} }, ctx(), "free");
+    expect(r).toMatchObject({ ok: false, status: 403 });
+  });
+
   it("404s when the project isn't the session user's", async () => {
-    const r = await runCoachAction({ id: "export_intelligence", params: {} }, ctx({ ...okTables, projects: { data: null } }), "free");
+    const r = await runCoachAction({ id: "export_intelligence", params: {} }, ctx({ ...okTables, projects: { data: null } }), "builder");
     expect(r).toMatchObject({ ok: false, status: 404 });
     const r2 = await runCoachAction({ id: "list_backlog", params: {} }, ctx({ ...okTables, projects: { data: null } }), "free");
     expect(r2).toMatchObject({ ok: false, status: 404 });
@@ -293,7 +298,7 @@ describe("registry wiring", () => {
   it("every UI chip points at a registered action and produces params that action accepts", async () => {
     for (const chip of COACH_ACTION_CHIPS) {
       expect(COACH_ACTIONS[chip.id]).toBeDefined();
-      const r = await runCoachAction({ id: chip.id, params: chip.params }, { userId: "u1", projectId: "p1", admin: fakeAdmin(okTables), now: NOW, loaders }, "free");
+      const r = await runCoachAction({ id: chip.id, params: chip.params }, { userId: "u1", projectId: "p1", admin: fakeAdmin(okTables), now: NOW, loaders }, "builder");
       expect(r.ok, chip.id).toBe(true);
     }
   });
@@ -307,7 +312,7 @@ describe("registry wiring", () => {
     ];
     for (const msg of samples) {
       const m = matchCoachAction(msg)!;
-      const r = await runCoachAction({ id: m.id, params: m.params }, { userId: "u1", projectId: "p1", admin: fakeAdmin(okTables), now: NOW, loaders }, "free");
+      const r = await runCoachAction({ id: m.id, params: m.params }, { userId: "u1", projectId: "p1", admin: fakeAdmin(okTables), now: NOW, loaders }, "builder");
       expect(r.ok, msg).toBe(true);
     }
   });
