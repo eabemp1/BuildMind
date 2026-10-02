@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { spendAIUsage, AIUsageUnavailableError, type SpendResult } from "@/lib/server/aiUsageStore";
 import { normalizePlan } from "@/lib/plan";
 import { getEffectivePlan } from "@/lib/server/plan";
 import { callModel, callModelJSON, hasAIProvider } from "@/lib/ai-providers";
@@ -87,87 +88,33 @@ export async function enforceAndTrackAIUsage(
   const monthlyLimit = monthlyLimits[plan] ?? monthlyLimits.free;
   const dailyLimit   = dailyLimits[plan]   ?? dailyLimits.free;
 
-  // ── Step 1: Daily cap check (fires first to prevent burst abuse) ───────────
-  // Run the daily check before the monthly check so a free user who has
-  // used 0 monthly calls cannot call the API 30 times in one day.
-
-  const { data: dailyCount, error: dailyError } = await supabase.rpc(
-    "increment_ai_usage_daily_capped",
-    { p_user_id: userId, p_date: today, p_limit: dailyLimit, p_feature: feature },
-  );
-
-  if (dailyError) throw new Error(dailyError.message);
-
-  // RPC returns -1 when the daily limit is already reached.
-  if (dailyCount === -1) {
-    const limitLabel = dailyLimit === -1 ? "unlimited" : String(dailyLimit);
-    const what = feature === "core" ? "today's action generation" : "AI Coach and other AI features";
-    throw new Error(
-      `Daily AI limit reached for ${what} (${limitLabel} calls/day on the free plan). ` +
-      `Your limit resets at midnight UTC, or upgrade to Builder for a much higher ceiling.`,
-    );
-  }
-
-  // ── Step 2: Monthly cap check ──────────────────────────────────────────────
-  // Builder/Venture: unlimited — just track via atomic upsert, no cap needed.
-  if (monthlyLimit === -1) {
-    await supabase.rpc("increment_ai_usage", { p_user_id: userId, p_month: month, p_feature: feature });
+  // Every call is counted here, once, atomically: both caps are checked and
+  // both counters incremented in a single step (see lib/server/aiUsageStore.ts).
+  let result: SpendResult;
+  try {
+    result = await spendAIUsage({ userId, feature, month, today, monthlyLimit, dailyLimit });
+  } catch (err) {
+    // Counters unreachable. A free user fails CLOSED — otherwise a broken
+    // counter would silently mean unlimited free AI. Paid users fail open so an
+    // outage never blocks someone who is paying.
+    console.error("[ai-usage] counter unavailable:", err);
+    if (plan === "free") throw new AIUsageUnavailableError();
     return;
   }
 
-  // Free plan: atomically increment and read back the new count in one round-trip.
-  // Using a Postgres RPC prevents the SELECT→UPDATE race condition where two
-  // concurrent requests both read the same count and both think they're under limit.
-  const { data: newCount, error: rpcError } = await supabase.rpc("increment_ai_usage_capped", {
-    p_user_id: userId,
-    p_month: month,
-    p_limit: monthlyLimit,
-    p_feature: feature,
-  });
+  if (result.ok) return;
 
-  if (rpcError) throw new Error(rpcError.message);
-
-  // RPC returns -1 when the limit is already reached (no increment performed).
-  // Note: daily count was already incremented above — we must decrement it back
-  // to keep daily and monthly counts in sync when the monthly cap is the blocker.
-  if (newCount === -1) {
-    // Best-effort rollback of the daily increment (non-throwing).
-    // Use a dedicated decrement RPC; increment_ai_usage_daily_capped(-1) is
-    // the unlimited increment path, not a decrement path.
-    try {
-      await supabase.rpc("decrement_ai_usage_daily", { p_user_id: userId, p_date: today, p_feature: feature });
-    } catch {
-      // B2 FIX: Fallback must use a relative atomic decrement (count - 1), NOT
-      // a read-compute-write with `dailyCount`. `dailyCount` is the post-increment
-      // value and may be stale if another concurrent request ran between the
-      // daily increment and this rollback, causing the UPDATE to write a wrong
-      // value and corrupting the daily counter. Postgres `GREATEST(count - 1, 0)`
-      // is always safe regardless of concurrent writes.
-      const { error: fallbackError } = await supabase.rpc("safe_decrement_ai_usage_daily_fallback", {
-        p_user_id: userId,
-        p_date: today,
-        p_feature: feature,
-      });
-      if (fallbackError) {
-        // If the fallback RPC is also not deployed, use a raw SQL expression via
-        // a second update that relies on the DB to evaluate the arithmetic.
-        // This is still safer than the stale-read approach: the DB computes
-        // GREATEST(count - 1, 0) at execution time, not at read time.
-        await supabase
-          .from("ai_usage_daily")
-          .update({ count: supabase.rpc as unknown as number }) // signal: use RPC migration
-          .eq("user_id", userId)
-          .eq("date", today)
-          .eq("feature", feature);
-        // NOTE: Deploy supabase/migrations/add_safe_decrement_ai_usage_daily.sql
-        // to add the safe_decrement_ai_usage_daily_fallback() function that
-        // executes: UPDATE ai_usage_daily SET count = GREATEST(count - 1, 0) ...
-      }
-    }
+  if (result.blocked === "daily") {
+    const limitLabel = dailyLimit === -1 ? "unlimited" : String(dailyLimit);
+    const what = feature === "core" ? "today's action generation" : "AI Coach and other AI features";
     throw new Error(
-      `Monthly AI limit reached (${monthlyLimit} calls). Upgrade to Builder for unlimited AI.`,
+      `Daily AI limit reached for ${what} (${limitLabel} calls/day on the ${plan} plan). ` +
+      `Your limit resets at midnight UTC${plan === "free" ? ", or upgrade to Builder for a much higher ceiling" : ""}.`,
     );
   }
+  throw new Error(
+    `Monthly AI limit reached (${monthlyLimit} calls).${plan === "free" ? " Upgrade to Builder for far more AI." : ""}`,
+  );
 }
 
 /**
