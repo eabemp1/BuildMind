@@ -28,6 +28,8 @@ export interface FounderSnapshot {
   momentumLabel: string | null;
   streak: number;
   activeDaysThisWeek: number;
+  /** Mon..Sun of the current week: which days had a completed action (future days are done:false). */
+  weekDays: Array<{ date: string; done: boolean; isToday: boolean; isFuture: boolean }>;
   daysElapsedThisWeek: number;
   activeDaysLastWeekSamePoint: number;
   completedToday: boolean;
@@ -105,6 +107,10 @@ export async function getFounderSnapshot(userId: string, projectId?: string, now
     momentumLabel: score?.momentumLabel?.label ?? null,
     streak: score?.streak ?? 0,
     activeDaysThisWeek: thisWeek.size,
+    weekDays: Array.from({ length: 7 }, (_, i) => {
+      const date = dayKey(new Date(new Date(`${weekStart}T00:00:00.000Z`).getTime() + i * DAY));
+      return { date, done: thisWeek.has(date), isToday: date === today, isFuture: date > today };
+    }),
     daysElapsedThisWeek: daysElapsed,
     activeDaysLastWeekSamePoint: [...lastWeek].filter((d) => {
       const idx = Math.floor((new Date(`${d}T00:00:00.000Z`).getTime() - new Date(`${lastWeekStart}T00:00:00.000Z`).getTime()) / DAY);
