@@ -21,7 +21,8 @@ import { Card } from "@/components/ui/card";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
 import { CoachActionResultCard } from "@/components/coach/CoachActionResultCard";
 import { matchCoachAction } from "@/lib/coachActions/matcher";
-import { COACH_ACTION_CHIPS } from "@/lib/coachActions/chips";
+import { COACH_ACTION_CHIPS, type CoachActionChip } from "@/lib/coachActions/chips";
+import { matchNavigation, parseReplyLinks } from "@/lib/coachNavigation";
 import type { CoachActionResult } from "@/lib/coachActions/types";
 
 type ChatMessage = {
@@ -111,8 +112,10 @@ function useIsMobile() {
   return isMobile;
 }
 
-function MessageBubble({ msg, onStartAction }: { msg: ChatMessage; onStartAction: () => void }) {
+function MessageBubble({ msg, onStartAction, onOpen, onRunChip }: { msg: ChatMessage; onStartAction: () => void; onOpen: (href: string) => void; onRunChip: (chip: CoachActionChip) => void }) {
   const isUser = msg.role === "user";
+  // Buttons the Coach attached ([[open:…]] / [[run:…]]) — validated against closed allow-lists.
+  const parsed = !isUser && msg.phase === "done" ? parseReplyLinks(msg.content) : { text: msg.content, links: [] as ReturnType<typeof parseReplyLinks>["links"] };
   const [expanded, setExpanded] = useState(false);
   const isMobile = useIsMobile();
   return (
@@ -151,11 +154,24 @@ function MessageBubble({ msg, onStartAction }: { msg: ChatMessage; onStartAction
           className={`px-3.5 py-2.5 text-[13px] leading-relaxed ${isUser ? "rounded-[var(--r-xl)] rounded-tr-sm border border-[var(--bm-border3)] bg-[var(--bm-bg4)]" : "rounded-[var(--r-xl)] rounded-tl-sm border border-[var(--bm-border2)] bg-[var(--bm-bg3)]"}`}
           style={{ color: msg.error ? "var(--bm-red)" : "var(--bm-text2)" }}
         >
-          {msg.phase === "thinking" ? <ThinkingDots /> : <span style={{ whiteSpace: "pre-wrap" }}>{sanitizeOutput(msg.content)}</span>}
+          {msg.phase === "thinking" ? <ThinkingDots /> : <span style={{ whiteSpace: "pre-wrap" }}>{sanitizeOutput(parsed.text)}</span>}
         </div>
 
         {!isUser && msg.phase === "done" && msg.actionResult && (
           <CoachActionResultCard result={msg.actionResult} />
+        )}
+
+        {!isUser && parsed.links.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {parsed.links.map((l, i) => (
+              <button key={i} type="button"
+                onClick={() => (l.kind === "open" ? onOpen(l.href) : onRunChip(l.chip))}
+                className="cursor-pointer rounded-[var(--r-sm)] px-3 py-1.5 text-[12px] font-semibold"
+                style={{ background: "var(--bm-accent-dim)", color: "var(--bm-accent)", border: "1px solid var(--bm-accent-bd)", fontFamily: "inherit" }}>
+                {l.label} →
+              </button>
+            ))}
+          </div>
         )}
 
         {!isUser && msg.phase === "done" && msg.recommendedAction && (
@@ -283,6 +299,17 @@ function AICoachPageInner() {
     // daily coaching allowance — the server skips the cap for them too
     // (app/api/ai/coach/route.ts). matchCoachAction is the same pure function
     // the server runs, so the two can't disagree about what counts as one.
+    // "Take me to Progress" — the Coach just does it: no model call, no allowance spent.
+    const navTarget = !opts?.action ? matchNavigation(msg) : null;
+    if (navTarget) {
+      setInput("");
+      setMessages(prev => [...prev,
+        { id: Date.now().toString(), role: "user", content: msg },
+        { id: (Date.now() + 1).toString(), role: "assistant", content: `Opening ${navTarget.label}…`, phase: "done" },
+      ]);
+      setTimeout(() => router.push(navTarget.href), 350);
+      return;
+    }
     const isAction = Boolean(opts?.action) || matchCoachAction(msg) !== null;
     if (remaining <= 0 && !planLoading && plan === "free" && !isAction) { showLimitModal("aiCoach"); return; }
     if (!userId) {
@@ -502,7 +529,7 @@ function AICoachPageInner() {
                 </div>
               </motion.div>
             )}
-            {messages.map(msg => <MessageBubble key={msg.id} msg={msg} onStartAction={() => router.push("/today")} />)}
+            {messages.map(msg => <MessageBubble key={msg.id} msg={msg} onStartAction={() => router.push("/today")} onOpen={(href) => router.push(href)} onRunChip={(chip) => sendMessage(chip.label, { action: { id: chip.id, params: chip.params } })} />)}
             <div ref={bottomRef} />
           </div>
 
