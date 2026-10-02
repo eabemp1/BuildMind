@@ -18,6 +18,7 @@
  * must keep working unmodified.
  */
 
+import { gateAIUsage } from "@/app/api/ai/_usageGate";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getWeeklyPulseData } from "@/lib/weeklyPulseData";
@@ -38,7 +39,13 @@ export async function POST(request: Request) {
     // Plan gate (light): the AI-written story is Builder/trial only; Free keeps
     // the same numbers with the deterministic summary line.
     const plan = await getEffectivePlan(user.id).catch(() => "free" as const);
-    const data = await getWeeklyPulseData(user.id, projectId, { aiStory: plan === "builder" });
+    let aiStory = false;
+    if (plan === "builder") {
+      // The AI-written story spends the plan allowance; at the limit Progress
+      // keeps working with the deterministic one-line story instead of erroring.
+      aiStory = (await gateAIUsage(user.id, "general")) === null;
+    }
+    const data = await getWeeklyPulseData(user.id, projectId, { aiStory });
     return NextResponse.json({ ok: true, data });
   } catch (err) {
     return NextResponse.json({ ok: false, error: "weekly_pulse_failed" }, { status: 500 });
