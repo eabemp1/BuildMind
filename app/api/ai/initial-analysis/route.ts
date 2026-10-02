@@ -16,6 +16,7 @@
  * re-generate. Invalidated when project_id or stage changes, or after 7 days.
  */
 
+import { gateAIUsage } from "@/app/api/ai/_usageGate";
 import { NextResponse } from "next/server";
 import { groqJSON, hasAdminEnv } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -55,6 +56,10 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
     const projectId = String(body?.projectId ?? "").trim();
     const forceRefresh = Boolean(body?.forceRefresh);
+    // Only a forced re-run spends allowance; the first analysis at onboarding
+    // is part of the core loop and uses the core budget.
+    const blocked = await gateAIUsage(userId, "core");
+    if (blocked) return blocked;
 
     if (!projectId) {
       return NextResponse.json({ ok: false, error: "projectId required" }, { status: 400 });
