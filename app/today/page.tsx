@@ -1856,7 +1856,7 @@ function TodayContent() {
   });
 
   return (
-    <div style={{ maxWidth: 920, margin: "0 auto", padding: isMobile ? "0 0 24px" : "20px 8px 48px" }}>
+    <div style={{ maxWidth: 920, width: "100%", minWidth: 0, boxSizing: "border-box", margin: "0 auto", padding: isMobile ? "0 2px 28px" : "20px 8px 48px", overflowX: "clip" }}>
 
       {/* ══ HERO HEADER — logo, UI mode toggle, streak/plan usage, page title.
           Previously trapped behind a collapsed "context" drawer (collapsed by
@@ -2455,7 +2455,9 @@ function TodayContent() {
           </div>
 
           <div
+            id="today-action"
             style={{
+              scrollMarginTop: 16,
               marginBottom: "var(--space-4)",
               display: actionData.isLowConfidence && actionData.intelligence && !isMobile ? "grid" : "block",
               gridTemplateColumns: actionData.isLowConfidence && actionData.intelligence && !isMobile ? "1fr 260px" : undefined,
@@ -2842,7 +2844,7 @@ function TodayContent() {
              go dark just because the task recommendation is tucked behind
              a pill for the evening. ── */}
       {uiMode === "pro" && actionData?.intelligence ? (
-        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1fr) 304px", gap: 14, marginTop: 14, marginBottom: 14 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "minmax(0, 1fr)" : "minmax(0, 1fr) 304px", gap: 14, marginTop: 14, marginBottom: 14 }}>
           <div><WhatChangedCard items={actionData.intelligence.what_changed} /><div style={{ marginTop: 14 }}><IntelligencePanel data={actionData.intelligence} onSwap={handleSwapAlternative} recentOutcomes={recentOutcomes} /></div></div>
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}><RisksGapsCard signals={supportingSignals} /></div>
         </div>
