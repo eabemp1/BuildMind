@@ -107,7 +107,7 @@ const exportIntelligence = defineAction({
   id: "export_intelligence",
   label: "Export intelligence data",
   description: "Download the full Founder Intelligence record (JSON, CSV trend, optional 30-day history).",
-  minPlan: "free",
+  minPlan: "builder",
   paramsSchema: z.object({
     format: z.enum(["json", "csv"]).default("json"),
     history: z.boolean().default(false),
@@ -476,4 +476,4 @@ export async function runCoachAction(
     return { ok: false, status: 403, error: `"${action.label}" needs the ${action.minPlan} plan.` };
   }
   return action.execute(ctx, request.params);
-    }
+  }
