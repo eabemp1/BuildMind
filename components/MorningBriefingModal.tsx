@@ -24,6 +24,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
 import { truncateChars } from "@/lib/textTruncate";
 import type { MorningBriefing } from "@/lib/founderContext";
+import BriefingStats from "./BriefingStats";
 
 interface Props {
   briefing: MorningBriefing | null;
@@ -84,7 +85,10 @@ export default function MorningBriefingModal({ briefing, isPaywalled, onDismiss 
             background: "var(--bm-bg2)",
             border: "1px solid var(--bm-accent-bd)",
             borderRadius: 18,
-            padding: "28px 26px 24px",
+            padding: "24px 20px 20px",
+            maxHeight: "88dvh",
+            overflowY: "auto",
+            overflowX: "hidden",
             position: "relative",
             boxShadow: "0 24px 64px rgba(0,0,0,0.5)",
           }}
@@ -141,6 +145,9 @@ export default function MorningBriefingModal({ briefing, isPaywalled, onDismiss 
             <FullContent briefing={briefing} />
           )}
 
+          {/* Real numbers for every plan — deterministic, no AI cost. */}
+          <BriefingStats onNavigate={onDismiss} />
+
           {/* Footer dismiss CTA */}
           <button
             onClick={onDismiss}
@@ -159,7 +166,7 @@ export default function MorningBriefingModal({ briefing, isPaywalled, onDismiss 
               transition: "border-color 0.15s",
             }}
           >
-            Got it — show me today&apos;s task
+            Got it — close
           </button>
         </motion.div>
       </motion.div>
@@ -286,4 +293,4 @@ function Row({
       </span>
     </div>
   );
-                }
+}
