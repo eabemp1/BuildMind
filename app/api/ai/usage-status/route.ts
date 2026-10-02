@@ -14,9 +14,8 @@
 
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { getEffectivePlan } from "@/lib/server/plan";
-import { PLAN_MONTHLY_LIMITS } from "@/app/api/ai/_utils";
+import { readAIUsage } from "@/lib/server/aiUsageStore";
 
 export async function GET() {
   try {
@@ -29,25 +28,11 @@ export async function GET() {
 
     // Plan is read from Supabase — trial-aware (getEffectivePlan checks trial_ends_at)
     const plan = await getEffectivePlan(user.id);
-    const monthlyLimit = PLAN_MONTHLY_LIMITS[plan] ?? PLAN_MONTHLY_LIMITS.free;
-
-    const now = new Date();
-    const month = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
-
-    let monthlyUsed = 0;
-    try {
-      const admin = createAdminClient();
-      const { data: usage } = await admin
-        .from("ai_usage")
-        .select("count")
-        .eq("user_id", user.id)
-        .eq("month", month)
-        .maybeSingle();
-      monthlyUsed = usage?.count ?? 0;
-    } catch {
-      // ai_usage table may not exist yet (migration pending) — treat as 0
-      // rather than failing the whole request; this is display-only.
-    }
+    // Same counters enforcement writes (lib/server/aiUsageStore.ts). The Today
+    // banner follows the general bucket (Coach and other open-ended AI).
+    const usage = await readAIUsage(user.id, plan);
+    const monthlyLimit = usage.general.limit;
+    const monthlyUsed = usage.general.used;
 
     // FIX: builder is no longer truly "-1 unlimited" (see app/api/ai/_utils.ts) —
     // it now has a generous but real ceiling. Report it accurately instead of
@@ -61,9 +46,10 @@ export async function GET() {
       monthlyLimit,
       unlimited: false,
       hitLimit: monthlyUsed >= monthlyLimit,
+      buckets: { general: usage.general, core: usage.core },
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
-}
+      }
