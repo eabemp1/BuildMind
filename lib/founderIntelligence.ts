@@ -1000,7 +1000,7 @@ function scoreCandidate(candidate: Omit<DecisionCandidate, "scores" | "why_it_be
   return {
     ...candidate,
     scores: { impact, urgency, goal_relevance, evidence_value, founder_fit, execution_probability, opportunity_cost, repetition_penalty, behavioral_correction, risk_reduction, confidence, total },
-    why_it_beats_alternatives: `Scores highest because it balances ${hasEvidenceGap ? "fresh evidence" : hasGoalRisk ? "goal recovery" : "execution progress"} with founder fit${archetypeHistory ? ", and this approach has worked for you before" : ""} and avoids repeating stale work.`,
+    why_it_beats_alternatives: `Scores highest because it balances ${hasEvidenceGap ? "fresh evidence" : hasGoalRisk ? "goal recovery" : "execution progress"} with founder fit${(archetypeHistory?.successes ?? 0) > 0 ? `, and this approach has worked for you before (${archetypeHistory!.successes} of ${archetypeHistory!.successes + archetypeHistory!.failures} resolved)` : ""} and avoids repeating stale work.`,
   };
 }
 
@@ -1254,4 +1254,4 @@ export async function loadFounderIntelligence(
     logError("founderIntelligence/loadFounderIntelligence", err, { userId, projectId });
     return buildFounderIntelligenceState({ ...preloaded, now });
   }
-          }
+                                          }
