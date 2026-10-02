@@ -24,9 +24,10 @@ describe("gateAIUsage", () => {
     expect(body.error).toMatch(/limit reached/i);
   });
 
-  it("fails open on a usage-store outage (never locks founders out)", async () => {
+  it("never lets a call through uncounted when the counters fail (503, not free AI)", async () => {
     enforce.mockImplementation(async () => { throw new Error("connection reset"); });
-    expect(await gateAIUsage("u1")).toBeNull();
+    const res = await gateAIUsage("u1");
+    expect(res?.status).toBe(503);
     expect(isLimitError(new Error("connection reset"))).toBe(false);
   });
 });
