@@ -12,6 +12,7 @@
  * Plan gate: builder only.
  */
 
+import { gateAIUsage } from "@/app/api/ai/_usageGate";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -39,6 +40,10 @@ export async function POST(req: NextRequest) {
       { status: 403 },
     );
   }
+
+  // Builder still spends AI usage: every agent run counts against the plan allowance.
+  const blocked = await gateAIUsage(auth.userId, "general");
+  if (blocked) return blocked;
 
   // ── Parse body ────────────────────────────────────────────────────────────
   let body: z.infer<typeof BodySchema>;
