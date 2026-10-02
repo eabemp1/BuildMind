@@ -338,6 +338,22 @@ export async function getFounderIntelligenceAccuracy(supabase: SupabaseLike, use
   }
 }
 
+/**
+ * A "success" is a completed recommendation that either produced real
+ * evidence (structured references or a "strong" outcome_quality) or
+ * clears the old text-overlap bar. Free-form outcomes like interviews and
+ * outreach no longer count as failures just because the founder phrased the
+ * reflection differently from the prediction.
+ */
+export function isArchetypeSuccess(row: { outcome: string; evidence_match_score: number | null; outcome_quality?: string | null; evidence_references?: unknown }): boolean {
+  if (row.outcome !== "completed") return false;
+  const hasRefs = Array.isArray(row.evidence_references) && row.evidence_references.length > 0;
+  // "useful" is the default stamped on EVERY completion without structured
+  // evidence, so only "strong" (structured evidence attached) counts.
+  const quality = row.outcome_quality === "strong";
+  return hasRefs || quality || (row.evidence_match_score ?? 0) >= 0.5;
+}
+
 export interface ArchetypeStats {
   [candidateId: string]: { successes: number; failures: number };
 }
@@ -363,25 +379,28 @@ export interface ArchetypeStats {
  */
 export async function getCandidateArchetypeStats(supabase: SupabaseLike, userId: string): Promise<ArchetypeStats> {
   try {
-    const { data, error } = await supabase
+    type Row = { candidate_id: string | null; outcome: string; evidence_match_score: number | null; outcome_quality?: string | null; evidence_references?: unknown };
+    const build = (cols: string) => supabase
       .from("reflexion_learning_log")
-      .select("candidate_id, outcome, evidence_match_score")
+      .select(cols)
       .eq("user_id", userId)
       .eq("prediction_source", "founder_intelligence")
       .neq("outcome", "pending")
       .not("candidate_id", "is", null)
       .order("created_at", { ascending: false })
       .limit(200);
-
-    if (error) throw error;
+    // Real-evidence signal first; if those columns don't exist in this
+    // database yet, fall back to the original columns so learning never
+    // silently stops (a failed select would otherwise return empty stats).
+    let res = await build("candidate_id, outcome, evidence_match_score, outcome_quality, evidence_references");
+    if (res.error) res = await build("candidate_id, outcome, evidence_match_score");
+    if (res.error) throw res.error;
     const stats: ArchetypeStats = {};
-    for (const row of (data ?? []) as Array<{ candidate_id: string | null; outcome: string; evidence_match_score: number | null }>) {
+    for (const row of (res.data ?? []) as unknown as Row[]) {
       const id = row.candidate_id;
       if (!id) continue;
       if (!stats[id]) stats[id] = { successes: 0, failures: 0 };
-      const success = row.outcome === "completed" && (row.evidence_match_score ?? 0) >= 0.5;
-      if (success) stats[id].successes += 1;
-      else stats[id].failures += 1;
+      stats[id][isArchetypeSuccess(row) ? "successes" : "failures"] += 1;
     }
     return stats;
   } catch (err) {
