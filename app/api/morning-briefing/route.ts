@@ -11,6 +11,7 @@
  * Both tiers receive the briefing. Free tier is rate-limited by day-of-week.
  * Do NOT gate this route at "builder" — that blocks free users from their 3-day briefing.
  */
+import { gateAIUsage } from "@/app/api/ai/_usageGate";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -421,6 +422,10 @@ export async function GET(req: Request) {
     projectStage: activeProject?.startup_stage ?? ctx?.current_stage ?? "Idea",
   };
 
+  // A fresh user-triggered generation spends the plan allowance (cached reads above stay free).
+  const blocked = await gateAIUsage(user.id, "core");
+  if (blocked) return blocked;
+
   try {
     const briefing = await generateMorningBriefing(reflexionCtx);
     if (briefing.action) {
@@ -561,4 +566,4 @@ export async function POST(req: Request) {
   }
 
   return GET(req);
-      }
+        }
