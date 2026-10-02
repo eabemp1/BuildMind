@@ -42,6 +42,14 @@ import { sanitizeOutput } from "@/lib/sanitizeOutput";
 import { trackEvent } from "@/lib/analytics";
 import { CofounderAvatar, CofounderMascot } from "./CofounderAvatar";
 
+/** Mirrors lib/server/founderSnapshot.ts::FounderSnapshot (type kept local so this client file never imports server code). */
+type PulseSnapshot = {
+  momentum: number | null; momentumDelta: number | null; momentumTrend: "up" | "down" | "flat" | "unknown"; momentumLabel: string | null;
+  streak: number; activeDaysThisWeek: number; daysElapsedThisWeek: number; activeDaysLastWeekSamePoint: number;
+  completedToday: boolean; pendingActionTitle: string | null; daysInactive: number | null;
+  overdueMilestones: number; worstOverdue: { title: string; daysLate: number } | null; topAvoidance: string | null; calibrating: boolean;
+};
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type PulseMode =
@@ -135,6 +143,7 @@ export default function CofounderPulse() {
   const [expanded, setExpanded] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   const [styleJustChanged, setStyleJustChanged] = useState<CofounderStyle | null>(null);
+  const [snap, setSnap] = useState<PulseSnapshot | null>(null);
   const pulseTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const activeStyle = memory?.cofounder_style ?? "execution-coach";
@@ -152,6 +161,7 @@ export default function CofounderPulse() {
 
     if (mem) {
       const msg = await deriveCofounderMessage(mem);
+      setSnap(lastSnapshot);
       setCurrentMessage(msg);
       setMode(msg.mode);
     }
@@ -318,6 +328,37 @@ export default function CofounderPulse() {
                 <CofounderMascot style={activeStyle} color={meta.color} pulsing={mode !== "observing"} mode={mode} size={72} />
               </div>
 
+              {/* Live numbers — the same snapshot Today and Progress read, so
+                  this panel can never disagree with them. */}
+              {snap && (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6, marginBottom: 12 }}>
+                  {[
+                    { k: "Momentum", v: snap.calibrating || snap.momentum === null ? "—" : String(snap.momentum), sub: snap.calibrating ? "calibrating" : snap.momentumDelta !== null ? `${snap.momentumDelta >= 0 ? "+" : ""}${snap.momentumDelta} wk` : (snap.momentumLabel ?? "") },
+                    { k: "Streak", v: `${snap.streak}d`, sub: snap.completedToday ? "done today" : "not yet today" },
+                    { k: "This week", v: `${snap.activeDaysThisWeek}/${snap.daysElapsedThisWeek}`, sub: `last wk ${snap.activeDaysLastWeekSamePoint}` },
+                  ].map((m) => (
+                    <div key={m.k} style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: 8, padding: "8px 6px", textAlign: "center", minWidth: 0 }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: "var(--bm-text)" }}>{m.v}</div>
+                      <div style={{ fontSize: 9, color: "var(--bm-text3)", fontFamily: "monospace", letterSpacing: "0.05em", textTransform: "uppercase" }}>{m.k}</div>
+                      <div style={{ fontSize: 9, color: "var(--bm-text3)", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.sub}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {snap && (snap.worstOverdue || snap.topAvoidance || snap.pendingActionTitle) && (
+                <ul style={{ margin: "0 0 12px", padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 5 }}>
+                  {snap.pendingActionTitle && !snap.completedToday && (
+                    <li style={{ fontSize: 11, color: "var(--bm-text2)", lineHeight: 1.5 }}>🎯 Today: {snap.pendingActionTitle.slice(0, 90)}</li>
+                  )}
+                  {snap.worstOverdue && (
+                    <li style={{ fontSize: 11, color: "#f59e0b", lineHeight: 1.5 }}>⏳ “{snap.worstOverdue.title.slice(0, 50)}” is {snap.worstOverdue.daysLate}d past target{snap.overdueMilestones > 1 ? ` (+${snap.overdueMilestones - 1} more)` : ""}</li>
+                  )}
+                  {snap.topAvoidance && (
+                    <li style={{ fontSize: 11, color: "var(--bm-text3)", lineHeight: 1.5 }}>🪞 Avoiding: {snap.topAvoidance.slice(0, 60)}</li>
+                  )}
+                </ul>
+              )}
+
               {/* Mode badge */}
               <div style={{ marginBottom: 10 }}>
                 <span style={{
@@ -416,7 +457,10 @@ export default function CofounderPulse() {
 
 // ─── Message derivation ───────────────────────────────────────────────────────
 
+let lastSnapshot: PulseSnapshot | null = null;
+
 async function deriveCofounderMessage(memory: FounderMemory): Promise<PulseMessage> {
+  lastSnapshot = null;
   const now = new Date().toISOString();
 
   // Fetch live signals: standing (real readiness + engagement, shared with
@@ -429,14 +473,24 @@ async function deriveCofounderMessage(memory: FounderMemory): Promise<PulseMessa
   let streak: number | undefined;
 
   try {
-    const [standingRes, pulseRes, overview] = await Promise.all([
+    // FIX: momentum used to come from /api/pulse/metrics (pulse_events), a
+    // table most founders have no rows in, so it returned 0 and the co-founder
+    // said "Momentum is at 0" while Today and Progress said 31. Momentum now
+    // comes from the founder snapshot (the scorecard every other surface reads).
+    const [standingRes, snapRes, overview] = await Promise.all([
       fetch("/api/founder-context/standing").then((r) => (r.ok ? r.json() : null)).catch(() => null),
-      fetch("/api/pulse/metrics").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      fetch("/api/founder-context/snapshot").then((r) => (r.ok ? r.json() : null)).catch(() => null),
       getDashboardOverview().catch(() => null),
     ]);
     if (standingRes?.ok && standingRes.data) standing = standingRes.data as FounderStanding;
-    if (pulseRes?.ok && typeof pulseRes.data?.pulseScore === "number") momentumScore = pulseRes.data.pulseScore;
-    streak = overview?.founderStreakDays ?? undefined;
+    if (snapRes?.ok && snapRes.data) {
+      const sn = snapRes.data as PulseSnapshot;
+      lastSnapshot = sn;
+      // A calibrating founder has no meaningful momentum yet — never alert on it.
+      if (!sn.calibrating && typeof sn.momentum === "number") momentumScore = sn.momentum;
+      streak = sn.streak;
+    }
+    if (streak === undefined) streak = overview?.founderStreakDays ?? undefined;
   } catch { /* non-fatal — deriveCofounderMode handles a null standing below */ }
 
   // FIX (this pass): mode used to come from pickModeFromMemory() thresholding
@@ -456,7 +510,7 @@ async function deriveCofounderMessage(memory: FounderMemory): Promise<PulseMessa
     const alertText = standing?.engagement === "stalled"
       ? `${daysInactive} days without activity on this project. That's not a break — that's drift. What's actually blocking you?`
       : typeof momentumScore === "number" && momentumScore < 35
-      ? `Momentum is at ${momentumScore}. That's not a plateau — it's a slide. Today's task is the only thing that reverses it.`
+      ? `Momentum is at ${momentumScore}${typeof lastSnapshot?.momentumDelta === "number" && lastSnapshot.momentumDelta < 0 ? `, down ${Math.abs(lastSnapshot.momentumDelta)} from last week` : ""}. That's not a plateau — it's a slide. Today's task is the only thing that reverses it.`
       : `Something's off. Come back and log it before it compounds.`;
     return { mode: "alert", text: alertText, action: pickAction(memory), timestamp: now };
   }
@@ -518,4 +572,4 @@ function pickAction(memory: FounderMemory): PulseMessage["action"] | undefined {
     label: "What's my one thing today?",
     prompt: "Given everything you know about my startup and my patterns, what is the single most important thing I should do today?",
   };
-                  }
+                      }
