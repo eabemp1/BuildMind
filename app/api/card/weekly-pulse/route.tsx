@@ -55,7 +55,7 @@ const COLORS = {
 const GRADE_COLOR: Record<string, string> = { A: COLORS.green, B: COLORS.accent, C: COLORS.amber, D: COLORS.red, F: COLORS.red };
 
 function buildSparklineChart(points: SparklinePoint[], hasGhost: boolean) {
-  const w = 900, h = 220, padX = 30, padY = 20;
+  const w = 880, h = 170, padX = 24, padY = 16;
   const reals = points.map((p) => p.real).filter((v): v is number => v !== null);
   const ghosts = points.map((p) => p.ghost).filter((v): v is number => v !== null);
   const all = [...reals, ...ghosts];
@@ -76,7 +76,10 @@ function buildSparklineChart(points: SparklinePoint[], hasGhost: boolean) {
     return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getUTCDay()];
   });
 
-  return { svgWidth: w, svgHeight: h, realPts, ghostPts, min, max, first, last, delta, dayLabels, points };
+  const xs = points.map((_, i) => x(i));
+  const yTicks = [max, Math.round((max + min) / 2), min].map((v) => ({ v, y: y(v) }));
+  const lastPt = reals.length > 0 ? { x: x(points.length - 1), y: y(reals[reals.length - 1]) } : null;
+  return { svgWidth: w, svgHeight: h, realPts, ghostPts, min, max, first, last, delta, dayLabels, points, xs, yTicks, lastPt };
 }
 
 /**
@@ -96,8 +99,8 @@ function bandColorForPng(weight: number): string {
 }
 
 function buildDayActivityChart(days: DayActivity[]) {
-  const colW = 108, colGap = 14, bandH = 26, bandGap = 5, labelH = 26;
-  const MAX_BANDS = 5; // fixed-height canvas — cap so one very busy day can't blow out the layout
+  const colW = 108, colGap = 14, bandH = 20, bandGap = 4, labelH = 26;
+  const MAX_BANDS = 4; // fixed-height canvas — cap so one very busy day can't blow out the layout
   const maxCount = Math.max(3, ...days.map((d) => Math.min(d.activities.length, MAX_BANDS)));
   const chartH = maxCount * (bandH + bandGap) + labelH;
   const todayStr = new Date().toISOString().slice(0, 10);
@@ -127,7 +130,7 @@ export async function GET(request: Request) {
       <div
         style={{
           width: WIDTH, height: HEIGHT, display: "flex", flexDirection: "column",
-          background: COLORS.bg, padding: "72px 64px", position: "relative", fontFamily: "sans-serif",
+          background: COLORS.bg, padding: "56px 64px", position: "relative", fontFamily: "sans-serif", overflow: "hidden",
         }}
       >
         {/* Ambient glow accents */}
@@ -152,7 +155,7 @@ export async function GET(request: Request) {
         </div>
 
         {/* Execution mode / archetype badge */}
-        <div style={{ display: "flex", marginTop: 36, zIndex: 1 }}>
+        <div style={{ display: "flex", marginTop: 28, zIndex: 1 }}>
           <span style={{
             fontSize: 18, color: COLORS.purple, letterSpacing: 1.5, textTransform: "uppercase",
             padding: "10px 22px", borderRadius: 999, border: `2px solid ${COLORS.border}`, background: "rgba(139,123,232,0.08)",
@@ -163,8 +166,8 @@ export async function GET(request: Request) {
 
         {/* Story */}
         <div style={{ display: "flex", marginTop: 28, zIndex: 1 }}>
-          <span style={{ color: COLORS.text, fontSize: 40, lineHeight: 1.4, fontWeight: 500 }}>
-            {data.story}
+          <span style={{ color: COLORS.text, fontSize: 34, lineHeight: 1.35, fontWeight: 500 }}>
+            {data.story.length > 260 ? `${data.story.slice(0, 257).trimEnd()}…` : data.story}
           </span>
         </div>
 
@@ -172,7 +175,7 @@ export async function GET(request: Request) {
              the founder's core feedback was that a bare two-line chart is
              not readable on its own. All three additions below address that
              directly, not just a nicer-looking line. ── */}
-        <div style={{ display: "flex", flexDirection: "column", marginTop: 40, zIndex: 1 }}>
+        <div style={{ display: "flex", flexDirection: "column", marginTop: 28, zIndex: 1 }}>
           {/* Legend */}
           <div style={{ display: "flex", gap: 28, marginBottom: 10 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -187,26 +190,27 @@ export async function GET(request: Request) {
             )}
           </div>
 
-          {/* Chart with y-axis min/max reference */}
-          <div style={{ display: "flex", gap: 12 }}>
-            <div style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", height: chart.svgHeight }}>
-              <span style={{ color: COLORS.text3, fontSize: 15 }}>{Math.round(chart.max)}</span>
-              <span style={{ color: COLORS.text3, fontSize: 15 }}>{Math.round(chart.min)}</span>
-            </div>
-            <div style={{ display: "flex", position: "relative" }}>
+          {/* Chart: y labels and day labels are positioned from the SAME y()/x()
+              functions that draw the lines, so axis and data can never drift
+              apart (they used to sit in separate flex boxes and misaligned). */}
+          <div style={{ display: "flex", position: "relative", width: chart.svgWidth + 48, height: chart.svgHeight + 28 }}>
+            {chart.yTicks.map((t, i) => (
+              <span key={i} style={{ position: "absolute", left: 0, top: t.y - 9, color: COLORS.text3, fontSize: 15, width: 36 }}>{Math.round(t.v)}</span>
+            ))}
+            <div style={{ display: "flex", position: "absolute", left: 44, top: 0 }}>
               <svg width={chart.svgWidth} height={chart.svgHeight}>
+                {chart.yTicks.map((t, i) => (
+                  <line key={i} x1={0} y1={t.y} x2={chart.svgWidth} y2={t.y} stroke={COLORS.border} strokeWidth={1} />
+                ))}
                 {chart.ghostPts && (
                   <polyline points={chart.ghostPts} fill="none" stroke={COLORS.text3} strokeWidth={3} strokeDasharray="7 5" />
                 )}
                 <polyline points={chart.realPts} fill="none" stroke={COLORS.accent} strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" />
+                {chart.lastPt && <circle cx={chart.lastPt.x} cy={chart.lastPt.y} r={7} fill={COLORS.accent} />}
               </svg>
             </div>
-          </div>
-
-          {/* X-axis day labels */}
-          <div style={{ display: "flex", justifyContent: "space-between", paddingLeft: 42, marginTop: 6 }}>
             {chart.dayLabels.map((d, i) => (
-              <span key={i} style={{ color: COLORS.text3, fontSize: 14 }}>{d}</span>
+              <span key={i} style={{ position: "absolute", left: 44 + chart.xs[i] - 14, top: chart.svgHeight + 6, color: COLORS.text3, fontSize: 14, width: 28 }}>{d}</span>
             ))}
           </div>
 
@@ -221,7 +225,7 @@ export async function GET(request: Request) {
         </div>
 
         {/* Metrics row */}
-        <div style={{ display: "flex", gap: 20, marginTop: 40, zIndex: 1 }}>
+        <div style={{ display: "flex", gap: 20, marginTop: 28, zIndex: 1 }}>
           {[
             { label: "Completion", value: `${data.completion_rate}%` },
             { label: "Momentum", value: `${data.momentum_score}` },
@@ -229,7 +233,7 @@ export async function GET(request: Request) {
           ].map((m) => (
             <div key={m.label} style={{
               display: "flex", flexDirection: "column", alignItems: "center", flex: 1,
-              background: "rgba(255,255,255,0.04)", border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: "20px 12px",
+              background: "rgba(255,255,255,0.04)", border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: "14px 12px",
             }}>
               <span style={{ color: COLORS.text, fontSize: 40, fontWeight: 700 }}>{m.value}</span>
               <span style={{ color: COLORS.text3, fontSize: 16, marginTop: 4 }}>{m.label}</span>
@@ -242,8 +246,8 @@ export async function GET(request: Request) {
             was (ACTION_TYPE_WEIGHT). Static equivalent of
             components/DayActivityCanvas.tsx — see buildDayActivityChart's
             comment for why this can't just reuse that component. */}
-        <div style={{ display: "flex", flexDirection: "column", marginTop: 36, zIndex: 1 }}>
-          <span style={{ color: COLORS.text2, fontSize: 18, fontWeight: 600, marginBottom: 14 }}>This week, by day</span>
+        <div style={{ display: "flex", flexDirection: "column", marginTop: 26, zIndex: 1 }}>
+          <span style={{ color: COLORS.text2, fontSize: 18, fontWeight: 600, marginBottom: 12 }}>This week, by day</span>
           <div style={{ display: "flex", gap: dayChart.colGap }}>
             {data.day_activity.map((day) => {
               const isToday = day.date === dayChart.todayStr;
@@ -294,7 +298,7 @@ export async function GET(request: Request) {
         {/* Footer */}
         <div style={{
           display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "auto",
-          paddingTop: 28, borderTop: `1px solid ${COLORS.border}`, zIndex: 1,
+          paddingTop: 20, borderTop: `1px solid ${COLORS.border}`, zIndex: 1,
         }}>
           <span style={{ color: COLORS.text3, fontSize: 18 }}>buildmind.live</span>
           <span style={{ color: COLORS.text3, fontSize: 18 }}>#BuildInPublic</span>
