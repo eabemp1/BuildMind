@@ -11,6 +11,7 @@
  * Triggered by the Evening Check when Momentum Score has decayed
  * for 3+ consecutive days.
  */
+import { gateAIUsage } from "@/app/api/ai/_usageGate";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -67,6 +68,9 @@ export async function POST(req: Request) {
   if (userPlan !== "builder") {
     return NextResponse.json({ ok: false, error: "Builder plan required", upgradeUrl: "/upgrade" }, { status: 403 });
   }
+
+  const blocked = await gateAIUsage(user.id, "general");
+  if (blocked) return blocked;
 
   const { trigger, projectId } = await req.json().catch(() => ({ trigger: undefined, projectId: undefined })) as {
     trigger?: "risk";
