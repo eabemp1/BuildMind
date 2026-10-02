@@ -18,6 +18,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getEffectivePlan } from "@/lib/server/plan";
 import { buildFounderIntelligenceReport, standingTrendToCSV, getIntelligenceHistory } from "@/lib/server/founderIntelligenceExport";
 
 export const runtime = "nodejs";
@@ -27,6 +28,15 @@ export async function GET(req: Request) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+
+  // Founder Execution Intelligence report is a Builder feature (trial counts as Builder).
+  const plan = await getEffectivePlan(user.id).catch(() => "free" as const);
+  if (plan !== "builder") {
+    return NextResponse.json(
+      { ok: false, error: "The Founder Execution Intelligence report is part of the Builder plan.", upgradeUrl: "/upgrade" },
+      { status: 403 },
+    );
+  }
 
   const url = new URL(req.url);
   let projectId = url.searchParams.get("projectId") || "";
