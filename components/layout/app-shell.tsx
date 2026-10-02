@@ -193,8 +193,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         )}
 
         {/* Page */}
-        <main className="flex-1 overflow-y-auto px-3 py-5 sm:px-8 sm:py-8">
-          <div style={{ maxWidth: 1120, margin: "0 auto", width: "100%" }}>{children}</div>
+        {/* min-w-0 + overflow-x-hidden: a flex child cannot shrink below its widest
+            content by default, so one wide card made the whole page scroll
+            sideways on phones (Today). */}
+        <main className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-5 sm:px-8 sm:py-8">
+          <div style={{ maxWidth: 1120, margin: "0 auto", width: "100%", minWidth: 0 }}>{children}</div>
         </main>
       </div>
     </div>
