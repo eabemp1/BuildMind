@@ -31,6 +31,7 @@
  *   event: error    — { message }
  */
 
+import { gateAIUsage } from "@/app/api/ai/_usageGate";
 import { NextResponse } from "next/server";
 import { groqJSON, hasAdminEnv } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -122,6 +123,13 @@ export async function POST(request: Request) {
           return;
         }
         const userId = userResult.user.id;
+        const blocked = await gateAIUsage(userId, "general");
+        if (blocked) {
+          const b = await blocked.json().catch(() => ({ error: "AI usage limit reached" }));
+          controller.enqueue(encoder.encode(sse("error", { message: b.error ?? "AI usage limit reached", upgradeUrl: "/upgrade" })));
+          controller.close();
+          return;
+        }
         const input = body as InsightInput;
         const stage = input.stage ?? "Idea";
 
@@ -232,4 +240,4 @@ No preamble. No markdown. Only the JSON array.`;
       Connection: "keep-alive",
     },
   });
-}
+                                                            }
