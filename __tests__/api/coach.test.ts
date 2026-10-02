@@ -269,25 +269,26 @@ describe("POST /api/ai/coach — free plan rate limiting", () => {
     vi.clearAllMocks();
   });
 
-  it("returns 429 when the usage RPC signals limit reached", async () => {
-    // Simulate the RPC returning -1 (limit reached), then the enforceCoachUsage
-    // throwing the LIMIT_REACHED error.
-    const { createAdminClient } = await import("../../lib/supabase/admin");
-    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        select: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockReturnThis(),
-        single: vi.fn().mockResolvedValue({ data: null, error: null }),
-        insert: vi.fn().mockResolvedValue({ error: null }),
-        update: vi.fn().mockReturnThis(),
-      }),
-      rpc: vi.fn().mockResolvedValue({ data: -1, error: null }),
-    });
+  it("returns 429 when the shared usage counter says the daily limit is reached", async () => {
+    // The free plan no longer has a Coach-only counter: it spends through
+    // enforceAndTrackAIUsage like every other AI feature.
+    mockEnforceAndTrackAIUsage.mockRejectedValueOnce(new Error("Daily AI limit reached for AI Coach and other AI features (3 calls/day on the free plan)."));
     mockGetRouteUser.mockResolvedValue({ userId: "user-abc", plan: "free" });
     mockHasAdminEnv.mockReturnValue(true);
 
     const res = await POST(makeRequest(VALID_BODY));
     expect(res.status).toBe(429);
+    expect(mockEnforceAndTrackAIUsage).toHaveBeenCalledWith("user-abc", "free");
+  });
+
+  it("returns 429 with a monthly message when the monthly cap is the blocker", async () => {
+    mockEnforceAndTrackAIUsage.mockRejectedValueOnce(new Error("Monthly AI limit reached (30 calls). Upgrade to Builder for far more AI."));
+    mockGetRouteUser.mockResolvedValue({ userId: "user-abc", plan: "free" });
+    mockHasAdminEnv.mockReturnValue(true);
+
+    const res = await POST(makeRequest(VALID_BODY));
+    expect(res.status).toBe(429);
+    expect(JSON.stringify(await res.json())).toMatch(/this month/i);
   });
 });
 
