@@ -23,6 +23,7 @@
 
 import { PLAN_LIMITS, TRIAL_DURATION_DAYS } from "@/lib/plan";
 import { PLAN_DAILY_LIMITS, CORE_DAILY_LIMITS } from "@/lib/aiLimits";
+import { buildLinkTagInstruction } from "@/lib/coachNavigation";
 
 export interface AppKnowledgeSection {
   id: string;
@@ -56,7 +57,7 @@ export const APP_SECTIONS: AppKnowledgeSection[] = [
     body: `Two plans: Free ($0) and Builder ($39/mo). New accounts get a ${TRIAL_DURATION_DAYS}-day trial with Builder-level access, no card needed; after day ${TRIAL_DURATION_DAYS} they fall back to Free until they pay.
 Free: ${free.maxProjects} project, ${PLAN_DAILY_LIMITS.free} general AI calls/day (AI Coach is capped at 3 messages/day), ${CORE_DAILY_LIMITS.free} daily-action generations/day, morning briefing ${free.morningBriefingDaysPerWeek} days/week, ${free.historyDays}-day history, one Break My Startup preview, first Ventures blueprint free, momentum score at level 1.
 Builder: unlimited projects, history and Coach messages (fair-use daily ceiling), daily briefing, full momentum with decay warnings, explainable rationale, cognitive-load check-in, HITL overrides, evening nudges, recovery mode, founder memory, weekly report, Agent Workforce, full Ventures/CoFounder blueprints, full Break My Startup analysis.
-One-tap Coach actions (open tasks, signals, momentum, etc.) never use up the daily message allowance.`,
+Every Coach interaction counts toward the daily allowance — coached replies AND one-tap actions (open tasks, signals, momentum, etc.). Opening a page ("take me to Progress") is navigation and is free. The Founder Execution Intelligence report/export in Founder Mirror is Builder-only.`,
   },
   {
     id: "today",
@@ -116,7 +117,7 @@ Project detail tabs: Milestones (expandable cards with tasks, difficulty/estimat
     id: "coach",
     title: "What the AI Coach itself can do",
     keywords: ["coach", "what can you do", "export", "download", "json", "execution log", "backlog", "open tasks", "help", "how do i use"],
-    body: `Typed phrases or the chips run instantly with no AI cost: "show my open tasks" (optionally "on the X milestone"), signals, decision reasoning, beliefs, momentum, milestones, execution log, and "export my intelligence data" (downloadable JSON). Free plan: 3 coached replies/day; chip actions are unlimited. Never invent task lists, counts or file contents — point to the exact phrase.`,
+    body: `Typed phrases or the chips run instantly: "show my open tasks" (optionally "on the X milestone"), signals, decision reasoning, beliefs, momentum, milestones, execution log, and "export my intelligence data" (downloadable JSON, Builder only). Free plan: 3 Coach interactions/day in total (replies and actions share it). Never invent task lists, counts or file contents — offer the matching button instead of telling them to type a phrase.`,
   },
 ];
 
@@ -137,5 +138,5 @@ export function buildAppKnowledgeBlock(message: string, plan: "free" | "builder"
   const detail = sections.length
     ? "\n\nRELEVANT APP DETAIL:\n" + sections.map((s) => `[${s.title}]\n${s.body}`).join("\n\n")
     : "";
-  return `\n\n${APP_OVERVIEW}\nThis founder is currently on the ${plan === "builder" ? "Builder (or trial)" : "Free"} plan.${detail}`;
+  return `\n\n${APP_OVERVIEW}\nThis founder is currently on the ${plan === "builder" ? "Builder (or trial)" : "Free"} plan.${detail}${buildLinkTagInstruction()}`;
 }
