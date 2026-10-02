@@ -150,6 +150,23 @@ export default function TodayCommandCenter({ actionTitle, timeText, done, streak
 
   return (
     <section aria-label="Today command center" style={{ ...card, margin: "16px 0 4px", display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* Completion moment — the payoff for finishing, from real numbers. */}
+      {done && (
+        <div role="status" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", padding: "10px 12px", borderRadius: 10, background: "var(--bm-green-dim, var(--bm-bg3))", border: "1px solid var(--bm-green, var(--bm-border))", minWidth: 0 }}>
+          <span style={{ fontSize: 18 }}>✅</span>
+          <div style={{ flex: "1 1 180px", minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--bm-text)" }}>Done for today</div>
+            <div style={{ ...mono, fontSize: 10, color: "var(--bm-text2)", marginTop: 2, lineHeight: 1.6 }}>
+              {[
+                `${snap?.streak ?? streak}-day streak`,
+                snap ? `${snap.activeDaysThisWeek}/${snap.daysElapsedThisWeek} days this week` : null,
+                focus.minutesToday > 0 ? `${focus.minutesToday}m focused` : null,
+              ].filter(Boolean).join(" · ")}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header: date + day arc + palette hint */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", minWidth: 0 }}>
         <div style={{ minWidth: 0 }}>
@@ -274,4 +291,4 @@ export default function TodayCommandCenter({ actionTitle, timeText, done, streak
 
 function btn(bg: string, color: string): React.CSSProperties {
   return { fontSize: 12, fontWeight: 600, padding: "7px 12px", borderRadius: 8, cursor: "pointer", color, background: bg, border: "1px solid var(--bm-border)", fontFamily: "inherit" };
-}
+    }
