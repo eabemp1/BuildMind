@@ -19,6 +19,7 @@
  * internal cron call with CRON_SECRET).
  */
 
+import { AIUsageUnavailableError } from "@/lib/server/aiUsageStore";
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/data/projects";
 import { groqChat, groqJSON, groqReasoningJSON, hasAdminEnv, enforceAndTrackAIUsage } from "@/app/api/ai/_utils";
@@ -189,6 +190,10 @@ export async function POST(req: NextRequest) {
     const msg = usageErr instanceof Error ? usageErr.message : String(usageErr);
     if (msg.toLowerCase().includes("limit reached")) {
       return NextResponse.json({ ok: false, error: msg, upgradeUrl: "/upgrade" }, { status: 429 });
+    }
+    // Counters unreachable: never serve uncounted AI to a free user (thrown only for free).
+    if (usageErr instanceof AIUsageUnavailableError) {
+      return NextResponse.json({ ok: false, success: false, error: usageErr.message }, { status: 503 });
     }
   }
 
