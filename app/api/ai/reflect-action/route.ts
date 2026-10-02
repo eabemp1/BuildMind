@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { AIUsageUnavailableError } from "@/lib/server/aiUsageStore";
 import { groqJSON, hasAdminEnv, enforceAndTrackAIUsage } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
@@ -211,6 +212,10 @@ export async function POST(request: Request) {
         { success: false, error: msg, upgradeUrl: "/upgrade" },
         { status: 429 },
       );
+    }
+    // Counters unreachable: never serve uncounted AI to a free user (thrown only for free).
+    if (usageErr instanceof AIUsageUnavailableError) {
+      return NextResponse.json({ ok: false, success: false, error: usageErr.message }, { status: 503 });
     }
   }
 
@@ -599,4 +604,4 @@ ${projectContext}`,
     const message = error instanceof Error ? error.message : "Reflect action failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+            }
