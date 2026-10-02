@@ -582,7 +582,7 @@ function FounderStateScreen({
   }
 
   return (
-    <OnboardingShell step={3} maxWidth={560}>
+    <OnboardingShell step={2} maxWidth={560}>
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
@@ -908,7 +908,7 @@ function StrikeScreen({ idea, result, onContinue, onBack }: {
   ];
 
   return (
-    <OnboardingShell step={2} maxWidth={560}>
+    <OnboardingShell step={3} maxWidth={560}>
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
@@ -1683,41 +1683,52 @@ function OnboardingInner() {
     trackFunnelStep("identity_input_complete");
   };
 
+  // Break My Startup now runs AFTER the Founder State question. The analysis
+  // starts the moment the idea is submitted and computes in the background
+  // while the founder answers, so by the time the result screen opens it is
+  // usually ready (no added wait). strikeRequestId drops a stale response if
+  // the founder goes back and resubmits a different idea.
+  const strikeRequestId = useRef(0);
+
   const handleIdeaSubmit = async (submittedIdea: string, submittedStage?: string) => {
     setIdea(submittedIdea);
     if (submittedStage) setStartupStage(submittedStage);
     setError(null);
+    setStrikeResult(null);
+    setScreen("founder_state");
+    trackFunnelStep("reflexion_strike_started");
 
+    const requestId = ++strikeRequestId.current;
     try {
-      trackFunnelStep("reflexion_strike_started");
       const res = await fetch("/api/ai/reflexion-strike", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ startupDescription: submittedIdea, stage: startupStage }),
+        // FIX: used the previous render's stage; the just-submitted one wins.
+        body: JSON.stringify({ startupDescription: submittedIdea, stage: submittedStage ?? startupStage }),
       });
       const data = await res.json();
+      if (requestId !== strikeRequestId.current) return;
       if (data.ok && data.data) {
         setStrikeResult(data.data);
-        setScreen("strike");
         trackFunnelStep("reflexion_strike_shown");
       } else {
         throw new Error("Strike failed");
       }
     } catch {
+      if (requestId !== strikeRequestId.current) return;
       // Graceful fallback — never show an error to a new user
       setStrikeResult({
         marketGap: "The crowded part of this market is generic solutions. The gap nobody has claimed yet is serving your exact type of user with deep specificity.",
         firstTask: "Find one person who has this problem. Send them a message in the next 30 minutes asking what they currently do about it.",
         rationale: "Because talking to one real person beats a week of planning every time.",
       });
-      setScreen("strike");
       trackFunnelStep("reflexion_strike_fallback");
     }
   };
 
   const handleStrikeContinue = () => {
-    setScreen("founder_state");
     trackFunnelStep("reflexion_strike_accepted");
+    setScreen("integrations");
   };
 
   async function saveOnboarding(options?: { worries?: string[]; avoidanceNote?: string }) {
@@ -1785,7 +1796,7 @@ function OnboardingInner() {
       router.push("/today?first_session=true");
     } catch {
       setError("Something went wrong saving your project. Please try again.");
-      setScreen("founder_state");
+      setScreen("integrations");
     }
   }
 
@@ -1802,7 +1813,7 @@ function OnboardingInner() {
     // screens or PromiseScreen, which are separate orphaned paths from an
     // older, longer onboarding design and were not asked for) —
     // Founder State now leads to Integrations, which leads straight to save.
-    setScreen("integrations");
+    setScreen("strike");
   };
 
   const handleDepthComplete = (answers: DepthAnswers) => {
@@ -1882,14 +1893,26 @@ function OnboardingInner() {
       {screen === "input" && (
         <InputScreen key="input" onSubmit={handleIdeaSubmit} onBack={() => setScreen("identity_input")} />
       )}
+      {screen === "strike" && !strikeResult && (
+        <OnboardingShell key="strike_loading" step={3} maxWidth={560}>
+          <div style={{ textAlign: "center", padding: "56px 0" }}>
+            <p style={{ fontFamily: "'Syne', sans-serif", fontSize: 18, fontWeight: 700, color: "var(--bm-text)", marginBottom: 8 }}>
+              Stress-testing your idea…
+            </p>
+            <p style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.6 }}>
+              Break My Startup is looking for the gap nobody has claimed. This takes a few seconds.
+            </p>
+          </div>
+        </OnboardingShell>
+      )}
       {screen === "strike" && strikeResult && (
-        <StrikeScreen key="strike" idea={idea} result={strikeResult} onContinue={handleStrikeContinue} onBack={() => setScreen("input")} />
+        <StrikeScreen key="strike" idea={idea} result={strikeResult} onContinue={handleStrikeContinue} onBack={() => setScreen("founder_state")} />
       )}
       {screen === "founder_state" && (
         <FounderStateScreen
           key="founder_state"
           onSubmit={handleFounderState}
-          onBack={() => setScreen("strike")}
+          onBack={() => setScreen("input")}
         />
       )}
       {screen === "depth" && (
