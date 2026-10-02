@@ -10,6 +10,7 @@ import { createClient } from "@/lib/supabase/client";
 import { TrialBanner } from "@/components/TrialBanner";
 import { storage } from "@/lib/storage";
 import { fetchBehaviorState } from "@/lib/userBehaviorState";
+import CommandPalette from "@/components/CommandPalette";
 
 // REC 4.2: Persistent daily loop status bar
 function DailyLoopStatusBar() {
@@ -196,6 +197,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         {/* min-w-0 + overflow-x-hidden: a flex child cannot shrink below its widest
             content by default, so one wide card made the whole page scroll
             sideways on phones (Today). */}
+        <CommandPalette />
         <main className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-5 sm:px-8 sm:py-8">
           <div style={{ maxWidth: 1120, margin: "0 auto", width: "100%", minWidth: 0 }}>{children}</div>
         </main>
