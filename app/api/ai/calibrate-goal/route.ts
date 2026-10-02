@@ -7,6 +7,7 @@
  * Body: { project_id, stage, execution_score, streak, startup_summary? }
  * Returns: { ok, goal_text, target_score, target_tasks }
  */
+import { gateAIUsage } from "@/app/api/ai/_usageGate";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { callModelJSON } from "@/lib/ai-providers";
@@ -15,6 +16,8 @@ export async function POST(req: Request) {
   const supabase = await createClient();
   const { data: { user }, error: authErr } = await supabase.auth.getUser();
   if (authErr || !user) return NextResponse.json({ ok: false }, { status: 401 });
+  const blocked = await gateAIUsage(user.id, "general");
+  if (blocked) return blocked;
 
   const body = await req.json().catch(() => ({})) as {
     stage?: string;
