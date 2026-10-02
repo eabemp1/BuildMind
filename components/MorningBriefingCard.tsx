@@ -21,6 +21,8 @@ type _BriefingGap = BriefingGap;
 import { usePlan } from "@/lib/usePlan";
 import { AIErrorBoundary } from "./AIErrorBoundary";
 
+import BriefingStats from "./BriefingStats";
+
 function MorningBriefingCardInner({ initialBriefing }: { initialBriefing?: MorningBriefing | null }) {
   const [briefing, setBriefing] = useState<MorningBriefing | null>(initialBriefing ?? null);
   const [loading, setLoading] = useState(initialBriefing === undefined);
@@ -53,6 +55,9 @@ function MorningBriefingCardInner({ initialBriefing }: { initialBriefing?: Morni
           padding: "14px 16px",
           marginBottom: 16,
           position: "relative",
+          minWidth: 0,
+          maxWidth: "100%",
+          overflow: "hidden",
         }}
       >
         <button
@@ -124,6 +129,8 @@ function MorningBriefingCardInner({ initialBriefing }: { initialBriefing?: Morni
             )}
           </div>
         )}
+
+        <BriefingStats />
       </motion.div>
     </AnimatePresence>
   );
@@ -135,4 +142,4 @@ export default function MorningBriefingCard({ initialBriefing }: { initialBriefi
       <MorningBriefingCardInner initialBriefing={initialBriefing} />
     </AIErrorBoundary>
   );
-                         }
+}
