@@ -297,7 +297,9 @@ function mayBeWrongAbout(state: FounderIntelligenceState, accuracy: Intelligence
     items.push(`Possible contradiction it hasn't resolved: ${contradiction}`);
   }
   if (accuracy.sample_size >= 5 && accuracy.average_match_score < 0.4) {
-    items.push("Recent recommendations haven't matched what you actually did — its model of what you need next may be stale.");
+    // Softened: the score is word-overlap, so a low value more often means
+    // "described differently" than "predicted badly".
+    items.push("Its predicted-evidence wording rarely overlaps your reflections, so its model of what you need next may be stale — or you may just be phrasing things differently. If the tasks feel off-target, use Correct this.");
   }
   // Only still-meaningfully-active corrections (same decay used to weight
   // beliefs above) — a correction from months ago that's fully decayed
@@ -316,9 +318,13 @@ function mayBeWrongAbout(state: FounderIntelligenceState, accuracy: Intelligence
 
 function accuracySummary(accuracy: IntelligenceAccuracy): string {
   if (!accuracy.sample_size) return "Not enough resolved recommendations yet to self-score accuracy.";
+  // HONESTY FIX: this number is a keyword-overlap between the predicted
+  // evidence and your reflection text (plus small completion/evidence
+  // bonuses). Different wording scores low even when the advice was right, so
+  // it must not be stated as "matched what you did X% of the time".
   const pct = Math.round(accuracy.average_match_score * 100);
-  const trendText = accuracy.trend === "up" ? "and improving" : accuracy.trend === "down" ? "but slipping" : accuracy.trend === "flat" ? "and holding steady" : "";
-  return `Its recommendations have matched what you actually did about ${pct}% of the time over the last ${accuracy.sample_size} resolved recommendations${trendText ? `, ${trendText}` : "."}`;
+  const trendText = accuracy.trend === "up" ? " (improving)" : accuracy.trend === "down" ? " (slipping)" : "";
+  return `Rough wording-overlap score between what each recommendation predicted and what you wrote afterwards: ${pct}% across ${accuracy.sample_size} resolved recommendations${trendText}. This is a diagnostic, not a measure of whether the advice was right — your completions and the evidence you logged are the real signal.`;
 }
 
 function toMirrorSignals(state: FounderIntelligenceState, asOf: Date): MirrorSignal[] {
@@ -390,4 +396,4 @@ export function buildFounderMirror(state: FounderIntelligenceState, accuracy: In
     },
     generated_at: state.generated_at,
   };
-      }
+       }
