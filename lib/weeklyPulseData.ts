@@ -348,10 +348,15 @@ export async function getWeeklyPulseData(
     });
   })();
   const activityByDate = new Map<string, DayActivityEntry[]>();
-  for (const t of weekTasks as Array<{ outcome?: string; action_shown?: string; action_type?: string; created_at?: string }>) {
+  // FIX: bars were keyed to created_at (the day the recommendation was
+  // GENERATED) and only read the learning log, so completions landed on the
+  // wrong day or not at all and the "by day" canvas rendered empty even
+  // while the Tasks counter incremented. Now keyed to the completion day
+  // (outcome_recorded_at), same rule as activeDays above.
+  for (const t of weekTasks as Array<{ outcome?: string; action_shown?: string; action_type?: string; created_at?: string; outcome_recorded_at?: string | null }>) {
     if (t.outcome !== "completed") continue;
-    const date = (t.created_at ?? "").slice(0, 10);
-    if (!date) continue;
+    const date = (t.outcome_recorded_at ?? t.created_at ?? "").slice(0, 10);
+    if (!date || date < weekStart) continue;
     const type = (t.action_type as ActionType) ?? "other";
     const entry: DayActivityEntry = {
       title: actionCategoryLabel(t.action_shown ?? "Completed action"),
@@ -360,6 +365,14 @@ export async function getWeeklyPulseData(
     };
     if (!activityByDate.has(date)) activityByDate.set(date, []);
     activityByDate.get(date)!.push(entry);
+  }
+  // action_logs (written by task-complete on every completion) backs up the
+  // learning log: a day with a logged completion must never render empty.
+  for (const a of actionLogs as Array<{ outcome?: string | null; created_at?: string | null }>) {
+    if (a.outcome !== "completed") continue;
+    const date = (a.created_at ?? "").slice(0, 10);
+    if (!date || date < weekStart || activityByDate.has(date)) continue;
+    activityByDate.set(date, [{ title: "Completed action", type: "other", weight: ACTION_TYPE_WEIGHT.other }]);
   }
   const dayActivity: DayActivity[] = weekDates.map((date, i) => {
     const activities = activityByDate.get(date) ?? [];
@@ -484,6 +497,10 @@ export async function getWeeklyPulseData(
       : null;
     return { date: entry.date, real: entry.score, ghost };
   });
+  // FIX: the chart's last point (score_history) and the headline Momentum
+  // tile (scorecard) came from different reads and disagreed (30 vs 31 on a
+  // real share card). The newest point now equals the headline value.
+  if (sparkline.length > 0) sparkline[sparkline.length - 1].real = momentumScore;
 
   const milestonesWithPacing = milestones.filter((m) => m.risk !== "unknown").length;
   const isQuietWeek = !hasAnyGradableSignal({
@@ -571,4 +588,4 @@ Write a 2-3 sentence story-style summary of the founder's week. Brief, specific,
     day_of_week: dayOfWeek, confidence_by_outcome: confidenceByOutcome, confidence_index: confidenceIndex, top_override_reason: topOverrideReason,
     weekly_goal: weeklyGoal, sparkline, grades, story, generated_at: new Date().toISOString(),
   };
-        }
+      }
