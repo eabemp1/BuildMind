@@ -274,6 +274,7 @@ export const FEATURE_GATES: Record<string, Plan> = {
   founderMemory:              "builder",
   weeklyReport:               "builder",  // alias used in existing route
   aiCoach:                    "builder",
+  intelligenceReport:         "builder",  // Founder Mirror → Founder Execution Intelligence report/export (+ Coach export action)
   startupKit:                 "builder",  // page is flagged off (lib/features.ts); gate matches its own canAccess() check
   
   // ── CoFounder Core (Month 2/3, currently builder-only, moving to operator) ──
@@ -611,4 +612,4 @@ export async function fetchAndSyncStoredPlanFromBillingStatus(): Promise<Plan> {
   } catch {
     return getPlan();
   }
-}
+      }
