@@ -13,6 +13,7 @@
  * Returns: { what_tried, what_happened, what_learned, blocker, outcome }
  */
 
+import { gateAIUsage } from "@/app/api/ai/_usageGate";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { callModelJSON } from "@/lib/ai-providers";
@@ -46,6 +47,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  const blocked = await gateAIUsage(user.id, "core");
+  if (blocked) return blocked;
 
   try {
     const formData = await req.formData();
