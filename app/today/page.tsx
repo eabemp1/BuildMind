@@ -2140,6 +2140,14 @@ function TodayContent() {
             )}
           </div>
 
+          {/* Focus block, directly under the task it serves */}
+          <TodayCommandCenter
+            actionTitle={actionData?.action ? sanitizeOutput(actionData.action) : null}
+            timeText={actionData?.time ?? null}
+            done={done}
+            streak={streak}
+          />
+
           {!done && !actionLoading && (
             <button
               onClick={() => void handlePreTaskReplace()}
@@ -2267,13 +2275,6 @@ function TodayContent() {
         </div>
       </motion.div>
 
-      {/* Focus block — right under the task it serves. */}
-      <TodayCommandCenter
-        actionTitle={actionData?.action ? sanitizeOutput(actionData.action) : null}
-        timeText={actionData?.time ?? null}
-        done={done}
-        streak={streak}
-      />
       </>
       )}
 
@@ -2822,4 +2823,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-      }
+    }
