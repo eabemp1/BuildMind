@@ -42,10 +42,8 @@ export interface TodayCommandCenterProps {
   streak: number;
 }
 
-const WEEKDAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
+const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const STORAGE_KEY = "bm_focus_state_v1";
-const RING_R = 34;
-const RING_C = 2 * Math.PI * RING_R;
 
 export default function TodayCommandCenter({ actionTitle, timeText, done, streak }: TodayCommandCenterProps) {
   const suggested = useMemo(() => parseSuggestedMinutes(timeText), [timeText]);
@@ -142,153 +140,172 @@ export default function TodayCommandCenter({ actionTitle, timeText, done, streak
     momentumDelta: snap?.calibrating ? null : snap?.momentumDelta ?? null, suggestedMinutes: suggested,
   });
 
-  const card: React.CSSProperties = {
-    background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 14,
-    padding: "14px 14px 12px", minWidth: 0, boxSizing: "border-box",
-  };
+  const greeting = now.getHours() < 12 ? "Good morning" : now.getHours() < 18 ? "Good afternoon" : "Good evening";
+  const dayLeft = arc.phase === "late" ? "The day is wrapping up" : `${arc.hoursLeft > 0 ? `${arc.hoursLeft}h ` : ""}${arc.minutesLeft}m left in your day`;
+  const streakNow = snap?.streak ?? streak;
+  const display: React.CSSProperties = { fontFamily: "'Syne', sans-serif" };
   const mono: React.CSSProperties = { fontFamily: "'DM Mono', monospace" };
+  const RING = 132;
+  const R = 56;
+  const C = 2 * Math.PI * R;
+  const tile: React.CSSProperties = { background: "var(--bm-bg3)", borderRadius: 12, padding: "10px 12px", minWidth: 0 };
 
   return (
-    <section aria-label="Today command center" style={{ ...card, margin: "16px 0 4px", display: "flex", flexDirection: "column", gap: 14 }}>
-      {/* Completion moment — the payoff for finishing, from real numbers. */}
-      {done && (
-        <div role="status" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", padding: "10px 12px", borderRadius: 10, background: "var(--bm-green-dim, var(--bm-bg3))", border: "1px solid var(--bm-green, var(--bm-border))", minWidth: 0 }}>
-          <span style={{ fontSize: 18 }}>✅</span>
-          <div style={{ flex: "1 1 180px", minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--bm-text)" }}>Done for today</div>
-            <div style={{ ...mono, fontSize: 10, color: "var(--bm-text2)", marginTop: 2, lineHeight: 1.6 }}>
-              {[
-                `${snap?.streak ?? streak}-day streak`,
-                snap ? `${snap.activeDaysThisWeek}/${snap.daysElapsedThisWeek} days this week` : null,
-                focus.minutesToday > 0 ? `${focus.minutesToday}m focused` : null,
-              ].filter(Boolean).join(" · ")}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Header: date + day arc + palette hint */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", minWidth: 0 }}>
+    <section
+      aria-label="Today command center"
+      style={{
+        margin: "4px 0 18px", padding: "20px 18px", borderRadius: 20, boxSizing: "border-box", minWidth: 0,
+        background: "linear-gradient(160deg, var(--bm-bg2) 0%, var(--bm-bg) 100%)",
+        border: `1px solid ${running ? "var(--bm-accent-bd)" : "var(--bm-border)"}`,
+        boxShadow: running ? "0 0 0 3px var(--bm-accent-dim)" : "none",
+        display: "flex", flexDirection: "column", gap: 18, transition: "box-shadow .3s, border-color .3s",
+      }}
+    >
+      {/* Greeting + day arc */}
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ ...mono, fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--bm-text4)" }}>
-            {now.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" })}
+          <div style={{ ...display, fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em", color: "var(--bm-text)" }}>
+            {done ? "Done for today" : greeting}
           </div>
-          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text)", marginTop: 2 }}>
-            {arc.phase === "late" ? "Day is wrapping up" : `${arc.hoursLeft > 0 ? `${arc.hoursLeft}h ` : ""}${arc.minutesLeft}m left in your day`}
+          <div style={{ fontSize: 14, color: "var(--bm-text3)", marginTop: 2 }}>
+            {now.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })} &middot; {dayLeft}
           </div>
         </div>
         <button
           type="button"
           onClick={() => window.dispatchEvent(new Event("bm:open-palette"))}
           aria-label="Open command palette"
-          style={{ ...mono, fontSize: 10, color: "var(--bm-text3)", background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: 8, padding: "6px 9px", cursor: "pointer" }}
+          style={{ ...mono, fontSize: 12, color: "var(--bm-text3)", background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: 10, padding: "8px 12px", cursor: "pointer" }}
         >
-          Jump to… <span style={{ opacity: 0.7 }}>Ctrl K</span>
+          Jump to&hellip; <span style={{ opacity: 0.7 }}>Ctrl K</span>
         </button>
       </div>
 
-      {/* Day arc */}
-      <div aria-hidden style={{ position: "relative", height: 6, borderRadius: 3, background: "var(--bm-border2)" }}>
+      <div aria-hidden style={{ position: "relative", height: 6, borderRadius: 3, background: "var(--bm-border2)", margin: "-6px 0 0" }}>
         <div style={{ position: "absolute", inset: 0, width: `${arc.progress * 100}%`, borderRadius: 3, background: "linear-gradient(90deg, var(--bm-accent-dim), var(--bm-accent))", transition: "width 1s linear" }} />
         <div style={{ position: "absolute", top: -3, left: `calc(${arc.progress * 100}% - 6px)`, width: 12, height: 12, borderRadius: "50%", background: "var(--bm-accent)", boxShadow: "0 0 0 3px var(--bm-accent-dim)" }} />
       </div>
 
-      {/* Week strip */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: 6 }}>
-        {(snap?.weekDays ?? Array.from({ length: 7 }, (_, i) => ({ date: String(i), done: false, isToday: false, isFuture: false }))).map((d, i) => (
-          <div key={d.date} title={d.date} style={{ textAlign: "center", minWidth: 0 }}>
-            <div style={{ ...mono, fontSize: 9, color: d.isToday ? "var(--bm-accent)" : "var(--bm-text4)", marginBottom: 4 }}>{WEEKDAY_LABELS[i]}</div>
-            <div
-              style={{
-                height: 26, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12,
-                background: d.done ? "var(--bm-green)" : d.isToday ? "var(--bm-accent-dim)" : "var(--bm-bg3)",
-                border: `1px solid ${d.isToday ? "var(--bm-accent-bd)" : "var(--bm-border)"}`,
-                color: d.done ? "#fff" : "var(--bm-text4)", opacity: d.isFuture ? 0.45 : 1,
-              }}
-            >
-              {d.done ? "✓" : ""}
-            </div>
-          </div>
-        ))}
-      </div>
+      {/* Completion payoff, real numbers */}
+      {done && (
+        <div role="status" style={{ padding: "12px 14px", borderRadius: 12, background: "var(--bm-green-dim, var(--bm-bg3))", border: "1px solid var(--bm-green, var(--bm-border))", fontSize: 14, color: "var(--bm-text)", lineHeight: 1.55 }}>
+          {[
+            `${streakNow}-day streak`,
+            snap ? `${snap.activeDaysThisWeek} of ${snap.daysElapsedThisWeek} days this week` : null,
+            focus.minutesToday > 0 ? `${focus.minutesToday} minutes focused` : null,
+          ].filter(Boolean).join("  \u00b7  ")}
+        </div>
+      )}
 
-      {/* Focus block */}
-      <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", minWidth: 0 }}>
-        <div style={{ position: "relative", width: 84, height: 84, flex: "0 0 auto" }}>
-          <svg width="84" height="84" viewBox="0 0 84 84" role="img" aria-label={`Focus timer ${formatClock(left)}`}>
-            <circle cx="42" cy="42" r={RING_R} fill="none" stroke="var(--bm-border2)" strokeWidth="6" />
+      {/* Focus block: big timer, one clear primary action */}
+      <div style={{ display: "flex", gap: 22, alignItems: "center", flexWrap: "wrap", minWidth: 0 }}>
+        <div style={{ position: "relative", width: RING, height: RING, flex: "0 0 auto", margin: "0 auto" }}>
+          <svg width={RING} height={RING} viewBox={`0 0 ${RING} ${RING}`} role="img" aria-label={`Focus timer ${formatClock(left)}`}>
+            <circle cx={RING / 2} cy={RING / 2} r={R} fill="none" stroke="var(--bm-border2)" strokeWidth="8" />
             <circle
-              cx="42" cy="42" r={RING_R} fill="none" strokeWidth="6" strokeLinecap="round"
+              cx={RING / 2} cy={RING / 2} r={R} fill="none" strokeWidth="8" strokeLinecap="round"
               stroke={finished ? "var(--bm-green)" : "var(--bm-accent)"}
-              strokeDasharray={RING_C} strokeDashoffset={RING_C * (1 - ringProgress)}
-              transform="rotate(-90 42 42)" style={{ transition: "stroke-dashoffset 0.9s linear" }}
+              strokeDasharray={C} strokeDashoffset={C * (1 - ringProgress)}
+              transform={`rotate(-90 ${RING / 2} ${RING / 2})`} style={{ transition: "stroke-dashoffset 0.9s linear" }}
             />
           </svg>
           <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-            <span style={{ ...mono, fontSize: 15, fontWeight: 600, color: "var(--bm-text)" }}>{done && focus.mode === "idle" ? "✓" : formatClock(left)}</span>
-            <span style={{ ...mono, fontSize: 8, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--bm-text4)" }}>
-              {running ? "focus" : paused ? "paused" : finished ? "done" : "ready"}
+            <span style={{ ...mono, fontSize: 28, fontWeight: 600, color: "var(--bm-text)", lineHeight: 1 }}>{done && focus.mode === "idle" ? "\u2713" : formatClock(left)}</span>
+            <span style={{ fontSize: 12, color: "var(--bm-text3)", marginTop: 4 }}>
+              {running ? "Focusing" : paused ? "Paused" : finished ? "Block done" : done ? "Finished" : "Ready"}
             </span>
           </div>
         </div>
 
-        <div style={{ flex: "1 1 180px", minWidth: 0, display: "flex", flexDirection: "column", gap: 8 }}>
-          <div style={{ fontSize: 12, color: "var(--bm-text2)", lineHeight: 1.45, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
-            {actionTitle ? <>Focus on: <strong style={{ color: "var(--bm-text)" }}>{actionTitle}</strong></> : "Focus blocks unlock once today's action is ready."}
+        <div style={{ flex: "1 1 240px", minWidth: 0, display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ fontSize: 15, color: "var(--bm-text2)", lineHeight: 1.5 }}>
+            {actionTitle
+              ? <><span style={{ color: "var(--bm-text3)" }}>Focus on</span><br /><strong style={{ color: "var(--bm-text)", fontSize: 16 }}>{actionTitle}</strong></>
+              : "Focus blocks unlock once today's action is ready."}
           </div>
 
           {focus.mode === "idle" && !done && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
-              {FOCUS_PRESETS.map((p) => (
-                <button key={p} type="button" onClick={() => { setMinutes(p); setFocus((f) => resetFocus(f, p)); }}
-                  style={{ ...mono, fontSize: 11, padding: "6px 10px", borderRadius: 8, cursor: "pointer", color: minutes === p ? "#fff" : "var(--bm-text2)", background: minutes === p ? "var(--bm-accent)" : "var(--bm-bg3)", border: "1px solid var(--bm-border)" }}>
-                  {p}m
-                </button>
-              ))}
+            <>
+              <div role="group" aria-label="Block length" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {FOCUS_PRESETS.map((p) => (
+                  <button key={p} type="button" aria-pressed={minutes === p} onClick={() => { setMinutes(p); setFocus((f) => resetFocus(f, p)); }}
+                    style={{ ...mono, fontSize: 14, padding: "9px 14px", borderRadius: 10, cursor: "pointer", color: minutes === p ? "#15130a" : "var(--bm-text2)", background: minutes === p ? "var(--bm-accent)" : "var(--bm-bg3)", border: "1px solid var(--bm-border)" }}>
+                    {p}m
+                  </button>
+                ))}
+              </div>
               <button type="button" onClick={start} disabled={!actionTitle}
-                style={{ fontSize: 12, fontWeight: 700, padding: "7px 14px", borderRadius: 8, cursor: actionTitle ? "pointer" : "not-allowed", opacity: actionTitle ? 1 : 0.5, color: "#fff", background: "var(--bm-accent)", border: "none" }}>
-                Start focus
+                style={{ fontSize: 16, fontWeight: 700, padding: "14px 20px", borderRadius: 12, cursor: actionTitle ? "pointer" : "not-allowed", opacity: actionTitle ? 1 : 0.5, color: "#15130a", background: "var(--bm-accent)", border: "none", fontFamily: "inherit", width: "100%" }}>
+                Start {minutes}-minute focus
               </button>
-            </div>
+            </>
           )}
 
           {running && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               <button type="button" onClick={() => setFocus((f) => pauseFocus(f, new Date()))} style={btn("var(--bm-bg3)", "var(--bm-text2)")}>Pause</button>
               <button type="button" onClick={() => setFocus((f) => resetFocus(f, minutes))} style={btn("var(--bm-bg3)", "var(--bm-text3)")}>Stop</button>
             </div>
           )}
           {paused && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              <button type="button" onClick={() => setFocus((f) => resumeFocus(f, new Date()))} style={btn("var(--bm-accent)", "#fff")}>Resume</button>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              <button type="button" onClick={() => setFocus((f) => resumeFocus(f, new Date()))} style={btn("var(--bm-accent)", "#15130a")}>Resume</button>
               <button type="button" onClick={() => setFocus((f) => resetFocus(f, minutes))} style={btn("var(--bm-bg3)", "var(--bm-text3)")}>Stop</button>
             </div>
           )}
           {finished && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              <button type="button" onClick={goToCheckIn} style={btn("var(--bm-green)", "#fff")}>{done ? "Reflect on it" : "Log how it went →"}</button>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              <button type="button" onClick={goToCheckIn} style={btn("var(--bm-green)", "#fff")}>{done ? "Reflect on it" : "Log how it went"}</button>
               <button type="button" onClick={() => setFocus((f) => startFocus({ ...f, mode: "idle" }, minutes, new Date()))} style={btn("var(--bm-bg3)", "var(--bm-text2)")}>Another {minutes}m</button>
             </div>
           )}
           {focus.mode === "idle" && done && (
-            <button type="button" onClick={goToCheckIn} style={{ ...btn("var(--bm-bg3)", "var(--bm-text2)"), alignSelf: "flex-start" }}>Reflect on today →</button>
+            <button type="button" onClick={goToCheckIn} style={{ ...btn("var(--bm-bg3)", "var(--bm-text2)"), alignSelf: "flex-start" }}>Reflect on today</button>
           )}
         </div>
       </div>
 
-      {/* Nudge + today's focus tally */}
-      <div style={{ borderTop: "1px solid var(--bm-border)", paddingTop: 10, display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-        <div style={{ fontSize: 12, color: "var(--bm-text2)", lineHeight: 1.55, flex: "1 1 220px", minWidth: 0 }}>{nudge}</div>
-        {focus.blocksToday > 0 && (
-          <div style={{ ...mono, fontSize: 10, color: "var(--bm-text3)", whiteSpace: "nowrap" }}>
-            {focus.blocksToday} block{focus.blocksToday === 1 ? "" : "s"} · {focus.minutesToday}m focused
-          </div>
-        )}
+      {/* Real numbers, readable at a glance */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
+        <div style={tile}>
+          <div style={{ ...mono, fontSize: 20, fontWeight: 600, color: "var(--bm-text)" }}>{streakNow}</div>
+          <div style={{ fontSize: 12, color: "var(--bm-text3)" }}>day streak</div>
+        </div>
+        <div style={tile}>
+          <div style={{ ...mono, fontSize: 20, fontWeight: 600, color: "var(--bm-text)" }}>{snap ? `${snap.activeDaysThisWeek}/${snap.daysElapsedThisWeek}` : "-"}</div>
+          <div style={{ fontSize: 12, color: "var(--bm-text3)" }}>days this week</div>
+        </div>
+        <div style={tile}>
+          <div style={{ ...mono, fontSize: 20, fontWeight: 600, color: "var(--bm-text)" }}>{focus.minutesToday}m</div>
+          <div style={{ fontSize: 12, color: "var(--bm-text3)" }}>focused today</div>
+        </div>
       </div>
+
+      {/* Week strip with day names */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: 8 }}>
+        {(snap?.weekDays ?? Array.from({ length: 7 }, (_, i) => ({ date: String(i), done: false, isToday: false, isFuture: false }))).map((d, i) => (
+          <div key={d.date} title={d.date} style={{ textAlign: "center", minWidth: 0 }}>
+            <div style={{ fontSize: 12, color: d.isToday ? "var(--bm-accent)" : "var(--bm-text4)", fontWeight: d.isToday ? 700 : 400, marginBottom: 5 }}>{WEEKDAY_LABELS[i]}</div>
+            <div
+              style={{
+                height: 32, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14,
+                background: d.done ? "var(--bm-green)" : d.isToday ? "var(--bm-accent-dim)" : "var(--bm-bg3)",
+                border: `1px solid ${d.isToday ? "var(--bm-accent-bd)" : "var(--bm-border)"}`,
+                color: d.done ? "#fff" : "var(--bm-text4)", opacity: d.isFuture ? 0.45 : 1,
+              }}
+            >
+              {d.done ? "\u2713" : ""}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Nudge */}
+      <div style={{ borderTop: "1px solid var(--bm-border)", paddingTop: 12, fontSize: 14, color: "var(--bm-text2)", lineHeight: 1.6 }}>{nudge}</div>
     </section>
   );
 }
 
 function btn(bg: string, color: string): React.CSSProperties {
-  return { fontSize: 12, fontWeight: 600, padding: "7px 12px", borderRadius: 8, cursor: "pointer", color, background: bg, border: "1px solid var(--bm-border)", fontFamily: "inherit" };
-    }
+  return { fontSize: 14, fontWeight: 600, padding: "11px 18px", borderRadius: 10, cursor: "pointer", color, background: bg, border: "1px solid var(--bm-border)", fontFamily: "inherit" };
+            }
