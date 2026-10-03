@@ -12,6 +12,7 @@ import { usePlan } from "@/lib/usePlan";
 import { storage } from "@/lib/storage";
 import { clearFounderInsight } from "@/lib/founderMemory";
 import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
+import { DEFAULT_NOTIFICATION_PREFS, NOTIFICATION_PREFS_KEY, parseNotificationPrefs, type NotificationPrefs } from "@/lib/notificationPrefs";
 import PushNotificationToggle from "@/components/PushNotificationToggle";
 import AvatarUpload from "@/components/AvatarUpload";
 import { ProfileCompletenessBar } from "@/components/ProfileCompletenessBar";
@@ -502,7 +503,22 @@ function SettingsContent() {
   const [email, setEmail] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [notifs, setNotifs] = useState({ streakReminder: true, weeklyReport: true, coachTips: false });
+  const [notifs, setNotifs] = useState<NotificationPrefs>(DEFAULT_NOTIFICATION_PREFS);
+  // Saved switches: load once, and save every change so the senders (cron jobs) honour them.
+  useEffect(() => {
+    let alive = true;
+    fetchBehaviorState<Record<string, unknown>>([NOTIFICATION_PREFS_KEY]).then((v) => {
+      if (alive && v[NOTIFICATION_PREFS_KEY]) setNotifs(parseNotificationPrefs(v[NOTIFICATION_PREFS_KEY]));
+    });
+    return () => { alive = false; };
+  }, []);
+  const updateNotif = (key: keyof NotificationPrefs, value: boolean) => {
+    setNotifs((n) => {
+      const next = { ...n, [key]: value };
+      void persistBehaviorState({ [NOTIFICATION_PREFS_KEY]: next });
+      return next;
+    });
+  };
   const [clearingMemory, setClearingMemory] = useState(false);
   const [memoryCleared, setMemoryCleared] = useState(false);
   const [aiPersonality, setAiPersonality] = useState<"direct" | "supportive" | "challenger">("direct");
@@ -726,7 +742,7 @@ function SettingsContent() {
                           <div style={{ fontSize: isMobile ? 14 : 13, fontWeight: 500, color: "var(--bm-text2)", marginBottom: 2 }}>{label}</div>
                           <div style={{ fontSize: isMobile ? 12 : 11, color: "var(--bm-text3)", lineHeight: 1.45 }}>{desc}</div>
                         </div>
-                        <Toggle checked={notifs[key as keyof typeof notifs]} onChange={v => setNotifs(n => ({ ...n, [key]: v }))} />
+                        <Toggle checked={notifs[key as keyof typeof notifs]} onChange={v => updateNotif(key as keyof NotificationPrefs, v)} />
                       </div>
                     ))}
                   </div>
@@ -873,4 +889,4 @@ export default function SettingsPage() {
       <SettingsContent />
     </Suspense>
   );
-}
+                     }
