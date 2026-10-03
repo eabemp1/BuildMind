@@ -37,6 +37,7 @@ const ALLOWED_KEYS = new Set([
   // closes that; the calls that still write/read them elsewhere become
   // harmless no-ops (filtered out same as any other unrecognized key).
   "notifications",
+  "notification_prefs",
   "blueprint_uses",
   "competitor_history",
   "reframe_usage",
@@ -106,4 +107,4 @@ export async function PATCH(req: NextRequest) {
   if (dbError) return NextResponse.json({ ok: false, error: dbError.message }, { status: 500 });
 
   return NextResponse.json({ ok: true });
-  }
+}
