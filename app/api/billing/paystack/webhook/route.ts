@@ -131,27 +131,53 @@ export async function POST(request: Request) {
   }
   const eventName = event.event?.toLowerCase() ?? "";
 
-  // ── Idempotency guard ─────────────────────────────────────────────────────
-  // Store the Paystack event reference before processing to prevent double-upgrades
-  // if Paystack fires the same webhook twice (audit §3: billing reconciliation).
-  const idempotencyKey = event.data?.reference ?? (event.data?.id != null ? String(event.data.id) : null);
-  if (idempotencyKey && process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  // Idempotency guard. The key is CLAIMED before processing (so two concurrent
+  // deliveries cannot both upgrade) and RELEASED if processing fails.
+  // Previously the key stayed claimed after a failure, so when Paystack
+  // retried the webhook it was acknowledged as a "duplicate" and a paying
+  // customer was never upgraded (or a cancellation was never applied).
+  // The event name is part of the key because several events share a reference.
+  const rawKey = event.data?.reference ?? (event.data?.id != null ? String(event.data.id) : null);
+  const idempotencyKey = rawKey ? `${eventName}:${rawKey}` : null;
+  const canTrack = Boolean(idempotencyKey && process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+  let claimed = false;
+  if (canTrack && idempotencyKey) {
     const adminSupa = createAdminClient();
-    // Attempt to insert the idempotency key. If it already exists, the INSERT will
-    // fail due to the unique constraint and we return 200 without reprocessing.
     const { error: dupeError } = await adminSupa
       .from("processed_webhooks")
       .insert({ provider: "paystack", event_key: idempotencyKey, event_name: eventName });
     if (dupeError && dupeError.code === "23505") {
-      // 23505 = unique_violation — webhook already processed
+      // unique_violation: this exact event was already handled successfully
       return NextResponse.json({ ok: true, ignored: "duplicate_webhook" });
     }
-    // Other errors (e.g. table not found) should not block webhook processing
-    if (dupeError && dupeError.code !== "42P01") {
+    if (!dupeError) claimed = true;
+    // Other errors (e.g. table missing) must not block processing
+    else if (dupeError.code !== "42P01") {
       console.warn("[paystack-webhook] idempotency insert failed (non-fatal):", dupeError.message);
     }
   }
 
+  try {
+    return await processEvent(event, eventName);
+  } catch (err) {
+    if (claimed && idempotencyKey) {
+      try {
+        await createAdminClient()
+          .from("processed_webhooks")
+          .delete()
+          .eq("provider", "paystack")
+          .eq("event_key", idempotencyKey);
+      } catch (releaseErr) {
+        logError("billing/webhook/release-key", releaseErr, { route: "/api/billing/paystack/webhook" });
+      }
+    }
+    logError("billing/webhook/process", err, { route: "/api/billing/paystack/webhook", eventName });
+    // 500 makes Paystack retry, and the released key lets the retry run.
+    return NextResponse.json({ ok: false, error: "Processing failed; will retry." }, { status: 500 });
+  }
+}
+
+async function processEvent(event: PaystackEvent, eventName: string): Promise<NextResponse> {
   const email = pickEmail(event);
   const userIdFromMetadata = pickUserIdFromMetadata(event);
   const userId = userIdFromMetadata ?? (await resolveUserIdByEmail(email));
@@ -256,4 +282,4 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json({ ok: true, ignored: eventName || "unknown_event" });
-}
+          }
