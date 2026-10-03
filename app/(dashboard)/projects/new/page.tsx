@@ -81,8 +81,14 @@ export default function NewProjectPage() {
       });
       const newId = (created as { id?: string } | null)?.id;
       router.push(newId ? `/projects/${newId}` : "/projects");
-    } catch {
-      setError("Couldn't create the project — try again.");
+    } catch (e: unknown) {
+      const raw = e instanceof Error ? e.message : typeof (e as { message?: unknown })?.message === "string" ? String((e as { message: string }).message) : "";
+      // The database enforces the Free plan's 1-project cap (trigger bm_projects_cap).
+      if (raw.includes("PROJECT_LIMIT_REACHED")) {
+        setError("The Free plan includes 1 project. Upgrade to Builder to add more.");
+      } else {
+        setError("Couldn't create the project. Try again.");
+      }
     }
   }
 
@@ -210,4 +216,4 @@ export default function NewProjectPage() {
       </div>
     </div>
   );
-            }
+                }
