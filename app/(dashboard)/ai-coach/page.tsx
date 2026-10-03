@@ -14,10 +14,8 @@ import { storage } from "@/lib/storage";
 import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
 import AIUsageBadge from "@/components/AIUsageBadge";
 import { ConfidenceBadge } from "@/components/ConfidenceBadge";
-import { Send, Bot, Brain, Sparkles, Zap, User, Clock, ChevronRight } from "lucide-react";
+import { Send, Brain, Sparkles, Zap, ChevronRight, ArrowUpRight, PanelRight, X } from "lucide-react";
 import { withAIErrorBoundary } from "@/components/AIErrorBoundary";
-import { PageHeader } from "@/components/ui/PageHeader";
-import { Card } from "@/components/ui/card";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
 import { CoachActionResultCard } from "@/components/coach/CoachActionResultCard";
 import { matchCoachAction } from "@/lib/coachActions/matcher";
@@ -100,6 +98,10 @@ function ThinkingDots() {
   );
 }
 
+function hasHistoryGlobal(o?: { completedTasks?: number; daysSinceLastReflection?: number | null } | null) {
+  return (o?.completedTasks ?? 0) > 0 || o?.daysSinceLastReflection != null;
+}
+
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
@@ -114,102 +116,99 @@ function useIsMobile() {
 
 function MessageBubble({ msg, onStartAction, onOpen, onRunChip }: { msg: ChatMessage; onStartAction: () => void; onOpen: (href: string) => void; onRunChip: (chip: CoachActionChip) => void }) {
   const isUser = msg.role === "user";
-  // Buttons the Coach attached ([[open:…]] / [[run:…]]) — validated against closed allow-lists.
+  // Buttons the Coach attached ([[open:...]] / [[run:...]]) are validated against closed allow-lists.
   const parsed = !isUser && msg.phase === "done" ? parseReplyLinks(msg.content) : { text: msg.content, links: [] as ReturnType<typeof parseReplyLinks>["links"] };
   const [expanded, setExpanded] = useState(false);
-  const isMobile = useIsMobile();
+  const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+  if (isUser) {
+    return (
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }} className="flex justify-end">
+        <div className="max-w-[85%] rounded-[22px] rounded-br-md border border-[var(--bm-border2)] bg-[var(--bm-bg3)] px-4 py-3 text-[15px] leading-[1.65] text-[var(--bm-text)] sm:max-w-[75%]">
+          <span style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{sanitizeOutput(msg.content)}</span>
+        </div>
+      </motion.div>
+    );
+  }
+
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}
-      className={`flex items-start gap-2.5 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
-      <div style={{
-        background: isUser ? "var(--bm-bg4)" : "var(--bm-bg3)",
-        border: "1px solid var(--bm-border)",
-      }} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full">
-        {isUser ? <User size={12} color="var(--bm-text3)" /> : <Bot size={12} color="var(--bm-text3)" />}
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }} className="flex items-start gap-3.5">
+      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[var(--bm-intel-bd)] bg-[var(--bm-intel-dim)]">
+        <Sparkles size={14} color="var(--bm-intel2)" />
       </div>
-      <div className={`flex min-w-0 flex-col gap-1.5 ${isUser ? "items-end max-w-[88%] sm:max-w-[75%]" : "items-start max-w-[92%] sm:max-w-[85%]"}`}>
-        {!isUser && msg.reasoning && msg.reasoning.length > 0 && (
-          <div className="w-full rounded-[var(--r-xl)] border border-[var(--bm-border)] bg-[var(--bm-bg3)] px-3 py-2.5">
-            <button onClick={() => setExpanded(v => !v)}
-              className="flex cursor-pointer items-center gap-1.5 border-0 bg-transparent p-0 text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--bm-text3)]">
-              <Brain size={10} color="var(--bm-text3)" />
-              <span style={{ color: "var(--bm-text3)" }}>Thinking</span>
-              <ChevronRight size={10} color="var(--bm-text3)" style={{ transform: expanded ? "rotate(90deg)" : "none", transition: "transform 0.15s" }} />
+      <div className="flex min-w-0 flex-1 flex-col gap-3">
+        {msg.reasoning && msg.reasoning.length > 0 && (
+          <div>
+            <button onClick={() => setExpanded(v => !v)} aria-expanded={expanded}
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-[var(--bm-border)] bg-transparent px-3 py-1 text-[12px] text-[var(--bm-text3)] hover:text-[var(--bm-text2)]">
+              <Brain size={12} />
+              {msg.phase === "thinking" ? "Thinking" : "How I got here"}
+              <ChevronRight size={12} style={{ transform: expanded ? "rotate(90deg)" : "none", transition: "transform 0.15s" }} />
             </button>
             <AnimatePresence>
               {expanded && (
-                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: "hidden", marginTop: 8 }}>
-                  {msg.reasoning.map((step, i) => (
-                    <div key={i} className="mb-1 flex items-start gap-2 text-[11px] text-[var(--bm-text3)]">
-                      <span style={{ color: "var(--bm-text4)", flexShrink: 0 }}>›</span>
-                      {sanitizeOutput(step)}
-                    </div>
-                  ))}
+                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: "hidden" }}>
+                  <div className="mt-2 border-l-2 border-[var(--bm-border2)] pl-3.5">
+                    {msg.reasoning.map((step, i) => (
+                      <div key={i} className="mb-1.5 text-[13px] leading-relaxed text-[var(--bm-text3)]">{sanitizeOutput(step)}</div>
+                    ))}
+                  </div>
                 </motion.div>
               )}
             </AnimatePresence>
           </div>
         )}
-        <div
-          className={`px-3.5 py-2.5 text-[13px] leading-relaxed ${isUser ? "rounded-[var(--r-xl)] rounded-tr-sm border border-[var(--bm-border3)] bg-[var(--bm-bg4)]" : "rounded-[var(--r-xl)] rounded-tl-sm border border-[var(--bm-border2)] bg-[var(--bm-bg3)]"}`}
-          style={{ color: msg.error ? "var(--bm-red)" : "var(--bm-text2)" }}
-        >
-          {msg.phase === "thinking" ? <ThinkingDots /> : <span style={{ whiteSpace: "pre-wrap" }}>{sanitizeOutput(parsed.text)}</span>}
-        </div>
 
-        {!isUser && msg.phase === "done" && msg.actionResult && (
-          <CoachActionResultCard result={msg.actionResult} />
+        {msg.phase === "thinking" ? (
+          <div className="py-1"><ThinkingDots /></div>
+        ) : (
+          <div className="text-[15.5px] leading-[1.75]" style={{ color: msg.error ? "var(--bm-red)" : "var(--bm-text)", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+            {sanitizeOutput(parsed.text)}
+          </div>
         )}
 
-        {!isUser && parsed.links.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
+        {msg.phase === "done" && msg.actionResult && <CoachActionResultCard result={msg.actionResult} />}
+
+        {parsed.links.length > 0 && (
+          <div className="flex flex-wrap gap-2">
             {parsed.links.map((l, i) => (
               <button key={i} type="button"
                 onClick={() => (l.kind === "open" ? onOpen(l.href) : onRunChip(l.chip))}
-                className="cursor-pointer rounded-[var(--r-sm)] px-3 py-1.5 text-[12px] font-semibold"
+                className="inline-flex cursor-pointer items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold"
                 style={{ background: "var(--bm-accent-dim)", color: "var(--bm-accent)", border: "1px solid var(--bm-accent-bd)", fontFamily: "inherit" }}>
-                {l.label} →
+                {l.label}
+                <ArrowUpRight size={13} />
               </button>
             ))}
           </div>
         )}
 
-        {!isUser && msg.phase === "done" && msg.recommendedAction && (
-          <div className="w-full rounded-[var(--r-lg)] p-3.5" style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-amber-bd, rgba(232,160,32,0.25))" }}>
-            <div className="mb-2 font-mono text-[9px] font-bold uppercase tracking-[0.06em] text-[var(--bm-amber)]">
-              Recommended action
-            </div>
-            <div className="mb-2">
-              <div className="text-[11px] font-semibold text-[var(--bm-text2)]">What to do</div>
-              <p className="mt-0.5 text-[12px] leading-relaxed text-[var(--bm-text3)]">{sanitizeOutput(msg.recommendedAction.what_to_do)}</p>
-            </div>
-            <div className="mb-2">
-              <div className="text-[11px] font-semibold text-[var(--bm-text2)]">Why now</div>
-              <p className="mt-0.5 text-[12px] leading-relaxed text-[var(--bm-text3)]">{sanitizeOutput(msg.recommendedAction.why_now)}</p>
-            </div>
+        {msg.phase === "done" && msg.recommendedAction && (
+          <div className="rounded-[18px] border border-[var(--bm-accent-bd)] bg-[var(--bm-bg2)] p-5">
+            <div className="mb-3 text-[14px] font-semibold text-[var(--bm-accent)]">Recommended next step</div>
+            <p className="text-[15px] leading-[1.65] text-[var(--bm-text)]">{sanitizeOutput(msg.recommendedAction.what_to_do)}</p>
+            <p className="mt-3 text-[14px] leading-relaxed text-[var(--bm-text3)]">
+              <span className="font-semibold text-[var(--bm-text2)]">Why now: </span>{sanitizeOutput(msg.recommendedAction.why_now)}
+            </p>
             {msg.recommendedAction.expected_evidence && (
-              <div className="mb-3">
-                <div className="text-[11px] font-semibold text-[var(--bm-text2)]">Expected evidence</div>
-                <p className="mt-0.5 text-[12px] leading-relaxed text-[var(--bm-text3)]">{sanitizeOutput(msg.recommendedAction.expected_evidence)}</p>
-              </div>
+              <p className="mt-2 text-[14px] leading-relaxed text-[var(--bm-text3)]">
+                <span className="font-semibold text-[var(--bm-text2)]">You will know it worked when: </span>{sanitizeOutput(msg.recommendedAction.expected_evidence)}
+              </p>
             )}
-            <button
-              onClick={onStartAction}
-              className="w-full rounded-[var(--r-sm)] border-0 py-2 text-[12px] font-bold"
-              style={{ background: "var(--bm-accent)", color: "#15130a" }}
-            >
+            <button onClick={onStartAction}
+              className="mt-4 w-full cursor-pointer rounded-[12px] border-0 py-3 text-[14px] font-bold sm:w-auto sm:px-6"
+              style={{ background: "var(--bm-accent)", color: "#15130a" }}>
               Start this now
             </button>
           </div>
         )}
 
-        <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-[var(--bm-text3)]">
-          <Clock size={9} />
-          {new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-          {!isUser && typeof msg.confidence_score === "number" && (
-            <ConfidenceBadge score={msg.confidence_score} />
-          )}
-        </div>
+        {msg.phase === "done" && (
+          <div className="flex flex-wrap items-center gap-2 text-[12px] text-[var(--bm-text4)]">
+            <span>{time}</span>
+            {typeof msg.confidence_score === "number" && <ConfidenceBadge score={msg.confidence_score} />}
+          </div>
+        )}
       </div>
     </motion.div>
   );
@@ -231,6 +230,7 @@ function AICoachPageInner() {
   const [memory, setMemory] = useState<string[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
   const [coachMessagesToday, setCoachMessagesToday] = useState(0);
+  const [showContext, setShowContext] = useState(false);
   const [activityEvents, setActivityEvents] = useState<Array<{ label: string; occurredAt: string }>>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -415,210 +415,160 @@ function AICoachPageInner() {
     );
   }
 
-  return (
-    <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-5 px-0 py-1 sm:px-6 sm:py-7" style={{ minHeight: isMobile ? "auto" : "calc(100vh - 80px)", height: isMobile ? "auto" : "calc(100vh - 80px)" }}>
+  const lowOnMessages = plan === "free" && remaining > 0 && remaining <= 1;
+  const greetingName = hasHistoryGlobal(overview);
+  const contextPanel = (
+    <div className="flex flex-col gap-3">
+      {activeProject && (
+        <div className="rounded-[16px] border border-[var(--bm-border)] bg-[var(--bm-bg2)] p-4">
+          <div className="mb-1 text-[12px] text-[var(--bm-text3)]">Coaching on</div>
+          <div className="text-[16px] font-semibold text-[var(--bm-text)]">{activeProject.title}</div>
+          <div className="mt-0.5 text-[13px] text-[var(--bm-text3)]">{activeProject.startup_stage ?? "Stage not set"}</div>
+        </div>
+      )}
+      {activeProject && activityEvents.length > 0 && (
+        <div className="rounded-[16px] border border-[var(--bm-border)] bg-[var(--bm-bg2)] p-4">
+          <div className="mb-3 text-[13px] font-semibold text-[var(--bm-text2)]">Recent activity</div>
+          <div className="flex flex-col gap-3">
+            {activityEvents.slice(0, 4).map((ev, i) => (
+              <div key={`${ev.occurredAt}-${i}`} className="flex items-start gap-2.5">
+                <div className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--bm-intel)]" />
+                <div>
+                  <div className="text-[13px] leading-snug text-[var(--bm-text2)]">{ev.label}</div>
+                  <div className="mt-0.5 text-[12px] text-[var(--bm-text4)]">{new Date(ev.occurredAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      <div className="rounded-[16px] border border-[var(--bm-border)] bg-[var(--bm-bg2)] p-4">
+        <div className="mb-3 flex items-center gap-2 text-[13px] font-semibold text-[var(--bm-text2)]"><Brain size={14} /> What the coach remembers</div>
+        {memory.length === 0 ? (
+          <p className="text-[13px] leading-relaxed text-[var(--bm-text3)]">Memory builds as you talk to the coach.</p>
+        ) : memory.slice(-5).map((m, i) => (
+          <div key={i} className="mb-2 flex items-start gap-2.5">
+            <div className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--bm-intel)]" />
+            <span className="text-[13px] leading-snug text-[var(--bm-text3)]">{sanitizeOutput(m).slice(0, 80)}{sanitizeOutput(m).length > 80 ? "…" : ""}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 
-      {/* Header */}
-      <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className="shrink-0">
-        <PageHeader
-          eyebrow="Founder intelligence"
-          title="AI Coach"
-          subtitle="Ask for a direct read on the decision, blocker, or pattern that matters now."
-          action={
-            <div className="flex w-full items-center gap-2 overflow-x-auto pb-0.5 sm:w-auto">
-            <span className="mr-1 shrink-0 text-[10px] text-[var(--bm-text3)]">Mode</span>
+  return (
+    <div className="relative mx-auto flex w-full max-w-[860px] flex-col" style={{ minHeight: isMobile ? "calc(100dvh - 120px)" : "calc(100vh - 80px)", height: isMobile ? "auto" : "calc(100vh - 80px)" }}>
+
+      {/* Slim header: the conversation is the page */}
+      <header className="flex shrink-0 items-center justify-between gap-3 px-4 py-3 sm:px-2">
+        <div className="min-w-0">
+          <h1 className="m-0 text-[20px] font-bold tracking-[-0.02em] text-[var(--bm-text)]" style={{ fontFamily: "'Syne', sans-serif" }}>AI Coach</h1>
+          {activeProject && <div className="truncate text-[13px] text-[var(--bm-text3)]">{activeProject.title}</div>}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <div role="group" aria-label="Coach tone" className="flex rounded-full border border-[var(--bm-border)] bg-[var(--bm-bg2)] p-0.5">
             {personalityOptions.map(opt => (
-              <button key={opt.id} onClick={() => setPersonality(opt.id)}
-                className={`shrink-0 cursor-pointer rounded-[var(--r-sm)] border px-3 py-2 text-[11px] ${personality === opt.id ? "border-[var(--bm-intel-bd)] bg-[var(--bm-intel-dim)] font-semibold text-[var(--bm-intel2)]" : "border-[var(--bm-border)] bg-transparent font-normal text-[var(--bm-text3)]"}`}>
+              <button key={opt.id} onClick={() => setPersonality(opt.id)} aria-pressed={personality === opt.id}
+                className={`cursor-pointer rounded-full border-0 px-3 py-1.5 text-[12.5px] ${personality === opt.id ? "bg-[var(--bm-intel-dim)] font-semibold text-[var(--bm-intel2)]" : "bg-transparent text-[var(--bm-text3)] hover:text-[var(--bm-text2)]"}`}>
                 {opt.label}
               </button>
             ))}
           </div>
-          }
-        />
-      </motion.div>
+          <button onClick={() => setShowContext(true)} aria-label="Show project context and coach memory"
+            className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-[var(--bm-border)] bg-[var(--bm-bg2)] text-[var(--bm-text3)] hover:text-[var(--bm-text)]">
+            <PanelRight size={16} />
+          </button>
+        </div>
+      </header>
 
-      {/* Free plan limit reached — same pattern as the Projects list banner */}
+      {/* Context drawer */}
+      <AnimatePresence>
+        {showContext && (
+          <>
+            <motion.div key="scrim" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowContext(false)}
+              className="fixed inset-0 z-40 bg-black/50" />
+            <motion.aside key="drawer" role="dialog" aria-label="Project context" initial={{ x: 360 }} animate={{ x: 0 }} exit={{ x: 360 }} transition={{ type: "tween", duration: 0.2 }}
+              className="fixed bottom-0 right-0 top-0 z-50 w-[92vw] max-w-[380px] overflow-y-auto border-l border-[var(--bm-border)] bg-[var(--bm-bg)] p-4">
+              <div className="mb-4 flex items-center justify-between">
+                <span className="text-[16px] font-semibold text-[var(--bm-text)]">Context</span>
+                <button onClick={() => setShowContext(false)} aria-label="Close" className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-[var(--bm-border)] bg-transparent text-[var(--bm-text3)]"><X size={16} /></button>
+              </div>
+              {contextPanel}
+            </motion.aside>
+          </>
+        )}
+      </AnimatePresence>
+
       {plan === "free" && remaining <= 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="shrink-0 rounded-[var(--r-lg)] p-4"
-          style={{ borderLeft: "2px solid var(--bm-accent)", background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)" }}
-        >
-          <p className="font-mono text-[9px] font-semibold uppercase tracking-[0.1em] text-[var(--bm-accent)]">
-            Free plan limit reached
-          </p>
-          <p className="mt-1.5 text-[13px] font-semibold text-[var(--bm-text)]">
-            You&apos;ve used all {coachLimit} coaching questions today
-          </p>
-          <p className="mt-1 text-[12px] leading-relaxed text-[var(--bm-text3)]">
-            Upgrade to Pro for unlimited coaching conversations with deeper behavioral analysis.
-          </p>
-          <div className="mt-3 flex items-center gap-4">
-            <button
-              onClick={() => showLimitModal("aiCoach")}
-              className="rounded-[var(--r-sm)] border-0 px-3.5 py-2 text-[12px] font-bold"
-              style={{ background: "var(--bm-accent)", color: "#15130a" }}
-            >
-              Upgrade plan
-            </button>
-            <a href="/upgrade" className="text-[12px] font-medium text-[var(--bm-text2)] hover:text-[var(--bm-text)]">
-              Learn more
-            </a>
-          </div>
-        </motion.div>
+        <div className="mx-4 mb-3 shrink-0 rounded-[16px] border border-[var(--bm-accent-bd)] bg-[var(--bm-accent-dim)] p-4 sm:mx-2">
+          <p className="text-[15px] font-semibold text-[var(--bm-text)]">You have used all {coachLimit} coaching questions today</p>
+          <p className="mt-1 text-[13.5px] leading-relaxed text-[var(--bm-text3)]">Quick actions below still work. Upgrade to Builder to keep talking to the coach right now.</p>
+          <button onClick={() => showLimitModal("aiCoach")} className="mt-3 cursor-pointer rounded-[10px] border-0 px-4 py-2.5 text-[13.5px] font-bold" style={{ background: "var(--bm-accent)", color: "#15130a" }}>Upgrade plan</button>
+        </div>
       )}
 
-      {/* Split layout */}
-      <div className="flex min-h-0 flex-1 flex-col gap-5 lg:flex-row">
-
-        {/* Chat panel */}
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}
-          className="flex min-h-[72vh] flex-1 flex-col overflow-hidden rounded-[var(--r-lg)] border border-[var(--bm-border)] bg-[var(--bm-bg2)] lg:min-h-0">
-          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--bm-border)] px-4 py-3 sm:px-5">
-            <div className="flex items-center gap-2">
-              <div className="h-2 w-2 rounded-full bg-[var(--bm-intel)]" />
-              <span className="font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--bm-text3)]">Coach conversation</span>
+      {/* Conversation */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 sm:px-2" style={{ scrollbarWidth: "thin" }}>
+        {messages.length === 0 ? (
+          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="mx-auto flex h-full max-w-[680px] flex-col justify-center py-8">
+            <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl border border-[var(--bm-intel-bd)] bg-[var(--bm-intel-dim)]">
+              <Sparkles size={22} color="var(--bm-intel2)" />
             </div>
-            {plan === "free" && (
-              <span className="text-[11px]" style={{ color: remaining > 1 ? "var(--bm-text3)" : "var(--bm-amber)" }}>
-                {remaining}/{coachLimit} messages left today
-              </span>
-            )}
-          </div>
-
-          <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4 sm:p-5" style={{ scrollbarWidth: "none" }}>
-            {messages.length === 0 && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}
-                className="flex h-full flex-col items-center justify-center gap-5 px-1 text-center">
-              <div style={{width:42,height:42,borderRadius:"var(--r-sm)",background:"var(--bm-intel-dim)",border:"1px solid var(--bm-intel-bd)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                  <Bot size={19} color="var(--bm-intel2)" />
-                </div>
-                <div style={{maxWidth:400,textAlign:"center"}}>
-              {(() => {
-                // FIX (High #10): this used to unconditionally claim "I have
-                // read your reflections" even for a founder with zero
-                // reflections and zero completed tasks — the exact
-                // overclaiming pattern flagged for the coach's system prompt
-                // (see app/api/ai/coach/route.ts's knowledgeClaim). Reuse
-                // data already fetched via useDashboardOverviewQuery instead
-                // of adding a new request just for this copy.
-                const hasHistory = (overview?.completedTasks ?? 0) > 0 || overview?.daysSinceLastReflection != null;
-                return (
-                  <>
-                    <div style={{fontFamily:"'Syne', sans-serif",fontSize:20,fontWeight:700,letterSpacing:"-0.02em",color:"var(--bm-text)",marginBottom:8,lineHeight:1.3}}>
-                      {hasHistory ? "I already know where things stand." : "Day one. Let's get oriented."}
-                    </div>
-                    <p style={{fontFamily:"'Inter', sans-serif",fontSize:12.5,color:"var(--bm-text2)",lineHeight:1.65,margin:0}}>
-                      {hasHistory
-                        ? "I have read your reflections. I know the blockers you keep naming and the tasks you keep skipping. I am not going to ask you to explain your situation. Tell me what you are stuck on right now, or ask me what you should be doing — I will tell you directly, including the things you probably did not ask about."
-                        : "You don't have a track record with me yet, so I'm not going to pretend I know your patterns. Tell me what you're actually stuck on, or what you're building — I'll give you a direct read based on that, not a guess at history I don't have."}
-                    </p>
-                  </>
-                );
-              })()}
-                </div>
-                <div className="grid w-full max-w-[520px] gap-2 text-left">
-                  {QUICK_PROMPTS.map(p => (
-                    <button key={p} onClick={() => sendMessage(p)}
-                      className="flex items-center justify-between gap-3 rounded-[var(--r-sm)] border border-[var(--bm-border)] bg-[var(--bm-bg3)] px-3.5 py-2.5 text-[12px] text-[var(--bm-text3)] transition-colors hover:border-[var(--bm-intel-bd)] hover:text-[var(--bm-text2)]">
-                      <span>{p}</span><ChevronRight size={13} color="var(--bm-text4)" />
-                    </button>
-                  ))}
-                </div>
-              </motion.div>
-            )}
-            {messages.map(msg => <MessageBubble key={msg.id} msg={msg} onStartAction={() => router.push("/today")} onOpen={(href) => router.push(href)} onRunChip={(chip) => sendMessage(chip.label, { action: { id: chip.id, params: chip.params } })} />)}
-            <div ref={bottomRef} />
-          </div>
-
-          <div className="sticky bottom-0 shrink-0 border-t border-[var(--bm-border)] bg-[var(--bm-bg)]/90 p-3 backdrop-blur-sm sm:p-4">
-            {plan === "free" && <div className="mb-2.5"><AIUsageBadge /></div>}
-            <div className="mb-2.5 flex items-center gap-2 overflow-x-auto pb-0.5" style={{ scrollbarWidth: "none" }}>
-              <span className="shrink-0 font-mono text-[9px] uppercase tracking-[0.08em] text-[var(--bm-text4)]">Actions</span>
-              {COACH_ACTION_CHIPS.map(chip => (
-                <button key={chip.label} type="button" disabled={loading}
-                  onClick={() => sendMessage(chip.label, { action: { id: chip.id, params: chip.params } })}
-                  className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-[var(--bm-border2)] bg-transparent px-3 py-1.5 text-[11.5px] text-[var(--bm-text3)] transition-colors hover:border-[var(--bm-intel-bd)] hover:text-[var(--bm-text2)] disabled:cursor-not-allowed disabled:opacity-50">
-                  <Zap size={11} />
-                  {chip.label}
+            <h2 className="m-0 text-[30px] font-bold leading-[1.2] tracking-[-0.025em] text-[var(--bm-text)] sm:text-[36px]" style={{ fontFamily: "'Syne', sans-serif" }}>
+              {greetingName ? "Where do things stand?" : "Day one. Let’s get oriented."}
+            </h2>
+            <p className="mt-3 max-w-[560px] text-[16px] leading-[1.7] text-[var(--bm-text2)]">
+              {greetingName
+                ? "I know your blockers, your streak and the tasks you keep skipping. Tell me what you are stuck on, or ask what to do next. I will answer directly."
+                : "You do not have a track record with me yet, so I will not pretend to know your patterns. Tell me what you are stuck on or what you are building, and I will give you a direct read."}
+            </p>
+            <div className="mt-7 grid gap-2.5 sm:grid-cols-2">
+              {QUICK_PROMPTS.slice(0, 4).map(p => (
+                <button key={p} onClick={() => sendMessage(p)}
+                  className="group flex min-h-[72px] cursor-pointer items-start justify-between gap-3 rounded-[16px] border border-[var(--bm-border)] bg-[var(--bm-bg2)] p-4 text-left text-[14.5px] leading-snug text-[var(--bm-text2)] transition-colors hover:border-[var(--bm-intel-bd)] hover:text-[var(--bm-text)]">
+                  <span>{p}</span>
+                  <ArrowUpRight size={16} className="mt-0.5 shrink-0 text-[var(--bm-text4)] group-hover:text-[var(--bm-intel2)]" />
                 </button>
               ))}
             </div>
-            <div className="flex items-end gap-2.5 rounded-[var(--r-lg)] border border-[var(--bm-border2)] bg-[var(--bm-bg3)] px-3.5 py-3 transition-colors"
-              onFocusCapture={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--bm-accent-bd)"; }}
-              onBlurCapture={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--bm-border2)"; }}>
-              <textarea ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-                placeholder="Ask anything about your startup..." rows={1} disabled={loading}
-                className="min-h-7 max-h-[120px] flex-1 resize-none border-0 bg-transparent text-[16px] leading-relaxed text-[var(--bm-text)] outline-none sm:text-[13px]" />
-              <motion.button whileTap={{ scale: 0.95 }} onClick={() => sendMessage()}
-                disabled={!input.trim() || loading}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--r-sm)] border-0 sm:h-8 sm:w-8"
-                style={{ background: !input.trim() || loading ? "var(--bm-bg4)" : "var(--bm-accent)", color: !input.trim() || loading ? "var(--bm-text3)" : "#15130a", cursor: !input.trim() || loading ? "not-allowed" : "pointer" }}>
-                <Send size={13} />
-              </motion.button>
-            </div>
+          </motion.div>
+        ) : (
+          <div className="mx-auto flex max-w-[760px] flex-col gap-8 py-4 pb-6">
+            {messages.map(msg => <MessageBubble key={msg.id} msg={msg} onStartAction={() => router.push("/today")} onOpen={(href) => router.push(href)} onRunChip={(chip) => sendMessage(chip.label, { action: { id: chip.id, params: chip.params } })} />)}
           </div>
-        </motion.div>
+        )}
+        <div ref={bottomRef} />
+      </div>
 
-        {/* Right sidebar */}
-        <motion.div initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.12 }}
-          className="flex w-full flex-col gap-3 overflow-y-auto lg:w-[280px]" style={{ scrollbarWidth: "none" }}>
-
-          {activeProject && (
-            <Card variant="data" className="border-[var(--bm-accent-bd)] p-4">
-              <div className="mb-2 font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--bm-text3)]">Current context</div>
-              <div className="mb-1.5 text-[13px] font-semibold text-[var(--bm-text)]">{activeProject.title}</div>
-              <div className="text-[12px] text-[var(--bm-text3)]">{activeProject.startup_stage ?? "Stage not set"}</div>
-            </Card>
-          )}
-
-          {activeProject && activityEvents.length > 0 && (
-            <Card variant="data" className="p-4">
-              <div className="mb-3 font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--bm-text3)]">Recent activity</div>
-              <div className="flex flex-col gap-2.5">
-                {activityEvents.slice(0, 3).map((ev, i) => (
-                  <div key={`${ev.occurredAt}-${i}`} className="flex items-start gap-2">
-                    <div className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--bm-intel)] opacity-60" />
-                    <div>
-                      <div className="text-[11px] leading-relaxed text-[var(--bm-text3)]">{ev.label}</div>
-                      <div className="mt-0.5 font-mono text-[9px] text-[var(--bm-text4)]">
-                        {new Date(ev.occurredAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          )}
-
-          <Card variant="data" className="p-4">
-            <div className="mb-3.5 flex items-center gap-1.5">
-              <Brain size={13} color="var(--bm-text3)" />
-              <span className="font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--bm-text3)]">Coach memory</span>
-            </div>
-            {memory.length === 0 ? (
-              <p className="text-[13px] leading-relaxed text-[var(--bm-text3)]">Memory builds as you talk to the coach.</p>
-            ) : memory.slice(-4).map((m, i) => (
-              <div key={i} className="mb-2 flex items-start gap-2">
-                <div className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--bm-intel)] opacity-60" />
-                <span className="text-[11px] leading-relaxed text-[var(--bm-text3)]">{sanitizeOutput(m).slice(0, 55)}{sanitizeOutput(m).length > 55 ? "…" : ""}</span>
-              </div>
-            ))}
-          </Card>
-
-          <Card variant="data" className="p-4">
-            <div className="mb-3 font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--bm-text3)]">Ask directly</div>
-            {QUICK_PROMPTS.map(p => (
-              <button key={p} onClick={() => sendMessage(p)}
-                className="mb-1.5 block w-full cursor-pointer rounded-[var(--r-sm)] border border-[var(--bm-border)] bg-transparent px-3 py-2 text-left text-[12px] text-[var(--bm-text3)] transition-colors hover:bg-[var(--bm-bg2)] hover:text-[var(--bm-text2)]">
-                {p}
+      {/* Composer */}
+      <div className="sticky bottom-0 shrink-0 bg-gradient-to-t from-[var(--bm-bg)] from-70% to-transparent px-3 pb-3 pt-4 sm:px-2 sm:pb-4">
+        <div className="mx-auto max-w-[760px]">
+          {plan === "free" && <div className="mb-2"><AIUsageBadge /></div>}
+          {lowOnMessages && <div className="mb-2 text-[13px] text-[var(--bm-amber)]">Last coaching message for today.</div>}
+          <div className="mb-2.5 flex items-center gap-2 overflow-x-auto pb-0.5" style={{ scrollbarWidth: "none" }}>
+            {COACH_ACTION_CHIPS.map(chip => (
+              <button key={chip.label} type="button" disabled={loading}
+                onClick={() => sendMessage(chip.label, { action: { id: chip.id, params: chip.params } })}
+                className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-[var(--bm-border2)] bg-[var(--bm-bg2)] px-3.5 py-2 text-[13px] text-[var(--bm-text2)] transition-colors hover:border-[var(--bm-intel-bd)] hover:text-[var(--bm-text)] disabled:cursor-not-allowed disabled:opacity-50">
+                <Zap size={13} color="var(--bm-intel2)" />
+                {chip.label}
               </button>
             ))}
-          </Card>
-        </motion.div>
+          </div>
+          <div className="flex items-end gap-3 rounded-[24px] border border-[var(--bm-border2)] bg-[var(--bm-bg2)] py-3 pl-5 pr-3 shadow-[0_8px_30px_rgba(0,0,0,0.25)] transition-colors focus-within:border-[var(--bm-accent-bd)]">
+            <textarea ref={inputRef} value={input}
+              onChange={e => { setInput(e.target.value); const el = e.currentTarget; el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 180) + "px"; }}
+              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+              placeholder="Ask anything about your startup" aria-label="Message the coach" rows={1} disabled={loading}
+              className="max-h-[180px] min-h-[28px] flex-1 resize-none border-0 bg-transparent py-1 text-[16px] leading-[1.6] text-[var(--bm-text)] outline-none placeholder:text-[var(--bm-text4)]" />
+            <motion.button whileTap={{ scale: 0.94 }} onClick={() => sendMessage()} aria-label="Send message"
+              disabled={!input.trim() || loading}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border-0"
+              style={{ background: !input.trim() || loading ? "var(--bm-bg4)" : "var(--bm-accent)", color: !input.trim() || loading ? "var(--bm-text3)" : "#15130a", cursor: !input.trim() || loading ? "not-allowed" : "pointer" }}>
+              <Send size={17} />
+            </motion.button>
+          </div>
+        </div>
       </div>
     </div>
   );
