@@ -47,6 +47,8 @@ vi.mock("../../lib/supabase/admin", () => ({
       }
       if (table === "subscriptions") {
         return {
+          // persistUserPlan reads the existing founding-member flag first
+          select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null }) }) }),
           upsert: (...a: unknown[]) => mockSubscriptionUpsert(...a),
         };
       }
