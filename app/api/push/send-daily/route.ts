@@ -34,6 +34,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import webpush from "web-push";
 import { createClient } from "@supabase/supabase-js";
+import { filterByNotificationPref } from "@/lib/server/notificationPrefs";
 import { planFromUserMetadata } from "@/lib/plan";
 import { logError, logInfo } from "@/lib/server/logger";
 import { claimSendSlots } from "@/lib/cronSendLog";
@@ -235,7 +236,11 @@ export async function POST(req: NextRequest) {
     pageFrom += PAGE_SIZE;
   }
 
-  const subs = allSubs;
+  // Respect the Streak Reminder switch in Settings (defaults to on).
+  const optedIn = new Set(
+    await filterByNotificationPref(supabase, Array.from(new Set(allSubs.map((s) => s.user_id))), "streakReminder"),
+  );
+  const subs = allSubs.filter((s) => optedIn.has(s.user_id));
 
   if (!subs || subs.length === 0) {
     return NextResponse.json({ skipped: true, reason: "no records", processed: 0, durationMs: Date.now() - start, sent: 0, failed: 0, total: 0, message: "No push subscribers yet" });
@@ -459,4 +464,4 @@ export async function POST(req: NextRequest) {
 // Allow GET for Vercel cron (which always sends GET) and manual testing
 export async function GET(req: NextRequest) {
   return POST(req);
-}
+  }
