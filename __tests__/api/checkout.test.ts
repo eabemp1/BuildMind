@@ -1,142 +1,183 @@
 /**
  * __tests__/api/checkout.test.ts
  *
- * Tests for the fixed checkout route (Fix 3 — dead plan branch).
+ * Tests for app/api/billing/checkout/route.ts
  *
- * Strategy: mock createClient and the Paystack API fetch so we test the
- * route's plan resolution, auth check, and request construction only.
+ * Routing under test: Ghana (GH) pays in GHS through Paystack; everyone
+ * else pays in USD through Polar. Auth, rate limit, FX and the founding
+ * discount lookup are mocked so only the route's own logic is exercised.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { mockGetUser } = vi.hoisted(() => ({
+const { mockGetUser, mockCreatePolar, mockFounding } = vi.hoisted(() => ({
   mockGetUser: vi.fn(),
+  mockCreatePolar: vi.fn(),
+  mockFounding: vi.fn(),
 }));
 
 vi.mock("../../lib/supabase/server", () => ({
-  createClient: vi.fn(() => ({
-    auth: { getUser: mockGetUser },
-  })),
+  createClient: vi.fn(async () => ({ auth: { getUser: mockGetUser } })),
 }));
 
-vi.mock("../../lib/plan", () => ({
-  normalizePlan: (p: string | undefined) => {
-    if (p === "builder") return "builder";
-    return "free";
-  },
+vi.mock("../../lib/supabase/admin", () => ({
+  createAdminClient: () => ({
+    from: () => ({
+      select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { is_founding_member: mockFounding() } }) }) }),
+    }),
+  }),
+}));
+
+vi.mock("../../lib/server/rateLimit", () => ({
+  getClientIp: () => "1.2.3.4",
+  rateLimitAsync: vi.fn(async () => ({ ok: true })),
+}));
+
+vi.mock("../../lib/fx", () => ({
+  usdToPesewas: vi.fn(async (usd: number) => ({ pesewas: Math.round(usd * 1500), rateUsed: 15, source: "test" })),
+}));
+
+vi.mock("../../lib/billing/polar", () => ({
+  createPolarCheckout: (...a: unknown[]) => mockCreatePolar(...a),
 }));
 
 vi.mock("next/server", () => ({
   NextResponse: {
     json: (body: unknown, init?: ResponseInit) =>
-      new Response(JSON.stringify(body), {
-        ...init,
-        headers: { "Content-Type": "application/json" },
-      }),
+      new Response(JSON.stringify(body), { ...init, headers: { "Content-Type": "application/json" } }),
   },
 }));
 
 import { POST } from "../../app/api/billing/checkout/route";
 
-async function json(res: Response) {
-  return res.json() as Promise<Record<string, unknown>>;
-}
+const json = (res: Response) => res.json() as Promise<Record<string, any>>;
+const USER = { id: "user-xyz", email: "founder@example.com" };
 
-const AUTHED_USER = {
-  id: "user-xyz",
-  email: "founder@example.com",
-};
-
-function paystackSuccess(plan = "builder") {
-  return new Response(
-    JSON.stringify({
-      status: true,
-      data: { authorization_url: `https://paystack.com/pay/mock-${plan}` },
-    }),
-    { status: 200, headers: { "Content-Type": "application/json" } },
-  );
-}
-
-function makeReq(body: object = { plan: "builder" }) {
+function req(country: string | null, body: object = { plan: "builder" }) {
   return new Request("https://example.com/api/billing/checkout", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(country ? { "x-vercel-ip-country": country } : {}) },
     body: JSON.stringify(body),
   });
 }
 
+function paystackOk() {
+  return new Response(
+    JSON.stringify({ status: true, data: { authorization_url: "https://checkout.paystack.com/abc" } }),
+    { status: 200, headers: { "Content-Type": "application/json" } },
+  );
+}
+
+let fetchMock: ReturnType<typeof vi.fn>;
+
 beforeEach(() => {
   process.env.PAYSTACK_SECRET_KEY = "sk_test_key";
   process.env.PAYSTACK_BUILDER_PLAN_CODE = "PLN_builder_monthly";
-  process.env.NEXT_PUBLIC_APP_URL = "https://buildmind.app";
-  vi.clearAllMocks();
-  mockGetUser.mockResolvedValue({ data: { user: AUTHED_USER }, error: null });
-  globalThis.fetch = vi.fn().mockResolvedValue(paystackSuccess("builder"));
+  mockGetUser.mockReset().mockResolvedValue({ data: { user: USER }, error: null });
+  mockCreatePolar.mockReset().mockResolvedValue({ url: "https://polar.sh/checkout/xyz" });
+  mockFounding.mockReset().mockReturnValue(false);
+  fetchMock = vi.fn(async () => paystackOk());
+  vi.stubGlobal("fetch", fetchMock);
 });
 
-describe("POST /api/billing/checkout — Fix 3 (dead plan branch)", () => {
-  it("returns 401 when not authenticated", async () => {
-    mockGetUser.mockResolvedValue({ data: { user: null }, error: { message: "Not logged in" } });
-    const res = await POST(makeReq());
+describe("POST /api/billing/checkout", () => {
+  it("returns 401 when not signed in", async () => {
+    mockGetUser.mockResolvedValue({ data: { user: null }, error: null });
+    const res = await POST(req("GH"));
     expect(res.status).toBe(401);
   });
 
-  it("returns 503 when PAYSTACK_SECRET_KEY is not set", async () => {
-    delete process.env.PAYSTACK_SECRET_KEY;
-    const res = await POST(makeReq());
-    expect(res.status).toBe(503);
+  describe("Ghana (Paystack, GHS)", () => {
+    it("returns the Paystack checkout url", async () => {
+      const res = await POST(req("GH"));
+      expect(res.status).toBe(200);
+      const body = await json(res);
+      expect(body.url).toBe("https://checkout.paystack.com/abc");
+      expect(body.currency).toBe("GHS");
+      expect(mockCreatePolar).not.toHaveBeenCalled();
+    });
+
+    it("sends user_id, plan and the plan code to Paystack", async () => {
+      await POST(req("GH"));
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe("https://api.paystack.co/transaction/initialize");
+      const sent = JSON.parse(String(init.body));
+      expect(sent.email).toBe(USER.email);
+      expect(sent.currency).toBe("GHS");
+      expect(sent.plan).toBe("PLN_builder_monthly");
+      expect(sent.metadata.user_id).toBe(USER.id);
+      expect(sent.metadata.plan).toBe("builder");
+      expect(sent.metadata.founding_member).toBe(false);
+    });
+
+    it("points the callback at /upgrade", async () => {
+      await POST(req("GH"));
+      const sent = JSON.parse(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body));
+      expect(sent.callback_url).toMatch(/\/upgrade$/);
+    });
+
+    it("flags founding members and charges less", async () => {
+      await POST(req("GH"));
+      const regular = JSON.parse(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body)).amount;
+      fetchMock.mockClear();
+      mockFounding.mockReturnValue(true);
+      await POST(req("GH"));
+      const sent = JSON.parse(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body));
+      expect(sent.metadata.founding_member).toBe(true);
+      expect(sent.amount).toBeLessThan(regular);
+    });
+
+    it("falls back to builder for unknown plan strings", async () => {
+      const res = await POST(req("GH", { plan: "enterprise-ultra" }));
+      expect(res.status).toBe(200);
+      const sent = JSON.parse(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body));
+      expect(sent.metadata.plan).toBe("builder");
+    });
+
+    it("returns 503 when PAYSTACK_SECRET_KEY is missing", async () => {
+      delete process.env.PAYSTACK_SECRET_KEY;
+      const res = await POST(req("GH"));
+      expect(res.status).toBe(503);
+    });
+
+    it("returns 502 with Paystack's message when initialize fails", async () => {
+      fetchMock.mockResolvedValue(
+        new Response(JSON.stringify({ status: false, message: "Card declined" }), { status: 400 }),
+      );
+      const res = await POST(req("GH"));
+      expect(res.status).toBe(502);
+      expect((await json(res)).error).toMatch(/Card declined/);
+    });
   });
 
-  it("creates a builder checkout for { plan: 'builder' }", async () => {
-    const res = await POST(makeReq({ plan: "builder" }));
-    expect(res.status).toBe(200);
-    const body = await json(res);
-    expect(body.plan).toBe("builder");
-    expect(body.url).toContain("paystack.com");
-  });
+  describe("International (Polar, USD)", () => {
+    it("routes non-Ghana traffic to Polar and never calls Paystack", async () => {
+      const res = await POST(req("US"));
+      expect(res.status).toBe(200);
+      const body = await json(res);
+      expect(body.url).toBe("https://polar.sh/checkout/xyz");
+      expect(body.currency).toBe("USD");
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(mockCreatePolar).toHaveBeenCalledWith(expect.objectContaining({ userId: USER.id, email: USER.email, plan: "builder" }));
+    });
 
-  it("passes plan to Paystack metadata (not silently discarded)", async () => {
-    await POST(makeReq({ plan: "builder" }));
-    const [, init] = vi.mocked(fetch).mock.calls[0];
-    const sent = JSON.parse(init!.body as string) as { metadata: { plan: string } };
-    expect(sent.metadata.plan).toBe("builder");
-  });
+    it("also uses Polar when the country is unknown", async () => {
+      const res = await POST(req(null));
+      expect(res.status).toBe(200);
+      expect(mockCreatePolar).toHaveBeenCalled();
+    });
 
-  it("defaults to builder for unknown plan strings (safe fallback)", async () => {
-    const res = await POST(makeReq({ plan: "enterprise" })); // unknown tier
-    expect(res.status).toBe(200);
-    const body = await json(res);
-    expect(body.plan).toBe("builder"); // safe default
-  });
+    it("passes the founding flag to Polar", async () => {
+      mockFounding.mockReturnValue(true);
+      await POST(req("US"));
+      expect(mockCreatePolar).toHaveBeenCalledWith(expect.objectContaining({ isFoundingMember: true }));
+    });
 
-  it("returns checkout URL in response body", async () => {
-    const res = await POST(makeReq({ plan: "builder" }));
-    const body = await json(res);
-    expect(typeof body.url).toBe("string");
-    expect(body.url).toMatch(/^https:\/\//);
-  });
-
-  it("returns 502 when Paystack API fails", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(
-      new Response(JSON.stringify({ status: false, message: "Card declined" }), { status: 400 })
-    );
-    const res = await POST(makeReq());
-    expect(res.status).toBe(502);
-    const body = await json(res);
-    expect(String(body.error)).toMatch(/Card declined/);
-  });
-
-  it("includes user_id in Paystack metadata", async () => {
-    await POST(makeReq({ plan: "builder" }));
-    const [, init] = vi.mocked(fetch).mock.calls[0];
-    const sent = JSON.parse(init!.body as string) as { metadata: { user_id: string } };
-    expect(sent.metadata.user_id).toBe("user-xyz");
-  });
-
-  it("includes correct callback_url pointing to /upgrade", async () => {
-    await POST(makeReq());
-    const [, init] = vi.mocked(fetch).mock.calls[0];
-    const sent = JSON.parse(init!.body as string) as { callback_url: string };
-    expect(sent.callback_url).toContain("/upgrade");
+    it("returns 502 when Polar fails", async () => {
+      mockCreatePolar.mockRejectedValue(new Error("POLAR_ACCESS_TOKEN is not set"));
+      const res = await POST(req("US"));
+      expect(res.status).toBe(502);
+      expect((await json(res)).error).toMatch(/POLAR_ACCESS_TOKEN/);
+    });
   });
 });
