@@ -102,6 +102,9 @@ export const POST = Webhooks({
       await grantAccess(payload);
     } catch (err) {
       logError("polar-webhook/onOrderPaid", err);
+      // Rethrow so the webhook returns 500 and Polar retries. Swallowing it
+      // here meant a transient DB error left a paying customer on Free.
+      throw err;
     }
   },
 
@@ -114,6 +117,9 @@ export const POST = Webhooks({
       await grantAccess(payload);
     } catch (err) {
       logError("polar-webhook/onSubscriptionCreated", err);
+      // Rethrow so the webhook returns 500 and Polar retries. Swallowing it
+      // here meant a transient DB error left a paying customer on Free.
+      throw err;
     }
   },
 
@@ -133,6 +139,9 @@ export const POST = Webhooks({
       });
     } catch (err) {
       logError("polar-webhook/onSubscriptionRevoked", err);
+      // Rethrow so the webhook returns 500 and Polar retries. Swallowing it
+      // here meant a transient DB error left a paying customer on Free.
+      throw err;
     }
   },
 });
