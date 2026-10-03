@@ -17,6 +17,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasAdminEnv } from "@/app/api/ai/_utils";
 import { claimSendSlots } from "@/lib/cronSendLog";
+import { filterByNotificationPref } from "@/lib/server/notificationPrefs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -129,7 +130,9 @@ export async function GET(request: Request) {
       // semantics correctly mean "once this Friday." Claim every builder
       // up front; only push_subscriptions rows for the claimed subset ever
       // get sent to.
-      const claimedBuilderIds = new Set(await claimSendSlots(builderIds, "weekly_report_push"));
+      // Respect the Weekly Report switch in Settings: opted-out users are never claimed or sent to.
+      const optedInIds = await filterByNotificationPref(supabase, builderIds, "weeklyReport");
+      const claimedBuilderIds = new Set(await claimSendSlots(optedInIds, "weekly_report_push"));
 
       const BATCH = 50;
       for (let i = 0; i < builderIds.length; i += BATCH) {
