@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { motion, AnimatePresence, useReducedMotion, useMotionValue, useSpring } from "framer-motion";
 import {
   ACHIEVEMENTS, RARITY_COLORS, RARITY_LABELS, getUnlocked, getAchievementTracks, getTrackLevel,
   getProgressState, xpToLevel,
@@ -9,6 +9,8 @@ import {
 } from "@/lib/achievements";
 import { Trophy, Lock, EyeOff, Sparkles, ArrowUpRight } from "lucide-react";
 import Link from "next/link";
+import AchievementMascot from "@/components/achievements/AchievementMascot";
+import ConfettiBurst from "@/components/achievements/ConfettiBurst";
 
 const EMPTY_STATS: AchievementStats = {
   streak: 0, maxStreak: 0, checkInsDone: 0, aiMessages: 0, projectsCreated: 0,
@@ -45,16 +47,78 @@ function timeAgo(iso?: string): string | null {
   return mo === 1 ? "1 month ago" : `${mo} months ago`;
 }
 
+/** Animates a number toward its target (e.g. XP ticking up after an unlock). */
+function useCountUp(target: number, ms = 900): number {
+  const reduce = useReducedMotion();
+  const [v, setV] = useState(0);
+  const cur = useRef(0);
+  useEffect(() => {
+    if (reduce) { cur.current = target; setV(target); return; }
+    const from = cur.current;
+    const t0 = performance.now();
+    let raf = 0;
+    const tick = (t: number) => {
+      const k = Math.min(1, (t - t0) / ms);
+      const e = 1 - Math.pow(1 - k, 3);
+      cur.current = Math.round(from + (target - from) * e);
+      setV(cur.current);
+      if (k < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [target, ms, reduce]);
+  return v;
+}
+
+/** Scroll-reveal with a spring, plus a subtle 3D tilt and light sheen that follow a mouse pointer. */
+function TiltCard({ index, children }: { index: number; children: React.ReactNode }) {
+  const reduce = useReducedMotion();
+  const ref = useRef<HTMLDivElement>(null);
+  const rx = useMotionValue(0);
+  const ry = useMotionValue(0);
+  const srx = useSpring(rx, { stiffness: 220, damping: 18 });
+  const sry = useSpring(ry, { stiffness: 220, damping: 18 });
+  const onMove = (e: React.PointerEvent) => {
+    if (reduce || e.pointerType !== "mouse" || !ref.current) return;
+    const r = ref.current.getBoundingClientRect();
+    const px = (e.clientX - r.left) / r.width;
+    const py = (e.clientY - r.top) / r.height;
+    ry.set((px - 0.5) * 9);
+    rx.set(-(py - 0.5) * 9);
+    ref.current.style.setProperty("--gx", `${px * 100}%`);
+    ref.current.style.setProperty("--gy", `${py * 100}%`);
+  };
+  const onLeave = () => { rx.set(0); ry.set(0); };
+  return (
+    <motion.div
+      ref={ref}
+      className="ach-tilt"
+      initial={reduce ? false : { opacity: 0, y: 26, scale: 0.95 }}
+      whileInView={{ opacity: 1, y: 0, scale: 1 }}
+      viewport={{ once: true, amount: 0.12 }}
+      transition={{ type: "spring", stiffness: 210, damping: 22, delay: (index % 3) * 0.07 }}
+      onPointerMove={onMove}
+      onPointerLeave={onLeave}
+      style={{ rotateX: srx, rotateY: sry, transformPerspective: 900 }}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
 function Bar({ pct, color = "var(--bm-accent)", h = 5 }: { pct: number; color?: string; h?: number }) {
   const reduce = useReducedMotion();
   return (
     <div style={{ height: h, borderRadius: 99, background: "var(--bm-bg3)", overflow: "hidden" }}>
       <motion.div
         initial={{ width: reduce ? `${pct}%` : 0 }}
-        animate={{ width: `${Math.max(0, Math.min(100, pct))}%` }}
-        transition={{ duration: reduce ? 0 : 0.8, ease: "easeOut" }}
-        style={{ height: "100%", borderRadius: 99, background: color }}
-      />
+        whileInView={{ width: `${Math.max(0, Math.min(100, pct))}%` }}
+        viewport={{ once: true }}
+        transition={{ duration: reduce ? 0 : 0.9, ease: "easeOut" }}
+        style={{ height: "100%", borderRadius: 99, background: color, position: "relative", overflow: "hidden" }}
+      >
+        {pct > 0 && pct < 100 && <span className="ach-shimmer" />}
+      </motion.div>
     </div>
   );
 }
@@ -68,7 +132,9 @@ function Medal({ emoji, badgeImage, state, rarity, secretLocked }: {
   return (
     <div
       aria-hidden
+      className={on ? `ach-medal ach-medal-on${rarity === "legendary" || rarity === "epic" ? " ach-aura" : ""}` : "ach-medal"}
       style={{
+        ["--aura" as string]: rc.glow,
         width: 52, height: 52, minWidth: 52, borderRadius: 16, flexShrink: 0, overflow: "hidden",
         display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26,
         background: on ? rc.bg : "var(--bm-bg3)",
@@ -180,12 +246,16 @@ function TrackCard({ track, stats, unlocked }: { track: AchievementTrack; stats:
 
       {/* Tier ladder: every step visible, earned ones filled */}
       <div style={{ display: "flex", gap: 4, margin: "2px 0 10px" }} aria-label={`${level} of ${tiers.length} tiers earned`}>
-        {tiers.map((t) => (
+        {tiers.map((t, ti) => (
           <div key={t.id} title={t.secret && !unlocked.has(t.id) ? "Secret" : t.label}
-            style={{
-              flex: 1, height: 5, borderRadius: 99,
-              background: unlocked.has(t.id) ? RARITY_COLORS[t.rarity].text : "var(--bm-bg3)",
-            }} />
+            style={{ flex: 1, height: 5, borderRadius: 99, background: "var(--bm-bg3)", overflow: "hidden" }}>
+            {unlocked.has(t.id) && (
+              <motion.div
+                initial={{ scaleX: 0 }} whileInView={{ scaleX: 1 }} viewport={{ once: true }}
+                transition={{ duration: 0.5, delay: 0.2 + ti * 0.15, ease: "easeOut" }}
+                style={{ height: "100%", background: RARITY_COLORS[t.rarity].text, transformOrigin: "left" }} />
+            )}
+          </div>
         ))}
       </div>
 
@@ -213,6 +283,13 @@ export default function AchievementsPage() {
   const [stats, setStats] = useState<AchievementStats | null>(null);
   const [filter, setFilter] = useState("all");
   const [justUnlocked, setJustUnlocked] = useState<Achievement[]>([]);
+  const [cheerKey, setCheerKey] = useState(0);
+  const [confettiKey, setConfettiKey] = useState(0);
+  const [ringPulse, setRingPulse] = useState(0);
+  const [serverReady, setServerReady] = useState(false);
+  const [levelUp, setLevelUp] = useState<{ level: number; title: string } | null>(null);
+  const prevLevel = useRef<number | null>(null);
+  const [tapLine, setTapLine] = useState<string | null>(null);
 
   useEffect(() => {
     // Instant optimistic render from local, then server replaces it (a forged
@@ -227,6 +304,7 @@ export default function AchievementsPage() {
         (data.records ?? []).forEach((r) => { ts[r.achievement_id] = r.unlocked_at; });
         setTimestamps(ts);
         if (data.stats) setStats(data.stats);
+        setServerReady(true);
       })
       .catch(() => {});
 
@@ -236,6 +314,9 @@ export default function AchievementsPage() {
       if (fresh.length === 0) return;
       setUnlocked((prev) => new Set([...prev, ...fresh.map((a) => a.id)]));
       setJustUnlocked(fresh);
+      setCheerKey((k) => k + 1);
+      setConfettiKey((k) => k + 1);
+      setRingPulse((k) => k + 1);
       clearTimeout(timer);
       timer = setTimeout(() => setJustUnlocked([]), 6000);
     };
@@ -250,6 +331,27 @@ export default function AchievementsPage() {
   // unlock), so the level shown matches what was actually earned.
   const xp = ACHIEVEMENTS.reduce((s, a) => s + (unlocked.has(a.id) ? a.xp : 0), 0);
   const lvl = xpToLevel(xp);
+  const cUnlocked = useCountUp(unlockedCount);
+  const cXp = useCountUp(xp, 1100);
+  const cStreak = useCountUp(stats?.maxStreak ?? 0);
+
+  // A real level-up (only after server data is in, so the first load never fires it).
+  useEffect(() => {
+    if (!serverReady) return;
+    if (prevLevel.current === null) { prevLevel.current = lvl.level; return; }
+    if (lvl.level > prevLevel.current) {
+      setLevelUp({ level: lvl.level, title: lvl.title });
+      setConfettiKey((k) => k + 1);
+    }
+    prevLevel.current = lvl.level;
+  }, [lvl.level, lvl.title, serverReady]);
+  useEffect(() => {
+    if (!levelUp) return;
+    const t = setTimeout(() => setLevelUp(null), 7000);
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setLevelUp(null); };
+    window.addEventListener("keydown", onKey);
+    return () => { clearTimeout(t); window.removeEventListener("keydown", onKey); };
+  }, [levelUp]);
 
   const countFor = (cat: string) => {
     const list = cat === "all" ? ACHIEVEMENTS : ACHIEVEMENTS.filter((a) => a.category === cat);
@@ -276,6 +378,16 @@ export default function AchievementsPage() {
       .slice(0, 3);
   }, [stats, unlocked, tracks]);
 
+  const mascotLine = justUnlocked.length > 0
+    ? `${justUnlocked[0].label}. You earned it!`
+    : tapLine
+      ?? (unlockedCount === 0
+        ? "Your first badge is one check-in away."
+        : upNext[0] && upNext[0].ratio >= 0.8
+          ? `So close. ${upNext[0].p.target - upNext[0].p.current} more for ${upNext[0].a.label}.`
+          : `${unlockedCount} badge${unlockedCount === 1 ? "" : "s"} earned. Keep going.`);
+  const TAP_LINES = ["Hi!", "Ha, that tickles.", "Go finish today's action.", "You are doing the work.", "One more badge?", "Show me a streak."];
+
   const dispTracks = filter === "all" ? tracks : tracks.filter((t) => t.category === filter);
   const dispStandalone = filter === "all" ? standalone : standalone.filter((a) => a.category === filter);
   const secretsLeft = ACHIEVEMENTS.filter((a) => a.secret && !unlocked.has(a.id)).length;
@@ -284,8 +396,13 @@ export default function AchievementsPage() {
     <div className="ach-wrap">
       <style>{`
         .ach-wrap{max-width:960px;margin:0 auto;padding:24px 16px 80px;box-sizing:border-box}
+        .ach-stage{display:flex;align-items:center;gap:6px;margin-bottom:6px;padding:0 4px}
+        .ach-bubble{position:relative;padding:12px 16px;border-radius:18px;background:var(--bm-bg2);border:1px solid var(--bm-border2);
+          font-size:15px;line-height:1.45;color:var(--bm-text);max-width:380px}
+        .ach-bubble::before{content:"";position:absolute;left:-7px;top:50%;width:12px;height:12px;background:var(--bm-bg2);
+          border-left:1px solid var(--bm-border2);border-bottom:1px solid var(--bm-border2);transform:translateY(-50%) rotate(45deg)}
         .ach-hero{display:grid;grid-template-columns:auto 1fr;gap:22px;align-items:center;padding:22px;border-radius:20px;
-          background:linear-gradient(135deg,var(--bm-bg2),var(--bm-bg));border:1px solid var(--bm-border);margin-bottom:18px}
+          background:radial-gradient(380px circle at var(--mx,18%) var(--my,0%),rgba(232,197,71,.10),transparent 65%),linear-gradient(135deg,var(--bm-bg2),var(--bm-bg));border:1px solid var(--bm-border);margin-bottom:18px;position:relative;overflow:hidden}
         .ach-ring{width:108px;height:108px;position:relative;flex-shrink:0}
         .ach-ring svg{transform:rotate(-90deg)}
         .ach-ring-in{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
@@ -301,16 +418,36 @@ export default function AchievementsPage() {
         .ach-pill[aria-pressed="true"]{background:var(--bm-accent-dim);border-color:var(--bm-accent-bd);color:var(--bm-accent);font-weight:600}
         .ach-pill:focus-visible,.ach-wrap a:focus-visible{outline:2px solid var(--bm-accent);outline-offset:2px}
         .ach-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
-        .ach-card{display:flex;gap:14px;padding:16px;border-radius:16px;background:var(--bm-bg2);border:1px solid var(--bm-border);min-width:0;box-sizing:border-box;transition:transform .15s}
-        .ach-card:hover{transform:translateY(-2px)}
+        .ach-card{position:relative;overflow:hidden;display:flex;gap:14px;padding:16px;border-radius:16px;background:var(--bm-bg2);border:1px solid var(--bm-border);min-width:0;box-sizing:border-box;}
         .ach-card[data-state="locked"]{opacity:.72}
         .ach-track{flex-direction:column;gap:0}
+        .ach-tilt{transform-style:preserve-3d;min-width:0}
+        .ach-card::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;transition:opacity .2s;
+          background:radial-gradient(240px circle at var(--gx,50%) var(--gy,0%),rgba(255,255,255,.09),transparent 60%)}
+        .ach-tilt:hover .ach-card::after{opacity:1}
+        .ach-medal{transition:transform .25s cubic-bezier(.3,1.6,.5,1)}
+        .ach-shimmer{position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.35),transparent);transform:translateX(-100%)}
+        @media (prefers-reduced-motion:no-preference){
+          .ach-tilt:hover .ach-medal-on{transform:scale(1.1) rotate(-5deg)}
+          .ach-medal-on{position:relative}
+          .ach-medal-on::after{content:"";position:absolute;top:-20%;bottom:-20%;width:38%;left:-60%;transform:skewX(-20deg);
+            background:linear-gradient(100deg,transparent,rgba(255,255,255,.5),transparent);animation:ach-shine 5.5s ease-in-out infinite}
+          .ach-aura{animation:ach-aura 2.6s ease-in-out infinite}
+          .ach-shimmer{animation:ach-bar 2.2s ease-in-out infinite}
+          .ach-card[data-state="nearly_there"]{animation:ach-near 2.4s ease-in-out infinite}
+          .ach-nextcard{transition:transform .2s,border-color .2s}
+          .ach-nextcard:hover{transform:translateY(-3px);border-color:var(--bm-accent-bd)}
+          @keyframes ach-shine{0%,55%{left:-60%}100%{left:140%}}
+          @keyframes ach-aura{0%,100%{box-shadow:0 0 10px var(--aura)}50%{box-shadow:0 0 26px var(--aura),0 0 4px var(--aura)}}
+          @keyframes ach-bar{0%{transform:translateX(-100%)}60%,100%{transform:translateX(100%)}}
+          @keyframes ach-near{0%,100%{box-shadow:0 0 0 0 rgba(217,164,65,0)}50%{box-shadow:0 0 0 4px rgba(217,164,65,.14)}}
+        }
         @media (max-width:560px){
           .ach-hero{grid-template-columns:1fr;justify-items:center;text-align:center;padding:20px 16px}
           .ach-grid{grid-template-columns:1fr}
           .ach-stats{width:100%}
         }
-        @media (prefers-reduced-motion:reduce){.ach-card{transition:none}.ach-card:hover{transform:none}}
+        
       `}</style>
 
       <AnimatePresence>
@@ -335,9 +472,52 @@ export default function AchievementsPage() {
         )}
       </AnimatePresence>
 
+      <ConfettiBurst burstKey={confettiKey} />
+      <AnimatePresence>
+        {levelUp && (
+          <motion.div
+            key="levelup" role="dialog" aria-label={`Level ${levelUp.level} reached`}
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            onClick={() => setLevelUp(null)}
+            style={{ position: "fixed", inset: 0, zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.65)", padding: 16 }}
+          >
+            <motion.div
+              initial={{ scale: 0.7, y: 30 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 260, damping: 18 }}
+              style={{ textAlign: "center", padding: "26px 28px 24px", borderRadius: 24, background: "var(--bm-bg2)", border: "1px solid var(--bm-accent-bd)", maxWidth: 360, width: "100%", boxShadow: "0 0 60px rgba(232,197,71,0.18)" }}
+            >
+              <div style={{ display: "flex", justifyContent: "center" }}><AchievementMascot size={170} levelUpKey={1} /></div>
+              <div style={{ fontSize: 14, color: "var(--bm-text3)", marginTop: 6 }}>Level up</div>
+              <div style={{ fontFamily: "Syne, var(--font-syne), sans-serif", fontSize: 30, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.02em" }}>
+                Level {levelUp.level}
+              </div>
+              <div style={{ fontSize: 18, color: "var(--bm-accent)", fontWeight: 600, marginTop: 2 }}>{levelUp.title}</div>
+              <button onClick={() => setLevelUp(null)} autoFocus
+                style={{ marginTop: 18, padding: "12px 28px", borderRadius: 12, border: 0, background: "var(--bm-accent)", color: "#15130a", fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "inherit" }}>
+                Keep going
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Mascot stage: tap it, it reacts; a real unlock makes it celebrate */}
+      <section className="ach-stage" aria-label="Mascot">
+        <AchievementMascot size={132} celebrateKey={cheerKey} onTap={() => { setTapLine(TAP_LINES[Math.floor(Math.random() * TAP_LINES.length)]); setTimeout(() => setTapLine(null), 4000); }} />
+        <div className="ach-bubble" role="status">{mascotLine}</div>
+      </section>
+
       {/* Hero: founder level is the one memorable thing on the page */}
-      <section className="ach-hero" aria-label="Founder level">
-        <div className="ach-ring">
+      <section
+        className="ach-hero"
+        aria-label="Founder level"
+        onPointerMove={(e) => {
+          const r = e.currentTarget.getBoundingClientRect();
+          e.currentTarget.style.setProperty("--mx", `${e.clientX - r.left}px`);
+          e.currentTarget.style.setProperty("--my", `${e.clientY - r.top}px`);
+        }}
+      >
+        <motion.div key={ringPulse} className="ach-ring" animate={reduce ? undefined : { scale: [1, 1.14, 1] }} transition={{ duration: 0.7 }}>
           <svg width="108" height="108" viewBox="0 0 108 108" aria-hidden>
             <circle cx="54" cy="54" r="47" fill="none" stroke="var(--bm-bg3)" strokeWidth="8" />
             <motion.circle cx="54" cy="54" r="47" fill="none" stroke="var(--bm-accent)" strokeWidth="8" strokeLinecap="round"
@@ -350,7 +530,7 @@ export default function AchievementsPage() {
             <span style={{ fontSize: 12, color: "var(--bm-text3)" }}>Level</span>
             <span style={{ fontFamily: "Syne, var(--font-syne), sans-serif", fontSize: 34, fontWeight: 800, lineHeight: 1, color: "var(--bm-text)" }}>{lvl.level}</span>
           </div>
-        </div>
+        </motion.div>
         <div style={{ minWidth: 0, width: "100%" }}>
           <h1 style={{ fontFamily: "Syne, var(--font-syne), sans-serif", fontSize: 28, fontWeight: 800, letterSpacing: "-0.03em", margin: 0, color: "var(--bm-text)" }}>
             {lvl.title}
@@ -362,15 +542,15 @@ export default function AchievementsPage() {
           </p>
           <div className="ach-stats">
             <div className="ach-stat">
-              <div className="bm-data" style={{ fontSize: 20, fontWeight: 700, color: "var(--bm-accent)" }}>{unlockedCount}<span style={{ fontSize: 13, color: "var(--bm-text3)", fontWeight: 400 }}>/{total}</span></div>
+              <div className="bm-data" style={{ fontSize: 20, fontWeight: 700, color: "var(--bm-accent)" }}>{cUnlocked}<span style={{ fontSize: 13, color: "var(--bm-text3)", fontWeight: 400 }}>/{total}</span></div>
               <div style={{ fontSize: 12, color: "var(--bm-text3)" }}>Unlocked</div>
             </div>
             <div className="ach-stat">
-              <div className="bm-data" style={{ fontSize: 20, fontWeight: 700, color: "var(--bm-text)" }}>{xp.toLocaleString()}</div>
+              <div className="bm-data" style={{ fontSize: 20, fontWeight: 700, color: "var(--bm-text)" }}>{cXp.toLocaleString()}</div>
               <div style={{ fontSize: 12, color: "var(--bm-text3)" }}>Total XP</div>
             </div>
             <div className="ach-stat">
-              <div className="bm-data" style={{ fontSize: 20, fontWeight: 700, color: "var(--bm-text)" }}>{stats?.maxStreak ?? 0}</div>
+              <div className="bm-data" style={{ fontSize: 20, fontWeight: 700, color: "var(--bm-text)" }}>{cStreak}</div>
               <div style={{ fontSize: 12, color: "var(--bm-text3)" }}>Best streak</div>
             </div>
           </div>
@@ -414,10 +594,12 @@ export default function AchievementsPage() {
         })}
       </div>
 
-      <div className="ach-grid">
-        {dispTracks.map((t) => <TrackCard key={t.track} track={t} stats={stats} unlocked={unlocked} />)}
-        {dispStandalone.map((a) => (
-          <AchievementCard key={a.id} a={a} unlocked={unlocked.has(a.id)} unlockedAt={timestamps[a.id]} stats={stats} />
+      <div key={filter} className="ach-grid">
+        {dispTracks.map((t, i) => <TiltCard key={t.track} index={i}><TrackCard track={t} stats={stats} unlocked={unlocked} /></TiltCard>)}
+        {dispStandalone.map((a, i) => (
+          <TiltCard key={a.id} index={dispTracks.length + i}>
+            <AchievementCard a={a} unlocked={unlocked.has(a.id)} unlockedAt={timestamps[a.id]} stats={stats} />
+          </TiltCard>
         ))}
       </div>
 
