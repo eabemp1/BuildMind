@@ -209,14 +209,28 @@ describe("POST /api/billing/paystack/webhook", () => {
     expect(persistUserPlan).not.toHaveBeenCalled();
   });
 
-  it("ignores charge.success when currency is not GHS", async () => {
+  it("ignores charge.success in an unsupported currency", async () => {
     const event = {
       ...CHARGE_SUCCESS,
-      data: { ...CHARGE_SUCCESS.data, currency: "USD" },
+      data: { ...CHARGE_SUCCESS.data, currency: "EUR" },
     };
-    const req = makeRequest(event);
-    await POST(req);
+    await POST(makeRequest(event));
     expect(persistUserPlan).not.toHaveBeenCalled();
+  });
+
+  it("ignores an underpaid USD charge", async () => {
+    const event = {
+      ...CHARGE_SUCCESS,
+      data: { ...CHARGE_SUCCESS.data, currency: "USD", amount: 100 },
+    };
+    await POST(makeRequest(event));
+    expect(persistUserPlan).not.toHaveBeenCalled();
+  });
+
+  it("returns 500 (so Paystack retries) when granting the plan fails", async () => {
+    vi.mocked(persistUserPlan).mockRejectedValueOnce(new Error("db down"));
+    const res = await POST(makeRequest(CHARGE_SUCCESS));
+    expect(res.status).toBe(500);
   });
 
   // ── Payload details ─────────────────────────────────────────────────────
