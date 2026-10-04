@@ -1,5 +1,5 @@
 import { Webhooks } from "@polar-sh/nextjs";
-import { persistUserPlan, resolveUserIdByEmail } from "@/lib/billing/server";
+import { persistUserPlan, resolveUserIdByEmail, scheduleCancellation, clearScheduledCancellation } from "@/lib/billing/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logError } from "@/lib/server/logger";
 
@@ -119,6 +119,32 @@ export const POST = Webhooks({
       logError("polar-webhook/onSubscriptionCreated", err);
       // Rethrow so the webhook returns 500 and Polar retries. Swallowing it
       // here meant a transient DB error left a paying customer on Free.
+      throw err;
+    }
+  },
+
+  // Customer cancelled: billing stops, access continues to period end.
+  onSubscriptionCanceled: async (payload) => {
+    try {
+      const { userId: metaUserId, email } = resolveUserId(payload);
+      const userId = metaUserId ?? (email ? await resolveUserIdByEmail(email) : null);
+      if (!userId) return;
+      await scheduleCancellation(userId, { email, reason: "polar_canceled" });
+    } catch (err) {
+      logError("polar-webhook/onSubscriptionCanceled", err);
+      throw err;
+    }
+  },
+
+  // Customer changed their mind before the period ended.
+  onSubscriptionUncanceled: async (payload) => {
+    try {
+      const { userId: metaUserId, email } = resolveUserId(payload);
+      const userId = metaUserId ?? (email ? await resolveUserIdByEmail(email) : null);
+      if (!userId) return;
+      await clearScheduledCancellation(userId);
+    } catch (err) {
+      logError("polar-webhook/onSubscriptionUncanceled", err);
       throw err;
     }
   },
