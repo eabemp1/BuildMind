@@ -6,6 +6,7 @@ import { buildFounderMirror } from "@/lib/founderMirror";
 import { buildStartupRelationshipGraph, traceRelationshipChain } from "@/lib/founderRelationships";
 import { getFounderIntelligenceAccuracy } from "@/lib/learningLoop";
 import { loadBehavioralContext } from "@/lib/behavioralLayers";
+import { reconcileFounderModels } from "@/lib/reconcileFounderModels";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -91,6 +92,21 @@ export async function GET(request: Request) {
     founderName,
     null,
   ).catch(() => null);
+
+  // Read-time reconciliation of the two founder models: surface any
+  // disagreement in "what may be wrong" instead of showing both silently.
+  if (behavioral) {
+    const tensions = reconcileFounderModels({
+      strengths: state.founder.strengths,
+      avoidancePatterns: state.founder.avoidance_patterns,
+      behavioralAvoidance: [
+        ...(behavioral.execution?.avoidanceZones ?? []).map((z: { category: unknown }) => String(z.category)),
+        ...(behavioral.signatureCard?.avoidanceZone ? [behavioral.signatureCard.avoidanceZone] : []),
+      ],
+      behavioralStrength: behavioral.archetype?.strength ?? null,
+    });
+    if (tensions.length) mirror.may_be_wrong_about = [...tensions, ...mirror.may_be_wrong_about];
+  }
 
   const graph = buildStartupRelationshipGraph(preloaded, state);
 
