@@ -50,6 +50,9 @@
     },
     "app/api/cron/promoter-digest/route.ts": {
       "maxDuration": 30
+    },
+    "app/api/cron/coach-tips/route.ts": {
+      "maxDuration": 60
     }
   },
   "crons": [
@@ -96,6 +99,10 @@
     {
       "path": "/api/cron/promoter-digest",
       "schedule": "0 10 * * *"
+    },
+    {
+      "path": "/api/cron/coach-tips",
+      "schedule": "0 10 * * 2,5"
     }
   ]
 }
