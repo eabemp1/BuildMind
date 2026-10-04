@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { NextResponse } from "next/server";
-import { persistUserPlan, resolveUserIdByEmail } from "@/lib/billing/server";
+import { persistUserPlan, resolveUserIdByEmail, scheduleCancellation, startPaymentGrace } from "@/lib/billing/server";
+import { formatAccessDate } from "@/lib/billing/cancellation";
 import { sendEmail } from "@/lib/email";
 import { logError } from "@/lib/server/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -235,51 +236,43 @@ async function processEvent(event: PaystackEvent, eventName: string): Promise<Ne
     return NextResponse.json({ ok: true });
   }
 
-  if (eventName === "subscription.disable" || eventName === "invoice.payment_failed" || eventName === "subscription.not_renew") {
-    // Paystack disables/not-renews are treated as access-ending subscription
-    // events. The grace timestamp is still recorded for messaging/recovery
-    // flows, but the authoritative plan is downgraded immediately.
-    const gracePeriodEndsAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
-
-    await persistUserPlan(userId, "free", {
-      provider: "paystack",
-      status: "canceled",
-      reference,
-      transactionId,
-      subscriptionId,
-      customerEmail: email,
-      meta: {
-        grace_period_ends_at: gracePeriodEndsAt,
-        grace_reason: eventName,
-      },
-    });
-
-    // Also write grace_period_ends_at into founder_context so plan checks can use it
-    // without an auth admin call
-    if (userId && process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      const adminForGrace = createAdminClient();
-      adminForGrace
-        .from("founder_context")
-        .update({ grace_period_ends_at: gracePeriodEndsAt })
-        .eq("user_id", userId)
-        .then(() => undefined, () => undefined); // best-effort
-    }
-
-    // Send cancellation / payment failure email (best-effort)
+  if (eventName === "invoice.payment_failed") {
+    // A failed renewal gets a short grace window, not an instant downgrade.
+    const graceEnds = await startPaymentGrace(userId, { email, reason: eventName });
     if (email) {
-      const cancelDate = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
-      const reason = eventName === "invoice.payment_failed"
-        ? "Payment failed — your subscription was not renewed"
-        : undefined;
       sendEmail({
         to: email,
         template: "subscription_cancelled",
-        data: { cancelDate, reason },
+        data: {
+          cancelDate: formatAccessDate(new Date().toISOString()),
+          accessUntil: formatAccessDate(graceEnds),
+          reason: "Your renewal payment didn't go through. Update your payment method before this date to keep Builder.",
+        },
       }).catch(err => logError("billing/webhook/email", err, { route: "/api/billing/paystack/webhook" }));
     }
+    return NextResponse.json({ ok: true, grace: true });
+  }
 
+  if (eventName === "subscription.disable" || eventName === "subscription.not_renew") {
+    // Billing has stopped. The customer keeps what they already paid for
+    // until the period ends. Paystack sends both events for one cancellation,
+    // so only email the first time.
+    const { decision, alreadyScheduled } = await scheduleCancellation(userId, {
+      email,
+      reason: eventName,
+    });
+    if (email && !alreadyScheduled) {
+      sendEmail({
+        to: email,
+        template: "subscription_cancelled",
+        data: {
+          cancelDate: formatAccessDate(new Date().toISOString()),
+          accessUntil: decision.mode === "until_period_end" ? formatAccessDate(decision.accessUntil) : undefined,
+        },
+      }).catch(err => logError("billing/webhook/email", err, { route: "/api/billing/paystack/webhook" }));
+    }
     return NextResponse.json({ ok: true });
   }
 
   return NextResponse.json({ ok: true, ignored: eventName || "unknown_event" });
-          }
+}
