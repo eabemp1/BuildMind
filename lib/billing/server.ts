@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { normalizePlan, type Plan } from "@/lib/plan";
+import { decideAccessAfterCancel, PAYMENT_GRACE_DAYS, type AccessDecision } from "@/lib/billing/cancellation";
 
 export type PublicPlan = Extract<Plan, "free" | "builder">;
 
@@ -23,6 +24,9 @@ type BillingUpdate = {
   /** FOUNDING MEMBER FIX: tags the subscriptions row so the badge/roadmap-input
    *  surface can read it directly without joining another table. */
   isFoundingMember?: boolean;
+  /** When set, the user has cancelled but keeps access until periodEnd.
+   *  Pass null to clear a scheduled cancellation (resume). */
+  canceledAt?: string | null;
 };
 
 const MONTHLY_PERIOD_MS = 30 * 24 * 60 * 60 * 1000;
@@ -150,6 +154,7 @@ export async function persistUserPlan(userId: string, plan: PublicPlan, update: 
     billing_current_period_start: billingPeriodStart,
     billing_current_period_end: billingPeriodEnd,
     billing_updated_at: nowIso,
+    billing_cancel_at_period_end: plan === "builder" && Boolean(update.canceledAt),
   };
 
   const { error: updateError } = await supabase.auth.admin.updateUserById(userId, {
@@ -184,7 +189,9 @@ export async function persistUserPlan(userId: string, plan: PublicPlan, update: 
     current_period_start:     billingPeriodStart,
     current_period_end:       billingPeriodEnd,
     grace_period_ends_at:     update.gracePeriodEndsAt ?? (update.meta?.grace_period_ends_at as string | null) ?? null,
-    canceled_at:              update.status === "canceled" ? new Date().toISOString() : null,
+    canceled_at:              update.canceledAt !== undefined
+      ? update.canceledAt
+      : update.status === "canceled" ? new Date().toISOString() : null,
     customer_email:           update.customerEmail ?? null,
     amount_minor:             update.amountMinor ?? null,
     currency:                 update.currency ?? "GHS",
@@ -221,4 +228,133 @@ export async function persistUserPlan(userId: string, plan: PublicPlan, update: 
     plan,
     metadata: nextMetadata,
   };
+}
+
+
+// ── Cancellation / grace helpers ─────────────────────────────────────────────
+
+type SubscriptionSnapshot = {
+  plan: string | null;
+  status: string | null;
+  provider: "paystack" | "stripe" | "polar" | null;
+  providerSubscriptionId: string | null;
+  providerCustomerId: string | null;
+  providerReference: string | null;
+  periodStart: string | null;
+  periodEnd: string | null;
+  canceledAt: string | null;
+  amountMinor: number | null;
+  currency: string | null;
+};
+
+export async function getSubscriptionSnapshot(userId: string): Promise<SubscriptionSnapshot | null> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("subscriptions")
+    .select("plan, status, provider, provider_subscription_id, provider_customer_id, provider_reference, current_period_start, current_period_end, canceled_at, amount_minor, currency")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw new Error(`[billing/getSubscriptionSnapshot] ${error.message}`);
+  if (!data) return null;
+  const row = data as Record<string, unknown>;
+  const str = (v: unknown) => (typeof v === "string" && v ? v : null);
+  const provider = str(row.provider);
+  return {
+    plan: str(row.plan),
+    status: str(row.status),
+    provider: provider === "paystack" || provider === "stripe" || provider === "polar" ? provider : null,
+    providerSubscriptionId: str(row.provider_subscription_id),
+    providerCustomerId: str(row.provider_customer_id),
+    providerReference: str(row.provider_reference),
+    periodStart: str(row.current_period_start),
+    periodEnd: str(row.current_period_end),
+    canceledAt: str(row.canceled_at),
+    amountMinor: typeof row.amount_minor === "number" ? row.amount_minor : null,
+    currency: str(row.currency),
+  };
+}
+
+/** Everything persistUserPlan would otherwise reset to null on a re-write. */
+function carryOver(snap: SubscriptionSnapshot | null): BillingUpdate {
+  if (!snap) return {};
+  return {
+    provider: snap.provider ?? undefined,
+    reference: snap.providerReference,
+    subscriptionId: snap.providerSubscriptionId,
+    customerId: snap.providerCustomerId,
+    amountMinor: snap.amountMinor,
+    currency: snap.currency,
+  };
+}
+
+/**
+ * Cancel without taking away time that was already paid for.
+ *  - Period still running: stay on Builder (status "active") until the period
+ *    ends, flagged as cancelled so the UI and emails can say so.
+ *  - Nothing left to honour: drop to Free now.
+ * Safe to call more than once (Paystack sends several events per cancellation).
+ */
+export async function scheduleCancellation(
+  userId: string,
+  opts: { reason?: string | null; email?: string | null } = {},
+): Promise<{ decision: AccessDecision; alreadyScheduled: boolean }> {
+  const snap = await getSubscriptionSnapshot(userId);
+  const decision = decideAccessAfterCancel(snap?.periodEnd ?? null);
+  const nowIso = new Date().toISOString();
+  const alreadyScheduled = Boolean(snap?.canceledAt) && (snap?.plan !== "builder" || snap?.status === "active" || snap?.status === "canceled");
+  const meta = { billing_canceled_at: nowIso, billing_cancel_reason: opts.reason ?? null };
+
+  if (decision.mode === "until_period_end") {
+    await persistUserPlan(userId, "builder", {
+      ...carryOver(snap),
+      status: "active",
+      periodStart: snap?.periodStart ?? null,
+      periodEnd: decision.accessUntil,
+      canceledAt: snap?.canceledAt ?? nowIso,
+      customerEmail: opts.email ?? null,
+      meta,
+    });
+  } else {
+    await persistUserPlan(userId, "free", {
+      ...carryOver(snap),
+      status: "canceled",
+      customerEmail: opts.email ?? null,
+      meta,
+    });
+  }
+  return { decision, alreadyScheduled };
+}
+
+/** Undo a scheduled cancellation while the paid period is still running. */
+export async function clearScheduledCancellation(userId: string): Promise<boolean> {
+  const snap = await getSubscriptionSnapshot(userId);
+  if (!snap || snap.plan !== "builder" || !snap.canceledAt) return false;
+  if (decideAccessAfterCancel(snap.periodEnd).mode !== "until_period_end") return false;
+  await persistUserPlan(userId, "builder", {
+    ...carryOver(snap),
+    status: "active",
+    periodStart: snap.periodStart,
+    periodEnd: snap.periodEnd,
+    canceledAt: null,
+  });
+  return true;
+}
+
+/**
+ * A renewal payment failed. Keep Builder for a short grace window instead of
+ * cutting access the same minute (cards fail for boring reasons).
+ */
+export async function startPaymentGrace(userId: string, opts: { email?: string | null; reason?: string } = {}): Promise<string> {
+  const snap = await getSubscriptionSnapshot(userId);
+  const graceEnds = new Date(Date.now() + PAYMENT_GRACE_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  await persistUserPlan(userId, "builder", {
+    ...carryOver(snap),
+    status: "grace",
+    gracePeriodEndsAt: graceEnds,
+    periodStart: snap?.periodStart ?? null,
+    periodEnd: snap?.periodEnd ?? graceEnds,
+    customerEmail: opts.email ?? null,
+    meta: { grace_period_ends_at: graceEnds, grace_reason: opts.reason ?? "payment_failed" },
+  });
+  return graceEnds;
 }
