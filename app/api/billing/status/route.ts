@@ -24,6 +24,7 @@ export async function GET() {
   let subscriptionStatus: string | null = null;
   let subscriptionProvider: string | null = null;
   let subscriptionPeriodEnd: string | null = null;
+  let subscriptionCanceledAt: string | null = null;
 
   // ── Free Trial: read from founder_context (server-authoritative) ──────────
   // If the auth callback missed trial creation, bootstrap it here so a new
@@ -37,13 +38,15 @@ export async function GET() {
     const admin = createAdminClient();
     const { data: sub } = await admin
       .from("subscriptions")
-      .select("status, provider, current_period_end")
+      .select("status, provider, current_period_end, canceled_at")
       .eq("user_id", user.id)
       .maybeSingle();
 
     subscriptionStatus = typeof sub?.status === "string" ? sub.status : null;
     subscriptionProvider = typeof sub?.provider === "string" ? sub.provider : null;
     subscriptionPeriodEnd = typeof sub?.current_period_end === "string" ? sub.current_period_end : null;
+
+    subscriptionCanceledAt = typeof sub?.canceled_at === "string" ? sub.canceled_at : null;
 
     const { data: ctx } = await admin
       .from("founder_context")
@@ -170,6 +173,12 @@ export async function GET() {
     billingProvider: subscriptionProvider ?? freshUser.user_metadata?.billing_provider ?? null,
     billingStatus: subscriptionStatus ?? freshUser.user_metadata?.billing_status ?? null,
     currentPeriodEnd: subscriptionPeriodEnd ?? freshUser.user_metadata?.billing_current_period_end ?? null,
+    // True when the customer has cancelled but is still inside the period they paid for.
+    cancelAtPeriodEnd:
+      effectivePlan === "builder" &&
+      Boolean(subscriptionCanceledAt) &&
+      Boolean(subscriptionPeriodEnd) &&
+      new Date(subscriptionPeriodEnd as string).getTime() > Date.now(),
     updatedAt: freshUser.user_metadata?.billing_updated_at ?? null,
   });
 }
