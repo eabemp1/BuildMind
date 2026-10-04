@@ -47,6 +47,7 @@ import { DecisionBrief } from "./components/DecisionBrief";
 import { ContextAlignmentCard } from "./components/ContextAlignmentCard";
 import { IntelligenceUnavailableCard } from "./components/IntelligenceUnavailableCard";
 import { useUIMode } from "@/lib/uiMode";
+import { WhyThisPanel } from "./components/WhyThisPanel";
 import { UIModeToggle } from "@/components/ui/UIModeToggle";
 import { RadialGauge } from "@/components/charts/RadialGauge";
 
@@ -2140,6 +2141,8 @@ function TodayContent() {
             )}
           </div>
 
+          <WhyThisPanel data={{ isAI: actionData.isAI, isLowConfidence: actionData.isLowConfidence, reflexion: actionData.reflexion, intelligence: actionData.intelligence }} />
+
           {/* Focus block, directly under the task it serves */}
           <TodayCommandCenter
             actionTitle={actionData?.action ? sanitizeOutput(actionData.action) : null}
@@ -2823,4 +2826,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-    }
+}
