@@ -22,6 +22,7 @@ import { sanitizeOutput } from "@/lib/sanitizeOutput";
 import { Input, Textarea } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
+import LevelUpPanel from "@/components/projects/LevelUpPanel";
 
 type Tab = "milestones" | "tasks" | "validation" | "roadmap";
 
@@ -1377,6 +1378,14 @@ export default function ProjectDetailPage() {
         </div>
       ) : null}
 
+      <LevelUpPanel
+        key={`${id}-${String(project.startup_stage ?? "Idea")}`}
+        projectId={id}
+        currentStage={String(project.startup_stage ?? "Idea")}
+        busy={stageChanging}
+        onLevelUp={(next) => executeStageTransition(next)}
+      />
+
       {/* Tabs */}
       <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--bm-border)", marginBottom: 24, overflowX: "auto" }}>
         {(["milestones", "tasks", "roadmap", "validation"] as Tab[]).map(t => (
@@ -1809,4 +1818,4 @@ export default function ProjectDetailPage() {
       </AnimatePresence>
     </div>
   );
-                                                         }
+      }
