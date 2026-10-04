@@ -283,6 +283,14 @@ export default function AchievementsPage() {
   const [stats, setStats] = useState<AchievementStats | null>(null);
   const [filter, setFilter] = useState("all");
   const [justUnlocked, setJustUnlocked] = useState<Achievement[]>([]);
+  const [mascotSize, setMascotSize] = useState(132);
+  useEffect(() => {
+    const q = window.matchMedia("(max-width: 560px)");
+    const apply = () => setMascotSize(q.matches ? 96 : 132);
+    apply();
+    q.addEventListener("change", apply);
+    return () => q.removeEventListener("change", apply);
+  }, []);
   const [cheerKey, setCheerKey] = useState(0);
   const [confettiKey, setConfettiKey] = useState(0);
   const [ringPulse, setRingPulse] = useState(0);
@@ -443,11 +451,27 @@ export default function AchievementsPage() {
           @keyframes ach-near{0%,100%{box-shadow:0 0 0 0 rgba(217,164,65,0)}50%{box-shadow:0 0 0 4px rgba(217,164,65,.14)}}
         }
         @media (max-width:560px){
-          .ach-hero{grid-template-columns:1fr;justify-items:center;text-align:center;padding:20px 16px}
-          .ach-grid{grid-template-columns:1fr}
-          .ach-stats{width:100%}
+          .ach-wrap{padding:14px 12px 72px}
+          .ach-stage{gap:2px}
+          .ach-bubble{font-size:13.5px;padding:9px 12px;border-radius:14px}
+          .ach-hero{grid-template-columns:1fr;justify-items:center;text-align:center;padding:16px 12px;gap:12px;border-radius:16px}
+          .ach-ring{width:88px;height:88px}
+          .ach-ring svg{width:88px;height:88px}
+          .ach-hero h1{font-size:22px !important}
+          .ach-hero p{font-size:13px !important}
+          .ach-stats{width:100%;gap:8px;margin-top:12px}
+          .ach-stat{padding:8px 6px}
+          .ach-stat .bm-data{font-size:17px !important}
+          .ach-stat div:last-child{font-size:11px !important}
+          .ach-grid{grid-template-columns:1fr;gap:10px}
+          .ach-card{padding:12px;gap:10px;border-radius:14px}
+          .ach-card h3{font-size:14px !important}
+          .ach-card p{font-size:12.5px !important}
+          .ach-medal{width:44px !important;height:44px !important;min-width:44px !important;font-size:22px !important;border-radius:13px !important}
+          .ach-pill{padding:7px 12px;font-size:12.5px}
+          .ach-nextcard{padding:11px}
         }
-        
+        @media (max-width:560px){ .ach-ring-in span:last-child{font-size:28px !important} }
       `}</style>
 
       <AnimatePresence>
@@ -486,7 +510,7 @@ export default function AchievementsPage() {
               transition={{ type: "spring", stiffness: 260, damping: 18 }}
               style={{ textAlign: "center", padding: "26px 28px 24px", borderRadius: 24, background: "var(--bm-bg2)", border: "1px solid var(--bm-accent-bd)", maxWidth: 360, width: "100%", boxShadow: "0 0 60px rgba(232,197,71,0.18)" }}
             >
-              <div style={{ display: "flex", justifyContent: "center" }}><AchievementMascot size={170} levelUpKey={1} /></div>
+              <div style={{ display: "flex", justifyContent: "center" }}><AchievementMascot size={mascotSize + 40} levelUpKey={1} /></div>
               <div style={{ fontSize: 14, color: "var(--bm-text3)", marginTop: 6 }}>Level up</div>
               <div style={{ fontFamily: "Syne, var(--font-syne), sans-serif", fontSize: 30, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.02em" }}>
                 Level {levelUp.level}
@@ -503,7 +527,7 @@ export default function AchievementsPage() {
 
       {/* Mascot stage: tap it, it reacts; a real unlock makes it celebrate */}
       <section className="ach-stage" aria-label="Mascot">
-        <AchievementMascot size={132} celebrateKey={cheerKey} onTap={() => { setTapLine(TAP_LINES[Math.floor(Math.random() * TAP_LINES.length)]); setTimeout(() => setTapLine(null), 4000); }} />
+        <AchievementMascot size={mascotSize} celebrateKey={cheerKey} onTap={() => { setTapLine(TAP_LINES[Math.floor(Math.random() * TAP_LINES.length)]); setTimeout(() => setTapLine(null), 4000); }} />
         <div className="ach-bubble" role="status">{mascotLine}</div>
       </section>
 
@@ -618,4 +642,4 @@ export default function AchievementsPage() {
       )}
     </div>
   );
-              }
+            }
