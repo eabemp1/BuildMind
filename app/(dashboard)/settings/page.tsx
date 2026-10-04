@@ -8,6 +8,7 @@ import { ensureUserProfile } from "@/lib/buildmind";
 import { FEATURES } from "@/lib/features";
 import { PLAN_NAMES, setStoredPlan, fetchAndSyncStoredPlanFromBillingStatus } from "@/lib/plan";
 import { PLAN_PRICE_LABEL } from "@/lib/pricing";
+import { formatAccessDate } from "@/lib/billing/cancellation";
 import { usePlan } from "@/lib/usePlan";
 import { storage } from "@/lib/storage";
 import { clearFounderInsight } from "@/lib/founderMemory";
@@ -385,25 +386,67 @@ function BillingTab() {
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [cancelStep, setCancelStep] = useState<CancelStep>("idle");
   const [cancelReason, setCancelReason] = useState("");
+  const [scheduled, setScheduled] = useState<{ until: string | null } | null>(null);
+  const [doneMessage, setDoneMessage] = useState<string | null>(null);
+
+  async function loadBillingStatus() {
+    try {
+      const res = await fetch("/api/billing/status", { cache: "no-store" });
+      const data = await res.json().catch(() => null);
+      if (data?.cancelAtPeriodEnd) {
+        setScheduled({ until: typeof data.currentPeriodEnd === "string" ? data.currentPeriodEnd : null });
+      } else {
+        setScheduled(null);
+      }
+    } catch {
+      /* non-fatal */
+    }
+  }
 
   useEffect(() => {
-    fetchAndSyncStoredPlanFromBillingStatus().finally(() => setLoading(false));
+    Promise.all([fetchAndSyncStoredPlanFromBillingStatus(), loadBillingStatus()]).finally(() => setLoading(false));
   }, []);
 
-  async function confirmCancel() {
-    if (!cancelReason || cancelLoading) return;
+  const untilLabel = scheduled?.until ? formatAccessDate(scheduled.until) : null;
+
+  async function resumeSubscription() {
+    if (cancelLoading) return;
     setCancelLoading(true);
     setCancelError(null);
     try {
       const res = await fetch("/api/billing/cancel", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "cancel", reason: cancelReason }),
+        body: JSON.stringify({ mode: "resume" }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.ok) throw new Error(body.error ?? "Couldn't keep your subscription. Try again.");
+      await fetchAndSyncStoredPlanFromBillingStatus();
+      await loadBillingStatus();
+      setCancelStep("idle");
+      setDoneMessage(body.message ?? "Your subscription will renew as normal.");
+    } catch (e) {
+      setCancelError(e instanceof Error ? e.message : "Couldn't keep your subscription. Try again.");
+    } finally {
+      setCancelLoading(false);
+    }
+  }
+
+  async function confirmCancel() {
+    if (cancelLoading) return;
+    setCancelLoading(true);
+    setCancelError(null);
+    try {
+      const res = await fetch("/api/billing/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "cancel", reason: cancelReason || undefined }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body.ok) throw new Error(body.error ?? "Cancellation failed");
-      setStoredPlan("free");
       await fetchAndSyncStoredPlanFromBillingStatus();
+      await loadBillingStatus();
+      setDoneMessage(body.message ?? "Cancelled. You won't be charged again.");
       setCancelStep("final");
     } catch (e) {
       setCancelError(e instanceof Error ? e.message : "Cancellation failed");
@@ -419,10 +462,14 @@ function BillingTab() {
           <div>
             <div style={{ fontSize: 10, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 700, marginBottom: 8 }}>Current Plan</div>
             <div style={{ fontSize: 22, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.02em", marginBottom: 4 }}>{PLAN_NAMES[plan] ?? plan}</div>
-            {isPaid && <div style={{ fontSize: 12, color: "var(--bm-text3)" }}>{PLAN_PRICE_LABEL.builder} · Renews monthly</div>}
+            {isPaid && (
+              <div style={{ fontSize: 12, color: "var(--bm-text3)" }}>
+                {scheduled ? `Cancelled · Builder continues until ${untilLabel ?? "the end of your paid period"}` : `${PLAN_PRICE_LABEL.builder} · Renews monthly`}
+              </div>
+            )}
           </div>
           {isPaid ? (
-            <span style={{ fontSize: 10, padding: "4px 12px", borderRadius: 20, background: "var(--bm-accent-dim)", color: "var(--bm-accent)", border: "1px solid var(--bm-accent-bd)", fontWeight: 700, letterSpacing: "0.06em" }}>ACTIVE</span>
+            <span style={{ fontSize: 10, padding: "4px 12px", borderRadius: 20, background: "var(--bm-accent-dim)", color: "var(--bm-accent)", border: "1px solid var(--bm-accent-bd)", fontWeight: 700, letterSpacing: "0.06em" }}>{scheduled ? "ENDING" : "ACTIVE"}</span>
           ) : (
             <a href="/upgrade" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 7, padding: "12px 18px", borderRadius: 11, border: "none", background: "var(--grad-primary)", color: "#fff", fontWeight: 700, fontSize: 13, textDecoration: "none", width: isMobile ? "100%" : "auto" }}>
               <Zap size={13} /> Upgrade to Builder
@@ -433,9 +480,24 @@ function BillingTab() {
 
       <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: isMobile ? "18px" : "22px 24px" }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 4 }}>Manage subscription</div>
-        <div style={{ fontSize: 12, color: "var(--bm-text3)", marginBottom: 16 }}>Cancel or pause your Builder plan.</div>
-        {cancelStep === "idle" && (
-          <button onClick={() => setCancelStep("confirm")}
+        <div style={{ fontSize: 12, color: "var(--bm-text3)", marginBottom: 16 }}>Cancel any time. You keep Builder until the end of the period you paid for.</div>
+        {doneMessage && cancelStep === "idle" && (
+          <div style={{ fontSize: 13, color: "var(--bm-green)", lineHeight: 1.6, marginBottom: 12 }}>{doneMessage}</div>
+        )}
+        {scheduled && cancelStep !== "final" && (
+          <div>
+            <div style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.6, marginBottom: 12 }}>
+              Your subscription is cancelled. You won't be charged again, and Builder access continues{untilLabel ? ` until ${untilLabel}` : " until your paid period ends"}.
+            </div>
+            <button onClick={resumeSubscription} disabled={cancelLoading}
+              style={{ padding: "10px 18px", borderRadius: 10, border: "none", background: "var(--bm-accent)", color: "#0a0a0a", fontSize: 12, fontWeight: 700, cursor: cancelLoading ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: cancelLoading ? 0.7 : 1 }}>
+              {cancelLoading ? "Restarting..." : "Keep my subscription"}
+            </button>
+            {cancelError && <div style={{ fontSize: 11, color: "var(--bm-red)", marginTop: 10 }}>{cancelError}</div>}
+          </div>
+        )}
+        {!scheduled && cancelStep === "idle" && isPaid && (
+          <button onClick={() => { setDoneMessage(null); setCancelStep("confirm"); }}
             style={{ padding: "9px 18px", borderRadius: 10, border: "1px solid rgba(224,85,85,0.25)", background: "rgba(224,85,85,0.06)", color: "var(--bm-red)", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
             Cancel subscription
           </button>
@@ -443,16 +505,16 @@ function BillingTab() {
         {cancelStep === "confirm" && (
           <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: "var(--bm-text)", marginBottom: 8 }}>Before you go…</div>
-            <p style={{ fontSize: 13, color: "var(--bm-text3)", marginBottom: 16, lineHeight: 1.6 }}>Cancelling will immediately end your Builder access.</p>
+            <p style={{ fontSize: 13, color: "var(--bm-text3)", marginBottom: 16, lineHeight: 1.6 }}>Cancelling stops future charges. You keep Builder until the end of the period you've already paid for, and you can change your mind before then.</p>
             <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 8 }}>
-              <button onClick={() => setCancelStep("reason")} style={{ padding: "10px 18px", borderRadius: 10, border: "none", background: "var(--bm-red)", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Still cancel</button>
+              <button onClick={() => setCancelStep("reason")} style={{ padding: "10px 18px", borderRadius: 10, border: "none", background: "var(--bm-red)", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Continue</button>
               <button onClick={() => setCancelStep("idle")} style={{ padding: "10px 18px", borderRadius: 10, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text2)", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Keep Builder</button>
             </div>
           </motion.div>
         )}
         {cancelStep === "reason" && (
           <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 12 }}>What's the main reason?</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 12 }}>What's the main reason? <span style={{ fontWeight: 400, color: "var(--bm-text3)" }}>(optional)</span></div>
             <div style={{ display: "flex", flexDirection: "column", gap: 7, marginBottom: 16 }}>
               {CANCEL_REASONS.map(r => (
                 <button key={r} onClick={() => setCancelReason(r)}
@@ -462,8 +524,8 @@ function BillingTab() {
               ))}
             </div>
             <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 8 }}>
-              <button onClick={confirmCancel} disabled={!cancelReason || cancelLoading}
-                style={{ padding: "10px 18px", borderRadius: 10, border: "none", background: cancelReason ? "var(--bm-red)" : "var(--bm-bg4)", color: cancelReason ? "#fff" : "var(--bm-text3)", fontSize: 12, fontWeight: 700, cursor: cancelReason && !cancelLoading ? "pointer" : "not-allowed", fontFamily: "inherit", opacity: cancelLoading ? 0.7 : 1 }}>
+              <button onClick={confirmCancel} disabled={cancelLoading}
+                style={{ padding: "10px 18px", borderRadius: 10, border: "none", background: "var(--bm-red)", color: "#fff", fontSize: 12, fontWeight: 700, cursor: cancelLoading ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: cancelLoading ? 0.7 : 1 }}>
                 {cancelLoading ? "Cancelling..." : "Confirm cancel"}
               </button>
               <button onClick={() => setCancelStep("idle")} style={{ padding: "10px 18px", borderRadius: 10, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text2)", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Go back</button>
@@ -473,7 +535,7 @@ function BillingTab() {
         )}
         {cancelStep === "final" && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            <div style={{ fontSize: 13, color: "var(--bm-text3)", lineHeight: 1.6 }}>Your subscription has been cancelled. Your account is now on the free plan.</div>
+            <div style={{ fontSize: 13, color: "var(--bm-text3)", lineHeight: 1.6 }}>{doneMessage ?? "Cancelled. You won't be charged again."}</div>
           </motion.div>
         )}
       </div>
@@ -889,4 +951,4 @@ export default function SettingsPage() {
       <SettingsContent />
     </Suspense>
   );
-                     }
+              }
