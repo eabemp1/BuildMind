@@ -1375,10 +1375,19 @@ export default function BreakMyStartupPage() {
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-xs font-semibold text-[var(--bm-text)]">{pivot.title}</span>
-                        {pivot.estimated_score_delta > 0 && (
-                          <Badge variant="success" size="sm">+{pivot.estimated_score_delta} score</Badge>
-                        )}
+                        {(() => {
+                          const chk = result.evidence?.pivotChecks?.find((c) => c.title === pivot.title);
+                          return chk ? (
+                            <Badge variant={chk.validatesOriginal ? "success" : "warning"} size="sm">
+                              {chk.relation === "same_problem" ? "Same problem" : chk.relation === "adjacent" ? "Adjacent problem" : "Different problem"}
+                            </Badge>
+                          ) : null;
+                        })()}
                       </div>
+                      {(() => {
+                        const chk = result.evidence?.pivotChecks?.find((c) => c.title === pivot.title);
+                        return chk ? <p className="text-[11px] leading-relaxed text-[var(--bm-text3)]">{chk.reason}</p> : null;
+                      })()}
                       <p className="text-xs leading-relaxed text-[var(--bm-text3)]">{pivot.description}</p>
                       <p className="text-[11px] leading-relaxed text-[var(--bm-text3)]">
                         <span className="font-semibold text-[var(--bm-text2)]">Target: </span>{pivot.target_niche}
@@ -1474,4 +1483,4 @@ export default function BreakMyStartupPage() {
       </AnimatePresence>
     </div>
   );
-                     }
+    }
