@@ -509,6 +509,8 @@ export async function POST(request: Request) {
         scraped: competitors,
         competitorSource: competitor_data_source,
         founderEvidenceCount: 0,
+        breakdown: breakdownEntries,
+        pivots,
       });
 
       return NextResponse.json({
@@ -892,6 +894,8 @@ export async function POST(request: Request) {
       scraped: competitors,
       competitorSource: competitor_data_source,
       founderEvidenceCount,
+      breakdown: breakdownEntries,
+      pivots,
     });
 
     return NextResponse.json({
