@@ -1,176 +1,265 @@
-import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { isAdminUser } from "@/lib/server/adminAuth";
-import { actionCategoryLabelOrNull } from "@/lib/actionClassification";
-import { deduplicateTags } from "@/lib/founderMemory";
-
 /**
- * GET/POST /api/admin/cleanup-avoidance-zones
+ * app/api/cron/weekly-report/route.ts
  *
- * Browser-callable version of scripts/cleanup-avoidance-zones.ts — same
- * logic, same actionCategoryLabel()/deduplicateTags() pipeline, but
- * runnable from a deployed URL instead of a local `npx tsx` invocation.
- * No terminal, no env vars to export by hand — auth comes from your
- * existing logged-in admin session, and the service-role write uses the
- * server's own SUPABASE_SERVICE_ROLE_KEY (already configured in Vercel).
+ * Weekly report cron — fires every Friday at 7:00 UTC (vercel.json).
  *
- * Cleans BOTH founder_memory.avoidance_zones/strengths AND the separate
- * founder_context.avoidance_zones column (fed by a weekly edge-function
- * synthesis job that was silently failing on a stale column name until
- * this session — now fixed, so it needs the same safety net).
+ * Fixes applied:
+ *   1. Paginated listUsers — no silent truncation at 1,000 users.
+ *   2. Actually pushes the report notification to builder users via web-push
+ *      instead of logging and exiting (the old stub behaviour).
  *
- * GET  → dry run: returns what WOULD change, writes nothing.
- * POST → live run: writes the cleaned arrays back.
- *
- * Optional query param ?user=<uuid> limits either mode to one account —
- * handy for spot-checking one of your test accounts before running it
- * against everyone.
+ * The full report content is generated on-demand when founders visit /reports.
+ * This cron's job is to bring the report *to* them — the system posts without
+ * the founder having to remember to open anything.
  */
 
-type CleanResult = { changed: boolean; before: string[]; after: string[] };
+import { NextResponse } from "next/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { hasAdminEnv } from "@/app/api/ai/_utils";
+import { claimSendSlots } from "@/lib/cronSendLog";
+import { filterByNotificationPref } from "@/lib/server/notificationPrefs";
+import { effectiveStreak } from "@/lib/streak";
 
-function cleanArray(raw: unknown): CleanResult {
-  const before = Array.isArray(raw) ? (raw as string[]).filter(Boolean) : [];
-  if (before.length === 0) return { changed: false, before, after: [] };
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const maxDuration = 30;
 
-  // Unclassifiable entries are dropped rather than stored as a catch-all label.
-  const recategorized = before.map((entry) => actionCategoryLabelOrNull(entry)).filter((x): x is string => Boolean(x));
-  const after = deduplicateTags(recategorized);
-
-  const changed = before.length !== after.length || before.some((v, i) => v !== after[i]);
-  return { changed, before, after };
+function getCronSecret(request: Request): string | undefined {
+  const authorization = request.headers.get("authorization");
+  const bearer = authorization?.match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
+  return request.headers.get("x-cron-secret") ?? bearer;
 }
 
-async function runCleanup(userIdFilter: string | null, isDryRun: boolean) {
-  const admin = createAdminClient();
-
-  let query = admin.from("founder_memory").select("user_id, avoidance_zones, strengths");
-  if (userIdFilter) query = query.eq("user_id", userIdFilter);
-
-  const { data: rows, error } = await query;
-  if (error) {
-    return { ok: false as const, error: error.message };
-  }
-  if (!rows || rows.length === 0) {
-    return { ok: true as const, dryRun: isDryRun, touched: 0, skipped: 0, results: [] };
-  }
-
-  const results: Array<{
-    user_id: string;
-    avoidance_zones?: { before: string[]; after: string[] };
-    strengths?: { before: string[]; after: string[] };
-  }> = [];
-  let touched = 0;
-  let skipped = 0;
-
-  for (const row of rows) {
-    const avoidance = cleanArray((row as { avoidance_zones: unknown }).avoidance_zones);
-    const strengths = cleanArray((row as { strengths: unknown }).strengths);
-
-    if (!avoidance.changed && !strengths.changed) {
-      skipped++;
-      continue;
-    }
-
-    touched++;
-    const entry: (typeof results)[number] = { user_id: (row as { user_id: string }).user_id };
-    if (avoidance.changed) entry.avoidance_zones = { before: avoidance.before, after: avoidance.after };
-    if (strengths.changed) entry.strengths = { before: strengths.before, after: strengths.after };
-    results.push(entry);
-
-    if (!isDryRun) {
-      const update: Record<string, string[]> = {};
-      if (avoidance.changed) update.avoidance_zones = avoidance.after;
-      if (strengths.changed) update.strengths = strengths.after;
-      const { error: updateError } = await admin
-        .from("founder_memory")
-        .update(update)
-        .eq("user_id", (row as { user_id: string }).user_id);
-      if (updateError) {
-        (entry as Record<string, unknown>).writeError = updateError.message;
-      }
-    }
-  }
-
-  return { ok: true as const, dryRun: isDryRun, touched, skipped, results };
+function isCronRequest(request: Request): boolean {
+  return Boolean(process.env.CRON_SECRET && getCronSecret(request) === process.env.CRON_SECRET);
 }
 
-async function runFounderContextCleanup(userIdFilter: string | null, isDryRun: boolean) {
-  const admin = createAdminClient();
-
-  let query = admin.from("founder_context").select("user_id, avoidance_zones");
-  if (userIdFilter) query = query.eq("user_id", userIdFilter);
-
-  const { data: rows, error } = await query;
-  if (error) {
-    return { ok: false as const, error: error.message };
-  }
-  if (!rows || rows.length === 0) {
-    return { ok: true as const, dryRun: isDryRun, touched: 0, skipped: 0, results: [] };
-  }
-
-  const results: Array<{ user_id: string; avoidance_zones: { before: string[]; after: string[] } }> = [];
-  let touched = 0;
-  let skipped = 0;
-
-  for (const row of rows) {
-    const avoidance = cleanArray((row as { avoidance_zones: unknown }).avoidance_zones);
-    if (!avoidance.changed) {
-      skipped++;
-      continue;
-    }
-    touched++;
-    const entry = { user_id: (row as { user_id: string }).user_id, avoidance_zones: { before: avoidance.before, after: avoidance.after } };
-    results.push(entry);
-
-    if (!isDryRun) {
-      const { error: updateError } = await admin
-        .from("founder_context")
-        .update({ avoidance_zones: avoidance.after })
-        .eq("user_id", (row as { user_id: string }).user_id);
-      if (updateError) {
-        (entry as Record<string, unknown>).writeError = updateError.message;
-      }
-    }
-  }
-
-  return { ok: true as const, dryRun: isDryRun, touched, skipped, results };
-}
-
-async function handle(request: Request, isDryRun: boolean) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user || !(await isAdminUser(user.id))) {
-    return NextResponse.json({ ok: false, error: "Not authorized" }, { status: 403 });
-  }
-
-  const { searchParams } = new URL(request.url);
-  const userIdFilter = searchParams.get("user");
-
-  const founderMemoryResult = await runCleanup(userIdFilter, isDryRun);
-  const founderContextResult = await runFounderContextCleanup(userIdFilter, isDryRun);
-
-  if (!founderMemoryResult.ok) {
-    return NextResponse.json(founderMemoryResult, { status: 500 });
-  }
-  if (!founderContextResult.ok) {
-    return NextResponse.json(founderContextResult, { status: 500 });
-  }
-  return NextResponse.json({
-    ok: true,
-    dryRun: isDryRun,
-    founder_memory: founderMemoryResult,
-    founder_context: founderContextResult,
-  });
-}
-
-// Dry run — safe to call any time, writes nothing.
 export async function GET(request: Request) {
-  return handle(request, true);
-}
+  const start = Date.now();
 
-// Live run — writes cleaned arrays back to founder_memory.
-export async function POST(request: Request) {
-  return handle(request, false);
+  if (!process.env.CRON_SECRET && process.env.NODE_ENV === "production") {
+    console.error(
+      "[buildmind] CRON_SECRET is not set. Weekly report cron is blocked. " +
+      "Set CRON_SECRET in Vercel Environment Variables."
+    );
+    return NextResponse.json(
+      { success: false, error: "CRON_SECRET not configured. Set it in Vercel to enable weekly report cron." },
+      { status: 500 },
+    );
+  }
+
+  if (!isCronRequest(request) && process.env.NODE_ENV === "production") {
+    console.error("[buildmind] Weekly report cron blocked: invalid or missing CRON_SECRET.");
+    return NextResponse.json(
+      { success: false, error: "Unauthorized", hint: "Vercel Cron must send Authorization: Bearer <CRON_SECRET>." },
+      { status: 401 },
+    );
+  }
+
+  if (!hasAdminEnv()) {
+    return NextResponse.json(
+      { success: false, error: "Supabase admin env is missing." },
+      { status: 500 },
+    );
+  }
+
+  const supabase = createAdminClient();
+  const now = new Date();
+
+  // Early exit if no actionable records exist.
+  const { count: subscriptionCount } = await supabase
+    .from("subscriptions")
+    .select("user_id", { count: "exact", head: true })
+    .eq("plan", "builder")
+    .in("status", ["active", "grace"]);
+  const { count: trialCount } = await supabase
+    .from("founder_context")
+    .select("user_id", { count: "exact", head: true })
+    .gt("trial_ends_at", now.toISOString());
+
+  if (!subscriptionCount && !trialCount) {
+    return NextResponse.json({ skipped: true, reason: "no records", processed: 0, durationMs: Date.now() - start });
+  }
+
+  // ── Fix 1: Paginated user fetch — no silent cap at 1,000 ───────────────────
+  const PAGE_SIZE = 200;
+  const allAuthUsers: Array<{ id: string; user_metadata?: Record<string, unknown> }> = [];
+  for (let page = 1; ; page++) {
+    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: PAGE_SIZE });
+    if (error) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    }
+    allAuthUsers.push(...(data?.users ?? []));
+    if ((data?.users ?? []).length < PAGE_SIZE) break;
+  }
+
+  // Include both paid builder users and active trial users
+  const { data: trialRows } = await supabase
+    .from("founder_context")
+    .select("user_id, trial_ends_at")
+    .gt("trial_ends_at", now.toISOString());
+
+  const trialUserIds = new Set((trialRows ?? []).map((r: { user_id: string }) => r.user_id));
+
+  const builderUsers = allAuthUsers.filter(
+    (u) => u.user_metadata?.plan === "builder" || trialUserIds.has(u.id),
+  );
+
+  // ── Fix 2: Actually deliver the weekly report via push ─────────────────────
+  const builderIds = builderUsers.map((u) => u.id);
+  let pushed = 0;
+  let skipped = 0;
+  const pushErrors: string[] = [];
+
+  if (builderIds.length > 0) {
+    const hasVapid =
+      process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY;
+
+    if (!hasVapid) {
+      skipped = builderIds.length;
+    } else {
+      const webpush = (await import("web-push")).default;
+      webpush.setVapidDetails(
+        process.env.VAPID_SUBJECT || "mailto:hello@buildmind.live",
+        process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!,
+        process.env.VAPID_PRIVATE_KEY!,
+      );
+
+      // FIX (High #9): no durable per-user marker existed before this send
+      // — only aggregate counts returned in the response, no per-user log.
+      // This runs weekly on a fixed day (Friday), so default (today's) date
+      // semantics correctly mean "once this Friday." Claim every builder
+      // up front; only push_subscriptions rows for the claimed subset ever
+      // get sent to.
+      // Respect the Weekly Report switch in Settings: opted-out users are never claimed or sent to.
+      const optedInIds = await filterByNotificationPref(supabase, builderIds, "weeklyReport");
+      const claimedBuilderIds = new Set(await claimSendSlots(optedInIds, "weekly_report_push"));
+
+      const BATCH = 50;
+      for (let i = 0; i < builderIds.length; i += BATCH) {
+        const batch = builderIds.slice(i, i + BATCH).filter((id) => claimedBuilderIds.has(id));
+        if (batch.length === 0) continue;
+        const { data: subs } = await supabase
+          .from("push_subscriptions")
+          .select("user_id, subscription")
+          .in("user_id", batch);
+
+        if (!subs?.length) continue;
+
+        await Promise.allSettled(
+          subs.map(async (row) => {
+            try {
+              // Fetch this user's week data for personalised push body
+              const weekAgoIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+              const [ctxRes, logsRes] = await Promise.allSettled([
+                supabase.from("founder_context").select("momentum_score, streak, last_checkin_date").eq("user_id", row.user_id).maybeSingle(),
+                supabase.from("action_logs").select("outcome").eq("user_id", row.user_id).gte("created_at", weekAgoIso),
+              ]);
+
+              const ctx  = ctxRes.status  === "fulfilled" ? ctxRes.value.data  : null;
+              const logs = logsRes.status === "fulfilled" ? (logsRes.value.data ?? []) : [];
+              const tasksCompleted = logs.filter((l: { outcome?: string }) => l.outcome === "completed").length;
+              const momentum = (ctx?.momentum_score as number | undefined) ?? 50;
+              const streak   = effectiveStreak(ctx?.streak as number | undefined, ctx?.last_checkin_date as string | undefined);
+
+              // Deterministic body — always references real numbers, testable, instant
+              let pushBody: string;
+              if (tasksCompleted === 0) {
+                pushBody = "Your weekly report is ready. See what the data says about this week.";
+              } else if (streak >= 7) {
+                pushBody = `${tasksCompleted} tasks logged · ${streak}-day streak · Your week in full → /reports`;
+              } else if (momentum >= 70) {
+                pushBody = `${tasksCompleted} tasks done, momentum at ${momentum}. Strong week — see the breakdown.`;
+              } else if (momentum < 45) {
+                pushBody = `${tasksCompleted} tasks, momentum at ${momentum}. See what pulled it down and what's next.`;
+              } else {
+                pushBody = `${tasksCompleted} task${tasksCompleted !== 1 ? "s" : ""} logged this week. Your report + next move are ready.`;
+              }
+
+              await webpush.sendNotification(
+                row.subscription,
+                JSON.stringify({
+                  title: "📋 Weekly report ready",
+                  body:  pushBody,
+                  icon:  "/logo/icon-192.png",
+                  badge: "/logo/icon-96.png",
+                  url:   "/reports",
+                  tag:   "weekly-report",
+                }),
+              );
+
+              // Write last_week_summary for each builder user — no AI call needed, deterministic
+              try {
+                const userId = row.user_id;
+                const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+                const [reflRes, ctxRes] = await Promise.all([
+                  supabase.from("reflections")
+                    .select("outcome, confidence, note, what_tried, what_learned, blocker, created_at")
+                    .eq("user_id", userId)
+                    .gte("created_at", weekAgo)
+                    .order("created_at", { ascending: false }),
+                  supabase.from("founder_context")
+                    .select("tasks_accepted_this_week, tasks_overridden_this_week, momentum_score")
+                    .eq("user_id", userId).maybeSingle(),
+                ]);
+
+                const refs = reflRes.data ?? [];
+                if (refs.length >= 2) {
+                  const completedCount = refs.filter(r => r.outcome === "completed").length;
+                  const blockedCount = refs.filter(r => r.outcome === "blocked").length;
+                  const avgConf = refs.reduce((s, r) => s + (r.confidence ?? 3), 0) / refs.length;
+                  const keyLearnings = refs.filter(r => r.what_learned).map(r => r.what_learned).join("; ") || null;
+                  const topBlocker = refs.filter(r => r.blocker).map(r => r.blocker).join("; ") || null;
+                  const ctx = ctxRes.data;
+
+                  const summary = JSON.stringify({
+                    tasks_completed: completedCount,
+                    tasks_blocked: blockedCount,
+                    avg_confidence: Math.round(avgConf * 10) / 10,
+                    override_count: ctx?.tasks_overridden_this_week ?? 0,
+                    biggest_blocker: topBlocker,
+                    key_learnings: keyLearnings,
+                    momentum_score: ctx?.momentum_score ?? null,
+                    next_week_recommendation: blockedCount > completedCount
+                      ? "Rebuild momentum: start with smallest-possible confidence win"
+                      : "Continue current thread and go one level deeper",
+                  });
+
+                  await supabase.from("founder_memory")
+                    .update({ last_week_summary: summary })
+                    .eq("user_id", userId);
+                }
+              } catch { /* non-fatal — never blocks push delivery */ }
+
+              pushed++;
+            } catch (err: unknown) {
+              if (err && typeof err === "object" && "statusCode" in err) {
+                const code = (err as { statusCode: number }).statusCode;
+                if (code === 410 || code === 404) {
+                  await supabase
+                    .from("push_subscriptions")
+                    .delete()
+                    .eq("user_id", row.user_id);
+                }
+              }
+              pushErrors.push(`${row.user_id}: ${String(err).slice(0, 60)}`);
+            }
+          }),
+        );
+      }
+    }
+  }
+
+  return NextResponse.json({
+    success: true,
+    cron: true,
+    ran_at: now.toISOString(),
+    users_scanned: allAuthUsers.length,
+    processed: builderUsers.length,
+    durationMs: Date.now() - start,
+    builder_users: builderUsers.length,
+    push_sent: pushed,
+    push_skipped: skipped,
+    push_errors: pushErrors.slice(0, 5),
+  });
 }

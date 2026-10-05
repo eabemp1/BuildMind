@@ -1,176 +1,78 @@
+/**
+ * app/api/founder-context/streak/route.ts
+ *
+ * GET  → returns { streak, lastCheckinDate } from founder_context (authoritative)
+ * POST → records a check-in event for TODAY (server's real date) and returns
+ *         the new authoritative streak.
+ *
+ * FIX: previously accepted { streak, lastCheckinDate } directly from the
+ * client and only bounds-checked it (0-3650, and — after a first pass this
+ * session — also capped to "at most previousStreak+1 per call"). That
+ * second constraint narrowed forgery but didn't close it: a script calling
+ * this endpoint repeatedly, each time with a different fake lastCheckinDate,
+ * could still walk the streak up to the max over many requests. This was
+ * also the fourth of four independent, disconnected streak implementations
+ * found across the codebase this session (the others: complete_task_atomic,
+ * reflect-action's inline logic, and this route's own prior version) — all
+ * four now call the same shared, atomic Postgres function. The client can
+ * still send a body (kept for backward compatibility with existing
+ * callers), but nothing in it is trusted for the computation anymore —
+ * only the server's own clock decides what day it is.
+ */
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { isAdminUser } from "@/lib/server/adminAuth";
-import { actionCategoryLabelOrNull } from "@/lib/actionClassification";
-import { deduplicateTags } from "@/lib/founderMemory";
+import { logError } from "@/lib/server/logger";
+import { streakStatus } from "@/lib/streak";
 
-/**
- * GET/POST /api/admin/cleanup-avoidance-zones
- *
- * Browser-callable version of scripts/cleanup-avoidance-zones.ts — same
- * logic, same actionCategoryLabel()/deduplicateTags() pipeline, but
- * runnable from a deployed URL instead of a local `npx tsx` invocation.
- * No terminal, no env vars to export by hand — auth comes from your
- * existing logged-in admin session, and the service-role write uses the
- * server's own SUPABASE_SERVICE_ROLE_KEY (already configured in Vercel).
- *
- * Cleans BOTH founder_memory.avoidance_zones/strengths AND the separate
- * founder_context.avoidance_zones column (fed by a weekly edge-function
- * synthesis job that was silently failing on a stale column name until
- * this session — now fixed, so it needs the same safety net).
- *
- * GET  → dry run: returns what WOULD change, writes nothing.
- * POST → live run: writes the cleaned arrays back.
- *
- * Optional query param ?user=<uuid> limits either mode to one account —
- * handy for spot-checking one of your test accounts before running it
- * against everyone.
- */
-
-type CleanResult = { changed: boolean; before: string[]; after: string[] };
-
-function cleanArray(raw: unknown): CleanResult {
-  const before = Array.isArray(raw) ? (raw as string[]).filter(Boolean) : [];
-  if (before.length === 0) return { changed: false, before, after: [] };
-
-  // Unclassifiable entries are dropped rather than stored as a catch-all label.
-  const recategorized = before.map((entry) => actionCategoryLabelOrNull(entry)).filter((x): x is string => Boolean(x));
-  const after = deduplicateTags(recategorized);
-
-  const changed = before.length !== after.length || before.some((v, i) => v !== after[i]);
-  return { changed, before, after };
-}
-
-async function runCleanup(userIdFilter: string | null, isDryRun: boolean) {
-  const admin = createAdminClient();
-
-  let query = admin.from("founder_memory").select("user_id, avoidance_zones, strengths");
-  if (userIdFilter) query = query.eq("user_id", userIdFilter);
-
-  const { data: rows, error } = await query;
-  if (error) {
-    return { ok: false as const, error: error.message };
-  }
-  if (!rows || rows.length === 0) {
-    return { ok: true as const, dryRun: isDryRun, touched: 0, skipped: 0, results: [] };
-  }
-
-  const results: Array<{
-    user_id: string;
-    avoidance_zones?: { before: string[]; after: string[] };
-    strengths?: { before: string[]; after: string[] };
-  }> = [];
-  let touched = 0;
-  let skipped = 0;
-
-  for (const row of rows) {
-    const avoidance = cleanArray((row as { avoidance_zones: unknown }).avoidance_zones);
-    const strengths = cleanArray((row as { strengths: unknown }).strengths);
-
-    if (!avoidance.changed && !strengths.changed) {
-      skipped++;
-      continue;
-    }
-
-    touched++;
-    const entry: (typeof results)[number] = { user_id: (row as { user_id: string }).user_id };
-    if (avoidance.changed) entry.avoidance_zones = { before: avoidance.before, after: avoidance.after };
-    if (strengths.changed) entry.strengths = { before: strengths.before, after: strengths.after };
-    results.push(entry);
-
-    if (!isDryRun) {
-      const update: Record<string, string[]> = {};
-      if (avoidance.changed) update.avoidance_zones = avoidance.after;
-      if (strengths.changed) update.strengths = strengths.after;
-      const { error: updateError } = await admin
-        .from("founder_memory")
-        .update(update)
-        .eq("user_id", (row as { user_id: string }).user_id);
-      if (updateError) {
-        (entry as Record<string, unknown>).writeError = updateError.message;
-      }
-    }
-  }
-
-  return { ok: true as const, dryRun: isDryRun, touched, skipped, results };
-}
-
-async function runFounderContextCleanup(userIdFilter: string | null, isDryRun: boolean) {
-  const admin = createAdminClient();
-
-  let query = admin.from("founder_context").select("user_id, avoidance_zones");
-  if (userIdFilter) query = query.eq("user_id", userIdFilter);
-
-  const { data: rows, error } = await query;
-  if (error) {
-    return { ok: false as const, error: error.message };
-  }
-  if (!rows || rows.length === 0) {
-    return { ok: true as const, dryRun: isDryRun, touched: 0, skipped: 0, results: [] };
-  }
-
-  const results: Array<{ user_id: string; avoidance_zones: { before: string[]; after: string[] } }> = [];
-  let touched = 0;
-  let skipped = 0;
-
-  for (const row of rows) {
-    const avoidance = cleanArray((row as { avoidance_zones: unknown }).avoidance_zones);
-    if (!avoidance.changed) {
-      skipped++;
-      continue;
-    }
-    touched++;
-    const entry = { user_id: (row as { user_id: string }).user_id, avoidance_zones: { before: avoidance.before, after: avoidance.after } };
-    results.push(entry);
-
-    if (!isDryRun) {
-      const { error: updateError } = await admin
-        .from("founder_context")
-        .update({ avoidance_zones: avoidance.after })
-        .eq("user_id", (row as { user_id: string }).user_id);
-      if (updateError) {
-        (entry as Record<string, unknown>).writeError = updateError.message;
-      }
-    }
-  }
-
-  return { ok: true as const, dryRun: isDryRun, touched, skipped, results };
-}
-
-async function handle(request: Request, isDryRun: boolean) {
+export async function GET() {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user || !(await isAdminUser(user.id))) {
-    return NextResponse.json({ ok: false, error: "Not authorized" }, { status: 403 });
-  }
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error || !user) return NextResponse.json({ ok: false }, { status: 401 });
 
-  const { searchParams } = new URL(request.url);
-  const userIdFilter = searchParams.get("user");
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("founder_context")
+    .select("streak, last_checkin_date")
+    .eq("user_id", user.id)
+    .maybeSingle();
 
-  const founderMemoryResult = await runCleanup(userIdFilter, isDryRun);
-  const founderContextResult = await runFounderContextCleanup(userIdFilter, isDryRun);
-
-  if (!founderMemoryResult.ok) {
-    return NextResponse.json(founderMemoryResult, { status: 500 });
-  }
-  if (!founderContextResult.ok) {
-    return NextResponse.json(founderContextResult, { status: 500 });
-  }
+  // Lapsed streaks read 0 here, so every screen that syncs from this route
+  // agrees with the scorecard (see lib/streak.ts).
+  const status = streakStatus(data?.streak, data?.last_checkin_date);
   return NextResponse.json({
     ok: true,
-    dryRun: isDryRun,
-    founder_memory: founderMemoryResult,
-    founder_context: founderContextResult,
+    streak: status.count,
+    atRisk: status.atRisk,
+    doneToday: status.doneToday,
+    lastStreak: status.lapsed ? status.lastRun : 0,
+    lastCheckinDate: data?.last_checkin_date ?? null,
   });
 }
 
-// Dry run — safe to call any time, writes nothing.
-export async function GET(request: Request) {
-  return handle(request, true);
-}
+export async function POST(req: Request) {
+  const supabase = await createClient();
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error || !user) return NextResponse.json({ ok: false }, { status: 401 });
 
-// Live run — writes cleaned arrays back to founder_memory.
-export async function POST(request: Request) {
-  return handle(request, false);
+  // Body is read but deliberately not used for the streak/date computation —
+  // kept only so existing callers sending { streak, lastCheckinDate } don't
+  // error on an unexpected payload shape. See fix note above.
+  await req.json().catch(() => ({}));
+
+  const admin = createAdminClient();
+  const today = new Date().toISOString().slice(0, 10); // server's real date, never client-supplied
+
+  const { data: newStreak, error: rpcError } = await admin.rpc("update_streak_atomic", {
+    p_user_id: user.id,
+    p_project_id: null,
+    p_today: today,
+  });
+
+  if (rpcError) {
+    logError("founder-context/streak", rpcError, { userId: user.id });
+    return NextResponse.json({ ok: false, error: "Could not update streak" }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true, streak: newStreak ?? 0 });
 }

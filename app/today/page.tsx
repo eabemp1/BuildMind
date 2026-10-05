@@ -4,29 +4,52 @@ import { Suspense, useState, useEffect, useRef, useMemo, useCallback } from "rea
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
-import { selectActiveProject, useActiveProjectId, useProjectSummariesQuery, queryKeys } from "@/lib/queries";
+import { selectActiveProject, useActiveProjectId, useProjectSummariesQuery, queryKeys, useFounderScorecardQuery } from "@/lib/queries";
 import { useQueryClient } from "@tanstack/react-query";
+import TodayCommandCenter from "@/components/today/TodayCommandCenter";
 import { computeStartupScore } from "@/lib/buildmind";
 import { computeScoreDelta, applyScoreDelta, getXP, recordScore } from "@/lib/scoring";
-import { getStoredStreak, incrementDailyStreak, recordTaskCompletion, syncStreakFromServer } from "@/lib/plan";
+import { getStoredStreak, recordTaskCompletion, syncStreakFromServer } from "@/lib/plan";
+import { observeTaskEvent } from "@/lib/founderMemory";
 import { usePlan } from "@/lib/usePlan";
 import { syncUrgencyFromServer } from "@/lib/urgency";
-import { updateAchievementStats, checkAndUnlockAchievements, getAchievementStats } from "@/lib/achievements";
+import { updateAchievementStats, checkAndUnlockAchievements, getAchievementStats, xpToLevel, getTotalXP } from "@/lib/achievements";
 import { notifyReflectPending } from "@/lib/notifications";
 import { trackFunnelStep } from "@/lib/onboarding-analytics";
 import BuildMindLoader from "@/components/BuildMindLoader";
-import MorningBriefingCard from "@/components/MorningBriefingCard";
+import MorningBriefingModal from "@/components/MorningBriefingModal";
+import RecoveryModeCard from "@/components/RecoveryModeCard";
+import { BlockerInsightCard } from "@/components/BlockerInsightCard";
 import { PaywallMoment } from "@/components/PaywallMoment";
-import { Clock, CheckCircle2, Copy, Check, Flame, Brain, Sparkles, AlertCircle, TrendingUp, RotateCcw, Zap } from "lucide-react";
+import { Clock, CheckCircle2, Copy, Check, Flame, Brain, Sparkles, AlertCircle, TrendingUp, RotateCcw, Zap, ArrowRight, Trophy } from "lucide-react";
 import { storage } from "@/lib/storage";
 import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
 import { MobileCheckin } from "@/components/MobileCheckin";
-import { ProfileCompletenessBar } from "@/components/ProfileCompletenessBar";
 import { LoopNarrative } from "@/components/LoopNarrative";
 import { broadcastTabEvent, useTabSync } from "@/lib/tabSync";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
+import { getArchetypeDisplay } from "@/lib/founderArchetypeDisplay";
+import { linkifyChannels } from "@/lib/linkifyChannels";
+import GhostGoalBanner from "@/components/GhostGoalBanner";
+import ReckoningPill from "@/components/ReckoningPill";
 import { recordOverride } from "@/lib/founderContext";
+import { truncateChars } from "@/lib/textTruncate";
 import type { MorningBriefing } from "@/lib/founderContext";
+import { IntelligencePanel, type TodayIntelligenceSummary } from "./components/IntelligencePanel";
+import { WhatChangedCard } from "./components/WhatChangedCard";
+import { RisksGapsCard } from "./components/RisksGapsCard";
+import { RiskInterrupt } from "./components/RiskInterrupt";
+import { ChurnRiskInterrupt } from "./components/ChurnRiskInterrupt";
+import { SignalCaptureForm } from "./components/SignalCaptureForm";
+import { SignalHistoryList } from "./components/SignalHistoryList";
+import { shouldTriggerRiskInterrupt, type ChurnRiskAssessment } from "@/lib/riskSignals";
+import { DecisionBrief } from "./components/DecisionBrief";
+import { ContextAlignmentCard } from "./components/ContextAlignmentCard";
+import { IntelligenceUnavailableCard } from "./components/IntelligenceUnavailableCard";
+import { useUIMode } from "@/lib/uiMode";
+import { WhyThisPanel } from "./components/WhyThisPanel";
+import { UIModeToggle } from "@/components/ui/UIModeToggle";
+import { RadialGauge } from "@/components/charts/RadialGauge";
 
 type Outcome = "completed" | "blocked" | "partial" | "learned";
 type ReflexionMeta = {
@@ -36,23 +59,17 @@ type ReflexionMeta = {
   loopRan: boolean;
   passedCritic: boolean;
   lastReflectionUsed: boolean;
-};
-
-// ── BuildMind Initial Analysis (shown on first task load) ────────────────────
-type InitialAnalysis = {
-  transition_state: string;
-  key_risks: [string, string, string];
-  immediate_priorities: [string, string, string];
-  health_score: number;
-  founder_pattern: string;
-  operating_mode: string;
-  generated_at: string;
-  stage: string;
+  wasHardFallback?: boolean;
+  hardFallbackReasons?: string[];
 };
 
 // ── Milestone Break interstitial (fires after milestone/stage change) ────────
 type MilestoneBreakResult = {
-  trigger: "milestone_complete" | "stage_transition";
+  // NOTE: "stalling" is not yet emitted by app/api/ai/milestone-break/route.ts
+  // (which only produces "milestone_complete" | "stage_transition" today).
+  // Client-side is ready for a future stalled-milestone detector; until the
+  // server emits it, this branch never renders.
+  trigger: "milestone_complete" | "stage_transition" | "stalling";
   triggerLabel: string;
   brutal_points: [string, string, string];
   recommended_action: string;
@@ -69,6 +86,14 @@ type ActionData = {
   reflexion?: ReflexionMeta;
   // log_row_id from recordActionShown — closes the learning loop via reflexion-outcome
   log_row_id?: string;
+  difficulty?: "light" | "focused" | "deep"; // From app/api/ai/today-action's response
+  // Confidence as a branch — when true, action/why were composed with
+  // explicit evidence-gathering framing instead of a confident directive.
+  // See CONFIDENCE NOTICE in app/api/ai/today-action/stream/route.ts.
+  isLowConfidence?: boolean;
+  // Founder Intelligence OS (Phase 10) — layered above the existing action,
+  // never required for the card to render. See app/today/components/IntelligencePanel.tsx.
+  intelligence?: TodayIntelligenceSummary;
 };
 
 type CachedTodayAction = {
@@ -156,6 +181,7 @@ type StoredReflection = {
   outcome: Outcome;
   note?: string;
   confidence?: number;
+  witnessed?: string; // acknowledgment line from app/reflect — surfaced here too, not just on /reflect
 };
 
 // ── Fallback actions (used when API is unavailable) ──────────────────────────
@@ -165,6 +191,10 @@ const DESTINATIONS: Record<string, { icon: string; label: string; url?: string }
   prototype:  [{ icon: "🚀", label: "Product Hunt", url: "https://www.producthunt.com" }, { icon: "𝕏", label: "Twitter / X", url: "https://twitter.com/intent/tweet" }, { icon: "🧵", label: "Indie Hackers", url: "https://www.indiehackers.com" }, { icon: "🎥", label: "Loom → share" }],
   mvp:        [{ icon: "🚀", label: "Product Hunt", url: "https://www.producthunt.com" }, { icon: "𝕏", label: "Twitter / X", url: "https://twitter.com/intent/tweet" }, { icon: "🧵", label: "Indie Hackers", url: "https://www.indiehackers.com" }, { icon: "💬", label: "WhatsApp" }],
   launch:     [{ icon: "🚀", label: "Product Hunt", url: "https://www.producthunt.com/posts/new" }, { icon: "𝕏", label: "Twitter / X", url: "https://twitter.com/intent/tweet" }, { icon: "🧵", label: "Indie Hackers", url: "https://www.indiehackers.com/post" }, { icon: "📰", label: "Hacker News", url: "https://news.ycombinator.com/submit" }],
+  // FIX: no "growth" key existed here, so DESTINATIONS[aiAction?.destKey ?? stageKey] ?? DESTINATIONS.idea
+  // silently fell back to idea-stage sharing channels (Reddit r/startups, "text 3 people")
+  // for a founder who is already past launch and working on retention.
+  growth:     [{ icon: "📞", label: "Call directly" }, { icon: "📧", label: "Email personally" }, { icon: "💼", label: "LinkedIn" }, { icon: "𝕏", label: "Twitter DM" }],
   revenue:    [{ icon: "📞", label: "Call directly" }, { icon: "📧", label: "Email personally" }, { icon: "💼", label: "LinkedIn" }, { icon: "𝕏", label: "Twitter DM" }],
 };
 
@@ -174,6 +204,12 @@ const STATIC_ACTIONS: Record<string, { action: string; message: string; why: str
   prototype:  { action: "Record a 3-minute Loom walkthrough and send it to 5 people today.", message: "Hey — I've built a rough prototype for [problem]. Would you watch a 3-minute demo and tell me what confuses you most? Brutal honesty only.", why: "Dropbox got 75K signups from a demo video before writing any backend code. Ship something real.", time: "Under 2 hours", destKey: "prototype" },
   mvp:        { action: "Send your working link to one warm contact before end of day.", message: "Hey — I've been building [product] to solve [problem]. It's rough but working. Would you try it for 10 minutes and tell me what breaks?", why: "The version they see today teaches you more than 3 more days of polishing. Ship it.", time: "30 minutes", destKey: "mvp" },
   launch:     { action: "Post on Product Hunt this week — imperfect listing beats no listing.", message: "We just launched [product] on Product Hunt — it [solves problem] for [target users]. Would love your support and brutal feedback: [link]", why: "You don't need to be ready. You need to be visible.", time: "3 hours to prepare", destKey: "launch" },
+  // FIX: no "growth" key existed here, so buildContextualStaticAction()'s
+  // STATIC_ACTIONS[stageKey] ?? STATIC_ACTIONS.idea silently fell back to
+  // "Talk to 5 people who have this problem before writing any code" for a
+  // founder already past launch — the AI-unavailable fallback path was
+  // telling a Growth-stage founder to re-do Idea-stage validation.
+  growth:     { action: "Call one churned user today — not to win them back, to understand why they left.", message: "Hey [name] — I noticed you stopped using [product]. No sales pitch. I just want to understand what didn't work so I can fix it. 10 minutes?", why: "Retention beats acquisition. Every churn conversation tells you more than another week of dashboards.", time: "1 hour", destKey: "growth" },
   revenue:    { action: "Call one churned user today — not to win them back, to understand why they left.", message: "Hey [name] — I noticed you stopped using [product]. No sales pitch. I just want to understand what didn't work so I can fix it. 10 minutes?", why: "Churn analysis conversations are the highest-leverage activity at revenue stage.", time: "1 hour", destKey: "revenue" },
 };
 
@@ -192,7 +228,7 @@ function inferProjectProblem(problem: string, productName: string, description =
   if (problem.trim()) return problem.trim();
   const haystack = `${productName} ${description}`.toLowerCase();
   if (/(consent|privacy|gdpr|compliance|audit)/.test(haystack)) return "verifiable consent tracking and audit logging";
-  if (description.trim()) return description.trim().slice(0, 120);
+  if (description.trim()) return truncateChars(description, 120);
   return productName.trim() ? `${productName.trim()} and the workflow it improves` : "their current workflow";
 }
 
@@ -214,11 +250,11 @@ function buildContextualStaticAction(
   };
 }
 
-const OUTCOME_CHIPS: { id: Outcome; label: string; color: string; bg: string; border: string }[] = [
-  { id: "completed", label: "Completed",         color: "var(--bm-text)",  bg: "var(--bm-bg4)", border: "var(--bm-border3)" },
-  { id: "partial",   label: "Partly done",       color: "var(--bm-text)",  bg: "var(--bm-bg4)", border: "var(--bm-border3)" },
-  { id: "blocked",   label: "Blocked",           color: "var(--bm-text)",  bg: "var(--bm-bg4)", border: "var(--bm-border3)" },
-  { id: "learned",   label: "Learned something", color: "var(--bm-text)",  bg: "var(--bm-bg4)", border: "var(--bm-border3)" },
+const OUTCOME_CHIPS: { id: Outcome; label: string; description: string; color: string; bg: string; border: string }[] = [
+  { id: "completed", label: "Completed",         description: "Task fully executed as planned.",        color: "var(--bm-text)",  bg: "var(--bm-bg4)", border: "var(--bm-border3)" },
+  { id: "partial",   label: "Partly done",       description: "Incomplete but made progress.",          color: "var(--bm-text)",  bg: "var(--bm-bg4)", border: "var(--bm-border3)" },
+  { id: "blocked",   label: "Blocked",           description: "Faced obstacles or issues.",             color: "var(--bm-text)",  bg: "var(--bm-bg4)", border: "var(--bm-border3)" },
+  { id: "learned",   label: "Learned something", description: "Didn't execute, but gained a real insight.", color: "var(--bm-text)",  bg: "var(--bm-bg4)", border: "var(--bm-border3)" },
 ];
 
 
@@ -263,33 +299,6 @@ const OUTCOME_META: Record<Outcome, { icon: string; label: string; color: string
   blocked:   { icon: "!", label: "Blocked",           color: "var(--bm-text2)" },
   learned:   { icon: "i", label: "Learned something", color: "var(--bm-text2)" },
 };
-
-/**
- * Build a human-readable causal sentence explaining WHY yesterday's outcome
- * shapes today's task. This is the key personalisation signal that was
- * previously invisible to the founder.
- */
-function buildYesterdayCausalLine(reflection: StoredReflection): string {
-  const { outcome, confidence = 3, note } = reflection;
-  const noteClip = note ? ` ("${note.slice(0, 60)}${note.length > 60 ? "…" : ""}")` : "";
-
-  if (outcome === "blocked") {
-    return `You got blocked yesterday${noteClip}. Today's action is designed to remove that specific blocker — not route around it.`;
-  }
-  if (outcome === "completed" && confidence >= 4) {
-    return `You nailed it yesterday${noteClip}. Today goes one level deeper on the same thread — keep the momentum.`;
-  }
-  if (outcome === "completed" && confidence < 3) {
-    return `You completed it yesterday but confidence was low${noteClip}. Today starts with a confidence-building step first.`;
-  }
-  if (outcome === "partial") {
-    return `You partly got there yesterday${noteClip}. Today's task picks up exactly where you left off.`;
-  }
-  if (outcome === "learned") {
-    return `You learned something important yesterday${noteClip}. Today's action applies that insight to a real person.`;
-  }
-  return `Based on your reflection yesterday, today's action is calibrated to where you actually are.`;
-}
 
 /**
  * Fill the outreach script template with real project values so founders
@@ -384,48 +393,82 @@ function TodayContent() {
   const searchParams = useSearchParams();
   const isFirstSession = searchParams.get("first_session") === "true";
   const queryClient = useQueryClient();
-  const { plan } = usePlan();
+  const { plan, isLoading: planLoading } = usePlan();
+  const [uiMode, setUIMode] = useUIMode();
   const { data: summaries = [], isLoading } = useProjectSummariesQuery();
   const activeProjectId = useActiveProjectId();
   const project = useMemo(() => selectActiveProject(summaries, activeProjectId), [summaries, activeProjectId]);
   const [copied, setCopied] = useState(false);
   const [shared, setShared] = useState(false);
+  const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
   const [streak, setStreak] = useState(0);
   // Ref guard — prevents iOS double-tap from firing handleCheckIn twice
   const checkInFired = useRef(false);
-  // Product Improvement #2 — Task-first layout: context collapsed by default
-  const [isContextOpen, setIsContextOpen] = useState(false);
+  const executionScriptRef = useRef<HTMLDivElement | null>(null);
+  const actionCardRef = useRef<HTMLDivElement | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState<string | null>(null);
   const [accountAgeDays, setAccountAgeDays] = useState(0);
   const [accountCreatedAt, setAccountCreatedAt] = useState<string | null>(null);
-  const [isFirstRun, setIsFirstRun] = useState(false);
+  // Founder archetype — light presence on the daily page (see /memory for
+  // the full explanation). This is one query for one string array, kept
+  // deliberately separate from the big data-loading effects below so it
+  // can't interfere with task loading if it ever fails.
+  const [archetypeTags, setArchetypeTags] = useState<string[]>([]);
+  const [stageNudge, setStageNudge] = useState<{
+    currentStage: string; nextStage: string; projectId: string | null;
+    completed: number; total: number;
+    tier: "checklist_only" | "ready"; evidenceFilled: number | null; evidenceTotal: number | null;
+    reason: string;
+  } | null>(null);
+  // Page-coherence: XP/level chip in the always-visible header, so leveling
+  // up feels like a consequence of using Today rather than a fact you only
+  // discover by remembering Achievements exists as a separate page.
+  const [levelInfo, setLevelInfo] = useState<{ level: number; title: string } | null>(null);
 
   // AI-personalised action state
   const [aiAction, setAiAction] = useState<ActionData | null>(null);
+  const [recentOutcomes, setRecentOutcomes] = useState<Array<{ action_shown: string; outcome: string; outcome_note: string | null; evidence_match_score: number | null; outcome_recorded_at: string | null }>>([]);
   const [debtSuppression, setDebtSuppression] = useState<DebtSuppression | null>(null);
   const [aiUsage, setAiUsage] = useState<{ monthlyUsed: number; monthlyLimit: number; unlimited: boolean } | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [replacingTask, setReplacingTask] = useState(false);
+  // FIX (task-repeat bug): holds the task text just rejected via "Replace
+  // this task" so the next generation call can tell the server to exclude
+  // it. A ref (not state) since it only needs to be read inside the
+  // generation effect, not trigger a re-render on its own.
+  const lastRejectedActionRef = useRef<string | null>(null);
   const [forceActionRefresh, setForceActionRefresh] = useState(0);
   // Progressive streaming label — shows which agent is currently running
   const [streamLabel, setStreamLabel] = useState<string | null>(null);
-
-  // Initial Analysis — BuildMind first-impression card
-  const [initialAnalysis, setInitialAnalysis] = useState<InitialAnalysis | null>(null);
-  const [initialAnalysisDismissed, setInitialAnalysisDismissed] = useState(false);
+  // True only when BOTH the SSE stream and the JSON fallback fail to
+  // produce a real action — i.e. actionData is about to silently fall back
+  // to STATIC_ACTIONS with no signal to the founder. Distinct from
+  // actionData.isAI === false, which also covers the (fine) low-confidence
+  // calibration case.
+  const [aiFetchFailed, setAiFetchFailed] = useState(false);
+  // Last real (isAI: true) action this session produced — used only for
+  // "Use last recommendation" on the unavailable screen. Not persisted;
+  // if nothing has succeeded yet this session, the button doesn't render.
+  const lastGoodActionRef = useRef<ActionData | null>(null);
 
   // Milestone Break interstitial — fires after milestone/stage change
   const [milestoneBreak, setMilestoneBreak] = useState<MilestoneBreakResult | null>(null);
   const [milestoneBreakDismissed, setMilestoneBreakDismissed] = useState(false);
 
+  // Stage eligibility is a review prompt, never an automatic mutation.
+  const [transitionEligible, setTransitionEligible] = useState<{
+    current_stage: string; next_stage: string; completed: number; total: number;
+    tier: "checklist_only" | "ready"; evidenceFilled: number | null; evidenceTotal: number | null;
+    reason: string;
+  } | null>(null);
+
   // Editable draft — pre-filled with real project values
   const [draftMessage, setDraftMessage] = useState<string | null>(null);
 
   // Yesterday's stored reflection — drives the causal thread UI
-  const [yesterdayReflection, setYesterdayReflection] = useState<StoredReflection | null>(null);
 
   // Pattern detection — surfaces after check-in
   const [activePattern, setActivePattern] = useState<{ signal: string; message: string; severity: string } | null>(null);
@@ -433,28 +476,205 @@ function TodayContent() {
   // Morning briefing
   const [briefingAvailable, setBriefingAvailable] = useState(false);
   const [morningBriefing, setMorningBriefing] = useState<MorningBriefing | null>(null);
+  const [showBriefingModal, setShowBriefingModal] = useState(false);
+
+  // Recovery Mode — shown when founder has 3+ days of momentum decay,
+  // or when a churn-risk signal cluster crosses shouldTriggerRiskInterrupt()
+  // (lib/riskSignals.ts). recoveryActive gates RecoveryModeCard (the
+  // ongoing active state); riskAssessment + the dismiss flag gate
+  // ChurnRiskInterrupt (the one-time detection prompt).
+  const [recoveryActive, setRecoveryActive] = useState(false);
+  const [momentumScoreForTicker, setMomentumScoreForTicker] = useState<number | null>(null);
+  const [riskAssessment, setRiskAssessment] = useState<ChurnRiskAssessment | null>(null);
+  const [riskInterruptDismissed, setRiskInterruptDismissed] = useState(false);
+  const [signalHistoryRefreshKey, setSignalHistoryRefreshKey] = useState(0);
+  const [blockerInsight, setBlockerInsight] = useState<{
+    id: string; title: string; body: string; action_redirect: string | null;
+  } | null>(null);
+  const [recoveryChecked, setRecoveryChecked] = useState(false);
+
+  // Momentum decay banner — shown when score dropped 5+ pts this week
+  const [decayDrop, setDecayDrop] = useState<number | null>(null);
+  const [decayDismissed, setDecayDismissed] = useState(false);
+
+  // Cognitive load — founder reports their capacity today
+  const [cogLoad, setCogLoad] = useState<"low" | "normal" | "high" | null>(null);
+  const [cogLoadSaved, setCogLoadSaved] = useState(false);
+
+  // Push permission prompt — shown once after first check-in complete
+  const [showPushPrompt, setShowPushPrompt] = useState(false);
 
   // Win attribution
 
   useEffect(() => {
     fetch("/api/ai/usage-status", { cache: "no-store" })
       .then(r => r.ok ? r.json() : null)
-      .then((d: { monthlyUsed?: number; monthlyLimit?: number; unlimited?: boolean } | null) => {
-        if (d) setAiUsage({ monthlyUsed: d.monthlyUsed ?? 0, monthlyLimit: d.monthlyLimit ?? 30, unlimited: d.unlimited ?? false });
-      })
-      .catch(() => {});
-
-    fetch("/api/morning-briefing", { cache: "no-store" })
-      .then(r => r.json().then((body: { ok?: boolean; data?: MorningBriefing; upgradePrompt?: boolean }) => ({ status: r.status, body })))
-      .then(({ status, body }) => {
-        if (status === 200 && body?.ok && body?.data) {
-          setMorningBriefing(body.data);
-          setBriefingAvailable(true);
-        } else if (status === 403 && body?.upgradePrompt === true) {
-          setBriefingAvailable(true);
+      .then((d: { ok?: boolean; monthlyUsed?: number; monthlyLimit?: number; unlimited?: boolean } | null) => {
+        // FIX: previously `d.monthlyLimit ?? 30` silently rendered a fabricated
+        // "30 remaining" banner whenever the response was missing fields —
+        // indistinguishable from a real 30-remaining state. Now only trust the
+        // response when it explicitly succeeded AND returned real numbers;
+        // otherwise leave aiUsage as null so the banner stays hidden rather
+        // than showing a made-up number.
+        if (d && d.ok && typeof d.monthlyUsed === "number" && typeof d.monthlyLimit === "number") {
+          setAiUsage({ monthlyUsed: d.monthlyUsed, monthlyLimit: d.monthlyLimit, unlimited: d.unlimited ?? false });
+        } else if (d && !d.ok) {
+          console.warn("[usage-status] request succeeded but returned an error payload:", d);
         }
       })
       .catch(() => {});
+
+    // "What happened last time" — cheap, read-only, no AI call. See
+    // app/api/founder-context/recent-outcomes/route.ts.
+    fetch("/api/founder-context/recent-outcomes", { cache: "no-store" })
+      .then(r => r.ok ? r.json() : null)
+      .then((d: { ok?: boolean; outcomes?: typeof recentOutcomes } | null) => {
+        if (d?.ok && Array.isArray(d.outcomes)) setRecentOutcomes(d.outcomes);
+      })
+      .catch(() => {});
+
+    // Fetch dismiss date first (fast), then briefing (slow — may generate)
+    // Wrapped in async IIFE since useEffect callbacks cannot be async directly.
+    //
+    // FIX: skip entirely on a user's first session. isFirstSession existed
+    // but was previously only used for copy tweaks — the briefing modal fired
+    // regardless, showing a brand-new user a "morning briefing" with zero
+    // real history to summarize, stacked on top of their first task and the
+    // push-permission prompt below. All within ~1.5s of landing on mobile.
+    if (!isFirstSession) void (async () => {
+      const today = new Date().toISOString().slice(0, 10);
+
+      // Step 1: check server dismiss state immediately (fast DB read)
+      let serverDismissedToday = false;
+      try {
+        const memRes = await fetch("/api/founder-memory", { cache: "no-store", credentials: "include" });
+        if (memRes.ok) {
+          const mem = await memRes.json() as { data?: { briefing_dismissed_date?: string } } | null;
+          serverDismissedToday = mem?.data?.briefing_dismissed_date === today;
+        }
+      } catch { /* non-fatal */ }
+
+      // Step 2: if already dismissed today, skip the briefing fetch entirely
+      if (serverDismissedToday) return;
+
+      // Step 3: fetch briefing (may trigger AI generation — can take several seconds)
+      try {
+        const briefingRes = await fetch("/api/morning-briefing", { cache: "no-store" });
+        const body = await briefingRes.json() as { ok?: boolean; data?: MorningBriefing; upgradePrompt?: boolean };
+
+        if (briefingRes.status === 200 && body?.ok && body?.data) {
+          setMorningBriefing(body.data);
+          setBriefingAvailable(true);
+          setShowBriefingModal(true);
+        } else if (briefingRes.status === 403 && body?.upgradePrompt === true) {
+          setBriefingAvailable(true);
+          setShowBriefingModal(true);
+        }
+      } catch { /* non-fatal */ }
+    })();
+
+    // ── Recovery Mode check ─────────────────────────────────────────────────
+    fetch("/api/recovery-mode", { cache: "no-store" })
+      .then(r => r.ok ? r.json() : null)
+      .then((d: { recoveryActive?: boolean; momentumScore?: number; daysInactive?: number } | null) => {
+        if (d?.recoveryActive) setRecoveryActive(true);
+        if (typeof d?.momentumScore === "number") setMomentumScoreForTicker(d.momentumScore);
+        // Decay banner: if momentum < 50 and days_inactive > 0
+        if (d && !d.recoveryActive && typeof d.momentumScore === "number" && d.momentumScore < 50) {
+          setDecayDrop(50 - d.momentumScore);
+        }
+        setRecoveryChecked(true);
+      })
+      .catch(() => { setRecoveryChecked(true); });
+
+    // ── Restore saved cognitive load from today ─────────────────────────────
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const savedCogLoad = typeof localStorage !== "undefined"
+      ? localStorage.getItem(`bm_cog_load_${todayKey}`) as "low" | "normal" | "high" | null
+      : null;
+    if (savedCogLoad) { setCogLoad(savedCogLoad); setCogLoadSaved(true); }
+  }, []);
+
+  // ── Churn risk check — project-scoped, so it re-runs when the active
+  // project changes. Drives ChurnRiskInterrupt (see lib/riskSignals.ts). ──
+  useEffect(() => {
+    if (!project?.id) { setRiskAssessment(null); return; }
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const dismissedKey = `bm_risk_interrupt_dismissed_${project.id}_${todayKey}`;
+    setRiskInterruptDismissed(storage.get(dismissedKey) === "1");
+
+    fetch(`/api/risk-signals?projectId=${encodeURIComponent(project.id)}`, { cache: "no-store" })
+      .then(r => r.ok ? r.json() : null)
+      .then((d: { ok?: boolean; assessment?: ChurnRiskAssessment } | null) => {
+        if (d?.ok && d.assessment) setRiskAssessment(d.assessment);
+      })
+      .catch(() => {});
+  }, [project?.id]);
+
+  // Founder archetype — isolated fetch, doesn't gate or block anything else on this page.
+  useEffect(() => {
+    if (!userId) return;
+    const supabase = createClient();
+    Promise.resolve(
+      supabase.from("founder_memory").select("personality_tags").eq("user_id", userId).maybeSingle(),
+    )
+      .then(({ data }) => {
+        if (Array.isArray(data?.personality_tags)) setArchetypeTags(data.personality_tags as string[]);
+      })
+      .catch(() => {});
+  }, [userId]);
+
+  // Stage-transition nudge — isolated fetch, same non-blocking pattern as
+  // the archetype badge above. Reads founder_context.pending_stage_transition,
+  // which lib/server/stageTransition.ts's single canonical detector keeps
+  // current (written after every task completion and every reflection —
+  // see that file's header comment). Previously this only surfaced on the
+  // project page, requiring a visit there to discover it existed at all.
+  useEffect(() => {
+    if (!userId) return;
+    const supabase = createClient();
+    Promise.resolve(
+      supabase.from("founder_context").select("pending_stage_transition").eq("user_id", userId).maybeSingle(),
+    )
+      .then(({ data }) => {
+        const pending = (data as { pending_stage_transition?: {
+          project_id?: string; current_stage?: string; recommended_stage?: string | null;
+          stage_milestones_completed?: number; stage_milestones_total?: number;
+          readiness_tier?: string; evidence_filled?: number | null; evidence_total?: number | null;
+          reason?: string;
+        } | null } | null)?.pending_stage_transition;
+        if (pending?.recommended_stage) {
+          setStageNudge({
+            currentStage: pending.current_stage ?? "",
+            nextStage: pending.recommended_stage,
+            projectId: pending.project_id ?? null,
+            completed: pending.stage_milestones_completed ?? 0,
+            total: pending.stage_milestones_total ?? 0,
+            tier: pending.readiness_tier === "ready" ? "ready" : "checklist_only",
+            evidenceFilled: pending.evidence_filled ?? null,
+            evidenceTotal: pending.evidence_total ?? null,
+            reason: pending.reason ?? "",
+          });
+        }
+      })
+      .catch(() => {});
+  }, [userId]);
+
+  // Level chip — client-only read (localStorage XP, now server-verified
+  // before ever being committed there per the achievements fix, so this is
+  // trustworthy without its own network round-trip). Re-reads whenever an
+  // achievement toast fires so leveling up updates the header live.
+  useEffect(() => {
+    const read = () => {
+      try { setLevelInfo(xpToLevel(getTotalXP())); } catch {}
+    };
+    read();
+    window.addEventListener("storage", read);
+    window.addEventListener("bm_achievement_unlocked", read);
+    return () => {
+      window.removeEventListener("storage", read);
+      window.removeEventListener("bm_achievement_unlocked", read);
+    };
   }, []);
 
   useEffect(() => {
@@ -477,6 +697,14 @@ function TodayContent() {
         });
         syncUrgencyFromServer().catch(() => {});
 
+        // Fetch active blocker insight — the "cheat code" card
+        fetch("/api/blocker-insight")
+          .then(r => r.json())
+          .then((json: { data?: { id: string; title: string; body: string; action_redirect: string | null } | null }) => {
+            if (json?.data) setBlockerInsight(json.data);
+          })
+          .catch(() => {});
+
         const today = localDayKey();
         const checkinKey = `bm_checkin_done_date_${uid}`;
         const cachedDoneDate = storage.get(checkinKey);
@@ -495,7 +723,6 @@ function TodayContent() {
           }
           if (values.today_action?.outcome) {
             storage.setJSON("bm_today_action", values.today_action);
-            setYesterdayReflection(values.today_action);
           }
           if (
             values.today_action_cache?.date === today &&
@@ -508,40 +735,7 @@ function TodayContent() {
       }
     });
 
-    // Load cached reflection instantly; server behavior state hydrates above.
-    try {
-      const stored = storage.getJSON("bm_today_action", null) as StoredReflection | null;
-      if (stored?.outcome) {
-        setYesterdayReflection(stored);
-      }
-    } catch {}
   }, []);
-
-  useEffect(() => {
-    if (!userId || !project?.id) return;
-    const seenKey = `bm_has_seen_today_${userId}`;
-    const firstSeenKey = `bm_today_first_seen_at_${userId}`;
-    const seen = storage.get(seenKey);
-    if (seen) {
-      setInitialAnalysisDismissed(true);
-      setIsFirstRun(false);
-      return;
-    }
-
-    const firstSeenAt = parseInt(storage.get(firstSeenKey) ?? "0", 10);
-    if (firstSeenAt > 0 && Date.now() - firstSeenAt >= 24 * 60 * 60 * 1000) {
-      storage.set(seenKey, "1");
-      setInitialAnalysisDismissed(true);
-      setIsFirstRun(false);
-      return;
-    }
-
-    if (!firstSeenAt) storage.set(firstSeenKey, String(Date.now()));
-
-    const hasPriorCheckin = done || streak > 0 || Boolean(storage.get(`bm_checkin_done_date_${userId}`) || storage.get("bm_checkin_done_date"));
-    setIsFirstRun(!hasPriorCheckin);
-    setInitialAnalysisDismissed(false);
-  }, [done, project?.id, streak, userId]);
 
   // Fetch personalised action from AI once we have project data
   useEffect(() => {
@@ -554,8 +748,13 @@ function TodayContent() {
     if (!userId || !projectId) return;
 
     // ── Fetch pending milestone-break interstitial ──────────────────────────
-    // Stored by /api/ai/milestone-break when a milestone or stage transition fires
-    fetch("/api/founder-context", { cache: "no-store" })
+    // Stored by /api/ai/milestone-break in founder_memory.pending_milestone_break
+    // (see migration 20260521000001_founder_memory_weekly_loop.sql). Must fetch
+    // /api/founder-memory here, not /api/founder-context — the founder_context
+    // table has no such column, and its route even mis-lists this field as a
+    // boolean (app/api/founder-context/route.ts:65), so this fetch could never
+    // have found the real value.
+    fetch("/api/founder-memory", { cache: "no-store" })
       .then(r => r.ok ? r.json() : null)
       .then((ctx: { data?: { pending_milestone_break?: string } } | null) => {
         if (!ctx?.data?.pending_milestone_break) return;
@@ -613,7 +812,7 @@ function TodayContent() {
           cached?.stage === currentStage &&
           isActionData(cached.data)
         ) {
-          setAiAction({ ...cached.data, isAI: true });
+          setAiAction({ ...cached.data, isAI: true }); setAiFetchFailed(false); lastGoodActionRef.current = { ...cached.data, isAI: true };
           // Still sync server cache in background — non-blocking
           void fetchBehaviorState<{ today_action_cache: CachedTodayAction & { generatedAt?: string } }>(["today_action_cache"])
             .then((serverCache) => {
@@ -630,7 +829,7 @@ function TodayContent() {
               ) {
                 storage.setJSON(cacheKey, serverCache.today_action_cache);
                 storage.set(`bm_today_action_cache_ts_${userId}`, String(serverTs));
-                setAiAction({ ...serverCache.today_action_cache.data, isAI: true });
+                setAiAction({ ...serverCache.today_action_cache.data, isAI: true }); setAiFetchFailed(false); lastGoodActionRef.current = { ...serverCache.today_action_cache.data, isAI: true };
               }
             })
             .catch(() => {});
@@ -690,7 +889,7 @@ function TodayContent() {
         // Sync to localStorage so next open is instant
         storage.setJSON(cacheKey, serverCache.today_action_cache);
         if (serverCacheTs > 0) storage.set(`bm_today_action_cache_ts_${userId}`, String(serverCacheTs));
-        setAiAction({ ...serverCache.today_action_cache.data, isAI: true });
+        setAiAction({ ...serverCache.today_action_cache.data, isAI: true }); setAiFetchFailed(false); lastGoodActionRef.current = { ...serverCache.today_action_cache.data, isAI: true };
         return;
       }
       // Server cache exists but is stale — clear both server and localStorage
@@ -708,28 +907,6 @@ function TodayContent() {
 
     setActionLoading(true);
 
-    // ── Fetch Initial Analysis in parallel with today's action ──────────────
-    // Shows the "BuildMind Initial Analysis" card on first task load
-    const analysisKey = `bm_initial_analysis_${projectId}`;
-    const cachedAnalysis = storage.getJSON<InitialAnalysis | null>(analysisKey, null);
-    if (cachedAnalysis && cachedAnalysis.stage === currentStage) {
-      setInitialAnalysis(cachedAnalysis);
-    } else {
-      fetch("/api/ai/initial-analysis", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId }),
-      })
-        .then(r => r.ok ? r.json() : null)
-        .then((d: { ok?: boolean; data?: InitialAnalysis } | null) => {
-          if (d?.ok && d.data) {
-            setInitialAnalysis(d.data);
-            storage.setJSON(analysisKey, d.data);
-          }
-        })
-        .catch(() => {});
-    }
-
     const pendingMilestones = project.pendingMilestones ?? [];
     const pendingTasks = project.pendingTasks ?? [];
 
@@ -740,6 +917,10 @@ function TodayContent() {
       pendingMilestones,
       pendingTasks,
       completionRate: project.completion_rate ?? 0,
+      // FIX (task-repeat bug): tells the server which task was just
+      // rejected via "Replace this task" so buildDecisionState() can
+      // exclude it from candidate ranking instead of re-picking it.
+      excludeAction: lastRejectedActionRef.current ?? undefined,
     });
 
     // ── Streaming path (SSE) ─────────────────────────────────────────────────
@@ -799,7 +980,14 @@ function TodayContent() {
               if (!actionData) break outer;
               if (!signal.aborted) {
                 setAiAction(actionData);
+                setAiFetchFailed(false);
+                lastGoodActionRef.current = actionData;
                 setStreamLabel(null);
+                // FIX (task-repeat bug): clear the rejection once a new
+                // action has actually been generated — otherwise this same
+                // task text would stay excluded forever, including on
+                // tomorrow's fresh generation.
+                lastRejectedActionRef.current = null;
                 const cacheValue = { date: today, projectId, stage: currentStage, data: actionData };
                 const nowTs = Date.now().toString();
                 storage.setJSON(cacheKey, cacheValue);
@@ -836,14 +1024,26 @@ function TodayContent() {
           if (json?.success && actionData) {
             setDebtSuppression(null);
             setAiAction(actionData);
+            setAiFetchFailed(false);
+            lastGoodActionRef.current = actionData;
+            lastRejectedActionRef.current = null;
             const cacheValue = { date: today, projectId, stage: currentStage, data: actionData };
             const nowTs = Date.now().toString();
             storage.setJSON(cacheKey, cacheValue);
             if (userId) storage.set(`bm_today_action_cache_ts_${userId}`, nowTs);
             persistBehaviorState({ today_action_cache: cacheValue });
+          } else if (!json?.success) {
+            // Real failure — the request completed but the server didn't
+            // return a usable action (not caught below, since r.ok was
+            // true). actionData is about to fall back to STATIC_ACTIONS
+            // with isAI:false; this is what tells the UI that fallback is
+            // silent and unsignaled otherwise.
+            setAiFetchFailed(true);
           }
         })
-        .catch(() => {})
+        .catch(() => {
+          if (!signal.aborted) setAiFetchFailed(true);
+        })
         .finally(() => { if (!signal.aborted) setActionLoading(false); });
       return;
     }
@@ -852,7 +1052,29 @@ function TodayContent() {
     })();
 
     return () => { abortController.abort(); };
-  }, [project, userId, forceActionRefresh]);
+    // FIX (Sept 22, 2026 — stream requests never appearing in Vercel logs at
+    // all, only the JSON fallback showing up): this depended on the whole
+    // `project` OBJECT, not project?.id. project comes from
+    // useMemo(() => selectActiveProject(summaries, activeProjectId), [summaries, activeProjectId])
+    // — its stability rides entirely on whether `summaries` (a React Query
+    // result) returns a referentially stable array between fetches. Any
+    // background refetch (window refocus is the common one — very
+    // plausible on mobile, where switching apps and coming back happens
+    // constantly) produces a new `summaries` array even when nothing
+    // meaningful changed, which produces a new `project` object via
+    // useMemo, which re-ran this effect, which aborted whatever stream
+    // request was in flight — often before it got far enough to register
+    // as a real logged invocation at all. That's consistent with what was
+    // actually observed: /stream never showing up in logs, while the
+    // faster JSON fallback (POST /api/ai/today-action) did.
+    //
+    // Genuine content changes (task completion, milestone changes) don't
+    // need project-object-identity to trigger a refresh — they already go
+    // through the explicit forceActionRefresh counter (see
+    // setForceActionRefresh calls elsewhere in this file), so narrowing
+    // this to project?.id doesn't silently drop that behavior; it removes
+    // an accidental, fragile trigger that was never the intended mechanism.
+  }, [project?.id, userId, forceActionRefresh]);
 
   useEffect(() => {
     if (replacingTask && !actionLoading && (aiAction || debtSuppression)) {
@@ -860,9 +1082,16 @@ function TodayContent() {
     }
   }, [actionLoading, aiAction, debtSuppression, replacingTask]);
 
+  // FIX: was calling getXP() directly (local storage), independent of the
+  // same canonical scorecard reports/overview/project-detail now all read
+  // from — the confirmed root cause of momentum/score disagreeing across
+  // pages. `streak` here is left as this page's own local state
+  // (unchanged) since it's already kept in sync elsewhere in this file;
+  // only xp needed correcting.
+  const { data: scorecard } = useFounderScorecardQuery();
   const score = project ? computeStartupScore({
     ...project,
-    xp: getXP(),
+    xp: scorecard?.xp ?? 0,
     streak,
   }) : 0;
   const stageKey = project?.startup_stage?.toLowerCase() ?? "idea";
@@ -959,10 +1188,21 @@ function TodayContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
+  // Evening mode — reuses the SAME evening window checkinSlot already
+  // computes (18:00-22:00, not yet submitted) rather than a second,
+  // separate "is it evening" rule. When true: the evening check-in surfaces
+  // directly on the page instead of staying inside "Why this task?", and
+  // the task recommendation collapses into a "Show task" pill so the page
+  // doesn't just accumulate more sections on top of each other.
+  const isEveningSurfaced = checkinSlot?.type === "evening";
+  const [taskPillExpanded, setTaskPillExpanded] = useState(false);
+
   const OUTREACH_KEYWORDS = ["dm", "message", "send", "email", "outreach", "call", "text", "reach out", "post", "tweet", "share"];
   const isOutreachAction = actionData ? OUTREACH_KEYWORDS.some(kw =>
-    actionData.action.toLowerCase().includes(kw) || actionData.message.toLowerCase().includes(kw)
+    actionData?.action.toLowerCase().includes(kw) || actionData?.message.toLowerCase().includes(kw)
   ) : false;
+  const criticalSignal = actionData?.intelligence?.top_signals.find((signal) => signal.severity === "critical");
+  const supportingSignals = actionData?.intelligence?.top_signals.filter((signal) => signal.severity !== "critical") ?? [];
 
   // Hydrate draft with real project values on action change
   useEffect(() => {
@@ -993,11 +1233,57 @@ function TodayContent() {
     } catch {}
   }
 
+  // ── Cognitive load save ────────────────────────────────────────────────────
+  const handleCogLoad = useCallback((level: "low" | "normal" | "high") => {
+    // Show the selected button highlighted for a beat before the card
+    // collapses — otherwise cogLoadSaved flips true in the same render as
+    // the click and the card unmounts before the tap registers visually.
+    setCogLoad(level);
+    const todayKey = new Date().toISOString().slice(0, 10);
+    try { localStorage.setItem(`bm_cog_load_${todayKey}`, level); } catch {}
+    fetch("/api/founder-context", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cognitive_load: level }),
+    }).catch(() => {});
+    setTimeout(() => setCogLoadSaved(true), 350);
+  }, []);
+
+  // ── Push permission request ────────────────────────────────────────────────
+  const requestPushPermission = useCallback(async () => {
+    setShowPushPrompt(false);
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm === "granted" && "serviceWorker" in navigator) {
+        const reg = await navigator.serviceWorker.ready;
+        const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+        if (!vapidKey) return;
+        const sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: vapidKey,
+        });
+        await fetch("/api/push/subscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ subscription: sub }),
+        });
+      }
+    } catch { /* non-fatal */ }
+  }, []);
+
   const handlePreTaskReplace = useCallback(async () => {
-    if (!userId) return;
     setReplacingTask(true);
+    // FIX (task-repeat bug): capture what's being rejected BEFORE it's
+    // cleared below, so the next generation call can tell the server to
+    // exclude it — see lastRejectedActionRef declaration for why.
+    lastRejectedActionRef.current = aiAction?.action ?? null;
     // Fire override signal best-effort — do NOT block the task refresh on it
     recordOverride("Not the right task right now").catch(() => {});
+    // Write skip signal to founder_memory so coach knows what this founder avoids
+    if (aiAction?.action) {
+      observeTaskEvent(aiAction.action, "skipped").catch(() => {});
+    }
     // Always clear cache and fetch a new task regardless of plan or API response
     setAiAction(null);
     setDebtSuppression(null);
@@ -1041,6 +1327,32 @@ function TodayContent() {
     }
   }
 
+  function handleSwapAlternative(alt: NonNullable<TodayIntelligenceSummary["decision"]["alternatives"]>[number]) {
+    if (!aiAction) return;
+    // Update the displayed action immediately — the founder shouldn't wait
+    // on a network round-trip to see the swap take effect.
+    setAiAction({
+      ...aiAction,
+      action: alt.action,
+      why: alt.why_it_beats_alternatives || aiAction.why,
+      message: alt.action, // draft/script wasn't generated for alternatives — action text stands in until reflected
+    });
+    // Fire-and-forget: repoints the pending Founder Intelligence prediction
+    // at what the founder actually chose. Doesn't block the swap from
+    // showing — this only keeps reflect-action's later outcome comparison
+    // and Thompson Sampling's per-archetype stats honest in the background.
+    void fetch("/api/founder-context/swap-action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        candidate: alt,
+        projectId: project?.id,
+        stage: project?.startup_stage,
+        recommendationId: actionData?.intelligence?.recommendation_id ?? null,
+      }),
+    }).catch(() => {});
+  }
+
   async function handleCheckIn(selectedOutcome: Outcome) {
     // Ref guard: prevents iOS double-tap from firing this twice before state updates
     if (checkInFired.current) return;
@@ -1065,6 +1377,13 @@ function TodayContent() {
             projectId: project?.id,
             taskTitle: actionData?.action ?? "",
             outcome: selectedOutcome,
+            // FIX: tells task-complete whether a "shown" row already exists
+            // for this task (created when it was generated). If it does,
+            // /api/ai/reflexion-outcome below updates that row directly —
+            // task-complete's own reflexion_learning_log insert now skips
+            // itself in that case instead of writing a duplicate row.
+            log_row_id: aiAction?.log_row_id ?? null,
+            recommendation_id: actionData?.intelligence?.recommendation_id ?? null,
           }),
         });
         if (tcRes.ok) {
@@ -1097,7 +1416,13 @@ function TodayContent() {
       notifyReflectPending();
 
       const todayDate = localDayKey();
-      const todayActionState = { action: actionData?.action ?? "", outcome: selectedOutcome, note: "", confidence: 3 };
+      const todayActionState = {
+        action: actionData?.action ?? "",
+        outcome: selectedOutcome,
+        note: "",
+        confidence: 3,
+        recommendation_id: actionData?.intelligence?.recommendation_id ?? null,
+      };
       storage.setJSON("bm_today_action", todayActionState);
       if (userId) {
         storage.remove(`bm_today_action_cache_${userId}`);
@@ -1109,6 +1434,11 @@ function TodayContent() {
         today_action_cache: null,
       });
       setDone(true);
+
+      // Show push permission prompt if not already granted
+      if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "default") {
+        setTimeout(() => setShowPushPrompt(true), 1500);
+      }
 
       if (userId) {
         storage.set(`bm_checkin_done_date_${userId}`, todayDate);
@@ -1131,6 +1461,50 @@ function TodayContent() {
           recordScore(newComputedScore);
           void queryClient.invalidateQueries({ queryKey: queryKeys.projectSummaries });
           void queryClient.invalidateQueries({ queryKey: queryKeys.overviewRoot });
+
+          // ── Stage-transition eligibility ────────────────────────────────────
+          fetch("/api/project/level-up", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ project_id: project.id }),
+          }).then(r => r.ok ? r.json() : null)
+            .then((d: {
+              eligible?: boolean; tier?: string; current_stage?: string; next_stage?: string;
+              stage_progress?: { completedMilestones: number; totalMilestones: number };
+              readiness?: { evidence?: { filledSlots: number; totalSlots: number } | null; headline?: string; detail?: string };
+            } | null) => {
+              if (d?.eligible && d.current_stage && d.next_stage) {
+                setTransitionEligible({
+                  current_stage: d.current_stage,
+                  next_stage: d.next_stage,
+                  completed: d.stage_progress?.completedMilestones ?? 0,
+                  total: d.stage_progress?.totalMilestones ?? 0,
+                  tier: d.tier === "ready" ? "ready" : "checklist_only",
+                  evidenceFilled: d.readiness?.evidence?.filledSlots ?? null,
+                  evidenceTotal: d.readiness?.evidence?.totalSlots ?? null,
+                  reason: [d.readiness?.headline, d.readiness?.detail].filter(Boolean).join(" "),
+                });
+              }
+            }).catch(() => {});
+
+          // ── Update ghost goal progress ──────────────────────────────────────
+          // FIX: this call previously sent only current_score. The route's
+          // `increment_tasks_done` flag existed but nothing ever set it, so
+          // Ghost Goals' tasks_done stayed at whatever POST /api/weekly-goal
+          // last reset it to (0) forever — the confirmed cause of "Ghost
+          // Goals didn't increment" / "don't know where it's getting tasks
+          // from" (it wasn't getting them from anywhere; the number was
+          // static). Today's check-in is the one place a task is actually
+          // completed, so this is the one place that should set the flag.
+          fetch("/api/weekly-goal", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              project_id:           project.id,
+              current_score:        newComputedScore,
+              increment_tasks_done: true,
+            }),
+          }).catch(() => {});
         } catch {}
       }
 
@@ -1148,41 +1522,41 @@ function TodayContent() {
         } catch {}
       }
 
-      // ── Close the learning loop ───────────────────────────────────────────
-      // Fire reflexion-outcome so the behavioral learning system records what
-      // the founder actually did with today's AI-generated task. Without this
-      // call, recordActionShown() fires but recordActionOutcome() never does,
-      // meaning the learning loop has no signal from the highest-frequency interaction.
-      if (aiAction?.log_row_id) {
-        // Map today page outcomes to the reflexion-outcome schema
-        const outcomeMap: Record<string, "completed" | "overridden" | "partial"> = {
-          completed: "completed",
-          partial:   "partial",
-          blocked:   "overridden",
-          learned:   "partial",
-        };
-        const mappedOutcome = outcomeMap[selectedOutcome as string] ?? "partial";
-        fetch("/api/ai/reflexion-outcome", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            log_row_id:   aiAction.log_row_id,
-            outcome:      mappedOutcome,
-            outcome_note: undefined,
-          }),
-        }).catch(() => {}); // best-effort — never blocks the check-in
+      // ── Learning loop closure moved server-side ───────────────────────────
+      // Used to fire a separate, unawaited POST /api/ai/reflexion-outcome
+      // here so recordActionOutcome() would run (recordActionShown() alone
+      // doesn't record what happened, only that something was shown). That
+      // call was never awaited and never checked for success — any
+      // navigation or network hiccup in this window could silently drop it,
+      // which is the confirmed cause of completions not showing up in this
+      // week's count even though the founder genuinely completed the task.
+      // app/api/founder-context/task-complete/route.ts now calls
+      // recordActionOutcome() itself, inside the request this code already
+      // awaits above (`await fetch(...task-complete)`), so it can't be
+      // dropped the same way. Nothing else to do here.
+
+      // ── Write to founder_memory (avoidance_zones / strengths) ─────────────
+      // This is the missing call that was designed but never wired.
+      // observeTaskEvent() atomically appends to avoidance_zones when skipped
+      // and to strengths when completed, so the AI Coach can mirror the founder's
+      // actual behavioral patterns instead of returning empty arrays.
+      if (aiAction?.action) {
+        const observeOutcome =
+          selectedOutcome === "completed" ? "completed" :
+          selectedOutcome === "partial"   ? "completed" : // partial counts as a strength signal
+          "skipped";
+        observeTaskEvent(
+          aiAction.action,
+          observeOutcome,
+        ).catch(() => {}); // client-side, best-effort
       }
 
-      // ── Increment daily streak ────────────────────────────────────────────
-      // Streak is earned here — on Today page action completion — not on Reflect
-      // or any other page. incrementDailyStreak() is idempotent for the same day.
-      const newStreak = serverStreak ?? incrementDailyStreak();
+      // ── Streak ────────────────────────────────────────────────────────────
+      // Earned only when the server accepts a completed action (task-complete
+      // above). If that call failed nothing was counted, so the display keeps
+      // the last server-confirmed value instead of inventing one locally.
+      const newStreak = serverStreak ?? streak;
       setStreak(newStreak);
-      fetch("/api/founder-context/streak", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ streak: newStreak, lastCheckinDate: localDayKey() }),
-      }).catch(() => {});
 
       // Notify other open tabs so they show the done state immediately
       const todayBroadcast = localDayKey();
@@ -1209,26 +1583,111 @@ function TodayContent() {
     </div>
   );
 
-  // ── Milestone Break interstitial — mandatory checkpoint after milestone/stage change ──
+  // ── No active project — genuinely empty, not a silently-sparse page.
+  // `project` is derived from `summaries` (useProjectSummariesQuery); if
+  // loading finished and nothing resolved, either the founder has no
+  // projects yet or none is marked active. Real distinction, real routes —
+  // no invented copy. ──
+  if (!isLoading && !project) {
+    return (
+      <div style={{ maxWidth: 460, margin: "0 auto", padding: isMobile ? "60px 16px" : "100px 24px", textAlign: "center" }}>
+        <p style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 8px" }}>
+          Daily briefing
+        </p>
+        <h1 style={{ fontSize: 18, fontWeight: 700, color: "var(--bm-text)", margin: "0 0 10px" }}>
+          No active plan detected
+        </h1>
+        <p style={{ fontSize: 13, color: "var(--bm-text3)", lineHeight: 1.6, margin: "0 0 20px" }}>
+          {summaries.length > 0
+            ? "You have projects, but none is currently active. Pick one to get today's task."
+            : "BuildMind generates daily recommendations once you have an active project with tasks or milestones."}
+        </p>
+        {/* Both cases route to /projects — Create Project is currently a
+            modal there (no standalone /projects/new route exists yet), so
+            this is a real link either way, not a guess. */}
+        <a
+          href="/projects"
+          style={{
+            display: "inline-block", padding: "10px 20px", borderRadius: 8,
+            border: "1px solid var(--bm-accent-bd)", background: "var(--bm-accent)",
+            color: "var(--bm-bg)", fontSize: 13, fontWeight: 700, textDecoration: "none",
+          }}
+        >
+          {summaries.length > 0 ? "Choose a project" : "Create a plan"}
+        </a>
+      </div>
+    );
+  }
+
+  // ── Recovery Mode active — takes priority over everything else on this
+  // page (milestone breaks included): "Normal recommendations paused
+  // until this is resolved" is the whole point, matching the Figma copy.
+  // Covers both triggers (inactivity decay + churn risk) — see
+  // components/RecoveryModeCard.tsx for how it tells them apart. ──
+  if (recoveryActive) {
+    return (
+      <div style={{ maxWidth: 820, margin: "0 auto", padding: "24px 24px" }}>
+        <RecoveryModeCard
+          onComplete={() => setRecoveryActive(false)}
+          onDismiss={() => setRecoveryActive(false)}
+        />
+      </div>
+    );
+  }
+
+  // ── Risk Interrupt — the detection moment for a churn-risk signal
+  // cluster (lib/riskSignals.ts). Shown once per project per day unless
+  // dismissed; choosing "Begin recovery" activates Recovery Mode above. ──
+  if (project?.id && riskAssessment && shouldTriggerRiskInterrupt(riskAssessment) && !riskInterruptDismissed) {
+    const dismissedKey = `bm_risk_interrupt_dismissed_${project.id}_${new Date().toISOString().slice(0, 10)}`;
+    return (
+      <ChurnRiskInterrupt
+        assessment={riskAssessment}
+        onBeginRecovery={async () => {
+          try {
+            const res = await fetch("/api/recovery-mode", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ trigger: "risk", projectId: project.id }),
+            });
+            if (res.ok) setRecoveryActive(true);
+          } catch {}
+        }}
+        onDismiss={() => {
+          storage.set(dismissedKey, "1");
+          setRiskInterruptDismissed(true);
+        }}
+      />
+    );
+  }
+
+  // ── Milestone Break interstitial — mandatory checkpoint after milestone/stage change, or a stalled milestone ──
   if (milestoneBreak && !milestoneBreakDismissed) {
+    const isStalling = milestoneBreak.trigger === "stalling";
     return (
       <div style={{ maxWidth: 560, margin: "0 auto", padding: isMobile ? "40px 16px" : "80px 24px" }}>
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
           {/* Header */}
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 28 }}>
-            <div style={{ width: 32, height: 32, borderRadius: 8, background: "var(--bm-red)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <AlertCircle size={16} color="#fff" />
+            <div style={{ width: 32, height: 32, borderRadius: 8, background: isStalling ? "var(--bm-amber)" : "var(--bm-red)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <AlertCircle size={16} color={isStalling ? "#000" : "#fff"} />
             </div>
             <div>
-              <p style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", margin: 0 }}>Mandatory checkpoint</p>
+              <p style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", margin: 0 }}>
+                {isStalling ? "Still open" : "Mandatory checkpoint"}
+              </p>
               <p style={{ fontSize: 14, fontWeight: 700, color: "var(--bm-text)", margin: 0, lineHeight: 1.3 }}>
-                You just completed: {sanitizeOutput(milestoneBreak.triggerLabel)}
+                {isStalling
+                  ? `Still working on: ${sanitizeOutput(milestoneBreak.triggerLabel)}`
+                  : `You just completed: ${sanitizeOutput(milestoneBreak.triggerLabel)}`}
               </p>
             </div>
           </div>
 
           <p style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.6, marginBottom: 24 }}>
-            Before you move to the next milestone, here's what could still kill this.
+            {isStalling
+              ? "This has been open longer than expected. No judgment — some milestones just run long. Here's what's likely actually going on."
+              : "Before you move to the next milestone, here's what could still kill this."}
           </p>
 
           {/* 3 brutal points */}
@@ -1240,12 +1699,14 @@ function TodayContent() {
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: 0.1 + i * 0.08 }}
                 style={{
-                  borderLeft: "2px solid var(--bm-red)",
-                  paddingLeft: 14,
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 10,
                   paddingTop: 2,
                   paddingBottom: 2,
                 }}
               >
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--bm-red)", marginTop: 6, flexShrink: 0 }} />
                 <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.6 }}>{sanitizeOutput(point)}</p>
               </motion.div>
             ))}
@@ -1264,7 +1725,7 @@ function TodayContent() {
               // Optimistically dismiss in UI, revert if server fails
               setMilestoneBreakDismissed(true);
               storage.set(dismissKey, "1");
-              fetch("/api/founder-context", {
+              fetch("/api/founder-memory", {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ pending_milestone_break: null }),
@@ -1293,8 +1754,8 @@ function TodayContent() {
     return (
       <div style={{ maxWidth: 560, margin: "0 auto", padding: isMobile ? "36px 0" : "60px 24px", textAlign: "center" }}>
         <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
-          <div style={{ width: 64, height: 64, borderRadius: "50%", background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px" }}>
-            <CheckCircle2 size={28} color="var(--bm-accent)" />
+          <div style={{ width: 64, height: 64, borderRadius: "50%", background: "var(--bm-green-dim)", border: "1px solid var(--bm-green-bd)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px" }}>
+            <CheckCircle2 size={28} color="var(--bm-green)" />
           </div>
           <h2 style={{ fontSize: 24, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em", marginBottom: 10 }}>
             Insight logged. BuildMind adapts.
@@ -1337,17 +1798,7 @@ function TodayContent() {
             </div>
           )}
 
-          {plan === "free" && briefingAvailable && !activePattern && (
-            <div style={{ marginBottom: 20, textAlign: "left" }}>
-              <PaywallMoment trigger="morning_briefing" />
-            </div>
-          )}
 
-          {plan !== "free" && morningBriefing && !activePattern && (
-            <div style={{ marginBottom: 20, textAlign: "left" }}>
-              <MorningBriefingCard initialBriefing={morningBriefing} />
-            </div>
-          )}
 
           <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 10, justifyContent: "center" }}>
             <button onClick={() => router.push("/reflect")} style={{ padding: "12px 20px", borderRadius: 10, border: "none", background: "var(--grad-primary)", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Reflect on today →</button>
@@ -1358,10 +1809,10 @@ function TodayContent() {
         <div style={{ marginTop: 24, padding: "14px 18px", background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.18)", borderRadius: 12, textAlign: "center" }}>
           <p style={{ fontSize: 12, color: "var(--bm-text3)", margin: "0 0 10px" }}>Know a founder who needs this?</p>
           <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
-            <button onClick={() => router.push("/invite")} style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid var(--bm-accent-bd)", background: "var(--bm-accent-dim)", color: "var(--bm-accent)", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+            <button onClick={() => router.push("/invite")} style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid var(--bm-border)", background: "var(--bm-bg3)", color: "var(--bm-text2)", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
               Invite a founder →
             </button>
-            <button onClick={() => router.push("/weekly-share")} style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+            <button onClick={() => router.push("/progress")} style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
               Share this week's progress
             </button>
           </div>
@@ -1376,12 +1827,7 @@ function TodayContent() {
     ? `${getGreeting()}, ${firstName}`
     : getGreeting();
 
-  // ── Yesterday causal sentence ─────────────────────────────────────────────
-  const yesterdayCausal = yesterdayReflection
-    ? buildYesterdayCausalLine(yesterdayReflection)
-    : null;
   const isDayOneColdStart = accountAgeDays <= 1 && streak === 0 && !done;
-  const shouldShowInitialAnalysis = Boolean(isFirstRun && initialAnalysis && !initialAnalysisDismissed);
   const weekOneStageKey = (project?.startup_stage ?? "Idea").toLowerCase();
   const weekOneMilestones = WEEK_ONE_MILESTONES[weekOneStageKey] ?? WEEK_ONE_MILESTONES.idea;
   const weekOneTarget = weekOneMilestones[weekOneMilestones.length - 1]?.milestone ?? WEEK_ONE_MILESTONES.idea[2].milestone;
@@ -1398,427 +1844,19 @@ function TodayContent() {
   });
 
   return (
-    <div style={{ maxWidth: 920, margin: "0 auto", padding: isMobile ? "0 0 24px" : "20px 8px 48px" }}>
+    <div style={{ maxWidth: 920, width: "100%", minWidth: 0, boxSizing: "border-box", margin: "0 auto", padding: isMobile ? "0 2px 28px" : "20px 8px 48px", overflowX: "clip" }}>
 
-      {/* ══ PRODUCT IMPROVEMENT #2 — TASK-FIRST LAYOUT ══
-          Project badge is 1 line, then ACTION CARD is the first full block.
-          All context (yesterday, analysis, check-ins) moves into a
-          collapsible drawer below the action card.
-      ══════════════════════════════════════════════════ */}
-
-      {/* Lightweight project + stage badge */}
-      {project && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text2)", letterSpacing: "-0.01em" }}>
-            {project.name ?? "Your startup"}
-          </span>
-          {project.startup_stage && (
-            <span style={{
-              fontFamily: "'DM Mono', monospace",
-              fontSize: 9,
-              padding: "2px 8px",
-              borderRadius: "var(--r-sm)",
-              background: "var(--bm-accent-dim)",
-              color: "var(--bm-accent)",
-              border: "1px solid var(--bm-accent-bd)",
-              textTransform: "uppercase",
-              letterSpacing: "0.08em",
-            }}>
-              {project.startup_stage}
-            </span>
-          )}
-          {isDayOneColdStart ? (
-            <span style={{ marginLeft: "auto", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-accent)" }}>
-              Start your streak today
-            </span>
-          ) : streak > 0 && (
-            <span style={{ marginLeft: "auto", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-text4)" }}>
-              {streak}d
-            </span>
-          )}
-        </div>
-      )}
-
-      {shouldShowInitialAnalysis && initialAnalysis && (
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4 }}
-          style={{
-            background: "var(--bm-accent-dim)",
-            border: "1px solid var(--bm-accent-bd)",
-            borderRadius: 14,
-            padding: isMobile ? "18px" : "22px 24px",
-            marginBottom: 16,
-            fontFamily: "'DM Mono', monospace",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 18 }}>
-            <div style={{ fontSize: 10, color: "var(--bm-accent)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>
-              ⚡ BuildMind Initial Analysis
-            </div>
-            <div style={{ fontSize: 10, color: "var(--bm-text3)", textAlign: "right" }}>
-              {project?.name ?? productName ?? "Your startup"}
-            </div>
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "140px 1fr", gap: isMobile ? 10 : 16, alignItems: "center", marginBottom: 18 }}>
-            <div style={{ fontSize: 11, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Health score</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ flex: 1, height: 9, borderRadius: 99, background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", overflow: "hidden" }}>
-                <div style={{ width: `${Math.max(0, Math.min(100, initialAnalysis.health_score))}%`, height: "100%", background: "var(--bm-accent)" }} />
-              </div>
-              <span style={{ fontSize: 12, color: "var(--bm-text)", fontWeight: 700, minWidth: 48, textAlign: "right" }}>
-                {initialAnalysis.health_score}/100
-              </span>
-            </div>
-          </div>
-
-          <div style={{ marginBottom: 18 }}>
-            <div style={{ fontSize: 11, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 7 }}>
-              Your founder pattern
-            </div>
-            <p style={{ fontSize: isMobile ? 13 : 14, color: "var(--bm-text)", lineHeight: 1.65, margin: 0 }}>
-              "{sanitizeOutput(initialAnalysis.founder_pattern)}"
-            </p>
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16, marginBottom: 18 }}>
-            <div>
-              <div style={{ fontSize: 11, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
-                Top 3 risks right now
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {initialAnalysis.key_risks.map((risk, index) => (
-                  <div key={risk} style={{ display: "flex", gap: 8, color: "var(--bm-text2)", fontSize: 12, lineHeight: 1.55 }}>
-                    <span style={{ color: "var(--bm-accent)", flexShrink: 0 }}>{index + 1}</span>
-                    <span>{sanitizeOutput(risk)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div>
-              <div style={{ fontSize: 11, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
-                Where to focus first
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {initialAnalysis.immediate_priorities.map((priority) => (
-                  <div key={priority} style={{ display: "flex", gap: 8, color: "var(--bm-text2)", fontSize: 12, lineHeight: 1.55 }}>
-                    <span style={{ color: "var(--bm-accent)", flexShrink: 0 }}>→</span>
-                    <span>{sanitizeOutput(priority)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <button
-            onClick={() => {
-              setInitialAnalysisDismissed(true);
-              if (userId) storage.set(`bm_has_seen_today_${userId}`, "1");
-            }}
-            style={{
-              width: "100%",
-              padding: "12px 14px",
-              borderRadius: 10,
-              border: "1px solid var(--bm-accent-bd)",
-              background: "var(--bm-accent)",
-              color: "var(--bm-bg)",
-              fontSize: 13,
-              fontWeight: 700,
-              cursor: "pointer",
-              fontFamily: "inherit",
-            }}
-          >
-            Got it - show me today's action →
-          </button>
-        </motion.div>
-      )}
-
-      {/* ── Context drawer (collapsed by default) — everything below wraps here ── */}
-      {isContextOpen && (<>
-
-      {/* ── Reflexion Strike Replay — day one causal thread (same visual as yesterdayReflection) ── */}
-      {isFirstSession && !yesterdayReflection && (
-        <motion.div
-          initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
-          style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)", borderRadius: 10, padding: "14px 16px", marginBottom: 14 }}
-        >
-          <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-            {/* Left: icon + connector — identical to yesterdayReflection */}
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0, paddingTop: 2 }}>
-              <div style={{ width: 28, height: 28, borderRadius: "50%", background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "var(--bm-accent)", flexShrink: 0 }}>
-                ⚡
-              </div>
-              <div style={{ width: 1, flex: 1, minHeight: 16, background: "var(--bm-border2)", margin: "4px 0" }} />
-              <RotateCcw size={12} color="var(--bm-accent)" />
-            </div>
-            {/* Right: content */}
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                <span style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.08em" }}>From your Reflexion Strike</span>
-                <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 99, fontWeight: 600, color: "var(--bm-accent)", background: "var(--bm-bg3)", border: "1px solid var(--bm-border)" }}>
-                  Market gap identified
-                </span>
-              </div>
-              {project?.problem && (
-                <p style={{ fontSize: 12, color: "var(--bm-text3)", marginBottom: 6, lineHeight: 1.5, fontStyle: "italic" }}>
-                  &ldquo;{sanitizeOutput(project.problem).slice(0, 100)}{sanitizeOutput(project.problem).length > 100 ? "…" : ""}&rdquo;
-                </p>
-              )}
-              {/* Causal link inset — identical structure to yesterdayReflection */}
-              <div style={{ display: "flex", gap: 6, alignItems: "flex-start", padding: "8px 10px", borderRadius: 8, background: "var(--bm-bg3)", border: "1px solid var(--bm-border)" }}>
-                <RotateCcw size={10} color="var(--bm-text3)" style={{ flexShrink: 0, marginTop: 1 }} />
-                <p style={{ fontSize: 11, color: "var(--bm-text2)", margin: 0, lineHeight: 1.55 }}>
-                  This is your starting baseline. The system has no history on you yet — every reflection you log tonight makes tomorrow&apos;s task sharper.
-                </p>
-              </div>
-            </div>
-          </div>
-        </motion.div>
-      )}
-
-      {/* ══ BUILDMIND INITIAL ANALYSIS CARD ══════════════════════════════════════
-          Shows perceived intelligence on first task load — creates emotional connection
-          and trust before the founder even reads their task.
-      ═══════════════════════════════════════════════════════════════════════════ */}
-      {initialAnalysis && !initialAnalysisDismissed && !shouldShowInitialAnalysis && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.04, duration: 0.35 }}
-          style={{
-            background: "var(--bm-bg2)",
-            border: "1px solid var(--bm-border2)",
-            borderRadius: 14,
-            padding: isMobile ? "18px" : "20px 22px",
-            marginBottom: 16,
-            position: "relative",
-          }}
-        >
-          {/* Dismiss */}
-          <button
-            onClick={() => setInitialAnalysisDismissed(true)}
-            style={{ position: "absolute", top: 12, right: 14, background: "none", border: "none", color: "var(--bm-text4)", cursor: "pointer", padding: 4, fontSize: 16, lineHeight: 1 }}
-            aria-label="Dismiss"
-          >×</button>
-
-          {/* Header */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
-            <div style={{ width: 24, height: 24, borderRadius: 6, background: "var(--bm-accent)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <Zap size={13} color="#fff" />
-            </div>
-            <div>
-              <p style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-accent)", textTransform: "uppercase", letterSpacing: "0.08em", margin: 0 }}>BuildMind Initial Analysis</p>
-              <p style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text)", margin: 0, lineHeight: 1.3 }}>
-                {initialAnalysis.transition_state.charAt(0).toUpperCase() + initialAnalysis.transition_state.slice(1)}
-              </p>
-            </div>
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 14, marginBottom: 14 }}>
-            {/* Key Risks */}
-            <div>
-              <p style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 8px" }}>Key Risks</p>
-              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                {initialAnalysis.key_risks.map((risk, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 7 }}>
-                    <div style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--bm-amber)", flexShrink: 0, marginTop: 5 }} />
-                    <p style={{ fontSize: 12, color: "var(--bm-text2)", margin: 0, lineHeight: 1.5 }}>{sanitizeOutput(risk)}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Immediate Priorities */}
-            <div>
-              <p style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 8px" }}>Immediate Priorities</p>
-              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                {initialAnalysis.immediate_priorities.map((p, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 7 }}>
-                    <div style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--bm-accent)", flexShrink: 0, marginTop: 5 }} />
-                    <p style={{ fontSize: 12, color: "var(--bm-text2)", margin: 0, lineHeight: 1.5 }}>{sanitizeOutput(p)}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Bottom stats row */}
-          <div style={{ display: "flex", gap: 0, borderRadius: 10, border: "1px solid var(--bm-border)", overflow: "hidden" }}>
-            {[
-              { label: "Startup Health", value: `${initialAnalysis.health_score}/100` },
-              { label: "Founder Pattern", value: initialAnalysis.founder_pattern },
-              { label: "Suggested Mode", value: initialAnalysis.operating_mode },
-            ].map((stat, i, arr) => (
-              <div key={stat.label} style={{ flex: 1, padding: "10px 12px", borderRight: i < arr.length - 1 ? "1px solid var(--bm-border)" : "none" }}>
-                <p style={{ fontSize: 9, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 3px" }}>{stat.label}</p>
-                <p style={{ fontSize: 11, fontWeight: 600, color: "var(--bm-text)", margin: 0, lineHeight: 1.3 }}>{sanitizeOutput(stat.value)}</p>
-              </div>
-            ))}
-          </div>
-        </motion.div>
-      )}
-
-      {/* ── Profile completeness ── */}
-      <ProfileCompletenessBar
-        asBanner
-        fields={{
-          startupSummary: project?.description ?? project?.startup_summary ?? "",
-          stage:          project?.startup_stage ?? "",
-          targetUsers:    project?.target_users ?? "",
-          avoidanceZones: [],
-          mrr:            project?.current_mrr ?? 0,
-          displayName:    project?.name ?? "",
-          tasksCompleted: project?.tasksCompleted ?? 0,
-        }}
-      />
-
-      {/* ── Morning / evening mobile check-in ── */}
-      {checkinSlot && (
-        <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 16 }}>
-          <MobileCheckin type={checkinSlot.type} onComplete={(note) => {
-            storage.set(checkinSlot.key, "1");
-            const endpoint = checkinSlot.type === "morning" ? "/api/morning-checkin" : "/api/evening-checkin";
-            fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ note }) }).catch(() => {});
-          }} />
-        </motion.div>
-      )}
-
-      {/* ── Pre-check-in paywall ── */}
-      {plan === "free" && briefingAvailable && (
-        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} style={{ marginBottom: 16 }}>
-          <PaywallMoment trigger="morning_briefing" />
-        </motion.div>
-      )}
-
-      {plan !== "free" && morningBriefing && (
-        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} style={{ marginBottom: 16 }}>
-          <MorningBriefingCard initialBriefing={morningBriefing} />
-        </motion.div>
-      )}
-
-      {/* ══ HERO HEADER ══════════════════════════════════════════════════════════ */}
+      {/* Task-first top of page. Only the Lite/Pro toggle lives here: streak, momentum,
+          stage progress and the weekly picture are in the Morning Briefing and the
+          Cofounder Pulse, so repeating them above the task was noise. */}
       <motion.div
-        initial={{ opacity: 0, y: -10 }}
+        initial={{ opacity: 0, y: -6 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
-        style={{ marginBottom: 22 }}
+        transition={{ duration: 0.25 }}
+        style={{ marginBottom: 14 }}
       >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginBottom: 16,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div
-              style={{
-                width: 26,
-                height: 26,
-                borderRadius: 7,
-                background: "var(--bm-accent)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Zap size={14} color="#fff" />
-            </div>
-            <span
-              style={{
-                fontSize: 13,
-                fontWeight: 600,
-                color: "var(--bm-text3)",
-                letterSpacing: "-0.01em",
-              }}
-            >
-              BuildMind
-            </span>
-          </div>
-
-          {isDayOneColdStart ? (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 5,
-                padding: "4px 9px",
-                borderRadius: 5,
-                background: "var(--bm-accent-dim)",
-                border: "1px solid var(--bm-accent-bd)",
-              }}
-            >
-              <Flame size={11} color="var(--bm-accent)" />
-              <span style={{ fontSize: 11, fontWeight: 400, color: "var(--bm-accent)", fontFamily: "'DM Mono', monospace" }}>
-                Start your streak today
-              </span>
-            </div>
-          ) : streak > 0 && (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 5,
-                padding: "4px 9px",
-                borderRadius: 5,
-                background: "var(--bm-bg2)",
-                border: "1px solid var(--bm-border)",
-              }}
-            >
-              <Flame size={11} color="var(--bm-text3)" />
-              <span style={{ fontSize: 11, fontWeight: 400, color: "var(--bm-text3)", fontFamily: "'DM Mono', monospace" }}>
-                {streak}d streak
-              </span>
-            </div>
-          )}
-        </div>
-
-        <div style={{ paddingBottom: 18, borderBottom: "1px solid var(--bm-border)" }}>
-          <p
-            style={{
-              fontSize: 12,
-              color: "var(--bm-text3)",
-              fontWeight: 500,
-              textTransform: "uppercase",
-              letterSpacing: "0.08em",
-              margin: "0 0 6px",
-            }}
-          >
-            {greetingLine}
-          </p>
-          <h1
-            style={{
-              fontFamily: "'Syne', sans-serif",
-              fontSize: "clamp(20px, 3.5vw, 26px)",
-              fontWeight: 700,
-              color: "var(--bm-text)",
-              letterSpacing: "-0.025em",
-              lineHeight: 1.2,
-              margin: "0 0 8px",
-            }}
-          >
-            {productName
-              ? `${productName}: today's operating focus`
-              : "Today's operating focus"}
-          </h1>
-          <p
-            style={{
-              fontSize: 13,
-              color: "var(--bm-text2)",
-              margin: 0,
-              lineHeight: 1.5,
-            }}
-          >
-            {[
-              project?.startup_stage ? `${project.startup_stage} stage` : null,
-              targetUsers ? `serving ${targetUsers}` : null,
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          </p>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+          <UIModeToggle mode={uiMode} onChange={setUIMode} />
         </div>
 
         {/* AI usage warning */}
@@ -1832,162 +1870,58 @@ function TodayContent() {
         )}
       </motion.div>
 
-      {/* ══════════════════════════════════════════════════════════════════════
-          YESTERDAY'S REFLECTION THREAD
-          Shows the causal link between yesterday's outcome and today's task.
-          Previously invisible — now the first thing the founder sees.
-      ══════════════════════════════════════════════════════════════════════ */}
-      {yesterdayReflection && (
+      {/* ── Evening mode — surfaces the evening check-in directly (it used to
+             be reachable only inside the "Why this task?" drawer) and
+             collapses the task recommendation into a single "Show task"
+             pill, so the page gains one clear evening focus instead of
+             stacking the check-in on top of everything else. ── */}
+      {isEveningSurfaced && !taskPillExpanded && (
         <motion.div
-          initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
-          style={{
-            background: "var(--bm-bg2)",
-            border: "1px solid var(--bm-border2)",
-            borderRadius: 10,
-            padding: "14px 16px",
-            marginBottom: 14,
-          }}
+          initial={{ opacity: 0, y: -6 }}
+          animate={{ opacity: 1, y: 0 }}
+          style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 16 }}
         >
-          <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-            {/* Left: outcome dot + connector */}
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0, paddingTop: 2 }}>
-              <div style={{
-                width: 28, height: 28, borderRadius: "50%",
-                background: "var(--bm-bg3)",
-                border: "1px solid var(--bm-border)",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 12, fontWeight: 700,
-                color: OUTCOME_META[yesterdayReflection.outcome].color,
-                flexShrink: 0,
-              }}>
-                {OUTCOME_META[yesterdayReflection.outcome].icon}
-              </div>
-              <div style={{ width: 1, flex: 1, minHeight: 16, background: "var(--bm-border2)", margin: "4px 0" }} />
-              <RotateCcw size={12} color="var(--bm-accent)" />
-            </div>
-
-            {/* Right: content */}
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                <span style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Yesterday</span>
-                <span style={{
-                  fontSize: 10, padding: "2px 8px", borderRadius: 99, fontWeight: 600,
-                  color: OUTCOME_META[yesterdayReflection.outcome].color,
-                  background: "var(--bm-bg3)",
-                  border: "1px solid var(--bm-border)",
-                }}>
-                  {OUTCOME_META[yesterdayReflection.outcome].label}
-                </span>
-              </div>
-
-              {yesterdayReflection.action && (
-                <p style={{ fontSize: 12, color: "var(--bm-text3)", marginBottom: 6, lineHeight: 1.5, fontStyle: "italic" }}>
-                  "{sanitizeOutput(yesterdayReflection.action).slice(0, 100)}{sanitizeOutput(yesterdayReflection.action).length > 100 ? "…" : ""}"
-                </p>
-              )}
-
-              {/* The causal link — the key personalisation signal */}
-              <div style={{
-                display: "flex", gap: 6, alignItems: "flex-start",
-                padding: "8px 10px", borderRadius: 8,
-                background: "var(--bm-bg3)", border: "1px solid var(--bm-border)",
-              }}>
-                <RotateCcw size={10} color="var(--bm-text3)" style={{ flexShrink: 0, marginTop: 1 }} />
-                <p style={{ fontSize: 11, color: "var(--bm-text2)", margin: 0, lineHeight: 1.55 }}>
-                  {sanitizeOutput(yesterdayCausal)}
-                </p>
-              </div>
-            </div>
-          </div>
-        </motion.div>
-      )}
-
-      {/* ══ FOCUS CALLOUT ══════════════════════════════════════════════════════ */}
-      {!yesterdayReflection && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.05 }}
-          style={{ padding: "10px 14px", borderRadius: 10, marginBottom: 14, background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", display: "flex", alignItems: "center", gap: 10 }}
-        >
-          <TrendingUp size={13} color="var(--bm-text3)" style={{ flexShrink: 0 }} />
-          {isFirstSession ? (
-            <div>
-              <p style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text)", margin: "0 0 4px" }}>
-                Day one. No history yet — this is how BuildMind learns.
-              </p>
-              <p style={{ fontSize: 12, color: "var(--bm-text3)", margin: 0, lineHeight: 1.55 }}>
-                Complete today&apos;s action and reflect tonight. That reflection becomes the input for tomorrow&apos;s task.
-                After 3 sessions, you&apos;ll start seeing behavioral patterns specific to how <em>you</em> build.
-              </p>
-            </div>
-          ) : (
-            <p style={{ fontSize: 12, color: "var(--bm-text3)", margin: 0, lineHeight: 1.5 }}>
-              BuildMind gives you <strong style={{ color: "var(--bm-text2)" }}>one action per day</strong> - calibrated to your stage, your roadmap, and what you did yesterday. Do it before anything else.
-            </p>
-          )}
-        </motion.div>
-      )}
-
-      {/* ══════════════════════════════════════════════════════════════════════
-          PENDING CONTEXT STRIP — what's powering this recommendation
-      ══════════════════════════════════════════════════════════════════════ */}
-      {(project?.pendingMilestones?.length ?? 0) > 0 || (project?.pendingTasks?.length ?? 0) > 0 ? (
-        <motion.div
-          initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
-          style={{
-            padding: "10px 14px", borderRadius: 12, marginBottom: 14,
-            background: "var(--bm-bg3)", border: "1px solid var(--bm-border)",
-            display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center",
-          }}
-        >
-          <span style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.08em", flexShrink: 0 }}>
-            From your roadmap
-          </span>
-          {project?.pendingMilestones?.slice(0, 2).map((m: string, i: number) => (
-            <span key={i} style={{
-              fontSize: 10, padding: "3px 8px", borderRadius: 99,
-              background: "var(--bm-bg2)", color: "var(--bm-text3)",
-              border: "1px solid var(--bm-border2)", fontWeight: 600,
-            }}>
-              ◎ {m}
-            </span>
-          ))}
-          {project?.pendingTasks?.slice(0, 2).map((t: string, i: number) => (
-            <span key={i} style={{
-              fontSize: 10, padding: "3px 8px", borderRadius: 99,
-              background: "var(--bm-bg2)", color: "var(--bm-text3)",
-              border: "1px solid var(--bm-border2)", fontWeight: 500,
-            }}>
-              ✦ {t}
-            </span>
-          ))}
+          <MobileCheckin type="evening" onComplete={(note) => {
+            storage.set(checkinSlot!.key, "1");
+            fetch("/api/evening-checkin", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ note }),
+            }).catch(() => {});
+          }} />
           <button
-            onClick={() => router.push("/projects")}
+            onClick={() => {
+              setTaskPillExpanded(true);
+              // Card isn't in the DOM yet this tick — wait one frame.
+              requestAnimationFrame(() => actionCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+            }}
             style={{
-              marginLeft: "auto", fontSize: 10, color: "var(--bm-text4)", background: "none",
-              border: "none", cursor: "pointer", fontFamily: "inherit", padding: 0,
+              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+              padding: "10px 8px 10px 14px", borderRadius: 999,
+              background: "var(--bm-bg2)", border: "1px solid var(--bm-border)",
+              cursor: "pointer", width: "100%", textAlign: "left",
             }}
           >
-            Edit tasks →
+            <span style={{ fontSize: 12, color: "var(--bm-text3)", fontWeight: 500 }}>
+              Today&apos;s task is still here if you want it.
+            </span>
+            <span style={{
+              flexShrink: 0, borderRadius: 999, padding: "6px 14px",
+              background: "var(--bm-accent)", color: "#15130a", fontSize: 12, fontWeight: 700,
+            }}>
+              Show task
+            </span>
           </button>
         </motion.div>
-      ) : null}
+      )}
 
-      </>)}
 
-      {/* ── "Why this task?" disclosure toggle ── */}
-      <button
-        onClick={() => setIsContextOpen(o => !o)}
-        style={{
-          display: "flex", alignItems: "center", gap: 6, marginBottom: 14,
-          background: "none", border: "none", cursor: "pointer",
-          color: "var(--bm-text4)", fontSize: 11, fontFamily: "inherit", padding: 0,
-        }}
-      >
-        <span style={{ fontSize: 10, transform: isContextOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s", display: "inline-block" }}>▶</span>
-        {isContextOpen ? "Hide context" : "Why this task?"}
-      </button>
+      {/* ══ PRODUCT IMPROVEMENT #2 — TASK-FIRST LAYOUT ══
+          Project badge is 1 line, then ACTION CARD is the first full block.
+          All context (yesterday, analysis, check-ins) moves into a
+          collapsible drawer below the action card.
+      ══════════════════════════════════════════════════ */}
+
 
       {debtSuppression && !aiAction && (
         <motion.div
@@ -2002,7 +1936,7 @@ function TodayContent() {
           }}
         >
           <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-            <AlertCircle size={20} color="var(--bm-accent)" style={{ flexShrink: 0, marginTop: 2 }} />
+            <AlertCircle size={20} color="var(--bm-red)" style={{ flexShrink: 0, marginTop: 2 }} />
             <div>
               <div style={{ fontSize: 10, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'DM Mono', monospace", marginBottom: 8 }}>
                 Execution debt
@@ -2019,9 +1953,9 @@ function TodayContent() {
                 onClick={() => void handleAcknowledgeDebt()}
                 disabled={actionLoading}
                 style={{
-                  border: "1px solid var(--bm-accent-bd)",
-                  background: "var(--bm-accent-dim)",
-                  color: "var(--bm-accent)",
+                  border: "1px solid var(--bm-red-bd)",
+                  background: "var(--bm-red-dim)",
+                  color: "var(--bm-red)",
                   borderRadius: 8,
                   padding: "9px 12px",
                   cursor: actionLoading ? "default" : "pointer",
@@ -2036,9 +1970,17 @@ function TodayContent() {
         </motion.div>
       )}
 
+      {/* Risk Interrupt — same reasoning as the intelligence grid below: a
+          critical live signal shouldn't go dark just because the task
+          recommendation is tucked behind the evening pill. */}
+      {uiMode === "pro" && criticalSignal ? <RiskInterrupt signal={criticalSignal} /> : null}
+
       {/* ══════════════════════════════════════════════════════════════════════
           ACTION CARD — first real content block (task-first layout)
+          Collapsed behind the "Show task" pill above during evening mode,
+          until the founder explicitly expands it.
       ══════════════════════════════════════════════════════════════════════ */}
+      {(!isEveningSurfaced || taskPillExpanded) && (<>
       {!actionData ? (
         /* Loading skeleton — shown while AI fetch is in flight */
         /* Never shows generic task; waits for the real personalised task */
@@ -2052,13 +1994,12 @@ function TodayContent() {
         >
           <div style={{ background: "var(--bm-bg2)", borderRadius: 11, padding: isMobile ? "20px" : "28px 30px 24px" }}>
             {/* Meta row skeleton */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-              <div style={{ height: 22, width: 90, borderRadius: 4, background: "var(--bm-bg3)", animation: "bm-pulse 1.4s ease-in-out infinite" }} />
-              <div style={{ height: 22, width: 120, borderRadius: 4, background: "var(--bm-bg3)", animation: "bm-pulse 1.4s ease-in-out infinite 0.1s" }} />
-              <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
-                <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: "50%", background: "var(--bm-accent)", opacity: 0.7, animation: "bm-pulse 1.2s ease-in-out infinite" }} />
-                <span style={{ fontSize: 11, color: "var(--bm-text3)" }}>{streamLabel ?? "Calibrating task..."}</span>
-              </div>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, marginBottom: 20, textAlign: "center" }}>
+              <div className="animate-spin" style={{ width: 22, height: 22, borderRadius: "50%", border: "2px solid var(--bm-border2)", borderTopColor: "var(--bm-accent)" }} />
+              <span style={{ fontSize: 13, color: "var(--bm-text2)" }}>{streamLabel ?? "Preparing your decision brief..."}</span>
+              <span style={{ fontFamily: "var(--font-mono, monospace)", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--bm-text4)" }}>
+                Aligning current hypothesis &amp; risk models
+              </span>
             </div>
 
             {/* Primary action skeleton */}
@@ -2088,15 +2029,32 @@ function TodayContent() {
             </div>
           </div>
         </div>
+      ) : aiFetchFailed && !actionLoading ? (
+        <IntelligenceUnavailableCard
+          lastSuccessAt={userId ? (() => {
+            const ts = storage.get(`bm_today_action_cache_ts_${userId}`);
+            return ts ? Number(ts) : null;
+          })() : null}
+          hasLastRecommendation={!!lastGoodActionRef.current}
+          onRetry={() => { setAiFetchFailed(false); setForceActionRefresh(v => v + 1); }}
+          onUseLastRecommendation={() => {
+            if (lastGoodActionRef.current) setAiAction(lastGoodActionRef.current);
+            setAiFetchFailed(false);
+          }}
+          onContinueBaseline={() => setAiFetchFailed(false)}
+          projectId={project?.id}
+        />
       ) : (
+        <>
         <motion.div
+        ref={actionCardRef}
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.08 }}
         style={{
           padding: 1,
             borderRadius: 12,
-            background: "var(--bm-border2)",
+            background: "var(--bm-accent-bd)",
             marginBottom: 14,
             transition: "background 0.4s",
           }}
@@ -2106,63 +2064,78 @@ function TodayContent() {
           {/* Meta row — simplified */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
             {project?.startup_stage && (
-              <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: "var(--bm-accent-dim)", color: "var(--bm-accent)", border: "1px solid var(--bm-accent-bd)", fontWeight: 400, textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: "'DM Mono', monospace" }}>
+              <span className="bm-badge bm-badge-accent" style={{ textTransform: "uppercase", letterSpacing: "0.06em" }}>
                 {project.startup_stage} stage
               </span>
             )}
             {actionData.isAI && !actionLoading && (
-              <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: "var(--bm-bg3)", color: "var(--bm-text3)", border: "1px solid var(--bm-border)", fontWeight: 400, fontFamily: "'DM Mono', monospace" }}>
+              <span className="bm-badge bm-badge-neutral">
                 Context calibrated
               </span>
             )}
             {actionLoading && (
-              <span style={{ fontSize: 11, color: "var(--bm-text3)", display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: "var(--text-xs)", color: "var(--bm-text3)", display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
                 <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "var(--bm-accent)", opacity: 0.6, animation: "bm-pulse 1.2s ease-in-out infinite" }} />
                 {sanitizeOutput(streamLabel ?? "Calibrating...")}
               </span>
             )}
             {!actionData.isAI && !actionLoading && (
-              <span style={{ fontSize: 10, color: "var(--bm-text4)", fontStyle: "italic" }}>
+              <span style={{ fontSize: "var(--text-xs)", color: "var(--bm-text4)", fontStyle: "italic" }}>
                 Baseline objective
               </span>
             )}
-            <span style={{ fontSize: 11, color: "var(--bm-text3)", display: "flex", alignItems: "center", gap: 4, marginLeft: "auto" }}>
+            <span style={{ fontSize: "var(--text-xs)", color: "var(--bm-text3)", display: "flex", alignItems: "center", gap: "var(--space-1)", marginLeft: "auto" }}>
+              {actionData.difficulty && (
+                <span className="bm-badge" style={{
+                  fontWeight: 700,
+                  textTransform: "capitalize",
+                  color: actionData.difficulty === "deep" ? "var(--bm-red)" : actionData.difficulty === "light" ? "var(--bm-green)" : "var(--bm-text3)",
+                  background: actionData.difficulty === "deep" ? "rgba(224,85,85,0.12)" : actionData.difficulty === "light" ? "rgba(74,184,176,0.12)" : "var(--bm-bg3)",
+                  border: `1px solid ${actionData.difficulty === "deep" ? "rgba(224,85,85,0.3)" : actionData.difficulty === "light" ? "rgba(74,184,176,0.3)" : "var(--bm-border)"}`,
+                }}>
+                  {actionData.difficulty}
+                </span>
+              )}
               <Clock size={11} /> {actionData.time}
             </span>
           </div>
 
-          {/* Primary action */}
-          <div style={{
-            background: "var(--bm-bg)",
-            border: "1px solid var(--bm-border)",
-            borderRadius: 10,
-            padding: isMobile ? "16px" : "18px 18px",
-            marginBottom: 14,
-            display: "flex",
-            alignItems: "flex-start",
-            gap: 10,
-          }}>
-            <div style={{
-              width: 26, height: 26, borderRadius: 6,
-              background: "var(--bm-accent)", color: "#fff",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 11, fontWeight: 500, flexShrink: 0,
-              fontFamily: "'DM Mono', monospace",
-            }}>01</div>
-            <div>
-              <div style={{ fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'DM Mono', monospace", marginBottom: 7 }}>
-                Primary Objective
+          <div
+            id="today-action"
+            style={{
+              scrollMarginTop: 16,
+              marginBottom: "var(--space-4)",
+              display: actionData.isLowConfidence && actionData.intelligence && !isMobile ? "grid" : "block",
+              gridTemplateColumns: actionData.isLowConfidence && actionData.intelligence && !isMobile ? "1fr 260px" : undefined,
+              gap: actionData.isLowConfidence && actionData.intelligence && !isMobile ? 14 : undefined,
+              alignItems: "start",
+            }}
+          >
+            <DecisionBrief
+              action={linkifyChannels(sanitizeOutput(actionData.action))}
+              lowConfidence={actionData.isLowConfidence}
+              rationale={sanitizeOutput(actionData.reflexion?.rationale ?? actionData.why)}
+              time={actionData.time}
+              expectedEvidence={actionData.intelligence?.decision?.top_candidate?.expected_evidence}
+              executeLabel="Open script"
+              onExecute={() => executionScriptRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+            />
+            {actionData.isLowConfidence && (
+              <div style={{ marginTop: isMobile ? 12 : 0 }}>
+                <ContextAlignmentCard intelligence={actionData.intelligence} />
               </div>
-              <p style={{ fontSize: isMobile ? 20 : 22, fontWeight: 400, color: "var(--bm-text)", lineHeight: 1.42, margin: "0 0 8px", letterSpacing: "-0.025em" }}>
-                {sanitizeOutput(actionData.action)}
-              </p>
-              <p style={{ fontSize: 13, color: "var(--bm-text2)", fontWeight: 400, margin: 0, lineHeight: 1.55 }}>
-                {isOutreachAction
-                  ? "Execute this before opening the rest of the day. The system will learn from the result."
-                  : "This is the highest-leverage operating move for the current stage. Everything else is secondary."}
-              </p>
-            </div>
+            )}
           </div>
+
+          <WhyThisPanel data={{ isAI: actionData.isAI, isLowConfidence: actionData.isLowConfidence, reflexion: actionData.reflexion, intelligence: actionData.intelligence }} />
+
+          {/* Focus block, directly under the task it serves */}
+          <TodayCommandCenter
+            actionTitle={actionData?.action ? sanitizeOutput(actionData.action) : null}
+            timeText={actionData?.time ?? null}
+            done={done}
+            streak={streak}
+          />
 
           {!done && !actionLoading && (
             <button
@@ -2171,18 +2144,18 @@ function TodayContent() {
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 6,
+                gap: "var(--space-2)",
                 background: "transparent",
                 border: "1px solid var(--bm-border)",
-                borderRadius: 8,
-                padding: "7px 13px",
-                fontSize: 12,
+                borderRadius: "var(--r-lg)",
+                padding: "var(--space-2) var(--space-3)",
+                fontSize: "var(--text-sm)",
                 fontWeight: 500,
                 color: "var(--bm-text3)",
                 cursor: replacingTask ? "not-allowed" : "pointer",
                 opacity: replacingTask ? 0.5 : 1,
                 transition: "all 0.15s",
-                marginBottom: 12,
+                marginBottom: "var(--space-3)",
                 fontFamily: "inherit",
               }}
               onMouseEnter={e => { e.currentTarget.style.color = "var(--bm-text2)"; }}
@@ -2195,15 +2168,15 @@ function TodayContent() {
 
           {/* Script instruction */}
           <div style={{
-            display: "flex", alignItems: "center", gap: 8, marginBottom: 10,
-            padding: "8px 12px", borderRadius: 9,
+            display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-3)",
+            padding: "var(--space-2) var(--space-3)", borderRadius: "var(--r-lg)",
             background: "var(--bm-bg3)", border: "1px solid var(--bm-border)",
           }}>
             <div>
-              <p style={{ fontSize: 12, fontWeight: 700, color: "var(--bm-text)", margin: "0 0 1px" }}>
+              <p style={{ fontSize: "var(--text-sm)", fontWeight: 700, color: "var(--bm-text)", margin: "0 0 1px" }}>
                 {isOutreachAction ? "Prepare the message" : "Prepare the script"}
               </p>
-              <p style={{ fontSize: 11, color: "var(--bm-text3)", margin: 0 }}>
+              <p style={{ fontSize: "var(--text-xs)", color: "var(--bm-text3)", margin: 0 }}>
                 {isOutreachAction
                   ? "Project context is pre-filled. Adjust only what improves clarity."
                   : "Use the script as written unless the context is wrong."}
@@ -2211,37 +2184,67 @@ function TodayContent() {
             </div>
           </div>
 
-          {/* Why — with reflexion rationale */}
-          <div style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: 10, padding: isMobile ? "16px" : "14px 16px", marginBottom: 18 }}>
-            <div style={{ fontSize: 10, fontWeight: 400, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6, display: "flex", alignItems: "center", gap: 5, fontFamily: "'DM Mono', monospace" }}>
-              <Brain size={10} color="var(--bm-text3)" /> Strategic rationale
-            </div>
-            <p style={{ fontSize: isMobile ? 14 : 13, color: "var(--bm-text2)", margin: "0 0 10px", lineHeight: 1.6 }}>
-              {sanitizeOutput(actionData.reflexion?.rationale ?? actionData.why)}
-            </p>
-            {actionData.reflexion?.lastReflectionUsed && (
-              <div style={{ fontSize: 11, color: "var(--bm-text3)", borderTop: "1px solid var(--bm-border)", paddingTop: 10 }}>
-                Your yesterday's reflection shaped this recommendation.
+          {/* Supplementary context — the rationale text itself now lives
+              only in DecisionBrief's "Why now" section above (line ~2533);
+              this used to repeat the identical paragraph a second time
+              under "Strategic rationale" right below it. Kept here: the
+              genuinely additional bits that aren't in DecisionBrief. */}
+          {(actionData.reflexion?.lastReflectionUsed || actionData.reflexion?.wasHardFallback || uiMode === "pro") && (
+            <div style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-xl)", padding: isMobile ? "var(--space-4)" : "var(--space-4) var(--space-4)", marginBottom: "var(--space-5)" }}>
+              <div style={{ fontSize: "var(--text-xs)", fontWeight: 400, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "var(--space-2)", display: "flex", alignItems: "center", gap: 5, fontFamily: "'DM Mono', monospace" }}>
+                <Brain size={10} color="var(--bm-text3)" /> Context
               </div>
-            )}
-          </div>
+              {actionData.reflexion?.lastReflectionUsed && (
+                <div style={{ fontSize: "var(--text-xs)", color: "var(--bm-text3)", marginBottom: "var(--space-2)" }}>
+                  Your yesterday's reflection shaped this recommendation.
+                </div>
+              )}
+              {actionData.reflexion?.wasHardFallback && (
+                <div style={{ fontSize: "var(--text-xs)", color: "var(--bm-text3)", marginBottom: "var(--space-2)", display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+                  <AlertCircle size={11} color="var(--bm-text3)" />
+                  Today's AI draft didn't meet our concreteness bar, so this is a proven fallback task instead — still real, just not freshly composed.
+                </div>
+              )}
+              {uiMode === "pro" ? (() => {
+                const items = [
+                  ...(actionData.intelligence?.decision?.top_candidate?.expected_evidence
+                    ? [{ label: "Expected evidence", value: actionData.intelligence.decision.top_candidate.expected_evidence }]
+                    : []),
+                  ...(actionData.isLowConfidence
+                    ? [{ label: "Uncertainty", value: "This recommendation is intended to gather a concrete signal before stronger guidance is given." }]
+                    : []),
+                ];
+                if (!items.length) return null;
+                return (
+                  <div style={{ marginTop: "var(--space-2)", padding: "10px 12px", borderRadius: "var(--r-md)", background: "var(--bm-intel-dim)", border: "1px solid var(--bm-intel-bd)", display: "flex", flexDirection: "column", gap: 6 }}>
+                    {items.map((item, i) => (
+                      <div key={i} style={{ display: "flex", gap: 8, fontSize: 12, lineHeight: 1.5 }}>
+                        <span style={{ color: "var(--bm-text3)", flexShrink: 0, minWidth: 90 }}>{item.label}</span>
+                        <span style={{ color: "var(--bm-text)" }}>{item.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })() : null}
+            </div>
+          )}
 
           {/* ── Message template — pre-filled with real project values ── */}
-          <div style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: 10, padding: isMobile ? "16px" : "14px 16px" }}>
-            <div style={{ display: "flex", alignItems: isMobile ? "stretch" : "center", justifyContent: "space-between", marginBottom: 8, gap: 8, flexDirection: isMobile ? "column" : "row" }}>
-              <span style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+          <div ref={executionScriptRef} style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: "var(--r-xl)", padding: isMobile ? "var(--space-4)" : "var(--space-4) var(--space-4)" }}>
+            <div style={{ display: "flex", alignItems: isMobile ? "stretch" : "center", justifyContent: "space-between", marginBottom: "var(--space-2)", gap: "var(--space-2)", flexDirection: isMobile ? "column" : "row" }}>
+              <span style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
                 {isOutreachAction ? "Execution draft" : "Execution script"}
               </span>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, width: isMobile ? "100%" : "auto" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", width: isMobile ? "100%" : "auto" }}>
                 <button
                   onClick={() => void handleShareMessage()}
-                  style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "4px 10px", borderRadius: 7, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", fontSize: 11, cursor: "pointer", fontFamily: "inherit", flex: isMobile ? 1 : "0 0 auto" }}
+                  style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "4px 10px", borderRadius: "var(--r-lg)", border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", fontSize: "var(--text-xs)", cursor: "pointer", fontFamily: "inherit", flex: isMobile ? 1 : "0 0 auto" }}
                 >
-                  {shared ? <><Check size={11} color="var(--bm-accent)" /> Shared</> : <>↗ Share</>}
+                  {shared ? <><Check size={11} color="var(--bm-green)" /> Shared</> : <>↗ Share</>}
                 </button>
                 <button onClick={handleCopy}
-                  style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "4px 10px", borderRadius: 7, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", fontSize: 11, cursor: "pointer", fontFamily: "inherit", flex: isMobile ? 1 : "0 0 auto" }}>
-                  {copied ? <><Check size={11} color="var(--bm-accent)" /> Copied</> : <><Copy size={11} /> Copy</>}
+                  style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "4px 10px", borderRadius: "var(--r-lg)", border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", fontSize: "var(--text-xs)", cursor: "pointer", fontFamily: "inherit", flex: isMobile ? 1 : "0 0 auto" }}>
+                  {copied ? <><Check size={11} color="var(--bm-green)" /> Copied</> : <><Copy size={11} /> Copy</>}
                 </button>
               </div>
             </div>
@@ -2250,107 +2253,122 @@ function TodayContent() {
                 value={draftMessage ?? ""}
                 onChange={e => setDraftMessage(e.target.value)}
                 rows={4}
-                style={{ width: "100%", background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)", borderRadius: 9, padding: "10px 13px", fontSize: isMobile ? 14 : 13, color: "var(--bm-text)", outline: "none", fontFamily: "inherit", resize: "vertical", boxSizing: "border-box", lineHeight: 1.6, transition: "border-color 0.15s" }}
+                style={{ width: "100%", background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)", borderRadius: "var(--r-lg)", padding: "var(--space-3) var(--space-3)", fontSize: isMobile ? "var(--text-md)" : "var(--text-base)", color: "var(--bm-text)", outline: "none", fontFamily: "inherit", resize: "vertical", boxSizing: "border-box", lineHeight: "var(--leading-relaxed)", transition: "border-color 0.15s" }}
                 onFocus={e => { e.target.style.borderColor = "var(--bm-accent-bd)"; }}
                 onBlur={e => { e.target.style.borderColor = "var(--bm-border2)"; }}
               />
             ) : (
-              <p style={{ fontSize: isMobile ? 14 : 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.6, fontStyle: "italic" }}>&ldquo;{sanitizeOutput(draftMessage ?? actionData.message)}&rdquo;</p>
+              <p style={{ fontSize: isMobile ? "var(--text-md)" : "var(--text-base)", color: "var(--bm-text2)", margin: 0, lineHeight: "var(--leading-relaxed)", fontStyle: "italic" }}>&ldquo;{sanitizeOutput(draftMessage ?? actionData.message)}&rdquo;</p>
             )}
           </div>
         </div>
       </motion.div>
+
+      </>
       )}
 
-      {accountAgeDays < 7 && (
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          style={{
-            background: "var(--bm-bg2)",
-            border: "1px solid var(--bm-border)",
-            borderRadius: 14,
-            padding: isMobile ? "14px" : "14px 16px",
-            marginBottom: 14,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
-            <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-              Week 1 journey
-            </span>
-            <div style={{ display: "flex", alignItems: "center", flex: 1, minWidth: isMobile ? "100%" : 260 }}>
-              {weekOneDays.map((day, index) => (
-                <div key={day.day} style={{ display: "flex", alignItems: "center", flex: index < 6 ? 1 : "0 0 auto" }}>
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-                    <div
-                      style={{
-                        width: 13,
-                        height: 13,
-                        borderRadius: "50%",
-                        background: day.completed ? "var(--bm-accent)" : day.active ? "var(--bm-bg4)" : "var(--bm-bg3)",
-                        border: day.completed ? "1px solid var(--bm-accent-bd)" : "1px solid var(--bm-border2)",
-                      }}
-                    />
-                    <span style={{ fontSize: 9, color: day.active ? "var(--bm-text2)" : "var(--bm-text4)", fontFamily: "'DM Mono', monospace" }}>
-                      D{day.day}
-                    </span>
-                  </div>
-                  {index < 6 && (
-                    <div style={{ flex: 1, height: 1, background: weekOneDays[index + 1]?.completed ? "var(--bm-accent-bd)" : "var(--bm-border)", margin: "0 5px 13px" }} />
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-          <p style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.55, margin: 0 }}>
-            By Day 7 you'll have {sanitizeOutput(weekOneTarget)}
-          </p>
-        </motion.div>
-      )}
-
-      {/* ── Destinations ── */}
+      {/* ── Choose channel & audience ── */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}
-        style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 18, padding: isMobile ? "18px" : "20px 24px", marginBottom: 14 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+        style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-3xl)", padding: isMobile ? "var(--space-5)" : "var(--space-5) var(--space-6)", marginBottom: "var(--space-4)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-1)" }}>
           <div style={{
             width: 22, height: 22, borderRadius: "50%",
             background: "var(--bm-bg4)", color: "var(--bm-text3)",
             display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 11, fontWeight: 800, flexShrink: 0,
+            fontSize: "var(--text-xs)", fontWeight: 800, flexShrink: 0,
           }}>3</div>
-          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--bm-text2)" }}>Send it — pick one channel below</div>
+          <div style={{ fontSize: "var(--text-sm)", fontWeight: 600, color: "var(--bm-text2)" }}>Choose channel &amp; audience</div>
         </div>
-        <p style={{ fontSize: 11, color: "var(--bm-text3)", marginBottom: 14, lineHeight: 1.5, paddingLeft: 30 }}>
+        <p style={{ fontSize: "var(--text-xs)", color: "var(--bm-text3)", marginBottom: "var(--space-4)", lineHeight: "var(--leading-normal)", paddingLeft: 30 }}>
           {targetUsers
             ? <>Reach your <strong style={{ color: "var(--bm-text3)", fontWeight: 500 }}>{targetUsers}</strong> directly. At least 3 people. Done counts even if they don't reply.</>
             : "At least 3 people. Done counts as done even if they don't reply. Replies are a bonus."}
         </p>
-        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(4, 1fr)", gap: 9 }}>
-          {destinations.map(d => (
-            <a key={d.label} href={d.url} target="_blank" rel="noopener noreferrer"
-              style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 7, padding: isMobile ? "16px 8px" : "14px 8px", borderRadius: 12, border: "1px solid var(--bm-border)", background: "var(--bm-bg3)", textDecoration: "none", transition: "all 0.15s" }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--bm-border2)"; e.currentTarget.style.background = "var(--bm-bg4)"; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--bm-border)"; e.currentTarget.style.background = "var(--bm-bg3)"; }}>
-              <span style={{ fontSize: 22 }}>{d.icon}</span>
-              <span style={{ fontSize: 11, color: "var(--bm-text3)", textAlign: "center", lineHeight: 1.3 }}>{d.label}</span>
-            </a>
-          ))}
-        </div>
+        {(() => {
+          // Same honesty constraint as the tile grid this replaces: only
+          // "Email personally" gets a synthesized mailto: (real draft
+          // content behind it). Everything else either has a real url in
+          // DESTINATIONS or has no real target data (no phone number, no
+          // profile URL) — those stay selectable but inert, same as before,
+          // never a fabricated link or a fabricated recipient count.
+          const channels = destinations.map(d => {
+            const isEmail = d.label === "Email personally";
+            const mailHref = isEmail
+              ? `mailto:?subject=${encodeURIComponent(project?.name ? `Quick question about ${project.name}` : "Quick question")}&body=${encodeURIComponent(draftMessage ?? actionData?.message ?? "")}`
+              : undefined;
+            const href = d.url ?? mailHref;
+            return { ...d, href, inert: !href };
+          });
+          const defaultChannel = channels.find(c => !c.inert) ?? channels[0];
+          const active = channels.find(c => c.label === selectedChannel) ?? defaultChannel;
+
+          return (
+            <>
+              <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap", marginBottom: "var(--space-4)" }}>
+                {channels.map(c => {
+                  const isActive = active?.label === c.label;
+                  return (
+                    <button
+                      key={c.label}
+                      type="button"
+                      onClick={() => setSelectedChannel(c.label)}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 8,
+                        padding: "8px 14px", borderRadius: "var(--r-full, 999px)",
+                        border: `1px solid ${isActive ? "var(--bm-accent-bd)" : "var(--bm-border2)"}`,
+                        background: isActive ? "var(--bm-accent-dim)" : "var(--bm-bg3)",
+                        cursor: "pointer", fontFamily: "inherit", textAlign: "left",
+                      }}
+                    >
+                      <span aria-hidden style={{
+                        width: 7, height: 7, borderRadius: "50%", flexShrink: 0,
+                        background: isActive ? "var(--bm-accent)" : "var(--bm-border3)",
+                      }} />
+                      <span>
+                        <span style={{ display: "block", fontSize: "var(--text-xs)", fontWeight: 600, color: isActive ? "var(--bm-text)" : "var(--bm-text2)" }}>
+                          {c.icon} {c.label}
+                        </span>
+                        <span style={{ display: "block", fontSize: 10, color: "var(--bm-text4)", marginTop: 1 }}>
+                          {c.inert ? "No linked destination — do this one manually" : targetUsers ? `Reach ${targetUsers}` : "Opens in a new tab"}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              <a
+                href={active?.href}
+                target={active?.href ? "_blank" : undefined}
+                rel={active?.href ? "noopener noreferrer" : undefined}
+                onClick={!active?.href ? (e) => e.preventDefault() : undefined}
+                style={{
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  padding: "10px 20px", borderRadius: "var(--r-lg)",
+                  background: active?.href ? "var(--bm-accent)" : "var(--bm-bg4)",
+                  color: active?.href ? "var(--bm-bg)" : "var(--bm-text4)",
+                  fontSize: "var(--text-sm)", fontWeight: 700, textDecoration: "none",
+                  cursor: active?.href ? "pointer" : "default",
+                }}
+              >
+                {active ? `Send via ${active.label}` : "Send"}
+              </a>
+            </>
+          );
+        })()}
       </motion.div>
 
       {/* ── Check-in ── */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.16 }}
-        style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 18, padding: isMobile ? "18px" : "20px 24px" }}>
+        style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-3xl)", padding: isMobile ? "var(--space-5)" : "var(--space-5) var(--space-6)" }}>
 
         {/* Stage motivator */}
         {project?.startup_stage && (
           <p
             style={{
-              fontSize: 12,
+              fontSize: "var(--text-sm)",
               color: "var(--bm-text3)",
-              marginBottom: 14,
-              lineHeight: 1.5,
+              marginBottom: "var(--space-4)",
+              lineHeight: "var(--leading-normal)",
               fontStyle: "italic",
             }}
           >
@@ -2367,7 +2385,7 @@ function TodayContent() {
         )}
 
         {/* Progress tracker */}
-        <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 20, overflow: "hidden" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: "var(--space-5)", overflow: "hidden" }}>
           {[
             { n: 1, label: "Read action", done: true },
             { n: 2, label: "Edit script", done: !!draftMessage },
@@ -2399,49 +2417,256 @@ function TodayContent() {
           ))}
         </div>
 
-        <div style={{ fontSize: 13, color: "var(--bm-text2)", marginBottom: 16, lineHeight: 1.6 }}>
-          How did it go? Tap your outcome to log today's reflection.
+        <p style={{ fontFamily: "var(--font-mono, monospace)", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--bm-text4)", margin: "0 0 6px" }}>
+          Check-in
+        </p>
+        <h2 style={{ fontSize: isMobile ? 16 : 17, fontWeight: 700, color: "var(--bm-text)", margin: "0 0 8px" }}>
+          How did it go?
+        </h2>
+        <div style={{ fontSize: 12.5, color: "var(--bm-text3)", marginBottom: 14, lineHeight: 1.6 }}>
+          Tap your outcome to log today's reflection.
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 9, marginBottom: 4 }}>
-          {OUTCOME_CHIPS.map(chip => (
+        <div style={{ display: "flex", flexDirection: "column", marginBottom: 4 }}>
+          {OUTCOME_CHIPS.map((chip, i) => (
             <button
               key={chip.id}
               disabled={submitting}
               onClick={() => {
                 if (submitting) return;
                 setSubmitting(true);
-                // Fire task-complete, streak and score updates, then navigate
-                void handleCheckIn(chip.id).then(() => {
-                  router.push(`/reflect?outcome=${chip.id}`);
-                }).catch(() => {
+                // Previously this awaited handleCheckIn's ENTIRE promise
+                // chain before navigating — 4 sequential network round-trips
+                // (task-complete fetch, persistBehaviorState, a direct
+                // Supabase score update, a founder-context PATCH) all had to
+                // resolve first. None of that is needed to render /reflect —
+                // it only needs the outcome (URL param) and this local
+                // snapshot, which handleCheckIn used to write mid-chain,
+                // after the first awaited call. Writing it here, synchronously,
+                // before navigating, and letting the rest of handleCheckIn's
+                // server-side bookkeeping run in the background is what
+                // actually cuts the wait — the bookkeeping doesn't block
+                // anything /reflect renders.
+                storage.setJSON("bm_today_action", {
+                  action: actionData?.action ?? "",
+                  outcome: chip.id,
+                  note: "",
+                  confidence: 3,
+                  recommendation_id: actionData?.intelligence?.recommendation_id ?? null,
+                });
+                void handleCheckIn(chip.id).catch(() => {
                   setSubmitting(false);
                 });
+                router.push(`/reflect?outcome=${chip.id}`);
               }}
               style={{
-                padding: isMobile ? "14px" : "12px 14px",
-                borderRadius: 10,
-                border: `1px solid var(--bm-border)`,
-                background: "var(--bm-bg3)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+                padding: isMobile ? "13px 4px" : "12px 6px",
+                borderTop: i === 0 ? "1px solid var(--bm-border)" : "none",
+                borderBottom: "1px solid var(--bm-border)",
+                background: "transparent",
                 color: "var(--bm-text3)",
-                fontSize: isMobile ? 14 : 13,
-                fontWeight: 400,
                 cursor: submitting ? "not-allowed" : "pointer",
                 fontFamily: "inherit",
                 textAlign: "left" as const,
-                transition: "all 0.15s",
+                transition: "background 0.15s",
                 opacity: submitting ? 0.6 : 1,
               }}
-              onMouseEnter={e => { if (!submitting) { e.currentTarget.style.borderColor = "var(--bm-border3)"; e.currentTarget.style.color = "var(--bm-text)"; } }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--bm-border)"; e.currentTarget.style.color = "var(--bm-text3)"; }}
+              onMouseEnter={e => { if (!submitting) e.currentTarget.style.background = "var(--bm-bg3)"; }}
+              onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
             >
-              {submitting ? "Recording..." : chip.label}
+              <span>
+                <span style={{ display: "block", fontSize: isMobile ? 14 : 12.5, fontWeight: 600, color: "var(--bm-text)" }}>
+                  {submitting ? "Recording..." : chip.label}
+                </span>
+                <span style={{ display: "block", fontSize: 10.5, color: "var(--bm-text4)", marginTop: 2 }}>
+                  {chip.description}
+                </span>
+              </span>
+              <span style={{ color: "var(--bm-text4)", flexShrink: 0 }}>›</span>
             </button>
           ))}
         </div>
-        <p style={{ fontSize: 11, color: "var(--bm-text4)", margin: "8px 0 0", lineHeight: 1.5 }}>
-          You'll complete your reflection on the next screen.
+        <p style={{ fontSize: 11, color: "var(--bm-text4)", margin: "10px 0 0", lineHeight: 1.5 }}>
+          Your outcome selection will feed into /reflect for learning capture.
         </p>
       </motion.div>
+      </>)}
+      {/* Context — deliberately BELOW the task. Archetype, stage readiness and the
+          project/ghost-goal chips are useful but they are not the decision, so they
+          no longer sit between the founder and today's action. */}
+      <div style={{ marginTop: 22, display: "flex", flexDirection: "column", gap: 0, minWidth: 0 }}>
+      {/* Lightweight project + stage badge — Weekly Vigil and The Reckoning
+          live here as compact chips, not as their own banners. Per the
+          Today-page task-first rule: DecisionBrief is the only element
+          allowed a permanently-open full block. Vigil is a few words,
+          always present once loaded; Reckoning renders nothing at all
+          except the ~1 day a month it has something real to surface. Both
+          open their full detail in a modal on tap, never inline. */}
+      {project && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text2)", letterSpacing: "-0.01em" }}>
+            {project.name ?? "Your startup"}
+          </span>
+          {project.startup_stage && (
+            <span style={{
+              fontFamily: "'DM Mono', monospace",
+              fontSize: 9,
+              padding: "2px 8px",
+              borderRadius: "var(--r-sm)",
+              background: "var(--bm-bg3)",
+              color: "var(--bm-text3)",
+              border: "1px solid var(--bm-border)",
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+            }}>
+              {project.startup_stage}
+            </span>
+          )}
+          <GhostGoalBanner
+            projectId={project.id}
+            currentScore={score}
+            stage={project.startup_stage ?? "Idea"}
+            executionScore={project.execution_score ?? 0}
+            streak={streak}
+            startupSummary={(project as unknown as Record<string, unknown>).startup_summary as string | undefined}
+            projectName={project.name ?? project.title ?? ""}
+          />
+          <ReckoningPill projectId={project.id} />
+          {isDayOneColdStart ? (
+            <span style={{ marginLeft: "auto", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-accent)" }}>
+              Start your streak today
+            </span>
+          ) : streak > 0 && (
+            <span style={{ marginLeft: "auto", fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-text4)" }}>
+              {streak}d
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* ── Founder archetype — compact, non-blocking presence on the daily
+          page. Deliberately not a modal or a dismiss-to-proceed gate (that
+          was the problem with the old Initial Analysis card) — just a small
+          persistent badge, since this is a core signal the AI uses on every
+          task and it should be visible somewhere the founder actually looks
+          daily, not just on /memory. Tap through for the full explanation.
+          Kept always-visible alongside the Intelligence Panel per the
+          founder's explicit request — everything else that used to live in
+          this spot moved into (or stayed in) the "Why this task?" drawer. */}
+      {(() => {
+        const archetype = getArchetypeDisplay(archetypeTags);
+        if (!archetype) return null;
+        return (
+          <a
+            href="/memory"
+            style={{
+              display: "flex", alignItems: "center", gap: 10,
+              padding: "10px 14px", marginBottom: 22,
+              borderRadius: 10, border: "1px solid var(--bm-border)", background: "var(--bm-bg2)",
+              textDecoration: "none",
+            }}
+          >
+            <span style={{ fontSize: 18, flexShrink: 0 }}>{archetype.icon}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: "var(--bm-text)" }}>{archetype.name}</span>
+              <span style={{ fontSize: 11, color: "var(--bm-text3)", marginLeft: 8 }}>— your founder archetype</span>
+            </div>
+            <span style={{ fontSize: 11, color: "var(--bm-text4)", flexShrink: 0 }}>Learn more →</span>
+          </a>
+        );
+      })()}
+
+      {/* ── Stage-transition nudge — one line, links to the full prompt on
+          the project page rather than duplicating it here. See
+          lib/server/stageTransition.ts for how this gets computed. ── */}
+      {(() => {
+        // Merged 3-signal readiness — both stageNudge (stageTransition.ts,
+        // fired after task/reflection) and transitionEligible (level-up
+        // POST, fired once per Today load) now compute the SAME tier via
+        // lib/server/stageReadiness.ts, so they can't disagree — this
+        // renders once from whichever loaded first. The tier itself
+        // decides the color/copy: milestone completion alone is shown
+        // honestly as "checklist done, evidence thin," not dressed up as
+        // the same green "ready" state a founder with real evidence and
+        // solid reflections would see.
+        const moment = stageNudge
+          ? {
+              currentStageLabel: stageNudge.currentStage,
+              nextStage: stageNudge.nextStage, projectId: stageNudge.projectId,
+              completed: stageNudge.completed, total: stageNudge.total, tier: stageNudge.tier,
+              evidenceFilled: stageNudge.evidenceFilled, evidenceTotal: stageNudge.evidenceTotal,
+              reason: stageNudge.reason,
+            }
+          : transitionEligible && project
+            ? {
+                currentStageLabel: transitionEligible.current_stage,
+                nextStage: transitionEligible.next_stage, projectId: project.id,
+                completed: transitionEligible.completed, total: transitionEligible.total, tier: transitionEligible.tier,
+                evidenceFilled: transitionEligible.evidenceFilled, evidenceTotal: transitionEligible.evidenceTotal,
+                reason: transitionEligible.reason,
+              }
+            : null;
+        if (!moment) return null;
+        const isReady = moment.tier === "ready";
+        const color = isReady ? "var(--bm-green)" : "var(--bm-amber)";
+        const borderVar = isReady ? "var(--bm-green-bd)" : "var(--bm-amber)";
+        const bgVar = isReady ? "var(--bm-green-dim)" : "var(--bm-bg3)";
+        return (
+          <a
+            href={moment.projectId ? `/projects/${moment.projectId}` : "/projects"}
+            style={{
+              display: "flex", alignItems: "center", gap: 14,
+              padding: "16px 18px", marginBottom: 22,
+              borderRadius: 14, border: `1px solid ${borderVar}`, background: bgVar,
+              textDecoration: "none",
+            }}
+          >
+            <div style={{ flexShrink: 0 }}>
+              <RadialGauge
+                value={moment.completed}
+                max={Math.max(moment.total, 1)}
+                size={52}
+                strokeWidth={5}
+                thresholds={[{ min: 0, color }]}
+                duration={0.8}
+              />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color }}>
+                {isReady
+                  ? `Ready for ${moment.nextStage} — ${moment.completed}/${moment.total} milestones`
+                  : `Checklist done for ${moment.currentStageLabel ?? ""} — evidence still thin`}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--bm-text3)", marginTop: 2 }}>
+                {isReady
+                  ? `Milestones done, evidence captured, reflections back it up. Ready to review ${moment.nextStage}?`
+                  : moment.reason ||
+                    (moment.evidenceTotal
+                      ? `${moment.evidenceFilled ?? 0}/${moment.evidenceTotal} evidence items captured so far — this is necessary work, not proof yet.`
+                      : `You've finished the checklist — that's necessary, not proof. See what's missing.`)}
+              </div>
+            </div>
+            <span style={{ fontSize: 11, flexShrink: 0, color, fontWeight: 700 }}>Review →</span>
+          </a>
+        );
+      })()}
+      </div>
+
+      {/* ── Pro-mode intelligence — deliberately OUTSIDE the evening "Show
+             task" collapse above. Pro is the founder's own persistent
+             choice (the toggle in the header), not something that should
+             go dark just because the task recommendation is tucked behind
+             a pill for the evening. ── */}
+      {uiMode === "pro" && actionData?.intelligence ? (
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "minmax(0, 1fr)" : "minmax(0, 1fr) 304px", gap: 14, marginTop: 14, marginBottom: 14 }}>
+          <div><WhatChangedCard items={actionData.intelligence.what_changed} /><div style={{ marginTop: 14 }}><IntelligencePanel data={actionData.intelligence} onSwap={handleSwapAlternative} recentOutcomes={recentOutcomes} /></div></div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}><RisksGapsCard signals={supportingSignals} /></div>
+        </div>
+      ) : null}
+
       {/* Beyond the 3 changes — Loop Narrative (the 8.5 unlock) */}
       <LoopNarrative
         reflectionCount={(() => {
@@ -2453,6 +2678,130 @@ function TodayContent() {
         })()}
         tasksCompleted={project?.tasksCompleted ?? 0}
       />
+
+      {/* ── Push permission prompt ─────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showPushPrompt && (
+          <motion.div
+            key="push-prompt"
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 16 }}
+            transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+            style={{
+              position: "fixed",
+              bottom: isMobile ? 80 : 32,
+              left: "50%",
+              transform: "translateX(-50%)",
+              width: isMobile ? "calc(100% - 32px)" : 380,
+              zIndex: 999,
+              borderRadius: 16,
+              border: "1px solid var(--bm-border)",
+              background: "var(--bm-bg2)",
+              backdropFilter: "blur(20px)",
+              WebkitBackdropFilter: "blur(20px)",
+              boxShadow: "0 16px 48px rgba(0,0,0,0.6)",
+              padding: "18px 20px",
+              display: "flex",
+              flexDirection: "column",
+              gap: 12,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+              <span style={{ fontSize: 20, flexShrink: 0 }}>🔔</span>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--bm-text)", marginBottom: 4 }}>
+                  Get your evening nudge
+                </div>
+                <p style={{ fontSize: 12, color: "var(--bm-text3)", margin: 0, lineHeight: 1.55 }}>
+                  BuildMind checks in at 8pm to see if you followed through. One tap to enable — you can turn it off anytime.
+                </p>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                onClick={() => void requestPushPermission()}
+                style={{
+                  flex: 1,
+                  padding: "10px 0",
+                  borderRadius: 10,
+                  border: "none",
+                  background: "var(--bm-accent)",
+                  color: "#000",
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                Enable evening check-in
+              </button>
+              <button
+                onClick={() => setShowPushPrompt(false)}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 10,
+                  border: "1px solid var(--bm-border2)",
+                  background: "var(--bm-bg3)",
+                  color: "var(--bm-text4)",
+                  fontWeight: 600,
+                  fontSize: 12,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                Not now
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Morning Briefing modal — first open of the day, server-gated ─── */}
+      {showBriefingModal && (morningBriefing || briefingAvailable) && (
+        <MorningBriefingModal
+          briefing={morningBriefing}
+          isPaywalled={!planLoading && plan === "free"}
+          onDismiss={() => {
+            setShowBriefingModal(false);
+            const today = new Date().toISOString().slice(0, 10);
+            fetch("/api/founder-memory", {
+              method: "PATCH",
+              credentials: "include",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ briefing_dismissed_date: today }),
+            })
+              .then(async (res) => {
+                if (!res.ok) {
+                  const body = await res.json().catch(() => null);
+                  console.error("Failed to persist briefing dismissal:", res.status, body?.error);
+                }
+              })
+              .catch((err) => console.error("Failed to persist briefing dismissal:", err));
+          }}
+        />
+      )}
+      {project?.id && !recoveryActive && (
+        <div style={{ maxWidth: 820, margin: "0 auto", padding: "0 24px 24px" }}>
+          <SignalCaptureForm
+            projectId={project.id}
+            onLogged={() => {
+              fetch(`/api/risk-signals?projectId=${encodeURIComponent(project.id)}`, { cache: "no-store" })
+                .then(r => r.ok ? r.json() : null)
+                .then((d: { ok?: boolean; assessment?: ChurnRiskAssessment } | null) => {
+                  if (d?.ok && d.assessment) setRiskAssessment(d.assessment);
+                })
+                .catch(() => {});
+              setSignalHistoryRefreshKey((k) => k + 1);
+            }}
+          />
+          <SignalHistoryList
+            projectId={project.id}
+            refreshKey={signalHistoryRefreshKey}
+            onAssessmentChange={setRiskAssessment}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -2463,4 +2812,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-}
+    }

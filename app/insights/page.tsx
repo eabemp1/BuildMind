@@ -1,112 +1,150 @@
 "use client";
 
 /**
- * app/insights/page.tsx — Founder Behavioral Insights (Audit v8 PROD #10)
+ * app/insights/page.tsx — Founder Behavioral Intelligence
  *
- * "Pattern detection fires internally and gets injected into AI prompts.
- *  But founders never see a direct view of their own behavioral patterns.
- *  An 'Insights' page showing: 'You've avoided sales conversations 4 times
- *  this month,' 'Your average confidence is 3.2/5 when you don't complete
- *  a task,' 'Mondays are your lowest momentum day' — this is the mirror
- *  that makes founders obsessed with the product."
+ * Premium behavioral data surface. Shows whatever data exists — no artificial
+ * gate. The "calibrating" state is contextual per-section, not a full block.
  *
- * Data sources (all existing tables):
- *   founder_memory      → avoidance_zones, strengths, personality_tags
- *   founder_context     → momentum_score, streak, meta_critic_signal
- *   reflections         → confidence scores, outcomes by day-of-week
- *   action_logs         → completion rates, override reasons
+ * Data sources:
+ *   /api/founder-context/patterns → strengths, avoidance_patterns (the
+ *     SAME merged/deduped lists Founder Mirror's beliefs derive from —
+ *     founder_memory + founder_context.avoidance_zones + execution-signature
+ *     categories + learned patterns; see that route's own comment)
+ *   founder_memory  → personality_tags, last_insight, archetype_classified_at
+ *   founder_context → momentum_score, streak, patterns
+ *   reflections     → confidence by outcome, day-of-week heatmap
+ *   action_logs     → completion rates, override reasons
  */
 
+import { daysSinceActive } from "@/lib/streak";
 import { useEffect, useState, useCallback } from "react";
-import { BuildMindCalibrating } from "@/components/BuildMindCalibrating";
 import { motion } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
 import { useActiveProjectId } from "@/lib/queries";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+
 interface InsightData {
-  avoidanceZones:    string[];
-  strengths:         string[];
-  personalityTags:   string[];
-  momentumScore:     number;
-  streak:            number;
-  metacriticSignal?: string;
-  lastInsight?:      string;
-  activePatternSignal:  string | null;
-  activePatternMessage: string | null;
-  activePatternSubject: string | null;
-  lastPatternShownAt:   string | null;
-  completionByDay:   Record<string, { completed: number; total: number }>;
+  avoidanceZones:         string[];
+  strengths:              string[];
+  personalityTags:        string[];
+  momentumScore:          number;
+  momentumDelta:          number | null;
+  momentumTrend:          "up" | "down" | "flat" | "unknown";
+  streak:                 number;
+  metacriticSignal?:      string;
+  lastInsight?:           string;
+  activePatternSignal:    string | null;
+  activePatternMessage:   string | null;
+  activePatternSubject:   string | null;
+  lastPatternShownAt:     string | null;
+  completionByDay:        Record<string, { completed: number; total: number }>;
   avgConfidenceByOutcome: Record<string, number>;
-  topOverrideReason?: string;
-  totalTasksCompleted: number;
-  totalTasksShown:     number;
+  topOverrideReason?:     string;
+  totalTasksCompleted:    number; // last 30 days, from action_logs
+  totalTasksShown:        number; // last 30 days, from action_logs
+  // ── Merged in from app/memory/page.tsx (retired — see app/memory/page.tsx) ──
+  // tasksCompletedTotal is deliberately NOT the same number as
+  // totalTasksCompleted above: this is founder_context's lifetime counter,
+  // the other is a 30-day rolling count from action_logs. Both are real,
+  // both are useful, they're just answering different questions — labeled
+  // separately below rather than picking one (that's the same "two
+  // divergent concepts smashed into one field" bug pattern already fixed
+  // elsewhere this session for pulse_score/momentum).
+  tasksCompletedTotal:       number;
+  daysInactive:              number;
+  cognitiveLoad:             string | null;
+  consecutiveTasksCompleted: number;
+  topicsMentionedRepeatedly: string[];
+  archetypeClassifiedAt:     string | null;
 }
+
+type AiInsightItem = { type: "warning" | "positive" | "insight"; text: string; basis: string | null; evidence: string | null };
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-type AiInsightItem = { type: "warning" | "positive" | "insight"; text: string };
-
 // ── Sub-components ────────────────────────────────────────────────────────────
-function InsightCard({ title, children, accent }: { title: string; children: React.ReactNode; accent?: string }) {
+
+function Section({
+  label, accent, children,
+}: {
+  label: string;
+  accent?: string;
+  children: React.ReactNode;
+}) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       style={{
-        background:    "var(--bm-bg2)",
-        border:        `1px solid ${accent ? accent + "33" : "var(--bm-border)"}`,
-        borderRadius:  14,
-        padding:       "20px 22px",
-        borderLeft:    accent ? `3px solid ${accent}` : undefined,
+        background:   "var(--bm-bg2)",
+        border:       "1px solid var(--bm-border)",
+        borderRadius: 14,
+        padding:      "18px 20px",
+      }}
+    >
+      <div style={{
+        display: "flex", alignItems: "center", gap: 7,
+        fontSize: 9, fontWeight: 700, letterSpacing: "0.1em",
+        textTransform: "uppercase", color: "var(--bm-text3)",
+        fontFamily: "'DM Mono', monospace", marginBottom: 14,
       }}>
-      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--bm-text3)", marginBottom: 14 }}>
-        {title}
+        {accent && <span className="bm-status-dot" style={{ background: accent, marginTop: 0 }} />}
+        {label}
       </div>
       {children}
     </motion.div>
   );
 }
 
-function Tag({ label, color }: { label: string; color?: string }) {
+function StatRow({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+      <span style={{ fontSize: 12.5, color: "var(--bm-text2)" }}>{label}</span>
+      <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--bm-text)", fontFamily: "'DM Mono', monospace" }}>
+        {value}{sub && <span style={{ fontSize: 10, color: "var(--bm-text3)", fontWeight: 400 }}> {sub}</span>}
+      </span>
+    </div>
+  );
+}
+
+function Bar({ value, max = 100, color = "var(--bm-accent)" }: { value: number; max?: number; color?: string }) {
+  return (
+    <div style={{ background: "var(--bm-bg4)", borderRadius: 3, height: 5, overflow: "hidden" }}>
+      <motion.div
+        initial={{ width: 0 }}
+        animate={{ width: `${Math.max(2, (value / max) * 100)}%` }}
+        transition={{ duration: 0.8, ease: "easeOut" }}
+        style={{ height: "100%", borderRadius: 3, background: color }}
+      />
+    </div>
+  );
+}
+
+function Chip({ label, color }: { label: string; color?: string }) {
   const c = color ?? "var(--bm-text3)";
   return (
     <span style={{
-      display:       "inline-block",
-      padding:       "4px 11px",
-      borderRadius:  20,
-      fontSize:      12,
-      fontWeight:    500,
-      background:    c + "18",
-      border:        `1px solid ${c}33`,
-      color:         c,
-      marginRight:   6,
-      marginBottom:  6,
+      display: "inline-block", padding: "4px 10px", borderRadius: 20,
+      fontSize: 11.5, fontWeight: 500,
+      background: c + "15", border: `1px solid ${c}30`, color: c,
+      marginRight: 6, marginBottom: 6,
     }}>
       {label}
     </span>
   );
 }
 
-function MomentumBar({ value, max = 100, color = "var(--bm-accent)" }: { value: number; max?: number; color?: string }) {
-  return (
-    <div style={{ background: "var(--bm-bg3)", borderRadius: 4, height: 6, overflow: "hidden", width: "100%" }}>
-      <motion.div
-        initial={{ width: 0 }}
-        animate={{ width: `${(value / max) * 100}%` }}
-        transition={{ duration: 0.7, ease: "easeOut" }}
-        style={{ height: "100%", borderRadius: 4, background: color }}
-      />
-    </div>
-  );
-}
-
 function DayHeatmap({ completionByDay }: { completionByDay: Record<string, { completed: number; total: number }> }) {
-  const maxRate = Math.max(...DAYS.map(d => {
-    const entry = completionByDay[d];
-    return entry?.total ? entry.completed / entry.total : 0;
-  }), 0.01);
+  const maxRate = Math.max(
+    ...DAYS.map(d => {
+      const e = completionByDay[d];
+      return e?.total ? e.completed / e.total : 0;
+    }),
+    0.01,
+  );
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 6 }}>
@@ -114,24 +152,21 @@ function DayHeatmap({ completionByDay }: { completionByDay: Record<string, { com
         const entry = completionByDay[day];
         const rate  = entry?.total ? entry.completed / entry.total : 0;
         const pct   = rate / maxRate;
-        const color = rate === 0 ? "var(--bm-bg3)"
-          : rate >= 0.6 ? "var(--bm-accent)"
-          : rate >= 0.35 ? "var(--bm-amber)"
+        const color = !entry?.total ? "var(--bm-bg4)"
+          : rate >= 0.6 ? "var(--bm-green)"
+          : rate >= 0.3 ? "var(--bm-amber)"
           : "var(--bm-red)";
         return (
           <div key={day} style={{ textAlign: "center" }}>
             <div
-              title={entry ? `${entry.completed}/${entry.total} tasks completed` : "No data"}
+              title={entry?.total ? `${entry.completed}/${entry.total} tasks` : "No data"}
               style={{
-                height:       36,
-                borderRadius: 6,
-                background:   color,
-                opacity:      entry?.total ? 0.3 + pct * 0.7 : 0.15,
-                marginBottom: 5,
-                transition:   "opacity 0.3s",
+                height: 32, borderRadius: 6, background: color,
+                opacity: entry?.total ? 0.25 + pct * 0.75 : 0.12,
+                marginBottom: 5, cursor: "default",
               }}
             />
-            <div style={{ fontSize: 10, color: "var(--bm-text3)" }}>{day}</div>
+            <div style={{ fontSize: 9.5, color: "var(--bm-text3)", fontFamily: "'DM Mono', monospace" }}>{day}</div>
           </div>
         );
       })}
@@ -139,37 +174,45 @@ function DayHeatmap({ completionByDay }: { completionByDay: Record<string, { com
   );
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
+function GhostBar({ label }: { label: string }) {
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ fontSize: 11.5, color: "var(--bm-text3)", marginBottom: 5 }}>{label}</div>
+      <div style={{
+        height: 5, borderRadius: 3,
+        background: "var(--bm-bg4)",
+        position: "relative", overflow: "hidden",
+      }}>
+        <div style={{
+          position: "absolute", inset: 0,
+          background: "linear-gradient(90deg, transparent, var(--bm-bg5) 50%, transparent)",
+          animation: "bm-shimmer 1.8s ease infinite",
+          backgroundSize: "200% 100%",
+        }} />
+      </div>
+    </div>
+  );
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────────
+
 export default function InsightsPage() {
-  const [reflectionCount, setReflectionCount] = useState(0);
+  const [tab, setTab] = useState<"signals" | "trends" | "patterns">("signals");
   const [data,    setData]    = useState<InsightData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState<string | null>(null);
-
-  // AI streaming insights
-  const [aiInsights, setAiInsights] = useState<AiInsightItem[]>([]);
-  const [aiLoading,  setAiLoading]  = useState(false);
+  const [aiInsights,  setAiInsights]  = useState<AiInsightItem[]>([]);
+  const [aiLoading,   setAiLoading]   = useState(false);
+  // ISSUE-5 FIX: previously any failure in the /api/ai/insights stream
+  // (auth hiccup, provider error, network drop) was swallowed silently —
+  // aiInsights just stayed empty and the whole "AI pattern analysis"
+  // section never rendered, with no indication anything went wrong. This
+  // tracks that failure so we can show a visible retry state instead.
+  const [aiError,     setAiError]     = useState<string | null>(null);
   const activeProjectId = useActiveProjectId();
 
-  // Fetch reflection count for BuildMindCalibrating gate
-  useEffect(() => {
-    async function fetchCount() {
-      try {
-        const supabase = createClient();
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-        let countQuery = supabase.from("reflections").select("id", { count: "exact", head: true }).eq("user_id", user.id);
-        if (activeProjectId) countQuery = countQuery.eq("project_id", activeProjectId);
-        const { count } = await countQuery;
-        setReflectionCount(count ?? 0);
-      } catch { /* non-fatal */ }
-    }
-    fetchCount();
-  }, [activeProjectId]);
-
   const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+    setLoading(true); setError(null);
     try {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
@@ -177,27 +220,68 @@ export default function InsightsPage() {
 
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
-      let reflectionsQuery = supabase.from("reflections").select("confidence, outcome, created_at").eq("user_id", user.id).gte("created_at", thirtyDaysAgo);
-      if (activeProjectId) reflectionsQuery = reflectionsQuery.eq("project_id", activeProjectId);
-      let projectQuery = supabase.from("projects").select("startup_stage").eq("user_id", user.id);
-      projectQuery = activeProjectId
-        ? projectQuery.eq("id", activeProjectId)
-        : projectQuery.order("created_at", { ascending: false }).limit(1);
+      let reflQ = supabase.from("reflections").select("confidence,outcome,created_at")
+        .eq("user_id", user.id).gte("created_at", thirtyDaysAgo);
+      if (activeProjectId) reflQ = reflQ.eq("project_id", activeProjectId);
 
-      const [memRes, ctxRes, reflRes, logRes, projRes] = await Promise.allSettled([
-        supabase.from("founder_memory").select("avoidance_zones, strengths, personality_tags, last_insight").eq("user_id", user.id).maybeSingle(),
-        supabase
-          .from("founder_context")
-          .select(
-            "momentum_score, streak, meta_critic_signal, " +
-            "active_pattern_signal, active_pattern_message, active_pattern_subject, " +
-            "last_pattern_shown_at"
-          )
-          .eq("user_id", user.id)
-          .maybeSingle(),
-        reflectionsQuery,
-        supabase.from("action_logs").select("outcome, outcome_note, created_at").eq("user_id", user.id).gte("created_at", thirtyDaysAgo),
-        projectQuery.maybeSingle(),
+      let projQ = supabase.from("projects").select("startup_stage").eq("user_id", user.id);
+      projQ = activeProjectId
+        ? projQ.eq("id", activeProjectId)
+        : projQ.order("created_at", { ascending: false }).limit(1);
+
+      const [memRes, ctxRes, reflRes, logRes, projRes, scorecardRes, overrideRes, patternsRes] = await Promise.allSettled([
+        supabase.from("founder_memory")
+          .select("avoidance_zones,strengths,personality_tags,last_insight,archetype_classified_at")
+          .eq("user_id", user.id).maybeSingle(),
+        supabase.from("founder_context")
+          .select("meta_critic_signal,active_pattern_signal,active_pattern_message,active_pattern_subject,last_pattern_shown_at,tasks_completed_total,days_inactive,last_checkin_date,cognitive_load,consecutive_tasks_completed,topics_mentioned_repeatedly")
+          .eq("user_id", user.id).maybeSingle(),
+        reflQ,
+        // FIX: previously selected `outcome_note`, confirmed via SQL
+        // (information_schema.columns on action_logs) NOT to exist — only
+        // created_at/outcome/user_id do. Selecting a nonexistent column
+        // fails the whole PostgREST query; supabase-js resolves that as
+        // { data: null, error } rather than throwing, so Promise.allSettled
+        // saw this as "fulfilled" and `logs` silently became [] for every
+        // founder, permanently. That broke: the day-of-week heatmap
+        // ("When you build"), override reasons ("Why you skip"), and
+        // totalTasksCompleted/totalTasksShown (so the completion-rate stat
+        // next to Streak never showed, and the AI-insights gate undercounted
+        // real activity). None of this ever surfaced as a visible error.
+        supabase.from("action_logs").select("outcome,created_at")
+          .eq("user_id", user.id).gte("created_at", thirtyDaysAgo),
+        projQ.maybeSingle(),
+        // ── Single source of truth for momentum/streak/xp — see lib/scorecard.ts ──
+        // Previously this page read ctx.momentum_score directly with a `?? 0`
+        // fallback (every other page used `?? 50`) AND ctx.streak, which never
+        // existed as a column until the June 30 migration — both guaranteed
+        // this page showed 0 regardless of real activity.
+        fetch("/api/founder-context/scorecard", { cache: "no-store" }),
+        // FIX: override reasons ("Why you skip") were being read from
+        // action_logs.outcome_note, which doesn't exist. The REAL, working
+        // capture mechanism is reflexion_learning_log.outcome_note, written
+        // by lib/learning.ts's recordActionOutcome() via
+        // /api/ai/reflexion-outcome — a fully wired pipeline, just never
+        // queried from here. NOT independently SQL-confirmed to have exactly
+        // this shape (id/outcome/outcome_note/created_at) — taken from the
+        // writer's own code; flagged as a follow-up query.
+        supabase.from("reflexion_learning_log").select("outcome,outcome_note,created_at")
+          .eq("user_id", user.id).eq("outcome", "overridden")
+          .not("outcome_note", "is", null)
+          .gte("created_at", thirtyDaysAgo),
+        // ── Single source of truth for strengths/avoidance — see
+        // app/api/founder-context/patterns/route.ts ── Previously this page
+        // read founder_memory.strengths/avoidance_zones directly, which is
+        // only one of up to four sources lib/founderIntelligence.ts merges
+        // into state.founder.strengths/avoidance_patterns (also folds in
+        // founder_context.avoidance_zones, execution-signature categories,
+        // and learned action-type patterns). Founder Mirror shows the
+        // merged list; this page showed the narrower raw one — same founder,
+        // two pages that link to each other, two different answers for
+        // "what are you avoiding." Falls back to the raw founder_memory
+        // fields below if this fetch fails, so the page degrades instead of
+        // going blank.
+        fetch(`/api/founder-context/patterns${activeProjectId ? `?projectId=${activeProjectId}` : ""}`, { cache: "no-store" }),
       ]);
 
       const mem   = memRes.status  === "fulfilled" ? memRes.value.data  : null;
@@ -205,8 +289,40 @@ export default function InsightsPage() {
       const refs  = reflRes.status === "fulfilled" ? (reflRes.value.data ?? []) : [];
       const logs  = logRes.status  === "fulfilled" ? (logRes.value.data ?? []) : [];
       const stage = projRes.status === "fulfilled" ? (projRes.value.data?.startup_stage ?? "Idea") : "Idea";
+      const overrideLogs = overrideRes.status === "fulfilled" ? (overrideRes.value.data ?? []) : [];
 
-      // Completion by day of week
+      let scorecardMomentum = 50;
+      let scorecardStreak = 0;
+      let scorecardMomentumDelta: number | null = null;
+      let scorecardMomentumTrend: InsightData["momentumTrend"] = "unknown";
+      if (scorecardRes.status === "fulfilled" && scorecardRes.value.ok) {
+        try {
+          const scorecardJson = await scorecardRes.value.json();
+          if (scorecardJson?.ok) {
+            scorecardMomentum      = scorecardJson.data.momentum;
+            scorecardStreak        = scorecardJson.data.streak;
+            scorecardMomentumDelta = scorecardJson.data.momentumDelta;
+            scorecardMomentumTrend = scorecardJson.data.momentumTrend;
+          }
+        } catch { /* fall through to defaults */ }
+      }
+
+      // Falls back to the raw founder_memory fields if the merged-pattern
+      // fetch fails — same graceful-degradation approach as scorecard above
+      // — rather than the page going blank for this section.
+      let mergedStrengths = (mem?.strengths ?? []) as string[];
+      let mergedAvoidance = (mem?.avoidance_zones ?? []) as string[];
+      if (patternsRes.status === "fulfilled" && patternsRes.value.ok) {
+        try {
+          const patternsJson = await patternsRes.value.json();
+          if (patternsJson?.ok) {
+            mergedStrengths = (patternsJson.data.strengths ?? mergedStrengths) as string[];
+            mergedAvoidance = (patternsJson.data.avoidance_patterns ?? mergedAvoidance) as string[];
+          }
+        } catch { /* fall through to founder_memory's raw lists */ }
+      }
+
+      // Day-of-week completion
       const completionByDay: Record<string, { completed: number; total: number }> = {};
       DAYS.forEach(d => { completionByDay[d] = { completed: 0, total: 0 }; });
       for (const log of logs as Array<{ outcome?: string; created_at: string }>) {
@@ -227,61 +343,90 @@ export default function InsightsPage() {
         avgConfidenceByOutcome[k] = parseFloat((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1));
       }
 
-      // Top override reason
+      // Override reasons — now sourced from reflexion_learning_log
+      // (the real, working table — see fetch comment above), not
+      // action_logs (which never had this data at all).
       const overrideReasons: Record<string, number> = {};
-      for (const log of logs as Array<{ outcome?: string; outcome_note?: string }>) {
-        if ((log.outcome === "overridden" || log.outcome === "partial") && log.outcome_note) {
+      for (const log of overrideLogs as Array<{ outcome_note?: string | null }>) {
+        if (log.outcome_note) {
           overrideReasons[log.outcome_note] = (overrideReasons[log.outcome_note] ?? 0) + 1;
         }
       }
       const topOverrideReason = Object.entries(overrideReasons).sort((a, b) => b[1] - a[1])[0]?.[0];
-
       const totalTasksCompleted = (logs as Array<{ outcome?: string }>).filter(l => l.outcome === "completed").length;
 
-      setData({
-        avoidanceZones:          (mem?.avoidance_zones   ?? []) as string[],
-        strengths:               (mem?.strengths          ?? []) as string[],
-        personalityTags:         (mem?.personality_tags   ?? []) as string[],
-        momentumScore:           ctx?.momentum_score ?? 0,
-        streak:                  ctx?.streak ?? 0,
-        metacriticSignal:        ctx?.meta_critic_signal ?? undefined,
-        lastInsight:             mem?.last_insight ?? undefined,
-        activePatternSignal:     ctx?.active_pattern_signal ?? null,
-        activePatternMessage:    ctx?.active_pattern_message ?? null,
-        activePatternSubject:    ctx?.active_pattern_subject ?? null,
-        lastPatternShownAt:      ctx?.last_pattern_shown_at ?? null,
+      const resolved: InsightData = {
+        avoidanceZones:         mergedAvoidance,
+        strengths:              mergedStrengths,
+        personalityTags:        (mem?.personality_tags  ?? []) as string[],
+        momentumScore:          scorecardMomentum,
+        momentumDelta:          scorecardMomentumDelta,
+        momentumTrend:          scorecardMomentumTrend,
+        streak:                 scorecardStreak,
+        metacriticSignal:       ctx?.meta_critic_signal ?? undefined,
+        lastInsight:            mem?.last_insight ?? undefined,
+        activePatternSignal:    ctx?.active_pattern_signal   ?? null,
+        activePatternMessage:   ctx?.active_pattern_message  ?? null,
+        activePatternSubject:   ctx?.active_pattern_subject  ?? null,
+        lastPatternShownAt:     ctx?.last_pattern_shown_at   ?? null,
         completionByDay,
         avgConfidenceByOutcome,
         topOverrideReason,
         totalTasksCompleted,
         totalTasksShown: logs.length,
-      });
+        // ── Merged in from app/memory/page.tsx ──────────────────────────
+        tasksCompletedTotal:       ctx?.tasks_completed_total ?? 0,
+        daysInactive:              daysSinceActive(ctx?.last_checkin_date, ctx?.days_inactive) ?? 0,
+        cognitiveLoad:             ctx?.cognitive_load ?? null,
+        consecutiveTasksCompleted: ctx?.consecutive_tasks_completed ?? 0,
+        topicsMentionedRepeatedly: (ctx?.topics_mentioned_repeatedly ?? []) as string[],
+        archetypeClassifiedAt:     mem?.archetype_classified_at ?? null,
+      };
+      setData(resolved);
 
-      // Fire AI insights stream — progressive rendering, non-blocking
-      // Only if there's enough data to generate meaningful patterns
-      if (totalTasksCompleted >= 3 || (mem?.avoidance_zones ?? []).length > 0) {
+      // AI insights — fire when ANY meaningful data exists (lowered gate)
+      const hasEnoughData =
+        totalTasksCompleted >= 1 ||
+        mergedAvoidance.length > 0 ||
+        mergedStrengths.length > 0 ||
+        refs.length > 0;
+
+      if (hasEnoughData) {
         setAiLoading(true);
+        setAiError(null);
         const collected: AiInsightItem[] = [];
         fetch("/api/ai/insights", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            avoidanceZones:          (mem?.avoidance_zones ?? []),
-            strengths:               (mem?.strengths ?? []),
+            avoidanceZones:         mergedAvoidance,
+            strengths:              mergedStrengths,
             completionByDay,
             avgConfidenceByOutcome,
             topOverrideReason,
             totalTasksCompleted,
-            totalTasksShown:         logs.length,
-            metacriticSignal:        ctx?.meta_critic_signal,
-            stage: stage,
+            totalTasksShown: logs.length,
+            metacriticSignal: ctx?.meta_critic_signal,
+            stage,
           }),
         })
           .then(async (res) => {
-            if (!res.ok || !res.body) { setAiLoading(false); return; }
-            const reader = res.body.getReader();
+            if (!res.ok || !res.body) {
+              setAiError("Couldn't load your pattern analysis.");
+              setAiLoading(false);
+              return;
+            }
+            const reader  = res.body.getReader();
             const decoder = new TextDecoder();
             let buffer = "";
+            // ISSUE-5 FIX: this used to only look at `data: ` lines and
+            // ignore the preceding `event: ` line entirely, so an
+            // `event: error` block was silently dropped (its payload has
+            // no .text/.type, so the old `if (payload?.text && payload?.type)`
+            // check just skipped it) — the page ended up with zero insights
+            // and zero explanation. Now we track the event name per block
+            // and surface error events explicitly.
+            let currentEvent = "message";
             while (true) {
               const { done, value } = await reader.read();
               if (done) break;
@@ -289,20 +434,36 @@ export default function InsightsPage() {
               const lines = buffer.split("\n");
               buffer = lines.pop() ?? "";
               for (const line of lines) {
+                if (line.startsWith("event: ")) {
+                  currentEvent = line.slice(7).trim();
+                  continue;
+                }
                 if (line.startsWith("data: ")) {
                   try {
                     const payload = JSON.parse(line.slice(6));
-                    if (payload?.text && payload?.type) {
+                    if (currentEvent === "error") {
+                      setAiError("Couldn't generate pattern analysis — try refreshing.");
+                    } else if (payload?.text && payload?.type) {
                       collected.push(payload as AiInsightItem);
                       setAiInsights([...collected]);
                     }
-                  } catch { /* skip */ }
+                  } catch {}
                 }
+                if (line.trim() === "") currentEvent = "message";
               }
+            }
+            // If the stream closed without ever producing an insight or an
+            // explicit error event, that's still a failure state from the
+            // founder's perspective — don't let the section just vanish.
+            if (collected.length === 0) {
+              setAiError((prev) => prev ?? "No pattern analysis came back — try refreshing.");
             }
             setAiLoading(false);
           })
-          .catch(() => setAiLoading(false));
+          .catch(() => {
+            setAiError("Couldn't reach the analysis service — try refreshing.");
+            setAiLoading(false);
+          });
       }
     } catch (e) {
       setError(String(e));
@@ -317,36 +478,100 @@ export default function InsightsPage() {
     ? Math.round((data.totalTasksCompleted / data.totalTasksShown) * 100)
     : null;
 
-  const lowestDay = data
-    ? DAYS.reduce((worst, day) => {
-        const e = data.completionByDay[day];
-        const we = data.completionByDay[worst];
-        if (!e?.total) return worst;
-        if (!we?.total) return day;
-        return (e.completed / e.total) < (we.completed / we.total) ? day : worst;
-      }, "Mon")
-    : null;
+  const hasAnyData = data && (
+    data.momentumScore > 0 ||
+    data.streak > 0 ||
+    data.totalTasksShown > 0 ||
+    data.avoidanceZones.length > 0 ||
+    data.strengths.length > 0 ||
+    data.tasksCompletedTotal > 0 ||
+    data.cognitiveLoad !== null ||
+    data.topicsMentionedRepeatedly.length > 0 ||
+    data.personalityTags.length > 0
+  );
 
   return (
-    <div style={{ maxWidth: 700, margin: "0 auto", padding: "32px 20px" }}>
+    <div style={{ maxWidth: 700, margin: "0 auto", padding: "32px 20px 48px" }}>
+      <style>{`
+        @keyframes bm-shimmer {
+          0%   { background-position: -200% 0; }
+          100% { background-position:  200% 0; }
+        }
+        @keyframes bm-pulse { 0%,100%{opacity:1}50%{opacity:0.35} }
+      `}</style>
+
       {/* Header */}
-      <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 28 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--bm-text)", margin: "0 0 6px", letterSpacing: "-0.03em" }}>
-          Your behavioral patterns
+      <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 28 }}>
+        <div style={{
+          fontSize: 9, fontWeight: 700, letterSpacing: "0.12em",
+          textTransform: "uppercase", color: "var(--bm-accent)",
+          fontFamily: "'DM Mono', monospace", marginBottom: 6,
+        }}>
+          Behavioral Intelligence
+        </div>
+        <h1 style={{
+          fontSize: 22, fontWeight: 800, color: "var(--bm-text)",
+          margin: "0 0 6px", letterSpacing: "-0.03em",
+        }}>
+          Your patterns
         </h1>
-        <p style={{ fontSize: 13, color: "var(--bm-text3)", margin: 0 }}>
-          What BuildMind has learned about how you build — last 30 days.
+        <p style={{ fontSize: 12.5, color: "var(--bm-text3)", margin: 0, lineHeight: 1.55 }}>
+          How BuildMind sees you build — last 30 days.
+          The longer you use it, the sharper this gets.
         </p>
       </motion.div>
 
+      {!loading && !error && (
+        <div style={{ display: "flex", gap: 2, marginBottom: 20, borderBottom: "1px solid var(--bm-border)" }}>
+          {([
+            { id: "signals", label: "Signals" },
+            { id: "trends", label: "Trends" },
+            { id: "patterns", label: "Patterns" },
+          ] as const).map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              style={{
+                fontFamily: "'DM Mono', monospace",
+                fontSize: 11,
+                padding: "9px 14px",
+                background: "transparent",
+                border: "none",
+                borderBottom: tab === t.id ? "2px solid var(--bm-accent)" : "2px solid transparent",
+                color: tab === t.id ? "var(--bm-text)" : "var(--bm-text3)",
+                cursor: "pointer",
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {loading && (
-        <div style={{ textAlign: "center", padding: "60px 0", color: "var(--bm-text3)", fontSize: 13 }}>
-          Reading your patterns…
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {["Momentum", "Execution", "Patterns"].map(l => (
+            <div key={l} style={{
+              background: "var(--bm-bg2)", border: "1px solid var(--bm-border)",
+              borderRadius: 14, padding: "18px 20px",
+            }}>
+              <div style={{
+                fontSize: 9, color: "var(--bm-text4)", fontFamily: "'DM Mono', monospace",
+                textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 14,
+              }}>{l}</div>
+              <GhostBar label="" />
+              <GhostBar label="" />
+            </div>
+          ))}
         </div>
       )}
 
       {error && (
-        <div style={{ padding: 20, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 10, color: "#ef4444", fontSize: 13 }}>
+        <div style={{
+          padding: 16, background: "var(--bm-red-dim)", border: "1px solid var(--bm-red-bd)",
+          borderRadius: 10, color: "var(--bm-red)", fontSize: 13,
+        }}>
           {error}
         </div>
       )}
@@ -354,246 +579,413 @@ export default function InsightsPage() {
       {data && !loading && (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
 
-          {/* Momentum + streak */}
-          <InsightCard title="Momentum" accent="var(--bm-accent)">
-            <div style={{ display: "flex", alignItems: "center", gap: 20, marginBottom: 14 }}>
+          {/* ── Momentum ─────────────────────────────────────────────────── */}
+          {tab === "trends" && (
+          <Section label="Momentum" accent="var(--bm-accent)">
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 20, marginBottom: 16 }}>
               <div>
-                <div style={{ fontSize: 36, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.04em", lineHeight: 1 }}>
-                  {data.momentumScore}
+                <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                  <div style={{
+                    fontSize: 48, fontWeight: 800, color: "var(--bm-text)",
+                    lineHeight: 1, letterSpacing: "-0.04em",
+                    fontFamily: "'DM Mono', monospace",
+                  }}>
+                    {data.momentumScore}
+                  </div>
+                  {data.momentumTrend !== "unknown" && (
+                    <span style={{
+                      fontSize: 13, fontWeight: 700, fontFamily: "'DM Mono', monospace",
+                      color: data.momentumTrend === "up"   ? "var(--bm-green)" :
+                             data.momentumTrend === "down" ? "var(--bm-red)"   :
+                             "var(--bm-text3)",
+                    }}>
+                      {data.momentumTrend === "up"   && `↑ +${data.momentumDelta}`}
+                      {data.momentumTrend === "down" && `↓ ${data.momentumDelta}`}
+                      {data.momentumTrend === "flat" && "→ steady"}
+                    </span>
+                  )}
                 </div>
-                <div style={{ fontSize: 11, color: "var(--bm-text3)", marginTop: 3 }}>/ 100</div>
+                <div style={{ fontSize: 10, color: "var(--bm-text3)", marginTop: 3 }}>
+                  / 100{data.momentumTrend !== "unknown" ? " · vs last week" : ""}
+                </div>
               </div>
+              <div style={{ flex: 1, paddingBottom: 6 }}>
+                <Bar value={data.momentumScore} />
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
+                  <span style={{ fontSize: 10, color: "var(--bm-text4)" }}>0</span>
+                  <span style={{ fontSize: 10, color: "var(--bm-text4)" }}>100</span>
+                </div>
+              </div>
+            </div>
+            {data.momentumTrend === "unknown" && (
+              <p style={{ fontSize: 11, color: "var(--bm-text4)", margin: "0 0 12px", lineHeight: 1.5 }}>
+                Trend appears after your first Sunday check-in — BuildMind needs one full week to compare against.
+              </p>
+            )}
+            <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
               {data.streak > 0 && (
-                <div style={{ fontSize: 13, color: "var(--bm-amber)", fontWeight: 600 }}>
-                  🔥 {data.streak}-day streak
+                <div>
+                  <div style={{ fontSize: 9, color: "var(--bm-text3)", fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 3 }}>Streak</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: "var(--bm-accent)" }}>🔥 {data.streak}d</div>
                 </div>
               )}
               {completionRate !== null && (
-                <div style={{ fontSize: 13, color: "var(--bm-text2)" }}>
-                  {completionRate}% completion rate
-                  <span style={{ color: "var(--bm-text3)", fontWeight: 400 }}>
-                    {" "}({data.totalTasksCompleted}/{data.totalTasksShown} tasks)
-                  </span>
+                <div>
+                  <div style={{ fontSize: 9, color: "var(--bm-text3)", fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 3 }}>Completion rate</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: "var(--bm-text)", fontFamily: "'DM Mono', monospace" }}>
+                    {completionRate}%
+                    <span style={{ fontSize: 11, color: "var(--bm-text3)", fontWeight: 400, fontFamily: "inherit" }}>
+                      {" "}({data.totalTasksCompleted}/{data.totalTasksShown})
+                    </span>
+                  </div>
+                </div>
+              )}
+              {/* Merged in from app/memory/page.tsx's "Execution stats" grid */}
+              {data.tasksCompletedTotal > 0 && (
+                <div>
+                  <div style={{ fontSize: 9, color: "var(--bm-text3)", fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 3 }}>Lifetime tasks</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: "var(--bm-text)", fontFamily: "'DM Mono', monospace" }}>{data.tasksCompletedTotal}</div>
+                </div>
+              )}
+              {data.consecutiveTasksCompleted > 0 && (
+                <div>
+                  <div style={{ fontSize: 9, color: "var(--bm-text3)", fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 3 }}>Consecutive</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: "var(--bm-text)", fontFamily: "'DM Mono', monospace" }}>{data.consecutiveTasksCompleted}</div>
+                </div>
+              )}
+              {data.daysInactive > 0 && (
+                <div>
+                  <div style={{ fontSize: 9, color: "var(--bm-text3)", fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 3 }}>Days inactive</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: data.daysInactive >= 3 ? "var(--bm-red)" : "var(--bm-text)", fontFamily: "'DM Mono', monospace" }}>{data.daysInactive}</div>
                 </div>
               )}
             </div>
-            <MomentumBar value={data.momentumScore} />
-          </InsightCard>
+          </Section>
+          )}
 
-          {data.activePatternSignal && data.activePatternMessage && (
-            <InsightCard
-              title={`Behavioural Pattern Detected · ${
-                data.activePatternSignal?.replace(/_/g, " ").toUpperCase() ?? "SIGNAL"
-              }`}
+          {/* ── Active pattern ───────────────────────────────────────────── */}
+          {tab === "signals" && data.activePatternSignal && data.activePatternMessage && (
+            <Section
+              label={`Pattern detected · ${data.activePatternSignal.replace(/_/g, " ").toUpperCase()}`}
               accent={
-                data.activePatternSignal === "momentum_decay" ? "var(--bm-red)" :
-                data.activePatternSignal === "override_cluster" ? "var(--bm-amber)" :
-                "var(--bm-accent)"
+                data.activePatternSignal === "momentum_decay"   ? "var(--bm-red)"   :
+                data.activePatternSignal === "override_cluster" ? "var(--bm-accent)" :
+                "var(--bm-green)"
               }
             >
-              <p style={{ fontSize: 14, color: "var(--bm-text2)", lineHeight: 1.65, margin: 0 }}>
+              <p style={{ fontSize: 13.5, color: "var(--bm-text2)", lineHeight: 1.65, margin: "0 0 10px" }}>
                 {sanitizeOutput(data.activePatternMessage)}
               </p>
               {data.activePatternSubject && (
-                <div style={{ marginTop: 10 }}>
-                  <Tag
-                    label={sanitizeOutput(data.activePatternSubject)}
-                    color={
-                      data.activePatternSignal === "momentum_decay" ? "var(--bm-red)" : "var(--bm-amber)"
-                    }
-                  />
-                </div>
+                <Chip
+                  label={sanitizeOutput(data.activePatternSubject)}
+                  color={data.activePatternSignal === "momentum_decay" ? "var(--bm-red)" : "var(--bm-accent)"}
+                />
               )}
-              {data.lastPatternShownAt && (
-                <p style={{ fontSize: 11, color: "var(--bm-text3)", marginTop: 10, marginBottom: 0 }}>
-                  First detected{" "}
-                  {new Date(data.lastPatternShownAt).toLocaleDateString("en-GB", {
-                    day: "numeric", month: "short",
-                  })}
-                </p>
-              )}
-            </InsightCard>
+            </Section>
           )}
 
-          {/* Day-of-week heatmap */}
-          {data.totalTasksShown > 0 && (
-            <InsightCard title="When you actually build">
-              <DayHeatmap completionByDay={data.completionByDay} />
-              {lowestDay && data.completionByDay[lowestDay]?.total > 0 && (
-                <p style={{ fontSize: 12, color: "var(--bm-text3)", margin: "12px 0 0" }}>
-                  {lowestDay}s are your lowest completion day.
-                  {" "}Consider avoiding hard tasks on {lowestDay}s.
-                </p>
-              )}
-            </InsightCard>
-          )}
-
-          {/* Avoidance zones */}
-          {data.avoidanceZones.length > 0 && (
-            <InsightCard title="What you avoid" accent="var(--bm-amber)">
-              <div style={{ marginBottom: 10 }}>
-                {data.avoidanceZones.map(z => (
-                  <Tag key={z} label={z} color="var(--bm-amber)" />
-                ))}
+          {/* ── Day-of-week heatmap ──────────────────────────────────────── */}
+          {tab === "trends" && (
+          <Section label="When you build">
+            {data.totalTasksShown > 0 ? (
+              <>
+                <DayHeatmap completionByDay={data.completionByDay} />
+                {(() => {
+                  const lowestDay = DAYS.reduce((worst, day) => {
+                    const e = data.completionByDay[day];
+                    const we = data.completionByDay[worst];
+                    if (!e?.total) return worst;
+                    if (!we?.total) return day;
+                    return (e.completed / e.total) < (we.completed / we.total) ? day : worst;
+                  }, "Mon");
+                  return data.completionByDay[lowestDay]?.total > 0 ? (
+                    <p style={{ fontSize: 11.5, color: "var(--bm-text3)", margin: "12px 0 0", lineHeight: 1.55 }}>
+                      {lowestDay}s are your lowest output day. Route lighter tasks there.
+                    </p>
+                  ) : null;
+                })()}
+              </>
+            ) : (
+              <div style={{ fontSize: 12, color: "var(--bm-text4)", lineHeight: 1.6 }}>
+                Complete a few tasks — day patterns will appear here.
               </div>
-              <p style={{ fontSize: 12, color: "var(--bm-text3)", margin: 0, lineHeight: 1.6 }}>
-                BuildMind injects these signals into every task recommendation to route around your blind spots.
-              </p>
-            </InsightCard>
+            )}
+          </Section>
           )}
 
-          {/* Confidence by outcome */}
-          {Object.keys(data.avgConfidenceByOutcome).length > 0 && (
-            <InsightCard title="Confidence when you complete vs skip">
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {/* ── Confidence by outcome ────────────────────────────────────── */}
+          {tab === "trends" && Object.keys(data.avgConfidenceByOutcome).length > 0 && (
+            <Section label="Confidence vs outcome">
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 {Object.entries(data.avgConfidenceByOutcome)
                   .sort((a, b) => b[1] - a[1])
                   .map(([outcome, avg]) => {
-                    const color = outcome === "completed" ? "var(--bm-accent)"
-                      : outcome === "partial"   ? "var(--bm-amber)"
-                      : "var(--bm-text3)";
+                    const color =
+                      outcome === "completed" ? "var(--bm-green)" :
+                      outcome === "partial"   ? "var(--bm-amber)"  :
+                      "var(--bm-text3)";
                     return (
-                      <div key={outcome} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <div style={{ width: 80, fontSize: 12, color, fontWeight: 500, textTransform: "capitalize" }}>
-                          {outcome}
+                      <div key={outcome}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                          <span style={{ fontSize: 12, color, fontWeight: 600, textTransform: "capitalize" }}>{outcome}</span>
+                          <span style={{ fontSize: 12, color: "var(--bm-text2)", fontFamily: "'DM Mono', monospace" }}>{avg}/5</span>
                         </div>
-                        <div style={{ flex: 1 }}>
-                          <MomentumBar value={avg} max={5} color={color} />
-                        </div>
-                        <div style={{ fontSize: 12, color: "var(--bm-text2)", width: 32, textAlign: "right" }}>
-                          {avg}/5
-                        </div>
+                        <Bar value={avg} max={5} color={color} />
                       </div>
                     );
                   })}
               </div>
-              {data.avgConfidenceByOutcome.completed && data.avgConfidenceByOutcome.overridden &&
-                data.avgConfidenceByOutcome.completed > data.avgConfidenceByOutcome.overridden + 0.5 && (
-                <p style={{ fontSize: 12, color: "var(--bm-text3)", margin: "12px 0 0", lineHeight: 1.6 }}>
-                  You're significantly more confident on days you complete tasks. Confidence isn't a prerequisite — it's a byproduct of shipping.
+              {data.avgConfidenceByOutcome.completed &&
+               data.avgConfidenceByOutcome.overridden &&
+               data.avgConfidenceByOutcome.completed > data.avgConfidenceByOutcome.overridden + 0.5 && (
+                <p style={{ fontSize: 11.5, color: "var(--bm-text3)", margin: "14px 0 0", lineHeight: 1.6 }}>
+                  You're {Math.round((data.avgConfidenceByOutcome.completed - data.avgConfidenceByOutcome.overridden) * 20)}% more confident on days you complete tasks.
+                  Confidence follows action — it doesn't precede it.
                 </p>
               )}
-            </InsightCard>
+            </Section>
           )}
 
-          {/* Strengths */}
-          {data.strengths.length > 0 && (
-            <InsightCard title="Where you're strong" accent="var(--bm-accent)">
-              <div>
-                {data.strengths.map(s => (
-                  <Tag key={s} label={s} color="var(--bm-accent)" />
-                ))}
+          {/* ── Today's reported capacity — merged in from app/memory/page.tsx ── */}
+          {tab === "trends" && data.cognitiveLoad && (
+            <Section label="Today's reported capacity" accent={data.cognitiveLoad === "low" ? "var(--bm-red)" : data.cognitiveLoad === "high" ? "var(--bm-green)" : undefined}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 22 }}>
+                  {data.cognitiveLoad === "low" ? "🪫" : data.cognitiveLoad === "high" ? "🔥" : "⚡"}
+                </span>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "var(--bm-text)", textTransform: "capitalize" }}>{data.cognitiveLoad}</div>
+                  <div style={{ fontSize: 11.5, color: "var(--bm-text3)" }}>
+                    {data.cognitiveLoad === "low"
+                      ? "Tasks today are scoped for low energy — light but forward-moving."
+                      : data.cognitiveLoad === "high"
+                      ? "High capacity reported — expect a more demanding task today."
+                      : "Normal capacity — standard task difficulty."}
+                  </div>
+                </div>
               </div>
-            </InsightCard>
+            </Section>
           )}
 
-          {/* Personality tags */}
-          {data.personalityTags.length > 0 && (
-            <InsightCard title="How you operate">
-              <div>
-                {data.personalityTags.map(t => (
-                  <Tag key={t} label={t} />
-                ))}
+          {/* ── Avoidance zones ──────────────────────────────────────────── */}
+          {tab === "patterns" && data.avoidanceZones.length > 0 && (
+            <Section label="What you avoid" accent="var(--bm-accent)">
+              <div style={{ marginBottom: 10 }}>
+                {data.avoidanceZones.map(z => <Chip key={z} label={z} color="var(--bm-accent)" />)}
               </div>
-            </InsightCard>
+              <p style={{ fontSize: 11.5, color: "var(--bm-text3)", margin: 0, lineHeight: 1.6 }}>
+                These signals are injected into every task recommendation to route around your blind spots.
+              </p>
+            </Section>
           )}
 
-          {/* Top skip reason */}
-          {data.topOverrideReason && (
-            <InsightCard title="Why you skip tasks" accent="var(--bm-red)">
-              <p style={{ fontSize: 14, color: "var(--bm-text)", fontWeight: 500, margin: "0 0 8px" }}>
+          {/* ── Topics you keep circling — merged in from app/memory/page.tsx ── */}
+          {tab === "patterns" && data.topicsMentionedRepeatedly.length > 0 && (
+            <Section label="Topics you keep circling" accent="var(--bm-amber, #E8A020)">
+              <p style={{ fontSize: 11.5, color: "var(--bm-text3)", margin: "0 0 10px", lineHeight: 1.6 }}>
+                Things you mention repeatedly in reflections without taking action. BuildMind will push you to resolve or drop these.
+              </p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {data.topicsMentionedRepeatedly.map((t, i) => <Chip key={t} label={t} color={i % 2 ? "var(--bm-amber, #E8A020)" : undefined} />)}
+              </div>
+            </Section>
+          )}
+
+          {/* ── Strengths ────────────────────────────────────────────────── */}
+          {tab === "patterns" && data.strengths.length > 0 && (
+            <Section label="Where you're strong" accent="var(--bm-green)">
+              {data.strengths.map(s => <Chip key={s} label={s} color="var(--bm-green)" />)}
+            </Section>
+          )}
+
+          {/* ── How you operate ─────────────────────────────────────────── */}
+          {tab === "patterns" && data.personalityTags.length > 0 && (
+            <Section label="How you operate">
+              {data.personalityTags.map(t => <Chip key={t} label={t} />)}
+              {data.archetypeClassifiedAt && (
+                <p style={{ fontSize: 11, color: "var(--bm-text4)", margin: "12px 0 0" }}>
+                  Profile last updated {new Date(data.archetypeClassifiedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                </p>
+              )}
+            </Section>
+          )}
+
+          {/* ── Reveal Mirror — Figma's closing element for Patterns: this
+                 tab is the lighter-weight teaser, Founder Mirror is the deep
+                 dive with confidence-scored beliefs and evidence. Real
+                 navigation to a page that already exists and already works. */}
+          {tab === "patterns" && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              style={{
+                background: "var(--bm-intel-dim, rgba(155,135,245,0.06))",
+                border: "1px solid var(--bm-intel-bd, rgba(155,135,245,0.25))",
+                borderRadius: 14,
+                padding: "18px 20px",
+              }}
+            >
+              <div style={{
+                display: "flex", alignItems: "center", gap: 7,
+                fontSize: 9, fontWeight: 700, letterSpacing: "0.1em",
+                textTransform: "uppercase", color: "var(--bm-intel, #9B87F5)",
+                fontFamily: "'DM Mono', monospace", marginBottom: 10,
+              }}>
+                Cognitive mirror report
+              </div>
+              <p style={{ fontSize: 15, fontWeight: 700, color: "var(--bm-text)", margin: "0 0 6px", fontFamily: "'Syne', sans-serif" }}>
+                Generate Founder Mirror Reflection
+              </p>
+              <p style={{ fontSize: 11.5, color: "var(--bm-text3)", margin: "0 0 14px", lineHeight: 1.6 }}>
+                Compile all active strengths, cognitive loops, and avoidance trends into a permanent, revisable view of your operating model.
+              </p>
+              <a
+                href="/founder-mirror"
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 6, padding: "9px 18px",
+                  borderRadius: "var(--r-md, 10px)", border: "none",
+                  background: "var(--bm-intel, #9B87F5)", color: "#0f0d1a",
+                  fontFamily: "'Inter', sans-serif", fontSize: 12.5, fontWeight: 700, textDecoration: "none",
+                }}
+              >
+                Reveal Mirror →
+              </a>
+            </motion.div>
+          )}
+
+
+          {/* ── Top skip reason ──────────────────────────────────────────── */}
+          {tab === "signals" && data.topOverrideReason && (
+            <Section label="Why you skip" accent="var(--bm-red)">
+              <p style={{ fontSize: 14, color: "var(--bm-text)", fontWeight: 600, margin: "0 0 8px" }}>
                 "{data.topOverrideReason}"
               </p>
-              <p style={{ fontSize: 12, color: "var(--bm-text3)", margin: 0, lineHeight: 1.6 }}>
-                This is your most common skip reason. BuildMind uses this to avoid assigning tasks that trigger this pattern.
+              <p style={{ fontSize: 11.5, color: "var(--bm-text3)", margin: 0, lineHeight: 1.6 }}>
+                Most common skip reason. BuildMind uses this to avoid assigning tasks that trigger this pattern.
               </p>
-            </InsightCard>
+            </Section>
           )}
 
-          {/* ══ AI PATTERN ANALYSIS — streams in progressively ══════════════════ */}
-          {(aiLoading || aiInsights.length > 0) && (
-            <InsightCard title="AI pattern analysis" accent="var(--bm-accent)">
-              {/* Streaming skeleton — shown while loading */}
+          {/* ── AI pattern analysis ──────────────────────────────────────── */}
+          {tab === "signals" && (aiLoading || aiInsights.length > 0 || aiError) && (
+            <Section label="AI pattern analysis" accent="var(--bm-accent)">
               {aiLoading && aiInsights.length === 0 && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {[0, 1, 2].map((i) => (
+                  {[80, 65, 72].map((w, i) => (
                     <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
                       <div style={{ width: 2, alignSelf: "stretch", borderRadius: 2, background: "var(--bm-border2)", flexShrink: 0 }} />
                       <div style={{ flex: 1 }}>
-                        <div style={{ height: 12, borderRadius: 6, background: "var(--bm-bg3)", width: `${70 + i * 10}%`, animation: "pulse 1.4s ease-in-out infinite", marginBottom: 6 }} />
-                        <div style={{ height: 10, borderRadius: 5, background: "var(--bm-bg3)", width: "50%", animation: "pulse 1.4s ease-in-out infinite" }} />
+                        <div style={{
+                          height: 11, borderRadius: 5, background: "var(--bm-bg4)",
+                          width: `${w}%`, marginBottom: 5,
+                          backgroundImage: "linear-gradient(90deg, var(--bm-bg4), var(--bm-bg5), var(--bm-bg4))",
+                          backgroundSize: "200% 100%",
+                          animation: "bm-shimmer 1.8s ease infinite",
+                        }} />
+                        <div style={{
+                          height: 9, borderRadius: 4, background: "var(--bm-bg4)",
+                          width: "45%",
+                          backgroundImage: "linear-gradient(90deg, var(--bm-bg4), var(--bm-bg5), var(--bm-bg4))",
+                          backgroundSize: "200% 100%",
+                          animation: "bm-shimmer 1.8s ease infinite",
+                        }} />
                       </div>
                     </div>
                   ))}
                 </div>
               )}
 
-              {/* Streamed insights */}
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                {aiInsights.map((insight, i) => (
+                {aiInsights.map((item, i) => (
                   <motion.div
                     key={i}
                     initial={{ opacity: 0, x: -6 }}
                     animate={{ opacity: 1, x: 0 }}
-                    transition={{ duration: 0.3 }}
-                    style={{
-                      borderLeft: `2px solid ${
-                        insight.type === "warning"
-                          ? "var(--bm-amber)"
-                          : insight.type === "positive"
-                          ? "var(--bm-accent)"
-                          : "var(--bm-text3)"
-                      }`,
-                      paddingLeft: 14,
-                    }}
+                    transition={{ duration: 0.25 }}
+                    style={{ display: "flex", alignItems: "flex-start", gap: 10 }}
                   >
-                    <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.6 }}>
-                      {sanitizeOutput(insight.text)}
-                    </p>
+                    <span className="bm-status-dot" style={{
+                      background: item.type === "warning"  ? "var(--bm-red)"   :
+                        item.type === "positive" ? "var(--bm-green)" :
+                        "var(--bm-accent)"
+                    }} />
+                    <div style={{ flex: 1 }}>
+                      <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.65 }}>
+                        {sanitizeOutput(item.text)}
+                      </p>
+                      {/* Evidence attribution — the server-computed fact this
+                          insight was actually built from (see
+                          app/api/ai/insights/route.ts's buildEvidenceMap),
+                          not the model's own paraphrase of it. Insights with
+                          no evidence are the generic no-data fallback, not a
+                          claim about this founder — labeled as such rather
+                          than left looking equally specific. */}
+                      {item.evidence ? (
+                        <p style={{ fontSize: 11, color: "var(--bm-text4)", margin: "3px 0 0", lineHeight: 1.5 }}>
+                          Based on: {item.evidence}
+                        </p>
+                      ) : (
+                        <p style={{ fontSize: 11, color: "var(--bm-text4)", fontStyle: "italic", margin: "3px 0 0", lineHeight: 1.5 }}>
+                          General guidance — not tied to your specific data yet
+                        </p>
+                      )}
+                    </div>
                   </motion.div>
                 ))}
               </div>
 
-              {/* Loading indicator alongside streamed items */}
+              {aiError && aiInsights.length === 0 && !aiLoading && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <p style={{ fontSize: 13, color: "var(--bm-text3)", margin: 0, lineHeight: 1.6 }}>
+                    {aiError}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => { setAiError(null); load(); }}
+                    style={{
+                      alignSelf: "flex-start",
+                      fontSize: 12, fontWeight: 600, color: "var(--bm-accent)",
+                      background: "transparent", border: "1px solid var(--bm-border)",
+                      borderRadius: 7, padding: "6px 12px", cursor: "pointer",
+                    }}
+                  >
+                    Try again
+                  </button>
+                </div>
+              )}
+
               {aiLoading && aiInsights.length > 0 && (
-                <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 8 }}>
-                  <div style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--bm-accent)", animation: "pulse 1s ease-in-out infinite" }} />
+                <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 10 }}>
+                  <span style={{
+                    display: "inline-block", width: 5, height: 5, borderRadius: "50%",
+                    background: "var(--bm-accent)", animation: "bm-pulse 1s ease-in-out infinite",
+                  }} />
                   <span style={{ fontSize: 11, color: "var(--bm-text4)" }}>Analysing more patterns…</span>
                 </div>
               )}
-            </InsightCard>
+            </Section>
           )}
 
-          {/* ── Existing data-driven insight cards ───────────────────────────── */}
-          {data.metacriticSignal && (
-            <InsightCard title="AI pattern diagnosis" accent="var(--bm-teal)">
+          {/* ── Meta-critic diagnosis ────────────────────────────────────── */}
+          {tab === "signals" && data.metacriticSignal && (
+            <Section label="BuildMind diagnosis" accent="var(--bm-green)">
               <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.65 }}>
                 {sanitizeOutput(data.metacriticSignal)}
               </p>
-            </InsightCard>
+            </Section>
           )}
 
-          {/* Last AI insight */}
-          {data.lastInsight && (
-            <InsightCard title="Last AI insight">
-              <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.65, fontStyle: "italic" }}>
-                "{sanitizeOutput(data.lastInsight)}"
-              </p>
-            </InsightCard>
-          )}
-
-          {/* Empty state */}
-          {data.avoidanceZones.length === 0 &&
-           data.strengths.length === 0 &&
-           data.totalTasksShown === 0 && (
-            <InsightCard title="No patterns yet">
+          {/* ── Truly empty state ────────────────────────────────────────── */}
+          {!hasAnyData && aiInsights.length === 0 && !aiLoading && (
+            <Section label="Calibrating">
               <p style={{ fontSize: 13, color: "var(--bm-text3)", margin: 0, lineHeight: 1.65 }}>
-                Complete a few daily tasks and check-ins — BuildMind needs at least 3 sessions to start detecting your behavioral patterns. Come back after a week.
+                Complete a task or check-in tonight — BuildMind starts detecting patterns after your first session. Come back tomorrow morning.
               </p>
-            </InsightCard>
+            </Section>
           )}
         </div>
       )}
     </div>
   );
-}
+              }

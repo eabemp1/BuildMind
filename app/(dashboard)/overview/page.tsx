@@ -5,11 +5,12 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { computeStartupScore } from "@/lib/buildmind";
-import { selectActiveProject, useActiveProjectId, useProjectSummariesQuery, useDashboardOverviewQuery } from "@/lib/queries";
+import { buildExecutionPicture, type Tone } from "@/lib/executionPicture";
+import { selectActiveProject, useActiveProjectId, useProjectSummariesQuery, useDashboardOverviewQuery, useFounderScorecardQuery, useFounderStandingQuery } from "@/lib/queries";
 import { recordScore, markActiveToday, recordPendingTasks, syncUrgencyFromServer } from "@/lib/urgency";
 import { getStoredStreak, syncStreakFromServer } from "@/lib/plan";
-import { getXP, getScoreHistory, syncScoreHistory, syncXP, computeConsistencyBonus } from "@/lib/scoring";
-import { ArrowRight, CheckCircle2 } from "lucide-react";
+import { getScoreHistory, syncScoreHistory, syncXP, computeConsistencyBonus } from "@/lib/scoring";
+import { ArrowRight, CheckCircle2, Circle } from "lucide-react";
 import { ProfileCompletenessBar } from "@/components/ProfileCompletenessBar";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FolderKanban } from "lucide-react";
@@ -26,16 +27,6 @@ const STAGE_COLOUR: Record<string, string> = {
   Launch:     "var(--bm-green)",
   Growth:     "var(--bm-green)",
   Revenue:    "var(--bm-green)",
-};
-
-// ── AI nudge map ──────────────────────────────────────────────────────────────
-const NUDGE: Record<string, { text: string; action: string }> = {
-  Idea:       { text: "Validation risk is the current constraint.",                     action: "Run one customer conversation before building." },
-  Validation: { text: "Commitment quality matters more than opinion volume.",            action: "Secure one paid, time, or workflow commitment." },
-  MVP:        { text: "Usage evidence is now more valuable than product polish.",        action: "Put the working link in front of three real users." },
-  Launch:     { text: "Distribution is the operational bottleneck.",                    action: "Publish one clear launch asset and measure response." },
-  Growth:     { text: "Retention is the strongest signal in this stage.",               action: "Interview one churned or inactive user." },
-  Revenue:    { text: "Revenue is the operating signal.",                               action: "Map the largest leak in acquisition-to-payment." },
 };
 
 // ── Relative time ─────────────────────────────────────────────────────────────
@@ -130,6 +121,17 @@ export default function OverviewPage() {
   const [serverTodayDone, setServerTodayDone] = useState(false);
 
   useEffect(() => {
+    // Bug fix: currentMrr previously always started at 0 and was never
+    // synced from the loaded project, so the MRR widget showed
+    // "Pre-revenue" on every reload even for founders who'd already set
+    // an MRR value. Hydrate it from the active project whenever it loads
+    // or changes.
+    if (activeProject?.current_mrr != null) {
+      setCurrentMrr(activeProject.current_mrr);
+    }
+  }, [activeProject?.id, activeProject?.current_mrr]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
     const cachedUid = localStorage.getItem("bm_active_user_id");
     if (cachedUid) storage.onSignIn(cachedUid);
@@ -175,9 +177,15 @@ export default function OverviewPage() {
     return () => clearInterval(t);
   }, []);
 
-  const streak = overview?.founderStreakDays ?? localStreak;
+  const { data: scorecard } = useFounderScorecardQuery();
+  const { data: standing } = useFounderStandingQuery(activeProject?.id, true);
 
-  const score = activeProject ? computeStartupScore({ ...activeProject, xp: getXP(), streak }) : 0;
+  // One streak: the server's lapse-aware count (lib/streak.ts). The overview
+  // payload, scorecard and local cache all come from the same rule now, so the
+  // order here only decides which arrives first.
+  const streak = scorecard?.streak ?? overview?.founderStreakDays ?? localStreak;
+
+  const score = activeProject ? computeStartupScore({ ...activeProject, xp: scorecard?.xp ?? 0, streak }) : 0;
 
   const scoreDelta = useMemo(() => {
     const history = getScoreHistory();
@@ -189,19 +197,43 @@ export default function OverviewPage() {
   }, [score]);
 
   const consistencyBonus = useMemo(() => computeConsistencyBonus(getScoreHistory()), [score]);
-  const localConsistencyPct = Math.round((consistencyBonus / 10) * 100);
-  const aiAdviceQuality = overview?.aiAdviceQuality ?? localConsistencyPct;
+  const cadence = overview?.aiAdviceQuality ?? Math.round((consistencyBonus / 10) * 100);
   const stage = activeProject?.startup_stage ?? "Idea";
   const milestonesCompleted = overview?.milestonesCompleted ?? 0;
   const totalTasks = activeProject?.tasksTotal ?? 0;
   const doneTasks = overview?.completedTasks ?? activeProject?.tasksCompleted ?? 0;
-  const nudge = NUDGE[stage] ?? NUDGE.Idea;
 
-  // Is today's check-in done?
   const todayStr = now.toLocaleDateString("en-CA");
   const todayDone = userId
-    ? overview?.todayDone || serverTodayDone || storage.get(`bm_checkin_done_date_${userId}`) === todayStr
+    ? Boolean(overview?.todayDone || serverTodayDone || storage.get(`bm_checkin_done_date_${userId}`) === todayStr)
     : false;
+
+  const daysSinceReflection = useMemo(() => {
+    if (overview?.daysSinceLastReflection != null) return overview.daysSinceLastReflection;
+    if (overview?.reflectionDoneToday) return 0;
+    for (let i = 0; i <= 3; i++) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      if (storage.get(`bm_reflect_done_${d.toLocaleDateString("en-CA")}`)) return i;
+    }
+    return null;
+  }, [score, overview?.daysSinceLastReflection, overview?.reflectionDoneToday]);
+
+  const pendingTasks: string[] = (activeProject?.pendingTasks ?? []).filter(Boolean);
+  const picture = buildExecutionPicture({
+    stage,
+    readinessTier: standing?.readiness.tier,
+    tasksTotal: totalTasks,
+    tasksDone: doneTasks,
+    milestonesCompleted,
+    streak,
+    streakAtRisk: scorecard?.streakAtRisk,
+    lastStreak: scorecard?.lastStreak,
+    todayDone,
+    daysSinceReflection,
+    scoreDelta,
+    nextMilestone: activeProject?.pendingMilestones?.[0] ?? null,
+    nextTask: pendingTasks[0] ?? null,
+  });
 
   useEffect(() => {
     if (score > 0) { recordScore(score); markActiveToday(); }
@@ -214,49 +246,40 @@ export default function OverviewPage() {
   const dateStr = now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
   const founderFirst = overview?.founderName?.split(" ")[0] ?? null;
 
-  // Attention strip conditions
-  // Memoized so storage.get() isn't called on every render — depends on score
-  // which changes when check-ins are recorded.
-  const noReflectIn3Days = useMemo(() => {
-    if (overview?.daysSinceLastReflection != null) return overview.daysSinceLastReflection >= 3;
-    if (overview?.reflectionDoneToday) return false;
-    for (let i = 1; i <= 3; i++) {
-      const d = new Date(); d.setDate(d.getDate() - i);
-      const key = `bm_reflect_done_${d.toLocaleDateString("en-CA")}`;
-      if (storage.get(key)) return false;
-    }
-    return true;
-  }, [score, overview?.daysSinceLastReflection, overview?.reflectionDoneToday]);
-  const showAttention =
-    (scoreDelta != null && scoreDelta < -10) ||
-    (streak === 0 && totalTasks > 0 && doneTasks / totalTasks < 0.5) ||
-    noReflectIn3Days;
-
-  const attentionMessage = scoreDelta != null && scoreDelta < -10
-    ? `Score dropped ${Math.abs(scoreDelta)} points — check what's blocking progress.`
-    : noReflectIn3Days
-    ? "No reflection logged in 3 days — tomorrow's task will be less accurate."
-    : "Completion rate is below 50% — break your next task into smaller steps.";
-  const attentionRoute = "/today";
-  const attentionLabel = noReflectIn3Days ? "Reflect on today →" : "Go to today →";
-
   if (isLoading || overviewLoading) {
     return (
-      <div style={{ maxWidth: 820, margin: "0 auto", padding: "36px 24px" }}>
-        <div style={{ height: 28, width: 200, borderRadius: 8, background: "var(--bm-bg3)", marginBottom: 8 }} className="animate-pulse" />
-        <div style={{ height: 14, width: 120, borderRadius: 6, background: "var(--bm-bg3)", marginBottom: 32 }} className="animate-pulse" />
-        <div style={{ display: "flex", gap: 0, borderRadius: 10, border: "1px solid var(--bm-border)", overflow: "hidden", marginBottom: 24, height: 64 }} className="animate-pulse" />
-        {[1, 2, 3].map(i => (
-          <div key={i} style={{ height: 72, borderRadius: 12, background: "var(--bm-bg3)", marginBottom: 10 }} className="animate-pulse" />
-        ))}
+      <div style={{ maxWidth: 860, margin: "0 auto", padding: "32px 20px" }}>
+        <div style={{ height: 14, width: 160, borderRadius: 6, background: "var(--bm-bg3)", marginBottom: 14 }} className="animate-pulse" />
+        <div style={{ height: 170, borderRadius: 16, background: "var(--bm-bg3)", marginBottom: 16 }} className="animate-pulse" />
+        <div style={{ height: 76, borderRadius: 12, background: "var(--bm-bg3)", marginBottom: 16 }} className="animate-pulse" />
+        <div style={{ height: 220, borderRadius: 12, background: "var(--bm-bg3)" }} className="animate-pulse" />
       </div>
     );
   }
 
-  return (
-    <div style={{ maxWidth: 820, margin: "0 auto", padding: "36px 24px 60px" }}>
+  const evidence = standing?.readiness.evidence;
+  const TONE: Record<Tone, { c: string; label: string }> = {
+    good:   { c: "var(--bm-green)", label: "Strong" },
+    steady: { c: "var(--bm-accent)", label: "Steady" },
+    watch:  { c: "var(--bm-amber)", label: "Needs attention" },
+    risk:   { c: "var(--bm-red)", label: "At risk" },
+  };
+  const tone = TONE[picture.tone];
+  const mono = "'DM Mono', monospace";
+  const card: React.CSSProperties = { border: "1px solid var(--bm-border)", borderRadius: 14, background: "var(--bm-bg2)" };
+  const eyebrow: React.CSSProperties = { margin: 0, fontFamily: mono, fontSize: 10, color: "var(--bm-text4)", letterSpacing: ".08em", textTransform: "uppercase" };
 
-      {/* ── Profile completeness (only shows when score < 80) ── */}
+  const R = 40, C = 2 * Math.PI * R;
+
+  const stats = [
+    { label: "Startup score", value: score > 0 ? `${score}` : "—", sub: scoreDelta == null ? "baseline" : `${scoreDelta >= 0 ? "+" : ""}${scoreDelta} vs last reading`, tip: "Built from task completion, reflection quality and consistency. Decays slowly if you go quiet." },
+    { label: "Streak", value: `${streak}d`, sub: scorecard?.streakDoneToday ? "extended today" : scorecard?.streakAtRisk ? "ends tonight" : streak === 0 ? "start today" : "alive", tip: "Consecutive days with at least one completed, partial or learned action. Blocked and skipped days do not count." },
+    { label: "Milestones", value: `${milestonesCompleted}`, sub: "completed", tip: "Stage-level objectives completed on this project." },
+    { label: "Cadence", value: `${cadence}%`, sub: "last 14 days", tip: "Active days, reflection depth and confidence over the last 14 days. Drops when you go quiet." },
+  ];
+
+  return (
+    <div style={{ maxWidth: 860, margin: "0 auto", padding: "28px 20px 72px" }}>
       <ProfileCompletenessBar
         fields={{
           startupSummary: activeProject?.description ?? activeProject?.startup_summary ?? "",
@@ -269,197 +292,167 @@ export default function OverviewPage() {
         }}
       />
 
-      {/* ── Header ── */}
-      <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} style={{ marginBottom: 20 }}>
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-          <div>
-            <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em", margin: 0, lineHeight: 1.2 }}>
-              {founderFirst ? `${founderFirst}'s workspace` : "Workspace"}
-            </h1>
-            <p style={{ fontSize: 13, color: "var(--bm-text3)", margin: "4px 0 0", lineHeight: 1 }}>
-              {dateStr}
-              {streak > 0 && <span style={{ marginLeft: 8, color: "var(--bm-amber)" }}>· {streak}d streak</span>}
-            </p>
-          </div>
-          {/* Today done chip */}
-          <div style={{
-            display: "flex", alignItems: "center", gap: 5, padding: "5px 12px",
-            borderRadius: 99, border: "1px solid var(--bm-border)",
-            background: todayDone ? "var(--bm-accent-dim)" : "var(--bm-bg2)",
-            fontSize: 12, fontWeight: 600,
-            color: todayDone ? "var(--bm-accent)" : "var(--bm-text3)",
-          }}>
-            {todayDone ? <CheckCircle2 size={12} /> : <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--bm-bg4)", display: "inline-block" }} />}
-            Today: {todayDone ? "Done ✓" : "Not done"}
-          </div>
+      <motion.header initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}
+        style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 12, flexWrap: "wrap", marginBottom: 18 }}>
+        <div>
+          <p style={eyebrow}>{dateStr}</p>
+          <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: 28, fontWeight: 700, letterSpacing: "-0.025em", margin: "6px 0 0", color: "var(--bm-text)" }}>
+            {founderFirst ? `Execution, ${founderFirst}` : "Execution"}
+          </h1>
         </div>
-        {activeProject && (
-          <p style={{ fontSize: 12, color: "var(--bm-text4)", marginTop: 6 }}>
-            Active: <span style={{ color: "var(--bm-text3)", fontWeight: 500 }}>{activeProject.title}</span>
-            &nbsp;·&nbsp;
-            <span style={{ color: STAGE_COLOUR[stage] ?? "var(--bm-text3)" }}>{stage}</span>
-          </p>
-        )}
-      </motion.div>
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 99, border: "1px solid var(--bm-border)", background: todayDone ? "var(--bm-accent-dim)" : "var(--bm-bg2)", fontSize: 12, fontWeight: 600, color: todayDone ? "var(--bm-accent)" : "var(--bm-text3)" }}>
+          {todayDone ? <CheckCircle2 size={13} /> : <Circle size={13} />}
+          {todayDone ? "Today done" : "Today open"}
+        </div>
+      </motion.header>
 
-      {/* ── Attention strip ── */}
-      {showAttention && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.05 }}
-          style={{ borderLeft: "2px solid var(--bm-amber)", paddingLeft: 14, marginBottom: 20 }}>
-          <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: "0 0 8px", lineHeight: 1.5 }}>
-            {attentionMessage}
-          </p>
-          <button onClick={() => router.push(attentionRoute)}
-            style={{ fontSize: 12, color: "var(--bm-accent)", background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit" }}>
-            {attentionLabel}
-          </button>
-        </motion.div>
-      )}
-
-      {/* ── Metrics row — 4 flat stat chips ── */}
-      {summaries.length > 0 && (
-        <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}
-          style={{ display: "flex", gap: 0, borderRadius: 10, border: "1px solid var(--bm-border)", overflow: "hidden", marginBottom: 20 }}>
-          {[
-            {
-              label: "Momentum Score",
-              value: score > 0 ? `${score}` : "—",
-              delta: scoreDelta,
-              tooltip: "How consistently you're executing. Built from task completion, reflection quality, and time between actions. Decays slowly if you go inactive.",
-            },
-            {
-              label: "Streak",
-              value: (streak > 0) ? `${streak}d` : (overviewLoading) ? "—" : "0d",
-              tooltip: "Consecutive days you've completed at least one task or reflection. Breaks if you miss a day. Used to unlock advanced features.",
-            },
-            {
-              label: milestonesCompleted > 0 ? "Milestones" : "Tasks Done",
-              value: milestonesCompleted > 0
-                ? `${milestonesCompleted}`
-                : doneTasks > 0
-                ? `${doneTasks}`
-                : "—",
-              tooltip: milestonesCompleted > 0
-                ? `${milestonesCompleted} milestone${milestonesCompleted !== 1 ? "s" : ""} completed across all your projects. A milestone is a stage-level objective — completing one moves your startup forward on the roadmap.`
-                : `Tasks completed across your active project. Each task maps to a milestone — completing tasks is how milestones unlock. This counts check-ins recorded on the Today page.`,
-            },
-            {
-              label: "Cadence",
-              value: `${aiAdviceQuality}%`,
-              tooltip: "How consistently and deeply you're executing right now — last 14 days only. Built from active days, reflection depth, confidence scores, and whether BuildMind has detected your behavioural patterns. Goes down when you go quiet.",
-            },
-          ].map((stat, i, arr) => (
-            <div key={stat.label} style={{ flex: 1, padding: "14px 16px", borderRight: i < arr.length - 1 ? "1px solid var(--bm-border)" : "none" }}>
-              <div style={{ display: "flex", alignItems: "center", fontSize: 11, color: "var(--bm-text3)", marginBottom: 4 }}>
-                {stat.label}
-                {"tooltip" in stat && stat.tooltip && <MetricTooltip text={stat.tooltip} />}
+      {activeProject && (
+        <>
+          {/* Verdict: the one statement everything else supports */}
+          <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
+            style={{ ...card, padding: "22px 22px 20px", marginBottom: 16, borderColor: "var(--bm-border)", boxShadow: `inset 3px 0 0 ${tone.c}` }}>
+            <div style={{ display: "flex", gap: 20, alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <p style={{ ...eyebrow, color: tone.c }}>{activeProject.title} · {stage} · {tone.label}</p>
+                <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: "clamp(21px,4.6vw,27px)", lineHeight: 1.2, letterSpacing: "-0.02em", margin: "8px 0 8px", color: "var(--bm-text)" }}>{picture.verdict}</h2>
+                <p style={{ margin: 0, fontSize: 14, lineHeight: 1.6, color: "var(--bm-text2)", maxWidth: 520 }}>
+                  {picture.because}
+                  {standing?.readiness.detail ? ` ${standing.readiness.detail}` : ""}
+                </p>
               </div>
-              <div style={{ fontSize: 20, fontWeight: 500, color: "var(--bm-text)", lineHeight: 1 }}>
-                {stat.value}
-                {stat.delta != null && (
-                  <span style={{ fontSize: 11, marginLeft: 5, color: stat.delta > 0 ? "var(--bm-green)" : "var(--bm-red)" }}>
-                    {stat.delta > 0 ? `+${stat.delta}` : stat.delta}
-                  </span>
-                )}
+              <div style={{ position: "relative", width: 96, height: 96, flexShrink: 0 }} aria-label={`${picture.completionPct}% of tasks complete`}>
+                <svg width="96" height="96" viewBox="0 0 96 96" style={{ transform: "rotate(-90deg)" }}>
+                  <circle cx="48" cy="48" r={R} fill="none" stroke="var(--bm-bg4)" strokeWidth="6" />
+                  <motion.circle cx="48" cy="48" r={R} fill="none" stroke={tone.c} strokeWidth="6" strokeLinecap="round"
+                    strokeDasharray={C} initial={{ strokeDashoffset: C }} animate={{ strokeDashoffset: C * (1 - picture.completionPct / 100) }}
+                    transition={{ duration: 0.9, ease: "easeOut", delay: 0.2 }} />
+                </svg>
+                <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                  <span style={{ fontSize: 22, fontWeight: 600, color: "var(--bm-text)", lineHeight: 1 }}>{picture.completionPct}%</span>
+                  <span style={{ fontFamily: mono, fontSize: 9, color: "var(--bm-text4)", marginTop: 3 }}>{doneTasks}/{totalTasks} tasks</span>
+                </div>
               </div>
             </div>
-          ))}
-        </motion.div>
+
+            <div style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid var(--bm-border)", display: "flex", gap: 14, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+              <div style={{ minWidth: 0, flex: "1 1 260px" }}>
+                <p style={eyebrow}>Next move</p>
+                <p style={{ margin: "5px 0 2px", fontSize: 15, fontWeight: 500, color: "var(--bm-text)" }}>{picture.nextMove.label}</p>
+                <p style={{ margin: 0, fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.5 }}>{picture.nextMove.why}</p>
+              </div>
+              <Button size="sm" onClick={() => router.push(picture.nextMove.href)} style={{ background: "var(--bm-amber)", color: "#111" }}>
+                {todayDone ? "Review Today" : "Open Today"} <ArrowRight size={14} />
+              </Button>
+            </div>
+
+            {picture.watch.length > 0 && (
+              <ul style={{ margin: "16px 0 0", padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 8 }}>
+                {picture.watch.map(w => (
+                  <li key={w} style={{ display: "flex", gap: 9, fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.5 }}>
+                    <span className="bm-status-dot" style={{ background: "var(--bm-amber)", marginTop: 6, flexShrink: 0 }} />
+                    <span>{w}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </motion.section>
+
+          {/* Four numbers, each defined once */}
+          <div className="grid grid-cols-2 sm:grid-cols-4" style={{ ...card, overflow: "hidden", marginBottom: 16 }}>
+            {stats.map((st, i) => (
+              <div key={st.label} title={st.tip} style={{ padding: "14px 16px", borderRight: i < 3 ? "1px solid var(--bm-border)" : "none", borderBottom: i < 2 ? "1px solid var(--bm-border)" : "none" }} className={i === 1 ? "max-sm:[border-right:none]" : ""}>
+                <p style={{ margin: 0, fontSize: 11, color: "var(--bm-text3)" }}>{st.label}</p>
+                <p style={{ margin: "6px 0 3px", fontSize: 24, fontWeight: 500, color: "var(--bm-text)", lineHeight: 1 }}>{st.value}</p>
+                <p style={{ margin: 0, fontFamily: mono, fontSize: 10, color: "var(--bm-text4)" }}>{st.sub}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]" style={{ marginBottom: 22 }}>
+            <section style={{ ...card, padding: "18px 20px" }}>
+              <p style={eyebrow}>Active milestone</p>
+              <h3 style={{ margin: "6px 0 14px", fontSize: 17, fontWeight: 600, color: "var(--bm-text)" }}>
+                {activeProject.pendingMilestones?.[0] ?? "No open milestone"}
+              </h3>
+              {pendingTasks.length > 0 ? (
+                <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 10 }}>
+                  {pendingTasks.slice(0, 4).map((task, i) => (
+                    <li key={`${i}-${task}`} style={{ display: "flex", gap: 10, alignItems: "flex-start", fontSize: 13.5, color: "var(--bm-text2)", lineHeight: 1.45 }}>
+                      <Circle size={15} style={{ color: "var(--bm-text4)", marginTop: 2, flexShrink: 0 }} />
+                      <span>{task}</span>
+                    </li>
+                  ))}
+                  {pendingTasks.length > 4 && <li style={{ fontSize: 12, color: "var(--bm-text4)" }}>+{pendingTasks.length - 4} more</li>}
+                </ul>
+              ) : (
+                <p style={{ margin: 0, fontSize: 13, color: "var(--bm-text4)" }}>No open tasks on this milestone. Today will propose the next one.</p>
+              )}
+            </section>
+
+            <section style={{ ...card, padding: "18px 20px" }}>
+              <p style={eyebrow}>Evidence for {stage}</p>
+              {evidence ? (
+                <>
+                  <p style={{ margin: "8px 0 10px", fontSize: 13.5, color: "var(--bm-text2)" }}>{evidence.filledSlots} of {evidence.totalSlots} proof slots filled</p>
+                  <ProgressBar value={evidence.filledSlots} max={evidence.totalSlots} />
+                  {evidence.missingLabels.length > 0 && (
+                    <p style={{ margin: "12px 0 0", fontSize: 12.5, color: "var(--bm-text3)", lineHeight: 1.55 }}>
+                      Still missing: {evidence.missingLabels.slice(0, 3).join(", ")}{evidence.missingLabels.length > 3 ? ` and ${evidence.missingLabels.length - 3} more` : ""}.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p style={{ margin: "8px 0 0", fontSize: 13, color: "var(--bm-text4)", lineHeight: 1.55 }}>Proof slots open once this stage's milestones are complete.</p>
+              )}
+            </section>
+          </div>
+        </>
       )}
 
-      {/* ── Empty state ── */}
       {summaries.length === 0 && (
         <EmptyState
           icon={FolderKanban}
           title="No operating system yet"
           body="Create a project so BuildMind can establish objectives, constraints, and execution cadence."
-          action={
-            <Button onClick={() => router.push("/projects")}>
-              Create your first project <ArrowRight size={14} />
-            </Button>
-          }
+          action={<Button onClick={() => router.push("/projects")}>Create your first project <ArrowRight size={14} /></Button>}
         />
       )}
 
-      {/* ── Projects list ── */}
       {summaries.length > 0 && (
-        <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Projects</span>
+        <motion.section initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+            <p style={eyebrow}>Projects</p>
             <Link href="/projects" style={{ fontSize: 12, color: "var(--bm-text3)", textDecoration: "none" }}>View all →</Link>
           </div>
-
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {summaries.slice(0, 4).map((s, i) => {
+            {summaries.slice(0, 4).map((s) => {
               const stageColor = STAGE_COLOUR[s.startup_stage ?? "Idea"] ?? "var(--bm-text3)";
-              const pCheckinDone = userId
-                ? todayDone
-                : false;
-
               return (
-                <motion.div key={s.id} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.14 + i * 0.05 }}>
-                  <div style={{
-                    border: "1px solid var(--bm-border)", borderRadius: 12,
-                    padding: "14px 16px", background: "var(--bm-bg2)",
-                  }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-                      {/* Name + stage */}
-                      <span style={{ fontSize: 14, fontWeight: 500, color: "var(--bm-text)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {s.title}
-                      </span>
-                      <span style={{ fontSize: 10, fontWeight: 700, color: stageColor, flexShrink: 0, padding: "2px 7px", borderRadius: 99, border: "1px solid", borderColor: stageColor, opacity: 0.9 }}>
-                        {s.startup_stage ?? "Idea"}
-                      </span>
-                      {/* Last activity */}
-                      {s.lastActivity && (
-                        <span style={{ fontSize: 11, color: "var(--bm-text4)", flexShrink: 0 }}>
-                          {relTime(s.lastActivity)}
-                        </span>
-                      )}
-                      {/* Today done indicator */}
-                      <span style={{ fontSize: 11, color: pCheckinDone ? "var(--bm-accent)" : "var(--bm-text4)", flexShrink: 0 }}>
-                        {pCheckinDone ? "✓" : "·"}
-                      </span>
-                      {/* View button */}
-                      <Link href={`/projects/${s.id}`} style={{ flexShrink: 0 }}>
-                        <button style={{ fontSize: 11, color: "var(--bm-text3)", background: "none", border: "1px solid var(--bm-border)", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontFamily: "inherit" }}>
-                          View →
-                        </button>
-                      </Link>
-                    </div>
-                    {/* 2px progress bar */}
-                    <ProgressBar value={s.tasksCompleted ?? 0} max={s.tasksTotal ?? 0} />
-                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: 5 }}>
-                      <span style={{ fontSize: 11, color: "var(--bm-text4)" }}>{s.tasksCompleted ?? 0}/{s.tasksTotal ?? 0} tasks</span>
-                      {activeProject?.id === s.id && (
-                        <MrrWidget projectId={s.id} currentMrr={currentMrr} onUpdate={setCurrentMrr} />
-                      )}
-                    </div>
+                <div key={s.id} style={{ ...card, padding: "13px 16px", borderRadius: 12 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 9 }}>
+                    <span style={{ fontSize: 14, fontWeight: 500, color: "var(--bm-text)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.title}</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: stageColor, flexShrink: 0, padding: "2px 7px", borderRadius: 99, border: `1px solid ${stageColor}` }}>{s.startup_stage ?? "Idea"}</span>
+                    <Link href={`/projects/${s.id}`} style={{ flexShrink: 0, fontSize: 11, color: "var(--bm-text3)", border: "1px solid var(--bm-border)", borderRadius: 6, padding: "4px 10px", textDecoration: "none" }}>Open</Link>
                   </div>
-                </motion.div>
+                  <ProgressBar value={s.tasksCompleted ?? 0} max={s.tasksTotal ?? 0} />
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6, gap: 8 }}>
+                    <span style={{ fontSize: 11, color: "var(--bm-text4)" }}>
+                      {s.tasksCompleted ?? 0}/{s.tasksTotal ?? 0} tasks{s.lastActivity ? ` · active ${relTime(s.lastActivity)}` : ""}
+                    </span>
+                    {activeProject?.id === s.id && <MrrWidget projectId={s.id} currentMrr={currentMrr} onUpdate={setCurrentMrr} />}
+                  </div>
+                </div>
               );
             })}
           </div>
 
-          {/* ── 7-day sparkline ── */}
           {scoreHistory.length >= 2 && (
-            <div style={{ marginTop: 20 }}>
-              <span style={{ fontSize: 11, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Score — last 7 days</span>
+            <div style={{ marginTop: 22 }}>
+              <p style={eyebrow}>Score, last 7 readings</p>
               <Sparkline history={scoreHistory} />
             </div>
           )}
-
-          {/* ── AI nudge — borderLeft only, no card ── */}
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.22 }}
-            style={{ borderLeft: "2px solid var(--bm-accent)", paddingLeft: 14, marginTop: 24 }}>
-            <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: "0 0 6px", lineHeight: 1.55 }}>
-              {nudge.text}
-            </p>
-            <p style={{ fontSize: 13, color: "var(--bm-text)", fontWeight: 500, margin: 0 }}>
-              → {nudge.action}
-            </p>
-          </motion.div>
-        </motion.div>
+        </motion.section>
       )}
     </div>
   );

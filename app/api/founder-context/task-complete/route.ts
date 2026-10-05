@@ -1,176 +1,433 @@
+/**
+ * app/api/founder-context/task-complete/route.ts
+ * POST → records task completion, boosts momentum, updates last_active,
+ *        and runs pattern detection (Playbook §3.2) to surface behavioural signals.
+ *
+ * PATCHES APPLIED (June 2026):
+ *  1. checkin_done_date upsert is now AWAITED (was fire-and-forget) so cross-device
+ *     done-state is visible before the client navigates away.
+ *  2. reflexion_learning_log insert now only fires as a genuine fallback when
+ *     no log_row_id is present — see PATCH 1 below for why the unconditional
+ *     version was double-counting every completion.
+ */
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { isAdminUser } from "@/lib/server/adminAuth";
-import { actionCategoryLabelOrNull } from "@/lib/actionClassification";
+import { dailyActivitySignal } from "@/lib/momentum";
+import { detectPattern, shouldSurfacePattern, type PatternResult } from "@/lib/patternDetection";
+import { recordActivity } from "@/lib/server/activityLog";
+import { evaluateAndCacheStageTransition } from "@/lib/server/stageTransition";
+import { invalidateCognitionCache } from "@/lib/founderCognition";
+import { actionCategoryLabelOrNull, inferActionType } from "@/lib/actionClassification";
 import { deduplicateTags } from "@/lib/founderMemory";
+import { recordActionOutcome, markIgnoredAfter24h } from "@/lib/learning";
 
-/**
- * GET/POST /api/admin/cleanup-avoidance-zones
- *
- * Browser-callable version of scripts/cleanup-avoidance-zones.ts — same
- * logic, same actionCategoryLabel()/deduplicateTags() pipeline, but
- * runnable from a deployed URL instead of a local `npx tsx` invocation.
- * No terminal, no env vars to export by hand — auth comes from your
- * existing logged-in admin session, and the service-role write uses the
- * server's own SUPABASE_SERVICE_ROLE_KEY (already configured in Vercel).
- *
- * Cleans BOTH founder_memory.avoidance_zones/strengths AND the separate
- * founder_context.avoidance_zones column (fed by a weekly edge-function
- * synthesis job that was silently failing on a stale column name until
- * this session — now fixed, so it needs the same safety net).
- *
- * GET  → dry run: returns what WOULD change, writes nothing.
- * POST → live run: writes the cleaned arrays back.
- *
- * Optional query param ?user=<uuid> limits either mode to one account —
- * handy for spot-checking one of your test accounts before running it
- * against everyone.
- */
-
-type CleanResult = { changed: boolean; before: string[]; after: string[] };
-
-function cleanArray(raw: unknown): CleanResult {
-  const before = Array.isArray(raw) ? (raw as string[]).filter(Boolean) : [];
-  if (before.length === 0) return { changed: false, before, after: [] };
-
-  // Unclassifiable entries are dropped rather than stored as a catch-all label.
-  const recategorized = before.map((entry) => actionCategoryLabelOrNull(entry)).filter((x): x is string => Boolean(x));
-  const after = deduplicateTags(recategorized);
-
-  const changed = before.length !== after.length || before.some((v, i) => v !== after[i]);
-  return { changed, before, after };
-}
-
-async function runCleanup(userIdFilter: string | null, isDryRun: boolean) {
-  const admin = createAdminClient();
-
-  let query = admin.from("founder_memory").select("user_id, avoidance_zones, strengths");
-  if (userIdFilter) query = query.eq("user_id", userIdFilter);
-
-  const { data: rows, error } = await query;
-  if (error) {
-    return { ok: false as const, error: error.message };
-  }
-  if (!rows || rows.length === 0) {
-    return { ok: true as const, dryRun: isDryRun, touched: 0, skipped: 0, results: [] };
-  }
-
-  const results: Array<{
-    user_id: string;
-    avoidance_zones?: { before: string[]; after: string[] };
-    strengths?: { before: string[]; after: string[] };
-  }> = [];
-  let touched = 0;
-  let skipped = 0;
-
-  for (const row of rows) {
-    const avoidance = cleanArray((row as { avoidance_zones: unknown }).avoidance_zones);
-    const strengths = cleanArray((row as { strengths: unknown }).strengths);
-
-    if (!avoidance.changed && !strengths.changed) {
-      skipped++;
-      continue;
-    }
-
-    touched++;
-    const entry: (typeof results)[number] = { user_id: (row as { user_id: string }).user_id };
-    if (avoidance.changed) entry.avoidance_zones = { before: avoidance.before, after: avoidance.after };
-    if (strengths.changed) entry.strengths = { before: strengths.before, after: strengths.after };
-    results.push(entry);
-
-    if (!isDryRun) {
-      const update: Record<string, string[]> = {};
-      if (avoidance.changed) update.avoidance_zones = avoidance.after;
-      if (strengths.changed) update.strengths = strengths.after;
-      const { error: updateError } = await admin
-        .from("founder_memory")
-        .update(update)
-        .eq("user_id", (row as { user_id: string }).user_id);
-      if (updateError) {
-        (entry as Record<string, unknown>).writeError = updateError.message;
-      }
-    }
-  }
-
-  return { ok: true as const, dryRun: isDryRun, touched, skipped, results };
-}
-
-async function runFounderContextCleanup(userIdFilter: string | null, isDryRun: boolean) {
-  const admin = createAdminClient();
-
-  let query = admin.from("founder_context").select("user_id, avoidance_zones");
-  if (userIdFilter) query = query.eq("user_id", userIdFilter);
-
-  const { data: rows, error } = await query;
-  if (error) {
-    return { ok: false as const, error: error.message };
-  }
-  if (!rows || rows.length === 0) {
-    return { ok: true as const, dryRun: isDryRun, touched: 0, skipped: 0, results: [] };
-  }
-
-  const results: Array<{ user_id: string; avoidance_zones: { before: string[]; after: string[] } }> = [];
-  let touched = 0;
-  let skipped = 0;
-
-  for (const row of rows) {
-    const avoidance = cleanArray((row as { avoidance_zones: unknown }).avoidance_zones);
-    if (!avoidance.changed) {
-      skipped++;
-      continue;
-    }
-    touched++;
-    const entry = { user_id: (row as { user_id: string }).user_id, avoidance_zones: { before: avoidance.before, after: avoidance.after } };
-    results.push(entry);
-
-    if (!isDryRun) {
-      const { error: updateError } = await admin
-        .from("founder_context")
-        .update({ avoidance_zones: avoidance.after })
-        .eq("user_id", (row as { user_id: string }).user_id);
-      if (updateError) {
-        (entry as Record<string, unknown>).writeError = updateError.message;
-      }
-    }
-  }
-
-  return { ok: true as const, dryRun: isDryRun, touched, skipped, results };
-}
-
-async function handle(request: Request, isDryRun: boolean) {
+export async function POST(req: Request) {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user || !(await isAdminUser(user.id))) {
-    return NextResponse.json({ ok: false, error: "Not authorized" }, { status: 403 });
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error || !user) return NextResponse.json({ ok: false }, { status: 401 });
+
+  const { stage = "", projectId = "", taskTitle = "", outcome = "completed", log_row_id = "", recommendation_id = "" } = await req.json().catch(() => ({}));
+  const admin = createAdminClient();
+
+  // Fetch context + founder_memory + recent task titles in parallel for pattern detection
+  const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+  const [ctxResult, memoryResult, recentTasksResult] = await Promise.allSettled([
+    admin
+      .from("founder_context")
+      .select("momentum_score, tasks_accepted_this_week, tasks_overridden_this_week, current_stage, consecutive_tasks_completed, last_active, tasks_completed_today, last_task_date, tasks_completed_total, override_reasons, topics_mentioned_repeatedly, days_inactive, last_pattern_shown_at, momentum_last_week, streak, last_checkin_date, xp")
+      .eq("user_id", user.id)
+      .maybeSingle(),
+    admin
+      .from("founder_memory")
+      .select("avoidance_zones")
+      .eq("user_id", user.id)
+      .maybeSingle(),
+    admin
+      .from("reflections")
+      .select("today_action")
+      .eq("user_id", user.id)
+      .gte("created_at", fourteenDaysAgo)
+      .not("today_action", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(30),
+  ]);
+
+  const ctx = ctxResult.status === "fulfilled" ? ctxResult.value.data : null;
+  const memory = memoryResult.status === "fulfilled" ? memoryResult.value.data : null;
+  const recentTaskTitles = recentTasksResult.status === "fulfilled"
+    ? (recentTasksResult.value.data ?? []).map((r: { today_action: string }) => r.today_action).filter(Boolean)
+    : [];
+
+  const previousTaskCount = ctx?.tasks_accepted_this_week ?? 0;
+  const isFirstTask = previousTaskCount === 0;
+
+  // Hard tasks (launch/revenue stage) give bigger momentum boost
+  const isHardTask = ["launch", "revenue", "growth"].some(s =>
+    (stage || ctx?.current_stage || "").toLowerCase().includes(s)
+  );
+
+  // EMA needs to know how many days elapsed since momentum was last touched —
+  // a task completed after a 5-day gap should compound differently than one
+  // completed the day after the last update.
+  const today = new Date().toISOString().slice(0, 10); // UTC — matches fetchBehaviorState comparison
+  const lastActiveForGap = ctx?.last_active ?? today;
+  const daysSinceLastUpdate = Math.max(
+    1,
+    Math.round((new Date(today).getTime() - new Date(lastActiveForGap).getTime()) / 86_400_000),
+  );
+  const todayCountBeforeThis = ctx?.last_task_date === today ? (ctx?.tasks_completed_today ?? 0) : 0;
+
+  // FIX (root cause of the months-long inconsistency): this route previously
+  // computed momentum, streak, and XP independently in JS and wrote them as
+  // part of one big upsert below — a THIRD implementation alongside
+  // lib/scorecard.ts's canonical functions and the Deno edge function's
+  // (now-removed) hand-copy. Now calls ONE atomic Postgres function that
+  // does the full row lock, all the math, and all the writes (momentum,
+  // streak, XP, and task counters) in a single round trip — see
+  // complete_task_atomic in supabase/migrations/20260719000000_atomic_scorecard_rpcs.sql.
+  // This is genuinely faster than a naive per-metric RPC split would have
+  // been, not just "no worse": one lock instead of three, one round trip
+  // instead of four.
+  const signal = dailyActivitySignal({
+    tasksCompletedToday: todayCountBeforeThis + 1,
+    isHardTask,
+    reflectionFiled: false,
+    wasOverridden: false,
+  });
+
+  type CompleteTaskAtomicResult = {
+    momentum: number;
+    streak: number;
+    xp: number;
+    xp_earned: number;
+    consecutive: number;
+  };
+
+  const { data: taskResult, error: taskRpcError } = await admin
+    .rpc("complete_task_atomic", {
+      p_user_id: user.id,
+      p_project_id: projectId || null,
+      p_signal: signal,
+      p_days_since_last_update: daysSinceLastUpdate,
+      p_today: today,
+      p_stage: stage || null,
+    })
+    .single<CompleteTaskAtomicResult>();
+
+  if (taskRpcError) throw new Error(`complete_task_atomic failed: ${taskRpcError.message}`);
+
+  const newMomentum = taskResult!.momentum;
+  const newStreak = taskResult!.streak;
+  const newXP = taskResult!.xp;
+  const newConsecutive = taskResult!.consecutive;
+  const xpEarned = taskResult!.xp_earned;
+
+
+  // ── Pattern Detection (Playbook §3.2) ────────────────────────────────────
+  // Run after every task completion — surfaces behavioural signals to the
+  // next AI response rather than waiting for the evening cron.
+  let activePattern: PatternResult | null = null;
+  try {
+    const pattern = detectPattern({
+      avoidance_zones: (memory?.avoidance_zones ?? []) as string[],
+      override_reasons: (ctx?.override_reasons ?? []) as string[],
+      tasks_overridden_this_week: ctx?.tasks_overridden_this_week ?? 0,
+      tasks_accepted_this_week: previousTaskCount + 1,
+      momentum_score: newMomentum,
+      momentum_last_week: ctx?.momentum_last_week ?? null,
+      topics_mentioned_repeatedly: (ctx?.topics_mentioned_repeatedly ?? []) as string[],
+      days_inactive: ctx?.days_inactive ?? 0,
+      recent_task_titles: recentTaskTitles,
+    });
+
+    if (
+      pattern.signal &&
+      shouldSurfacePattern(ctx?.last_pattern_shown_at, pattern.severity)
+    ) {
+      activePattern = pattern;
+    }
+  } catch {
+    // Pattern detection is non-fatal — never block task completion
   }
 
-  const { searchParams } = new URL(request.url);
-  const userIdFilter = searchParams.get("user");
+  // Only two things left to write here: tasks_accepted_this_week (a weekly
+  // counter separate from the RPC's daily/total counters) and the
+  // pattern-detection fields, which depend on newMomentum from the RPC
+  // above so couldn't be folded into it. Everything else — momentum, streak,
+  // xp, consecutive count, today/total counts, last_active, days_inactive,
+  // current_stage — was already written atomically by complete_task_atomic.
+  await admin.from("founder_context").upsert({
+    user_id: user.id,
+    tasks_accepted_this_week: previousTaskCount + 1,
+    ...(activePattern?.signal
+      ? {
+          active_pattern_signal: activePattern.signal,
+          active_pattern_message: activePattern.message,
+          active_pattern_subject: activePattern.subject,
+          last_pattern_shown_at: new Date().toISOString(),
+        }
+      : {}),
+  }, { onConflict: "user_id" });
 
-  const founderMemoryResult = await runCleanup(userIdFilter, isDryRun);
-  const founderContextResult = await runFounderContextCleanup(userIdFilter, isDryRun);
+  // ── Mirror onto projects (read-only consumers: project_summaries view) ────
+  // founder_context is the single source of truth — the RPCs above already
+  // mirror momentum_score/streak onto projects internally (passed
+  // p_project_id), so no separate mirror needed here anymore.
 
-  if (!founderMemoryResult.ok) {
-    return NextResponse.json(founderMemoryResult, { status: 500 });
+  const computedScore = newMomentum;
+  // FIX: this used to upsert with onConflict: "user_id,recorded_at::date" —
+  // but recorded_at::date is a SQL expression, not a plain column, and
+  // Supabase/PostgREST's onConflict resolution can't match that against the
+  // table's expression-based unique index. The upsert has been throwing on
+  // every single call since this was written (confirmed: score_history had
+  // zero rows total, for every user). Silently swallowed by the fire-and-
+  // forget .catch(() => {}), so nothing ever surfaced the failure — this is
+  // also why the Progress page's "real" sparkline line has never drawn.
+  // Replaced with an explicit check-then-write so it never depends on
+  // PostgREST resolving an expression index through onConflict.
+  if (typeof computedScore === "number") {
+    void (async () => {
+      try {
+        const dayStart = new Date(); dayStart.setUTCHours(0, 0, 0, 0);
+        const dayEnd = new Date(dayStart); dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
+        const { data: existing } = await admin
+          .from("score_history")
+          .select("id")
+          .eq("user_id", user.id)
+          .gte("recorded_at", dayStart.toISOString())
+          .lt("recorded_at", dayEnd.toISOString())
+          .maybeSingle();
+
+        if (existing?.id) {
+          await admin
+            .from("score_history")
+            .update({ score: computedScore, recorded_at: new Date().toISOString() })
+            .eq("id", existing.id);
+        } else {
+          await admin
+            .from("score_history")
+            .insert({ user_id: user.id, score: computedScore, recorded_at: new Date().toISOString() });
+        }
+      } catch {
+        // Non-fatal — must never block the task completion response
+      }
+    })();
   }
-  if (!founderContextResult.ok) {
-    return NextResponse.json(founderContextResult, { status: 500 });
+
+  if (taskTitle) {
+    // FIX: this used to store `String(taskTitle).slice(0, 80)` — a raw
+    // truncated fragment of the task sentence — as if it were a behavioral
+    // category. That's why Founder Mirror / Insights / the Today
+    // Intelligence Panel showed things like 'Comment on 3 r/Entrepreneur or
+    // r/SideProject threads today - ask solo founders t' (cut off mid-word)
+    // instead of a clean category like "direct outreach (reddit)". This
+    // exact bug was already fixed once, in lib/founderMemory.ts's
+    // observeTaskEvent() (see its comment for the same root cause) — but
+    // this route has its own SEPARATE write to the same avoidance_zones /
+    // strengths columns that never got the same fix, so the array kept
+    // accumulating garbled fragments from this path even after the other
+    // path started writing clean categories. Now both paths agree.
+    const zone = actionCategoryLabelOrNull(String(taskTitle));
+    const field = outcome === "blocked" || outcome === "skipped" ? "avoidance_zones" : "strengths";
+    if (zone) void (async () => {
+      const { data: mem } = await admin
+        .from("founder_memory")
+        .select(field)
+        .eq("user_id", user.id)
+        .maybeSingle();
+      const memoryRow = mem as { avoidance_zones?: string[]; strengths?: string[] } | null;
+      const current = ((memoryRow?.[field] as string[] | undefined) ?? []).filter(Boolean);
+      // Also runs the existing array through deduplicateTags — this lets
+      // old garbled raw-fragment entries already sitting in someone's row
+      // get squeezed out over time (dedup keeps the shorter/more-canonical
+      // form) rather than needing a separate one-off cleanup migration.
+      const next = deduplicateTags([...current, zone]);
+      if (next.length === current.length && current.includes(zone)) return;
+      if (memoryRow) {
+        await admin
+          .from("founder_memory")
+          .update({ [field]: next })
+          .eq("user_id", user.id);
+      } else {
+        await admin
+          .from("founder_memory")
+          .insert({ user_id: user.id, [field]: next });
+      }
+    })().catch(() => {});
   }
+
+  recordActivity(user.id, "task_completed", { stage, projectId }).catch(() => {});
+  invalidateCognitionCache(user.id);
+  // CONSOLIDATION: was checkAndCacheStageTransition() (the looser,
+  // now-retired detector) — see lib/server/stageTransition.ts for why
+  // there's now exactly one detector instead of two disagreeing ones.
+  if (projectId) evaluateAndCacheStageTransition(user.id, projectId).catch(() => {});
+
+  // ── PATCH 1 + PATCH 2: Write completion to reflexion_learning_log (AWAITED) ─
+  // FIX (duplicate-write bug, June 2026): this used to insert UNCONDITIONALLY
+  // on every completion — "just in case" the stream route hadn't already
+  // logged a "shown" row. But app/today/page.tsx ALSO independently called
+  // POST /api/ai/reflexion-outcome with the same log_row_id, which UPDATEs
+  // that existing row's outcome in place. When log_row_id was present, both
+  // paths fired: one UPDATE (correct) and one unconditional INSERT (a
+  // genuine duplicate row) — fixed by only inserting as a true fallback.
+  //
+  // FIX (this pass — the outcome never landing at all): the UPDATE side of
+  // that fix was a SEPARATE, unawaited fetch from the browser
+  // (app/today/page.tsx → POST /api/ai/reflexion-outcome, wrapped in
+  // .catch(() => {}), never checked for success). Any navigation, tab
+  // backgrounding, or network hiccup in that window could drop it silently
+  // — the "shown" row would just never get marked "completed," even though
+  // the founder genuinely completed the task and task-complete's OTHER
+  // writes (momentum, streak, action_logs below) all landed fine. That's
+  // the confirmed cause of Progress showing real momentum/streak movement
+  // alongside 0 completed tasks for a day work actually happened.
+  //
+  // Fix: do the outcome update HERE instead, inside the one call the client
+  // already awaits before doing anything else (`await fetch(...
+  // task-complete)` in app/today/page.tsx) — via the exact same
+  // recordActionOutcome() function reflexion-outcome/route.ts calls (not a
+  // second copy of the update logic), so the "re-derive and cache learned
+  // patterns" side effect stays intact too. The client no longer needs to
+  // fire reflexion-outcome itself for Today's completion flow (removed from
+  // app/today/page.tsx) — this is now the one, awaited, verified path.
+  //
+  // Mapping note: this block's `outcome` param comes from app/today/page.tsx's
+  // `Outcome` type — "completed" | "blocked" | "partial" | "learned" — never
+  // "skipped". The mapping below was previously
+  // `outcome === "blocked" ? "partial" : outcome === "skipped" ? "overridden" : "completed"`,
+  // which — since "skipped" never actually arrives from Today — silently
+  // recorded every real "partial" and "learned" outcome as "completed" in
+  // reflexion_learning_log. Replaced with the mapping app/today/page.tsx's
+  // own (now-removed) reflexion-outcome call used, which is the one that
+  // actually matches ActionOutcome's real cases.
+  const mappedOutcome: "completed" | "overridden" | "partial" =
+    outcome === "completed" ? "completed" :
+    outcome === "blocked"   ? "overridden" :
+    "partial"; // "partial" and "learned" both count as partial signal, not a full completion
+
+  async function insertFallbackLog(userId: string) {
+    // FIX: supabase-js does NOT throw on a failed insert — it resolves with
+    // `{ error }`. The previous try/catch therefore never fired, so if the
+    // row was rejected (e.g. a column that exists in code but not in the live
+    // table) the completion vanished silently and Progress stayed at 0.
+    // The result is now checked, and a minimal-column retry guarantees the
+    // completion is recorded even when optional lifecycle columns are absent.
+    const base = {
+      user_id: userId,
+      project_id: projectId || null,
+      stage: stage || ctx?.current_stage || null,
+      action_shown: taskTitle || null,
+      action_type: inferActionType(taskTitle || ""),
+      outcome: mappedOutcome,
+      outcome_recorded_at: new Date().toISOString(),
+      session_id: `task_complete:${userId}:${Date.now()}`,
+    };
+    try {
+      const { error } = await admin.from("reflexion_learning_log").insert({
+        ...base,
+        evidence_produced: outcome === "completed" ? taskTitle || null : null,
+        outcome_quality: outcome === "completed" ? "useful" : "none",
+        lifecycle_events: [{
+          type: outcome === "completed" ? "completed" : outcome === "blocked" ? "blocked" : "skipped",
+          at: new Date().toISOString(),
+          note: taskTitle || null,
+        }],
+      });
+      if (!error) return;
+      console.error("[task-complete] fallback log insert failed, retrying minimal:", error.message);
+      const retry = await admin.from("reflexion_learning_log").insert(base);
+      if (retry.error) console.error("[task-complete] minimal fallback insert failed:", retry.error.message);
+    } catch (err) {
+      console.error("[task-complete] fallback log insert threw:", err);
+    }
+  }
+
+  if (log_row_id) {
+    const updated = await recordActionOutcome({
+      logRowId: log_row_id,
+      userId: user.id,
+      outcome: mappedOutcome,
+    }).catch(() => false);
+    // The row the client referenced didn't update (wrong id, RLS mismatch,
+    // or it genuinely doesn't exist) — fall through to the same fallback
+    // insert used when there was no log_row_id at all, so the completion
+    // still gets recorded somewhere rather than silently vanishing a
+    // second way.
+    if (!updated) await insertFallbackLog(user.id);
+  } else {
+    await insertFallbackLog(user.id);
+  }
+
+  // Lazy cleanup that used to only run when reflexion-outcome was hit from
+  // the client (it no longer is, for Today's flow) — moved here so stale
+  // pending rows still age out without needing a cron.
+  markIgnoredAfter24h(user.id).catch(() => {});
+
+  // Also write to action_logs — the source crons (sunday-email, meta-critic, weekly-report) read.
+  try {
+    await admin.from("action_logs").insert({
+      user_id:   user.id,
+      project_id: projectId || null,
+      stage:     stage || ctx?.current_stage || null,
+      action_shown: taskTitle || null,
+      outcome:   outcome === "blocked" ? "partial" : outcome === "skipped" ? "overridden" : "completed",
+      created_at: new Date().toISOString(),
+    });
+  } catch {
+    // Non-fatal — backfilled from reflexion_learning_log if missing
+  }
+
+  // Preserve the recommendation identity across the Today -> Reflect handoff.
+  // This is deliberately non-blocking: task completion must remain resilient
+  // when the behavior-state cache is unavailable.
+  if (typeof recommendation_id === "string" && recommendation_id) {
+    admin.from("user_behavior_state").upsert({
+      user_id: user.id,
+      key: "today_recommendation_id",
+      value: recommendation_id,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "user_id,key" }).then(() => {}, () => {});
+  }
+
+  // Do not resolve a recommendation at check-in. A check-in confirms an
+  // attempted action, not the evidence it produced. Founder Intelligence
+  // resolution happens exactly once in reflect-action after the founder has
+  // recorded what happened and what they learned.
+
+  // ── PATCH 2: Write checkin_done_date to user_behavior_state (AWAITED) ────
+  // This was previously fire-and-forget. Awaiting it guarantees that by the time
+  // the client receives this 200 response and navigates to /reflect, any other
+  // device querying fetchBehaviorState will already see the done state in Supabase.
+  // Cross-device check-in sync depends entirely on this write completing first.
+  try {
+    await admin.from("user_behavior_state")
+      .upsert([{
+        user_id: user.id,
+        key: "checkin_done_date",
+        value: today,
+        updated_at: new Date().toISOString(),
+      }], { onConflict: "user_id,key" });
+  } catch {
+    // Non-fatal — state will re-sync on next fetchBehaviorState call
+  }
+
   return NextResponse.json({
     ok: true,
-    dryRun: isDryRun,
-    founder_memory: founderMemoryResult,
-    founder_context: founderContextResult,
+    momentum: newMomentum,
+    isFirstTask,
+    consecutiveTasksCompleted: newConsecutive,
+    tasksCompletedTotal: (ctx?.tasks_completed_total ?? 0) + 1,
+    xpEarned,
+    xp: newXP,
+    streak: newStreak,
+    lastCheckinDate: today,
+    // Surface detected pattern to the client so the today page can show it
+    pattern: activePattern ? {
+      signal: activePattern.signal,
+      message: activePattern.message,
+      severity: activePattern.severity,
+    } : null,
   });
-}
-
-// Dry run — safe to call any time, writes nothing.
-export async function GET(request: Request) {
-  return handle(request, true);
-}
-
-// Live run — writes cleaned arrays back to founder_memory.
-export async function POST(request: Request) {
-  return handle(request, false);
-}
+      }

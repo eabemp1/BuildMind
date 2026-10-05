@@ -1,20 +1,24 @@
 "use client";
+import type { EvidenceLayer } from "@/lib/breakEvidence";
+import { EvidencePanel } from "@/components/break/EvidencePanel";
+import { StressTestProgress } from "@/components/break/StressTestProgress";
 import React from "react";
 
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useActiveProjectId, useProjectsQuery } from "@/lib/queries";
 import { setActiveProjectId } from "@/lib/api";
+import { createProjectWithRoadmap } from "@/lib/buildmind";
 import { createClient } from "@/lib/supabase/client";
 import { storage } from "@/lib/storage";
 import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
-import { canAccess, incrementDailyStreak } from "@/lib/plan";
+import { canAccess } from "@/lib/plan";
 import { usePlan } from "@/lib/usePlan";
 import { useLimitModal } from "@/components/LimitModal";
 import { updateAchievementStats, checkAndUnlockAchievements } from "@/lib/achievements";
 import {
   Shield, ChevronDown, AlertTriangle, CheckCircle2,
-  RefreshCw, Save, X, Loader2,
+  RefreshCw, Save, X, Loader2, Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BuildMindCalibrating } from "@/components/BuildMindCalibrating";
@@ -22,7 +26,9 @@ import { Card } from "@/components/ui/card";
 import { Badge, BadgeVariant } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { sanitizeOutput } from "@/lib/sanitizeOutput";
+import { sanitizeOutput, sanitizeMarkdown } from "@/lib/sanitizeOutput";
+import { Markdown } from "@/components/ui/Markdown";
+import { RadialGauge, RadarChart, SeverityStack, type SeverityItem, type Severity } from "@/components/charts";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 type RiskSeverity = "Critical" | "High" | "Medium" | "Low";
@@ -32,9 +38,30 @@ interface RiskItem {
   severity: RiskSeverity;
   description: string;
   mitigation: string;
+  /** Which of the founder's SELECTED focus areas this risk actually relates
+   *  to (never an unselected one) — see lib/breakMyStartupFocusAreas.ts. */
+  relatedFocusAreas?: string[];
+}
+
+interface PivotItem {
+  title: string;
+  description: string;
+  target_niche: string;
+  why_better: string;
+  estimated_score_delta: number;
+  key_change: string;
+  relatedFocusAreas?: string[];
+}
+
+interface CompetitorRow {
+  name: string;
+  url?: string;
+  weakness: string;
+  threat_level: "low" | "medium" | "high";
 }
 
 interface BreakResult {
+  evidence?: EvidenceLayer;
   overallRisk: RiskSeverity;
   summary: string;
   risks: RiskItem[];
@@ -43,9 +70,36 @@ interface BreakResult {
   gated?: boolean;
   score_note?: string;
   agents?: Array<{ name: string; status: string; summary: string; confidence?: number }>;
+  /** Per-dimension 0-100 scores from the 5-agent pipeline's SignalSummary.
+   *  The API has always returned this on signal_summary; it just wasn't
+   *  read here before. Feeds the radar chart. */
+  signalBreakdown?: Array<{ key: string; label: string; value: number; tip?: string }>;
   isSynthetic?: boolean; // D2: true when all agents fell back to hardcoded defaults
   focusAreas?: string[];
   executionPlan?: { mvp_roadmap?: string[]; first_10_actions?: string[]; gtm_plan?: string[] } | null;
+  /** Pivot Engine output (lib/agents generatePivots). The backend has always
+   *  computed this — it's the system's actual "you might be going in the
+   *  wrong direction" signal — but it was dropped before reaching the UI.
+   *  Now surfaced as its own card. */
+  pivots?: PivotItem[];
+  /** Real per-competitor breakdown from the Competitor agent
+   *  (agent_outputs.competitor.direct_competitors) — computed on every run,
+   *  but only ever reduced to a generic paragraph (competitor_summary)
+   *  before reaching this page. Feeds the Competitive Landscape table. */
+  competitorTable?: CompetitorRow[];
+  /** Real opportunities the pipeline found (signals.all_opportunities on the
+   *  backend), returned as survive_reasons on every response but never read
+   *  here before. Feeds "What Could Still Work". */
+  surviveReasons?: string[];
+  /** Index-aligned with surviveReasons — which selected focus areas each one relates to. */
+  surviveReasonTags?: string[][];
+  /** Which selected focus areas were actually addressed anywhere in the
+   *  result vs. which ones nothing came back on — null when none selected. */
+  focusAreaCoverage?: FocusAreaCoverage | null;
+  /** Raw (non-inverted) 0-100 scores for the five stress-test dimensions —
+   *  same signal_summary the radar chart uses, kept un-inverted here so the
+   *  tiles read the same numbers a founder would recognize from the model. */
+  signalScores?: { demand: number; competition: number; timing: number; uniqueness: number; risk: number };
   reflexionAction?: {
     action?: string;
     rationale?: string;
@@ -56,22 +110,41 @@ interface BreakResult {
   } | null;
 }
 
+/** Selected focus areas that touched an item, index-aligned with the parent
+ *  list. See lib/breakMyStartupFocusAreas.ts — only ever contains names
+ *  from what the founder actually selected. */
+type FocusAreaCoverage = { selected: string[]; addressed: string[]; unaddressed: string[] };
+
 type BreakApiData = {
   verdict?: string;
   kill_reasons?: string[];
+  kill_reason_tags?: string[][];
   survive_reasons?: string[];
+  survive_reason_tags?: string[][];
   brutal_advice?: string;
   survival_probability?: number;
+  evidence_layer?: EvidenceLayer;
   competitor_summary?: string;
   differentiation_plan?: string[];
+  differentiation_plan_tags?: string[][];
+  pivot_focus_tags?: string[][];
+  focus_area_coverage?: FocusAreaCoverage | null;
   gated?: boolean;
   reasoning?: string[];
   agent_outputs?: Record<string, Record<string, unknown> | null>;
   agent_statuses?: Record<string, string>;
-  signal_summary?: { overall_confidence?: number };
+  signal_summary?: {
+    overall_confidence?: number;
+    demand_score?: number;
+    competition_score?: number;
+    timing_score?: number;
+    uniqueness_score?: number;
+    risk_score?: number;
+  };
   execution_plan?: BreakResult["executionPlan"];
   reflexion_action?: BreakResult["reflexionAction"];
   focus_areas?: string[];
+  pivots?: PivotItem[];
 };
 
 const FOCUS_AREAS = [
@@ -84,6 +157,30 @@ const FOCUS_AREAS = [
   "Regulatory Risk",
 ] as const;
 type FocusArea = (typeof FOCUS_AREAS)[number];
+
+/** Small pill row showing which of the founder's selected focus areas an
+ *  item relates to (lib/breakMyStartupFocusAreas.ts tags it server-side) —
+ *  the visible proof that picking a chip actually shaped the result. */
+function FocusAreaTags({ areas }: { areas?: string[] }) {
+  if (!areas || areas.length === 0) return null;
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 8 }}>
+      {areas.map((area) => (
+        <span
+          key={area}
+          style={{
+            fontSize: 9.5, fontWeight: 600, color: "var(--bm-intel)",
+            background: "var(--bm-intel-dim, rgba(93,169,224,0.1))",
+            border: "1px solid var(--bm-intel-bd, rgba(93,169,224,0.25))",
+            borderRadius: 999, padding: "2px 8px",
+          }}
+        >
+          {area}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 function severityVariant(s: RiskSeverity): BadgeVariant {
   if (s === "Critical") return "danger";
@@ -104,6 +201,21 @@ function cleanAIText(value = ""): string {
     .replace(/<think>[\s\S]*?<\/think>/gi, "")
     .replace(/<think>[\s\S]*$/gi, "")
     .replace(/^[\s\S]*<\/think>/gi, "")
+    // FIX: this function stripped think-tags, arrows, dashes, curly quotes,
+    // and ellipsis, but never touched markdown syntax. This page renders
+    // every AI string as plain JSX text — no ReactMarkdown, no
+    // dangerouslySetInnerHTML anywhere in this file (confirmed via grep) —
+    // so any markdown the model outputs shows up as literal characters
+    // instead of being interpreted. Bold/italic stripped BEFORE the single-
+    // asterisk/underscore pass, or **text** would only half-match.
+    .replace(/\*\*\*([^*]+)\*\*\*/g, "$1")   // ***bold italic***
+    .replace(/\*\*([^*]+)\*\*/g, "$1")       // **bold**
+    .replace(/__([^_]+)__/g, "$1")           // __bold__
+    .replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, "$1") // *italic* (not part of **)
+    .replace(/(?<!_)_([^_\n]+)_(?!_)/g, "$1")     // _italic_
+    .replace(/`{1,3}([^`]+)`{1,3}/g, "$1")   // `code` / ```code```
+    .replace(/^#{1,6}\s+/gm, "")             // # Heading markers
+    .replace(/^[-*+]\s+/gm, "")              // markdown bullet markers
     .replace(/[•→⇒➜➔]/g, "-")
     .replace(/[—–]/g, "-")
     .replace(/[“”]/g, '"')
@@ -115,41 +227,6 @@ function cleanAIText(value = ""): string {
 
 function cleanAIList(items?: string[]): string[] {
   return (items ?? []).map(cleanAIText).filter(Boolean);
-}
-
-// ── Survival ring ─────────────────────────────────────────────────────────────
-function SurvivalRing({ value, size = 110 }: { value: number; size?: number }) {
-  const stroke = 8;
-  const r = (size - stroke) / 2;
-  const circ = 2 * Math.PI * r;
-  const color = value >= 60 ? "var(--bm-green)" : value >= 40 ? "var(--bm-amber)" : "var(--bm-red)";
-  return (
-    <div style={{ position: "relative", width: size, height: size, flexShrink: 0 }}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform: "rotate(-90deg)" }}>
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--bm-border)" strokeWidth={stroke} />
-        <motion.circle
-          cx={size / 2} cy={size / 2} r={r}
-          fill="none" stroke={color} strokeWidth={stroke}
-          strokeLinecap="round" strokeDasharray={circ}
-          initial={{ strokeDashoffset: circ }}
-          animate={{ strokeDashoffset: circ - (value / 100) * circ }}
-          transition={{ duration: 1.4, ease: "easeOut", delay: 0.3 }}
-          style={{ filter: `drop-shadow(0 0 5px ${color}55)` }}
-        />
-      </svg>
-      <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-        <motion.span
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 1.0 }}
-          style={{ fontSize: 22, fontWeight: 800, color, letterSpacing: "-0.03em", lineHeight: 1 }}
-        >
-          {value}%
-        </motion.span>
-        <span style={{ fontSize: 9, color: "var(--bm-text4)", marginTop: 2 }}>survive</span>
-      </div>
-    </div>
-  );
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
@@ -183,6 +260,7 @@ export default function BreakMyStartupPage() {
 
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [customIdea, setCustomIdea] = useState("");
+  const [knownCompetitors, setKnownCompetitors] = useState("");
   const [focusAreas, setFocusAreas] = useState<FocusArea[]>([]);
   const [executionMode, setExecutionMode] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -194,15 +272,46 @@ export default function BreakMyStartupPage() {
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [outcomeSaving, setOutcomeSaving] = useState<string | null>(null);
+  // ISSUE-4 FIX: distinguishes "founder deliberately picked an existing
+  // project from the dropdown" from "a project got auto-selected because it
+  // happened to be active elsewhere in the app". Only the former should let
+  // results be saved onto that project — otherwise a genuinely new/custom
+  // idea silently gets attached to whatever project the founder was last
+  // viewing, instead of being offered as its own new project.
+  const [projectExplicitlySelected, setProjectExplicitlySelected] = useState(false);
+  const [addingProject, setAddingProject] = useState(false);
+  const [addedProjectId, setAddedProjectId] = useState<string | null>(null);
+  const [addProjectError, setAddProjectError] = useState<string | null>(null);
 
   // Pre-fill idea from selected project
   const selectedProject = projects.find((p) => p.id === selectedProjectId);
 
+  // FIX: this effect used to list `selectedProjectId` in its own dependency
+  // array with a guard of `!selectedProjectId` — meaning every time the
+  // founder cleared it (by choosing "Use custom idea instead"), the effect
+  // re-fired and immediately set it right back to activeProjectId. That's
+  // the exact bug: selecting custom idea appeared to instantly snap back to
+  // the active project. This should only auto-select the active project
+  // ONCE, on initial load — not re-assert itself every time it's cleared.
+  const didAutoSelectProject = useRef(false);
   useEffect(() => {
-    if (!activeProjectId || selectedProjectId) return;
-    if (projects.some((p) => p.id === activeProjectId)) setSelectedProjectId(activeProjectId);
-  }, [activeProjectId, projects, selectedProjectId]);
+    if (didAutoSelectProject.current) return;
+    if (!activeProjectId) return;
+    if (projects.some((p) => p.id === activeProjectId)) {
+      setSelectedProjectId(activeProjectId);
+      didAutoSelectProject.current = true;
+    }
+  }, [activeProjectId, projects]);
 
+  // ISSUE-4 FIX: remember exactly what text we auto-filled from the project,
+  // so handleRunTest can tell "founder is still testing the pre-loaded
+  // project as-is" apart from "founder edited this into a different idea".
+  // That distinction matters because the backend, when given a projectId,
+  // ignores the typed idea entirely and re-reads the project's own stored
+  // description — so a diverged custom idea must NOT be sent with a
+  // projectId, or it silently gets swapped out for "the existing project"
+  // again, discarding what the founder actually wrote.
+  const autofilledIdeaRef = useRef<string>("");
   useEffect(() => {
     if (!selectedProjectId) return;
     if (!selectedProject) return;
@@ -212,12 +321,25 @@ export default function BreakMyStartupPage() {
       selectedProject.problem,
       selectedProject.target_users ? `Target users: ${selectedProject.target_users}` : "",
     ].filter(Boolean).join("\n\n");
+    autofilledIdeaRef.current = projectIdea;
     setCustomIdea(projectIdea);
   }, [selectedProjectId, selectedProject]);
 
   function mapApiResult(data: BreakApiData): BreakResult {
     const probability = typeof data.survival_probability === "number" ? data.survival_probability : undefined;
-    const killReasons = cleanAIList(data.kill_reasons);
+    // cleanAIList can drop an item entirely (.filter(Boolean), when an item
+    // is nothing but a stripped think-tag/markdown artifact) — pairing text
+    // with its tag BEFORE that filter, not after, so kill_reason_tags[i]
+    // can't end up describing the wrong reason once indices shift.
+    function cleanWithTags(items: string[] | undefined, tags: string[][] | undefined): { texts: string[]; tags: string[][] } {
+      const paired = (items ?? [])
+        .map((item, i) => ({ text: cleanAIText(item), tags: tags?.[i] ?? [] }))
+        .filter((x) => Boolean(x.text));
+      return { texts: paired.map((x) => x.text), tags: paired.map((x) => x.tags) };
+    }
+    const killPaired = cleanWithTags(data.kill_reasons, data.kill_reason_tags);
+    const killReasons = killPaired.texts;
+    const survivePaired = cleanWithTags(data.survive_reasons, data.survive_reason_tags);
     const differentiationPlan = cleanAIList(data.differentiation_plan);
     const brutalAdvice = cleanAIText(data.brutal_advice);
     const overallRisk: RiskSeverity =
@@ -226,11 +348,68 @@ export default function BreakMyStartupPage() {
       probability < 50 ? "High" :
       probability < 75 ? "Medium" : "Low";
 
+    // FIX (previous pass): this used to be `differentiationPlan[index] ?? brutalAdvice ?? ...`,
+    // which discarded the Risk agent's own per-risk `mitigation` field and
+    // substituted the Competitor agent's positioning suggestions instead.
+    // That pass reads `riskAgentOutput.top_risks[index].mitigation` first —
+    // correct when the Risk agent returns per-risk mitigations. But it left
+    // a real duplication path open: whenever the Risk agent's mitigation for
+    // a given index is missing/empty (fallback, timeout, or a short/invalid
+    // model response), it falls through to `differentiationPlan[index]`,
+    // and the Competitive Landscape card below independently falls through
+    // to `differentiationPlan[0]` — the SAME index every time. If Market
+    // Risk (index 0) also had to fall back, both cards render the exact
+    // same string, verbatim. That's the bug the founder is seeing in
+    // production (Market Risk and Competitive Landscape showing identical
+    // mitigation text). Confirmed by reading this file: nothing tracked
+    // which differentiationPlan entries were already used.
+    //
+    // Fix: track used differentiation-plan indices across ALL risk cards
+    // (including the appended Competitive Landscape one) so no two cards
+    // can ever render the same fallback text. If every differentiation
+    // entry is exhausted, fall back to a distinct final-resort line instead
+    // of repeating brutalAdvice/differentiationPlan[0] again.
+    const riskAgentOutput = data.agent_outputs?.risk as
+      | { top_risks?: Array<{ mitigation?: string }> }
+      | undefined;
+
+    // Real per-competitor data the Competitor agent already computes on
+    // every run — confirmed via grep that it reaches agent_outputs.competitor
+    // but nothing before this read direct_competitors back out; only the
+    // generic competitor_summary paragraph was ever shown.
+    const competitorAgentOutput = data.agent_outputs?.competitor as
+      | { direct_competitors?: Array<{ name?: string; url?: string; weakness?: string; threat_level?: string }> }
+      | undefined;
+    const competitorTable: CompetitorRow[] | undefined = competitorAgentOutput?.direct_competitors?.length
+      ? competitorAgentOutput.direct_competitors.slice(0, 5).map((c) => ({
+          name: cleanAIText(c.name) || "Unnamed competitor",
+          url: c.url,
+          weakness: cleanAIText(c.weakness) || "No specific gap identified yet.",
+          threat_level: (c.threat_level === "high" || c.threat_level === "low") ? c.threat_level : "medium",
+        }))
+      : undefined;
+
+    const usedDiffIndices = new Set<number>();
+    function nextDifferentiationEntry(): string | undefined {
+      for (let i = 0; i < differentiationPlan.length; i++) {
+        if (!usedDiffIndices.has(i)) {
+          usedDiffIndices.add(i);
+          return differentiationPlan[i];
+        }
+      }
+      return undefined;
+    }
+
     const risks: RiskItem[] = (killReasons.length ? killReasons : ["Execution risk not enough data yet"]).map((reason, index) => ({
       category: ["Market Risk", "Execution Risk", "Moat Risk", "Revenue Risk"][index] ?? "Startup Risk",
       severity: index === 0 ? overallRisk : overallRisk === "Critical" ? "High" : overallRisk,
       description: reason,
-      mitigation: differentiationPlan[index] ?? brutalAdvice ?? "Talk to 5 target users and validate the riskiest assumption before building more.",
+      mitigation:
+        cleanAIText(riskAgentOutput?.top_risks?.[index]?.mitigation) ||
+        nextDifferentiationEntry() ||
+        brutalAdvice ||
+        "Talk to 5 target users and validate the riskiest assumption before building more.",
+      relatedFocusAreas: killPaired.tags[index]?.length ? killPaired.tags[index] : undefined,
     }));
 
     if (data.competitor_summary) {
@@ -238,7 +417,9 @@ export default function BreakMyStartupPage() {
         category: "Competitive Landscape",
         severity: "Medium",
         description: cleanAIText(data.competitor_summary),
-        mitigation: differentiationPlan[0] ?? "Pick one underserved niche and position around that pain instead of competing broadly.",
+        mitigation:
+          nextDifferentiationEntry() ??
+          "Pick one underserved niche and position around that pain instead of competing broadly.",
       });
     }
 
@@ -252,22 +433,48 @@ export default function BreakMyStartupPage() {
       allStatuses.every((s) => s === "fallback");
 
     const agents = Object.entries(data.agent_outputs ?? {}).map(([name, output]) => {
-      const text = output
-        ? Object.values(output)
-            .flat()
-            .filter((value) => typeof value === "string")
-            .slice(0, 2)
-            .join(" ")
-        : "";
+      const reasoning =
+        output && typeof (output as Record<string, unknown>).reasoning === "string"
+          ? ((output as Record<string, unknown>).reasoning as string)
+          : "";
       return {
         name: name[0].toUpperCase() + name.slice(1),
         status: data.agent_statuses?.[name] ?? "complete",
-        summary: cleanAIText(text) || "Agent completed with structured analysis.",
+        summary: cleanAIText(reasoning) || "Agent completed with structured analysis.",
         confidence: data.signal_summary?.overall_confidence,
       };
     });
 
+    const ss = data.signal_summary;
+    const signalBreakdown =
+      ss && [ss.demand_score, ss.competition_score, ss.timing_score, ss.uniqueness_score, ss.risk_score].some(
+        (v) => typeof v === "number"
+      )
+        ? [
+            { key: "demand", label: "Demand", value: ss.demand_score ?? 0, tip: "How much real demand signal was found" },
+            { key: "competition", label: "Market Space", value: 100 - (ss.competition_score ?? 100), tip: "Inverted competition score — higher means less crowded" },
+            { key: "timing", label: "Timing", value: ss.timing_score ?? 0, tip: "How favorable current market timing looks" },
+            { key: "uniqueness", label: "Uniqueness", value: ss.uniqueness_score ?? 0, tip: "Differentiation vs. what's already out there" },
+            { key: "risk", label: "Safety", value: 100 - (ss.risk_score ?? 100), tip: "Inverted risk score — higher means lower execution risk" },
+          ]
+        : undefined;
+    // Un-inverted counterpart of the above, for the at-a-glance score tiles —
+    // same source numbers, just literal (Competition/Risk read as-is, not
+    // flipped for the "more filled = better" radar convention).
+    const signalScores = ss && [ss.demand_score, ss.competition_score, ss.timing_score, ss.uniqueness_score, ss.risk_score].some(
+      (v) => typeof v === "number"
+    )
+      ? {
+          demand: Math.round(ss.demand_score ?? 0),
+          competition: Math.round(ss.competition_score ?? 0),
+          timing: Math.round(ss.timing_score ?? 0),
+          uniqueness: Math.round(ss.uniqueness_score ?? 0),
+          risk: Math.round(ss.risk_score ?? 0),
+        }
+      : undefined;
+
     return {
+      evidence: data.evidence_layer,
       overallRisk,
       summary: cleanAIText(data.verdict) || "Stress test complete. Review the risks before deciding what to build next.",
       risks,
@@ -280,8 +487,25 @@ export default function BreakMyStartupPage() {
             /focus areas|5-agent|viability score|competitor/i.test(item)
           ).join(" | ") || "Calculated from execution data, validation signals, stage, and competitor context.",
       agents,
+      signalBreakdown,
+      signalScores,
+      competitorTable,
+      surviveReasons: survivePaired.texts,
+      surviveReasonTags: survivePaired.tags,
+      focusAreaCoverage: data.focus_area_coverage ?? null,
       isSynthetic,
       focusAreas: cleanAIList(data.focus_areas),
+      pivots: Array.isArray(data.pivots)
+        ? data.pivots.slice(0, 3).map((p, i) => ({
+            title: cleanAIText(p.title),
+            description: cleanAIText(p.description),
+            target_niche: cleanAIText(p.target_niche),
+            why_better: cleanAIText(p.why_better),
+            estimated_score_delta: typeof p.estimated_score_delta === "number" ? p.estimated_score_delta : 0,
+            key_change: cleanAIText(p.key_change),
+            relatedFocusAreas: data.pivot_focus_tags?.[i]?.length ? data.pivot_focus_tags[i] : undefined,
+          }))
+        : undefined,
       executionPlan: data.execution_plan
         ? {
             mvp_roadmap: cleanAIList(data.execution_plan.mvp_roadmap),
@@ -314,6 +538,21 @@ export default function BreakMyStartupPage() {
       return;
     }
 
+    // ISSUE-4 FIX: the backend, when given a projectId, ignores the `idea`
+    // field entirely and re-reads the project's own stored description —
+    // see app/api/ai/break-my-startup/route.ts's "if (!projectId)" branch.
+    // So if the founder edited the textarea into something that no longer
+    // matches what we auto-filled from the selected project, sending
+    // projectId would silently discard their edit and re-run the OLD
+    // project data instead. Only attach projectId when either the founder
+    // explicitly chose that project, or the text still matches what was
+    // pre-filled (i.e. they haven't diverged from it).
+    const ideaMatchesAutofill = customIdea.trim() === autofilledIdeaRef.current.trim();
+    const runProjectId =
+      selectedProjectId && (projectExplicitlySelected || ideaMatchesAutofill)
+        ? selectedProjectId
+        : undefined;
+
     // G4 FIX: Cancel any in-flight request before starting a new one.
     // This prevents a network-retry from running two full 5-agent pipelines
     // simultaneously and double-charging the AI usage counter.
@@ -327,6 +566,8 @@ export default function BreakMyStartupPage() {
     setResult(null);
     setError(null);
     setSaved(false);
+    setAddedProjectId(null);
+    setAddProjectError(null);
 
     try {
       const supabase = createClient();
@@ -347,10 +588,15 @@ export default function BreakMyStartupPage() {
         signal: abortController.signal, // G4 FIX: abort if a newer request starts
         body: JSON.stringify({
           userId: authData.user.id,
-          projectId: selectedProjectId || undefined,
+          projectId: runProjectId,
           idea,
           focusAreas,
           executionMode,
+          knownCompetitors: knownCompetitors
+            .split(",")
+            .map((c) => c.trim())
+            .filter(Boolean)
+            .slice(0, 8),
         }),
       });
 
@@ -365,13 +611,6 @@ export default function BreakMyStartupPage() {
       try {
         updateAchievementStats({ breakMyStartupUsed: true });
         await checkAndUnlockAchievements();
-        // Break My Startup counts as a streak-qualifying activity — increment once per day
-        const todayKey = new Date().toISOString().split("T")[0];
-        if (storage.get("bm_break_streak_date") !== todayKey) {
-          incrementDailyStreak();
-          storage.set("bm_break_streak_date", todayKey);
-          persistBehaviorState({ break_streak_date: todayKey });
-        }
       } catch {}
     } catch {
       setError("Something went wrong running the stress test. Please try again.");
@@ -406,11 +645,74 @@ export default function BreakMyStartupPage() {
     }
   }
 
+  // ISSUE-4 FIX: When the founder ran the stress test on a custom idea
+  // (no project explicitly selected — see projectExplicitlySelected above),
+  // give them a real path to turn that idea into a new project instead of
+  // it having nowhere to go, or silently landing on whatever project
+  // happened to be auto-selected. Reuses the same project-creation flow as
+  // onboarding (createProjectWithRoadmap), then attaches this stress test
+  // as the project's first note so nothing from the run is lost.
+  async function handleAddAsProject() {
+    if (!result || !customIdea.trim()) return;
+    setAddingProject(true);
+    setAddProjectError(null);
+    try {
+      const firstLine = customIdea.trim().split("\n")[0] ?? customIdea.trim();
+      const projectName = firstLine.slice(0, 60).replace(/[.!?]+$/, "").trim() || "Untitled idea";
+
+      const created = await createProjectWithRoadmap({
+        project_name: projectName,
+        idea_description: customIdea.trim(),
+        target_users: selectedProject?.target_users ?? "Not specified yet",
+        problem: selectedProject?.problem || result.risks[0]?.description || customIdea.trim(),
+      });
+
+      const newProjectId = (created as { id?: string } | null)?.id;
+      if (newProjectId) {
+        await fetch("/api/ventures/notes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            projectId: newProjectId,
+            type: "stress_test",
+            content: JSON.stringify(result),
+          }),
+        }).catch(() => {});
+        setAddedProjectId(newProjectId);
+        setActiveProjectId(newProjectId);
+      }
+    } catch {
+      setAddProjectError("Couldn't create the project. Please try again.");
+    } finally {
+      setAddingProject(false);
+    }
+  }
+
   function handleReset() {
     setResult(null);
     setError(null);
     setSaved(false);
     setCustomIdea("");
+    setProjectExplicitlySelected(false);
+    setAddedProjectId(null);
+    setAddProjectError(null);
+  }
+
+  // "Explore Pivot" — takes the founder from a pivot suggestion straight
+  // into a fresh stress test on that pivot, instead of leaving it as a
+  // dead-end card. Composes the re-run idea from the pivot's own real
+  // fields (title/description/target_niche/key_change) rather than any
+  // separately generated copy.
+  function handleExplorePivot(pivot: PivotItem) {
+    setResult(null);
+    setError(null);
+    setSaved(false);
+    setSelectedProjectId("");
+    setProjectExplicitlySelected(false);
+    setCustomIdea(
+      `${pivot.title}: ${pivot.description}\n\nTarget users: ${pivot.target_niche}\nKey change from current approach: ${pivot.key_change}`
+    );
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   async function handleOutcome(outcome: "completed" | "partial" | "overridden") {
@@ -429,7 +731,7 @@ export default function BreakMyStartupPage() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 flex flex-col gap-8">
+    <div className="mx-auto flex w-full max-w-[820px] flex-col gap-6 px-0 py-5 sm:px-6 sm:py-8">
 
       {/* Header */}
       <motion.div
@@ -438,10 +740,11 @@ export default function BreakMyStartupPage() {
         transition={{ duration: 0.2 }}
       >
         <PageHeader
+          eyebrow="Adversarial review"
           title="Break My Startup"
-          subtitle="Run a brutal, honest stress-test on your current project or any idea. No sugarcoating. The goal is to make you stronger, not scare you."
+          subtitle="Find what breaks first before you invest more time. The useful answer is the uncomfortable one."
           action={
-            <span className="inline-flex h-9 items-center gap-2 rounded-[var(--r-xl)] border border-[var(--bm-border)] bg-[var(--bm-bg2)] px-3 text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--bm-red)]">
+            <span className="inline-flex h-8 items-center gap-2 rounded-[var(--r-sm)] border border-[var(--bm-red-bd)] bg-[var(--bm-red-dim)] px-3 font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--bm-red)]">
               <Shield size={15} />
               Stress test
             </span>
@@ -461,7 +764,7 @@ export default function BreakMyStartupPage() {
           >
             {/* Project selector */}
             {!projectsLoading && projects.length > 0 && (
-              <Card className="p-4 flex flex-col gap-3">
+              <Card variant="data" className="flex flex-col gap-3 p-4">
                 <label className="text-xs font-medium text-[var(--bm-text2)] uppercase tracking-widest">
                   Select a Project (optional)
                 </label>
@@ -470,10 +773,21 @@ export default function BreakMyStartupPage() {
                     value={selectedProjectId}
                     onChange={(e) => {
                       setSelectedProjectId(e.target.value);
+                      // Deliberate dropdown interaction — whatever the founder
+                      // picks (a project, or "— Use custom idea instead —")
+                      // now reflects real intent, not an auto-selection.
+                      setProjectExplicitlySelected(Boolean(e.target.value));
                       if (e.target.value) setActiveProjectId(e.target.value);
-                      if (!e.target.value) setCustomIdea("");
+                      // FIX: this used to also call setCustomIdea("") whenever
+                      // the dropdown was set back to "— Use custom idea
+                      // instead —", unconditionally wiping whatever the
+                      // founder had typed in the textarea below — the exact
+                      // reason "custom idea" looked broken: switching the
+                      // dropdown at all could erase your own text before you
+                      // ever hit submit. Never force-clear text the founder
+                      // typed themselves.
                     }}
-                    className="w-full h-10 rounded-lg pl-3 pr-8 text-sm outline-none appearance-none cursor-pointer"
+                    className="h-10 w-full cursor-pointer appearance-none rounded-[var(--r-sm)] pl-3 pr-8 text-sm outline-none"
                     style={{
                       background: "var(--bm-bg3)",
                       border: "1px solid var(--bm-border2)",
@@ -512,6 +826,19 @@ export default function BreakMyStartupPage() {
               rows={6}
             />
 
+            {/* Known competitors — grounds the Competitor agent's search in
+                real, named tools you already know about, instead of leaving
+                it entirely to generic keyword search results. */}
+            <Textarea
+              label="Known competitors (optional)"
+              helperText="Name any tools you already know compete with you, comma-separated (e.g. validator.ai, Notion AI). We'll look these up directly alongside the general market search."
+              placeholder="validator.ai, Notion AI, ..."
+              value={knownCompetitors}
+              onChange={(e) => setKnownCompetitors(e.target.value)}
+              rows={1}
+            />
+
+
             {/* Focus areas */}
             <div className="flex flex-col gap-2">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -521,11 +848,11 @@ export default function BreakMyStartupPage() {
                 <button
                   type="button"
                   onClick={() => setExecutionMode((value) => !value)}
-                  className="w-full rounded-lg px-3 py-1.5 text-xs font-semibold sm:w-auto"
+                      className="w-full rounded-[var(--r-sm)] px-3 py-1.5 text-xs font-semibold sm:w-auto"
                   style={{
                     border: "1px solid var(--bm-border)",
                     background: executionMode ? "rgba(92,200,138,0.12)" : "var(--bm-bg3)",
-                    color: executionMode ? "var(--bm-accent)" : "var(--bm-text3)",
+                    color: executionMode ? "var(--bm-green)" : "var(--bm-text3)",
                   }}
                 >
                   Focus Mode {executionMode ? "On" : "Off"}
@@ -538,11 +865,11 @@ export default function BreakMyStartupPage() {
                     <button
                       key={area}
                       onClick={() => toggleFocus(area)}
-                      className="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-150"
+                      className="rounded-[var(--r-sm)] border px-3 py-1.5 text-xs font-medium transition-all duration-150"
                       style={{
                         background: active ? "rgba(92,200,138,0.10)" : "var(--bm-bg3)",
-                        borderColor: active ? "var(--bm-accent-bd)" : "var(--bm-border)",
-                        color: active ? "var(--bm-accent)" : "var(--bm-text3)",
+                        borderColor: active ? "var(--bm-green-bd)" : "var(--bm-border)",
+                        color: active ? "var(--bm-green)" : "var(--bm-text3)",
                       }}
                     >
                       {area}
@@ -572,22 +899,8 @@ export default function BreakMyStartupPage() {
               </motion.div>
             )}
 
-            {/* Loading skeleton */}
-            {loading && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col gap-3">
-                {[1, 2, 3].map((i) => (
-                  <div
-                    key={i}
-                    className="rounded-[var(--r-xl)] p-5 border border-[var(--bm-border)] bg-[var(--bm-bg2)] animate-pulse flex flex-col gap-2"
-                  >
-                    <div className="h-4 w-36 rounded-full bg-[var(--bm-bg3)]" />
-                    <div className="h-3 w-full rounded-full bg-[var(--bm-bg3)] opacity-70" />
-                    <div className="h-3 w-5/6 rounded-full bg-[var(--bm-bg3)] opacity-50" />
-                    <div className="h-3 w-2/3 rounded-full bg-[var(--bm-bg3)] opacity-40" />
-                  </div>
-                ))}
-              </motion.div>
-            )}
+            {/* Progress while the pipeline runs */}
+            {loading && <StressTestProgress idea={customIdea || (projects.find((p) => p.id === selectedProjectId)?.title ?? "")} />}
 
             {!loading && (
               <Button
@@ -611,7 +924,7 @@ export default function BreakMyStartupPage() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.35 }}
-            className="flex flex-col gap-5"
+                className="flex flex-col gap-4"
           >
             {/* Overall verdict — visceral, full-width */}
             <motion.div
@@ -619,20 +932,29 @@ export default function BreakMyStartupPage() {
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.4 }}
               style={{
-                borderRadius: "var(--r-xl)",
+                borderRadius: "var(--r-lg)",
                 padding: "clamp(16px, 4vw, 24px)",
                 background: "var(--bm-bg2)",
                 border: `1px solid ${overallColor(result.overallRisk)}40`,
-                boxShadow: `0 0 32px ${overallColor(result.overallRisk)}18`,
+                boxShadow: "none",
               }}
             >
               <div style={{ display: "flex", alignItems: "flex-start", gap: 20, flexWrap: "wrap" }}>
                 {result.survival_probability !== undefined && (
-                  <SurvivalRing value={result.survival_probability} />
+                  <RadialGauge
+                    value={result.survival_probability}
+                    size={110}
+                    label="survive"
+                    thresholds={[
+                      { min: 60, color: "var(--bm-green)" },
+                      { min: 40, color: "var(--bm-amber)" },
+                      { min: 0, color: "var(--bm-red)" },
+                    ]}
+                  />
                 )}
                 <div style={{ flex: "1 1 220px", minWidth: 0 }}>
-                  <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: "var(--bm-text3)", letterSpacing: "0.07em", marginBottom: 10 }}>
-                    Survival score · Moat strength · Market timing
+                    <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: "var(--bm-text3)", letterSpacing: "0.07em", marginBottom: 10, textTransform: "uppercase" }}>
+                    Stress-test verdict
                   </div>
                   <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: "var(--bm-text4)", letterSpacing: "0.06em", marginBottom: 12 }}>
                     The uncomfortable ones are the useful ones.
@@ -649,9 +971,9 @@ export default function BreakMyStartupPage() {
                     </Badge>
                   </div>
                   {result.summary && (
-                    <p style={{ fontSize: 15, fontWeight: 600, color: "var(--bm-text)", lineHeight: 1.55, marginBottom: 0 }}>
-                      {sanitizeOutput(result.summary)}
-                    </p>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: "var(--bm-text)", lineHeight: 1.55, marginBottom: 0 }}>
+                      <Markdown textSize={15}>{sanitizeMarkdown(result.summary)}</Markdown>
+                    </div>
                   )}
                   {result.score_note && (
                     <p style={{ fontSize: 12, color: "var(--bm-text3)", marginTop: 6, lineHeight: 1.5 }}>
@@ -676,6 +998,39 @@ export default function BreakMyStartupPage() {
               </div>
             </motion.div>
 
+            {result.evidence && <EvidencePanel layer={result.evidence} />}
+
+            {/* At-a-glance score tiles — same signal_summary numbers behind
+                the radar chart further down, shown literally (not inverted)
+                the way the model actually scored each dimension. */}
+            {result.signalScores && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1 }}
+                className="grid grid-cols-2 gap-2.5 sm:grid-cols-5"
+              >
+                {([
+                  ["Demand", result.signalScores.demand, "var(--bm-intel)"],
+                  ["Competition", result.signalScores.competition, "var(--bm-red)"],
+                  ["Timing", result.signalScores.timing, "var(--bm-green)"],
+                  ["Uniqueness", result.signalScores.uniqueness, "var(--bm-amber)"],
+                  ["Risk", result.signalScores.risk, "var(--bm-red)"],
+                ] as const).map(([label, value, color]) => (
+                  <Card key={label} variant="data" className="p-3">
+                    <div className="font-mono text-[9px] uppercase tracking-[0.06em] text-[var(--bm-text4)]">{label}</div>
+                    <div className="mt-1 flex items-baseline gap-1">
+                      <span className="text-xl font-bold text-[var(--bm-text)]">{value}</span>
+                      <span className="text-[10px] text-[var(--bm-text4)]">/100</span>
+                    </div>
+                    <div className="mt-2 h-1 overflow-hidden rounded-full bg-[var(--bm-bg3)]">
+                      <div className="h-full rounded-full" style={{ width: `${Math.min(100, Math.max(0, value))}%`, background: color }} />
+                    </div>
+                  </Card>
+                ))}
+              </motion.div>
+            )}
+
             {/* Brutal advice — high contrast */}
             {result.brutal_advice && (
               <motion.div
@@ -687,7 +1042,6 @@ export default function BreakMyStartupPage() {
                   padding: "16px 18px",
                   background: "rgba(232,160,32,0.06)",
                   border: "1px solid rgba(232,160,32,0.3)",
-                  borderLeft: "3px solid var(--bm-amber)",
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
@@ -699,9 +1053,9 @@ export default function BreakMyStartupPage() {
                     Brutal advice
                   </span>
                 </div>
-                <p style={{ fontSize: 14, color: "var(--bm-text)", lineHeight: 1.6, fontWeight: 500, margin: 0 }}>
-                  {sanitizeOutput(result.brutal_advice)}
-                </p>
+                <div style={{ fontSize: 14, color: "var(--bm-text)", lineHeight: 1.6, fontWeight: 500 }}>
+                  <Markdown textSize={14}>{sanitizeMarkdown(result.brutal_advice)}</Markdown>
+                </div>
               </motion.div>
             )}
 
@@ -731,8 +1085,8 @@ export default function BreakMyStartupPage() {
 
             {/* Risk breakdown cards */}
             {result.agents && result.agents.length > 0 && (
-              <Card className="p-4 flex flex-col gap-3">
-                <h3 className="text-sm font-semibold text-[var(--bm-text)]">Five-Agent Analysis</h3>
+            <Card variant="data" className="flex flex-col gap-3 p-4">
+                <h3 className="font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--bm-text3)]">Analysis lenses</h3>
                 <div className="grid gap-2 sm:grid-cols-2">
                   {result.agents.map((agent) => (
                     <div key={agent.name} className="rounded-lg p-3" style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)" }}>
@@ -740,16 +1094,23 @@ export default function BreakMyStartupPage() {
                         <span className="text-xs font-semibold text-[var(--bm-text)]">{agent.name}</span>
                         <span className="text-[10px] uppercase tracking-widest text-[var(--bm-text4)]">{agent.status}</span>
                       </div>
-                      <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-[var(--bm-text3)]">{sanitizeOutput(agent.summary)}</p>
+                      <div className="mt-1">
+                        <Markdown textSize={12}>{sanitizeMarkdown(agent.summary)}</Markdown>
+                      </div>
                     </div>
                   ))}
                 </div>
+                {result.signalBreakdown && (
+                  <div style={{ display: "flex", justifyContent: "center", paddingTop: 8 }}>
+                    <RadarChart axes={result.signalBreakdown} size={240} />
+                  </div>
+                )}
               </Card>
             )}
 
             {result.executionPlan && (
-              <Card className="p-4 flex flex-col gap-3">
-                <h3 className="text-sm font-semibold text-[var(--bm-text)]">Focus Mode Plan</h3>
+              <Card variant="data" className="flex flex-col gap-3 p-4">
+                <h3 className="font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--bm-text3)]">Execution Recovery Plan</h3>
                 <div className="grid gap-3 sm:grid-cols-3">
                   {[
                     ["MVP Roadmap", result.executionPlan.mvp_roadmap],
@@ -768,16 +1129,23 @@ export default function BreakMyStartupPage() {
             )}
 
             {result.reflexionAction && (
-              <Card className="p-4 flex flex-col gap-3">
+              <Card variant="insight" className="flex flex-col gap-3 p-4">
                 <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                   <h3 className="text-sm font-semibold text-[var(--bm-text)]">Reflexion Loop</h3>
                   {typeof result.reflexionAction.confidence === "number" && (
                     <span className="text-xs text-[var(--bm-text3)]">{Math.round(result.reflexionAction.confidence * 100)}% confidence</span>
                   )}
                 </div>
-                <p className="text-sm leading-relaxed text-[var(--bm-text2)]">{sanitizeOutput(result.reflexionAction.action)}</p>
-                {result.reflexionAction.rationale && (
-                  <p className="text-xs leading-relaxed text-[var(--bm-text3)]">{sanitizeOutput(result.reflexionAction.rationale)}</p>
+                {/* NOTE: reflexionAction.action is the same text already shown in
+                    "Brutal advice" above (the API sets brutal_advice = reflexionAction.action) —
+                    repeating it here was the source of the "exact copy" duplication. This card
+                    now surfaces what Brutal Advice doesn't: why, and how confident the system is. */}
+                {result.reflexionAction.rationale ? (
+                  <Markdown textSize={13}>{sanitizeMarkdown(result.reflexionAction.rationale)}</Markdown>
+                ) : (
+                  <p className="text-sm leading-relaxed text-[var(--bm-text2)]">
+                    See &ldquo;Brutal advice&rdquo; above — this is the action the Reflexion pipeline recommends.
+                  </p>
                 )}
                 {result.reflexionAction.log_row_id && (
                   <div className="flex flex-wrap gap-2">
@@ -791,11 +1159,57 @@ export default function BreakMyStartupPage() {
               </Card>
             )}
 
+            {/* Focus area coverage — the at-a-glance proof that selecting
+                chips actually changed something, not just a hope that a
+                line buried in a prompt somewhere got weighted. Built from
+                relatedFocusAreas tags already attached to the risks/survive
+                reasons/pivots below, so this can't disagree with them —
+                same data, just summarized first. Unaddressed areas are
+                shown too, honestly: it means nothing in this run's output
+                touched that dimension, not that the selection was ignored. */}
+            {result.focusAreaCoverage && (
+              <div
+                style={{
+                  display: "flex", flexDirection: "column", gap: 6,
+                  padding: "10px 12px", borderRadius: "var(--r-md)",
+                  border: "1px solid var(--bm-border)", background: "var(--bm-bg2)",
+                }}
+              >
+                <span style={{ fontSize: 9, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: "'DM Mono', monospace" }}>
+                  Focus areas — {result.focusAreaCoverage.addressed.length} of {result.focusAreaCoverage.selected.length} addressed below
+                </span>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                  {result.focusAreaCoverage.selected.map((area) => {
+                    const addressed = result.focusAreaCoverage!.addressed.includes(area);
+                    return (
+                      <span
+                        key={area}
+                        style={{
+                          fontSize: 10.5, fontWeight: 600,
+                          color: addressed ? "var(--bm-green)" : "var(--bm-text4)",
+                          background: addressed ? "var(--bm-green-dim, rgba(92,200,138,0.1))" : "transparent",
+                          border: `1px solid ${addressed ? "var(--bm-green-bd, rgba(92,200,138,0.25))" : "var(--bm-border2)"}`,
+                          borderRadius: 999, padding: "2px 9px",
+                        }}
+                      >
+                        {addressed ? "✓" : "—"} {area}
+                      </span>
+                    );
+                  })}
+                </div>
+                {result.focusAreaCoverage.unaddressed.length > 0 && (
+                  <p style={{ fontSize: 10.5, color: "var(--bm-text4)", margin: 0, lineHeight: 1.5 }}>
+                    Nothing in this run's output touched {result.focusAreaCoverage.unaddressed.join(", ")} specifically — worth a closer look or a re-run.
+                  </p>
+                )}
+              </div>
+            )}
+
             {/* Risk breakdown cards */}
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
                 <h3 style={{ fontSize: 12, fontWeight: 700, color: "var(--bm-text)", margin: 0, textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                  Kill reasons
+                  What Breaks First
                 </h3>
                 <span style={{
                   fontSize: 10, fontWeight: 600, color: "var(--bm-red)",
@@ -805,6 +1219,15 @@ export default function BreakMyStartupPage() {
                   {result.risks.length} found
                 </span>
               </div>
+              {result.risks.length > 1 && (
+                <SeverityStack
+                  title="At a glance"
+                  items={result.risks.map((risk): SeverityItem => ({
+                    label: risk.category,
+                    severity: ({ Critical: "fatal", High: "high", Medium: "medium", Low: "low" } as Record<RiskSeverity, Severity>)[risk.severity],
+                  }))}
+                />
+              )}
               {result.risks.map((risk, i) => (
                 <motion.div
                   key={i}
@@ -835,24 +1258,156 @@ export default function BreakMyStartupPage() {
                         {risk.severity}
                       </Badge>
                     </div>
-                    <p style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.55, margin: "0 0 10px 0" }}>
-                      {sanitizeOutput(risk.description)}
-                    </p>
+                    <div style={{ fontSize: 9, fontWeight: 700, color: "var(--bm-intel)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4, fontFamily: "'DM Mono', monospace" }}>
+                      Failure mechanism
+                    </div>
+                    <div style={{ margin: "0 0 10px 0" }}>
+                      <Markdown textSize={13}>{sanitizeMarkdown(risk.description)}</Markdown>
+                    </div>
                     <div style={{
                       display: "flex", alignItems: "flex-start", gap: 8,
                       background: "var(--bm-bg3)", borderRadius: "var(--r-sm)", padding: "8px 10px",
                     }}>
-                      <CheckCircle2 size={12} style={{ color: "var(--bm-accent)", flexShrink: 0, marginTop: 1 }} />
-                      <span style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.5 }}>{sanitizeOutput(risk.mitigation)}</span>
+                      <CheckCircle2 size={12} style={{ color: "var(--bm-text3)", flexShrink: 0, marginTop: 1 }} />
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 9, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>
+                          How to de-risk this
+                        </div>
+                        <Markdown textSize={12}>{sanitizeMarkdown(risk.mitigation)}</Markdown>
+                      </div>
                     </div>
+                    <FocusAreaTags areas={risk.relatedFocusAreas} />
                   </div>
                 </motion.div>
               ))}
             </div>
 
+            {/* What Could Still Work — real opportunity signals
+                (signals.all_opportunities on the backend) returned on every
+                response as survive_reasons but never rendered before. No
+                per-item confidence score exists in the real data, so none is
+                shown here — only the categories/severity levels above the
+                risk cards are ever assigned an actual number. */}
+            {result.surviveReasons && result.surviveReasons.length > 0 && (
+              <div className="flex flex-col gap-2.5">
+                <h3 className="m-0 text-xs font-bold uppercase tracking-[0.08em] text-[var(--bm-text)]">
+                  What Could Still Work
+                </h3>
+                <div className="grid gap-2.5 sm:grid-cols-2">
+                  {result.surviveReasons.map((reason, i) => (
+                    <div
+                      key={i}
+                      className="rounded-[var(--r-md)] p-3"
+                      style={{ borderLeft: "2px solid var(--bm-green)", background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderLeftWidth: 2, borderLeftColor: "var(--bm-green)" }}
+                    >
+                      <Markdown textSize={12}>{sanitizeMarkdown(reason)}</Markdown>
+                      <FocusAreaTags areas={result.surviveReasonTags?.[i]} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Competitive Landscape — real per-competitor data from the
+                Competitor agent (agent_outputs.competitor.direct_competitors),
+                computed on every run but previously reduced to a generic
+                paragraph before reaching the UI. Only columns backed by real
+                per-competitor fields are shown (name, exploitable weakness,
+                threat level) — no invented "core strength" column, since
+                nothing in the agent output states one per competitor. */}
+            {result.competitorTable && result.competitorTable.length > 0 && (
+              <Card variant="data" className="flex flex-col gap-3 p-4">
+                <h3 className="font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--bm-text3)]">
+                  Competitive Landscape
+                </h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-left text-xs">
+                    <thead>
+                      <tr style={{ borderBottom: "1px solid var(--bm-border)" }}>
+                        <th className="px-2 py-1.5 font-mono text-[9px] uppercase tracking-[0.06em] text-[var(--bm-text4)]">Competitor</th>
+                        <th className="px-2 py-1.5 font-mono text-[9px] uppercase tracking-[0.06em] text-[var(--bm-text4)]">Exploitable weakness</th>
+                        <th className="px-2 py-1.5 font-mono text-[9px] uppercase tracking-[0.06em] text-[var(--bm-text4)]">Threat</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {result.competitorTable.map((row) => (
+                        <tr key={row.name} style={{ borderBottom: "1px solid var(--bm-border)" }}>
+                          <td className="px-2 py-2 align-top font-semibold text-[var(--bm-text)]">
+                            {row.url ? (
+                              <a href={row.url} target="_blank" rel="noopener noreferrer" className="hover:underline">{row.name}</a>
+                            ) : row.name}
+                          </td>
+                          <td className="px-2 py-2 align-top leading-relaxed text-[var(--bm-text3)]">{row.weakness}</td>
+                          <td className="px-2 py-2 align-top">
+                            <Badge
+                              variant={row.threat_level === "high" ? "danger" : row.threat_level === "low" ? "success" : "warning"}
+                              size="sm"
+                            >
+                              {row.threat_level}
+                            </Badge>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            )}
+
+            {/* Pivot suggestions — the system's actual "you might be going in
+                the wrong direction" signal. Computed server-side by the
+                Pivot Engine (lib/agents generatePivots) on every run, but
+                previously dropped before it reached this page. */}
+            {result.pivots && result.pivots.length > 0 && (
+              <Card variant="data" className="flex flex-col gap-3 p-4">
+                <div className="flex items-center gap-2">
+                  <RefreshCw size={13} style={{ color: "var(--bm-accent)" }} />
+                  <h3 className="text-sm font-semibold text-[var(--bm-text)]">
+                    Pivot Candidates
+                  </h3>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {result.pivots.map((pivot) => (
+                    <div
+                      key={pivot.title}
+                      className="flex flex-col gap-1.5 rounded-lg p-3"
+                      style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)" }}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-semibold text-[var(--bm-text)]">{pivot.title}</span>
+                        {pivot.estimated_score_delta > 0 && (
+                          <Badge variant="success" size="sm">+{pivot.estimated_score_delta} score</Badge>
+                        )}
+                      </div>
+                      <p className="text-xs leading-relaxed text-[var(--bm-text3)]">{pivot.description}</p>
+                      <p className="text-[11px] leading-relaxed text-[var(--bm-text3)]">
+                        <span className="font-semibold text-[var(--bm-text2)]">Target: </span>{pivot.target_niche}
+                      </p>
+                      <p className="text-[11px] leading-relaxed text-[var(--bm-text3)]">
+                        <span className="font-semibold text-[var(--bm-text2)]">Why: </span>{pivot.why_better}
+                      </p>
+                      {pivot.key_change && (
+                        <p className="text-[11px] leading-relaxed text-[var(--bm-text3)]">
+                          <span className="font-semibold text-[var(--bm-text2)]">Required change: </span>{pivot.key_change}
+                        </p>
+                      )}
+                      <FocusAreaTags areas={pivot.relatedFocusAreas} />
+                      <button
+                        onClick={() => handleExplorePivot(pivot)}
+                        className="mt-1 w-full rounded-md border py-1.5 text-[11px] font-semibold uppercase tracking-[0.04em] transition-colors"
+                        style={{ borderColor: "var(--bm-accent-bd)", color: "var(--bm-accent)", background: "transparent" }}
+                      >
+                        Explore pivot →
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+
             {/* Actions */}
             <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-              {selectedProjectId && (
+              {selectedProjectId && projectExplicitlySelected ? (
                 <Button
                   variant="secondary"
                   size="sm"
@@ -872,7 +1427,31 @@ export default function BreakMyStartupPage() {
                     </>
                   )}
                 </Button>
-              )}
+              ) : customIdea.trim() ? (
+                // ISSUE-4 FIX: a custom idea (no project deliberately chosen)
+                // now gets its own path to becoming a project, rather than
+                // either having no save option or silently attaching to
+                // whatever project happened to be active elsewhere.
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleAddAsProject}
+                  loading={addingProject}
+                  disabled={Boolean(addedProjectId)}
+                >
+                  {addedProjectId ? (
+                    <>
+                      <CheckCircle2 size={13} style={{ color: "var(--bm-green)" }} />
+                      Added as Project
+                    </>
+                  ) : (
+                    <>
+                      <Plus size={13} />
+                      Add as Project
+                    </>
+                  )}
+                </Button>
+              ) : null}
               <Button
                 variant="ghost"
                 size="sm"
@@ -882,9 +1461,17 @@ export default function BreakMyStartupPage() {
                 Run Again
               </Button>
             </div>
+            {addProjectError && (
+              <p style={{ fontSize: 12, color: "var(--bm-red)", margin: 0 }}>{addProjectError}</p>
+            )}
+            {addedProjectId && (
+              <p style={{ fontSize: 12, color: "var(--bm-text3)", margin: 0 }}>
+                Saved as a new project — you can find it in your projects list.
+              </p>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
     </div>
   );
-}
+                     }
