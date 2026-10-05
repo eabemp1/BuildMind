@@ -1,570 +1,176 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
-import { createUserNotification, enforceAndTrackAIUsage, groqJSON, hasAdminEnv } from "@/app/api/ai/_utils";
+import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getRouteUser } from "@/app/api/ai/_planCheck";
-import { logError } from "@/lib/server/logger";
-import type { FounderMemory } from "@/lib/founderMemory";
-import { assembleCoachContext, computeContextConfidence } from "@/lib/coachContext";
+import { isAdminUser } from "@/lib/server/adminAuth";
+import { actionCategoryLabelOrNull } from "@/lib/actionClassification";
+import { deduplicateTags } from "@/lib/founderMemory";
 
-export const runtime     = "nodejs";
-export const dynamic     = "force-dynamic";
-export const maxDuration = 30; // single JSON LLM call with context assembly ~5–15 s
-import { inferStage } from "@/lib/stages";
-import { detectSpiralFull } from "@/lib/cofounder/spiralDetection";
-import { injectContinuityIntoSystemPrompt, recordInteractionServer, type RecentInteraction } from "@/lib/conversationContinuity";
-import { evaluateAIOutput } from "@/lib/aiEvaluator";
-import { getPromptForRequest, loadActivePrompts } from "@/lib/promptRegistry";
-import { loadFounderIntelligence, buildFounderIntelligencePromptBlock } from "@/lib/founderIntelligence";
-import { recordActionShown } from "@/lib/learning";
-import { buildCofounderJudgmentPromptBlock, buildCofounderJudgment } from "@/lib/cofounderJudgment";
-import { matchCoachAction } from "@/lib/coachActions/matcher";
-import { runCoachAction, parseActionRequest, isCoachActionsEnabled } from "@/lib/coachActions/registry";
-import { buildAppKnowledgeBlock } from "@/lib/coachAppKnowledge";
+/**
+ * GET/POST /api/admin/cleanup-avoidance-zones
+ *
+ * Browser-callable version of scripts/cleanup-avoidance-zones.ts — same
+ * logic, same actionCategoryLabel()/deduplicateTags() pipeline, but
+ * runnable from a deployed URL instead of a local `npx tsx` invocation.
+ * No terminal, no env vars to export by hand — auth comes from your
+ * existing logged-in admin session, and the service-role write uses the
+ * server's own SUPABASE_SERVICE_ROLE_KEY (already configured in Vercel).
+ *
+ * Cleans BOTH founder_memory.avoidance_zones/strengths AND the separate
+ * founder_context.avoidance_zones column (fed by a weekly edge-function
+ * synthesis job that was silently failing on a stale column name until
+ * this session — now fixed, so it needs the same safety net).
+ *
+ * GET  → dry run: returns what WOULD change, writes nothing.
+ * POST → live run: writes the cleaned arrays back.
+ *
+ * Optional query param ?user=<uuid> limits either mode to one account —
+ * handy for spot-checking one of your test accounts before running it
+ * against everyone.
+ */
 
-const FREE_COACH_MESSAGES_PER_DAY = 3;
+type CleanResult = { changed: boolean; before: string[]; after: string[] };
 
-function dayKey(date = new Date()): string {
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+function cleanArray(raw: unknown): CleanResult {
+  const before = Array.isArray(raw) ? (raw as string[]).filter(Boolean) : [];
+  if (before.length === 0) return { changed: false, before, after: [] };
+
+  // Unclassifiable entries are dropped rather than stored as a catch-all label.
+  const recategorized = before.map((entry) => actionCategoryLabelOrNull(entry)).filter((x): x is string => Boolean(x));
+  const after = deduplicateTags(recategorized);
+
+  const changed = before.length !== after.length || before.some((v, i) => v !== after[i]);
+  return { changed, before, after };
 }
 
-async function enforceCoachUsage(userId: string, plan: string) {
-  // FIX: the free plan used to be counted in a SEPARATE per-day counter
-  // (month key "coach:YYYY-MM-DD"), so Coach messages never reduced the monthly
-  // total the usage badge shows and the main AI feature was invisible to it.
-  // Every plan now spends through the shared counter (lib/server/aiUsageStore.ts):
-  // free = FREE_COACH_MESSAGES_PER_DAY per day AND the monthly cap, both counted.
-  try {
-    await enforceAndTrackAIUsage(userId, plan);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (plan === "free" && msg.toLowerCase().includes("limit reached")) {
-      throw new Error(
-        msg.toLowerCase().includes("monthly")
-          ? `LIMIT_REACHED:coach:You've used all your free AI messages this month. Upgrade to Builder to keep going.`
-          : `LIMIT_REACHED:coach:That's your ${FREE_COACH_MESSAGES_PER_DAY} AI Coach messages for today. More tomorrow \u2014 or upgrade to Builder to keep going right now.`,
-      );
+async function runCleanup(userIdFilter: string | null, isDryRun: boolean) {
+  const admin = createAdminClient();
+
+  let query = admin.from("founder_memory").select("user_id, avoidance_zones, strengths");
+  if (userIdFilter) query = query.eq("user_id", userIdFilter);
+
+  const { data: rows, error } = await query;
+  if (error) {
+    return { ok: false as const, error: error.message };
+  }
+  if (!rows || rows.length === 0) {
+    return { ok: true as const, dryRun: isDryRun, touched: 0, skipped: 0, results: [] };
+  }
+
+  const results: Array<{
+    user_id: string;
+    avoidance_zones?: { before: string[]; after: string[] };
+    strengths?: { before: string[]; after: string[] };
+  }> = [];
+  let touched = 0;
+  let skipped = 0;
+
+  for (const row of rows) {
+    const avoidance = cleanArray((row as { avoidance_zones: unknown }).avoidance_zones);
+    const strengths = cleanArray((row as { strengths: unknown }).strengths);
+
+    if (!avoidance.changed && !strengths.changed) {
+      skipped++;
+      continue;
     }
-    throw err;
+
+    touched++;
+    const entry: (typeof results)[number] = { user_id: (row as { user_id: string }).user_id };
+    if (avoidance.changed) entry.avoidance_zones = { before: avoidance.before, after: avoidance.after };
+    if (strengths.changed) entry.strengths = { before: strengths.before, after: strengths.after };
+    results.push(entry);
+
+    if (!isDryRun) {
+      const update: Record<string, string[]> = {};
+      if (avoidance.changed) update.avoidance_zones = avoidance.after;
+      if (strengths.changed) update.strengths = strengths.after;
+      const { error: updateError } = await admin
+        .from("founder_memory")
+        .update(update)
+        .eq("user_id", (row as { user_id: string }).user_id);
+      if (updateError) {
+        (entry as Record<string, unknown>).writeError = updateError.message;
+      }
+    }
   }
+
+  return { ok: true as const, dryRun: isDryRun, touched, skipped, results };
 }
 
-function buildFounderMemoryContext(memory: FounderMemory | null): string {
-  if (!memory) return "";
-  const lines: string[] = [];
-  if (memory.personality_tags?.length)
-    lines.push(`Founder personality: ${memory.personality_tags.join(", ")}`);
-  if (memory.avoidance_zones?.length)
-    lines.push(`Consistently avoids: ${memory.avoidance_zones.join(", ")} — call this out if relevant`);
-  if (memory.strengths?.length)
-    lines.push(`Strong at: ${memory.strengths.join(", ")}`);
-  if (memory.last_insight)
-    lines.push(`Last pattern observed: "${memory.last_insight}"`);
-  if (memory.cofounder_style)
-    lines.push(`Communication style to use: ${memory.cofounder_style}`);
-  // REC 2.5: Include topics mentioned repeatedly for proactive observation
-  const topicsRepeated = (memory as Record<string, unknown>).topics_mentioned_repeatedly as string[] | undefined;
-  if (topicsRepeated?.length)
-    lines.push(`Topics mentioned repeatedly without action: ${topicsRepeated.join(", ")}`);
-  if (!lines.length) return "";
-  return "\n\nFOUNDER MEMORY (persistent — do not repeat back verbatim, just let it inform your tone and advice):\n" + lines.join("\n");
+async function runFounderContextCleanup(userIdFilter: string | null, isDryRun: boolean) {
+  const admin = createAdminClient();
+
+  let query = admin.from("founder_context").select("user_id, avoidance_zones");
+  if (userIdFilter) query = query.eq("user_id", userIdFilter);
+
+  const { data: rows, error } = await query;
+  if (error) {
+    return { ok: false as const, error: error.message };
+  }
+  if (!rows || rows.length === 0) {
+    return { ok: true as const, dryRun: isDryRun, touched: 0, skipped: 0, results: [] };
+  }
+
+  const results: Array<{ user_id: string; avoidance_zones: { before: string[]; after: string[] } }> = [];
+  let touched = 0;
+  let skipped = 0;
+
+  for (const row of rows) {
+    const avoidance = cleanArray((row as { avoidance_zones: unknown }).avoidance_zones);
+    if (!avoidance.changed) {
+      skipped++;
+      continue;
+    }
+    touched++;
+    const entry = { user_id: (row as { user_id: string }).user_id, avoidance_zones: { before: avoidance.before, after: avoidance.after } };
+    results.push(entry);
+
+    if (!isDryRun) {
+      const { error: updateError } = await admin
+        .from("founder_context")
+        .update({ avoidance_zones: avoidance.after })
+        .eq("user_id", (row as { user_id: string }).user_id);
+      if (updateError) {
+        (entry as Record<string, unknown>).writeError = updateError.message;
+      }
+    }
+  }
+
+  return { ok: true as const, dryRun: isDryRun, touched, skipped, results };
 }
 
-// REC 2.5: Build the proactive observation the coach leads with before answering.
-// This is the distinction between consulting (answering questions) and coaching (noticing patterns).
-function buildProactiveObservation(memory: FounderMemory | null, currentMessage: string): string {
-  if (!memory) return "";
-  const avoidance = memory.avoidance_zones ?? [];
-  const topicsRepeated = ((memory as Record<string, unknown>).topics_mentioned_repeatedly as string[] | undefined) ?? [];
-  const lastInsight = memory.last_insight ?? "";
-
-  // Don't surface the same topic they're already asking about
-  const messageLower = currentMessage.toLowerCase();
-  const unreaisedAvoidance = avoidance.find((z: string) => !messageLower.includes(z.toLowerCase()));
-  const unreaisedTopic = topicsRepeated.find((t: string) => !messageLower.includes(t.toLowerCase()));
-
-  const observations: string[] = [];
-  if (unreaisedAvoidance) observations.push(`You've been avoiding ${unreaisedAvoidance} consistently`);
-  if (unreaisedTopic) observations.push(`You've mentioned ${unreaisedTopic} multiple times without acting on it`);
-  if (lastInsight && !messageLower.includes(lastInsight.toLowerCase().slice(0, 20))) {
-    // Truncate to the first sentence to avoid bloating prompt instructions with
-    // a full multi-sentence AI-generated paragraph (audit finding §2.5).
-    const firstSentence = lastInsight.split(/(?<=[.!?])\s+/)[0] ?? lastInsight;
-    const truncated = firstSentence.length > 120 ? firstSentence.slice(0, 120).trimEnd() + "…" : firstSentence;
-    observations.push(truncated);
+async function handle(request: Request, isDryRun: boolean) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user || !(await isAdminUser(user.id))) {
+    return NextResponse.json({ ok: false, error: "Not authorized" }, { status: 403 });
   }
 
-  if (!observations.length) return "";
+  const { searchParams } = new URL(request.url);
+  const userIdFilter = searchParams.get("user");
 
-  // Pick the most interesting unraised observation
-  const obs = observations[0];
-  return `\n\nPROACTIVE COACHING INSTRUCTION: Before answering the founder's question, open with one direct observation from their behavioral profile that they have NOT raised in this message. Do not ask a question — make a statement. Example format: "Before you ask — [observation]. What's actually blocking that?" The observation to use: "${obs}"`;
+  const founderMemoryResult = await runCleanup(userIdFilter, isDryRun);
+  const founderContextResult = await runFounderContextCleanup(userIdFilter, isDryRun);
+
+  if (!founderMemoryResult.ok) {
+    return NextResponse.json(founderMemoryResult, { status: 500 });
+  }
+  if (!founderContextResult.ok) {
+    return NextResponse.json(founderContextResult, { status: 500 });
+  }
+  return NextResponse.json({
+    ok: true,
+    dryRun: isDryRun,
+    founder_memory: founderMemoryResult,
+    founder_context: founderContextResult,
+  });
 }
 
-// ── Spiral detection — the patterns that signal a founder is collapsing ───────
-// Kept server-side so the detection logic cannot be bypassed client-side.
-type SpiralSignal = "competitor" | "motivation" | "avoidance" | null;
-
-function detectSpiralSignal(message: string): { detected: boolean; signal: SpiralSignal } {
-  const triggers: { pattern: RegExp; signal: SpiralSignal }[] = [
-    { pattern: /someone (is already|already|just) (doing|built|building|launched|shipped)/i, signal: "competitor" },
-    { pattern: /(they already have|there'?s already a) (this|that|something like|an app|a tool)/i, signal: "competitor" },
-    { pattern: /too late (to|for)/i, signal: "competitor" },
-    { pattern: /what'?s the point/i, signal: "motivation" },
-    { pattern: /i (don'?t|do not) see the point/i, signal: "motivation" },
-    { pattern: /why (am i|bother|even)/i, signal: "motivation" },
-    { pattern: /nobody (cares|will use|wants)/i, signal: "motivation" },
-    { pattern: /this (is|was) a (bad|stupid|dumb|terrible) idea/i, signal: "motivation" },
-    { pattern: /i should (just )?give up/i, signal: "motivation" },
-    { pattern: /maybe i should (pivot|quit|stop|abandon)/i, signal: "motivation" },
-    { pattern: /i keep (putting off|avoiding|procrastinating)/i, signal: "avoidance" },
-    { pattern: /haven'?t (touched|worked on|opened|started)/i, signal: "avoidance" },
-    { pattern: /i'?m stuck (on|at|with)/i, signal: "avoidance" },
-    { pattern: /can'?t bring myself to/i, signal: "avoidance" },
-  ];
-  for (const { pattern, signal } of triggers) {
-    if (pattern.test(message)) return { detected: true, signal };
-  }
-  return { detected: false, signal: null };
+// Dry run — safe to call any time, writes nothing.
+export async function GET(request: Request) {
+  return handle(request, true);
 }
 
-function buildSpiralInstruction(signal: SpiralSignal, message: string): string {
-  if (!signal) return "";
-  if (signal === "competitor") {
-    return `\n\nSPIRAL ALERT — COMPETITOR: The founder is in a competitor spiral. Before anything else:
-1. Acknowledge the competitor is real — do NOT dismiss it
-2. Name a specific gap that competitor has NOT solved for this founder's exact target user
-3. Reframe: competitors = proof of market. Use their user count as evidence.
-4. Give ONE 20-minute task to differentiate, not "don't worry about it"
-Be direct, not reassuring. The goal is to redirect energy, not comfort.`;
-  }
-  if (signal === "motivation") {
-    return `\n\nSPIRAL ALERT — MOTIVATION: The founder is questioning the point. Before anything else:
-1. Name exactly what they've done (even if small) — not to celebrate, to remind them it's real
-2. Identify if this is a real signal (bad idea) or temporary noise (rough day)
-3. If it's noise: one concrete re-entry task, under 30 minutes
-4. If it might be real: ask the one question that will distinguish noise from signal
-Do NOT say "believe in yourself." Do NOT dismiss the feeling.`;
-  }
-  if (signal === "avoidance") {
-    return `\n\nSPIRAL ALERT — AVOIDANCE: The founder is in an avoidance pattern. Before anything else:
-1. Name the avoidance directly — "You're describing a pattern, not a problem"
-2. Break the avoided task into its smallest possible first step (under 15 min)
-3. Ask: "Is this hard because it's actually hard, or because you're afraid of the feedback?"
-4. Give them a timer — "Do 10 minutes of it right now, then come back"
-Be firm. Avoidance compounds. Interrupting it early is the job.`;
-  }
-  return "";
-}
-
-
-const CoachBodySchema = z.object({
-  userId:       z.string().optional(),
-  projectId:    z.string().optional(),
-  message:      z.string().max(2000).optional(),
-  blockerType:  z.string().max(200).optional(),
-  domain:       z.string().max(200).optional(),
-  messages:     z.array(z.object({ role: z.string().optional(), content: z.string().optional() })).optional(),
-  // Coach Actions chip payload — validated for real by parseActionRequest();
-  // declared here only because z.object() strips undeclared keys.
-  action:       z.unknown().optional(),
-});
-
+// Live run — writes cleaned arrays back to founder_memory.
 export async function POST(request: Request) {
-  try {
-    void loadActivePrompts();
-    const routeUser = await getRouteUser();
-    if (!routeUser) {
-      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-    }
-
-    const rawBody = await request.json().catch(() => ({}));
-    const zodResult = CoachBodySchema.safeParse(rawBody);
-    const body = zodResult.success ? zodResult.data : rawBody;
-    const userId = String(body?.userId ?? routeUser.userId).trim();
-    const projectId = String(body?.projectId ?? body?.project?.id ?? "").trim();
-    // Input length limits — prevent prompt injection and runaway token costs
-    const message = String(body?.message ?? "").trim().slice(0, 2000);
-    const blockerType = String(body?.blockerType ?? "").trim().slice(0, 200);
-    const domain = String(body?.domain ?? "").trim().slice(0, 200);
-    // FIX (Sept 2026): coach traffic shares the same 8,000 TPM free-tier
-    // ceiling as Today's action generation (both use the "fast" role in
-    // getFastChain()) — see PROVIDER STATUS in lib/ai-providers.ts. History
-    // was 8 messages / 1000 chars each (up to ~8,000 chars / ~2,000 tokens
-    // on its own, on top of project context, behavioral context, and the
-    // Founder Intelligence + Cofounder Judgment blocks below). Halved on
-    // both axes — this compounds with every follow-up message, unlike the
-    // other context blocks which are roughly constant per request.
-    const history = Array.isArray(body?.messages)
-      ? (body.messages as { role?: string; content?: string }[])
-          .map((m) => ({ role: (m?.role === "assistant" ? "assistant" : "user") as "user" | "assistant", content: String(m?.content ?? "").trim().slice(0, 500) }))
-          .filter((m) => m.content)
-          .slice(-4)
-      : [];
-
-    if (userId !== routeUser.userId) {
-      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-    }
-
-    if (!userId || !projectId) {
-      return NextResponse.json({ success: false, error: "userId and projectId required" }, { status: 400 });
-    }
-
-    // ── Usage: every Coach interaction counts ────────────────────────────────
-    // One-tap actions and typed matches used to run BEFORE this check and were
-    // free. They now spend the same plan allowance as a coached reply, so no
-    // Coach surface bypasses the limit. (Free = FREE_COACH_MESSAGES_PER_DAY.)
-    await enforceCoachUsage(userId, routeUser.plan);
-
-    // ── Coach Actions (deterministic, read-only — see lib/coachActions/) ──────
-    // A chip sends body.action; typed text is matched by the same pure matcher
-    // the client uses. Spiral-flagged messages never match — a founder in a
-    // spiral needs the coach, not a task list. A typed match that fails falls
-    // through to normal coaching; an explicit chip request reports its error.
-    if (isCoachActionsEnabled() && hasAdminEnv()) {
-      const requested = parseActionRequest(body?.action);
-      const typed = !requested && message && !detectSpiralSignal(message).detected ? matchCoachAction(message) : null;
-      const chosen = requested ?? typed;
-      if (chosen) {
-        const actionAdmin = createAdminClient();
-        const outcome = await runCoachAction({ id: chosen.id, params: chosen.params }, { userId, projectId, admin: actionAdmin }, routeUser.plan);
-        if (outcome.ok) {
-          recordInteractionServer(
-            actionAdmin as Parameters<typeof recordInteractionServer>[0],
-            userId,
-            "ai_coach",
-            `Ran coach action: ${outcome.result.title}`,
-          ).catch(() => {});
-          return NextResponse.json({
-            success: true,
-            data: {
-              kind: "action",
-              reasoning: [],
-              answer: outcome.result.summary,
-              reply: outcome.result.summary,
-              actionResult: outcome.result,
-              spiralDetected: false,
-            },
-          });
-        }
-        if (requested) return NextResponse.json({ success: false, error: outcome.error }, { status: outcome.status });
-      }
-    }
-
-    // (usage already counted above — covers actions and coached replies alike)
-
-    // ── Spiral detection (server-side, plan-gated) ──────────────────────────
-    const { detected: spiralDetected, signal: spiralSignal } = detectSpiralSignal(message);
-
-    let projectContext = "";
-    let stage = "MVP";
-    let intelligenceBlock = "";
-    let founderMemoryContext = "";
-    let memory: FounderMemory | null = null;
-    let lastMorningNote = "";
-    let confidenceScore: number | null = null;
-    let recentInteractions: RecentInteraction[] = [];
-
-    // supabase client is needed outside the hasAdminEnv block for recordInteractionServer
-    const supabase = hasAdminEnv() ? createAdminClient() : null;
-
-    if (hasAdminEnv() && supabase) {
-      try {
-        // Run project fetch and full behavioral context assembly in parallel
-        const [projectResult, milestonesResult, profileResult, behavioralResult, intelligenceResult] = await Promise.allSettled([
-          supabase
-            .from("projects")
-            .select("name, title, description, target_users, problem, startup_stage, validation_strengths, validation_weaknesses")
-            .eq("id", projectId)
-            .eq("user_id", userId)
-            .maybeSingle(),
-          supabase.from("milestones").select("id, title, status").eq("project_id", projectId),
-          supabase.from("founder_context").select("recent_interactions").eq("user_id", userId).maybeSingle(),
-          // ── NEW: assembleCoachContext pulls reflections, action patterns,
-          // momentum, skip reasons, blocker insights, score trend, and memory
-          // — the six data sources the coach previously never saw.
-          assembleCoachContext(supabase, userId, projectId),
-          // Founder Intelligence coherence layer — loads existing signals into
-          // typed state so the coach doesn't have to re-derive them from scratch.
-          // Non-fatal: if it fails the coach degrades gracefully to coachContext alone.
-          loadFounderIntelligence(supabase, userId, projectId, { now: new Date() }).catch(() => null),
-        ]);
-
-        const project    = projectResult.status    === "fulfilled" ? projectResult.value.data    : null;
-        const milestones = milestonesResult.status === "fulfilled" ? milestonesResult.value.data ?? [] : [];
-        const behavioral = behavioralResult.status === "fulfilled" ? behavioralResult.value : null;
-        const intelligenceState = intelligenceResult?.status === "fulfilled" ? intelligenceResult.value : null;
-        intelligenceBlock = intelligenceState
-          ? `${buildFounderIntelligencePromptBlock(intelligenceState)}\n\n${buildCofounderJudgmentPromptBlock(buildCofounderJudgment(intelligenceState))}`
-          : "";
-
-        // Still read memory for spiral persistence (write path only)
-        const { data: memData } = await supabase.from("founder_memory").select("emotional_signals").eq("user_id", userId).maybeSingle();
-        memory = memData as FounderMemory | null;
-
-        // Extract morning note from recent_interactions (unchanged)
-        const profileInteractions = profileResult.status === "fulfilled"
-          ? (profileResult.value.data?.recent_interactions as Array<{ type?: string; note?: string; timestamp?: string }> | null) ?? []
-          : [];
-        const todayUTC = new Date().toISOString().slice(0, 10);
-        const todayMorningCheckin = profileInteractions.find(
-          (r) => r.type === "morning_checkin" && r.timestamp?.startsWith(todayUTC),
-        );
-        if (todayMorningCheckin?.note) lastMorningNote = todayMorningCheckin.note;
-        recentInteractions = profileInteractions as RecentInteraction[];
-
-        // Build project context block (kept — gives structured startup fields)
-        const milestoneIds = milestones.map((m) => m.id);
-        let allTasks: Array<{ title: string; is_completed: boolean }> = [];
-        if (milestoneIds.length > 0) {
-          const BATCH_SIZE = 20;
-          const batches = [];
-          for (let i = 0; i < milestoneIds.length; i += BATCH_SIZE) {
-            const batchIds = milestoneIds.slice(i, i + BATCH_SIZE);
-            const tasksQuery = supabase.from("tasks").select("title, is_completed");
-            batches.push(
-              batchIds.length === 1
-                ? tasksQuery.eq("milestone_id", batchIds[0])
-                : tasksQuery.in("milestone_id", batchIds)
-            );
-          }
-          const batchResults = await Promise.all(batches);
-          for (const result of batchResults) {
-            if (result.data) allTasks = allTasks.concat(result.data);
-          }
-        }
-
-        const completedTasks      = allTasks.filter((t) => t.is_completed).length;
-        const totalTasks          = allTasks.length;
-        const completedMilestones = milestones.filter((m) => m.status === "completed").length;
-
-        if (project) {
-          stage = project.startup_stage ?? inferStage(completedTasks, totalTasks, completedMilestones, milestones.length);
-          const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-          const valStrengths   = (project.validation_strengths ?? []).join(", ");
-          const valWeaknesses  = (project.validation_weaknesses ?? []).join(", ");
-          projectContext = `Project: ${project.name ?? project.title}
-Stage: ${stage}
-Problem: ${project.problem ?? "Not defined"}
-Target users: ${project.target_users ?? "Not defined"}
-Task completion: ${completedTasks}/${totalTasks} (${completionRate}%)
-Milestone completion: ${completedMilestones}/${milestones.length}
-Validation strengths: ${valStrengths || "None recorded"}
-Validation gaps: ${valWeaknesses || "None recorded"}`;
-        }
-
-        // Replace thin memory context with the full behavioral context block
-        founderMemoryContext = behavioral?.contextBlock ?? buildFounderMemoryContext(memory);
-
-        // Persist spiral event to founder_memory (write path — unchanged)
-        if (spiralDetected && memory) {
-          const signals = (memory.emotional_signals ?? []) as { trigger: string; type: string; confidence: number }[];
-          signals.push({ trigger: message.slice(0, 80), type: "draining", confidence: 0.85 });
-          await supabase.from("founder_memory")
-            .update({ emotional_signals: signals.slice(-20), updated_at: new Date().toISOString() })
-            .eq("user_id", userId);
-        }
-
-        // Update confidence score using behavioral signals (much more accurate than before)
-        if (behavioral) {
-          confidenceScore = computeContextConfidence(behavioral.signals);
-        }
-      } catch (err) {
-        console.error("[coach] Context assembly failed:", err);
-      }
-    }
-
-    const blockerContext = blockerType
-      ? `\n\nFounder flagged a specific blocker: "${blockerType}" — address this directly.`
-      : "";
-    const domainContext = domain
-      ? `\n\nDomain/context they're focused on: ${domain}`
-      : "";
-    const historyContext = history.length
-      ? "\n\nConversation so far:\n" + history.map((m) => `${m.role === "user" ? "Founder" : "Coach"}: ${m.content}`).join("\n")
-      : "";
-
-    // ── Spiral instruction injected into system prompt when detected ─────────
-    const spiralInstruction = buildSpiralInstruction(spiralSignal, message);
-
-    // REC 2.5: Build proactive observation from founder memory
-    const proactiveObservation = buildProactiveObservation(memory, message);
-
-    // AI Improvement #1: Use LLM spiral classifier (not just regex) for nuanced detection
-    const spiralResultFull = await detectSpiralFull(message);
-    // spiralDetected / spiralSignal are already declared from the regex pass above;
-    // if the LLM classifier fires, use its result for the instruction builder.
-    const effectiveSpiralSignal: SpiralSignal =
-      spiralResultFull.detected && spiralResultFull.detectedBy === "llm"
-        ? (spiralResultFull.signal as SpiralSignal)
-        : spiralSignal;
-    const effectiveSpiralDetected = spiralDetected || (spiralResultFull.detected && spiralResultFull.detectedBy === "llm");
-
-    // Confidence score computed inside data-fetch block via computeContextConfidence()
-    // Fall back to simple check if behavioral assembly failed
-    if (confidenceScore === null) {
-      const hasProjectContext = Boolean(projectContext.trim());
-      const hasTargetUsers    = Boolean(projectContext.includes("Target users:") && !projectContext.includes("Not defined"));
-      confidenceScore = [hasProjectContext, hasTargetUsers].filter(Boolean).length / 2;
-    }
-
-    // Task 5: inject today's morning note into system prompt so coach has same-day context
-    const morningNoteContext = lastMorningNote
-      ? `\n\nTODAY'S MORNING INTENTION (founder logged this earlier today): "${lastMorningNote}" — if relevant, connect your coaching to what they said they'd do today.`
-      : "";
-
-    // FIX (High #10): the opening claim used to be a flat, unconditional
-    // "You have read every reflection" regardless of what data actually
-    // exists for this founder — reflections are capped at 5
-    // (lib/coachContext.ts:79), action history at 30 days/60 rows, and a
-    // brand-new founder gets literally "[Behavioral context not yet
-    // available]". confidenceScore (computed above from the real signals
-    // assembleCoachContext found) is the honest gate for how much the coach
-    // can actually claim to know.
-    const knowledgeClaim =
-      confidenceScore >= 0.5
-        ? "You've read his recent reflections and know his patterns — the blockers he keeps naming, the streaks that broke, what he keeps skipping versus what he actually ships. When he asks you something, you already have context — you do not need to ask for it."
-        : confidenceScore > 0
-        ? "You have some signal on this founder — a few reflections, partial history — but not a full picture yet. Use what you have directly, without pretending it's more than it is. If you're missing something that would change your answer, ask for it in one line, then answer with what you've got."
-        : "This is early — you have no track record on this founder yet, no reflections, no completion pattern. Don't claim history you don't have. Ask one sharp question to get oriented, or give your best direct read based on what's in front of you right now.";
-
-    const baseSystemPrompt = `You are BuildMind — not an assistant, not a chatbot. You are the co-founder who stayed up building alongside this founder and knows exactly where things stand.
-
-${knowledgeClaim}
-
-The difference between you and every other AI: you notice things he did not ask about, and you say them. Not to be clever — because that is what a real co-founder does. If he asks about X but the actual problem is Y, you name Y first, briefly, then answer X.
-
-WHAT YOU NEVER DO:
-- Never say "great question", "certainly", "absolutely", "happy to help", or any filler
-- Never give a numbered list of generic startup advice
-- Never say "as a founder you should..." — you know this specific founder
-- Never deflect when asked for an opinion — give it directly
-- Never write more than 180 words — density beats length every time
-- Never recommend something you know he consistently skips without naming that pattern directly
-
-WHAT YOU ALWAYS DO:
-- Lead with the most important thing, even if he did not ask for it
-- Name the real pattern when you see it: "You keep listing visibility as a blocker but you skip content tasks 80% of the time. The fix is not more content."
-- Be honest when the data suggests he is avoiding something — name it without judgment
-- When confidence is low on a claim, say so: "I am not certain, but my read is..."
-- End with one concrete thing he can do in the next 30 minutes when relevant
-
-REASONING FORMAT:
-The reasoning array shows your actual thought process — what you noticed, what pattern you recognised, what you decided to lead with. Make it real, not performative.
-
-RECOMMENDED ACTION (optional):
-Only when your answer converges on one concrete, time-boxed action — not for open-ended or reflective questions — include a recommended_action object naming exactly what to do, why it matters right now (tie it to something real from his data, not generic advice), and what evidence within a short window would tell him it worked. Omit the field entirely rather than force one.
-
-THINGS THE FOUNDER CAN ASK YOU TO PULL UP (handled instantly outside this conversation, not by you): their open tasks or backlog (e.g. "show my open tasks", optionally "on the X milestone") and a download of their full Founder Intelligence data (e.g. "export my intelligence data"). If they ask for something like that and it reached you, tell them the exact phrase to type. Never invent task lists, counts, or file contents yourself.
-
-You must return ONLY valid JSON:
-{
-  "reasoning": ["what I noticed about his situation", "what pattern this connects to", "what matters most to say first"],
-  "answer": "your response — direct, specific, under 180 words",
-  "recommended_action": { "what_to_do": "...", "why_now": "...", "expected_evidence": "..." }
+  return handle(request, false);
 }
-recommended_action is optional — omit the key entirely when no single action stands out.
-${spiralInstruction}${proactiveObservation}
-
-${buildAppKnowledgeBlock(message, routeUser.plan === "builder" ? "builder" : "free")}
-
-${projectContext ? `FOUNDER CONTEXT (real data):\n${projectContext}` : ""}${founderMemoryContext}${intelligenceBlock ? `\n\n${intelligenceBlock}` : ""}${morningNoteContext}${blockerContext}${domainContext}${historyContext}
-
-Message: ${message}
-
-Return ONLY the JSON. No preamble. No markdown fences.`;
-
-    // Inject cross-feature continuity block before the base system prompt
-    const systemPrompt = injectContinuityIntoSystemPrompt(baseSystemPrompt, recentInteractions);
-
-    const result = await groqJSON<{ reasoning: string[]; answer: string; recommended_action?: { what_to_do?: string; why_now?: string; expected_evidence?: string } }>(systemPrompt, message);
-
-    const reasoning = Array.isArray(result?.reasoning) && result.reasoning.length > 0
-      ? result.reasoning.slice(0, 4).map((r) => String(r).trim()).filter(Boolean)
-      : ["Reading your project data...", "Identifying the key constraint...", "Deciding what matters most right now..."];
-
-    const answer = typeof result?.answer === "string" && result.answer.trim().length > 10
-      ? result.answer.trim()
-      : "BuildMind couldn't generate a response right now. Focus on your most important open task.";
-
-    // Only pass through when the model actually gave a concrete action —
-    // partial/malformed objects are dropped rather than rendered half-empty.
-    const ra = result?.recommended_action;
-    const recommendedAction = ra && typeof ra.what_to_do === "string" && ra.what_to_do.trim().length > 3 && typeof ra.why_now === "string" && ra.why_now.trim().length > 3
-      ? {
-          what_to_do: ra.what_to_do.trim(),
-          why_now: ra.why_now.trim(),
-          expected_evidence: typeof ra.expected_evidence === "string" ? ra.expected_evidence.trim() : undefined,
-        }
-      : undefined;
-
-    await createUserNotification(userId, "BuildMind has a new coaching response for you.", "ai_recommendation");
-
-    // Log quality — enables tracking whether coach responses are specific enough
-    const { version: promptVersion, variant } = getPromptForRequest("coach_system", userId);
-    void evaluateAIOutput({
-      userId,
-      projectId,
-      context: "coach",
-      promptId: "coach_system",
-      promptVersion,
-      variant,
-      output: answer,
-      founderContext: {
-        stage,
-        targetUsers: body?.targetUsers as string | undefined,
-        archetype: memory?.personality_tags?.find((tag) => tag.startsWith("archetype:"))?.replace("archetype:", ""),
-      },
-    });
-
-    // AI Improvement #2: record this interaction for cross-feature continuity
-    const interactionSummary = answer.slice(0, 120) + (answer.length > 120 ? "…" : "");
-    if (supabase) {
-      recordInteractionServer(
-        supabase as Parameters<typeof recordInteractionServer>[0],
-        userId,
-        "ai_coach",
-        interactionSummary,
-        effectiveSpiralDetected ? (effectiveSpiralSignal ?? undefined) : undefined,
-      ).catch(() => {}); // fire-and-forget
-      recordActionShown({
-        userId,
-        projectId,
-        sessionId: `ai_coach:${projectId}:${Date.now()}`,
-        stage,
-        actionShown: answer,
-        criticPersona: "ai_coach",
-      }).catch(() => {});
-    }
-
-    // AI Improvement #3: trigger embedding update for tag deduplication
-    // (fire-and-forget — never blocks the coach response)
-    fetch(`${process.env.NEXT_PUBLIC_APP_URL ?? ""}/api/ai/embed-tags`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        authorization: `Bearer ${process.env.CRON_SECRET ?? ""}`,
-      },
-      body: JSON.stringify({ userId }),
-    }).catch(() => {});
-
-    return NextResponse.json({
-      success: true,
-      data: { reasoning, answer, reply: answer, recommended_action: recommendedAction, spiralDetected: effectiveSpiralDetected, spiralSignal: effectiveSpiralSignal, confidence_score: confidenceScore },
-    });
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : "Coach failed";
-    const providerMissing = msg.includes("No AI providers configured") || msg.includes("GROQ_API_KEY");
-    const status = msg.toLowerCase().includes("limit") ? 429 : providerMissing ? 503 : 500;
-    return NextResponse.json({
-      success: false,
-      error: msg,
-      data: {
-        reasoning: ["Encountering an issue...", "Falling back to default guidance..."],
-        answer: providerMissing
-          ? "AI is not configured yet. Add GROQ_API_KEY, CEREBRAS_API_KEY, or GEMINI_API_KEY to your environment variables."
-          : "BuildMind is temporarily unavailable. Your most important task right now: complete the top pending item in your project.",
-      },
-    }, { status });
-  }
-              }

@@ -1,117 +1,176 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { computeStartupScore } from "@/lib/buildmind";
-import { getCanonicalStage } from "@/lib/stages";
+import { isAdminUser } from "@/lib/server/adminAuth";
+import { actionCategoryLabelOrNull } from "@/lib/actionClassification";
+import { deduplicateTags } from "@/lib/founderMemory";
 
 /**
- * app/api/projects/scores/route.ts — NEW
+ * GET/POST /api/admin/cleanup-avoidance-zones
  *
- * Fix #1: Projects page score now comes from the server (same source as
- * Today/Dashboard pages) so the score ring is consistent across all pages
- * and devices.
+ * Browser-callable version of scripts/cleanup-avoidance-zones.ts — same
+ * logic, same actionCategoryLabel()/deduplicateTags() pipeline, but
+ * runnable from a deployed URL instead of a local `npx tsx` invocation.
+ * No terminal, no env vars to export by hand — auth comes from your
+ * existing logged-in admin session, and the service-role write uses the
+ * server's own SUPABASE_SERVICE_ROLE_KEY (already configured in Vercel).
  *
- * Fix #12 / #14: All cross-device stats come from Supabase, not localStorage.
+ * Cleans BOTH founder_memory.avoidance_zones/strengths AND the separate
+ * founder_context.avoidance_zones column (fed by a weekly edge-function
+ * synthesis job that was silently failing on a stale column name until
+ * this session — now fixed, so it needs the same safety net).
  *
- * GET /api/projects/scores?ids=uuid1,uuid2,...
- *   → { scores: { [projectId]: number }, stages: { [projectId]: string } }
+ * GET  → dry run: returns what WOULD change, writes nothing.
+ * POST → live run: writes the cleaned arrays back.
  *
- * If `ids` is omitted, returns scores for ALL projects owned by the user.
+ * Optional query param ?user=<uuid> limits either mode to one account —
+ * handy for spot-checking one of your test accounts before running it
+ * against everyone.
  */
-export async function GET(request: Request) {
-  try {
-    const supabase = await createClient();
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError || !user) {
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-    }
 
-    const { searchParams } = new URL(request.url);
-    const idsParam = searchParams.get("ids");
-    const projectIds = idsParam ? idsParam.split(",").filter(Boolean) : null;
+type CleanResult = { changed: boolean; before: string[]; after: string[] };
 
-    const admin = createAdminClient();
+function cleanArray(raw: unknown): CleanResult {
+  const before = Array.isArray(raw) ? (raw as string[]).filter(Boolean) : [];
+  if (before.length === 0) return { changed: false, before, after: [] };
 
-    // Fetch projects
-    let projectsQuery = admin
-      .from("projects")
-      .select("id, startup_stage, validation_strengths, execution_score, momentum_score, created_at")
-      .eq("user_id", user.id);
-    if (projectIds?.length) {
-      projectsQuery = projectsQuery.in("id", projectIds);
-    }
-    const { data: projects, error: projError } = await projectsQuery;
-    if (projError) {
-      return NextResponse.json({ ok: false, error: projError.message }, { status: 500 });
-    }
+  // Unclassifiable entries are dropped rather than stored as a catch-all label.
+  const recategorized = before.map((entry) => actionCategoryLabelOrNull(entry)).filter((x): x is string => Boolean(x));
+  const after = deduplicateTags(recategorized);
 
-    // Fetch milestones + tasks for score computation
-    const pIds = (projects ?? []).map((p) => p.id);
-    const [milestonesResult, tasksResult] = await Promise.all([
-      pIds.length
-        ? admin.from("milestones").select("id, project_id, title, status, created_at").in("project_id", pIds)
-        : Promise.resolve({ data: [], error: null }),
-      pIds.length
-        ? admin.from("tasks").select("id, milestone_id, is_completed").in("project_id", pIds)
-        : Promise.resolve({ data: [], error: null }),
-    ]);
+  const changed = before.length !== after.length || before.some((v, i) => v !== after[i]);
+  return { changed, before, after };
+}
 
-    const milestones = milestonesResult.data ?? [];
-    const tasks = tasksResult.data ?? [];
+async function runCleanup(userIdFilter: string | null, isDryRun: boolean) {
+  const admin = createAdminClient();
 
-    // Build per-project score and canonical stage
-    const scores: Record<string, number> = {};
-    const stages: Record<string, string> = {};
-    let founderContext: { streak?: number | null; xp?: number | null } | null = null;
-    const founderContextWithXp = await admin
-      .from("founder_context")
-      .select("streak,xp")
-      .eq("user_id", user.id)
-      .maybeSingle();
-    if (founderContextWithXp.error && /column|schema cache|could not find/i.test(founderContextWithXp.error.message)) {
-      const founderContextWithoutXp = await admin
-        .from("founder_context")
-        .select("streak")
-        .eq("user_id", user.id)
-        .maybeSingle();
-      founderContext = founderContextWithoutXp.data ?? null;
-    } else {
-      founderContext = founderContextWithXp.data ?? null;
-    }
+  let query = admin.from("founder_memory").select("user_id, avoidance_zones, strengths");
+  if (userIdFilter) query = query.eq("user_id", userIdFilter);
 
-    for (const project of projects ?? []) {
-      const pMilestones = milestones.filter((m) => m.project_id === project.id);
-      const pTasks = tasks.filter((t) =>
-        pMilestones.some((m) => m.id === t.milestone_id)
-      );
-
-      // Build milestoneIdMap: milestoneId → milestoneTitle
-      const milestoneIdMap = new Map(pMilestones.map((m) => [m.id, m.title]));
-
-      scores[project.id] = computeStartupScore({
-        validation_strengths: Array.isArray(project.validation_strengths)
-          ? project.validation_strengths
-          : [],
-        execution_score: project.execution_score ?? 0,
-        momentum_score: project.momentum_score ?? 50,
-        xp: founderContext?.xp ?? 0,
-        streak: founderContext?.streak ?? 0,
-      });
-
-      // Fix #15: canonical stage — always use startup_stage from DB first
-      stages[project.id] = getCanonicalStage(
-        project.startup_stage,
-        pMilestones,
-        pTasks.map((t) => ({ milestone_id: t.milestone_id, is_completed: t.is_completed })),
-        milestoneIdMap,
-      );
-    }
-
-    return NextResponse.json({ ok: true, scores, stages });
-  } catch (err) {
-    return NextResponse.json(
-      { ok: false, error: err instanceof Error ? err.message : "Failed" },
-      { status: 500 }
-    );
+  const { data: rows, error } = await query;
+  if (error) {
+    return { ok: false as const, error: error.message };
   }
+  if (!rows || rows.length === 0) {
+    return { ok: true as const, dryRun: isDryRun, touched: 0, skipped: 0, results: [] };
+  }
+
+  const results: Array<{
+    user_id: string;
+    avoidance_zones?: { before: string[]; after: string[] };
+    strengths?: { before: string[]; after: string[] };
+  }> = [];
+  let touched = 0;
+  let skipped = 0;
+
+  for (const row of rows) {
+    const avoidance = cleanArray((row as { avoidance_zones: unknown }).avoidance_zones);
+    const strengths = cleanArray((row as { strengths: unknown }).strengths);
+
+    if (!avoidance.changed && !strengths.changed) {
+      skipped++;
+      continue;
+    }
+
+    touched++;
+    const entry: (typeof results)[number] = { user_id: (row as { user_id: string }).user_id };
+    if (avoidance.changed) entry.avoidance_zones = { before: avoidance.before, after: avoidance.after };
+    if (strengths.changed) entry.strengths = { before: strengths.before, after: strengths.after };
+    results.push(entry);
+
+    if (!isDryRun) {
+      const update: Record<string, string[]> = {};
+      if (avoidance.changed) update.avoidance_zones = avoidance.after;
+      if (strengths.changed) update.strengths = strengths.after;
+      const { error: updateError } = await admin
+        .from("founder_memory")
+        .update(update)
+        .eq("user_id", (row as { user_id: string }).user_id);
+      if (updateError) {
+        (entry as Record<string, unknown>).writeError = updateError.message;
+      }
+    }
+  }
+
+  return { ok: true as const, dryRun: isDryRun, touched, skipped, results };
+}
+
+async function runFounderContextCleanup(userIdFilter: string | null, isDryRun: boolean) {
+  const admin = createAdminClient();
+
+  let query = admin.from("founder_context").select("user_id, avoidance_zones");
+  if (userIdFilter) query = query.eq("user_id", userIdFilter);
+
+  const { data: rows, error } = await query;
+  if (error) {
+    return { ok: false as const, error: error.message };
+  }
+  if (!rows || rows.length === 0) {
+    return { ok: true as const, dryRun: isDryRun, touched: 0, skipped: 0, results: [] };
+  }
+
+  const results: Array<{ user_id: string; avoidance_zones: { before: string[]; after: string[] } }> = [];
+  let touched = 0;
+  let skipped = 0;
+
+  for (const row of rows) {
+    const avoidance = cleanArray((row as { avoidance_zones: unknown }).avoidance_zones);
+    if (!avoidance.changed) {
+      skipped++;
+      continue;
+    }
+    touched++;
+    const entry = { user_id: (row as { user_id: string }).user_id, avoidance_zones: { before: avoidance.before, after: avoidance.after } };
+    results.push(entry);
+
+    if (!isDryRun) {
+      const { error: updateError } = await admin
+        .from("founder_context")
+        .update({ avoidance_zones: avoidance.after })
+        .eq("user_id", (row as { user_id: string }).user_id);
+      if (updateError) {
+        (entry as Record<string, unknown>).writeError = updateError.message;
+      }
+    }
+  }
+
+  return { ok: true as const, dryRun: isDryRun, touched, skipped, results };
+}
+
+async function handle(request: Request, isDryRun: boolean) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user || !(await isAdminUser(user.id))) {
+    return NextResponse.json({ ok: false, error: "Not authorized" }, { status: 403 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const userIdFilter = searchParams.get("user");
+
+  const founderMemoryResult = await runCleanup(userIdFilter, isDryRun);
+  const founderContextResult = await runFounderContextCleanup(userIdFilter, isDryRun);
+
+  if (!founderMemoryResult.ok) {
+    return NextResponse.json(founderMemoryResult, { status: 500 });
+  }
+  if (!founderContextResult.ok) {
+    return NextResponse.json(founderContextResult, { status: 500 });
+  }
+  return NextResponse.json({
+    ok: true,
+    dryRun: isDryRun,
+    founder_memory: founderMemoryResult,
+    founder_context: founderContextResult,
+  });
+}
+
+// Dry run — safe to call any time, writes nothing.
+export async function GET(request: Request) {
+  return handle(request, true);
+}
+
+// Live run — writes cleaned arrays back to founder_memory.
+export async function POST(request: Request) {
+  return handle(request, false);
 }

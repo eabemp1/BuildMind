@@ -1,107 +1,176 @@
+import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { isAdminUser } from "@/lib/server/adminAuth";
+import { actionCategoryLabelOrNull } from "@/lib/actionClassification";
+import { deduplicateTags } from "@/lib/founderMemory";
+
 /**
- * app/api/integrations/notion/callback/route.ts — Notion OAuth callback
+ * GET/POST /api/admin/cleanup-avoidance-zones
  *
- * Flow:
- *   1. User clicks "Connect Notion" → redirect to Notion OAuth URL
- *   2. Notion redirects back here with ?code=... & signed state
- *   3. Exchange code for access_token
- *   4. Find or create their default database (first DB in workspace)
- *   5. Store in integrations table
- *   6. Redirect to /settings?integration=notion&status=connected
+ * Browser-callable version of scripts/cleanup-avoidance-zones.ts — same
+ * logic, same actionCategoryLabel()/deduplicateTags() pipeline, but
+ * runnable from a deployed URL instead of a local `npx tsx` invocation.
+ * No terminal, no env vars to export by hand — auth comes from your
+ * existing logged-in admin session, and the service-role write uses the
+ * server's own SUPABASE_SERVICE_ROLE_KEY (already configured in Vercel).
+ *
+ * Cleans BOTH founder_memory.avoidance_zones/strengths AND the separate
+ * founder_context.avoidance_zones column (fed by a weekly edge-function
+ * synthesis job that was silently failing on a stale column name until
+ * this session — now fixed, so it needs the same safety net).
+ *
+ * GET  → dry run: returns what WOULD change, writes nothing.
+ * POST → live run: writes the cleaned arrays back.
+ *
+ * Optional query param ?user=<uuid> limits either mode to one account —
+ * handy for spot-checking one of your test accounts before running it
+ * against everyone.
  */
 
-import { NextResponse, type NextRequest } from "next/server";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { logError } from "@/lib/server/logger";
-import { verifyOAuthState } from "@/lib/server/oauthState";
+type CleanResult = { changed: boolean; before: string[]; after: string[] };
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://buildmind.live";
+function cleanArray(raw: unknown): CleanResult {
+  const before = Array.isArray(raw) ? (raw as string[]).filter(Boolean) : [];
+  if (before.length === 0) return { changed: false, before, after: [] };
 
-export async function GET(request: NextRequest) {
-  const url     = new URL(request.url);
-  const code    = url.searchParams.get("code");
-  const state   = url.searchParams.get("state");
-  const errorParam = url.searchParams.get("error");
+  // Unclassifiable entries are dropped rather than stored as a catch-all label.
+  const recategorized = before.map((entry) => actionCategoryLabelOrNull(entry)).filter((x): x is string => Boolean(x));
+  const after = deduplicateTags(recategorized);
 
-  if (errorParam || !code) {
-    return NextResponse.redirect(`${APP_URL}/settings?integration=notion&status=denied`);
+  const changed = before.length !== after.length || before.some((v, i) => v !== after[i]);
+  return { changed, before, after };
+}
+
+async function runCleanup(userIdFilter: string | null, isDryRun: boolean) {
+  const admin = createAdminClient();
+
+  let query = admin.from("founder_memory").select("user_id, avoidance_zones, strengths");
+  if (userIdFilter) query = query.eq("user_id", userIdFilter);
+
+  const { data: rows, error } = await query;
+  if (error) {
+    return { ok: false as const, error: error.message };
+  }
+  if (!rows || rows.length === 0) {
+    return { ok: true as const, dryRun: isDryRun, touched: 0, skipped: 0, results: [] };
   }
 
-  try {
-    const userId = verifyOAuthState(state);
-    if (!userId) {
-      return NextResponse.redirect(`${APP_URL}/settings?integration=notion&status=error&reason=invalid_state`);
+  const results: Array<{
+    user_id: string;
+    avoidance_zones?: { before: string[]; after: string[] };
+    strengths?: { before: string[]; after: string[] };
+  }> = [];
+  let touched = 0;
+  let skipped = 0;
+
+  for (const row of rows) {
+    const avoidance = cleanArray((row as { avoidance_zones: unknown }).avoidance_zones);
+    const strengths = cleanArray((row as { strengths: unknown }).strengths);
+
+    if (!avoidance.changed && !strengths.changed) {
+      skipped++;
+      continue;
     }
 
-    const clientId = process.env.NOTION_CLIENT_ID ?? "";
-    const clientSecret = process.env.NOTION_CLIENT_SECRET ?? "";
-    if (!clientId || !clientSecret) {
-      throw new Error("Notion OAuth credentials are not configured");
+    touched++;
+    const entry: (typeof results)[number] = { user_id: (row as { user_id: string }).user_id };
+    if (avoidance.changed) entry.avoidance_zones = { before: avoidance.before, after: avoidance.after };
+    if (strengths.changed) entry.strengths = { before: strengths.before, after: strengths.after };
+    results.push(entry);
+
+    if (!isDryRun) {
+      const update: Record<string, string[]> = {};
+      if (avoidance.changed) update.avoidance_zones = avoidance.after;
+      if (strengths.changed) update.strengths = strengths.after;
+      const { error: updateError } = await admin
+        .from("founder_memory")
+        .update(update)
+        .eq("user_id", (row as { user_id: string }).user_id);
+      if (updateError) {
+        (entry as Record<string, unknown>).writeError = updateError.message;
+      }
     }
-
-    // Exchange code for token
-    const tokenRes = await fetch("https://api.notion.com/v1/oauth/token", {
-      method: "POST",
-      headers: {
-        "Authorization": "Basic " + Buffer.from(`${clientId}:${clientSecret}`).toString("base64"),
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        grant_type:   "authorization_code",
-        code,
-        redirect_uri: `${APP_URL}/api/integrations/notion/callback`,
-      }),
-    });
-
-    if (!tokenRes.ok) {
-      throw new Error(`Notion token exchange failed: ${tokenRes.status}`);
-    }
-
-    const tokenData = await tokenRes.json() as {
-      access_token: string;
-      workspace_id: string;
-      workspace_name?: string;
-      bot_id?: string;
-    };
-
-    // Find their first database in the workspace (default target)
-    let databaseId: string | null = null;
-    try {
-      const searchRes = await fetch("https://api.notion.com/v1/search", {
-        method:  "POST",
-        headers: {
-          "Authorization":  `Bearer ${tokenData.access_token}`,
-          "Notion-Version": "2022-06-28",
-          "Content-Type":   "application/json",
-        },
-        body: JSON.stringify({ filter: { value: "database", property: "object" }, page_size: 1 }),
-      });
-      const searchData = await searchRes.json() as { results?: Array<{ id: string }> };
-      databaseId = searchData.results?.[0]?.id ?? null;
-    } catch { /* non-fatal — user can configure later */ }
-
-    // Determine userId from signed state.
-    const supabase = createAdminClient();
-
-    await supabase.from("integrations").upsert({
-      user_id:      userId,
-      provider:     "notion",
-      access_token: tokenData.access_token,
-      workspace_id: tokenData.workspace_id,
-      database_id:  databaseId,
-      metadata:     { workspace_name: tokenData.workspace_name },
-    }, { onConflict: "user_id,provider" });
-
-    // Read return path from cookie (set by connect route). Defaults to /settings.
-    const returnPath = request.cookies.get("bm_oauth_return")?.value ?? "/settings";
-    const safeReturn = ["/onboarding", "/settings"].includes(returnPath) ? returnPath : "/settings";
-    const redirectUrl = `${APP_URL}${safeReturn}?integration=notion&status=connected`;
-    const response = NextResponse.redirect(redirectUrl);
-    // Clear the return cookie
-    response.cookies.set("bm_oauth_return", "", { maxAge: 0, path: "/" });
-    return response;
-  } catch (err) {
-    logError("integrations/notion/callback", err);
-    return NextResponse.redirect(`${APP_URL}/settings?integration=notion&status=error`);
   }
+
+  return { ok: true as const, dryRun: isDryRun, touched, skipped, results };
+}
+
+async function runFounderContextCleanup(userIdFilter: string | null, isDryRun: boolean) {
+  const admin = createAdminClient();
+
+  let query = admin.from("founder_context").select("user_id, avoidance_zones");
+  if (userIdFilter) query = query.eq("user_id", userIdFilter);
+
+  const { data: rows, error } = await query;
+  if (error) {
+    return { ok: false as const, error: error.message };
+  }
+  if (!rows || rows.length === 0) {
+    return { ok: true as const, dryRun: isDryRun, touched: 0, skipped: 0, results: [] };
+  }
+
+  const results: Array<{ user_id: string; avoidance_zones: { before: string[]; after: string[] } }> = [];
+  let touched = 0;
+  let skipped = 0;
+
+  for (const row of rows) {
+    const avoidance = cleanArray((row as { avoidance_zones: unknown }).avoidance_zones);
+    if (!avoidance.changed) {
+      skipped++;
+      continue;
+    }
+    touched++;
+    const entry = { user_id: (row as { user_id: string }).user_id, avoidance_zones: { before: avoidance.before, after: avoidance.after } };
+    results.push(entry);
+
+    if (!isDryRun) {
+      const { error: updateError } = await admin
+        .from("founder_context")
+        .update({ avoidance_zones: avoidance.after })
+        .eq("user_id", (row as { user_id: string }).user_id);
+      if (updateError) {
+        (entry as Record<string, unknown>).writeError = updateError.message;
+      }
+    }
+  }
+
+  return { ok: true as const, dryRun: isDryRun, touched, skipped, results };
+}
+
+async function handle(request: Request, isDryRun: boolean) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user || !(await isAdminUser(user.id))) {
+    return NextResponse.json({ ok: false, error: "Not authorized" }, { status: 403 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const userIdFilter = searchParams.get("user");
+
+  const founderMemoryResult = await runCleanup(userIdFilter, isDryRun);
+  const founderContextResult = await runFounderContextCleanup(userIdFilter, isDryRun);
+
+  if (!founderMemoryResult.ok) {
+    return NextResponse.json(founderMemoryResult, { status: 500 });
+  }
+  if (!founderContextResult.ok) {
+    return NextResponse.json(founderContextResult, { status: 500 });
+  }
+  return NextResponse.json({
+    ok: true,
+    dryRun: isDryRun,
+    founder_memory: founderMemoryResult,
+    founder_context: founderContextResult,
+  });
+}
+
+// Dry run — safe to call any time, writes nothing.
+export async function GET(request: Request) {
+  return handle(request, true);
+}
+
+// Live run — writes cleaned arrays back to founder_memory.
+export async function POST(request: Request) {
+  return handle(request, false);
 }

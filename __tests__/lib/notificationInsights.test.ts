@@ -50,14 +50,14 @@ describe("buildInsightNotifications", () => {
   });
 
   it("warns about streak risk only when nothing completed today", async () => {
-    rows = {}; single = { founder_context: { streak: 5, momentum_score: 40, momentum_last_week: 60 } };
+    rows = {}; single = { founder_context: { streak: 5, last_checkin_date: "2026-09-30", momentum_score: 40, momentum_last_week: 60 } };
     const items = await buildInsightNotifications("u1", undefined, NOW);
     expect(items.find((i) => i.type === "streak_risk")?.title).toContain("5-day streak");
     expect(items.find((i) => i.type === "momentum_shift")?.title).toContain("down 20");
   });
 
   it("every item carries a stable dedupeKey and an expiry", async () => {
-    rows = {}; single = { founder_context: { streak: 3, avoidance_zones: ["Cold outreach"] } };
+    rows = {}; single = { founder_context: { streak: 3, last_checkin_date: "2026-09-30", avoidance_zones: ["Cold outreach"] } };
     const items = await buildInsightNotifications("u1", undefined, NOW);
     expect(items.length).toBeGreaterThan(0);
     for (const i of items) { expect(i.dedupeKey).toBeTruthy(); expect(i.expiresInMs).toBeGreaterThan(0); }

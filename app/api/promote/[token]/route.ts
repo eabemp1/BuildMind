@@ -1,3 +1,4 @@
+import { streakFromDays } from "@/lib/streak";
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -101,22 +102,8 @@ function computeMomentum(activity: { completed_at: string }[]): number {
 }
 
 function computeStreak(activity: { completed_at: string }[]): number {
-  const days = new Set(activity.map(a => a.completed_at.slice(0, 10)));
-  let streak = 0;
-  const cursor = new Date();
-  for (;;) {
-    const key = cursor.toISOString().slice(0, 10);
-    if (days.has(key)) {
-      streak++;
-      cursor.setDate(cursor.getDate() - 1);
-    } else if (streak === 0 && key === new Date().toISOString().slice(0, 10)) {
-      // today not logged yet — don't break streak on the current day
-      cursor.setDate(cursor.getDate() - 1);
-    } else {
-      break;
-    }
-  }
-  return streak;
+  // Same rule as every other streak in the app (lib/streak.ts).
+  return streakFromDays(activity.map(a => a.completed_at.slice(0, 10)));
 }
 
 export async function GET(_req: Request, { params }: { params: Promise<{ token: string }> }) {

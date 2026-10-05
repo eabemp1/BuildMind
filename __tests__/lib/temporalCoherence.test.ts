@@ -27,7 +27,7 @@ describe("temporalCoherence: buildTemporalComparison", () => {
     });
 
     expect(comparison.changed_today.join(" ")).toContain("reflection");
-    expect(comparison.week_over_week.join(" ")).toContain("External evidence actions moved");
+    expect(comparison.week_over_week.join(" ")).toContain("Completed external-evidence actions moved");
     expect(comparison.since_last_decision.join(" ")).toContain("Message a user");
     expect(comparison.increasing).toContain("external evidence seeking");
     expect(comparison.slipping_goals).toContain("Validate buyer pain");

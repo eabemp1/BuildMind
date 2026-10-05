@@ -21,6 +21,7 @@ import { createClient } from "@/lib/supabase/client";
 import { getCurrentUser, getProjectSummaries } from "@/lib/data/projects";
 import { computeStartupScore } from "@/lib/scoring";
 import type { BuildMindProject, DashboardOverview, WeeklyReportMetrics } from "@/lib/buildmind.types";
+import { effectiveStreak } from "@/lib/streak";
 
 const REPORT_COLORS = [
   "var(--bm-accent)",
@@ -545,26 +546,9 @@ export async function getDashboardOverview(activeProjectId?: string): Promise<Da
     return milestoneTasks.length > 0 && milestoneTasks.every((task) => task.is_completed);
   }).length;
 
-  const completedDates = new Set(
-    [
-      ...(allTasks ?? [])
-        .filter((t) => t.is_completed && (t.updated_at || t.created_at))
-        .map((t) => toLocalDateStr(t.updated_at ?? t.created_at)),
-      ...todayCompletedDates.map((date) => toLocalDateStr(date)),
-    ],
-  );
-
-  let streak = 0;
-  for (let i = 0; i < 90; i++) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    if (completedDates.has(toLocalDateStr(d.toISOString()))) streak++;
-    else if (i > 0) break;
-  }
-
   const { data: founderContext } = await supabase
     .from("founder_context")
-    .select("streak, avoidance_zones, consecutive_tasks_completed, tasks_completed_total, days_inactive")
+    .select("streak, last_checkin_date, avoidance_zones, consecutive_tasks_completed, tasks_completed_total, days_inactive")
     .eq("user_id", user.id)
     .maybeSingle();
 
@@ -593,12 +577,11 @@ export async function getDashboardOverview(activeProjectId?: string): Promise<Da
     .order("created_at", { ascending: false })
     .limit(14);
 
-  const contextRow = founderContext as { streak?: number | null; avoidance_zones?: string[] | null } | null;
-  const dbStreak = contextRow?.streak;
-  const serverStreak = Math.max(
-    typeof dbStreak === "number" ? dbStreak : 0,
-    streak,
-  );
+  // One streak, one definition (lib/streak.ts): the server count, lapsed to 0
+  // when a full day was missed. The old Math.max() against a count rebuilt
+  // from task edit timestamps could show a streak the founder never earned.
+  const contextRow = founderContext as { streak?: number | null; last_checkin_date?: string | null; avoidance_zones?: string[] | null } | null;
+  const serverStreak = effectiveStreak(contextRow?.streak, contextRow?.last_checkin_date);
 
   const today = new Date().toLocaleDateString("en-CA");
   const { data: behaviorRows } = await supabase
@@ -629,6 +612,7 @@ export async function getDashboardOverview(activeProjectId?: string): Promise<Da
 
   const contextData = founderContext as {
     streak?: number | null;
+    last_checkin_date?: string | null;
     avoidance_zones?: string[] | null;
     consecutive_tasks_completed?: number | null;
     tasks_completed_total?: number | null;

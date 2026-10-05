@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { selectActiveProject, useActiveProjectId, useProjectSummariesQuery, useDashboardOverviewQuery } from "@/lib/queries";
-import { fetchAndSyncStoredPlanFromBillingStatus, getLimits, incrementDailyStreak } from "@/lib/plan";
+import { fetchAndSyncStoredPlanFromBillingStatus, getLimits } from "@/lib/plan";
 import { usePlan } from "@/lib/usePlan";
 import { useLimitModal } from "@/components/LimitModal";
 import { updateAchievementStats, checkAndUnlockAchievements, getAchievementStats } from "@/lib/achievements";
@@ -124,7 +124,7 @@ function MessageBubble({ msg, onStartAction, onOpen, onRunChip }: { msg: ChatMes
   if (isUser) {
     return (
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }} className="flex justify-end">
-        <div className="max-w-[85%] rounded-[22px] rounded-br-md border border-[var(--bm-border2)] bg-[var(--bm-bg3)] px-4 py-3 text-[15px] leading-[1.65] text-[var(--bm-text)] sm:max-w-[75%]">
+        <div className="max-w-[85%] rounded-[20px] rounded-br-md border border-[var(--bm-border2)] bg-[var(--bm-bg3)] px-3.5 py-2.5 sm:px-4 sm:py-3 text-[14.5px] leading-[1.6] text-[var(--bm-text)] sm:max-w-[75%] sm:text-[15px]">
           <span style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{sanitizeOutput(msg.content)}</span>
         </div>
       </motion.div>
@@ -132,8 +132,8 @@ function MessageBubble({ msg, onStartAction, onOpen, onRunChip }: { msg: ChatMes
   }
 
   return (
-    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }} className="flex items-start gap-3.5">
-      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[var(--bm-intel-bd)] bg-[var(--bm-intel-dim)]">
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }} className="flex items-start gap-2.5 sm:gap-3.5">
+      <div className="mt-0.5 flex h-7 w-7 shrink-0 sm:h-8 sm:w-8 items-center justify-center rounded-full border border-[var(--bm-intel-bd)] bg-[var(--bm-intel-dim)]">
         <Sparkles size={14} color="var(--bm-intel2)" />
       </div>
       <div className="flex min-w-0 flex-1 flex-col gap-3">
@@ -162,7 +162,7 @@ function MessageBubble({ msg, onStartAction, onOpen, onRunChip }: { msg: ChatMes
         {msg.phase === "thinking" ? (
           <div className="py-1"><ThinkingDots /></div>
         ) : (
-          <div className="text-[15.5px] leading-[1.75]" style={{ color: msg.error ? "var(--bm-red)" : "var(--bm-text)", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+          <div className="text-[14.5px] leading-[1.7] sm:text-[15.5px] sm:leading-[1.75]" style={{ color: msg.error ? "var(--bm-red)" : "var(--bm-text)", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
             {sanitizeOutput(parsed.text)}
           </div>
         )}
@@ -174,7 +174,7 @@ function MessageBubble({ msg, onStartAction, onOpen, onRunChip }: { msg: ChatMes
             {parsed.links.map((l, i) => (
               <button key={i} type="button"
                 onClick={() => (l.kind === "open" ? onOpen(l.href) : onRunChip(l.chip))}
-                className="inline-flex cursor-pointer items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold"
+                className="inline-flex cursor-pointer items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold sm:px-4 sm:py-2 sm:text-[13px]"
                 style={{ background: "var(--bm-accent-dim)", color: "var(--bm-accent)", border: "1px solid var(--bm-accent-bd)", fontFamily: "inherit" }}>
                 {l.label}
                 <ArrowUpRight size={13} />
@@ -370,13 +370,6 @@ function AICoachPageInner() {
       const stats = getAchievementStats();
       updateAchievementStats({ ...stats, aiMessages: (stats.aiMessages ?? 0) + 1 });
       checkAndUnlockAchievements();
-      // AI Coach counts as a streak-qualifying activity — increment once per day
-      const todayKey = new Date().toISOString().split("T")[0];
-      if (storage.get("bm_coach_streak_date") !== todayKey) {
-        incrementDailyStreak();
-        storage.set("bm_coach_streak_date", todayKey);
-        persistBehaviorState({ coach_streak_date: todayKey });
-      }
       trackEvent("ai_coach_message", { plan });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Something went wrong. Try again.";
@@ -460,16 +453,16 @@ function AICoachPageInner() {
     <div className="relative mx-auto flex w-full max-w-[860px] flex-col" style={{ minHeight: isMobile ? "calc(100dvh - 120px)" : "calc(100vh - 80px)", height: isMobile ? "auto" : "calc(100vh - 80px)" }}>
 
       {/* Slim header: the conversation is the page */}
-      <header className="flex shrink-0 items-center justify-between gap-3 px-4 py-3 sm:px-2">
+      <header className="flex shrink-0 items-center justify-between gap-2 px-3 py-2.5 sm:gap-3 sm:px-2 sm:py-3">
         <div className="min-w-0">
-          <h1 className="m-0 text-[20px] font-bold tracking-[-0.02em] text-[var(--bm-text)]" style={{ fontFamily: "'Syne', sans-serif" }}>AI Coach</h1>
+          <h1 className="m-0 text-[18px] font-bold tracking-[-0.02em] text-[var(--bm-text)] sm:text-[20px]" style={{ fontFamily: "'Syne', sans-serif" }}>AI Coach</h1>
           {activeProject && <div className="truncate text-[13px] text-[var(--bm-text3)]">{activeProject.title}</div>}
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <div role="group" aria-label="Coach tone" className="flex rounded-full border border-[var(--bm-border)] bg-[var(--bm-bg2)] p-0.5">
             {personalityOptions.map(opt => (
               <button key={opt.id} onClick={() => setPersonality(opt.id)} aria-pressed={personality === opt.id}
-                className={`cursor-pointer rounded-full border-0 px-3 py-1.5 text-[12.5px] ${personality === opt.id ? "bg-[var(--bm-intel-dim)] font-semibold text-[var(--bm-intel2)]" : "bg-transparent text-[var(--bm-text3)] hover:text-[var(--bm-text2)]"}`}>
+                className={`cursor-pointer rounded-full border-0 px-2.5 py-1.5 text-[12px] sm:px-3 sm:text-[12.5px] ${personality === opt.id ? "bg-[var(--bm-intel-dim)] font-semibold text-[var(--bm-intel2)]" : "bg-transparent text-[var(--bm-text3)] hover:text-[var(--bm-text2)]"}`}>
                 {opt.label}
               </button>
             ))}
@@ -511,21 +504,21 @@ function AICoachPageInner() {
       <div className="min-h-0 flex-1 overflow-y-auto px-4 sm:px-2" style={{ scrollbarWidth: "thin" }}>
         {messages.length === 0 ? (
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="mx-auto flex h-full max-w-[680px] flex-col justify-center py-8">
-            <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl border border-[var(--bm-intel-bd)] bg-[var(--bm-intel-dim)]">
+            <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-2xl sm:mb-5 sm:h-12 sm:w-12 border border-[var(--bm-intel-bd)] bg-[var(--bm-intel-dim)]">
               <Sparkles size={22} color="var(--bm-intel2)" />
             </div>
-            <h2 className="m-0 text-[30px] font-bold leading-[1.2] tracking-[-0.025em] text-[var(--bm-text)] sm:text-[36px]" style={{ fontFamily: "'Syne', sans-serif" }}>
+            <h2 className="m-0 text-[24px] font-bold leading-[1.2] tracking-[-0.025em] text-[var(--bm-text)] sm:text-[36px]" style={{ fontFamily: "'Syne', sans-serif" }}>
               {greetingName ? "Where do things stand?" : "Day one. Let’s get oriented."}
             </h2>
-            <p className="mt-3 max-w-[560px] text-[16px] leading-[1.7] text-[var(--bm-text2)]">
+            <p className="mt-2.5 max-w-[560px] text-[14px] leading-[1.65] text-[var(--bm-text2)] sm:mt-3 sm:text-[16px] sm:leading-[1.7]">
               {greetingName
                 ? "I know your blockers, your streak and the tasks you keep skipping. Tell me what you are stuck on, or ask what to do next. I will answer directly."
                 : "You do not have a track record with me yet, so I will not pretend to know your patterns. Tell me what you are stuck on or what you are building, and I will give you a direct read."}
             </p>
-            <div className="mt-7 grid gap-2.5 sm:grid-cols-2">
+            <div className="mt-5 grid gap-2 sm:mt-7 sm:grid-cols-2 sm:gap-2.5">
               {QUICK_PROMPTS.slice(0, 4).map(p => (
                 <button key={p} onClick={() => sendMessage(p)}
-                  className="group flex min-h-[72px] cursor-pointer items-start justify-between gap-3 rounded-[16px] border border-[var(--bm-border)] bg-[var(--bm-bg2)] p-4 text-left text-[14.5px] leading-snug text-[var(--bm-text2)] transition-colors hover:border-[var(--bm-intel-bd)] hover:text-[var(--bm-text)]">
+                  className="group flex min-h-[56px] cursor-pointer items-start justify-between gap-3 rounded-[14px] border border-[var(--bm-border)] bg-[var(--bm-bg2)] p-3 text-left text-[13.5px] leading-snug sm:min-h-[72px] sm:rounded-[16px] sm:p-4 sm:text-[14.5px] text-[var(--bm-text2)] transition-colors hover:border-[var(--bm-intel-bd)] hover:text-[var(--bm-text)]">
                   <span>{p}</span>
                   <ArrowUpRight size={16} className="mt-0.5 shrink-0 text-[var(--bm-text4)] group-hover:text-[var(--bm-intel2)]" />
                 </button>
@@ -549,13 +542,13 @@ function AICoachPageInner() {
             {COACH_ACTION_CHIPS.map(chip => (
               <button key={chip.label} type="button" disabled={loading}
                 onClick={() => sendMessage(chip.label, { action: { id: chip.id, params: chip.params } })}
-                className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-[var(--bm-border2)] bg-[var(--bm-bg2)] px-3.5 py-2 text-[13px] text-[var(--bm-text2)] transition-colors hover:border-[var(--bm-intel-bd)] hover:text-[var(--bm-text)] disabled:cursor-not-allowed disabled:opacity-50">
+                className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-[var(--bm-border2)] bg-[var(--bm-bg2)] px-3 py-1.5 text-[12.5px] text-[var(--bm-text2)] sm:px-3.5 sm:py-2 sm:text-[13px] transition-colors hover:border-[var(--bm-intel-bd)] hover:text-[var(--bm-text)] disabled:cursor-not-allowed disabled:opacity-50">
                 <Zap size={13} color="var(--bm-intel2)" />
                 {chip.label}
               </button>
             ))}
           </div>
-          <div className="flex items-end gap-3 rounded-[24px] border border-[var(--bm-border2)] bg-[var(--bm-bg2)] py-3 pl-5 pr-3 shadow-[0_8px_30px_rgba(0,0,0,0.25)] transition-colors focus-within:border-[var(--bm-accent-bd)]">
+          <div className="flex items-end gap-3 rounded-[22px] border border-[var(--bm-border2)] bg-[var(--bm-bg2)] py-2 pl-4 pr-2 sm:rounded-[24px] sm:py-3 sm:pl-5 sm:pr-3 shadow-[0_8px_30px_rgba(0,0,0,0.25)] transition-colors focus-within:border-[var(--bm-accent-bd)]">
             <textarea ref={inputRef} value={input}
               onChange={e => { setInput(e.target.value); const el = e.currentTarget; el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 180) + "px"; }}
               onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
@@ -563,7 +556,7 @@ function AICoachPageInner() {
               className="max-h-[180px] min-h-[28px] flex-1 resize-none border-0 bg-transparent py-1 text-[16px] leading-[1.6] text-[var(--bm-text)] outline-none placeholder:text-[var(--bm-text4)]" />
             <motion.button whileTap={{ scale: 0.94 }} onClick={() => sendMessage()} aria-label="Send message"
               disabled={!input.trim() || loading}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border-0"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-0 sm:h-11 sm:w-11"
               style={{ background: !input.trim() || loading ? "var(--bm-bg4)" : "var(--bm-accent)", color: !input.trim() || loading ? "var(--bm-text3)" : "#15130a", cursor: !input.trim() || loading ? "not-allowed" : "pointer" }}>
               <Send size={17} />
             </motion.button>

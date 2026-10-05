@@ -1,1490 +1,571 @@
 "use client";
-import React from "react";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { useActiveProjectId, useProjectsQuery } from "@/lib/queries";
-import { setActiveProjectId } from "@/lib/api";
-import { createProjectWithRoadmap } from "@/lib/buildmind";
+import { selectActiveProject, useActiveProjectId, useProjectSummariesQuery, useDashboardOverviewQuery } from "@/lib/queries";
+import { fetchAndSyncStoredPlanFromBillingStatus, getLimits } from "@/lib/plan";
+import { usePlan } from "@/lib/usePlan";
+import { useLimitModal } from "@/components/LimitModal";
+import { updateAchievementStats, checkAndUnlockAchievements, getAchievementStats } from "@/lib/achievements";
+import { trackEvent } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase/client";
 import { storage } from "@/lib/storage";
 import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
-import { canAccess, incrementDailyStreak } from "@/lib/plan";
-import { usePlan } from "@/lib/usePlan";
-import { useLimitModal } from "@/components/LimitModal";
-import { updateAchievementStats, checkAndUnlockAchievements } from "@/lib/achievements";
-import {
-  Shield, ChevronDown, AlertTriangle, CheckCircle2,
-  RefreshCw, Save, X, Loader2, Plus,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { BuildMindCalibrating } from "@/components/BuildMindCalibrating";
-import { Card } from "@/components/ui/card";
-import { Badge, BadgeVariant } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/input";
-import { PageHeader } from "@/components/ui/PageHeader";
-import { sanitizeOutput, sanitizeMarkdown } from "@/lib/sanitizeOutput";
-import { Markdown } from "@/components/ui/Markdown";
-import { RadialGauge, RadarChart, SeverityStack, type SeverityItem, type Severity } from "@/components/charts";
+import AIUsageBadge from "@/components/AIUsageBadge";
+import { ConfidenceBadge } from "@/components/ConfidenceBadge";
+import { Send, Brain, Sparkles, Zap, ChevronRight, ArrowUpRight, PanelRight, X } from "lucide-react";
+import { withAIErrorBoundary } from "@/components/AIErrorBoundary";
+import { sanitizeOutput } from "@/lib/sanitizeOutput";
+import { CoachActionResultCard } from "@/components/coach/CoachActionResultCard";
+import { matchCoachAction } from "@/lib/coachActions/matcher";
+import { COACH_ACTION_CHIPS, type CoachActionChip } from "@/lib/coachActions/chips";
+import { matchNavigation, parseReplyLinks } from "@/lib/coachNavigation";
+import type { CoachActionResult } from "@/lib/coachActions/types";
 
-// ── Types ────────────────────────────────────────────────────────────────────
-type RiskSeverity = "Critical" | "High" | "Medium" | "Low";
-
-interface RiskItem {
-  category: string;
-  severity: RiskSeverity;
-  description: string;
-  mitigation: string;
-  /** Which of the founder's SELECTED focus areas this risk actually relates
-   *  to (never an unselected one) — see lib/breakMyStartupFocusAreas.ts. */
-  relatedFocusAreas?: string[];
-}
-
-interface PivotItem {
-  title: string;
-  description: string;
-  target_niche: string;
-  why_better: string;
-  estimated_score_delta: number;
-  key_change: string;
-  relatedFocusAreas?: string[];
-}
-
-interface CompetitorRow {
-  name: string;
-  url?: string;
-  weakness: string;
-  threat_level: "low" | "medium" | "high";
-}
-
-interface BreakResult {
-  overallRisk: RiskSeverity;
-  summary: string;
-  risks: RiskItem[];
-  survival_probability?: number;
-  brutal_advice?: string;
-  gated?: boolean;
-  score_note?: string;
-  agents?: Array<{ name: string; status: string; summary: string; confidence?: number }>;
-  /** Per-dimension 0-100 scores from the 5-agent pipeline's SignalSummary.
-   *  The API has always returned this on signal_summary; it just wasn't
-   *  read here before. Feeds the radar chart. */
-  signalBreakdown?: Array<{ key: string; label: string; value: number; tip?: string }>;
-  isSynthetic?: boolean; // D2: true when all agents fell back to hardcoded defaults
-  focusAreas?: string[];
-  executionPlan?: { mvp_roadmap?: string[]; first_10_actions?: string[]; gtm_plan?: string[] } | null;
-  /** Pivot Engine output (lib/agents generatePivots). The backend has always
-   *  computed this — it's the system's actual "you might be going in the
-   *  wrong direction" signal — but it was dropped before reaching the UI.
-   *  Now surfaced as its own card. */
-  pivots?: PivotItem[];
-  /** Real per-competitor breakdown from the Competitor agent
-   *  (agent_outputs.competitor.direct_competitors) — computed on every run,
-   *  but only ever reduced to a generic paragraph (competitor_summary)
-   *  before reaching this page. Feeds the Competitive Landscape table. */
-  competitorTable?: CompetitorRow[];
-  /** Real opportunities the pipeline found (signals.all_opportunities on the
-   *  backend), returned as survive_reasons on every response but never read
-   *  here before. Feeds "What Could Still Work". */
-  surviveReasons?: string[];
-  /** Index-aligned with surviveReasons — which selected focus areas each one relates to. */
-  surviveReasonTags?: string[][];
-  /** Which selected focus areas were actually addressed anywhere in the
-   *  result vs. which ones nothing came back on — null when none selected. */
-  focusAreaCoverage?: FocusAreaCoverage | null;
-  /** Raw (non-inverted) 0-100 scores for the five stress-test dimensions —
-   *  same signal_summary the radar chart uses, kept un-inverted here so the
-   *  tiles read the same numbers a founder would recognize from the model. */
-  signalScores?: { demand: number; competition: number; timing: number; uniqueness: number; risk: number };
-  reflexionAction?: {
-    action?: string;
-    rationale?: string;
-    confidence?: number;
-    supporting_signals?: string[];
-    risks?: string[];
-    log_row_id?: string | null;
-  } | null;
-}
-
-/** Selected focus areas that touched an item, index-aligned with the parent
- *  list. See lib/breakMyStartupFocusAreas.ts — only ever contains names
- *  from what the founder actually selected. */
-type FocusAreaCoverage = { selected: string[]; addressed: string[]; unaddressed: string[] };
-
-type BreakApiData = {
-  verdict?: string;
-  kill_reasons?: string[];
-  kill_reason_tags?: string[][];
-  survive_reasons?: string[];
-  survive_reason_tags?: string[][];
-  brutal_advice?: string;
-  survival_probability?: number;
-  competitor_summary?: string;
-  differentiation_plan?: string[];
-  differentiation_plan_tags?: string[][];
-  pivot_focus_tags?: string[][];
-  focus_area_coverage?: FocusAreaCoverage | null;
-  gated?: boolean;
+type ChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
   reasoning?: string[];
-  agent_outputs?: Record<string, Record<string, unknown> | null>;
-  agent_statuses?: Record<string, string>;
-  signal_summary?: {
-    overall_confidence?: number;
-    demand_score?: number;
-    competition_score?: number;
-    timing_score?: number;
-    uniqueness_score?: number;
-    risk_score?: number;
-  };
-  execution_plan?: BreakResult["executionPlan"];
-  reflexion_action?: BreakResult["reflexionAction"];
-  focus_areas?: string[];
-  pivots?: PivotItem[];
+  phase?: "thinking" | "writing" | "done";
+  error?: boolean;
+  /** Reflexion confidence_score (0–1). Badge renders when < 0.75 */
+  confidence_score?: number | null;
+  /** Optional structured action the coach converged on — only present when
+   *  the model named one concrete, time-boxed next step (see coach route's
+   *  recommended_action contract). Absent on most replies by design. */
+  recommendedAction?: { what_to_do: string; why_now: string; expected_evidence?: string };
+  /** Present when the reply was a Coach Action (lib/coachActions) rather
+   *  than model-written coaching — rendered as a data card, not prose. */
+  actionResult?: CoachActionResult;
 };
 
-const FOCUS_AREAS = [
-  "Business Model",
-  "Unit Economics",
-  "Market Size",
-  "Competitive Moat",
-  "Founder-Market Fit",
-  "Tech Risk",
-  "Regulatory Risk",
-] as const;
-type FocusArea = (typeof FOCUS_AREAS)[number];
+function buildPlaceholderReasoning(message: string, projectTitle?: string, score?: number): string[] {
+  const msg = message.toLowerCase();
+  const steps: string[] = [];
+  if (projectTitle) steps.push(`Pulling live data for "${projectTitle}"...`);
+  else steps.push("Reading your project state...");
+  if (msg.includes("stuck") || msg.includes("block")) {
+    steps.push("Identifying the specific blocker vs. avoidance pattern...");
+    steps.push("Checking execution history for context...");
+  } else if (msg.includes("user") || msg.includes("customer")) {
+    steps.push("Evaluating user acquisition approach vs. stage...");
+    steps.push("Cross-referencing validation data...");
+  } else if (msg.includes("today") || msg.includes("priority")) {
+    steps.push("Scanning open tasks for highest-leverage action...");
+    steps.push(score !== undefined ? `Score is ${score}/100 — weighing effort vs. impact...` : "Weighing effort vs. impact...");
+  } else {
+    steps.push("Reading between the lines of your question...");
+    steps.push(score !== undefined ? `Execution score ${score}/100 — calibrating directness level...` : "Calibrating response to your situation...");
+  }
+  steps.push("Drafting the most useful response...");
+  return steps;
+}
 
-/** Small pill row showing which of the founder's selected focus areas an
- *  item relates to (lib/breakMyStartupFocusAreas.ts tags it server-side) —
- *  the visible proof that picking a chip actually shaped the result. */
-function FocusAreaTags({ areas }: { areas?: string[] }) {
-  if (!areas || areas.length === 0) return null;
+const QUICK_PROMPTS = [
+  "Am I avoiding the hardest work right now?",
+  "What is the single highest-leverage move this week?",
+  "Is my recent progress real or just busyness?",
+  "If you were the founder, what would you do today?",
+  "What behavioral patterns should I be worried about?",
+];
+
+// FIX: renamed from *_PER_WEEK — the server (app/api/ai/coach/route.ts,
+// FREE_COACH_MESSAGES_PER_DAY) enforces this as a DAILY cap. The client
+// counter was previously week-scoped, blocking free users ~7x more
+// aggressively than the real server policy. Now both are day-scoped.
+const FREE_COACH_MESSAGES_PER_DAY = 3;
+
+function getCoachMessagesToday() {
+  return storage.getCoachMessagesToday();
+}
+
+function recordCoachMessage() {
+  storage.recordCoachMessage();
+}
+
+function ThinkingDots() {
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 8 }}>
-      {areas.map((area) => (
-        <span
-          key={area}
-          style={{
-            fontSize: 9.5, fontWeight: 600, color: "var(--bm-intel)",
-            background: "var(--bm-intel-dim, rgba(93,169,224,0.1))",
-            border: "1px solid var(--bm-intel-bd, rgba(93,169,224,0.25))",
-            borderRadius: 999, padding: "2px 8px",
-          }}
-        >
-          {area}
-        </span>
+    <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+      {[0, 1, 2].map(i => (
+        <motion.span key={i}
+          style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--bm-accent)", display: "inline-block" }}
+          animate={{ opacity: [0.3, 1, 0.3], scale: [0.8, 1.1, 0.8] }}
+          transition={{ duration: 1, delay: i * 0.18, repeat: Infinity }} />
       ))}
-    </div>
+    </span>
   );
 }
 
-function severityVariant(s: RiskSeverity): BadgeVariant {
-  if (s === "Critical") return "danger";
-  if (s === "High") return "warning";
-  if (s === "Medium") return "info";
-  return "neutral";
+function hasHistoryGlobal(o?: { completedTasks?: number; daysSinceLastReflection?: number | null } | null) {
+  return (o?.completedTasks ?? 0) > 0 || o?.daysSinceLastReflection != null;
 }
 
-function overallColor(s: RiskSeverity) {
-  if (s === "Critical") return "var(--bm-red)";
-  if (s === "High") return "var(--bm-amber)";
-  if (s === "Medium") return "var(--bm-blue)";
-  return "var(--bm-green)";
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 767px)");
+    const update = () => setIsMobile(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+  return isMobile;
 }
 
-function cleanAIText(value = ""): string {
-  return value
-    .replace(/<think>[\s\S]*?<\/think>/gi, "")
-    .replace(/<think>[\s\S]*$/gi, "")
-    .replace(/^[\s\S]*<\/think>/gi, "")
-    // FIX: this function stripped think-tags, arrows, dashes, curly quotes,
-    // and ellipsis, but never touched markdown syntax. This page renders
-    // every AI string as plain JSX text — no ReactMarkdown, no
-    // dangerouslySetInnerHTML anywhere in this file (confirmed via grep) —
-    // so any markdown the model outputs shows up as literal characters
-    // instead of being interpreted. Bold/italic stripped BEFORE the single-
-    // asterisk/underscore pass, or **text** would only half-match.
-    .replace(/\*\*\*([^*]+)\*\*\*/g, "$1")   // ***bold italic***
-    .replace(/\*\*([^*]+)\*\*/g, "$1")       // **bold**
-    .replace(/__([^_]+)__/g, "$1")           // __bold__
-    .replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, "$1") // *italic* (not part of **)
-    .replace(/(?<!_)_([^_\n]+)_(?!_)/g, "$1")     // _italic_
-    .replace(/`{1,3}([^`]+)`{1,3}/g, "$1")   // `code` / ```code```
-    .replace(/^#{1,6}\s+/gm, "")             // # Heading markers
-    .replace(/^[-*+]\s+/gm, "")              // markdown bullet markers
-    .replace(/[•→⇒➜➔]/g, "-")
-    .replace(/[—–]/g, "-")
-    .replace(/[“”]/g, '"')
-    .replace(/[‘’]/g, "'")
-    .replace(/\u2026/g, "...")
-    .replace(/[^\S\r\n]+/g, " ")
-    .trim();
+function MessageBubble({ msg, onStartAction, onOpen, onRunChip }: { msg: ChatMessage; onStartAction: () => void; onOpen: (href: string) => void; onRunChip: (chip: CoachActionChip) => void }) {
+  const isUser = msg.role === "user";
+  // Buttons the Coach attached ([[open:...]] / [[run:...]]) are validated against closed allow-lists.
+  const parsed = !isUser && msg.phase === "done" ? parseReplyLinks(msg.content) : { text: msg.content, links: [] as ReturnType<typeof parseReplyLinks>["links"] };
+  const [expanded, setExpanded] = useState(false);
+  const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+  if (isUser) {
+    return (
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }} className="flex justify-end">
+        <div className="max-w-[85%] rounded-[20px] rounded-br-md border border-[var(--bm-border2)] bg-[var(--bm-bg3)] px-3.5 py-2.5 sm:px-4 sm:py-3 text-[14.5px] leading-[1.6] text-[var(--bm-text)] sm:max-w-[75%] sm:text-[15px]">
+          <span style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{sanitizeOutput(msg.content)}</span>
+        </div>
+      </motion.div>
+    );
+  }
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }} className="flex items-start gap-2.5 sm:gap-3.5">
+      <div className="mt-0.5 flex h-7 w-7 shrink-0 sm:h-8 sm:w-8 items-center justify-center rounded-full border border-[var(--bm-intel-bd)] bg-[var(--bm-intel-dim)]">
+        <Sparkles size={14} color="var(--bm-intel2)" />
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col gap-3">
+        {msg.reasoning && msg.reasoning.length > 0 && (
+          <div>
+            <button onClick={() => setExpanded(v => !v)} aria-expanded={expanded}
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-[var(--bm-border)] bg-transparent px-3 py-1 text-[12px] text-[var(--bm-text3)] hover:text-[var(--bm-text2)]">
+              <Brain size={12} />
+              {msg.phase === "thinking" ? "Thinking" : "How I got here"}
+              <ChevronRight size={12} style={{ transform: expanded ? "rotate(90deg)" : "none", transition: "transform 0.15s" }} />
+            </button>
+            <AnimatePresence>
+              {expanded && (
+                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: "hidden" }}>
+                  <div className="mt-2 border-l-2 border-[var(--bm-border2)] pl-3.5">
+                    {msg.reasoning.map((step, i) => (
+                      <div key={i} className="mb-1.5 text-[13px] leading-relaxed text-[var(--bm-text3)]">{sanitizeOutput(step)}</div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
+
+        {msg.phase === "thinking" ? (
+          <div className="py-1"><ThinkingDots /></div>
+        ) : (
+          <div className="text-[14.5px] leading-[1.7] sm:text-[15.5px] sm:leading-[1.75]" style={{ color: msg.error ? "var(--bm-red)" : "var(--bm-text)", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+            {sanitizeOutput(parsed.text)}
+          </div>
+        )}
+
+        {msg.phase === "done" && msg.actionResult && <CoachActionResultCard result={msg.actionResult} />}
+
+        {parsed.links.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {parsed.links.map((l, i) => (
+              <button key={i} type="button"
+                onClick={() => (l.kind === "open" ? onOpen(l.href) : onRunChip(l.chip))}
+                className="inline-flex cursor-pointer items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold sm:px-4 sm:py-2 sm:text-[13px]"
+                style={{ background: "var(--bm-accent-dim)", color: "var(--bm-accent)", border: "1px solid var(--bm-accent-bd)", fontFamily: "inherit" }}>
+                {l.label}
+                <ArrowUpRight size={13} />
+              </button>
+            ))}
+          </div>
+        )}
+
+        {msg.phase === "done" && msg.recommendedAction && (
+          <div className="rounded-[18px] border border-[var(--bm-accent-bd)] bg-[var(--bm-bg2)] p-5">
+            <div className="mb-3 text-[14px] font-semibold text-[var(--bm-accent)]">Recommended next step</div>
+            <p className="text-[15px] leading-[1.65] text-[var(--bm-text)]">{sanitizeOutput(msg.recommendedAction.what_to_do)}</p>
+            <p className="mt-3 text-[14px] leading-relaxed text-[var(--bm-text3)]">
+              <span className="font-semibold text-[var(--bm-text2)]">Why now: </span>{sanitizeOutput(msg.recommendedAction.why_now)}
+            </p>
+            {msg.recommendedAction.expected_evidence && (
+              <p className="mt-2 text-[14px] leading-relaxed text-[var(--bm-text3)]">
+                <span className="font-semibold text-[var(--bm-text2)]">You will know it worked when: </span>{sanitizeOutput(msg.recommendedAction.expected_evidence)}
+              </p>
+            )}
+            <button onClick={onStartAction}
+              className="mt-4 w-full cursor-pointer rounded-[12px] border-0 py-3 text-[14px] font-bold sm:w-auto sm:px-6"
+              style={{ background: "var(--bm-accent)", color: "#15130a" }}>
+              Start this now
+            </button>
+          </div>
+        )}
+
+        {msg.phase === "done" && (
+          <div className="flex flex-wrap items-center gap-2 text-[12px] text-[var(--bm-text4)]">
+            <span>{time}</span>
+            {typeof msg.confidence_score === "number" && <ConfidenceBadge score={msg.confidence_score} />}
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
 }
 
-function cleanAIList(items?: string[]): string[] {
-  return (items ?? []).map(cleanAIText).filter(Boolean);
-}
+function AICoachPageInner() {
+  const router = useRouter();
+  const isMobile = useIsMobile();
+  const { plan, isLoading: planLoading } = usePlan();
+  const { showLimitModal } = useLimitModal();
+  const { data: summaries = [], isLoading: summariesLoading } = useProjectSummariesQuery();
+  const activeProjectId = useActiveProjectId();
+  const activeProject = selectActiveProject(summaries, activeProjectId);
+  const { data: overview } = useDashboardOverviewQuery(activeProject?.id);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [personality, setPersonality] = useState<"direct" | "supportive" | "challenger">("direct");
+  const [memory, setMemory] = useState<string[]>([]);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [coachMessagesToday, setCoachMessagesToday] = useState(0);
+  const [showContext, setShowContext] = useState(false);
+  const [activityEvents, setActivityEvents] = useState<Array<{ label: string; occurredAt: string }>>([]);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
-// ── Main page ─────────────────────────────────────────────────────────────────
-export default function BreakMyStartupPage() {
-  const [reflectionCount, setReflectionCount] = React.useState(0);
+  // FIX (checklist item): this used to call computeStartupScore(activeProject)
+  // directly, without xp/streak — the same score displayed on Today/Overview
+  // for the identical project, at the identical moment, would be up to ~30
+  // points higher (xp boost 0-20, streak boost 0-10; see lib/scoring/index.ts).
+  // Rather than fix the inputs, the score widget itself is removed below —
+  // a chat surface doesn't need a status widget, and deleting it is safer
+  // than patching it: no more mismatch, no surface for a duplicate verdict
+  // to grow back. buildPlaceholderReasoning falls back to its non-numeric
+  // flavor text when score is undefined.
+  const limits = getLimits(plan);
+  const coachLimit = plan === "free" ? FREE_COACH_MESSAGES_PER_DAY : limits.aiMessagesPerDay;
+  const remaining = plan === "free" ? Math.max(0, coachLimit - coachMessagesToday) : Infinity;
 
-  React.useEffect(() => {
-    async function fetchCount() {
-      try {
-        const { createClient: cc } = await import("@/lib/supabase/client");
-        const supabase = cc();
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-        const { count } = await supabase.from("reflections").select("id", { count: "exact", head: true }).eq("user_id", user.id);
-        setReflectionCount(count ?? 0);
-      } catch { /* non-fatal */ }
-    }
-    fetchCount();
+  useEffect(() => {
+    void fetchAndSyncStoredPlanFromBillingStatus();
+  }, []);
 
-    fetchBehaviorState<{ break_streak_date: string }>(["break_streak_date"]).then(values => {
+  useEffect(() => {
+    try { setMemory(storage.getJSON<string[]>("bm_coach_memory", [])); } catch {}
+    setCoachMessagesToday(getCoachMessagesToday());
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
+    fetchBehaviorState<{
+      coach_memory: string[];
+      coach_streak_date: string;
+      ai_personality: "direct" | "supportive" | "challenger";
+    }>(["coach_memory", "coach_streak_date", "ai_personality"]).then(values => {
+      if (Array.isArray(values.coach_memory)) {
+        storage.setJSON("bm_coach_memory", values.coach_memory);
+        setMemory(values.coach_memory);
+      }
       const today = new Date().toISOString().split("T")[0];
-      if (values.break_streak_date === today) {
-        storage.set("bm_break_streak_date", today);
+      if (values.coach_streak_date === today) {
+        storage.set("bm_coach_streak_date", today);
+      }
+      if (values.ai_personality === "direct" || values.ai_personality === "supportive" || values.ai_personality === "challenger") {
+        setPersonality(values.ai_personality);
       }
     }).catch(() => {});
   }, []);
-  const { plan, isLoading: planLoading } = usePlan();
-  const { showLimitModal } = useLimitModal();
-  const { data: projects = [], isLoading: projectsLoading } = useProjectsQuery();
-  const activeProjectId = useActiveProjectId();
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
-  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
-  const [customIdea, setCustomIdea] = useState("");
-  const [knownCompetitors, setKnownCompetitors] = useState("");
-  const [focusAreas, setFocusAreas] = useState<FocusArea[]>([]);
-  const [executionMode, setExecutionMode] = useState(false);
-  const [loading, setLoading] = useState(false);
-  // G4 FIX: Track in-flight request so a network retry or component remount
-  // can abort the previous request rather than running two pipelines in parallel.
-  const abortRef = useRef<AbortController | null>(null);
-  const [result, setResult] = useState<BreakResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [outcomeSaving, setOutcomeSaving] = useState<string | null>(null);
-  // ISSUE-4 FIX: distinguishes "founder deliberately picked an existing
-  // project from the dropdown" from "a project got auto-selected because it
-  // happened to be active elsewhere in the app". Only the former should let
-  // results be saved onto that project — otherwise a genuinely new/custom
-  // idea silently gets attached to whatever project the founder was last
-  // viewing, instead of being offered as its own new project.
-  const [projectExplicitlySelected, setProjectExplicitlySelected] = useState(false);
-  const [addingProject, setAddingProject] = useState(false);
-  const [addedProjectId, setAddedProjectId] = useState<string | null>(null);
-  const [addProjectError, setAddProjectError] = useState<string | null>(null);
-
-  // Pre-fill idea from selected project
-  const selectedProject = projects.find((p) => p.id === selectedProjectId);
-
-  // FIX: this effect used to list `selectedProjectId` in its own dependency
-  // array with a guard of `!selectedProjectId` — meaning every time the
-  // founder cleared it (by choosing "Use custom idea instead"), the effect
-  // re-fired and immediately set it right back to activeProjectId. That's
-  // the exact bug: selecting custom idea appeared to instantly snap back to
-  // the active project. This should only auto-select the active project
-  // ONCE, on initial load — not re-assert itself every time it's cleared.
-  const didAutoSelectProject = useRef(false);
+  // Real recent activity for the active project — same activity_log-backed
+  // route added for the Projects detail page's "Last activity" card, reused
+  // here for Figma's "Recent outcomes" concept. No separate metric-tracking
+  // (e.g. "waitlist +40%") exists anywhere, so this shows what's actually
+  // logged rather than inventing business-outcome numbers.
   useEffect(() => {
-    if (didAutoSelectProject.current) return;
-    if (!activeProjectId) return;
-    if (projects.some((p) => p.id === activeProjectId)) {
-      setSelectedProjectId(activeProjectId);
-      didAutoSelectProject.current = true;
-    }
-  }, [activeProjectId, projects]);
+    if (!activeProject?.id) { setActivityEvents([]); return; }
+    fetch(`/api/projects/${activeProject.id}/activity`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { ok?: boolean; events?: Array<{ label: string; occurredAt: string }> }) => {
+        if (d.ok && Array.isArray(d.events)) setActivityEvents(d.events);
+      })
+      .catch(() => {});
+  }, [activeProject?.id]);
 
-  // ISSUE-4 FIX: remember exactly what text we auto-filled from the project,
-  // so handleRunTest can tell "founder is still testing the pre-loaded
-  // project as-is" apart from "founder edited this into a different idea".
-  // That distinction matters because the backend, when given a projectId,
-  // ignores the typed idea entirely and re-reads the project's own stored
-  // description — so a diverged custom idea must NOT be sent with a
-  // projectId, or it silently gets swapped out for "the existing project"
-  // again, discarding what the founder actually wrote.
-  const autofilledIdeaRef = useRef<string>("");
-  useEffect(() => {
-    if (!selectedProjectId) return;
-    if (!selectedProject) return;
-    const projectIdea = [
-      selectedProject.title,
-      selectedProject.description,
-      selectedProject.problem,
-      selectedProject.target_users ? `Target users: ${selectedProject.target_users}` : "",
-    ].filter(Boolean).join("\n\n");
-    autofilledIdeaRef.current = projectIdea;
-    setCustomIdea(projectIdea);
-  }, [selectedProjectId, selectedProject]);
-
-  function mapApiResult(data: BreakApiData): BreakResult {
-    const probability = typeof data.survival_probability === "number" ? data.survival_probability : undefined;
-    // cleanAIList can drop an item entirely (.filter(Boolean), when an item
-    // is nothing but a stripped think-tag/markdown artifact) — pairing text
-    // with its tag BEFORE that filter, not after, so kill_reason_tags[i]
-    // can't end up describing the wrong reason once indices shift.
-    function cleanWithTags(items: string[] | undefined, tags: string[][] | undefined): { texts: string[]; tags: string[][] } {
-      const paired = (items ?? [])
-        .map((item, i) => ({ text: cleanAIText(item), tags: tags?.[i] ?? [] }))
-        .filter((x) => Boolean(x.text));
-      return { texts: paired.map((x) => x.text), tags: paired.map((x) => x.tags) };
-    }
-    const killPaired = cleanWithTags(data.kill_reasons, data.kill_reason_tags);
-    const killReasons = killPaired.texts;
-    const survivePaired = cleanWithTags(data.survive_reasons, data.survive_reason_tags);
-    const differentiationPlan = cleanAIList(data.differentiation_plan);
-    const brutalAdvice = cleanAIText(data.brutal_advice);
-    const overallRisk: RiskSeverity =
-      probability == null ? "High" :
-      probability < 25 ? "Critical" :
-      probability < 50 ? "High" :
-      probability < 75 ? "Medium" : "Low";
-
-    // FIX (previous pass): this used to be `differentiationPlan[index] ?? brutalAdvice ?? ...`,
-    // which discarded the Risk agent's own per-risk `mitigation` field and
-    // substituted the Competitor agent's positioning suggestions instead.
-    // That pass reads `riskAgentOutput.top_risks[index].mitigation` first —
-    // correct when the Risk agent returns per-risk mitigations. But it left
-    // a real duplication path open: whenever the Risk agent's mitigation for
-    // a given index is missing/empty (fallback, timeout, or a short/invalid
-    // model response), it falls through to `differentiationPlan[index]`,
-    // and the Competitive Landscape card below independently falls through
-    // to `differentiationPlan[0]` — the SAME index every time. If Market
-    // Risk (index 0) also had to fall back, both cards render the exact
-    // same string, verbatim. That's the bug the founder is seeing in
-    // production (Market Risk and Competitive Landscape showing identical
-    // mitigation text). Confirmed by reading this file: nothing tracked
-    // which differentiationPlan entries were already used.
-    //
-    // Fix: track used differentiation-plan indices across ALL risk cards
-    // (including the appended Competitive Landscape one) so no two cards
-    // can ever render the same fallback text. If every differentiation
-    // entry is exhausted, fall back to a distinct final-resort line instead
-    // of repeating brutalAdvice/differentiationPlan[0] again.
-    const riskAgentOutput = data.agent_outputs?.risk as
-      | { top_risks?: Array<{ mitigation?: string }> }
-      | undefined;
-
-    // Real per-competitor data the Competitor agent already computes on
-    // every run — confirmed via grep that it reaches agent_outputs.competitor
-    // but nothing before this read direct_competitors back out; only the
-    // generic competitor_summary paragraph was ever shown.
-    const competitorAgentOutput = data.agent_outputs?.competitor as
-      | { direct_competitors?: Array<{ name?: string; url?: string; weakness?: string; threat_level?: string }> }
-      | undefined;
-    const competitorTable: CompetitorRow[] | undefined = competitorAgentOutput?.direct_competitors?.length
-      ? competitorAgentOutput.direct_competitors.slice(0, 5).map((c) => ({
-          name: cleanAIText(c.name) || "Unnamed competitor",
-          url: c.url,
-          weakness: cleanAIText(c.weakness) || "No specific gap identified yet.",
-          threat_level: (c.threat_level === "high" || c.threat_level === "low") ? c.threat_level : "medium",
-        }))
-      : undefined;
-
-    const usedDiffIndices = new Set<number>();
-    function nextDifferentiationEntry(): string | undefined {
-      for (let i = 0; i < differentiationPlan.length; i++) {
-        if (!usedDiffIndices.has(i)) {
-          usedDiffIndices.add(i);
-          return differentiationPlan[i];
-        }
-      }
-      return undefined;
-    }
-
-    const risks: RiskItem[] = (killReasons.length ? killReasons : ["Execution risk not enough data yet"]).map((reason, index) => ({
-      category: ["Market Risk", "Execution Risk", "Moat Risk", "Revenue Risk"][index] ?? "Startup Risk",
-      severity: index === 0 ? overallRisk : overallRisk === "Critical" ? "High" : overallRisk,
-      description: reason,
-      mitigation:
-        cleanAIText(riskAgentOutput?.top_risks?.[index]?.mitigation) ||
-        nextDifferentiationEntry() ||
-        brutalAdvice ||
-        "Talk to 5 target users and validate the riskiest assumption before building more.",
-      relatedFocusAreas: killPaired.tags[index]?.length ? killPaired.tags[index] : undefined,
-    }));
-
-    if (data.competitor_summary) {
-      risks.push({
-        category: "Competitive Landscape",
-        severity: "Medium",
-        description: cleanAIText(data.competitor_summary),
-        mitigation:
-          nextDifferentiationEntry() ??
-          "Pick one underserved niche and position around that pain instead of competing broadly.",
-      });
-    }
-
-    // D2 FIX: Detect when all agents fell back (overall_confidence ≤ 0.3 and every
-    // agent_status is "fallback"). In that case the score is computed from hardcoded
-    // defaults — show a banner so founders don't make decisions on synthetic data.
-    const allStatuses = Object.values(data.agent_statuses ?? {});
-    const isSynthetic =
-      (data.signal_summary?.overall_confidence ?? 1) <= 0.35 &&
-      allStatuses.length > 0 &&
-      allStatuses.every((s) => s === "fallback");
-
-    const agents = Object.entries(data.agent_outputs ?? {}).map(([name, output]) => {
-      const reasoning =
-        output && typeof (output as Record<string, unknown>).reasoning === "string"
-          ? ((output as Record<string, unknown>).reasoning as string)
-          : "";
-      return {
-        name: name[0].toUpperCase() + name.slice(1),
-        status: data.agent_statuses?.[name] ?? "complete",
-        summary: cleanAIText(reasoning) || "Agent completed with structured analysis.",
-        confidence: data.signal_summary?.overall_confidence,
-      };
-    });
-
-    const ss = data.signal_summary;
-    const signalBreakdown =
-      ss && [ss.demand_score, ss.competition_score, ss.timing_score, ss.uniqueness_score, ss.risk_score].some(
-        (v) => typeof v === "number"
-      )
-        ? [
-            { key: "demand", label: "Demand", value: ss.demand_score ?? 0, tip: "How much real demand signal was found" },
-            { key: "competition", label: "Market Space", value: 100 - (ss.competition_score ?? 100), tip: "Inverted competition score — higher means less crowded" },
-            { key: "timing", label: "Timing", value: ss.timing_score ?? 0, tip: "How favorable current market timing looks" },
-            { key: "uniqueness", label: "Uniqueness", value: ss.uniqueness_score ?? 0, tip: "Differentiation vs. what's already out there" },
-            { key: "risk", label: "Safety", value: 100 - (ss.risk_score ?? 100), tip: "Inverted risk score — higher means lower execution risk" },
-          ]
-        : undefined;
-    // Un-inverted counterpart of the above, for the at-a-glance score tiles —
-    // same source numbers, just literal (Competition/Risk read as-is, not
-    // flipped for the "more filled = better" radar convention).
-    const signalScores = ss && [ss.demand_score, ss.competition_score, ss.timing_score, ss.uniqueness_score, ss.risk_score].some(
-      (v) => typeof v === "number"
-    )
-      ? {
-          demand: Math.round(ss.demand_score ?? 0),
-          competition: Math.round(ss.competition_score ?? 0),
-          timing: Math.round(ss.timing_score ?? 0),
-          uniqueness: Math.round(ss.uniqueness_score ?? 0),
-          risk: Math.round(ss.risk_score ?? 0),
-        }
-      : undefined;
-
-    return {
-      overallRisk,
-      summary: cleanAIText(data.verdict) || "Stress test complete. Review the risks before deciding what to build next.",
-      risks,
-      survival_probability: probability,
-      brutal_advice: brutalAdvice || undefined,
-      gated: data.gated,
-      score_note: data.gated
-        ? "Free preview score: estimated from your written idea only."
-        : cleanAIList(data.reasoning).filter((item) =>
-            /focus areas|5-agent|viability score|competitor/i.test(item)
-          ).join(" | ") || "Calculated from execution data, validation signals, stage, and competitor context.",
-      agents,
-      signalBreakdown,
-      signalScores,
-      competitorTable,
-      surviveReasons: survivePaired.texts,
-      surviveReasonTags: survivePaired.tags,
-      focusAreaCoverage: data.focus_area_coverage ?? null,
-      isSynthetic,
-      focusAreas: cleanAIList(data.focus_areas),
-      pivots: Array.isArray(data.pivots)
-        ? data.pivots.slice(0, 3).map((p, i) => ({
-            title: cleanAIText(p.title),
-            description: cleanAIText(p.description),
-            target_niche: cleanAIText(p.target_niche),
-            why_better: cleanAIText(p.why_better),
-            estimated_score_delta: typeof p.estimated_score_delta === "number" ? p.estimated_score_delta : 0,
-            key_change: cleanAIText(p.key_change),
-            relatedFocusAreas: data.pivot_focus_tags?.[i]?.length ? data.pivot_focus_tags[i] : undefined,
-          }))
-        : undefined,
-      executionPlan: data.execution_plan
-        ? {
-            mvp_roadmap: cleanAIList(data.execution_plan.mvp_roadmap),
-            first_10_actions: cleanAIList(data.execution_plan.first_10_actions),
-            gtm_plan: cleanAIList(data.execution_plan.gtm_plan),
-          }
-        : null,
-      reflexionAction: data.reflexion_action
-        ? {
-            ...data.reflexion_action,
-            action: cleanAIText(data.reflexion_action.action),
-            rationale: cleanAIText(data.reflexion_action.rationale),
-            supporting_signals: cleanAIList(data.reflexion_action.supporting_signals),
-            risks: cleanAIList(data.reflexion_action.risks),
-          }
-        : null,
-    };
-  }
-
-  function toggleFocus(area: FocusArea) {
-    setFocusAreas((prev) =>
-      prev.includes(area) ? prev.filter((a) => a !== area) : [...prev, area]
-    );
-  }
-
-  async function handleRunTest() {
-    const idea = customIdea.trim() || selectedProject?.description || selectedProject?.title || "";
-    if (!idea) {
-      setError("Please describe your startup idea or select a project.");
+  async function sendMessage(text?: string, opts?: { action?: { id: string; params: Record<string, unknown> } }) {
+    const msg = (text ?? input).trim();
+    if (!msg || loading) return;
+    // Coach Actions cost no AI tokens, so they don't spend the free plan's
+    // daily coaching allowance — the server skips the cap for them too
+    // (app/api/ai/coach/route.ts). matchCoachAction is the same pure function
+    // the server runs, so the two can't disagree about what counts as one.
+    // "Take me to Progress" — the Coach just does it: no model call, no allowance spent.
+    const navTarget = !opts?.action ? matchNavigation(msg) : null;
+    if (navTarget) {
+      setInput("");
+      setMessages(prev => [...prev,
+        { id: Date.now().toString(), role: "user", content: msg },
+        { id: (Date.now() + 1).toString(), role: "assistant", content: `Opening ${navTarget.label}…`, phase: "done" },
+      ]);
+      setTimeout(() => router.push(navTarget.href), 350);
       return;
     }
-
-    // ISSUE-4 FIX: the backend, when given a projectId, ignores the `idea`
-    // field entirely and re-reads the project's own stored description —
-    // see app/api/ai/break-my-startup/route.ts's "if (!projectId)" branch.
-    // So if the founder edited the textarea into something that no longer
-    // matches what we auto-filled from the selected project, sending
-    // projectId would silently discard their edit and re-run the OLD
-    // project data instead. Only attach projectId when either the founder
-    // explicitly chose that project, or the text still matches what was
-    // pre-filled (i.e. they haven't diverged from it).
-    const ideaMatchesAutofill = customIdea.trim() === autofilledIdeaRef.current.trim();
-    const runProjectId =
-      selectedProjectId && (projectExplicitlySelected || ideaMatchesAutofill)
-        ? selectedProjectId
-        : undefined;
-
-    // G4 FIX: Cancel any in-flight request before starting a new one.
-    // This prevents a network-retry from running two full 5-agent pipelines
-    // simultaneously and double-charging the AI usage counter.
-    if (abortRef.current) {
-      abortRef.current.abort();
+    const isAction = Boolean(opts?.action) || matchCoachAction(msg) !== null;
+    if (remaining <= 0 && !planLoading && plan === "free" && !isAction) { showLimitModal("aiCoach"); return; }
+    if (!userId) {
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: "assistant", content: "Please sign in again before using AI Coach.", phase: "done", error: true }]);
+      return;
     }
-    const abortController = new AbortController();
-    abortRef.current = abortController;
-
+    if (!activeProject?.id) {
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: "assistant", content: "Create or select a project first so I can coach against real context.", phase: "done", error: true }]);
+      return;
+    }
+    setInput("");
+    const userMsg: ChatMessage = { id: Date.now().toString(), role: "user", content: msg };
+    const placeholderReasoning = buildPlaceholderReasoning(msg, activeProject?.title);
+    const thinkingMsg: ChatMessage = { id: (Date.now() + 1).toString(), role: "assistant", content: "", phase: "thinking", reasoning: placeholderReasoning };
+    setMessages(prev => [...prev, userMsg, thinkingMsg]);
     setLoading(true);
-    setResult(null);
-    setError(null);
-    setSaved(false);
-    setAddedProjectId(null);
-    setAddProjectError(null);
-
     try {
-      const supabase = createClient();
-      const { data: authData } = await supabase.auth.getUser();
-      if (!authData.user) throw new Error("Not authenticated");
+      const res = await fetch("/api/ai/coach", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          projectId: activeProject.id,
+          message: msg,
+          project: activeProject,
+          overview,
+          memory,
+          personality,
+          messages,
+          action: opts?.action,
+        }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok || !payload?.success) throw new Error(payload?.error ?? "Coach unavailable");
 
-      const freePreviewKey = `bm_break_preview_used_${authData.user.id}`;
-      // Wait for server-authoritative plan before applying free gate —
-      // prevents Builder users from being blocked during the plan loading window.
-      if (!planLoading && plan === "free" && storage.get(freePreviewKey)) {
-        showLimitModal("break_startup");
+      // A Coach Action reply: render the data card and stop. Deliberately
+      // skips the coaching-message counter, achievements, streak, and coach
+      // memory below — none of those should move because someone exported a file.
+      if (payload?.data?.kind === "action" && payload.data.actionResult) {
+        const actionResult = payload.data.actionResult as CoachActionResult;
+        setMessages(prev => prev.map(m => m.id === thinkingMsg.id
+          ? { ...m, content: String(payload.data.reply ?? actionResult.summary), reasoning: undefined, phase: "done", actionResult }
+          : m));
         return;
       }
-
-      const res = await fetch("/api/ai/break-my-startup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: abortController.signal, // G4 FIX: abort if a newer request starts
-        body: JSON.stringify({
-          userId: authData.user.id,
-          projectId: runProjectId,
-          idea,
-          focusAreas,
-          executionMode,
-          knownCompetitors: knownCompetitors
-            .split(",")
-            .map((c) => c.trim())
-            .filter(Boolean)
-            .slice(0, 8),
-        }),
-      });
-
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok || !payload?.success) throw new Error(payload?.error ?? "Request failed");
-
-      const mappedResult = mapApiResult(payload.data ?? {});
-      setResult(mappedResult);
-      if (plan === "free") storage.set(freePreviewKey, "1");
-
-      // Track achievement
-      try {
-        updateAchievementStats({ breakMyStartupUsed: true });
-        await checkAndUnlockAchievements();
-        // Break My Startup counts as a streak-qualifying activity — increment once per day
-        const todayKey = new Date().toISOString().split("T")[0];
-        if (storage.get("bm_break_streak_date") !== todayKey) {
-          incrementDailyStreak();
-          storage.set("bm_break_streak_date", todayKey);
-          persistBehaviorState({ break_streak_date: todayKey });
-        }
-      } catch {}
-    } catch {
-      setError("Something went wrong running the stress test. Please try again.");
+      const reply = payload?.data?.reply ?? payload?.data?.answer ?? "I'm having trouble responding right now. Please try again.";
+      const confidence_score = typeof payload?.data?.confidence_score === "number" ? payload.data.confidence_score : null;
+      const ra = payload?.data?.recommended_action;
+      const recommendedAction = ra && typeof ra.what_to_do === "string" && typeof ra.why_now === "string"
+        ? { what_to_do: ra.what_to_do, why_now: ra.why_now, expected_evidence: typeof ra.expected_evidence === "string" ? ra.expected_evidence : undefined }
+        : undefined;
+      const newMemory = [...memory, msg].slice(-10);
+      setMemory(newMemory);
+      storage.setJSON("bm_coach_memory", newMemory);
+      persistBehaviorState({ coach_memory: newMemory });
+      setMessages(prev => prev.map(m => m.id === thinkingMsg.id ? { ...m, content: reply, reasoning: payload?.data?.reasoning ?? m.reasoning, phase: "done", confidence_score, recommendedAction } : m));
+      recordCoachMessage();
+      setCoachMessagesToday(getCoachMessagesToday());
+      const stats = getAchievementStats();
+      updateAchievementStats({ ...stats, aiMessages: (stats.aiMessages ?? 0) + 1 });
+      checkAndUnlockAchievements();
+      trackEvent("ai_coach_message", { plan });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Something went wrong. Try again.";
+      if (message.toLowerCase().includes("limit")) showLimitModal("aiCoach");
+      setMessages(prev => prev.map(m => m.id === thinkingMsg.id ? { ...m, content: message, phase: "done", error: true } : m));
     } finally {
       setLoading(false);
+      setTimeout(() => inputRef.current?.focus(), 100);
     }
   }
 
-  async function handleSave() {
-    if (!result || !selectedProjectId) return;
-    setSaving(true);
-    try {
-      const supabase = createClient();
-      const { data: user } = await supabase.auth.getUser();
-      if (!user.user) throw new Error("Not authenticated");
+  const personalityOptions = [
+    { id: "direct" as const, label: "Direct" },
+    { id: "supportive" as const, label: "Supportive" },
+    { id: "challenger" as const, label: "Challenger" },
+  ];
 
-      // Save result to project notes
-      await fetch("/api/ventures/notes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectId: selectedProjectId,
-          type: "stress_test",
-          content: JSON.stringify(result),
-        }),
-      });
-      setSaved(true);
-    } catch {
-      // Silently fail — user can still copy the result
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  // ISSUE-4 FIX: When the founder ran the stress test on a custom idea
-  // (no project explicitly selected — see projectExplicitlySelected above),
-  // give them a real path to turn that idea into a new project instead of
-  // it having nowhere to go, or silently landing on whatever project
-  // happened to be auto-selected. Reuses the same project-creation flow as
-  // onboarding (createProjectWithRoadmap), then attaches this stress test
-  // as the project's first note so nothing from the run is lost.
-  async function handleAddAsProject() {
-    if (!result || !customIdea.trim()) return;
-    setAddingProject(true);
-    setAddProjectError(null);
-    try {
-      const firstLine = customIdea.trim().split("\n")[0] ?? customIdea.trim();
-      const projectName = firstLine.slice(0, 60).replace(/[.!?]+$/, "").trim() || "Untitled idea";
-
-      const created = await createProjectWithRoadmap({
-        project_name: projectName,
-        idea_description: customIdea.trim(),
-        target_users: selectedProject?.target_users ?? "Not specified yet",
-        problem: selectedProject?.problem || result.risks[0]?.description || customIdea.trim(),
-      });
-
-      const newProjectId = (created as { id?: string } | null)?.id;
-      if (newProjectId) {
-        await fetch("/api/ventures/notes", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            projectId: newProjectId,
-            type: "stress_test",
-            content: JSON.stringify(result),
-          }),
-        }).catch(() => {});
-        setAddedProjectId(newProjectId);
-        setActiveProjectId(newProjectId);
-      }
-    } catch {
-      setAddProjectError("Couldn't create the project. Please try again.");
-    } finally {
-      setAddingProject(false);
-    }
-  }
-
-  function handleReset() {
-    setResult(null);
-    setError(null);
-    setSaved(false);
-    setCustomIdea("");
-    setProjectExplicitlySelected(false);
-    setAddedProjectId(null);
-    setAddProjectError(null);
-  }
-
-  // "Explore Pivot" — takes the founder from a pivot suggestion straight
-  // into a fresh stress test on that pivot, instead of leaving it as a
-  // dead-end card. Composes the re-run idea from the pivot's own real
-  // fields (title/description/target_niche/key_change) rather than any
-  // separately generated copy.
-  function handleExplorePivot(pivot: PivotItem) {
-    setResult(null);
-    setError(null);
-    setSaved(false);
-    setSelectedProjectId("");
-    setProjectExplicitlySelected(false);
-    setCustomIdea(
-      `${pivot.title}: ${pivot.description}\n\nTarget users: ${pivot.target_niche}\nKey change from current approach: ${pivot.key_change}`
+  // No active project = genuinely nothing real to coach against. Rather than
+  // let the founder type into a chat that will just bounce their first
+  // message back as an error, say so up front — matching the reference
+  // design's dedicated unavailable state, and true to what's actually wrong.
+  if (!summariesLoading && !activeProject) {
+    return (
+      <div className="mx-auto flex w-full max-w-[1120px] flex-col items-center justify-center gap-3 px-5 py-24 text-center" style={{ minHeight: "60vh" }}>
+        <div className="flex h-11 w-11 items-center justify-center rounded-full" style={{ background: "rgba(224,85,85,0.12)" }}>
+          <span className="block h-2.5 w-2.5 rounded-full" style={{ background: "var(--bm-red)" }} />
+        </div>
+        <h2 className="text-[15px] font-semibold text-[var(--bm-text)]">Intelligence temporarily unavailable</h2>
+        <p className="max-w-[360px] text-[12.5px] leading-relaxed text-[var(--bm-text3)]">
+          BuildMind coaching requires access to your project state and behavior data. Create or select a project to pick this back up.
+        </p>
+        <a href="/projects" className="mt-1 rounded-[var(--r-sm)] px-3.5 py-2 text-[12px] font-semibold" style={{ background: "var(--bm-accent)", color: "#15130a" }}>
+          Go to Projects
+        </a>
+      </div>
     );
-    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  async function handleOutcome(outcome: "completed" | "partial" | "overridden") {
-    const logRowId = result?.reflexionAction?.log_row_id;
-    if (!logRowId) return;
-    setOutcomeSaving(outcome);
-    try {
-      await fetch("/api/ai/reflexion-outcome", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ log_row_id: logRowId, outcome }),
-      });
-    } finally {
-      setOutcomeSaving(null);
-    }
-  }
-
-  return (
-    <div className="mx-auto flex w-full max-w-[820px] flex-col gap-6 px-0 py-5 sm:px-6 sm:py-8">
-
-      {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.2 }}
-      >
-        <PageHeader
-          eyebrow="Adversarial review"
-          title="Break My Startup"
-          subtitle="Find what breaks first before you invest more time. The useful answer is the uncomfortable one."
-          action={
-            <span className="inline-flex h-8 items-center gap-2 rounded-[var(--r-sm)] border border-[var(--bm-red-bd)] bg-[var(--bm-red-dim)] px-3 font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--bm-red)]">
-              <Shield size={15} />
-              Stress test
-            </span>
-          }
-        />
-      </motion.div>
-
-      {/* Input panel */}
-      <AnimatePresence mode="wait">
-        {!result && (
-          <motion.div
-            key="input"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            className="flex flex-col gap-5"
-          >
-            {/* Project selector */}
-            {!projectsLoading && projects.length > 0 && (
-              <Card variant="data" className="flex flex-col gap-3 p-4">
-                <label className="text-xs font-medium text-[var(--bm-text2)] uppercase tracking-widest">
-                  Select a Project (optional)
-                </label>
-                <div className="relative">
-                  <select
-                    value={selectedProjectId}
-                    onChange={(e) => {
-                      setSelectedProjectId(e.target.value);
-                      // Deliberate dropdown interaction — whatever the founder
-                      // picks (a project, or "— Use custom idea instead —")
-                      // now reflects real intent, not an auto-selection.
-                      setProjectExplicitlySelected(Boolean(e.target.value));
-                      if (e.target.value) setActiveProjectId(e.target.value);
-                      // FIX: this used to also call setCustomIdea("") whenever
-                      // the dropdown was set back to "— Use custom idea
-                      // instead —", unconditionally wiping whatever the
-                      // founder had typed in the textarea below — the exact
-                      // reason "custom idea" looked broken: switching the
-                      // dropdown at all could erase your own text before you
-                      // ever hit submit. Never force-clear text the founder
-                      // typed themselves.
-                    }}
-                    className="h-10 w-full cursor-pointer appearance-none rounded-[var(--r-sm)] pl-3 pr-8 text-sm outline-none"
-                    style={{
-                      background: "var(--bm-bg3)",
-                      border: "1px solid var(--bm-border2)",
-                      color: "var(--bm-text)",
-                    }}
-                  >
-                    <option value="">— Use custom idea instead —</option>
-                    {projects.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.title ?? "Untitled"}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown
-                    size={13}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"
-                    style={{ color: "var(--bm-text3)" }}
-                  />
-                </div>
-
-                {selectedProject && (
-                  <p className="text-xs text-[var(--bm-text3)] leading-relaxed line-clamp-2">
-                    {selectedProject.description ?? "No description"}
-                  </p>
-                )}
-              </Card>
-            )}
-
-            {/* Custom idea textarea */}
-            <Textarea
-              label={selectedProjectId ? "Startup context to stress-test" : "Describe your startup idea"}
-              helperText={selectedProjectId ? "Loaded from your selected project. You can edit or add domain-specific context before running the test." : undefined}
-              placeholder="What are you building? Who is it for? How do you plan to make money? Paste your pitch, business model, domain, or current strategy..."
-              value={customIdea}
-              onChange={(e) => setCustomIdea(e.target.value)}
-              rows={6}
-            />
-
-            {/* Known competitors — grounds the Competitor agent's search in
-                real, named tools you already know about, instead of leaving
-                it entirely to generic keyword search results. */}
-            <Textarea
-              label="Known competitors (optional)"
-              helperText="Name any tools you already know compete with you, comma-separated (e.g. validator.ai, Notion AI). We'll look these up directly alongside the general market search."
-              placeholder="validator.ai, Notion AI, ..."
-              value={knownCompetitors}
-              onChange={(e) => setKnownCompetitors(e.target.value)}
-              rows={1}
-            />
-
-
-            {/* Focus areas */}
-            <div className="flex flex-col gap-2">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <label className="text-xs font-medium text-[var(--bm-text2)] uppercase tracking-widest">
-                  Focus Areas (optional)
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setExecutionMode((value) => !value)}
-                      className="w-full rounded-[var(--r-sm)] px-3 py-1.5 text-xs font-semibold sm:w-auto"
-                  style={{
-                    border: "1px solid var(--bm-border)",
-                    background: executionMode ? "rgba(92,200,138,0.12)" : "var(--bm-bg3)",
-                    color: executionMode ? "var(--bm-green)" : "var(--bm-text3)",
-                  }}
-                >
-                  Focus Mode {executionMode ? "On" : "Off"}
-                </button>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {FOCUS_AREAS.map((area) => {
-                  const active = focusAreas.includes(area);
-                  return (
-                    <button
-                      key={area}
-                      onClick={() => toggleFocus(area)}
-                      className="rounded-[var(--r-sm)] border px-3 py-1.5 text-xs font-medium transition-all duration-150"
-                      style={{
-                        background: active ? "rgba(92,200,138,0.10)" : "var(--bm-bg3)",
-                        borderColor: active ? "var(--bm-green-bd)" : "var(--bm-border)",
-                        color: active ? "var(--bm-green)" : "var(--bm-text3)",
-                      }}
-                    >
-                      {area}
-                    </button>
-                  );
-                })}
-              </div>
-              <p className="text-xs text-[var(--bm-text3)]">
-                Leave empty to stress-test everything. Focus Mode turns the result into an execution-first plan.
-              </p>
-            </div>
-
-            {/* Error */}
-            {error && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="flex items-center gap-2 text-sm p-3 rounded-lg"
-                style={{
-                  background: "rgba(224,85,85,0.08)",
-                  border: "1px solid rgba(224,85,85,0.2)",
-                  color: "var(--bm-red)",
-                }}
-              >
-                <AlertTriangle size={14} />
-                {error}
-              </motion.div>
-            )}
-
-            {/* Loading skeleton */}
-            {loading && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col gap-3">
-                {[1, 2, 3].map((i) => (
-                  <div
-                    key={i}
-                    className="flex flex-col gap-2 rounded-[var(--r-lg)] border border-[var(--bm-border)] bg-[var(--bm-bg2)] p-5 animate-pulse"
-                  >
-                    <div className="h-4 w-36 rounded-full bg-[var(--bm-bg3)]" />
-                    <div className="h-3 w-full rounded-full bg-[var(--bm-bg3)] opacity-70" />
-                    <div className="h-3 w-5/6 rounded-full bg-[var(--bm-bg3)] opacity-50" />
-                    <div className="h-3 w-2/3 rounded-full bg-[var(--bm-bg3)] opacity-40" />
-                  </div>
-                ))}
-              </motion.div>
-            )}
-
-            {!loading && (
-              <Button
-                size="lg"
-                onClick={handleRunTest}
-                disabled={!customIdea.trim() && !selectedProjectId}
-                className="w-full sm:w-auto sm:self-start"
-              >
-                <AlertTriangle size={15} />
-                Run Stress Test →
-              </Button>
-            )}
-          </motion.div>
-        )}
-
-        {/* Result panel */}
-        {result && !loading && (
-          <motion.div
-            key="result"
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.35 }}
-                className="flex flex-col gap-4"
-          >
-            {/* Overall verdict — visceral, full-width */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.97 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.4 }}
-              style={{
-                borderRadius: "var(--r-lg)",
-                padding: "clamp(16px, 4vw, 24px)",
-                background: "var(--bm-bg2)",
-                border: `1px solid ${overallColor(result.overallRisk)}40`,
-                boxShadow: "none",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 20, flexWrap: "wrap" }}>
-                {result.survival_probability !== undefined && (
-                  <RadialGauge
-                    value={result.survival_probability}
-                    size={110}
-                    label="survive"
-                    thresholds={[
-                      { min: 60, color: "var(--bm-green)" },
-                      { min: 40, color: "var(--bm-amber)" },
-                      { min: 0, color: "var(--bm-red)" },
-                    ]}
-                  />
-                )}
-                <div style={{ flex: "1 1 220px", minWidth: 0 }}>
-                    <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: "var(--bm-text3)", letterSpacing: "0.07em", marginBottom: 10, textTransform: "uppercase" }}>
-                    Stress-test verdict
-                  </div>
-                  <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: "var(--bm-text4)", letterSpacing: "0.06em", marginBottom: 12 }}>
-                    The uncomfortable ones are the useful ones.
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                    <span style={{
-                      fontSize: 9, fontWeight: 700, letterSpacing: "0.12em",
-                      textTransform: "uppercase", color: "var(--bm-text3)",
-                    }}>
-                      Verdict
-                    </span>
-                    <Badge variant={severityVariant(result.overallRisk)} size="md" dot>
-                      {result.overallRisk} Risk
-                    </Badge>
-                  </div>
-                  {result.summary && (
-                    <div style={{ fontSize: 15, fontWeight: 600, color: "var(--bm-text)", lineHeight: 1.55, marginBottom: 0 }}>
-                      <Markdown textSize={15}>{sanitizeMarkdown(result.summary)}</Markdown>
-                    </div>
-                  )}
-                  {result.score_note && (
-                    <p style={{ fontSize: 12, color: "var(--bm-text3)", marginTop: 6, lineHeight: 1.5 }}>
-                      {sanitizeOutput(result.score_note)}
-                    </p>
-                  )}
-                  {result.gated && (
-                    <button
-                      type="button"
-                      onClick={() => showLimitModal("break_startup")}
-                      style={{
-                        marginTop: 12, display: "inline-flex", alignItems: "center", gap: 6,
-                        fontSize: 12, fontWeight: 600, color: "var(--bm-text-inv)",
-                        background: "var(--bm-accent)", border: "none", borderRadius: "var(--r-md)",
-                        padding: "8px 16px", cursor: "pointer",
-                      }}
-                    >
-                      Unlock full analysis →
-                    </button>
-                  )}
-                </div>
-              </div>
-            </motion.div>
-
-            {/* At-a-glance score tiles — same signal_summary numbers behind
-                the radar chart further down, shown literally (not inverted)
-                the way the model actually scored each dimension. */}
-            {result.signalScores && (
-              <motion.div
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1 }}
-                className="grid grid-cols-2 gap-2.5 sm:grid-cols-5"
-              >
-                {([
-                  ["Demand", result.signalScores.demand, "var(--bm-intel)"],
-                  ["Competition", result.signalScores.competition, "var(--bm-red)"],
-                  ["Timing", result.signalScores.timing, "var(--bm-green)"],
-                  ["Uniqueness", result.signalScores.uniqueness, "var(--bm-amber)"],
-                  ["Risk", result.signalScores.risk, "var(--bm-red)"],
-                ] as const).map(([label, value, color]) => (
-                  <Card key={label} variant="data" className="p-3">
-                    <div className="font-mono text-[9px] uppercase tracking-[0.06em] text-[var(--bm-text4)]">{label}</div>
-                    <div className="mt-1 flex items-baseline gap-1">
-                      <span className="text-xl font-bold text-[var(--bm-text)]">{value}</span>
-                      <span className="text-[10px] text-[var(--bm-text4)]">/100</span>
-                    </div>
-                    <div className="mt-2 h-1 overflow-hidden rounded-full bg-[var(--bm-bg3)]">
-                      <div className="h-full rounded-full" style={{ width: `${Math.min(100, Math.max(0, value))}%`, background: color }} />
-                    </div>
-                  </Card>
-                ))}
-              </motion.div>
-            )}
-
-            {/* Brutal advice — high contrast */}
-            {result.brutal_advice && (
-              <motion.div
-                initial={{ opacity: 0, x: -6 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.2 }}
-                style={{
-                  borderRadius: "var(--r-lg)",
-                  padding: "16px 18px",
-                  background: "rgba(232,160,32,0.06)",
-                  border: "1px solid rgba(232,160,32,0.3)",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-                  <AlertTriangle size={13} style={{ color: "var(--bm-amber)", flexShrink: 0 }} />
-                  <span style={{
-                    fontSize: 9, fontWeight: 700, textTransform: "uppercase",
-                    letterSpacing: "0.12em", color: "var(--bm-amber)",
-                  }}>
-                    Brutal advice
-                  </span>
-                </div>
-                <div style={{ fontSize: 14, color: "var(--bm-text)", lineHeight: 1.6, fontWeight: 500 }}>
-                  <Markdown textSize={14}>{sanitizeMarkdown(result.brutal_advice)}</Markdown>
-                </div>
-              </motion.div>
-            )}
-
-            {/* D2 FIX: Synthetic-analysis warning — shown when all 5 agents fell back */}
-            {result.isSynthetic && (
-              <div style={{
-                background: "var(--bm-amber-muted, rgba(245,158,11,0.12))",
-                border: "1px solid var(--bm-amber, #f59e0b)",
-                borderRadius: 10,
-                padding: "12px 16px",
-                display: "flex",
-                gap: 10,
-                alignItems: "flex-start",
-              }}>
-                <span style={{ fontSize: 16, flexShrink: 0 }}>⚠️</span>
+  const lowOnMessages = plan === "free" && remaining > 0 && remaining <= 1;
+  const greetingName = hasHistoryGlobal(overview);
+  const contextPanel = (
+    <div className="flex flex-col gap-3">
+      {activeProject && (
+        <div className="rounded-[16px] border border-[var(--bm-border)] bg-[var(--bm-bg2)] p-4">
+          <div className="mb-1 text-[12px] text-[var(--bm-text3)]">Coaching on</div>
+          <div className="text-[16px] font-semibold text-[var(--bm-text)]">{activeProject.title}</div>
+          <div className="mt-0.5 text-[13px] text-[var(--bm-text3)]">{activeProject.startup_stage ?? "Stage not set"}</div>
+        </div>
+      )}
+      {activeProject && activityEvents.length > 0 && (
+        <div className="rounded-[16px] border border-[var(--bm-border)] bg-[var(--bm-bg2)] p-4">
+          <div className="mb-3 text-[13px] font-semibold text-[var(--bm-text2)]">Recent activity</div>
+          <div className="flex flex-col gap-3">
+            {activityEvents.slice(0, 4).map((ev, i) => (
+              <div key={`${ev.occurredAt}-${i}`} className="flex items-start gap-2.5">
+                <div className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--bm-intel)]" />
                 <div>
-                  <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "var(--bm-amber, #f59e0b)" }}>
-                    Analysis unavailable — AI providers unreachable
-                  </p>
-                  <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.5 }}>
-                    All five analysis agents fell back to default values. The score shown is estimated, not
-                    computed from your actual idea. Try again in a few minutes when providers recover.
-                  </p>
+                  <div className="text-[13px] leading-snug text-[var(--bm-text2)]">{ev.label}</div>
+                  <div className="mt-0.5 text-[12px] text-[var(--bm-text4)]">{new Date(ev.occurredAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</div>
                 </div>
               </div>
-            )}
-
-            {/* Risk breakdown cards */}
-            {result.agents && result.agents.length > 0 && (
-            <Card variant="data" className="flex flex-col gap-3 p-4">
-                <h3 className="font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--bm-text3)]">Analysis lenses</h3>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {result.agents.map((agent) => (
-                    <div key={agent.name} className="rounded-lg p-3" style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)" }}>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-semibold text-[var(--bm-text)]">{agent.name}</span>
-                        <span className="text-[10px] uppercase tracking-widest text-[var(--bm-text4)]">{agent.status}</span>
-                      </div>
-                      <div className="mt-1">
-                        <Markdown textSize={12}>{sanitizeMarkdown(agent.summary)}</Markdown>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                {result.signalBreakdown && (
-                  <div style={{ display: "flex", justifyContent: "center", paddingTop: 8 }}>
-                    <RadarChart axes={result.signalBreakdown} size={240} />
-                  </div>
-                )}
-              </Card>
-            )}
-
-            {result.executionPlan && (
-              <Card variant="data" className="flex flex-col gap-3 p-4">
-                <h3 className="font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--bm-text3)]">Execution Recovery Plan</h3>
-                <div className="grid gap-3 sm:grid-cols-3">
-                  {[
-                    ["MVP Roadmap", result.executionPlan.mvp_roadmap],
-                    ["First Actions", result.executionPlan.first_10_actions],
-                    ["Go To Market", result.executionPlan.gtm_plan],
-                  ].map(([title, items]) => (
-                    <div key={title as string} className="flex flex-col gap-2">
-                      <span className="text-xs font-semibold text-[var(--bm-text2)]">{title as string}</span>
-                      {(items as string[] | undefined)?.slice(0, 4).map((item) => (
-                        <p key={item} className="text-xs leading-relaxed text-[var(--bm-text3)]">{sanitizeOutput(item)}</p>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              </Card>
-            )}
-
-            {result.reflexionAction && (
-              <Card variant="insight" className="flex flex-col gap-3 p-4">
-                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-                  <h3 className="text-sm font-semibold text-[var(--bm-text)]">Reflexion Loop</h3>
-                  {typeof result.reflexionAction.confidence === "number" && (
-                    <span className="text-xs text-[var(--bm-text3)]">{Math.round(result.reflexionAction.confidence * 100)}% confidence</span>
-                  )}
-                </div>
-                {/* NOTE: reflexionAction.action is the same text already shown in
-                    "Brutal advice" above (the API sets brutal_advice = reflexionAction.action) —
-                    repeating it here was the source of the "exact copy" duplication. This card
-                    now surfaces what Brutal Advice doesn't: why, and how confident the system is. */}
-                {result.reflexionAction.rationale ? (
-                  <Markdown textSize={13}>{sanitizeMarkdown(result.reflexionAction.rationale)}</Markdown>
-                ) : (
-                  <p className="text-sm leading-relaxed text-[var(--bm-text2)]">
-                    See &ldquo;Brutal advice&rdquo; above — this is the action the Reflexion pipeline recommends.
-                  </p>
-                )}
-                {result.reflexionAction.log_row_id && (
-                  <div className="flex flex-wrap gap-2">
-                    {(["completed", "partial", "overridden"] as const).map((outcome) => (
-                      <Button key={outcome} variant="ghost" size="sm" onClick={() => handleOutcome(outcome)} loading={outcomeSaving === outcome}>
-                        Mark {outcome}
-                      </Button>
-                    ))}
-                  </div>
-                )}
-              </Card>
-            )}
-
-            {/* Focus area coverage — the at-a-glance proof that selecting
-                chips actually changed something, not just a hope that a
-                line buried in a prompt somewhere got weighted. Built from
-                relatedFocusAreas tags already attached to the risks/survive
-                reasons/pivots below, so this can't disagree with them —
-                same data, just summarized first. Unaddressed areas are
-                shown too, honestly: it means nothing in this run's output
-                touched that dimension, not that the selection was ignored. */}
-            {result.focusAreaCoverage && (
-              <div
-                style={{
-                  display: "flex", flexDirection: "column", gap: 6,
-                  padding: "10px 12px", borderRadius: "var(--r-md)",
-                  border: "1px solid var(--bm-border)", background: "var(--bm-bg2)",
-                }}
-              >
-                <span style={{ fontSize: 9, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.06em", fontFamily: "'DM Mono', monospace" }}>
-                  Focus areas — {result.focusAreaCoverage.addressed.length} of {result.focusAreaCoverage.selected.length} addressed below
-                </span>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                  {result.focusAreaCoverage.selected.map((area) => {
-                    const addressed = result.focusAreaCoverage!.addressed.includes(area);
-                    return (
-                      <span
-                        key={area}
-                        style={{
-                          fontSize: 10.5, fontWeight: 600,
-                          color: addressed ? "var(--bm-green)" : "var(--bm-text4)",
-                          background: addressed ? "var(--bm-green-dim, rgba(92,200,138,0.1))" : "transparent",
-                          border: `1px solid ${addressed ? "var(--bm-green-bd, rgba(92,200,138,0.25))" : "var(--bm-border2)"}`,
-                          borderRadius: 999, padding: "2px 9px",
-                        }}
-                      >
-                        {addressed ? "✓" : "—"} {area}
-                      </span>
-                    );
-                  })}
-                </div>
-                {result.focusAreaCoverage.unaddressed.length > 0 && (
-                  <p style={{ fontSize: 10.5, color: "var(--bm-text4)", margin: 0, lineHeight: 1.5 }}>
-                    Nothing in this run's output touched {result.focusAreaCoverage.unaddressed.join(", ")} specifically — worth a closer look or a re-run.
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* Risk breakdown cards */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
-                <h3 style={{ fontSize: 12, fontWeight: 700, color: "var(--bm-text)", margin: 0, textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                  What Breaks First
-                </h3>
-                <span style={{
-                  fontSize: 10, fontWeight: 600, color: "var(--bm-red)",
-                  background: "rgba(224,85,85,0.1)", border: "1px solid rgba(224,85,85,0.2)",
-                  borderRadius: 4, padding: "1px 6px",
-                }}>
-                  {result.risks.length} found
-                </span>
-              </div>
-              {result.risks.length > 1 && (
-                <SeverityStack
-                  title="At a glance"
-                  items={result.risks.map((risk): SeverityItem => ({
-                    label: risk.category,
-                    severity: ({ Critical: "fatal", High: "high", Medium: "medium", Low: "low" } as Record<RiskSeverity, Severity>)[risk.severity],
-                  }))}
-                />
-              )}
-              {result.risks.map((risk, i) => (
-                <motion.div
-                  key={i}
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.08 }}
-                  style={{
-                    borderRadius: "var(--r-md)",
-                    overflow: "hidden",
-                    border: `1px solid ${
-                      risk.severity === "Critical" ? "rgba(224,85,85,0.3)" :
-                      risk.severity === "High" ? "rgba(232,160,32,0.25)" :
-                      "var(--bm-border)"
-                    }`,
-                    background: "var(--bm-bg2)",
-                  }}
-                >
-                  <div style={{ height: 3, background: overallColor(risk.severity), opacity: 0.7 }} />
-                  <div style={{ padding: "12px 14px" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
-                      <span style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", minWidth: 18, flexShrink: 0 }}>
-                        #{i + 1}
-                      </span>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: "var(--bm-text)", flex: 1 }}>
-                        {risk.category}
-                      </span>
-                      <Badge variant={severityVariant(risk.severity)} size="sm" dot>
-                        {risk.severity}
-                      </Badge>
-                    </div>
-                    <div style={{ fontSize: 9, fontWeight: 700, color: "var(--bm-intel)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4, fontFamily: "'DM Mono', monospace" }}>
-                      Failure mechanism
-                    </div>
-                    <div style={{ margin: "0 0 10px 0" }}>
-                      <Markdown textSize={13}>{sanitizeMarkdown(risk.description)}</Markdown>
-                    </div>
-                    <div style={{
-                      display: "flex", alignItems: "flex-start", gap: 8,
-                      background: "var(--bm-bg3)", borderRadius: "var(--r-sm)", padding: "8px 10px",
-                    }}>
-                      <CheckCircle2 size={12} style={{ color: "var(--bm-text3)", flexShrink: 0, marginTop: 1 }} />
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 9, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>
-                          How to de-risk this
-                        </div>
-                        <Markdown textSize={12}>{sanitizeMarkdown(risk.mitigation)}</Markdown>
-                      </div>
-                    </div>
-                    <FocusAreaTags areas={risk.relatedFocusAreas} />
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-
-            {/* What Could Still Work — real opportunity signals
-                (signals.all_opportunities on the backend) returned on every
-                response as survive_reasons but never rendered before. No
-                per-item confidence score exists in the real data, so none is
-                shown here — only the categories/severity levels above the
-                risk cards are ever assigned an actual number. */}
-            {result.surviveReasons && result.surviveReasons.length > 0 && (
-              <div className="flex flex-col gap-2.5">
-                <h3 className="m-0 text-xs font-bold uppercase tracking-[0.08em] text-[var(--bm-text)]">
-                  What Could Still Work
-                </h3>
-                <div className="grid gap-2.5 sm:grid-cols-2">
-                  {result.surviveReasons.map((reason, i) => (
-                    <div
-                      key={i}
-                      className="rounded-[var(--r-md)] p-3"
-                      style={{ borderLeft: "2px solid var(--bm-green)", background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderLeftWidth: 2, borderLeftColor: "var(--bm-green)" }}
-                    >
-                      <Markdown textSize={12}>{sanitizeMarkdown(reason)}</Markdown>
-                      <FocusAreaTags areas={result.surviveReasonTags?.[i]} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Competitive Landscape — real per-competitor data from the
-                Competitor agent (agent_outputs.competitor.direct_competitors),
-                computed on every run but previously reduced to a generic
-                paragraph before reaching the UI. Only columns backed by real
-                per-competitor fields are shown (name, exploitable weakness,
-                threat level) — no invented "core strength" column, since
-                nothing in the agent output states one per competitor. */}
-            {result.competitorTable && result.competitorTable.length > 0 && (
-              <Card variant="data" className="flex flex-col gap-3 p-4">
-                <h3 className="font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--bm-text3)]">
-                  Competitive Landscape
-                </h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full border-collapse text-left text-xs">
-                    <thead>
-                      <tr style={{ borderBottom: "1px solid var(--bm-border)" }}>
-                        <th className="px-2 py-1.5 font-mono text-[9px] uppercase tracking-[0.06em] text-[var(--bm-text4)]">Competitor</th>
-                        <th className="px-2 py-1.5 font-mono text-[9px] uppercase tracking-[0.06em] text-[var(--bm-text4)]">Exploitable weakness</th>
-                        <th className="px-2 py-1.5 font-mono text-[9px] uppercase tracking-[0.06em] text-[var(--bm-text4)]">Threat</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {result.competitorTable.map((row) => (
-                        <tr key={row.name} style={{ borderBottom: "1px solid var(--bm-border)" }}>
-                          <td className="px-2 py-2 align-top font-semibold text-[var(--bm-text)]">
-                            {row.url ? (
-                              <a href={row.url} target="_blank" rel="noopener noreferrer" className="hover:underline">{row.name}</a>
-                            ) : row.name}
-                          </td>
-                          <td className="px-2 py-2 align-top leading-relaxed text-[var(--bm-text3)]">{row.weakness}</td>
-                          <td className="px-2 py-2 align-top">
-                            <Badge
-                              variant={row.threat_level === "high" ? "danger" : row.threat_level === "low" ? "success" : "warning"}
-                              size="sm"
-                            >
-                              {row.threat_level}
-                            </Badge>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </Card>
-            )}
-
-            {/* Pivot suggestions — the system's actual "you might be going in
-                the wrong direction" signal. Computed server-side by the
-                Pivot Engine (lib/agents generatePivots) on every run, but
-                previously dropped before it reached this page. */}
-            {result.pivots && result.pivots.length > 0 && (
-              <Card variant="data" className="flex flex-col gap-3 p-4">
-                <div className="flex items-center gap-2">
-                  <RefreshCw size={13} style={{ color: "var(--bm-accent)" }} />
-                  <h3 className="text-sm font-semibold text-[var(--bm-text)]">
-                    Pivot Candidates
-                  </h3>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-3">
-                  {result.pivots.map((pivot) => (
-                    <div
-                      key={pivot.title}
-                      className="flex flex-col gap-1.5 rounded-lg p-3"
-                      style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)" }}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-semibold text-[var(--bm-text)]">{pivot.title}</span>
-                        {pivot.estimated_score_delta > 0 && (
-                          <Badge variant="success" size="sm">+{pivot.estimated_score_delta} score</Badge>
-                        )}
-                      </div>
-                      <p className="text-xs leading-relaxed text-[var(--bm-text3)]">{pivot.description}</p>
-                      <p className="text-[11px] leading-relaxed text-[var(--bm-text3)]">
-                        <span className="font-semibold text-[var(--bm-text2)]">Target: </span>{pivot.target_niche}
-                      </p>
-                      <p className="text-[11px] leading-relaxed text-[var(--bm-text3)]">
-                        <span className="font-semibold text-[var(--bm-text2)]">Why: </span>{pivot.why_better}
-                      </p>
-                      {pivot.key_change && (
-                        <p className="text-[11px] leading-relaxed text-[var(--bm-text3)]">
-                          <span className="font-semibold text-[var(--bm-text2)]">Required change: </span>{pivot.key_change}
-                        </p>
-                      )}
-                      <FocusAreaTags areas={pivot.relatedFocusAreas} />
-                      <button
-                        onClick={() => handleExplorePivot(pivot)}
-                        className="mt-1 w-full rounded-md border py-1.5 text-[11px] font-semibold uppercase tracking-[0.04em] transition-colors"
-                        style={{ borderColor: "var(--bm-accent-bd)", color: "var(--bm-accent)", background: "transparent" }}
-                      >
-                        Explore pivot →
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </Card>
-            )}
-
-            {/* Actions */}
-            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-              {selectedProjectId && projectExplicitlySelected ? (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={handleSave}
-                  loading={saving}
-                  disabled={saved}
-                >
-                  {saved ? (
-                    <>
-                      <CheckCircle2 size={13} style={{ color: "var(--bm-green)" }} />
-                      Saved to Project
-                    </>
-                  ) : (
-                    <>
-                      <Save size={13} />
-                      Save to Project
-                    </>
-                  )}
-                </Button>
-              ) : customIdea.trim() ? (
-                // ISSUE-4 FIX: a custom idea (no project deliberately chosen)
-                // now gets its own path to becoming a project, rather than
-                // either having no save option or silently attaching to
-                // whatever project happened to be active elsewhere.
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={handleAddAsProject}
-                  loading={addingProject}
-                  disabled={Boolean(addedProjectId)}
-                >
-                  {addedProjectId ? (
-                    <>
-                      <CheckCircle2 size={13} style={{ color: "var(--bm-green)" }} />
-                      Added as Project
-                    </>
-                  ) : (
-                    <>
-                      <Plus size={13} />
-                      Add as Project
-                    </>
-                  )}
-                </Button>
-              ) : null}
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleReset}
-              >
-                <RefreshCw size={13} />
-                Run Again
-              </Button>
-            </div>
-            {addProjectError && (
-              <p style={{ fontSize: 12, color: "var(--bm-red)", margin: 0 }}>{addProjectError}</p>
-            )}
-            {addedProjectId && (
-              <p style={{ fontSize: 12, color: "var(--bm-text3)", margin: 0 }}>
-                Saved as a new project — you can find it in your projects list.
-              </p>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
+            ))}
+          </div>
+        </div>
+      )}
+      <div className="rounded-[16px] border border-[var(--bm-border)] bg-[var(--bm-bg2)] p-4">
+        <div className="mb-3 flex items-center gap-2 text-[13px] font-semibold text-[var(--bm-text2)]"><Brain size={14} /> What the coach remembers</div>
+        {memory.length === 0 ? (
+          <p className="text-[13px] leading-relaxed text-[var(--bm-text3)]">Memory builds as you talk to the coach.</p>
+        ) : memory.slice(-5).map((m, i) => (
+          <div key={i} className="mb-2 flex items-start gap-2.5">
+            <div className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--bm-intel)]" />
+            <span className="text-[13px] leading-snug text-[var(--bm-text3)]">{sanitizeOutput(m).slice(0, 80)}{sanitizeOutput(m).length > 80 ? "…" : ""}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
-                     }
+
+  return (
+    <div className="relative mx-auto flex w-full max-w-[860px] flex-col" style={{ minHeight: isMobile ? "calc(100dvh - 120px)" : "calc(100vh - 80px)", height: isMobile ? "auto" : "calc(100vh - 80px)" }}>
+
+      {/* Slim header: the conversation is the page */}
+      <header className="flex shrink-0 items-center justify-between gap-2 px-3 py-2.5 sm:gap-3 sm:px-2 sm:py-3">
+        <div className="min-w-0">
+          <h1 className="m-0 text-[18px] font-bold tracking-[-0.02em] text-[var(--bm-text)] sm:text-[20px]" style={{ fontFamily: "'Syne', sans-serif" }}>AI Coach</h1>
+          {activeProject && <div className="truncate text-[13px] text-[var(--bm-text3)]">{activeProject.title}</div>}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <div role="group" aria-label="Coach tone" className="flex rounded-full border border-[var(--bm-border)] bg-[var(--bm-bg2)] p-0.5">
+            {personalityOptions.map(opt => (
+              <button key={opt.id} onClick={() => setPersonality(opt.id)} aria-pressed={personality === opt.id}
+                className={`cursor-pointer rounded-full border-0 px-2.5 py-1.5 text-[12px] sm:px-3 sm:text-[12.5px] ${personality === opt.id ? "bg-[var(--bm-intel-dim)] font-semibold text-[var(--bm-intel2)]" : "bg-transparent text-[var(--bm-text3)] hover:text-[var(--bm-text2)]"}`}>
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <button onClick={() => setShowContext(true)} aria-label="Show project context and coach memory"
+            className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-[var(--bm-border)] bg-[var(--bm-bg2)] text-[var(--bm-text3)] hover:text-[var(--bm-text)]">
+            <PanelRight size={16} />
+          </button>
+        </div>
+      </header>
+
+      {/* Context drawer */}
+      <AnimatePresence>
+        {showContext && (
+          <>
+            <motion.div key="scrim" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowContext(false)}
+              className="fixed inset-0 z-40 bg-black/50" />
+            <motion.aside key="drawer" role="dialog" aria-label="Project context" initial={{ x: 360 }} animate={{ x: 0 }} exit={{ x: 360 }} transition={{ type: "tween", duration: 0.2 }}
+              className="fixed bottom-0 right-0 top-0 z-50 w-[92vw] max-w-[380px] overflow-y-auto border-l border-[var(--bm-border)] bg-[var(--bm-bg)] p-4">
+              <div className="mb-4 flex items-center justify-between">
+                <span className="text-[16px] font-semibold text-[var(--bm-text)]">Context</span>
+                <button onClick={() => setShowContext(false)} aria-label="Close" className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-[var(--bm-border)] bg-transparent text-[var(--bm-text3)]"><X size={16} /></button>
+              </div>
+              {contextPanel}
+            </motion.aside>
+          </>
+        )}
+      </AnimatePresence>
+
+      {plan === "free" && remaining <= 0 && (
+        <div className="mx-4 mb-3 shrink-0 rounded-[16px] border border-[var(--bm-accent-bd)] bg-[var(--bm-accent-dim)] p-4 sm:mx-2">
+          <p className="text-[15px] font-semibold text-[var(--bm-text)]">You have used all {coachLimit} coaching questions today</p>
+          <p className="mt-1 text-[13.5px] leading-relaxed text-[var(--bm-text3)]">Quick actions below still work. Upgrade to Builder to keep talking to the coach right now.</p>
+          <button onClick={() => showLimitModal("aiCoach")} className="mt-3 cursor-pointer rounded-[10px] border-0 px-4 py-2.5 text-[13.5px] font-bold" style={{ background: "var(--bm-accent)", color: "#15130a" }}>Upgrade plan</button>
+        </div>
+      )}
+
+      {/* Conversation */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 sm:px-2" style={{ scrollbarWidth: "thin" }}>
+        {messages.length === 0 ? (
+          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="mx-auto flex h-full max-w-[680px] flex-col justify-center py-8">
+            <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-2xl sm:mb-5 sm:h-12 sm:w-12 border border-[var(--bm-intel-bd)] bg-[var(--bm-intel-dim)]">
+              <Sparkles size={22} color="var(--bm-intel2)" />
+            </div>
+            <h2 className="m-0 text-[24px] font-bold leading-[1.2] tracking-[-0.025em] text-[var(--bm-text)] sm:text-[36px]" style={{ fontFamily: "'Syne', sans-serif" }}>
+              {greetingName ? "Where do things stand?" : "Day one. Let’s get oriented."}
+            </h2>
+            <p className="mt-2.5 max-w-[560px] text-[14px] leading-[1.65] text-[var(--bm-text2)] sm:mt-3 sm:text-[16px] sm:leading-[1.7]">
+              {greetingName
+                ? "I know your blockers, your streak and the tasks you keep skipping. Tell me what you are stuck on, or ask what to do next. I will answer directly."
+                : "You do not have a track record with me yet, so I will not pretend to know your patterns. Tell me what you are stuck on or what you are building, and I will give you a direct read."}
+            </p>
+            <div className="mt-5 grid gap-2 sm:mt-7 sm:grid-cols-2 sm:gap-2.5">
+              {QUICK_PROMPTS.slice(0, 4).map(p => (
+                <button key={p} onClick={() => sendMessage(p)}
+                  className="group flex min-h-[56px] cursor-pointer items-start justify-between gap-3 rounded-[14px] border border-[var(--bm-border)] bg-[var(--bm-bg2)] p-3 text-left text-[13.5px] leading-snug sm:min-h-[72px] sm:rounded-[16px] sm:p-4 sm:text-[14.5px] text-[var(--bm-text2)] transition-colors hover:border-[var(--bm-intel-bd)] hover:text-[var(--bm-text)]">
+                  <span>{p}</span>
+                  <ArrowUpRight size={16} className="mt-0.5 shrink-0 text-[var(--bm-text4)] group-hover:text-[var(--bm-intel2)]" />
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        ) : (
+          <div className="mx-auto flex max-w-[760px] flex-col gap-8 py-4 pb-6">
+            {messages.map(msg => <MessageBubble key={msg.id} msg={msg} onStartAction={() => router.push("/today")} onOpen={(href) => router.push(href)} onRunChip={(chip) => sendMessage(chip.label, { action: { id: chip.id, params: chip.params } })} />)}
+          </div>
+        )}
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Composer */}
+      <div className="sticky bottom-0 shrink-0 bg-gradient-to-t from-[var(--bm-bg)] from-70% to-transparent px-3 pb-3 pt-4 sm:px-2 sm:pb-4">
+        <div className="mx-auto max-w-[760px]">
+          {plan === "free" && <div className="mb-2"><AIUsageBadge /></div>}
+          {lowOnMessages && <div className="mb-2 text-[13px] text-[var(--bm-amber)]">Last coaching message for today.</div>}
+          <div className="mb-2.5 flex items-center gap-2 overflow-x-auto pb-0.5" style={{ scrollbarWidth: "none" }}>
+            {COACH_ACTION_CHIPS.map(chip => (
+              <button key={chip.label} type="button" disabled={loading}
+                onClick={() => sendMessage(chip.label, { action: { id: chip.id, params: chip.params } })}
+                className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-[var(--bm-border2)] bg-[var(--bm-bg2)] px-3 py-1.5 text-[12.5px] text-[var(--bm-text2)] sm:px-3.5 sm:py-2 sm:text-[13px] transition-colors hover:border-[var(--bm-intel-bd)] hover:text-[var(--bm-text)] disabled:cursor-not-allowed disabled:opacity-50">
+                <Zap size={13} color="var(--bm-intel2)" />
+                {chip.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-end gap-3 rounded-[22px] border border-[var(--bm-border2)] bg-[var(--bm-bg2)] py-2 pl-4 pr-2 sm:rounded-[24px] sm:py-3 sm:pl-5 sm:pr-3 shadow-[0_8px_30px_rgba(0,0,0,0.25)] transition-colors focus-within:border-[var(--bm-accent-bd)]">
+            <textarea ref={inputRef} value={input}
+              onChange={e => { setInput(e.target.value); const el = e.currentTarget; el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 180) + "px"; }}
+              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+              placeholder="Ask anything about your startup" aria-label="Message the coach" rows={1} disabled={loading}
+              className="max-h-[180px] min-h-[28px] flex-1 resize-none border-0 bg-transparent py-1 text-[16px] leading-[1.6] text-[var(--bm-text)] outline-none placeholder:text-[var(--bm-text4)]" />
+            <motion.button whileTap={{ scale: 0.94 }} onClick={() => sendMessage()} aria-label="Send message"
+              disabled={!input.trim() || loading}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-0 sm:h-11 sm:w-11"
+              style={{ background: !input.trim() || loading ? "var(--bm-bg4)" : "var(--bm-accent)", color: !input.trim() || loading ? "var(--bm-text3)" : "#15130a", cursor: !input.trim() || loading ? "not-allowed" : "pointer" }}>
+              <Send size={17} />
+            </motion.button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Wrapped with AIErrorBoundary so AI pipeline crashes show a recoverable fallback
+export default withAIErrorBoundary(AICoachPageInner, "AI Coach");

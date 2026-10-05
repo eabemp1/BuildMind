@@ -111,7 +111,7 @@ describe("Founder Intelligence coherence layer", () => {
       ],
     }));
 
-    expect(temporal.week_changes.join(" ")).toContain("External evidence actions moved");
+    expect(temporal.week_changes.join(" ")).toContain("Completed external-evidence actions moved");
     expect(temporal.increasing_behaviors).toContain("external evidence seeking");
   });
 
