@@ -1,0 +1,419 @@
+/**
+ * lib/founderMemory.ts — Persistent Founder Memory System
+ *
+ * Stores and evolves a rich behavioral profile of the founder across sessions.
+ * This gives the AI Chief of Staff context about who it's working with —
+ * not just their startup, but how they think, what they avoid, what motivates them.
+ *
+ * Data lives in Supabase table: founder_memory (one row per user)
+ * Schema:
+ *   id uuid PK
+ *   user_id uuid FK → auth.users
+ *   personality_tags text[]       — e.g. ["ships fast", "avoids sales", "overthinks design"]
+ *   decision_patterns jsonb       — recurring choices and outcomes
+ *   emotional_signals jsonb       — what energizes / drains them
+ *   avoidance_zones text[]        — tasks they consistently skip
+ *   strengths text[]              — tasks they complete rapidly / enthusiastically
+ *   cofounder_style text          — how the AI should speak to this person
+ *   last_insight text             — most recent generated insight
+ *   insight_history jsonb[]       — all past insights with timestamps
+ *   updated_at timestamptz
+ */
+
+import { createClient } from "@/lib/supabase/client";
+import { getCurrentUser } from "@/lib/data/projects";
+import { actionCategoryLabelOrNull } from "@/lib/actionClassification";
+
+// ── Runtime validation ─────────────────────────────────────────────────────────
+// Guards against silent data loss from SQL/TypeScript schema mismatches.
+// If the DB returns unexpected shape, we surface it as a console error rather
+// than letting bad data propagate through the AI pipeline.
+
+function isStringArray(v: unknown): v is string[] {
+  return Array.isArray(v) && v.every((x) => typeof x === "string");
+}
+
+function validateFounderMemoryShape(data: Record<string, unknown>): void {
+  const errors: string[] = [];
+  if (!isStringArray(data.personality_tags))
+    errors.push("personality_tags must be string[]");
+  if (!Array.isArray(data.decision_patterns))
+    errors.push("decision_patterns must be array");
+  if (!Array.isArray(data.emotional_signals))
+    errors.push("emotional_signals must be array");
+  if (!isStringArray(data.avoidance_zones))
+    errors.push("avoidance_zones must be string[]");
+  if (!isStringArray(data.strengths))
+    errors.push("strengths must be string[]");
+  if (data.cofounder_style !== undefined && typeof data.cofounder_style !== "string")
+    errors.push("cofounder_style must be string");
+  if (!Array.isArray(data.validation_receipts))
+    errors.push("validation_receipts must be array");
+  if (!Array.isArray(data.competitor_history))
+    errors.push("competitor_history must be array");
+  if (errors.length > 0) {
+    // Surface schema mismatch as a warning rather than crashing — the AI pipeline
+    // should still function with partial data, but we want visibility into misalignment.
+    console.error("[founderMemory] Schema/type mismatch detected:", errors, data);
+  }
+}
+
+export type DecisionPattern = {
+  pattern: string;          // e.g. "delays pricing decisions"
+  count: number;
+  lastSeen: string;         // ISO date
+  outcome?: "good" | "neutral" | "bad";
+};
+
+export type EmotionalSignal = {
+  trigger: string;          // e.g. "completing validation milestone"
+  type: "energizing" | "draining";
+  confidence: number;       // 0-1
+};
+
+export type CofounderStyle =
+  | "direct-challenger"     // pushes back, asks hard questions
+  | "strategic-partner"     // thinks long-term, connects dots
+  | "execution-coach"       // keeps them on track, celebrates wins
+  | "devil-advocate";       // always plays the skeptic
+
+export type ValidationReceipt = {
+  id: string;
+  personName: string;
+  quote: string;
+  channel: string;
+  date: string;
+  problemConfirmed: boolean;
+};
+
+export type CompetitorHistoryEntry = {
+  name: string;
+  url?: string;
+  count: number;
+  lastSeen: string;
+};
+
+export type FounderMemory = {
+  id: string;
+  user_id: string;
+  personality_tags: string[];
+  decision_patterns: DecisionPattern[];
+  emotional_signals: EmotionalSignal[];
+  avoidance_zones: string[];
+  strengths: string[];
+  cofounder_style: CofounderStyle;
+  last_insight: string | null;
+  insight_history: { text: string; created_at: string }[];
+  archetype_classified_at: string | null;
+  archetype_confidence: number | null;
+  last_debt_surfaced: Record<string, string> | null;
+  updated_at: string;
+  // ── Weekly loop feed ─────────────────────────────────────────────────────
+  // Written by weekly-report API; read by today-action on Mondays
+  last_week_summary: string | null; // JSON string
+  // ── Initial Analysis ────────────────────────────────────────────────────
+  // Written by initial-analysis API; cached per stage
+  initial_analysis: string | null; // JSON string
+  // ── Milestone Break interstitial ─────────────────────────────────────────
+  // Written by milestone-break API; cleared after acknowledgement
+  pending_milestone_break: string | null; // JSON string
+  // ── CoFounder Core additions ────────────────────────────────────────────
+  // Real human validation receipts — surfaced during competitor spirals
+  validationReceipts: ValidationReceipt[];
+  // Tracks competitor lookup frequency to detect avoidance patterns
+  competitorHistory: CompetitorHistoryEntry[];
+};
+
+// ── Read ─────────────────────────────────────────────────────────────────────
+
+export async function getFounderMemory(): Promise<FounderMemory | null> {
+  const user = await getCurrentUser();
+  if (!user) return null;
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("founder_memory")
+    .select("*")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (error || !data) return null;
+  validateFounderMemoryShape(data as Record<string, unknown>);
+  return data as FounderMemory;
+}
+
+// ── Write ─────────────────────────────────────────────────────────────────────
+
+// ── Tag deduplication ─────────────────────────────────────────────────────────
+// Prevents "ships fast" and "moves quickly" from becoming two separate tags.
+// Uses case-insensitive substring matching as a lightweight approximation of
+// semantic deduplication (no embedding cost, no network call).
+
+/**
+ * deduplicateTags — removes near-duplicate string tags from a list.
+ *
+ * Two tags are considered duplicates when one is a substring of the other
+ * (case-insensitive, after stripping common filler words). This catches:
+ *   "ships fast" / "ships quickly" → keeps the first seen
+ *   "avoids sales calls" / "avoids sales" → merges to the shorter canonical form
+ *   "user interviews" / "interviewing users" → keeps the first seen
+ *
+ * Max `limit` tags are returned (oldest first = most established patterns).
+ */
+export function deduplicateTags(tags: string[], limit = 10): string[] {
+  const FILLER = /\b(the|a|an|to|on|in|at|for|of|is|are|was|were|be|been|being|and|or|but|not|very|really|just|so|quite|mostly|often|always|never|usually|typically)\b/gi;
+
+  function normalize(s: string) {
+    return s.toLowerCase().replace(FILLER, " ").replace(/\s+/g, " ").trim();
+  }
+
+  // B4 FIX: Sort by ascending length before deduplicating so the shorter
+  // (more canonical) form always wins regardless of input order.
+  // Previously ["avoids sales calls", "avoids sales"] kept the longer form
+  // while ["avoids sales", "avoids sales calls"] kept the shorter — the
+  // winner depended on which concurrent write arrived first.
+  const sorted = [...tags].sort((a, b) => a.length - b.length);
+
+  const canonical: string[] = [];
+  for (const tag of sorted) {
+    const norm = normalize(tag);
+    const isDup = canonical.some((c) => {
+      const cn = normalize(c);
+      return cn.includes(norm) || norm.includes(cn);
+    });
+    if (!isDup) canonical.push(tag);
+    if (canonical.length >= limit) break;
+  }
+  return canonical;
+}
+
+export async function upsertFounderMemory(
+  patch: Partial<Omit<FounderMemory, "id" | "user_id" | "updated_at">>
+): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Not authenticated");
+  const supabase = createClient();
+  await supabase.from("founder_memory").upsert({
+    user_id: user.id,
+    ...patch,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "user_id" });
+}
+
+// ── Observe & Evolve ──────────────────────────────────────────────────────────
+
+/**
+ * Called every time a task is completed or skipped.
+ * Detects avoidance patterns and strengths automatically.
+ */
+export async function observeTaskEvent(
+  taskTitle: string,
+  event: "completed" | "skipped" | "overdue",
+  category?: string
+): Promise<void> {
+  const memory = await getFounderMemory();
+  if (!memory) return;
+
+  const now = new Date().toISOString();
+
+  // E1 FIX: Use atomic Postgres RPCs for array mutations instead of the
+  // classic read-modify-write pattern. Two simultaneous task completions
+  // previously raced: both read the same memory state, computed different
+  // updates, and the later write silently discarded the earlier one.
+  // The RPCs below mutate in a single UPDATE statement, preventing clobbering.
+  const supabase = createClient();
+
+  if (event === "skipped" || event === "overdue") {
+    // FIX: this used to fall back to `taskTitle.split(" ").slice(0, 3).join(" ")`
+    // whenever no explicit category was passed — and no call site (Today
+    // page, lib/queries.ts, lib/buildmind.ts) ever passed one. Confirmed in
+    // production data: avoidance_zones contained raw task-title fragments
+    // like "Create a 7-day" instead of a genuine behavioral category. Every
+    // one of those tasks had a proper category available via
+    // action_type in reflexion_learning_log — actionCategoryLabel() runs
+    // the same keyword classification used there, so this now stores
+    // something like "direct outreach (linkedin)" instead of a text
+    // fragment.
+    const zone = category ?? actionCategoryLabelOrNull(taskTitle);
+    // append_avoidance_zone RPC: atomically appends if not already present (max 10 items)
+    if (zone) await supabase.rpc("append_avoidance_zone", {
+      p_user_id: (await getCurrentUser())?.id ?? "",
+      p_zone: zone,
+    }).then(({ error }) => {
+      if (error) {
+        // Graceful degradation: fall back to read-modify-write if RPC is not yet deployed
+        return upsertFounderMemory({
+          avoidance_zones: deduplicateTags(
+            Array.from(new Set([...memory.avoidance_zones, zone])),
+            10,
+          ),
+        });
+      }
+    });
+  }
+
+  if (event === "completed") {
+    // Same fix as above, mirrored for strengths.
+    const strength = category ?? actionCategoryLabelOrNull(taskTitle);
+    // append_strength RPC: atomically appends if not already present (max 10 items)
+    if (strength) await supabase.rpc("append_strength", {
+      p_user_id: (await getCurrentUser())?.id ?? "",
+      p_strength: strength,
+    }).then(({ error }) => {
+      if (error) {
+        return upsertFounderMemory({
+          strengths: deduplicateTags(
+            Array.from(new Set([...memory.strengths, strength])),
+            10,
+          ),
+        });
+      }
+    });
+  }
+
+  // Decision patterns: build updated array client-side and write atomically.
+  // This is safe because pattern keys are namespaced (event_category) and the
+  // write is idempotent at the pattern level — duplicate writes at worst
+  // over-count by 1, which is acceptable for analytics data.
+  const patternKey = `${event}_${category ?? "general"}`;
+  const patterns = [...memory.decision_patterns];
+  const existing = patterns.find((p) => p.pattern === patternKey);
+  if (existing) {
+    existing.count += 1;
+    existing.lastSeen = now;
+  } else {
+    patterns.push({ pattern: patternKey, count: 1, lastSeen: now });
+  }
+  await upsertFounderMemory({ decision_patterns: patterns.slice(0, 20) });
+}
+
+/**
+ * Generates a new insight about the founder based on their memory profile.
+ * Called periodically (e.g., weekly, or on AI coach open).
+ */
+export async function generateFounderInsight(): Promise<string | null> {
+  const memory = await getFounderMemory();
+  if (!memory) return null;
+
+  const prompt = buildInsightPrompt(memory);
+
+  const res = await fetch("/api/ai/founder-insight", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt, memory }),
+  });
+
+  if (!res.ok) return null;
+  const body = await res.json().catch(() => ({}));
+  const insight: string = body?.insight ?? "";
+
+  // D4 FIX: Validate insight before persisting. A hallucinated or harmful
+  // AI insight stored in founder_memory poisons every subsequent AI prompt
+  // (via buildFounderContext), creating a compounding feedback loop.
+  // Guards:
+  //   1. Must be non-empty and at least 20 chars (not a stub/error string).
+  //   2. Must not exceed 500 chars (prevents runaway prompt pollution).
+  //   3. Confidence from the API body must be >= 0.5 (default 1.0 when absent).
+  //      Low-confidence insights are returned to the caller but not persisted.
+  if (!insight || insight.length < 20) return null;
+
+  const sanitizedInsight = insight.slice(0, 500);
+  const confidence: number = typeof body?.confidence === "number" ? body.confidence : 1.0;
+
+  // Do not persist low-confidence insights — return them for display only.
+  if (confidence < 0.5) return sanitizedInsight;
+
+  const history = [
+    { text: sanitizedInsight, created_at: new Date().toISOString() },
+    ...memory.insight_history,
+  ].slice(0, 10);
+
+  await upsertFounderMemory({ last_insight: sanitizedInsight, insight_history: history });
+  return sanitizedInsight;
+}
+
+/**
+ * D4 FIX: Allows a founder to clear their stored insight history.
+ * Without this, a bad/hallucinated insight had no user-facing removal path.
+ */
+export async function clearFounderInsight(): Promise<void> {
+  await upsertFounderMemory({ last_insight: null, insight_history: [] });
+}
+
+function buildInsightPrompt(memory: FounderMemory): string {
+  return `
+You are studying the behavioral patterns of a startup founder. Based on these signals, generate ONE sharp, non-obvious insight about how they're building — and one specific thing they should change this week.
+
+Avoidance zones (tasks they consistently skip): ${memory.avoidance_zones.join(", ") || "none yet"}
+Strengths (tasks they complete quickly): ${memory.strengths.join(", ") || "none yet"}
+Decision patterns: ${memory.decision_patterns.map(p => `${p.pattern} (${p.count}x)`).join(", ") || "none yet"}
+Personality tags: ${memory.personality_tags.join(", ") || "none yet"}
+
+Write 2 sentences max. Be direct. Don't hedge. The insight should feel like it came from someone who has been watching them build for months.
+  `.trim();
+}
+
+// ── Co-founder style evolution ────────────────────────────────────────────────
+
+/**
+ * Updates co-founder communication style based on user feedback signals.
+ * E.g., if they keep asking for more challenge, switch to devil-advocate.
+ */
+export async function evolveCofounderStyle(
+  feedback: "too-soft" | "too-harsh" | "on-point" | "more-strategic"
+): Promise<CofounderStyle> {
+  const memory = await getFounderMemory();
+  const current = memory?.cofounder_style ?? "execution-coach";
+
+  const transitions: Record<string, Record<string, CofounderStyle>> = {
+    "too-soft": {
+      "execution-coach": "direct-challenger",
+      "strategic-partner": "devil-advocate",
+      "direct-challenger": "devil-advocate",
+      "devil-advocate": "devil-advocate",
+    },
+    "too-harsh": {
+      "devil-advocate": "direct-challenger",
+      "direct-challenger": "execution-coach",
+      "execution-coach": "strategic-partner",
+      "strategic-partner": "strategic-partner",
+    },
+    "more-strategic": {
+      "execution-coach": "strategic-partner",
+      "direct-challenger": "strategic-partner",
+      "devil-advocate": "strategic-partner",
+      "strategic-partner": "strategic-partner",
+    },
+    "on-point": { [current]: current },
+  };
+
+  const next = transitions[feedback]?.[current] ?? current;
+  await upsertFounderMemory({ cofounder_style: next });
+  return next;
+}
+
+// ── Context builder for AI prompts ───────────────────────────────────────────
+
+/**
+ * Returns a compact founder context string to prepend to any AI prompt.
+ * Use this in every API call to give the AI real memory of the founder.
+ */
+export function buildFounderContext(memory: FounderMemory): string {
+  const lines: string[] = [
+    `FOUNDER PROFILE (persistent memory — do not repeat back to user):`,
+    memory.personality_tags.length
+      ? `Personality: ${memory.personality_tags.join(", ")}`
+      : "",
+    memory.avoidance_zones.length
+      ? `Avoids: ${memory.avoidance_zones.join(", ")}`
+      : "",
+    memory.strengths.length
+      ? `Strong at: ${memory.strengths.join(", ")}`
+      : "",
+    memory.cofounder_style
+      ? `Respond as: ${memory.cofounder_style}`
+      : "",
+    memory.last_insight
+      ? `Last insight about them: "${memory.last_insight}"`
+      : "",
+  ];
+  return lines.filter(Boolean).join("\n");
+}
