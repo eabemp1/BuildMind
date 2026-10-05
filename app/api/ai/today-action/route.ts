@@ -1,4 +1,7 @@
 import { buildFirstDaysBrief, countBlockEntries } from "@/lib/firstDaysBrief";
+import { planTodayMission, parseRecentTasks, missionPromptBlock, failsMissionPreScreen } from "@/lib/todayMission";
+import { fallbackForKind } from "@/lib/todayFallbacks";
+import { groundTargetUsers, groundingPromptBlock, wantsGrounding } from "@/lib/todayGrounding";
 import { NextResponse } from "next/server";
 import { enforceAndTrackAIUsage, hasAdminEnv } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -618,6 +621,27 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
       lastReflectionContext += `\n\nACTIVE GOALS (advance one today):\n${personalisationCtx.activeGoals.map((g, i) => `${i + 1}. ${g}`).join("\n")}`;
     }
 
+    // ── Mission planning (lib/todayMission.ts) — same planner as the stream route ──
+    const recentTasksParsed = parseRecentTasks(personalisationCtx.recentActionsBlock);
+    const mission = planTodayMission({
+      stage,
+      recentTasks: recentTasksParsed,
+      avoidance: cognitionAvoidanceSignals,
+      blockers: personalisationCtx.recurringBlockers,
+      activeGoals: personalisationCtx.activeGoals,
+      cognitiveLoad: (["fresh", "drained", "autopilot"] as string[]).includes(String(cognitionCognitiveLoad)) ? (cognitionCognitiveLoad as "fresh" | "drained" | "autopilot") : "fresh",
+      momentum: cognitionMomentumScore,
+      excludeAction,
+    });
+    const missionGrounding = wantsGrounding(mission.kind) && projectId ? await groundTargetUsers({ key: projectId, targetUsers, problem }) : [];
+    lastReflectionContext += `\n\n${missionPromptBlock(mission, { targetUsers, avoidance: cognitionAvoidanceSignals, blockers: personalisationCtx.recurringBlockers })}`;
+    if (missionGrounding.length) lastReflectionContext += `\n\n${groundingPromptBlock(missionGrounding)}`;
+    const kindFallback = fallbackForKind(
+      mission.kind,
+      { userType: inferProjectAudience(targetUsers, title, projectContext, problem), problemDesc: problem || title || "this problem", productName: title?.trim() || "your product", stage },
+      `${userId}:${new Date().toISOString().slice(0, 10)}`,
+    );
+
     // NOTE: founderIntelligence loading + prediction recording already
     // happened inside loadTodayActionContext() above (tctx.founderIntelligence,
     // tctx.founderIntelligencePromptBlock) — this used to reload it a second
@@ -929,13 +953,30 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
     // synchronously and fall back to the known-concrete buildContextualFallback()
     // template on a hard fail, instead of shipping a known-bad action and
     // only discovering it later on the AI & Quality dashboard.
-    const preScreenTarget = targetUsers || inferProjectAudience(targetUsers, title, projectContext, problem);
-    const preScreen = failsHardPreScreen(finalResult.action, { stage, targetUsers: preScreenTarget });
+    const preScreen = failsMissionPreScreen(finalResult.action, mission, {
+      title, targetUsers, problem,
+      blockers: personalisationCtx.recurringBlockers,
+      avoidance: cognitionAvoidanceSignals,
+      activeGoals: personalisationCtx.activeGoals,
+      recentTasks: recentTasksParsed,
+    });
     const wasHardFallback = preScreen.fails;
     if (wasHardFallback) {
-      finalResult.action = fallback.action;
-      finalResult.message = fallback.message;
+      finalResult.action = kindFallback.action;
+      finalResult.message = kindFallback.message;
+    } else if (!mission.requires.draft) {
+      finalResult.message = "";
     }
+    Object.assign(finalResult, {
+      time: `${wasHardFallback ? Number.parseInt(kindFallback.time, 10) || mission.minutes : mission.minutes} min`,
+      missionKind: mission.kind,
+      missionLabel: mission.label,
+      missionReasons: mission.reasons,
+      doneWhen: wasHardFallback ? kindFallback.done_when : "",
+      firstStep: wasHardFallback ? kindFallback.first_step : "",
+      hasDraft: Boolean(finalResult.message),
+      groundedIn: missionGrounding.map((g) => ({ title: g.title, url: g.url })),
+    });
 
     if (reflexionOutput) {
       finalResult.reflexion = {

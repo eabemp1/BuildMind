@@ -14,7 +14,8 @@ import { storage } from "@/lib/storage";
 import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
 import AIUsageBadge from "@/components/AIUsageBadge";
 import { ConfidenceBadge } from "@/components/ConfidenceBadge";
-import { Send, Brain, Sparkles, Zap, ChevronRight, ArrowUpRight, PanelRight, X } from "lucide-react";
+import { Send, Brain, Sparkles, Zap, ChevronRight, ArrowUpRight, PanelRight, X, Globe } from "lucide-react";
+import { needsWebResearch } from "@/lib/webResearchGate";
 import { withAIErrorBoundary } from "@/components/AIErrorBoundary";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
 import { CoachActionResultCard } from "@/components/coach/CoachActionResultCard";
@@ -39,10 +40,15 @@ type ChatMessage = {
   /** Present when the reply was a Coach Action (lib/coachActions) rather
    *  than model-written coaching — rendered as a data card, not prose. */
   actionResult?: CoachActionResult;
+  /** Web pages the coach actually retrieved for this reply (numbered to match [n] in the text). */
+  sources?: Array<{ n: number; title: string; url: string; host: string; read: boolean }>;
 };
 
 function buildPlaceholderReasoning(message: string, projectTitle?: string, score?: number): string[] {
   const msg = message.toLowerCase();
+  if (needsWebResearch(message)) {
+    return ["Searching the web for this...", "Reading the most relevant pages...", projectTitle ? `Connecting what I find to "${projectTitle}"...` : "Connecting what I find to your project..."];
+  }
   const steps: string[] = [];
   if (projectTitle) steps.push(`Pulling live data for "${projectTitle}"...`);
   else steps.push("Reading your project state...");
@@ -168,6 +174,21 @@ function MessageBubble({ msg, onStartAction, onOpen, onRunChip }: { msg: ChatMes
         )}
 
         {msg.phase === "done" && msg.actionResult && <CoachActionResultCard result={msg.actionResult} />}
+
+        {msg.phase === "done" && msg.sources && msg.sources.length > 0 && (
+          <div>
+            <div className="mb-1.5 flex items-center gap-1.5 text-[12px] text-[var(--bm-text3)]"><Globe size={12} />Searched the web · {msg.sources.length} source{msg.sources.length === 1 ? "" : "s"}</div>
+            <div className="flex flex-wrap gap-2">
+              {msg.sources.map(src => (
+                <a key={src.n} href={src.url} target="_blank" rel="noopener noreferrer" title={src.title}
+                  className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[var(--bm-border)] bg-[var(--bm-bg2)] px-2.5 py-1 text-[12px] text-[var(--bm-text2)] no-underline hover:border-[var(--bm-border2)]">
+                  <span className="font-mono text-[10px] text-[var(--bm-accent)]">{src.n}</span>
+                  <span className="truncate">{src.host || src.title}</span>
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
 
         {parsed.links.length > 0 && (
           <div className="flex flex-wrap gap-2">
@@ -364,7 +385,7 @@ function AICoachPageInner() {
       setMemory(newMemory);
       storage.setJSON("bm_coach_memory", newMemory);
       persistBehaviorState({ coach_memory: newMemory });
-      setMessages(prev => prev.map(m => m.id === thinkingMsg.id ? { ...m, content: reply, reasoning: payload?.data?.reasoning ?? m.reasoning, phase: "done", confidence_score, recommendedAction } : m));
+      setMessages(prev => prev.map(m => m.id === thinkingMsg.id ? { ...m, content: reply, reasoning: payload?.data?.reasoning ?? m.reasoning, phase: "done", confidence_score, recommendedAction, sources: Array.isArray(payload?.data?.sources) ? payload.data.sources : undefined } : m));
       recordCoachMessage();
       setCoachMessagesToday(getCoachMessagesToday());
       const stats = getAchievementStats();

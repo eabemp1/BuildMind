@@ -40,6 +40,9 @@ import { recordFounderIntelligencePrediction } from "@/lib/learningLoop";
 import { loadTodayActionContext } from "@/lib/todayActionContext";
 import { formatRegionalContextBlock } from "@/lib/regionalContext";
 import { buildFirstDaysBrief, countBlockEntries } from "@/lib/firstDaysBrief";
+import { planTodayMission, parseRecentTasks, missionPromptBlock, assessTaskQuality, missionMeta, type Mission } from "@/lib/todayMission";
+import { fallbackForKind } from "@/lib/todayFallbacks";
+import { groundTargetUsers, groundingPromptBlock, wantsGrounding } from "@/lib/todayGrounding";
 
 function sse(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -318,12 +321,16 @@ function normalizePlatform(raw: string | undefined): string {
 }
 
 interface StructuredAction {
-  platform: string;
-  count: number;
-  user_type: string;
+  kind?: string;
+  platform?: string;
+  count?: number;
+  user_type?: string;
   task: string;
   rationale: string;
-  draft: string;
+  draft?: string;
+  done_when?: string;
+  first_step?: string;
+  minutes?: number;
 }
 
 // Structural guarantee, not a hope: if the model's own `task` sentence
@@ -332,9 +339,14 @@ interface StructuredAction {
 // generation away and falling back to the generic template. This is what
 // turns has_platform/has_number from "usually true, we grade it after" into
 // "always true by construction."
-function composeConcreteTask(structured: StructuredAction): { task: string; platform: string; count: number } {
+function composeConcreteTask(structured: StructuredAction, mission?: Mission): { task: string; platform: string; count: number } {
+  // Only outreach-shaped missions need platform/number spliced in. A build,
+  // analyze or pricing task is left exactly as written.
+  if (mission && !mission.requires.platform && !mission.requires.number) {
+    return { task: (structured.task ?? "").trim(), platform: "", count: 0 };
+  }
   const platform = normalizePlatform(structured.platform);
-  const count = Number.isFinite(structured.count) && structured.count >= 1 ? Math.round(structured.count) : 3;
+  const count = Number.isFinite(structured.count) && (structured.count as number) >= 1 ? Math.round(structured.count as number) : 3;
   let task = (structured.task ?? "").trim();
   const hasPlatform = new RegExp(platform.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(task);
   const hasNumber = /\b\d+\b/.test(task);
@@ -511,6 +523,39 @@ export async function POST(request: Request) {
           `${userId}:${new Date().toISOString().slice(0, 10)}`,
         );
 
+        // ── Mission planning (lib/todayMission.ts) ────────────────────────
+        const recentTasks = parseRecentTasks(personalisationCtx.recentActionsBlock);
+        const mission = planTodayMission({
+          stage,
+          recentTasks,
+          avoidance: cognitionAvoidanceSignals,
+          blockers: personalisationCtx.recurringBlockers,
+          activeGoals: personalisationCtx.activeGoals,
+          cognitiveLoad,
+          momentum: cognitionMomentumScore,
+          isLowConfidence,
+          candidateId: founderIntelligence?.decision.top_candidate?.id ?? null,
+          excludeAction,
+        });
+        const grounding = wantsGrounding(mission.kind)
+          ? await groundTargetUsers({ key: projectId, targetUsers, problem })
+          : [];
+        const groundingBlock = groundingPromptBlock(grounding);
+        const missionBlock = missionPromptBlock(mission, { targetUsers, avoidance: cognitionAvoidanceSignals, blockers: personalisationCtx.recurringBlockers });
+        const kindFallback = fallbackForKind(
+          mission.kind,
+          { userType: inferProjectAudience(targetUsers, title, description, problem), problemDesc: inferProjectProblem(problem, title, description), productName: title?.trim() || "your product", stage },
+          `${userId}:${new Date().toISOString().slice(0, 10)}`,
+        );
+        const qualityCtx = {
+          title, targetUsers, problem,
+          blockers: personalisationCtx.recurringBlockers,
+          avoidance: cognitionAvoidanceSignals,
+          activeGoals: personalisationCtx.activeGoals,
+          recentTasks,
+        };
+        emit("mission", { kind: mission.kind, label: mission.label, minutes: mission.minutes, reasons: mission.reasons, grounded: grounding.length });
+
         emit("agent_a", { status: "running", label: "Agent A generating your task…" });
 
         const activeGoalsLine =
@@ -570,21 +615,28 @@ ${founderIntelligencePromptBlock ? `\n${founderIntelligencePromptBlock}` : ""}
 ${lastReflectionContext}
 ${debtContext}
 ${firstDaysBrief ? `\n${firstDaysBrief}\n` : ""}
+${missionBlock}
+${groundingBlock}
 Return JSON with exactly these fields:
 {
-  "platform": one of ${JSON.stringify(ALLOWED_PLATFORMS)},
-  "count": integer 1-10 — how many people/actions,
-  "user_type": the specific user type this targets (use "${targetUsers || "their target users"}" unless the founder data clearly points elsewhere),
-  "task": one sentence, completable in under 1 hour, naming the platform and count explicitly. No generics like "some users" or "relevant communities".
-  "rationale": one sentence starting with "Because" — name the specific avoidance pattern, blocker, or reflection outcome this directly addresses.
-  "draft": a 2-3 sentence paste-ready message using the actual product name (${title || "their product"}) and actual target user type. No placeholder brackets like [Name], [Company], [Your Product].
+  "kind": "${mission.kind}",
+  "task": one sentence naming the exact thing to do, in this founder's own product/user terms. Completable in ${mission.minutes} minutes or less. No generics like "some users", "relevant communities", "research", "explore", "brainstorm".${mission.requires.platform ? ` Must name one of ${JSON.stringify(ALLOWED_PLATFORMS)}.` : ""}${mission.requires.number ? " Must include a specific number." : ""}
+  "first_step": the literal first action to take in the next 2 minutes (open X, write Y),
+  "done_when": one sentence a stranger could check ("3 messages sent", "page live at a URL", "decision written in 3 lines"),
+  "minutes": integer ${Math.min(10, mission.minutes)}-${mission.minutes},
+  "rationale": one sentence starting with "Because" - name the specific avoidance pattern, blocker, outcome or evidence gap this addresses,${mission.requires.platform ? `
+  "platform": one of ${JSON.stringify(ALLOWED_PLATFORMS)},` : ""}${mission.requires.number ? `
+  "count": integer 1-10,` : ""}${mission.requires.userType ? `
+  "user_type": the specific user type (use "${targetUsers || "their target users"}" unless the data points elsewhere),` : ""}${mission.requires.draft ? `
+  "draft": a 2-3 sentence paste-ready message using the actual product name (${title || "their product"}) and the actual target user. No placeholder brackets.` : `
+  "draft": ""`}
 }
 
 HARD RULES:
 1. "task" must NOT be semantically equivalent to any task in the RECENT ACTION HISTORY above.
-2. "draft" must use the actual product name and actual target user — never placeholder brackets.
+2. Stay inside today's mission kind (${mission.label}); do not turn it into outreach unless the kind is outreach/interview/follow_up/publish.
 3. If a blocker or avoidance zone is present, "task" or "rationale" must name it explicitly.
-4. "draft" must not contain [Name], [Company], [Your Product], [Target Audience].`;
+4. No placeholder brackets like [Name], [Company], [Your Product] anywhere.`;
 
         let structuredA: StructuredAction;
         try {
@@ -595,25 +647,33 @@ HARD RULES:
         } catch (err) {
           logError("today-action-stream/agentA", err, { userId, stage, provider: "callModelJSON" });
           structuredA = {
-            platform: normalizePlatform(fallback.platform),
+            kind: mission.kind,
+            platform: kindFallback.platform || undefined,
             count: 3,
             user_type: targetUsers || "your target users",
-            task: fallback.action,
+            task: kindFallback.action,
             rationale: `Because you're at ${stage} stage and this is the highest-leverage move today.`,
-            draft: fallback.message,
+            draft: kindFallback.message,
+            done_when: kindFallback.done_when,
+            first_step: kindFallback.first_step,
+            minutes: mission.minutes,
           };
         }
-        const composedA = composeConcreteTask(structuredA);
+        const composedA = composeConcreteTask(structuredA, mission);
         const agentAFields = {
           task: composedA.task,
           rationale: cleanVisibleText(structuredA.rationale, `Because this is the highest-leverage move today.`),
-          draft: cleanVisibleText(structuredA.draft, fallback.message),
+          draft: mission.requires.draft ? cleanVisibleText(structuredA.draft, kindFallback.message) : "",
+          done_when: cleanVisibleText(structuredA.done_when, ""),
+          first_step: cleanVisibleText(structuredA.first_step, ""),
+          minutes: Math.max(5, Math.min(90, Math.round(Number(structuredA.minutes) || mission.minutes))),
         };
+        const qualityA = assessTaskQuality({ ...agentAFields, platform: structuredA.platform, count: structuredA.count }, mission, qualityCtx);
         // agentAOutput kept as a display blob purely so the Critic prompt
         // below (which evaluates free text) and the eval/log pipeline don't
         // need to change shape — the fields feeding it are now guaranteed,
         // not parsed.
-        const agentAOutput = `TASK: ${agentAFields.task}\nRATIONALE: ${agentAFields.rationale}\nDRAFT: ${agentAFields.draft}`;
+        const agentAOutput = `TASK: ${agentAFields.task}\nFIRST STEP: ${agentAFields.first_step}\nDONE WHEN: ${agentAFields.done_when}\nRATIONALE: ${agentAFields.rationale}${agentAFields.draft ? `\nDRAFT: ${agentAFields.draft}` : ""}`;
 
         emit("agent_a", { status: "done", output: agentAOutput });
 
@@ -638,12 +698,13 @@ HARD RULES:
 
 You are a GATEKEEPER. Reject the task if ANY of the following are true:
 1. Semantically equivalent to any task in the RECENT TASKS list below
-2. DRAFT contains placeholder text like "[Your Product]", "[Target Audience]", "[Name]", "[Company]"
+2. Any field contains placeholder text like "[Your Product]", "[Target Audience]", "[Name]", "[Company]"
 3. The task does not advance any of the stated active goals (if goals were provided)
-4. The DRAFT is not paste-ready (too generic, no specific context)
+4. ${mission.requires.draft ? "The DRAFT is not paste-ready (too generic, no specific context)" : "The task is vague about what exactly gets made, sent or decided"}
+5. The task is not a ${mission.label} task (today's mission), or has no checkable "done when"
 ${founderIntelligence ? buildCriticJudgmentRule(buildCofounderJudgment(founderIntelligence)) : ""}
 
-Do NOT reject for missing platform, user type, or a specific number — those are structurally guaranteed before you see this text (see composeConcreteTask() in this file) and are never actually absent, so judging them again only risks a false rejection of otherwise-correct output.
+Do NOT reject for lacking a platform, user type or number unless the mission kind needs them; build, analyze, pricing, unblock and reset tasks legitimately have none.
 
 ${personalisationCtx.recentActionsBlock}
 
@@ -656,11 +717,16 @@ Context: Stage=${stage}, Target users=${targetUsers || "unknown"}, Product=${tit
           );
           criticVerdict = (parsed.verdict === "fail" ? "fail" : "pass") as "pass" | "fail";
           criticReason = parsed.reason ?? "OK";
+          if (!qualityA.pass) {
+            criticVerdict = "fail";
+            criticReason = `${qualityA.reasons.join(" ")} ${criticReason}`.trim();
+          }
           improvedVersion = parsed.improved_version ?? null;
           improvedVersion = improvedVersion ? sanitizeModelOutput(improvedVersion) : null;
         } catch (err) {
           logError("today-action-stream/agentB-critic", err, { userId, stage, provider: "callModelJSON" });
-          // critic failed — default to pass
+          // critic failed — fall back to the deterministic rubric alone
+          if (!qualityA.pass) { criticVerdict = "fail"; criticReason = qualityA.reasons.join(" "); }
         }
 
         emit("agent_b", {
@@ -692,13 +758,14 @@ Context: Stage=${stage}, Target users=${targetUsers || "unknown"}, Product=${tit
                 role: "system",
                 content: `BuildMind execution engine. ${refineMode}
 
-Return JSON with exactly these fields: platform (one of ${JSON.stringify(ALLOWED_PLATFORMS)}), count (integer 1-10), user_type, task (specific number + exact platform, completable in 30 min), rationale (one sentence starting with "Because"), draft (2-3 sentence paste-ready message using actual product name "${title || "their product"}" and actual target user "${targetUsers || "their users"}", no placeholder brackets).
+Return JSON with exactly these fields: kind ("${mission.kind}"), task (one sentence, ${mission.label} work, at most ${mission.minutes} minutes${mission.requires.platform ? ", names one platform" : ""}${mission.requires.number ? ", has a specific number" : ""}), first_step, done_when, minutes (integer), rationale (one sentence starting with "Because")${mission.requires.platform ? ", platform" : ""}${mission.requires.number ? ", count" : ""}${mission.requires.userType ? ", user_type" : ""}, draft (${mission.requires.draft ? `2-3 sentence paste-ready message using actual product name "${title || "their product"}" and target user "${targetUsers || "their users"}"` : "empty string"}).
 
 Rules:
-- Never use [Name], [Company], [Your Product], [Target Audience] in draft
-- task must name the exact platform and a specific number
-- draft must be something the founder can literally copy-paste right now
+- Never use bracket placeholders like [Name] or [Company]
+- Fix every problem in the critique below
+- Do not repeat anything in the recent task list
 
+Mission: ${mission.label} - ${mission.reasons.join(" ")}
 Stage: ${stage} | Target: ${targetUsers || "not set"} | Product: ${title || "not set"}
 Critique: ${criticReason}
 
@@ -715,13 +782,17 @@ ${JSON.stringify(structuredA)}`,
           emit("agent_c", { status: "done", output: "skipped — critic passed, no rebuild needed" });
         }
 
-        const composedC = composeConcreteTask(structuredC);
+        const composedC = composeConcreteTask(structuredC, mission);
         const agentCFields = {
           task: composedC.task,
           rationale: cleanVisibleText(structuredC.rationale, agentAFields.rationale),
-          draft: cleanVisibleText(structuredC.draft, agentAFields.draft),
+          draft: mission.requires.draft ? cleanVisibleText(structuredC.draft, agentAFields.draft) : "",
+          done_when: cleanVisibleText(structuredC.done_when, agentAFields.done_when),
+          first_step: cleanVisibleText(structuredC.first_step, agentAFields.first_step),
+          minutes: Math.max(5, Math.min(90, Math.round(Number(structuredC.minutes) || agentAFields.minutes))),
         };
-        const refined = `TASK: ${agentCFields.task}\nRATIONALE: ${agentCFields.rationale}\nDRAFT: ${agentCFields.draft}`;
+        const finalQuality = assessTaskQuality({ ...agentCFields, platform: structuredC.platform, count: structuredC.count }, mission, qualityCtx);
+        const refined = `TASK: ${agentCFields.task}\nDONE WHEN: ${agentCFields.done_when}\nRATIONALE: ${agentCFields.rationale}${agentCFields.draft ? `\nDRAFT: ${agentCFields.draft}` : ""}`;
 
         if (criticVerdict === "fail") {
           emit("agent_c", { status: "done", output: refined });
@@ -747,11 +818,15 @@ ${JSON.stringify(structuredA)}`,
         // enforce) and any edge case where a bad normalizePlatform() match
         // still slipped through. A hard fail here should now be rare rather
         // than routine, which is the actual point of this whole rewrite.
-        const preScreenTarget = targetUsers || inferProjectAudience(targetUsers, title, description, problem);
-        const preScreen = failsHardPreScreen(agentCFields.task, { stage, targetUsers: preScreenTarget });
+        // Kind-aware gate: the rubric (lib/todayMission.ts) only demands a
+        // platform/number/user type when the mission kind needs them.
+        const preScreen = { fails: !finalQuality.pass, failed_checks: finalQuality.hardFails.length ? finalQuality.hardFails : finalQuality.softFails };
         const wasHardFallback = preScreen.fails;
-        const finalAction = wasHardFallback ? fallback.action : agentCFields.task;
-        const finalDraft = wasHardFallback ? fallback.message : agentCFields.draft;
+        const finalAction = wasHardFallback ? kindFallback.action : agentCFields.task;
+        const finalDraft = wasHardFallback ? kindFallback.message : agentCFields.draft;
+        const finalDoneWhen = wasHardFallback ? kindFallback.done_when : agentCFields.done_when;
+        const finalFirstStep = wasHardFallback ? kindFallback.first_step : agentCFields.first_step;
+        const finalMinutes = wasHardFallback ? Number.parseInt(kindFallback.time, 10) || mission.minutes : agentCFields.minutes;
         const decisionReason = deterministicCandidate?.why_it_beats_alternatives;
 
         // Historical tracking: previously wasHardFallback only existed in
@@ -783,6 +858,16 @@ ${JSON.stringify(structuredA)}`,
         const finalData = {
           ...fallback,
           action: finalAction,
+          time: `${finalMinutes} min`,
+          platform: wasHardFallback ? kindFallback.platform : (composedC.platform || fallback.platform),
+          missionKind: mission.kind,
+          missionLabel: mission.label,
+          missionReasons: mission.reasons,
+          doneWhen: finalDoneWhen,
+          firstStep: finalFirstStep,
+          hasDraft: Boolean(finalDraft),
+          qualityScore: wasHardFallback ? undefined : finalQuality.score,
+          groundedIn: grounding.map((g) => ({ title: g.title, url: g.url })),
           message: finalDraft,  // ← AI-written DRAFT, unless the hard pre-screen rejected it
           why: decisionReason ? `${rationale} ${decisionReason}` : rationale,
           stage,

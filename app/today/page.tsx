@@ -94,6 +94,14 @@ type ActionData = {
   // Founder Intelligence OS (Phase 10) — layered above the existing action,
   // never required for the card to render. See app/today/components/IntelligencePanel.tsx.
   intelligence?: TodayIntelligenceSummary;
+  // Mission planner (lib/todayMission.ts): what kind of work today is, and why.
+  missionKind?: string;
+  missionLabel?: string;
+  missionReasons?: string[];
+  doneWhen?: string;
+  firstStep?: string;
+  hasDraft?: boolean;
+  groundedIn?: Array<{ title: string; url: string }>;
 };
 
 type CachedTodayAction = {
@@ -1201,6 +1209,9 @@ function TodayContent() {
   const isOutreachAction = actionData ? OUTREACH_KEYWORDS.some(kw =>
     actionData?.action.toLowerCase().includes(kw) || actionData?.message.toLowerCase().includes(kw)
   ) : false;
+  // Build / analyze / pricing / unblock / reset days have no outreach draft, so
+  // they get a "how to do it" panel instead of a message box and channel picker.
+  const noDraft = Boolean(actionData?.missionKind) && actionData?.hasDraft === false;
   const criticalSignal = actionData?.intelligence?.top_signals.find((signal) => signal.severity === "critical");
   const supportingSignals = actionData?.intelligence?.top_signals.filter((signal) => signal.severity !== "critical") ?? [];
 
@@ -2230,6 +2241,27 @@ function TodayContent() {
           )}
 
           {/* ── Message template — pre-filled with real project values ── */}
+          {noDraft ? (
+            <div ref={executionScriptRef} style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: "var(--r-xl)", padding: "var(--space-4)", display: "grid", gap: "var(--space-3)" }}>
+              {actionData.missionLabel && (
+                <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--bm-text3)" }}>
+                  Today is a {actionData.missionLabel.toLowerCase()} day{actionData.missionReasons?.[0] ? `: ${actionData.missionReasons[0]}` : ""}
+                </div>
+              )}
+              {actionData.firstStep && (
+                <div>
+                  <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--bm-text3)", marginBottom: 2 }}>Start with</div>
+                  <p style={{ margin: 0, fontSize: "var(--text-base)", color: "var(--bm-text)", lineHeight: "var(--leading-relaxed)" }}>{sanitizeOutput(actionData.firstStep)}</p>
+                </div>
+              )}
+              {actionData.doneWhen && (
+                <div>
+                  <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--bm-text3)", marginBottom: 2 }}>Done when</div>
+                  <p style={{ margin: 0, fontSize: "var(--text-base)", color: "var(--bm-text2)", lineHeight: "var(--leading-relaxed)" }}>{sanitizeOutput(actionData.doneWhen)}</p>
+                </div>
+              )}
+            </div>
+          ) : (
           <div ref={executionScriptRef} style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: "var(--r-xl)", padding: isMobile ? "var(--space-4)" : "var(--space-4) var(--space-4)" }}>
             <div style={{ display: "flex", alignItems: isMobile ? "stretch" : "center", justifyContent: "space-between", marginBottom: "var(--space-2)", gap: "var(--space-2)", flexDirection: isMobile ? "column" : "row" }}>
               <span style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
@@ -2261,6 +2293,17 @@ function TodayContent() {
               <p style={{ fontSize: isMobile ? "var(--text-md)" : "var(--text-base)", color: "var(--bm-text2)", margin: 0, lineHeight: "var(--leading-relaxed)", fontStyle: "italic" }}>&ldquo;{sanitizeOutput(draftMessage ?? actionData.message)}&rdquo;</p>
             )}
           </div>
+          )}
+          {actionData.groundedIn && actionData.groundedIn.length > 0 && (
+            <div style={{ marginTop: "var(--space-3)", fontSize: "var(--text-xs)", color: "var(--bm-text3)" }}>
+              Where they talk about this:{" "}
+              {actionData.groundedIn.map((g, i) => (
+                <a key={g.url} href={g.url} target="_blank" rel="noopener noreferrer" style={{ color: "var(--bm-accent)", marginRight: 10 }}>
+                  {sanitizeOutput(g.title).slice(0, 60)}{i < actionData.groundedIn!.length - 1 ? "" : ""}
+                </a>
+              ))}
+            </div>
+          )}
         </div>
       </motion.div>
 
@@ -2268,6 +2311,7 @@ function TodayContent() {
       )}
 
       {/* ── Choose channel & audience ── */}
+      {!noDraft && (
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}
         style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-3xl)", padding: isMobile ? "var(--space-5)" : "var(--space-5) var(--space-6)", marginBottom: "var(--space-4)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-1)" }}>
@@ -2356,6 +2400,7 @@ function TodayContent() {
           );
         })()}
       </motion.div>
+      )}
 
       {/* ── Check-in ── */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.16 }}

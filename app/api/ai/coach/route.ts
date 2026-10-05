@@ -1,3 +1,4 @@
+import { needsWebResearch, planResearch, gatherResearch, formatResearchBlock, publicSources, type ResearchResult } from "@/lib/webResearch";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createUserNotification, enforceAndTrackAIUsage, groqJSON, hasAdminEnv } from "@/app/api/ai/_utils";
@@ -412,6 +413,28 @@ Validation gaps: ${valWeaknesses || "None recorded"}`;
       ? `\n\nTODAY'S MORNING INTENTION (founder logged this earlier today): "${lastMorningNote}" — if relevant, connect your coaching to what they said they'd do today.`
       : "";
 
+    // ── Live web research (like Claude's search) ─────────────────────────────
+    // Gate cheaply, plan the searches with one small model call, then search
+    // and read pages in parallel. Any failure degrades to a normal reply.
+    // A spiral gets the coach, not a research dump.
+    let research: ResearchResult = { sources: [], queries: [], attempted: false };
+    if (!spiralDetected && needsWebResearch(message)) {
+      try {
+        const plan = await planResearch(message, {
+          title: (body?.project as { title?: string } | undefined)?.title,
+          stage,
+          targetUsers: body?.targetUsers as string | undefined,
+        });
+        if (plan.needsWeb) {
+          research = await Promise.race([
+            gatherResearch(plan),
+            new Promise<ResearchResult>((resolve) => setTimeout(() => resolve({ sources: [], queries: plan.queries, attempted: true }), 12000)),
+          ]);
+        }
+      } catch { /* research is additive */ }
+    }
+    const researchBlock = formatResearchBlock(research);
+
     // FIX (High #10): the opening claim used to be a flat, unconditional
     // "You have read every reflection" regardless of what data actually
     // exists for this founder — reflections are capped at 5
@@ -438,7 +461,7 @@ WHAT YOU NEVER DO:
 - Never give a numbered list of generic startup advice
 - Never say "as a founder you should..." — you know this specific founder
 - Never deflect when asked for an opinion — give it directly
-- Never write more than 180 words — density beats length every time
+- Never write more than ${research.sources.length ? 260 : 180} words — density beats length every time
 - Never recommend something you know he consistently skips without naming that pattern directly
 
 WHAT YOU ALWAYS DO:
@@ -459,7 +482,7 @@ THINGS THE FOUNDER CAN ASK YOU TO PULL UP (handled instantly outside this conver
 You must return ONLY valid JSON:
 {
   "reasoning": ["what I noticed about his situation", "what pattern this connects to", "what matters most to say first"],
-  "answer": "your response — direct, specific, under 180 words",
+  "answer": "your response — direct, specific, under ${research.sources.length ? 260 : 180} words, with [n] citations when you used the web research",
   "recommended_action": { "what_to_do": "...", "why_now": "...", "expected_evidence": "..." }
 }
 recommended_action is optional — omit the key entirely when no single action stands out.
@@ -467,7 +490,7 @@ ${spiralInstruction}${proactiveObservation}
 
 ${buildAppKnowledgeBlock(message, routeUser.plan === "builder" ? "builder" : "free")}
 
-${projectContext ? `FOUNDER CONTEXT (real data):\n${projectContext}` : ""}${founderMemoryContext}${intelligenceBlock ? `\n\n${intelligenceBlock}` : ""}${morningNoteContext}${blockerContext}${domainContext}${historyContext}
+${projectContext ? `FOUNDER CONTEXT (real data):\n${projectContext}` : ""}${founderMemoryContext}${intelligenceBlock ? `\n\n${intelligenceBlock}` : ""}${morningNoteContext}${blockerContext}${domainContext}${historyContext}${researchBlock}
 
 Message: ${message}
 
@@ -544,7 +567,7 @@ Return ONLY the JSON. No preamble. No markdown fences.`;
 
     return NextResponse.json({
       success: true,
-      data: { reasoning, answer, reply: answer, recommended_action: recommendedAction, spiralDetected: effectiveSpiralDetected, spiralSignal: effectiveSpiralSignal, confidence_score: confidenceScore },
+      data: { reasoning, answer, reply: answer, sources: publicSources(research), researched: research.attempted, recommended_action: recommendedAction, spiralDetected: effectiveSpiralDetected, spiralSignal: effectiveSpiralSignal, confidence_score: confidenceScore },
     });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Coach failed";

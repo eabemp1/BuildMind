@@ -15,6 +15,8 @@ import crypto from "node:crypto";
 vi.mock("@/lib/billing/server", () => ({
   persistUserPlan: vi.fn().mockResolvedValue({ plan: "builder", metadata: {} }),
   resolveUserIdByEmail: vi.fn().mockResolvedValue("user-abc-123"),
+  scheduleCancellation: vi.fn().mockResolvedValue({ decision: { mode: "until_period_end", accessUntil: "2099-01-01T00:00:00.000Z" }, alreadyScheduled: false }),
+  startPaymentGrace: vi.fn().mockResolvedValue("2099-01-04T00:00:00.000Z"),
 }));
 
 vi.mock("next/server", () => ({
@@ -28,7 +30,7 @@ vi.mock("next/server", () => ({
 }));
 
 import { POST } from "../../app/api/billing/paystack/webhook/route";
-import { persistUserPlan, resolveUserIdByEmail } from "@/lib/billing/server";
+import { persistUserPlan, resolveUserIdByEmail, scheduleCancellation, startPaymentGrace } from "@/lib/billing/server";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -163,26 +165,21 @@ describe("POST /api/billing/paystack/webhook", () => {
     );
   });
 
-  it("downgrades to free on subscription.disable", async () => {
-    const event = { ...CHARGE_SUCCESS, event: "subscription.disable" };
-    const req = makeRequest(event);
-    await POST(req);
-    expect(persistUserPlan).toHaveBeenCalledWith(
-      "user-abc-123",
-      "free",
-      expect.objectContaining({ status: "canceled" }),
-    );
+  it("schedules cancellation (keeps paid time) on subscription.disable", async () => {
+    await POST(makeRequest({ ...CHARGE_SUCCESS, event: "subscription.disable" }));
+    expect(scheduleCancellation).toHaveBeenCalledWith("user-abc-123", expect.objectContaining({ reason: "subscription.disable" }));
+    expect(persistUserPlan).not.toHaveBeenCalledWith("user-abc-123", "free", expect.anything());
   });
 
-  it("downgrades to free on invoice.payment_failed", async () => {
-    const event = { ...CHARGE_SUCCESS, event: "invoice.payment_failed" };
-    const req = makeRequest(event);
-    await POST(req);
-    expect(persistUserPlan).toHaveBeenCalledWith(
-      "user-abc-123",
-      "free",
-      expect.objectContaining({ status: "canceled" }),
-    );
+  it("schedules cancellation on subscription.not_renew", async () => {
+    await POST(makeRequest({ ...CHARGE_SUCCESS, event: "subscription.not_renew" }));
+    expect(scheduleCancellation).toHaveBeenCalledWith("user-abc-123", expect.objectContaining({ reason: "subscription.not_renew" }));
+  });
+
+  it("gives a payment grace window instead of downgrading on invoice.payment_failed", async () => {
+    await POST(makeRequest({ ...CHARGE_SUCCESS, event: "invoice.payment_failed" }));
+    expect(startPaymentGrace).toHaveBeenCalledWith("user-abc-123", expect.anything());
+    expect(persistUserPlan).not.toHaveBeenCalledWith("user-abc-123", "free", expect.anything());
   });
 
   it("ignores unhandled events without calling persistUserPlan", async () => {
