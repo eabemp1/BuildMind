@@ -14,6 +14,8 @@
  * Data source: reflections table (today_action, completed, override_reason, category)
  */
 
+import { classifyTask } from "@/lib/taxonomy/taskTaxonomy";
+
 export type TaskCategory =
   | "outreach"
   | "technical"
@@ -81,7 +83,28 @@ const TYPE_PATTERNS: Array<{ type: TaskType; pattern: RegExp }> = [
   { type: "admin",    pattern: /\b(plan|organize|update|track|schedule|set up|manage|configure)\b/i },
 ];
 
+const DOMAIN_TO_CATEGORY: Record<string, TaskCategory> = {
+  "Customer discovery": "outreach",
+  "Outreach & sales": "outreach",
+  "Team & community": "outreach",
+  "Launch & growth": "content",
+  "Content & distribution": "content",
+  "Product engineering": "technical",
+  "Design & UX": "technical",
+  "Pricing & revenue": "revenue",
+  "Research & strategy": "research",
+  "Operations & admin": "admin",
+  "Fundraising & finance": "admin",
+  "Learning & reflection": "research",
+};
+
 export function inferCategory(title: string): TaskCategory {
+  const c = classifyTask(title);
+  if (c.confident && c.domain) return DOMAIN_TO_CATEGORY[c.domain] ?? "other";
+  return legacyInferCategory(title);
+}
+
+function legacyInferCategory(title: string): TaskCategory {
   for (const { category, pattern } of CATEGORY_PATTERNS) {
     if (pattern.test(title)) return category;
   }
@@ -89,6 +112,21 @@ export function inferCategory(title: string): TaskCategory {
 }
 
 export function inferTaskType(title: string): TaskType {
+  const c = classifyTask(title);
+  if (c.confident && c.purpose) {
+    switch (c.purpose) {
+      case "evidence": case "people": return "talk";
+      case "build": return "build";
+      case "distribution": return /\b(post|write|publish|newsletter|blog|thread|article|copy)\b/i.test(title) ? "write" : "talk";
+      case "revenue": return "talk";
+      case "plan": return /\b(research|competitor|market|read|study)\b/i.test(title) ? "research" : "admin";
+      default: return "admin";
+    }
+  }
+  return legacyInferTaskType(title);
+}
+
+function legacyInferTaskType(title: string): TaskType {
   for (const { type, pattern } of TYPE_PATTERNS) {
     if (pattern.test(title)) return type;
   }

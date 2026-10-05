@@ -656,46 +656,46 @@ function HeroMockup() {
 // ── Feature cards ─────────────────────────────────────────────────────────────
 const FEATURES = [
   {
-    icon: Brain,
-    title: "Reflexion Loop",
-    desc: "Generator writes your task. Critic rejects or approves. Refiner sharpens. The agent chain turns your context into one specific next move.",
-    badge: "Core engine",
+    icon: Target,
+    title: "One move a day, with the reasoning",
+    desc: "Not a task list. One specific action chosen from your stage, your history and what you have been avoiding, plus a plain explanation of why it was chosen.",
+    badge: "Daily",
     badgeColor: "var(--bm-accent)",
   },
   {
-    icon: Sparkles,
-    title: "Morning Briefing",
-    desc: "Every day at 7am, one action card is generated from your overnight context. Open. Read. Execute. That's the whole interaction.",
-    badge: "Daily",
-    badgeColor: "var(--bm-amber)",
-  },
-  {
-    icon: TrendingUp,
-    title: "Momentum Score",
-    desc: "A single number that tracks execution health. It rises when you act, decays when you don't, and folds streaks, check-ins, and confidence into one signal.",
-    badge: "Live",
-    badgeColor: "var(--bm-teal)",
-  },
-  {
     icon: Flame,
-    title: "Rotating Critic Personas",
-    desc: "YC partner, growth hacker, cynical user, and domain expert modes cycle weekly. Each attacks the same product from a different angle.",
-    badge: "Weekly rotate",
-    badgeColor: "#A78BFA",
-  },
-  {
-    icon: Shield,
-    title: "Recovery Mode",
-    desc: "When confidence drops for multiple days, the system shifts register: softer language, smaller actions, and re-grounding before the next push.",
-    badge: "Auto-trigger",
+    title: "Break My Startup, built on evidence",
+    desc: "Five specialist agents attack your idea, then every claim is labelled evidence, inference or hypothesis. Contradictions are flagged and the score comes as a range with the tests that would prove it wrong.",
+    badge: "Stress-test",
     badgeColor: "var(--bm-red)",
   },
   {
-    icon: Activity,
-    title: "Founder Memory",
-    desc: "Every reflection, outcome, and check-in builds context. The AI remembers your history, so actions get sharper as it learns what works for you.",
+    icon: Brain,
+    title: "A memory that calls out patterns",
+    desc: "Every outcome and reflection builds a record of how you execute: where you move fast, where you stall, what you keep postponing. It tells you, before the pattern costs you a month.",
     badge: "Memory",
     badgeColor: "var(--bm-intel2)",
+  },
+  {
+    icon: Shield,
+    title: "Stages that need proof, not ticks",
+    desc: "You move from Idea to Validation to MVP by attaching real evidence: interviews, commitments, usage. A completed checklist alone does not level you up.",
+    badge: "Evidence gates",
+    badgeColor: "var(--bm-teal)",
+  },
+  {
+    icon: TrendingUp,
+    title: "Momentum you can trust",
+    desc: "A score that rises when you act and decays when you do not. Streaks count only real work, and a lapsed streak says so instead of flattering you.",
+    badge: "Honest by design",
+    badgeColor: "var(--bm-amber)",
+  },
+  {
+    icon: Sparkles,
+    title: "A coach that already knows your business",
+    desc: "Ask anything and get answers grounded in your project, your numbers and your history, not generic startup advice. When confidence drops it shifts to smaller, steadier steps.",
+    badge: "AI Coach",
+    badgeColor: "#A78BFA",
   },
 ];
 
@@ -916,9 +916,9 @@ function PricingSection() {
       <div className="mx-auto max-w-[740px]">
         <motion.div initial={{ opacity: 0, y: 12, scale: 0.94 }} whileInView={{ opacity: 1, y: 0, scale: 1 }} viewport={{ once: true }} className="mb-10 text-center">
           <h2 className="mb-3 text-3xl font-bold tracking-tight text-[var(--bm-text)]">
-            The system works while you're not.
+            Start free. Upgrade when it has earned it.
           </h2>
-          <p className="text-[var(--bm-text3)] text-base">Pick how much of your decision-making you want handed back to you.</p>
+          <p className="text-[var(--bm-text3)] text-base">Free shows you the method. Builder is the full operating partner for a founder who is serious about shipping.</p>
         </motion.div>
 
         <div className="mt-12 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -965,20 +965,19 @@ function PricingSection() {
                 </div>
                 <div style={{ fontSize: 32, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em" }}>$39 <span style={{ fontSize: 14, fontWeight: 400, color: "var(--bm-text3)" }}>/month</span></div>
                 <p className="text-sm text-[var(--bm-text2)] mt-2 leading-relaxed">
-                  The system reads your context overnight and tells you the one move that matters. You open it and execute.
+                  The full system: daily move with reasoning, evidence-based stress-tests, stage gates that ask for proof, and a coach that knows your business.
                 </p>
               </div>
               <ul className="flex flex-col gap-3 flex-1">
                 {[
-                  "Daily Morning Briefing - every day",
-                  "Full Reflexion Loop (3-agent chain)",
-                  "Unlimited AI tasks + messages",
-                  "Rotating Critic Personas (4 weekly)",
+                  "A new daily move every day, with the reasoning",
+                  "Full Break My Startup: 5 agents, evidence labels, contradictions, falsification tests",
+                  "Evidence-gated stage progression",
+                  "Founder memory that spots your avoidance patterns",
+                  "Unlimited AI Coach grounded in your project",
                   "Full Momentum Score with decay warnings",
-                  "Recovery Mode - when confidence drops",
-                  "Emotional language layer at trigger moments",
-                  "Evening check nudges",
-                  "Founder memory - AI remembers your history",
+                  "Recovery mode when confidence drops",
+                  "Weekly report and coach tips",
                   "Unlimited projects",
                 ].map((f) => (
                   <li key={f} className="flex items-start gap-2 text-sm text-[var(--bm-text)]">
@@ -989,7 +988,7 @@ function PricingSection() {
               </ul>
               <Link href="/auth/login">
                 <Button size="md" className="w-full">
-                  Start Builder — $39/mo <ArrowRight size={14} />
+                  Go Builder — $39/mo <ArrowRight size={14} />
                 </Button>
               </Link>
               <p style={{ fontSize: 11, color: "var(--bm-text4)", textAlign: "center" }}>
@@ -2360,28 +2359,28 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
             {/* Live pill */}
             <span className="bm-hero-badge">
               <span className="bm-live-dot" />
-              The next move, already decided
+              Execution intelligence for founders
             </span>
 
             <h1 style={{ fontSize: "clamp(2rem,4.5vw,4rem)", fontWeight: 800, lineHeight: 1.06, letterSpacing: "-0.03em", color: "var(--bm-text)" }}>
-              The next move is
+              Stop guessing.
               <br />
-              <span className="font-display italic gradient-text">already decided.</span>
+              <span className="font-display italic gradient-text">Build what's true.</span>
             </h1>
 
             <p style={{ maxWidth: 400, fontSize: 15, lineHeight: 1.75, color: "var(--bm-text2)" }}>
-              BuildMind watches your startup context and tells you the one highest-leverage thing to do next. No lists. No frameworks. Just the next move — generated overnight, waiting when you wake up.
+              BuildMind is the operating partner for founders building alone. It remembers what you did, what you avoided and what worked, then gives you the one move that matters today, with the reasoning shown. Before you spend months on an idea, it tries to break it with evidence.
             </p>
 
             <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
               <Link href="/auth/login" className="w-full sm:w-auto">
                 <Button size="lg" className="w-full sm:w-auto">
-                  Start Building Free <ArrowRight size={16} />
+                  Start free <ArrowRight size={16} />
                 </Button>
               </Link>
               <Button size="lg" variant="secondary" onClick={() => setDemoOpen(true)} className="html-btn-secondary w-full sm:w-auto">
                 <Play size={14} />
-                Watch 2-min Demo
+                Watch the 2-minute demo
               </Button>
             </div>
 
@@ -2512,10 +2511,10 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
         <div className="mx-auto max-w-[1100px]">
           <motion.div initial={{ opacity: 0, y: 12, scale: 0.94 }} whileInView={{ opacity: 1, y: 0, scale: 1 }} viewport={{ once: true }} className="mb-10 text-left sm:mb-14 sm:text-center">
             <h2 className="mb-3 text-3xl font-bold tracking-tight sm:text-3xl">
-              Built to remove decisions. Not add more.
+              Built for the founder who is alone with every decision.
             </h2>
             <p className="text-base leading-relaxed text-[var(--bm-text2)]">
-              Most tools give you more to manage. BuildMind takes things off your plate — one decision at a time.
+              No co-founder to push back, no advisor on call. BuildMind is the part of a good team you were missing: it remembers, it challenges you, and it asks for proof.
             </p>
           </motion.div>
 
@@ -2553,6 +2552,36 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
         </div>
       </section>
 
+      {/* Who it is for + what changes — premium, founder-specific */}
+      <section className="html-section px-5 py-[60px] sm:px-8 sm:py-24" style={{ borderTop: subtleSectionBorder }}>
+        <div className="mx-auto grid max-w-[1100px] gap-10 md:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] md:gap-16">
+          <motion.div initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}>
+            <h2 className="text-3xl font-bold leading-tight tracking-tight text-[var(--bm-text)] sm:text-4xl">
+              Most founders do not fail from a bad idea. They fail from drifting.
+            </h2>
+            <p className="mt-4 text-base leading-relaxed text-[var(--bm-text2)]">
+              Weeks go into research, design and tooling while the one conversation that would settle everything keeps getting postponed. BuildMind exists to close that gap.
+            </p>
+            <Link href="/auth/login" className="mt-6 inline-block">
+              <Button size="md">Start free <ArrowRight size={14} /></Button>
+            </Link>
+          </motion.div>
+          <div className="flex flex-col divide-y" style={{ borderColor: "var(--bm-border)" }}>
+            {[
+              { before: "A to-do list that grows faster than you can clear it", after: "One action today, chosen for your stage and explained" },
+              { before: "Advice from tools that forget you after every chat", after: "A memory of what you shipped, avoided and learned" },
+              { before: "An idea that feels right because nobody has pushed back", after: "A stress-test that shows its evidence, and where it disagrees with itself" },
+              { before: "Moving to the next stage because the checklist is done", after: "Moving on because real customers gave you proof" },
+            ].map((row) => (
+              <div key={row.after} className="grid gap-1 py-5 first:pt-0 sm:grid-cols-2 sm:gap-6">
+                <p className="text-sm leading-relaxed text-[var(--bm-text4)] line-through decoration-[var(--bm-border2)]">{row.before}</p>
+                <p className="text-sm font-medium leading-relaxed text-[var(--bm-text)]">{row.after}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* Break My Startup — interactive hook, no login needed */}
       <div id="break"><BreakMyStartupSection /></div>
 
@@ -2579,12 +2608,12 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
             className="font-display italic text-[clamp(2rem,4vw,3.2rem)] font-bold leading-[1.1] tracking-tight text-[var(--bm-text)]"
             style={{ marginBottom: 16 }}
           >
-            Stop deciding
+            Build the thing
             <br />
-            what to do next.
+            that is actually true.
           </h2>
           <p className="mx-auto mb-8 text-[15px] leading-[1.65] text-[var(--bm-text2)]">
-            Let the system watch your context and tell you the move. Every morning, before you've had to think.
+            Your first move is waiting. Free to start, and your stress-test shows its evidence.
           </p>
           <div className="flex flex-wrap justify-center gap-3">
             <Link href="/auth/login">
@@ -2592,7 +2621,7 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
                 className="bm-cta-primary inline-flex h-[46px] items-center gap-1.5 rounded-[var(--r-xl)] px-7 text-[15px] font-semibold transition-all hover:brightness-108 active:scale-95"
                 style={{ background: "var(--grad-primary)", color: "#0C0C0D" }}
               >
-                Start Building Free <ArrowRight size={16} />
+                Start free <ArrowRight size={16} />
               </button>
             </Link>
           </div>

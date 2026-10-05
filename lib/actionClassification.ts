@@ -13,6 +13,8 @@
  * unchanged.
  */
 
+import { classifyTask, UNCLASSIFIED_LABEL, type Domain } from "@/lib/taxonomy/taskTaxonomy";
+
 export type ActionType =
   | "user_interview"
   | "content"
@@ -38,7 +40,7 @@ export type ActionPlatform =
  * inferActionType — categorises an action string into a type label.
  * Keyword-based, fast, no LLM needed.
  */
-export function inferActionType(action: string): ActionType {
+function legacyInferActionType(action: string): ActionType {
   const a = action.toLowerCase();
   if (/interview|talk to|speak with|call|user research|conversation|ask \d+ people/i.test(a))
     return "user_interview";
@@ -68,7 +70,7 @@ export function inferActionType(action: string): ActionType {
 /**
  * inferActionPlatform — extracts the primary platform from action text.
  */
-export function inferActionPlatform(action: string): ActionPlatform {
+function legacyInferActionPlatform(action: string): ActionPlatform {
   const a = action.toLowerCase();
   if (/linkedin/i.test(a)) return "linkedin";
   if (/whatsapp/i.test(a)) return "whatsapp";
@@ -79,6 +81,49 @@ export function inferActionPlatform(action: string): ActionPlatform {
   if (/slack/i.test(a)) return "slack";
   if (/phone|call|call them|ring/i.test(a)) return "phone";
   return "other";
+}
+
+const DOMAIN_TO_ACTION_TYPE: Record<Domain, ActionType> = {
+  "Customer discovery": "user_interview",
+  "Outreach & sales": "outreach",
+  "Content & distribution": "content",
+  "Launch & growth": "outreach",
+  "Product engineering": "build",
+  "Design & UX": "build",
+  "Pricing & revenue": "pricing",
+  "Research & strategy": "research",
+  "Operations & admin": "other",
+  "Fundraising & finance": "other",
+  "Team & community": "outreach",
+  "Learning & reflection": "other",
+};
+
+const CHANNEL_TO_PLATFORM: Record<string, ActionPlatform> = {
+  linkedin: "linkedin", whatsapp: "whatsapp", twitter: "twitter", email: "email",
+  reddit: "reddit", instagram: "instagram", slack: "slack", phone: "phone",
+};
+
+/**
+ * inferActionType - the coarse 8-bucket type, now derived from the full
+ * taxonomy (lib/taxonomy/taskTaxonomy.ts) when it is confident, so every
+ * system agrees. Falls back to the old keyword rules for tasks the taxonomy
+ * cannot place.
+ */
+export function inferActionType(action: string): ActionType {
+  const c = classifyTask(action);
+  if (c.confident && c.leafId && c.domain) {
+    if (c.leafId === "pivot_decisions") return "pivot";
+    if (c.leafId === "billing_setup") return "build";
+    if (c.leafId === "customer_support" || c.leafId === "testimonials") return "user_interview";
+    return DOMAIN_TO_ACTION_TYPE[c.domain];
+  }
+  return legacyInferActionType(action);
+}
+
+export function inferActionPlatform(action: string): ActionPlatform {
+  const c = classifyTask(action);
+  const mapped = c.channel ? CHANNEL_TO_PLATFORM[c.channel.id] : undefined;
+  return mapped ?? legacyInferActionPlatform(action);
 }
 
 const ACTION_TYPE_LABELS: Record<ActionType, string> = {
@@ -211,13 +256,17 @@ const SPECIFIC_LABELS: Array<{ test: RegExp; label: string }> = [
  * themselves are untouched — nothing else reading those is affected.
  */
 export function actionCategoryLabel(action: string): string {
+  const c = classifyTask(action);
+  if (c.confident) return c.displayLabel;
+  // Not confident: use the old specific labels only when they matched something real,
+  // never the catch-all. Callers that learn patterns should skip UNCLASSIFIED_LABEL.
   const specific = SPECIFIC_LABELS.find((entry) => entry.test.test(action));
-  const platform = inferActionPlatform(action);
-  if (specific) {
-    const alreadyNamesPlatform = platform !== "other" && specific.label.toLowerCase().includes(platform);
-    return platform === "other" || alreadyNamesPlatform ? specific.label : `${specific.label} (${platform})`;
-  }
-  const type = inferActionType(action);
-  const typeLabel = ACTION_TYPE_LABELS[type];
-  return platform === "other" ? typeLabel : `${typeLabel} (${platform})`;
-    }
+  if (specific) return specific.label;
+  return UNCLASSIFIED_LABEL;
+}
+
+/** Like actionCategoryLabel, but null when the task could not be placed. Prefer this when storing patterns. */
+export function actionCategoryLabelOrNull(action: string): string | null {
+  const label = actionCategoryLabel(action);
+  return label === UNCLASSIFIED_LABEL ? null : label;
+}

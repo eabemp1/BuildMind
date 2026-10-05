@@ -6,6 +6,9 @@
  * and since the previous recommendation decision.
  */
 
+import { isExternalWork } from "@/lib/taxonomy/workSignals";
+import { splitMilestones } from "@/lib/milestoneScope";
+
 type Row = Record<string, any>;
 
 export interface TemporalComparisonInput {
@@ -15,6 +18,8 @@ export interface TemporalComparisonInput {
   milestones?: Row[];
   tasks?: Row[];
   activityEvents?: Row[];
+  /** Current project stage. When given, milestones for later stages are treated as upcoming, not slipping. */
+  stage?: string;
 }
 
 export interface TemporalComparison {
@@ -33,7 +38,6 @@ export interface TemporalComparison {
   decaying_assumptions: string[];
 }
 
-const EXTERNAL_KEYWORDS = /\b(user|customer|interview|feedback|talked|called|met|spoke|revenue|sale|paid|pricing|launch|publish|post|pitch|email|reach out|dm|contact)\b/i;
 
 function dateValue(row: Row, fallback = "created_at"): number {
   const raw = row[fallback] ?? row.created_at ?? row.occurred_at ?? row.updated_at ?? row.outcome_recorded_at;
@@ -68,8 +72,9 @@ function trend(nowRate: number | null, prevRate: number | null): "up" | "down" |
   return "flat";
 }
 
+/** Completed external work only. Attempts that were blocked or skipped are not evidence. */
 function externalCount(rows: Row[]): number {
-  return rows.filter((r) => EXTERNAL_KEYWORDS.test(`${r.today_action ?? ""} ${r.note ?? ""} ${r.what_happened ?? ""} ${r.what_learned ?? ""}`)).length;
+  return rows.filter((r) => (r.outcome === "completed" || r.outcome === "done") && isExternalWork(String(r.today_action ?? r.note ?? ""))).length;
 }
 
 export function buildTemporalComparison(input: TemporalComparisonInput): TemporalComparison {
@@ -99,7 +104,9 @@ export function buildTemporalComparison(input: TemporalComparisonInput): Tempora
   const previousCompletion = completionRate(prevWeekLogs.length ? prevWeekLogs : prevWeekReflections);
   const effectivenessTrend = trend(recentCompletion, previousCompletion);
 
-  const activeMilestones = milestones.filter((m) => m.status !== "completed" && m.status !== "abandoned");
+  const activeMilestones = input.stage
+    ? splitMilestones(milestones, input.stage).inPlay
+    : milestones.filter((m) => m.status !== "completed" && m.status !== "abandoned");
   const slippingGoals = activeMilestones
     .filter((m) => daysBetween(now, m, "updated_at") >= 7)
     .map((m) => String(m.title ?? "Untitled milestone"))
@@ -117,11 +124,11 @@ export function buildTemporalComparison(input: TemporalComparisonInput): Tempora
     ].filter(Boolean) as string[],
     changed_this_week: [
       `${thisWeekReflections.filter((r) => r.outcome === "completed" || r.outcome === "done").length}/${thisWeekReflections.length} reflected actions completed this week.`,
-      `${thisWeekExternal} external evidence action(s) this week.`,
+      `${thisWeekExternal} completed external-evidence action(s) this week.`,
       thisWeekLogs.length ? `${thisWeekLogs.length} recommendation lifecycle event(s) this week.` : null,
     ].filter(Boolean) as string[],
     week_over_week: [
-      `External evidence actions moved from ${prevWeekExternal} last week to ${thisWeekExternal} this week.`,
+      `Completed external-evidence actions moved from ${prevWeekExternal} last week to ${thisWeekExternal} this week.`,
       recentCompletion != null && previousCompletion != null ? `Recommendation completion moved from ${Math.round(previousCompletion * 100)}% to ${Math.round(recentCompletion * 100)}%.` : null,
     ].filter(Boolean) as string[],
     since_last_decision: lastDecision

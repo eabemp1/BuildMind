@@ -1,10 +1,15 @@
 import { buildExecutionSignature, type ExecutionSignature, type TaskRecord } from "@/lib/outcomeCorrelation";
 import { buildTemporalProfile, type SessionEvent, type TemporalProfile } from "@/lib/temporalPatterns";
+import { isFounderRecommendation, isRealTaskTitle, distinctByAction } from "@/lib/recommendationRows";
+import { isExternalWork, showsUserEvidence, isRevenueWork, focusAreaOf } from "@/lib/taxonomy/workSignals";
+import { splitMilestones, tasksInPlay, milestonePhase } from "@/lib/milestoneScope";
+import { resolveStrengthsAndAvoidance } from "@/lib/founderPatterns";
 import { deriveLearnedPatterns, type LearnedPatterns, type LearningLogRow } from "@/lib/learning";
 import { logError } from "@/lib/server/logger";
 import { buildTemporalComparison } from "@/lib/temporalCoherence";
 import { buildCofounderJudgment } from "@/lib/cofounderJudgment";
 import { computeMomentumTrendFromDelta, type MomentumTrendDirection } from "@/lib/momentum";
+import { effectiveStreak, daysSinceActive } from "@/lib/streak";
 
 type SupabaseLike = {
   from: (table: string) => any;
@@ -93,6 +98,8 @@ export interface FounderState {
   operating_windows: string[];
   recommendation_acceptance: string[];
   recommendation_rejection: string[];
+  /** Areas that look like both a strength and an avoidance and cannot yet be told apart. */
+  mixed_patterns?: string[];
   behavioral_trends: string[];
   confidence: number;
   recent_changes: string[];
@@ -275,7 +282,7 @@ function weightedCompletedEvidence(reflections: Array<Record<string, any>>, now:
   return reflections.reduce((sum, r) => {
     const completed = r.outcome === "completed" || r.outcome === "done";
     if (!completed) return sum;
-    const hasEvidence = USER_EVIDENCE_KEYWORDS.test(`${r.today_action ?? ""} ${r.note ?? ""} ${r.what_happened ?? ""} ${r.what_learned ?? ""}`);
+    const hasEvidence = showsUserEvidence({ task: r.today_action, note: r.note, happened: r.what_happened, learned: r.what_learned });
     return hasEvidence ? sum + recencyWeight(now, r.created_at, 14) : sum;
   }, 0);
 }
@@ -308,18 +315,12 @@ function stagePriority(stage: string): string {
 }
 
 function actionCategory(text: string): string {
-  const t = text.toLowerCase();
-  if (REVENUE_KEYWORDS.test(t)) return "revenue";
-  if (/\b(message|dm|email|reach out|contact|call|talk|interview|feedback)\b/i.test(t)) return "customer evidence";
-  if (/\b(build|ship|code|implement|deploy|fix|feature)\b/i.test(t)) return "build";
-  if (/\b(write|post|publish|content|tweet|thread|blog)\b/i.test(t)) return "distribution";
-  if (/\b(research|review|analyze|read|study|compare)\b/i.test(t)) return "research";
-  return "operations";
+  return focusAreaOf(text);
 }
 
 export function deriveTemporalCoherence(input: FounderIntelligenceInput): TemporalCoherenceState {
   const now = input.now ?? new Date();
-  const comparison = buildTemporalComparison(input);
+  const comparison = buildTemporalComparison({ ...input, stage: String(input.project?.startup_stage ?? input.founderContext?.current_stage ?? "") || undefined });
   const reflections = input.reflections ?? [];
   const learningLogs = input.learningLogs ?? [];
   const actions = input.actionLogs ?? [];
@@ -335,8 +336,12 @@ export function deriveTemporalCoherence(input: FounderIntelligenceInput): Tempor
     const age = daysBetween(now, r.created_at);
     return age >= 7 && age < 14;
   });
-  const thisWeekExternal = thisWeekReflections.filter((r) => EXTERNAL_KEYWORDS.test(`${r.today_action ?? ""} ${r.note ?? ""}`)).length;
-  const lastWeekExternal = lastWeekReflections.filter((r) => EXTERNAL_KEYWORDS.test(`${r.today_action ?? ""} ${r.note ?? ""}`)).length;
+  // Only COMPLETED external work counts. Counting attempts (blocked, skipped) made the
+  // model say "external evidence seeking increasing" while also saying no external
+  // evidence existed.
+  const isDone = (r: Record<string, any>) => r.outcome === "completed" || r.outcome === "done";
+  const thisWeekExternal = thisWeekReflections.filter((r) => isDone(r) && isExternalWork(String(r.today_action ?? r.note ?? ""))).length;
+  const lastWeekExternal = lastWeekReflections.filter((r) => isDone(r) && isExternalWork(String(r.today_action ?? r.note ?? ""))).length;
   const today = recentWithin([...reflections, ...actions], now, 1);
 
   const week_changes: string[] = [];
@@ -344,11 +349,11 @@ export function deriveTemporalCoherence(input: FounderIntelligenceInput): Tempor
     week_changes.push(`Completed ${thisWeekCompleted}/${thisWeekReflections.length} reflected actions this week vs ${lastWeekCompleted}/${lastWeekReflections.length} last week.`);
   }
   if (thisWeekExternal !== lastWeekExternal) {
-    week_changes.push(`External evidence actions moved from ${lastWeekExternal} last week to ${thisWeekExternal} this week.`);
+    week_changes.push(`Completed external-evidence actions moved from ${lastWeekExternal} last week to ${thisWeekExternal} this week.`);
   }
   if (thisWeekLogs.length || lastWeekLogs.length) {
-    const rejectedNow = thisWeekLogs.filter((r) => r.outcome === "overridden" || r.outcome === "ignored").length;
-    const rejectedBefore = lastWeekLogs.filter((r) => r.outcome === "overridden" || r.outcome === "ignored").length;
+    const rejectedNow = distinctByAction(thisWeekLogs.filter((r) => r.outcome === "overridden" || r.outcome === "ignored")).length;
+    const rejectedBefore = distinctByAction(lastWeekLogs.filter((r) => r.outcome === "overridden" || r.outcome === "ignored")).length;
     week_changes.push(`Recommendation rejection moved from ${rejectedBefore} last week to ${rejectedNow} this week.`);
   }
 
@@ -392,7 +397,8 @@ export function deriveIntelligenceSignals(params: {
   const activityEvents = input.activityEvents ?? [];
   const signals: IntelligenceSignal[] = [];
   const stage = String(project.startup_stage ?? founderContext.current_stage ?? "Idea");
-  const activeMilestone = milestones.find((m) => m.status !== "completed" && m.status !== "abandoned");
+  const scoped = splitMilestones(milestones, stage);
+  const activeMilestone = scoped.inPlay[0] ?? null;
 
   const avoidance = unique([
     ...((founderContext.avoidance_zones ?? []) as string[]),
@@ -419,7 +425,7 @@ export function deriveIntelligenceSignals(params: {
 
   const thisWeek = recentWithin(reflections, now, 7);
   const completedThisWeek = thisWeek.filter((r) => r.outcome === "completed" || r.outcome === "done");
-  const externalThisWeek = completedThisWeek.filter((r) => EXTERNAL_KEYWORDS.test(`${r.today_action ?? ""} ${r.note ?? ""}`));
+  const externalThisWeek = completedThisWeek.filter((r) => isExternalWork(String(r.today_action ?? r.note ?? "")));
   if (completedThisWeek.length >= 3 && externalThisWeek.length === 0) {
     signals.push(signal({
       now,
@@ -440,7 +446,7 @@ export function deriveIntelligenceSignals(params: {
   const evidenceRows = recentWithin(reflections, now, 14).filter((r) => {
     const completed = r.outcome === "completed" || r.outcome === "done";
     if (!completed) return false;
-    return USER_EVIDENCE_KEYWORDS.test(`${r.today_action ?? ""} ${r.note ?? ""} ${r.what_happened ?? ""} ${r.what_learned ?? ""}`);
+    return showsUserEvidence({ task: r.today_action, note: r.note, happened: r.what_happened, learned: r.what_learned });
   });
   if (evidenceRows.length === 0) {
     signals.push(signal({
@@ -457,8 +463,9 @@ export function deriveIntelligenceSignals(params: {
     }));
   }
 
-  const activeMilestones = milestones.filter((m) => m.status !== "completed" && m.status !== "abandoned");
-  const activeForSlippage = activeMilestones.find((m) => Boolean(m.id)) ?? null;
+  // Upcoming-stage milestones (e.g. Growth while the project is on Launch) have not
+  // started, so being "untouched for 61 days" is not slippage.
+  const activeForSlippage = scoped.inPlay.find((m) => Boolean(m.id)) ?? null;
   if (activeForSlippage) {
     const milestoneId = String(activeForSlippage.id);
     const lastMovementAt = activeForSlippage.updated_at ?? activeForSlippage.created_at ?? null;
@@ -530,7 +537,7 @@ export function deriveIntelligenceSignals(params: {
     }));
   }
 
-  const rejected = learningLogs.filter((r) => r.outcome === "overridden" || r.outcome === "ignored");
+  const rejected = distinctByAction(learningLogs.filter((r) => r.outcome === "overridden" || r.outcome === "ignored"));
   if (learnedPatterns.patterns_reliable && rejected.length >= 3) {
     signals.push(signal({
       now,
@@ -538,7 +545,7 @@ export function deriveIntelligenceSignals(params: {
       severity: rejected.length >= 5 ? "high" : "medium",
       confidence: Math.min(0.9, learnedPatterns.total_logged / 12),
       title: "Recommendation rejection pattern",
-      summary: `The founder has rejected or ignored ${rejected.length} recent recommendations; avoided types: ${learnedPatterns.avoided_action_types.join(", ") || "not yet specific"}.`,
+      summary: `The founder has rejected or ignored ${rejected.length} distinct recent recommendation${rejected.length === 1 ? "" : "s"}; avoided types: ${learnedPatterns.avoided_action_types.join(", ") || "not yet specific"}.`,
       evidence: rejected.slice(0, 3).map((r) => ({ source: "reflexion_learning_log", detail: `${r.action_shown} → ${r.outcome}` })),
       recommended_response: "Reduce friction or change channel/type while preserving the strategic goal.",
     }));
@@ -572,7 +579,7 @@ export function deriveIntelligenceSignals(params: {
     }));
   }
 
-  const staleTasks = tasks.filter((t) => !t.is_completed && t.status !== "completed" && daysBetween(now, t.updated_at ?? t.created_at ?? t.due_date) >= 14);
+  const staleTasks = tasksInPlay(tasks, milestones, stage).filter((t) => daysBetween(now, t.updated_at ?? t.created_at ?? t.due_date) >= 14);
   if (staleTasks.length > 0 && evidenceRows.length === 0) {
     signals.push(signal({
       now,
@@ -607,7 +614,10 @@ export function deriveIntelligenceSignals(params: {
   });
 }
 
-export function buildFounderIntelligenceState(input: FounderIntelligenceInput): FounderIntelligenceState {
+export function buildFounderIntelligenceState(rawInput: FounderIntelligenceInput): FounderIntelligenceState {
+  // AI Coach replies and prompt fragments are not recommendations; drop them before
+  // anything learns from them (see lib/recommendationRows.ts).
+  const input: FounderIntelligenceInput = { ...rawInput, learningLogs: (rawInput.learningLogs ?? []).filter(isFounderRecommendation) };
   const now = input.now ?? new Date();
   const founderContext = input.founderContext ?? {};
   const founderMemory = input.founderMemory ?? {};
@@ -640,9 +650,12 @@ export function buildFounderIntelligenceState(input: FounderIntelligenceInput): 
   const thisWeek = recentWithin(reflections, now, 7);
   const completedThisWeek = thisWeek.filter((r) => r.outcome === "completed" || r.outcome === "done");
   const skippedThisWeek = thisWeek.filter((r) => ["blocked", "abandoned", "skipped"].includes(String(r.outcome)));
-  const activeMilestones = milestones.filter((m) => m.status !== "completed" && m.status !== "abandoned");
-  const stalledMilestones = activeMilestones.filter((m) => daysBetween(now, m.updated_at ?? m.created_at) >= 7);
   const stage = String(project.startup_stage ?? founderContext.current_stage ?? "Idea");
+  // Milestones for stages the project has not reached are "upcoming", not active or stalled.
+  const scopedMilestones = splitMilestones(milestones, stage);
+  const activeMilestones = scopedMilestones.inPlay;
+  const stalledMilestones = activeMilestones.filter((m) => daysBetween(now, m.updated_at ?? m.created_at) >= 7);
+  const tasksNowInPlay = tasksInPlay(tasks, milestones, stage);
   // FIX (stale placeholder milestone bug): the roadmap seeder
   // (app/api/ai/generate-roadmap/route.ts) creates one milestone per
   // roadmap stage, titled literally "Idea", "Validation", "MVP", "Launch",
@@ -682,16 +695,17 @@ export function buildFounderIntelligenceState(input: FounderIntelligenceInput): 
       active_milestone: activeMilestone?.title ? String(activeMilestone.title) : null,
       // The existing task contract has no due-date guarantee, so never infer overdue work from creation time.
       overdue_tasks: tasks.filter((task) => !task.is_completed && task.due_date && new Date(task.due_date).getTime() < now.getTime()).length,
-      pending_tasks: tasks.filter((task) => !task.is_completed && task.status !== "completed").length,
+      // Tasks from stages already passed (or not yet reached) are not pending work.
+      pending_tasks: tasksNowInPlay.length,
     },
     execution: {
       completed_actions_7d: completedThisWeek.length,
       completed_tasks_7d: completedTaskRows7d.length,
       task_velocity_7d: taskTimestampCoverage ? completedTaskRows7d.length : null,
       milestone_velocity_30d: milestoneTimestampCoverage ? milestones.filter((milestone) => milestone.status === "completed" && daysBetween(now, milestone.updated_at ?? milestone.created_at) <= 30).length : null,
-      repeated_postponements: learningLogs.filter((row) => row.outcome === "overridden" || row.outcome === "ignored").length,
+      repeated_postponements: distinctByAction(learningLogs.filter((row) => row.outcome === "overridden" || row.outcome === "ignored")).length,
       stall_days: activeMilestoneTimestamp ? daysBetween(now, activeMilestoneTimestamp) : null,
-      inactivity_days: typeof founderContext.days_inactive === "number" ? founderContext.days_inactive : null,
+      inactivity_days: daysSinceActive(founderContext.last_checkin_date as string | null | undefined, typeof founderContext.days_inactive === "number" ? founderContext.days_inactive : null),
       focus_distribution: Array.from(focusCounts, ([category, count]) => ({ category, count })),
     },
     alignment: { stated_priority: statedPriorities[0] ?? null, observed_priority: observedPriorities[0] ?? null, confidence: clampScore((activeMilestones.length ? 50 : 0) + Math.min(completedThisWeek.length, 5) * 10) },
@@ -702,7 +716,7 @@ export function buildFounderIntelligenceState(input: FounderIntelligenceInput): 
         typeof founderContext.momentum_score === "number" && typeof founderContext.momentum_last_week === "number"
           ? founderContext.momentum_score - founderContext.momentum_last_week
           : null,
-      streak_days: typeof founderContext.streak === "number" ? founderContext.streak : null,
+      streak_days: typeof founderContext.streak === "number" ? effectiveStreak(founderContext.streak, founderContext.last_checkin_date as string | null | undefined) : null,
     },
     coverage,
   };
@@ -720,13 +734,20 @@ export function buildFounderIntelligenceState(input: FounderIntelligenceInput): 
   const recentActivityWeight = activityEvents.reduce((sum, a) => sum + recencyWeight(now, a.occurred_at, 14), 0);
   const evidenceWeight = weightedCompletedEvidence(reflections, now);
 
+  const resolvedPatterns = resolveStrengthsAndAvoidance({
+    strengths: [...(founderMemory.strengths ?? []), ...executionSignature.strengths.map((s) => String(s.category)), ...learnedPatterns.preferred_action_types],
+    avoidance: [...(founderContext.avoidance_zones ?? []), ...(founderMemory.avoidance_zones ?? []), ...executionSignature.avoidanceZones.map((s) => String(s.category)), ...learnedPatterns.avoided_action_types],
+    records: reflections.map((r) => ({ title: String(r.today_action ?? r.note ?? ""), completed: r.outcome === "completed" || r.outcome === "done" })),
+  });
+
   const founder: FounderState = {
-    strengths: unique([...(founderMemory.strengths ?? []), ...executionSignature.strengths.map((s) => String(s.category)), ...learnedPatterns.preferred_action_types], 8),
-    avoidance_patterns: unique([...(founderContext.avoidance_zones ?? []), ...(founderMemory.avoidance_zones ?? []), ...executionSignature.avoidanceZones.map((s) => String(s.category)), ...learnedPatterns.avoided_action_types], 8),
+    strengths: resolvedPatterns.strengths,
+    avoidance_patterns: resolvedPatterns.avoidance,
+    mixed_patterns: resolvedPatterns.mixed.map((m) => `${m.label}: ${m.completed} of ${m.total} finished, not enough to call it a strength or an avoidance`),
     execution_patterns: unique([executionSignature.signatureSentence, learnedPatterns.patterns_reliable ? `Recommendation completion rate ${Math.round(learnedPatterns.completion_rate * 100)}%` : null], 5),
     operating_windows: unique([temporalProfile.peakProductivityHour != null ? `Best completion hour around ${temporalProfile.peakProductivityHour}:00` : null, temporalProfile.dropoutHour != null ? `Dropout risk around ${temporalProfile.dropoutHour}:00` : null], 4),
     recommendation_acceptance: learnedPatterns.preferred_action_types.map((t) => `Completes ${t} recommendations`),
-    recommendation_rejection: unique([...learnedPatterns.avoided_action_types.map((t) => `Avoids ${t} recommendations`), ...learnedPatterns.avoided_platforms.map((p) => `Avoids ${p}`)], 6),
+    recommendation_rejection: unique([...learnedPatterns.avoided_action_types.filter((t) => !resolvedPatterns.strengths.some((x) => x.toLowerCase().includes(t))).map((t) => `Avoids ${String(t).replace(/_/g, " ")} recommendations`), ...learnedPatterns.avoided_platforms.map((p) => `Avoids ${p} recommendations`)], 6),
     behavioral_trends: unique([
       ...temporal.increasing_behaviors.map((b) => `${b} increasing`),
       ...temporal.decreasing_behaviors.map((b) => `${b} decreasing`),
@@ -764,13 +785,15 @@ export function buildFounderIntelligenceState(input: FounderIntelligenceInput): 
     evidence: unique(reflections.filter((r) => {
       const completed = r.outcome === "completed" || r.outcome === "done";
       if (!completed) return false;
-      return USER_EVIDENCE_KEYWORDS.test(`${r.today_action ?? ""} ${r.note ?? ""} ${r.what_happened ?? ""} ${r.what_learned ?? ""}`);
+      return showsUserEvidence({ task: r.today_action, note: r.note, happened: r.what_happened, learned: r.what_learned });
     }).map((r) => String(r.what_learned ?? r.what_happened ?? r.note ?? r.today_action)), 6),
     assumptions: unique([project.problem ? `Target users have this problem: ${project.problem}` : null, project.target_users ? `Target segment: ${project.target_users}` : null], 6),
     risks: signals.filter((s) => ["EVIDENCE_GAP", "GOAL_SLIPPAGE", "ASSUMPTION_DECAY", "BUSYWORK_PATTERN"].includes(s.type)).map((s) => s.summary).slice(0, 6),
     metrics: {
       momentum_score: founderContext.momentum_score ?? null,
-      current_mrr: project.current_mrr ?? null,
+      // projects.current_mrr is stored in minor units (pesewas); report the real amount.
+      current_mrr: typeof project.current_mrr === "number" ? project.current_mrr / 100 : null,
+      current_mrr_currency: "GHS",
       tasks_completed_this_week: completedThisWeek.length,
       reflected_actions_this_week: thisWeek.length,
     },
@@ -796,13 +819,13 @@ export function buildFounderIntelligenceState(input: FounderIntelligenceInput): 
     .map((r) => String((r as { action_shown?: string }).action_shown ?? ""));
   const repeatedActions = unique(
     [...reflections.map((r) => String(r.today_action ?? "")), ...recentShownTitles]
-      .filter((title, _, arr) => title && arr.filter((x) => x === title).length > 1),
+      .filter((title, _, arr) => title && isRealTaskTitle(title) && arr.filter((x) => x === title).length > 1),
     5,
   );
   const execution: ExecutionState = {
     completed_actions: completedThisWeek.map((r) => String(r.today_action ?? r.note ?? "completed action")).slice(0, 6),
     skipped_actions: skippedThisWeek.map((r) => String(r.today_action ?? r.note ?? "skipped action")).slice(0, 6),
-    delayed_actions: tasks.filter((t) => !t.is_completed && t.status !== "completed" && daysBetween(now, t.updated_at ?? t.created_at ?? t.due_date) >= 7).map((t) => String(t.title)).slice(0, 6),
+    delayed_actions: tasksNowInPlay.filter((t) => daysBetween(now, t.updated_at ?? t.created_at ?? t.due_date) >= 7).map((t) => String(t.title)).slice(0, 6),
     repeated_actions: repeatedActions,
     outcome_quality: startup.evidence.length ? [`${startup.evidence.length} evidence-producing reflections detected.`] : ["Recent completion does not clearly show external evidence yet."],
     execution_velocity: thisWeek.length ? Math.round((completedThisWeek.length / thisWeek.length) * 100) : 0,
@@ -1254,4 +1277,4 @@ export async function loadFounderIntelligence(
     logError("founderIntelligence/loadFounderIntelligence", err, { userId, projectId });
     return buildFounderIntelligenceState({ ...preloaded, now });
   }
-                                          }
+          }

@@ -298,6 +298,9 @@ export function useFounderScorecardQuery(validationStrengths: string[] = []) {
       return json.data as {
         momentum: number;
         streak: number;
+        streakAtRisk?: boolean;
+        streakDoneToday?: boolean;
+        lastStreak?: number;
         xp: number;
         executionScore: number;
         tasksCompletedTotal: number;

@@ -31,6 +31,7 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logError } from "@/lib/server/logger";
+import { isFounderRecommendation, distinctByAction } from "@/lib/recommendationRows";
 import { inferActionType, inferActionPlatform, type ActionType, type ActionPlatform } from "@/lib/actionClassification";
 
 // Re-exported for backward compatibility — these used to be defined here.
@@ -148,6 +149,10 @@ export function deriveLearnedPatterns(rows: LearningLogRow[]): LearnedPatterns {
 
   if (!rows || rows.length === 0) return empty;
 
+  // AI Coach replies are not recommendations; they must never count as rejections.
+  rows = rows.filter(isFounderRecommendation);
+  if (rows.length === 0) return empty;
+
   // Only count resolved rows for rate calculation
   const resolved = rows.filter(r =>
     r.outcome === "completed" || r.outcome === "overridden" ||
@@ -155,7 +160,10 @@ export function deriveLearnedPatterns(rows: LearningLogRow[]): LearnedPatterns {
   );
 
   const completed = resolved.filter(r => r.outcome === "completed" || r.outcome === "partial");
-  const failed = resolved.filter(r => r.outcome === "overridden" || r.outcome === "ignored");
+  const failedAll = resolved.filter(r => r.outcome === "overridden" || r.outcome === "ignored");
+  // The same task shown and ignored ten times is ONE rejected task for pattern purposes
+  // (the completion rate below still counts every showing).
+  const failed = distinctByAction(failedAll);
 
   const completion_rate = resolved.length > 0
     ? Math.round((completed.length / resolved.length) * 100) / 100
@@ -193,7 +201,7 @@ export function deriveLearnedPatterns(rows: LearningLogRow[]): LearnedPatterns {
   // Avoided platforms: platforms where outcome was overridden/ignored ≥ 2 times
   const platformFailCounts = new Map<ActionPlatform, number>();
   for (const row of failed) {
-    if (row.action_platform) {
+    if (row.action_platform && row.action_platform !== "other") {
       platformFailCounts.set(row.action_platform, (platformFailCounts.get(row.action_platform) ?? 0) + 1);
     }
   }

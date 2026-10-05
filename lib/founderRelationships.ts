@@ -1,3 +1,4 @@
+import { showsUserEvidence } from "@/lib/taxonomy/workSignals";
 /**
  * lib/founderRelationships.ts — Phase 8: Startup Relationship Model
  *
@@ -55,7 +56,6 @@ export interface RelationshipChain {
   narrative: string;
 }
 
-const USER_EVIDENCE_KEYWORDS = /\b(user|customer|interview|feedback|talked|called|met|spoke|reply|response|commitment|preorder|paid|payment|signed up|signup)\b/i;
 
 function titleMatch(a: string, b: string): boolean {
   const na = a.toLowerCase().trim();
@@ -119,7 +119,7 @@ export function buildStartupRelationshipGraph(
         edges.push({ from: actionId, to: outcomeId, relation: "resulted_in" });
 
         const evidenceText = String(r.what_learned ?? r.what_happened ?? r.note ?? "");
-        if (evidenceText && USER_EVIDENCE_KEYWORDS.test(`${r.today_action ?? ""} ${evidenceText}`)) {
+        if (evidenceText && showsUserEvidence({ task: r.today_action, note: evidenceText })) {
           const evidenceId = `evidence:${actionId}`;
           nodes.push({ id: evidenceId, type: "evidence", label: evidenceText.slice(0, 160), timestamp: r.created_at ?? null });
           edges.push({ from: outcomeId, to: evidenceId, relation: "produced_evidence" });

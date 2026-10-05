@@ -20,6 +20,7 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isTodayFlowSession } from "@/lib/todayFlowSessions";
+import { effectiveStreak } from "@/lib/streak";
 
 export type InsightNotifType =
   | "today_action"
@@ -98,7 +99,7 @@ export async function buildInsightNotifications(
       .limit(200),
     admin
       .from("founder_context")
-      .select("momentum_score, momentum_last_week, streak, avoidance_zones, pending_stage_transition, days_inactive")
+      .select("momentum_score, momentum_last_week, streak, last_checkin_date, avoidance_zones, pending_stage_transition, days_inactive")
       .eq("user_id", userId)
       .maybeSingle(),
     (() => {
@@ -187,7 +188,7 @@ export async function buildInsightNotifications(
   // 3. Momentum + streak -------------------------------------------------------
   const momentum = typeof ctx?.momentum_score === "number" ? (ctx.momentum_score as number) : null;
   const momentumLast = typeof ctx?.momentum_last_week === "number" ? (ctx.momentum_last_week as number) : null;
-  const streak = typeof ctx?.streak === "number" ? (ctx.streak as number) : 0;
+  const streak = effectiveStreak(ctx?.streak as number | undefined, ctx?.last_checkin_date as string | undefined, now.toISOString().slice(0, 10));
 
   if (momentum !== null && momentumLast !== null && Math.abs(momentum - momentumLast) >= 5) {
     const delta = momentum - momentumLast;

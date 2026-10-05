@@ -22,7 +22,7 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { getCurrentUser } from "@/lib/data/projects";
-import { actionCategoryLabel } from "@/lib/actionClassification";
+import { actionCategoryLabelOrNull } from "@/lib/actionClassification";
 
 // ── Runtime validation ─────────────────────────────────────────────────────────
 // Guards against silent data loss from SQL/TypeScript schema mismatches.
@@ -232,9 +232,9 @@ export async function observeTaskEvent(
     // the same keyword classification used there, so this now stores
     // something like "direct outreach (linkedin)" instead of a text
     // fragment.
-    const zone = category ?? actionCategoryLabel(taskTitle);
+    const zone = category ?? actionCategoryLabelOrNull(taskTitle);
     // append_avoidance_zone RPC: atomically appends if not already present (max 10 items)
-    await supabase.rpc("append_avoidance_zone", {
+    if (zone) await supabase.rpc("append_avoidance_zone", {
       p_user_id: (await getCurrentUser())?.id ?? "",
       p_zone: zone,
     }).then(({ error }) => {
@@ -252,9 +252,9 @@ export async function observeTaskEvent(
 
   if (event === "completed") {
     // Same fix as above, mirrored for strengths.
-    const strength = category ?? actionCategoryLabel(taskTitle);
+    const strength = category ?? actionCategoryLabelOrNull(taskTitle);
     // append_strength RPC: atomically appends if not already present (max 10 items)
-    await supabase.rpc("append_strength", {
+    if (strength) await supabase.rpc("append_strength", {
       p_user_id: (await getCurrentUser())?.id ?? "",
       p_strength: strength,
     }).then(({ error }) => {

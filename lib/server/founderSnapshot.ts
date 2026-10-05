@@ -17,6 +17,7 @@
  * Every query is independent and failure-tolerant; a missing value is null,
  * never a fabricated 0.
  */
+import { daysSinceActive } from "@/lib/streak";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getFounderScorecard } from "@/lib/scorecard";
 import { isTodayFlowSession } from "@/lib/todayFlowSessions";
@@ -64,7 +65,7 @@ export async function getFounderSnapshot(userId: string, projectId?: string, now
       .select("outcome, action_shown, created_at, outcome_recorded_at, session_id")
       .eq("user_id", userId).gte("created_at", `${lastWeekStart}T00:00:00.000Z`)
       .order("created_at", { ascending: false }).limit(200),
-    admin.from("founder_context").select("days_inactive, avoidance_zones, tasks_completed_total").eq("user_id", userId).maybeSingle(),
+    admin.from("founder_context").select("days_inactive, last_checkin_date, avoidance_zones, tasks_completed_total").eq("user_id", userId).maybeSingle(),
     (() => {
       let q = admin.from("milestones").select("title, target_date, status").eq("user_id", userId)
         .neq("status", "completed").neq("status", "abandoned").not("target_date", "is", null);
@@ -118,7 +119,7 @@ export async function getFounderSnapshot(userId: string, projectId?: string, now
     }).length,
     completedToday: thisWeek.has(today),
     pendingActionTitle: pending?.action_shown ?? null,
-    daysInactive: typeof ctx?.days_inactive === "number" ? (ctx.days_inactive as number) : null,
+    daysInactive: daysSinceActive(ctx?.last_checkin_date as string | null | undefined, typeof ctx?.days_inactive === "number" ? (ctx.days_inactive as number) : null),
     overdueMilestones: overdue.length,
     worstOverdue: overdue[0] ?? null,
     topAvoidance: zones[0] ?? null,

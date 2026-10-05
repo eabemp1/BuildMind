@@ -19,8 +19,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { hasAdminEnv } from "@/app/api/ai/_utils";
 import { buildArchetypeSystemContext } from "@/lib/founderArchetype";
 import { inferStage } from "@/lib/stages";
-import { fetchNotionContext, formatNotionContextForPrompt } from "@/lib/integrations/notion";
-import { fetchLinearContext, formatLinearContextForPrompt } from "@/lib/integrations/linear";
+import { loadIntegrationContext } from "@/lib/integrations/context";
 import type { ReflexionContext } from "@/lib/reflexion";
 
 /**
@@ -236,24 +235,7 @@ export async function loadTodayActionContext(params: {
 
     // Notion / Linear context injection — pulls the founder's real task
     // list so the AI doesn't suggest work they're already doing elsewhere.
-    let integrationContext = "";
-    try {
-      const { data: integrations } = await supabase
-        .from("integrations")
-        .select("provider, access_token, database_id")
-        .eq("user_id", userId)
-        .in("provider", ["notion", "linear"]);
-
-      for (const intg of (integrations ?? []) as Array<{ provider: string; access_token: string; database_id?: string }>) {
-        if (intg.provider === "notion" && intg.database_id) {
-          const notionCtx = await fetchNotionContext(intg.access_token, intg.database_id);
-          integrationContext += formatNotionContextForPrompt(notionCtx);
-        } else if (intg.provider === "linear") {
-          const linearCtx = await fetchLinearContext(intg.access_token);
-          integrationContext += formatLinearContextForPrompt(linearCtx);
-        }
-      }
-    } catch { /* non-fatal — integration context is best-effort */ }
+    const integrationContext = (await loadIntegrationContext(supabase, userId)).text;
 
     ctx.projectContext = `Project: ${ctx.title}\nStage: ${ctx.stage}\nProblem: ${ctx.problem || "Not specified"}\nTarget users: ${ctx.targetUsers || "Not specified"}\nDescription: ${ctx.description || "Not specified"}\nOverall progress: ${completedTasks}/${totalTasks} tasks done (${completionPct}%), ${completedMilestones}/${(milestones ?? []).length} milestones complete\nPending milestones (next to tackle): ${pendingMilestonesList.length ? pendingMilestonesList.join(", ") : "None"}\nNext open tasks: ${pendingTasksList.length ? pendingTasksList.join(", ") : "None"}\nCurrent MRR: ${project.current_mrr && project.current_mrr > 0 ? `GHS ${(project.current_mrr / 100).toFixed(0)} / month` : "GHS 0 (pre-revenue)"}${project.current_mrr && project.current_mrr > 0 ? "\n→ This founder has paying customers. Tasks must prioritize retention, upsell, and reducing churn over acquisition." : "\n→ This founder has no revenue yet. Every task should move them closer to a first paying customer."}${onboardingBlockerLine}${integrationContext}`;
   }

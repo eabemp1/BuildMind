@@ -36,6 +36,7 @@
  */
 
 import { storage } from "@/lib/storage";
+import { effectiveStreak, streakDayKey } from "@/lib/streak";
 
 export type Plan = "free" | "builder";
 
@@ -433,28 +434,27 @@ function dayKeyFromDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-// ── Daily streak tracking ────────────────────────────────────────────────────
-
-const STREAK_KEY = "bm_streak";
-const LAST_CHECKIN_KEY = "bm_last_checkin_date";
-
-function streakDayKey(d = new Date()): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
+// ── Daily streak (client mirror) ─────────────────────────────────────────────
+//
+// The streak is owned by the server (see lib/streak.ts). The client keeps a
+// cached copy only so the first paint isn't blank. The cache is passed through
+// the same lapse rule as the server value, and it is never advanced locally:
+// the only thing that extends a streak is the server accepting a completed
+// action (task-complete / reflect-action).
 
 export function getStoredStreak(): number {
   if (typeof window === "undefined") return 0;
-  return storage.getStreak();
+  return effectiveStreak(storage.getStreak(), storage.getLastCheckinDate());
 }
 
 /**
  * syncStreakFromServer — call on app mount to restore streak from Supabase.
- * This makes streak survive device switches and storage clears.
+ * The server already applies the lapse rule, so a stale 12 never comes back.
  */
 export async function syncStreakFromServer(): Promise<number> {
   if (typeof window === "undefined") return 0;
   try {
-    const res = await fetch("/api/founder-context/streak");
+    const res = await fetch("/api/founder-context/streak", { cache: "no-store" });
     if (!res.ok) return getStoredStreak();
     const { streak, lastCheckinDate } = await res.json();
     if (typeof streak === "number") {
@@ -467,63 +467,25 @@ export async function syncStreakFromServer(): Promise<number> {
   return getStoredStreak();
 }
 
+/**
+ * @deprecated Streaks are earned by completing an action, and the server
+ * decides. This used to bump a local counter (with a local-only "freeze" the
+ * server never honoured) and POST a check-in whenever the founder sent a coach
+ * message or ran a startup analysis. It now only refreshes from the server so
+ * old call sites cannot inflate the number.
+ */
 export function incrementDailyStreak(): number {
   if (typeof window === "undefined") return 0;
-  const today = streakDayKey();
-  const lastCheckin = storage.getLastCheckinDate();
-  const current = getStoredStreak();
+  void syncStreakFromServer();
+  return getStoredStreak();
+}
 
-  // Already checked in today — no change
-  if (lastCheckin === today) return current;
-
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayKey = streakDayKey(yesterday);
-
-  let next: number;
-  if (lastCheckin === yesterdayKey) {
-    // Checked in yesterday — normal increment
-    next = current + 1;
-    // Clear any freeze that was used
-    storage.set("bm_streak_freeze_used", "0");
-  } else if (lastCheckin) {
-    // Missed at least one day — check if freeze is available
-    const freezeUsed = storage.get("bm_streak_freeze_used") === "1";
-    const twoDaysAgo = new Date();
-    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
-    const twoDaysAgoKey = streakDayKey(twoDaysAgo);
-
-    if (!freezeUsed && lastCheckin === twoDaysAgoKey && current >= 3) {
-      // Used freeze: missed exactly 1 day, streak >= 3 (Duolingo rule: no freeze for <3 day streaks)
-      next = current; // streak preserved
-      storage.set("bm_streak_freeze_used", "1");
-      // Notify user their streak was saved by the freeze
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("bm_streak_freeze_used", { detail: { streak: current } }));
-      }
-    } else {
-      // Missed 2+ days or freeze already used — reset
-      next = 1;
-      storage.set("bm_streak_freeze_used", "0");
-    }
-  } else {
-    // First ever check-in
-    next = 1;
-    storage.set("bm_streak_freeze_used", "0");
-  }
-
-  storage.setStreak(next);
-  storage.setLastCheckinDate(today);
-  window.dispatchEvent(new CustomEvent("bm_streak_updated", { detail: { streak: next } }));
-
-  // Persist to Supabase so streak survives device switches and storage clears.
-  fetch("/api/founder-context/streak", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ streak: next, lastCheckinDate: today }),
-  }).catch(() => { /* non-fatal — storage is the fast fallback */ });
-
-  return next;
+/** Called after the server confirms a completed action. */
+export function applyServerStreak(streak: number, lastCheckinDate: string = streakDayKey()): void {
+  if (typeof window === "undefined") return;
+  storage.setStreak(streak);
+  storage.setLastCheckinDate(lastCheckinDate);
+  window.dispatchEvent(new CustomEvent("bm_streak_updated", { detail: { streak } }));
 }
 
 // ── Upgrade trigger ───────────────────────────────────────────────────────────
@@ -612,4 +574,4 @@ export async function fetchAndSyncStoredPlanFromBillingStatus(): Promise<Plan> {
   } catch {
     return getPlan();
   }
-      }
+}

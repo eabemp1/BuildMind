@@ -11,6 +11,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { formatRegionalContextBlock } from "@/lib/regionalContext";
+import { effectiveStreak } from "@/lib/streak";
 
 export interface CoachBehavioralContext {
   /** The full formatted string for the system prompt */
@@ -161,7 +162,11 @@ export async function assembleCoachContext(
       signals.hasMomentumData = true;
       const lines: string[] = [];
 
-      if (ctx.streak)           lines.push(`Current streak: ${ctx.streak} days`);
+      {
+        const liveStreak = effectiveStreak(ctx.streak, ctx.last_checkin_date);
+        if (liveStreak > 0) lines.push(`Current streak: ${liveStreak} days`);
+        else if (ctx.streak) lines.push(`Streak lapsed (was ${ctx.streak} days)`);
+      }
       if (ctx.days_inactive)    lines.push(`Days since last check-in: ${ctx.days_inactive}`);
       if (ctx.momentum_score)   lines.push(`Momentum score: ${ctx.momentum_score}/100`);
       if (ctx.last_checkin_date) lines.push(`Last active: ${relativeDate(ctx.last_checkin_date)}`);

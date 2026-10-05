@@ -31,6 +31,7 @@
  * with founder_context, so they cannot drift.
  */
 
+import { streakStatus } from "@/lib/streak";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { momentumLabel, isMomentumDecaying, computeMomentumTrendFromDelta } from "@/lib/momentum";
 // computeStartupScore is no longer imported here — see the FIX comment
@@ -40,7 +41,10 @@ import { momentumLabel, isMomentumDecaying, computeMomentumTrendFromDelta } from
 export interface FounderScorecard {
   // Raw signals — the truth, straight from founder_context
   momentum: number;          // 0-100, bounded EMA — see lib/momentum.ts
-  streak: number;            // consecutive active days
+  streak: number;            // consecutive active days — lapsed streaks read 0 (lib/streak.ts)
+  streakAtRisk: boolean;     // alive, but ends tonight unless something is completed today
+  streakDoneToday: boolean;
+  lastStreak: number;        // the run that lapsed, for "you had 12 days" framing
   xp: number;                // lifetime XP, awarded by tasks + achievements
   executionScore: number;    // 0-100, AI-assessed reflexion quality (most recent verdict)
   tasksCompletedTotal: number;
@@ -56,6 +60,9 @@ export interface FounderScorecard {
 const DEFAULT_SCORECARD: Omit<FounderScorecard, "momentumLabel" | "isDecaying" | "momentumDelta" | "momentumTrend"> = {
   momentum: 50,
   streak: 0,
+  streakAtRisk: false,
+  streakDoneToday: false,
+  lastStreak: 0,
   xp: 0,
   executionScore: 0,
   tasksCompletedTotal: 0,
@@ -79,7 +86,7 @@ export async function getFounderScorecard(
 
   const { data: ctx } = await admin
     .from("founder_context")
-    .select("momentum_score, streak, xp, tasks_completed_total, tasks_completed_today, momentum_last_week")
+    .select("momentum_score, streak, last_checkin_date, xp, tasks_completed_total, tasks_completed_today, momentum_last_week")
     .eq("user_id", userId)
     .maybeSingle();
 
@@ -93,9 +100,13 @@ export async function getFounderScorecard(
     .limit(1)
     .maybeSingle();
 
+  const streakInfo = streakStatus(ctx?.streak, ctx?.last_checkin_date);
   const raw = {
     momentum:             ctx?.momentum_score ?? DEFAULT_SCORECARD.momentum,
-    streak:               ctx?.streak ?? DEFAULT_SCORECARD.streak,
+    streak:               streakInfo.count,
+    streakAtRisk:         streakInfo.atRisk,
+    streakDoneToday:      streakInfo.doneToday,
+    lastStreak:           streakInfo.lapsed ? streakInfo.lastRun : 0,
     xp:                   ctx?.xp ?? DEFAULT_SCORECARD.xp,
     executionScore:       proj?.execution_score ?? DEFAULT_SCORECARD.executionScore,
     tasksCompletedTotal:  ctx?.tasks_completed_total ?? DEFAULT_SCORECARD.tasksCompletedTotal,
