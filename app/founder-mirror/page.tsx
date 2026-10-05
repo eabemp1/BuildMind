@@ -20,6 +20,7 @@ import { Textarea } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { RelationshipGraph, type StartupRelationshipGraph } from "@/components/founder-mirror/RelationshipGraph";
 import { AIErrorBoundary } from "@/components/AIErrorBoundary";
+import { MirrorStory } from "@/components/founder-mirror/MirrorStory";
 
 type Belief = {
   belief: string;
@@ -181,6 +182,8 @@ export default function FounderMirrorPage() {
   const [targetBelief, setTargetBelief] = useState<{ text: string; key: string } | null>(null);
   // Shown briefly after a correction lands, so the effect of "Correct the
   // model" is visible instead of the correction just being stored silently.
+  // Story (slideshow) is the default; "detail" is the full dashboard below.
+  const [view, setView] = useState<"story" | "detail">("story");
   const [correctionDelta, setCorrectionDelta] = useState<{ belief: string; before: number; after: number } | null>(null);
 
   async function loadMirror() {
@@ -304,6 +307,45 @@ export default function FounderMirrorPage() {
 
   const { mirror, relationship_chain: chain, relationship_graph_summary: graphSummary, relationship_graph: graph, behavioral } = data;
 
+  const viewToggle = (
+    <div role="tablist" aria-label="Founder Mirror view" className="inline-flex rounded-full border border-[var(--bm-border)] bg-[var(--bm-bg2)] p-0.5 text-xs">
+      {(["story", "detail"] as const).map((v) => (
+        <button
+          key={v}
+          role="tab"
+          aria-selected={view === v}
+          onClick={() => setView(v)}
+          className="rounded-full px-3.5 py-1.5 font-semibold transition-colors"
+          style={{ background: view === v ? "var(--bm-text)" : "transparent", color: view === v ? "var(--bm-bg)" : "var(--bm-text3)", cursor: "pointer" }}
+        >
+          {v === "story" ? "Story" : "Full detail"}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (view === "story") {
+    return (
+      <div className="mx-auto max-w-[1120px] px-3 py-5 sm:px-6 sm:py-7">
+        <div className="mb-3.5 flex items-center justify-between gap-3">
+          <div className="font-[Syne] text-[15px] font-bold text-[var(--bm-text)]">Founder Mirror</div>
+          {viewToggle}
+        </div>
+        <MirrorStory
+          mirror={mirror}
+          behavioral={behavioral}
+          onOpenDetail={(target) => {
+            setView("detail");
+            if (target?.correct) {
+              if (target.beliefKey && target.belief) setTargetBelief({ text: target.belief, key: target.beliefKey });
+              setTimeout(() => document.getElementById("correct-the-model")?.scrollIntoView({ behavior: "smooth", block: "center" }), 350);
+            }
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-[1120px] px-3 py-5 sm:px-6 sm:py-7">
       <motion.div initial="hidden" animate="show" variants={fadeUp}>
@@ -312,8 +354,9 @@ export default function FounderMirrorPage() {
           title="Your operating model, observed over time."
           subtitle="Not a personality profile. This is BuildMind's current, revisable view of the behavior shaping your startup decisions."
           action={
-            <div className="flex items-center gap-1.5 whitespace-nowrap text-xs text-[var(--bm-text3)]">
-              <RefreshCw size={13} />Updated {formatDate(mirror.generated_at)}
+            <div className="flex flex-wrap items-center gap-3 whitespace-nowrap text-xs text-[var(--bm-text3)]">
+              {viewToggle}
+              <span className="flex items-center gap-1.5"><RefreshCw size={13} />Updated {formatDate(mirror.generated_at)}</span>
             </div>
           }
         />
@@ -882,4 +925,4 @@ export default function FounderMirrorPage() {
       </motion.div>
     </div>
   );
-}
+                                                            }
