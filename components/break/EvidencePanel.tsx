@@ -31,6 +31,26 @@ export function EvidencePanel({ layer }: { layer: EvidenceLayer }) {
 
   return (
     <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} style={{ display: "flex", flexDirection: "column", gap: 12 }} aria-label="Evidence and reasoning">
+      {/* Conclusion confidence leads: how far to trust the verdict, what is unknown, what would settle it */}
+      {layer.conclusion && (
+        <div style={{ ...box, borderColor: layer.conclusion.pct < 40 ? "var(--bm-amber)" : "var(--bm-border)" }}>
+          <p style={eyebrow}>Confidence in this conclusion</p>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, margin: "8px 0 4px", flexWrap: "wrap" }}>
+            <span style={{ fontSize: 30, fontWeight: 600, color: "var(--bm-text)" }}>{layer.conclusion.pct}%</span>
+            <Chip color={layer.conclusion.label === "High" ? "var(--bm-green)" : layer.conclusion.label === "Moderate" ? "var(--bm-amber)" : "var(--bm-red)"}>{layer.conclusion.label}</Chip>
+          </div>
+          <p style={{ margin: "0 0 12px", fontSize: 12.5, color: "var(--bm-text3)", lineHeight: 1.5 }}>Use this to decide what to investigate next. It is not enough to decide the idea is dead or alive.</p>
+          <dl style={{ margin: 0, display: "grid", gap: 10 }}>
+            <div><dt style={{ ...eyebrow, color: "var(--bm-text3)" }}>Biggest unknown</dt><dd style={{ margin: "3px 0 0", fontSize: 13.5, color: "var(--bm-text)", lineHeight: 1.45 }}>{layer.conclusion.primaryUncertainty}</dd></div>
+            <div><dt style={eyebrow}>Next unknown</dt><dd style={{ margin: "3px 0 0", fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.45 }}>{layer.conclusion.secondaryUncertainty}</dd></div>
+            {layer.conclusion.requiredEvidence.length > 0 && (
+              <div><dt style={eyebrow}>Evidence that would settle it</dt>
+                <dd style={{ margin: "3px 0 0" }}><ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.5 }}>{layer.conclusion.requiredEvidence.map(e => <li key={e}>{e}</li>)}</ul></dd></div>
+            )}
+          </dl>
+        </div>
+      )}
+
       {/* Calibrated range replaces a falsely precise number */}
       <div style={box}>
         <p style={eyebrow}>How sure is this?</p>
@@ -44,6 +64,28 @@ export function EvidencePanel({ layer }: { layer: EvidenceLayer }) {
           <div style={{ position: "absolute", left: `${c.score}%`, top: -3, width: 3, height: 14, borderRadius: 2, background: "var(--bm-text)", transform: "translateX(-1px)" }} />
         </div>
         <p style={{ margin: "10px 0 0", fontSize: 12.5, color: "var(--bm-text3)", lineHeight: 1.55 }}>{c.why}</p>
+        {layer.scoreBasis && (
+          <div style={{ marginTop: 14, borderTop: "1px solid var(--bm-border)", paddingTop: 12 }}>
+            <p style={eyebrow}>Where the score comes from · {layer.scoreBasis.label}</p>
+            <ul style={{ listStyle: "none", margin: "10px 0 0", padding: 0, display: "grid", gap: 9 }}>
+              {layer.scoreBasis.components.map(comp => (
+                <li key={comp.key} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "start" }}>
+                  <div>
+                    <p style={{ margin: 0, fontSize: 13, color: "var(--bm-text)" }}>{comp.label} <span style={{ color: "var(--bm-text4)", fontSize: 11.5 }}>weight {comp.weight}</span></p>
+                    <p style={{ margin: "2px 0 0", fontSize: 11.5, color: "var(--bm-text4)", lineHeight: 1.45 }}>{comp.basedOn}</p>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: "var(--bm-text)" }}>{comp.score}</div>
+                    <Chip color={comp.kind === "inference" ? "var(--bm-amber)" : comp.kind === "mixed" ? "var(--bm-accent)" : "var(--bm-green)"}>{comp.kind}</Chip>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <p style={{ margin: "10px 0 0", fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.55 }}>
+              {layer.scoreBasis.inferenceSharePct}% of the score rests on model inference alone. {layer.scoreBasis.note}
+            </p>
+          </div>
+        )}
       </div>
 
       {layer.conflicts.length > 0 && (
@@ -119,6 +161,38 @@ export function EvidencePanel({ layer }: { layer: EvidenceLayer }) {
           ))}
         </div>
       </div>
+      {layer.thesisTest && (
+        <div style={box}>
+          <p style={eyebrow}>The experiment that tests your actual idea</p>
+          <p style={{ margin: "10px 0 0", fontSize: 13.5, fontWeight: 600, color: "var(--bm-text)", lineHeight: 1.45 }}>Claim under test: {layer.thesisTest.thesis}</p>
+          <p style={{ margin: "8px 0 0", fontSize: 12.5, color: "var(--bm-amber)", lineHeight: 1.5 }}>{layer.thesisTest.notThisTest}</p>
+          <p style={{ margin: "8px 0 0", fontSize: 12.5, color: "var(--bm-text2)", lineHeight: 1.55 }}>{layer.thesisTest.setup}</p>
+          <p style={{ ...eyebrow, marginTop: 12 }}>Measure</p>
+          <ul style={{ margin: "5px 0 0", paddingLeft: 18, fontSize: 12.5, color: "var(--bm-text2)", lineHeight: 1.55 }}>{layer.thesisTest.measure.map(m => <li key={m}>{m}</li>)}</ul>
+          <dl style={{ margin: "12px 0 0", display: "grid", gap: 6, fontSize: 12.5, lineHeight: 1.5 }}>
+            <div><dt style={{ display: "inline", color: "var(--bm-text3)" }}>Why this test: </dt><dd style={{ display: "inline", margin: 0, color: "var(--bm-text2)" }}>{layer.thesisTest.why}</dd></div>
+            <div><dt style={{ display: "inline", color: "var(--bm-text3)" }}>Based on: </dt><dd style={{ display: "inline", margin: 0, color: "var(--bm-text2)" }}>{layer.thesisTest.basedOn}</dd></div>
+            <div><dt style={{ display: "inline", color: "var(--bm-text3)" }}>You will learn: </dt><dd style={{ display: "inline", margin: 0, color: "var(--bm-text2)" }}>{layer.thesisTest.expectedLearning}</dd></div>
+            <div><dt style={{ display: "inline", color: "var(--bm-text3)" }}>If it fails: </dt><dd style={{ display: "inline", margin: 0, color: "var(--bm-text2)" }}>{layer.thesisTest.ifItFails}</dd></div>
+          </dl>
+        </div>
+      )}
+
+      {layer.changeMyMind && (
+        <div style={box}>
+          <p style={eyebrow}>What would change our mind</p>
+          <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", marginTop: 12 }}>
+            <div>
+              <p style={{ margin: 0, fontSize: 12.5, fontWeight: 600, color: "var(--bm-red)" }}>Would count against the idea</p>
+              <ul style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: 12.5, color: "var(--bm-text2)", lineHeight: 1.55 }}>{layer.changeMyMind.kills.map(k => <li key={k}>{k}</li>)}</ul>
+            </div>
+            <div>
+              <p style={{ margin: 0, fontSize: 12.5, fontWeight: 600, color: "var(--bm-green)" }}>Would strengthen it</p>
+              <ul style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: 12.5, color: "var(--bm-text2)", lineHeight: 1.55 }}>{layer.changeMyMind.strengthens.map(k => <li key={k}>{k}</li>)}</ul>
+            </div>
+          </div>
+        </div>
+      )}
     </motion.section>
   );
 }
