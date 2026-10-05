@@ -52,3 +52,66 @@ describe("buildEvidenceLayer", () => {
     expect(c.high).toBeLessThanOrEqual(100);
   });
 });
+
+describe("evidence layer v2", () => {
+  const mkt = { ...market, demand_signals: ["There is clear evidence of user frustration with file locate across platforms."], reasoning: "" };
+  const sen = { ...sentiment, user_pain_points: [], reasoning: "There is no evidence in the supplied data of users actively complaining about being unable to find files they know they have." };
+  const comp = { ...competitor, saturation_level: "medium", differentiation_opportunities: ["Reconstruct a lost file from indirect evidence such as emails, versions and metadata"] };
+  const v2 = (o: Partial<EvidenceInput> = {}) => base({
+    market: mkt as never, sentiment: sen as never, competitor: comp as never,
+    parsed: { problem: "People cannot find or recover files they know existed", target_customer: "knowledge workers", monetization: "subscription" },
+    breakdown: [
+      { key: "demand", label: "Market Demand", score: 46, weight: "30%" },
+      { key: "competition", label: "Competitive Position", score: 45, weight: "20%" },
+      { key: "timing", label: "Market Timing", score: 55, weight: "15%" },
+      { key: "uniqueness", label: "Differentiation", score: 26, weight: "20%" },
+      { key: "monetization", label: "Monetization Clarity", score: 40, weight: "15%" },
+    ],
+    pivots: [
+      { title: "Enterprise Data Decay Auditor", description: "Audit organisational records for compliance", target_niche: "compliance teams", key_change: "buyer" },
+      { title: "Niche to knowledge workers who lose files", description: "Focus on people who cannot find files they know existed", target_niche: "knowledge workers", key_change: "Target audience" },
+    ],
+    ...o,
+  });
+
+  it("catches a text-level contradiction between Market and Sentiment", () => {
+    const c = buildEvidenceLayer(v2()).conflicts.find(x => /one section reports evidence/.test(x.title));
+    expect(c).toBeTruthy();
+    expect(c!.howToSettle).toMatch(/broad frustration/);
+  });
+  it("does not invent a conflict when nothing is contradicted", () => {
+    const calm = buildEvidenceLayer(v2({ sentiment: { ...sentiment, reasoning: "Users mention it often." } as never }));
+    expect(calm.conflicts.some(x => /one section reports evidence/.test(x.title))).toBe(false);
+  });
+  it("explains where the score comes from and says it is uncalibrated", () => {
+    const b = buildEvidenceLayer(v2()).scoreBasis!;
+    expect(b.calibrated).toBe(false);
+    expect(b.components).toHaveLength(5);
+    expect(b.inferenceSharePct).toBeGreaterThan(50);
+    expect(b.components.find(c => c.key === "uniqueness")!.kind).toBe("inference");
+  });
+  it("leads with conclusion confidence, uncertainty and required evidence", () => {
+    const c = buildEvidenceLayer(v2()).conclusion!;
+    expect(c.pct).toBeLessThanOrEqual(55);
+    expect(c.primaryUncertainty).toMatch(/specific pain|knowledge workers/);
+    expect(c.requiredEvidence.length).toBeGreaterThan(0);
+  });
+  it("designs the experiment around the differentiator, not the commodity", () => {
+    const t = buildEvidenceLayer(v2()).thesisTest!;
+    expect(t.thesis).toMatch(/Reconstruct/);
+    expect(t.notThisTest).toMatch(/Do not test/);
+    expect(t.measure.join(" ")).toMatch(/false positives/i);
+    expect(t.ifItFails.length).toBeGreaterThan(20);
+  });
+  it("states what would change our mind in both directions", () => {
+    const m = buildEvidenceLayer(v2()).changeMyMind!;
+    expect(m.kills.length).toBeGreaterThan(2);
+    expect(m.strengthens.length).toBeGreaterThan(2);
+    expect(m.kills.join(" ")).toMatch(/Existing tools solve the hard test cases/);
+  });
+  it("says when a pivot does not validate the original idea", () => {
+    const checks = buildEvidenceLayer(v2()).pivotChecks!;
+    expect(checks.find(c => /Enterprise/.test(c.title))!.validatesOriginal).toBe(false);
+    expect(checks.find(c => /Niche to knowledge/.test(c.title))!.relation).toBe("same_problem");
+  });
+});
