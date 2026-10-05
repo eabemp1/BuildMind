@@ -1,105 +1,49 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { FormEvent, Suspense, useEffect, useState, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { selectActiveProject, useActiveProjectId, useProjectSummariesQuery, useDashboardOverviewQuery } from "@/lib/queries";
-import { fetchAndSyncStoredPlanFromBillingStatus, getLimits } from "@/lib/plan";
-import { usePlan } from "@/lib/usePlan";
-import { useLimitModal } from "@/components/LimitModal";
-import { updateAchievementStats, checkAndUnlockAchievements, getAchievementStats } from "@/lib/achievements";
-import { trackEvent } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase/client";
+import { ensureUserProfile } from "@/lib/buildmind";
+import { FEATURES } from "@/lib/features";
+import { PLAN_NAMES, setStoredPlan, fetchAndSyncStoredPlanFromBillingStatus } from "@/lib/plan";
+import { PLAN_PRICE_LABEL } from "@/lib/pricing";
+import { usePlan } from "@/lib/usePlan";
 import { storage } from "@/lib/storage";
+import { clearFounderInsight } from "@/lib/founderMemory";
 import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
-import AIUsageBadge from "@/components/AIUsageBadge";
-import { ConfidenceBadge } from "@/components/ConfidenceBadge";
-import { Send, Brain, Sparkles, Zap, ChevronRight, ArrowUpRight, PanelRight, X } from "lucide-react";
-import { withAIErrorBoundary } from "@/components/AIErrorBoundary";
-import { sanitizeOutput } from "@/lib/sanitizeOutput";
-import { CoachActionResultCard } from "@/components/coach/CoachActionResultCard";
-import { matchCoachAction } from "@/lib/coachActions/matcher";
-import { COACH_ACTION_CHIPS, type CoachActionChip } from "@/lib/coachActions/chips";
-import { matchNavigation, parseReplyLinks } from "@/lib/coachNavigation";
-import type { CoachActionResult } from "@/lib/coachActions/types";
+import PushNotificationToggle from "@/components/PushNotificationToggle";
+import AvatarUpload from "@/components/AvatarUpload";
+import { ProfileCompletenessBar } from "@/components/ProfileCompletenessBar";
+import { User, CreditCard, Bell, Bot, Shield, Check, Zap, Globe, Plug2, type LucideIcon } from "lucide-react";
+import { PageHeader } from "@/components/ui/PageHeader";
 
-type ChatMessage = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  reasoning?: string[];
-  phase?: "thinking" | "writing" | "done";
-  error?: boolean;
-  /** Reflexion confidence_score (0–1). Badge renders when < 0.75 */
-  confidence_score?: number | null;
-  /** Optional structured action the coach converged on — only present when
-   *  the model named one concrete, time-boxed next step (see coach route's
-   *  recommended_action contract). Absent on most replies by design. */
-  recommendedAction?: { what_to_do: string; why_now: string; expected_evidence?: string };
-  /** Present when the reply was a Coach Action (lib/coachActions) rather
-   *  than model-written coaching — rendered as a data card, not prose. */
-  actionResult?: CoachActionResult;
-};
+type Tab = "profile" | "account" | "notifications" | "ai" | "billing" | "integrations" | "public";
 
-function buildPlaceholderReasoning(message: string, projectTitle?: string, score?: number): string[] {
-  const msg = message.toLowerCase();
-  const steps: string[] = [];
-  if (projectTitle) steps.push(`Pulling live data for "${projectTitle}"...`);
-  else steps.push("Reading your project state...");
-  if (msg.includes("stuck") || msg.includes("block")) {
-    steps.push("Identifying the specific blocker vs. avoidance pattern...");
-    steps.push("Checking execution history for context...");
-  } else if (msg.includes("user") || msg.includes("customer")) {
-    steps.push("Evaluating user acquisition approach vs. stage...");
-    steps.push("Cross-referencing validation data...");
-  } else if (msg.includes("today") || msg.includes("priority")) {
-    steps.push("Scanning open tasks for highest-leverage action...");
-    steps.push(score !== undefined ? `Score is ${score}/100 — weighing effort vs. impact...` : "Weighing effort vs. impact...");
-  } else {
-    steps.push("Reading between the lines of your question...");
-    steps.push(score !== undefined ? `Execution score ${score}/100 — calibrating directness level...` : "Calibrating response to your situation...");
-  }
-  steps.push("Drafting the most useful response...");
-  return steps;
-}
-
-const QUICK_PROMPTS = [
-  "Am I avoiding the hardest work right now?",
-  "What is the single highest-leverage move this week?",
-  "Is my recent progress real or just busyness?",
-  "If you were the founder, what would you do today?",
-  "What behavioral patterns should I be worried about?",
+const TABS: { id: Tab; label: string; icon: LucideIcon }[] = [
+  { id: "profile",        label: "Profile",        icon: User       },
+  { id: "account",        label: "Account",        icon: Shield     },
+  ...(FEATURES.notifications ? [{ id: "notifications" as Tab, label: "Notifications", icon: Bell }] : []),
+  { id: "billing",        label: "Billing",        icon: CreditCard },
+  { id: "integrations",   label: "Integrations",   icon: Plug2      },
+  { id: "ai",             label: "AI Usage",       icon: Bot        },
+  { id: "public",         label: "Public Profile", icon: Globe      },
 ];
 
-// FIX: renamed from *_PER_WEEK — the server (app/api/ai/coach/route.ts,
-// FREE_COACH_MESSAGES_PER_DAY) enforces this as a DAILY cap. The client
-// counter was previously week-scoped, blocking free users ~7x more
-// aggressively than the real server policy. Now both are day-scoped.
-const FREE_COACH_MESSAGES_PER_DAY = 3;
-
-function getCoachMessagesToday() {
-  return storage.getCoachMessagesToday();
-}
-
-function recordCoachMessage() {
-  storage.recordCoachMessage();
-}
-
-function ThinkingDots() {
+function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return (
-    <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
-      {[0, 1, 2].map(i => (
-        <motion.span key={i}
-          style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--bm-accent)", display: "inline-block" }}
-          animate={{ opacity: [0.3, 1, 0.3], scale: [0.8, 1.1, 0.8] }}
-          transition={{ duration: 1, delay: i * 0.18, repeat: Infinity }} />
-      ))}
-    </span>
+    <motion.button onClick={() => onChange(!checked)}
+      style={{
+        width: 42, height: 24, borderRadius: 12, position: "relative", cursor: "pointer", flexShrink: 0,
+        background: checked ? "var(--bm-accent)" : "var(--bm-bg4)",
+        border: `1px solid ${checked ? "var(--bm-accent-bd)" : "var(--bm-border2)"}`,
+        transition: "background 0.2s, border-color 0.2s",
+        boxShadow: checked ? "var(--shadow-accent)" : "none",
+      }}>
+      <motion.div animate={{ x: checked ? 20 : 2 }} transition={{ type: "spring", stiffness: 400, damping: 25 }}
+        style={{ width: 18, height: 18, borderRadius: "50%", background: "#fff", position: "absolute", top: 2 }} />
+    </motion.button>
   );
-}
-
-function hasHistoryGlobal(o?: { completedTasks?: number; daysSinceLastReflection?: number | null } | null) {
-  return (o?.completedTasks ?? 0) > 0 || o?.daysSinceLastReflection != null;
 }
 
 function useIsMobile() {
@@ -114,458 +58,819 @@ function useIsMobile() {
   return isMobile;
 }
 
-function MessageBubble({ msg, onStartAction, onOpen, onRunChip }: { msg: ChatMessage; onStartAction: () => void; onOpen: (href: string) => void; onRunChip: (chip: CoachActionChip) => void }) {
-  const isUser = msg.role === "user";
-  // Buttons the Coach attached ([[open:...]] / [[run:...]]) are validated against closed allow-lists.
-  const parsed = !isUser && msg.phase === "done" ? parseReplyLinks(msg.content) : { text: msg.content, links: [] as ReturnType<typeof parseReplyLinks>["links"] };
-  const [expanded, setExpanded] = useState(false);
-  const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-
-  if (isUser) {
-    return (
-      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }} className="flex justify-end">
-        <div className="max-w-[85%] rounded-[20px] rounded-br-md border border-[var(--bm-border2)] bg-[var(--bm-bg3)] px-3.5 py-2.5 sm:px-4 sm:py-3 text-[14.5px] leading-[1.6] text-[var(--bm-text)] sm:max-w-[75%] sm:text-[15px]">
-          <span style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{sanitizeOutput(msg.content)}</span>
-        </div>
-      </motion.div>
-    );
-  }
-
+function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
-    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }} className="flex items-start gap-2.5 sm:gap-3.5">
-      <div className="mt-0.5 flex h-7 w-7 shrink-0 sm:h-8 sm:w-8 items-center justify-center rounded-full border border-[var(--bm-intel-bd)] bg-[var(--bm-intel-dim)]">
-        <Sparkles size={14} color="var(--bm-intel2)" />
-      </div>
-      <div className="flex min-w-0 flex-1 flex-col gap-3">
-        {msg.reasoning && msg.reasoning.length > 0 && (
-          <div>
-            <button onClick={() => setExpanded(v => !v)} aria-expanded={expanded}
-              className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-[var(--bm-border)] bg-transparent px-3 py-1 text-[12px] text-[var(--bm-text3)] hover:text-[var(--bm-text2)]">
-              <Brain size={12} />
-              {msg.phase === "thinking" ? "Thinking" : "How I got here"}
-              <ChevronRight size={12} style={{ transform: expanded ? "rotate(90deg)" : "none", transition: "transform 0.15s" }} />
-            </button>
-            <AnimatePresence>
-              {expanded && (
-                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: "hidden" }}>
-                  <div className="mt-2 border-l-2 border-[var(--bm-border2)] pl-3.5">
-                    {msg.reasoning.map((step, i) => (
-                      <div key={i} className="mb-1.5 text-[13px] leading-relaxed text-[var(--bm-text3)]">{sanitizeOutput(step)}</div>
-                    ))}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        )}
-
-        {msg.phase === "thinking" ? (
-          <div className="py-1"><ThinkingDots /></div>
-        ) : (
-          <div className="text-[14.5px] leading-[1.7] sm:text-[15.5px] sm:leading-[1.75]" style={{ color: msg.error ? "var(--bm-red)" : "var(--bm-text)", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-            {sanitizeOutput(parsed.text)}
-          </div>
-        )}
-
-        {msg.phase === "done" && msg.actionResult && <CoachActionResultCard result={msg.actionResult} />}
-
-        {parsed.links.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {parsed.links.map((l, i) => (
-              <button key={i} type="button"
-                onClick={() => (l.kind === "open" ? onOpen(l.href) : onRunChip(l.chip))}
-                className="inline-flex cursor-pointer items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold sm:px-4 sm:py-2 sm:text-[13px]"
-                style={{ background: "var(--bm-accent-dim)", color: "var(--bm-accent)", border: "1px solid var(--bm-accent-bd)", fontFamily: "inherit" }}>
-                {l.label}
-                <ArrowUpRight size={13} />
-              </button>
-            ))}
-          </div>
-        )}
-
-        {msg.phase === "done" && msg.recommendedAction && (
-          <div className="rounded-[18px] border border-[var(--bm-accent-bd)] bg-[var(--bm-bg2)] p-5">
-            <div className="mb-3 text-[14px] font-semibold text-[var(--bm-accent)]">Recommended next step</div>
-            <p className="text-[15px] leading-[1.65] text-[var(--bm-text)]">{sanitizeOutput(msg.recommendedAction.what_to_do)}</p>
-            <p className="mt-3 text-[14px] leading-relaxed text-[var(--bm-text3)]">
-              <span className="font-semibold text-[var(--bm-text2)]">Why now: </span>{sanitizeOutput(msg.recommendedAction.why_now)}
-            </p>
-            {msg.recommendedAction.expected_evidence && (
-              <p className="mt-2 text-[14px] leading-relaxed text-[var(--bm-text3)]">
-                <span className="font-semibold text-[var(--bm-text2)]">You will know it worked when: </span>{sanitizeOutput(msg.recommendedAction.expected_evidence)}
-              </p>
-            )}
-            <button onClick={onStartAction}
-              className="mt-4 w-full cursor-pointer rounded-[12px] border-0 py-3 text-[14px] font-bold sm:w-auto sm:px-6"
-              style={{ background: "var(--bm-accent)", color: "#15130a" }}>
-              Start this now
-            </button>
-          </div>
-        )}
-
-        {msg.phase === "done" && (
-          <div className="flex flex-wrap items-center gap-2 text-[12px] text-[var(--bm-text4)]">
-            <span>{time}</span>
-            {typeof msg.confidence_score === "number" && <ConfidenceBadge score={msg.confidence_score} />}
-          </div>
-        )}
-      </div>
-    </motion.div>
+    <label style={{ display: "block", fontSize: 10, color: "var(--bm-text3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
+      {children}
+    </label>
   );
 }
 
-function AICoachPageInner() {
-  const router = useRouter();
+function SettingsInput({ value, onChange, placeholder, type = "text", disabled }: {
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  placeholder?: string;
+  type?: string;
+  disabled?: boolean;
+}) {
   const isMobile = useIsMobile();
-  const { plan, isLoading: planLoading } = usePlan();
-  const { showLimitModal } = useLimitModal();
-  const { data: summaries = [], isLoading: summariesLoading } = useProjectSummariesQuery();
-  const activeProjectId = useActiveProjectId();
-  const activeProject = selectActiveProject(summaries, activeProjectId);
-  const { data: overview } = useDashboardOverviewQuery(activeProject?.id);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [personality, setPersonality] = useState<"direct" | "supportive" | "challenger">("direct");
-  const [memory, setMemory] = useState<string[]>([]);
-  const [userId, setUserId] = useState<string | null>(null);
-  const [coachMessagesToday, setCoachMessagesToday] = useState(0);
-  const [showContext, setShowContext] = useState(false);
-  const [activityEvents, setActivityEvents] = useState<Array<{ label: string; occurredAt: string }>>([]);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  return (
+    <input value={value} onChange={onChange} placeholder={placeholder} type={type} disabled={disabled}
+      style={{ width: "100%", background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: 10, padding: isMobile ? "13px 14px" : "10px 14px", fontSize: isMobile ? 16 : 13, color: "var(--bm-text)", outline: "none", fontFamily: "inherit", boxSizing: "border-box", transition: "border-color 0.15s", opacity: disabled ? 0.5 : 1 }}
+      onFocus={e => { e.target.style.borderColor = "var(--bm-accent-bd)"; }}
+      onBlur={e => { e.target.style.borderColor = "var(--bm-border2)"; }} />
+  );
+}
 
-  // FIX (checklist item): this used to call computeStartupScore(activeProject)
-  // directly, without xp/streak — the same score displayed on Today/Overview
-  // for the identical project, at the identical moment, would be up to ~30
-  // points higher (xp boost 0-20, streak boost 0-10; see lib/scoring/index.ts).
-  // Rather than fix the inputs, the score widget itself is removed below —
-  // a chat surface doesn't need a status widget, and deleting it is safer
-  // than patching it: no more mismatch, no surface for a duplicate verdict
-  // to grow back. buildPlaceholderReasoning falls back to its non-numeric
-  // flavor text when score is undefined.
-  const limits = getLimits(plan);
-  const coachLimit = plan === "free" ? FREE_COACH_MESSAGES_PER_DAY : limits.aiMessagesPerDay;
-  const remaining = plan === "free" ? Math.max(0, coachLimit - coachMessagesToday) : Infinity;
+function SaveButton({ loading, onClick }: { loading: boolean; onClick: () => void }) {
+  const isMobile = useIsMobile();
+  return (
+    <motion.button whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.97 }} onClick={onClick} disabled={loading}
+      style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: isMobile ? "13px 20px" : "10px 20px", borderRadius: 10, border: "none", background: "var(--grad-primary)", color: "#fff", fontWeight: 600, fontSize: isMobile ? 14 : 13, cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: loading ? 0.7 : 1, transition: "opacity 0.15s", width: isMobile ? "100%" : "auto" }}>
+      {loading ? "Saving…" : <><Check size={14} /> Save changes</>}
+    </motion.button>
+  );
+}
 
+// ── Feature comparison data ───────────────────────────────────────────────────
+const PLAN_FEATURES = [
+  { label: "Daily AI action",              free: true,  builder: true  },
+  { label: "Reflexion loop (AI learns from outcomes)", free: false, builder: true },
+  { label: "Behavioral memory",            free: false, builder: true  },
+  { label: "Notion & Linear task sync",    free: false, builder: true  },
+  { label: "Unlimited AI Coach messages",  free: false, builder: true  },
+  { label: "Weekly performance reports",   free: false, builder: true  },
+  { label: "Break My Startup analysis",    free: true,  builder: true  },
+  { label: "Morning briefings",            free: false, builder: true  },
+];
+
+// ── Integrations Tab ───────────────────────────────────────────────────────────
+function IntegrationsTab({ initialStatus }: { initialStatus: string | null }) {
+  const isMobile = useIsMobile();
+  const [notionStatus, setNotionStatus] = useState<"idle" | "connected" | "error">("idle");
+  const [linearStatus, setLinearStatus] = useState<"idle" | "connected" | "error">("idle");
+  const [toast, setToast]               = useState<string | null>(null);
+  const [loading, setLoading]           = useState(true);
+
+  // Check current connection status from DB on load
   useEffect(() => {
-    void fetchAndSyncStoredPlanFromBillingStatus();
-  }, []);
-
-  useEffect(() => {
-    try { setMemory(storage.getJSON<string[]>("bm_coach_memory", [])); } catch {}
-    setCoachMessagesToday(getCoachMessagesToday());
-    const supabase = createClient();
-    supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
-    fetchBehaviorState<{
-      coach_memory: string[];
-      coach_streak_date: string;
-      ai_personality: "direct" | "supportive" | "challenger";
-    }>(["coach_memory", "coach_streak_date", "ai_personality"]).then(values => {
-      if (Array.isArray(values.coach_memory)) {
-        storage.setJSON("bm_coach_memory", values.coach_memory);
-        setMemory(values.coach_memory);
-      }
-      const today = new Date().toISOString().split("T")[0];
-      if (values.coach_streak_date === today) {
-        storage.set("bm_coach_streak_date", today);
-      }
-      if (values.ai_personality === "direct" || values.ai_personality === "supportive" || values.ai_personality === "challenger") {
-        setPersonality(values.ai_personality);
-      }
-    }).catch(() => {});
-  }, []);
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
-
-  // Real recent activity for the active project — same activity_log-backed
-  // route added for the Projects detail page's "Last activity" card, reused
-  // here for Figma's "Recent outcomes" concept. No separate metric-tracking
-  // (e.g. "waitlist +40%") exists anywhere, so this shows what's actually
-  // logged rather than inventing business-outcome numbers.
-  useEffect(() => {
-    if (!activeProject?.id) { setActivityEvents([]); return; }
-    fetch(`/api/projects/${activeProject.id}/activity`, { cache: "no-store" })
-      .then((r) => r.json())
-      .then((d: { ok?: boolean; events?: Array<{ label: string; occurredAt: string }> }) => {
-        if (d.ok && Array.isArray(d.events)) setActivityEvents(d.events);
+    fetch("/api/integrations/status")
+      .then(r => r.ok ? r.json() : null)
+      .then((d: { notion?: boolean; linear?: boolean } | null) => {
+        if (!d) return;
+        if (d.notion) setNotionStatus("connected");
+        if (d.linear) setLinearStatus("connected");
       })
-      .catch(() => {});
-  }, [activeProject?.id]);
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
 
-  async function sendMessage(text?: string, opts?: { action?: { id: string; params: Record<string, unknown> } }) {
-    const msg = (text ?? input).trim();
-    if (!msg || loading) return;
-    // Coach Actions cost no AI tokens, so they don't spend the free plan's
-    // daily coaching allowance — the server skips the cap for them too
-    // (app/api/ai/coach/route.ts). matchCoachAction is the same pure function
-    // the server runs, so the two can't disagree about what counts as one.
-    // "Take me to Progress" — the Coach just does it: no model call, no allowance spent.
-    const navTarget = !opts?.action ? matchNavigation(msg) : null;
-    if (navTarget) {
-      setInput("");
-      setMessages(prev => [...prev,
-        { id: Date.now().toString(), role: "user", content: msg },
-        { id: (Date.now() + 1).toString(), role: "assistant", content: `Opening ${navTarget.label}…`, phase: "done" },
-      ]);
-      setTimeout(() => router.push(navTarget.href), 350);
-      return;
-    }
-    const isAction = Boolean(opts?.action) || matchCoachAction(msg) !== null;
-    if (remaining <= 0 && !planLoading && plan === "free" && !isAction) { showLimitModal("aiCoach"); return; }
-    if (!userId) {
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: "assistant", content: "Please sign in again before using AI Coach.", phase: "done", error: true }]);
-      return;
-    }
-    if (!activeProject?.id) {
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: "assistant", content: "Create or select a project first so I can coach against real context.", phase: "done", error: true }]);
-      return;
-    }
-    setInput("");
-    const userMsg: ChatMessage = { id: Date.now().toString(), role: "user", content: msg };
-    const placeholderReasoning = buildPlaceholderReasoning(msg, activeProject?.title);
-    const thinkingMsg: ChatMessage = { id: (Date.now() + 1).toString(), role: "assistant", content: "", phase: "thinking", reasoning: placeholderReasoning };
-    setMessages(prev => [...prev, userMsg, thinkingMsg]);
-    setLoading(true);
-    try {
-      const res = await fetch("/api/ai/coach", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId,
-          projectId: activeProject.id,
-          message: msg,
-          project: activeProject,
-          overview,
-          memory,
-          personality,
-          messages,
-          action: opts?.action,
-        }),
-      });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok || !payload?.success) throw new Error(payload?.error ?? "Coach unavailable");
+  // Handle OAuth callback query params: ?integration=notion&status=connected
+  useEffect(() => {
+    if (!initialStatus) return;
+    const params = new URLSearchParams(window.location.search);
+    const integration = params.get("integration");
+    const status      = params.get("status");
+    if (!integration || !status) return;
 
-      // A Coach Action reply: render the data card and stop. Deliberately
-      // skips the coaching-message counter, achievements, streak, and coach
-      // memory below — none of those should move because someone exported a file.
-      if (payload?.data?.kind === "action" && payload.data.actionResult) {
-        const actionResult = payload.data.actionResult as CoachActionResult;
-        setMessages(prev => prev.map(m => m.id === thinkingMsg.id
-          ? { ...m, content: String(payload.data.reply ?? actionResult.summary), reasoning: undefined, phase: "done", actionResult }
-          : m));
-        return;
-      }
-      const reply = payload?.data?.reply ?? payload?.data?.answer ?? "I'm having trouble responding right now. Please try again.";
-      const confidence_score = typeof payload?.data?.confidence_score === "number" ? payload.data.confidence_score : null;
-      const ra = payload?.data?.recommended_action;
-      const recommendedAction = ra && typeof ra.what_to_do === "string" && typeof ra.why_now === "string"
-        ? { what_to_do: ra.what_to_do, why_now: ra.why_now, expected_evidence: typeof ra.expected_evidence === "string" ? ra.expected_evidence : undefined }
-        : undefined;
-      const newMemory = [...memory, msg].slice(-10);
-      setMemory(newMemory);
-      storage.setJSON("bm_coach_memory", newMemory);
-      persistBehaviorState({ coach_memory: newMemory });
-      setMessages(prev => prev.map(m => m.id === thinkingMsg.id ? { ...m, content: reply, reasoning: payload?.data?.reasoning ?? m.reasoning, phase: "done", confidence_score, recommendedAction } : m));
-      recordCoachMessage();
-      setCoachMessagesToday(getCoachMessagesToday());
-      const stats = getAchievementStats();
-      updateAchievementStats({ ...stats, aiMessages: (stats.aiMessages ?? 0) + 1 });
-      checkAndUnlockAchievements();
-      trackEvent("ai_coach_message", { plan });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Something went wrong. Try again.";
-      if (message.toLowerCase().includes("limit")) showLimitModal("aiCoach");
-      setMessages(prev => prev.map(m => m.id === thinkingMsg.id ? { ...m, content: message, phase: "done", error: true } : m));
-    } finally {
-      setLoading(false);
-      setTimeout(() => inputRef.current?.focus(), 100);
+    if (integration === "notion") {
+      setNotionStatus(status === "connected" ? "connected" : "error");
+      setToast(status === "connected" ? "Notion connected! Your tasks will now feed into your daily AI brief." : "Notion connection failed — try again.");
+    } else if (integration === "linear") {
+      setLinearStatus(status === "connected" ? "connected" : "error");
+      setToast(status === "connected" ? "Linear connected! Your assigned issues will now feed into your daily AI brief." : "Linear connection failed — try again.");
     }
-  }
 
-  const personalityOptions = [
-    { id: "direct" as const, label: "Direct" },
-    { id: "supportive" as const, label: "Supportive" },
-    { id: "challenger" as const, label: "Challenger" },
+    // Clean the URL so refresh doesn't re-trigger
+    const clean = window.location.pathname;
+    window.history.replaceState({}, "", `${clean}?tab=integrations`);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialStatus]);
+
+  // Auto-clear toast
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 5000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  const integrations = [
+    {
+      id: "notion",
+      name: "Notion",
+      desc: "Pulls incomplete tasks from your Notion database and feeds them into your daily AI brief. Prevents the AI from suggesting work you're already doing.",
+      status: notionStatus,
+      connectUrl: "/api/integrations/notion/connect",
+      logo: "N",
+      logoColor: "#000",
+      logoBg: "#f5f5f4",
+    },
+    {
+      id: "linear",
+      name: "Linear",
+      desc: "Syncs your assigned Linear issues into your daily brief. The AI knows what's already in your sprint before it suggests today's action.",
+      status: linearStatus,
+      connectUrl: "/api/integrations/linear/connect",
+      logo: "L",
+      logoColor: "#5e6ad2",
+      logoBg: "#ededf6",
+    },
   ];
 
-  // No active project = genuinely nothing real to coach against. Rather than
-  // let the founder type into a chat that will just bounce their first
-  // message back as an error, say so up front — matching the reference
-  // design's dedicated unavailable state, and true to what's actually wrong.
-  if (!summariesLoading && !activeProject) {
-    return (
-      <div className="mx-auto flex w-full max-w-[1120px] flex-col items-center justify-center gap-3 px-5 py-24 text-center" style={{ minHeight: "60vh" }}>
-        <div className="flex h-11 w-11 items-center justify-center rounded-full" style={{ background: "rgba(224,85,85,0.12)" }}>
-          <span className="block h-2.5 w-2.5 rounded-full" style={{ background: "var(--bm-red)" }} />
-        </div>
-        <h2 className="text-[15px] font-semibold text-[var(--bm-text)]">Intelligence temporarily unavailable</h2>
-        <p className="max-w-[360px] text-[12.5px] leading-relaxed text-[var(--bm-text3)]">
-          BuildMind coaching requires access to your project state and behavior data. Create or select a project to pick this back up.
-        </p>
-        <a href="/projects" className="mt-1 rounded-[var(--r-sm)] px-3.5 py-2 text-[12px] font-semibold" style={{ background: "var(--bm-accent)", color: "#15130a" }}>
-          Go to Projects
-        </a>
-      </div>
-    );
-  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* Toast */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            style={{
+              padding: "10px 14px", borderRadius: 10,
+              background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)",
+              fontSize: 13, color: "var(--bm-accent)", fontWeight: 500,
+              display: "flex", alignItems: "center", gap: 8,
+            }}
+          >
+            <Check size={14} /> {toast}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-  const lowOnMessages = plan === "free" && remaining > 0 && remaining <= 1;
-  const greetingName = hasHistoryGlobal(overview);
-  const contextPanel = (
-    <div className="flex flex-col gap-3">
-      {activeProject && (
-        <div className="rounded-[16px] border border-[var(--bm-border)] bg-[var(--bm-bg2)] p-4">
-          <div className="mb-1 text-[12px] text-[var(--bm-text3)]">Coaching on</div>
-          <div className="text-[16px] font-semibold text-[var(--bm-text)]">{activeProject.title}</div>
-          <div className="mt-0.5 text-[13px] text-[var(--bm-text3)]">{activeProject.startup_stage ?? "Stage not set"}</div>
+      {/* Header explanation */}
+      <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: isMobile ? "18px" : "22px 24px" }}>
+        <div style={{ fontSize: isMobile ? 15 : 13, fontWeight: 700, color: "var(--bm-text)", marginBottom: 6 }}>
+          Task integrations
         </div>
-      )}
-      {activeProject && activityEvents.length > 0 && (
-        <div className="rounded-[16px] border border-[var(--bm-border)] bg-[var(--bm-bg2)] p-4">
-          <div className="mb-3 text-[13px] font-semibold text-[var(--bm-text2)]">Recent activity</div>
-          <div className="flex flex-col gap-3">
-            {activityEvents.slice(0, 4).map((ev, i) => (
-              <div key={`${ev.occurredAt}-${i}`} className="flex items-start gap-2.5">
-                <div className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--bm-intel)]" />
-                <div>
-                  <div className="text-[13px] leading-snug text-[var(--bm-text2)]">{ev.label}</div>
-                  <div className="mt-0.5 text-[12px] text-[var(--bm-text4)]">{new Date(ev.occurredAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</div>
-                </div>
+        <div style={{ fontSize: isMobile ? 13 : 12, color: "var(--bm-text3)", lineHeight: 1.6, marginBottom: 0 }}>
+          Connect your task manager so BuildMind knows what you&apos;re already working on.
+          Your real tasks feed directly into the AI brief — no more generic suggestions.
+        </div>
+      </div>
+
+      {/* Integration cards */}
+      {integrations.map(intg => (
+        <div
+          key={intg.id}
+          style={{
+            background: "var(--bm-bg2)",
+            border: `1px solid ${intg.status === "connected" ? "var(--bm-accent-bd)" : "var(--bm-border)"}`,
+            borderRadius: 16,
+            padding: isMobile ? "18px" : "20px 22px",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 14, flexDirection: isMobile ? "column" : "row" }}>
+            {/* Logo */}
+            <div style={{
+              width: 40, height: 40, borderRadius: 10, flexShrink: 0,
+              background: intg.logoBg, border: "1px solid var(--bm-border)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 16, fontWeight: 800, color: intg.logoColor,
+            }}>
+              {intg.logo}
+            </div>
+
+            {/* Info */}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 14, fontWeight: 700, color: "var(--bm-text)" }}>{intg.name}</span>
+                {intg.status === "connected" && (
+                  <span style={{
+                    fontSize: 10, padding: "2px 8px", borderRadius: 20,
+                    background: "var(--bm-accent-dim)", color: "var(--bm-accent)",
+                    border: "1px solid var(--bm-accent-bd)", fontWeight: 700, letterSpacing: "0.06em",
+                  }}>
+                    CONNECTED
+                  </span>
+                )}
+                {intg.status === "error" && (
+                  <span style={{
+                    fontSize: 10, padding: "2px 8px", borderRadius: 20,
+                    background: "rgba(224,85,85,0.08)", color: "var(--bm-red)",
+                    border: "1px solid rgba(224,85,85,0.2)", fontWeight: 700,
+                  }}>
+                    CONNECTION FAILED
+                  </span>
+                )}
               </div>
-            ))}
+              <div style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.6 }}>{intg.desc}</div>
+            </div>
+
+            {/* CTA */}
+            <div style={{ flexShrink: 0, width: isMobile ? "100%" : "auto" }}>
+              {intg.status === "connected" ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--bm-accent)" }}>
+                  <Check size={14} /> Active
+                </div>
+              ) : (
+                <a
+                  href={intg.connectUrl}
+                  style={{
+                    display: "block", padding: "9px 18px", borderRadius: 10,
+                    border: "1px solid var(--bm-border)",
+                    background: "var(--bm-bg3)",
+                    color: "var(--bm-text2)", fontSize: 12, fontWeight: 600,
+                    textDecoration: "none", textAlign: "center",
+                    width: isMobile ? "100%" : "auto",
+                    boxSizing: "border-box",
+                  }}
+                >
+                  Connect {intg.name}
+                </a>
+              )}
+            </div>
           </div>
         </div>
+      ))}
+
+      {loading && (
+        <div style={{ fontSize: 12, color: "var(--bm-text4)", textAlign: "center", padding: "8px 0" }}>
+          Checking connection status…
+        </div>
       )}
-      <div className="rounded-[16px] border border-[var(--bm-border)] bg-[var(--bm-bg2)] p-4">
-        <div className="mb-3 flex items-center gap-2 text-[13px] font-semibold text-[var(--bm-text2)]"><Brain size={14} /> What the coach remembers</div>
-        {memory.length === 0 ? (
-          <p className="text-[13px] leading-relaxed text-[var(--bm-text3)]">Memory builds as you talk to the coach.</p>
-        ) : memory.slice(-5).map((m, i) => (
-          <div key={i} className="mb-2 flex items-start gap-2.5">
-            <div className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--bm-intel)]" />
-            <span className="text-[13px] leading-snug text-[var(--bm-text3)]">{sanitizeOutput(m).slice(0, 80)}{sanitizeOutput(m).length > 80 ? "…" : ""}</span>
+
+      {/* Phase 2 integrations — GitHub + Stripe */}
+      <div style={{ marginTop: 8 }}>
+        <p style={{
+          fontFamily: "'DM Mono', monospace",
+          fontSize: 9,
+          textTransform: "uppercase",
+          letterSpacing: "0.10em",
+          color: "var(--bm-text3)",
+          marginBottom: 12,
+        }}>
+          Phase 2 — Q4 2026
+        </p>
+        {[
+          {
+            logo: "GH",
+            logoBg: "#24292e",
+            logoColor: "#fff",
+            name: "GitHub",
+            desc: "Shipping velocity signal. BuildMind reads your commit frequency, PR merges, and issue throughput to calibrate whether your execution is matching your stated priorities.",
+          },
+          {
+            logo: "$",
+            logoBg: "#635bff",
+            logoColor: "#fff",
+            name: "Stripe MRR",
+            desc: "Revenue reality check. Pulls your MRR automatically — replaces manual entry and collapses the distance between AI advice and revenue operating system. Available at 50 paying users.",
+          },
+        ].map((intg) => (
+          <div
+            key={intg.name}
+            style={{
+              background: "var(--bm-bg2)",
+              border: "1px solid var(--bm-border)",
+              borderRadius: "var(--r-lg)",
+              padding: "18px 20px",
+              opacity: 0.55,
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 14,
+              marginBottom: 10,
+            }}
+          >
+            <div style={{
+              width: 36, height: 36, borderRadius: "var(--r-md)", flexShrink: 0,
+              background: intg.logoBg, border: "1px solid var(--bm-border)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 13, fontWeight: 800, color: intg.logoColor,
+            }}>
+              {intg.logo}
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text2)" }}>{intg.name}</span>
+                <span style={{
+                  fontFamily: "'DM Mono', monospace",
+                  fontSize: 8,
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  padding: "2px 8px",
+                  border: "1px solid var(--bm-border2)",
+                  borderRadius: "var(--r-sm)",
+                  color: "var(--bm-text3)",
+                }}>
+                  Phase 2 · Q4 2026
+                </span>
+              </div>
+              <p style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.55, margin: 0 }}>
+                {intg.desc}
+              </p>
+            </div>
           </div>
         ))}
       </div>
     </div>
   );
+}
+
+type CancelStep = "idle" | "confirm" | "reason" | "final";
+const CANCEL_REASONS = [
+  "Too expensive right now",
+  "Not using it enough",
+  "Missing a feature I need",
+  "Switching to something else",
+  "Just taking a break",
+  "Other",
+];
+
+function BillingTab() {
+  const isMobile = useIsMobile();
+  const { plan } = usePlan();
+  const isPaid = plan !== "free";
+  const [loading, setLoading] = useState(true);
+  const [cancelLoading, setCancelLoading] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+  const [cancelStep, setCancelStep] = useState<CancelStep>("idle");
+  const [cancelReason, setCancelReason] = useState("");
+
+  useEffect(() => {
+    fetchAndSyncStoredPlanFromBillingStatus().finally(() => setLoading(false));
+  }, []);
+
+  async function confirmCancel() {
+    if (!cancelReason || cancelLoading) return;
+    setCancelLoading(true);
+    setCancelError(null);
+    try {
+      const res = await fetch("/api/billing/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "cancel", reason: cancelReason }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.ok) throw new Error(body.error ?? "Cancellation failed");
+      setStoredPlan("free");
+      await fetchAndSyncStoredPlanFromBillingStatus();
+      setCancelStep("final");
+    } catch (e) {
+      setCancelError(e instanceof Error ? e.message : "Cancellation failed");
+    } finally {
+      setCancelLoading(false);
+    }
+  }
 
   return (
-    <div className="relative mx-auto flex w-full max-w-[860px] flex-col" style={{ minHeight: isMobile ? "calc(100dvh - 120px)" : "calc(100vh - 80px)", height: isMobile ? "auto" : "calc(100vh - 80px)" }}>
-
-      {/* Slim header: the conversation is the page */}
-      <header className="flex shrink-0 items-center justify-between gap-2 px-3 py-2.5 sm:gap-3 sm:px-2 sm:py-3">
-        <div className="min-w-0">
-          <h1 className="m-0 text-[18px] font-bold tracking-[-0.02em] text-[var(--bm-text)] sm:text-[20px]" style={{ fontFamily: "'Syne', sans-serif" }}>AI Coach</h1>
-          {activeProject && <div className="truncate text-[13px] text-[var(--bm-text3)]">{activeProject.title}</div>}
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <div role="group" aria-label="Coach tone" className="flex rounded-full border border-[var(--bm-border)] bg-[var(--bm-bg2)] p-0.5">
-            {personalityOptions.map(opt => (
-              <button key={opt.id} onClick={() => setPersonality(opt.id)} aria-pressed={personality === opt.id}
-                className={`cursor-pointer rounded-full border-0 px-2.5 py-1.5 text-[12px] sm:px-3 sm:text-[12.5px] ${personality === opt.id ? "bg-[var(--bm-intel-dim)] font-semibold text-[var(--bm-intel2)]" : "bg-transparent text-[var(--bm-text3)] hover:text-[var(--bm-text2)]"}`}>
-                {opt.label}
-              </button>
-            ))}
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ background: isPaid ? "var(--bm-accent-dim)" : "var(--bm-bg2)", border: `1px solid ${isPaid ? "var(--bm-accent-bd)" : "var(--bm-border)"}`, borderRadius: 16, padding: isMobile ? "18px" : "22px 24px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexDirection: isMobile ? "column" : "row", gap: 16 }}>
+          <div>
+            <div style={{ fontSize: 10, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 700, marginBottom: 8 }}>Current Plan</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.02em", marginBottom: 4 }}>{PLAN_NAMES[plan] ?? plan}</div>
+            {isPaid && <div style={{ fontSize: 12, color: "var(--bm-text3)" }}>{PLAN_PRICE_LABEL.builder} · Renews monthly</div>}
           </div>
-          <button onClick={() => setShowContext(true)} aria-label="Show project context and coach memory"
-            className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-[var(--bm-border)] bg-[var(--bm-bg2)] text-[var(--bm-text3)] hover:text-[var(--bm-text)]">
-            <PanelRight size={16} />
+          {isPaid ? (
+            <span style={{ fontSize: 10, padding: "4px 12px", borderRadius: 20, background: "var(--bm-accent-dim)", color: "var(--bm-accent)", border: "1px solid var(--bm-accent-bd)", fontWeight: 700, letterSpacing: "0.06em" }}>ACTIVE</span>
+          ) : (
+            <a href="/upgrade" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 7, padding: "12px 18px", borderRadius: 11, border: "none", background: "var(--grad-primary)", color: "#fff", fontWeight: 700, fontSize: 13, textDecoration: "none", width: isMobile ? "100%" : "auto" }}>
+              <Zap size={13} /> Upgrade to Builder
+            </a>
+          )}
+        </div>
+      </div>
+
+      <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: isMobile ? "18px" : "22px 24px" }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 4 }}>Manage subscription</div>
+        <div style={{ fontSize: 12, color: "var(--bm-text3)", marginBottom: 16 }}>Cancel or pause your Builder plan.</div>
+        {cancelStep === "idle" && (
+          <button onClick={() => setCancelStep("confirm")}
+            style={{ padding: "9px 18px", borderRadius: 10, border: "1px solid rgba(224,85,85,0.25)", background: "rgba(224,85,85,0.06)", color: "var(--bm-red)", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+            Cancel subscription
           </button>
-        </div>
-      </header>
-
-      {/* Context drawer */}
-      <AnimatePresence>
-        {showContext && (
-          <>
-            <motion.div key="scrim" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowContext(false)}
-              className="fixed inset-0 z-40 bg-black/50" />
-            <motion.aside key="drawer" role="dialog" aria-label="Project context" initial={{ x: 360 }} animate={{ x: 0 }} exit={{ x: 360 }} transition={{ type: "tween", duration: 0.2 }}
-              className="fixed bottom-0 right-0 top-0 z-50 w-[92vw] max-w-[380px] overflow-y-auto border-l border-[var(--bm-border)] bg-[var(--bm-bg)] p-4">
-              <div className="mb-4 flex items-center justify-between">
-                <span className="text-[16px] font-semibold text-[var(--bm-text)]">Context</span>
-                <button onClick={() => setShowContext(false)} aria-label="Close" className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-[var(--bm-border)] bg-transparent text-[var(--bm-text3)]"><X size={16} /></button>
-              </div>
-              {contextPanel}
-            </motion.aside>
-          </>
         )}
-      </AnimatePresence>
-
-      {plan === "free" && remaining <= 0 && (
-        <div className="mx-4 mb-3 shrink-0 rounded-[16px] border border-[var(--bm-accent-bd)] bg-[var(--bm-accent-dim)] p-4 sm:mx-2">
-          <p className="text-[15px] font-semibold text-[var(--bm-text)]">You have used all {coachLimit} coaching questions today</p>
-          <p className="mt-1 text-[13.5px] leading-relaxed text-[var(--bm-text3)]">Quick actions below still work. Upgrade to Builder to keep talking to the coach right now.</p>
-          <button onClick={() => showLimitModal("aiCoach")} className="mt-3 cursor-pointer rounded-[10px] border-0 px-4 py-2.5 text-[13.5px] font-bold" style={{ background: "var(--bm-accent)", color: "#15130a" }}>Upgrade plan</button>
-        </div>
-      )}
-
-      {/* Conversation */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 sm:px-2" style={{ scrollbarWidth: "thin" }}>
-        {messages.length === 0 ? (
-          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="mx-auto flex h-full max-w-[680px] flex-col justify-center py-8">
-            <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-2xl sm:mb-5 sm:h-12 sm:w-12 border border-[var(--bm-intel-bd)] bg-[var(--bm-intel-dim)]">
-              <Sparkles size={22} color="var(--bm-intel2)" />
+        {cancelStep === "confirm" && (
+          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--bm-text)", marginBottom: 8 }}>Before you go…</div>
+            <p style={{ fontSize: 13, color: "var(--bm-text3)", marginBottom: 16, lineHeight: 1.6 }}>Cancelling will immediately end your Builder access.</p>
+            <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 8 }}>
+              <button onClick={() => setCancelStep("reason")} style={{ padding: "10px 18px", borderRadius: 10, border: "none", background: "var(--bm-red)", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Still cancel</button>
+              <button onClick={() => setCancelStep("idle")} style={{ padding: "10px 18px", borderRadius: 10, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text2)", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Keep Builder</button>
             </div>
-            <h2 className="m-0 text-[24px] font-bold leading-[1.2] tracking-[-0.025em] text-[var(--bm-text)] sm:text-[36px]" style={{ fontFamily: "'Syne', sans-serif" }}>
-              {greetingName ? "Where do things stand?" : "Day one. Let’s get oriented."}
-            </h2>
-            <p className="mt-2.5 max-w-[560px] text-[14px] leading-[1.65] text-[var(--bm-text2)] sm:mt-3 sm:text-[16px] sm:leading-[1.7]">
-              {greetingName
-                ? "I know your blockers, your streak and the tasks you keep skipping. Tell me what you are stuck on, or ask what to do next. I will answer directly."
-                : "You do not have a track record with me yet, so I will not pretend to know your patterns. Tell me what you are stuck on or what you are building, and I will give you a direct read."}
-            </p>
-            <div className="mt-5 grid gap-2 sm:mt-7 sm:grid-cols-2 sm:gap-2.5">
-              {QUICK_PROMPTS.slice(0, 4).map(p => (
-                <button key={p} onClick={() => sendMessage(p)}
-                  className="group flex min-h-[56px] cursor-pointer items-start justify-between gap-3 rounded-[14px] border border-[var(--bm-border)] bg-[var(--bm-bg2)] p-3 text-left text-[13.5px] leading-snug sm:min-h-[72px] sm:rounded-[16px] sm:p-4 sm:text-[14.5px] text-[var(--bm-text2)] transition-colors hover:border-[var(--bm-intel-bd)] hover:text-[var(--bm-text)]">
-                  <span>{p}</span>
-                  <ArrowUpRight size={16} className="mt-0.5 shrink-0 text-[var(--bm-text4)] group-hover:text-[var(--bm-intel2)]" />
+          </motion.div>
+        )}
+        {cancelStep === "reason" && (
+          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 12 }}>What's the main reason?</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 7, marginBottom: 16 }}>
+              {CANCEL_REASONS.map(r => (
+                <button key={r} onClick={() => setCancelReason(r)}
+                  style={{ padding: "10px 14px", borderRadius: 10, border: `1px solid ${cancelReason === r ? "var(--bm-accent-bd)" : "var(--bm-border)"}`, background: cancelReason === r ? "var(--bm-accent-dim)" : "transparent", color: cancelReason === r ? "var(--bm-accent)" : "var(--bm-text2)", fontSize: 12, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                  {r}
                 </button>
               ))}
             </div>
+            <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 8 }}>
+              <button onClick={confirmCancel} disabled={!cancelReason || cancelLoading}
+                style={{ padding: "10px 18px", borderRadius: 10, border: "none", background: cancelReason ? "var(--bm-red)" : "var(--bm-bg4)", color: cancelReason ? "#fff" : "var(--bm-text3)", fontSize: 12, fontWeight: 700, cursor: cancelReason && !cancelLoading ? "pointer" : "not-allowed", fontFamily: "inherit", opacity: cancelLoading ? 0.7 : 1 }}>
+                {cancelLoading ? "Cancelling..." : "Confirm cancel"}
+              </button>
+              <button onClick={() => setCancelStep("idle")} style={{ padding: "10px 18px", borderRadius: 10, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text2)", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Go back</button>
+            </div>
+            {cancelError && <div style={{ fontSize: 11, color: "var(--bm-red)", marginTop: 10 }}>{cancelError}</div>}
           </motion.div>
-        ) : (
-          <div className="mx-auto flex max-w-[760px] flex-col gap-8 py-4 pb-6">
-            {messages.map(msg => <MessageBubble key={msg.id} msg={msg} onStartAction={() => router.push("/today")} onOpen={(href) => router.push(href)} onRunChip={(chip) => sendMessage(chip.label, { action: { id: chip.id, params: chip.params } })} />)}
-          </div>
         )}
-        <div ref={bottomRef} />
+        {cancelStep === "final" && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <div style={{ fontSize: 13, color: "var(--bm-text3)", lineHeight: 1.6 }}>Your subscription has been cancelled. Your account is now on the free plan.</div>
+          </motion.div>
+        )}
       </div>
 
-      {/* Composer */}
-      <div className="sticky bottom-0 shrink-0 bg-gradient-to-t from-[var(--bm-bg)] from-70% to-transparent px-3 pb-3 pt-4 sm:px-2 sm:pb-4">
-        <div className="mx-auto max-w-[760px]">
-          {plan === "free" && <div className="mb-2"><AIUsageBadge /></div>}
-          {lowOnMessages && <div className="mb-2 text-[13px] text-[var(--bm-amber)]">Last coaching message for today.</div>}
-          <div className="mb-2.5 flex items-center gap-2 overflow-x-auto pb-0.5" style={{ scrollbarWidth: "none" }}>
-            {COACH_ACTION_CHIPS.map(chip => (
-              <button key={chip.label} type="button" disabled={loading}
-                onClick={() => sendMessage(chip.label, { action: { id: chip.id, params: chip.params } })}
-                className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-[var(--bm-border2)] bg-[var(--bm-bg2)] px-3 py-1.5 text-[12.5px] text-[var(--bm-text2)] sm:px-3.5 sm:py-2 sm:text-[13px] transition-colors hover:border-[var(--bm-intel-bd)] hover:text-[var(--bm-text)] disabled:cursor-not-allowed disabled:opacity-50">
-                <Zap size={13} color="var(--bm-intel2)" />
-                {chip.label}
-              </button>
-            ))}
-          </div>
-          <div className="flex items-end gap-3 rounded-[22px] border border-[var(--bm-border2)] bg-[var(--bm-bg2)] py-2 pl-4 pr-2 sm:rounded-[24px] sm:py-3 sm:pl-5 sm:pr-3 shadow-[0_8px_30px_rgba(0,0,0,0.25)] transition-colors focus-within:border-[var(--bm-accent-bd)]">
-            <textarea ref={inputRef} value={input}
-              onChange={e => { setInput(e.target.value); const el = e.currentTarget; el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 180) + "px"; }}
-              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-              placeholder="Ask anything about your startup" aria-label="Message the coach" rows={1} disabled={loading}
-              className="max-h-[180px] min-h-[28px] flex-1 resize-none border-0 bg-transparent py-1 text-[16px] leading-[1.6] text-[var(--bm-text)] outline-none placeholder:text-[var(--bm-text4)]" />
-            <motion.button whileTap={{ scale: 0.94 }} onClick={() => sendMessage()} aria-label="Send message"
-              disabled={!input.trim() || loading}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-0 sm:h-11 sm:w-11"
-              style={{ background: !input.trim() || loading ? "var(--bm-bg4)" : "var(--bm-accent)", color: !input.trim() || loading ? "var(--bm-text3)" : "#15130a", cursor: !input.trim() || loading ? "not-allowed" : "pointer" }}>
-              <Send size={17} />
-            </motion.button>
-          </div>
+      {loading && <div style={{ fontSize: 12, color: "var(--bm-text4)", textAlign: "center" }}>Loading billing status…</div>}
+    </div>
+  );
+}
+
+function SettingsContent() {
+  const isMobile = useIsMobile();
+  const { plan } = usePlan();
+  const searchParams = useSearchParams();
+  // If redirected from OAuth callback, default to integrations tab
+  const initialIntegrationStatus = searchParams.get("integration");
+  const [tab, setTab] = useState<Tab>(() => {
+    if (typeof window !== "undefined" && searchParams.get("tab") === "integrations") return "integrations";
+    if (initialIntegrationStatus) return "integrations";
+    return "profile";
+  });
+  const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
+  const [bio, setBio] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState("");
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarUploadError, setAvatarUploadError] = useState<string | null>(null);
+  const [email, setEmail] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [notifs, setNotifs] = useState({ streakReminder: true, weeklyReport: true, coachTips: false });
+  const [clearingMemory, setClearingMemory] = useState(false);
+  const [memoryCleared, setMemoryCleared] = useState(false);
+  const [aiPersonality, setAiPersonality] = useState<"direct" | "supportive" | "challenger">("direct");
+  const [userId, setUserId] = useState<string>("");
+  // Public profile state
+  const [publicProfile, setPublicProfile] = useState(false);
+  const [publicUsername, setPublicUsername] = useState("");
+  const [usernameError, setUsernameError] = useState<string | null>(null);
+  const [publicSaving, setPublicSaving] = useState(false);
+  const [publicSaved, setPublicSaved] = useState(false);
+  // For ProfileCompletenessBar in profile tab
+  const [activeProject, setActiveProject] = useState<Record<string, unknown> | null>(null);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const sb = createClient();
+        const { data } = await sb.auth.getUser();
+        if (!data.user) return;
+        setUserId(data.user.id);
+        setEmail(data.user.email ?? "");
+        await ensureUserProfile({ id: data.user.id, email: data.user.email ?? "" });
+        const { data: profile } = await sb
+          .from("profiles")
+          .select("name, username, bio, avatar_url, public_profile")
+          .eq("id", data.user.id)
+          .maybeSingle();
+        if (profile) {
+          setName(profile.name ?? "");
+          setUsername(profile.username ?? "");
+          setPublicUsername(profile.username ?? "");
+          setBio(profile.bio ?? "");
+          setAvatarUrl(profile.avatar_url ?? "");
+          setPublicProfile(profile.public_profile ?? false);
+        }
+        // Fetch active project for ProfileCompletenessBar
+        const { data: project } = await sb
+          .from("projects")
+          .select("description, startup_summary, stage, startup_stage, target_users, problem")
+          .eq("user_id", data.user.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (project) setActiveProject(project as Record<string, unknown>);
+        const saved = storage.get("bm_ai_personality");
+        if (saved === "direct" || saved === "supportive" || saved === "challenger") {
+          setAiPersonality(saved);
+        }
+        const behavior = await fetchBehaviorState<{ ai_personality: "direct" | "supportive" | "challenger" }>(["ai_personality"]);
+        if (behavior.ai_personality === "direct" || behavior.ai_personality === "supportive" || behavior.ai_personality === "challenger") {
+          storage.set("bm_ai_personality", behavior.ai_personality);
+          setAiPersonality(behavior.ai_personality);
+        }
+      } catch {}
+    };
+    load();
+  }, []);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const sb = createClient();
+      const { data } = await sb.auth.getUser();
+      if (!data.user) return;
+      await sb.from("profiles").upsert({
+        id: data.user.id,
+        name: name.trim(),
+        username: username.trim().toLowerCase(),
+        bio: bio.trim(),
+        avatar_url: avatarUrl.trim() || null,
+        updated_at: new Date().toISOString(),
+      });
+      storage.set("bm_ai_personality", aiPersonality);
+      persistBehaviorState({ ai_personality: aiPersonality });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch {} finally { setSaving(false); }
+  }
+
+  async function handlePublicSave() {
+    setUsernameError(null);
+    const slug = publicUsername.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+    if (!slug) { setUsernameError("Username is required to enable a public profile."); return; }
+    if (slug.length < 3) { setUsernameError("Username must be at least 3 characters."); return; }
+
+    setPublicSaving(true);
+    try {
+      const sb = createClient();
+      const { data } = await sb.auth.getUser();
+      if (!data.user) return;
+
+      // Check uniqueness (only if changed)
+      if (slug !== username) {
+        const { data: existing } = await sb
+          .from("profiles")
+          .select("id")
+          .eq("username", slug)
+          .neq("id", data.user.id)
+          .maybeSingle();
+        if (existing) { setUsernameError("That username is taken. Try another."); return; }
+      }
+
+      await sb.from("profiles").upsert({
+        id:             data.user.id,
+        username:       slug,
+        public_profile: publicProfile,
+        updated_at:     new Date().toISOString(),
+      });
+      setUsername(slug);
+      setPublicSaved(true);
+      setTimeout(() => setPublicSaved(false), 2500);
+    } catch { setUsernameError("Save failed — please try again."); }
+    finally { setPublicSaving(false); }
+  }
+
+  return (
+    <div className="mx-auto flex max-w-5xl flex-col gap-6 px-0 py-1 sm:px-6 sm:py-7">
+      <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
+        <PageHeader
+          title="Settings"
+          subtitle="Manage your account, notifications, and AI preferences."
+        />
+      </motion.div>
+
+      <div className="flex flex-col gap-5 lg:flex-row">
+        {/* Sidebar nav */}
+        <div className="w-full shrink-0 overflow-x-auto pb-1 lg:w-40 lg:overflow-visible">
+          <nav className="flex min-w-max flex-row gap-2 lg:min-w-0 lg:flex-col">
+            {TABS.map(t => {
+              const Icon = t.icon;
+              const active = tab === t.id;
+              return (
+                <button key={t.id} onClick={() => setTab(t.id)}
+                  className={`flex h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-none border-b-2 px-3.5 text-left text-[13px] transition-colors lg:w-full lg:rounded-lg lg:border-b-0 lg:border-l-2 ${
+                    active
+                      ? "border-[var(--bm-accent)] bg-[var(--bm-accent-dim)] font-semibold text-[var(--bm-accent)]"
+                      : "border-transparent bg-transparent font-normal text-[var(--bm-text3)] hover:bg-[var(--bm-bg3)] hover:text-[var(--bm-text2)]"
+                  }`}>
+                  <Icon size={14} strokeWidth={active ? 2.2 : 1.6} style={{ flexShrink: 0 }} />
+                  {t.label}
+                </button>
+              );
+            })}
+          </nav>
+        </div>
+
+        {/* Content area */}
+        <div className="min-w-0 flex-1">
+          <AnimatePresence mode="wait">
+            <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+
+              {tab === "profile" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                  {/* Profile completeness card (full card) */}
+                  <ProfileCompletenessBar
+                    fields={{
+                      startupSummary:   (activeProject?.startup_summary as string) ?? (activeProject?.description as string) ?? "",
+                      stage:            (activeProject?.stage as string) ?? (activeProject?.startup_stage as string) ?? "",
+                      targetUsers:      (activeProject?.target_users as string) ?? "",
+                      problem:          (activeProject?.problem as string) ?? "",
+                      revenueModel:     "",
+                      weeklyRevenueGoal: 0,
+                      avoidanceZones:   [],
+                      personalityTags:  [],
+                    }}
+                  />
+                  <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: isMobile ? "18px" : "22px 24px" }}>
+                    <div style={{ fontSize: isMobile ? 15 : 13, fontWeight: 700, color: "var(--bm-text)", marginBottom: 20 }}>Public Profile</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: isMobile ? 18 : 16 }}>
+                      <div>
+                        <FieldLabel>Profile Photo</FieldLabel>
+                        <AvatarUpload currentUrl={avatarUrl} onUpload={setAvatarUrl} />
+                        {/* Or paste URL */}
+                        <div style={{ fontSize: 10, color: "var(--bm-text4)", marginBottom: 6 }}>or paste an image URL</div>
+                        <SettingsInput value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} placeholder="https://..." />
+                      </div>
+                      <div><FieldLabel>Full Name</FieldLabel><SettingsInput value={name} onChange={(e) => setName(e.target.value)} placeholder="Alex Johnson" /></div>
+                      <div><FieldLabel>Username</FieldLabel><SettingsInput value={username} onChange={(e) => setUsername(e.target.value)} placeholder="alexbuilds" /></div>
+                      <div>
+                        <FieldLabel>Bio</FieldLabel>
+                        <textarea value={bio} onChange={e => setBio(e.target.value)} rows={3} placeholder="Building in public. Founder of [startup]."
+                          style={{ width: "100%", background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: 10, padding: isMobile ? "13px 14px" : "10px 14px", fontSize: isMobile ? 16 : 13, color: "var(--bm-text)", outline: "none", fontFamily: "inherit", resize: "none", boxSizing: "border-box", lineHeight: 1.55, transition: "border-color 0.15s" }}
+                          onFocus={e => { e.target.style.borderColor = "var(--bm-accent-bd)"; }}
+                          onBlur={e => { e.target.style.borderColor = "var(--bm-border2)"; }} />
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "flex-end", alignItems: isMobile ? "stretch" : "center", flexDirection: isMobile ? "column" : "row", gap: 14 }}>
+                    <AnimatePresence>
+                      {saved && (
+                        <motion.span initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                          style={{ fontSize: 12, color: "var(--bm-accent)", display: "flex", alignItems: "center", gap: 6 }}>
+                          <Check size={12} /> Saved
+                        </motion.span>
+                      )}
+                    </AnimatePresence>
+                    <SaveButton loading={saving} onClick={handleSave} />
+                  </div>
+                </div>
+              )}
+
+              {tab === "account" && (
+                <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: isMobile ? "18px" : "22px 24px" }}>
+                  <div style={{ fontSize: isMobile ? 15 : 13, fontWeight: 700, color: "var(--bm-text)", marginBottom: 20 }}>Account</div>
+                  <div><FieldLabel>Email Address</FieldLabel><SettingsInput value={email} onChange={() => {}} disabled placeholder="you@example.com" /></div>
+                  <div style={{ fontSize: 11, color: "var(--bm-text3)", marginTop: 8 }}>Email is managed through your auth provider.</div>
+                </div>
+              )}
+
+              {tab === "notifications" && FEATURES.notifications && (
+                <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: isMobile ? "18px" : "22px 24px" }}>
+                  <div style={{ fontSize: isMobile ? 15 : 13, fontWeight: 700, color: "var(--bm-text)", marginBottom: 20 }}>Notifications</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+                    {[
+                      { key: "streakReminder", label: "Streak Reminder", desc: "Daily reminder to complete your action" },
+                      { key: "weeklyReport", label: "Weekly Report", desc: "AI summary of your week every Sunday" },
+                      { key: "coachTips", label: "AI Coach Tips", desc: "Occasional startup insights from your coach" },
+                    ].map(({ key, label, desc }) => (
+                      <div key={key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, padding: isMobile ? "18px 0" : "16px 0", borderBottom: "1px solid var(--bm-border)" }}>
+                        <div>
+                          <div style={{ fontSize: isMobile ? 14 : 13, fontWeight: 500, color: "var(--bm-text2)", marginBottom: 2 }}>{label}</div>
+                          <div style={{ fontSize: isMobile ? 12 : 11, color: "var(--bm-text3)", lineHeight: 1.45 }}>{desc}</div>
+                        </div>
+                        <Toggle checked={notifs[key as keyof typeof notifs]} onChange={v => setNotifs(n => ({ ...n, [key]: v }))} />
+                      </div>
+                    ))}
+                  </div>
+                  {userId ? <div style={{ marginTop: 20 }}><PushNotificationToggle userId={userId} /></div> : null}
+                </div>
+              )}
+
+              {tab === "ai" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                  <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: isMobile ? "18px" : "22px 24px" }}>
+                    <div style={{ fontSize: isMobile ? 15 : 13, fontWeight: 700, color: "var(--bm-text)", marginBottom: 6 }}>AI Coach Personality</div>
+                    <div style={{ fontSize: isMobile ? 13 : 12, color: "var(--bm-text3)", marginBottom: 18 }}>Choose how your AI Coach communicates with you.</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+                      {([ 
+                        { id: "direct" as const, label: "Direct & Honest", desc: "Straight talk. No sugarcoating. Highest clarity." },
+                        { id: "supportive" as const, label: "Supportive", desc: "Encouraging tone with actionable feedback." },
+                        { id: "challenger" as const, label: "Challenger", desc: "Pushes your thinking hard. High intensity." },
+                      ] satisfies { id: "direct" | "supportive" | "challenger"; label: string; desc: string }[]).map(opt => (
+                        <button key={opt.id} onClick={() => setAiPersonality(opt.id)}
+                          style={{ padding: isMobile ? "15px" : "13px 16px", borderRadius: 12, border: `1px solid ${aiPersonality === opt.id ? "var(--bm-accent-bd)" : "var(--bm-border)"}`, background: aiPersonality === opt.id ? "var(--bm-accent-dim)" : "var(--bm-bg3)", cursor: "pointer", fontFamily: "inherit", textAlign: "left", transition: "all 0.15s" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <div>
+                              <div style={{ fontSize: isMobile ? 14 : 13, fontWeight: aiPersonality === opt.id ? 700 : 500, color: aiPersonality === opt.id ? "var(--bm-accent)" : "var(--bm-text2)", marginBottom: 3 }}>{opt.label}</div>
+                              <div style={{ fontSize: isMobile ? 12 : 11, color: "var(--bm-text3)", lineHeight: 1.45 }}>{opt.desc}</div>
+                            </div>
+                            {aiPersonality === opt.id && <Check size={14} color="var(--bm-accent)" />}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {/* D4 FIX: Allow founders to clear stored AI insights (privacy + accuracy) */}
+                  <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: isMobile ? "18px" : "22px 24px" }}>
+                    <div style={{ fontSize: isMobile ? 15 : 13, fontWeight: 700, color: "var(--bm-text)", marginBottom: 6 }}>AI Memory</div>
+                    <div style={{ fontSize: isMobile ? 13 : 12, color: "var(--bm-text3)", lineHeight: 1.55, marginBottom: 16 }}>
+                      BuildMind stores behavioural patterns — avoidance signals, strengths, and coaching insights — to personalise future AI outputs.
+                      If the AI has developed an inaccurate model of you, clearing this resets it.
+                    </div>
+                    {memoryCleared ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--bm-green, #22c55e)", fontSize: 13 }}>
+                        <Check size={14} /> AI memory cleared.
+                      </div>
+                    ) : (
+                      <button
+                        onClick={async () => {
+                          if (!confirm("Clear all stored AI insights and behavioural patterns? This cannot be undone.")) return;
+                          setClearingMemory(true);
+                          try {
+                            await clearFounderInsight();
+                            setMemoryCleared(true);
+                          } catch {
+                            alert("Failed to clear memory — please try again.");
+                          } finally {
+                            setClearingMemory(false);
+                          }
+                        }}
+                        disabled={clearingMemory}
+                        style={{ padding: "9px 18px", borderRadius: 10, border: "1px solid var(--bm-red, #ef4444)", background: "transparent", color: "var(--bm-red, #ef4444)", fontSize: 13, fontWeight: 600, cursor: clearingMemory ? "not-allowed" : "pointer", opacity: clearingMemory ? 0.6 : 1, fontFamily: "inherit" }}
+                      >
+                        {clearingMemory ? "Clearing…" : "Clear AI Memory"}
+                      </button>
+                    )}
+                  </div>
+
+                  <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                    <SaveButton loading={saving} onClick={handleSave} />
+                  </div>
+                </div>
+              )}
+
+              {tab === "billing" && <BillingTab />}
+
+              {tab === "integrations" && (
+                <IntegrationsTab initialStatus={initialIntegrationStatus} />
+              )}
+
+              {tab === "public" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                  <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: isMobile ? "18px" : "22px 24px" }}>
+                    <div style={{ fontSize: isMobile ? 15 : 13, fontWeight: 700, color: "var(--bm-text)", marginBottom: 6 }}>Public Founder Score</div>
+                    <div style={{ fontSize: isMobile ? 13 : 12, color: "var(--bm-text3)", lineHeight: 1.55, marginBottom: 20 }}>
+                      Share your Momentum Score publicly at <code style={{ background: "var(--bm-bg3)", padding: "2px 6px", borderRadius: 4, fontSize: 11 }}>buildmind.live/founder/{publicUsername || "your-username"}</code>
+                    </div>
+
+                    <div style={{ marginBottom: 16 }}>
+                      <FieldLabel>Username</FieldLabel>
+                      <SettingsInput
+                        value={publicUsername}
+                        onChange={e => { setPublicUsername(e.target.value); setUsernameError(null); }}
+                        placeholder="alexbuilds"
+                      />
+                      {publicUsername && (
+                        <div style={{ fontSize: 11, color: "var(--bm-text3)", marginTop: 6 }}>
+                          Preview: <span style={{ color: "var(--bm-accent)" }}>buildmind.live/founder/{publicUsername.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "")}</span>
+                        </div>
+                      )}
+                      {usernameError && <div style={{ fontSize: 11, color: "var(--bm-red)", marginTop: 6 }}>{usernameError}</div>}
+                    </div>
+
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, padding: "16px 0", borderTop: "1px solid var(--bm-border)" }}>
+                      <div>
+                        <div style={{ fontSize: isMobile ? 14 : 13, fontWeight: 500, color: "var(--bm-text2)", marginBottom: 2 }}>Show my Momentum Score publicly</div>
+                        <div style={{ fontSize: isMobile ? 12 : 11, color: "var(--bm-text3)", lineHeight: 1.45 }}>
+                          {FEATURES.publicFounderScore
+                            ? "Anyone with your link can see your score and stage."
+                            : "Currently gated — activate via FEATURES.publicFounderScore when ready."}
+                        </div>
+                      </div>
+                      <Toggle checked={publicProfile} onChange={setPublicProfile} />
+                    </div>
+
+                    {!FEATURES.publicFounderScore && (
+                      <div style={{ marginTop: 12, padding: "10px 14px", background: "rgba(232,160,32,0.06)", border: "1px solid rgba(232,160,32,0.18)", borderRadius: 8, fontSize: 12, color: "var(--bm-amber)" }}>
+                        🔒 Public profiles are currently in private beta. Your settings will go live when this feature activates.
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 14 }}>
+                    <AnimatePresence>
+                      {publicSaved && (
+                        <motion.span initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                          style={{ fontSize: 12, color: "var(--bm-accent)", display: "flex", alignItems: "center", gap: 6 }}>
+                          <Check size={12} /> Saved
+                        </motion.span>
+                      )}
+                    </AnimatePresence>
+                    <SaveButton loading={publicSaving} onClick={handlePublicSave} />
+                  </div>
+                </div>
+              )}
+
+            </motion.div>
+          </AnimatePresence>
         </div>
       </div>
     </div>
   );
 }
 
-// Wrapped with AIErrorBoundary so AI pipeline crashes show a recoverable fallback
-export default withAIErrorBoundary(AICoachPageInner, "AI Coach");
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={null}>
+      <SettingsContent />
+    </Suspense>
+  );
+}

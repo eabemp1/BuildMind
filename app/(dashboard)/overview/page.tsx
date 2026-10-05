@@ -1,571 +1,466 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
+import Link from "next/link";
+import { computeStartupScore } from "@/lib/buildmind";
 import { selectActiveProject, useActiveProjectId, useProjectSummariesQuery, useDashboardOverviewQuery } from "@/lib/queries";
-import { fetchAndSyncStoredPlanFromBillingStatus, getLimits } from "@/lib/plan";
-import { usePlan } from "@/lib/usePlan";
-import { useLimitModal } from "@/components/LimitModal";
-import { updateAchievementStats, checkAndUnlockAchievements, getAchievementStats } from "@/lib/achievements";
-import { trackEvent } from "@/lib/analytics";
-import { createClient } from "@/lib/supabase/client";
+import { recordScore, markActiveToday, recordPendingTasks, syncUrgencyFromServer } from "@/lib/urgency";
+import { getStoredStreak, syncStreakFromServer } from "@/lib/plan";
+import { getXP, getScoreHistory, syncScoreHistory, syncXP, computeConsistencyBonus } from "@/lib/scoring";
+import { ArrowRight, CheckCircle2 } from "lucide-react";
+import { ProfileCompletenessBar } from "@/components/ProfileCompletenessBar";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { FolderKanban } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { MrrWidget } from "@/components/MrrWidget";
 import { storage } from "@/lib/storage";
-import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
-import AIUsageBadge from "@/components/AIUsageBadge";
-import { ConfidenceBadge } from "@/components/ConfidenceBadge";
-import { Send, Brain, Sparkles, Zap, ChevronRight, ArrowUpRight, PanelRight, X } from "lucide-react";
-import { withAIErrorBoundary } from "@/components/AIErrorBoundary";
-import { sanitizeOutput } from "@/lib/sanitizeOutput";
-import { CoachActionResultCard } from "@/components/coach/CoachActionResultCard";
-import { matchCoachAction } from "@/lib/coachActions/matcher";
-import { COACH_ACTION_CHIPS, type CoachActionChip } from "@/lib/coachActions/chips";
-import { matchNavigation, parseReplyLinks } from "@/lib/coachNavigation";
-import type { CoachActionResult } from "@/lib/coachActions/types";
+import { fetchBehaviorState } from "@/lib/userBehaviorState";
 
-type ChatMessage = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  reasoning?: string[];
-  phase?: "thinking" | "writing" | "done";
-  error?: boolean;
-  /** Reflexion confidence_score (0–1). Badge renders when < 0.75 */
-  confidence_score?: number | null;
-  /** Optional structured action the coach converged on — only present when
-   *  the model named one concrete, time-boxed next step (see coach route's
-   *  recommended_action contract). Absent on most replies by design. */
-  recommendedAction?: { what_to_do: string; why_now: string; expected_evidence?: string };
-  /** Present when the reply was a Coach Action (lib/coachActions) rather
-   *  than model-written coaching — rendered as a data card, not prose. */
-  actionResult?: CoachActionResult;
+// ── Stage badge colours ───────────────────────────────────────────────────────
+const STAGE_COLOUR: Record<string, string> = {
+  Idea:       "var(--bm-text3)",
+  Validation: "var(--bm-accent)",
+  MVP:        "var(--bm-amber)",
+  Launch:     "var(--bm-green)",
+  Growth:     "var(--bm-green)",
+  Revenue:    "var(--bm-green)",
 };
 
-function buildPlaceholderReasoning(message: string, projectTitle?: string, score?: number): string[] {
-  const msg = message.toLowerCase();
-  const steps: string[] = [];
-  if (projectTitle) steps.push(`Pulling live data for "${projectTitle}"...`);
-  else steps.push("Reading your project state...");
-  if (msg.includes("stuck") || msg.includes("block")) {
-    steps.push("Identifying the specific blocker vs. avoidance pattern...");
-    steps.push("Checking execution history for context...");
-  } else if (msg.includes("user") || msg.includes("customer")) {
-    steps.push("Evaluating user acquisition approach vs. stage...");
-    steps.push("Cross-referencing validation data...");
-  } else if (msg.includes("today") || msg.includes("priority")) {
-    steps.push("Scanning open tasks for highest-leverage action...");
-    steps.push(score !== undefined ? `Score is ${score}/100 — weighing effort vs. impact...` : "Weighing effort vs. impact...");
-  } else {
-    steps.push("Reading between the lines of your question...");
-    steps.push(score !== undefined ? `Execution score ${score}/100 — calibrating directness level...` : "Calibrating response to your situation...");
-  }
-  steps.push("Drafting the most useful response...");
-  return steps;
+// ── AI nudge map ──────────────────────────────────────────────────────────────
+const NUDGE: Record<string, { text: string; action: string }> = {
+  Idea:       { text: "Validation risk is the current constraint.",                     action: "Run one customer conversation before building." },
+  Validation: { text: "Commitment quality matters more than opinion volume.",            action: "Secure one paid, time, or workflow commitment." },
+  MVP:        { text: "Usage evidence is now more valuable than product polish.",        action: "Put the working link in front of three real users." },
+  Launch:     { text: "Distribution is the operational bottleneck.",                    action: "Publish one clear launch asset and measure response." },
+  Growth:     { text: "Retention is the strongest signal in this stage.",               action: "Interview one churned or inactive user." },
+  Revenue:    { text: "Revenue is the operating signal.",                               action: "Map the largest leak in acquisition-to-payment." },
+};
+
+// ── Relative time ─────────────────────────────────────────────────────────────
+function relTime(ts: string) {
+  const diff = Date.now() - new Date(ts).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 2) return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
 }
 
-const QUICK_PROMPTS = [
-  "Am I avoiding the hardest work right now?",
-  "What is the single highest-leverage move this week?",
-  "Is my recent progress real or just busyness?",
-  "If you were the founder, what would you do today?",
-  "What behavioral patterns should I be worried about?",
-];
-
-// FIX: renamed from *_PER_WEEK — the server (app/api/ai/coach/route.ts,
-// FREE_COACH_MESSAGES_PER_DAY) enforces this as a DAILY cap. The client
-// counter was previously week-scoped, blocking free users ~7x more
-// aggressively than the real server policy. Now both are day-scoped.
-const FREE_COACH_MESSAGES_PER_DAY = 3;
-
-function getCoachMessagesToday() {
-  return storage.getCoachMessagesToday();
-}
-
-function recordCoachMessage() {
-  storage.recordCoachMessage();
-}
-
-function ThinkingDots() {
+// ── Progress bar (2px height, Linear-like) ────────────────────────────────────
+function ProgressBar({ value, max }: { value: number; max: number }) {
+  const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
   return (
-    <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
-      {[0, 1, 2].map(i => (
-        <motion.span key={i}
-          style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--bm-accent)", display: "inline-block" }}
-          animate={{ opacity: [0.3, 1, 0.3], scale: [0.8, 1.1, 0.8] }}
-          transition={{ duration: 1, delay: i * 0.18, repeat: Infinity }} />
-      ))}
+    <div style={{ width: "100%", height: 2, borderRadius: 99, background: "var(--bm-bg4)", overflow: "hidden" }}>
+      <motion.div
+        style={{ height: "100%", borderRadius: 99, background: "var(--grad-primary)" }}
+        initial={{ width: 0 }}
+        animate={{ width: `${pct}%` }}
+        transition={{ duration: 0.7, ease: "easeOut", delay: 0.2 }}
+      />
+    </div>
+  );
+}
+
+function MetricTooltip({ text }: { text: string }) {
+  return (
+    <span
+      title={text}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: 14,
+        height: 14,
+        borderRadius: "50%",
+        border: "1px solid var(--bm-border2)",
+        color: "var(--bm-text4)",
+        fontSize: 9,
+        fontWeight: 700,
+        cursor: "help",
+        marginLeft: 4,
+        flexShrink: 0,
+      }}
+    >
+      ?
     </span>
   );
 }
 
-function hasHistoryGlobal(o?: { completedTasks?: number; daysSinceLastReflection?: number | null } | null) {
-  return (o?.completedTasks ?? 0) > 0 || o?.daysSinceLastReflection != null;
-}
-
-function useIsMobile() {
-  const [isMobile, setIsMobile] = useState(false);
-  useEffect(() => {
-    const query = window.matchMedia("(max-width: 767px)");
-    const update = () => setIsMobile(query.matches);
-    update();
-    query.addEventListener("change", update);
-    return () => query.removeEventListener("change", update);
-  }, []);
-  return isMobile;
-}
-
-function MessageBubble({ msg, onStartAction, onOpen, onRunChip }: { msg: ChatMessage; onStartAction: () => void; onOpen: (href: string) => void; onRunChip: (chip: CoachActionChip) => void }) {
-  const isUser = msg.role === "user";
-  // Buttons the Coach attached ([[open:...]] / [[run:...]]) are validated against closed allow-lists.
-  const parsed = !isUser && msg.phase === "done" ? parseReplyLinks(msg.content) : { text: msg.content, links: [] as ReturnType<typeof parseReplyLinks>["links"] };
-  const [expanded, setExpanded] = useState(false);
-  const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-
-  if (isUser) {
-    return (
-      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }} className="flex justify-end">
-        <div className="max-w-[85%] rounded-[20px] rounded-br-md border border-[var(--bm-border2)] bg-[var(--bm-bg3)] px-3.5 py-2.5 sm:px-4 sm:py-3 text-[14.5px] leading-[1.6] text-[var(--bm-text)] sm:max-w-[75%] sm:text-[15px]">
-          <span style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{sanitizeOutput(msg.content)}</span>
-        </div>
-      </motion.div>
-    );
-  }
-
+// ── 7-day sparkline ───────────────────────────────────────────────────────────
+function Sparkline({ history }: { history: { date: string; score: number }[] }) {
+  if (history.length < 2) return null;
+  const last7 = history.slice(-7);
+  const maxV = Math.max(...last7.map(h => h.score), 1);
+  const minV = Math.min(...last7.map(h => h.score));
+  const range = maxV - minV || 1;
+  const W = 240, H = 36, pad = 4;
+  const pts = last7.map((h, i) => {
+    const x = pad + (i / Math.max(last7.length - 1, 1)) * (W - pad * 2);
+    const y = pad + ((maxV - h.score) / range) * (H - pad * 2);
+    return `${x},${y}`;
+  }).join(" ");
   return (
-    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }} className="flex items-start gap-2.5 sm:gap-3.5">
-      <div className="mt-0.5 flex h-7 w-7 shrink-0 sm:h-8 sm:w-8 items-center justify-center rounded-full border border-[var(--bm-intel-bd)] bg-[var(--bm-intel-dim)]">
-        <Sparkles size={14} color="var(--bm-intel2)" />
-      </div>
-      <div className="flex min-w-0 flex-1 flex-col gap-3">
-        {msg.reasoning && msg.reasoning.length > 0 && (
-          <div>
-            <button onClick={() => setExpanded(v => !v)} aria-expanded={expanded}
-              className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-[var(--bm-border)] bg-transparent px-3 py-1 text-[12px] text-[var(--bm-text3)] hover:text-[var(--bm-text2)]">
-              <Brain size={12} />
-              {msg.phase === "thinking" ? "Thinking" : "How I got here"}
-              <ChevronRight size={12} style={{ transform: expanded ? "rotate(90deg)" : "none", transition: "transform 0.15s" }} />
-            </button>
-            <AnimatePresence>
-              {expanded && (
-                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: "hidden" }}>
-                  <div className="mt-2 border-l-2 border-[var(--bm-border2)] pl-3.5">
-                    {msg.reasoning.map((step, i) => (
-                      <div key={i} className="mb-1.5 text-[13px] leading-relaxed text-[var(--bm-text3)]">{sanitizeOutput(step)}</div>
-                    ))}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        )}
-
-        {msg.phase === "thinking" ? (
-          <div className="py-1"><ThinkingDots /></div>
-        ) : (
-          <div className="text-[14.5px] leading-[1.7] sm:text-[15.5px] sm:leading-[1.75]" style={{ color: msg.error ? "var(--bm-red)" : "var(--bm-text)", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-            {sanitizeOutput(parsed.text)}
-          </div>
-        )}
-
-        {msg.phase === "done" && msg.actionResult && <CoachActionResultCard result={msg.actionResult} />}
-
-        {parsed.links.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {parsed.links.map((l, i) => (
-              <button key={i} type="button"
-                onClick={() => (l.kind === "open" ? onOpen(l.href) : onRunChip(l.chip))}
-                className="inline-flex cursor-pointer items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold sm:px-4 sm:py-2 sm:text-[13px]"
-                style={{ background: "var(--bm-accent-dim)", color: "var(--bm-accent)", border: "1px solid var(--bm-accent-bd)", fontFamily: "inherit" }}>
-                {l.label}
-                <ArrowUpRight size={13} />
-              </button>
-            ))}
-          </div>
-        )}
-
-        {msg.phase === "done" && msg.recommendedAction && (
-          <div className="rounded-[18px] border border-[var(--bm-accent-bd)] bg-[var(--bm-bg2)] p-5">
-            <div className="mb-3 text-[14px] font-semibold text-[var(--bm-accent)]">Recommended next step</div>
-            <p className="text-[15px] leading-[1.65] text-[var(--bm-text)]">{sanitizeOutput(msg.recommendedAction.what_to_do)}</p>
-            <p className="mt-3 text-[14px] leading-relaxed text-[var(--bm-text3)]">
-              <span className="font-semibold text-[var(--bm-text2)]">Why now: </span>{sanitizeOutput(msg.recommendedAction.why_now)}
-            </p>
-            {msg.recommendedAction.expected_evidence && (
-              <p className="mt-2 text-[14px] leading-relaxed text-[var(--bm-text3)]">
-                <span className="font-semibold text-[var(--bm-text2)]">You will know it worked when: </span>{sanitizeOutput(msg.recommendedAction.expected_evidence)}
-              </p>
-            )}
-            <button onClick={onStartAction}
-              className="mt-4 w-full cursor-pointer rounded-[12px] border-0 py-3 text-[14px] font-bold sm:w-auto sm:px-6"
-              style={{ background: "var(--bm-accent)", color: "#15130a" }}>
-              Start this now
-            </button>
-          </div>
-        )}
-
-        {msg.phase === "done" && (
-          <div className="flex flex-wrap items-center gap-2 text-[12px] text-[var(--bm-text4)]">
-            <span>{time}</span>
-            {typeof msg.confidence_score === "number" && <ConfidenceBadge score={msg.confidence_score} />}
-          </div>
-        )}
-      </div>
-    </motion.div>
+    <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+      <span style={{ fontSize: 11, color: "var(--bm-text4)", minWidth: 24 }}>{last7[0]?.score}</span>
+      <svg width={W} height={H} style={{ flex: 1 }}>
+        <polyline points={pts} fill="none" stroke="var(--bm-accent)" strokeWidth="1.5" strokeLinejoin="round" />
+      </svg>
+      <span style={{ fontSize: 11, color: "var(--bm-text4)", minWidth: 24, textAlign: "right" }}>
+        {last7[last7.length - 1]?.score}
+      </span>
+    </div>
   );
 }
 
-function AICoachPageInner() {
+// ── Main page ─────────────────────────────────────────────────────────────────
+export default function OverviewPage() {
   const router = useRouter();
-  const isMobile = useIsMobile();
-  const { plan, isLoading: planLoading } = usePlan();
-  const { showLimitModal } = useLimitModal();
-  const { data: summaries = [], isLoading: summariesLoading } = useProjectSummariesQuery();
+  const { data: summaries = [], isLoading } = useProjectSummariesQuery();
   const activeProjectId = useActiveProjectId();
-  const activeProject = selectActiveProject(summaries, activeProjectId);
-  const { data: overview } = useDashboardOverviewQuery(activeProject?.id);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [personality, setPersonality] = useState<"direct" | "supportive" | "challenger">("direct");
-  const [memory, setMemory] = useState<string[]>([]);
+  const activeProject = useMemo(() => selectActiveProject(summaries, activeProjectId), [summaries, activeProjectId]);
+  const { data: overview, isLoading: overviewLoading } = useDashboardOverviewQuery(activeProject?.id);
+  const [localStreak, setLocalStreak] = useState(0);
+  const [scoreHistory, setScoreHistory] = useState<{ date: string; score: number }[]>([]);
+  const [now, setNow] = useState(() => new Date());
+  const [currentMrr, setCurrentMrr] = useState<number>(0);
   const [userId, setUserId] = useState<string | null>(null);
-  const [coachMessagesToday, setCoachMessagesToday] = useState(0);
-  const [showContext, setShowContext] = useState(false);
-  const [activityEvents, setActivityEvents] = useState<Array<{ label: string; occurredAt: string }>>([]);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-
-  // FIX (checklist item): this used to call computeStartupScore(activeProject)
-  // directly, without xp/streak — the same score displayed on Today/Overview
-  // for the identical project, at the identical moment, would be up to ~30
-  // points higher (xp boost 0-20, streak boost 0-10; see lib/scoring/index.ts).
-  // Rather than fix the inputs, the score widget itself is removed below —
-  // a chat surface doesn't need a status widget, and deleting it is safer
-  // than patching it: no more mismatch, no surface for a duplicate verdict
-  // to grow back. buildPlaceholderReasoning falls back to its non-numeric
-  // flavor text when score is undefined.
-  const limits = getLimits(plan);
-  const coachLimit = plan === "free" ? FREE_COACH_MESSAGES_PER_DAY : limits.aiMessagesPerDay;
-  const remaining = plan === "free" ? Math.max(0, coachLimit - coachMessagesToday) : Infinity;
+  const [serverTodayDone, setServerTodayDone] = useState(false);
 
   useEffect(() => {
-    void fetchAndSyncStoredPlanFromBillingStatus();
-  }, []);
-
-  useEffect(() => {
-    try { setMemory(storage.getJSON<string[]>("bm_coach_memory", [])); } catch {}
-    setCoachMessagesToday(getCoachMessagesToday());
-    const supabase = createClient();
-    supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
-    fetchBehaviorState<{
-      coach_memory: string[];
-      coach_streak_date: string;
-      ai_personality: "direct" | "supportive" | "challenger";
-    }>(["coach_memory", "coach_streak_date", "ai_personality"]).then(values => {
-      if (Array.isArray(values.coach_memory)) {
-        storage.setJSON("bm_coach_memory", values.coach_memory);
-        setMemory(values.coach_memory);
-      }
-      const today = new Date().toISOString().split("T")[0];
-      if (values.coach_streak_date === today) {
-        storage.set("bm_coach_streak_date", today);
-      }
-      if (values.ai_personality === "direct" || values.ai_personality === "supportive" || values.ai_personality === "challenger") {
-        setPersonality(values.ai_personality);
-      }
-    }).catch(() => {});
-  }, []);
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
-
-  // Real recent activity for the active project — same activity_log-backed
-  // route added for the Projects detail page's "Last activity" card, reused
-  // here for Figma's "Recent outcomes" concept. No separate metric-tracking
-  // (e.g. "waitlist +40%") exists anywhere, so this shows what's actually
-  // logged rather than inventing business-outcome numbers.
-  useEffect(() => {
-    if (!activeProject?.id) { setActivityEvents([]); return; }
-    fetch(`/api/projects/${activeProject.id}/activity`, { cache: "no-store" })
-      .then((r) => r.json())
-      .then((d: { ok?: boolean; events?: Array<{ label: string; occurredAt: string }> }) => {
-        if (d.ok && Array.isArray(d.events)) setActivityEvents(d.events);
-      })
+    if (typeof window === "undefined") return;
+    const cachedUid = localStorage.getItem("bm_active_user_id");
+    if (cachedUid) storage.onSignIn(cachedUid);
+    const refresh = () => setLocalStreak(getStoredStreak());
+    refresh();
+    setScoreHistory(getScoreHistory());
+    window.addEventListener("storage", refresh);
+    window.addEventListener("bm_streak_updated", refresh);
+    syncUrgencyFromServer().then(refresh).catch(() => {});
+    import("@/lib/plan")
+      .then(({ syncStreakFromServer }) => syncStreakFromServer())
+      .then(refresh)
       .catch(() => {});
-  }, [activeProject?.id]);
-
-  async function sendMessage(text?: string, opts?: { action?: { id: string; params: Record<string, unknown> } }) {
-    const msg = (text ?? input).trim();
-    if (!msg || loading) return;
-    // Coach Actions cost no AI tokens, so they don't spend the free plan's
-    // daily coaching allowance — the server skips the cap for them too
-    // (app/api/ai/coach/route.ts). matchCoachAction is the same pure function
-    // the server runs, so the two can't disagree about what counts as one.
-    // "Take me to Progress" — the Coach just does it: no model call, no allowance spent.
-    const navTarget = !opts?.action ? matchNavigation(msg) : null;
-    if (navTarget) {
-      setInput("");
-      setMessages(prev => [...prev,
-        { id: Date.now().toString(), role: "user", content: msg },
-        { id: (Date.now() + 1).toString(), role: "assistant", content: `Opening ${navTarget.label}…`, phase: "done" },
-      ]);
-      setTimeout(() => router.push(navTarget.href), 350);
-      return;
-    }
-    const isAction = Boolean(opts?.action) || matchCoachAction(msg) !== null;
-    if (remaining <= 0 && !planLoading && plan === "free" && !isAction) { showLimitModal("aiCoach"); return; }
-    if (!userId) {
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: "assistant", content: "Please sign in again before using AI Coach.", phase: "done", error: true }]);
-      return;
-    }
-    if (!activeProject?.id) {
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: "assistant", content: "Create or select a project first so I can coach against real context.", phase: "done", error: true }]);
-      return;
-    }
-    setInput("");
-    const userMsg: ChatMessage = { id: Date.now().toString(), role: "user", content: msg };
-    const placeholderReasoning = buildPlaceholderReasoning(msg, activeProject?.title);
-    const thinkingMsg: ChatMessage = { id: (Date.now() + 1).toString(), role: "assistant", content: "", phase: "thinking", reasoning: placeholderReasoning };
-    setMessages(prev => [...prev, userMsg, thinkingMsg]);
-    setLoading(true);
-    try {
-      const res = await fetch("/api/ai/coach", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId,
-          projectId: activeProject.id,
-          message: msg,
-          project: activeProject,
-          overview,
-          memory,
-          personality,
-          messages,
-          action: opts?.action,
-        }),
+    void syncScoreHistory().then(() => setScoreHistory(getScoreHistory()));
+    void syncXP();
+    // Get userId for today-done check
+    import("@/lib/supabase/client").then(({ createClient }) => {
+      createClient().auth.getUser().then(({ data }) => {
+        const uid = data?.user?.id ?? null;
+        if (uid) {
+          setUserId(uid);
+          storage.onSignIn(uid);
+          syncStreakFromServer().then(refresh).catch(refresh);
+          fetchBehaviorState<{ checkin_done_date: string }>(["checkin_done_date"])
+            .then((values) => {
+              const today = new Date().toLocaleDateString("en-CA");
+              setServerTodayDone(values.checkin_done_date === today);
+              if (values.checkin_done_date === today) {
+                storage.set(`bm_checkin_done_date_${uid}`, today);
+              }
+            })
+            .catch(() => {});
+        }
       });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok || !payload?.success) throw new Error(payload?.error ?? "Coach unavailable");
+    });
+    return () => {
+      window.removeEventListener("storage", refresh);
+      window.removeEventListener("bm_streak_updated", refresh);
+    };
+  }, []);
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 60000);
+    return () => clearInterval(t);
+  }, []);
 
-      // A Coach Action reply: render the data card and stop. Deliberately
-      // skips the coaching-message counter, achievements, streak, and coach
-      // memory below — none of those should move because someone exported a file.
-      if (payload?.data?.kind === "action" && payload.data.actionResult) {
-        const actionResult = payload.data.actionResult as CoachActionResult;
-        setMessages(prev => prev.map(m => m.id === thinkingMsg.id
-          ? { ...m, content: String(payload.data.reply ?? actionResult.summary), reasoning: undefined, phase: "done", actionResult }
-          : m));
-        return;
-      }
-      const reply = payload?.data?.reply ?? payload?.data?.answer ?? "I'm having trouble responding right now. Please try again.";
-      const confidence_score = typeof payload?.data?.confidence_score === "number" ? payload.data.confidence_score : null;
-      const ra = payload?.data?.recommended_action;
-      const recommendedAction = ra && typeof ra.what_to_do === "string" && typeof ra.why_now === "string"
-        ? { what_to_do: ra.what_to_do, why_now: ra.why_now, expected_evidence: typeof ra.expected_evidence === "string" ? ra.expected_evidence : undefined }
-        : undefined;
-      const newMemory = [...memory, msg].slice(-10);
-      setMemory(newMemory);
-      storage.setJSON("bm_coach_memory", newMemory);
-      persistBehaviorState({ coach_memory: newMemory });
-      setMessages(prev => prev.map(m => m.id === thinkingMsg.id ? { ...m, content: reply, reasoning: payload?.data?.reasoning ?? m.reasoning, phase: "done", confidence_score, recommendedAction } : m));
-      recordCoachMessage();
-      setCoachMessagesToday(getCoachMessagesToday());
-      const stats = getAchievementStats();
-      updateAchievementStats({ ...stats, aiMessages: (stats.aiMessages ?? 0) + 1 });
-      checkAndUnlockAchievements();
-      trackEvent("ai_coach_message", { plan });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Something went wrong. Try again.";
-      if (message.toLowerCase().includes("limit")) showLimitModal("aiCoach");
-      setMessages(prev => prev.map(m => m.id === thinkingMsg.id ? { ...m, content: message, phase: "done", error: true } : m));
-    } finally {
-      setLoading(false);
-      setTimeout(() => inputRef.current?.focus(), 100);
+  const streak = overview?.founderStreakDays ?? localStreak;
+
+  const score = activeProject ? computeStartupScore({ ...activeProject, xp: getXP(), streak }) : 0;
+
+  const scoreDelta = useMemo(() => {
+    const history = getScoreHistory();
+    if (history.length < 2) return null;
+    const sorted = [...history].sort((a, b) => b.date.localeCompare(a.date));
+    const prev = sorted[1]?.score;
+    if (prev == null || score === 0) return null;
+    return score - prev;
+  }, [score]);
+
+  const consistencyBonus = useMemo(() => computeConsistencyBonus(getScoreHistory()), [score]);
+  const localConsistencyPct = Math.round((consistencyBonus / 10) * 100);
+  const aiAdviceQuality = overview?.aiAdviceQuality ?? localConsistencyPct;
+  const stage = activeProject?.startup_stage ?? "Idea";
+  const milestonesCompleted = overview?.milestonesCompleted ?? 0;
+  const totalTasks = activeProject?.tasksTotal ?? 0;
+  const doneTasks = overview?.completedTasks ?? activeProject?.tasksCompleted ?? 0;
+  const nudge = NUDGE[stage] ?? NUDGE.Idea;
+
+  // Is today's check-in done?
+  const todayStr = now.toLocaleDateString("en-CA");
+  const todayDone = userId
+    ? overview?.todayDone || serverTodayDone || storage.get(`bm_checkin_done_date_${userId}`) === todayStr
+    : false;
+
+  useEffect(() => {
+    if (score > 0) { recordScore(score); markActiveToday(); }
+    const pending = activeProject ? Math.max(0, (activeProject.tasksTotal ?? 0) - (activeProject.tasksCompleted ?? 0)) : 0;
+    if (pending > 0) recordPendingTasks(pending);
+    const p = activeProject as unknown as Record<string, number> | null;
+    setCurrentMrr(p?.current_mrr ?? 0);
+  }, [score, activeProject]);
+
+  const dateStr = now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+  const founderFirst = overview?.founderName?.split(" ")[0] ?? null;
+
+  // Attention strip conditions
+  // Memoized so storage.get() isn't called on every render — depends on score
+  // which changes when check-ins are recorded.
+  const noReflectIn3Days = useMemo(() => {
+    if (overview?.daysSinceLastReflection != null) return overview.daysSinceLastReflection >= 3;
+    if (overview?.reflectionDoneToday) return false;
+    for (let i = 1; i <= 3; i++) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      const key = `bm_reflect_done_${d.toLocaleDateString("en-CA")}`;
+      if (storage.get(key)) return false;
     }
-  }
+    return true;
+  }, [score, overview?.daysSinceLastReflection, overview?.reflectionDoneToday]);
+  const showAttention =
+    (scoreDelta != null && scoreDelta < -10) ||
+    (streak === 0 && totalTasks > 0 && doneTasks / totalTasks < 0.5) ||
+    noReflectIn3Days;
 
-  const personalityOptions = [
-    { id: "direct" as const, label: "Direct" },
-    { id: "supportive" as const, label: "Supportive" },
-    { id: "challenger" as const, label: "Challenger" },
-  ];
+  const attentionMessage = scoreDelta != null && scoreDelta < -10
+    ? `Score dropped ${Math.abs(scoreDelta)} points — check what's blocking progress.`
+    : noReflectIn3Days
+    ? "No reflection logged in 3 days — tomorrow's task will be less accurate."
+    : "Completion rate is below 50% — break your next task into smaller steps.";
+  const attentionRoute = "/today";
+  const attentionLabel = noReflectIn3Days ? "Reflect on today →" : "Go to today →";
 
-  // No active project = genuinely nothing real to coach against. Rather than
-  // let the founder type into a chat that will just bounce their first
-  // message back as an error, say so up front — matching the reference
-  // design's dedicated unavailable state, and true to what's actually wrong.
-  if (!summariesLoading && !activeProject) {
+  if (isLoading || overviewLoading) {
     return (
-      <div className="mx-auto flex w-full max-w-[1120px] flex-col items-center justify-center gap-3 px-5 py-24 text-center" style={{ minHeight: "60vh" }}>
-        <div className="flex h-11 w-11 items-center justify-center rounded-full" style={{ background: "rgba(224,85,85,0.12)" }}>
-          <span className="block h-2.5 w-2.5 rounded-full" style={{ background: "var(--bm-red)" }} />
-        </div>
-        <h2 className="text-[15px] font-semibold text-[var(--bm-text)]">Intelligence temporarily unavailable</h2>
-        <p className="max-w-[360px] text-[12.5px] leading-relaxed text-[var(--bm-text3)]">
-          BuildMind coaching requires access to your project state and behavior data. Create or select a project to pick this back up.
-        </p>
-        <a href="/projects" className="mt-1 rounded-[var(--r-sm)] px-3.5 py-2 text-[12px] font-semibold" style={{ background: "var(--bm-accent)", color: "#15130a" }}>
-          Go to Projects
-        </a>
-      </div>
-    );
-  }
-
-  const lowOnMessages = plan === "free" && remaining > 0 && remaining <= 1;
-  const greetingName = hasHistoryGlobal(overview);
-  const contextPanel = (
-    <div className="flex flex-col gap-3">
-      {activeProject && (
-        <div className="rounded-[16px] border border-[var(--bm-border)] bg-[var(--bm-bg2)] p-4">
-          <div className="mb-1 text-[12px] text-[var(--bm-text3)]">Coaching on</div>
-          <div className="text-[16px] font-semibold text-[var(--bm-text)]">{activeProject.title}</div>
-          <div className="mt-0.5 text-[13px] text-[var(--bm-text3)]">{activeProject.startup_stage ?? "Stage not set"}</div>
-        </div>
-      )}
-      {activeProject && activityEvents.length > 0 && (
-        <div className="rounded-[16px] border border-[var(--bm-border)] bg-[var(--bm-bg2)] p-4">
-          <div className="mb-3 text-[13px] font-semibold text-[var(--bm-text2)]">Recent activity</div>
-          <div className="flex flex-col gap-3">
-            {activityEvents.slice(0, 4).map((ev, i) => (
-              <div key={`${ev.occurredAt}-${i}`} className="flex items-start gap-2.5">
-                <div className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--bm-intel)]" />
-                <div>
-                  <div className="text-[13px] leading-snug text-[var(--bm-text2)]">{ev.label}</div>
-                  <div className="mt-0.5 text-[12px] text-[var(--bm-text4)]">{new Date(ev.occurredAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      <div className="rounded-[16px] border border-[var(--bm-border)] bg-[var(--bm-bg2)] p-4">
-        <div className="mb-3 flex items-center gap-2 text-[13px] font-semibold text-[var(--bm-text2)]"><Brain size={14} /> What the coach remembers</div>
-        {memory.length === 0 ? (
-          <p className="text-[13px] leading-relaxed text-[var(--bm-text3)]">Memory builds as you talk to the coach.</p>
-        ) : memory.slice(-5).map((m, i) => (
-          <div key={i} className="mb-2 flex items-start gap-2.5">
-            <div className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--bm-intel)]" />
-            <span className="text-[13px] leading-snug text-[var(--bm-text3)]">{sanitizeOutput(m).slice(0, 80)}{sanitizeOutput(m).length > 80 ? "…" : ""}</span>
-          </div>
+      <div style={{ maxWidth: 820, margin: "0 auto", padding: "36px 24px" }}>
+        <div style={{ height: 28, width: 200, borderRadius: 8, background: "var(--bm-bg3)", marginBottom: 8 }} className="animate-pulse" />
+        <div style={{ height: 14, width: 120, borderRadius: 6, background: "var(--bm-bg3)", marginBottom: 32 }} className="animate-pulse" />
+        <div style={{ display: "flex", gap: 0, borderRadius: 10, border: "1px solid var(--bm-border)", overflow: "hidden", marginBottom: 24, height: 64 }} className="animate-pulse" />
+        {[1, 2, 3].map(i => (
+          <div key={i} style={{ height: 72, borderRadius: 12, background: "var(--bm-bg3)", marginBottom: 10 }} className="animate-pulse" />
         ))}
       </div>
-    </div>
-  );
+    );
+  }
 
   return (
-    <div className="relative mx-auto flex w-full max-w-[860px] flex-col" style={{ minHeight: isMobile ? "calc(100dvh - 120px)" : "calc(100vh - 80px)", height: isMobile ? "auto" : "calc(100vh - 80px)" }}>
+    <div style={{ maxWidth: 820, margin: "0 auto", padding: "36px 24px 60px" }}>
 
-      {/* Slim header: the conversation is the page */}
-      <header className="flex shrink-0 items-center justify-between gap-2 px-3 py-2.5 sm:gap-3 sm:px-2 sm:py-3">
-        <div className="min-w-0">
-          <h1 className="m-0 text-[18px] font-bold tracking-[-0.02em] text-[var(--bm-text)] sm:text-[20px]" style={{ fontFamily: "'Syne', sans-serif" }}>AI Coach</h1>
-          {activeProject && <div className="truncate text-[13px] text-[var(--bm-text3)]">{activeProject.title}</div>}
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <div role="group" aria-label="Coach tone" className="flex rounded-full border border-[var(--bm-border)] bg-[var(--bm-bg2)] p-0.5">
-            {personalityOptions.map(opt => (
-              <button key={opt.id} onClick={() => setPersonality(opt.id)} aria-pressed={personality === opt.id}
-                className={`cursor-pointer rounded-full border-0 px-2.5 py-1.5 text-[12px] sm:px-3 sm:text-[12.5px] ${personality === opt.id ? "bg-[var(--bm-intel-dim)] font-semibold text-[var(--bm-intel2)]" : "bg-transparent text-[var(--bm-text3)] hover:text-[var(--bm-text2)]"}`}>
-                {opt.label}
-              </button>
-            ))}
+      {/* ── Profile completeness (only shows when score < 80) ── */}
+      <ProfileCompletenessBar
+        fields={{
+          startupSummary: activeProject?.description ?? activeProject?.startup_summary ?? "",
+          stage:          activeProject?.stage ?? activeProject?.startup_stage ?? "",
+          targetUsers:    activeProject?.target_users ?? "",
+          avoidanceZones: overview?.avoidanceZones ?? [],
+          mrr:            activeProject?.current_mrr ?? 0,
+          displayName:    overview?.founderName ?? "",
+          tasksCompleted: doneTasks,
+        }}
+      />
+
+      {/* ── Header ── */}
+      <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} style={{ marginBottom: 20 }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+          <div>
+            <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em", margin: 0, lineHeight: 1.2 }}>
+              {founderFirst ? `${founderFirst}'s workspace` : "Workspace"}
+            </h1>
+            <p style={{ fontSize: 13, color: "var(--bm-text3)", margin: "4px 0 0", lineHeight: 1 }}>
+              {dateStr}
+              {streak > 0 && <span style={{ marginLeft: 8, color: "var(--bm-amber)" }}>· {streak}d streak</span>}
+            </p>
           </div>
-          <button onClick={() => setShowContext(true)} aria-label="Show project context and coach memory"
-            className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-[var(--bm-border)] bg-[var(--bm-bg2)] text-[var(--bm-text3)] hover:text-[var(--bm-text)]">
-            <PanelRight size={16} />
-          </button>
+          {/* Today done chip */}
+          <div style={{
+            display: "flex", alignItems: "center", gap: 5, padding: "5px 12px",
+            borderRadius: 99, border: "1px solid var(--bm-border)",
+            background: todayDone ? "var(--bm-accent-dim)" : "var(--bm-bg2)",
+            fontSize: 12, fontWeight: 600,
+            color: todayDone ? "var(--bm-accent)" : "var(--bm-text3)",
+          }}>
+            {todayDone ? <CheckCircle2 size={12} /> : <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--bm-bg4)", display: "inline-block" }} />}
+            Today: {todayDone ? "Done ✓" : "Not done"}
+          </div>
         </div>
-      </header>
-
-      {/* Context drawer */}
-      <AnimatePresence>
-        {showContext && (
-          <>
-            <motion.div key="scrim" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowContext(false)}
-              className="fixed inset-0 z-40 bg-black/50" />
-            <motion.aside key="drawer" role="dialog" aria-label="Project context" initial={{ x: 360 }} animate={{ x: 0 }} exit={{ x: 360 }} transition={{ type: "tween", duration: 0.2 }}
-              className="fixed bottom-0 right-0 top-0 z-50 w-[92vw] max-w-[380px] overflow-y-auto border-l border-[var(--bm-border)] bg-[var(--bm-bg)] p-4">
-              <div className="mb-4 flex items-center justify-between">
-                <span className="text-[16px] font-semibold text-[var(--bm-text)]">Context</span>
-                <button onClick={() => setShowContext(false)} aria-label="Close" className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-[var(--bm-border)] bg-transparent text-[var(--bm-text3)]"><X size={16} /></button>
-              </div>
-              {contextPanel}
-            </motion.aside>
-          </>
+        {activeProject && (
+          <p style={{ fontSize: 12, color: "var(--bm-text4)", marginTop: 6 }}>
+            Active: <span style={{ color: "var(--bm-text3)", fontWeight: 500 }}>{activeProject.title}</span>
+            &nbsp;·&nbsp;
+            <span style={{ color: STAGE_COLOUR[stage] ?? "var(--bm-text3)" }}>{stage}</span>
+          </p>
         )}
-      </AnimatePresence>
+      </motion.div>
 
-      {plan === "free" && remaining <= 0 && (
-        <div className="mx-4 mb-3 shrink-0 rounded-[16px] border border-[var(--bm-accent-bd)] bg-[var(--bm-accent-dim)] p-4 sm:mx-2">
-          <p className="text-[15px] font-semibold text-[var(--bm-text)]">You have used all {coachLimit} coaching questions today</p>
-          <p className="mt-1 text-[13.5px] leading-relaxed text-[var(--bm-text3)]">Quick actions below still work. Upgrade to Builder to keep talking to the coach right now.</p>
-          <button onClick={() => showLimitModal("aiCoach")} className="mt-3 cursor-pointer rounded-[10px] border-0 px-4 py-2.5 text-[13.5px] font-bold" style={{ background: "var(--bm-accent)", color: "#15130a" }}>Upgrade plan</button>
-        </div>
+      {/* ── Attention strip ── */}
+      {showAttention && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.05 }}
+          style={{ borderLeft: "2px solid var(--bm-amber)", paddingLeft: 14, marginBottom: 20 }}>
+          <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: "0 0 8px", lineHeight: 1.5 }}>
+            {attentionMessage}
+          </p>
+          <button onClick={() => router.push(attentionRoute)}
+            style={{ fontSize: 12, color: "var(--bm-accent)", background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit" }}>
+            {attentionLabel}
+          </button>
+        </motion.div>
       )}
 
-      {/* Conversation */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 sm:px-2" style={{ scrollbarWidth: "thin" }}>
-        {messages.length === 0 ? (
-          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="mx-auto flex h-full max-w-[680px] flex-col justify-center py-8">
-            <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-2xl sm:mb-5 sm:h-12 sm:w-12 border border-[var(--bm-intel-bd)] bg-[var(--bm-intel-dim)]">
-              <Sparkles size={22} color="var(--bm-intel2)" />
+      {/* ── Metrics row — 4 flat stat chips ── */}
+      {summaries.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}
+          style={{ display: "flex", gap: 0, borderRadius: 10, border: "1px solid var(--bm-border)", overflow: "hidden", marginBottom: 20 }}>
+          {[
+            {
+              label: "Momentum Score",
+              value: score > 0 ? `${score}` : "—",
+              delta: scoreDelta,
+              tooltip: "How consistently you're executing. Built from task completion, reflection quality, and time between actions. Decays slowly if you go inactive.",
+            },
+            {
+              label: "Streak",
+              value: (streak > 0) ? `${streak}d` : (overviewLoading) ? "—" : "0d",
+              tooltip: "Consecutive days you've completed at least one task or reflection. Breaks if you miss a day. Used to unlock advanced features.",
+            },
+            {
+              label: milestonesCompleted > 0 ? "Milestones" : "Tasks Done",
+              value: milestonesCompleted > 0
+                ? `${milestonesCompleted}`
+                : doneTasks > 0
+                ? `${doneTasks}`
+                : "—",
+              tooltip: milestonesCompleted > 0
+                ? `${milestonesCompleted} milestone${milestonesCompleted !== 1 ? "s" : ""} completed across all your projects. A milestone is a stage-level objective — completing one moves your startup forward on the roadmap.`
+                : `Tasks completed across your active project. Each task maps to a milestone — completing tasks is how milestones unlock. This counts check-ins recorded on the Today page.`,
+            },
+            {
+              label: "Cadence",
+              value: `${aiAdviceQuality}%`,
+              tooltip: "How consistently and deeply you're executing right now — last 14 days only. Built from active days, reflection depth, confidence scores, and whether BuildMind has detected your behavioural patterns. Goes down when you go quiet.",
+            },
+          ].map((stat, i, arr) => (
+            <div key={stat.label} style={{ flex: 1, padding: "14px 16px", borderRight: i < arr.length - 1 ? "1px solid var(--bm-border)" : "none" }}>
+              <div style={{ display: "flex", alignItems: "center", fontSize: 11, color: "var(--bm-text3)", marginBottom: 4 }}>
+                {stat.label}
+                {"tooltip" in stat && stat.tooltip && <MetricTooltip text={stat.tooltip} />}
+              </div>
+              <div style={{ fontSize: 20, fontWeight: 500, color: "var(--bm-text)", lineHeight: 1 }}>
+                {stat.value}
+                {stat.delta != null && (
+                  <span style={{ fontSize: 11, marginLeft: 5, color: stat.delta > 0 ? "var(--bm-green)" : "var(--bm-red)" }}>
+                    {stat.delta > 0 ? `+${stat.delta}` : stat.delta}
+                  </span>
+                )}
+              </div>
             </div>
-            <h2 className="m-0 text-[24px] font-bold leading-[1.2] tracking-[-0.025em] text-[var(--bm-text)] sm:text-[36px]" style={{ fontFamily: "'Syne', sans-serif" }}>
-              {greetingName ? "Where do things stand?" : "Day one. Let’s get oriented."}
-            </h2>
-            <p className="mt-2.5 max-w-[560px] text-[14px] leading-[1.65] text-[var(--bm-text2)] sm:mt-3 sm:text-[16px] sm:leading-[1.7]">
-              {greetingName
-                ? "I know your blockers, your streak and the tasks you keep skipping. Tell me what you are stuck on, or ask what to do next. I will answer directly."
-                : "You do not have a track record with me yet, so I will not pretend to know your patterns. Tell me what you are stuck on or what you are building, and I will give you a direct read."}
-            </p>
-            <div className="mt-5 grid gap-2 sm:mt-7 sm:grid-cols-2 sm:gap-2.5">
-              {QUICK_PROMPTS.slice(0, 4).map(p => (
-                <button key={p} onClick={() => sendMessage(p)}
-                  className="group flex min-h-[56px] cursor-pointer items-start justify-between gap-3 rounded-[14px] border border-[var(--bm-border)] bg-[var(--bm-bg2)] p-3 text-left text-[13.5px] leading-snug sm:min-h-[72px] sm:rounded-[16px] sm:p-4 sm:text-[14.5px] text-[var(--bm-text2)] transition-colors hover:border-[var(--bm-intel-bd)] hover:text-[var(--bm-text)]">
-                  <span>{p}</span>
-                  <ArrowUpRight size={16} className="mt-0.5 shrink-0 text-[var(--bm-text4)] group-hover:text-[var(--bm-intel2)]" />
-                </button>
-              ))}
-            </div>
-          </motion.div>
-        ) : (
-          <div className="mx-auto flex max-w-[760px] flex-col gap-8 py-4 pb-6">
-            {messages.map(msg => <MessageBubble key={msg.id} msg={msg} onStartAction={() => router.push("/today")} onOpen={(href) => router.push(href)} onRunChip={(chip) => sendMessage(chip.label, { action: { id: chip.id, params: chip.params } })} />)}
-          </div>
-        )}
-        <div ref={bottomRef} />
-      </div>
+          ))}
+        </motion.div>
+      )}
 
-      {/* Composer */}
-      <div className="sticky bottom-0 shrink-0 bg-gradient-to-t from-[var(--bm-bg)] from-70% to-transparent px-3 pb-3 pt-4 sm:px-2 sm:pb-4">
-        <div className="mx-auto max-w-[760px]">
-          {plan === "free" && <div className="mb-2"><AIUsageBadge /></div>}
-          {lowOnMessages && <div className="mb-2 text-[13px] text-[var(--bm-amber)]">Last coaching message for today.</div>}
-          <div className="mb-2.5 flex items-center gap-2 overflow-x-auto pb-0.5" style={{ scrollbarWidth: "none" }}>
-            {COACH_ACTION_CHIPS.map(chip => (
-              <button key={chip.label} type="button" disabled={loading}
-                onClick={() => sendMessage(chip.label, { action: { id: chip.id, params: chip.params } })}
-                className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-[var(--bm-border2)] bg-[var(--bm-bg2)] px-3 py-1.5 text-[12.5px] text-[var(--bm-text2)] sm:px-3.5 sm:py-2 sm:text-[13px] transition-colors hover:border-[var(--bm-intel-bd)] hover:text-[var(--bm-text)] disabled:cursor-not-allowed disabled:opacity-50">
-                <Zap size={13} color="var(--bm-intel2)" />
-                {chip.label}
-              </button>
-            ))}
+      {/* ── Empty state ── */}
+      {summaries.length === 0 && (
+        <EmptyState
+          icon={FolderKanban}
+          title="No operating system yet"
+          body="Create a project so BuildMind can establish objectives, constraints, and execution cadence."
+          action={
+            <Button onClick={() => router.push("/projects")}>
+              Create your first project <ArrowRight size={14} />
+            </Button>
+          }
+        />
+      )}
+
+      {/* ── Projects list ── */}
+      {summaries.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Projects</span>
+            <Link href="/projects" style={{ fontSize: 12, color: "var(--bm-text3)", textDecoration: "none" }}>View all →</Link>
           </div>
-          <div className="flex items-end gap-3 rounded-[22px] border border-[var(--bm-border2)] bg-[var(--bm-bg2)] py-2 pl-4 pr-2 sm:rounded-[24px] sm:py-3 sm:pl-5 sm:pr-3 shadow-[0_8px_30px_rgba(0,0,0,0.25)] transition-colors focus-within:border-[var(--bm-accent-bd)]">
-            <textarea ref={inputRef} value={input}
-              onChange={e => { setInput(e.target.value); const el = e.currentTarget; el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 180) + "px"; }}
-              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-              placeholder="Ask anything about your startup" aria-label="Message the coach" rows={1} disabled={loading}
-              className="max-h-[180px] min-h-[28px] flex-1 resize-none border-0 bg-transparent py-1 text-[16px] leading-[1.6] text-[var(--bm-text)] outline-none placeholder:text-[var(--bm-text4)]" />
-            <motion.button whileTap={{ scale: 0.94 }} onClick={() => sendMessage()} aria-label="Send message"
-              disabled={!input.trim() || loading}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-0 sm:h-11 sm:w-11"
-              style={{ background: !input.trim() || loading ? "var(--bm-bg4)" : "var(--bm-accent)", color: !input.trim() || loading ? "var(--bm-text3)" : "#15130a", cursor: !input.trim() || loading ? "not-allowed" : "pointer" }}>
-              <Send size={17} />
-            </motion.button>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {summaries.slice(0, 4).map((s, i) => {
+              const stageColor = STAGE_COLOUR[s.startup_stage ?? "Idea"] ?? "var(--bm-text3)";
+              const pCheckinDone = userId
+                ? todayDone
+                : false;
+
+              return (
+                <motion.div key={s.id} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.14 + i * 0.05 }}>
+                  <div style={{
+                    border: "1px solid var(--bm-border)", borderRadius: 12,
+                    padding: "14px 16px", background: "var(--bm-bg2)",
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                      {/* Name + stage */}
+                      <span style={{ fontSize: 14, fontWeight: 500, color: "var(--bm-text)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {s.title}
+                      </span>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: stageColor, flexShrink: 0, padding: "2px 7px", borderRadius: 99, border: "1px solid", borderColor: stageColor, opacity: 0.9 }}>
+                        {s.startup_stage ?? "Idea"}
+                      </span>
+                      {/* Last activity */}
+                      {s.lastActivity && (
+                        <span style={{ fontSize: 11, color: "var(--bm-text4)", flexShrink: 0 }}>
+                          {relTime(s.lastActivity)}
+                        </span>
+                      )}
+                      {/* Today done indicator */}
+                      <span style={{ fontSize: 11, color: pCheckinDone ? "var(--bm-accent)" : "var(--bm-text4)", flexShrink: 0 }}>
+                        {pCheckinDone ? "✓" : "·"}
+                      </span>
+                      {/* View button */}
+                      <Link href={`/projects/${s.id}`} style={{ flexShrink: 0 }}>
+                        <button style={{ fontSize: 11, color: "var(--bm-text3)", background: "none", border: "1px solid var(--bm-border)", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontFamily: "inherit" }}>
+                          View →
+                        </button>
+                      </Link>
+                    </div>
+                    {/* 2px progress bar */}
+                    <ProgressBar value={s.tasksCompleted ?? 0} max={s.tasksTotal ?? 0} />
+                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: 5 }}>
+                      <span style={{ fontSize: 11, color: "var(--bm-text4)" }}>{s.tasksCompleted ?? 0}/{s.tasksTotal ?? 0} tasks</span>
+                      {activeProject?.id === s.id && (
+                        <MrrWidget projectId={s.id} currentMrr={currentMrr} onUpdate={setCurrentMrr} />
+                      )}
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })}
           </div>
-        </div>
-      </div>
+
+          {/* ── 7-day sparkline ── */}
+          {scoreHistory.length >= 2 && (
+            <div style={{ marginTop: 20 }}>
+              <span style={{ fontSize: 11, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Score — last 7 days</span>
+              <Sparkline history={scoreHistory} />
+            </div>
+          )}
+
+          {/* ── AI nudge — borderLeft only, no card ── */}
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.22 }}
+            style={{ borderLeft: "2px solid var(--bm-accent)", paddingLeft: 14, marginTop: 24 }}>
+            <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: "0 0 6px", lineHeight: 1.55 }}>
+              {nudge.text}
+            </p>
+            <p style={{ fontSize: 13, color: "var(--bm-text)", fontWeight: 500, margin: 0 }}>
+              → {nudge.action}
+            </p>
+          </motion.div>
+        </motion.div>
+      )}
     </div>
   );
 }
-
-// Wrapped with AIErrorBoundary so AI pipeline crashes show a recoverable fallback
-export default withAIErrorBoundary(AICoachPageInner, "AI Coach");

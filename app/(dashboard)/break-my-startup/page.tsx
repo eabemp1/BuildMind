@@ -1,571 +1,890 @@
 "use client";
+import React from "react";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { selectActiveProject, useActiveProjectId, useProjectSummariesQuery, useDashboardOverviewQuery } from "@/lib/queries";
-import { fetchAndSyncStoredPlanFromBillingStatus, getLimits } from "@/lib/plan";
-import { usePlan } from "@/lib/usePlan";
-import { useLimitModal } from "@/components/LimitModal";
-import { updateAchievementStats, checkAndUnlockAchievements, getAchievementStats } from "@/lib/achievements";
-import { trackEvent } from "@/lib/analytics";
+import { useActiveProjectId, useProjectsQuery } from "@/lib/queries";
+import { setActiveProjectId } from "@/lib/api";
 import { createClient } from "@/lib/supabase/client";
 import { storage } from "@/lib/storage";
 import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
-import AIUsageBadge from "@/components/AIUsageBadge";
-import { ConfidenceBadge } from "@/components/ConfidenceBadge";
-import { Send, Brain, Sparkles, Zap, ChevronRight, ArrowUpRight, PanelRight, X } from "lucide-react";
-import { withAIErrorBoundary } from "@/components/AIErrorBoundary";
+import { canAccess, incrementDailyStreak } from "@/lib/plan";
+import { usePlan } from "@/lib/usePlan";
+import { useLimitModal } from "@/components/LimitModal";
+import { updateAchievementStats, checkAndUnlockAchievements } from "@/lib/achievements";
+import {
+  Shield, ChevronDown, AlertTriangle, CheckCircle2,
+  RefreshCw, Save, X, Loader2,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { BuildMindCalibrating } from "@/components/BuildMindCalibrating";
+import { Card } from "@/components/ui/card";
+import { Badge, BadgeVariant } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/input";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
-import { CoachActionResultCard } from "@/components/coach/CoachActionResultCard";
-import { matchCoachAction } from "@/lib/coachActions/matcher";
-import { COACH_ACTION_CHIPS, type CoachActionChip } from "@/lib/coachActions/chips";
-import { matchNavigation, parseReplyLinks } from "@/lib/coachNavigation";
-import type { CoachActionResult } from "@/lib/coachActions/types";
 
-type ChatMessage = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
+// ── Types ────────────────────────────────────────────────────────────────────
+type RiskSeverity = "Critical" | "High" | "Medium" | "Low";
+
+interface RiskItem {
+  category: string;
+  severity: RiskSeverity;
+  description: string;
+  mitigation: string;
+}
+
+interface BreakResult {
+  overallRisk: RiskSeverity;
+  summary: string;
+  risks: RiskItem[];
+  survival_probability?: number;
+  brutal_advice?: string;
+  gated?: boolean;
+  score_note?: string;
+  agents?: Array<{ name: string; status: string; summary: string; confidence?: number }>;
+  isSynthetic?: boolean; // D2: true when all agents fell back to hardcoded defaults
+  focusAreas?: string[];
+  executionPlan?: { mvp_roadmap?: string[]; first_10_actions?: string[]; gtm_plan?: string[] } | null;
+  reflexionAction?: {
+    action?: string;
+    rationale?: string;
+    confidence?: number;
+    supporting_signals?: string[];
+    risks?: string[];
+    log_row_id?: string | null;
+  } | null;
+}
+
+type BreakApiData = {
+  verdict?: string;
+  kill_reasons?: string[];
+  survive_reasons?: string[];
+  brutal_advice?: string;
+  survival_probability?: number;
+  competitor_summary?: string;
+  differentiation_plan?: string[];
+  gated?: boolean;
   reasoning?: string[];
-  phase?: "thinking" | "writing" | "done";
-  error?: boolean;
-  /** Reflexion confidence_score (0–1). Badge renders when < 0.75 */
-  confidence_score?: number | null;
-  /** Optional structured action the coach converged on — only present when
-   *  the model named one concrete, time-boxed next step (see coach route's
-   *  recommended_action contract). Absent on most replies by design. */
-  recommendedAction?: { what_to_do: string; why_now: string; expected_evidence?: string };
-  /** Present when the reply was a Coach Action (lib/coachActions) rather
-   *  than model-written coaching — rendered as a data card, not prose. */
-  actionResult?: CoachActionResult;
+  agent_outputs?: Record<string, Record<string, unknown> | null>;
+  agent_statuses?: Record<string, string>;
+  signal_summary?: { overall_confidence?: number };
+  execution_plan?: BreakResult["executionPlan"];
+  reflexion_action?: BreakResult["reflexionAction"];
+  focus_areas?: string[];
 };
 
-function buildPlaceholderReasoning(message: string, projectTitle?: string, score?: number): string[] {
-  const msg = message.toLowerCase();
-  const steps: string[] = [];
-  if (projectTitle) steps.push(`Pulling live data for "${projectTitle}"...`);
-  else steps.push("Reading your project state...");
-  if (msg.includes("stuck") || msg.includes("block")) {
-    steps.push("Identifying the specific blocker vs. avoidance pattern...");
-    steps.push("Checking execution history for context...");
-  } else if (msg.includes("user") || msg.includes("customer")) {
-    steps.push("Evaluating user acquisition approach vs. stage...");
-    steps.push("Cross-referencing validation data...");
-  } else if (msg.includes("today") || msg.includes("priority")) {
-    steps.push("Scanning open tasks for highest-leverage action...");
-    steps.push(score !== undefined ? `Score is ${score}/100 — weighing effort vs. impact...` : "Weighing effort vs. impact...");
-  } else {
-    steps.push("Reading between the lines of your question...");
-    steps.push(score !== undefined ? `Execution score ${score}/100 — calibrating directness level...` : "Calibrating response to your situation...");
-  }
-  steps.push("Drafting the most useful response...");
-  return steps;
+const FOCUS_AREAS = [
+  "Business Model",
+  "Unit Economics",
+  "Market Size",
+  "Competitive Moat",
+  "Founder-Market Fit",
+  "Tech Risk",
+  "Regulatory Risk",
+] as const;
+type FocusArea = (typeof FOCUS_AREAS)[number];
+
+function severityVariant(s: RiskSeverity): BadgeVariant {
+  if (s === "Critical") return "danger";
+  if (s === "High") return "warning";
+  if (s === "Medium") return "info";
+  return "neutral";
 }
 
-const QUICK_PROMPTS = [
-  "Am I avoiding the hardest work right now?",
-  "What is the single highest-leverage move this week?",
-  "Is my recent progress real or just busyness?",
-  "If you were the founder, what would you do today?",
-  "What behavioral patterns should I be worried about?",
-];
-
-// FIX: renamed from *_PER_WEEK — the server (app/api/ai/coach/route.ts,
-// FREE_COACH_MESSAGES_PER_DAY) enforces this as a DAILY cap. The client
-// counter was previously week-scoped, blocking free users ~7x more
-// aggressively than the real server policy. Now both are day-scoped.
-const FREE_COACH_MESSAGES_PER_DAY = 3;
-
-function getCoachMessagesToday() {
-  return storage.getCoachMessagesToday();
+function overallColor(s: RiskSeverity) {
+  if (s === "Critical") return "var(--bm-red)";
+  if (s === "High") return "var(--bm-amber)";
+  if (s === "Medium") return "var(--bm-blue)";
+  return "var(--bm-green)";
 }
 
-function recordCoachMessage() {
-  storage.recordCoachMessage();
+function cleanAIText(value = ""): string {
+  return value
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .replace(/<think>[\s\S]*$/gi, "")
+    .replace(/^[\s\S]*<\/think>/gi, "")
+    .replace(/[•→⇒➜➔]/g, "-")
+    .replace(/[—–]/g, "-")
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/\u2026/g, "...")
+    .replace(/[^\S\r\n]+/g, " ")
+    .trim();
 }
 
-function ThinkingDots() {
+function cleanAIList(items?: string[]): string[] {
+  return (items ?? []).map(cleanAIText).filter(Boolean);
+}
+
+// ── Survival ring ─────────────────────────────────────────────────────────────
+function SurvivalRing({ value, size = 110 }: { value: number; size?: number }) {
+  const stroke = 8;
+  const r = (size - stroke) / 2;
+  const circ = 2 * Math.PI * r;
+  const color = value >= 60 ? "var(--bm-green)" : value >= 40 ? "var(--bm-amber)" : "var(--bm-red)";
   return (
-    <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
-      {[0, 1, 2].map(i => (
-        <motion.span key={i}
-          style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--bm-accent)", display: "inline-block" }}
-          animate={{ opacity: [0.3, 1, 0.3], scale: [0.8, 1.1, 0.8] }}
-          transition={{ duration: 1, delay: i * 0.18, repeat: Infinity }} />
-      ))}
-    </span>
+    <div style={{ position: "relative", width: size, height: size, flexShrink: 0 }}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform: "rotate(-90deg)" }}>
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--bm-border)" strokeWidth={stroke} />
+        <motion.circle
+          cx={size / 2} cy={size / 2} r={r}
+          fill="none" stroke={color} strokeWidth={stroke}
+          strokeLinecap="round" strokeDasharray={circ}
+          initial={{ strokeDashoffset: circ }}
+          animate={{ strokeDashoffset: circ - (value / 100) * circ }}
+          transition={{ duration: 1.4, ease: "easeOut", delay: 0.3 }}
+          style={{ filter: `drop-shadow(0 0 5px ${color}55)` }}
+        />
+      </svg>
+      <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+        <motion.span
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 1.0 }}
+          style={{ fontSize: 22, fontWeight: 800, color, letterSpacing: "-0.03em", lineHeight: 1 }}
+        >
+          {value}%
+        </motion.span>
+        <span style={{ fontSize: 9, color: "var(--bm-text4)", marginTop: 2 }}>survive</span>
+      </div>
+    </div>
   );
 }
 
-function hasHistoryGlobal(o?: { completedTasks?: number; daysSinceLastReflection?: number | null } | null) {
-  return (o?.completedTasks ?? 0) > 0 || o?.daysSinceLastReflection != null;
-}
+// ── Main page ─────────────────────────────────────────────────────────────────
+export default function BreakMyStartupPage() {
+  const [reflectionCount, setReflectionCount] = React.useState(0);
 
-function useIsMobile() {
-  const [isMobile, setIsMobile] = useState(false);
-  useEffect(() => {
-    const query = window.matchMedia("(max-width: 767px)");
-    const update = () => setIsMobile(query.matches);
-    update();
-    query.addEventListener("change", update);
-    return () => query.removeEventListener("change", update);
-  }, []);
-  return isMobile;
-}
+  React.useEffect(() => {
+    async function fetchCount() {
+      try {
+        const { createClient: cc } = await import("@/lib/supabase/client");
+        const supabase = cc();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const { count } = await supabase.from("reflections").select("id", { count: "exact", head: true }).eq("user_id", user.id);
+        setReflectionCount(count ?? 0);
+      } catch { /* non-fatal */ }
+    }
+    fetchCount();
 
-function MessageBubble({ msg, onStartAction, onOpen, onRunChip }: { msg: ChatMessage; onStartAction: () => void; onOpen: (href: string) => void; onRunChip: (chip: CoachActionChip) => void }) {
-  const isUser = msg.role === "user";
-  // Buttons the Coach attached ([[open:...]] / [[run:...]]) are validated against closed allow-lists.
-  const parsed = !isUser && msg.phase === "done" ? parseReplyLinks(msg.content) : { text: msg.content, links: [] as ReturnType<typeof parseReplyLinks>["links"] };
-  const [expanded, setExpanded] = useState(false);
-  const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-
-  if (isUser) {
-    return (
-      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }} className="flex justify-end">
-        <div className="max-w-[85%] rounded-[20px] rounded-br-md border border-[var(--bm-border2)] bg-[var(--bm-bg3)] px-3.5 py-2.5 sm:px-4 sm:py-3 text-[14.5px] leading-[1.6] text-[var(--bm-text)] sm:max-w-[75%] sm:text-[15px]">
-          <span style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{sanitizeOutput(msg.content)}</span>
-        </div>
-      </motion.div>
-    );
-  }
-
-  return (
-    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }} className="flex items-start gap-2.5 sm:gap-3.5">
-      <div className="mt-0.5 flex h-7 w-7 shrink-0 sm:h-8 sm:w-8 items-center justify-center rounded-full border border-[var(--bm-intel-bd)] bg-[var(--bm-intel-dim)]">
-        <Sparkles size={14} color="var(--bm-intel2)" />
-      </div>
-      <div className="flex min-w-0 flex-1 flex-col gap-3">
-        {msg.reasoning && msg.reasoning.length > 0 && (
-          <div>
-            <button onClick={() => setExpanded(v => !v)} aria-expanded={expanded}
-              className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-[var(--bm-border)] bg-transparent px-3 py-1 text-[12px] text-[var(--bm-text3)] hover:text-[var(--bm-text2)]">
-              <Brain size={12} />
-              {msg.phase === "thinking" ? "Thinking" : "How I got here"}
-              <ChevronRight size={12} style={{ transform: expanded ? "rotate(90deg)" : "none", transition: "transform 0.15s" }} />
-            </button>
-            <AnimatePresence>
-              {expanded && (
-                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: "hidden" }}>
-                  <div className="mt-2 border-l-2 border-[var(--bm-border2)] pl-3.5">
-                    {msg.reasoning.map((step, i) => (
-                      <div key={i} className="mb-1.5 text-[13px] leading-relaxed text-[var(--bm-text3)]">{sanitizeOutput(step)}</div>
-                    ))}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        )}
-
-        {msg.phase === "thinking" ? (
-          <div className="py-1"><ThinkingDots /></div>
-        ) : (
-          <div className="text-[14.5px] leading-[1.7] sm:text-[15.5px] sm:leading-[1.75]" style={{ color: msg.error ? "var(--bm-red)" : "var(--bm-text)", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-            {sanitizeOutput(parsed.text)}
-          </div>
-        )}
-
-        {msg.phase === "done" && msg.actionResult && <CoachActionResultCard result={msg.actionResult} />}
-
-        {parsed.links.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {parsed.links.map((l, i) => (
-              <button key={i} type="button"
-                onClick={() => (l.kind === "open" ? onOpen(l.href) : onRunChip(l.chip))}
-                className="inline-flex cursor-pointer items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold sm:px-4 sm:py-2 sm:text-[13px]"
-                style={{ background: "var(--bm-accent-dim)", color: "var(--bm-accent)", border: "1px solid var(--bm-accent-bd)", fontFamily: "inherit" }}>
-                {l.label}
-                <ArrowUpRight size={13} />
-              </button>
-            ))}
-          </div>
-        )}
-
-        {msg.phase === "done" && msg.recommendedAction && (
-          <div className="rounded-[18px] border border-[var(--bm-accent-bd)] bg-[var(--bm-bg2)] p-5">
-            <div className="mb-3 text-[14px] font-semibold text-[var(--bm-accent)]">Recommended next step</div>
-            <p className="text-[15px] leading-[1.65] text-[var(--bm-text)]">{sanitizeOutput(msg.recommendedAction.what_to_do)}</p>
-            <p className="mt-3 text-[14px] leading-relaxed text-[var(--bm-text3)]">
-              <span className="font-semibold text-[var(--bm-text2)]">Why now: </span>{sanitizeOutput(msg.recommendedAction.why_now)}
-            </p>
-            {msg.recommendedAction.expected_evidence && (
-              <p className="mt-2 text-[14px] leading-relaxed text-[var(--bm-text3)]">
-                <span className="font-semibold text-[var(--bm-text2)]">You will know it worked when: </span>{sanitizeOutput(msg.recommendedAction.expected_evidence)}
-              </p>
-            )}
-            <button onClick={onStartAction}
-              className="mt-4 w-full cursor-pointer rounded-[12px] border-0 py-3 text-[14px] font-bold sm:w-auto sm:px-6"
-              style={{ background: "var(--bm-accent)", color: "#15130a" }}>
-              Start this now
-            </button>
-          </div>
-        )}
-
-        {msg.phase === "done" && (
-          <div className="flex flex-wrap items-center gap-2 text-[12px] text-[var(--bm-text4)]">
-            <span>{time}</span>
-            {typeof msg.confidence_score === "number" && <ConfidenceBadge score={msg.confidence_score} />}
-          </div>
-        )}
-      </div>
-    </motion.div>
-  );
-}
-
-function AICoachPageInner() {
-  const router = useRouter();
-  const isMobile = useIsMobile();
-  const { plan, isLoading: planLoading } = usePlan();
-  const { showLimitModal } = useLimitModal();
-  const { data: summaries = [], isLoading: summariesLoading } = useProjectSummariesQuery();
-  const activeProjectId = useActiveProjectId();
-  const activeProject = selectActiveProject(summaries, activeProjectId);
-  const { data: overview } = useDashboardOverviewQuery(activeProject?.id);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [personality, setPersonality] = useState<"direct" | "supportive" | "challenger">("direct");
-  const [memory, setMemory] = useState<string[]>([]);
-  const [userId, setUserId] = useState<string | null>(null);
-  const [coachMessagesToday, setCoachMessagesToday] = useState(0);
-  const [showContext, setShowContext] = useState(false);
-  const [activityEvents, setActivityEvents] = useState<Array<{ label: string; occurredAt: string }>>([]);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-
-  // FIX (checklist item): this used to call computeStartupScore(activeProject)
-  // directly, without xp/streak — the same score displayed on Today/Overview
-  // for the identical project, at the identical moment, would be up to ~30
-  // points higher (xp boost 0-20, streak boost 0-10; see lib/scoring/index.ts).
-  // Rather than fix the inputs, the score widget itself is removed below —
-  // a chat surface doesn't need a status widget, and deleting it is safer
-  // than patching it: no more mismatch, no surface for a duplicate verdict
-  // to grow back. buildPlaceholderReasoning falls back to its non-numeric
-  // flavor text when score is undefined.
-  const limits = getLimits(plan);
-  const coachLimit = plan === "free" ? FREE_COACH_MESSAGES_PER_DAY : limits.aiMessagesPerDay;
-  const remaining = plan === "free" ? Math.max(0, coachLimit - coachMessagesToday) : Infinity;
-
-  useEffect(() => {
-    void fetchAndSyncStoredPlanFromBillingStatus();
-  }, []);
-
-  useEffect(() => {
-    try { setMemory(storage.getJSON<string[]>("bm_coach_memory", [])); } catch {}
-    setCoachMessagesToday(getCoachMessagesToday());
-    const supabase = createClient();
-    supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
-    fetchBehaviorState<{
-      coach_memory: string[];
-      coach_streak_date: string;
-      ai_personality: "direct" | "supportive" | "challenger";
-    }>(["coach_memory", "coach_streak_date", "ai_personality"]).then(values => {
-      if (Array.isArray(values.coach_memory)) {
-        storage.setJSON("bm_coach_memory", values.coach_memory);
-        setMemory(values.coach_memory);
-      }
+    fetchBehaviorState<{ break_streak_date: string }>(["break_streak_date"]).then(values => {
       const today = new Date().toISOString().split("T")[0];
-      if (values.coach_streak_date === today) {
-        storage.set("bm_coach_streak_date", today);
-      }
-      if (values.ai_personality === "direct" || values.ai_personality === "supportive" || values.ai_personality === "challenger") {
-        setPersonality(values.ai_personality);
+      if (values.break_streak_date === today) {
+        storage.set("bm_break_streak_date", today);
       }
     }).catch(() => {});
   }, []);
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+  const { plan, isLoading: planLoading } = usePlan();
+  const { showLimitModal } = useLimitModal();
+  const { data: projects = [], isLoading: projectsLoading } = useProjectsQuery();
+  const activeProjectId = useActiveProjectId();
 
-  // Real recent activity for the active project — same activity_log-backed
-  // route added for the Projects detail page's "Last activity" card, reused
-  // here for Figma's "Recent outcomes" concept. No separate metric-tracking
-  // (e.g. "waitlist +40%") exists anywhere, so this shows what's actually
-  // logged rather than inventing business-outcome numbers.
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  const [customIdea, setCustomIdea] = useState("");
+  const [focusAreas, setFocusAreas] = useState<FocusArea[]>([]);
+  const [executionMode, setExecutionMode] = useState(false);
+  const [loading, setLoading] = useState(false);
+  // G4 FIX: Track in-flight request so a network retry or component remount
+  // can abort the previous request rather than running two pipelines in parallel.
+  const abortRef = useRef<AbortController | null>(null);
+  const [result, setResult] = useState<BreakResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [outcomeSaving, setOutcomeSaving] = useState<string | null>(null);
+
+  // Pre-fill idea from selected project
+  const selectedProject = projects.find((p) => p.id === selectedProjectId);
+
   useEffect(() => {
-    if (!activeProject?.id) { setActivityEvents([]); return; }
-    fetch(`/api/projects/${activeProject.id}/activity`, { cache: "no-store" })
-      .then((r) => r.json())
-      .then((d: { ok?: boolean; events?: Array<{ label: string; occurredAt: string }> }) => {
-        if (d.ok && Array.isArray(d.events)) setActivityEvents(d.events);
-      })
-      .catch(() => {});
-  }, [activeProject?.id]);
+    if (!activeProjectId || selectedProjectId) return;
+    if (projects.some((p) => p.id === activeProjectId)) setSelectedProjectId(activeProjectId);
+  }, [activeProjectId, projects, selectedProjectId]);
 
-  async function sendMessage(text?: string, opts?: { action?: { id: string; params: Record<string, unknown> } }) {
-    const msg = (text ?? input).trim();
-    if (!msg || loading) return;
-    // Coach Actions cost no AI tokens, so they don't spend the free plan's
-    // daily coaching allowance — the server skips the cap for them too
-    // (app/api/ai/coach/route.ts). matchCoachAction is the same pure function
-    // the server runs, so the two can't disagree about what counts as one.
-    // "Take me to Progress" — the Coach just does it: no model call, no allowance spent.
-    const navTarget = !opts?.action ? matchNavigation(msg) : null;
-    if (navTarget) {
-      setInput("");
-      setMessages(prev => [...prev,
-        { id: Date.now().toString(), role: "user", content: msg },
-        { id: (Date.now() + 1).toString(), role: "assistant", content: `Opening ${navTarget.label}…`, phase: "done" },
-      ]);
-      setTimeout(() => router.push(navTarget.href), 350);
-      return;
-    }
-    const isAction = Boolean(opts?.action) || matchCoachAction(msg) !== null;
-    if (remaining <= 0 && !planLoading && plan === "free" && !isAction) { showLimitModal("aiCoach"); return; }
-    if (!userId) {
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: "assistant", content: "Please sign in again before using AI Coach.", phase: "done", error: true }]);
-      return;
-    }
-    if (!activeProject?.id) {
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: "assistant", content: "Create or select a project first so I can coach against real context.", phase: "done", error: true }]);
-      return;
-    }
-    setInput("");
-    const userMsg: ChatMessage = { id: Date.now().toString(), role: "user", content: msg };
-    const placeholderReasoning = buildPlaceholderReasoning(msg, activeProject?.title);
-    const thinkingMsg: ChatMessage = { id: (Date.now() + 1).toString(), role: "assistant", content: "", phase: "thinking", reasoning: placeholderReasoning };
-    setMessages(prev => [...prev, userMsg, thinkingMsg]);
-    setLoading(true);
-    try {
-      const res = await fetch("/api/ai/coach", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId,
-          projectId: activeProject.id,
-          message: msg,
-          project: activeProject,
-          overview,
-          memory,
-          personality,
-          messages,
-          action: opts?.action,
-        }),
+  useEffect(() => {
+    if (!selectedProjectId) return;
+    if (!selectedProject) return;
+    const projectIdea = [
+      selectedProject.title,
+      selectedProject.description,
+      selectedProject.problem,
+      selectedProject.target_users ? `Target users: ${selectedProject.target_users}` : "",
+    ].filter(Boolean).join("\n\n");
+    setCustomIdea(projectIdea);
+  }, [selectedProjectId, selectedProject]);
+
+  function mapApiResult(data: BreakApiData): BreakResult {
+    const probability = typeof data.survival_probability === "number" ? data.survival_probability : undefined;
+    const killReasons = cleanAIList(data.kill_reasons);
+    const differentiationPlan = cleanAIList(data.differentiation_plan);
+    const brutalAdvice = cleanAIText(data.brutal_advice);
+    const overallRisk: RiskSeverity =
+      probability == null ? "High" :
+      probability < 25 ? "Critical" :
+      probability < 50 ? "High" :
+      probability < 75 ? "Medium" : "Low";
+
+    const risks: RiskItem[] = (killReasons.length ? killReasons : ["Execution risk not enough data yet"]).map((reason, index) => ({
+      category: ["Market Risk", "Execution Risk", "Moat Risk", "Revenue Risk"][index] ?? "Startup Risk",
+      severity: index === 0 ? overallRisk : overallRisk === "Critical" ? "High" : overallRisk,
+      description: reason,
+      mitigation: differentiationPlan[index] ?? brutalAdvice ?? "Talk to 5 target users and validate the riskiest assumption before building more.",
+    }));
+
+    if (data.competitor_summary) {
+      risks.push({
+        category: "Competitive Landscape",
+        severity: "Medium",
+        description: cleanAIText(data.competitor_summary),
+        mitigation: differentiationPlan[0] ?? "Pick one underserved niche and position around that pain instead of competing broadly.",
       });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok || !payload?.success) throw new Error(payload?.error ?? "Coach unavailable");
-
-      // A Coach Action reply: render the data card and stop. Deliberately
-      // skips the coaching-message counter, achievements, streak, and coach
-      // memory below — none of those should move because someone exported a file.
-      if (payload?.data?.kind === "action" && payload.data.actionResult) {
-        const actionResult = payload.data.actionResult as CoachActionResult;
-        setMessages(prev => prev.map(m => m.id === thinkingMsg.id
-          ? { ...m, content: String(payload.data.reply ?? actionResult.summary), reasoning: undefined, phase: "done", actionResult }
-          : m));
-        return;
-      }
-      const reply = payload?.data?.reply ?? payload?.data?.answer ?? "I'm having trouble responding right now. Please try again.";
-      const confidence_score = typeof payload?.data?.confidence_score === "number" ? payload.data.confidence_score : null;
-      const ra = payload?.data?.recommended_action;
-      const recommendedAction = ra && typeof ra.what_to_do === "string" && typeof ra.why_now === "string"
-        ? { what_to_do: ra.what_to_do, why_now: ra.why_now, expected_evidence: typeof ra.expected_evidence === "string" ? ra.expected_evidence : undefined }
-        : undefined;
-      const newMemory = [...memory, msg].slice(-10);
-      setMemory(newMemory);
-      storage.setJSON("bm_coach_memory", newMemory);
-      persistBehaviorState({ coach_memory: newMemory });
-      setMessages(prev => prev.map(m => m.id === thinkingMsg.id ? { ...m, content: reply, reasoning: payload?.data?.reasoning ?? m.reasoning, phase: "done", confidence_score, recommendedAction } : m));
-      recordCoachMessage();
-      setCoachMessagesToday(getCoachMessagesToday());
-      const stats = getAchievementStats();
-      updateAchievementStats({ ...stats, aiMessages: (stats.aiMessages ?? 0) + 1 });
-      checkAndUnlockAchievements();
-      trackEvent("ai_coach_message", { plan });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Something went wrong. Try again.";
-      if (message.toLowerCase().includes("limit")) showLimitModal("aiCoach");
-      setMessages(prev => prev.map(m => m.id === thinkingMsg.id ? { ...m, content: message, phase: "done", error: true } : m));
-    } finally {
-      setLoading(false);
-      setTimeout(() => inputRef.current?.focus(), 100);
     }
+
+    // D2 FIX: Detect when all agents fell back (overall_confidence ≤ 0.3 and every
+    // agent_status is "fallback"). In that case the score is computed from hardcoded
+    // defaults — show a banner so founders don't make decisions on synthetic data.
+    const allStatuses = Object.values(data.agent_statuses ?? {});
+    const isSynthetic =
+      (data.signal_summary?.overall_confidence ?? 1) <= 0.35 &&
+      allStatuses.length > 0 &&
+      allStatuses.every((s) => s === "fallback");
+
+    const agents = Object.entries(data.agent_outputs ?? {}).map(([name, output]) => {
+      const text = output
+        ? Object.values(output)
+            .flat()
+            .filter((value) => typeof value === "string")
+            .slice(0, 2)
+            .join(" ")
+        : "";
+      return {
+        name: name[0].toUpperCase() + name.slice(1),
+        status: data.agent_statuses?.[name] ?? "complete",
+        summary: cleanAIText(text) || "Agent completed with structured analysis.",
+        confidence: data.signal_summary?.overall_confidence,
+      };
+    });
+
+    return {
+      overallRisk,
+      summary: cleanAIText(data.verdict) || "Stress test complete. Review the risks before deciding what to build next.",
+      risks,
+      survival_probability: probability,
+      brutal_advice: brutalAdvice || undefined,
+      gated: data.gated,
+      score_note: data.gated
+        ? "Free preview score: estimated from your written idea only."
+        : cleanAIList(data.reasoning).filter((item) =>
+            /focus areas|5-agent|viability score|competitor/i.test(item)
+          ).join(" | ") || "Calculated from execution data, validation signals, stage, and competitor context.",
+      agents,
+      isSynthetic,
+      focusAreas: cleanAIList(data.focus_areas),
+      executionPlan: data.execution_plan
+        ? {
+            mvp_roadmap: cleanAIList(data.execution_plan.mvp_roadmap),
+            first_10_actions: cleanAIList(data.execution_plan.first_10_actions),
+            gtm_plan: cleanAIList(data.execution_plan.gtm_plan),
+          }
+        : null,
+      reflexionAction: data.reflexion_action
+        ? {
+            ...data.reflexion_action,
+            action: cleanAIText(data.reflexion_action.action),
+            rationale: cleanAIText(data.reflexion_action.rationale),
+            supporting_signals: cleanAIList(data.reflexion_action.supporting_signals),
+            risks: cleanAIList(data.reflexion_action.risks),
+          }
+        : null,
+    };
   }
 
-  const personalityOptions = [
-    { id: "direct" as const, label: "Direct" },
-    { id: "supportive" as const, label: "Supportive" },
-    { id: "challenger" as const, label: "Challenger" },
-  ];
-
-  // No active project = genuinely nothing real to coach against. Rather than
-  // let the founder type into a chat that will just bounce their first
-  // message back as an error, say so up front — matching the reference
-  // design's dedicated unavailable state, and true to what's actually wrong.
-  if (!summariesLoading && !activeProject) {
-    return (
-      <div className="mx-auto flex w-full max-w-[1120px] flex-col items-center justify-center gap-3 px-5 py-24 text-center" style={{ minHeight: "60vh" }}>
-        <div className="flex h-11 w-11 items-center justify-center rounded-full" style={{ background: "rgba(224,85,85,0.12)" }}>
-          <span className="block h-2.5 w-2.5 rounded-full" style={{ background: "var(--bm-red)" }} />
-        </div>
-        <h2 className="text-[15px] font-semibold text-[var(--bm-text)]">Intelligence temporarily unavailable</h2>
-        <p className="max-w-[360px] text-[12.5px] leading-relaxed text-[var(--bm-text3)]">
-          BuildMind coaching requires access to your project state and behavior data. Create or select a project to pick this back up.
-        </p>
-        <a href="/projects" className="mt-1 rounded-[var(--r-sm)] px-3.5 py-2 text-[12px] font-semibold" style={{ background: "var(--bm-accent)", color: "#15130a" }}>
-          Go to Projects
-        </a>
-      </div>
+  function toggleFocus(area: FocusArea) {
+    setFocusAreas((prev) =>
+      prev.includes(area) ? prev.filter((a) => a !== area) : [...prev, area]
     );
   }
 
-  const lowOnMessages = plan === "free" && remaining > 0 && remaining <= 1;
-  const greetingName = hasHistoryGlobal(overview);
-  const contextPanel = (
-    <div className="flex flex-col gap-3">
-      {activeProject && (
-        <div className="rounded-[16px] border border-[var(--bm-border)] bg-[var(--bm-bg2)] p-4">
-          <div className="mb-1 text-[12px] text-[var(--bm-text3)]">Coaching on</div>
-          <div className="text-[16px] font-semibold text-[var(--bm-text)]">{activeProject.title}</div>
-          <div className="mt-0.5 text-[13px] text-[var(--bm-text3)]">{activeProject.startup_stage ?? "Stage not set"}</div>
-        </div>
-      )}
-      {activeProject && activityEvents.length > 0 && (
-        <div className="rounded-[16px] border border-[var(--bm-border)] bg-[var(--bm-bg2)] p-4">
-          <div className="mb-3 text-[13px] font-semibold text-[var(--bm-text2)]">Recent activity</div>
-          <div className="flex flex-col gap-3">
-            {activityEvents.slice(0, 4).map((ev, i) => (
-              <div key={`${ev.occurredAt}-${i}`} className="flex items-start gap-2.5">
-                <div className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--bm-intel)]" />
-                <div>
-                  <div className="text-[13px] leading-snug text-[var(--bm-text2)]">{ev.label}</div>
-                  <div className="mt-0.5 text-[12px] text-[var(--bm-text4)]">{new Date(ev.occurredAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      <div className="rounded-[16px] border border-[var(--bm-border)] bg-[var(--bm-bg2)] p-4">
-        <div className="mb-3 flex items-center gap-2 text-[13px] font-semibold text-[var(--bm-text2)]"><Brain size={14} /> What the coach remembers</div>
-        {memory.length === 0 ? (
-          <p className="text-[13px] leading-relaxed text-[var(--bm-text3)]">Memory builds as you talk to the coach.</p>
-        ) : memory.slice(-5).map((m, i) => (
-          <div key={i} className="mb-2 flex items-start gap-2.5">
-            <div className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--bm-intel)]" />
-            <span className="text-[13px] leading-snug text-[var(--bm-text3)]">{sanitizeOutput(m).slice(0, 80)}{sanitizeOutput(m).length > 80 ? "…" : ""}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+  async function handleRunTest() {
+    const idea = customIdea.trim() || selectedProject?.description || selectedProject?.title || "";
+    if (!idea) {
+      setError("Please describe your startup idea or select a project.");
+      return;
+    }
+
+    // G4 FIX: Cancel any in-flight request before starting a new one.
+    // This prevents a network-retry from running two full 5-agent pipelines
+    // simultaneously and double-charging the AI usage counter.
+    if (abortRef.current) {
+      abortRef.current.abort();
+    }
+    const abortController = new AbortController();
+    abortRef.current = abortController;
+
+    setLoading(true);
+    setResult(null);
+    setError(null);
+    setSaved(false);
+
+    try {
+      const supabase = createClient();
+      const { data: authData } = await supabase.auth.getUser();
+      if (!authData.user) throw new Error("Not authenticated");
+
+      const freePreviewKey = `bm_break_preview_used_${authData.user.id}`;
+      // Wait for server-authoritative plan before applying free gate —
+      // prevents Builder users from being blocked during the plan loading window.
+      if (!planLoading && plan === "free" && storage.get(freePreviewKey)) {
+        showLimitModal("break_startup");
+        return;
+      }
+
+      const res = await fetch("/api/ai/break-my-startup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: abortController.signal, // G4 FIX: abort if a newer request starts
+        body: JSON.stringify({
+          userId: authData.user.id,
+          projectId: selectedProjectId || undefined,
+          idea,
+          focusAreas,
+          executionMode,
+        }),
+      });
+
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok || !payload?.success) throw new Error(payload?.error ?? "Request failed");
+
+      const mappedResult = mapApiResult(payload.data ?? {});
+      setResult(mappedResult);
+      if (plan === "free") storage.set(freePreviewKey, "1");
+
+      // Track achievement
+      try {
+        updateAchievementStats({ breakMyStartupUsed: true });
+        await checkAndUnlockAchievements();
+        // Break My Startup counts as a streak-qualifying activity — increment once per day
+        const todayKey = new Date().toISOString().split("T")[0];
+        if (storage.get("bm_break_streak_date") !== todayKey) {
+          incrementDailyStreak();
+          storage.set("bm_break_streak_date", todayKey);
+          persistBehaviorState({ break_streak_date: todayKey });
+        }
+      } catch {}
+    } catch {
+      setError("Something went wrong running the stress test. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSave() {
+    if (!result || !selectedProjectId) return;
+    setSaving(true);
+    try {
+      const supabase = createClient();
+      const { data: user } = await supabase.auth.getUser();
+      if (!user.user) throw new Error("Not authenticated");
+
+      // Save result to project notes
+      await fetch("/api/ventures/notes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: selectedProjectId,
+          type: "stress_test",
+          content: JSON.stringify(result),
+        }),
+      });
+      setSaved(true);
+    } catch {
+      // Silently fail — user can still copy the result
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleReset() {
+    setResult(null);
+    setError(null);
+    setSaved(false);
+    setCustomIdea("");
+  }
+
+  async function handleOutcome(outcome: "completed" | "partial" | "overridden") {
+    const logRowId = result?.reflexionAction?.log_row_id;
+    if (!logRowId) return;
+    setOutcomeSaving(outcome);
+    try {
+      await fetch("/api/ai/reflexion-outcome", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ log_row_id: logRowId, outcome }),
+      });
+    } finally {
+      setOutcomeSaving(null);
+    }
+  }
 
   return (
-    <div className="relative mx-auto flex w-full max-w-[860px] flex-col" style={{ minHeight: isMobile ? "calc(100dvh - 120px)" : "calc(100vh - 80px)", height: isMobile ? "auto" : "calc(100vh - 80px)" }}>
+    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 flex flex-col gap-8">
 
-      {/* Slim header: the conversation is the page */}
-      <header className="flex shrink-0 items-center justify-between gap-2 px-3 py-2.5 sm:gap-3 sm:px-2 sm:py-3">
-        <div className="min-w-0">
-          <h1 className="m-0 text-[18px] font-bold tracking-[-0.02em] text-[var(--bm-text)] sm:text-[20px]" style={{ fontFamily: "'Syne', sans-serif" }}>AI Coach</h1>
-          {activeProject && <div className="truncate text-[13px] text-[var(--bm-text3)]">{activeProject.title}</div>}
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <div role="group" aria-label="Coach tone" className="flex rounded-full border border-[var(--bm-border)] bg-[var(--bm-bg2)] p-0.5">
-            {personalityOptions.map(opt => (
-              <button key={opt.id} onClick={() => setPersonality(opt.id)} aria-pressed={personality === opt.id}
-                className={`cursor-pointer rounded-full border-0 px-2.5 py-1.5 text-[12px] sm:px-3 sm:text-[12.5px] ${personality === opt.id ? "bg-[var(--bm-intel-dim)] font-semibold text-[var(--bm-intel2)]" : "bg-transparent text-[var(--bm-text3)] hover:text-[var(--bm-text2)]"}`}>
-                {opt.label}
-              </button>
-            ))}
-          </div>
-          <button onClick={() => setShowContext(true)} aria-label="Show project context and coach memory"
-            className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-[var(--bm-border)] bg-[var(--bm-bg2)] text-[var(--bm-text3)] hover:text-[var(--bm-text)]">
-            <PanelRight size={16} />
-          </button>
-        </div>
-      </header>
+      {/* Header */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.2 }}
+      >
+        <PageHeader
+          title="Break My Startup"
+          subtitle="Run a brutal, honest stress-test on your current project or any idea. No sugarcoating. The goal is to make you stronger, not scare you."
+          action={
+            <span className="inline-flex h-9 items-center gap-2 rounded-[var(--r-xl)] border border-[var(--bm-border)] bg-[var(--bm-bg2)] px-3 text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--bm-red)]">
+              <Shield size={15} />
+              Stress test
+            </span>
+          }
+        />
+      </motion.div>
 
-      {/* Context drawer */}
-      <AnimatePresence>
-        {showContext && (
-          <>
-            <motion.div key="scrim" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowContext(false)}
-              className="fixed inset-0 z-40 bg-black/50" />
-            <motion.aside key="drawer" role="dialog" aria-label="Project context" initial={{ x: 360 }} animate={{ x: 0 }} exit={{ x: 360 }} transition={{ type: "tween", duration: 0.2 }}
-              className="fixed bottom-0 right-0 top-0 z-50 w-[92vw] max-w-[380px] overflow-y-auto border-l border-[var(--bm-border)] bg-[var(--bm-bg)] p-4">
-              <div className="mb-4 flex items-center justify-between">
-                <span className="text-[16px] font-semibold text-[var(--bm-text)]">Context</span>
-                <button onClick={() => setShowContext(false)} aria-label="Close" className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-[var(--bm-border)] bg-transparent text-[var(--bm-text3)]"><X size={16} /></button>
-              </div>
-              {contextPanel}
-            </motion.aside>
-          </>
-        )}
-      </AnimatePresence>
+      {/* Input panel */}
+      <AnimatePresence mode="wait">
+        {!result && (
+          <motion.div
+            key="input"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            className="flex flex-col gap-5"
+          >
+            {/* Project selector */}
+            {!projectsLoading && projects.length > 0 && (
+              <Card className="p-4 flex flex-col gap-3">
+                <label className="text-xs font-medium text-[var(--bm-text2)] uppercase tracking-widest">
+                  Select a Project (optional)
+                </label>
+                <div className="relative">
+                  <select
+                    value={selectedProjectId}
+                    onChange={(e) => {
+                      setSelectedProjectId(e.target.value);
+                      if (e.target.value) setActiveProjectId(e.target.value);
+                      if (!e.target.value) setCustomIdea("");
+                    }}
+                    className="w-full h-10 rounded-lg pl-3 pr-8 text-sm outline-none appearance-none cursor-pointer"
+                    style={{
+                      background: "var(--bm-bg3)",
+                      border: "1px solid var(--bm-border2)",
+                      color: "var(--bm-text)",
+                    }}
+                  >
+                    <option value="">— Use custom idea instead —</option>
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.title ?? "Untitled"}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown
+                    size={13}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                    style={{ color: "var(--bm-text3)" }}
+                  />
+                </div>
 
-      {plan === "free" && remaining <= 0 && (
-        <div className="mx-4 mb-3 shrink-0 rounded-[16px] border border-[var(--bm-accent-bd)] bg-[var(--bm-accent-dim)] p-4 sm:mx-2">
-          <p className="text-[15px] font-semibold text-[var(--bm-text)]">You have used all {coachLimit} coaching questions today</p>
-          <p className="mt-1 text-[13.5px] leading-relaxed text-[var(--bm-text3)]">Quick actions below still work. Upgrade to Builder to keep talking to the coach right now.</p>
-          <button onClick={() => showLimitModal("aiCoach")} className="mt-3 cursor-pointer rounded-[10px] border-0 px-4 py-2.5 text-[13.5px] font-bold" style={{ background: "var(--bm-accent)", color: "#15130a" }}>Upgrade plan</button>
-        </div>
-      )}
+                {selectedProject && (
+                  <p className="text-xs text-[var(--bm-text3)] leading-relaxed line-clamp-2">
+                    {selectedProject.description ?? "No description"}
+                  </p>
+                )}
+              </Card>
+            )}
 
-      {/* Conversation */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 sm:px-2" style={{ scrollbarWidth: "thin" }}>
-        {messages.length === 0 ? (
-          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="mx-auto flex h-full max-w-[680px] flex-col justify-center py-8">
-            <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-2xl sm:mb-5 sm:h-12 sm:w-12 border border-[var(--bm-intel-bd)] bg-[var(--bm-intel-dim)]">
-              <Sparkles size={22} color="var(--bm-intel2)" />
-            </div>
-            <h2 className="m-0 text-[24px] font-bold leading-[1.2] tracking-[-0.025em] text-[var(--bm-text)] sm:text-[36px]" style={{ fontFamily: "'Syne', sans-serif" }}>
-              {greetingName ? "Where do things stand?" : "Day one. Let’s get oriented."}
-            </h2>
-            <p className="mt-2.5 max-w-[560px] text-[14px] leading-[1.65] text-[var(--bm-text2)] sm:mt-3 sm:text-[16px] sm:leading-[1.7]">
-              {greetingName
-                ? "I know your blockers, your streak and the tasks you keep skipping. Tell me what you are stuck on, or ask what to do next. I will answer directly."
-                : "You do not have a track record with me yet, so I will not pretend to know your patterns. Tell me what you are stuck on or what you are building, and I will give you a direct read."}
-            </p>
-            <div className="mt-5 grid gap-2 sm:mt-7 sm:grid-cols-2 sm:gap-2.5">
-              {QUICK_PROMPTS.slice(0, 4).map(p => (
-                <button key={p} onClick={() => sendMessage(p)}
-                  className="group flex min-h-[56px] cursor-pointer items-start justify-between gap-3 rounded-[14px] border border-[var(--bm-border)] bg-[var(--bm-bg2)] p-3 text-left text-[13.5px] leading-snug sm:min-h-[72px] sm:rounded-[16px] sm:p-4 sm:text-[14.5px] text-[var(--bm-text2)] transition-colors hover:border-[var(--bm-intel-bd)] hover:text-[var(--bm-text)]">
-                  <span>{p}</span>
-                  <ArrowUpRight size={16} className="mt-0.5 shrink-0 text-[var(--bm-text4)] group-hover:text-[var(--bm-intel2)]" />
+            {/* Custom idea textarea */}
+            <Textarea
+              label={selectedProjectId ? "Startup context to stress-test" : "Describe your startup idea"}
+              helperText={selectedProjectId ? "Loaded from your selected project. You can edit or add domain-specific context before running the test." : undefined}
+              placeholder="What are you building? Who is it for? How do you plan to make money? Paste your pitch, business model, domain, or current strategy..."
+              value={customIdea}
+              onChange={(e) => setCustomIdea(e.target.value)}
+              rows={6}
+            />
+
+            {/* Focus areas */}
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <label className="text-xs font-medium text-[var(--bm-text2)] uppercase tracking-widest">
+                  Focus Areas (optional)
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setExecutionMode((value) => !value)}
+                  className="w-full rounded-lg px-3 py-1.5 text-xs font-semibold sm:w-auto"
+                  style={{
+                    border: "1px solid var(--bm-border)",
+                    background: executionMode ? "rgba(92,200,138,0.12)" : "var(--bm-bg3)",
+                    color: executionMode ? "var(--bm-accent)" : "var(--bm-text3)",
+                  }}
+                >
+                  Focus Mode {executionMode ? "On" : "Off"}
                 </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {FOCUS_AREAS.map((area) => {
+                  const active = focusAreas.includes(area);
+                  return (
+                    <button
+                      key={area}
+                      onClick={() => toggleFocus(area)}
+                      className="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-150"
+                      style={{
+                        background: active ? "rgba(92,200,138,0.10)" : "var(--bm-bg3)",
+                        borderColor: active ? "var(--bm-accent-bd)" : "var(--bm-border)",
+                        color: active ? "var(--bm-accent)" : "var(--bm-text3)",
+                      }}
+                    >
+                      {area}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-[var(--bm-text3)]">
+                Leave empty to stress-test everything. Focus Mode turns the result into an execution-first plan.
+              </p>
+            </div>
+
+            {/* Error */}
+            {error && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="flex items-center gap-2 text-sm p-3 rounded-lg"
+                style={{
+                  background: "rgba(224,85,85,0.08)",
+                  border: "1px solid rgba(224,85,85,0.2)",
+                  color: "var(--bm-red)",
+                }}
+              >
+                <AlertTriangle size={14} />
+                {error}
+              </motion.div>
+            )}
+
+            {/* Loading skeleton */}
+            {loading && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col gap-3">
+                {[1, 2, 3].map((i) => (
+                  <div
+                    key={i}
+                    className="rounded-[var(--r-xl)] p-5 border border-[var(--bm-border)] bg-[var(--bm-bg2)] animate-pulse flex flex-col gap-2"
+                  >
+                    <div className="h-4 w-36 rounded-full bg-[var(--bm-bg3)]" />
+                    <div className="h-3 w-full rounded-full bg-[var(--bm-bg3)] opacity-70" />
+                    <div className="h-3 w-5/6 rounded-full bg-[var(--bm-bg3)] opacity-50" />
+                    <div className="h-3 w-2/3 rounded-full bg-[var(--bm-bg3)] opacity-40" />
+                  </div>
+                ))}
+              </motion.div>
+            )}
+
+            {!loading && (
+              <Button
+                size="lg"
+                onClick={handleRunTest}
+                disabled={!customIdea.trim() && !selectedProjectId}
+                className="w-full sm:w-auto sm:self-start"
+              >
+                <AlertTriangle size={15} />
+                Run Stress Test →
+              </Button>
+            )}
+          </motion.div>
+        )}
+
+        {/* Result panel */}
+        {result && !loading && (
+          <motion.div
+            key="result"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.35 }}
+            className="flex flex-col gap-5"
+          >
+            {/* Overall verdict — visceral, full-width */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.97 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.4 }}
+              style={{
+                borderRadius: "var(--r-xl)",
+                padding: "clamp(16px, 4vw, 24px)",
+                background: "var(--bm-bg2)",
+                border: `1px solid ${overallColor(result.overallRisk)}40`,
+                boxShadow: `0 0 32px ${overallColor(result.overallRisk)}18`,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 20, flexWrap: "wrap" }}>
+                {result.survival_probability !== undefined && (
+                  <SurvivalRing value={result.survival_probability} />
+                )}
+                <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+                  <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: "var(--bm-text3)", letterSpacing: "0.07em", marginBottom: 10 }}>
+                    Survival score · Moat strength · Market timing
+                  </div>
+                  <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: "var(--bm-text4)", letterSpacing: "0.06em", marginBottom: 12 }}>
+                    The uncomfortable ones are the useful ones.
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                    <span style={{
+                      fontSize: 9, fontWeight: 700, letterSpacing: "0.12em",
+                      textTransform: "uppercase", color: "var(--bm-text3)",
+                    }}>
+                      Verdict
+                    </span>
+                    <Badge variant={severityVariant(result.overallRisk)} size="md" dot>
+                      {result.overallRisk} Risk
+                    </Badge>
+                  </div>
+                  {result.summary && (
+                    <p style={{ fontSize: 15, fontWeight: 600, color: "var(--bm-text)", lineHeight: 1.55, marginBottom: 0 }}>
+                      {sanitizeOutput(result.summary)}
+                    </p>
+                  )}
+                  {result.score_note && (
+                    <p style={{ fontSize: 12, color: "var(--bm-text3)", marginTop: 6, lineHeight: 1.5 }}>
+                      {sanitizeOutput(result.score_note)}
+                    </p>
+                  )}
+                  {result.gated && (
+                    <button
+                      type="button"
+                      onClick={() => showLimitModal("break_startup")}
+                      style={{
+                        marginTop: 12, display: "inline-flex", alignItems: "center", gap: 6,
+                        fontSize: 12, fontWeight: 600, color: "var(--bm-text-inv)",
+                        background: "var(--bm-accent)", border: "none", borderRadius: "var(--r-md)",
+                        padding: "8px 16px", cursor: "pointer",
+                      }}
+                    >
+                      Unlock full analysis →
+                    </button>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+
+            {/* Brutal advice — high contrast */}
+            {result.brutal_advice && (
+              <motion.div
+                initial={{ opacity: 0, x: -6 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.2 }}
+                style={{
+                  borderRadius: "var(--r-lg)",
+                  padding: "16px 18px",
+                  background: "rgba(232,160,32,0.06)",
+                  border: "1px solid rgba(232,160,32,0.3)",
+                  borderLeft: "3px solid var(--bm-amber)",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                  <AlertTriangle size={13} style={{ color: "var(--bm-amber)", flexShrink: 0 }} />
+                  <span style={{
+                    fontSize: 9, fontWeight: 700, textTransform: "uppercase",
+                    letterSpacing: "0.12em", color: "var(--bm-amber)",
+                  }}>
+                    Brutal advice
+                  </span>
+                </div>
+                <p style={{ fontSize: 14, color: "var(--bm-text)", lineHeight: 1.6, fontWeight: 500, margin: 0 }}>
+                  {sanitizeOutput(result.brutal_advice)}
+                </p>
+              </motion.div>
+            )}
+
+            {/* D2 FIX: Synthetic-analysis warning — shown when all 5 agents fell back */}
+            {result.isSynthetic && (
+              <div style={{
+                background: "var(--bm-amber-muted, rgba(245,158,11,0.12))",
+                border: "1px solid var(--bm-amber, #f59e0b)",
+                borderRadius: 10,
+                padding: "12px 16px",
+                display: "flex",
+                gap: 10,
+                alignItems: "flex-start",
+              }}>
+                <span style={{ fontSize: 16, flexShrink: 0 }}>⚠️</span>
+                <div>
+                  <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "var(--bm-amber, #f59e0b)" }}>
+                    Analysis unavailable — AI providers unreachable
+                  </p>
+                  <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.5 }}>
+                    All five analysis agents fell back to default values. The score shown is estimated, not
+                    computed from your actual idea. Try again in a few minutes when providers recover.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Risk breakdown cards */}
+            {result.agents && result.agents.length > 0 && (
+              <Card className="p-4 flex flex-col gap-3">
+                <h3 className="text-sm font-semibold text-[var(--bm-text)]">Five-Agent Analysis</h3>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {result.agents.map((agent) => (
+                    <div key={agent.name} className="rounded-lg p-3" style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)" }}>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-semibold text-[var(--bm-text)]">{agent.name}</span>
+                        <span className="text-[10px] uppercase tracking-widest text-[var(--bm-text4)]">{agent.status}</span>
+                      </div>
+                      <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-[var(--bm-text3)]">{sanitizeOutput(agent.summary)}</p>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+
+            {result.executionPlan && (
+              <Card className="p-4 flex flex-col gap-3">
+                <h3 className="text-sm font-semibold text-[var(--bm-text)]">Focus Mode Plan</h3>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {[
+                    ["MVP Roadmap", result.executionPlan.mvp_roadmap],
+                    ["First Actions", result.executionPlan.first_10_actions],
+                    ["Go To Market", result.executionPlan.gtm_plan],
+                  ].map(([title, items]) => (
+                    <div key={title as string} className="flex flex-col gap-2">
+                      <span className="text-xs font-semibold text-[var(--bm-text2)]">{title as string}</span>
+                      {(items as string[] | undefined)?.slice(0, 4).map((item) => (
+                        <p key={item} className="text-xs leading-relaxed text-[var(--bm-text3)]">{sanitizeOutput(item)}</p>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+
+            {result.reflexionAction && (
+              <Card className="p-4 flex flex-col gap-3">
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                  <h3 className="text-sm font-semibold text-[var(--bm-text)]">Reflexion Loop</h3>
+                  {typeof result.reflexionAction.confidence === "number" && (
+                    <span className="text-xs text-[var(--bm-text3)]">{Math.round(result.reflexionAction.confidence * 100)}% confidence</span>
+                  )}
+                </div>
+                <p className="text-sm leading-relaxed text-[var(--bm-text2)]">{sanitizeOutput(result.reflexionAction.action)}</p>
+                {result.reflexionAction.rationale && (
+                  <p className="text-xs leading-relaxed text-[var(--bm-text3)]">{sanitizeOutput(result.reflexionAction.rationale)}</p>
+                )}
+                {result.reflexionAction.log_row_id && (
+                  <div className="flex flex-wrap gap-2">
+                    {(["completed", "partial", "overridden"] as const).map((outcome) => (
+                      <Button key={outcome} variant="ghost" size="sm" onClick={() => handleOutcome(outcome)} loading={outcomeSaving === outcome}>
+                        Mark {outcome}
+                      </Button>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            )}
+
+            {/* Risk breakdown cards */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+                <h3 style={{ fontSize: 12, fontWeight: 700, color: "var(--bm-text)", margin: 0, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                  Kill reasons
+                </h3>
+                <span style={{
+                  fontSize: 10, fontWeight: 600, color: "var(--bm-red)",
+                  background: "rgba(224,85,85,0.1)", border: "1px solid rgba(224,85,85,0.2)",
+                  borderRadius: 4, padding: "1px 6px",
+                }}>
+                  {result.risks.length} found
+                </span>
+              </div>
+              {result.risks.map((risk, i) => (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.08 }}
+                  style={{
+                    borderRadius: "var(--r-md)",
+                    overflow: "hidden",
+                    border: `1px solid ${
+                      risk.severity === "Critical" ? "rgba(224,85,85,0.3)" :
+                      risk.severity === "High" ? "rgba(232,160,32,0.25)" :
+                      "var(--bm-border)"
+                    }`,
+                    background: "var(--bm-bg2)",
+                  }}
+                >
+                  <div style={{ height: 3, background: overallColor(risk.severity), opacity: 0.7 }} />
+                  <div style={{ padding: "12px 14px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", minWidth: 18, flexShrink: 0 }}>
+                        #{i + 1}
+                      </span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: "var(--bm-text)", flex: 1 }}>
+                        {risk.category}
+                      </span>
+                      <Badge variant={severityVariant(risk.severity)} size="sm" dot>
+                        {risk.severity}
+                      </Badge>
+                    </div>
+                    <p style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.55, margin: "0 0 10px 0" }}>
+                      {sanitizeOutput(risk.description)}
+                    </p>
+                    <div style={{
+                      display: "flex", alignItems: "flex-start", gap: 8,
+                      background: "var(--bm-bg3)", borderRadius: "var(--r-sm)", padding: "8px 10px",
+                    }}>
+                      <CheckCircle2 size={12} style={{ color: "var(--bm-accent)", flexShrink: 0, marginTop: 1 }} />
+                      <span style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.5 }}>{sanitizeOutput(risk.mitigation)}</span>
+                    </div>
+                  </div>
+                </motion.div>
               ))}
             </div>
-          </motion.div>
-        ) : (
-          <div className="mx-auto flex max-w-[760px] flex-col gap-8 py-4 pb-6">
-            {messages.map(msg => <MessageBubble key={msg.id} msg={msg} onStartAction={() => router.push("/today")} onOpen={(href) => router.push(href)} onRunChip={(chip) => sendMessage(chip.label, { action: { id: chip.id, params: chip.params } })} />)}
-          </div>
-        )}
-        <div ref={bottomRef} />
-      </div>
 
-      {/* Composer */}
-      <div className="sticky bottom-0 shrink-0 bg-gradient-to-t from-[var(--bm-bg)] from-70% to-transparent px-3 pb-3 pt-4 sm:px-2 sm:pb-4">
-        <div className="mx-auto max-w-[760px]">
-          {plan === "free" && <div className="mb-2"><AIUsageBadge /></div>}
-          {lowOnMessages && <div className="mb-2 text-[13px] text-[var(--bm-amber)]">Last coaching message for today.</div>}
-          <div className="mb-2.5 flex items-center gap-2 overflow-x-auto pb-0.5" style={{ scrollbarWidth: "none" }}>
-            {COACH_ACTION_CHIPS.map(chip => (
-              <button key={chip.label} type="button" disabled={loading}
-                onClick={() => sendMessage(chip.label, { action: { id: chip.id, params: chip.params } })}
-                className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-[var(--bm-border2)] bg-[var(--bm-bg2)] px-3 py-1.5 text-[12.5px] text-[var(--bm-text2)] sm:px-3.5 sm:py-2 sm:text-[13px] transition-colors hover:border-[var(--bm-intel-bd)] hover:text-[var(--bm-text)] disabled:cursor-not-allowed disabled:opacity-50">
-                <Zap size={13} color="var(--bm-intel2)" />
-                {chip.label}
-              </button>
-            ))}
-          </div>
-          <div className="flex items-end gap-3 rounded-[22px] border border-[var(--bm-border2)] bg-[var(--bm-bg2)] py-2 pl-4 pr-2 sm:rounded-[24px] sm:py-3 sm:pl-5 sm:pr-3 shadow-[0_8px_30px_rgba(0,0,0,0.25)] transition-colors focus-within:border-[var(--bm-accent-bd)]">
-            <textarea ref={inputRef} value={input}
-              onChange={e => { setInput(e.target.value); const el = e.currentTarget; el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 180) + "px"; }}
-              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-              placeholder="Ask anything about your startup" aria-label="Message the coach" rows={1} disabled={loading}
-              className="max-h-[180px] min-h-[28px] flex-1 resize-none border-0 bg-transparent py-1 text-[16px] leading-[1.6] text-[var(--bm-text)] outline-none placeholder:text-[var(--bm-text4)]" />
-            <motion.button whileTap={{ scale: 0.94 }} onClick={() => sendMessage()} aria-label="Send message"
-              disabled={!input.trim() || loading}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-0 sm:h-11 sm:w-11"
-              style={{ background: !input.trim() || loading ? "var(--bm-bg4)" : "var(--bm-accent)", color: !input.trim() || loading ? "var(--bm-text3)" : "#15130a", cursor: !input.trim() || loading ? "not-allowed" : "pointer" }}>
-              <Send size={17} />
-            </motion.button>
-          </div>
-        </div>
-      </div>
+            {/* Actions */}
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+              {selectedProjectId && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleSave}
+                  loading={saving}
+                  disabled={saved}
+                >
+                  {saved ? (
+                    <>
+                      <CheckCircle2 size={13} style={{ color: "var(--bm-green)" }} />
+                      Saved to Project
+                    </>
+                  ) : (
+                    <>
+                      <Save size={13} />
+                      Save to Project
+                    </>
+                  )}
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleReset}
+              >
+                <RefreshCw size={13} />
+                Run Again
+              </Button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
-
-// Wrapped with AIErrorBoundary so AI pipeline crashes show a recoverable fallback
-export default withAIErrorBoundary(AICoachPageInner, "AI Coach");
