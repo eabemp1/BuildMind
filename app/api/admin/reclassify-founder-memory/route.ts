@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdminUser } from "@/lib/server/adminAuth";
-import { actionCategoryLabel } from "@/lib/actionClassification";
+import { actionCategoryLabelOrNull } from "@/lib/actionClassification";
 import { deduplicateTags } from "@/lib/founderMemory";
 
 /**
@@ -60,7 +60,7 @@ function isAvoidanceOutcome(outcome: string | null): boolean {
 
 function rebuild(events: SourceEvent[], bucket: "avoidance" | "strength"): string[] {
   const relevant = events.filter((e) => e.bucket === bucket).sort((a, b) => a.at - b.at);
-  return deduplicateTags(relevant.map((e) => actionCategoryLabel(e.text)).filter(Boolean), 10);
+  return deduplicateTags(relevant.map((e) => actionCategoryLabelOrNull(e.text)).filter((x): x is string => Boolean(x)), 10);
 }
 
 function arraysEqual(a: string[], b: string[]): boolean {
