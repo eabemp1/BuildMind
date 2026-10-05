@@ -140,6 +140,16 @@ export default function TodayCommandCenter({ actionTitle, timeText, done, streak
     momentumDelta: snap?.calibrating ? null : snap?.momentumDelta ?? null, suggestedMinutes: suggested,
   });
 
+  // Colour identity: the card takes the colour of the part of the day you are in
+  // (gold morning, teal afternoon, violet evening) and turns green once the action is done.
+  const hour = now.getHours();
+  const pal = done
+    ? { c: "var(--bm-green, #4ade80)", dim: "rgba(74,222,128,0.14)", bd: "rgba(74,222,128,0.4)", tint: "rgba(74,222,128,0.10)", name: "done" }
+    : hour < 12
+      ? { c: "#E8C547", dim: "rgba(232,197,71,0.14)", bd: "rgba(232,197,71,0.4)", tint: "rgba(232,197,71,0.10)", name: "morning" }
+      : hour < 18
+        ? { c: "#4AB8B0", dim: "rgba(74,184,176,0.14)", bd: "rgba(74,184,176,0.4)", tint: "rgba(74,184,176,0.10)", name: "afternoon" }
+        : { c: "#9B87F5", dim: "rgba(155,135,245,0.15)", bd: "rgba(155,135,245,0.4)", tint: "rgba(155,135,245,0.12)", name: "evening" };
   const greeting = now.getHours() < 12 ? "Good morning" : now.getHours() < 18 ? "Good afternoon" : "Good evening";
   const dayLeft = arc.phase === "late" ? "The day is wrapping up" : `${arc.hoursLeft > 0 ? `${arc.hoursLeft}h ` : ""}${arc.minutesLeft}m left in your day`;
   const streakNow = snap?.streak ?? streak;
@@ -155,9 +165,9 @@ export default function TodayCommandCenter({ actionTitle, timeText, done, streak
       aria-label="Today command center"
       style={{
         margin: "4px 0 18px", padding: "20px 18px", borderRadius: 20, boxSizing: "border-box", minWidth: 0,
-        background: "linear-gradient(160deg, var(--bm-bg2) 0%, var(--bm-bg) 100%)",
-        border: `1px solid ${running ? "var(--bm-accent-bd)" : "var(--bm-border)"}`,
-        boxShadow: running ? "0 0 0 3px var(--bm-accent-dim)" : "none",
+        background: `linear-gradient(160deg, ${pal.tint} 0%, var(--bm-bg2) 40%, var(--bm-bg) 100%)`,
+        border: `1px solid ${running ? pal.c : pal.bd}`,
+        boxShadow: running ? `0 0 0 3px ${pal.dim}` : "none",
         display: "flex", flexDirection: "column", gap: 18, transition: "box-shadow .3s, border-color .3s",
       }}
     >
@@ -182,8 +192,8 @@ export default function TodayCommandCenter({ actionTitle, timeText, done, streak
       </div>
 
       <div aria-hidden style={{ position: "relative", height: 6, borderRadius: 3, background: "var(--bm-border2)", margin: "-6px 0 0" }}>
-        <div style={{ position: "absolute", inset: 0, width: `${arc.progress * 100}%`, borderRadius: 3, background: "linear-gradient(90deg, var(--bm-accent-dim), var(--bm-accent))", transition: "width 1s linear" }} />
-        <div style={{ position: "absolute", top: -3, left: `calc(${arc.progress * 100}% - 6px)`, width: 12, height: 12, borderRadius: "50%", background: "var(--bm-accent)", boxShadow: "0 0 0 3px var(--bm-accent-dim)" }} />
+        <div style={{ position: "absolute", inset: 0, width: `${arc.progress * 100}%`, borderRadius: 3, background: `linear-gradient(90deg, ${pal.dim}, ${pal.c})`, transition: "width 1s linear" }} />
+        <div style={{ position: "absolute", top: -3, left: `calc(${arc.progress * 100}% - 6px)`, width: 12, height: 12, borderRadius: "50%", background: pal.c, boxShadow: `0 0 0 3px ${pal.dim}` }} />
       </div>
 
       {/* Completion payoff, real numbers */}
@@ -204,7 +214,7 @@ export default function TodayCommandCenter({ actionTitle, timeText, done, streak
             <circle cx={RING / 2} cy={RING / 2} r={R} fill="none" stroke="var(--bm-border2)" strokeWidth="8" />
             <circle
               cx={RING / 2} cy={RING / 2} r={R} fill="none" strokeWidth="8" strokeLinecap="round"
-              stroke={finished ? "var(--bm-green)" : "var(--bm-accent)"}
+              stroke={finished ? "var(--bm-green)" : pal.c}
               strokeDasharray={C} strokeDashoffset={C * (1 - ringProgress)}
               transform={`rotate(-90 ${RING / 2} ${RING / 2})`} style={{ transition: "stroke-dashoffset 0.9s linear" }}
             />
@@ -229,13 +239,13 @@ export default function TodayCommandCenter({ actionTitle, timeText, done, streak
               <div role="group" aria-label="Block length" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                 {FOCUS_PRESETS.map((p) => (
                   <button key={p} type="button" aria-pressed={minutes === p} onClick={() => { setMinutes(p); setFocus((f) => resetFocus(f, p)); }}
-                    style={{ ...mono, fontSize: 14, padding: "9px 14px", borderRadius: 10, cursor: "pointer", color: minutes === p ? "#15130a" : "var(--bm-text2)", background: minutes === p ? "var(--bm-accent)" : "var(--bm-bg3)", border: "1px solid var(--bm-border)" }}>
+                    style={{ ...mono, fontSize: 14, padding: "9px 14px", borderRadius: 10, cursor: "pointer", color: minutes === p ? "#15130a" : "var(--bm-text2)", background: minutes === p ? pal.c : "var(--bm-bg3)", border: "1px solid var(--bm-border)" }}>
                     {p}m
                   </button>
                 ))}
               </div>
               <button type="button" onClick={start} disabled={!actionTitle}
-                style={{ fontSize: 16, fontWeight: 700, padding: "14px 20px", borderRadius: 12, cursor: actionTitle ? "pointer" : "not-allowed", opacity: actionTitle ? 1 : 0.5, color: "#15130a", background: "var(--bm-accent)", border: "none", fontFamily: "inherit", width: "100%" }}>
+                style={{ fontSize: 16, fontWeight: 700, padding: "14px 20px", borderRadius: 12, cursor: actionTitle ? "pointer" : "not-allowed", opacity: actionTitle ? 1 : 0.5, color: "#15130a", background: pal.c, border: "none", fontFamily: "inherit", width: "100%" }}>
                 Start {minutes}-minute focus
               </button>
             </>
@@ -249,7 +259,7 @@ export default function TodayCommandCenter({ actionTitle, timeText, done, streak
           )}
           {paused && (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              <button type="button" onClick={() => setFocus((f) => resumeFocus(f, new Date()))} style={btn("var(--bm-accent)", "#15130a")}>Resume</button>
+              <button type="button" onClick={() => setFocus((f) => resumeFocus(f, new Date()))} style={btn(pal.c, "#15130a")}>Resume</button>
               <button type="button" onClick={() => setFocus((f) => resetFocus(f, minutes))} style={btn("var(--bm-bg3)", "var(--bm-text3)")}>Stop</button>
             </div>
           )}
@@ -268,7 +278,7 @@ export default function TodayCommandCenter({ actionTitle, timeText, done, streak
       {/* Real numbers, readable at a glance */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
         <div style={tile}>
-          <div style={{ ...mono, fontSize: 20, fontWeight: 600, color: "var(--bm-text)" }}>{streakNow}</div>
+          <div style={{ ...mono, fontSize: 20, fontWeight: 600, color: pal.c }}>{streakNow}</div>
           <div style={{ fontSize: 12, color: "var(--bm-text3)" }}>day streak</div>
         </div>
         <div style={tile}>
@@ -285,12 +295,12 @@ export default function TodayCommandCenter({ actionTitle, timeText, done, streak
       <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: 8 }}>
         {(snap?.weekDays ?? Array.from({ length: 7 }, (_, i) => ({ date: String(i), done: false, isToday: false, isFuture: false }))).map((d, i) => (
           <div key={d.date} title={d.date} style={{ textAlign: "center", minWidth: 0 }}>
-            <div style={{ fontSize: 12, color: d.isToday ? "var(--bm-accent)" : "var(--bm-text4)", fontWeight: d.isToday ? 700 : 400, marginBottom: 5 }}>{WEEKDAY_LABELS[i]}</div>
+            <div style={{ fontSize: 12, color: d.isToday ? pal.c : "var(--bm-text4)", fontWeight: d.isToday ? 700 : 400, marginBottom: 5 }}>{WEEKDAY_LABELS[i]}</div>
             <div
               style={{
                 height: 32, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14,
-                background: d.done ? "var(--bm-green)" : d.isToday ? "var(--bm-accent-dim)" : "var(--bm-bg3)",
-                border: `1px solid ${d.isToday ? "var(--bm-accent-bd)" : "var(--bm-border)"}`,
+                background: d.done ? "var(--bm-green)" : d.isToday ? pal.dim : "var(--bm-bg3)",
+                border: `1px solid ${d.isToday ? pal.bd : "var(--bm-border)"}`,
                 color: d.done ? "#fff" : "var(--bm-text4)", opacity: d.isFuture ? 0.45 : 1,
               }}
             >
@@ -308,4 +318,4 @@ export default function TodayCommandCenter({ actionTitle, timeText, done, streak
 
 function btn(bg: string, color: string): React.CSSProperties {
   return { fontSize: 14, fontWeight: 600, padding: "11px 18px", borderRadius: 10, cursor: "pointer", color, background: bg, border: "1px solid var(--bm-border)", fontFamily: "inherit" };
-            }
+                }
