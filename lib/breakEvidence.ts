@@ -15,6 +15,7 @@
  * and for each key assumption states what result would prove it wrong.
  */
 
+import { tokenize, stem } from "@/lib/taxonomy/taskTaxonomy";
 import type {
   CompetitorOutput, MarketResearchOutput, RiskOutput, ScrapedCompetitor,
   SentimentOutput, TrendOutput,
@@ -57,6 +58,53 @@ export interface ConfidenceBand {
   why: string;
 }
 
+export interface ScoreComponent {
+  key: string;
+  label: string;
+  score: number;
+  weight: string;
+  basedOn: string;
+  kind: "evidence" | "mixed" | "inference";
+}
+
+/** Where the headline number comes from, and how far it can be trusted. */
+export interface ScoreBasis {
+  label: string;
+  components: ScoreComponent[];
+  inferenceSharePct: number;
+  calibrated: false;
+  note: string;
+}
+
+export interface ConclusionConfidence {
+  pct: number;
+  label: "Low" | "Moderate" | "High";
+  primaryUncertainty: string;
+  secondaryUncertainty: string;
+  requiredEvidence: string[];
+}
+
+/** The experiment that tests the differentiating claim, not the easy adjacent one. */
+export interface ThesisTest {
+  thesis: string;
+  notThisTest: string;
+  setup: string;
+  measure: string[];
+  why: string;
+  basedOn: string;
+  expectedLearning: string;
+  ifItFails: string;
+}
+
+export interface ChangeMyMind { kills: string[]; strengthens: string[] }
+
+export interface PivotCheck {
+  title: string;
+  relation: "same_problem" | "adjacent" | "different_problem";
+  reason: string;
+  validatesOriginal: boolean;
+}
+
 export interface EvidenceLayer {
   claims: EvidenceClaim[];
   conflicts: EvidenceConflict[];
@@ -64,6 +112,12 @@ export interface EvidenceLayer {
   confidence: ConfidenceBand;
   falsifiers: Falsifier[];
   unknowns: string[];
+  // Added later; optional so results saved before this existed still render.
+  scoreBasis?: ScoreBasis;
+  conclusion?: ConclusionConfidence;
+  thesisTest?: ThesisTest;
+  changeMyMind?: ChangeMyMind;
+  pivotChecks?: PivotCheck[];
 }
 
 export interface EvidenceInput {
@@ -80,6 +134,9 @@ export interface EvidenceInput {
   competitorSource: string;          // "tavily" | "brave" | "ddg" | "ai_synthesised" | "none"
   /** Real evidence from the founder's own project (interviews, payments). */
   founderEvidenceCount?: number;
+  /** Per-dimension scores with weights, from computeViabilityBreakdown(). */
+  breakdown?: Array<{ key: string; label: string; score: number; weight: string }>;
+  pivots?: Array<{ title: string; description?: string; target_niche?: string; why_better?: string; key_change?: string }>;
 }
 
 const clip = (s: string, n = 140) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
@@ -176,6 +233,7 @@ export function detectConflicts(input: EvidenceInput, graded: CompetitorEvidence
       howToSettle: "Check whether growth is going to incumbents. If the leaders are taking it, a new entrant needs a wedge they cannot copy quickly.",
     });
   }
+  out.push(...detectTextConflicts(input));
   const confs = [market?.confidence, competitor?.confidence, trend?.confidence, sentiment?.confidence, input.risk?.confidence].filter((c): c is number => typeof c === "number");
   if (confs.length >= 3 && Math.max(...confs) - Math.min(...confs) > 0.4) {
     out.push({
@@ -184,6 +242,64 @@ export function detectConflicts(input: EvidenceInput, graded: CompetitorEvidence
       sideB: { agent: "Least confident agent", says: `${Math.round(Math.min(...confs) * 100)}% sure` },
       howToSettle: "Treat the low-confidence area as unproven. That is the first place to gather real evidence.",
     });
+  }
+  return out;
+}
+
+// ── Contradictions in what the agents WROTE ───────────────────────────────
+// The rating-based checks above miss the case where one agent writes "clear
+// evidence of user frustration with X" and another writes "no evidence of
+// users complaining about X". Both can be true at different scopes (a broad
+// frustration vs the specific pain the idea depends on), but the report must
+// say so instead of printing both.
+
+const AFFIRM_RE = /\b(clear|strong|significant|widespread|substantial|evident|numerous|ample|abundant)\b[^.]{0,50}\b(evidence|demand|frustrations?|complaints?|interest|need|pain|signals?)\b|\b(users|people|customers)\s+(are\s+|have been\s+)?(frustrated|complaining|struggling|asking)\b/i;
+const DENY_RE = /\b(no|little|limited|insufficient|lack of|lacks|absence of|not enough|zero|without any)\b[^.]{0,40}\b(evidence|data|signals?|complaints?|indication|proof|sign)\b|\bno\s+(users|one|people)\b[^.]{0,40}\b(complain|report|mention)/i;
+const GENERIC_STEMS = new Set(["evidence", "data", "suppli", "user", "peopl", "clear", "there", "across", "signal", "strong", "market", "customer", "avail", "provid", "indic", "exist", "actively", "specific", "thei", "have", "that", "with", "from", "about", "their", "this", "which", "when", "than", "more", "most", "some", "such", "into", "also", "being", "been", "could", "would", "should"]);
+
+function sentences(text: string): string[] {
+  return text.split(/(?<=[.!?])\s+|\n+/).map(t => t.trim()).filter(t => t.length > 25);
+}
+function contentStems(text: string): Set<string> {
+  return new Set(tokenize(text).filter(t => t.length > 3).map(stem).filter(t => !GENERIC_STEMS.has(t)));
+}
+
+export function detectTextConflicts(input: EvidenceInput): EvidenceConflict[] {
+  const { market, sentiment, trend, competitor, risk } = input;
+  const sources: Array<{ agent: string; texts: string[] }> = [
+    { agent: "Market agent", texts: [...(market?.demand_signals ?? []), market?.target_customer_fit ?? "", market?.reasoning ?? ""] },
+    { agent: "Sentiment agent", texts: [...(sentiment?.user_pain_points ?? []), ...(sentiment?.demand_signals ?? []), ...(sentiment?.community_signals ?? []), sentiment?.reasoning ?? ""] },
+    { agent: "Trend agent", texts: [trend?.reasoning ?? ""] },
+    { agent: "Competitor agent", texts: [competitor?.reasoning ?? ""] },
+    { agent: "Risk agent", texts: [risk?.reasoning ?? ""] },
+  ];
+  const tagged = sources.flatMap(src =>
+    src.texts.flatMap(t => sentences(t)).map(sent => ({
+      agent: src.agent, sent,
+      kind: DENY_RE.test(sent) ? "deny" as const : AFFIRM_RE.test(sent) ? "affirm" as const : null,
+      stems: contentStems(sent),
+    })).filter(x => x.kind),
+  );
+  const out: EvidenceConflict[] = [];
+  const used = new Set<string>();
+  for (const a of tagged.filter(t => t.kind === "affirm")) {
+    for (const d of tagged.filter(t => t.kind === "deny")) {
+      if (a.agent === d.agent) continue;
+      const shared = [...a.stems].filter(x => d.stems.has(x));
+      if (shared.length < 1) continue;
+      const aUser = /\b(user|users|people|customers?)\b/i.test(a.sent), dUser = /\b(user|users|people|customers?)\b/i.test(d.sent);
+      if (shared.length < 2 && !(aUser && dUser)) continue;
+      const key = [a.agent, d.agent].sort().join("|");
+      if (used.has(key)) continue;
+      used.add(key);
+      out.push({
+        title: "Evidence conflict: one section reports evidence, another reports none",
+        sideA: { agent: a.agent, says: clip(a.sent, 170) },
+        sideB: { agent: d.agent, says: clip(d.sent, 170) },
+        howToSettle: "These may describe different scopes: a broad frustration is not proof of the specific pain this idea needs. Treat the specific claim as unvalidated until target customers describe it unprompted, then decide which section was talking about what.",
+      });
+      if (out.length >= 2) return out;
+    }
   }
   return out;
 }
@@ -226,12 +342,18 @@ export function labelClaims(input: EvidenceInput, graded: CompetitorEvidence[]):
 
 // ── Confidence band ───────────────────────────────────────────────────────
 
-export function calibrate(input: EvidenceInput, graded: CompetitorEvidence[]): ConfidenceBand {
+export function evidenceQuality(input: EvidenceInput, graded: CompetitorEvidence[]): number {
   const verified = graded.filter(c => c.quality === "verified").length;
   const agentShare = Math.min(1, Math.max(0, input.agentsSucceeded / 5));
   const own = Math.min(1, (input.founderEvidenceCount ?? 0) / 4);
   let quality = 0.2 * agentShare + 0.3 * Math.min(1, verified / 5) + 0.5 * own;
   if (input.analysisIsSynthetic) quality *= 0.5;
+  return quality;
+}
+
+export function calibrate(input: EvidenceInput, graded: CompetitorEvidence[]): ConfidenceBand {
+  const verified = graded.filter(c => c.quality === "verified").length;
+  const quality = evidenceQuality(input, graded);
   const half = Math.round(7 + (1 - quality) * 22);
   const score = Math.round(input.viabilityScore);
   const low = Math.max(0, score - half);
@@ -286,17 +408,148 @@ export function buildFalsifiers(input: EvidenceInput): Falsifier[] {
   return out.slice(0, 4);
 }
 
+// ── Where the score comes from ────────────────────────────────────────────
+
+export function buildScoreBasis(input: EvidenceInput, graded: CompetitorEvidence[]): ScoreBasis | undefined {
+  if (!input.breakdown || input.breakdown.length === 0) return undefined;
+  const verified = graded.filter(c => c.quality === "verified").length;
+  const inferred = graded.filter(c => c.quality === "inferred").length;
+  const own = (input.founderEvidenceCount ?? 0) > 0;
+  const basis = (key: string): { basedOn: string; kind: ScoreComponent["kind"] } => {
+    switch (key) {
+      case "demand": return own
+        ? { basedOn: "Market and Sentiment agents reading search snippets, plus your own project evidence", kind: "mixed" }
+        : { basedOn: "Market and Sentiment agents reading search snippets. No customer was asked.", kind: "inference" };
+      case "competition": return verified > 0
+        ? { basedOn: `${verified} competitor${verified === 1 ? "" : "s"} found in live search, ${inferred} named by the agent only`, kind: "mixed" }
+        : { basedOn: "Competitor agent's own list. Nothing matched in live search.", kind: "inference" };
+      case "timing": return { basedOn: "Trend agent's reading of search results. No hard market data.", kind: "inference" };
+      case "uniqueness": return { basedOn: "Competitor agent's view of your differentiation. No customer has compared you with an alternative.", kind: "inference" };
+      case "monetization": return own
+        ? { basedOn: "Sentiment agent's willingness-to-pay signal, plus your own project evidence", kind: "mixed" }
+        : { basedOn: "Sentiment agent's willingness-to-pay signal. Nobody was asked to pay.", kind: "inference" };
+      default: return { basedOn: "Agent judgement", kind: "inference" };
+    }
+  };
+  const components: ScoreComponent[] = input.breakdown.map(b => ({ key: b.key, label: b.label, score: Math.round(b.score), weight: b.weight, ...basis(b.key) }));
+  const total = components.reduce((n, c) => n + (parseFloat(c.weight) || 0), 0) || 100;
+  const inf = components.filter(c => c.kind === "inference").reduce((n, c) => n + (parseFloat(c.weight) || 0), 0);
+  return {
+    label: "Model-generated estimate",
+    components,
+    inferenceSharePct: Math.round((inf / total) * 100),
+    calibrated: false,
+    note: "The weights are fixed by BuildMind and shown above. Each part is a model's judgement, and the result has not been calibrated against how real startups turned out. Read it as a diagnostic that tells you where to look, not a measurement of viability.",
+  };
+}
+
+// ── Conclusion confidence ─────────────────────────────────────────────────
+
+export function buildConclusion(input: EvidenceInput, graded: CompetitorEvidence[], falsifiers: Falsifier[], conflicts: EvidenceConflict[]): ConclusionConfidence {
+  const q = evidenceQuality(input, graded);
+  const noCustomer = !(input.founderEvidenceCount && input.founderEvidenceCount > 0);
+  // Without a single customer conversation, web research alone cannot justify more than middling confidence.
+  const pct = Math.min(noCustomer ? 55 : 95, Math.round(15 + q * 75));
+  const worst = (input.risk?.top_risks ?? []).find(r => r.severity === "fatal" || r.severity === "high");
+  const customer = input.parsed?.target_customer?.trim() || "your target customers";
+
+  const primary = conflicts.length > 0 && /evidence/i.test(conflicts[0].title)
+    ? "Whether the specific pain this idea depends on exists, or only a broader frustration does"
+    : noCustomer ? `Whether ${customer} hit this problem often enough to act on it`
+    : input.sentiment?.willingness_to_pay_signal !== "likely" ? "Whether they will pay, and how much"
+    : "Whether the strongest risk can be overcome";
+  const secondary = worst ? `Whether this can be overcome: ${clip(worst.title, 90)}`
+    : input.competitor?.saturation_level === "high" || input.competitor?.saturation_level === "medium" ? "Whether you can beat what people already use"
+    : "How much it costs to reach and keep a customer";
+
+  return {
+    pct,
+    label: pct >= 65 ? "High" : pct >= 40 ? "Moderate" : "Low",
+    primaryUncertainty: primary,
+    secondaryUncertainty: secondary,
+    requiredEvidence: falsifiers.slice(0, 3).map(f => f.test.split(/(?<=\.)\s/)[0]),
+  };
+}
+
+// ── The experiment that tests the actual thesis ───────────────────────────
+
+export function buildThesisTest(input: EvidenceInput, graded: CompetitorEvidence[]): ThesisTest | undefined {
+  const diff = input.competitor?.differentiation_opportunities?.find(present)
+    ?? input.competitor?.market_gaps?.find(present);
+  if (!diff) return undefined;
+  const rivals = graded.filter(c => c.quality !== "adjacent").slice(0, 3).map(c => c.name);
+  const customer = input.parsed?.target_customer?.trim() || "target customers";
+  const rivalText = rivals.length ? rivals.join(", ") : "the tools people use today";
+  return {
+    thesis: clip(diff, 200),
+    notThisTest: `Do not test the part ${rivalText} already do well. Passing that proves nothing about your idea and quietly turns you into a copy of them.`,
+    setup: `Build a realistic set of 10 or more cases where ONLY your differentiator can succeed: ${clip(diff, 120)}. Include traps (near-duplicates, old versions, partial information). Run it with 5 to 8 ${customer}, phrasing each case the way a real customer states the need, with no hints.`,
+    measure: [
+      "Success rate on those cases, next to the best existing option on the same cases",
+      "Wrong answers (false positives) and how confidently they were stated",
+      "Effort and time to reach the right answer",
+      "Whether it can explain why it believes the answer is correct",
+      "Whether each participant says they would have solved it without you",
+    ],
+    why: "The idea only matters if it solves cases existing tools fail on. A test the easy version could pass cannot tell you that.",
+    basedOn: `The differentiation the competitor analysis identified, set against ${rivalText}.`,
+    expectedLearning: "A real success rate on the hard cases, and how often customers meet such cases at all.",
+    ifItFails: "If existing options solve the hard cases about as well, the differentiator is not a business yet. Either find a case type they cannot solve, or stop here with the lesson.",
+  };
+}
+
+export function buildChangeMyMind(input: EvidenceInput, falsifiers: Falsifier[], thesis?: ThesisTest): ChangeMyMind {
+  const kills = falsifiers.map(f => f.provenWrongIf);
+  const strengthens = [
+    "Customers repeatedly describe the problem unprompted, with a specific recent example",
+    "At least a few commit money or a dated promise within 14 days",
+  ];
+  if (thesis) {
+    kills.push("Existing tools solve the hard test cases about as well as yours does");
+    strengthens.unshift("Your approach solves the hard cases that the best existing option fails on");
+  }
+  kills.push("Customers will not give the access or data your approach needs");
+  strengthens.push("Results improve as you add context, without adding manual work per customer");
+  return { kills: kills.slice(0, 5), strengthens: strengthens.slice(0, 5) };
+}
+
+// ── Do the pivots test the original idea? ─────────────────────────────────
+
+export function checkPivots(input: EvidenceInput): PivotCheck[] {
+  const origin = contentStems(`${input.parsed?.problem ?? ""} ${input.parsed?.target_customer ?? ""}`);
+  return (input.pivots ?? []).map(p => {
+    const text = contentStems(`${p.title} ${p.description ?? ""} ${p.target_niche ?? ""} ${p.key_change ?? ""}`);
+    const shared = [...text].filter(x => origin.has(x)).length;
+    const overlap = origin.size ? shared / Math.min(origin.size, Math.max(text.size, 1)) : 0;
+    const relation: PivotCheck["relation"] = overlap >= 0.3 ? "same_problem" : overlap >= 0.12 ? "adjacent" : "different_problem";
+    const reason = relation === "same_problem"
+      ? "Narrows who you serve or how you charge. The core problem is the same, so evidence about it still counts."
+      : relation === "adjacent"
+        ? "Solves a nearby problem. Only part of your evidence carries over, so check this customer really has it."
+        : "Solves a different problem for a different buyer. It can be a business, but it does not validate your original idea. Treat it as a separate bet.";
+    return { title: p.title, relation, reason, validatesOriginal: relation === "same_problem" };
+  });
+}
+
 // ── Entry point ───────────────────────────────────────────────────────────
 
 export function buildEvidenceLayer(input: EvidenceInput): EvidenceLayer {
   const competitors = gradeCompetitors(input);
   const { claims, unknowns } = labelClaims(input, competitors);
+  const conflicts = detectConflicts(input, competitors);
+  const falsifiers = buildFalsifiers(input);
+  const thesisTest = buildThesisTest(input, competitors);
   return {
     claims,
-    conflicts: detectConflicts(input, competitors),
+    conflicts,
     competitors,
     confidence: calibrate(input, competitors),
-    falsifiers: buildFalsifiers(input),
+    falsifiers,
     unknowns,
+    scoreBasis: buildScoreBasis(input, competitors),
+    conclusion: buildConclusion(input, competitors, falsifiers, conflicts),
+    thesisTest,
+    changeMyMind: buildChangeMyMind(input, falsifiers, thesisTest),
+    pivotChecks: checkPivots(input),
   };
-}
+          }
