@@ -13,6 +13,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdminUser } from "@/lib/server/adminAuth";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { effectiveStreak } from "@/lib/streak";
 
 // ── Auth guard ───────────────────────────────────────────────────────────────
 
@@ -90,10 +91,10 @@ export async function GET() {
   // Fetch founder_context for streaks + last_seen
   const { data: contextRows } = await admin
     .from("founder_context")
-    .select("user_id, streak, updated_at");
+    .select("user_id, streak, last_checkin_date, updated_at");
   const contextMap: Record<string, { streak: number; updated_at: string }> = {};
   for (const row of contextRows ?? []) {
-    contextMap[row.user_id] = { streak: row.streak ?? 0, updated_at: row.updated_at };
+    contextMap[row.user_id] = { streak: effectiveStreak(row.streak, row.last_checkin_date), updated_at: row.updated_at };
   }
 
   const users = authUsers.map(u => {
