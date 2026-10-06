@@ -86,10 +86,12 @@ function inferProjectAudience(targetUsers: string, title: string, description = 
 }
 
 function inferProjectProblem(problem: string, title: string, description = ""): string {
-  if (problem?.trim()) return problem.trim();
+  // First eight words, no trailing punctuation: a whole pasted paragraph inside a task
+  // sentence reads badly and leaves ".." where the template adds its own full stop.
+  if (problem?.trim()) return problem.trim().split(/\s+/).slice(0, 8).join(" ").replace(/[.!?,;:]+$/, "");
   const haystack = `${title} ${description}`.toLowerCase();
   if (/(consent|privacy|gdpr|compliance|audit)/.test(haystack)) return "verifiable consent tracking and audit logging";
-  if (description?.trim()) return description.trim().slice(0, 120);
+  if (description?.trim()) return description.trim().split(/\s+/).slice(0, 8).join(" ").replace(/[.!?,;:]+$/, "");
   return title?.trim() ? `${title.trim()} and the workflow it improves` : "their current workflow";
 }
 
