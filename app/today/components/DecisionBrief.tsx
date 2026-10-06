@@ -1,9 +1,9 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { ArrowRight, Clock, Target } from "lucide-react";
+import React, { type ReactNode } from "react";
+import { motion, useReducedMotion } from "framer-motion";
+import { ArrowRight, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 
 export type DecisionBriefProps = {
   action: ReactNode;
@@ -13,60 +13,98 @@ export type DecisionBriefProps = {
   expectedEvidence?: string;
   onExecute?: () => void;
   executeLabel?: string;
+  /** The kind of work today is ("Talk to customers"), from the mission planner. */
+  kicker?: string;
+  /** Colour for this kind of work. Falls back to the app accent. */
+  accent?: string;
+  /** Why this kind of work today, one short line each. */
+  reasons?: string[];
 };
 
-/** Presentational only: callers retain recommendation and execution behavior. */
-export function DecisionBrief({ action, rationale, time, lowConfidence = false, expectedEvidence, onExecute, executeLabel = "Execute" }: DecisionBriefProps) {
+/**
+ * The one thing to do today, set large. The task is the page's focal point:
+ * a coloured edge that draws down once, then the sentence rising into place.
+ * Everything else is quiet text. Presentational only: callers keep the
+ * recommendation and execution behaviour.
+ */
+export function DecisionBrief({
+  action, rationale, time, lowConfidence = false, expectedEvidence, onExecute, executeLabel = "Execute",
+  kicker, accent = "var(--bm-accent)", reasons,
+}: DecisionBriefProps) {
+  const reduce = useReducedMotion();
+  const ease = [0.16, 1, 0.3, 1] as const;
+
   return (
-    <Card
-      variant={lowConfidence ? "data" : "alert"}
-      className="overflow-hidden"
-      style={{ borderRadius: "var(--r-xl)" }}
-    >
-      <div className="border-b border-[var(--bm-border)] px-4 py-3 sm:px-5">
-        <div className="flex items-center gap-2">
-          <span className="grid size-5 place-items-center rounded-[4px] bg-[var(--bm-accent-dim)] text-[var(--bm-accent)]">
-            <Target size={11} />
+    <section aria-label="Today's task" style={{ position: "relative", padding: "6px 0 4px 20px" }}>
+      <motion.span
+        aria-hidden
+        initial={reduce ? false : { scaleY: 0 }}
+        animate={{ scaleY: 1 }}
+        transition={{ duration: reduce ? 0 : 0.8, ease }}
+        style={{ position: "absolute", left: 0, top: 4, bottom: 4, width: 4, borderRadius: 2, background: accent, transformOrigin: "top" }}
+      />
+
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+        <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: accent, fontWeight: 500 }}>
+          {lowConfidence ? "Finding out first" : kicker ?? "Today"}
+        </span>
+        {time ? (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "'DM Mono', monospace", fontSize: 12, color: "var(--bm-text4)" }}>
+            <Clock size={12} />{time}
           </span>
-          <p className="font-mono text-[10px] font-medium uppercase tracking-[0.1em] text-[var(--bm-text3)]">
-            {lowConfidence ? "Calibration brief" : "Decision brief"}
-          </p>
-          {time ? <span className="ml-auto inline-flex items-center gap-1 font-mono text-[10px] text-[var(--bm-text4)]"><Clock size={11} />{time}</span> : null}
+        ) : null}
+      </div>
+
+      <motion.h2
+        initial={reduce ? false : { opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: reduce ? 0 : 0.7, ease, delay: reduce ? 0 : 0.15 }}
+        style={{
+          margin: 0, fontFamily: "var(--font-syne), 'Syne', sans-serif", fontWeight: 600, color: "var(--bm-text)",
+          fontSize: "clamp(22px, 4.6vw, 32px)", lineHeight: 1.22, letterSpacing: "-0.02em", textWrap: "balance",
+        }}
+      >
+        {action}
+      </motion.h2>
+
+      {lowConfidence ? (
+        <p style={{ margin: "12px 0 0", fontSize: 13, lineHeight: 1.55, color: "var(--bm-text3)" }}>
+          This is a question for the real world, not a guess. What you learn will shape the next recommendation.
+        </p>
+      ) : null}
+
+      {rationale ? (
+        <motion.p
+          initial={reduce ? false : { opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: reduce ? 0 : 0.6, delay: reduce ? 0 : 0.5 }}
+          style={{ margin: "16px 0 0", maxWidth: "62ch", fontSize: 15, lineHeight: 1.65, color: "var(--bm-text2)" }}
+        >
+          {rationale}
+        </motion.p>
+      ) : null}
+
+      {reasons && reasons.length > 0 ? (
+        <ul style={{ margin: "12px 0 0", padding: 0, listStyle: "none", display: "grid", gap: 4 }}>
+          {reasons.slice(0, 2).map((r) => (
+            <li key={r} style={{ fontSize: 12.5, lineHeight: 1.5, color: "var(--bm-text3)" }}>{r}</li>
+          ))}
+        </ul>
+      ) : null}
+
+      {expectedEvidence ? (
+        <p style={{ margin: "14px 0 0", maxWidth: "62ch", fontSize: 12.5, lineHeight: 1.55, color: "var(--bm-text3)" }}>
+          You will know it worked when: {expectedEvidence}
+        </p>
+      ) : null}
+
+      {onExecute ? (
+        <div style={{ marginTop: 18 }}>
+          <Button size="sm" onClick={onExecute}>
+            {executeLabel} <ArrowRight size={13} />
+          </Button>
         </div>
-      </div>
-
-      <div className="px-4 py-4 sm:px-5 sm:py-5">
-        <p className="font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--bm-text4)]">What to do</p>
-        <h2 className="mt-2 font-[family-name:var(--font-syne)] text-[19px] font-semibold leading-[1.28] text-[var(--bm-text)] sm:text-[21px]">{action}</h2>
-
-        {lowConfidence ? (
-          <p className="mt-3 border-l-2 border-[var(--bm-intel-bd)] pl-3 text-xs leading-relaxed text-[var(--bm-text3)]">
-            This is an evidence-gathering action. The result will calibrate the next recommendation.
-          </p>
-        ) : null}
-
-        {rationale ? (
-          <div className="mt-4 border-t border-[var(--bm-border)] pt-3">
-            <p className="font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--bm-text4)]">Why now</p>
-            <p className="mt-1.5 text-[13px] leading-relaxed text-[var(--bm-text2)]">{rationale}</p>
-          </div>
-        ) : null}
-
-        {expectedEvidence ? (
-          <div className="mt-3 rounded-[var(--r-md)] border border-[var(--bm-border)] bg-[var(--bm-bg3)] px-3 py-2.5">
-            <p className="font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--bm-text4)]">Expected evidence</p>
-            <p className="mt-1 text-xs leading-relaxed text-[var(--bm-text3)]">{expectedEvidence}</p>
-          </div>
-        ) : null}
-
-        {onExecute ? (
-          <div className="mt-4">
-            <Button size="sm" onClick={onExecute}>
-              {executeLabel} <ArrowRight size={13} />
-            </Button>
-          </div>
-        ) : null}
-      </div>
-    </Card>
+      ) : null}
+    </section>
   );
 }
