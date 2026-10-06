@@ -42,6 +42,8 @@ export interface FounderIntelligenceReport {
   standingTrend: StandingLogEntry[];
   /** Rolling accuracy of BuildMind's own predictions for this founder. */
   predictionAccuracy: IntelligenceAccuracy;
+  /** Days since predictionAccuracy was last recomputed. A large number means the figure is stale. */
+  predictionAccuracyAgeDays: number | null;
   /** The full composed intelligence state — founder/startup/strategy/
    *  execution/temporal/signals/decision/archetype_stats/source_summary.
    *  See lib/founderIntelligence.ts's FounderIntelligenceState for the
@@ -81,6 +83,7 @@ export async function buildFounderIntelligenceReport(
     standing,
     standingTrend: trend,
     predictionAccuracy: accuracy,
+    predictionAccuracyAgeDays: accuracy?.last_updated_at ? Math.floor((Date.now() - new Date(accuracy.last_updated_at).getTime()) / 86_400_000) : null,
     fullState,
   };
 }
