@@ -134,6 +134,53 @@ export function EvidencePanel({ layer }: { layer: EvidenceLayer }) {
         </div>
       )}
 
+      {layer.nextMove && (
+        <div style={{ ...box, borderColor: layer.nextMove.holdBuilding ? "var(--bm-accent)" : "var(--bm-border)" }}>
+          <p style={eyebrow}>{layer.nextMove.holdBuilding ? "Do this before building anything" : "Best next test"}</p>
+          <p style={{ margin: "10px 0 6px", fontSize: 14, fontWeight: 600, color: "var(--bm-text)", lineHeight: 1.5 }}>{layer.nextMove.action}</p>
+          <p style={{ margin: 0, fontSize: 12.5, color: "var(--bm-text2)", lineHeight: 1.55 }}>{layer.nextMove.why}</p>
+          {layer.nextMove.doNotBuildYet.length > 0 && (
+            <>
+              <p style={{ ...eyebrow, marginTop: 12 }}>Not yet</p>
+              <ul style={{ margin: "5px 0 0", paddingLeft: 18, fontSize: 12.5, color: "var(--bm-text2)", lineHeight: 1.55 }}>
+                {layer.nextMove.doNotBuildYet.map(t => <li key={t}>{t}</li>)}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
+
+      {(layer.demandSplit || layer.riskExposure) && (
+        <div style={box}>
+          <p style={eyebrow}>Two numbers that are easy to confuse</p>
+          <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", marginTop: 12 }}>
+            {layer.demandSplit && (
+              <div>
+                <p style={{ margin: 0, fontSize: 12.5, color: "var(--bm-text3)" }}>Demand</p>
+                <p style={{ margin: "4px 0 0", fontSize: 13.5, color: "var(--bm-text)" }}>
+                  <strong style={{ fontSize: 22, fontWeight: 600 }}>{layer.demandSplit.market}</strong> in the market
+                  {" · "}
+                  <strong style={{ fontSize: 22, fontWeight: 600 }}>{layer.demandSplit.product}</strong> for your product
+                </p>
+                <p style={{ margin: "6px 0 0", fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.5 }}>{layer.demandSplit.basis}</p>
+              </div>
+            )}
+            {layer.riskExposure && (
+              <div>
+                <p style={{ margin: 0, fontSize: 12.5, color: "var(--bm-text3)" }}>Risk</p>
+                <p style={{ margin: "4px 0 0", fontSize: 13.5, color: "var(--bm-text)" }}>
+                  <strong style={{ fontSize: 22, fontWeight: 600 }}>{layer.riskExposure.exposure}</strong> exposure
+                  {" · "}
+                  <strong style={{ fontSize: 22, fontWeight: 600 }}>{layer.riskExposure.uncertainty}</strong> uncertainty
+                </p>
+                <p style={{ margin: "6px 0 0", fontSize: 12.5, color: "var(--bm-text2)", lineHeight: 1.5 }}>Main unresolved: {layer.riskExposure.primaryUnresolved}</p>
+                <p style={{ margin: "6px 0 0", fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.5 }}>{layer.riskExposure.note}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {track && (track.resolved > 0 || track.open > 0) && <TrackRecordCard track={track} />}
 
       {/* Calibrated range replaces a falsely precise number */}
@@ -234,6 +281,52 @@ export function EvidencePanel({ layer }: { layer: EvidenceLayer }) {
         </div>
       )}
 
+      {layer.hypotheses && layer.hypotheses.length > 0 && (
+        <div style={box}>
+          <p style={eyebrow}>The idea as separate bets</p>
+          <p style={{ margin: "6px 0 0", fontSize: 12.5, color: "var(--bm-text3)", lineHeight: 1.5 }}>The score is a summary of these. Each bet can be wrong on its own.</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 14 }}>
+            {layer.hypotheses.map(h => (
+              <div key={h.id} style={{ borderTop: "1px solid var(--bm-border)", paddingTop: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--bm-text)" }}>{h.label}</span>
+                  <Chip color={h.status === "supported" ? "var(--bm-green)" : h.status === "contested" ? "var(--bm-red)" : h.status === "indirect_support" ? "var(--bm-amber)" : "var(--bm-text3)"}>
+                    {h.status === "indirect_support" ? "indirect support only" : h.status}
+                  </Chip>
+                  <span style={{ fontSize: 11.5, color: "var(--bm-text4)" }}>confidence {Math.round(h.confidence * 100)}%</span>
+                </div>
+                <p style={{ margin: "5px 0 0", fontSize: 12.5, color: "var(--bm-text2)", lineHeight: 1.5 }}>{h.statement}</p>
+                {h.evidence.length > 0 && <p style={{ margin: "5px 0 0", fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.5 }}>For: {h.evidence.join(" ")}</p>}
+                {h.counterevidence.length > 0 && <p style={{ margin: "3px 0 0", fontSize: 12, color: "var(--bm-red)", lineHeight: 1.5 }}>Against: {h.counterevidence.join(" ")}</p>}
+                <p style={{ margin: "3px 0 0", fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.5 }}>Wrong if: {h.falsifier}</p>
+                <p style={{ margin: "3px 0 0", fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.5 }}>Next: {h.nextExperiment}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {layer.evidenceHierarchy && (
+        <div style={box}>
+          <p style={eyebrow}>What kind of proof is behind this</p>
+          <ul style={{ listStyle: "none", margin: "12px 0 0", padding: 0, display: "grid", gap: 8 }}>
+            {layer.evidenceHierarchy.levels.map(l => (
+              <li key={l.level} style={{ display: "flex", gap: 10, alignItems: "baseline" }}>
+                <span style={{ fontFamily: mono, fontSize: 12, color: l.count === 0 && l.level === 1 ? "var(--bm-red)" : "var(--bm-text)", minWidth: 22 }}>{l.count}</span>
+                <span style={{ fontSize: 12.5, color: "var(--bm-text2)", lineHeight: 1.45 }}><strong style={{ color: "var(--bm-text)", fontWeight: 600 }}>{l.label}.</strong> {l.note}</span>
+              </li>
+            ))}
+          </ul>
+          <p style={{ margin: "12px 0 0", fontSize: 12.5, color: "var(--bm-text2)", lineHeight: 1.55 }}>{layer.evidenceHierarchy.statement}</p>
+        </div>
+      )}
+
+      {layer.excludedCompetitors && layer.excludedCompetitors.length > 0 && (
+        <p style={{ margin: 0, fontSize: 12, color: "var(--bm-text4)", lineHeight: 1.5 }}>
+          Left out of the competitor list: {layer.excludedCompetitors.map(e => `${e.name} (${e.reason.replace(/\.$/, "").toLowerCase()})`).join("; ")}.
+        </p>
+      )}
+
       <div style={box}>
         <p style={eyebrow}>What would prove this wrong</p>
         <div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 12 }}>
@@ -284,4 +377,4 @@ export function EvidencePanel({ layer }: { layer: EvidenceLayer }) {
       )}
     </motion.section>
   );
-              }
+          }
