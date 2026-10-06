@@ -76,6 +76,19 @@ type MilestoneBreakResult = {
   generated_at: string;
 };
 
+// One colour per kind of work, so the page itself says what sort of day this is.
+function missionAccent(kind?: string): string {
+  switch (kind) {
+    case "interview": case "outreach": case "follow_up": return "#4AB8B0";
+    case "build": return "#9B87F5";
+    case "publish": return "#E8C547";
+    case "pricing": return "var(--bm-green, #4ade80)";
+    case "analyze": return "var(--bm-intel, #6FA8FF)";
+    case "unblock": return "var(--bm-red, #E05555)";
+    default: return "var(--bm-accent)";
+  }
+}
+
 type ActionData = {
   action: string;
   message: string;
@@ -2128,6 +2141,9 @@ function TodayContent() {
               rationale={sanitizeOutput(actionData.reflexion?.rationale ?? actionData.why)}
               time={actionData.time}
               expectedEvidence={actionData.intelligence?.decision?.top_candidate?.expected_evidence}
+              kicker={actionData.missionLabel}
+              accent={missionAccent(actionData.missionKind)}
+              reasons={actionData.missionReasons}
               executeLabel="Open script"
               onExecute={() => executionScriptRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
             />
@@ -2146,6 +2162,7 @@ function TodayContent() {
             timeText={actionData?.time ?? null}
             done={done}
             streak={streak}
+            firstStep={actionData?.firstStep ?? null}
           />
 
           {!done && !actionLoading && (
@@ -2857,4 +2874,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-    }
+  }
