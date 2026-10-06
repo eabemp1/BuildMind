@@ -44,10 +44,17 @@ export interface CompetitorEvidence {
   url?: string;
 }
 
+export type TestComponent = "demand" | "monetization" | "competition" | "uniqueness" | "risk";
+
 export interface Falsifier {
   assumption: string;
   test: string;
   provenWrongIf: string;
+  /** Stable id within one analysis, so a result can be recorded against it later. */
+  id?: string;
+  component?: TestComponent;
+  /** How likely this analysis said the assumption is to hold (0-1). This is the prediction the track record scores. */
+  predictedHold?: number;
 }
 
 export interface ConfidenceBand {
@@ -86,6 +93,8 @@ export interface ConclusionConfidence {
 
 /** The experiment that tests the differentiating claim, not the easy adjacent one. */
 export interface ThesisTest {
+  id?: string;
+  predictedHold?: number;
   thesis: string;
   notThisTest: string;
   setup: string;
@@ -118,6 +127,10 @@ export interface EvidenceLayer {
   thesisTest?: ThesisTest;
   changeMyMind?: ChangeMyMind;
   pivotChecks?: PivotCheck[];
+  /** How reliable this founder's past analyses turned out to be (see lib/breakCalibration.ts). */
+  trackRecord?: import("@/lib/breakCalibration").TrackRecord;
+  /** Id of the saved prediction row, set by the route so results can be recorded. */
+  predictionId?: string;
 }
 
 export interface EvidenceInput {
@@ -139,6 +152,7 @@ export interface EvidenceInput {
   pivots?: Array<{ title: string; description?: string; target_niche?: string; why_better?: string; key_change?: string }>;
 }
 
+const clampP = (n: number) => Math.min(0.95, Math.max(0.05, n));
 const clip = (s: string, n = 140) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 const present = (s: unknown): s is string => typeof s === "string" && s.trim().length > 0;
 
@@ -375,6 +389,11 @@ export function calibrate(input: EvidenceInput, graded: CompetitorEvidence[]): C
 
 export function buildFalsifiers(input: EvidenceInput): Falsifier[] {
   const out: Falsifier[] = [];
+  const scoreOf = (key: string, fallback = 0.4): number => {
+    const e = input.breakdown?.find(x => x.key === key);
+    return clampP(e ? e.score / 100 : fallback);
+  };
+  const riskHold = (sev?: string) => clampP(sev === "fatal" ? 0.15 : sev === "high" ? 0.3 : sev === "medium" ? 0.6 : 0.85);
   const customer = input.parsed?.target_customer?.trim() || "your target customers";
   const problem = input.parsed?.problem?.trim();
 
@@ -382,12 +401,14 @@ export function buildFalsifiers(input: EvidenceInput): Falsifier[] {
     assumption: problem ? `People have this problem badly enough to act: ${clip(problem, 100)}` : "The problem is painful enough that people act on it",
     test: `Interview 8 of ${customer}. Ask what they did about this the last time it happened. Do not describe your solution.`,
     provenWrongIf: "Fewer than 3 of 8 describe having paid, built a workaround or searched for a fix in the past 3 months.",
+    component: "demand", predictedHold: scoreOf("demand"),
   });
   if (input.sentiment?.willingness_to_pay_signal !== "likely") {
     out.push({
       assumption: "They will pay for it",
       test: `Ask 10 of ${customer} for a deposit, pre-order or signed letter of intent at a stated price.`,
       provenWrongIf: "Fewer than 2 of 10 commit money or a dated promise within 14 days.",
+      component: "monetization", predictedHold: scoreOf("monetization"),
     });
   }
   const worst = (input.risk?.top_risks ?? []).find(r => r.severity === "fatal" || r.severity === "high");
@@ -396,6 +417,7 @@ export function buildFalsifiers(input: EvidenceInput): Falsifier[] {
       assumption: `This risk is manageable: ${clip(worst.title, 80)}`,
       test: worst.mitigation && worst.mitigation.trim() ? clip(worst.mitigation, 160) : "Run the cheapest possible test that would show whether this risk materialises.",
       provenWrongIf: "The cheapest test fails, or you cannot design one that costs less than two weeks of work.",
+      component: "risk", predictedHold: riskHold(worst.severity),
     });
   }
   if (input.competitor?.saturation_level === "high" || input.competitor?.saturation_level === "medium") {
@@ -403,9 +425,10 @@ export function buildFalsifiers(input: EvidenceInput): Falsifier[] {
       assumption: "You can win against existing options",
       test: "Ask 5 users of the closest competitor what they would switch for. Note the exact words.",
       provenWrongIf: "Most say the current tool is good enough, or none can name a thing it fails at.",
+      component: "competition", predictedHold: scoreOf("competition"),
     });
   }
-  return out.slice(0, 4);
+  return out.slice(0, 4).map((f, i) => ({ ...f, id: `f${i + 1}` }));
 }
 
 // ── Where the score comes from ────────────────────────────────────────────
@@ -480,7 +503,10 @@ export function buildThesisTest(input: EvidenceInput, graded: CompetitorEvidence
   const rivals = graded.filter(c => c.quality !== "adjacent").slice(0, 3).map(c => c.name);
   const customer = input.parsed?.target_customer?.trim() || "target customers";
   const rivalText = rivals.length ? rivals.join(", ") : "the tools people use today";
+  const uniq = input.breakdown?.find(x => x.key === "uniqueness");
   return {
+    id: "thesis",
+    predictedHold: clampP(uniq ? uniq.score / 100 : 0.3),
     thesis: clip(diff, 200),
     notThisTest: `Do not test the part ${rivalText} already do well. Passing that proves nothing about your idea and quietly turns you into a copy of them.`,
     setup: `Build a realistic set of 10 or more cases where ONLY your differentiator can succeed: ${clip(diff, 120)}. Include traps (near-duplicates, old versions, partial information). Run it with 5 to 8 ${customer}, phrasing each case the way a real customer states the need, with no hints.`,
@@ -552,4 +578,4 @@ export function buildEvidenceLayer(input: EvidenceInput): EvidenceLayer {
     changeMyMind: buildChangeMyMind(input, falsifiers, thesisTest),
     pivotChecks: checkPivots(input),
   };
-          }
+                                       }
