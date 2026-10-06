@@ -272,12 +272,14 @@ export interface StageEvidenceCompleteness {
 export function computeStageEvidenceCompleteness(
   requirement: StageEvidenceRequirement,
   rows: Pick<StageEvidenceRow, "evidence_type">[],
+  /** Slots already satisfied by data BuildMind holds elsewhere (for example recorded MRR). */
+  derivedSlotKeys: readonly string[] = [],
 ): StageEvidenceCompleteness {
   const submittedTypes = new Set(rows.map(r => r.evidence_type));
   const filledSlotKeys: string[] = [];
   const missingSlotKeys: string[] = [];
   for (const slot of requirement.slots) {
-    const filled = slot.acceptedTypes.some(t => submittedTypes.has(t));
+    const filled = derivedSlotKeys.includes(slot.key) || slot.acceptedTypes.some(t => submittedTypes.has(t));
     (filled ? filledSlotKeys : missingSlotKeys).push(slot.key);
   }
   return {
