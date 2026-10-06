@@ -338,7 +338,7 @@ export async function getProjectSummaries(): Promise<ProjectSummary[]> {
     // deliberately NOT the same as `progress` above, which is ALL tasks
     // across the project's whole history — stageProgress is scoped to
     // whichever milestones actually belong to the current stage.
-    const stageProgress = computeStageProgress(projectMilestones, displayStage);
+    const stageProgress = computeStageProgress(projectMilestones, displayStage, projectTasks.map((t) => ({ milestone_id: t.milestone_id, is_completed: t.is_completed })));
 
     // Pending milestones and tasks — used by Today page for AI personalization
     const pendingMilestones = projectMilestones
@@ -767,4 +767,4 @@ export async function updateProjectMRR(
     .update({ current_mrr: mrrPesewas, mrr_updated_at: new Date().toISOString() })
     .eq("id", projectId)
     .eq("user_id", user.id);
-                              }
+     }
