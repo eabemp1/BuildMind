@@ -19,6 +19,8 @@ import {
 } from "@/lib/agents";
 import { competitorSearch } from "@/lib/search";
 import { buildEvidenceLayer } from "@/lib/breakEvidence";
+import { extractTests, applyTrackRecord, summarizeTrackRecord } from "@/lib/breakCalibration";
+import { loadTrackRecord, savePrediction } from "@/lib/server/breakPredictions";
 import { buildPreviewFocusInsights, tagFocusAreasForList, buildFocusAreaCoverage } from "@/lib/breakMyStartupFocusAreas";
 import {
   computeViabilityScore,
@@ -241,6 +243,23 @@ const BreakMyStartupSchema = z.object({
   executionMode: z.boolean().optional(),
   knownCompetitors: z.array(z.string().max(80)).max(8).optional(),
 });
+
+/**
+ * Applies the founder's prediction track record to a fresh analysis and saves
+ * this analysis's predictions so the founder can record how they turned out.
+ * Never throws: on any failure the unadjusted analysis is returned.
+ */
+async function finalizeEvidence(layer: ReturnType<typeof buildEvidenceLayer>, userId: string, projectId: string | null) {
+  try {
+    const supabase = createAdminClient();
+    const track = (await loadTrackRecord(supabase, userId)) ?? summarizeTrackRecord([]);
+    const adjusted = applyTrackRecord(layer, track);
+    const predictionId = await savePrediction(supabase, { userId, projectId, tests: extractTests(adjusted) });
+    return predictionId ? { ...adjusted, predictionId } : adjusted;
+  } catch {
+    return layer;
+  }
+}
 
 export async function POST(request: Request) {
   let fallbackIdea = "";
@@ -499,7 +518,7 @@ export async function POST(request: Request) {
       const focusAreaCoverage = buildFocusAreaCoverage(focusAreas, [...killReasonTags, ...surviveReasonTags, ...differentiationPlanTags, ...pivotTags.map((t) => t)]);
 
       // Evidence & reasoning layer: labels, contradictions, provenance, calibrated range.
-      const evidenceLayer = buildEvidenceLayer({
+      const rawEvidence = buildEvidenceLayer({
         viabilityScore: viabilityResult.viability_score,
         parsed,
         market: agentPipeline.market, competitor: agentPipeline.competitor, trend: agentPipeline.trend,
@@ -512,6 +531,7 @@ export async function POST(request: Request) {
         breakdown: breakdownEntries,
         pivots,
       });
+      const evidenceLayer = await finalizeEvidence(rawEvidence, userId, null);
 
       return NextResponse.json({
         success: true,
@@ -884,7 +904,7 @@ export async function POST(request: Request) {
         .eq("user_id", userId);
       founderEvidenceCount = count ?? 0;
     } catch { /* non-fatal — evidence layer just treats it as none */ }
-    const evidenceLayer = buildEvidenceLayer({
+    const rawEvidence = buildEvidenceLayer({
       viabilityScore: viabilityResult.viability_score,
       parsed: { problem: project.problem ?? undefined, target_customer: project.target_users ?? undefined },
       market: agentPipeline.market, competitor: agentPipeline.competitor, trend: agentPipeline.trend,
@@ -897,6 +917,7 @@ export async function POST(request: Request) {
       breakdown: breakdownEntries,
       pivots,
     });
+    const evidenceLayer = await finalizeEvidence(rawEvidence, userId, projectId);
 
     return NextResponse.json({
       success: true,
@@ -1039,4 +1060,4 @@ export async function POST(request: Request) {
       { status: msg.toLowerCase().includes("limit") ? 429 : 500 },
     );
   }
-      }
+    }
