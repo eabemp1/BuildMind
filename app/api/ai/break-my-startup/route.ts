@@ -20,6 +20,7 @@ import {
 import { competitorSearch } from "@/lib/search";
 import { buildEvidenceLayer } from "@/lib/breakEvidence";
 import { extractTests, applyTrackRecord, summarizeTrackRecord } from "@/lib/breakCalibration";
+import { stripUnsupportedTraitClaims } from "@/lib/breakGuards";
 import { loadTrackRecord, savePrediction } from "@/lib/server/breakPredictions";
 import { buildPreviewFocusInsights, tagFocusAreasForList, buildFocusAreaCoverage } from "@/lib/breakMyStartupFocusAreas";
 import {
@@ -507,7 +508,8 @@ export async function POST(request: Request) {
       // indistinguishable from no effect. Tag each generated item against
       // ONLY the areas the founder actually picked (never invents a tag for
       // an unselected area) and summarize what got addressed vs. didn't.
-      const killReasons = signals.all_risks.slice(0, 3).map(r => r.description);
+      // Idea-only mode has no behavioural history, so character claims about the founder are dropped.
+      const killReasons = stripUnsupportedTraitClaims(signals.all_risks.map(r => r.description), false).slice(0, 3);
       const surviveReasons = signals.all_opportunities.slice(0, 2);
       const differentiationPlan = agentPipeline.competitor?.differentiation_opportunities?.slice(0, 3)
         ?? ["Identify the gap no competitor is addressing", "Own one specific niche", "Price differently"];
@@ -549,7 +551,7 @@ export async function POST(request: Request) {
           kill_reason_tags: killReasonTags,
           survive_reasons: surviveReasons,
           survive_reason_tags: surviveReasonTags,
-          brutal_advice: reflexionAction?.action ?? "Talk to 5 target users before writing a single line of code.",
+          brutal_advice: evidenceLayer.nextMove?.holdBuilding ? evidenceLayer.nextMove.action : (reflexionAction?.action ?? "Talk to 5 target users before writing a single line of code."),
           survival_probability: baseSignal,
           competitor_summary: competitorSummary,
           differentiation_plan: differentiationPlan,
@@ -885,7 +887,7 @@ export async function POST(request: Request) {
 
     // ── Visible focus-area tagging — see the idea-mode pipeline above for
     // why this exists; same treatment, project mode's own field names.
-    const killReasons = signals.all_risks.slice(0, 3).map(r => r.description);
+    const killReasons = stripUnsupportedTraitClaims(signals.all_risks.map(r => r.description), completedTasks + completedMilestones >= 15).slice(0, 3);
     const surviveReasons = signals.all_opportunities.slice(0, 2);
     const differentiationPlan = agentPipeline.competitor?.differentiation_opportunities?.slice(0, 3)
       ?? ["Identify the gap no competitor addresses", "Own one specific niche for 60 days", "Price based on outcomes, not features"];
@@ -914,6 +916,7 @@ export async function POST(request: Request) {
       scraped: competitors,
       competitorSource: competitor_data_source,
       founderEvidenceCount,
+      productName: ((project.name ?? project.title) ?? undefined) as string | undefined,
       breakdown: breakdownEntries,
       pivots,
     });
@@ -935,8 +938,8 @@ export async function POST(request: Request) {
         kill_reason_tags: killReasonTags,
         survive_reasons: surviveReasons,
         survive_reason_tags: surviveReasonTags,
-        brutal_advice: reflexionAction?.action
-          ?? "Run 5 user interviews this week and report back on willingness to pay.",
+        brutal_advice: evidenceLayer.nextMove?.holdBuilding ? evidenceLayer.nextMove.action : (reflexionAction?.action
+          ?? "Run 5 user interviews this week and report back on willingness to pay."),
         survival_probability: viabilityResult.viability_score,
         competitor_summary: competitorSummary,
         differentiation_plan: differentiationPlan,
@@ -1060,4 +1063,4 @@ export async function POST(request: Request) {
       { status: msg.toLowerCase().includes("limit") ? 429 : 500 },
     );
   }
-    }
+      }
