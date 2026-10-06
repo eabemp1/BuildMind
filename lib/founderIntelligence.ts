@@ -162,7 +162,12 @@ export interface DecisionCandidate {
     repetition_penalty: number;
     behavioral_correction: number;
     risk_reduction: number;
+    /** How sure BuildMind is that the signals behind this candidate are real (not whether the action will work). */
     confidence: number;
+    /** Chance this kind of action works for THIS founder, from their own resolved history. */
+    predicted_success?: number;
+    /** How many resolved outcomes that estimate rests on. */
+    predicted_success_n?: number;
     total: number;
   };
   supporting_signals: IntelligenceSignalType[];
@@ -729,6 +734,10 @@ export function buildFounderIntelligenceState(rawInput: FounderIntelligenceInput
   const intelligenceAccuracy = founderContext.intelligence_accuracy as { sample_size?: number; average_match_score?: number; trend?: string } | undefined;
   const accuracySampleSize = Number(intelligenceAccuracy?.sample_size ?? 0);
   const accuracyScore = Number(intelligenceAccuracy?.average_match_score ?? 0);
+  const accuracyUpdatedAt = (intelligenceAccuracy as { last_updated_at?: string } | undefined)?.last_updated_at;
+  const accuracyAgeDays = accuracyUpdatedAt && !Number.isNaN(new Date(accuracyUpdatedAt).getTime())
+    ? Math.floor((now.getTime() - new Date(accuracyUpdatedAt).getTime()) / 86_400_000)
+    : null;
   const accuracyAdjustment = accuracySampleSize >= 3 ? Math.round((accuracyScore - 0.5) * 20) : 0;
   const recentReflectionWeight = reflections.reduce((sum, r) => sum + recencyWeight(now, r.created_at, 21), 0);
   const recentActivityWeight = activityEvents.reduce((sum, a) => sum + recencyWeight(now, a.occurred_at, 14), 0);
@@ -738,6 +747,7 @@ export function buildFounderIntelligenceState(rawInput: FounderIntelligenceInput
     strengths: [...(founderMemory.strengths ?? []), ...executionSignature.strengths.map((s) => String(s.category)), ...learnedPatterns.preferred_action_types],
     avoidance: [...(founderContext.avoidance_zones ?? []), ...(founderMemory.avoidance_zones ?? []), ...executionSignature.avoidanceZones.map((s) => String(s.category)), ...learnedPatterns.avoided_action_types],
     records: reflections.map((r) => ({ title: String(r.today_action ?? r.note ?? ""), completed: r.outcome === "completed" || r.outcome === "done" })),
+    stats: [...executionSignature.avoidanceZones, ...executionSignature.strengths].map((c) => ({ label: String(c.category), completed: Math.round(c.completionRate * c.totalTasks), total: c.totalTasks })),
   });
 
   const founder: FounderState = {
@@ -752,7 +762,11 @@ export function buildFounderIntelligenceState(rawInput: FounderIntelligenceInput
       ...temporal.increasing_behaviors.map((b) => `${b} increasing`),
       ...temporal.decreasing_behaviors.map((b) => `${b} decreasing`),
       accuracySampleSize >= 3 && intelligenceAccuracy?.trend === "up" ? "Founder Intelligence predictions are getting more accurate" : null,
-      accuracySampleSize >= 3 && intelligenceAccuracy?.trend === "down" ? "Founder Intelligence predictions are slipping — model may be stale" : null,
+      accuracySampleSize >= 3 && intelligenceAccuracy?.trend === "down"
+        ? (accuracyAgeDays !== null && accuracyAgeDays > 21
+            ? `Founder Intelligence accuracy was last measured ${accuracyAgeDays} days ago (trend then: down), so it needs fresh outcomes before it can be trusted`
+            : "Founder Intelligence predictions are slipping — model may be stale")
+        : null,
     ], 6),
     confidence: clampScore(
       (learnedPatterns.patterns_reliable ? 25 : 0)
@@ -853,8 +867,11 @@ export function buildFounderIntelligenceState(rawInput: FounderIntelligenceInput
 
   const todayDateStr = now.toISOString().slice(0, 10);
   const hasFreshCache = !input.excludeAction && input.cachedDecision?.date === todayDateStr;
+  // A cached decision keeps its ranked candidates, but its basis lines quote the
+  // signals as they were when it was cached. Rebuild them from the live signals
+  // so the report never shows 63 days beside 64, or 30 rejections beside 14.
   const decision = hasFreshCache
-    ? input.cachedDecision!.decision
+    ? refreshDecisionBasis(input.cachedDecision!.decision, stateWithoutDecision.signals, now)
     : buildDecisionState({ ...stateWithoutDecision, decision: { candidates: [], top_candidate: null, decision_basis: [] } }, input.excludeAction);
 
   return { ...stateWithoutDecision, decision };
@@ -984,6 +1001,18 @@ export function activeSignals(signals: IntelligenceSignal[], asOf: Date): Array<
     .sort((a, b) => b.decayed_confidence - a.decayed_confidence);
 }
 
+/** Rebuilds only the human-readable basis of a cached decision from the current signals. */
+export function refreshDecisionBasis(decision: DecisionState, signals: IntelligenceSignal[], now: Date): DecisionState {
+  const live = activeSignals(signals, now).slice(0, 3);
+  return {
+    ...decision,
+    decision_basis: [
+      decision.top_candidate ? `Top candidate score: ${decision.top_candidate.scores.total}/100.` : "No candidate ranked.",
+      ...live.map((s) => `${s.type}: ${s.summary}`),
+    ],
+  };
+}
+
 function scoreCandidate(candidate: Omit<DecisionCandidate, "scores" | "why_it_beats_alternatives">, state: FounderIntelligenceState): DecisionCandidate {
   const signalTypes = new Set(candidate.supporting_signals);
   const isExternal = /user|customer|interview|feedback|message|call|revenue|pricing|paid|launch|post|publish/i.test(candidate.action);
@@ -1017,12 +1046,20 @@ function scoreCandidate(candidate: Omit<DecisionCandidate, "scores" | "why_it_be
   // pulls down — without any hand-tuned per-founder weight anywhere.
   const archetypeHistory = state.archetype_stats[candidate.id];
   const learned_fit = Math.round(sampleBeta((archetypeHistory?.successes ?? 0) + 1, (archetypeHistory?.failures ?? 0) + 1) * 100);
+  // Track-record estimate: the archetype's own resolved outcomes, shrunk toward
+  // this founder's overall success rate so two samples cannot swing it wildly.
+  const allStats = Object.values(state.archetype_stats);
+  const allS = allStats.reduce((n, a) => n + a.successes, 0);
+  const allN = allStats.reduce((n, a) => n + a.successes + a.failures, 0);
+  const priorMean = allN >= 3 ? allS / allN : 0.45;
+  const histN = (archetypeHistory?.successes ?? 0) + (archetypeHistory?.failures ?? 0);
+  const predicted_success = Math.round(((((archetypeHistory?.successes ?? 0) + priorMean * 2) / (histN + 2)) * 100));
   const total = clampScore(
     impact * 0.16 + urgency * 0.14 + goal_relevance * 0.13 + evidence_value * 0.15 + founder_fit * 0.1 + execution_probability * 0.1 + behavioral_correction * 0.1 + risk_reduction * 0.1 + confidence * 0.08 + learned_fit * 0.12 - opportunity_cost * 0.08 - repetition_penalty * 0.08,
   );
   return {
     ...candidate,
-    scores: { impact, urgency, goal_relevance, evidence_value, founder_fit, execution_probability, opportunity_cost, repetition_penalty, behavioral_correction, risk_reduction, confidence, total },
+    scores: { impact, urgency, goal_relevance, evidence_value, founder_fit, execution_probability, opportunity_cost, repetition_penalty, behavioral_correction, risk_reduction, confidence, predicted_success, predicted_success_n: histN, total },
     why_it_beats_alternatives: `Scores highest because it balances ${hasEvidenceGap ? "fresh evidence" : hasGoalRisk ? "goal recovery" : "execution progress"} with founder fit${(archetypeHistory?.successes ?? 0) > 0 ? `, and this approach has worked for you before (${archetypeHistory!.successes} of ${archetypeHistory!.successes + archetypeHistory!.failures} resolved)` : ""} and avoids repeating stale work.`,
   };
 }
@@ -1277,4 +1314,4 @@ export async function loadFounderIntelligence(
     logError("founderIntelligence/loadFounderIntelligence", err, { userId, projectId });
     return buildFounderIntelligenceState({ ...preloaded, now });
   }
-          }
+      }
