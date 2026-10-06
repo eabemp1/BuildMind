@@ -77,10 +77,12 @@ export function resolveStrengthsAndAvoidance(input: {
       mixed.push({ label: domainOfLabel(a) ?? a, completed, total });
     }
   }
+  // "content creation" beside "Social posts · LinkedIn" says one thing twice. Keep the specific one.
+  strengths = strengths.filter((a) => a.includes("·") || !strengths.some((b) => b !== a && b.includes("·") && sameWorkArea(a, b)));
   const seen = new Set<string>();
   return {
     strengths: strengths.slice(0, limit),
     avoidance: avoidance.slice(0, limit),
     mixed: mixed.filter((m) => (seen.has(m.label) ? false : (seen.add(m.label), true))),
   };
-                        }
+}
