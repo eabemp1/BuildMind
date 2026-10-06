@@ -54,7 +54,7 @@ export async function POST(req: Request) {
 
   const { data: project, error: projErr } = await admin
     .from("projects")
-    .select("id, startup_stage, execution_score")
+    .select("id, startup_stage, execution_score, current_mrr")
     .eq("id", project_id)
     .eq("user_id", user.id)
     .maybeSingle();
@@ -99,6 +99,7 @@ export async function POST(req: Request) {
     reflectionCount,
     avgConfidence,
     overrides: overrideCount ?? 0,
+    derivedSlotKeys: Number((project as { current_mrr?: number | null }).current_mrr ?? 0) > 0 ? ["paying_customer_evidence"] : [],
   });
 
   return NextResponse.json({
