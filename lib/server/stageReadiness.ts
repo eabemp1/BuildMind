@@ -1,321 +1,168 @@
 /**
- * lib/server/stageEvidence.ts
+ * lib/server/stageReadiness.ts
  *
- * Decision 1 (what counts as evidence) and Decision 2 (which transitions
- * get real exit criteria), implemented together:
+ * The problem this fixes: BuildMind had three real, independently correct
+ * signals about whether a founder is ready to move stages —
+ *   1. stage-milestone completion   (lib/server/stageProgress.ts)
+ *   2. typed evidence captured      (lib/server/stageEvidence.ts)
+ *   3. reflection-confidence trend  (the 3-signal check in stageTransition.ts)
+ * — but nothing combined them. A founder could tick every box in a stage
+ * by doing busywork, see a green "stage complete" checkmark, and the
+ * system would call that "ready" — even with zero real evidence and a
+ * string of low-confidence reflections. Task completion proves work
+ * happened. It doesn't prove the work meant anything. Evidence and
+ * reflection-conviction are what were supposed to answer that, and they
+ * existed, just disconnected from the actual readiness answer shown to
+ * the founder.
  *
- * Decision 1 — a CLOSED set of 4 evidence types, not an open schema and not
- * bare free text. Rigorous enough to be queryable (a metric has a
- * name/value/date, not just a sentence), cheap enough that a founder can
- * fill one in on a Tuesday night without hitting a form with a dozen
- * fields. Every evidence row must be exactly one of: metric | artifact |
- * experiment | founder_judgment. This is enforced at the database layer
- * too (see the CHECK constraints in
- * 20260902020000_stage_transition_evidence.sql) — this file is not the
- * only place the closed set is honored.
+ * This file is now the ONE place all three combine into a single, honest,
+ * three-tier answer — not a binary. `lib/server/stageTransition.ts` (the
+ * Today nudge) and `app/api/project/level-up/route.ts` (the on-demand
+ * Projects-page check) both call this, so they can't tell two different
+ * stories about the same founder's readiness.
  *
- * Decision 2 — ALL FIVE forward transitions are fully built, not just
- * Launch -> Growth. STAGE_EVIDENCE_REQUIREMENTS has an entry for every
- * stage a founder can move INTO going forward: Validation, MVP, Launch,
- * Growth, Revenue. (Idea has no entry because nothing precedes it — you
- * can't "transition into" the starting stage.) Each entry was designed
- * with the same rigor as the original Launch -> Growth build: 4 slots that
- * reflect what actually changes about the business at that specific
- * transition, not a generic reused template.
- *
- * getStageEvidenceRequirement is keyed by TARGET stage only, not by the
- * exact (from, to) pair. A founder can skip stages in the picker (e.g.
- * Idea straight to MVP); the requirement for arriving AT a stage doesn't
- * depend on which stage they skipped from, so this looks up by
- * destination. It returns null for any transition that isn't a forward
- * move (toIdx <= fromIdx) — moving a stage backward is a correction, not a
- * transition, and stays an unreviewed override exactly as
- * stage-transition-product-design.md specifies for manual selection in
- * general.
+ * The tiers are deliberately not a gate — every design doc in this
+ * project has been consistent that manual stage selection stays a founder
+ * override regardless of tier. The point of the tier is honesty in what's
+ * SHOWN, not a new restriction on what's ALLOWED.
  */
 
-import { STAGE_ORDER } from "@/lib/stages";
+import type { StageProgress } from "@/lib/server/stageProgress";
+import { getStageEvidenceRequirement, computeStageEvidenceCompleteness, type StageEvidenceType } from "@/lib/server/stageEvidence";
 
-export type StageEvidenceType = "metric" | "artifact" | "experiment" | "founder_judgment";
-
-export const STAGE_EVIDENCE_TYPES: readonly StageEvidenceType[] = [
-  "metric",
-  "artifact",
-  "experiment",
-  "founder_judgment",
-] as const;
-
-export interface StageEvidenceRow {
-  id: string;
-  evidence_type: StageEvidenceType;
-  metric_name: string | null;
-  metric_value: string | null;
-  metric_date: string | null;
-  artifact_description: string | null;
-  artifact_url: string | null;
-  experiment_channel: string | null;
-  experiment_hypothesis: string | null;
-  experiment_outcome: string | null;
-  judgment_text: string | null;
-  created_at: string;
-}
-
-/** One evidence slot a transition review wants filled. */
-export interface StageEvidenceSlot {
-  key: string;
-  label: string;
-  helpText: string;
-  /** Which evidence type(s) can satisfy this slot. */
-  acceptedTypes: readonly StageEvidenceType[];
-}
-
-export interface StageEvidenceRequirement {
-  /** The target stage this requirement applies to (see file header — keyed by target, not by pair). */
-  toStage: string;
-  /** Shown above the evidence form so the ask is explained, not just a checklist. */
-  framing: string;
-  slots: readonly StageEvidenceSlot[];
-}
-
-// Decision 2: one entry per stage a founder can move INTO. Fully built for
-// all five, not a subset. Each was designed around what that specific
-// transition actually needs to prove, not copied from Launch -> Growth.
-const STAGE_EVIDENCE_REQUIREMENTS: Record<string, StageEvidenceRequirement> = {
-  Validation: {
-    toStage: "Validation",
-    framing:
-      "Validation means the problem is real for someone other than you. A task count doesn't prove that — talk to people and bring back what they actually said.",
-    slots: [
-      {
-        key: "problem_evidence",
-        label: "Evidence the problem is real",
-        helpText: "Notes, quotes, or a summary from real conversations with people who have this problem — not assumptions about what they'd want.",
-        acceptedTypes: ["artifact"],
-      },
-      {
-        key: "target_user_defined",
-        label: "Who specifically has this problem",
-        helpText: "Name the first users precisely enough that you could go find 10 more just like them.",
-        acceptedTypes: ["founder_judgment"],
-      },
-      {
-        key: "demand_signal",
-        label: "A demand signal beyond a compliment",
-        helpText: "A waitlist signup, a pre-order, a letter of intent, or someone actually asking to pay or switch — not \"that's a great idea.\"",
-        acceptedTypes: ["metric", "artifact"],
-      },
-      {
-        key: "validation_confirmation",
-        label: "Founder confirms this is worth building",
-        helpText: "In your own words: why does the evidence above justify starting to build, rather than researching further?",
-        acceptedTypes: ["founder_judgment"],
-      },
-    ],
-  },
-
-  MVP: {
-    toStage: "MVP",
-    framing:
-      "MVP is a build commitment, not another research phase. Before this moves, be specific about what you're building and why it's the smallest thing that tests the real risk.",
-    slots: [
-      {
-        key: "solution_hypothesis",
-        label: "The specific solution, and why",
-        helpText: "What you're building and why it's the right response to the validated problem — the actual bet, not a feature list.",
-        acceptedTypes: ["founder_judgment"],
-      },
-      {
-        key: "mvp_scope",
-        label: "MVP scope defined",
-        helpText: "A real spec, wireframe, or feature list for the smallest version that tests the hypothesis.",
-        acceptedTypes: ["artifact"],
-      },
-      {
-        key: "build_plan",
-        label: "A build/test plan you're actually running",
-        helpText: "What you're building, how you'll know if it worked, and by when.",
-        acceptedTypes: ["experiment"],
-      },
-      {
-        key: "mvp_confirmation",
-        label: "Founder confirms this is buildable now",
-        helpText: "Why is now the right time to start building, instead of validating further?",
-        acceptedTypes: ["founder_judgment"],
-      },
-    ],
-  },
-
-  Launch: {
-    toStage: "Launch",
-    framing:
-      "Launch means the product actually works and is about to go in front of the public. Prove the thing works before you try to prove it grows.",
-    slots: [
-      {
-        key: "product_functional",
-        label: "MVP functions end-to-end",
-        helpText: "A demo, a working link, or screenshots showing the core flow actually works — not just individual pieces in isolation.",
-        acceptedTypes: ["artifact"],
-      },
-      {
-        key: "beta_feedback",
-        label: "Feedback from real, non-founder users",
-        helpText: "What early or beta users actually said or did — not friends being polite.",
-        acceptedTypes: ["metric", "artifact"],
-      },
-      {
-        key: "launch_readiness_check",
-        label: "A launch dry run",
-        helpText: "A soft launch, closed beta, or dry run you actually attempted, and what happened.",
-        acceptedTypes: ["experiment"],
-      },
-      {
-        key: "launch_confirmation",
-        label: "Founder confirms it's ready for the public",
-        helpText: "What convinces you this is ready for real strangers, not just people you know personally?",
-        acceptedTypes: ["founder_judgment"],
-      },
-    ],
-  },
-
-  Growth: {
-    toStage: "Growth",
-    framing:
-      "Growth is a different operating problem than Launch. Before this project moves, capture what actually changed — a generic task count isn't proof the business did.",
-    slots: [
-      {
-        key: "real_user_exposure",
-        label: "Real user exposure",
-        helpText: "The product was used by real users outside the founder — a link, a signup list, a support thread, a usage screenshot.",
-        acceptedTypes: ["artifact", "metric"],
-      },
-      {
-        key: "channel_attempt",
-        label: "Acquisition channel or experiment attempted",
-        helpText: "A specific channel or growth experiment you actually ran, with what you expected and what happened.",
-        acceptedTypes: ["experiment"],
-      },
-      {
-        key: "measurable_result",
-        label: "Measurable result",
-        helpText: "Signups, activation, retention, conversion, or revenue — a real number with a date, not an estimate.",
-        acceptedTypes: ["metric"],
-      },
-      {
-        key: "growth_confirmation",
-        label: "Founder confirms growth is the problem now",
-        helpText: "In your own words: why is distribution/growth the constraint now, not launch readiness?",
-        acceptedTypes: ["founder_judgment"],
-      },
-    ],
-  },
-
-  Revenue: {
-    toStage: "Revenue",
-    framing:
-      "Revenue means someone is paying, not just using. Growth metrics without payment evidence don't yet prove the business works.",
-    slots: [
-      {
-        key: "traction_metric",
-        label: "Real growth traction",
-        helpText: "An actual number — active users, MRR trajectory, or a growth rate — with a date, not an estimate.",
-        acceptedTypes: ["metric"],
-      },
-      {
-        key: "monetization_attempt",
-        label: "A monetization or pricing experiment",
-        helpText: "A pricing model or paywall you actually tried, and what happened when you asked people to pay.",
-        acceptedTypes: ["experiment"],
-      },
-      {
-        key: "paying_customer_evidence",
-        label: "Evidence someone actually paid",
-        helpText: "A real transaction, invoice, or subscription — not a stated willingness to pay.",
-        acceptedTypes: ["metric", "artifact"],
-      },
-      {
-        key: "revenue_confirmation",
-        label: "Founder confirms revenue is the focus now",
-        helpText: "Why is monetization the operating problem now, rather than growth?",
-        acceptedTypes: ["founder_judgment"],
-      },
-    ],
-  },
-};
+export type ReadinessTier = "not_ready" | "checklist_only" | "ready";
 
 /**
- * Returns the requirement for arriving at `toStage`, or null when the move
- * isn't a forward transition (backward moves and no-ops are unreviewed
- * overrides — see file header). `fromStage` is accepted for that forward
- * check and for API/display symmetry with the (from, to) pair the caller
- * already has, even though the requirement itself is keyed by target only.
+ * A founder needs at least half of a transition's 4 evidence slots filled
+ * to count as "meaningfully evidenced" rather than "thin." Chosen as a
+ * middle ground deliberately: requiring all 4 makes the review feel like a
+ * form gate (the exact friction the evidence model was designed to avoid);
+ * requiring just 1 makes "evidence captured" nearly meaningless. This is a
+ * product number, not a derived constant — revisit it with real usage data
+ * once the tier has been live for a while, the same way the evidence pilot
+ * itself was meant to evolve from real submissions rather than upfront guessing.
  */
-export function getStageEvidenceRequirement(fromStage: string, toStage: string): StageEvidenceRequirement | null {
-  const fromIdx = STAGE_ORDER.indexOf(fromStage as typeof STAGE_ORDER[number]);
-  const toIdx = STAGE_ORDER.indexOf(toStage as typeof STAGE_ORDER[number]);
-  if (fromIdx < 0 || toIdx < 0 || toIdx <= fromIdx) return null;
-  return STAGE_EVIDENCE_REQUIREMENTS[toStage] ?? null;
+const EVIDENCE_BAR_FRACTION = 0.5;
+
+/** Same bar `shouldPromptStageTransition` in lib/stages/index.ts already used — kept identical on purpose so the two never disagree about what "enough reflection" means. */
+const REFLECTION_MIN_COUNT = 3;
+const REFLECTION_MIN_AVG_CONFIDENCE = 3.5;
+const REFLECTION_MAX_OVERRIDES = 2;
+
+export interface StageReadinessEvidence {
+  filledSlots: number;
+  totalSlots: number;
+  meetsBar: boolean;
+  missingLabels: string[];
 }
 
-export interface StageEvidenceCompleteness {
-  requirement: StageEvidenceRequirement;
-  filledSlotKeys: string[];
-  missingSlotKeys: string[];
-  isComplete: boolean;
+export interface StageReadinessReflection {
+  count: number;
+  avgConfidence: number | null;
+  overrides: number;
+  meetsBar: boolean;
 }
 
-/**
- * A slot is filled if at least one submitted row's type matches one of the
- * slot's accepted types. This is intentionally lenient about which specific
- * row satisfies which slot — founders shouldn't have to tag evidence
- * against a slot ID, the type alone is enough signal.
- */
-export function computeStageEvidenceCompleteness(
-  requirement: StageEvidenceRequirement,
-  rows: Pick<StageEvidenceRow, "evidence_type">[],
-  /** Slots already satisfied by data BuildMind holds elsewhere (for example recorded MRR). */
-  derivedSlotKeys: readonly string[] = [],
-): StageEvidenceCompleteness {
-  const submittedTypes = new Set(rows.map(r => r.evidence_type));
-  const filledSlotKeys: string[] = [];
-  const missingSlotKeys: string[] = [];
-  for (const slot of requirement.slots) {
-    const filled = derivedSlotKeys.includes(slot.key) || slot.acceptedTypes.some(t => submittedTypes.has(t));
-    (filled ? filledSlotKeys : missingSlotKeys).push(slot.key);
-  }
-  return {
-    requirement,
-    filledSlotKeys,
-    missingSlotKeys,
-    isComplete: missingSlotKeys.length === 0,
+export interface StageReadiness {
+  tier: ReadinessTier;
+  currentStage: string;
+  nextStage: string | null;
+  stageProgress: StageProgress;
+  /** null only when nextStage is null (already at the terminal stage) — every real forward transition has a requirement. */
+  evidence: StageReadinessEvidence | null;
+  reflection: StageReadinessReflection;
+  headline: string;
+  detail: string;
+}
+
+export function computeStageReadiness(input: {
+  stageProgress: StageProgress;
+  nextStage: string | null;
+  evidenceRows: { evidence_type: StageEvidenceType }[];
+  reflectionCount: number;
+  avgConfidence: number | null;
+  overrides: number;
+  derivedSlotKeys?: readonly string[];
+}): StageReadiness {
+  const { stageProgress, nextStage, evidenceRows, reflectionCount, avgConfidence, overrides } = input;
+  const currentStage = stageProgress.stage;
+
+  const reflection: StageReadinessReflection = {
+    count: reflectionCount,
+    avgConfidence,
+    overrides,
+    meetsBar:
+      reflectionCount >= REFLECTION_MIN_COUNT &&
+      avgConfidence !== null &&
+      avgConfidence > REFLECTION_MIN_AVG_CONFIDENCE &&
+      overrides < REFLECTION_MAX_OVERRIDES,
   };
-}
 
-/** Server-side validation that a submitted row is internally consistent for its type. */
-export function validateStageEvidenceInput(input: {
-  evidence_type: string;
-  metric_name?: string | null;
-  metric_value?: string | null;
-  artifact_description?: string | null;
-  experiment_channel?: string | null;
-  experiment_outcome?: string | null;
-  judgment_text?: string | null;
-}): string | null {
-  if (!STAGE_EVIDENCE_TYPES.includes(input.evidence_type as StageEvidenceType)) {
-    return `evidence_type must be one of: ${STAGE_EVIDENCE_TYPES.join(", ")}`;
+  let evidence: StageReadinessEvidence | null = null;
+  if (nextStage) {
+    const requirement = getStageEvidenceRequirement(currentStage, nextStage);
+    if (requirement) {
+      const completeness = computeStageEvidenceCompleteness(requirement, evidenceRows, input.derivedSlotKeys ?? []);
+      const bar = Math.ceil(requirement.slots.length * EVIDENCE_BAR_FRACTION);
+      evidence = {
+        filledSlots: completeness.filledSlotKeys.length,
+        totalSlots: requirement.slots.length,
+        meetsBar: completeness.filledSlotKeys.length >= bar,
+        missingLabels: requirement.slots
+          .filter(s => completeness.missingSlotKeys.includes(s.key))
+          .map(s => s.label),
+      };
+    }
   }
-  switch (input.evidence_type as StageEvidenceType) {
-    case "metric":
-      if (!input.metric_name?.trim() || !input.metric_value?.trim()) return "metric evidence requires metric_name and metric_value";
-      break;
-    case "artifact":
-      if (!input.artifact_description?.trim()) return "artifact evidence requires artifact_description";
-      break;
-    case "experiment":
-      if (!input.experiment_channel?.trim() || !input.experiment_outcome?.trim()) return "experiment evidence requires experiment_channel and experiment_outcome";
-      break;
-    case "founder_judgment":
-      if (!input.judgment_text?.trim()) return "founder_judgment evidence requires judgment_text";
-      break;
+
+  // --- Tier decision ---
+  if (!stageProgress.isComplete || !nextStage) {
+    return {
+      tier: "not_ready",
+      currentStage, nextStage, stageProgress, evidence, reflection,
+      headline: `${stageProgress.completedMilestones}/${stageProgress.totalMilestones} ${currentStage} milestones done.`,
+      detail: stageProgress.totalMilestones > 0
+        ? "Finish the rest before this counts as a real stage transition."
+        : `No milestones are tagged to ${currentStage} yet — nothing to measure.`,
+    };
   }
-  return null;
+
+  const evidenceOk = evidence ? evidence.meetsBar : true;
+  const reflectionOk = reflection.meetsBar;
+
+  if (evidenceOk && reflectionOk) {
+    return {
+      tier: "ready",
+      currentStage, nextStage, stageProgress, evidence, reflection,
+      headline: `Ready for ${nextStage} — milestones done, evidence captured, and your reflections back it up.`,
+      detail: evidence
+        ? `${evidence.filledSlots}/${evidence.totalSlots} evidence items · avg confidence ${avgConfidence}/5 over ${reflectionCount} reflections.`
+        : `Avg confidence ${avgConfidence}/5 over ${reflectionCount} reflections.`,
+    };
+  }
+
+  // Checklist done, but thin on evidence and/or conviction — the tier this
+  // exists to surface honestly instead of silently calling it "ready."
+  const gaps: string[] = [];
+  if (evidence && !evidence.meetsBar) {
+    gaps.push(
+      `Evidence: ${evidence.filledSlots}/${evidence.totalSlots} captured — still missing ${evidence.missingLabels.slice(0, 2).join(", ")}${evidence.missingLabels.length > 2 ? ", and more" : ""}.`,
+    );
+  }
+  if (!reflection.meetsBar) {
+    if (reflection.count < REFLECTION_MIN_COUNT) {
+      gaps.push(`Reflections: only ${reflection.count} in the last 7 days (need ${REFLECTION_MIN_COUNT}).`);
+    } else if (reflection.avgConfidence !== null && reflection.avgConfidence <= REFLECTION_MIN_AVG_CONFIDENCE) {
+      gaps.push(`Reflections: averaging ${reflection.avgConfidence}/5 confidence — a bit low to call this solid yet.`);
+    } else if (reflection.overrides >= REFLECTION_MAX_OVERRIDES) {
+      gaps.push(`Reflections: ${reflection.overrides} skipped/overridden checks this week.`);
+    }
+  }
+
+  return {
+    tier: "checklist_only",
+    currentStage, nextStage, stageProgress, evidence, reflection,
+    headline: `Checklist done for ${currentStage} — that's necessary, not proof.`,
+    detail: gaps.join(" "),
+  };
 }
