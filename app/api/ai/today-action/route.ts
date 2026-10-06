@@ -280,7 +280,13 @@ export async function POST(request: Request) {
     // Same fix as today-action/stream/route.ts — see the comment there for
     // the full rationale. Kept identical so the two routes can't drift into
     // disagreeing about what counts as "low confidence."
-    const topCandidateConfidence = founderIntelligence?.decision.top_candidate?.scores.confidence ?? 100;
+    const topScores = founderIntelligence?.decision.top_candidate?.scores;
+    // 'confidence' is how sure the signals are; if this kind of task has failed for
+    // this founder before, that history must lower the confidence we show.
+    const topCandidateConfidence = Math.min(
+      topScores?.confidence ?? 100,
+      (topScores?.predicted_success_n ?? 0) >= 2 ? (topScores?.predicted_success ?? 100) : 100,
+    );
     isLowConfidence = topCandidateConfidence < 40;
     if (isLowConfidence) {
       founderIntelligencePromptBlock += `\n\nCONFIDENCE NOTICE: Current confidence in this recommendation is low (${topCandidateConfidence}%) — there isn't enough recent evidence about this founder's situation yet. Do NOT phrase the task as a confident directive. Frame it explicitly as a small evidence-gathering step, and the rationale must say plainly that this is about closing an evidence gap, not a high-conviction recommendation.`;
@@ -1056,4 +1062,4 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
     const message = error instanceof Error ? error.message : "Today action failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-  }
+}
