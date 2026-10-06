@@ -24,7 +24,9 @@ const MIN_TOTAL = 3;
 const STRENGTH_AT = 0.6;
 const AVOIDANCE_AT = 0.35;
 
-function recordFor(label: string, records: AreaRecord[]): { completed: number; total: number } {
+export interface AreaStat { label: string; completed: number; total: number }
+
+function recordFor(label: string, records: AreaRecord[], stats: AreaStat[] = []): { completed: number; total: number } {
   let completed = 0;
   let total = 0;
   for (const r of records) {
@@ -35,6 +37,14 @@ function recordFor(label: string, records: AreaRecord[]): { completed: number; t
       if (r.completed) completed++;
     }
   }
+  // Reflection titles are sparse. When they cannot speak for this area, fall
+  // back to the per-category completion counts the execution signature holds,
+  // so the same export never says '0 of 0' beside '14% completion'.
+  if (total === 0) {
+    for (const s of stats) {
+      if (s.total > 0 && sameWorkArea(s.label, label)) { completed += s.completed; total += s.total; }
+    }
+  }
   return { completed, total };
 }
 
@@ -42,6 +52,8 @@ export function resolveStrengthsAndAvoidance(input: {
   strengths: string[];
   avoidance: string[];
   records: AreaRecord[];
+  /** Per-category totals from the execution signature, used when records are too thin. */
+  stats?: AreaStat[];
   limit?: number;
 }): ResolvedPatterns {
   const limit = input.limit ?? 8;
@@ -53,7 +65,7 @@ export function resolveStrengthsAndAvoidance(input: {
   for (const a of [...avoidance]) {
     const clash = strengths.filter((s) => sameWorkArea(s, a));
     if (clash.length === 0) continue;
-    const { completed, total } = recordFor(a, input.records);
+    const { completed, total } = recordFor(a, input.records, input.stats);
     const rate = total > 0 ? completed / total : null;
     if (total >= MIN_TOTAL && rate !== null && rate >= STRENGTH_AT) {
       avoidance = avoidance.filter((x) => x !== a);
@@ -71,4 +83,4 @@ export function resolveStrengthsAndAvoidance(input: {
     avoidance: avoidance.slice(0, limit),
     mixed: mixed.filter((m) => (seen.has(m.label) ? false : (seen.add(m.label), true))),
   };
-}
+                        }
