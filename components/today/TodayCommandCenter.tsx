@@ -22,6 +22,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { storage } from "@/lib/storage";
+import { DayRibbon } from "@/components/today/DayRibbon";
+import { useCountUp } from "@/components/today/useCountUp";
+import { buildFocusIcs, detectPlatform, openAndroidTimer, openIcs, type Platform } from "@/lib/focusReminder";
 import {
   FOCUS_PRESETS, dayArc, finishBlock, formatClock, nearestPreset, normalizeFocusState, nudgeLine,
   parseSuggestedMinutes, pauseFocus, resetFocus, resumeFocus, secondsLeft, startFocus,
@@ -40,12 +43,14 @@ export interface TodayCommandCenterProps {
   timeText: string | null;
   done: boolean;
   streak: number;
+  /** Shown in the phone reminder so the alert says what to start with. */
+  firstStep?: string | null;
 }
 
 const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const STORAGE_KEY = "bm_focus_state_v1";
 
-export default function TodayCommandCenter({ actionTitle, timeText, done, streak }: TodayCommandCenterProps) {
+export default function TodayCommandCenter({ actionTitle, timeText, done, streak, firstStep }: TodayCommandCenterProps) {
   const suggested = useMemo(() => parseSuggestedMinutes(timeText), [timeText]);
   const defaultMinutes = suggested ? nearestPreset(suggested) : 25;
 
@@ -53,6 +58,18 @@ export default function TodayCommandCenter({ actionTitle, timeText, done, streak
   const [focus, setFocus] = useState<FocusState>(() => normalizeFocusState(null, new Date(), defaultMinutes));
   const [minutes, setMinutes] = useState<number>(defaultMinutes);
   const [snap, setSnap] = useState<Snap | null>(null);
+  const [narrow, setNarrow] = useState(false);
+  const [platform, setPlatform] = useState<Platform>("other");
+  const [reminderNote, setReminderNote] = useState<string | null>(null);
+  useEffect(() => { setPlatform(detectPlatform(navigator.userAgent, navigator.maxTouchPoints ?? 0)); }, []);
+  useEffect(() => {
+    const q = window.matchMedia("(max-width: 480px)");
+    const apply = () => setNarrow(q.matches);
+    apply();
+    q.addEventListener("change", apply);
+    return () => q.removeEventListener("change", apply);
+  }, []);
+  useEffect(() => { if (focus.mode !== "running") setReminderNote(null); }, [focus.mode]);
   const hydrated = useRef(false);
   const finishedAnnounced = useRef(false);
 
@@ -113,9 +130,27 @@ export default function TodayCommandCenter({ actionTitle, timeText, done, streak
     if (focus.mode === "finished" && !finishedAnnounced.current) {
       finishedAnnounced.current = true;
       try { navigator.vibrate?.([120, 60, 120]); } catch { /* optional */ }
+      // If the tab is in the background, say so with a system notification (needs permission already granted).
+      try {
+        if (document.hidden && typeof Notification !== "undefined" && Notification.permission === "granted") {
+          new Notification("Focus block done", { body: actionTitle ? `Log how "${actionTitle.slice(0, 60)}" went.` : "Log how it went.", tag: "bm-focus-done" });
+        }
+      } catch { /* optional */ }
     }
     if (focus.mode !== "finished") finishedAnnounced.current = false;
   }, [focus.mode]);
+
+  // ── Phone reminders: one tap hands the block to the phone's own Clock or Calendar ──
+  const addToCalendar = useCallback(() => {
+    const startAt = new Date();
+    const endAt = new Date(focus.endAt ?? startAt.getTime() + left * 1000);
+    openIcs(buildFocusIcs({ task: actionTitle ?? "Focus block", start: startAt, end: endAt, firstStep: firstStep ?? undefined }), "buildmind-focus.ics", platform);
+    setReminderNote(platform === "ios" ? "Tap Add in the Calendar sheet. It will alert when the block ends." : "Open the downloaded file to add it. It will alert when the block ends.");
+  }, [actionTitle, firstStep, focus.endAt, left, platform]);
+  const setPhoneTimer = useCallback(() => {
+    openAndroidTimer(Math.max(1, left), actionTitle ?? "Focus block");
+    setReminderNote("Your Clock app now has this timer, and it keeps running with BuildMind closed.");
+  }, [actionTitle, left]);
 
   // ── Command palette → "Start focus session" ──
   const start = useCallback(() => setFocus((f) => startFocus(f, minutes, new Date())), [minutes]);
@@ -153,31 +188,33 @@ export default function TodayCommandCenter({ actionTitle, timeText, done, streak
   const greeting = now.getHours() < 12 ? "Good morning" : now.getHours() < 18 ? "Good afternoon" : "Good evening";
   const dayLeft = arc.phase === "late" ? "The day is wrapping up" : `${arc.hoursLeft > 0 ? `${arc.hoursLeft}h ` : ""}${arc.minutesLeft}m left in your day`;
   const streakNow = snap?.streak ?? streak;
+  const streakShown = useCountUp(streakNow);
+  const minutesShown = useCountUp(focus.minutesToday);
   const display: React.CSSProperties = { fontFamily: "'Syne', sans-serif" };
   const mono: React.CSSProperties = { fontFamily: "'DM Mono', monospace" };
-  const RING = 132;
-  const R = 56;
+  const RING = narrow ? 104 : 132;
+  const R = narrow ? 44 : 56;
   const C = 2 * Math.PI * R;
-  const tile: React.CSSProperties = { background: "var(--bm-bg3)", borderRadius: 12, padding: "10px 12px", minWidth: 0 };
+  const tile: React.CSSProperties = { background: "var(--bm-bg3)", borderRadius: 12, padding: narrow ? "8px 9px" : "10px 12px", minWidth: 0 };
 
   return (
     <section
       aria-label="Today command center"
       style={{
-        margin: "4px 0 18px", padding: "20px 18px", borderRadius: 20, boxSizing: "border-box", minWidth: 0,
+        margin: "4px 0 16px", padding: narrow ? "14px 12px" : "20px 18px", borderRadius: narrow ? 16 : 20, boxSizing: "border-box", minWidth: 0,
         background: `linear-gradient(160deg, ${pal.tint} 0%, var(--bm-bg2) 40%, var(--bm-bg) 100%)`,
         border: `1px solid ${running ? pal.c : pal.bd}`,
         boxShadow: running ? `0 0 0 3px ${pal.dim}` : "none",
-        display: "flex", flexDirection: "column", gap: 18, transition: "box-shadow .3s, border-color .3s",
+        display: "flex", flexDirection: "column", gap: narrow ? 12 : 18, transition: "box-shadow .3s, border-color .3s",
       }}
     >
       {/* Greeting + day arc */}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ ...display, fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em", color: "var(--bm-text)" }}>
+          <div style={{ ...display, fontSize: narrow ? 18 : 22, fontWeight: 700, letterSpacing: "-0.02em", color: "var(--bm-text)" }}>
             {done ? "Done for today" : greeting}
           </div>
-          <div style={{ fontSize: 14, color: "var(--bm-text3)", marginTop: 2 }}>
+          <div style={{ fontSize: narrow ? 12.5 : 14, color: "var(--bm-text3)", marginTop: 2 }}>
             {now.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })} &middot; {dayLeft}
           </div>
         </div>
@@ -185,16 +222,16 @@ export default function TodayCommandCenter({ actionTitle, timeText, done, streak
           type="button"
           onClick={() => window.dispatchEvent(new Event("bm:open-palette"))}
           aria-label="Open command palette"
-          style={{ ...mono, fontSize: 12, color: "var(--bm-text3)", background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: 10, padding: "8px 12px", cursor: "pointer" }}
+          style={{ ...mono, fontSize: 11, color: "var(--bm-text3)", background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: 10, padding: narrow ? "6px 9px" : "8px 12px", cursor: "pointer", display: narrow ? "none" : "block" }}
         >
           Jump to&hellip; <span style={{ opacity: 0.7 }}>Ctrl K</span>
         </button>
       </div>
 
-      <div aria-hidden style={{ position: "relative", height: 6, borderRadius: 3, background: "var(--bm-border2)", margin: "-6px 0 0" }}>
-        <div style={{ position: "absolute", inset: 0, width: `${arc.progress * 100}%`, borderRadius: 3, background: `linear-gradient(90deg, ${pal.dim}, ${pal.c})`, transition: "width 1s linear" }} />
-        <div style={{ position: "absolute", top: -3, left: `calc(${arc.progress * 100}% - 6px)`, width: 12, height: 12, borderRadius: "50%", background: pal.c, boxShadow: `0 0 0 3px ${pal.dim}` }} />
-      </div>
+      <DayRibbon
+        now={now} color={pal.c} dim={pal.dim} done={done} running={running} narrow={narrow}
+        focusSpan={running && focus.endAt !== null ? { startMin: new Date(focus.endAt - focus.durationSec * 1000).getHours() * 60 + new Date(focus.endAt - focus.durationSec * 1000).getMinutes(), endMin: new Date(focus.endAt).getHours() * 60 + new Date(focus.endAt).getMinutes() } : null}
+      />
 
       {/* Completion payoff, real numbers */}
       {done && (
@@ -208,7 +245,7 @@ export default function TodayCommandCenter({ actionTitle, timeText, done, streak
       )}
 
       {/* Focus block: big timer, one clear primary action */}
-      <div style={{ display: "flex", gap: 22, alignItems: "center", flexWrap: "wrap", minWidth: 0 }}>
+      <div style={{ display: "flex", gap: narrow ? 14 : 22, alignItems: "center", flexWrap: "wrap", minWidth: 0 }}>
         <div style={{ position: "relative", width: RING, height: RING, flex: "0 0 auto", margin: "0 auto" }}>
           <svg width={RING} height={RING} viewBox={`0 0 ${RING} ${RING}`} role="img" aria-label={`Focus timer ${formatClock(left)}`}>
             <circle cx={RING / 2} cy={RING / 2} r={R} fill="none" stroke="var(--bm-border2)" strokeWidth="8" />
@@ -216,11 +253,11 @@ export default function TodayCommandCenter({ actionTitle, timeText, done, streak
               cx={RING / 2} cy={RING / 2} r={R} fill="none" strokeWidth="8" strokeLinecap="round"
               stroke={finished ? "var(--bm-green)" : pal.c}
               strokeDasharray={C} strokeDashoffset={C * (1 - ringProgress)}
-              transform={`rotate(-90 ${RING / 2} ${RING / 2})`} style={{ transition: "stroke-dashoffset 0.9s linear" }}
+              transform={`rotate(-90 ${RING / 2} ${RING / 2})`} style={{ transition: "stroke-dashoffset 0.9s linear", filter: running ? `drop-shadow(0 0 6px ${pal.c})` : "none" }}
             />
           </svg>
           <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-            <span style={{ ...mono, fontSize: 28, fontWeight: 600, color: "var(--bm-text)", lineHeight: 1 }}>{done && focus.mode === "idle" ? "\u2713" : formatClock(left)}</span>
+            <span style={{ ...mono, fontSize: narrow ? 22 : 28, fontWeight: 600, color: "var(--bm-text)", lineHeight: 1 }}>{done && focus.mode === "idle" ? "\u2713" : formatClock(left)}</span>
             <span style={{ fontSize: 12, color: "var(--bm-text3)", marginTop: 4 }}>
               {running ? "Focusing" : paused ? "Paused" : finished ? "Block done" : done ? "Finished" : "Ready"}
             </span>
@@ -228,9 +265,9 @@ export default function TodayCommandCenter({ actionTitle, timeText, done, streak
         </div>
 
         <div style={{ flex: "1 1 240px", minWidth: 0, display: "flex", flexDirection: "column", gap: 12 }}>
-          <div style={{ fontSize: 15, color: "var(--bm-text2)", lineHeight: 1.5 }}>
+          <div style={{ fontSize: narrow ? 13.5 : 15, color: "var(--bm-text2)", lineHeight: 1.5 }}>
             {actionTitle
-              ? <><span style={{ color: "var(--bm-text3)" }}>Focus on</span><br /><strong style={{ color: "var(--bm-text)", fontSize: 16 }}>{actionTitle}</strong></>
+              ? <><span style={{ color: "var(--bm-text3)" }}>Focus on</span><br /><strong style={{ color: "var(--bm-text)", fontSize: narrow ? 14.5 : 16 }}>{actionTitle}</strong></>
               : "Focus blocks unlock once today's action is ready."}
           </div>
 
@@ -239,23 +276,40 @@ export default function TodayCommandCenter({ actionTitle, timeText, done, streak
               <div role="group" aria-label="Block length" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                 {FOCUS_PRESETS.map((p) => (
                   <button key={p} type="button" aria-pressed={minutes === p} onClick={() => { setMinutes(p); setFocus((f) => resetFocus(f, p)); }}
-                    style={{ ...mono, fontSize: 14, padding: "9px 14px", borderRadius: 10, cursor: "pointer", color: minutes === p ? "#15130a" : "var(--bm-text2)", background: minutes === p ? pal.c : "var(--bm-bg3)", border: "1px solid var(--bm-border)" }}>
+                    style={{ ...mono, fontSize: narrow ? 13 : 14, padding: narrow ? "8px 12px" : "9px 14px", borderRadius: 10, cursor: "pointer", color: minutes === p ? "#15130a" : "var(--bm-text2)", background: minutes === p ? pal.c : "var(--bm-bg3)", border: "1px solid var(--bm-border)" }}>
                     {p}m
                   </button>
                 ))}
               </div>
               <button type="button" onClick={start} disabled={!actionTitle}
-                style={{ fontSize: 16, fontWeight: 700, padding: "14px 20px", borderRadius: 12, cursor: actionTitle ? "pointer" : "not-allowed", opacity: actionTitle ? 1 : 0.5, color: "#15130a", background: pal.c, border: "none", fontFamily: "inherit", width: "100%" }}>
+                style={{ fontSize: narrow ? 15 : 16, fontWeight: 700, padding: narrow ? "12px 16px" : "14px 20px", borderRadius: 12, cursor: actionTitle ? "pointer" : "not-allowed", opacity: actionTitle ? 1 : 0.5, color: "#15130a", background: pal.c, border: "none", fontFamily: "inherit", width: "100%" }}>
                 Start {minutes}-minute focus
               </button>
             </>
           )}
 
           {running && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              <button type="button" onClick={() => setFocus((f) => pauseFocus(f, new Date()))} style={btn("var(--bm-bg3)", "var(--bm-text2)")}>Pause</button>
-              <button type="button" onClick={() => setFocus((f) => resetFocus(f, minutes))} style={btn("var(--bm-bg3)", "var(--bm-text3)")}>Stop</button>
-            </div>
+            <>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                <button type="button" onClick={() => setFocus((f) => pauseFocus(f, new Date()))} style={btn("var(--bm-bg3)", "var(--bm-text2)")}>Pause</button>
+                <button type="button" onClick={() => setFocus((f) => resetFocus(f, minutes))} style={btn("var(--bm-bg3)", "var(--bm-text3)")}>Stop</button>
+              </div>
+              <div style={{ borderTop: "1px solid var(--bm-border)", paddingTop: 10 }}>
+                <div style={{ fontSize: 12.5, color: "var(--bm-text3)", lineHeight: 1.5, marginBottom: 8 }}>
+                  Leaving the app? Put this block on your phone so it still alerts you.
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {platform === "android" && (
+                    <button type="button" onClick={setPhoneTimer} style={btn("var(--bm-bg3)", "var(--bm-text2)")}>Set in Clock app</button>
+                  )}
+                  <button type="button" onClick={addToCalendar} style={btn("var(--bm-bg3)", "var(--bm-text2)")}>Add alert to Calendar</button>
+                </div>
+                {reminderNote && <div role="status" style={{ marginTop: 8, fontSize: 12.5, color: "var(--bm-text2)", lineHeight: 1.5 }}>{reminderNote}</div>}
+                {platform === "ios" && !reminderNote && (
+                  <div style={{ marginTop: 8, fontSize: 12, color: "var(--bm-text4)", lineHeight: 1.5 }}>iPhone does not let websites set Clock timers, so this uses Calendar, which alerts the same way.</div>
+                )}
+              </div>
+            </>
           )}
           {paused && (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -278,15 +332,15 @@ export default function TodayCommandCenter({ actionTitle, timeText, done, streak
       {/* Real numbers, readable at a glance */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
         <div style={tile}>
-          <div style={{ ...mono, fontSize: 20, fontWeight: 600, color: pal.c }}>{streakNow}</div>
+          <div style={{ ...mono, fontSize: narrow ? 17 : 20, fontWeight: 600, color: pal.c }}>{streakShown}</div>
           <div style={{ fontSize: 12, color: "var(--bm-text3)" }}>day streak</div>
         </div>
         <div style={tile}>
-          <div style={{ ...mono, fontSize: 20, fontWeight: 600, color: "var(--bm-text)" }}>{snap ? `${snap.activeDaysThisWeek}/${snap.daysElapsedThisWeek}` : "-"}</div>
+          <div style={{ ...mono, fontSize: narrow ? 17 : 20, fontWeight: 600, color: "var(--bm-text)" }}>{snap ? `${snap.activeDaysThisWeek}/${snap.daysElapsedThisWeek}` : "-"}</div>
           <div style={{ fontSize: 12, color: "var(--bm-text3)" }}>days this week</div>
         </div>
         <div style={tile}>
-          <div style={{ ...mono, fontSize: 20, fontWeight: 600, color: "var(--bm-text)" }}>{focus.minutesToday}m</div>
+          <div style={{ ...mono, fontSize: narrow ? 17 : 20, fontWeight: 600, color: "var(--bm-text)" }}>{minutesShown}m</div>
           <div style={{ fontSize: 12, color: "var(--bm-text3)" }}>focused today</div>
         </div>
       </div>
@@ -295,10 +349,10 @@ export default function TodayCommandCenter({ actionTitle, timeText, done, streak
       <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: 8 }}>
         {(snap?.weekDays ?? Array.from({ length: 7 }, (_, i) => ({ date: String(i), done: false, isToday: false, isFuture: false }))).map((d, i) => (
           <div key={d.date} title={d.date} style={{ textAlign: "center", minWidth: 0 }}>
-            <div style={{ fontSize: 12, color: d.isToday ? pal.c : "var(--bm-text4)", fontWeight: d.isToday ? 700 : 400, marginBottom: 5 }}>{WEEKDAY_LABELS[i]}</div>
+            <div style={{ fontSize: narrow ? 10.5 : 12, color: d.isToday ? pal.c : "var(--bm-text4)", fontWeight: d.isToday ? 700 : 400, marginBottom: 5 }}>{WEEKDAY_LABELS[i]}</div>
             <div
               style={{
-                height: 32, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14,
+                height: narrow ? 26 : 32, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14,
                 background: d.done ? "var(--bm-green)" : d.isToday ? pal.dim : "var(--bm-bg3)",
                 border: `1px solid ${d.isToday ? pal.bd : "var(--bm-border)"}`,
                 color: d.done ? "#fff" : "var(--bm-text4)", opacity: d.isFuture ? 0.45 : 1,
@@ -311,11 +365,11 @@ export default function TodayCommandCenter({ actionTitle, timeText, done, streak
       </div>
 
       {/* Nudge */}
-      <div style={{ borderTop: "1px solid var(--bm-border)", paddingTop: 12, fontSize: 14, color: "var(--bm-text2)", lineHeight: 1.6 }}>{nudge}</div>
+      <div style={{ borderTop: "1px solid var(--bm-border)", paddingTop: 10, fontSize: narrow ? 13 : 14, color: "var(--bm-text2)", lineHeight: 1.6 }}>{nudge}</div>
     </section>
   );
 }
 
 function btn(bg: string, color: string): React.CSSProperties {
   return { fontSize: 14, fontWeight: 600, padding: "11px 18px", borderRadius: 10, cursor: "pointer", color, background: bg, border: "1px solid var(--bm-border)", fontFamily: "inherit" };
-                }
+                  }
