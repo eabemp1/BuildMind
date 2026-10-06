@@ -16,6 +16,11 @@
  */
 
 import { tokenize, stem } from "@/lib/taxonomy/taskTaxonomy";
+import {
+  buildDemandSplit, buildEvidenceHierarchy, buildHypotheses, buildNextMove, buildRiskExposure,
+  notACompetitorReason, productDemandScore,
+  type DemandSplit, type EvidenceHierarchy, type Hypothesis, type NextMove, type RiskExposure,
+} from "@/lib/breakEvidenceV3";
 import type {
   CompetitorOutput, MarketResearchOutput, RiskOutput, ScrapedCompetitor,
   SentimentOutput, TrendOutput,
@@ -129,6 +134,16 @@ export interface EvidenceLayer {
   pivotChecks?: PivotCheck[];
   /** How reliable this founder's past analyses turned out to be (see lib/breakCalibration.ts). */
   trackRecord?: import("@/lib/breakCalibration").TrackRecord;
+  /** Demand in the market vs demand that can be claimed for this product. */
+  demandSplit?: DemandSplit;
+  riskExposure?: RiskExposure;
+  evidenceHierarchy?: EvidenceHierarchy;
+  /** The next move, chosen to follow the diagnosis rather than to sound productive. */
+  nextMove?: NextMove;
+  /** The idea as separate bets, each with its own evidence and test. */
+  hypotheses?: Hypothesis[];
+  /** Entries the competitor search returned that are not competitors, and why. */
+  excludedCompetitors?: Array<{ name: string; reason: string }>;
   /** Id of the saved prediction row, set by the route so results can be recorded. */
   predictionId?: string;
 }
@@ -149,6 +164,8 @@ export interface EvidenceInput {
   founderEvidenceCount?: number;
   /** Per-dimension scores with weights, from computeViabilityBreakdown(). */
   breakdown?: Array<{ key: string; label: string; score: number; weight: string }>;
+  /** The founder's own product name, so it is never listed as its own competitor. */
+  productName?: string;
   pivots?: Array<{ title: string; description?: string; target_niche?: string; why_better?: string; key_change?: string }>;
 }
 
@@ -163,6 +180,21 @@ function hostOf(url?: string): string {
 
 // ── Competitors ───────────────────────────────────────────────────────────
 
+/** Entries that look like competitors but are the founder's own product, a category, or a directory page. */
+export function excludedCompetitors(input: EvidenceInput): Array<{ name: string; reason: string }> {
+  const out: Array<{ name: string; reason: string }> = [];
+  const seen = new Set<string>();
+  const check = (name: string | undefined, url?: string) => {
+    if (!name || seen.has(name.toLowerCase())) return;
+    const reason = notACompetitorReason(name, url, input.productName);
+    if (reason) { seen.add(name.toLowerCase()); out.push({ name, reason }); }
+  };
+  for (const d of input.competitor?.direct_competitors ?? []) check(d.name, d.url);
+  for (const n of input.competitor?.indirect_competitors ?? []) check(n);
+  for (const sc of input.scraped) check(sc.title, sc.url);
+  return out.slice(0, 6);
+}
+
 export function gradeCompetitors(input: EvidenceInput): CompetitorEvidence[] {
   const searchIsReal = input.competitorSource !== "ai_synthesised" && input.competitorSource !== "none";
   const scrapedByHost = new Map<string, ScrapedCompetitor>();
@@ -173,6 +205,7 @@ export function gradeCompetitors(input: EvidenceInput): CompetitorEvidence[] {
   const push = (c: CompetitorEvidence) => {
     const k = c.name.toLowerCase();
     if (seen.has(k)) return;
+    if (notACompetitorReason(c.name, c.url, input.productName)) return;
     seen.add(k); out.push(c);
   };
 
@@ -401,7 +434,7 @@ export function buildFalsifiers(input: EvidenceInput): Falsifier[] {
     assumption: problem ? `People have this problem badly enough to act: ${clip(problem, 100)}` : "The problem is painful enough that people act on it",
     test: `Interview 8 of ${customer}. Ask what they did about this the last time it happened. Do not describe your solution.`,
     provenWrongIf: "Fewer than 3 of 8 describe having paid, built a workaround or searched for a fix in the past 3 months.",
-    component: "demand", predictedHold: scoreOf("demand"),
+    component: "demand", predictedHold: clampP(productDemandScore(input) / 100),
   });
   if (input.sentiment?.willingness_to_pay_signal !== "likely") {
     out.push({
@@ -454,7 +487,7 @@ export function buildScoreBasis(input: EvidenceInput, graded: CompetitorEvidence
       default: return { basedOn: "Agent judgement", kind: "inference" };
     }
   };
-  const components: ScoreComponent[] = input.breakdown.map(b => ({ key: b.key, label: b.label, score: Math.round(b.score), weight: b.weight, ...basis(b.key) }));
+  const components: ScoreComponent[] = input.breakdown.map(b => ({ key: b.key, label: b.key === "risk" ? "Risk resilience (higher is safer)" : b.label, score: Math.round(b.score), weight: b.weight, ...basis(b.key) }));
   const total = components.reduce((n, c) => n + (parseFloat(c.weight) || 0), 0) || 100;
   const inf = components.filter(c => c.kind === "inference").reduce((n, c) => n + (parseFloat(c.weight) || 0), 0);
   return {
@@ -565,6 +598,8 @@ export function buildEvidenceLayer(input: EvidenceInput): EvidenceLayer {
   const conflicts = detectConflicts(input, competitors);
   const falsifiers = buildFalsifiers(input);
   const thesisTest = buildThesisTest(input, competitors);
+  const conclusion = buildConclusion(input, competitors, falsifiers, conflicts);
+  const excluded = excludedCompetitors(input);
   return {
     claims,
     conflicts,
@@ -573,9 +608,15 @@ export function buildEvidenceLayer(input: EvidenceInput): EvidenceLayer {
     falsifiers,
     unknowns,
     scoreBasis: buildScoreBasis(input, competitors),
-    conclusion: buildConclusion(input, competitors, falsifiers, conflicts),
+    conclusion,
     thesisTest,
     changeMyMind: buildChangeMyMind(input, falsifiers, thesisTest),
     pivotChecks: checkPivots(input),
+    demandSplit: buildDemandSplit(input),
+    riskExposure: buildRiskExposure(input, conclusion.primaryUncertainty),
+    evidenceHierarchy: buildEvidenceHierarchy(input, competitors),
+    nextMove: buildNextMove(input, falsifiers),
+    hypotheses: buildHypotheses(input, falsifiers),
+    excludedCompetitors: excluded.length ? excluded : undefined,
   };
-                                       }
+                }
