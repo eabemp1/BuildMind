@@ -860,7 +860,22 @@ export async function callModel(
       break;
     }
     try {
-      const text = await provider.call(messages, temperature, maxTokens, jsonMode);
+      // With an explicit shared deadline, a provider call may not outlive it.
+      // Without this a call started at 23s of a 24s budget could still run its
+      // own 8s timeout and push the function past Vercel's 30s kill.
+      let text: string;
+      if (deadlineMs !== undefined) {
+        const remaining = Math.max(500, effectiveDeadline - Date.now());
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          text = await Promise.race([
+            provider.call(messages, temperature, maxTokens, jsonMode),
+            new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("deadline reached mid-call")), remaining); }),
+          ]);
+        } finally { if (timer) clearTimeout(timer); }
+      } else {
+        text = await provider.call(messages, temperature, maxTokens, jsonMode);
+      }
       if (jsonMode) assertValidJSONModeOutput(text);
       console.info(`[ai-providers] ${role} succeeded via ${provider.label}`);
       return text;
@@ -910,4 +925,4 @@ export async function callModelJSON<T>(
       `callModelJSON: failed to parse provider response as JSON. Raw (truncated): ${clean.slice(0, 120)}`
     );
   }
-          }
+      }
