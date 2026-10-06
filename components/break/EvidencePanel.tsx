@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import type { EvidenceLayer, ClaimKind } from "@/lib/breakEvidence";
+import type { TrackRecord, TestStatus } from "@/lib/breakCalibration";
 
 const KIND: Record<ClaimKind, { label: string; color: string; hint: string }> = {
   evidence:   { label: "Evidence",   color: "var(--bm-green)",  hint: "Backed by a source you can open" },
@@ -23,8 +24,90 @@ function Chip({ color, children, title }: { color: string; children: React.React
   return <span title={title} style={{ fontFamily: mono, fontSize: 9.5, letterSpacing: ".05em", textTransform: "uppercase", color, border: `1px solid ${color}`, borderRadius: 99, padding: "2px 7px", flexShrink: 0 }}>{children}</span>;
 }
 
+const RESULT_LABEL: Record<Exclude<TestStatus, "open">, { label: string; color: string }> = {
+  supported:    { label: "Held up",       color: "var(--bm-green)" },
+  refuted:      { label: "Proved wrong",  color: "var(--bm-red)" },
+  inconclusive: { label: "Could not tell", color: "var(--bm-text3)" },
+};
+
+/** Lets the founder record what happened when they ran a predicted test. */
+function RecordResult({ predictionId, testId, hold, status, busy, onRecord }: {
+  predictionId?: string; testId?: string; hold?: number; status?: TestStatus; busy: boolean;
+  onRecord: (testId: string, status: TestStatus) => void;
+}) {
+  if (!predictionId || !testId) return null;
+  const done = status && status !== "open" ? RESULT_LABEL[status] : null;
+  return (
+    <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+      {typeof hold === "number" && <span style={{ fontSize: 11.5, color: "var(--bm-text4)" }}>We expected this to hold {Math.round(hold * 100)}% of the time.</span>}
+      {done ? (
+        <>
+          <Chip color={done.color}>{done.label}</Chip>
+          <button type="button" disabled={busy} onClick={() => onRecord(testId, "open")} style={{ background: "none", border: 0, padding: 0, color: "var(--bm-text3)", fontSize: 11.5, cursor: "pointer", textDecoration: "underline" }}>Undo</button>
+        </>
+      ) : (
+        (Object.keys(RESULT_LABEL) as Array<keyof typeof RESULT_LABEL>).map((k) => (
+          <button key={k} type="button" disabled={busy} onClick={() => onRecord(testId, k)}
+            style={{ border: "1px solid var(--bm-border2)", background: "transparent", color: "var(--bm-text2)", borderRadius: 99, padding: "3px 10px", fontSize: 11.5, cursor: busy ? "wait" : "pointer" }}>
+            {RESULT_LABEL[k].label}
+          </button>
+        ))
+      )}
+    </div>
+  );
+}
+
+const GRADE_COPY: Record<TrackRecord["grade"], { label: string; color: string }> = {
+  no_data:       { label: "No results yet",   color: "var(--bm-text3)" },
+  early:         { label: "Too early to tell", color: "var(--bm-amber)" },
+  calibrated:    { label: "Well calibrated",  color: "var(--bm-green)" },
+  overconfident: { label: "Ran optimistic",   color: "var(--bm-red)" },
+  underconfident:{ label: "Ran cautious",     color: "var(--bm-amber)" },
+};
+
+function TrackRecordCard({ track }: { track: TrackRecord }) {
+  const g = GRADE_COPY[track.grade];
+  const pct = (x: number | null) => (x === null ? "–" : `${Math.round(x * 100)}%`);
+  return (
+    <div style={box}>
+      <p style={eyebrow}>How these numbers have performed for you</p>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "10px 0 6px", flexWrap: "wrap" }}>
+        <Chip color={g.color}>{g.label}</Chip>
+        {track.resolved > 0 && (
+          <span style={{ fontSize: 12.5, color: "var(--bm-text2)" }}>Expected {pct(track.meanPredicted)} to hold, {pct(track.observed)} did ({track.resolved} tested)</span>
+        )}
+      </div>
+      <p style={{ margin: 0, fontSize: 12.5, color: "var(--bm-text2)", lineHeight: 1.55 }}>{track.summary}</p>
+      {track.adjustment.applied && (
+        <p style={{ margin: "8px 0 0", fontSize: 12, color: "var(--bm-amber)", lineHeight: 1.5 }}>This analysis is already adjusted for that record.</p>
+      )}
+    </div>
+  );
+}
+
 export function EvidencePanel({ layer }: { layer: EvidenceLayer }) {
   const [showAllClaims, setShowAllClaims] = useState(false);
+  const [results, setResults] = useState<Record<string, TestStatus>>({});
+  const [track, setTrack] = useState<TrackRecord | undefined>(layer.trackRecord);
+  const [busy, setBusy] = useState(false);
+  const [recordError, setRecordError] = useState<string | null>(null);
+
+  async function record(testId: string, status: TestStatus) {
+    if (!layer.predictionId) return;
+    setBusy(true); setRecordError(null);
+    try {
+      const res = await fetch("/api/break-predictions", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ predictionId: layer.predictionId, testId, status }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.error ?? "Could not record that result");
+      setResults((r) => ({ ...r, [testId]: status }));
+      if (json.trackRecord) setTrack(json.trackRecord as TrackRecord);
+    } catch (e) {
+      setRecordError(e instanceof Error ? e.message : "Could not record that result");
+    } finally { setBusy(false); }
+  }
   const c = layer.confidence;
   const claims = showAllClaims ? layer.claims : layer.claims.slice(0, 6);
   const gradeColor = c.grade === "solid" ? "var(--bm-green)" : c.grade === "moderate" ? "var(--bm-amber)" : "var(--bm-red)";
@@ -50,6 +133,8 @@ export function EvidencePanel({ layer }: { layer: EvidenceLayer }) {
           </dl>
         </div>
       )}
+
+      {track && (track.resolved > 0 || track.open > 0) && <TrackRecordCard track={track} />}
 
       {/* Calibrated range replaces a falsely precise number */}
       <div style={box}>
@@ -153,10 +238,11 @@ export function EvidencePanel({ layer }: { layer: EvidenceLayer }) {
         <p style={eyebrow}>What would prove this wrong</p>
         <div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 12 }}>
           {layer.falsifiers.map(f => (
-            <div key={f.assumption}>
+            <div key={f.id ?? f.assumption}>
               <p style={{ margin: 0, fontSize: 13.5, fontWeight: 600, color: "var(--bm-text)", lineHeight: 1.4 }}>{f.assumption}</p>
               <p style={{ margin: "5px 0 0", fontSize: 12.5, color: "var(--bm-text2)", lineHeight: 1.5 }}>Test: {f.test}</p>
               <p style={{ margin: "3px 0 0", fontSize: 12.5, color: "var(--bm-red)", lineHeight: 1.5 }}>Wrong if: {f.provenWrongIf}</p>
+              <RecordResult predictionId={layer.predictionId} testId={f.id} hold={f.predictedHold} status={f.id ? results[f.id] : undefined} busy={busy} onRecord={record} />
             </div>
           ))}
         </div>
@@ -166,6 +252,7 @@ export function EvidencePanel({ layer }: { layer: EvidenceLayer }) {
           <p style={eyebrow}>The experiment that tests your actual idea</p>
           <p style={{ margin: "10px 0 0", fontSize: 13.5, fontWeight: 600, color: "var(--bm-text)", lineHeight: 1.45 }}>Claim under test: {layer.thesisTest.thesis}</p>
           <p style={{ margin: "8px 0 0", fontSize: 12.5, color: "var(--bm-amber)", lineHeight: 1.5 }}>{layer.thesisTest.notThisTest}</p>
+          <RecordResult predictionId={layer.predictionId} testId={layer.thesisTest.id} hold={layer.thesisTest.predictedHold} status={layer.thesisTest.id ? results[layer.thesisTest.id] : undefined} busy={busy} onRecord={record} />
           <p style={{ margin: "8px 0 0", fontSize: 12.5, color: "var(--bm-text2)", lineHeight: 1.55 }}>{layer.thesisTest.setup}</p>
           <p style={{ ...eyebrow, marginTop: 12 }}>Measure</p>
           <ul style={{ margin: "5px 0 0", paddingLeft: 18, fontSize: 12.5, color: "var(--bm-text2)", lineHeight: 1.55 }}>{layer.thesisTest.measure.map(m => <li key={m}>{m}</li>)}</ul>
@@ -177,6 +264,8 @@ export function EvidencePanel({ layer }: { layer: EvidenceLayer }) {
           </dl>
         </div>
       )}
+
+      {recordError && <p role="alert" style={{ margin: 0, fontSize: 12.5, color: "var(--bm-red)" }}>{recordError}</p>}
 
       {layer.changeMyMind && (
         <div style={box}>
@@ -195,4 +284,4 @@ export function EvidencePanel({ layer }: { layer: EvidenceLayer }) {
       )}
     </motion.section>
   );
-}
+              }
