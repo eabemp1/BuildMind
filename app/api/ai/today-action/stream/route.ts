@@ -375,7 +375,7 @@ export async function POST(request: Request) {
   // much stage 1 actually used instead of assuming an allowance it may not
   // have. 24s leaves ~6s of margin for request parsing, SSE setup, and
   // response writing outside the AI calls themselves.
-  const requestDeadline = Date.now() + 24000;
+  const requestDeadline = Date.now() + 21000;
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -994,4 +994,4 @@ ${JSON.stringify(structuredA)}`,
 
 export async function GET() {
   return NextResponse.json({ error: "Use POST" }, { status: 405 });
-  }
+    }
