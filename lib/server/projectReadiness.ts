@@ -70,7 +70,7 @@ export async function getProjectReadiness(
 
   const { data: project } = await supabase
     .from("projects")
-    .select("startup_stage, updated_at")
+    .select("startup_stage, updated_at, current_mrr")
     .eq("id", projectId)
     .eq("user_id", userId)
     .maybeSingle();
@@ -80,7 +80,7 @@ export async function getProjectReadiness(
   const currentStageIdx = STAGE_ORDER.indexOf(currentStage);
   const nextStage = currentStageIdx < STAGE_ORDER.length - 1 ? STAGE_ORDER[currentStageIdx + 1] : null;
 
-  const [{ data: milestones }, { data: reflections }, { count: overrideCount }, { data: evidenceRows }] =
+  const [{ data: milestones }, { data: reflections }, { count: overrideCount }, { data: evidenceRows }, { data: projectTasks }] =
     await Promise.all([
       supabase.from("milestones").select("id, title, status, order_index, stage").eq("project_id", projectId).eq("user_id", userId),
       supabase
@@ -105,9 +105,12 @@ export async function getProjectReadiness(
             .eq("from_stage", currentStage)
             .eq("to_stage", nextStage)
         : Promise.resolve({ data: [] as { evidence_type: string }[] }),
+      // Task counts for the stage ring and readiness detail. Without these the
+      // stage showed 0 tasks even when tasks were linked to its milestones.
+      supabase.from("tasks").select("milestone_id, is_completed, milestones!inner(project_id)").eq("user_id", userId).eq("milestones.project_id", projectId),
     ]);
 
-  const stageProgress = computeStageProgress(milestones ?? [], currentStage);
+  const stageProgress = computeStageProgress(milestones ?? [], currentStage, (projectTasks ?? []) as { milestone_id: string | null; is_completed?: boolean | null }[]);
   const reflectionCount = (reflections ?? []).length;
   const avgConfidence = reflectionCount > 0
     ? Math.round(((reflections ?? []).reduce((s, r) => s + (r.confidence ?? 3), 0) / reflectionCount) * 10) / 10
@@ -120,6 +123,9 @@ export async function getProjectReadiness(
     reflectionCount,
     avgConfidence,
     overrides: overrideCount ?? 0,
+    // A recorded MRR above zero is revenue the founder has already entered, so
+    // the 'someone actually paid' slot should not read as empty.
+    derivedSlotKeys: Number((project as { current_mrr?: number | null }).current_mrr ?? 0) > 0 ? ["paying_customer_evidence"] : [],
   });
 
   const daysInactive = project.updated_at
