@@ -37,11 +37,13 @@ export async function groundTargetUsers(params: {
 
   const query = `${targetUsers} ${problem}`.replace(/\s+/g, " ").trim().slice(0, 160);
   let links: GroundingLink[] = [];
+  let timedOut = false;
   try {
     const res = await Promise.race([
       discussionSearch(query, 6),
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), params.timeoutMs ?? 4000)),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), params.timeoutMs ?? 2500)),
     ]);
+    if (res === null) timedOut = true;
     if (res && res.scraped && res.provider !== "ai_synthesised" && res.provider !== "none") {
       const seen = new Set<string>();
       for (const r of res.results) {
@@ -59,6 +61,8 @@ export async function groundTargetUsers(params: {
   } catch {
     links = [];
   }
+  // A timeout says nothing about the topic, so it is not remembered for 12 hours.
+  if (timedOut) return links;
   cache.set(key, { at: Date.now(), links });
   if (cache.size > 500) {
     const oldest = [...cache.entries()].sort((a, b) => a[1].at - b[1].at)[0];
