@@ -1,4 +1,5 @@
 "use client";
+import { classifyRiskCategory, stripUnsupportedTraitClaims } from "@/lib/breakGuards";
 import type { EvidenceLayer } from "@/lib/breakEvidence";
 import { EvidencePanel } from "@/components/break/EvidencePanel";
 import { StressTestProgress } from "@/components/break/StressTestProgress";
@@ -401,11 +402,11 @@ export default function BreakMyStartupPage() {
     }
 
     const risks: RiskItem[] = (killReasons.length ? killReasons : ["Execution risk not enough data yet"]).map((reason, index) => ({
-      category: ["Market Risk", "Execution Risk", "Moat Risk", "Revenue Risk"][index] ?? "Startup Risk",
+      category: classifyRiskCategory(reason),
       severity: index === 0 ? overallRisk : overallRisk === "Critical" ? "High" : overallRisk,
       description: reason,
       mitigation:
-        cleanAIText(riskAgentOutput?.top_risks?.[index]?.mitigation) ||
+        stripUnsupportedTraitClaims([cleanAIText(riskAgentOutput?.top_risks?.[index]?.mitigation)], false)[0] ||
         nextDifferentiationEntry() ||
         brutalAdvice ||
         "Talk to 5 target users and validate the riskiest assumption before building more.",
@@ -1108,7 +1109,14 @@ export default function BreakMyStartupPage() {
               </Card>
             )}
 
-            {result.executionPlan && (
+            {result.executionPlan && result.evidence?.nextMove?.holdBuilding && (
+              <Card variant="data" className="flex flex-col gap-2 p-4">
+                <h3 className="font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--bm-text3)]">Build plan on hold</h3>
+                <p className="text-xs leading-relaxed text-[var(--bm-text2)]">A build roadmap was generated, but the biggest unknown is whether the problem is real and painful enough to pay for. Do not build these things yet. Run the interviews above first, then regenerate this plan with what you learn.</p>
+              </Card>
+            )}
+
+            {result.executionPlan && !result.evidence?.nextMove?.holdBuilding && (
               <Card variant="data" className="flex flex-col gap-3 p-4">
                 <h3 className="font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--bm-text3)]">Execution Recovery Plan</h3>
                 <div className="grid gap-3 sm:grid-cols-3">
@@ -1483,4 +1491,4 @@ export default function BreakMyStartupPage() {
       </AnimatePresence>
     </div>
   );
-    }
+         }
