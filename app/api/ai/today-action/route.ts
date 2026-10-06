@@ -153,6 +153,7 @@ function buildContextualFallback(stage: string, targetUsers: string, problem: st
 }
 
 export async function POST(request: Request) {
+  const requestStartedAt = Date.now();
   try {
     void loadActivePrompts();
     // Authenticate session first — userId in body must match the session user
@@ -831,7 +832,17 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
     let reflexionOutput: Awaited<ReturnType<typeof runReflexionLoop>> | null = null;
     let reflexionStatus: ReflexionStatus = "partial";
     try {
-      reflexionOutput = await runReflexionLoop(taskSeed, reflexionContext);
+      // The loop makes three sequential model calls with no shared deadline.
+      // Cap it by what is left of the 30s function window so a slow provider
+      // becomes the single-pass fallback instead of a killed request.
+      const loopBudgetMs = Math.max(4000, 24000 - (Date.now() - requestStartedAt));
+      let loopTimer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        reflexionOutput = await Promise.race([
+          runReflexionLoop(taskSeed, reflexionContext),
+          new Promise<never>((_, reject) => { loopTimer = setTimeout(() => reject(new Error("reflexion loop exceeded its time budget")), loopBudgetMs); }),
+        ]);
+      } finally { if (loopTimer) clearTimeout(loopTimer); }
       reflexionStatus = reflexionOutput ? "ok" : "partial";
     } catch (err) {
       reflexionStatus = "failed";
@@ -1062,4 +1073,4 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
     const message = error instanceof Error ? error.message : "Today action failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+      }
