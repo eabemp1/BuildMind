@@ -57,6 +57,13 @@ export interface IntelligenceSignal {
   affected_goal?: string | null;
   affected_assumption?: string | null;
   recommended_response: string;
+  /**
+   * `confidence` is how sure BuildMind is that the OBSERVATION happened. For signals
+   * that interpret behaviour (avoidance, behaviour change) this is how sure it is about
+   * the MEANING, which is always lower, and the other readings are listed.
+   */
+  interpretation_confidence?: number;
+  alternative_explanations?: string[];
   coverage: { task_events: number; reflections: number; activity_events: number; recommendation_outcomes: number };
   observation_count: number;
   limitations: string[];
@@ -168,6 +175,8 @@ export interface DecisionCandidate {
     predicted_success?: number;
     /** How many resolved outcomes that estimate rests on. */
     predicted_success_n?: number;
+    /** Points removed because this kind of action has repeatedly failed for this founder. */
+    intervention_penalty?: number;
     total: number;
   };
   supporting_signals: IntelligenceSignalType[];
@@ -254,6 +263,29 @@ function clampScore(n: number): number {
 
 function confidenceFromCounts(count: number, reliableAt: number): number {
   return Math.max(0.2, Math.min(0.95, count / reliableAt));
+}
+
+/** Ends a sentence once: no "..", no doubled stops from text that already ended in one. */
+function endSentence(text: string): string {
+  const t = String(text).trim().replace(/\s+/g, " ");
+  return /[.!?…]$/.test(t) ? t : `${t}.`;
+}
+
+/** Collapses accidental ".." (but keeps a real ellipsis). */
+function tidyStops(text: string): string {
+  return String(text).replace(/([^.])\.{2}(?!\.)/g, "$1.");
+}
+
+/** Same fact worded two ways ("1/2 reflected actions completed" twice) is one change. */
+function dedupeChanges(lines: string[]): string[] {
+  const topic = (l: string) =>
+    /reflected action/i.test(l) ? "reflected"
+    : /external-evidence/i.test(l) ? "external"
+    : /recommendation rejection|rejected or ignored/i.test(l) ? "rejection"
+    : /recommendation completion/i.test(l) ? "completion"
+    : l;
+  const seen = new Set<string>();
+  return lines.filter((l) => { const k = topic(l); if (seen.has(k)) return false; seen.add(k); return true; });
 }
 
 function unique(values: Array<string | null | undefined>, limit = 8): string[] {
@@ -364,8 +396,8 @@ export function deriveTemporalCoherence(input: FounderIntelligenceInput): Tempor
 
   return {
     today_changes: unique([...comparison.changed_today, ...(today.length ? [`${today.length} founder activity/reflection events recorded today.`] : [])], 6),
-    week_changes: unique([...week_changes, ...comparison.changed_this_week, ...comparison.since_last_decision], 8),
-    week_over_week_changes: unique([...week_changes, ...comparison.week_over_week], 8),
+    week_changes: unique(dedupeChanges([...week_changes, ...comparison.changed_this_week, ...comparison.since_last_decision]), 8),
+    week_over_week_changes: unique(dedupeChanges([...week_changes, ...comparison.week_over_week]), 8),
     increasing_behaviors: unique([...comparison.increasing, ...(thisWeekExternal > lastWeekExternal ? ["external evidence seeking"] : [])], 5),
     decreasing_behaviors: unique([...comparison.decreasing, ...(thisWeekExternal < lastWeekExternal ? ["external evidence seeking"] : [])], 5),
     strengthening_patterns: unique([
@@ -412,11 +444,12 @@ export function deriveIntelligenceSignals(params: {
     ...learnedPatterns.avoided_action_types,
   ], 6);
   if (avoidance.length > 0) {
+    const avoidanceObserved = confidenceFromCounts(avoidance.length + executionSignature.avoidanceZones.length, 5);
     signals.push(signal({
       now,
       type: "REPEATED_AVOIDANCE",
       severity: avoidance.length >= 3 ? "high" : "medium",
-      confidence: confidenceFromCounts(avoidance.length + executionSignature.avoidanceZones.length, 5),
+      confidence: avoidanceObserved,
       title: "Repeated avoidance pattern detected",
       summary: `BuildMind currently sees avoidance around ${avoidance.slice(0, 3).join(", ")}.`,
       evidence: [
@@ -425,6 +458,13 @@ export function deriveIntelligenceSignals(params: {
       ],
       affected_goal: activeMilestone?.title ?? null,
       recommended_response: "Prefer a smaller direct exposure to the avoided work rather than routing around it entirely.",
+      interpretation_confidence: Math.round(Math.max(0.3, Math.min(0.7, avoidanceObserved - 0.15)) * 100) / 100,
+      alternative_explanations: [
+        "The tasks were badly matched to the goal or the moment",
+        "The tasks were too big or too vague to start",
+        "The founder disagrees with the strategy behind them",
+        "More attractive work (building) is winning the time",
+      ],
     }));
   }
 
@@ -508,7 +548,7 @@ export function deriveIntelligenceSignals(params: {
           },
           ...linkedTasks.slice(0, 4).map((task) => ({
             source: "task", record_id: task.id ? String(task.id) : undefined, field: "milestone_id", observed_at: task.updated_at ?? task.created_at,
-            fact: `Task is linked to ${activeForSlippage.title}: ${String(task.title ?? "untitled task")}.`,
+            fact: `Task is linked to ${activeForSlippage.title}: ${endSentence(String(task.title ?? "untitled task"))}`,
             detail: `Linked task: ${String(task.title ?? "untitled task")}`, value: task.is_completed ?? null, window: "7 days",
           })),
           ...relevantActivity.slice(0, 3).map((event) => ({
@@ -563,24 +603,32 @@ export function deriveIntelligenceSignals(params: {
       now,
       type: "MOMENTUM_CHANGE",
       severity: momentum < lastWeekMomentum ? "high" : "medium",
-      confidence: 0.8,
-      title: momentum < lastWeekMomentum ? "Momentum dropped" : "Momentum improved",
-      summary: `Momentum moved from ${lastWeekMomentum} to ${momentum}.`,
+      // One score moving is a measurement, not proof the founder's state changed.
+      // It is trusted more only when real behaviour moved the same way.
+      confidence: (momentum > lastWeekMomentum ? temporal.increasing_behaviors.length > 0 : temporal.decreasing_behaviors.length > 0) ? 0.8 : 0.55,
+      title: momentum < lastWeekMomentum ? "Momentum score dropped" : "Momentum score rose",
+      summary: `Momentum score moved from ${lastWeekMomentum} to ${momentum}${(momentum > lastWeekMomentum ? temporal.increasing_behaviors.length > 0 : temporal.decreasing_behaviors.length > 0) ? ", and behaviour moved the same way." : "; no matching change in completed work yet, so treat it as unconfirmed."}`,
       evidence: [{ source: "founder_context", detail: `momentum_last_week=${lastWeekMomentum}, momentum_score=${momentum}` }],
       recommended_response: momentum < lastWeekMomentum ? "Assign a smaller high-signal task to restart execution." : "Use the momentum window for a higher-leverage uncomfortable task.",
     }));
   }
 
   if (temporal.decreasing_behaviors.length > 0 || temporalProfile.sessionLengthTrend === "shrinking") {
+    const measured = temporal.decreasing_behaviors.length > 0;
     signals.push(signal({
       now,
       type: "FOUNDER_BEHAVIOR_CHANGE",
       severity: "medium",
-      confidence: 0.65,
-      title: "Founder behavior is changing",
-      summary: temporal.decreasing_behaviors.length ? `Decreasing behavior: ${temporal.decreasing_behaviors.join(", ")}.` : "Session length appears to be shrinking.",
-      evidence: [{ source: "temporal_profile", detail: temporalProfile.insight ?? `session trend=${temporalProfile.sessionLengthTrend}` }],
+      confidence: measured ? 0.65 : 0.5,
+      title: "Founder behavior may be changing",
+      summary: measured ? `Decreasing behavior: ${temporal.decreasing_behaviors.join(", ")}.` : "Measured session length is trending shorter.",
+      evidence: [
+        ...(measured ? [] : [{ source: "temporal_profile", detail: "session length trend=shrinking" }]),
+        ...(temporalProfile.insight ? [{ source: "temporal_profile", detail: `Related timing pattern (not a measure of session length): ${temporalProfile.insight}` }] : []),
+      ],
       recommended_response: "Adjust task size/timing and explicitly test whether the old operating pattern still holds.",
+      interpretation_confidence: 0.4,
+      alternative_explanations: ["A different time of day rather than a shorter session", "Fewer, larger tasks", "A quiet week"],
     }));
   }
 
@@ -692,6 +740,7 @@ export function buildFounderIntelligenceState(rawInput: FounderIntelligenceInput
   const taskTimestampCoverage = tasks.some((task) => Boolean(task.updated_at ?? task.completed_at ?? task.created_at));
   const milestoneTimestampCoverage = milestones.some((milestone) => Boolean(milestone.updated_at ?? milestone.created_at));
   const activeMilestoneTimestamp = activeMilestone?.updated_at ?? activeMilestone?.created_at ?? null;
+  const alignmentConfidence = clampScore((activeMilestones.length ? 50 : 0) + Math.min(completedThisWeek.length, 5) * 10);
   const executionState: FounderExecutionState = {
     as_of: now.toISOString(),
     scope: { user_id: input.userId, project_id: input.projectId ?? (project.id ? String(project.id) : null) },
@@ -713,7 +762,7 @@ export function buildFounderIntelligenceState(rawInput: FounderIntelligenceInput
       inactivity_days: daysSinceActive(founderContext.last_checkin_date as string | null | undefined, typeof founderContext.days_inactive === "number" ? founderContext.days_inactive : null),
       focus_distribution: Array.from(focusCounts, ([category, count]) => ({ category, count })),
     },
-    alignment: { stated_priority: statedPriorities[0] ?? null, observed_priority: observedPriorities[0] ?? null, confidence: clampScore((activeMilestones.length ? 50 : 0) + Math.min(completedThisWeek.length, 5) * 10) },
+    alignment: { stated_priority: statedPriorities[0] ?? null, observed_priority: observedPriorities[0] ?? null, confidence: alignmentConfidence },
     momentum: {
       score: typeof founderContext.momentum_score === "number" ? founderContext.momentum_score : null,
       trend: computeMomentumTrendFromDelta(founderContext.momentum_score, founderContext.momentum_last_week),
@@ -750,14 +799,21 @@ export function buildFounderIntelligenceState(rawInput: FounderIntelligenceInput
     stats: [...executionSignature.avoidanceZones, ...executionSignature.strengths].map((c) => ({ label: String(c.category), completed: Math.round(c.completionRate * c.totalTasks), total: c.totalTasks })),
   });
 
+  // A platform that is also in the strengths (founder posts and builds there) is not an
+  // avoided platform. What they avoid on it is the action type (usually outreach).
+  const platformInStrengths = (p: string) => resolvedPatterns.strengths.some((x) => x.toLowerCase().includes(String(p).toLowerCase()));
+  const avoidedPlatformsOnly = learnedPatterns.avoided_platforms.filter((p) => !platformInStrengths(p));
+  const platformMixed = learnedPatterns.avoided_platforms.filter(platformInStrengths)
+    .map((p) => `${p}: finishes posting and building work there but ignores recommendations on it, so the avoidance is likely the action type (such as outreach), not the platform`);
+
   const founder: FounderState = {
     strengths: resolvedPatterns.strengths,
     avoidance_patterns: resolvedPatterns.avoidance,
-    mixed_patterns: resolvedPatterns.mixed.map((m) => `${m.label}: ${m.completed} of ${m.total} finished, not enough to call it a strength or an avoidance`),
+    mixed_patterns: [...resolvedPatterns.mixed.map((m) => `${m.label}: ${m.completed} of ${m.total} finished, not enough to call it a strength or an avoidance`), ...platformMixed],
     execution_patterns: unique([executionSignature.signatureSentence, learnedPatterns.patterns_reliable ? `Recommendation completion rate ${Math.round(learnedPatterns.completion_rate * 100)}%` : null], 5),
     operating_windows: unique([temporalProfile.peakProductivityHour != null ? `Best completion hour around ${temporalProfile.peakProductivityHour}:00` : null, temporalProfile.dropoutHour != null ? `Dropout risk around ${temporalProfile.dropoutHour}:00` : null], 4),
     recommendation_acceptance: learnedPatterns.preferred_action_types.map((t) => `Completes ${t} recommendations`),
-    recommendation_rejection: unique([...learnedPatterns.avoided_action_types.filter((t) => !resolvedPatterns.strengths.some((x) => x.toLowerCase().includes(t))).map((t) => `Avoids ${String(t).replace(/_/g, " ")} recommendations`), ...learnedPatterns.avoided_platforms.map((p) => `Avoids ${p} recommendations`)], 6),
+    recommendation_rejection: unique([...learnedPatterns.avoided_action_types.filter((t) => !resolvedPatterns.strengths.some((x) => x.toLowerCase().includes(t))).map((t) => `Avoids ${String(t).replace(/_/g, " ")} recommendations`), ...avoidedPlatformsOnly.map((p) => `Avoids ${p} recommendations`)], 6),
     behavioral_trends: unique([
       ...temporal.increasing_behaviors.map((b) => `${b} increasing`),
       ...temporal.decreasing_behaviors.map((b) => `${b} decreasing`),
@@ -820,7 +876,9 @@ export function buildFounderIntelligenceState(rawInput: FounderIntelligenceInput
     observed_priorities: observedPriorities,
     contradictions: contradictionSignals.map((s) => s.summary),
     strategic_drift: signals.filter((s) => s.type === "BUSYWORK_PATTERN" || s.type === "GOAL_SLIPPAGE").map((s) => s.summary),
-    priority_confidence: clampScore((activeMilestones.length ? 40 : 20) + (project.problem ? 20 : 0) + (thisWeek.length ? 20 : 0)),
+    // Cannot exceed the alignment confidence: a priority is only as well-confirmed as the
+    // observed behaviour that backs it, so the two sections never disagree.
+    priority_confidence: Math.min(alignmentConfidence, clampScore((activeMilestones.length ? 40 : 20) + (project.problem ? 20 : 0) + (thisWeek.length ? 20 : 0))),
   };
 
   // FIX: previously only checked reflections.today_action — a task shown
@@ -837,10 +895,10 @@ export function buildFounderIntelligenceState(rawInput: FounderIntelligenceInput
     5,
   );
   const execution: ExecutionState = {
-    completed_actions: completedThisWeek.map((r) => String(r.today_action ?? r.note ?? "completed action")).slice(0, 6),
+    completed_actions: completedThisWeek.map((r) => tidyStops(String(r.today_action ?? r.note ?? "completed action"))).slice(0, 6),
     skipped_actions: skippedThisWeek.map((r) => String(r.today_action ?? r.note ?? "skipped action")).slice(0, 6),
     delayed_actions: tasksNowInPlay.filter((t) => daysBetween(now, t.updated_at ?? t.created_at ?? t.due_date) >= 7).map((t) => String(t.title)).slice(0, 6),
-    repeated_actions: repeatedActions,
+    repeated_actions: repeatedActions.map(tidyStops),
     outcome_quality: startup.evidence.length ? [`${startup.evidence.length} evidence-producing reflections detected.`] : ["Recent completion does not clearly show external evidence yet."],
     execution_velocity: thisWeek.length ? Math.round((completedThisWeek.length / thisWeek.length) * 100) : 0,
   };
@@ -1006,6 +1064,17 @@ export function activeSignals(signals: IntelligenceSignal[], asOf: Date): Array<
     .sort((a, b) => b.decayed_confidence - a.decayed_confidence);
 }
 
+/** Says so when the top two are within 3 points, so a tie is never presented as a clear win. */
+function closeCallLine(candidates: DecisionCandidate[]): string | null {
+  if (candidates.length < 2) return null;
+  const [a, b] = candidates;
+  if (a.scores.total - b.scores.total > 3) return null;
+  const chosenOn = (a.scores.predicted_success_n ?? 0) >= 2 || (b.scores.predicted_success_n ?? 0) >= 2
+    ? "Chosen on total score; the track record for each is shown in the scores."
+    : "Chosen on total score; neither has enough history to separate them.";
+  return `Close call: ${a.id} (${a.scores.total}) vs ${b.id} (${b.scores.total}). ${chosenOn}`;
+}
+
 /** Rebuilds only the human-readable basis of a cached decision from the current signals. */
 export function refreshDecisionBasis(decision: DecisionState, signals: IntelligenceSignal[], now: Date): DecisionState {
   const live = activeSignals(signals, now).slice(0, 3);
@@ -1013,6 +1082,7 @@ export function refreshDecisionBasis(decision: DecisionState, signals: Intellige
     ...decision,
     decision_basis: [
       decision.top_candidate ? `Top candidate score: ${decision.top_candidate.scores.total}/100.` : "No candidate ranked.",
+      ...(closeCallLine(decision.candidates) ? [closeCallLine(decision.candidates)!] : []),
       ...live.map((s) => `${s.type}: ${s.summary}`),
     ],
   };
@@ -1032,7 +1102,6 @@ function scoreCandidate(candidate: Omit<DecisionCandidate, "scores" | "why_it_be
   const goal_relevance = isGenericContinuation ? 60 : candidate.action.toLowerCase().includes(String(state.startup.current_goal ?? "").toLowerCase().slice(0, 12)) ? 85 : hasGoalRisk ? 80 : 60;
   const evidence_value = isGenericContinuation ? 45 : isExternal ? 90 : hasEvidenceGap ? 75 : 45;
   const founder_fit = hasAvoidance ? 55 : founderAvoidsExternal && isExternal ? 50 : 75;
-  const execution_probability = state.execution.execution_velocity > 70 ? 80 : state.execution.execution_velocity > 40 ? 65 : 45;
   const opportunity_cost = isExternal ? 15 : 35;
   const repetition_penalty = repeated ? 40 : 0;
   const behavioral_correction = isGenericContinuation ? 40 : hasAvoidance || signalTypes.has("BEHAVIOR_STRATEGY_CONTRADICTION") ? 80 : 45;
@@ -1059,13 +1128,28 @@ function scoreCandidate(candidate: Omit<DecisionCandidate, "scores" | "why_it_be
   const priorMean = allN >= 3 ? allS / allN : 0.45;
   const histN = (archetypeHistory?.successes ?? 0) + (archetypeHistory?.failures ?? 0);
   const predicted_success = Math.round(((((archetypeHistory?.successes ?? 0) + priorMean * 2) / (histN + 2)) * 100));
+  // Execution probability is per candidate: the founder's general pace, pulled toward how
+  // this kind of action has actually gone for them, and eased for a small first step.
+  const paceBase = state.execution.execution_velocity > 70 ? 80 : state.execution.execution_velocity > 40 ? 65 : 45;
+  const isMicroStep = candidate.id === "avoidance_microdose";
+  const execution_probability = clampScore(
+    (histN >= 2 ? paceBase * 0.5 + predicted_success * 0.5 : paceBase)
+    + (isMicroStep ? 5 : 0),
+  );
+  // A kind of action that has failed for this founder every time is not simply repeated.
+  // It stays out of first place unless the mechanism changes (a new candidate id) or the
+  // founder picks it. The penalty grows with how many times it failed.
+  const failures = archetypeHistory?.failures ?? 0;
+  const intervention_penalty = (archetypeHistory?.successes ?? 0) === 0 && failures >= 3
+    ? Math.min(40, 20 + (failures - 3) * 5)
+    : histN >= 4 && predicted_success < 25 ? 15 : 0;
   const total = clampScore(
-    impact * 0.16 + urgency * 0.14 + goal_relevance * 0.13 + evidence_value * 0.15 + founder_fit * 0.1 + execution_probability * 0.1 + behavioral_correction * 0.1 + risk_reduction * 0.1 + confidence * 0.08 + learned_fit * 0.12 - opportunity_cost * 0.08 - repetition_penalty * 0.08,
+    impact * 0.16 + urgency * 0.14 + goal_relevance * 0.13 + evidence_value * 0.15 + founder_fit * 0.1 + execution_probability * 0.1 + behavioral_correction * 0.1 + risk_reduction * 0.1 + confidence * 0.08 + learned_fit * 0.12 - opportunity_cost * 0.08 - repetition_penalty * 0.08 - intervention_penalty,
   );
   return {
     ...candidate,
-    scores: { impact, urgency, goal_relevance, evidence_value, founder_fit, execution_probability, opportunity_cost, repetition_penalty, behavioral_correction, risk_reduction, confidence, predicted_success, predicted_success_n: histN, total },
-    why_it_beats_alternatives: `Scores highest because it balances ${hasEvidenceGap ? "fresh evidence" : hasGoalRisk ? "goal recovery" : "execution progress"} with founder fit${(archetypeHistory?.successes ?? 0) > 0 ? `, and this approach has worked for you before (${archetypeHistory!.successes} of ${archetypeHistory!.successes + archetypeHistory!.failures} resolved)` : ""} and avoids repeating stale work.`,
+    scores: { impact, urgency, goal_relevance, evidence_value, founder_fit, execution_probability, opportunity_cost, repetition_penalty, behavioral_correction, risk_reduction, confidence, predicted_success, predicted_success_n: histN, intervention_penalty, total },
+    why_it_beats_alternatives: `${intervention_penalty > 0 ? `Ranked down: this approach has not worked for you (${archetypeHistory?.successes ?? 0} of ${histN} resolved). ` : ""}Scores highest because it balances ${hasEvidenceGap ? "fresh evidence" : hasGoalRisk ? "goal recovery" : "execution progress"} with founder fit${(archetypeHistory?.successes ?? 0) > 0 ? `, and this approach has worked for you before (${archetypeHistory!.successes} of ${archetypeHistory!.successes + archetypeHistory!.failures} resolved)` : ""} and avoids repeating stale work.`,
   };
 }
 
@@ -1151,6 +1235,7 @@ export function buildDecisionState(state: FounderIntelligenceState, excludeActio
     top_candidate: ranked[0] ?? null,
     decision_basis: [
       ranked[0] ? `Top candidate score: ${ranked[0].scores.total}/100.` : "No candidate ranked.",
+      ...(closeCallLine(ranked) ? [closeCallLine(ranked)!] : []),
       ...topSignals.slice(0, 3).map((s) => `${s.type}: ${s.summary}`),
     ],
   };
@@ -1319,4 +1404,4 @@ export async function loadFounderIntelligence(
     logError("founderIntelligence/loadFounderIntelligence", err, { userId, projectId });
     return buildFounderIntelligenceState({ ...preloaded, now });
   }
-  }
+          }
