@@ -866,7 +866,12 @@ export function buildFounderIntelligenceState(rawInput: FounderIntelligenceInput
   };
 
   const todayDateStr = now.toISOString().slice(0, 10);
-  const hasFreshCache = !input.excludeAction && input.cachedDecision?.date === todayDateStr;
+  // A decision cached by an older scoring version lacks predicted_success; reusing
+  // it would keep showing signal-strength "confidence" as if it were success odds.
+  const cachedCandidates = input.cachedDecision?.decision?.candidates ?? [];
+  const cacheIsCurrentVersion =
+    cachedCandidates.length > 0 && cachedCandidates.every((c) => typeof c.scores?.predicted_success === "number");
+  const hasFreshCache = !input.excludeAction && input.cachedDecision?.date === todayDateStr && cacheIsCurrentVersion;
   // A cached decision keeps its ranked candidates, but its basis lines quote the
   // signals as they were when it was cached. Rebuild them from the live signals
   // so the report never shows 63 days beside 64, or 30 rejections beside 14.
@@ -1314,4 +1319,4 @@ export async function loadFounderIntelligence(
     logError("founderIntelligence/loadFounderIntelligence", err, { userId, projectId });
     return buildFounderIntelligenceState({ ...preloaded, now });
   }
-      }
+  }
