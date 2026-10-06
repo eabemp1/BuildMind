@@ -506,7 +506,11 @@ export async function POST(request: Request) {
         // Below this threshold, the task itself should be framed as
         // evidence-gathering ("here's how to find out"), not a confident
         // directive dressed up to sound sure of itself.
-        const topCandidateConfidence = founderIntelligence?.decision.top_candidate?.scores.confidence ?? 100;
+        const topScores = founderIntelligence?.decision.top_candidate?.scores;
+        const topCandidateConfidence = Math.min(
+          topScores?.confidence ?? 100,
+          (topScores?.predicted_success_n ?? 0) >= 2 ? (topScores?.predicted_success ?? 100) : 100,
+        );
         isLowConfidence = topCandidateConfidence < 40;
         if (isLowConfidence) {
           founderIntelligencePromptBlock += `\n\nCONFIDENCE NOTICE: Current confidence in this recommendation is low (${topCandidateConfidence}%) — there isn't enough recent evidence about this founder's situation yet. Do NOT phrase "task" as a confident directive. Frame it explicitly as a small evidence-gathering step, and "rationale" must say plainly that this is about closing an evidence gap, not a high-conviction recommendation.`;
@@ -990,4 +994,4 @@ ${JSON.stringify(structuredA)}`,
 
 export async function GET() {
   return NextResponse.json({ error: "Use POST" }, { status: 405 });
-    }
+  }
