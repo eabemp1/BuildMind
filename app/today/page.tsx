@@ -43,7 +43,6 @@ import { ChurnRiskInterrupt } from "./components/ChurnRiskInterrupt";
 import { SignalCaptureForm } from "./components/SignalCaptureForm";
 import { SignalHistoryList } from "./components/SignalHistoryList";
 import { shouldTriggerRiskInterrupt, type ChurnRiskAssessment } from "@/lib/riskSignals";
-import { DecisionBrief } from "./components/DecisionBrief";
 import { ContextAlignmentCard } from "./components/ContextAlignmentCard";
 import { IntelligenceUnavailableCard } from "./components/IntelligenceUnavailableCard";
 import { useUIMode } from "@/lib/uiMode";
@@ -2076,14 +2075,10 @@ function TodayContent() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.08 }}
         style={{
-          padding: 1,
-            borderRadius: 12,
-            background: "var(--bm-accent-bd)",
-            marginBottom: 14,
-            transition: "background 0.4s",
+          marginBottom: 14,
           }}
       >
-        <div style={{ background: "var(--bm-bg2)", borderRadius: 11, padding: isMobile ? "20px" : "28px 30px 24px" }}>
+        <div style={{ padding: isMobile ? "4px 2px 0" : "8px 0 0" }}>
 
           {/* Meta row — simplified */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
@@ -2120,7 +2115,6 @@ function TodayContent() {
                   {actionData.difficulty}
                 </span>
               )}
-              <Clock size={11} /> {actionData.time}
             </span>
           </div>
 
@@ -2135,17 +2129,21 @@ function TodayContent() {
               alignItems: "start",
             }}
           >
-            <DecisionBrief
+            <TodayCommandCenter
               action={linkifyChannels(sanitizeOutput(actionData.action))}
               lowConfidence={actionData.isLowConfidence}
               rationale={sanitizeOutput(actionData.reflexion?.rationale ?? actionData.why)}
-              time={actionData.time}
               expectedEvidence={actionData.intelligence?.decision?.top_candidate?.expected_evidence}
               kicker={actionData.missionLabel}
               accent={missionAccent(actionData.missionKind)}
               reasons={actionData.missionReasons}
               executeLabel="Open script"
               onExecute={() => executionScriptRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+              actionTitle={actionData?.action ? sanitizeOutput(actionData.action) : null}
+              timeText={actionData?.time ?? null}
+              done={done}
+              streak={streak}
+              firstStep={actionData?.firstStep ?? null}
             />
             {actionData.isLowConfidence && (
               <div style={{ marginTop: isMobile ? 12 : 0 }}>
@@ -2156,14 +2154,6 @@ function TodayContent() {
 
           <WhyThisPanel data={{ isAI: actionData.isAI, isLowConfidence: actionData.isLowConfidence, reflexion: actionData.reflexion, intelligence: actionData.intelligence }} />
 
-          {/* Focus block, directly under the task it serves */}
-          <TodayCommandCenter
-            actionTitle={actionData?.action ? sanitizeOutput(actionData.action) : null}
-            timeText={actionData?.time ?? null}
-            done={done}
-            streak={streak}
-            firstStep={actionData?.firstStep ?? null}
-          />
 
           {!done && !actionLoading && (
             <button
@@ -2874,4 +2864,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-  }
+    }
