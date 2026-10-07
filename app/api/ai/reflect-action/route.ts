@@ -435,6 +435,34 @@ Target users: ${project.target_users ?? "Not specified"}`;
           .filter((v): v is string => Boolean(v?.trim()))
           .join(" — ")
           .trim();
+        // FIX: /reflect never sends recommendationId, and task-complete only
+        // *stored* it (user_behavior_state.today_recommendation_id) without
+        // anything reading it back — so no reflection ever resolved a pending
+        // Founder Intelligence prediction and accuracy went stale. Fall back to
+        // the stored id, but only if it is a pending row owned by this user.
+        let effectiveRecommendationId: string | undefined = recommendationId;
+        if (!effectiveRecommendationId) {
+          try {
+            const { data: stored } = await supabase
+              .from("user_behavior_state")
+              .select("value")
+              .eq("user_id", verifiedUserId)
+              .eq("key", "today_recommendation_id")
+              .maybeSingle();
+            const candidate = typeof stored?.value === "string" ? stored.value : null;
+            if (candidate && /^[0-9a-f-]{36}$/i.test(candidate)) {
+              const { data: row } = await supabase
+                .from("reflexion_learning_log")
+                .select("id")
+                .eq("id", candidate)
+                .eq("user_id", verifiedUserId)
+                .maybeSingle();
+              if (row?.id) effectiveRecommendationId = candidate;
+            }
+          } catch {
+            // best-effort; falls back to unresolved
+          }
+        }
         // Awaited (unlike the other fire-and-forget calls below) because the
         // Reflection Recorded screen shows a real before/after confidence
         // delta when this reflection resolved a pending prediction — that
@@ -443,7 +471,7 @@ Target users: ${project.target_users ?? "Not specified"}`;
           const accuracyBefore = await getFounderIntelligenceAccuracy(supabase, verifiedUserId);
           const comparison = await compareFounderIntelligenceOutcome(supabase, {
             userId: verifiedUserId,
-            recommendationId,
+            recommendationId: effectiveRecommendationId,
             taskTitle: todayAction ?? note ?? "",
             outcome,
             reflectionText: reflectionEvidenceText,
@@ -464,16 +492,16 @@ Target users: ${project.target_users ?? "Not specified"}`;
           // Confidence delta is a bonus display, never block the reflection save.
         }
         let isFounderIntelligenceRecommendation = false;
-        if (recommendationId && !founderIntelligenceResolved) {
+        if (effectiveRecommendationId && !founderIntelligenceResolved) {
           const { data: recommendation } = await supabase
             .from("reflexion_learning_log")
             .select("prediction_source")
-            .eq("id", recommendationId)
+            .eq("id", effectiveRecommendationId)
             .eq("user_id", verifiedUserId)
             .maybeSingle();
           isFounderIntelligenceRecommendation = recommendation?.prediction_source === "founder_intelligence";
         }
-        if (recommendationId && !founderIntelligenceResolved && !isFounderIntelligenceRecommendation) {
+        if (effectiveRecommendationId && !founderIntelligenceResolved && !isFounderIntelligenceRecommendation) {
           // Non-Founder-Intelligence recommendations still keep their
           // existing action lifecycle. A Founder Intelligence row without
           // sufficient evidence stays pending rather than being trained from
@@ -481,18 +509,18 @@ Target users: ${project.target_users ?? "Not specified"}`;
           const mappedOutcome = outcome === "completed" ? "completed" : outcome === "blocked" ? "overridden" : "partial";
           await markRecommendationObserved(supabase, {
             userId: verifiedUserId,
-            recommendationId,
+            recommendationId: effectiveRecommendationId,
             taskTitle: todayAction ?? note ?? "",
             outcome,
             founderExplanation: note || blocker || undefined,
             evidenceProduced: reflectionEvidenceText || undefined,
           });
           await recordActionOutcome({
-            logRowId: recommendationId,
+            logRowId: effectiveRecommendationId,
             userId: verifiedUserId,
             outcome: mappedOutcome,
             outcomeNote: note || blocker || undefined,
-          }).catch((err) => logError("reflect-action/recordActionOutcome", err, { verifiedUserId, recommendationId }));
+          }).catch((err) => logError("reflect-action/recordActionOutcome", err, { verifiedUserId, recommendationId: effectiveRecommendationId }));
         }
         recordActivity(verifiedUserId, "reflection_done", { projectId, outcome, confidence }).catch(() => {});
         // CONSOLIDATION: was checkAndCacheStageTransition() — see
@@ -610,4 +638,4 @@ ${projectContext}`,
     const message = error instanceof Error ? error.message : "Reflect action failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+    }
