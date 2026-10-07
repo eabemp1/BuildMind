@@ -1109,8 +1109,12 @@ function TodayContent() {
   // (unchanged) since it's already kept in sync elsewhere in this file;
   // only xp needed correcting.
   const { data: scorecard } = useFounderScorecardQuery();
+  useEffect(() => {
+    if (typeof scorecard?.xp === "number") { try { setLevelInfo(xpToLevel(scorecard.xp)); } catch { /* keep local level */ } }
+  }, [scorecard?.xp]);
   const score = project ? computeStartupScore({
     ...project,
+    momentum_score: scorecard?.momentum ?? project.momentum_score,
     xp: scorecard?.xp ?? 0,
     streak,
   }) : 0;
