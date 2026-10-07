@@ -185,7 +185,7 @@ export default function OverviewPage() {
   // order here only decides which arrives first.
   const streak = scorecard?.streak ?? overview?.founderStreakDays ?? localStreak;
 
-  const score = activeProject ? computeStartupScore({ ...activeProject, xp: scorecard?.xp ?? 0, streak }) : 0;
+  const score = activeProject ? computeStartupScore({ ...activeProject, momentum_score: scorecard?.momentum ?? activeProject.momentum_score, xp: scorecard?.xp ?? 0, streak }) : 0;
 
   const scoreDelta = useMemo(() => {
     const history = getScoreHistory();
@@ -446,4 +446,4 @@ export default function OverviewPage() {
       )}
     </div>
   );
-                                 }
+        }
