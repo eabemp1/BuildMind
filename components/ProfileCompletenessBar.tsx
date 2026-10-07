@@ -23,97 +23,12 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
-interface ProfileFields {
-  startupSummary?: string;
-  problem?: string;
-  stage?: string;
-  targetUsers?: string;
-  avoidanceZones?: string[];
-  mrr?: number;
-  revenueModel?: string;
-  weeklyRevenueGoal?: number;
-  personalityTags?: string[];
-  displayName?: string;
-  tasksCompleted?: number;
-}
-
-interface CompletenessItem {
-  label: string;
-  points: number;
-  complete: boolean;
-  action: string;   // where to go to fix it
-  actionLabel: string;
-}
-
-export function computeCompleteness(fields: ProfileFields): {
-  score: number;
-  items: CompletenessItem[];
-} {
-  const items: CompletenessItem[] = [
-    {
-      label: "Startup description",
-      points: 25,
-      complete: (fields.startupSummary?.trim().length ?? 0) > 20,
-      action: "/settings#startup",
-      actionLabel: "Add description",
-    },
-    {
-      label: "Display name",
-      points: 10,
-      complete: (fields.displayName?.trim().length ?? 0) > 1,
-      action: "/settings#profile",
-      actionLabel: "Add your name",
-    },
-    {
-      label: "Startup stage",
-      points: 15,
-      complete: !!(fields.stage) && fields.stage !== "Idea",
-      action: "/settings#startup",
-      actionLabel: "Set your stage",
-    },
-    {
-      label: "Target users",
-      points: 15,
-      complete: (fields.targetUsers?.trim().length ?? 0) > 5,
-      action: "/settings#startup",
-      actionLabel: "Describe your users",
-    },
-    {
-      label: "Avoidance zones",
-      points: 10,
-      complete: (fields.avoidanceZones?.length ?? 0) > 0,
-      action: "/today",
-      actionLabel: "Complete a reflection",
-    },
-    {
-      label: "Revenue or model",
-      points: 10,
-      complete: (fields.mrr ?? 0) > 0 || (fields.revenueModel?.length ?? 0) > 2,
-      action: "/settings#startup",
-      actionLabel: "Add revenue model",
-    },
-    {
-      label: "First task completed",
-      points: 10,
-      complete: (fields.tasksCompleted ?? 0) > 0,
-      action: "/today",
-      actionLabel: "Complete a task",
-    },
-    {
-      label: "Location / timezone",
-      points: 5,
-      complete: false, // will be populated from profile if available
-      action: "/settings#profile",
-      actionLabel: "Add location",
-    },
-  ];
-
-  const score = items.reduce((sum, i) => sum + (i.complete ? i.points : 0), 0);
-  return { score, items };
-}
+import { computeCompleteness, type ProfileFields } from "@/lib/profileCompleteness";
+export { computeCompleteness };
 
 interface Props {
-  fields: ProfileFields;
+  /** Omit to load from /api/profile/completeness, so every page shows the same number. */
+  fields?: ProfileFields;
   /** If true, shows as a dismissible banner (for /today page) */
   asBanner?: boolean;
   className?: string;
@@ -122,7 +37,18 @@ interface Props {
 export function ProfileCompletenessBar({ fields, asBanner = false, className }: Props) {
   const [dismissed, setDismissed] = useState(false);
   const [expanded, setExpanded]   = useState(false);
-  const { score, items }          = computeCompleteness(fields);
+  const [loaded, setLoaded]       = useState<ProfileFields | null>(null);
+  useEffect(() => {
+    if (fields) return;
+    let off = false;
+    fetch("/api/profile/completeness", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (!off && j?.ok) setLoaded(j.fields as ProfileFields); })
+      .catch(() => {});
+    return () => { off = true; };
+  }, [fields]);
+  const resolved = fields ?? loaded;
+  const { score, items }          = computeCompleteness(resolved ?? {});
   const incomplete                = items.filter(i => !i.complete).sort((a, b) => b.points - a.points);
   const topMissing                = incomplete[0];
 
@@ -133,7 +59,7 @@ export function ProfileCompletenessBar({ fields, asBanner = false, className }: 
   }, []);
 
   // Don't show if score is already great or user dismissed
-  if (score >= 80 || dismissed) return null;
+  if (!resolved || score >= 80 || dismissed) return null;
 
   const handleDismiss = () => {
     setDismissed(true);
