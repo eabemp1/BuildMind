@@ -9,6 +9,7 @@ import {
   useDeleteProjectMutation,
   useProjectSummariesQuery,
   useFounderStandingBatchQuery,
+  useFounderScorecardQuery,
 } from "@/lib/queries";
 import { getLimits } from "@/lib/plan";
 import { usePlan } from "@/lib/usePlan";
@@ -138,6 +139,7 @@ export default function ProjectsPage() {
   // Fix #1: server-authoritative streak + xp so score is consistent across pages/devices
   const [serverStreak, setServerStreak] = useState(0);
   const [serverXP, setServerXP] = useState(0);
+  const { data: founderScorecard } = useFounderScorecardQuery();
 
   const limits = getLimits(plan);
   const hasUnlimitedProjects = limits.maxProjects === -1 || limits.maxProjects === Infinity;
@@ -286,6 +288,7 @@ export default function ProjectsPage() {
           {filteredSummaries.map((s, i) => {
             const score = computeStartupScore({
               ...s,
+              momentum_score: founderScorecard?.momentum ?? s.momentum_score,
               streak: serverStreak,
               xp: serverXP,
             });
@@ -552,4 +555,4 @@ export default function ProjectsPage() {
       </div>
     </div>
   );
-  }
+          }
