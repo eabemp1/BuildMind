@@ -647,4 +647,4 @@ export default function AchievementsPage() {
       )}
     </div>
   );
-                        }
+        }
