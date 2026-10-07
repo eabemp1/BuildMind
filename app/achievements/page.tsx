@@ -9,6 +9,7 @@ import {
 } from "@/lib/achievements";
 import { Trophy, Lock, EyeOff, Sparkles, ArrowUpRight } from "lucide-react";
 import Link from "next/link";
+import { useFounderScorecardQuery } from "@/lib/queries";
 import AchievementMascot from "@/components/achievements/AchievementMascot";
 import ConfettiBurst from "@/components/achievements/ConfettiBurst";
 
@@ -295,6 +296,7 @@ export default function AchievementsPage() {
   const [confettiKey, setConfettiKey] = useState(0);
   const [ringPulse, setRingPulse] = useState(0);
   const [serverReady, setServerReady] = useState(false);
+  const { data: scorecard } = useFounderScorecardQuery();
   const [levelUp, setLevelUp] = useState<{ level: number; title: string } | null>(null);
   const prevLevel = useRef<number | null>(null);
   const [tapLine, setTapLine] = useState<string | null>(null);
@@ -337,7 +339,10 @@ export default function AchievementsPage() {
   const unlockedCount = ACHIEVEMENTS.filter((a) => unlocked.has(a.id)).length;
   // XP derived from the unlocked set (the server grants exactly a.xp per
   // unlock), so the level shown matches what was actually earned.
-  const xp = ACHIEVEMENTS.reduce((s, a) => s + (unlocked.has(a.id) ? a.xp : 0), 0);
+  // Server XP also includes task completions, so prefer it: the same number the
+  // Overview, Reports and Today show. The achievement-only sum is the fallback.
+  const achievementXp = ACHIEVEMENTS.reduce((s, a) => s + (unlocked.has(a.id) ? a.xp : 0), 0);
+  const xp = typeof scorecard?.xp === "number" ? scorecard.xp : achievementXp;
   const lvl = xpToLevel(xp);
   const cUnlocked = useCountUp(unlockedCount);
   const cXp = useCountUp(xp, 1100);
@@ -642,4 +647,4 @@ export default function AchievementsPage() {
       )}
     </div>
   );
-            }
+                        }
