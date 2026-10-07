@@ -221,19 +221,11 @@ export default function UpgradePage() {
           </div>
         </div>
 
-        {/* Social proof */}
-        <div style={{ textAlign: "center", padding: "clamp(16px, 3vw, 20px)",
-          borderRadius: 12, border: "1px solid var(--bm-border)", background: "var(--bm-bg2)" }}>
-          <p style={{ fontSize: "clamp(11px, 2vw, 13px)", color: "var(--bm-text3)",
-            lineHeight: 1.65, margin: 0, fontStyle: "italic" }}>
-            &ldquo;The morning briefing alone is worth the price. I wake up knowing exactly what to do — not what to plan.&rdquo;
-          </p>
-          <p style={{ fontSize: 11, color: "var(--bm-text4)", marginTop: 8 }}>
-            Early Builder member · Idea stage → Validation in 3 weeks
-          </p>
-        </div>
+        {/* Social proof: intentionally empty until there are real, consented
+            testimonials. A made-up quote on a payment page is a trust and
+            consumer-protection risk. Fill from the testimonials table. */}
 
       </div>
     </main>
   );
-    }
+}
