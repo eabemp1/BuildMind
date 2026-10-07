@@ -405,7 +405,7 @@ export async function POST(request: Request) {
           const supabase = createAdminClient();
           const { data } = await supabase
             .from("founder_context")
-            .select("cognitive_load,avoidance_zones,topics_repeated,days_inactive")
+            .select("cognitive_load,avoidance_zones,topics_repeated:topics_mentioned_repeatedly,days_inactive")
             .eq("user_id", userId)
             .maybeSingle();
           ideaModeFounderCtx = data;
@@ -646,7 +646,7 @@ export async function POST(request: Request) {
         .eq("project_id", projectId),
       supabase
         .from("founder_context")
-        .select("momentum_score,cognitive_load,consecutive_tasks_completed,days_inactive,avoidance_zones,topics_repeated")
+        .select("momentum_score,cognitive_load,consecutive_tasks_completed,days_inactive,avoidance_zones,topics_repeated:topics_mentioned_repeatedly")
         .eq("user_id", userId)
         .maybeSingle(),
       // Founder Intelligence OS: load the coherence layer so BMS Reflexion
@@ -1063,4 +1063,4 @@ export async function POST(request: Request) {
       { status: msg.toLowerCase().includes("limit") ? 429 : 500 },
     );
   }
-      }
+}
