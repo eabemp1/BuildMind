@@ -63,16 +63,16 @@ export async function GET(request: Request) {
     // Build per-project score and canonical stage
     const scores: Record<string, number> = {};
     const stages: Record<string, string> = {};
-    let founderContext: { streak?: number | null; xp?: number | null; last_checkin_date?: string | null } | null = null;
+    let founderContext: { streak?: number | null; xp?: number | null; momentum_score?: number | null; last_checkin_date?: string | null } | null = null;
     const founderContextWithXp = await admin
       .from("founder_context")
-      .select("streak,xp,last_checkin_date")
+      .select("streak,xp,momentum_score,last_checkin_date")
       .eq("user_id", user.id)
       .maybeSingle();
     if (founderContextWithXp.error && /column|schema cache|could not find/i.test(founderContextWithXp.error.message)) {
       const founderContextWithoutXp = await admin
         .from("founder_context")
-        .select("streak,last_checkin_date")
+        .select("streak,momentum_score,last_checkin_date")
         .eq("user_id", user.id)
         .maybeSingle();
       founderContext = founderContextWithoutXp.data ?? null;
@@ -94,7 +94,7 @@ export async function GET(request: Request) {
           ? project.validation_strengths
           : [],
         execution_score: project.execution_score ?? 0,
-        momentum_score: project.momentum_score ?? 50,
+        momentum_score: founderContext?.momentum_score ?? project.momentum_score ?? 50,
         xp: founderContext?.xp ?? 0,
         streak: effectiveStreak(founderContext?.streak, founderContext?.last_checkin_date),
       });
