@@ -192,7 +192,7 @@ function buildSlides(p: MirrorStoryProps, replay: () => void): Slide[] {
         <Reveal><Ring pct={acc.accuracy_pct} color={acc.trend === "down" ? "var(--bm-amber)" : "var(--bm-green)"} size={168} /></Reveal>
         <div style={{ display: "grid", gap: 16, flex: 1, minWidth: 240 }}>
           <Reveal i={1}><Kicker color="var(--bm-green)">How well BuildMind knows you</Kicker></Reveal>
-          <Reveal i={2}><Headline size={38}>{acc.accuracy_pct == null ? "Still learning you." : `It called ${acc.accuracy_pct}% of your moves.`}</Headline></Reveal>
+          <Reveal i={2}><Headline size={38}>{acc.accuracy_pct == null ? "Still learning you." : `Its advice matched what happened ${acc.accuracy_pct}% of the time.`}</Headline></Reveal>
           <Reveal i={3}><p style={body}>{acc.summary}</p></Reveal>
         </div>
       </div>
@@ -232,7 +232,7 @@ function buildSlides(p: MirrorStoryProps, replay: () => void): Slide[] {
       key: `belief-${b.belief_key}`, accent: b.trend === "weakening" ? "var(--bm-red)" : "var(--bm-intel)",
       node: (
         <div style={{ display: "grid", gap: 20 }}>
-          <Reveal><Kicker color="var(--bm-intel)">What it believes about you · {idx + 1} of {beliefs.length}</Kicker></Reveal>
+          <Reveal><Kicker color="var(--bm-intel)">What it believes about you · {idx + 1} of {beliefs.length}{mirror.beliefs.length > beliefs.length ? ` strongest (${mirror.beliefs.length} active)` : ""}</Kicker></Reveal>
           <Reveal i={1}><Headline size={40}>&ldquo;{clip(b.belief, 150)}&rdquo;</Headline></Reveal>
           <Reveal i={2}>
             <div style={{ maxWidth: 520, display: "grid", gap: 8 }}>
@@ -242,8 +242,8 @@ function buildSlides(p: MirrorStoryProps, replay: () => void): Slide[] {
                   {b.trend === "weakening" ? <TrendingDown size={14} /> : <TrendingUp size={14} />}{t.text}
                 </span>
               </div>
-              <Bar pct={b.confidence} color={t.color === "var(--bm-text3)" ? "var(--bm-intel)" : t.color} delay={0.7} height={10} />
-              <div style={{ fontFamily: "Syne, sans-serif", fontWeight: 700, fontSize: 30, color: "var(--bm-text)" }}><CountUp to={Math.round(b.confidence)} suffix="%" /></div>
+              <Bar pct={b.confidence * 100} color={t.color === "var(--bm-text3)" ? "var(--bm-intel)" : t.color} delay={0.7} height={10} />
+              <div style={{ fontFamily: "Syne, sans-serif", fontWeight: 700, fontSize: 30, color: "var(--bm-text)" }}><CountUp to={Math.round(b.confidence * 100)} suffix="%" /></div>
             </div>
           </Reveal>
           <Reveal i={3}><p style={body}>{clip(b.why, 260)}</p></Reveal>
@@ -273,7 +273,7 @@ function buildSlides(p: MirrorStoryProps, replay: () => void): Slide[] {
       node: (
         <div style={{ display: "grid", gap: 22 }}>
           <Reveal><Kicker color="var(--bm-green)">Skills it has watched you build</Kicker></Reveal>
-          <Reveal i={1}><Headline size={38}>You are leveling up in {skills.length === 1 ? "one area" : `${skills.length} areas`}.</Headline></Reveal>
+          <Reveal i={1}><Headline size={38}>You are leveling up in {mirror.skills.length === 1 ? "one area" : `${mirror.skills.length} areas`}.</Headline></Reveal>
           <div style={{ display: "grid", gap: 16, maxWidth: 620 }}>
             {skills.map((s, i) => (
               <Reveal key={s.id} i={2 + i}>
@@ -298,7 +298,7 @@ function buildSlides(p: MirrorStoryProps, replay: () => void): Slide[] {
       node: (
         <div style={{ display: "grid", gap: 20 }}>
           <Reveal><Kicker color="var(--bm-amber)">Worth watching</Kicker></Reveal>
-          <Reveal i={1}><Headline size={38}>{signals.length === 1 ? "One pattern" : `${signals.length} patterns`} to keep an eye on.</Headline></Reveal>
+          <Reveal i={1}><Headline size={38}>{mirror.signals.length === 1 ? "One pattern" : `${mirror.signals.length} patterns`} to keep an eye on.</Headline></Reveal>
           <div style={{ display: "grid", gap: 12, maxWidth: 680 }}>
             {signals.map((s, i) => (
               <motion.div key={s.id} initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.7, delay: 0.5 + i * 0.18, ease: EASE }}
@@ -538,4 +538,4 @@ export function MirrorStory(props: MirrorStoryProps) {
       </div>
     </section>
   );
-}
+                  }
