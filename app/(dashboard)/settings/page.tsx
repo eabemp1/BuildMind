@@ -620,7 +620,7 @@ function SettingsContent() {
         // Fetch active project for ProfileCompletenessBar
         const { data: project } = await sb
           .from("projects")
-          .select("description, startup_summary, stage, startup_stage, target_users, problem")
+          .select("description, startup_summary, startup_stage, target_users, problem")
           .eq("user_id", data.user.id)
           .order("created_at", { ascending: false })
           .limit(1)
@@ -952,4 +952,4 @@ export default function SettingsPage() {
       <SettingsContent />
     </Suspense>
   );
-}
+            }
