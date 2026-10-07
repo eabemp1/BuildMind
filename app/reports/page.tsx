@@ -269,7 +269,7 @@ export default function ReportsPage() {
     // reported. Now uses the same canonical scorecard the metrics source
     // already reads from, so the fallback can never disagree with it.
     if (!project || !scorecard) return 0;
-    return computeStartupScore({ ...project, streak: scorecard.streak, xp: scorecard.xp });
+    return computeStartupScore({ ...project, momentum_score: scorecard.momentum ?? project.momentum_score, streak: scorecard.streak, xp: scorecard.xp });
   }, [project, scorecard]);
 
   const score = metrics?.score ?? liveScore;
@@ -850,4 +850,4 @@ export default function ReportsPage() {
       </div>
     </PaywallGate>
   );
-          }
+  }
