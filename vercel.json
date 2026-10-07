@@ -103,6 +103,10 @@
     {
       "path": "/api/cron/coach-tips",
       "schedule": "0 10 * * 2,5"
+    },
+    {
+      "path": "/api/cron/milestone-stall",
+      "schedule": "0 11 * * *"
     }
   ]
 }
