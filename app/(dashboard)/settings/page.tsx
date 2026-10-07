@@ -736,18 +736,7 @@ function SettingsContent() {
               {tab === "profile" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                   {/* Profile completeness card (full card) */}
-                  <ProfileCompletenessBar
-                    fields={{
-                      startupSummary:   (activeProject?.startup_summary as string) ?? (activeProject?.description as string) ?? "",
-                      stage:            (activeProject?.stage as string) ?? (activeProject?.startup_stage as string) ?? "",
-                      targetUsers:      (activeProject?.target_users as string) ?? "",
-                      problem:          (activeProject?.problem as string) ?? "",
-                      revenueModel:     "",
-                      weeklyRevenueGoal: 0,
-                      avoidanceZones:   [],
-                      personalityTags:  [],
-                    }}
-                  />
+                  <ProfileCompletenessBar />
                   <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: isMobile ? "18px" : "22px 24px" }}>
                     <div style={{ fontSize: isMobile ? 15 : 13, fontWeight: 700, color: "var(--bm-text)", marginBottom: 20 }}>Public Profile</div>
                     <div style={{ display: "flex", flexDirection: "column", gap: isMobile ? 18 : 16 }}>
@@ -952,4 +941,4 @@ export default function SettingsPage() {
       <SettingsContent />
     </Suspense>
   );
-            }
+  }
