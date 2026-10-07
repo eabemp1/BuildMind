@@ -280,17 +280,7 @@ export default function OverviewPage() {
 
   return (
     <div style={{ maxWidth: 860, margin: "0 auto", padding: "28px 20px 72px" }}>
-      <ProfileCompletenessBar
-        fields={{
-          startupSummary: activeProject?.description ?? activeProject?.startup_summary ?? "",
-          stage:          activeProject?.stage ?? activeProject?.startup_stage ?? "",
-          targetUsers:    activeProject?.target_users ?? "",
-          avoidanceZones: overview?.avoidanceZones ?? [],
-          mrr:            activeProject?.current_mrr ?? 0,
-          displayName:    overview?.founderName ?? "",
-          tasksCompleted: doneTasks,
-        }}
-      />
+      <ProfileCompletenessBar />
 
       <motion.header initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}
         style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 12, flexWrap: "wrap", marginBottom: 18 }}>
@@ -456,4 +446,4 @@ export default function OverviewPage() {
       )}
     </div>
   );
-}
+                                 }
