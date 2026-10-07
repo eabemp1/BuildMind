@@ -165,9 +165,9 @@ export async function loadBehavioralContext(
       // E) Briefing delivery cache
       supabase
         .from("morning_briefings")
-        .select("generated_at, delivered_at")
+        .select("created_at, delivered_at")
         .eq("user_id", userId)
-        .order("generated_at", { ascending: false })
+        .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle(),
     ]);
