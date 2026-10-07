@@ -46,7 +46,10 @@ function words(text: string): Set<string> {
       .toLowerCase()
       .replace(/[^a-z0-9\s]/g, " ")
       .split(/\s+/)
-      .filter((w) => w.length > 3),
+      .filter((w) => w.length > 3)
+      // Light stemming (first 6 letters) so "interview"/"interviewed"/"interviews"
+      // count as the same word instead of reading as a miss.
+      .map((w) => w.slice(0, 6)),
   );
 }
 
@@ -245,7 +248,9 @@ export async function compareFounderIntelligenceOutcome(
 
     const observedText = `${params.taskTitle} ${params.reflectionText}`.trim();
     const actionOverlap = keywordOverlapScore(String(pending.action_shown ?? ""), observedText);
-    const evidenceOverlap = keywordOverlapScore(String(pending.predicted_evidence ?? ""), observedText);
+    // Evidence is judged against what the founder WROTE about the outcome only.
+    // Including the task title let the prediction match its own action text.
+    const evidenceOverlap = keywordOverlapScore(String(pending.predicted_evidence ?? ""), params.reflectionText ?? "");
     const completed = mapOutcome(params.outcome) === "completed";
     // A server-created evidence reference confirms an actual durable outcome
     // row exists. It improves evidence quality but does not itself claim the
@@ -407,4 +412,4 @@ export async function getCandidateArchetypeStats(supabase: SupabaseLike, userId:
     logError("learningLoop/getCandidateArchetypeStats", err, { userId });
     return {};
   }
-}
+      }
