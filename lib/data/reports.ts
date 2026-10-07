@@ -150,7 +150,14 @@ export async function getWeeklyReportMetrics(activeProjectId?: string): Promise<
 
   const projectIds = summaries.map((p) => p.id);
   const score = Math.round(
-    summaries.reduce((sum, project) => sum + computeStartupScore(project), 0) / summaries.length,
+    summaries.reduce((sum, project) => sum + computeStartupScore({
+      ...project,
+      // Same inputs Today/Overview use: the founder-level scorecard, not the
+      // per-project mirrors, so this headline score matches theirs.
+      momentum_score: serverMomentumScore ?? project.momentum_score,
+      xp: serverXP,
+      streak: serverStreakFromScorecard,
+    }), 0) / summaries.length,
   );
 
   const BATCH_SIZE = 20;
@@ -699,4 +706,4 @@ export function calculateDashboardStats(projects: BuildMindProject[]) {
       : 0,
     aiUsage: activeProjects ? "Active" : "Getting started",
   };
-                        }
+                                               }
