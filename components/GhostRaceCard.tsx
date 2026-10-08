@@ -16,6 +16,7 @@
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { usePlan } from "@/lib/usePlan";
+import { useMeasuredWidth } from "@/lib/useMeasuredWidth";
 import { dayName, type GhostRace, type GhostStatus } from "@/lib/ghostRace";
 
 const DAY_INITIAL = ["M", "T", "W", "T", "F", "S", "S"];
@@ -31,7 +32,8 @@ const STATUS_COLOR: Record<GhostStatus, string> = {
 };
 
 function RaceChart({ race }: { race: GhostRace }) {
-  const W = 560, H = 150, padL = 26, padR = 44, padT = 14, padB = 26;
+  const [wrapRef, measured] = useMeasuredWidth<HTMLDivElement>(320);
+  const W = Math.max(260, Math.min(measured, 720)), H = 140, padL = 24, padR = 52, padT = 12, padB = 24;
   const top = Math.max(race.ghost, race.doneSoFar, 3);
   const x = (i: number) => padL + (i / 6) * (W - padL - padR);
   const y = (v: number) => padT + (1 - v / top) * (H - padT - padB);
@@ -44,7 +46,8 @@ function RaceChart({ race }: { race: GhostRace }) {
   const last = youPts[youPts.length - 1];
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={`You have finished ${race.doneSoFar} actions against a ghost of ${race.ghost}`} style={{ display: "block" }}>
+    <div ref={wrapRef} style={{ width: "100%" }}>
+    <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label={`You have finished ${race.doneSoFar} actions against a ghost of ${race.ghost}`} style={{ display: "block" }}>
       {ticks.map((t) => (
         <g key={t}>
           <line x1={padL} x2={W - padR} y1={y(t)} y2={y(t)} stroke="var(--bm-border)" strokeWidth={1} />
@@ -61,6 +64,7 @@ function RaceChart({ race }: { race: GhostRace }) {
         <text key={i} x={x(i)} y={H - 6} textAnchor="middle" fontSize={11} fontFamily={mono} fill={i === race.todayIndex ? "var(--bm-accent)" : "var(--bm-text3)"} fontWeight={i === race.todayIndex ? 700 : 400}>{d}</text>
       ))}
     </svg>
+    </div>
   );
 }
 
@@ -116,7 +120,7 @@ export function GhostRaceCard({ race }: { race: GhostRace }) {
           {race.detail && <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.5 }}>{race.detail}</span>}
         </div>
         <div style={{ display: "flex", alignItems: "baseline", gap: 6 }} aria-label={`${race.doneSoFar} of ${race.ghost}`}>
-          <span style={{ fontFamily: "'Syne', sans-serif", fontSize: "clamp(28px, 7vw, 34px)", fontWeight: 800, lineHeight: 1, letterSpacing: "-0.03em", color: "var(--bm-text)" }}>{race.doneSoFar}</span>
+          <span style={{ fontFamily: "'Syne', sans-serif", fontSize: "clamp(24px, 6vw, 28px)", fontWeight: 800, lineHeight: 1, letterSpacing: "-0.03em", color: "var(--bm-text)" }}>{race.doneSoFar}</span>
           <span style={{ fontFamily: mono, fontSize: 13, color: "var(--bm-text3)" }}>/ {race.ghost}</span>
         </div>
       </div>
