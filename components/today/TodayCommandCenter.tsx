@@ -234,7 +234,7 @@ export default function TodayCommandCenter({ action, kicker, accent, rationale, 
       <h2
         style={{
           margin: "10px 0 0", ...display, fontWeight: 700, color: "var(--bm-text)", textWrap: "balance",
-          fontSize: narrow ? "clamp(27px, 8.2vw, 34px)" : "clamp(34px, 5.2vw, 50px)", lineHeight: 1.1, letterSpacing: "-0.03em",
+          fontSize: headlineSize(narrow, nodesLength(action ?? actionTitle)), lineHeight: 1.2, letterSpacing: "-0.02em",
         }}
       >
         <InkText nodes={action ?? actionTitle ?? "Preparing today's action"} progress={progress} color={ink} />
@@ -245,7 +245,7 @@ export default function TodayCommandCenter({ action, kicker, accent, rationale, 
           This is a question for the real world, not a guess. What you learn shapes the next recommendation.
         </p>
       ) : null}
-      {rationale ? <p style={{ margin: "18px 0 0", maxWidth: "60ch", fontSize: 15.5, lineHeight: 1.65, color: "var(--bm-text2)" }}>{rationale}</p> : null}
+      {rationale ? <p style={{ margin: "18px 0 0", maxWidth: "60ch", fontSize: 14, lineHeight: 1.6, color: "var(--bm-text2)" }}>{rationale}</p> : null}
       {reasons && reasons.length > 0 ? (
         <ul style={{ margin: "10px 0 0", padding: 0, listStyle: "none", display: "grid", gap: 3 }}>
           {reasons.slice(0, 2).map((r) => <li key={r} style={{ fontSize: 13, lineHeight: 1.5, color: "var(--bm-text3)" }}>{r}</li>)}
@@ -379,4 +379,26 @@ function DayLine({ nowMin, color, done, blockStart, blockEnd }: { nowMin: number
 
 function btn(bg: string, color: string): React.CSSProperties {
   return { fontSize: 14, fontWeight: 700, padding: "11px 20px", cursor: "pointer", color, background: bg, border: "none", fontFamily: "inherit" };
-      }
+}
+
+
+/** Plain-text length of a headline, whether it arrives as a string or nodes. */
+function nodesLength(v: unknown): number {
+  if (typeof v === "string") return v.length;
+  if (typeof v === "number") return String(v).length;
+  if (Array.isArray(v)) return v.reduce((n: number, c) => n + nodesLength(c), 0);
+  if (v && typeof v === "object" && "props" in (v as object)) return nodesLength((v as { props?: { children?: unknown } }).props?.children);
+  return 0;
+}
+
+/**
+ * The headline is generated text of very different lengths. A fixed 50px
+ * turns a 120-character task into a wall; size it by length instead, topping
+ * out at 30px so it reads as a heading, not a banner.
+ */
+function headlineSize(narrow: boolean, len: number): string {
+  if (narrow) return len <= 70 ? "clamp(20px, 6vw, 24px)" : "clamp(18px, 5.2vw, 21px)";
+  if (len <= 60) return "clamp(24px, 3vw, 30px)";
+  if (len <= 110) return "clamp(21px, 2.5vw, 25px)";
+  return "clamp(19px, 2.1vw, 22px)";
+}
