@@ -487,7 +487,7 @@ Current MRR: ${project.current_mrr && project.current_mrr > 0 ? `GHS ${(project.
         }
 
         // REC 2.1: On Mondays, inject last week's summary as causal context for today's task
-        const isMonday = new Date().getDay() === 1;
+        const isMonday = new Date().getUTCDay() === 1;
         if (isMonday && lastWeekSummaryRaw) {
           try {
             const lastWeek = JSON.parse(lastWeekSummaryRaw) as {
@@ -1075,4 +1075,4 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
     const message = error instanceof Error ? error.message : "Today action failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-      }
+  }
