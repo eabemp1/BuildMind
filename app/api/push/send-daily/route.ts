@@ -438,13 +438,16 @@ export async function POST(req: NextRequest) {
 
   // ── Log cron run for health check endpoint ────────────────────────────────
   // push_cron_log may not exist yet — log is best-effort, never blocks response
-  void supabase.from("push_cron_log").insert({
+  // Awaited: on serverless an un-awaited insert can be dropped when the
+  // response returns, which left the health check with no run to report.
+  const { error: cronLogError } = await supabase.from("push_cron_log").insert({
     ran_at: new Date().toISOString(),
     status: failed === 0 ? "success" : sent > 0 ? "partial" : "failed",
     sent_count: sent,
     failed_count: failed,
     total_subscribers: subs.length,
   });
+  if (cronLogError) logInfo("push/send-daily/log", "push_cron_log insert failed", { message: cronLogError.message });
 
   return NextResponse.json({
     sent,
@@ -464,4 +467,4 @@ export async function POST(req: NextRequest) {
 // Allow GET for Vercel cron (which always sends GET) and manual testing
 export async function GET(req: NextRequest) {
   return POST(req);
-  }
+}
