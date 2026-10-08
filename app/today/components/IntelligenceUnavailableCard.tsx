@@ -61,11 +61,11 @@ export function IntelligenceUnavailableCard({
       <h3 style={{ fontSize: 16, fontWeight: 700, color: "var(--bm-text)", margin: "0 0 8px" }}>
         Intelligence temporarily unavailable
       </h3>
-      <p style={{ fontSize: 12.5, color: "var(--bm-text3)", maxWidth: 360, margin: "0 auto 6px", lineHeight: 1.6 }}>
+      <p style={{ fontSize: 12, color: "var(--bm-text3)", maxWidth: 360, margin: "0 auto 6px", lineHeight: 1.6 }}>
         BuildMind couldn&apos;t generate today&apos;s recommendation. Your data and progress are safe.
       </p>
       {lastSuccessAt && (
-        <p style={{ fontFamily: "'DM Mono', monospace", fontSize: 9.5, color: "var(--bm-text4)", margin: "0 0 18px", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+        <p style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "var(--bm-text4)", margin: "0 0 18px", textTransform: "uppercase", letterSpacing: "0.06em" }}>
           Last successful recommendation: {timeAgo(lastSuccessAt)}
         </p>
       )}
@@ -93,7 +93,7 @@ export function IntelligenceUnavailableCard({
           </button>
         )}
       </div>
-      <p style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 8px" }}>
+      <p style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 8px" }}>
         While intelligence is unavailable, you can:
       </p>
       <div style={{ maxWidth: 300, margin: "0 auto", display: "flex", flexDirection: "column", gap: 6 }}>
@@ -102,7 +102,7 @@ export function IntelligenceUnavailableCard({
           style={{
             textAlign: "left", padding: "9px 12px", borderRadius: "var(--r-lg)",
             border: "1px solid var(--bm-border)", background: "var(--bm-bg3)", color: "var(--bm-text2)",
-            fontSize: 11.5, cursor: "pointer", fontFamily: "inherit",
+            fontSize: 11, cursor: "pointer", fontFamily: "inherit",
           }}
         >
           🎯 Continue with today&apos;s baseline task
@@ -112,7 +112,7 @@ export function IntelligenceUnavailableCard({
           style={{
             textAlign: "left", padding: "9px 12px", borderRadius: "var(--r-lg)",
             border: "1px solid var(--bm-border)", background: "var(--bm-bg3)", color: "var(--bm-text2)",
-            fontSize: 11.5, textDecoration: "none",
+            fontSize: 11, textDecoration: "none",
           }}
         >
           📈 Review recent outcomes
@@ -123,7 +123,7 @@ export function IntelligenceUnavailableCard({
             style={{
               textAlign: "left", padding: "9px 12px", borderRadius: "var(--r-lg)",
               border: "1px solid var(--bm-border)", background: "var(--bm-bg3)", color: "var(--bm-text2)",
-              fontSize: 11.5, textDecoration: "none",
+              fontSize: 11, textDecoration: "none",
             }}
           >
             📎 Update project context
