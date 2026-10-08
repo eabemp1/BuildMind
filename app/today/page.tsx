@@ -1024,47 +1024,71 @@ function TodayContent() {
     } catch { /* SSE unavailable — fall through to JSON fallback */ }
 
     // ── JSON fallback ────────────────────────────────────────────────────────
-    if (!streamSucceeded) {
-      fetch("/api/ai/today-action", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: requestBody,
-        signal,
-      })
-        .then(r => r.ok ? r.json() : Promise.reject())
-        .then(json => {
+    if (!streamSucceeded && !signal.aborted) {
+      // FIX (first-load "Intelligence not available"): a single transient
+      // failure on first load (session/cookies still settling, the stream
+      // having just generated and cached server-side, a cold function) used
+      // to flip straight to the failure card, while navigating away and back
+      // succeeded via the server cache. Now we retry with backoff and re-check
+      // the server cache before declaring failure. Aborted runs never set it.
+      const applyAction = (actionData: NonNullable<ReturnType<typeof unwrapActionPayload>>) => {
+        setDebtSuppression(null);
+        setAiAction(actionData);
+        setAiFetchFailed(false);
+        lastGoodActionRef.current = actionData;
+        lastRejectedActionRef.current = null;
+        const cacheValue = { date: today, projectId, stage: currentStage, data: actionData };
+        storage.setJSON(cacheKey, cacheValue);
+        if (userId) storage.set(`bm_today_action_cache_ts_${userId}`, Date.now().toString());
+        persistBehaviorState({ today_action_cache: cacheValue });
+      };
+      const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+      let resolved = false;
+      const delays = [0, 1500, 3500];
+      for (let attempt = 0; attempt < delays.length && !resolved; attempt++) {
+        if (delays[attempt]) await sleep(delays[attempt]);
+        if (signal.aborted) return;
+        try {
+          if (attempt > 0) {
+            // The stream may have finished server-side even though we missed it.
+            const sc = await fetchBehaviorState<{ today_action_cache: CachedTodayAction & { generatedAt?: string } }>(["today_action_cache"]);
+            if (signal.aborted) return;
+            const c = sc?.today_action_cache;
+            if (c && c.date === today && c.projectId === projectId && c.data) {
+              setDebtSuppression(null);
+              setAiAction({ ...c.data, isAI: true });
+              setAiFetchFailed(false);
+              lastGoodActionRef.current = { ...c.data, isAI: true };
+              resolved = true;
+              break;
+            }
+          }
+          const r = await fetch("/api/ai/today-action", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: requestBody,
+            signal,
+          });
+          if (!r.ok) continue;
+          const json = await r.json();
           if (signal.aborted) return;
           const actionData = unwrapActionPayload(json);
           const debtData = unwrapDebtPayload(json);
           if (json?.success && debtData) {
             setDebtSuppression(debtData);
             setAiAction(null);
-            return;
+            resolved = true;
+          } else if (json?.success && actionData) {
+            applyAction(actionData);
+            resolved = true;
           }
-          if (json?.success && actionData) {
-            setDebtSuppression(null);
-            setAiAction(actionData);
-            setAiFetchFailed(false);
-            lastGoodActionRef.current = actionData;
-            lastRejectedActionRef.current = null;
-            const cacheValue = { date: today, projectId, stage: currentStage, data: actionData };
-            const nowTs = Date.now().toString();
-            storage.setJSON(cacheKey, cacheValue);
-            if (userId) storage.set(`bm_today_action_cache_ts_${userId}`, nowTs);
-            persistBehaviorState({ today_action_cache: cacheValue });
-          } else if (!json?.success) {
-            // Real failure — the request completed but the server didn't
-            // return a usable action (not caught below, since r.ok was
-            // true). actionData is about to fall back to STATIC_ACTIONS
-            // with isAI:false; this is what tells the UI that fallback is
-            // silent and unsignaled otherwise.
-            setAiFetchFailed(true);
-          }
-        })
-        .catch(() => {
-          if (!signal.aborted) setAiFetchFailed(true);
-        })
-        .finally(() => { if (!signal.aborted) setActionLoading(false); });
+        } catch {
+          if (signal.aborted) return;
+        }
+      }
+      if (signal.aborted) return;
+      if (!resolved) setAiFetchFailed(true);
+      setActionLoading(false);
       return;
     }
 
@@ -2868,4 +2892,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-    }
+  }
