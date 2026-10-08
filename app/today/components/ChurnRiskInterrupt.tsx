@@ -40,7 +40,7 @@ export function ChurnRiskInterrupt({ assessment, onBeginRecovery, onDismiss }: P
         overflow: "hidden",
       }}>
         <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--bm-border)" }}>
-          <h1 style={{ fontSize: 19, fontWeight: 700, color: "var(--bm-text)", lineHeight: 1.35, margin: 0 }}>
+          <h1 style={{ fontSize: 16, fontWeight: 700, color: "var(--bm-text)", lineHeight: 1.35, margin: 0 }}>
             {sanitizeOutput(who)} shows {assessment.churnProbability}% churn probability
           </h1>
           <p style={{ fontSize: 13, color: "var(--bm-text3)", marginTop: 8, lineHeight: 1.6 }}>
