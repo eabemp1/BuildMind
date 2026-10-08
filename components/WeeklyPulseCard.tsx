@@ -17,13 +17,16 @@
  * for actual execution, on the same grid.
  */
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Sparkles, Target, Flame, TrendingUp, TrendingDown, Ghost, Share2, Check, Download } from "lucide-react";
+import { Sparkles, Target, Flame, TrendingUp, TrendingDown, Ghost } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useActiveProjectId } from "@/lib/queries";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
 import { ARCHETYPE_DISPLAY, type FounderArchetype } from "@/lib/founderArchetypeDisplay";
+import { ShareWeekCard } from "@/components/ShareWeekCard";
+import { GhostRaceCard } from "@/components/GhostRaceCard";
+import type { GhostRace } from "@/lib/ghostRace";
 import { DayActivityCanvas, type DayActivity } from "@/components/DayActivityCanvas";
 
 interface MilestonePacing {
@@ -36,7 +39,7 @@ interface SparklinePoint { date: string; real: number | null; ghost: number | nu
 interface WeeklyPulseData {
   is_quiet_week: boolean;
   momentum_score: number; momentum_delta: number | null; streak: number;
-  tasks_completed: number; tasks_total: number; completion_rate: number; active_days: number;
+  tasks_completed: number; tasks_total: number; actions_completed: number; ghost_race: GhostRace | null; completion_rate: number; active_days: number;
   day_activity: DayActivity[];
   un_ghosted: string[]; milestones: MilestonePacing[]; archetype: string | null;
   day_of_week: Record<string, { completed: number; total: number }>;
@@ -212,7 +215,6 @@ export function WeeklyPulseCard() {
   const [data, setData] = useState<WeeklyPulseData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
   const activeProjectId = useActiveProjectId();
 
   const load = useCallback(async () => {
@@ -237,33 +239,6 @@ export function WeeklyPulseCard() {
   }, [activeProjectId]);
 
   useEffect(() => { load(); }, [load]);
-
-  const handleShare = useCallback(async () => {
-    if (!data) return;
-    const gradeLine = data.grades.filter((g) => g.grade !== "N/A").map((g) => `${g.label}: ${g.grade}`).join(" · ");
-    const text = `${sanitizeOutput(data.story)}\n\n${data.completion_rate}% task completion · Momentum ${data.momentum_score}/100${gradeLine ? `\n${gradeLine}` : ""}\n#BuildInPublic`;
-    try {
-      if (navigator.share) await navigator.share({ text });
-      else { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000); }
-    } catch { /* user cancelled share sheet */ }
-  }, [data]);
-
-  // X/Twitter intent link — carries over the retired /weekly-share page's
-  // tweet format, now built from the same corrected, single-source data
-  // This Week already renders (no separate fetch, no separate streak
-  // fallback chain to drift from the rest of the app).
-  const tweetIntentUrl = useMemo(() => {
-    if (!data) return null;
-    const bestMilestone = data.milestones[0];
-    const text =
-      `This week building with @buildmind_os\n\n` +
-      `✓ ${data.tasks_completed}/${data.tasks_total} tasks done\n` +
-      `🔥 ${data.streak}d streak\n` +
-      `📈 Momentum: ${data.momentum_score}/100\n` +
-      (bestMilestone ? `🎯 ${bestMilestone.title}: ${bestMilestone.reason}\n\n` : "\n") +
-      `Track my build → buildmind.live\n#BuildInPublic #Startups`;
-    return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
-  }, [data]);
 
   if (loading) {
     return (
@@ -416,7 +391,7 @@ export function WeeklyPulseCard() {
         const atRiskMilestone = data.milestones.find((m) => m.risk === "high" || m.risk === "medium");
         const directive =
           goal && goal.status !== "on_track" && goal.status !== "completed"
-            ? `You're behind on "${goal.goal_text}" — ${goal.tasks_done}/${goal.target_tasks} tasks done this week. Close the gap today.`
+            ? `You're behind on "${goal.goal_text}" — ${goal.tasks_done}/${goal.target_tasks} actions done this week. Close the gap today.`
             : atRiskMilestone
               ? `"${atRiskMilestone.title}" is at risk — ${atRiskMilestone.reason}`
               : data.top_override_reason
@@ -445,6 +420,9 @@ export function WeeklyPulseCard() {
         );
       })()}
 
+      {/* Ghost race: the weekly goal, set from your own history (lib/ghostRace.ts) */}
+      {data.ghost_race && <GhostRaceCard race={data.ghost_race} />}
+
       {/* 3. METRICS */}
       <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: 14, alignItems: "center", background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-lg)", padding: 18 }}>
         <div style={{ position: "relative", width: 88, height: 88 }}>
@@ -460,7 +438,10 @@ export function WeeklyPulseCard() {
               <Target size={12} style={{ color: "var(--bm-text3)" }} />
               <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text3)" }}>Tasks</span>
             </div>
-            <span style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color: "var(--bm-text)" }}>{data.tasks_completed}/{data.tasks_total}</span>
+            <span style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color: "var(--bm-text)" }}>{data.actions_completed ?? data.tasks_completed}</span>
+            <span style={{ display: "block", fontFamily: "'Inter', sans-serif", fontSize: 10.5, color: "var(--bm-text3)", marginTop: 2 }}>
+              done on {data.tasks_completed} of {data.tasks_total} {data.tasks_total === 1 ? "day" : "days"}
+            </span>
           </div>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
@@ -532,52 +513,8 @@ export function WeeklyPulseCard() {
         </div>
       )}
 
-      {/* 4. SHARE */}
-      <div style={{ display: "flex", gap: 8 }}>
-        <button onClick={handleShare} style={{
-          flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "10px 16px",
-          borderRadius: "var(--r-md, 10px)", border: "1px solid var(--bm-border)", background: "var(--bm-bg3)",
-          color: "var(--bm-text2)", fontFamily: "'Inter', sans-serif", fontSize: 12.5, fontWeight: 600, cursor: "pointer",
-        }}>
-          {copied ? <Check size={13} /> : <Share2 size={13} />}
-          {copied ? "Copied" : "Share this week"}
-        </button>
-        {/* Real server-rendered PNG (app/api/card/weekly-pulse) — no
-            html2canvas, no client-side DOM screenshot. The browser just
-            navigates to the image URL with a download attribute; the route
-            itself builds the PNG from the same data this card renders. */}
-        <a
-          href={`/api/card/weekly-pulse${activeProjectId ? `?projectId=${activeProjectId}` : ""}`}
-          download="buildmind-weekly-pulse.png"
-          style={{
-            flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "10px 16px",
-            borderRadius: "var(--r-md, 10px)", border: "1px solid var(--bm-accent-bd, var(--bm-border))",
-            background: "rgba(93,169,224,0.08)", color: "var(--bm-accent)", fontFamily: "'Inter', sans-serif",
-            fontSize: 12.5, fontWeight: 600, cursor: "pointer", textDecoration: "none",
-          }}
-        >
-          <Download size={13} />
-          Download image
-        </a>
-      </div>
-
-      {/* Carried over from the retired /weekly-share page — same tweet
-          format, now built from correct, single-source data. */}
-      {tweetIntentUrl && (
-        <a
-          href={tweetIntentUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "10px 16px",
-            borderRadius: "var(--r-md, 10px)", border: "1px solid var(--bm-border)", background: "transparent",
-            color: "var(--bm-text2)", fontFamily: "'Inter', sans-serif", fontSize: 12.5, fontWeight: 600,
-            cursor: "pointer", textDecoration: "none",
-          }}
-        >
-          𝕏 Share on X — #BuildInPublic
-        </a>
-      )}
+      {/* 4. SHARE — server-rendered card (app/api/card/week) in three shapes. */}
+      <ShareWeekCard projectId={activeProjectId || undefined} />
 
       {/* Reports stays a separate surface for the exportable/historical
           view (4-week heatmap, CSV/PDF/PNG) — linked here, not merged in,
@@ -593,4 +530,4 @@ export function WeeklyPulseCard() {
       </a>
     </motion.div>
   );
-                                    }
+                                                              }
