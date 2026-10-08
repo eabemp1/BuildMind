@@ -458,7 +458,7 @@ export async function getWeeklyPulseData(
   const dayOfWeek: Record<string, { completed: number; total: number }> = {};
   DAYS.forEach((d) => { dayOfWeek[d] = { completed: 0, total: 0 }; });
   for (const log of actionLogs as Array<{ outcome?: string; created_at: string }>) {
-    const day = DAYS[new Date(log.created_at).getDay()];
+    const day = DAYS[new Date(log.created_at).getUTCDay()];
     dayOfWeek[day].total++;
     if (log.outcome === "completed") dayOfWeek[day].completed++;
   }
@@ -610,4 +610,4 @@ Write a 2-3 sentence story-style summary of the founder's week. Brief, specific,
     day_of_week: dayOfWeek, confidence_by_outcome: confidenceByOutcome, confidence_index: confidenceIndex, top_override_reason: topOverrideReason,
     weekly_goal: weeklyGoal, sparkline, grades, story, generated_at: new Date().toISOString(),
   };
-                                }
+        }
