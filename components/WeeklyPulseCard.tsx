@@ -18,6 +18,7 @@
  */
 
 import { useEffect, useState, useCallback } from "react";
+import { useMeasuredWidth } from "@/lib/useMeasuredWidth";
 import { motion } from "framer-motion";
 import { Sparkles, Target, Flame, TrendingUp, TrendingDown, Ghost } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -65,7 +66,17 @@ const GRADE_COLOR: Record<GradedDimension["grade"], string> = {
  *  answers "how far behind am I" — a dashed connector + labeled gap at the
  *  most recent day both lines have a value, colored red/green/neutral by
  *  direction. Pure SVG, no chart library needed for 7 points. */
-function GhostSparkline({ points, size = { w: 300, h: 148 } }: { points: SparklinePoint[]; size?: { w: number; h: number } }) {
+function GhostSparkline({ points }: { points: SparklinePoint[] }) {
+  // Drawn in real pixels (see useMeasuredWidth) so labels never scale up.
+  const [wrapRef, measured] = useMeasuredWidth<HTMLDivElement>(300);
+  return (
+    <div ref={wrapRef} style={{ width: "100%" }}>
+      <GhostSparklineSvg points={points} size={{ w: Math.max(240, Math.min(measured, 720)), h: 132 }} />
+    </div>
+  );
+}
+
+function GhostSparklineSvg({ points, size }: { points: SparklinePoint[]; size: { w: number; h: number } }) {
   if (points.length < 2) {
     return <div style={{ fontSize: 11, color: "var(--bm-text3)", padding: "20px 0", textAlign: "center" }}>Not enough days logged yet this week.</div>;
   }
@@ -100,7 +111,7 @@ function GhostSparkline({ points, size = { w: 300, h: 148 } }: { points: Sparkli
   const gridLines = [0.25, 0.5, 0.75];
 
   return (
-    <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="xMidYMid meet">
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: "block" }}>
       <defs>
         <linearGradient id="ghostRealFill" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="var(--bm-accent)" stopOpacity={0.28} />
@@ -115,7 +126,7 @@ function GhostSparkline({ points, size = { w: 300, h: 148 } }: { points: Sparkli
 
       {/* Day labels — which day is which, absent before */}
       {points.map((p, i) => (
-        <text key={p.date} x={x(i)} y={h - 6} textAnchor="middle" fontFamily="'Inter', sans-serif" fontSize={9} fill="var(--bm-text4)">
+        <text key={p.date} x={x(i)} y={h - 6} textAnchor="middle" fontFamily="'Inter', sans-serif" fontSize={10} fill="var(--bm-text4)">
           {dayLabel(p.date)}
         </text>
       ))}
@@ -136,7 +147,7 @@ function GhostSparkline({ points, size = { w: 300, h: 148 } }: { points: Sparkli
           <text
             x={Math.min(w - padX - 2, x(gapIndex) + 5)}
             y={(y(points[gapIndex].real as number) + y(points[gapIndex].ghost as number)) / 2 + 3}
-            fontFamily="'DM Mono', monospace" fontSize={9.5} fontWeight={700} fill={gapColor}
+            fontFamily="'DM Mono', monospace" fontSize={10} fontWeight={700} fill={gapColor}
           >
             {gap > 0 ? `+${gap}` : gap}
           </text>
@@ -150,12 +161,12 @@ function GhostSparkline({ points, size = { w: 300, h: 148 } }: { points: Sparkli
       {/* Endpoint value callouts on the real line — first and last, so the
           shape has numbers attached to it, not just a silhouette. */}
       {realPoints.length > 0 && (
-        <text x={x(realPoints[0].i)} y={Math.max(10, y(realPoints[0].v) - 8)} textAnchor="middle" fontFamily="'DM Mono', monospace" fontSize={9.5} fill="var(--bm-text3)">
+        <text x={x(realPoints[0].i)} y={Math.max(10, y(realPoints[0].v) - 8)} textAnchor="middle" fontFamily="'DM Mono', monospace" fontSize={10} fill="var(--bm-text3)">
           {Math.round(realPoints[0].v)}
         </text>
       )}
       {realPoints.length > 1 && (
-        <text x={x(realPoints[realPoints.length - 1].i)} y={Math.max(10, y(realPoints[realPoints.length - 1].v) - 8)} textAnchor="middle" fontFamily="'DM Mono', monospace" fontSize={9.5} fontWeight={700} fill="var(--bm-accent)">
+        <text x={x(realPoints[realPoints.length - 1].i)} y={Math.max(10, y(realPoints[realPoints.length - 1].v) - 8)} textAnchor="middle" fontFamily="'DM Mono', monospace" fontSize={10} fontWeight={700} fill="var(--bm-accent)">
           {Math.round(realPoints[realPoints.length - 1].v)}
         </text>
       )}
