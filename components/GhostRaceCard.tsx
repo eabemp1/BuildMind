@@ -71,7 +71,7 @@ function History({ race, limit }: { race: GhostRace; limit: number }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-        <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, fontWeight: 600, color: "var(--bm-text)" }}>Past weeks against their ghost</span>
+        <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: "var(--bm-text)" }}>Past weeks against their ghost</span>
         {race.beatStreak > 0 && (
           <span style={{ fontFamily: mono, fontSize: 11, color: "var(--bm-green)" }}>
             {race.beatStreak} {race.beatStreak === 1 ? "week" : "weeks"} beaten in a row
@@ -107,17 +107,17 @@ export function GhostRaceCard({ race }: { race: GhostRace }) {
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       aria-label="Ghost race"
-      style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-lg)", padding: "20px 20px 18px", display: "flex", flexDirection: "column", gap: 18 }}
+      style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-lg)", padding: "16px", display: "flex", flexDirection: "column", gap: 14 }}
     >
       <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0, flex: "1 1 240px" }}>
-          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "var(--bm-text3)" }}>This week&apos;s race against your ghost</span>
-          <span style={{ fontFamily: "'Syne', sans-serif", fontSize: 22, fontWeight: 700, color, letterSpacing: "-0.02em", lineHeight: 1.2 }}>{race.headline}</span>
+          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "var(--bm-text3)" }}>This week&apos;s race against your ghost</span>
+          <span style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color, letterSpacing: "-0.01em", lineHeight: 1.3 }}>{race.headline}</span>
           {race.detail && <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.5 }}>{race.detail}</span>}
         </div>
         <div style={{ display: "flex", alignItems: "baseline", gap: 6 }} aria-label={`${race.doneSoFar} of ${race.ghost}`}>
-          <span style={{ fontFamily: "'Syne', sans-serif", fontSize: 54, fontWeight: 800, lineHeight: 0.9, letterSpacing: "-0.04em", color: "var(--bm-text)" }}>{race.doneSoFar}</span>
-          <span style={{ fontFamily: mono, fontSize: 16, color: "var(--bm-text3)" }}>/ {race.ghost}</span>
+          <span style={{ fontFamily: "'Syne', sans-serif", fontSize: "clamp(28px, 7vw, 34px)", fontWeight: 800, lineHeight: 1, letterSpacing: "-0.03em", color: "var(--bm-text)" }}>{race.doneSoFar}</span>
+          <span style={{ fontFamily: mono, fontSize: 13, color: "var(--bm-text3)" }}>/ {race.ghost}</span>
         </div>
       </div>
 
@@ -127,10 +127,10 @@ export function GhostRaceCard({ race }: { race: GhostRace }) {
 
       {blockedByPlan && (
         <div style={{ borderRadius: 12, border: "1px solid var(--bm-accent-bd)", background: "var(--bm-accent-dim)", padding: "12px 14px", display: "flex", gap: 12, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
-          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "var(--bm-text)", lineHeight: 1.5, flex: "1 1 220px" }}>
+          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "var(--bm-text)", lineHeight: 1.5, flex: "1 1 220px" }}>
             Your ghost is {race.ghost}, and Free includes {cap} Today actions a week. You have outgrown the free week.
           </span>
-          <Link href="/upgrade?feature=ghost" style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, fontWeight: 700, color: "var(--bm-text-inv)", background: "var(--bm-accent)", padding: "8px 14px", borderRadius: 9, textDecoration: "none" }}>
+          <Link href="/upgrade?feature=ghost" style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 700, color: "var(--bm-text-inv)", background: "var(--bm-accent)", padding: "8px 14px", borderRadius: 9, textDecoration: "none" }}>
             Race it with Builder
           </Link>
         </div>
@@ -142,24 +142,24 @@ export function GhostRaceCard({ race }: { race: GhostRace }) {
         paid ? (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12, borderTop: "1px solid var(--bm-border)", paddingTop: 14 }}>
             <div>
-              <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: "var(--bm-text3)" }}>On this pace you finish</div>
-              <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 20, fontWeight: 700, color: race.projected >= race.ghost ? "var(--bm-green)" : "var(--bm-text)" }}>
+              <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text3)" }}>On this pace you finish</div>
+              <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color: race.projected >= race.ghost ? "var(--bm-green)" : "var(--bm-text)" }}>
                 {race.projected} {race.projected === 1 ? "action" : "actions"}
               </div>
-              <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: "var(--bm-text3)" }}>{race.projected >= race.ghost ? "Enough to beat the ghost." : `${race.ghost - race.projected} short of the ghost.`}</div>
+              <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text3)" }}>{race.projected >= race.ghost ? "Enough to beat the ghost." : `${race.ghost - race.projected} short of the ghost.`}</div>
             </div>
             <div>
-              <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: "var(--bm-text3)" }}>The day you usually slip</div>
-              <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 20, fontWeight: 700, color: "var(--bm-text)" }}>{race.slipDay === null ? "No pattern yet" : dayName(race.slipDay)}</div>
-              <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: "var(--bm-text3)" }}>{race.slipDay === null ? "Needs three active weeks." : "Plan your hardest action for the day before."}</div>
+              <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text3)" }}>The day you usually slip</div>
+              <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color: "var(--bm-text)" }}>{race.slipDay === null ? "No pattern yet" : dayName(race.slipDay)}</div>
+              <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text3)" }}>{race.slipDay === null ? "Needs three active weeks." : "Plan your hardest action for the day before."}</div>
             </div>
           </div>
         ) : (
           <div style={{ borderTop: "1px solid var(--bm-border)", paddingTop: 14, display: "flex", gap: 12, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
-            <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "var(--bm-text2)", lineHeight: 1.5, flex: "1 1 240px" }}>
+            <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "var(--bm-text2)", lineHeight: 1.5, flex: "1 1 240px" }}>
               Builder adds your pace forecast, the weekday you usually slip on, and twelve weeks of ghost history.
             </span>
-            <Link href="/upgrade?feature=ghost" style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, fontWeight: 600, color: "var(--bm-accent)", textDecoration: "none" }}>See what Builder adds</Link>
+            <Link href="/upgrade?feature=ghost" style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: "var(--bm-accent)", textDecoration: "none" }}>See what Builder adds</Link>
           </div>
         )
       )}
