@@ -1645,7 +1645,7 @@ function TodayContent() {
         <p style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 8px" }}>
           Daily briefing
         </p>
-        <h1 style={{ fontSize: 18, fontWeight: 700, color: "var(--bm-text)", margin: "0 0 10px" }}>
+        <h1 style={{ fontSize: 16, fontWeight: 700, color: "var(--bm-text)", margin: "0 0 10px" }}>
           No active plan detected
         </h1>
         <p style={{ fontSize: 13, color: "var(--bm-text3)", lineHeight: 1.6, margin: "0 0 20px" }}>
@@ -1808,7 +1808,7 @@ function TodayContent() {
           <div style={{ width: 64, height: 64, borderRadius: "50%", background: "var(--bm-green-dim)", border: "1px solid var(--bm-green-bd)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px" }}>
             <CheckCircle2 size={28} color="var(--bm-green)" />
           </div>
-          <h2 style={{ fontSize: 24, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em", marginBottom: 10 }}>
+          <h2 style={{ fontSize: isMobile ? 20 : 22, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em", marginBottom: 10 }}>
             Insight logged. BuildMind adapts.
           </h2>
           <p style={{ fontSize: 14, color: "var(--bm-text3)", marginBottom: isFirstSession ? 16 : 20, lineHeight: 1.6 }}>
@@ -1992,7 +1992,7 @@ function TodayContent() {
               <div style={{ fontSize: 10, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'DM Mono', monospace", marginBottom: 8 }}>
                 Execution debt
               </div>
-              <p style={{ color: "var(--bm-text)", fontSize: isMobile ? 17 : 18, lineHeight: 1.45, margin: "0 0 10px" }}>
+              <p style={{ color: "var(--bm-text)", fontSize: isMobile ? 15 : 16, lineHeight: 1.45, margin: "0 0 10px" }}>
                 {sanitizeOutput(debtSuppression.debtMessage)}
               </p>
               {debtSuppression.interventionHint && (
@@ -2500,7 +2500,7 @@ function TodayContent() {
         <p style={{ fontFamily: "var(--font-mono, monospace)", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--bm-text4)", margin: "0 0 6px" }}>
           Check-in
         </p>
-        <h2 style={{ fontSize: isMobile ? 16 : 17, fontWeight: 700, color: "var(--bm-text)", margin: "0 0 8px" }}>
+        <h2 style={{ fontSize: isMobile ? 15 : 16, fontWeight: 700, color: "var(--bm-text)", margin: "0 0 8px" }}>
           How did it go?
         </h2>
         <div style={{ fontSize: 12.5, color: "var(--bm-text3)", marginBottom: 14, lineHeight: 1.6 }}>
@@ -2892,4 +2892,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-  }
+    }
