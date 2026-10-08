@@ -58,6 +58,8 @@ import { computeMilestonePacing, type MilestonePacingResult } from "@/lib/milest
 import { computeWeeklyGrades, type GradedDimension } from "@/lib/patternGrading";
 import { actionCategoryLabel, ACTION_TYPE_WEIGHT, type ActionType } from "@/lib/actionClassification";
 import { isTodayFlowSession } from "@/lib/todayFlowSessions";
+import { computeGhostRace, type GhostRace } from "@/lib/ghostRace";
+import { loadGhostWeeks } from "@/lib/ghostRaceData";
 
 export interface SparklinePoint { date: string; real: number | null; ghost: number | null; }
 
@@ -91,6 +93,12 @@ export interface WeeklyPulseResponse {
    *  distinct calendar days that have occurred so far this week (<=7). */
   tasks_completed: number;
   tasks_total: number;
+  /** Finished actions this week (a second action on the same day counts). tasks_completed
+   *  above is DAYS with at least one — keep reading that for rates and grades, and read this
+   *  for "how many did I do". */
+  actions_completed: number;
+  /** The race against your own typical week. See lib/ghostRace.ts. */
+  ghost_race: GhostRace | null;
   completion_rate: number;
   active_days: number;
   /** Per-day breakdown for the activity canvas — see DayActivity. Always
@@ -328,6 +336,20 @@ export async function getWeeklyPulseData(
   const tasksTotal = weekTasks.length > 0 || activeDays > 0 ? daysElapsedThisWeek : 0;
   const completionRate = tasksTotal > 0 ? Math.round((tasksCompleted / tasksTotal) * 100) : 0;
 
+  // Finished actions, not days: completing a second task on the same day
+  // used to leave the Tasks tile unchanged because it counts days with any
+  // activity. This is the number that has to move on every completion.
+  let ghostRace: GhostRace | null = null;
+  let actionsCompleted = (weekTasks as Array<{ outcome?: string | null }>).filter((t) => t.outcome === "completed").length;
+  try {
+    const weeks = await loadGhostWeeks(admin, userId, weekStart);
+    actionsCompleted = weeks.current.total;
+    const todayIndex = Math.min(6, Math.max(0, Math.round((new Date(`${nowDateStr}T00:00:00.000Z`).getTime() - new Date(`${weekStart}T00:00:00.000Z`).getTime()) / 86_400_000)));
+    ghostRace = computeGhostRace({ completedWeeks: weeks.completed, current: weeks.current, todayIndex });
+  } catch {
+    // Non-fatal: the tile falls back to the learning-log count above.
+  }
+
   // ── Per-day activity canvas ──────────────────────────────────────────────
   // Every distinct completed action this week, grouped by the calendar day
   // it was completed on. `weight` (ACTION_TYPE_WEIGHT — a stated heuristic,
@@ -485,7 +507,7 @@ export async function getWeeklyPulseData(
     ? {
         goal_text: weeklyGoalRow.goal_text, target_score: weeklyGoalRow.target_score,
         current_score: weeklyGoalRow.current_score, target_tasks: weeklyGoalRow.target_tasks,
-        tasks_done: tasksCompleted, status: weeklyGoalRow.status,
+        tasks_done: actionsCompleted, status: weeklyGoalRow.status,
       }
     : null;
 
@@ -583,9 +605,9 @@ Write a 2-3 sentence story-style summary of the founder's week. Brief, specific,
   return {
     is_quiet_week: isQuietWeek,
     momentum_score: momentumScore, momentum_delta: momentumDelta, streak,
-    tasks_completed: tasksCompleted, tasks_total: tasksTotal, completion_rate: completionRate,
+    tasks_completed: tasksCompleted, tasks_total: tasksTotal, actions_completed: actionsCompleted, ghost_race: ghostRace, completion_rate: completionRate,
     active_days: activeDays, day_activity: dayActivity, un_ghosted: unGhosted, milestones, archetype,
     day_of_week: dayOfWeek, confidence_by_outcome: confidenceByOutcome, confidence_index: confidenceIndex, top_override_reason: topOverrideReason,
     weekly_goal: weeklyGoal, sparkline, grades, story, generated_at: new Date().toISOString(),
   };
-      }
+                                }
