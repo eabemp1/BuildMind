@@ -30,6 +30,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { STAGE_ORDER, normalizeStage } from "@/lib/stages";
 import { computeStageProgress } from "@/lib/server/stageProgress";
 import { computeStageReadiness } from "@/lib/server/stageReadiness";
+import { daysSinceActive } from "@/lib/streak";
 import type { StageReadiness } from "@/lib/server/stageReadiness";
 import type { StageEvidenceType } from "@/lib/server/stageEvidence";
 
@@ -87,6 +88,10 @@ export async function getProjectReadiness(
         .from("reflections")
         .select("confidence, outcome")
         .eq("user_id", userId)
+        // Scope to this project: a founder with two projects must not have one
+        // project's reflections decide the other's readiness. Legacy rows with
+        // no project_id still count.
+        .or(`project_id.eq.${projectId},project_id.is.null`)
         .gte("created_at", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
         .order("created_at", { ascending: false })
         .limit(10),
@@ -94,6 +99,7 @@ export async function getProjectReadiness(
         .from("reflections")
         .select("id", { count: "exact", head: true })
         .eq("user_id", userId)
+        .or(`project_id.eq.${projectId},project_id.is.null`)
         .in("outcome", ["skipped", "overridden", "blocked"])
         .gte("created_at", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()),
       nextStage
@@ -128,9 +134,21 @@ export async function getProjectReadiness(
     derivedSlotKeys: Number((project as { current_mrr?: number | null }).current_mrr ?? 0) > 0 ? ["paying_customer_evidence"] : [],
   });
 
-  const daysInactive = project.updated_at
+  // projects.updated_at is only bumped when the summary is rewritten (nothing
+  // touches it on task completion), so a founder shipping daily would read as
+  // stalled. The check-in date is written on every completed action; use the
+  // more recent of the two.
+  const { data: ctx } = await supabase
+    .from("founder_context")
+    .select("last_checkin_date, days_inactive")
+    .eq("user_id", userId)
+    .maybeSingle();
+  const fromCheckin = daysSinceActive(ctx?.last_checkin_date as string | null | undefined, ctx?.days_inactive as number | null | undefined);
+  const fromProject = project.updated_at
     ? Math.floor((Date.now() - new Date(project.updated_at).getTime()) / 86_400_000)
-    : 0;
+    : null;
+  const candidates = [fromCheckin, fromProject].filter((n): n is number => typeof n === "number");
+  const daysInactive = candidates.length ? Math.min(...candidates) : 0;
 
   return { readiness, currentStage, nextStage, daysInactive };
 }
