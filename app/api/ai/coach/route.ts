@@ -278,7 +278,7 @@ export async function POST(request: Request) {
             .eq("id", projectId)
             .eq("user_id", userId)
             .maybeSingle(),
-          supabase.from("milestones").select("id, title, status").eq("project_id", projectId),
+          supabase.from("milestones").select("id, title, status").eq("project_id", projectId).eq("user_id", userId),
           supabase.from("founder_context").select("recent_interactions").eq("user_id", userId).maybeSingle(),
           // ── NEW: assembleCoachContext pulls reflections, action patterns,
           // momentum, skip reasons, blocker insights, score trend, and memory
@@ -584,4 +584,4 @@ Return ONLY the JSON. No preamble. No markdown fences.`;
       },
     }, { status });
   }
-          }
+                                                                            }
