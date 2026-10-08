@@ -31,7 +31,7 @@ const seg = (active: boolean): React.CSSProperties => ({
 const btn: React.CSSProperties = {
   flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "10px 14px",
   borderRadius: "var(--r-md, 10px)", border: "1px solid var(--bm-border2)", background: "var(--bm-bg3)",
-  color: "var(--bm-text2)", fontFamily: "'Inter', sans-serif", fontSize: 12.5, fontWeight: 600, cursor: "pointer",
+  color: "var(--bm-text2)", fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, cursor: "pointer",
 };
 
 export function ShareWeekCard({ projectId }: { projectId?: string }) {
@@ -88,7 +88,7 @@ export function ShareWeekCard({ projectId }: { projectId?: string }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 12, background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-lg)", padding: 16 }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
         <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 600, color: "var(--bm-text)" }}>Share your week</span>
-        <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: "var(--bm-text3)" }}>Real numbers from this week</span>
+        <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text3)" }}>Real numbers from this week</span>
       </div>
 
       <div style={{ display: "flex", gap: 8 }}>
