@@ -8,6 +8,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { loadGhostWeeks } from "@/lib/ghostRaceData";
+import { ghostTarget } from "@/lib/ghostRace";
 
 /** Returns the ISO date string for the Monday of the week containing `d` */
 function weekStart(d: Date): string {
@@ -66,6 +68,14 @@ export async function GET(req: Request) {
     .maybeSingle();
 
   if (dbErr) return NextResponse.json({ ok: false, error: dbErr.message }, { status: 500 });
+  // tasks_done is a stored counter that only moves when a PATCH lands. Report
+  // the live count instead so Today, Progress and the share card never differ.
+  if (data) {
+    try {
+      const weeks = await loadGhostWeeks(admin, user.id, week);
+      return NextResponse.json({ ok: true, data: { ...data, tasks_done: weeks.current.total } });
+    } catch { /* fall back to the stored counter */ }
+  }
   return NextResponse.json({ ok: true, data });
 }
 
@@ -112,17 +122,21 @@ export async function POST(req: Request) {
   // completion flow — see the FIX comments in weeklyPulseData.ts for why
   // this specific filter, not the generic `tasks` table or all learning-log
   // rows, is the correct source).
-  const weekStartIso = `${week}T00:00:00.000Z`;
-  const { data: weekLogs } = await admin
-    .from("reflexion_learning_log")
-    .select("outcome, session_id")
-    .eq("user_id", user.id)
-    .gte("created_at", weekStartIso);
-  const backfilledTasksDone = (weekLogs ?? []).filter(
-    (r) => (r.session_id ?? "").startsWith("today_action") && r.outcome === "completed",
-  ).length;
+  // Backfill from the same source and window Progress uses (both Today
+  // session prefixes, counting finished actions). The old filter matched only
+  // "today_action", so completions written by task-complete's fallback row
+  // ("task_complete:…") never counted here.
+  let backfilledTasksDone = 0;
+  let ghostForWeek: number | null = null;
+  try {
+    const weeks = await loadGhostWeeks(admin, user.id, week);
+    backfilledTasksDone = weeks.current.total;
+    ghostForWeek = ghostTarget(weeks.completed).ghost;
+  } catch { /* leave at 0 and use the caller's target */ }
   const normalizedTargetScore = clampFiniteNumber(target_score, 70, 0, 100);
-  const normalizedTargetTasks = Math.floor(clampFiniteNumber(target_tasks, 5, 1, Number.MAX_SAFE_INTEGER));
+  // The target is the Ghost (your own typical week), not a number the client
+  // guessed: Today gives one action a day, so a fixed 5-7 was arbitrary.
+  const normalizedTargetTasks = ghostForWeek ?? Math.floor(clampFiniteNumber(target_tasks, 5, 1, 7));
   const normalizedCurrentScore = clampFiniteNumber(current_score, 0, 0, 100);
   let initialStatus: "active" | "surpassed" | "on_track" = "active";
   if (normalizedCurrentScore >= normalizedTargetScore && backfilledTasksDone >= normalizedTargetTasks) {
@@ -223,4 +237,4 @@ export async function PATCH(req: Request) {
   }
 
   return NextResponse.json({ ok: false, error: "Goal changed concurrently; please retry" }, { status: 409 });
-}
+    }
