@@ -24,6 +24,7 @@ import { ReflectionField } from "./components/ReflectionField";
 import { ConfidenceSelector } from "./components/ConfidenceSelector";
 import { OutcomePicker, type ReflectionOutcome } from "./components/OutcomePicker";
 import { ReflectionCompletion } from "./components/ReflectionCompletion";
+import { effectiveStreak } from "@/lib/streak";
 
 type Outcome = ReflectionOutcome;
 type ReflectionHistoryEntry = {
@@ -161,7 +162,7 @@ export default function ReflectPage() {
               .limit(30),
             supabase
               .from("founder_context")
-              .select("streak")
+              .select("streak, last_checkin_date")
               .eq("user_id", user.id)
               .maybeSingle(),
           ]);
@@ -171,8 +172,12 @@ export default function ReflectPage() {
           // If server has no streak yet (new user), fall back to 0 honestly.
           let resolvedStreak = 0;
           if (founderCtxRes.status === "fulfilled" && founderCtxRes.value.data !== null) {
-            const serverStreak = founderCtxRes.value.data?.streak;
-            resolvedStreak = typeof serverStreak === "number" ? serverStreak : 0;
+            // A stored count never expires by itself — pass it through the
+            // shared lapse rule so a stopped streak reads 0 here too.
+            resolvedStreak = effectiveStreak(
+              founderCtxRes.value.data?.streak,
+              founderCtxRes.value.data?.last_checkin_date,
+            );
           }
           setStreak(resolvedStreak);
 
