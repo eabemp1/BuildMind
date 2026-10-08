@@ -125,14 +125,14 @@ function ProgressContent() {
           </p>
           <h1 style={{
             fontFamily: "'Syne', sans-serif",
-            fontSize: 26, fontWeight: 700, color: "var(--bm-text)",
+            fontSize: "clamp(20px, 5.5vw, 24px)", fontWeight: 700, color: "var(--bm-text)",
             letterSpacing: "-0.025em", margin: "0 0 6px",
           }}>
             What does the evidence say?
           </h1>
           <p style={{
             fontFamily: "'Inter', sans-serif",
-            fontSize: 12.5, color: "var(--bm-text2)", lineHeight: 1.5, margin: 0,
+            fontSize: 12, color: "var(--bm-text2)", lineHeight: 1.5, margin: 0,
           }}>
             A grounded read of your execution over time - not another scorecard.
           </p>
