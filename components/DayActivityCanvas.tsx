@@ -54,7 +54,7 @@ export function DayActivityCanvas({ days }: { days: DayActivity[] }) {
       <svg
         viewBox={`0 0 ${width} ${height}`}
         width="100%"
-        style={{ display: "block", overflow: "visible" }}
+        style={{ display: "block", overflow: "visible", maxWidth: width }}
         role="img"
         aria-label="This week's completed activity by day, shaded by how crucial each was"
       >
