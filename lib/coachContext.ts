@@ -11,7 +11,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { formatRegionalContextBlock } from "@/lib/regionalContext";
-import { effectiveStreak } from "@/lib/streak";
+import { effectiveStreak, daysSinceActive, streakDayKey } from "@/lib/streak";
 
 export interface CoachBehavioralContext {
   /** The full formatted string for the system prompt */
@@ -76,6 +76,9 @@ export async function assembleCoachContext(
       .from("reflections")
       .select("outcome, confidence, blocker, blocker_category, what_tried, what_happened, what_learned, note, created_at")
       .eq("user_id", userId)
+      // Project-scoped: the coach for project A must not quote project B's
+      // reflections. Rows with no project (older data) still count.
+      .or(`project_id.eq.${projectId},project_id.is.null`)
       .order("created_at", { ascending: false })
       .limit(5);
 
@@ -108,6 +111,7 @@ export async function assembleCoachContext(
       .from("reflexion_learning_log")
       .select("action_type, outcome, action_shown, created_at")
       .eq("user_id", userId)
+      .or(`project_id.eq.${projectId},project_id.is.null`)
       .gte("created_at", since)
       .order("created_at", { ascending: false })
       .limit(60);
@@ -154,7 +158,7 @@ export async function assembleCoachContext(
   try {
     const { data: ctx } = await supabase
       .from("founder_context")
-      .select("momentum_score, streak, days_inactive, last_checkin_date, tasks_completed_today, tasks_completed_total, tasks_accepted_this_week, tasks_overridden_this_week, override_reasons, avoidance_zones, topics_mentioned_repeatedly")
+      .select("momentum_score, streak, days_inactive, last_checkin_date, last_task_date, tasks_completed_today, tasks_completed_total, tasks_accepted_this_week, tasks_overridden_this_week, override_reasons, avoidance_zones, topics_mentioned_repeatedly")
       .eq("user_id", userId)
       .maybeSingle();
 
@@ -167,10 +171,17 @@ export async function assembleCoachContext(
         if (liveStreak > 0) lines.push(`Current streak: ${liveStreak} days`);
         else if (ctx.streak) lines.push(`Streak lapsed (was ${ctx.streak} days)`);
       }
-      if (ctx.days_inactive)    lines.push(`Days since last check-in: ${ctx.days_inactive}`);
+      {
+        // days_inactive is a counter that only moves when a job runs; derive
+        // from the check-in date like every other reader (lib/streak.ts).
+        const idle = daysSinceActive(ctx.last_checkin_date, ctx.days_inactive);
+        if (idle) lines.push(`Days since last check-in: ${idle}`);
+      }
       if (ctx.momentum_score)   lines.push(`Momentum score: ${ctx.momentum_score}/100`);
       if (ctx.last_checkin_date) lines.push(`Last active: ${relativeDate(ctx.last_checkin_date)}`);
-      if (ctx.tasks_completed_today) lines.push(`Completed today: ${ctx.tasks_completed_today}`);
+      // The counter only resets on the next completion, so yesterday's count
+      // would read as "today" without checking the date it belongs to.
+      if (ctx.tasks_completed_today && ctx.last_task_date === streakDayKey()) lines.push(`Completed today: ${ctx.tasks_completed_today}`);
       if (ctx.tasks_accepted_this_week || ctx.tasks_overridden_this_week) {
         lines.push(`This week: ${ctx.tasks_accepted_this_week ?? 0} accepted, ${ctx.tasks_overridden_this_week ?? 0} overridden`);
       }
@@ -320,4 +331,4 @@ export function computeContextConfidence(signals: CoachBehavioralContext["signal
     if (signals[key as keyof typeof signals]) score += weight;
   }
   return Math.round(score * 100) / 100;
-}
+        }
