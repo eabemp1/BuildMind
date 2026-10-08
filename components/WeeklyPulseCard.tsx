@@ -186,7 +186,7 @@ function GradeBadge({ g }: { g: GradedDimension }) {
         <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text3)" }}>{g.label}</span>
         <span style={{ fontFamily: "'Syne', sans-serif", fontSize: 15, fontWeight: 700, color: GRADE_COLOR[g.grade] }}>{g.grade}</span>
       </div>
-      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 10.5, color: "var(--bm-text3)", lineHeight: 1.4 }}>{g.basis}</span>
+      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text3)", lineHeight: 1.4 }}>{g.basis}</span>
     </div>
   );
 }
@@ -257,14 +257,14 @@ export function WeeklyPulseCard() {
       <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-lg)", padding: "20px 20px 16px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
           <Sparkles size={14} style={{ color: "var(--bm-text3)" }} />
-          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.10em", color: "var(--bm-text3)" }}>
+          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.10em", color: "var(--bm-text3)" }}>
             Your week
           </span>
           {data.archetype && (
             <a
               href="/memory"
               style={{
-                marginLeft: "auto", fontFamily: "'DM Mono', monospace", fontSize: 10, padding: "3px 10px",
+                marginLeft: "auto", fontFamily: "'DM Mono', monospace", fontSize: 11, padding: "3px 10px",
                 borderRadius: 999, background: "var(--bm-bg3)", color: "var(--bm-text3)", border: "1px solid var(--bm-border)",
                 textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 5,
               }}
@@ -275,7 +275,7 @@ export function WeeklyPulseCard() {
             </a>
           )}
         </div>
-        <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 14.5, lineHeight: 1.6, color: "var(--bm-text)", margin: 0 }}>
+        <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, lineHeight: 1.6, color: "var(--bm-text)", margin: 0 }}>
           {sanitizeOutput(data.story)}
         </p>
       </div>
@@ -290,14 +290,14 @@ export function WeeklyPulseCard() {
           <span
             className="bm-badge"
             style={{
-              fontFamily: "'DM Mono', monospace", fontSize: 9.5, textTransform: "uppercase", letterSpacing: "0.05em",
+              fontFamily: "'DM Mono', monospace", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em",
               padding: "2px 8px", borderRadius: 999, color: confidenceLabel(data.confidence_index).color,
               background: "var(--bm-bg3)", border: `1px solid ${confidenceLabel(data.confidence_index).color}33`,
             }}
           >
             {confidenceLabel(data.confidence_index).label}
           </span>
-          <span style={{ marginLeft: "auto", fontFamily: "'Inter', sans-serif", fontSize: 10.5, color: "var(--bm-text4)" }}>
+          <span style={{ marginLeft: "auto", fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text4)" }}>
             From this week&apos;s reflections
           </span>
         </div>
@@ -306,8 +306,8 @@ export function WeeklyPulseCard() {
       {/* 2. EVIDENCE — ghost vs real sparkline, the founder's requested visual */}
       <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-lg)", padding: "16px 18px 8px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, fontWeight: 600, color: "var(--bm-text)" }}>Ghost vs. real</span>
-          <div style={{ display: "flex", gap: 12, fontSize: 10.5, color: "var(--bm-text3)", fontFamily: "'Inter', sans-serif" }}>
+          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: "var(--bm-text)" }}>Ghost vs. real</span>
+          <div style={{ display: "flex", gap: 12, fontSize: 11, color: "var(--bm-text3)", fontFamily: "'Inter', sans-serif" }}>
             <span><span style={{ display: "inline-block", width: 10, height: 2, background: "var(--bm-accent)", marginRight: 4, verticalAlign: "middle" }} />Actual</span>
             {data.weekly_goal && (
               <span><span style={{ display: "inline-block", width: 10, height: 2, borderTop: "1.5px dashed var(--bm-text3)", marginRight: 4, verticalAlign: "middle" }} />Target</span>
@@ -320,16 +320,16 @@ export function WeeklyPulseCard() {
           if (!withBoth) return null;
           const gap = Math.round((withBoth.real as number) - (withBoth.ghost as number));
           if (gap === 0) return (
-            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 10.5, color: "var(--bm-text3)", margin: "2px 0 8px" }}>Exactly on pace.</p>
+            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text3)", margin: "2px 0 8px" }}>Exactly on pace.</p>
           );
           return (
-            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 10.5, color: gap > 0 ? "var(--bm-green)" : "var(--bm-red)", margin: "2px 0 8px" }}>
+            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: gap > 0 ? "var(--bm-green)" : "var(--bm-red)", margin: "2px 0 8px" }}>
               {gap > 0 ? `${gap} points ahead of target pace.` : `${Math.abs(gap)} points behind target pace.`}
             </p>
           );
         })()}
         {!data.weekly_goal && (
-          <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 10.5, color: "var(--bm-text3)", margin: "4px 0 8px" }}>
+          <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text3)", margin: "4px 0 8px" }}>
             Set a weekly goal on an active project to see the target (ghost) line.
           </p>
         )}
@@ -340,11 +340,11 @@ export function WeeklyPulseCard() {
         <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-lg)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <Ghost size={13} style={{ color: "var(--bm-text3)" }} />
-            <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, fontWeight: 600, color: "var(--bm-text)" }}>Un-ghosted this week</span>
+            <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: "var(--bm-text)" }}>Un-ghosted this week</span>
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
             {data.un_ghosted.map((item) => (
-              <span key={item} className="bm-badge bm-badge-neutral" style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5 }}>
+              <span key={item} className="bm-badge bm-badge-neutral" style={{ fontFamily: "'Inter', sans-serif", fontSize: 11 }}>
                 {sanitizeOutput(item)}
               </span>
             ))}
@@ -358,23 +358,23 @@ export function WeeklyPulseCard() {
           best day before it's shown, same as bestDay()'s own guard. */}
       {(bestDay(data.day_of_week) || data.top_override_reason) && (
         <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-lg)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: 14 }}>
-          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, fontWeight: 600, color: "var(--bm-text)" }}>Cognitive matrix</span>
+          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: "var(--bm-text)" }}>Cognitive matrix</span>
           {bestDay(data.day_of_week) && (
             <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 9.5, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--bm-green)" }}>
+              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--bm-green)" }}>
                 ● Verified known
               </span>
-              <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "var(--bm-text)", margin: 0, lineHeight: 1.5 }}>
+              <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "var(--bm-text)", margin: 0, lineHeight: 1.5 }}>
                 You get the most done on {bestDay(data.day_of_week)!.day}s ({bestDay(data.day_of_week)!.rate}% completion rate this week).
               </p>
             </div>
           )}
           {data.top_override_reason && (
             <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 9.5, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--bm-amber, #d9a441)" }}>
+              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--bm-amber, #d9a441)" }}>
                 ● Active blindspot
               </span>
-              <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "var(--bm-text)", margin: 0, lineHeight: 1.5 }}>
+              <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "var(--bm-text)", margin: 0, lineHeight: 1.5 }}>
                 Your most common reason for skipped or partial tasks: &ldquo;{sanitizeOutput(data.top_override_reason)}&rdquo;
               </p>
             </div>
@@ -400,10 +400,10 @@ export function WeeklyPulseCard() {
         if (!directive) return null;
         return (
           <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-accent-bd, var(--bm-border))", borderRadius: "var(--r-lg)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
-            <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 9.5, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--bm-accent)" }}>
+            <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--bm-accent)" }}>
               Recommended directive
             </span>
-            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, fontWeight: 600, color: "var(--bm-text)", margin: 0, lineHeight: 1.5 }}>
+            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 600, color: "var(--bm-text)", margin: 0, lineHeight: 1.5 }}>
               {sanitizeOutput(directive)}
             </p>
             <a
@@ -411,7 +411,7 @@ export function WeeklyPulseCard() {
               style={{
                 alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px",
                 borderRadius: "var(--r-md, 10px)", border: "none", background: "var(--bm-accent)", color: "#15130a",
-                fontFamily: "'Inter', sans-serif", fontSize: 12.5, fontWeight: 700, textDecoration: "none",
+                fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 700, textDecoration: "none",
               }}
             >
               Execute /today
@@ -428,8 +428,8 @@ export function WeeklyPulseCard() {
         <div style={{ position: "relative", width: 88, height: 88 }}>
           <Ring value={data.completion_rate} />
           <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-            <span style={{ fontFamily: "'Syne', sans-serif", fontSize: 18, fontWeight: 700, color: "var(--bm-text)" }}>{data.completion_rate}%</span>
-            <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 9, color: "var(--bm-text3)" }}>done</span>
+            <span style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color: "var(--bm-text)" }}>{data.completion_rate}%</span>
+            <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text3)" }}>done</span>
           </div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -439,7 +439,7 @@ export function WeeklyPulseCard() {
               <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text3)" }}>Tasks</span>
             </div>
             <span style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color: "var(--bm-text)" }}>{data.actions_completed ?? data.tasks_completed}</span>
-            <span style={{ display: "block", fontFamily: "'Inter', sans-serif", fontSize: 10.5, color: "var(--bm-text3)", marginTop: 2 }}>
+            <span style={{ display: "block", fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text3)", marginTop: 2 }}>
               done on {data.tasks_completed} of {data.tasks_total} {data.tasks_total === 1 ? "day" : "days"}
             </span>
           </div>
@@ -475,7 +475,7 @@ export function WeeklyPulseCard() {
           each band's depth of color showing how crucial that one action
           was (ACTION_TYPE_WEIGHT — see components/DayActivityCanvas.tsx). */}
       <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-lg)", padding: 18 }}>
-        <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, fontWeight: 600, color: "var(--bm-text)", display: "block", marginBottom: 12 }}>
+        <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: "var(--bm-text)", display: "block", marginBottom: 12 }}>
           This week, by day
         </span>
         <DayActivityCanvas days={data.day_activity} />
@@ -486,7 +486,7 @@ export function WeeklyPulseCard() {
           grid of N/A badges, which reads as broken rather than honest. */}
       {data.is_quiet_week ? (
         <p style={{
-          fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: "var(--bm-text3)",
+          fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text3)",
           textAlign: "center", padding: "4px 0",
         }}>
           Not enough activity yet to grade this week — check back after a few tasks.
@@ -500,7 +500,7 @@ export function WeeklyPulseCard() {
       {/* Milestone pacing */}
       {data.milestones.length > 0 && (
         <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-lg)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
-          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, fontWeight: 600, color: "var(--bm-text)" }}>Milestone pacing</span>
+          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: "var(--bm-text)" }}>Milestone pacing</span>
           {data.milestones.map((m) => (
             <div key={m.id} style={{ display: "flex", alignItems: "flex-start", gap: 8, paddingBottom: 8, borderBottom: "1px solid var(--bm-border)" }}>
               <span style={{ width: 7, height: 7, borderRadius: "50%", background: RISK_COLOR[m.risk], marginTop: 5, flexShrink: 0 }} />
@@ -530,4 +530,4 @@ export function WeeklyPulseCard() {
       </a>
     </motion.div>
   );
-                                                              }
+                                    }
