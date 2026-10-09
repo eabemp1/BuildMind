@@ -448,3 +448,39 @@ body {
    (not a tint). Everything else that currently reaches for gold as
    decoration should be --bm-text3/--bm-border instead. This is a
    subtraction task across existing pages, not a new pattern to add. */
+
+/* ── Accessibility baseline ───────────────────────────────────────────────
+   1. Keyboard focus is always visible. Mouse clicks do not show the ring
+      (:focus-visible), keyboard navigation does.
+   2. Motion is switched off for people who ask the OS to reduce it.
+   3. A skip link lets keyboard and screen-reader users jump past the sidebar.
+   Uses the accent token so it follows light and dark themes. */
+:where(a, button, input, select, textarea, summary, [role="button"], [tabindex]):focus-visible {
+  outline: 2px solid var(--bm-accent);
+  outline-offset: 2px;
+  border-radius: var(--r-md, 4px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.bm-skip-link {
+  position: absolute;
+  left: 12px;
+  top: -48px;
+  z-index: 1000;
+  padding: 8px 14px;
+  border-radius: var(--r-lg, 6px);
+  background: var(--bm-accent);
+  color: var(--bm-text-inv, #151109);
+  font-size: var(--text-sm, 12px);
+  font-weight: 700;
+  text-decoration: none;
+}
+.bm-skip-link:focus { top: 12px; }

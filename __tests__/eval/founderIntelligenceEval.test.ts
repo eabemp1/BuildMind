@@ -19,7 +19,7 @@
  * the one milestone tied to interviews has been untouched for 9 days.
  */
 
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildFounderIntelligenceState,
   type FounderIntelligenceInput,
@@ -78,6 +78,18 @@ const state = buildFounderIntelligenceState(scenario);
 const graph = buildStartupRelationshipGraph(scenario, state);
 const accuracy: IntelligenceAccuracy = { sample_size: 6, average_match_score: 0.3, last_updated_at: NOW.toISOString(), trend: "down" };
 const mirror = buildFounderMirror(state, accuracy);
+
+// The decision ranker samples with Math.random (Thompson-style exploration).
+// Pin it to a seeded generator so these assertions test the logic, not luck.
+function seedRandom(seed = 42) {
+  let s = seed >>> 0;
+  vi.spyOn(Math, "random").mockImplementation(() => {
+    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+    return s / 4294967296;
+  });
+}
+beforeEach(() => seedRandom());
+afterEach(() => vi.restoreAllMocks());
 
 describe("Phase 15 eval: CURRENT BUILD baseline (raw rows only) is weak", () => {
   it("cannot express a stated-vs-observed contradiction without synthesis", () => {

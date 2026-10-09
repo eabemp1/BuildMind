@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildDecisionState,
   buildFounderIntelligencePromptBlock,
@@ -61,6 +61,18 @@ function baseInput(overrides: Partial<FounderIntelligenceInput> = {}): FounderIn
     ...overrides,
   };
 }
+
+// The decision ranker samples with Math.random (Thompson-style exploration).
+// Pin it to a seeded generator so these assertions test the logic, not luck.
+function seedRandom(seed = 42) {
+  let s = seed >>> 0;
+  vi.spyOn(Math, "random").mockImplementation(() => {
+    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+    return s / 4294967296;
+  });
+}
+beforeEach(() => seedRandom());
+afterEach(() => vi.restoreAllMocks());
 
 describe("Founder Intelligence coherence layer", () => {
   it("turns existing subsystems into typed signals with evidence", () => {

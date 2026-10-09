@@ -136,6 +136,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="relative flex h-dvh min-h-dvh overflow-hidden" style={{ background: "var(--bm-bg)" }}>
+      <a href="#main-content" className="bm-skip-link">Skip to main content</a>
 
       {/* ── Sidebar — desktop ── */}
       <aside className="sticky top-0 hidden h-dvh w-[220px] shrink-0 md:flex"
@@ -198,7 +199,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             content by default, so one wide card made the whole page scroll
             sideways on phones (Today). */}
         <CommandPalette />
-        <main className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-5 sm:px-8 sm:py-8">
+        <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 outline-none overflow-y-auto overflow-x-hidden px-3 py-5 sm:px-8 sm:py-8">
           <div style={{ maxWidth: 1120, margin: "0 auto", width: "100%", minWidth: 0 }}>{children}</div>
         </main>
       </div>
