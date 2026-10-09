@@ -39,6 +39,7 @@ function makeBuilder() {
   builder.update  = (v: unknown) => { mockUpdate(v); return builder; };
   builder.insert  = (v: unknown) => { mockInsert(v); return builder; };
   builder.single  = () => mockSingle();
+  builder.maybeSingle = () => mockSingle(); // lib/learning.ts uses maybeSingle()
   // Make builder thenable with proper two-arg form so `await builder` resolves
   (builder as unknown as PromiseLike<unknown>).then = function(
     resolve?: (v: unknown) => unknown,

@@ -2,18 +2,22 @@ import { describe, expect, it, vi } from "vitest";
 import { markRecommendationObserved } from "../../lib/recommendationLifecycle";
 
 function makeSupabase() {
-  const update = vi.fn(() => ({ eq: vi.fn().mockResolvedValue({ error: null }) }));
+  // update(...).eq("id").eq("user_id")
+  const update = vi.fn(() => ({ eq: vi.fn(() => ({ eq: vi.fn().mockResolvedValue({ error: null }) })) }));
   const builder: any = {
     from: vi.fn(() => ({
       select: vi.fn(() => ({
+        // id -> user_id -> outcome=pending: the lookup is by explicit ID only.
         eq: vi.fn(() => ({
           eq: vi.fn(() => ({
-            order: vi.fn(() => ({
-              limit: vi.fn(() => ({
-                maybeSingle: vi.fn().mockResolvedValue({
-                  data: { id: "log-1", lifecycle_events: [{ type: "shown", at: "2026-08-05T00:00:00.000Z" }] },
-                  error: null,
-                }),
+            eq: vi.fn(() => ({
+              order: vi.fn(() => ({
+                limit: vi.fn(() => ({
+                  maybeSingle: vi.fn().mockResolvedValue({
+                    data: { id: "log-1", lifecycle_events: [{ type: "shown", at: "2026-08-05T00:00:00.000Z" }] },
+                    error: null,
+                  }),
+                })),
               })),
             })),
           })),
@@ -31,6 +35,7 @@ describe("recommendationLifecycle", () => {
 
     const id = await markRecommendationObserved(builder, {
       userId: "u1",
+      recommendationId: "log-1",
       taskTitle: "Message 3 privacy officers",
       outcome: "completed",
       founderExplanation: "Two replied",
@@ -55,6 +60,7 @@ describe("recommendationLifecycle", () => {
 
     await markRecommendationObserved(builder, {
       userId: "u1",
+      recommendationId: "log-1",
       taskTitle: "Call one prospect",
       outcome: "skipped",
     });
@@ -64,5 +70,14 @@ describe("recommendationLifecycle", () => {
       skipped_at: expect.any(String),
       outcome_quality: "none",
     }));
+  });
+});
+
+describe("recommendationLifecycle without an explicit ID", () => {
+  it("does not guess a pending recommendation", async () => {
+    const { builder, update } = makeSupabase();
+    const id = await markRecommendationObserved(builder, { userId: "u1", taskTitle: "x", outcome: "completed" });
+    expect(id).toBeNull();
+    expect(update).not.toHaveBeenCalled();
   });
 });

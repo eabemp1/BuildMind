@@ -144,6 +144,8 @@ describe("learningLoop: compareFounderIntelligenceOutcome (COMPARE)", () => {
       recommendationId: "log-1",
       taskTitle: "Fixed a CSS bug on the landing page",
       outcome: "blocked",
+      // A reflection is required to score at all; this one is unrelated.
+      reflectionText: "Spent the afternoon adjusting button padding and fonts",
     });
     expect(result).not.toBeNull();
     expect(result!.score).toBeLessThan(0.5);

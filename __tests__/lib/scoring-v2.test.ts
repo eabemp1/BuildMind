@@ -89,8 +89,8 @@ describe("computeStartupScoreV2", () => {
     score: 50,
   }));
 
-  it("returns 0 with empty inputs", () => {
-    expect(computeStartupScoreV2({}, [])).toBe(0);
+  it("returns the new-founder baseline with empty inputs (25 x 0.90, rounded)", () => {
+    expect(computeStartupScoreV2({}, [])).toBe(23);
   });
 
   it("equals computeStartupScore×0.90 + 0 when no active history", () => {

@@ -16,18 +16,28 @@ import {
 // ─── computeStartupScore ───────────────────────────────────────────────────
 
 describe("computeStartupScore", () => {
-  it("returns 0 when all inputs are empty/null", () => {
-    expect(computeStartupScore({})).toBe(0);
+  // The model is v3: momentum defaults to 50 (the DB default) and a founder
+  // with no earned signal gets a baseline of momentum x 0.5, so a brand-new
+  // account is never shown 0. Tests that isolate one signal pin momentum to 0.
+  const NO_MOMENTUM = { momentum_score: 0 } as const;
+
+  it("gives a brand-new founder the baseline (momentum 50 default -> 25), never 0", () => {
+    expect(computeStartupScore({})).toBe(25);
+  });
+
+  it("returns 0 when every signal is explicitly zero", () => {
+    expect(computeStartupScore({ ...NO_MOMENTUM })).toBe(0);
   });
 
   it("uses execution_score as the primary signal (weight 0.45)", () => {
     // execution=80 * 0.45 = 36
-    expect(computeStartupScore({ execution_score: 80 })).toBe(36);
+    expect(computeStartupScore({ ...NO_MOMENTUM, execution_score: 80 })).toBe(36);
   });
 
   it("adds momentum_score as a secondary signal (weight 0.25)", () => {
-    // momentum=80 * 0.25 = 20
-    expect(computeStartupScore({ momentum_score: 80 })).toBe(20);
+    // No earned signal, so the baseline floor (80 x 0.5 = 40) applies, which
+    // is above the raw 80 x 0.25 = 20.
+    expect(computeStartupScore({ momentum_score: 80 })).toBe(40);
   });
 
   it("combines execution and momentum correctly", () => {
@@ -37,42 +47,42 @@ describe("computeStartupScore", () => {
 
   it("adds 4 pts per validation strength (up to 20)", () => {
     // 3 strengths → +12
-    expect(computeStartupScore({ validation_strengths: ["a", "b", "c"] })).toBe(12);
+    expect(computeStartupScore({ ...NO_MOMENTUM, validation_strengths: ["a", "b", "c"] })).toBe(12);
   });
 
   it("caps validation bonus at 20 (5+ strengths)", () => {
     const sixStrengths = ["a", "b", "c", "d", "e", "f"];
-    expect(computeStartupScore({ validation_strengths: sixStrengths })).toBe(20);
+    expect(computeStartupScore({ ...NO_MOMENTUM, validation_strengths: sixStrengths })).toBe(20);
   });
 
   it("XP below threshold gives 0 boost", () => {
-    expect(computeStartupScore({ xp: 100 })).toBe(0);
+    expect(computeStartupScore({ ...NO_MOMENTUM, xp: 100 })).toBe(0);
   });
 
   it("XP ≥ 200 gives +4 boost", () => {
-    expect(computeStartupScore({ xp: 200 })).toBe(4);
+    expect(computeStartupScore({ ...NO_MOMENTUM, xp: 200 })).toBe(4);
   });
 
   it("XP ≥ 3500 gives +20 boost (max)", () => {
-    expect(computeStartupScore({ xp: 5000 })).toBe(20);
+    expect(computeStartupScore({ ...NO_MOMENTUM, xp: 5000 })).toBe(20);
   });
 
   it("30-day streak gives +10 boost (max streak bonus)", () => {
-    expect(computeStartupScore({ streak: 30 })).toBe(10);
+    expect(computeStartupScore({ ...NO_MOMENTUM, streak: 30 })).toBe(10);
   });
 
   it("streak capped at 30 days — 60-day streak = same as 30", () => {
-    expect(computeStartupScore({ streak: 60 })).toBe(10);
+    expect(computeStartupScore({ ...NO_MOMENTUM, streak: 60 })).toBe(10);
   });
 
   it("streak scales proportionally below 30 days", () => {
     // 15 days = 50% of max → 5 pts
-    expect(computeStartupScore({ streak: 15 })).toBe(5);
+    expect(computeStartupScore({ ...NO_MOMENTUM, streak: 15 })).toBe(5);
   });
 
   it("progress field is no longer a scoring input (noisy milestone signal removed)", () => {
     // progress should have no effect — score should remain 0
-    expect(computeStartupScore({ progress: 100 } as any)).toBe(0);
+    expect(computeStartupScore({ ...NO_MOMENTUM, progress: 100 } as any)).toBe(0);
   });
 
   it("caps result at 100 with all signals combined", () => {
@@ -96,7 +106,7 @@ describe("computeStartupScore", () => {
         xp: null,
         streak: null,
       }),
-    ).toBe(0);
+    ).toBe(25); // null momentum falls back to the default 50 -> baseline 25
   });
 });
 

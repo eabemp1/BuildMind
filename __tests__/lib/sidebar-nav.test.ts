@@ -32,7 +32,8 @@ describe("NAV config", () => {
   it("every item has an icon", () => {
     NAV.forEach(item => {
       expect(item.icon).toBeDefined();
-      expect(typeof item.icon).toBe("function");
+      // lucide icons are forwardRef components (objects), not plain functions
+      expect(["function", "object"]).toContain(typeof item.icon);
     });
   });
 
@@ -78,9 +79,8 @@ describe("NAV config", () => {
     expect(unique.size).toBe(hrefs.length);
   });
 
-  it("/reflect has showDot=true (pending action indicator)", () => {
-    const reflect = NAV.find(i => i.href === "/reflect");
-    expect(reflect?.showDot).toBe(true);
+  it("/reflect is reached from Today, not the sidebar", () => {
+    expect(NAV.find(i => i.href === "/reflect")).toBeUndefined();
   });
 });
 

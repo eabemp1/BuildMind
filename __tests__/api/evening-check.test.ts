@@ -56,6 +56,7 @@ vi.mock("@supabase/supabase-js", () => ({
       },
     },
     from: mockFrom,
+    rpc: vi.fn().mockResolvedValue({ data: 50, error: null }),
   })),
 }));
 
@@ -80,23 +81,26 @@ function makeRequest(opts: { isCron?: boolean; dryRun?: boolean } = {}): import(
   });
 }
 
-function makeChainable(overrides: Record<string, unknown> = {}) {
+/**
+ * A chainable, awaitable query-builder double. Every filter method returns the
+ * builder; awaiting it (or calling a terminal like maybeSingle) yields `result`.
+ * The route now pages subscriptions, counts them first, and batches
+ * founder_context / projects lookups, so one result per table is not enough:
+ * `result` is what a bare await returns, `single` is what maybeSingle returns.
+ */
+function makeChainable(opts: { result?: Record<string, unknown>; single?: unknown; extra?: Record<string, unknown> } = {}) {
+  const result = { data: null, error: null, count: 0, ...(opts.result ?? {}) };
   const builder: Record<string, unknown> = {};
-  // All methods return the builder itself unless overridden
   const chain = () => builder;
-  builder.select = chain;
-  builder.eq = chain;
-  builder.gte = chain;
-  builder.limit = chain;
-  builder.lt = chain;
-  builder.order = chain;
-  builder.update = chain;
-  builder.delete = chain;
+  for (const m of ["select", "eq", "gte", "lte", "lt", "in", "not", "order", "limit", "range", "update", "delete", "upsert", "is"]) {
+    builder[m] = chain;
+  }
   builder.insert = vi.fn().mockResolvedValue({ error: null });
-  builder.single = vi.fn().mockResolvedValue({ data: null, error: null });
-  builder.maybeSingle = vi.fn().mockResolvedValue({ data: null, error: null });
-  // Apply any test-specific overrides
-  Object.assign(builder, overrides);
+  builder.single = vi.fn().mockResolvedValue({ data: opts.single ?? null, error: null });
+  builder.maybeSingle = vi.fn().mockResolvedValue({ data: opts.single ?? null, error: null });
+  builder.then = (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>
+    Promise.resolve(result).then(resolve, reject);
+  Object.assign(builder, opts.extra ?? {});
   return builder;
 }
 
@@ -104,52 +108,50 @@ function setupSupabaseMocks(opts: {
   subs?: Array<{ user_id: string; subscription: object }>;
   reflectedToday?: boolean;
   daysInactive?: number;
+  deleteSub?: ReturnType<typeof vi.fn>;
 }) {
   const subs = opts.subs ?? [
     { user_id: "user-1", subscription: { endpoint: "https://push.example.com/abc", keys: { p256dh: "x", auth: "y" } } },
   ];
+  const ctxRow = {
+    days_inactive: opts.daysInactive ?? 0,
+    momentum_score: 55,
+    momentum_last_week: 50,
+    tasks_accepted_this_week: 3,
+    tasks_overridden_this_week: 0,
+    override_reasons: [],
+    topics_mentioned_repeatedly: [],
+    last_pattern_shown_at: null,
+    trial_ends_at: null,
+  };
 
   mockFrom.mockImplementation((table: string) => {
     if (table === "push_subscriptions") {
-      return {
-        select: vi.fn().mockResolvedValue({ data: subs, error: null }),
-        delete: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
-      };
+      return makeChainable({
+        result: { data: subs, count: subs.length },
+        extra: {
+          delete: opts.deleteSub ?? vi.fn(() => makeChainable()),
+        },
+      });
     }
     if (table === "reflections") {
       return makeChainable({
-        maybeSingle: vi.fn().mockResolvedValue({
-          data: opts.reflectedToday ? { id: "refl-1" } : null,
-          error: null,
-        }),
+        result: { data: [] },
+        single: opts.reflectedToday ? { id: "refl-1" } : null,
       });
     }
     if (table === "founder_context") {
-      return makeChainable({
-        maybeSingle: vi.fn().mockResolvedValue({
-          data: {
-            days_inactive: opts.daysInactive ?? 0,
-            momentum_score: 55,
-            momentum_last_week: 50,
-            tasks_accepted_this_week: 3,
-            tasks_overridden_this_week: 0,
-            override_reasons: [],
-            topics_mentioned_repeatedly: [],
-            last_pattern_shown_at: null,
-          },
-          error: null,
-        }),
-        // update() must return something with .eq() on it
-        update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
-      });
+      // bare await = the batched "who is active" lookup; maybeSingle = per-user context
+      return makeChainable({ result: { data: [{ user_id: subs[0]?.user_id }] }, single: ctxRow });
+    }
+    if (table === "projects") {
+      return makeChainable({ result: { data: [{ user_id: subs[0]?.user_id }] } });
     }
     if (table === "founder_memory") {
-      return makeChainable({
-        maybeSingle: vi.fn().mockResolvedValue({ data: { avoidance_zones: [] }, error: null }),
-      });
+      return makeChainable({ single: { avoidance_zones: [] } });
     }
     if (table === "notifications" || table === "evening_checks") {
-      return { insert: mockInsert };
+      return makeChainable({ extra: { insert: mockInsert } });
     }
     return makeChainable();
   });
@@ -251,42 +253,10 @@ describe("evening-check — pattern detection integration", () => {
 
 describe("evening-check — expired subscription cleanup", () => {
   it("deletes push subscription on 410 response", async () => {
-    setupSupabaseMocks({ reflectedToday: false });
+    const mockDeleteSub = vi.fn(() => makeChainable());
+    setupSupabaseMocks({ reflectedToday: false, deleteSub: mockDeleteSub });
     const err = Object.assign(new Error("Subscription gone"), { statusCode: 410 });
     mockWebpushSend.mockRejectedValue(err);
-
-    const mockDeleteSub = vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) });
-    mockFrom.mockImplementation((table: string) => {
-      if (table === "push_subscriptions") {
-        return {
-          select: vi.fn().mockResolvedValue({
-            data: [{ user_id: "user-1", subscription: { endpoint: "x", keys: { p256dh: "a", auth: "b" } } }],
-            error: null,
-          }),
-          delete: mockDeleteSub,
-        };
-      }
-      // Table-specific mocks for the 410 test path
-      if (table === "reflections") {
-        return {
-          select: vi.fn().mockReturnThis(),
-          eq: vi.fn().mockReturnThis(),
-          gte: vi.fn().mockReturnThis(),
-          limit: vi.fn().mockReturnThis(),
-          // User has NOT reflected today — don't skip them
-          maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
-        };
-      }
-      return {
-        select: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockReturnThis(),
-        gte: vi.fn().mockReturnThis(),
-        limit: vi.fn().mockReturnThis(),
-        maybeSingle: vi.fn().mockResolvedValue({ data: { days_inactive: 0, momentum_score: 50, tasks_accepted_this_week: 2, tasks_overridden_this_week: 0, override_reasons: [], topics_mentioned_repeatedly: [], last_pattern_shown_at: null }, error: null }),
-        update: vi.fn().mockReturnThis(),
-        insert: vi.fn().mockResolvedValue({ error: null }),
-      };
-    });
 
     const { GET } = await import("../../app/api/cron/evening-check/route");
     await GET(makeRequest() as Parameters<typeof GET>[0]);

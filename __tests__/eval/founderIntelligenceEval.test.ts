@@ -55,6 +55,9 @@ const scenario: FounderIntelligenceInput = {
   ],
   tasks: [
     { id: "t1", milestone_id: "m1", title: "Interview privacy officers", status: "pending", is_completed: false, created_at: "2026-07-15T00:00:00.000Z", updated_at: "2026-07-27T00:00:00.000Z" },
+    // Slippage needs two linked observations before it is diagnosed (a stale
+    // timestamp alone is not enough), so the scenario carries a second open task.
+    { id: "t2", milestone_id: "m1", title: "Book three privacy officer calls", status: "pending", is_completed: false, created_at: "2026-07-16T00:00:00.000Z", updated_at: "2026-07-27T00:00:00.000Z" },
   ],
   reflections: [
     { today_action: "Polish onboarding UI", outcome: "completed", note: "Made the UI nicer", created_at: "2026-08-04T09:00:00.000Z" },

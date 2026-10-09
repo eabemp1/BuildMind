@@ -109,15 +109,17 @@ describe("runReflexionLoop — happy path", () => {
     expect(systemPrompt).toContain("indie hackers");
   });
 
-  it("routes all calls through the reasoning role", async () => {
+  it("uses the reasoning role for generation and critique, and the fast role only for the one-sentence rationale", async () => {
     mockHappyPath();
     await runReflexionLoop("Pick today's task", makeCtx());
 
-    for (const call of mockedCallModel.mock.calls) {
-      expect(call[1]?.role).toBe("reasoning");
-    }
-    expect(mockedCallModelJSON.mock.calls[0][1]?.role).toBe("reasoning");
+    const roles = mockedCallModel.mock.calls.map((c) => c[1]?.role);
+    expect(roles[0]).toBe("reasoning");               // generator
+    expect(roles.filter((r) => r === "fast")).toHaveLength(1); // rationale only
+    expect(roles[roles.length - 1]).toBe("fast");
+    expect(mockedCallModelJSON.mock.calls[0][1]?.role).toBe("reasoning"); // critic
   });
+
 });
 
 describe("runReflexionLoop — critic rejection", () => {

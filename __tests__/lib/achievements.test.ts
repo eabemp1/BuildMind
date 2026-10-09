@@ -36,7 +36,7 @@ const localStorageMock = {
   clear:      () => { Object.keys(store).forEach(k => delete store[k]); },
 };
 
-vi.stubGlobal("window", { localStorage: localStorageMock });
+vi.stubGlobal("window", { localStorage: localStorageMock, dispatchEvent: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn() });
 vi.stubGlobal("localStorage", localStorageMock);
 
 // FIX: checkAndUnlockAchievements() now awaits a real server round-trip

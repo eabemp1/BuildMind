@@ -66,17 +66,17 @@ describe("getWeeklyCriticPersona", () => {
     expect(persona.prompt.length).toBeGreaterThan(0);
   });
 
-  it("rotates across 4 distinct personas (weekNumbers 0–3)", () => {
-    const names = new Set([0, 1, 2, 3].map(w => getWeeklyCriticPersona(w).name));
-    expect(names.size).toBe(4);
+  it("rotates across 5 distinct personas (weekNumbers 0–4)", () => {
+    const names = new Set([0, 1, 2, 3, 4].map(w => getWeeklyCriticPersona(w).name));
+    expect(names.size).toBe(5);
   });
 
-  it("wraps around — weekNumber 4 === weekNumber 0", () => {
-    expect(getWeeklyCriticPersona(4).name).toBe(getWeeklyCriticPersona(0).name);
+  it("wraps around — weekNumber 5 === weekNumber 0", () => {
+    expect(getWeeklyCriticPersona(5).name).toBe(getWeeklyCriticPersona(0).name);
   });
 
-  it("wraps around — weekNumber 7 === weekNumber 3", () => {
-    expect(getWeeklyCriticPersona(7).name).toBe(getWeeklyCriticPersona(3).name);
+  it("wraps around — weekNumber 8 === weekNumber 3", () => {
+    expect(getWeeklyCriticPersona(8).name).toBe(getWeeklyCriticPersona(3).name);
   });
 
   it("uses current week when no weekNumber is supplied", () => {
