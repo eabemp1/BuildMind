@@ -545,7 +545,7 @@ export async function recordActionOutcome(params: {
   try {
     const supabase = createAdminClient();
 
-    const { error } = await supabase
+    const { data: updatedRows, error } = await supabase
       .from("reflexion_learning_log")
       .update({
         outcome: params.outcome,
@@ -553,9 +553,13 @@ export async function recordActionOutcome(params: {
         outcome_recorded_at: new Date().toISOString(),
       })
       .eq("id", params.logRowId)
-      .eq("user_id", params.userId); // RLS double-check
+      .eq("user_id", params.userId) // RLS double-check
+      .select("id");
 
-    if (error) return false;
+    // An update that matches no row is not an error to supabase-js. Reporting
+    // it as success meant a stale or wrong id skipped the fallback insert and
+    // the completion vanished from Progress.
+    if (error || !Array.isArray(updatedRows) || updatedRows.length === 0) return false;
 
     // Re-derive and cache patterns after outcome recorded (fire-and-forget)
     deriveAndCachePatterns(params.userId)

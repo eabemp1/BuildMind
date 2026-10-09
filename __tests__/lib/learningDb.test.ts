@@ -374,7 +374,13 @@ describe("recordActionOutcome — update shape", () => {
     await new Promise((r) => setTimeout(r, 0));
   }
 
+  const matchedRow = () => {
+    _builder.then = (resolve: (v: unknown) => unknown) =>
+      Promise.resolve({ data: [{ id: "row" }], error: null }).then(resolve);
+  };
+
   it("returns true on successful update", async () => {
+    matchedRow();
     const result = await recordActionOutcome({
       logRowId: "row-abc",
       userId: "user-abc",
@@ -413,7 +419,15 @@ describe("recordActionOutcome — update shape", () => {
     expect(result).toBe(false);
   });
 
+  it("returns false when the update matches no row", async () => {
+    _builder.then = (resolve: (v: unknown) => unknown) =>
+      Promise.resolve({ data: [], error: null }).then(resolve);
+    const result = await recordActionOutcome({ logRowId: "stale", userId: "user-abc", outcome: "completed" });
+    expect(result).toBe(false);
+  });
+
   it("writes outcome and outcome_note to the update payload", async () => {
+    matchedRow();
     const result = await recordActionOutcome({
       logRowId: "row-xyz",
       userId: "user-abc",

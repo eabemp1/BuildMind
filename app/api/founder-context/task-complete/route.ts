@@ -366,17 +366,26 @@ export async function POST(req: Request) {
   markIgnoredAfter24h(user.id).catch(() => {});
 
   // Also write to action_logs — the source crons (sunday-email, meta-critic, weekly-report) read.
+  // supabase-js resolves with { error } instead of throwing, so the old
+  // try/catch never saw a failed insert. Check it, retry with the minimal
+  // columns, and log, because Progress counts from this table too.
   try {
-    await admin.from("action_logs").insert({
+    const row = {
       user_id:   user.id,
       project_id: projectId || null,
       stage:     stage || ctx?.current_stage || null,
       action_shown: taskTitle || null,
       outcome:   outcome === "blocked" ? "partial" : outcome === "skipped" ? "overridden" : "completed",
       created_at: new Date().toISOString(),
-    });
-  } catch {
-    // Non-fatal — backfilled from reflexion_learning_log if missing
+    };
+    const { error: alErr } = await admin.from("action_logs").insert(row);
+    if (alErr) {
+      console.error("[task-complete] action_logs insert failed, retrying minimal:", alErr.message);
+      const retry = await admin.from("action_logs").insert({ user_id: row.user_id, outcome: row.outcome, created_at: row.created_at });
+      if (retry.error) console.error("[task-complete] minimal action_logs insert failed:", retry.error.message);
+    }
+  } catch (err) {
+    console.error("[task-complete] action_logs insert threw:", err);
   }
 
   // Preserve the recommendation identity across the Today -> Reflect handoff.

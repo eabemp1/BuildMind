@@ -73,7 +73,8 @@ export async function GET(req: Request) {
   if (data) {
     try {
       const weeks = await loadGhostWeeks(admin, user.id, week);
-      return NextResponse.json({ ok: true, data: { ...data, tasks_done: weeks.current.total } });
+      // Target comes from the Ghost Race too, so the goal and the race can't disagree.
+      return NextResponse.json({ ok: true, data: { ...data, tasks_done: weeks.current.total, target_tasks: ghostTarget(weeks.completed).ghost } });
     } catch { /* fall back to the stored counter */ }
   }
   return NextResponse.json({ ok: true, data });
@@ -237,4 +238,4 @@ export async function PATCH(req: Request) {
   }
 
   return NextResponse.json({ ok: false, error: "Goal changed concurrently; please retry" }, { status: 409 });
-    }
+}

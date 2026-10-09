@@ -17,7 +17,7 @@
  * for actual execution, on the same grid.
  */
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, type CSSProperties } from "react";
 import { useMeasuredWidth } from "@/lib/useMeasuredWidth";
 import { motion } from "framer-motion";
 import { Sparkles, Target, Flame, TrendingUp, TrendingDown, Ghost } from "lucide-react";
@@ -42,7 +42,7 @@ interface WeeklyPulseData {
   momentum_score: number; momentum_delta: number | null; streak: number;
   tasks_completed: number; tasks_total: number; actions_completed: number; ghost_race: GhostRace | null; completion_rate: number; active_days: number;
   day_activity: DayActivity[];
-  un_ghosted: string[]; milestones: MilestonePacing[]; archetype: string | null;
+  un_ghosted: string[]; avoidance_remaining: string[]; milestones: MilestonePacing[]; archetype: string | null;
   day_of_week: Record<string, { completed: number; total: number }>;
   confidence_by_outcome: Record<string, number>; confidence_index: number | null; top_override_reason: string | null;
   weekly_goal: { goal_text: string; target_score: number; current_score: number; target_tasks: number; tasks_done: number; status: string } | null;
@@ -202,6 +202,119 @@ function GradeBadge({ g }: { g: GradedDimension }) {
   );
 }
 
+
+const inputStyle: CSSProperties = {
+  fontFamily: "'Inter', sans-serif", fontSize: 13, color: "var(--bm-text)", background: "var(--bm-bg3)",
+  border: "1px solid var(--bm-border)", borderRadius: 8, padding: "6px 8px", minHeight: 36,
+};
+const chipStyle: CSSProperties = {
+  fontFamily: "'Inter', sans-serif", fontSize: 12, color: "var(--bm-text)", background: "var(--bm-bg3)",
+  border: "1px solid var(--bm-border)", borderRadius: 999, padding: "6px 12px", minHeight: 36, cursor: "pointer",
+};
+
+function isoDatePlus(days: number): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function MilestoneRow({ m, onChanged }: { m: MilestonePacing; onChanged: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(m.targetDate?.slice(0, 10) ?? "");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function save(date: string | null) {
+    setSaving(true); setErr(null);
+    try {
+      const res = await fetch("/api/milestones/target-date", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ milestone_id: m.id, target_date: date }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.ok) { setErr(json?.error ?? "Couldn't save the deadline."); return; }
+      setEditing(false);
+      onChanged();
+    } catch {
+      setErr("Couldn't save the deadline. Check your connection.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={{ display: "flex", alignItems: "flex-start", gap: 8, paddingBottom: 8, borderBottom: "1px solid var(--bm-border)" }}>
+      <span style={{ width: 7, height: 7, borderRadius: "50%", background: RISK_COLOR[m.risk], marginTop: 5, flexShrink: 0 }} />
+      <div style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1, minWidth: 0 }}>
+        <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: "var(--bm-text)" }}>{m.title}</span>
+        <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text3)", lineHeight: 1.4 }}>
+          {m.targetDate ? `Due ${m.targetDate.slice(0, 10)}. ` : ""}{m.reason}
+        </span>
+        {!editing ? (
+          <button type="button" onClick={() => setEditing(true)} style={{ ...chipStyle, alignSelf: "flex-start", marginTop: 2 }}>
+            {m.targetDate ? "Change deadline" : "Set deadline"}
+          </button>
+        ) : (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", marginTop: 2 }}>
+            <input type="date" aria-label={`Deadline for ${m.title}`} value={value} min={isoDatePlus(0)} onChange={(e) => setValue(e.target.value)} style={inputStyle} />
+            {[7, 14, 30].map((n) => (
+              <button key={n} type="button" style={chipStyle} onClick={() => setValue(isoDatePlus(n))}>+{n} days</button>
+            ))}
+            <button type="button" disabled={saving || !value} onClick={() => save(value)} style={{ ...chipStyle, background: "var(--bm-accent)", color: "#15130a", fontWeight: 700, opacity: saving || !value ? 0.6 : 1 }}>
+              {saving ? "Saving" : "Save deadline"}
+            </button>
+            {m.targetDate && (
+              <button type="button" disabled={saving} style={chipStyle} onClick={() => save(null)}>Remove</button>
+            )}
+            <button type="button" style={chipStyle} onClick={() => { setEditing(false); setErr(null); }}>Cancel</button>
+          </div>
+        )}
+        {err && <span role="alert" style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-red)" }}>{err}</span>}
+      </div>
+    </div>
+  );
+}
+
+function AvoidanceList({ zones, onChanged }: { zones: string[]; onChanged: () => void }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  if (zones.length === 0) return null;
+
+  async function face(zone: string) {
+    setBusy(zone); setErr(null);
+    try {
+      const res = await fetch("/api/avoidance/resolve", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ zone }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.ok) { setErr(json?.error ?? "Couldn't save. Try again."); return; }
+      onChanged();
+    } catch {
+      setErr("Couldn't save. Check your connection.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-lg)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: 8 }}>
+      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: "var(--bm-text)" }}>Still avoiding</span>
+      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text3)", lineHeight: 1.4 }}>
+        Do one real action on an area, then mark it faced. Facing areas raises your Avoidance Resistance grade.
+      </span>
+      {zones.map((z) => (
+        <div key={z} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "var(--bm-text)" }}>{sanitizeOutput(z)}</span>
+          <button type="button" disabled={busy === z} onClick={() => face(z)} style={chipStyle}>
+            {busy === z ? "Saving" : "I faced this"}
+          </button>
+        </div>
+      ))}
+      {err && <span role="alert" style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-red)" }}>{err}</span>}
+    </div>
+  );
+}
+
 function confidenceLabel(index: number): { label: string; color: string } {
   if (index >= 75) return { label: "High", color: "var(--bm-green)" };
   if (index >= 50) return { label: "Medium", color: "var(--bm-amber, #d9a441)" };
@@ -228,8 +341,9 @@ export function WeeklyPulseCard() {
   const [error, setError] = useState<string | null>(null);
   const activeProjectId = useActiveProjectId();
 
-  const load = useCallback(async () => {
-    setLoading(true); setError(null);
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    setError(null);
     try {
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
@@ -339,6 +453,11 @@ export function WeeklyPulseCard() {
             </p>
           );
         })()}
+        {data.weekly_goal && (
+          <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text3)", margin: "2px 0 8px" }}>
+            Ghost Goal: {data.weekly_goal.tasks_done} of {data.weekly_goal.target_tasks} actions. This is the same count and target as the Ghost Race below.
+          </p>
+        )}
         {!data.weekly_goal && (
           <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text3)", margin: "4px 0 8px" }}>
             Set a weekly goal on an active project to see the target (ghost) line.
@@ -401,7 +520,9 @@ export function WeeklyPulseCard() {
         const goal = data.weekly_goal;
         const atRiskMilestone = data.milestones.find((m) => m.risk === "high" || m.risk === "medium");
         const directive =
-          goal && goal.status !== "on_track" && goal.status !== "completed"
+          goal && (data.ghost_race
+            ? data.ghost_race.status === "behind" || data.ghost_race.status === "out_of_reach"
+            : goal.status !== "on_track" && goal.status !== "completed")
             ? `You're behind on "${goal.goal_text}" — ${goal.tasks_done}/${goal.target_tasks} actions done this week. Close the gap today.`
             : atRiskMilestone
               ? `"${atRiskMilestone.title}" is at risk — ${atRiskMilestone.reason}`
@@ -492,6 +613,8 @@ export function WeeklyPulseCard() {
         <DayActivityCanvas days={data.day_activity} />
       </div>
 
+      <AvoidanceList zones={data.avoidance_remaining ?? []} onChanged={() => load(true)} />
+
       {/* Grades */}
       {/* Grades — hidden entirely on a quiet week rather than showing a
           grid of N/A badges, which reads as broken rather than honest. */}
@@ -508,19 +631,11 @@ export function WeeklyPulseCard() {
         </div>
       )}
 
-      {/* Milestone pacing */}
+      {/* Milestone pacing — every milestone gets a deadline control */}
       {data.milestones.length > 0 && (
         <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-lg)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
           <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: "var(--bm-text)" }}>Milestone pacing</span>
-          {data.milestones.map((m) => (
-            <div key={m.id} style={{ display: "flex", alignItems: "flex-start", gap: 8, paddingBottom: 8, borderBottom: "1px solid var(--bm-border)" }}>
-              <span style={{ width: 7, height: 7, borderRadius: "50%", background: RISK_COLOR[m.risk], marginTop: 5, flexShrink: 0 }} />
-              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: "var(--bm-text)" }}>{m.title}</span>
-                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text3)", lineHeight: 1.4 }}>{m.reason}</span>
-              </div>
-            </div>
-          ))}
+          {data.milestones.map((m) => <MilestoneRow key={m.id} m={m} onChanged={() => load(true)} />)}
         </div>
       )}
 

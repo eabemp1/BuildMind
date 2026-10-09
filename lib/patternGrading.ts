@@ -98,7 +98,7 @@ export function gradeDeadlineRecovery(input: {
 }): GradedDimension {
   const known = input.milestoneRisks.filter((r) => r !== "unknown");
   if (known.length === 0) {
-    return { label: "Deadline Recovery", score: null, grade: "N/A", basis: "No milestones with enough data to pace yet." };
+    return { label: "Deadline Recovery", score: null, grade: "N/A", basis: input.milestoneRisks.length > 0 ? "Set a deadline on a milestone and finish a task under it to get this grade." : "Add a milestone with a deadline to get this grade." };
   }
   const highRisk = known.filter((r) => r === "high").length;
   const mediumRisk = known.filter((r) => r === "medium").length;
@@ -118,7 +118,7 @@ export function gradeAvoidanceResistance(input: {
 }): GradedDimension {
   const { unGhostedCount, currentAvoidanceZoneCount } = input;
   if (currentAvoidanceZoneCount === 0 && unGhostedCount === 0) {
-    return { label: "Avoidance Resistance", score: null, grade: "N/A", basis: "No avoidance zones tracked yet." };
+    return { label: "Avoidance Resistance", score: null, grade: "N/A", basis: "Nothing flagged as avoided yet." };
   }
   // Zones remaining after this week's un-ghosting, as a share of what was
   // being avoided — resistance credit for shrinking the list, not for
@@ -130,8 +130,8 @@ export function gradeAvoidanceResistance(input: {
     score,
     grade: bandGrade(score),
     basis: unGhostedCount > 0
-      ? `Moved on ${unGhostedCount} previously avoided item${unGhostedCount === 1 ? "" : "s"} this week.`
-      : `${currentAvoidanceZoneCount} avoidance zone${currentAvoidanceZoneCount === 1 ? "" : "s"} still untouched.`,
+      ? `Faced ${unGhostedCount} of ${baseline} avoided area${baseline === 1 ? "" : "s"} this week.`
+      : `${currentAvoidanceZoneCount} avoided area${currentAvoidanceZoneCount === 1 ? "" : "s"} still untouched. Do one action on it, then mark it faced below.`,
   };
 }
 

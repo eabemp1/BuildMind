@@ -60,6 +60,7 @@ import { actionCategoryLabel, ACTION_TYPE_WEIGHT, type ActionType } from "@/lib/
 import { isTodayFlowSession } from "@/lib/todayFlowSessions";
 import { computeGhostRace, type GhostRace } from "@/lib/ghostRace";
 import { loadGhostWeeks } from "@/lib/ghostRaceData";
+import { matchZones } from "@/lib/avoidanceMatch";
 
 export interface SparklinePoint { date: string; real: number | null; ghost: number | null; }
 
@@ -107,6 +108,8 @@ export interface WeeklyPulseResponse {
    *  mid-week. */
   day_activity: DayActivity[];
   un_ghosted: string[];
+  /** Avoidance zones still untouched. The Progress card lets the founder mark one as faced. */
+  avoidance_remaining: string[];
   milestones: MilestonePacingResult[];
   archetype: string | null;
   day_of_week: Record<string, { completed: number; total: number }>;
@@ -237,8 +240,8 @@ export async function getWeeklyPulseData(
     // prefix — Today's flow legitimately writes more than one prefix (see
     // that filter's own comment for why an allowlist here caused a second,
     // separate bug).
-    admin.from("reflexion_learning_log").select("outcome, action_shown, action_type, outcome_note, created_at, outcome_recorded_at, session_id").eq("user_id", userId).gte("created_at", weekAgoIso),
-    admin.from("tasks").select("id, status, updated_at").eq("user_id", userId).lt("created_at", weekAgoIso),
+    admin.from("reflexion_learning_log").select("outcome, action_shown, action_type, outcome_note, created_at, outcome_recorded_at, session_id").eq("user_id", userId).or(`created_at.gte.${weekAgoIso},outcome_recorded_at.gte.${weekAgoIso}`),
+    admin.from("tasks").select("id, status, is_completed, updated_at").eq("user_id", userId).lt("created_at", weekAgoIso),
     (() => {
       let q = admin.from("milestones").select("id, title, target_date, status, created_at, project_id").eq("user_id", userId).neq("status", "abandoned");
       if (projectId) q = q.eq("project_id", projectId);
@@ -406,12 +409,18 @@ export async function getWeeklyPulseData(
     };
   });
 
+  // A task is done when EITHER flag says so: the project and Today UI set
+  // is_completed only, the AI reflect route sets status too. Reading status
+  // alone made every UI-completed task look open, so Backlog Clearance sat
+  // at F.
+  const isDone = (t: { status?: string | null; is_completed?: boolean | null }) =>
+    t.is_completed === true || t.status === "completed";
   const backlogStillOpenOrClearedThisWeek = backlogTasks.filter(
-    (t) => t.status !== "completed" || (t.updated_at ?? "") >= weekAgoIso,
+    (t) => !isDone(t) || (t.updated_at ?? "") >= weekAgoIso,
   );
   const backlogTotal = backlogStillOpenOrClearedThisWeek.length;
   const backlogCleared = backlogStillOpenOrClearedThisWeek.filter(
-    (t) => t.status === "completed" && (t.updated_at ?? "") >= weekAgoIso,
+    (t) => isDone(t) && (t.updated_at ?? "") >= weekAgoIso,
   ).length;
 
   const momentumScore = scorecard?.momentum ?? 50;
@@ -425,20 +434,30 @@ export async function getWeeklyPulseData(
     : null;
 
   const avoidanceZones: string[] = Array.isArray(memory?.avoidance_zones) ? memory.avoidance_zones : [];
-  const completedTitles = weekTasks.filter((t) => t.outcome === "completed").map((t) => (t.action_shown ?? "").toLowerCase());
-  const unGhosted = avoidanceZones.filter((zone) =>
-    completedTitles.some((title) => title.includes(zone.toLowerCase()) || zone.toLowerCase().includes(title)),
-  );
+  const completedActions = (weekTasks as Array<{ outcome?: string | null; action_shown?: string | null; action_type?: string | null }>)
+    .filter((t) => t.outcome === "completed")
+    .map((t) => ({ title: t.action_shown ?? "", actionType: t.action_type ?? null }));
+  const autoFaced = matchZones(avoidanceZones, completedActions);
+  // Zones the founder marked as faced this week were already removed from
+  // avoidance_zones, so they count as faced and are not in the remaining list.
+  let resolvedThisWeek: string[] = [];
+  try {
+    const { data: resolvedRow } = await admin.from("founder_memory").select("avoidance_resolved").eq("user_id", userId).maybeSingle();
+    const list = Array.isArray(resolvedRow?.avoidance_resolved) ? (resolvedRow!.avoidance_resolved as Array<{ zone?: string; at?: string }>) : [];
+    resolvedThisWeek = list.filter((r) => r?.zone && (r.at ?? "") >= weekAgoIso).map((r) => String(r.zone));
+  } catch { /* column not migrated yet: manual resolves simply don't count */ }
+  const unGhosted = Array.from(new Set([...autoFaced, ...resolvedThisWeek]));
+  const remainingZones = avoidanceZones.filter((z) => !autoFaced.includes(z));
 
   const milestoneIds = milestoneRows.map((m) => m.id);
   const taskCountsByMilestone = new Map<string, { total: number; completed: number }>();
   if (milestoneIds.length > 0) {
-    const { data: allTasksForMilestones } = await admin.from("tasks").select("milestone_id, status").in("milestone_id", milestoneIds);
+    const { data: allTasksForMilestones } = await admin.from("tasks").select("milestone_id, status, is_completed").in("milestone_id", milestoneIds);
     for (const t of allTasksForMilestones ?? []) {
       const key = t.milestone_id as string;
       const entry = taskCountsByMilestone.get(key) ?? { total: 0, completed: 0 };
       entry.total += 1;
-      if (t.status === "completed") entry.completed += 1;
+      if (t.is_completed === true || t.status === "completed") entry.completed += 1;
       taskCountsByMilestone.set(key, entry);
     }
   }
@@ -506,7 +525,8 @@ export async function getWeeklyPulseData(
   const weeklyGoal = weeklyGoalRow
     ? {
         goal_text: weeklyGoalRow.goal_text, target_score: weeklyGoalRow.target_score,
-        current_score: weeklyGoalRow.current_score, target_tasks: weeklyGoalRow.target_tasks,
+        // Same target and same count as the Ghost Race below, always.
+        current_score: weeklyGoalRow.current_score, target_tasks: ghostRace?.ghost ?? weeklyGoalRow.target_tasks,
         tasks_done: actionsCompleted, status: weeklyGoalRow.status,
       }
     : null;
@@ -527,13 +547,13 @@ export async function getWeeklyPulseData(
   const milestonesWithPacing = milestones.filter((m) => m.risk !== "unknown").length;
   const isQuietWeek = !hasAnyGradableSignal({
     tasksTotal, backlogTotal, milestonesWithPacing,
-    avoidanceZoneCount: avoidanceZones.length, unGhostedCount: unGhosted.length,
+    avoidanceZoneCount: remainingZones.length, unGhostedCount: unGhosted.length,
   }).any;
 
   const grades = isQuietWeek ? [] : computeWeeklyGrades({
     tasksCompleted, tasksTotal, backlogTotal, backlogCleared, activeDaysThisWeek: activeDays,
     milestoneRisks: milestones.map((m) => m.risk), unGhostedCount: unGhosted.length,
-    currentAvoidanceZoneCount: avoidanceZones.length,
+    currentAvoidanceZoneCount: remainingZones.length,
   });
 
   let story: string;
@@ -606,7 +626,7 @@ Write a 2-3 sentence story-style summary of the founder's week. Brief, specific,
     is_quiet_week: isQuietWeek,
     momentum_score: momentumScore, momentum_delta: momentumDelta, streak,
     tasks_completed: tasksCompleted, tasks_total: tasksTotal, actions_completed: actionsCompleted, ghost_race: ghostRace, completion_rate: completionRate,
-    active_days: activeDays, day_activity: dayActivity, un_ghosted: unGhosted, milestones, archetype,
+    active_days: activeDays, day_activity: dayActivity, un_ghosted: unGhosted, avoidance_remaining: remainingZones, milestones, archetype,
     day_of_week: dayOfWeek, confidence_by_outcome: confidenceByOutcome, confidence_index: confidenceIndex, top_override_reason: topOverrideReason,
     weekly_goal: weeklyGoal, sparkline, grades, story, generated_at: new Date().toISOString(),
   };
