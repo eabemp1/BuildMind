@@ -640,7 +640,9 @@ HARD RULES:
 1. "task" must NOT be semantically equivalent to any task in the RECENT ACTION HISTORY above.
 2. Stay inside today's mission kind (${mission.label}); do not turn it into outreach unless the kind is outreach/interview/follow_up/publish.
 3. If a blocker or avoidance zone is present, "task" or "rationale" must name it explicitly.
-4. No placeholder brackets like [Name], [Company], [Your Product] anywhere.`;
+4. No placeholder brackets like [Name], [Company], [Your Product] anywhere.
+5. Only name product features, integrations, customers, users, prices or results that appear in FOUNDER DATA, the reflection history or the signals above. Never invent a feature the founder "built", a customer, or something users "asked for". Items under RECENT TASKS are things that were SUGGESTED, not facts: a feature that only appears there may not exist. If the task needs a fact you do not have, make "first_step" the check that confirms it.
+6. If the latest reflection says the founder could not do or find something, today's task must remove that obstacle or take a different route to the same goal. Do not hand back the step that just failed.`;
 
         let structuredA: StructuredAction;
         try {
@@ -706,6 +708,7 @@ You are a GATEKEEPER. Reject the task if ANY of the following are true:
 3. The task does not advance any of the stated active goals (if goals were provided)
 4. ${mission.requires.draft ? "The DRAFT is not paste-ready (too generic, no specific context)" : "The task is vague about what exactly gets made, sent or decided"}
 5. The task is not a ${mission.label} task (today's mission), or has no checkable "done when"
+6. The task names a product feature, customer, user request or result that does not appear in the founder data above (a feature that only appears in RECENT TASKS was merely suggested, not built)
 ${founderIntelligence ? buildCriticJudgmentRule(buildCofounderJudgment(founderIntelligence)) : ""}
 
 Do NOT reject for lacking a platform, user type or number unless the mission kind needs them; build, analyze, pricing, unblock and reset tasks legitimately have none.
@@ -836,21 +839,23 @@ ${JSON.stringify(structuredA)}`,
         // Historical tracking: previously wasHardFallback only existed in
         // the live response and today's single (overwritten-daily) cache
         // row — no way to see whether generation has been silently
-        // degrading to the fallback template repeatedly over time. Written
-        // here, matched by session_id (unique per generation, set above),
-        // fire-and-forget so it never adds latency to the response.
-        if (adminForCache) {
-          Promise.resolve(
-            adminForCache
+        // degrading to the fallback template repeatedly over time. Awaited and keyed by the row id. The previous fire-and-forget update
+        // matched on session_id and, in a serverless runtime, could be cut off
+        // when the SSE stream closed: was_hard_fallback was NULL on all 100
+        // production rows, so fallback frequency could not be measured at all.
+        if (adminForCache && tctx.recommendationId) {
+          try {
+            await adminForCache
               .from("reflexion_learning_log")
               .update({
                 was_hard_fallback: wasHardFallback,
                 was_hard_fallback_reasons: wasHardFallback ? preScreen.failed_checks : null,
               })
-              .eq("user_id", userId)
-              .eq("session_id", sessionId)
-              .eq("prediction_source", "founder_intelligence"),
-          ).catch(() => {});
+              .eq("id", tctx.recommendationId)
+              .eq("user_id", userId);
+          } catch (err) {
+            logError("today-action-stream/hardFallbackLog", err, { userId });
+          }
         }
 
         // rationale — comes directly from the structured field now. The old
@@ -994,4 +999,4 @@ ${JSON.stringify(structuredA)}`,
 
 export async function GET() {
   return NextResponse.json({ error: "Use POST" }, { status: 405 });
-    }
+      }
