@@ -1142,7 +1142,7 @@ export async function detectFounderGaps(
     // Keywords: "user", "customer", "interview", "feedback", "talked to", "called"
     const { data: recentReflections } = await sb
       .from("reflections")
-      .select("note, today_action, created_at")
+      .select("note, today_action, what_tried, what_happened, what_learned, created_at")
       .eq("user_id", userId)
       .gte("created_at", fourteenDaysAgo)
       .order("created_at", { ascending: false });
@@ -1246,8 +1246,12 @@ export async function detectFounderGaps(
 
     if (isRevenueStage) {
       const revenueKeywords = ["revenue", "pricing", "sale", "paid", "charge", "money", "mrr", "arr", "customer paid"];
+      // what_tried / what_happened / what_learned are where founders actually
+      // describe their work (note is only a joined copy and can be empty), so
+      // read all of them - not just note + today_action.
       const revenueActivity = (recentReflections ?? []).some(r => {
-        const text = `${r.note ?? ""} ${r.today_action ?? ""}`.toLowerCase();
+        const rr = r as { note?: string | null; today_action?: string | null; what_tried?: string | null; what_happened?: string | null; what_learned?: string | null };
+        const text = `${rr.note ?? ""} ${rr.today_action ?? ""} ${rr.what_tried ?? ""} ${rr.what_happened ?? ""} ${rr.what_learned ?? ""}`.toLowerCase();
         return revenueKeywords.some(kw => text.includes(kw));
       });
 
@@ -1281,7 +1285,28 @@ export async function detectFounderGaps(
           }
         } catch { /* non-fatal */ }
 
-        const totalPricingShown = revenueTasksShown + cachedPricingShownCount;
+        // The anti-repetition guard above only saw reflections + today's cache.
+        // Pricing nudges that came from earlier morning briefings were never
+        // counted, so the same "draft a pricing model" gap fired every night for
+        // 10 days. Count briefing-shown pricing tasks too.
+        let briefingPricingShown = 0;
+        try {
+          const { data: briefingRows } = await sb
+            .from("reflexion_learning_log")
+            .select("action_shown")
+            .eq("user_id", userId)
+            .like("session_id", "morning_briefing:%")
+            .gte("created_at", fourteenDaysAgo);
+          // One nightly briefing can be re-run, so count distinct task texts.
+          const distinct = new Set(
+            (briefingRows ?? [])
+              .map((r: { action_shown?: string | null }) => String(r.action_shown ?? "").toLowerCase().trim())
+              .filter((a: string) => /pricing|revenue|monetis|charge|payment/.test(a)),
+          );
+          briefingPricingShown = distinct.size;
+        } catch { /* non-fatal */ }
+
+        const totalPricingShown = revenueTasksShown + cachedPricingShownCount + briefingPricingShown;
 
         if (totalPricingShown < 2) {
           // First or second time — safe to surface the gap
@@ -1452,4 +1477,4 @@ function extractAction(text: string): string {
     /\b(do|send|call|write|post|reach out|open|find|talk|test|launch|build|contact)\b/i.test(s)
   );
   return actionSentence ?? sentences[sentences.length - 1] ?? "";
-}
+  }
