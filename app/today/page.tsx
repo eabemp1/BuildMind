@@ -941,6 +941,9 @@ function TodayContent() {
       // rejected via "Replace this task" so buildDecisionState() can
       // exclude it from candidate ranking instead of re-picking it.
       excludeAction: lastRejectedActionRef.current ?? undefined,
+      // The server stamps the cached task with THIS day key so the cache check
+      // above (local day) and the server's stamp can never disagree (lib/dayKey.ts).
+      dayKey: today,
     });
 
     // ── Streaming path (SSE) ─────────────────────────────────────────────────
@@ -2896,4 +2899,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-               }
+    }
