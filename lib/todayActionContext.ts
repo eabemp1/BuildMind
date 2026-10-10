@@ -17,6 +17,7 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasAdminEnv } from "@/app/api/ai/_utils";
+import { sanitizeAvoidanceZones } from "@/lib/avoidanceSanitize";
 import { buildArchetypeSystemContext } from "@/lib/founderArchetype";
 import { inferStage } from "@/lib/stages";
 import { loadIntegrationContext } from "@/lib/integrations/context";
@@ -410,7 +411,7 @@ export async function loadTodayActionContext(params: {
       ctx.cognitionMomentumScore = cognitionState.signal_confidence > 0.3
         ? (cognitionInput.context?.momentum_score ?? 50)
         : 50;
-      ctx.cognitionAvoidanceSignals = cognitionInput.memory?.avoidance_zones ?? [];
+      ctx.cognitionAvoidanceSignals = sanitizeAvoidanceZones(cognitionInput.memory?.avoidance_zones);
       // The Today page's energy check-in writes "low" | "normal" | "high",
       // but ReflexionContext expects "fresh" | "drained" | "autopilot" — no
       // other writer of this column exists, so the raw value never matched
@@ -501,4 +502,4 @@ export async function loadTodayActionContext(params: {
   }
 
   return ctx;
-}
+                                                         }
