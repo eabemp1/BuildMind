@@ -36,6 +36,7 @@ function makeBuilder() {
   builder.order   = (..._a: unknown[]) => { mockOrder();   return builder; };
   builder.limit   = (..._a: unknown[]) => { mockLimit();   return builder; };
   builder.lt      = (..._a: unknown[]) => { mockLt(..._a);      return builder; };
+  builder.or      = (..._a: unknown[]) => builder; // markIgnoredAfter24h excludes archetype rows via .or()
   builder.update  = (v: unknown) => { mockUpdate(v); return builder; };
   builder.insert  = (v: unknown) => { mockInsert(v); return builder; };
   builder.single  = () => mockSingle();
