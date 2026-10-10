@@ -1473,6 +1473,9 @@ function TodayContent() {
         note: "",
         confidence: 3,
         recommendation_id: actionData?.intelligence?.recommendation_id ?? null,
+        // Day-stamped so /reflect can tell THIS check-in's task apart from a
+        // stale snapshot left over from an earlier day (see app/reflect/page.tsx).
+        date: todayDate,
       };
       storage.setJSON("bm_today_action", todayActionState);
       if (userId) {
@@ -2532,6 +2535,7 @@ function TodayContent() {
                   note: "",
                   confidence: 3,
                   recommendation_id: actionData?.intelligence?.recommendation_id ?? null,
+                  date: localDayKey(),
                 });
                 void handleCheckIn(chip.id).catch(() => {
                   setSubmitting(false);
@@ -2892,4 +2896,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-    }
+               }
