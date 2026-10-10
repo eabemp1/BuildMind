@@ -19,6 +19,7 @@
  * internal cron call with CRON_SECRET).
  */
 
+import { sanitizeAvoidanceZones } from "@/lib/avoidanceSanitize";
 import { AIUsageUnavailableError } from "@/lib/server/aiUsageStore";
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/data/projects";
@@ -134,7 +135,7 @@ Base these on actual patterns in the data. If no clear pattern exists, return em
   await supabase.from("founder_memory").upsert(
     {
       user_id:          userId,
-      avoidance_zones:  synthesis.avoidance_zones  ?? memory?.avoidance_zones  ?? [],
+      avoidance_zones:  sanitizeAvoidanceZones(synthesis.avoidance_zones ?? memory?.avoidance_zones ?? []),
       strengths:        synthesis.strengths         ?? memory?.strengths         ?? [],
       personality_tags: synthesis.personality_tags  ?? memory?.personality_tags  ?? [],
       last_insight:     synthesis.last_insight      ?? null,
