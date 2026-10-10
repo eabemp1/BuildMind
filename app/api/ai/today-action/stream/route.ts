@@ -16,6 +16,7 @@ import { NextResponse } from "next/server";
 import { enforceAndTrackAIUsage, hasAdminEnv } from "@/app/api/ai/_utils";
 import { logError } from "@/lib/server/logger";
 import { truncateWords } from "@/lib/textTruncate";
+import { resolveDayKey } from "@/lib/dayKey";
 
 export const runtime     = "nodejs";
 export const dynamic     = "force-dynamic";
@@ -964,7 +965,7 @@ ${JSON.stringify(structuredA)}`,
             }
 
             upsertTodayActionCache(adminForCache, userId, {
-              date: new Date().toISOString().slice(0, 10), // UTC — matches task-complete today
+              date: resolveDayKey(body?.dayKey), // client local day (validated) - see lib/dayKey.ts
               projectId,
               stage,
               data: { ...finalData, reflexion_status: "ok" },
@@ -999,4 +1000,4 @@ ${JSON.stringify(structuredA)}`,
 
 export async function GET() {
   return NextResponse.json({ error: "Use POST" }, { status: 405 });
-      }
+  }
