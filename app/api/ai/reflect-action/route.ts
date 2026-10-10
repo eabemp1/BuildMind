@@ -1,3 +1,4 @@
+import { sanitizeAvoidanceZones, sanitizeTopics } from "@/lib/avoidanceSanitize";
 import { NextResponse } from "next/server";
 import { AIUsageUnavailableError } from "@/lib/server/aiUsageStore";
 import { groqJSON, hasAdminEnv, enforceAndTrackAIUsage } from "@/app/api/ai/_utils";
@@ -182,14 +183,19 @@ If there are no clear patterns yet, return empty arrays. Do not guess.`,
 
   if (!patterns.avoidance_zones && !patterns.topics_mentioned_repeatedly) return;
 
+  // The model sometimes echoes a slice of the reflection note instead of a
+  // category (see lib/avoidanceSanitize.ts). Never persist those.
+  const cleanAvoidance = sanitizeAvoidanceZones(patterns.avoidance_zones, 3);
+  const cleanTopics = sanitizeTopics(patterns.topics_mentioned_repeatedly, 3);
+
   // Write patterns back to founder_context
   await supabase
     .from("founder_context")
     .upsert(
       {
         user_id: userId,
-        ...(patterns.avoidance_zones?.length ? { avoidance_zones: patterns.avoidance_zones } : {}),
-        ...(patterns.topics_mentioned_repeatedly?.length ? { topics_mentioned_repeatedly: patterns.topics_mentioned_repeatedly } : {}),
+        ...(cleanAvoidance.length ? { avoidance_zones: cleanAvoidance } : {}),
+        ...(cleanTopics.length ? { topics_mentioned_repeatedly: cleanTopics } : {}),
       },
       { onConflict: "user_id" }
     );
@@ -229,7 +235,11 @@ export async function POST(request: Request) {
       );
     }
     const body: ReflectActionInput = parseResult.data;
-    const { outcome, note, what_tried, what_happened, what_learned, blocker, confidence, stage, todayAction, streak, userId, projectId, taskId, recommendationId } = body;
+    const { outcome, note, what_tried, what_happened, what_learned, blocker, confidence, stage, streak, userId, projectId, taskId, recommendationId } = body;
+    // `let`: the client can send a stale or empty task (see the day-stamp fix in
+    // app/reflect/page.tsx), so below we fall back to the task Today actually
+    // showed this founder instead of saving the reflection against nothing.
+    let todayAction = body.todayAction;
 
     // Use the server-verified userId from auth, fall back to body for backwards compat
     const verifiedUserId = routeUser.userId ?? userId;
@@ -265,6 +275,24 @@ Project: ${project.name ?? project.title}
 Stage: ${project.startup_stage ?? stage}
 Problem being solved: ${project.problem ?? "Not specified"}
 Target users: ${project.target_users ?? "Not specified"}`;
+        }
+
+        // Empty task from the client (no same-day check-in snapshot): attach the
+        // reflection to the latest task Today really showed in the last 36h -
+        // the AI "today_action:" row, not an archetype template or a briefing.
+        if (!todayAction.trim()) {
+          try {
+            const { data: shownRows } = await supabase
+              .from("reflexion_learning_log")
+              .select("action_shown, session_id, prediction_source, created_at")
+              .eq("user_id", verifiedUserId)
+              .gte("created_at", new Date(Date.now() - 36 * 60 * 60 * 1000).toISOString())
+              .order("created_at", { ascending: false })
+              .limit(20);
+            const shown = (shownRows ?? []).find((r: { session_id?: string | null; prediction_source?: string | null }) =>
+              typeof r.session_id === "string" && r.session_id.startsWith("today_action:") && r.prediction_source !== "founder_intelligence");
+            if (shown?.action_shown) todayAction = String(shown.action_shown).slice(0, 2000);
+          } catch { /* best-effort - an empty task is no worse than before */ }
         }
 
         // Classify blocker into enum category before saving
@@ -388,7 +416,7 @@ Target users: ${project.target_users ?? "Not specified"}`;
             {
               user_id: verifiedUserId,
               key: "today_action",
-              value: { action: todayAction, outcome, note, confidence },
+              value: { action: todayAction, outcome, note, confidence, date: todayDate },
               updated_at: new Date().toISOString(),
             },
             {
