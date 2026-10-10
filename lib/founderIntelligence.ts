@@ -1,6 +1,7 @@
 import { buildExecutionSignature, type ExecutionSignature, type TaskRecord } from "@/lib/outcomeCorrelation";
 import { buildTemporalProfile, type SessionEvent, type TemporalProfile } from "@/lib/temporalPatterns";
-import { isFounderRecommendation, isRealTaskTitle, distinctByAction } from "@/lib/recommendationRows";
+import { sanitizeAvoidanceZones } from "@/lib/avoidanceSanitize";
+import { isTodayRecommendation, isShownTaskRow, isRealTaskTitle, distinctByAction } from "@/lib/recommendationRows";
 import { isExternalWork, showsUserEvidence, isRevenueWork, focusAreaOf } from "@/lib/taxonomy/workSignals";
 import { splitMilestones, tasksInPlay, milestonePhase } from "@/lib/milestoneScope";
 import { resolveStrengthsAndAvoidance } from "@/lib/founderPatterns";
@@ -389,8 +390,8 @@ export function deriveTemporalCoherence(input: FounderIntelligenceInput): Tempor
     week_changes.push(`Completed external-evidence actions moved from ${lastWeekExternal} last week to ${thisWeekExternal} this week.`);
   }
   if (thisWeekLogs.length || lastWeekLogs.length) {
-    const rejectedNow = distinctByAction(thisWeekLogs.filter((r) => r.outcome === "overridden" || r.outcome === "ignored")).length;
-    const rejectedBefore = distinctByAction(lastWeekLogs.filter((r) => r.outcome === "overridden" || r.outcome === "ignored")).length;
+    const rejectedNow = distinctByAction(thisWeekLogs.filter((r) => isShownTaskRow(r) && (r.outcome === "overridden" || r.outcome === "ignored"))).length;
+    const rejectedBefore = distinctByAction(lastWeekLogs.filter((r) => isShownTaskRow(r) && (r.outcome === "overridden" || r.outcome === "ignored"))).length;
     week_changes.push(`Recommendation rejection moved from ${rejectedBefore} last week to ${rejectedNow} this week.`);
   }
 
@@ -438,8 +439,8 @@ export function deriveIntelligenceSignals(params: {
   const activeMilestone = scoped.inPlay[0] ?? null;
 
   const avoidance = unique([
-    ...((founderContext.avoidance_zones ?? []) as string[]),
-    ...((input.founderMemory?.avoidance_zones ?? []) as string[]),
+    ...sanitizeAvoidanceZones(founderContext.avoidance_zones),
+    ...sanitizeAvoidanceZones(input.founderMemory?.avoidance_zones),
     ...executionSignature.avoidanceZones.map((z) => String(z.category)),
     ...learnedPatterns.avoided_action_types,
   ], 6);
@@ -582,7 +583,10 @@ export function deriveIntelligenceSignals(params: {
     }));
   }
 
-  const rejected = distinctByAction(learningLogs.filter((r) => r.outcome === "overridden" || r.outcome === "ignored"));
+  // Only AI tasks the founder was shown on Today. Archetype template rows
+  // (prediction_source = founder_intelligence) are resolved by reflections, not
+  // by the founder rejecting them, so they must not double-count as rejections.
+  const rejected = distinctByAction(learningLogs.filter((r) => isShownTaskRow(r) && (r.outcome === "overridden" || r.outcome === "ignored")));
   if (learnedPatterns.patterns_reliable && rejected.length >= 3) {
     signals.push(signal({
       now,
@@ -670,7 +674,7 @@ export function deriveIntelligenceSignals(params: {
 export function buildFounderIntelligenceState(rawInput: FounderIntelligenceInput): FounderIntelligenceState {
   // AI Coach replies and prompt fragments are not recommendations; drop them before
   // anything learns from them (see lib/recommendationRows.ts).
-  const input: FounderIntelligenceInput = { ...rawInput, learningLogs: (rawInput.learningLogs ?? []).filter(isFounderRecommendation) };
+  const input: FounderIntelligenceInput = { ...rawInput, learningLogs: (rawInput.learningLogs ?? []).filter(isTodayRecommendation) };
   const now = input.now ?? new Date();
   const founderContext = input.founderContext ?? {};
   const founderMemory = input.founderMemory ?? {};
@@ -757,7 +761,7 @@ export function buildFounderIntelligenceState(rawInput: FounderIntelligenceInput
       completed_tasks_7d: completedTaskRows7d.length,
       task_velocity_7d: taskTimestampCoverage ? completedTaskRows7d.length : null,
       milestone_velocity_30d: milestoneTimestampCoverage ? milestones.filter((milestone) => milestone.status === "completed" && daysBetween(now, milestone.updated_at ?? milestone.created_at) <= 30).length : null,
-      repeated_postponements: distinctByAction(learningLogs.filter((row) => row.outcome === "overridden" || row.outcome === "ignored")).length,
+      repeated_postponements: distinctByAction(learningLogs.filter((row) => isShownTaskRow(row) && (row.outcome === "overridden" || row.outcome === "ignored"))).length,
       stall_days: activeMilestoneTimestamp ? daysBetween(now, activeMilestoneTimestamp) : null,
       inactivity_days: daysSinceActive(founderContext.last_checkin_date as string | null | undefined, typeof founderContext.days_inactive === "number" ? founderContext.days_inactive : null),
       focus_distribution: Array.from(focusCounts, ([category, count]) => ({ category, count })),
@@ -794,7 +798,7 @@ export function buildFounderIntelligenceState(rawInput: FounderIntelligenceInput
 
   const resolvedPatterns = resolveStrengthsAndAvoidance({
     strengths: [...(founderMemory.strengths ?? []), ...executionSignature.strengths.map((s) => String(s.category)), ...learnedPatterns.preferred_action_types],
-    avoidance: [...(founderContext.avoidance_zones ?? []), ...(founderMemory.avoidance_zones ?? []), ...executionSignature.avoidanceZones.map((s) => String(s.category)), ...learnedPatterns.avoided_action_types],
+    avoidance: [...sanitizeAvoidanceZones(founderContext.avoidance_zones), ...sanitizeAvoidanceZones(founderMemory.avoidance_zones), ...executionSignature.avoidanceZones.map((s) => String(s.category)), ...learnedPatterns.avoided_action_types],
     records: reflections.map((r) => ({ title: String(r.today_action ?? r.note ?? ""), completed: r.outcome === "completed" || r.outcome === "done" })),
     stats: [...executionSignature.avoidanceZones, ...executionSignature.strengths].map((c) => ({ label: String(c.category), completed: Math.round(c.completionRate * c.totalTasks), total: c.totalTasks })),
   });
@@ -1404,4 +1408,4 @@ export async function loadFounderIntelligence(
     logError("founderIntelligence/loadFounderIntelligence", err, { userId, projectId });
     return buildFounderIntelligenceState({ ...preloaded, now });
   }
-          }
+                                                                                          }
