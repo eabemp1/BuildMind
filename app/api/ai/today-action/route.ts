@@ -31,6 +31,7 @@ export const dynamic     = "force-dynamic";
 export const maxDuration = 30; // reflexion loop (Generator + Critic + Refiner) ~15–20 s
 import { inferStage } from "@/lib/stages";
 import { recordActionShown } from "@/lib/learning";
+import { resolveDayKey } from "@/lib/dayKey";
 import { truncateWords } from "@/lib/textTruncate";
 
 type TodayAction = {
@@ -177,6 +178,7 @@ export async function POST(request: Request) {
       completionRate:    z.number().min(0).max(100).optional(),
       acknowledgeDebt:   z.boolean().optional(),
       excludeAction:     z.string().max(500).optional(),
+      dayKey:            z.string().max(10).optional(),
     });
     const parsedBody = bodySchema.safeParse(rawBody);
     if (!parsedBody.success) {
@@ -1060,7 +1062,7 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
 
       if (supabase) {
         upsertTodayActionCache(supabase, userId, {
-          date: new Date().toISOString().slice(0, 10),
+          date: resolveDayKey(body.dayKey),
           projectId,
           stage,
           data: { ...finalResult, stage, isAI: true, reflexion_status: reflexionStatus, intelligence: tctx.intelligenceSummary },
