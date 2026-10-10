@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { distinctByAction, isShownTaskRow } from "@/lib/recommendationRows";
 
 export interface TodayPersonalisationContext {
   /** Last 7 actions shown (from reflexion_learning_log), formatted for prompt injection */
@@ -40,11 +41,16 @@ export async function buildTodayPersonalisationContext(
     const [actionsResult, reflectionsResult, milestonesResult] = await Promise.allSettled([
       supabase
         .from("reflexion_learning_log")
-        .select("action_shown, stage, created_at, outcome")
+        .select("action_shown, stage, created_at, outcome, session_id, critic_persona, prediction_source")
         .eq("user_id", userId)
         .or(`project_id.eq.${projectId},project_id.is.null`)
         .order("created_at", { ascending: false })
-        .limit(7),
+        // Over-fetch: the table is shared with briefings / Break My Startup /
+        // weekly reports / archetype-template rows, which are filtered out
+        // below. Taking the newest 7 raw rows meant the "recent tasks" window
+        // (and the mission planner's fatigue + outcome logic built on it) was
+        // mostly not Today tasks at all.
+        .limit(60),
 
       supabase
         .from("reflections")
@@ -63,8 +69,11 @@ export async function buildTodayPersonalisationContext(
         .limit(3),
     ]);
 
-    const actions =
+    const rawActions =
       actionsResult.status === "fulfilled" ? (actionsResult.value.data ?? []) : [];
+    // Only tasks the founder was actually shown on Today, one entry per distinct
+    // task (a task regenerated several times is still one task), newest first.
+    const actions = distinctByAction(rawActions.filter((r) => isShownTaskRow(r))).slice(0, 7);
     const recentActionsBlock =
       actions.length === 0
         ? ""
