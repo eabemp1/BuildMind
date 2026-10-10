@@ -584,6 +584,13 @@ export async function markIgnoredAfter24h(userId: string): Promise<void> {
     const supabase = createAdminClient();
     const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
+    // Archetype prediction rows (prediction_source = founder_intelligence) are
+    // deliberately excluded: they are resolved by a reflection with evidence
+    // (compareFounderIntelligenceOutcome), never by the founder "ignoring" them.
+    // Blanket-marking them "ignored" turned every unresolved prediction into a
+    // FAILURE for the Thompson-sampling archetype stats, which then ranked
+    // archetypes down ("0 of 8 resolved") for reasons unrelated to the founder.
+    // `.or(is.null, neq)` rather than `.neq` because SQL `<>` drops NULL rows.
     await supabase
       .from("reflexion_learning_log")
       .update({
@@ -592,6 +599,7 @@ export async function markIgnoredAfter24h(userId: string): Promise<void> {
       })
       .eq("user_id", userId)
       .eq("outcome", "pending")
+      .or("prediction_source.is.null,prediction_source.neq.founder_intelligence")
       .lt("created_at", cutoff);
   } catch (err) { logError("learning/markIgnoredAfter24h", err); /* non-fatal */ }
-}
+        }
