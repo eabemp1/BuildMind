@@ -61,6 +61,14 @@ function buildFallbackWitness(o: Outcome, whatTried: string): string {
   return "Today wasn't a shipped feature, but you're leaving it with something you didn't have this morning.";
 }
 
+// Same day key the Today page stamps onto its check-in snapshot (local date).
+function reflectDayKey(date = new Date()): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 export default function ReflectPage() {
   const router = useRouter();
   const [outcome, setOutcome] = useState<Outcome | null>(null);
@@ -104,7 +112,9 @@ export default function ReflectPage() {
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [testimonialSource, setTestimonialSource] = useState<TestimonialSource | null>(null);
   const [historySynthesis, setHistorySynthesis] = useState<string | null>(null);
-  const canSubmit = outcome !== null && whatTried.trim().length > 0;
+  // A "blocked" reflection must say what blocked it: the blocker is what lets the
+  // next Today task remove it, and it was empty in every real blocked reflection.
+  const canSubmit = outcome !== null && whatTried.trim().length > 0 && (outcome !== "blocked" || blocker.trim().length > 0);
   const [showCelebration, setShowCelebration] = useState(false);
   const [celebrationMomentum, setCelebrationMomentum] = useState<{ before: number; after: number } | undefined>(undefined);
   const [confidenceAdjustment, setConfidenceAdjustment] = useState<{ before: number; after: number; trend: "up" | "down" | "flat" | "unknown" } | undefined>(undefined);
@@ -124,12 +134,22 @@ export default function ReflectPage() {
     try {
       const saved = storage.getJSON("bm_reflect_history", []);
       setHistory(saved);
-      const action = storage.getJSON<{ action?: string }>("bm_today_action", {});
-      setTodayAction(action?.action ?? "");
+      // Only trust the local snapshot if it was written TODAY by this check-in.
+      // An undated/older snapshot is the previous reflection's task: using it
+      // attached every new reflection to the same stale task text.
+      const action = storage.getJSON<{ action?: string; date?: string }>("bm_today_action", {});
+      setTodayAction(action?.date === reflectDayKey() ? (action?.action ?? "") : "");
       setStreak(0); // Server is source of truth — will be set correctly in the async fetch below
     } catch {}
-    fetchBehaviorState<{ today_action: { action?: string }; reflect_done_date: string }>(["today_action", "reflect_done_date"]).then(values => {
-      if (values.today_action?.action) {
+    fetchBehaviorState<{ today_action: { action?: string; date?: string }; reflect_done_date: string }>(["today_action", "reflect_done_date"]).then(values => {
+      // The Today check-in writes the local snapshot synchronously but the
+      // server copy in the background, so on arrival the server copy can still
+      // be the PREVIOUS day's task. A same-day local snapshot always wins; the
+      // server copy is only used when it is itself dated today.
+      let localSnap: { action?: string; date?: string } = {};
+      try { localSnap = storage.getJSON<{ action?: string; date?: string }>("bm_today_action", {}) ?? {}; } catch {}
+      const localIsToday = localSnap.date === reflectDayKey() && Boolean(localSnap.action);
+      if (!localIsToday && values.today_action?.action && values.today_action.date === reflectDayKey()) {
         storage.setJSON("bm_today_action", values.today_action);
         setTodayAction(values.today_action.action);
       }
@@ -443,12 +463,12 @@ export default function ReflectPage() {
       <input id="reflect-file-input" type="file" accept=".md,.csv,.txt" style={{ display: "none" }}
         onChange={async (e) => { const file = e.target.files?.[0]; if (!file) return; setUploadedFile(file); await handleFileExtract(file); }} />
 
-      {(["what_tried", "what_happened", "what_learned", ...(outcome === "blocked" ? ["blocker"] : [])] as const).map((field) => {
+      {(["what_tried", "what_happened", "what_learned", ...(outcome === "blocked" || outcome === "partial" ? ["blocker"] : [])] as const).map((field) => {
         const cfg = {
           what_tried:    { label: "What did you actually try?",     required: true,  placeholder: "Specific action: posted on Reddit r/indiehackers, cold-emailed 5 founders…", value: whatTried,     set: setWhatTried },
           what_happened: { label: "What concretely happened?",      required: false, placeholder: "Numbers if possible: 3 replies, 0 signups, 1 interested DM, post got 47 upvotes…", value: whatHappened,  set: setWhatHappened },
           what_learned:  { label: "What did you learn?",            required: false, placeholder: "Insight you can act on tomorrow: founders want X not Y, the problem is actually Z…", value: whatLearned,   set: setWhatLearned },
-          blocker:       { label: "What exactly is blocking you?",  required: false, placeholder: "Specific blocker — not 'motivation', but: can't find users, auth keeps failing…", value: blocker,       set: setBlocker },
+          blocker:       { label: outcome === "blocked" ? "What exactly is blocking you?" : "What got in the way of finishing?",  required: outcome === "blocked", placeholder: "Specific blocker — not 'motivation', but: can't find users, auth keeps failing…", value: blocker,       set: setBlocker },
         }[field];
         if (!cfg) return null;
         return <ReflectionField key={field} label={cfg.label} required={cfg.required} placeholder={cfg.placeholder} value={cfg.value} onChange={cfg.set} />;
@@ -462,4 +482,4 @@ export default function ReflectPage() {
       </motion.button>
     </div>
   );
-                                }
+    }
