@@ -20,7 +20,7 @@ export interface CronFounderContext {
   stage?: string;                       // Current startup stage
   daysInactive?: number;                // Days since last check-in
   tasksCompleted?: number;              // Tasks done this week
-  momentumStart?: number;               // Momentum score at start of week
+  momentumStart?: number | null;        // Momentum at start of week; null/undefined = no baseline yet
   momentumEnd?: number;                 // Momentum score now
   streak?: number;                      // Current streak days
   avoidanceZone?: string;               // Primary avoidance pattern
@@ -175,19 +175,26 @@ export async function generateSundayEmailNarrative(ctx: CronFounderContext): Pro
 }> {
   const {
     name, startupName, stage,
-    tasksCompleted = 0, momentumStart = 50, momentumEnd = 50,
+    tasksCompleted = 0, momentumEnd = 50,
     streak = 0, avoidanceZone, lastInsight,
   } = ctx;
 
   const firstName   = name?.split(" ")[0] ?? "Founder";
   const startup     = startupName ?? "your startup";
-  const momentumDir = momentumEnd >= momentumStart ? "up" : "down";
-  const momentumDelta = Math.abs(momentumEnd - momentumStart);
+  const momentumStart = typeof ctx.momentumStart === "number" ? ctx.momentumStart : null;
+  const momentumDir = momentumStart === null ? "flat" : momentumEnd > momentumStart ? "up" : momentumEnd < momentumStart ? "down" : "flat";
+  const momentumDelta = momentumStart === null ? 0 : Math.abs(momentumEnd - momentumStart);
+  const momentumLine = momentumStart === null
+    ? `Momentum: ${momentumEnd} (no last-week baseline yet — do not claim it moved)`
+    : `Momentum: ${momentumStart} → ${momentumEnd} (${momentumDir} ${momentumDelta} pts)`;
+  const momentumSentence = momentumStart === null
+    ? `Momentum is at ${momentumEnd}.`
+    : momentumDelta === 0 ? `Momentum held at ${momentumEnd}.` : `Momentum moved ${momentumDir} ${momentumDelta} points.`;
 
   const fallback = {
     diagnosis: tasksCompleted === 0
       ? `Nothing logged this week on ${startup}. That's the data.`
-      : `${firstName} completed ${tasksCompleted} task${tasksCompleted !== 1 ? "s" : ""} this week. Momentum moved ${momentumDir} ${momentumDelta} points.`,
+      : `${firstName} completed ${tasksCompleted} task${tasksCompleted !== 1 ? "s" : ""} this week. ${momentumSentence}`,
     nextWeekDirective: avoidanceZone
       ? `Next week: address ${avoidanceZone} directly. It keeps showing up.`
       : lastInsight ?? `Next week: complete the next task before planning the one after.`,
@@ -199,7 +206,7 @@ export async function generateSundayEmailNarrative(ctx: CronFounderContext): Pro
       `Startup: ${startup}`,
       stage              && `Stage: ${stage}`,
       `Tasks completed this week: ${tasksCompleted}`,
-      `Momentum: ${momentumStart} → ${momentumEnd} (${momentumDir} ${momentumDelta} pts)`,
+      momentumLine,
       streak > 0         && `Current streak: ${streak} days`,
       avoidanceZone      && `Avoidance pattern: ${avoidanceZone}`,
       lastInsight        && `Last AI insight about them: "${lastInsight}"`,
