@@ -786,7 +786,7 @@ function SettingsContent() {
                   <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
                     {[
                       { key: "streakReminder", label: "Streak Reminder", desc: "Daily reminder to complete your action" },
-                      { key: "weeklyReport", label: "Weekly Report", desc: "AI summary of your week every Sunday" },
+                      { key: "weeklyReport", label: "Weekly Report", desc: "Report-ready alert on Fridays and your Sunday recap email" },
                       { key: "coachTips", label: "AI Coach Tips", desc: "Occasional startup insights from your coach" },
                     ].map(({ key, label, desc }) => (
                       <div key={key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, padding: isMobile ? "18px 0" : "16px 0", borderBottom: "1px solid var(--bm-border)" }}>
@@ -941,4 +941,4 @@ export default function SettingsPage() {
       <SettingsContent />
     </Suspense>
   );
-  }
+    }
