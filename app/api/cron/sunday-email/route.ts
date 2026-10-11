@@ -22,7 +22,9 @@
 
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { setWeeklyMomentumBaseline } from "@/lib/scorecard";
+import { snapshotAllMomentumBaselines } from "@/lib/scorecard";
+import { filterByNotificationPref } from "@/lib/server/notificationPrefs";
+import { sanitizeAvoidanceZones } from "@/lib/avoidanceSanitize";
 import { hasAdminEnv } from "@/app/api/ai/_utils";
 import { sendEmail } from "@/lib/email";
 import { logError, logInfo } from "@/lib/server/logger";
@@ -47,7 +49,7 @@ interface FounderWeekData {
   name:            string;
   startupName:     string;
   tasksCompleted:  number;
-  momentumStart:   number;
+  momentumStart:   number | null;   // null = no last-week baseline yet
   momentumEnd:     number;
   streak:          number;
   avoidancePattern?: string;
@@ -103,7 +105,9 @@ export async function GET(request: Request) {
     .gt("trial_ends_at", nowIso);
 
   if (!subscriptionCount && !trialCount) {
-    return NextResponse.json({ skipped: true, reason: "no records", processed: 0, durationMs: Date.now() - start });
+    // Nobody to email, but the weekly momentum baseline is for every founder.
+    const snapshotted = await snapshotAllMomentumBaselines().catch(() => 0);
+    return NextResponse.json({ skipped: true, reason: "no records", baselines: snapshotted, processed: 0, durationMs: Date.now() - start });
   }
 
   // ── 1. Get all builder + trial users (paginated) ───────────────────────────
@@ -125,14 +129,18 @@ export async function GET(request: Request) {
   const builderUsers = allUsers.filter(u =>
     u.user_metadata?.plan === "builder" || trialIds.has(u.id)
   );
-  const builderIds = builderUsers.map(u => u.id);
+  // Honour the "Weekly Report" switch in Settings (it used to gate only the Friday push).
+  const builderIds = await filterByNotificationPref(supabase, builderUsers.map(u => u.id), "weeklyReport");
+  const optedIn = new Set(builderIds);
+  const recipients = builderUsers.filter(u => optedIn.has(u.id));
 
   if (builderIds.length === 0) {
-    return NextResponse.json({ success: true, sent: 0, reason: "no builder users" });
+    const snapshotted = await snapshotAllMomentumBaselines().catch(() => 0);
+    return NextResponse.json({ success: true, sent: 0, reason: "no builder users", baselines: snapshotted });
   }
 
   // ── 2. Batch-fetch all data in parallel ────────────────────────────────────
-  const [profilesRes, founderCtxRes, founderMemRes, actionLogsRes, reflectionsRes] =
+  const [profilesRes, founderCtxRes, founderMemRes, actionLogsRes] =
     await Promise.allSettled([
       supabase
         .from("profiles")
@@ -140,7 +148,7 @@ export async function GET(request: Request) {
         .in("id", builderIds),
       supabase
         .from("founder_context")
-        .select("user_id, momentum_score, streak, last_checkin_date, meta_critic_signal")
+        .select("user_id, momentum_score, momentum_last_week, streak, last_checkin_date, meta_critic_signal")
         .in("user_id", builderIds),
       supabase
         .from("founder_memory")
@@ -151,33 +159,25 @@ export async function GET(request: Request) {
         .select("user_id, outcome, created_at")
         .in("user_id", builderIds)
         .gte("created_at", sevenDaysAgo),
-      supabase
-        .from("reflections")
-        .select("user_id, momentum_score, created_at")
-        .in("user_id", builderIds)
-        .gte("created_at", sevenDaysAgo)
-        .order("created_at", { ascending: true }),
     ]);
 
   const profiles    = profilesRes.status    === "fulfilled" ? (profilesRes.value.data ?? [])    : [];
   const founderCtxs = founderCtxRes.status  === "fulfilled" ? (founderCtxRes.value.data ?? [])  : [];
   const founderMems = founderMemRes.status  === "fulfilled" ? (founderMemRes.value.data ?? [])  : [];
   const actionLogs  = actionLogsRes.status  === "fulfilled" ? (actionLogsRes.value.data ?? [])  : [];
-  const reflections = reflectionsRes.status === "fulfilled" ? (reflectionsRes.value.data ?? []) : [];
 
   // ── 3. Fetch their projects (startup name) ─────────────────────────────────
   const { data: projects } = await supabase
     .from("projects")
     .select("user_id, name, title")
     .in("user_id", builderIds)
-    .order("created_at", { ascending: true });
+    .order("updated_at", { ascending: false }); // newest first = the project the founder is actually working on (matches re-engage and Today)
 
   // Index lookups
   type ProfileRow  = { id: string; name?: string; username?: string };
-  type CtxRow      = { user_id: string; momentum_score?: number; streak?: number; last_checkin_date?: string | null; meta_critic_signal?: string };
+  type CtxRow      = { user_id: string; momentum_score?: number; momentum_last_week?: number | null; streak?: number; last_checkin_date?: string | null; meta_critic_signal?: string };
   type MemRow      = { user_id: string; avoidance_zones?: string[]; last_insight?: string };
   type LogRow      = { user_id: string; outcome?: string; created_at: string };
-  type ReflRow     = { user_id: string; momentum_score?: number; created_at: string };
   type ProjectRow  = { user_id: string; name?: string; title?: string };
 
   const profileMap  = new Map<string, ProfileRow>((profiles as ProfileRow[]).map(p => [p.id, p]));
@@ -190,13 +190,11 @@ export async function GET(request: Request) {
 
   // Group logs and reflections by user
   const logsByUser  = new Map<string, LogRow[]>();
-  const reflsByUser = new Map<string, ReflRow[]>();
   for (const l of actionLogs  as LogRow[])  { if (!logsByUser.has(l.user_id))  logsByUser.set(l.user_id, []);  logsByUser.get(l.user_id)!.push(l); }
-  for (const r of reflections as ReflRow[]) { if (!reflsByUser.has(r.user_id)) reflsByUser.set(r.user_id, []); reflsByUser.get(r.user_id)!.push(r); }
 
   // ── 4. Build per-user data, skip users with nothing to report ─────────────
   const weekData: FounderWeekData[] = [];
-  for (const user of builderUsers) {
+  for (const user of recipients) {
     const authEmail = user.email;
     if (!authEmail) continue;
 
@@ -205,27 +203,24 @@ export async function GET(request: Request) {
     const mem      = memMap.get(user.id);
     const project  = projectMap.get(user.id);
     const logs     = logsByUser.get(user.id) ?? [];
-    const refls    = reflsByUser.get(user.id) ?? [];
 
     const tasksCompleted = logs.filter(l => l.outcome === "completed").length;
-    const momentumEnd    = ctx?.momentum_score ?? 0;
-    const momentumStart  = refls.length > 0 ? (refls[0].momentum_score ?? momentumEnd) : momentumEnd;
+    // Same number every other surface shows (founder_context.momentum_score), and the
+    // start of the week is the stored weekly baseline. The old code read
+    // reflections.momentum_score - a column that does not exist - so start always
+    // equalled end and every email said "momentum ↑0".
+    const momentumEnd    = typeof ctx?.momentum_score === "number" ? ctx.momentum_score : 50;
+    const momentumStart  = typeof ctx?.momentum_last_week === "number" ? ctx.momentum_last_week : null;
     const streak         = effectiveStreak(ctx?.streak, ctx?.last_checkin_date);
 
-    // ── Weekly momentum baseline snapshot ─────────────────────────────────
-    // Powers FounderScorecard.momentumTrend / momentumDelta (lib/scorecard.ts),
-    // used by app/insights/page.tsx (Behavioral Patterns) to show whether
-    // momentum is rising or falling week over week. Runs for every builder
-    // user regardless of whether they end up receiving an email below.
-    setWeeklyMomentumBaseline(user.id).catch(() => {});
-
     // Skip if they did literally nothing and momentum didn't change
-    if (tasksCompleted === 0 && momentumEnd === momentumStart && streak === 0) continue;
+    if (tasksCompleted === 0 && (momentumStart === null || momentumEnd === momentumStart) && streak === 0) continue;
 
+    const cleanZones = sanitizeAvoidanceZones(mem?.avoidance_zones, 3); // drops pasted reflection text
     // Avoidance pattern: prefer meta_critic_signal, fall back to first avoidance zone
     const avoidancePattern: string | undefined =
       ctx?.meta_critic_signal
-      ?? (mem?.avoidance_zones?.[0] ? `You've been avoiding: ${mem.avoidance_zones[0]}` : undefined);
+      ?? (cleanZones[0] ? `You've been avoiding: ${cleanZones[0]}` : undefined);
 
     // Next week focus: use last_insight if available
     const nextWeekFocus = mem?.last_insight ?? undefined;
@@ -316,8 +311,12 @@ export async function GET(request: Request) {
     }
   }
 
+  // Weekly baseline for every founder, AFTER this run has read last week's value.
+  const baselines = await snapshotAllMomentumBaselines().catch(() => 0);
+
   return NextResponse.json({
     success: true,
+    baselines,
     ran_at:          new Date().toISOString(),
     week_number:     weekNumber,
     builder_users:   builderUsers.length,
@@ -328,4 +327,4 @@ export async function GET(request: Request) {
     emails_sent:     sent,
     emails_failed:   failed,
   });
-        }
+}
