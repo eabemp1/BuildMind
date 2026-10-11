@@ -5,6 +5,8 @@ import { planFromUserMetadata } from "@/lib/plan";
 import { enqueueBatch } from "@/lib/queue";
 import { reclassifyFounderArchetypeIfEligible } from "@/lib/founderArchetype";
 import { updateMomentum } from "@/lib/scorecard";
+import { daysSinceLastActivity, daysSinceMomentumUpdate } from "@/lib/inactivity";
+import { sanitizeAvoidanceZones } from "@/lib/avoidanceSanitize";
 
 // ── Deterministic evening nudge variants ──────────────────────────────────────
 // Segmented by context so the message is always relevant.
@@ -381,7 +383,7 @@ export async function GET(req: NextRequest) {
     const [ctxResult, memoryResult, recentTasksResult] = await Promise.allSettled([
       supabase
         .from("founder_context")
-        .select("days_inactive, momentum_score, momentum_last_week, tasks_accepted_this_week, tasks_overridden_this_week, override_reasons, topics_mentioned_repeatedly, last_pattern_shown_at")
+        .select("days_inactive, last_active, last_checkin_date, last_task_date, momentum_updated_at, momentum_score, momentum_last_week, tasks_accepted_this_week, tasks_overridden_this_week, override_reasons, topics_mentioned_repeatedly, last_pattern_shown_at")
         .eq("user_id", row.user_id)
         .maybeSingle(),
       supabase
@@ -397,12 +399,22 @@ export async function GET(req: NextRequest) {
     const recentTaskTitles = recentTasksResult.status === "fulfilled"
       ? (recentTasksResult.value.data ?? []).map((r: { today_action: string }) => r.today_action).filter(Boolean)
       : [];
-    const daysInactive = Math.max(1, (ctx?.days_inactive ?? 0) + 1);
+    // Completed today's task but never wrote a reflection? They still showed up: no
+    // "you haven't done anything" nudge and no decay.
+    if (daysSinceLastActivity(ctx) === 0) {
+      skippedReflected += 1;
+      await supabase.from("founder_context").update({ days_inactive: 0 }).eq("user_id", row.user_id);
+      continue;
+    }
+
+    // Derived from real activity dates; the stored counter is only a fallback.
+    const daysInactive = Math.max(1, daysSinceLastActivity(ctx) ?? (ctx?.days_inactive ?? 0) + 1);
+    const cleanAvoidance = sanitizeAvoidanceZones(memory?.avoidance_zones, 5);
 
     // Pattern Detection — Playbook §3.2: fires automatically every evening
     const { detectPattern, shouldSurfacePattern } = await import("@/lib/patternDetection");
     const pattern = detectPattern({
-      avoidance_zones: (memory?.avoidance_zones ?? []) as string[],
+      avoidance_zones: cleanAvoidance,
       override_reasons: (ctx?.override_reasons ?? []) as string[],
       tasks_overridden_this_week: ctx?.tasks_overridden_this_week ?? 0,
       tasks_accepted_this_week: ctx?.tasks_accepted_this_week ?? 0,
@@ -428,7 +440,7 @@ export async function GET(req: NextRequest) {
       body = eveningNudge({
         name:          founderName,
         daysInactive,
-        avoidanceZone: (memory?.avoidance_zones as string[] | undefined)?.[0],
+        avoidanceZone: cleanAvoidance[0],
         lastTask:      recentTaskTitles[0] ?? undefined,
         patternSignal: pattern.signal ?? undefined,
       });
@@ -476,7 +488,7 @@ export async function GET(req: NextRequest) {
       // momentumDecay() through the same atomic path reflect-action and
       // override now use.
       try {
-        await updateMomentum(row.user_id, null, 0, daysInactive);
+        await updateMomentum(row.user_id, null, 0, daysSinceMomentumUpdate(ctx?.momentum_updated_at as string | undefined));
       } catch (momentumErr) {
         console.error("[evening-check] momentum decay failed:", momentumErr);
       }
@@ -553,4 +565,4 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   return GET(req);
-}
+    }
