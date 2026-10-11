@@ -19,11 +19,10 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { swapPredictionCandidate } from "@/lib/learningLoop";
 import { upsertTodayActionCache, type TodayActionCache, type TodayActionData } from "@/lib/todayActionCache";
+import { resolveDayKey } from "@/lib/dayKey";
 import type { DecisionCandidate } from "@/lib/founderIntelligence";
 
-function localDateKey(now = new Date()): string {
-  return now.toISOString().slice(0, 10);
-}
+
 
 export async function POST(req: Request) {
   const supabase = await createClient();
@@ -92,7 +91,7 @@ export async function POST(req: Request) {
     };
 
     const updatedCache: TodayActionCache = {
-      date: existing?.date ?? localDateKey(),
+      date: existing?.date ?? resolveDayKey(body?.dayKey),
       projectId: existing?.projectId ?? projectId,
       stage: existing?.stage ?? stage,
       data: updatedData,
