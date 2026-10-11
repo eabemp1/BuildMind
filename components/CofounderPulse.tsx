@@ -195,6 +195,10 @@ export default function CofounderPulse() {
     function handleRefresh() {
       if (memory) {
         deriveCofounderMessage(memory).then((msg) => {
+          // Refresh the numbers too, not just the message: previously only the
+          // first load set `snap`, so Momentum/Streak in the panel froze at their
+          // mount-time values while the rest of the app moved on.
+          setSnap(lastSnapshot);
           setCurrentMessage(msg);
           setMode(msg.mode);
         });
@@ -572,4 +576,4 @@ function pickAction(memory: FounderMemory): PulseMessage["action"] | undefined {
     label: "What's my one thing today?",
     prompt: "Given everything you know about my startup and my patterns, what is the single most important thing I should do today?",
   };
-                      }
+                   }
