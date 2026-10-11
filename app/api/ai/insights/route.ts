@@ -36,6 +36,7 @@ import { NextResponse } from "next/server";
 import { groqJSON, hasAdminEnv } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
+import { deterministicInsights, type InsightInput, type InsightItem } from "@/lib/insightsFallback";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,25 +45,6 @@ export const maxDuration = 25;
 function sse(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }
-
-type InsightItem = {
-  type: "warning" | "positive" | "insight";
-  text: string;
-  basis: string | null;
-  evidence: string | null;
-};
-
-type InsightInput = {
-  avoidanceZones?: string[];
-  strengths?: string[];
-  completionByDay?: Record<string, { completed: number; total: number }>;
-  avgConfidenceByOutcome?: Record<string, number>;
-  topOverrideReason?: string;
-  totalTasksCompleted?: number;
-  totalTasksShown?: number;
-  metacriticSignal?: string;
-  stage?: string;
-};
 
 /**
  * The one place a raw input stat becomes a citable, server-verified fact.
@@ -108,6 +90,7 @@ function buildEvidenceMap(input: InsightInput): Record<string, string> {
 
   return map;
 }
+
 
 export async function POST(request: Request) {
   const encoder = new TextEncoder();
@@ -166,12 +149,11 @@ zones, or patterns that aren't listed. For each insight, set "basis" to the EXAC
 fact it's built on. If a fact doesn't support a real pattern, leave it out rather than stretching it into one —
 returning fewer insights is fine, inventing a "basis" key that isn't in the list is not.
 
-Return ONLY a valid JSON array:
-[
-  { "type": "warning"|"positive"|"insight", "text": "specific observation max 30 words", "basis": "<exact key from Available facts>" },
-  ...
-]
-No preamble. No markdown. Only the JSON array.`;
+Return ONLY a valid JSON object of this shape:
+{ "insights": [
+  { "type": "warning"|"positive"|"insight", "text": "specific observation max 30 words", "basis": "<exact key from Available facts>" }
+] }
+No preamble. No markdown. Only the JSON object.`;
 
         const userPrompt = [
           `Stage: ${stage}`,
@@ -182,24 +164,39 @@ No preamble. No markdown. Only the JSON array.`;
         let insights: InsightItem[] = [];
 
         try {
-          const ai = await groqJSON<Array<{ type?: string; text?: string; basis?: string }>>(systemPrompt, userPrompt);
+          // JSON mode returns an object, so ask for { insights: [...] } and also
+          // accept a bare array. This used to demand a bare array, which never
+          // parsed, and the catch below swallowed the error - every founder saw
+          // the generic "not tied to your data" lines no matter how much data they had.
+          const raw = await groqJSON<
+            Array<{ type?: string; text?: string; basis?: string }> | { insights?: Array<{ type?: string; text?: string; basis?: string }> }
+          >(systemPrompt, userPrompt);
+          const ai = Array.isArray(raw) ? raw : raw?.insights;
           if (Array.isArray(ai)) {
             insights = ai
-              .filter((item) => typeof item?.basis === "string" && Object.prototype.hasOwnProperty.call(evidenceMap, item.basis))
+              .filter((item) => typeof item?.basis === "string" && Object.prototype.hasOwnProperty.call(evidenceMap, item.basis) && String(item.text ?? "").trim().length > 0)
               .slice(0, 5)
               .map((item) => ({
                 type: (["warning", "positive", "insight"].includes(item.type ?? "") ? item.type : "insight") as InsightItem["type"],
                 text: String(item.text ?? "").slice(0, 200),
                 basis: item.basis as string,
-                // The server's own precomputed text for this key — never
-                // the model's version of it — so a displayed "why" is
+                // The server's own precomputed text for this key - never
+                // the model's version of it - so a displayed "why" is
                 // always literally true of the underlying data.
                 evidence: evidenceMap[item.basis as string],
               }));
+            if (insights.length === 0) {
+              console.warn("[insights] model returned no insight citing a real fact key", { returned: ai.length });
+            }
           }
-        } catch {
-          // insights stays [] — falls through to the generic fallback below
+        } catch (err) {
+          console.error("[insights] model call failed", err instanceof Error ? err.message : err);
+          // insights stays [] - falls through to the data-derived fallback below
         }
+
+        // Model unavailable or ungrounded: build insights straight from the real
+        // numbers instead of showing generic filler. Still fully grounded.
+        if (insights.length === 0) insights = deterministicInsights(input, evidenceMap);
 
         // Every candidate cited a key outside the real evidence map (or the
         // call failed outright) — fall back rather than show nothing, but
@@ -240,4 +237,4 @@ No preamble. No markdown. Only the JSON array.`;
       Connection: "keep-alive",
     },
   });
-                                                            }
+}
