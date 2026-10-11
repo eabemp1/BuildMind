@@ -20,6 +20,8 @@
 
 const RESEND_API_URL = "https://api.resend.com/emails";
 
+import { escapeHtml } from "@/lib/htmlEscape";
+
 const FROM = process.env.EMAIL_FROM ?? "BuildMind <hello@buildmind.live>";
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://buildmind.live";
 
@@ -186,11 +188,16 @@ function welcomeText(data: { name?: string }): string {
 
 
 function weeklyBehavioralReviewHTML(data: TemplateData["weekly_behavioral_review"]): string {
-  const name = data.name ? data.name.split(" ")[0] : "Founder";
-  const startup = data.startupName ?? "your startup";
-  const momentumChange = data.momentumEnd - data.momentumStart;
-  const momentumArrow = momentumChange >= 0 ? "↑" : "↓";
-  const momentumColor = momentumChange >= 0 ? "#5CC88A" : "#E8A020";
+  const name = escapeHtml(data.name ? data.name.split(" ")[0] : "Founder");
+  const startup = escapeHtml(data.startupName ?? "your startup");
+  // No baseline (first week, or the weekly snapshot hasn't run) means we cannot
+  // honestly say momentum moved, so the change chip is simply omitted.
+  const momentumChange = data.momentumStart === null ? null : data.momentumEnd - data.momentumStart;
+  const momentumArrow = momentumChange === null ? "" : momentumChange > 0 ? "↑" : momentumChange < 0 ? "↓" : "→";
+  const momentumColor = momentumChange === null || momentumChange === 0 ? "#8A8A92" : momentumChange > 0 ? "#5CC88A" : "#E8A020";
+  const changeChip = momentumChange === null
+    ? ""
+    : `<span style="font-size:13px;font-weight:700;color:${momentumColor};">${momentumArrow} ${Math.abs(momentumChange)} pts vs last week</span>`;
   const weekLabel = data.weekNumber ? `Week ${data.weekNumber}` : "This week";
 
   return shell(`
@@ -202,7 +209,7 @@ function weeklyBehavioralReviewHTML(data: TemplateData["weekly_behavioral_review
     <div style="background:#1C1C1F;border:1px solid #222226;border-radius:12px;padding:20px 24px;margin-bottom:24px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
         <span style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#56565E;">Momentum</span>
-        <span style="font-size:13px;font-weight:700;color:${momentumColor};">${momentumArrow} ${Math.abs(momentumChange)} pts</span>
+        ${changeChip}
       </div>
       <div style="display:flex;gap:24px;">
         <div>
@@ -224,12 +231,12 @@ function weeklyBehavioralReviewHTML(data: TemplateData["weekly_behavioral_review
     <!-- Behavioral signal -->
     <div style="background:#161618;border-left:3px solid #E8A02033;padding:14px 16px;border-radius:0 8px 8px 0;margin-bottom:20px;">
       <p style="margin:0 0 6px;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#56565E;">Pattern detected</p>
-      <p style="margin:0;font-size:13px;color:#ECECEC;line-height:1.6;">${data.avoidancePattern}</p>
+      <p style="margin:0;font-size:13px;color:#ECECEC;line-height:1.6;">${escapeHtml(data.avoidancePattern)}</p>
     </div>
     ` : ""}
 
     ${data.nextWeekFocus ? `
-    ${body(`<strong style="color:#ECECEC;">Next week:</strong> ${data.nextWeekFocus}`)}
+    ${body(`<strong style="color:#ECECEC;">Next week:</strong> ${escapeHtml(data.nextWeekFocus)}`)}
     ` : ""}
 
     <div style="text-align:left;margin-bottom:28px;">
@@ -257,7 +264,8 @@ type TemplateData = {
     name?: string;
     startupName?: string;
     tasksCompleted: number;
-    momentumStart: number;
+    /** Momentum at the start of the week. null = no baseline yet, so no change is shown. */
+    momentumStart: number | null;
     momentumEnd: number;
     streak: number;
     avoidancePattern?: string;
@@ -294,7 +302,7 @@ function reEngagementHTML(data: TemplateData["re_engagement"]): string {
   `);
 }
 
-function buildHTML<T extends EmailTemplate>(template: T, data: TemplateData[T]): { html: string; subject: string } {
+export function buildHTML<T extends EmailTemplate>(template: T, data: TemplateData[T]): { html: string; subject: string } {
   switch (template) {
     case "welcome":
       return {
@@ -318,10 +326,14 @@ function buildHTML<T extends EmailTemplate>(template: T, data: TemplateData[T]):
       };
     case "weekly_behavioral_review": {
       const d = data as TemplateData["weekly_behavioral_review"];
-      const change = d.momentumEnd - d.momentumStart;
-      const dir = change >= 0 ? `↑${change}` : `↓${Math.abs(change)}`;
+      const change = d.momentumStart === null ? null : d.momentumEnd - d.momentumStart;
+      const momentumPart = change === null
+        ? `momentum ${d.momentumEnd}`
+        : change === 0
+          ? `momentum steady at ${d.momentumEnd}`
+          : `momentum ${change > 0 ? "↑" : "↓"}${Math.abs(change)}`;
       return {
-        subject: `Your week in BuildMind — ${d.tasksCompleted} tasks, momentum ${dir}`,
+        subject: `Your week in BuildMind — ${d.tasksCompleted} task${d.tasksCompleted === 1 ? "" : "s"}, ${momentumPart}`,
         html: weeklyBehavioralReviewHTML(d),
       };
     }
