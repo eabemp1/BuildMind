@@ -9,6 +9,7 @@
  * Returns a single formatted string ready to inject into the system prompt.
  */
 
+import { isShownTaskRow } from "@/lib/recommendationRows";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { formatRegionalContextBlock } from "@/lib/regionalContext";
 import { effectiveStreak, daysSinceActive, streakDayKey } from "@/lib/streak";
@@ -107,16 +108,18 @@ export async function assembleCoachContext(
   // content at 80% — don't recommend content here."
   try {
     const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
-    const { data: actions } = await supabase
+    const { data: rawActions } = await supabase
       .from("reflexion_learning_log")
-      .select("action_type, outcome, action_shown, created_at")
+      .select("action_type, outcome, action_shown, created_at, session_id, critic_persona, prediction_source")
       .eq("user_id", userId)
       .or(`project_id.eq.${projectId},project_id.is.null`)
       .gte("created_at", since)
       .order("created_at", { ascending: false })
       .limit(60);
 
-    if (actions?.length) {
+    // Shared table: keep only tasks the founder was actually shown on Today.
+    const actions = (rawActions ?? []).filter((r) => isShownTaskRow(r));
+    if (actions.length) {
       signals.hasCompletionPattern = true;
 
       // Aggregate by action_type
@@ -331,4 +334,4 @@ export function computeContextConfidence(signals: CoachBehavioralContext["signal
     if (signals[key as keyof typeof signals]) score += weight;
   }
   return Math.round(score * 100) / 100;
-        }
+      }
