@@ -25,6 +25,8 @@ import { createClient } from "@supabase/supabase-js";
 import { sendEmail } from "@/lib/email";
 import { generateReEngagementEmail } from "@/lib/cron/aiContent";
 import { claimSendSlots } from "@/lib/cronSendLog";
+import { escapeHtml } from "@/lib/htmlEscape";
+import { sanitizeAvoidanceZones } from "@/lib/avoidanceSanitize";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,10 +41,10 @@ function isCronRequest(req: Request): boolean {
 
 /** Minimal HTML shell for the AI-generated re-engagement email body */
 function buildReEngagementHTML(name: string | undefined, startupName: string | undefined, daysInactive: number, aiBody: string): string {
-  const firstName = name?.split(" ")[0] ?? "Founder";
-  const startup   = startupName ?? "your startup";
+  const firstName = escapeHtml(name?.split(" ")[0] ?? "Founder");
+  const startup   = escapeHtml(startupName ?? "your startup");
   const paragraphs = aiBody.split("\n").filter(p => p.trim()).map(p =>
-    `<p style="margin:0 0 16px;font-size:15px;color:#CECECE;line-height:1.75;">${p.trim()}</p>`
+    `<p style="margin:0 0 16px;font-size:15px;color:#CECECE;line-height:1.75;">${escapeHtml(p.trim())}</p>`
   ).join("");
   return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#0A0A0C;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
   <div style="max-width:540px;margin:40px auto;padding:0 20px;">
@@ -93,27 +95,21 @@ export async function GET(req: NextRequest) {
   const supabase = createClient(supabaseUrl, serviceKey);
   const dryRun = req.nextUrl.searchParams.get("dryRun") === "1";
 
-  // Early exit if no actionable records exist.
-  const { count: actionableCount, error: countError } = await supabase
-    .from("founder_context")
-    .select("user_id", { count: "exact", head: true })
-    .or("and(days_inactive.gte.6,days_inactive.lte.8),and(days_inactive.gte.13,days_inactive.lte.15)");
-
-  if (countError) {
-    return NextResponse.json({ ok: false, error: countError.message, step: "count_actionable" }, { status: 500 });
-  }
-  if (!actionableCount) {
-    return NextResponse.json({ skipped: true, reason: "no records", durationMs: Date.now() - start });
-  }
-
-  // ── Find users inactive for 7 or 14 days ─────────────────────────────────
-  // We look at founder_context.days_inactive which is maintained by the
-  // evening-check cron (increments daily, resets on reflection/task activity).
+  // ── Who is inactive? ─────────────────────────────────────────────────────
+  // FIX: this used to trust founder_context.days_inactive, but that counter is only
+  // advanced by the evening-check cron, which only visits PAID founders who have push
+  // enabled. Free founders and anyone without push stayed at 0 forever, so they never
+  // got a win-back email. Inactivity is now computed from the real activity dates
+  // (last_active / last_checkin_date / last_task_date), for everyone.
+  const DAY = 24 * 60 * 60 * 1000;
   const now = new Date();
-  const sevenDayWindowStart = new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000).toISOString();
-  const sevenDayWindowEnd   = new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000).toISOString();
-  const fourteenDayWindowStart = new Date(now.getTime() - 15 * 24 * 60 * 60 * 1000).toISOString();
-  const fourteenDayWindowEnd   = new Date(now.getTime() - 13 * 24 * 60 * 60 * 1000).toISOString();
+  const todayUtc = Date.parse(`${now.toISOString().slice(0, 10)}T00:00:00Z`);
+  const dayStr = (daysAgo: number) => new Date(todayUtc - daysAgo * DAY).toISOString().slice(0, 10);
+  const toDay = (v: unknown): number | null => {
+    if (typeof v !== "string" || v.length < 10) return null;
+    const t = Date.parse(`${v.slice(0, 10)}T00:00:00Z`);
+    return Number.isFinite(t) ? t : null;
+  };
 
   let sent = 0;
   let skipped = 0;
@@ -137,11 +133,14 @@ export async function GET(req: NextRequest) {
   const fourteenDayRows: CtxRow[] = [];
 
   while (hasMore) {
-    // Fetch contexts where days_inactive is in the 7-day or 14-day window
+    // Candidates: last activity 6-15 days ago. last_active is the broadest marker, so
+    // pre-filter on it, then take the most recent of the three dates in JS.
     const { data: contexts, error: ctxError } = await supabase
       .from("founder_context")
-      .select("user_id, days_inactive")
-      .or(`and(days_inactive.gte.6,days_inactive.lte.8),and(days_inactive.gte.13,days_inactive.lte.15)`)
+      .select("user_id, last_active, last_checkin_date, last_task_date")
+      .gte("last_active", dayStr(15))
+      .lte("last_active", dayStr(6))
+      .order("user_id", { ascending: true })
       .range(pageFrom, pageFrom + PAGE_SIZE - 1);
 
     if (ctxError) {
@@ -153,12 +152,15 @@ export async function GET(req: NextRequest) {
     hasMore = rows.length === PAGE_SIZE;
     pageFrom += PAGE_SIZE;
 
-    for (const ctx of rows) {
-      const daysInactive: number = ctx.days_inactive ?? 0;
-      const isSevenDay    = daysInactive >= 6 && daysInactive <= 8;
-      const isFourteenDay = daysInactive >= 13 && daysInactive <= 15;
-      if (isSevenDay) sevenDayRows.push(ctx);
-      else if (isFourteenDay) fourteenDayRows.push(ctx);
+    for (const r of rows) {
+      const last = Math.max(
+        ...[toDay(r.last_active), toDay(r.last_checkin_date), toDay(r.last_task_date)].filter((x): x is number => x !== null),
+      );
+      if (!Number.isFinite(last)) { skipped++; continue; }
+      const daysInactive = Math.round((todayUtc - last) / DAY);
+      const ctx: CtxRow = { user_id: r.user_id, days_inactive: daysInactive };
+      if (daysInactive >= 6 && daysInactive <= 8) sevenDayRows.push(ctx);
+      else if (daysInactive >= 13 && daysInactive <= 15) fourteenDayRows.push(ctx);
       else skipped++;
     }
   }
@@ -195,15 +197,16 @@ export async function GET(req: NextRequest) {
     const isSevenDay = ctx.isSevenDay;
 
     // Look up user profile + project for context
-    const [authResult, projectResult] = await Promise.allSettled([
+    const [authResult, projectResult, profileResult] = await Promise.allSettled([
       supabase.auth.admin.getUserById(ctx.user_id),
       supabase
         .from("projects")
-        .select("title")
+        .select("name, title")
         .eq("user_id", ctx.user_id)
         .order("updated_at", { ascending: false })
         .limit(1)
         .maybeSingle(),
+      supabase.from("profiles").select("name, username").eq("id", ctx.user_id).maybeSingle(),
     ]);
 
     const authUser =
@@ -211,23 +214,31 @@ export async function GET(req: NextRequest) {
     const email = authUser?.email;
     if (!email) { skipped++; continue; }
 
-    const name = (authUser?.user_metadata?.full_name as string | undefined) ?? undefined;
-    const startupName =
-      projectResult.status === "fulfilled"
-        ? (projectResult.value.data?.title as string | undefined)
-        : undefined;
+    // Same name + project the Sunday email uses, so one founder is not "Sam / Acme" in
+    // one email and "Samuel / Acme Beta" in the next.
+    const profileRow = profileResult.status === "fulfilled" ? profileResult.value.data : null;
+    const name =
+      (profileRow?.name as string | undefined) ??
+      (profileRow?.username as string | undefined) ??
+      (authUser?.user_metadata?.full_name as string | undefined) ??
+      undefined;
+    const projectRow = projectResult.status === "fulfilled" ? projectResult.value.data : null;
+    const startupName = (projectRow?.name as string | undefined) ?? (projectRow?.title as string | undefined) ?? undefined;
 
-    // Fetch last reflection note for deeper personalisation
+    // Fetch last reflection for deeper personalisation. `note` is empty for the newer
+    // structured reflections (what_tried / what_learned), which used to make this
+    // email generic for anyone using the current Reflect form.
     let lastReflectionNote: string | undefined;
     try {
       const { data: lastRefl } = await supabase
         .from("reflections")
-        .select("note")
+        .select("note, what_learned, what_tried")
         .eq("user_id", ctx.user_id)
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
-      lastReflectionNote = (lastRefl?.note as string | undefined) ?? undefined;
+      const raw = (lastRefl?.note || lastRefl?.what_learned || lastRefl?.what_tried) as string | undefined;
+      lastReflectionNote = raw ? raw.slice(0, 280) : undefined;
     } catch { /* non-fatal */ }
 
     // Fetch avoidance zone
@@ -238,7 +249,7 @@ export async function GET(req: NextRequest) {
         .select("avoidance_zones")
         .eq("user_id", ctx.user_id)
         .maybeSingle();
-      avoidanceZone = (mem?.avoidance_zones as string[] | undefined)?.[0];
+      avoidanceZone = sanitizeAvoidanceZones(mem?.avoidance_zones, 1)[0];
     } catch { /* non-fatal */ }
 
     if (!dryRun) {
@@ -284,4 +295,4 @@ export async function GET(req: NextRequest) {
     failed,
     details: dryRun ? details : undefined, // Only expose details in dry-run to avoid PII in logs
   });
-    }
+}
