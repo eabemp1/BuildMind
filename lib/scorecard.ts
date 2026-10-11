@@ -273,3 +273,41 @@ export async function setWeeklyMomentumBaseline(userId: string): Promise<void> {
       .eq("user_id", userId);
   }
         }
+
+
+/**
+ * snapshotAllMomentumBaselines — weekly baseline for EVERY founder, not just the
+ * ones who get the Sunday email. Previously only paid/trial users were
+ * snapshotted (and not at all when the email cron exited early), so everyone
+ * else had a null or months-old momentum_last_week and the "vs last week"
+ * numbers on Today, Progress, Insights and the Cofounder Pulse were missing or
+ * wrong. Returns how many rows were updated.
+ */
+export async function snapshotAllMomentumBaselines(): Promise<number> {
+  const admin = createAdminClient();
+  const PAGE = 500;
+  let updated = 0;
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await admin
+      .from("founder_context")
+      .select("user_id, momentum_score")
+      .order("user_id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error || !data || data.length === 0) break;
+    const rows = data.filter((r: { momentum_score: unknown }) => typeof r.momentum_score === "number");
+    const CONCURRENCY = 25;
+    for (let i = 0; i < rows.length; i += CONCURRENCY) {
+      await Promise.allSettled(
+        rows.slice(i, i + CONCURRENCY).map(async (r: { user_id: string; momentum_score: number }) => {
+          const { error: upErr } = await admin
+            .from("founder_context")
+            .update({ momentum_last_week: r.momentum_score })
+            .eq("user_id", r.user_id);
+          if (!upErr) updated++;
+        }),
+      );
+    }
+    if (data.length < PAGE) break;
+  }
+  return updated;
+}
