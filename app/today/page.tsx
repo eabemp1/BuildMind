@@ -1459,6 +1459,10 @@ function TodayContent() {
           if (tcData.xp != null) {
             storage.set("bm_xp", String(tcData.xp));
           }
+          // The sidebar Cofounder Pulse shows momentum/streak/"done today" from the
+          // same snapshot. Without this it kept the pre-completion numbers until a
+          // full reload, so it disagreed with this page right after a check-in.
+          try { window.dispatchEvent(new CustomEvent("bm:pulse-refresh")); } catch { /* non-fatal */ }
         }
       } catch {}
 
