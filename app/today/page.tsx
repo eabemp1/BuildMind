@@ -1403,6 +1403,7 @@ function TodayContent() {
         projectId: project?.id,
         stage: project?.startup_stage,
         recommendationId: actionData?.intelligence?.recommendation_id ?? null,
+        dayKey: localDayKey(),
       }),
     }).catch(() => {});
   }
@@ -2899,4 +2900,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-    }
+}
