@@ -1,4 +1,4 @@
-
+import { isTodayFlowSession } from "@/lib/todayFlowSessions";
 import { NextResponse } from "next/server";
 import { groqJSON, hasAdminEnv } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -147,11 +147,15 @@ export async function POST(request: Request) {
 
             const { data: reflexionRows } = await supabase
               .from("reflexion_learning_log")
-              .select("id, created_at, outcome")
+              .select("id, created_at, outcome, session_id")
               .eq("user_id", userId)
               .neq("outcome", "pending")
               .gte("created_at", weekAgoISO);
-            const reflexionCount = (reflexionRows ?? []).length;
+            // Shared table: briefings, coach chats and Break My Startup rows flip to
+            // "ignored" after 24h and must not count as tasks done this week.
+            const reflexionCount = (reflexionRows ?? []).filter(
+              (r: { session_id?: string | null }) => isTodayFlowSession(r.session_id),
+            ).length;
 
             // Use the highest count — they overlap but should never undercount.
             tasks = Math.max(tasks, reflexionCount, reflectionCount);
