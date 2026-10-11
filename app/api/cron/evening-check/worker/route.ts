@@ -35,6 +35,7 @@ import { createClient } from "@supabase/supabase-js";
 import webpush from "web-push";
 import { verifyQStashSignature } from "@/lib/queue";
 import { updateMomentum } from "@/lib/scorecard";
+import { daysSinceLastActivity, daysSinceMomentumUpdate } from "@/lib/inactivity";
 
 export const runtime  = "nodejs";
 export const dynamic  = "force-dynamic";
@@ -140,17 +141,24 @@ export async function POST(req: NextRequest) {
 
   const { data: ctx } = await supabase
     .from("founder_context")
-    .select("days_inactive")
+    .select("days_inactive, last_active, last_checkin_date, last_task_date, momentum_updated_at")
     .eq("user_id", userId)
     .maybeSingle();
-  const daysInactive = Math.max(1, (ctx?.days_inactive ?? 0) + 1);
+
+  // Completed the task today without writing a reflection: not inactive.
+  if (daysSinceLastActivity(ctx) === 0) {
+    await supabase.from("founder_context").update({ days_inactive: 0 }).eq("user_id", userId);
+    return NextResponse.json({ ok: true, userId, skipped: "active_today", processed: 1, durationMs: Date.now() - start });
+  }
+
+  const daysInactive = Math.max(1, daysSinceLastActivity(ctx) ?? (ctx?.days_inactive ?? 0) + 1);
 
   const body = eveningNudge(daysInactive);
 
   await supabase.from("founder_context").update({ days_inactive: daysInactive }).eq("user_id", userId);
 
   try {
-    await updateMomentum(userId, null, 0, daysInactive);
+    await updateMomentum(userId, null, 0, daysSinceMomentumUpdate(ctx?.momentum_updated_at as string | undefined));
   } catch (momentumErr) {
     console.error("[evening-check/worker] momentum decay failed:", momentumErr);
   }
