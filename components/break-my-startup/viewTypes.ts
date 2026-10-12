@@ -19,6 +19,13 @@ export interface PivotItem {
   estimated_score_delta: number;
   key_change: string;
   relatedFocusAreas?: string[];
+  /** 0-100 fit with how this founder actually executes. */
+  style_fit?: number;
+  fit_reason?: string;
+  first_step?: string;
+  effort?: "light" | "moderate" | "heavy";
+  confidence_boost?: string;
+  needs_avoided_work?: boolean;
 }
 
 export interface CompetitorRow {
@@ -45,6 +52,7 @@ export interface BreakResult {
   focusAreas?: string[];
   executionPlan?: { mvp_roadmap?: string[]; first_10_actions?: string[]; gtm_plan?: string[] } | null;
   pivots?: PivotItem[];
+  founderStyle?: { label: string; pace: string } | null;
   competitorTable?: CompetitorRow[];
   surviveReasons?: string[];
   surviveReasonTags?: string[][];
