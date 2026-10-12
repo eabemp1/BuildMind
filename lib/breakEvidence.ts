@@ -432,7 +432,7 @@ export function buildFalsifiers(input: EvidenceInput): Falsifier[] {
 
   out.push({
     assumption: problem ? `People have this problem badly enough to act: ${clip(problem, 100)}` : "The problem is painful enough that people act on it",
-    test: `Interview 8 of ${customer}. Ask what they did about this the last time it happened. Do not describe your solution.`,
+    test: `Interview 8 people from this group: ${customer}. Ask what they did about this the last time it happened. Do not describe your solution.`,
     provenWrongIf: "Fewer than 3 of 8 describe having paid, built a workaround or searched for a fix in the past 3 months.",
     component: "demand", predictedHold: clampP(productDemandScore(input) / 100),
   });
