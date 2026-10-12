@@ -41,6 +41,7 @@ type BreakApiData = {
   differentiation_plan?: string[];
   differentiation_plan_tags?: string[][];
   pivot_focus_tags?: string[][];
+  founder_style?: { label: string; pace: string } | null;
   focus_area_coverage?: FocusAreaCoverage | null;
   gated?: boolean;
   reasoning?: string[];
@@ -370,6 +371,7 @@ export default function BreakMyStartupPage() {
       focusAreaCoverage: data.focus_area_coverage ?? null,
       isSynthetic,
       focusAreas: cleanAIList(data.focus_areas),
+      founderStyle: data.founder_style ?? null,
       pivots: Array.isArray(data.pivots)
         ? data.pivots.slice(0, 3).map((p, i) => ({
             title: cleanAIText(p.title),
@@ -379,6 +381,12 @@ export default function BreakMyStartupPage() {
             estimated_score_delta: typeof p.estimated_score_delta === "number" ? p.estimated_score_delta : 0,
             key_change: cleanAIText(p.key_change),
             relatedFocusAreas: data.pivot_focus_tags?.[i]?.length ? data.pivot_focus_tags[i] : undefined,
+            style_fit: typeof p.style_fit === "number" ? p.style_fit : undefined,
+            fit_reason: p.fit_reason ? cleanAIText(p.fit_reason) : undefined,
+            first_step: p.first_step ? cleanAIText(p.first_step) : undefined,
+            effort: p.effort,
+            confidence_boost: p.confidence_boost ? cleanAIText(p.confidence_boost) : undefined,
+            needs_avoided_work: p.needs_avoided_work,
           }))
         : undefined,
       executionPlan: data.execution_plan
