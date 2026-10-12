@@ -142,7 +142,7 @@ export function buildNextMove(input: EvidenceInput, falsifiers: Falsifier[]): Ne
   if (demandOpen) {
     return {
       holdBuilding: true,
-      action: `Interview 8 of ${customer} this week without describing your product. Ask what they did the last time the problem happened, what it cost them, and what they use now. Write down their exact words.`,
+      action: `Interview 8 people from this group this week (${customer}) without describing your product. Ask what they did the last time the problem happened, what it cost them, and what they use now. Write down their exact words.`,
       why: "The biggest unknown is whether the problem is painful and frequent enough to act on. Eight conversations settle more of that than any build, pilot or campaign, at the lowest cost.",
       doNotBuildYet: [
         "A pilot with dozens of people. It tests your solution before you know the problem is real.",
