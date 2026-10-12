@@ -23,6 +23,7 @@ import { motion } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
 import { useActiveProjectId } from "@/lib/queries";
+import { OpenBesideButton } from "@/components/layout/OpenBesideButton";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -896,6 +897,14 @@ export default function InsightsPage() {
                 </div>
               )}
 
+              {aiInsights.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  <OpenBesideButton label="Read beside" request={{
+                    kind: "reader", eyebrow: "AI pattern analysis", title: "What your data says about how you work",
+                    markdown: aiInsights.map((it) => `- ${sanitizeOutput(it.text)}${it.evidence ? `\n  *${sanitizeOutput(String(it.evidence))}*` : ""}`).join("\n"),
+                  }} />
+                </div>
+              )}
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 {aiInsights.map((item, i) => (
                   <motion.div
@@ -973,6 +982,9 @@ export default function InsightsPage() {
               <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.65 }}>
                 {sanitizeOutput(data.metacriticSignal)}
               </p>
+              <div style={{ marginTop: 10 }}>
+                <OpenBesideButton label="Read beside" request={{ kind: "reader", eyebrow: "BuildMind diagnosis", title: "Diagnosis", markdown: sanitizeOutput(data.metacriticSignal) }} />
+              </div>
             </Section>
           )}
 

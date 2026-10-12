@@ -12,6 +12,7 @@ import { useActiveProjectId } from "@/lib/queries";
 import { usePlan } from "@/lib/usePlan";
 import { AGENT_IDENTITY, type AgentType } from "@/lib/agentWorkforce";
 import { RadialGauge } from "@/components/charts";
+import { OpenBesideButton } from "@/components/layout/OpenBesideButton";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -285,6 +286,19 @@ function LiveAgentCard({ run, pendingCount }: { run: AgentRun; pendingCount: num
               <div style={{ fontSize: 12, color: "var(--bm-text2)", lineHeight: 1.55 }}>{run.top_risk}</div>
             </div>
           )}
+
+          <div style={{ marginTop: 12 }}>
+            <OpenBesideButton label="Read the full report beside" request={{
+              kind: "reader", eyebrow: `${identity.name} report`, title: run.mission,
+              subtitle: vStyle.label,
+              facts: [{ label: "Confidence", value: `${run.confidence_pct}%` }, { label: "Signals", value: String(run.signals_found) }, { label: "Verdict", value: vStyle.label }],
+              markdown: run.report_markdown?.trim() || [
+                run.recommended_action ? `**Recommended action**\n\n${run.recommended_action}` : "",
+                [run.top_finding_1, run.top_finding_2, run.top_finding_3].filter(Boolean).length ? `**Top findings**\n\n${[run.top_finding_1, run.top_finding_2, run.top_finding_3].filter(Boolean).map((f) => `- ${f}`).join("\n")}` : "",
+                run.top_risk ? `**Top risk**\n\n${run.top_risk}` : "",
+              ].filter(Boolean).join("\n\n"),
+            }} />
+          </div>
 
           {pendingCount > 0 && (
             <div style={{

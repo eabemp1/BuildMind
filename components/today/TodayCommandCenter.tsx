@@ -30,6 +30,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { storage } from "@/lib/storage";
 import { useCountUp } from "@/components/today/useCountUp";
+import { useSidePane } from "@/components/layout/side-pane-context";
 import { buildFocusIcs, detectPlatform, openAndroidTimer, openIcs, type Platform } from "@/lib/focusReminder";
 import {
   FOCUS_PRESETS, dayArc, finishBlock, formatClock, nearestPreset, normalizeFocusState, nudgeLine,
@@ -68,6 +69,18 @@ const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const STORAGE_KEY = "bm_focus_state_v1";
 
 export default function TodayCommandCenter({ action, kicker, accent, rationale, reasons, expectedEvidence, lowConfidence = false, onExecute, executeLabel = "Open script", actionTitle, timeText, done, streak, firstStep }: TodayCommandCenterProps) {
+  const { openPane } = useSidePane();
+  const askCoach = () => openPane({ kind: "coach", title: "Coach on today's task", prompt: actionTitle ? `I'm about to work on this: "${actionTitle}". What is the smallest first move, and what usually makes people stall on it?` : undefined });
+  const showWhy = () => openPane({
+    kind: "reader", eyebrow: "Why this task", title: actionTitle ?? "Today's task",
+    markdown: [
+      typeof rationale === "string" && rationale ? rationale : "",
+      firstStep ? `**Start with:** ${firstStep}` : "",
+      reasons && reasons.length ? `**What it is based on**\n\n${reasons.map((r) => `- ${r}`).join("\n")}` : "",
+      expectedEvidence ? `**You will know it worked when:** ${expectedEvidence}` : "",
+    ].filter(Boolean).join("\n\n") || "Nothing more to show for this task yet.",
+    facts: timeText ? [{ label: "Time", value: timeText }] : undefined,
+  });
   const suggested = useMemo(() => parseSuggestedMinutes(timeText), [timeText]);
   const defaultMinutes = suggested ? nearestPreset(suggested) : 25;
 
@@ -240,6 +253,12 @@ export default function TodayCommandCenter({ action, kicker, accent, rationale, 
         <InkText nodes={action ?? actionTitle ?? "Preparing today's action"} progress={progress} color={ink} />
       </h2>
 
+      {firstStep && !done ? (
+        <p style={{ margin: "14px 0 0", maxWidth: "58ch", fontSize: 14, lineHeight: 1.55, color: "var(--bm-text2)" }}>
+          <span style={{ ...mono, fontSize: 12, color: ink, marginRight: 8 }}>First move</span>{firstStep}
+        </p>
+      ) : null}
+
       {lowConfidence ? (
         <p style={{ margin: "14px 0 0", maxWidth: "58ch", fontSize: 14, lineHeight: 1.6, color: "var(--bm-text3)" }}>
           This is a question for the real world, not a guess. What you learn shapes the next recommendation.
@@ -269,7 +288,11 @@ export default function TodayCommandCenter({ action, kicker, accent, rationale, 
                 </button>
               ))}
             </div>
-            {onExecute ? <button type="button" className="bm-ink-link" onClick={onExecute} style={link({ marginLeft: narrow ? 0 : "auto" })}>{executeLabel}</button> : null}
+            <span style={{ display: "inline-flex", gap: 14, flexWrap: "wrap", marginLeft: narrow ? 0 : "auto" }}>
+              <button type="button" className="bm-ink-link" onClick={showWhy} style={link()}>Why this</button>
+              <button type="button" className="bm-ink-link" onClick={askCoach} style={link()}>Ask the coach</button>
+              {onExecute ? <button type="button" className="bm-ink-link" onClick={onExecute} style={link()}>{executeLabel}</button> : null}
+            </span>
           </div>
         )}
 
@@ -283,6 +306,7 @@ export default function TodayCommandCenter({ action, kicker, accent, rationale, 
               {running && <button type="button" className="bm-ink-link" onClick={() => setFocus((f) => pauseFocus(f, new Date()))} style={link()}>Pause</button>}
               {paused && <button type="button" className="bm-ink-btn" onClick={() => setFocus((f) => resumeFocus(f, new Date()))} style={{ ...btn(ink, "#15130a"), borderRadius: 999 }}>Resume</button>}
               {(running || paused) && <button type="button" className="bm-ink-link" onClick={() => setFocus((f) => resetFocus(f, minutes))} style={link({ color: "var(--bm-text3)" })}>Stop</button>}
+              {(running || paused) && <button type="button" className="bm-ink-link" onClick={askCoach} style={link({ color: "var(--bm-text3)" })}>Stuck? Ask the coach</button>}
               {finished && <button type="button" className="bm-ink-btn" onClick={goToCheckIn} style={{ ...btn("var(--bm-green, #4ade80)", "#0b1a10"), borderRadius: 999 }}>{done ? "Reflect on it" : "Log how it went"}</button>}
               {finished && <button type="button" className="bm-ink-link" onClick={() => setFocus((f) => startFocus({ ...f, mode: "idle" }, minutes, new Date()))} style={link()}>Another {minutes}m</button>}
             </span>

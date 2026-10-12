@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Sidebar, { SidebarContent } from "@/components/layout/sidebar";
 import Topbar from "@/components/layout/topbar";
@@ -11,6 +11,8 @@ import { TrialBanner } from "@/components/TrialBanner";
 import { storage } from "@/lib/storage";
 import { fetchBehaviorState } from "@/lib/userBehaviorState";
 import CommandPalette from "@/components/CommandPalette";
+import { SidePaneProvider, useSidePane } from "@/components/layout/side-pane-context";
+import SidePaneHost from "@/components/layout/side-pane";
 
 // REC 4.2: Persistent daily loop status bar
 function DailyLoopStatusBar() {
@@ -95,8 +97,24 @@ const PATH_TO_FUNNEL: Record<string, Parameters<typeof trackFunnelStep>[0]> = {
   "/upgrade": "upgrade_seen",
 };
 
+const NAV_KEY = "bm_nav_open";
+
 export default function AppShell({ children }: { children: React.ReactNode }) {
+  return (
+    <SidePaneProvider>
+      <AppShellInner>{children}</AppShellInner>
+    </SidePaneProvider>
+  );
+}
+
+function AppShellInner({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  // Desktop drawer: the sidebar slides away to give the page the full width.
+  const [navOpen, setNavOpen] = useState(true);
+  const { pane, openPane, closePane } = useSidePane();
+  // When the sidebar was closed automatically to make room for the pane, it
+  // comes back when the pane closes. A sidebar the founder closed stays closed.
+  const autoClosed = useRef(false);
   const pathname = usePathname();
   const router = useRouter();
 
@@ -119,6 +137,43 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }, [pathname]);
 
   useEffect(() => {
+    try { if (window.localStorage.getItem(NAV_KEY) === "0") setNavOpen(false); } catch { /* ignore */ }
+  }, []);
+
+  const setNav = (open: boolean, remember = true) => {
+    setNavOpen(open);
+    if (remember) { try { window.localStorage.setItem(NAV_KEY, open ? "1" : "0"); } catch { /* ignore */ } }
+  };
+
+  function toggleSidebar() {
+    if (typeof window !== "undefined" && window.innerWidth >= 768) { autoClosed.current = false; setNav(!navOpen); }
+    else setMobileOpen((p) => !p);
+  }
+
+  // Make room: opening a pane on a mid-size screen tucks the sidebar away.
+  useEffect(() => {
+    if (pane && navOpen && typeof window !== "undefined" && window.innerWidth >= 1024 && window.innerWidth < 1500) {
+      autoClosed.current = true;
+      setNavOpen(false);
+    } else if (!pane && autoClosed.current) {
+      autoClosed.current = false;
+      setNavOpen(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pane]);
+
+  // Shortcuts: Ctrl/Cmd+B toggles the sidebar, Ctrl/Cmd+J toggles the coach pane.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return;
+      if (e.key.toLowerCase() === "b") { e.preventDefault(); toggleSidebar(); }
+      if (e.key.toLowerCase() === "j") { e.preventDefault(); if (pane?.kind === "coach") closePane(); else openPane({ kind: "coach" }); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
+  useEffect(() => {
     try {
       trackPageView(pathname);
       const step = PATH_TO_FUNNEL[pathname];
@@ -139,10 +194,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <a href="#main-content" className="bm-skip-link">Skip to main content</a>
 
       {/* ── Sidebar — desktop ── */}
-      <aside className="sticky top-0 hidden h-dvh w-[220px] shrink-0 md:flex"
-             style={{ borderRight: "1px solid var(--bm-border)" }}>
-        <Sidebar />
-      </aside>
+      <motion.aside className="sticky top-0 hidden h-dvh shrink-0 overflow-hidden md:flex"
+             aria-hidden={!navOpen}
+             initial={false}
+             animate={{ width: navOpen ? 220 : 0 }}
+             transition={{ type: "spring", stiffness: 380, damping: 38 }}
+             style={{ borderRight: navOpen ? "1px solid var(--bm-border)" : "none" }}>
+        <div style={{ width: 220, flexShrink: 0, height: "100%" }} {...(navOpen ? {} : { inert: "" as unknown as boolean })}>
+          <Sidebar />
+        </div>
+      </motion.aside>
 
       {/* ── Sidebar — mobile overlay ── */}
       <AnimatePresence>
@@ -169,7 +230,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         )}
       </AnimatePresence>
 
-      {/* ── Main ── */}
+      {/* ── Main (shrinks when a side pane is open) ── */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Topbar */}
         <header
@@ -181,7 +242,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             backdropFilter: "blur(20px)",
           }}
         >
-          <Topbar onToggleSidebar={() => setMobileOpen(p => !p)} />
+          <Topbar onToggleSidebar={toggleSidebar} navOpen={navOpen} />
         </header>
 
         {/* REC 4.2: Persistent daily loop status bar — visible from every dashboard page */}
@@ -203,6 +264,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <div style={{ maxWidth: 1120, margin: "0 auto", width: "100%", minWidth: 0 }}>{children}</div>
         </main>
       </div>
+
+      {/* ── Side pane: coach, insights, projects, agent output ── */}
+      <SidePaneHost />
     </div>
   );
 }

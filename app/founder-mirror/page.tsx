@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { RelationshipGraph, type StartupRelationshipGraph } from "@/components/founder-mirror/RelationshipGraph";
 import { AIErrorBoundary } from "@/components/AIErrorBoundary";
 import { MirrorStory } from "@/components/founder-mirror/MirrorStory";
+import { OpenBesideButton } from "@/components/layout/OpenBesideButton";
 
 type Belief = {
   belief: string;
@@ -577,6 +578,18 @@ export default function FounderMirrorPage() {
                     <span>{Math.round(belief.confidence * 100)}% confidence</span>
                     <span>Updated {formatDate(belief.last_updated)}</span>
                   </div>
+                </div>
+
+                <div>
+                  <OpenBesideButton label="Details beside" request={{
+                    kind: "reader", eyebrow: `Belief · ${belief.trend}`, title: belief.belief,
+                    facts: [{ label: "Confidence", value: `${Math.round(belief.confidence * 100)}%` }, { label: "Updated", value: formatDate(belief.last_updated) }],
+                    markdown: [
+                      belief.why,
+                      belief.evidence.length ? `**Evidence**\n\n${belief.evidence.map((e) => `- ${e}`).join("\n")}` : "",
+                      belief.contradictory_evidence.length ? `**What you said that disagrees**\n\n${belief.contradictory_evidence.map((e) => `- ${e}`).join("\n")}` : "",
+                    ].filter(Boolean).join("\n\n"),
+                  }} />
                 </div>
 
                 {belief.correction_effect && (

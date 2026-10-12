@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Menu, Search } from "lucide-react";
+import { Menu, PanelLeft, Search, Sparkles } from "lucide-react";
 import { motion } from "framer-motion";
 import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
@@ -12,10 +12,12 @@ import NotificationBell from "@/components/NotificationBell";
 import { NAV, hasPlanAccess } from "@/components/layout/sidebar-nav";
 import { getTasksCompleted, syncTasksCompletedFromServer } from "@/lib/nav-config";
 import { usePlan } from "@/lib/usePlan";
+import { useSidePane } from "@/components/layout/side-pane-context";
 
-type TopbarProps = { onToggleSidebar?: () => void };
+type TopbarProps = { onToggleSidebar?: () => void; navOpen?: boolean };
 
-export default function Topbar({ onToggleSidebar }: TopbarProps) {
+export default function Topbar({ onToggleSidebar, navOpen = true }: TopbarProps) {
+  const { pane, openPane, closePane } = useSidePane();
   const router = useRouter();
   const pathname = usePathname();
   const [email, setEmail] = useState("");
@@ -168,9 +170,10 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
       }}
     >
 
-      {/* Mobile menu toggle */}
+      {/* Sidebar drawer toggle (Ctrl/Cmd+B). Phones get the hamburger, desktops the panel icon. */}
       <button
         onClick={onToggleSidebar}
+        title={navOpen ? "Hide sidebar (Ctrl+B)" : "Show sidebar (Ctrl+B)"}
         style={{
           display: "grid", placeItems: "center",
           width: 32, height: 32, borderRadius: 6,
@@ -178,11 +181,12 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
           background: "transparent", color: "var(--bm-text3)",
           cursor: "pointer", flexShrink: 0,
         }}
-        className="md:hidden"
         type="button"
         aria-label="Toggle navigation"
+        aria-expanded={navOpen}
       >
-        <Menu size={15} />
+        <Menu size={15} className="md:hidden" />
+        <PanelLeft size={15} className="hidden md:block" />
       </button>
 
       {/* Search */}
@@ -277,6 +281,14 @@ export default function Topbar({ onToggleSidebar }: TopbarProps) {
 
       {/* Right controls */}
       <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+        <button type="button" onClick={() => (pane?.kind === "coach" ? closePane() : openPane({ kind: "coach" }))}
+          title="Ask your coach beside this page (Ctrl+J)" aria-pressed={pane?.kind === "coach"}
+          style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 32, padding: "0 10px", borderRadius: 6, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 600,
+            border: `1px solid ${pane?.kind === "coach" ? "var(--bm-accent-bd)" : "var(--bm-border2)"}`,
+            background: pane?.kind === "coach" ? "var(--bm-accent-dim)" : "transparent",
+            color: pane?.kind === "coach" ? "var(--bm-accent)" : "var(--bm-text3)" }}>
+          <Sparkles size={14} /><span className="hidden sm:inline">Coach</span>
+        </button>
         <NotificationBell />
 
         {/* Avatar menu */}

@@ -20,7 +20,7 @@
  * output fully themeable via the app's --bm-* CSS variables.
  */
 
-import { Fragment, type ReactNode } from "react";
+import React, { Fragment, type ReactNode } from "react";
 
 // ── Inline parsing (bold / italic / inline code) ───────────────────────────
 

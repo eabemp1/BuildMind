@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { OpenBesideButton } from "@/components/layout/OpenBesideButton";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 const STAGE_OPTIONS = ["Idea", "Validation", "MVP", "Launch", "Growth", "Revenue"] as const;
@@ -406,6 +407,7 @@ export default function ProjectsPage() {
                             <Check size={12} />
                           </Button>
                         )}
+                        <OpenBesideButton compact label={`Peek at ${s.name ?? s.title} beside this page`} request={{ kind: "project", projectId: s.id, title: s.name ?? s.title }} style={{ border: "none", padding: "6px 8px" }} />
                         <Link href={`/projects/${s.id}`}>
                           <Button variant="ghost" size="sm" className="px-2" title={`Open ${s.name ?? s.title}`}>
                             <ChevronRight size={14} />
