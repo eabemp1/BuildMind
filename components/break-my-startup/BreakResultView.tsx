@@ -370,6 +370,24 @@ function NextTab({ result, props, rec }: { result: BreakResult; props: BreakResu
   const ra = result.reflexionAction;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 26 }}>
+      {mv?.fork && (
+        <section style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-accent-bd)", borderRadius: 16, padding: "18px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
+          <span style={labelText}>Your idea serves {mv.fork.audiences.length} different groups. Start with one.</span>
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto minmax(0,1fr)", gap: 10, alignItems: "stretch" }}>
+            <div style={{ background: "color-mix(in srgb, var(--bm-accent) 12%, transparent)", border: "1px solid var(--bm-accent)", borderRadius: 12, padding: "10px 12px" }}>
+              <p style={{ ...labelText, color: "var(--bm-accent)" }}>Test first</p>
+              <p style={{ fontFamily: display, fontSize: 15, fontWeight: 700, color: "var(--bm-text)", margin: "2px 0 0", overflowWrap: "anywhere" }}>{mv.fork.start}</p>
+            </div>
+            <ArrowRight size={16} style={{ alignSelf: "center", color: "var(--bm-text3)" }} />
+            <div style={{ background: "var(--bm-bg3)", border: "1px dashed var(--bm-border)", borderRadius: 12, padding: "10px 12px" }}>
+              <p style={labelText}>Test later</p>
+              <p style={{ ...bodyText, color: "var(--bm-text2)", margin: "2px 0 0", overflowWrap: "anywhere" }}>{mv.fork.later.join(", ")}</p>
+            </div>
+          </div>
+          <p style={{ ...bodyText, fontSize: 13.5, maxWidth: "68ch" }}>{mv.fork.reason}</p>
+        </section>
+      )}
+
       {(mv || result.brutal_advice) && (
         <section style={{ background: "var(--bm-bg2)", border: `1px solid ${hold ? "var(--bm-accent)" : "var(--bm-border)"}`, borderRadius: 16, padding: "20px", display: "flex", flexDirection: "column", gap: 12 }}>
           <span style={labelText}>{mv ? (hold ? "Do this before building anything" : "Best next test") : "The blunt version"}</span>
