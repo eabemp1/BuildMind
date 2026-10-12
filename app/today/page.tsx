@@ -1511,7 +1511,10 @@ function TodayContent() {
       if (userId && project) {
         try {
           const delta = computeScoreDelta(selectedOutcome, 3);
-          const currentScore = project.execution_score ?? score;
+          // Start from the stored EXECUTION score. Falling back to the composite startup
+          // score (`score`) put a different metric into this column for founders with no
+          // execution score yet, and the whole chart then jumped scales.
+          const currentScore = project.execution_score ?? 0;
           const newScore = applyScoreDelta(currentScore, delta);
           const supabase = createClient();
           await supabase
@@ -2619,7 +2622,7 @@ function TodayContent() {
           )}
           <GhostGoalBanner
             projectId={project.id}
-            currentScore={score}
+            currentScore={Math.round(project.execution_score ?? 0)}
             stage={project.startup_stage ?? "Idea"}
             executionScore={project.execution_score ?? 0}
             streak={streak}
@@ -2904,4 +2907,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-}
+    }
