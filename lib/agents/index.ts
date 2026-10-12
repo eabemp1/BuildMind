@@ -34,6 +34,7 @@
  */
 
 import { callModelJSON, hasAIProvider } from "@/lib/ai-providers";
+import { buildFounderStylePromptBlock, type FounderStyleProfile } from "@/lib/founderStyle";
 import { discussionSearch, newsSearch } from "@/lib/search";
 
 // ─── D1 FIX: Prompt injection sanitiser ──────────────────────────────────────
@@ -106,6 +107,8 @@ export interface StartupContext {
   // pasted into the idea-only flow. Agents should scope how much weight
   // founder execution history gets accordingly.
   isOwnProject?: boolean;
+  /** Observed execution style, used by the Pivot Engine to personalise pivots. */
+  founderStyle?: FounderStyleProfile;
 }
 
 export interface ScrapedCompetitor {
@@ -308,7 +311,7 @@ Assess market demand. Be specific. Lower confidence when uncertain.`;
   try {
     const result = await callModelJSON<MarketResearchOutput>(
       [{ role: "system", content: system }, { role: "user", content: user }],
-      { role: "fast", maxTokens: 700 },
+      { role: "fast", maxTokens: 1100 },
     );
     // Validate required fields
     if (!result.demand_signals || !result.confidence) return fallback;
@@ -878,6 +881,27 @@ export interface PivotSuggestion {
   why_better: string;
   estimated_score_delta: number;  // how much this pivot improves viability score
   key_change: string;             // the single most important thing that changes
+  // ── Execution-style fit (present when the founder has behavioural history) ──
+  style_fit?: number;             // 0-100: how well this pivot suits how they actually execute
+  fit_reason?: string;            // one sentence tying the pivot to their observed behaviour
+  first_step?: string;            // a concrete step they can finish this week
+  effort?: "light" | "moderate" | "heavy";
+  confidence_boost?: string;      // the early win this pivot is likely to produce
+  needs_avoided_work?: boolean;   // true when it requires work they tend to avoid
+}
+
+function normalisePivotFit(p: Partial<PivotSuggestion>, hasStyle: boolean): Partial<PivotSuggestion> {
+  const effort = p.effort === "light" || p.effort === "moderate" || p.effort === "heavy" ? p.effort : undefined;
+  const fit = Number(p.style_fit);
+  const clean = (v: unknown, max: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : undefined);
+  return {
+    style_fit: Number.isFinite(fit) ? Math.min(100, Math.max(0, Math.round(fit))) : undefined,
+    fit_reason: hasStyle ? clean(p.fit_reason, 220) : undefined,
+    first_step: clean(p.first_step, 220),
+    effort,
+    confidence_boost: clean(p.confidence_boost, 200),
+    needs_avoided_work: hasStyle ? p.needs_avoided_work === true : undefined,
+  };
 }
 
 /**
@@ -897,6 +921,9 @@ export async function generatePivots(
       why_better: "Niche products have higher conversion and word-of-mouth",
       estimated_score_delta: 8,
       key_change: "Target audience definition",
+      first_step: "Write down the one customer type with the sharpest pain and message five of them this week.",
+      effort: "light",
+      confidence_boost: "Replies from a focused segment show whether the pain is real.",
     },
     {
       title: "B2B pivot",
@@ -905,6 +932,9 @@ export async function generatePivots(
       why_better: "B2B has clearer willingness-to-pay and longer retention",
       estimated_score_delta: 6,
       key_change: "Monetization model",
+      first_step: "List 20 businesses that have this problem and ask three for a 15 minute call.",
+      effort: "moderate",
+      confidence_boost: "A business agreeing to talk is a stronger signal than consumer interest.",
     },
     {
       title: "Services-first validation",
@@ -913,6 +943,9 @@ export async function generatePivots(
       why_better: "Validates willingness-to-pay before engineering investment",
       estimated_score_delta: 10,
       key_change: "Go-to-market approach",
+      first_step: "Offer to do the job by hand for one customer, and agree a price before you start.",
+      effort: "moderate",
+      confidence_boost: "One paid customer proves willingness to pay before you build anything.",
     },
   ];
 
@@ -931,12 +964,21 @@ Return ONLY valid JSON:
       "target_niche": "specific niche this pivot targets",
       "why_better": "specific reason this scores higher (reference the signals)",
       "estimated_score_delta": 5–20,
-      "key_change": "the single most important thing that changes"
+      "key_change": "the single most important thing that changes",
+      "style_fit": 0-100,
+      "fit_reason": "one sentence tying this pivot to the founder's observed execution style (omit if no style data)",
+      "first_step": "one concrete step the founder can finish within 7 days",
+      "effort": "light | moderate | heavy",
+      "confidence_boost": "the specific early win this pivot should produce within two weeks",
+      "needs_avoided_work": true or false
     }
   ]
 }
 
 Rules:
+- Every pivot needs a first_step and a confidence_boost, even without style data
+- Without style data, set style_fit to 50 and omit fit_reason
+- Pivots must be pursuable by one person with the founder's observed strengths; do not require skills or work they have shown no sign of
 - Each pivot must be MEANINGFULLY different from each other
 - estimated_score_delta: honest estimate of improvement, not inflated
 - Reference actual gaps and pain points from the signal data
@@ -956,7 +998,9 @@ Signal data:
 - Key gaps identified: ${signals.competitor_gaps.slice(0, 3).join(", ") || "none"}
 - Key pain points: ${signals.all_pain_points.slice(0, 3).join(", ") || "none"}
 
-Generate 3 pivots that improve on the weakest signals.`;
+${buildFounderStylePromptBlock(ctx.founderStyle)}
+
+Generate 3 pivots that improve on the weakest signals${ctx.founderStyle?.hasSignal ? " AND that this founder is likely to execute and finish" : ""}.`;
 
   try {
     const result = await callModelJSON<{ pivots: PivotSuggestion[] }>(
@@ -971,6 +1015,7 @@ Generate 3 pivots that improve on the weakest signals.`;
       why_better: p.why_better || "Addresses key signal gaps",
       estimated_score_delta: Math.min(25, Math.max(3, Number(p.estimated_score_delta) || 5)),
       key_change: p.key_change || "Strategy",
+      ...normalisePivotFit(p, !!ctx.founderStyle?.hasSignal),
     }));
   } catch {
     return fallbackPivots;
