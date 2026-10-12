@@ -127,21 +127,75 @@ export function buildEvidenceHierarchy(input: EvidenceInput, graded: CompetitorE
 
 // ── The next move follows the diagnosis ───────────────────────────────────
 
+/** One idea, several customers. The founder should test one at a time. */
+export interface AudienceFork {
+  audiences: string[];
+  start: string;
+  later: string[];
+  reason: string;
+}
+
 export interface NextMove {
   /** True when the biggest unknown is demand, so building more is the wrong move. */
   holdBuilding: boolean;
   action: string;
   why: string;
   doNotBuildYet: string[];
+  /** Present when the target customer is really two or more different groups. */
+  fork?: AudienceFork;
+}
+
+// Words that signal an audience that holds a budget (an organisation or a role
+// that buys for one). Used only to break the tie between audiences.
+const BUYER_WORDS = /\b(teams?|compan(y|ies)|businesses|business|hospitals?|clinics?|schools?|firms?|agenc(y|ies)|managers?|directors?|procurement|departments?|enterprises?|startups?|stores?|shops?|restaurants?|employers?|organi[sz]ations?|ngos?|governments?|insurers?|banks?|operators?|owners?|founders?|retailers?|suppliers?|vendors?)\b/i;
+
+/**
+ * Splits a target-customer string into distinct audiences. Conservative on
+ * purpose: "small and medium businesses" or "men and women" stay whole, and a
+ * split only happens when at least one side is a multi-word group and every
+ * side is a plausible audience name.
+ */
+export function splitAudiences(customer: string | undefined | null): string[] {
+  const text = (customer ?? "").replace(/\s+/g, " ").trim();
+  if (!text) return [];
+  const parts = text
+    .split(/\s*(?:,|;|&|\/|\+|\band\b|\bor\b|\bas well as\b)\s*/i)
+    .map((x) => x.replace(/^(and|or|both|the)\s+/i, "").trim().replace(/[.]+$/, ""))
+    .filter(Boolean);
+  if (parts.length < 2 || parts.length > 4) return [text];
+  const words = (x: string) => x.split(" ").length;
+  const anyMulti = parts.some((x) => words(x) >= 2);
+  const allPlausible = parts.every((x) => words(x) <= 6 && /[a-z]{3,}/i.test(x));
+  // A lone adjective ("small", "local") means this was one audience, not two.
+  const loneAdjective = parts.some((x) => words(x) === 1 && !/(s|ers?|ists?)$/i.test(x));
+  return anyMulti && allPlausible && !loneAdjective ? parts : [text];
+}
+
+export function pickAudienceFork(customer: string | undefined | null): AudienceFork | undefined {
+  const audiences = splitAudiences(customer);
+  if (audiences.length < 2) return undefined;
+  const buyers = audiences.filter((a) => BUYER_WORDS.test(a));
+  let start = audiences[0];
+  let reason: string;
+  if (buyers.length === 1) {
+    start = buyers[0];
+    reason = "They are the group most likely to hold a budget, so a yes from them is closer to a paying customer. The other group can come second, once you know what this one will pay for.";
+  } else {
+    reason = "Nothing in the description says which group pays first, so start with the one you can reach this week. Eight honest conversations with one group beat four with each.";
+  }
+  return { audiences, start, later: audiences.filter((a) => a !== start), reason };
 }
 
 export function buildNextMove(input: EvidenceInput, falsifiers: Falsifier[]): NextMove {
-  const customer = input.parsed?.target_customer?.trim() || "people who have this problem";
+  const rawCustomer = input.parsed?.target_customer?.trim() || "people who have this problem";
+  const fork = pickAudienceFork(input.parsed?.target_customer);
+  const customer = fork ? fork.start : rawCustomer;
   const noCustomer = !hasCustomerEvidence(input);
   const demandOpen = noCustomer || productDemandScore(input) < 55;
   if (demandOpen) {
     return {
       holdBuilding: true,
+      fork,
       action: `Interview 8 people from this group this week (${customer}) without describing your product. Ask what they did the last time the problem happened, what it cost them, and what they use now. Write down their exact words.`,
       why: "The biggest unknown is whether the problem is painful and frequent enough to act on. Eight conversations settle more of that than any build, pilot or campaign, at the lowest cost.",
       doNotBuildYet: [
@@ -154,6 +208,7 @@ export function buildNextMove(input: EvidenceInput, falsifiers: Falsifier[]): Ne
   const first = falsifiers[0];
   return {
     holdBuilding: false,
+    fork,
     action: first ? first.test : `Run the cheapest test that could prove your riskiest assumption wrong.`,
     why: "Demand has some direct support. The next most informative step is the test most likely to prove the thesis wrong.",
     doNotBuildYet: [],
