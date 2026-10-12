@@ -71,11 +71,21 @@ export async function GET(req: Request) {
   // tasks_done is a stored counter that only moves when a PATCH lands. Report
   // the live count instead so Today, Progress and the share card never differ.
   if (data) {
+    // current_score used to be whatever the browser last PATCHed: the composite
+    // startup score from one code path, the execution score from another. The goal's
+    // target is calibrated on EXECUTION score, so the live execution score is the
+    // only value that is comparable to it. Read it from the project, not the client.
+    let liveScore: number = typeof data.current_score === "number" ? data.current_score : 0;
+    try {
+      const { data: proj } = await admin.from("projects").select("execution_score").eq("id", projectId).eq("user_id", user.id).maybeSingle();
+      if (typeof proj?.execution_score === "number") liveScore = proj.execution_score;
+    } catch { /* keep stored value */ }
     try {
       const weeks = await loadGhostWeeks(admin, user.id, week);
       // Target comes from the Ghost Race too, so the goal and the race can't disagree.
-      return NextResponse.json({ ok: true, data: { ...data, tasks_done: weeks.current.total, target_tasks: ghostTarget(weeks.completed).ghost } });
+      return NextResponse.json({ ok: true, data: { ...data, current_score: liveScore, tasks_done: weeks.current.total, target_tasks: ghostTarget(weeks.completed).ghost } });
     } catch { /* fall back to the stored counter */ }
+    return NextResponse.json({ ok: true, data: { ...data, current_score: liveScore } });
   }
   return NextResponse.json({ ok: true, data });
 }
@@ -238,4 +248,4 @@ export async function PATCH(req: Request) {
   }
 
   return NextResponse.json({ ok: false, error: "Goal changed concurrently; please retry" }, { status: 409 });
-}
+      }
