@@ -287,7 +287,10 @@ export async function GET(req: Request) {
 
           await admin
             .from("projects")
-            .update({ momentum_score: batchMomentum, execution_score: batchExecution })
+            // execution_score is deliberately NOT written here. The nightly verdict used to
+            // overwrite it with 75 / 45 / 20, which clobbered the running score that
+            // check-ins build up and made the Ghost Goal and Progress chart saw-tooth.
+            .update({ momentum_score: batchMomentum })
             .eq("id", activeProject.id)
             .eq("user_id", ctx.user_id);
         }
@@ -525,7 +528,8 @@ export async function GET(req: Request) {
 
         await admin
           .from("projects")
-          .update({ momentum_score: newMomentum, execution_score: newExecution })
+          // execution_score is deliberately NOT written here (see the batch path above).
+          .update({ momentum_score: newMomentum })
           .eq("id", activeProject.id)
           .eq("user_id", user.id);
       }
@@ -566,4 +570,4 @@ export async function POST(req: Request) {
   }
 
   return GET(req);
-        }
+      }
