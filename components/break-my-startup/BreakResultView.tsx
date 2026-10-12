@@ -16,9 +16,9 @@
  *   Next steps what to do first, the test, the plan, pivots
  */
 
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, Plus, RefreshCw, Save } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, Plus, RefreshCw, Save, Sparkles } from "lucide-react";
 import { Markdown } from "@/components/ui/Markdown";
 import { Button } from "@/components/ui/button";
 import { RadialGauge } from "@/components/charts";
@@ -28,6 +28,7 @@ import {
 } from "@/components/break/EvidenceSections";
 import { Chip, Disclosure, afterFirstSentence, bodyText, body, display, firstSentence, labelText, mono, smallText } from "@/components/break-my-startup/ui";
 import type { BreakResult, PivotItem, RiskItem, RiskSeverity } from "@/components/break-my-startup/viewTypes";
+import { EffortDots, PivotCompare, RiskMap, RiskTree, RoadmapTimeline, SignalRadar, ThreatMap, fitColor } from "@/components/break-my-startup/Visuals";
 
 type TabId = "risks" | "proof" | "market" | "next";
 
@@ -121,11 +122,17 @@ function KeyFact({ label, tone, onClick, action, children }: { label: string; to
   );
 }
 
-function RiskRow({ risk, index, defaultOpen }: { risk: RiskItem; index: number; defaultOpen: boolean }) {
+function RiskRow({ risk, index, defaultOpen, focusToken }: { risk: RiskItem; index: number; defaultOpen: boolean; focusToken?: number }) {
   const [open, setOpen] = useState(defaultOpen);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!focusToken) return;
+    setOpen(true);
+    ref.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [focusToken]);
   const color = SEV_COLOR[risk.severity];
   return (
-    <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderLeft: `4px solid ${color}`, borderRadius: 12 }}>
+    <div ref={ref} id={`risk-${index}`} style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderLeft: `4px solid ${color}`, borderRadius: 12 }}>
       <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)} style={{ width: "100%", display: "flex", gap: 12, alignItems: "center", padding: "14px 16px", background: "none", border: 0, cursor: "pointer", textAlign: "left", color: "inherit" }}>
         <span style={{ fontFamily: mono, fontSize: 12, color: "var(--bm-text3)", minWidth: 18 }}>{index + 1}</span>
         <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
@@ -174,8 +181,15 @@ function RisksTab({ result }: { result: BreakResult }) {
   const work = result.surviveReasons ?? [];
   const shown = allWork ? work : work.slice(0, 3);
   const cov = result.focusAreaCoverage;
+  const [pick, setPick] = useState<{ i: number; t: number } | null>(null);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 26 }}>
+      {result.risks.length > 0 && (
+        <section style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", alignItems: "start" }}>
+          <RiskMap risks={result.risks} onPick={(i) => setPick({ i, t: Date.now() })} />
+          <RiskTree verdict={`${result.overallRisk} risk overall`} risks={result.risks} />
+        </section>
+      )}
       <section style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
           <h3 style={{ fontFamily: display, fontSize: 18, fontWeight: 700, color: "var(--bm-text)", margin: 0, letterSpacing: "-0.01em" }}>What breaks first</h3>
@@ -183,7 +197,7 @@ function RisksTab({ result }: { result: BreakResult }) {
             {counts.map((c) => <Chip key={c.s} color={SEV_COLOR[c.s]}>{c.n} {c.s.toLowerCase()}</Chip>)}
           </div>
         </div>
-        {result.risks.map((r, i) => <RiskRow key={i} risk={r} index={i} defaultOpen={i === 0} />)}
+        {result.risks.map((r, i) => <RiskRow key={i} risk={r} index={i} defaultOpen={i === 0} focusToken={pick?.i === i ? pick.t : undefined} />)}
       </section>
 
       {work.length > 0 && (
@@ -239,6 +253,7 @@ function MarketTab({ result }: { result: BreakResult }) {
       {sc && (
         <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <h3 style={{ fontFamily: display, fontSize: 18, fontWeight: 700, color: "var(--bm-text)", margin: 0 }}>Five signals</h3>
+          <SignalRadar scores={sc} overall={result.survival_probability} />
           <p style={smallText}>Scored 0 to 100. For demand, uniqueness and timing, higher is better. For competition and risk, lower is better.</p>
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             {SIGNALS.map((s) => {
@@ -263,6 +278,7 @@ function MarketTab({ result }: { result: BreakResult }) {
       {result.competitorTable && result.competitorTable.length > 0 && (
         <section style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <h3 style={{ fontFamily: display, fontSize: 18, fontWeight: 700, color: "var(--bm-text)", margin: 0 }}>Who you are up against</h3>
+          <ThreatMap competitors={result.competitorTable} />
           <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))" }}>
             {result.competitorTable.map((c) => {
               const ev = q[c.name.toLowerCase()];
@@ -312,11 +328,32 @@ function PivotCard({ pivot, result, onExplore }: { pivot: PivotItem; result: Bre
         {chk && <Chip color={chk.validatesOriginal ? "var(--bm-green)" : "var(--bm-amber)"}>{chk.relation === "same_problem" ? "Same problem" : chk.relation === "adjacent" ? "Adjacent problem" : "Different problem"}</Chip>}
       </div>
       <p style={{ ...bodyText, fontSize: 13.5 }}>{pivot.description}</p>
+      {(typeof pivot.style_fit === "number" || pivot.effort) && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {typeof pivot.style_fit === "number" && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ ...smallText, fontSize: 11.5 }}>Fits you</span>
+              <div style={{ flex: 1, height: 6, borderRadius: 99, background: "var(--bm-bg4)", overflow: "hidden" }}><div style={{ width: `${pivot.style_fit}%`, height: "100%", background: fitColor(pivot.style_fit) }} /></div>
+              <span style={{ fontFamily: mono, fontSize: 11.5, color: fitColor(pivot.style_fit) }}>{Math.round(pivot.style_fit)}</span>
+            </div>
+          )}
+          <EffortDots effort={pivot.effort} />
+          {pivot.fit_reason && <p style={{ ...smallText, fontSize: 12 }}>{pivot.fit_reason}</p>}
+          {pivot.needs_avoided_work && <Chip color="var(--bm-amber)">Needs work you tend to put off. Start small.</Chip>}
+        </div>
+      )}
       <dl style={{ margin: 0, display: "grid", gap: 6 }}>
         <div><dt style={{ ...labelText, display: "inline" }}>For: </dt><dd style={{ ...bodyText, fontSize: 13, display: "inline" }}>{pivot.target_niche}</dd></div>
         <div><dt style={{ ...labelText, display: "inline" }}>Why: </dt><dd style={{ ...bodyText, fontSize: 13, display: "inline" }}>{pivot.why_better}</dd></div>
         {pivot.key_change && <div><dt style={{ ...labelText, display: "inline" }}>Change: </dt><dd style={{ ...bodyText, fontSize: 13, display: "inline" }}>{pivot.key_change}</dd></div>}
       </dl>
+      {pivot.first_step && (
+        <div style={{ background: "var(--bm-bg3)", borderRadius: 10, padding: "9px 11px", borderLeft: "3px solid var(--bm-accent)" }}>
+          <p style={labelText}>Your first step</p>
+          <p style={{ ...bodyText, fontSize: 13 }}>{pivot.first_step}</p>
+          {pivot.confidence_boost && <p style={{ ...smallText, fontSize: 12, marginTop: 4 }}><strong style={{ color: "var(--bm-green)" }}>Early win:</strong> {pivot.confidence_boost}</p>}
+        </div>
+      )}
       {chk && <p style={{ ...smallText, fontSize: 12 }}>{chk.reason}</p>}
       <FocusTags areas={pivot.relatedFocusAreas} />
       <button type="button" onClick={onExplore} style={{ marginTop: "auto", border: "1px solid var(--bm-accent-bd)", background: "transparent", color: "var(--bm-accent)", borderRadius: 10, padding: "9px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
@@ -331,7 +368,6 @@ function NextTab({ result, props, rec }: { result: BreakResult; props: BreakResu
   const hold = Boolean(mv?.holdBuilding);
   const plan = result.executionPlan;
   const ra = result.reflexionAction;
-  const cols: Array<[string, string[] | undefined]> = plan ? [["Build", plan.mvp_roadmap], ["First actions", plan.first_10_actions], ["Reach customers", plan.gtm_plan]] : [];
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 26 }}>
       {(mv || result.brutal_advice) && (
@@ -367,16 +403,7 @@ function NextTab({ result, props, rec }: { result: BreakResult; props: BreakResu
       {plan && !hold && (
         <section style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <h3 style={{ fontFamily: display, fontSize: 18, fontWeight: 700, color: "var(--bm-text)", margin: 0 }}>Recovery plan</h3>
-          <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))" }}>
-            {cols.map(([title, items]) => (
-              <div key={title} style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 12, padding: "14px 16px" }}>
-                <p style={{ fontFamily: display, fontSize: 14, fontWeight: 700, color: "var(--bm-text)", margin: "0 0 8px" }}>{title}</p>
-                <ol style={{ margin: 0, paddingLeft: 20, listStyle: "decimal", display: "flex", flexDirection: "column", gap: 8 }}>
-                  {(items ?? []).slice(0, 4).map((it) => <li key={it} style={{ ...bodyText, fontSize: 13.5 }}>{it}</li>)}
-                </ol>
-              </div>
-            ))}
-          </div>
+          <RoadmapTimeline plan={plan} />
         </section>
       )}
 
@@ -402,6 +429,13 @@ function NextTab({ result, props, rec }: { result: BreakResult; props: BreakResu
             <RefreshCw size={15} style={{ color: "var(--bm-accent)" }} />
             <h3 style={{ fontFamily: display, fontSize: 18, fontWeight: 700, color: "var(--bm-text)", margin: 0 }}>If you changed direction</h3>
           </div>
+          {result.founderStyle && (
+            <div style={{ display: "flex", gap: 10, alignItems: "center", background: "var(--bm-accent-dim, var(--bm-bg3))", border: "1px solid var(--bm-accent-bd)", borderRadius: 12, padding: "10px 14px" }}>
+              <Sparkles size={15} style={{ color: "var(--bm-accent)", flexShrink: 0 }} />
+              <p style={{ ...bodyText, fontSize: 13 }}>Matched to how you work: <strong style={{ color: "var(--bm-text)" }}>{result.founderStyle.label}</strong>. Each direction starts with a step you can finish this week.</p>
+            </div>
+          )}
+          <PivotCompare current={result.survival_probability} pivots={result.pivots} styleLabel={result.founderStyle?.label} />
           <div style={{ display: "flex", gap: 12, overflowX: "auto", scrollSnapType: "x proximity", paddingBottom: 6 }}>
             {result.pivots.map((p) => <PivotCard key={p.title} pivot={p} result={result} onExplore={() => props.onExplorePivot(p)} />)}
           </div>
