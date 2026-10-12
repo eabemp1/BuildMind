@@ -387,7 +387,7 @@ export default function GhostGoalBanner({
                     <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
                       <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
                         <ProgressRing value={goal.current_score} max={goal.target_score} color={ghostColor} size={32} />
-                        <span style={{ fontSize: 8, color: "var(--bm-text4)", marginTop: 2 }}>score</span>
+                        <span style={{ fontSize: 8, color: "var(--bm-text4)", marginTop: 2 }}>exec</span>
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
                         <ProgressRing value={goal.tasks_done} max={goal.target_tasks} color={ghostColor} size={32} />
@@ -398,7 +398,7 @@ export default function GhostGoalBanner({
 
                   <div style={{ marginBottom: 10 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-                      <span style={{ fontSize: 10, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.07em" }}>Score progress</span>
+                      <span style={{ fontSize: 10, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.07em" }}>Execution score</span>
                       <span style={{ fontSize: 10, color: ghostColor, fontWeight: 700 }}>{goal.current_score} / {goal.target_score}{surpassed && " ✓"}</span>
                     </div>
                     <div style={{ height: 5, borderRadius: 99, background: "var(--bm-bg3)", overflow: "hidden" }}>
@@ -472,4 +472,4 @@ export default function GhostGoalBanner({
       </AnimatePresence>
     </>
   );
-}
+    }
