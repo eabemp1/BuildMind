@@ -39,6 +39,7 @@ import {
   recordActionShown,
   markIgnoredAfter24h,
 } from "@/lib/learning";
+import { loadFounderStyleProfile } from "@/lib/founderStyle";
 import { loadFounderIntelligence, buildFounderIntelligencePromptBlock } from "@/lib/founderIntelligence";
 
 type ReflexionStatus = "ok" | "partial" | "failed";
@@ -426,6 +427,7 @@ export async function POST(request: Request) {
         founderTopicsRepeated: ideaModeFounderCtx?.topics_repeated ?? [],
         founderDaysInactive: ideaModeFounderCtx?.days_inactive ?? undefined,
         isOwnProject: false,
+        founderStyle: hasAdminEnv() ? await loadFounderStyleProfile(createAdminClient(), userId) : undefined,
       };
 
       // Run 5-agent pipeline
@@ -585,6 +587,7 @@ export async function POST(request: Request) {
           agent_statuses: agentPipeline.agent_statuses,
           pivots,
           pivot_focus_tags: pivotTags,
+        founder_style: startupCtx.founderStyle?.hasSignal ? { label: startupCtx.founderStyle.styleLabel, pace: startupCtx.founderStyle.pace } : null,
           execution_plan: executionPlan,
           reflexion_action: reflexionAction
             ? {
@@ -759,6 +762,7 @@ export async function POST(request: Request) {
       founderTopicsRepeated: founderCtxRow?.topics_repeated ?? [],
       founderDaysInactive: founderCtxRow?.days_inactive ?? undefined,
       isOwnProject: true,
+      founderStyle: await loadFounderStyleProfile(supabase, userId, intelligenceState?.execution_state?.execution),
     };
 
     // Run 5-agent pipeline with full project context
@@ -973,6 +977,7 @@ export async function POST(request: Request) {
         agent_statuses: agentPipeline.agent_statuses,
         pivots,
         pivot_focus_tags: pivotTags,
+        founder_style: startupCtx.founderStyle?.hasSignal ? { label: startupCtx.founderStyle.styleLabel, pace: startupCtx.founderStyle.pace } : null,
         execution_plan: executionPlan,
         reflexion_action: reflexionAction
           ? {
