@@ -526,23 +526,29 @@ export async function getWeeklyPulseData(
     ? {
         goal_text: weeklyGoalRow.goal_text, target_score: weeklyGoalRow.target_score,
         // Same target and same count as the Ghost Race below, always.
-        current_score: weeklyGoalRow.current_score, target_tasks: ghostRace?.ghost ?? weeklyGoalRow.target_tasks,
+        current_score: typeof scorecard?.executionScore === "number" && scorecard.executionScore > 0 ? Math.round(scorecard.executionScore) : weeklyGoalRow.current_score, target_tasks: ghostRace?.ghost ?? weeklyGoalRow.target_tasks,
         tasks_done: actionsCompleted, status: weeklyGoalRow.status,
       }
     : null;
 
   const last7 = scoreHistory.slice(-7);
-  const startScore = last7[0]?.score ?? momentumScore;
+  const startScore = last7[0]?.score ?? (typeof scorecard?.executionScore === "number" ? scorecard.executionScore : 0);
   const sparkline: SparklinePoint[] = last7.map((entry, i) => {
     const ghost = weeklyGoal
       ? Math.round(startScore + ((weeklyGoal.target_score - startScore) * (i / Math.max(1, last7.length - 1))))
       : null;
     return { date: entry.date, real: entry.score, ghost };
   });
-  // FIX: the chart's last point (score_history) and the headline Momentum
-  // tile (scorecard) came from different reads and disagreed (30 vs 31 on a
-  // real share card). The newest point now equals the headline value.
-  if (sparkline.length > 0) sparkline[sparkline.length - 1].real = momentumScore;
+  // The chart plots EXECUTION score (score_history is written from the execution
+  // score at each check-in, and the ghost target is calibrated on that same scale).
+  // This used to overwrite the newest point with MOMENTUM, a different 0-100 metric,
+  // so the line jumped from e.g. 58 to 31 on the last day and the share card claimed
+  // "Momentum went from 58 to 31". The newest point is now the current execution
+  // score, which is the same scale as every point before it.
+  const liveExecution = scorecard?.executionScore;
+  if (sparkline.length > 0 && typeof liveExecution === "number" && liveExecution > 0) {
+    sparkline[sparkline.length - 1].real = Math.round(liveExecution);
+  }
 
   const milestonesWithPacing = milestones.filter((m) => m.risk !== "unknown").length;
   const isQuietWeek = !hasAnyGradableSignal({
@@ -630,4 +636,4 @@ Write a 2-3 sentence story-style summary of the founder's week. Brief, specific,
     day_of_week: dayOfWeek, confidence_by_outcome: confidenceByOutcome, confidence_index: confidenceIndex, top_override_reason: topOverrideReason,
     weekly_goal: weeklyGoal, sparkline, grades, story, generated_at: new Date().toISOString(),
   };
-        }
+      }
