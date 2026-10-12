@@ -217,7 +217,7 @@ export async function GET(request: Request) {
           {/* Explicit interpretation — turns the shape into a stated fact */}
           {chart.first !== undefined && chart.last !== undefined && chart.delta !== null && (
             <span style={{ color: COLORS.text2, fontSize: 18, marginTop: 14 }}>
-              Momentum went from {Math.round(chart.first)} to {Math.round(chart.last)} this week
+              Execution score went from {Math.round(chart.first)} to {Math.round(chart.last)} this week
               {chart.delta >= 0 ? " (up " : " (down "}{Math.abs(Math.round(chart.delta))} pts)
               {data.weekly_goal ? `, target was ${data.weekly_goal.target_score}` : ""}.
             </span>
