@@ -818,6 +818,7 @@ export default function BreakMyStartupPage() {
               onExplorePivot={handleExplorePivot}
               outcomeSaving={outcomeSaving} onOutcome={handleOutcome}
               onUnlock={() => showLimitModal("break_startup")}
+              ideaTitle={customIdea.trim() || selectedProject?.title || ""}
             />
           </motion.div>
         )}

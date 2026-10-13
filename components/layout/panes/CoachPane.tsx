@@ -13,6 +13,10 @@ import { useLimitModal } from "@/components/LimitModal";
 import { createClient } from "@/lib/supabase/client";
 import { storage } from "@/lib/storage";
 import { matchNavigation, parseReplyLinks } from "@/lib/coachNavigation";
+import { matchCoachAction } from "@/lib/coachActions/matcher";
+import { COACH_ACTION_CHIPS, type CoachActionChip } from "@/lib/coachActions/chips";
+import { CoachActionResultCard } from "@/components/coach/CoachActionResultCard";
+import type { CoachActionResult } from "@/lib/coachActions/types";
 import { useSidePane, type OpenPane } from "@/components/layout/side-pane-context";
 
 type CoachReq = Extract<OpenPane, { kind: "coach" }>;
@@ -41,10 +45,10 @@ export default function CoachPane({ req }: { req: CoachReq }) {
   useEffect(() => { createClient().auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null)); }, []);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
-  async function send(text: string) {
+  async function send(text: string, opts?: { action?: { id: string; params: Record<string, unknown> } }) {
     const msg = text.trim();
     if (!msg || busy) return;
-    const nav = matchNavigation(msg);
+    const nav = opts?.action ? null : matchNavigation(msg);
     if (nav) {
       setInput("");
       setMessages((p) => [...p, { id: `u${Date.now()}`, role: "user", content: msg }, { id: `a${Date.now()}`, role: "assistant", content: `Opening ${nav.label}…` }]);
@@ -52,7 +56,8 @@ export default function CoachPane({ req }: { req: CoachReq }) {
       return;
     }
     const remaining = FREE_COACH_MESSAGES_PER_DAY - storage.getCoachMessagesToday();
-    if (plan === "free" && !planLoading && remaining <= 0) { showLimitModal("aiCoach"); return; }
+    const isAction = Boolean(opts?.action) || matchCoachAction(msg) !== null;
+    if (plan === "free" && !planLoading && remaining <= 0 && !isAction) { showLimitModal("aiCoach"); return; }
     const fail = (content: string) => setMessages((p) => [...p, { id: `e${Date.now()}`, role: "assistant", content, error: true }]);
     if (!userId) { fail("Please sign in again before using the coach."); return; }
     if (!project?.id) { fail("Create or select a project first so I can coach against real context."); return; }
@@ -65,16 +70,17 @@ export default function CoachPane({ req }: { req: CoachReq }) {
     try {
       const res = await fetch("/api/ai/coach", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, projectId: project.id, message: msg, project, overview, memory: [], personality: "direct", messages: history }),
+        body: JSON.stringify({ userId, projectId: project.id, message: msg, project, overview, memory: [], personality: "direct", messages: history, action: opts?.action }),
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok || !payload?.success) throw new Error(payload?.error ?? "Coach unavailable");
       const data = payload.data ?? {};
+      const actionResult = data.kind === "action" && data.actionResult ? (data.actionResult as CoachActionResult) : undefined;
       const reply = data.kind === "action" && data.actionResult
         ? String(data.reply ?? data.actionResult.summary ?? "Done. Open the full Coach page to see the result.")
         : String(data.reply ?? data.answer ?? "I'm having trouble responding right now. Please try again.");
       if (data.kind !== "action") storage.recordCoachMessage();
-      setMessages((p) => p.map((m) => (m.id === pendingId ? { ...m, content: reply, pending: false } : m)));
+      setMessages((p) => p.map((m) => (m.id === pendingId ? { ...m, content: reply, pending: false, actionResult } : m)));
     } catch (e) {
       const message = e instanceof Error ? e.message : "Something went wrong. Try again.";
       if (message.toLowerCase().includes("limit")) showLimitModal("aiCoach");
@@ -93,6 +99,7 @@ export default function CoachPane({ req }: { req: CoachReq }) {
   }, [req.key, req.prompt, userId, project?.id]);
 
   const suggestions = ["What should I do next?", "What am I avoiding?", "Challenge my plan"];
+  const drawChips = COACH_ACTION_CHIPS.filter((c) => c.id === "draw_execution_intelligence" || c.id === "draw_progress");
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
@@ -103,6 +110,10 @@ export default function CoachPane({ req }: { req: CoachReq }) {
               Ask about {project ? <strong style={{ color: "var(--bm-text)" }}>{(project as { title?: string }).title ?? "your project"}</strong> : "your project"} while you keep working on the page beside this.
             </p>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {drawChips.map((c: CoachActionChip) => (
+                <button key={c.id} type="button" onClick={() => void send(c.label, { action: { id: c.id, params: c.params } })}
+                  style={{ border: "1px solid var(--bm-accent-bd)", background: "var(--bm-accent-dim)", color: "var(--bm-accent)", borderRadius: 99, padding: "6px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>{c.label}</button>
+              ))}
               {suggestions.map((s) => (
                 <button key={s} type="button" onClick={() => void send(s)}
                   style={{ border: "1px solid var(--bm-border2)", background: "var(--bm-bg3)", color: "var(--bm-text2)", borderRadius: 99, padding: "6px 12px", fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}>{s}</button>
@@ -122,6 +133,7 @@ export default function CoachPane({ req }: { req: CoachReq }) {
                 {m.pending ? <span style={{ fontSize: 13, color: "var(--bm-text3)" }}>Thinking…</span>
                   : m.error ? <span style={{ fontSize: 13, color: "var(--bm-red)" }}>{m.content}</span>
                   : <Markdown textSize={13.5}>{sanitizeMarkdown(parsed.text)}</Markdown>}
+                {m.actionResult && <CoachActionResultCard result={m.actionResult} />}
                 {parsed.links.length > 0 && (
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                     {parsed.links.map((l, i) => l.kind === "open" && (

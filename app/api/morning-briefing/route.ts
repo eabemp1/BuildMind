@@ -570,4 +570,4 @@ export async function POST(req: Request) {
   }
 
   return GET(req);
-      }
+        }

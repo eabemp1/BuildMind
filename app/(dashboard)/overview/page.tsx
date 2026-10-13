@@ -1,5 +1,6 @@
 "use client";
 
+import { OpenBesideButton } from "@/components/layout/OpenBesideButton";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -289,6 +290,7 @@ export default function OverviewPage() {
           <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: 28, fontWeight: 700, letterSpacing: "-0.025em", margin: "6px 0 0", color: "var(--bm-text)" }}>
             {founderFirst ? `Execution, ${founderFirst}` : "Execution"}
           </h1>
+          <div style={{ marginTop: 10 }}><OpenBesideButton label="Ask coach beside" request={{ kind: "coach", title: "Overview", prompt: "Draw my execution intelligence" }} /></div>
         </div>
         <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 99, border: "1px solid var(--bm-border)", background: todayDone ? "var(--bm-accent-dim)" : "var(--bm-bg2)", fontSize: 12, fontWeight: 600, color: todayDone ? "var(--bm-accent)" : "var(--bm-text3)" }}>
           {todayDone ? <CheckCircle2 size={13} /> : <Circle size={13} />}

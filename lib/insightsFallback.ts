@@ -54,3 +54,4 @@ export function deterministicInsights(input: InsightInput, evidenceMap: Record<s
 
   return out.slice(0, 4);
 }
+

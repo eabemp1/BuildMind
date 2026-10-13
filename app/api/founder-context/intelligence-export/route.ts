@@ -4,6 +4,8 @@
  * GET → the founder's own Founder Execution Intelligence data, as an
  * actual downloadable output — not another in-app page. Default JSON
  * (the full report, including the nested FounderIntelligenceState).
+ * ?format=visual returns a detailed visual report (HTML, prints to PDF) and
+ * ?format=png a poster of the same record.
  * ?format=csv returns just the standing trend as rows, for anyone who
  * wants to drop 30 days of readiness/engagement into a spreadsheet.
  * ?history=true additionally includes up to 30 days of past full-state
@@ -20,6 +22,8 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getEffectivePlan } from "@/lib/server/plan";
 import { buildFounderIntelligenceReport, standingTrendToCSV, getIntelligenceHistory } from "@/lib/server/founderIntelligenceExport";
+import { buildExecutionIntelligenceVisual } from "@/lib/visuals/intelligenceVisual";
+import { posterResponse, visualReportResponse } from "@/lib/visuals/exportResponses";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,7 +44,10 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url);
   let projectId = url.searchParams.get("projectId") || "";
-  const format = url.searchParams.get("format") === "csv" ? "csv" : "json";
+  const fmtParam = url.searchParams.get("format");
+  // json (default) and csv are the data exports; visual (HTML report, prints
+  // to PDF) and png (poster) draw the same record.
+  const format = fmtParam === "csv" || fmtParam === "visual" || fmtParam === "png" ? fmtParam : "json";
   const wantsHistory = url.searchParams.get("history") === "true";
 
   if (!projectId) {
@@ -58,6 +65,18 @@ export async function GET(req: Request) {
 
   const report = await buildFounderIntelligenceReport(user.id, projectId);
   if (!report) return NextResponse.json({ ok: false, error: "Could not build report" }, { status: 404 });
+
+  if (format === "visual" || format === "png") {
+    const spec = buildExecutionIntelligenceVisual({
+      state: report.fullState,
+      trend: report.standingTrend.map((t) => ({ recordedAt: t.recordedAt, daysInactive: t.daysInactive, engagement: t.engagement })),
+      accuracy: report.predictionAccuracy,
+      generatedAt: report.generatedAt,
+    });
+    return format === "visual"
+      ? visualReportResponse(spec, `buildmind-intelligence-${projectId}.html`)
+      : posterResponse(spec, `buildmind-intelligence-${projectId}.png`);
+  }
 
   if (format === "csv") {
     const csv = standingTrendToCSV(report.standingTrend);

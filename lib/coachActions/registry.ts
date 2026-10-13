@@ -25,6 +25,8 @@ import { getFounderScorecard, type FounderScorecard } from "@/lib/scorecard";
 import type { CoachActionId, CoachActionResult } from "./types";
 import { fetchBacklog, shapeBacklog, shapeMilestones, type BacklogView, type MilestoneProgress } from "./backlog";
 import { fetchExecutionLog, shapeExecutionLog, type ExecutionLogView } from "./executionLog";
+import { buildFounderIntelligenceReport } from "@/lib/server/founderIntelligenceExport";
+import { buildExecutionIntelligenceVisual, buildProgressVisual } from "@/lib/visuals/intelligenceVisual";
 import { buildSignalsResult, buildDecisionResult, buildBeliefsResult, buildMomentumResult } from "./intelligenceViews";
 
 export interface CoachActionContext {
@@ -36,6 +38,7 @@ export interface CoachActionContext {
   loaders?: {
     mirror?: (admin: SupabaseClient, userId: string, projectId: string) => Promise<FounderMirror>;
     scorecard?: (userId: string) => Promise<FounderScorecard>;
+    report?: (userId: string, projectId: string) => ReturnType<typeof buildFounderIntelligenceReport>;
   };
 }
 
@@ -435,6 +438,77 @@ export function buildExecutionLogResult(
   };
 }
 
+// ── draw_execution_intelligence ──────────────────────────────────────────
+// The same report the export builds, drawn. Builder plan, like the export it
+// links to. Every panel is a reshaping of a real field (lib/visuals).
+const drawExecutionIntelligence = defineAction({
+  id: "draw_execution_intelligence",
+  label: "Draw execution intelligence",
+  description: "A drawn picture of your Founder Execution Intelligence: standing, signals, how you operate, and why today's pick won.",
+  minPlan: "builder",
+  paramsSchema: z.object({}),
+  async run(ctx) {
+    const denied = await assertOwnsProject(ctx);
+    if (denied) return denied;
+    const report = await (ctx.loaders?.report ?? buildFounderIntelligenceReport)(ctx.userId, ctx.projectId);
+    if (!report) return { ok: false, status: 404, error: "Couldn't build the intelligence report." };
+    const visual = buildExecutionIntelligenceVisual({
+      state: report.fullState,
+      trend: report.standingTrend.map((t) => ({ recordedAt: t.recordedAt, daysInactive: t.daysInactive, engagement: t.engagement })),
+      accuracy: report.predictionAccuracy,
+      generatedAt: report.generatedAt,
+    });
+    const base = `/api/founder-context/intelligence-export?projectId=${encodeURIComponent(ctx.projectId)}`;
+    return {
+      ok: true,
+      result: {
+        actionId: "draw_execution_intelligence",
+        title: "Your execution intelligence",
+        summary: `Drawn from your own record: ${visual.panels.length} panels. Every number is a field from your data, and panels with no data are left out.`,
+        visual,
+        downloads: [
+          { label: "Visual report (HTML, print to PDF)", href: `${base}&format=visual` },
+          { label: "Poster (PNG)", href: `${base}&format=png` },
+          { label: "Full report (JSON)", href: `${base}&format=json` },
+        ],
+        note: "Open the visual report to print it or save it as a PDF.",
+      },
+    };
+  },
+});
+
+// ── draw_progress ────────────────────────────────────────────────────────
+const drawProgress = defineAction({
+  id: "draw_progress",
+  label: "Chart progress",
+  description: "Momentum, milestone completion and a calendar of the last 28 days, drawn from the scorecard, backlog and execution log.",
+  minPlan: "free",
+  paramsSchema: z.object({ days: z.number().int().min(7).max(35).default(28) }),
+  async run(ctx, params) {
+    const denied = await assertOwnsProject(ctx);
+    if (denied) return denied;
+    const [scorecard, fetched, logFetched] = await Promise.all([
+      (ctx.loaders?.scorecard ?? ((id: string) => getFounderScorecard(id)))(ctx.userId),
+      fetchBacklog(ctx.admin, ctx.userId, ctx.projectId),
+      fetchExecutionLog(ctx.admin, ctx.userId, params.days, ctx.now),
+    ]);
+    const milestones = fetched.ok ? shapeMilestones(fetched.milestones, fetched.tasks, ctx.now) : [];
+    const log = logFetched.ok ? shapeExecutionLog(logFetched.rows, params.days, ctx.now, logFetched.truncated) : null;
+    const visual = buildProgressVisual({ scorecard, milestones, log, days: params.days, now: ctx.now });
+    return {
+      ok: true,
+      result: {
+        actionId: "draw_progress",
+        title: "Your progress",
+        summary: `Momentum ${Math.round(scorecard.momentum)}, ${plural(scorecard.streak, "day")} streak, ${milestones.filter((m) => m.status === "completed").length} of ${plural(milestones.length, "milestone")} done.`,
+        visual,
+        downloads: [{ label: "Execution record (CSV)", href: `/api/founder-context/execution-log-export?days=${params.days}&format=csv` }],
+        note: "Dates are UTC.",
+      },
+    };
+  },
+});
+
 export const COACH_ACTIONS: Record<CoachActionId, RegisteredAction> = {
   export_intelligence: exportIntelligence,
   list_backlog: listBacklog,
@@ -444,6 +518,8 @@ export const COACH_ACTIONS: Record<CoachActionId, RegisteredAction> = {
   get_beliefs: getBeliefs,
   get_momentum: getMomentum,
   get_execution_log: getExecutionLog,
+  draw_execution_intelligence: drawExecutionIntelligence,
+  draw_progress: drawProgress,
 };
 
 const isActionId = (id: unknown): id is CoachActionId =>

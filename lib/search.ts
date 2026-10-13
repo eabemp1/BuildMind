@@ -27,6 +27,8 @@
  * SERVER-SIDE ONLY.
  */
 
+import { mergeResults, cacheGet, cacheSet } from "@/lib/searchRank";
+
 export interface SearchResult {
   title:       string;
   url:         string;
@@ -48,6 +50,7 @@ const TIMEOUT_MS = 8000; // slightly under Vercel's per-fetch budget
 // a proper provider is available (DDG has a 9 s timeout, fragile HTML
 // parsing, and frequently-broken/low-quality results — it only runs when
 // Tavily/Brave/Serper are all unavailable).
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function hasSearchApiKey(): boolean {
   return Boolean(
     process.env.BRAVE_SEARCH_API_KEY ||
@@ -272,27 +275,43 @@ async function synthesiseWithAI(query: string): Promise<SearchResponse> {
 // ── Waterfall orchestrators ───────────────────────────────────────────────────
 
 /**
+ * Run EVERY configured provider in parallel and merge (consensus-boosted,
+ * deduped, per-domain capped). DDG always runs as a fallback when the keyed
+ * providers all came back empty (it used to be skipped whenever any key was
+ * set, so a quota-exhausted key meant zero results). One retry on throw.
+ */
+async function runProviders(
+  kind: string, query: string, limit: number,
+  attempts: Array<() => Promise<SearchResponse | null>>,
+  ddg: () => Promise<SearchResponse | null>,
+): Promise<SearchResponse | null> {
+  const ck = `${kind}:${query}:${limit}`;
+  const hit = cacheGet<SearchResponse>(ck, 10 * 60 * 1000);
+  if (hit) return hit;
+  const safe = (fn: () => Promise<SearchResponse | null>) => fn().catch(() => fn().catch(() => null));
+  const settled = await Promise.all(attempts.map(safe));
+  let ok = settled.filter((r): r is SearchResponse => Boolean(r && r.results.length));
+  if (!ok.length) { const d = await safe(ddg); if (d?.results.length) ok = [d]; }
+  if (!ok.length) return null;
+  const merged: SearchResponse = {
+    results: mergeResults(ok.map((r) => r.results), query, limit),
+    provider: ok[0].provider, scraped: true, query,
+  };
+  if (merged.results.length) cacheSet(ck, merged);
+  return merged.results.length ? merged : null;
+}
+
+/**
  * webSearch — general web search.
  * Priority: Tavily → Brave → Serper → DDG (last resort) → AI synthesis
  */
 export async function webSearch(query: string, count = 10): Promise<SearchResponse> {
-  const attempts: Array<() => Promise<SearchResponse | null>> = [
+  const r = await runProviders("web", query, count, [
     () => searchTavily(query, "basic", count),
     () => searchBrave(query, "web", count),
     () => searchSerper(query, "search", count),
-    // Skip DDG when a real API key is present — its 9 s HTML-scrape timeout
-    // and unreliable parsing only make sense as a genuine last resort.
-    ...(!hasSearchApiKey() ? [() => searchDDG(query)] : []),
-  ];
-
-  for (const attempt of attempts) {
-    try {
-      const result = await attempt();
-      if (result && result.results.length > 0) return result;
-    } catch { /* fall through */ }
-  }
-
-  return synthesiseWithAI(query);
+  ], () => searchDDG(query));
+  return r ?? synthesiseWithAI(query);
 }
 
 /**
@@ -302,22 +321,12 @@ export async function webSearch(query: string, count = 10): Promise<SearchRespon
  */
 export async function discussionSearch(query: string, count = 10): Promise<SearchResponse> {
   const redditQuery = `${query} site:reddit.com OR site:news.ycombinator.com`;
-
-  const attempts: Array<() => Promise<SearchResponse | null>> = [
+  const r = await runProviders("disc", query, count, [
     () => searchTavily(`${query} reddit forum community discussion`, "basic", count),
     () => searchBrave(query, "discussions", count),
     () => searchSerper(redditQuery, "search", count),
-    ...(!hasSearchApiKey() ? [() => searchDDG(redditQuery)] : []),
-  ];
-
-  for (const attempt of attempts) {
-    try {
-      const result = await attempt();
-      if (result && result.results.length > 0) return result;
-    } catch { /* fall through */ }
-  }
-
-  return synthesiseWithAI(`${query} user pain points community complaints`);
+  ], () => searchDDG(redditQuery));
+  return r ?? synthesiseWithAI(`${query} user pain points community complaints`);
 }
 
 /**
@@ -325,21 +334,12 @@ export async function discussionSearch(query: string, count = 10): Promise<Searc
  * Priority: Tavily → Brave news → Serper news → DDG (last resort) → AI synthesis
  */
 export async function newsSearch(query: string, count = 8): Promise<SearchResponse> {
-  const attempts: Array<() => Promise<SearchResponse | null>> = [
-    () => searchTavily(`${query} recent news 2024 2025`, "basic", count),
+  const r = await runProviders("news", query, count, [
+    () => searchTavily(`${query} news`, "basic", count),
     () => searchBrave(query, "news", count),
     () => searchSerper(query, "news", count),
-    ...(!hasSearchApiKey() ? [() => searchDDG(`${query} news`)] : []),
-  ];
-
-  for (const attempt of attempts) {
-    try {
-      const result = await attempt();
-      if (result && result.results.length > 0) return result;
-    } catch { /* fall through */ }
-  }
-
-  return synthesiseWithAI(`${query} recent developments news`);
+  ], () => searchDDG(`${query} news`));
+  return r ?? synthesiseWithAI(`${query} recent developments news`);
 }
 
 /**

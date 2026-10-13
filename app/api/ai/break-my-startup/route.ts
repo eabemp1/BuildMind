@@ -18,6 +18,7 @@ import {
   type ScrapedCompetitor,
 } from "@/lib/agents";
 import { competitorSearch } from "@/lib/search";
+import { readPages } from "@/lib/pageReader";
 import { buildEvidenceLayer } from "@/lib/breakEvidence";
 import { extractTests, applyTrackRecord, summarizeTrackRecord } from "@/lib/breakCalibration";
 import { stripUnsupportedTraitClaims } from "@/lib/breakGuards";
@@ -73,6 +74,28 @@ async function scrapeCompetitors(query: string): Promise<ScrapeResult> {
   } catch {
     return { results: [], scraped: false, source: "none" };
   }
+}
+
+/**
+ * enrichCompetitors — search snippets are one or two sentences. Read the top
+ * pages themselves and fold what they actually say (description, pricing
+ * hints) into the snippet so the Competitor agent reasons from real page
+ * content. Best-effort, bounded (4 pages, ~6.5s each, in parallel).
+ */
+async function enrichCompetitors(list: ScrapedCompetitor[]): Promise<ScrapedCompetitor[]> {
+  const targets = list.map((c, i) => ({ c, i })).filter(({ c }) => c.url).slice(0, 4);
+  if (!targets.length) return list;
+  try {
+    const pages = await readPages(targets.map((t) => t.c.url), 4);
+    const out = [...list];
+    pages.forEach((pg, k) => {
+      if (!pg?.ok) return;
+      const { c, i } = targets[k];
+      const bits = [pg.description || pg.headings[0] || "", pg.prices.length ? `Prices seen: ${pg.prices.slice(0, 3).join(", ")}` : pg.hasPricingPage ? "Has a public pricing page" : ""].filter(Boolean);
+      if (bits.length) out[i] = { ...c, snippet: `${c.snippet} | From their site: ${bits.join(". ")}`.slice(0, 600) };
+    });
+    return out;
+  } catch { return list; }
 }
 
 /**
@@ -382,7 +405,7 @@ export async function POST(request: Request) {
         scrapeCompetitors(`${idea} startup tool software competitors`),
         lookupNamedCompetitors(knownCompetitorNames),
       ]);
-      const competitors = [...namedCompetitors, ...scrapeResult.results];
+      const competitors = await enrichCompetitors([...namedCompetitors, ...scrapeResult.results]);
       const competitors_scraped = scrapeResult.scraped || namedCompetitors.length > 0;
       const competitor_data_source = scrapeResult.source ?? "none";
 

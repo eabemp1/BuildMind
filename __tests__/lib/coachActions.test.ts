@@ -100,7 +100,26 @@ const fakeScorecard = {
   momentum: 34, momentumLabel: { label: "Low" }, momentumDelta: 14, momentumTrend: "up", streak: 1, xp: 120, isDecaying: false,
 } as unknown as FounderScorecard;
 
-const loaders = { mirror: async () => fakeMirror, scorecard: async () => fakeScorecard };
+const intelState: any = {
+  generated_at: "2026-10-12T09:00:00.000Z",
+  execution_state: {
+    momentum: { score: 62, trend: "up", delta: 7, streak_days: 3 },
+    execution: { completed_actions_7d: 4, completed_tasks_7d: 6, task_velocity_7d: 1.2, milestone_velocity_30d: null, repeated_postponements: 2, stall_days: null, inactivity_days: 0, focus_distribution: [{ category: "outreach", count: 5 }, { category: "build", count: 2 }] },
+  },
+  founder: { strengths: ["Ships fast"], avoidance_patterns: ["Customer calls"], execution_patterns: [], operating_windows: ["Mornings"], recommendation_acceptance: [], recommendation_rejection: [], behavioral_trends: [], confidence: 0.6, recent_changes: [], corrections: [] },
+  startup: { current_goal: "Get 5 paying users", active_milestones: [], stalled_milestones: [], current_projects: [], evidence: [], assumptions: [], risks: [], metrics: {}, strategic_priorities: [], recent_changes: [] },
+  strategy: { stated_priorities: [], observed_priorities: [], contradictions: [], strategic_drift: [], priority_confidence: 0.5 },
+  execution: { completed_actions: ["a", "b"], skipped_actions: ["c"], delayed_actions: [], repeated_actions: [], outcome_quality: [], execution_velocity: 66 },
+  temporal: { today_changes: [], week_changes: [], week_over_week_changes: ["Outreach is up 3 actions on last week."], increasing_behaviors: [], decreasing_behaviors: [], strengthening_patterns: [], weakening_patterns: [] },
+  signals: [{ id: "s1", type: "REPEATED_AVOIDANCE", severity: "high", confidence: 0.8, title: "Customer calls keep slipping", summary: "Postponed 3 times.", evidence: [], detected_at: "", recommended_response: "", coverage: { task_events: 1, reflections: 0, activity_events: 0, recommendation_outcomes: 0 }, observation_count: 3, limitations: [], lifecycle: "active" }],
+  decision: {
+    candidates: [], decision_basis: [],
+    top_candidate: { id: "t", action: "Call 2 customers", rationale: "r", expected_evidence: "e", supporting_signals: [], why_it_beats_alternatives: "w", scores: { impact: 90, urgency: 80, goal_relevance: 85, evidence_value: 90, founder_fit: 50, execution_probability: 60, opportunity_cost: 15, repetition_penalty: 0, behavioral_correction: 80, risk_reduction: 85, confidence: 70, total: 82 } },
+  },
+  archetype_stats: {}, source_summary: { reflections: 0, learning_logs: 0, activity_events: 0, milestones: 0, tasks: 0, action_logs: 0 },
+};
+const fakeReport: any = { fullState: intelState, standingTrend: [], predictionAccuracy: null, generatedAt: NOW.toISOString() };
+const loaders = { mirror: async () => fakeMirror, scorecard: async () => fakeScorecard, report: async () => fakeReport };
 
 describe("matchCoachAction — requests it should catch", () => {
   const backlogCases: Array<[string, Record<string, unknown>]> = [
@@ -299,7 +318,7 @@ describe("registry wiring", () => {
     for (const chip of COACH_ACTION_CHIPS) {
       expect(COACH_ACTIONS[chip.id]).toBeDefined();
       const r = await runCoachAction({ id: chip.id, params: chip.params }, { userId: "u1", projectId: "p1", admin: fakeAdmin(okTables), now: NOW, loaders }, "builder");
-      expect(r.ok, chip.id).toBe(true);
+      expect(r.ok, chip.id + " " + JSON.stringify(r)).toBe(true);
     }
   });
 

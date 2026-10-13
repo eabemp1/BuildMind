@@ -11,7 +11,8 @@
  * download links are refused unless they're same-origin API paths.
  */
 
-import { Download, ListChecks, Database, Flag, Radar, GitBranch, Brain, TrendingUp, History } from "lucide-react";
+import { Download, ListChecks, Database, Flag, Radar, GitBranch, Brain, TrendingUp, History, Shapes, LineChart } from "lucide-react";
+import { VisualBoard } from "@/components/visuals/VisualBoard";
 import type { CoachActionId, CoachActionResult } from "@/lib/coachActions/types";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
 
@@ -26,6 +27,8 @@ const ICONS: Record<CoachActionId, typeof Database> = {
   get_momentum: TrendingUp,
   get_execution_log: History,
   export_intelligence: Database,
+  draw_execution_intelligence: Shapes,
+  draw_progress: LineChart,
 };
 
 export function CoachActionResultCard({ result }: { result: CoachActionResult }) {
@@ -44,7 +47,13 @@ export function CoachActionResultCard({ result }: { result: CoachActionResult })
         </div>
       </div>
 
-      {result.stats && result.stats.length > 0 && (
+      {result.visual && (
+        <div className="mb-3">
+          <VisualBoard spec={result.visual} showHeader={false} />
+        </div>
+      )}
+
+      {!result.visual && result.stats && result.stats.length > 0 && (
         <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
           {result.stats.map((s) => (
             <div key={s.label} className="rounded-[var(--r-sm)] border border-[var(--bm-border)] bg-[var(--bm-bg2)] px-2.5 py-2">

@@ -16,6 +16,7 @@
  *   Next steps what to do first, the test, the plan, pivots
  */
 
+import { ShareBreak } from "./ShareBreak";
 import React, { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, Plus, RefreshCw, Save, Sparkles } from "lucide-react";
@@ -47,6 +48,8 @@ export interface BreakResultViewProps {
   onExplorePivot: (p: PivotItem) => void;
   outcomeSaving: string | null; onOutcome: (o: "completed" | "partial" | "overridden") => void;
   onUnlock: () => void;
+  /** Idea text, used as the title on the shared card. */
+  ideaTitle?: string;
 }
 
 function Hero({ result, onJump, onUnlock }: { result: BreakResult; onJump: (t: TabId) => void; onUnlock: () => void }) {
@@ -527,6 +530,7 @@ export function BreakResultView(props: BreakResultViewProps) {
             {props.addedProjectId ? <><CheckCircle2 size={13} style={{ color: "var(--bm-green)" }} />Added as project</> : <><Plus size={13} />Add as project</>}
           </Button>
         )}
+        {!result.gated && <ShareBreak result={result} idea={props.ideaTitle ?? ""} />}
         <Button variant="ghost" size="sm" onClick={props.onReset}><RefreshCw size={13} />Run again</Button>
         {props.addProjectError && <span style={{ ...smallText, color: "var(--bm-red)" }}>{props.addProjectError}</span>}
         {props.addedProjectId && <span style={smallText}>Saved as a new project. You can find it in your projects list.</span>}

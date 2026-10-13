@@ -295,4 +295,4 @@ export async function GET(req: NextRequest) {
     failed,
     details: dryRun ? details : undefined, // Only expose details in dry-run to avoid PII in logs
   });
-}
+    }

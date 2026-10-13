@@ -11,6 +11,7 @@
  * render in tests and in places that are not inside the app shell.
  */
 
+import type { CoachActionResult } from "@/lib/coachActions/types";
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 export interface PaneFact { label: string; value: string }
@@ -37,6 +38,8 @@ export interface CoachChatMessage {
   content: string;
   pending?: boolean;
   error?: boolean;
+  /** A Coach Action result (data card, drawn visual, downloads). */
+  actionResult?: CoachActionResult;
 }
 
 interface SidePaneApi {

@@ -636,4 +636,4 @@ Write a 2-3 sentence story-style summary of the founder's week. Brief, specific,
     day_of_week: dayOfWeek, confidence_by_outcome: confidenceByOutcome, confidence_index: confidenceIndex, top_override_reason: topOverrideReason,
     weekly_goal: weeklyGoal, sparkline, grades, story, generated_at: new Date().toISOString(),
   };
-      }
+        }

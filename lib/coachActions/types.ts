@@ -21,7 +21,11 @@ export type CoachActionId =
   | "get_decision_reasoning"
   | "get_beliefs"
   | "get_momentum"
-  | "get_execution_log";
+  | "get_execution_log"
+  | "draw_execution_intelligence"
+  | "draw_progress";
+
+import type { VisualSpec } from "@/lib/visuals/spec";
 
 export interface CoachActionDownload {
   label: string;
@@ -44,6 +48,8 @@ export interface CoachActionResult {
   summary: string;
   stats?: Array<{ label: string; value: string }>;
   rows?: CoachActionRow[];
+  /** A drawn picture of the data. Built from real fields by lib/visuals, never written by a model. */
+  visual?: VisualSpec;
   downloads?: CoachActionDownload[];
   /** Truncation / not-found / caveat text, shown small under the card body. */
   note?: string;

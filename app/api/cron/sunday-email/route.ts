@@ -327,4 +327,4 @@ export async function GET(request: Request) {
     emails_sent:     sent,
     emails_failed:   failed,
   });
-}
+        }

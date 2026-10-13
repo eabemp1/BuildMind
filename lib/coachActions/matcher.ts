@@ -136,10 +136,25 @@ const DECISION_PHRASE =
 const DATA_NOUN = /\b(data|report|records?|intelligence|history|progress|profile|everything)\b/;
 const INTELLIGENCE_RECORD = /\bintelligence\s+(?:record|records|report|data|history)\b/;
 
+// ── Draw / visualise ───────────────────────────────────────────────────────
+// A drawing verb AND a subject, so "chart my progress" draws but "I want to
+// chart a course for the company" does not. Checked before the advice filter
+// only when both are present, because "can you draw my execution intelligence"
+// is a request for the picture, not venting.
+const DRAW_VERB = /\b(draw|visuali[sz]e|visuali[sz]ation|chart|graph|plot|diagram|infographic|picture of|visual (?:of|for)|map out|illustrate)\b/;
+const DRAW_EXECUTION = /\b(execution|intelligence|signals?|decision|beliefs?|patterns?|how i (?:work|operate)|founder (?:model|profile)|everything|my data)\b/;
+const DRAW_PROGRESS = /\b(progress|momentum|milestones?|streak|tasks?|week|weeks|month|performance|consistency|activity|how i(?:'|’)?m doing)\b/;
+
 export function matchCoachAction(message: string): CoachActionMatch | null {
   // Trailing punctuation off so "what have i done?" and "what have i done" match alike.
   const t = (message ?? "").trim().toLowerCase().replace(/[?.!]+$/, "");
   if (!t || t.length > MAX_MATCHABLE_LENGTH) return null;
+
+  if (DRAW_VERB.test(t) && /\b(my|me|i|our)\b/.test(t)) {
+    if (DRAW_EXECUTION.test(t)) return { id: "draw_execution_intelligence", params: {} };
+    if (DRAW_PROGRESS.test(t)) return { id: "draw_progress", params: {} };
+    if (/\b(draw|visuali[sz]e|infographic)\b/.test(t)) return { id: "draw_execution_intelligence", params: {} };
+  }
 
   // Meta-questions about BuildMind's own reasoning — before the advice filter.
   if (DECISION_PHRASE.test(t)) return { id: "get_decision_reasoning", params: {} };

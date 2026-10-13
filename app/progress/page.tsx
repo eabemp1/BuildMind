@@ -19,6 +19,7 @@
 
 "use client";
 
+import { OpenBesideButton } from "@/components/layout/OpenBesideButton";
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -136,6 +137,10 @@ function ProgressContent() {
           }}>
             A grounded read of your execution over time - not another scorecard.
           </p>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+            <OpenBesideButton label="Chart my progress beside" request={{ kind: "coach", title: "Progress chart", prompt: "Chart my progress" }} />
+            <OpenBesideButton label="Draw my execution intelligence" request={{ kind: "coach", title: "Execution intelligence", prompt: "Draw my execution intelligence" }} />
+          </div>
         </div>
 
         {/* Vision Document retention hooks — shown before tabs */}
