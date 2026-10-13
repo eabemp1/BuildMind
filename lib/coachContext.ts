@@ -334,4 +334,4 @@ export function computeContextConfidence(signals: CoachBehavioralContext["signal
     if (signals[key as keyof typeof signals]) score += weight;
   }
   return Math.round(score * 100) / 100;
-        }
+      }

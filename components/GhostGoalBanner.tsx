@@ -472,4 +472,4 @@ export default function GhostGoalBanner({
       </AnimatePresence>
     </>
   );
-}
+    }

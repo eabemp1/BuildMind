@@ -439,25 +439,13 @@ Max 50 words total. No emojis. Direct. Respond in JSON: { "analysis": "..." }`,
   }
   return { job: "weekly_mirror", sent, total: (contexts ?? []).length };
 }
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: { "Access-Control-Allow-Origin": "*" } });
 
   const secret = req.headers.get("x-job-secret");
   if (secret !== Deno.env.get("CRON_SECRET")) return new Response("Unauthorized", { status: 401 });
-
-  // RETIRED. The Vercel crons (/api/morning-briefing, /api/cron/evening-check,
-  // /api/cron/weekly-report, /api/cron/sunday-email) are the single source of truth.
-  // This function duplicated them with different rules: a flat -2 momentum decay
-  // (the app uses the EMA in lib/momentum.ts), `days_inactive` forced to 1 instead of
-  // incremented, the pre-rename `avoidance_signals` column, and no per-day send claim,
-  // so every founder could be nudged and decayed twice a day. Set
-  // ENABLE_LEGACY_SCHEDULED_JOBS=true only to run it deliberately.
-  if (Deno.env.get("ENABLE_LEGACY_SCHEDULED_JOBS") !== "true") {
-    return new Response(JSON.stringify({ retired: true, message: "scheduled-jobs is retired; Vercel crons own these jobs." }), {
-      status: 410, headers: { "Content-Type": "application/json" },
-    });
-  }
 
   const { job, dry_run } = await req.json().catch(() => ({ job: "", dry_run: false }));
 

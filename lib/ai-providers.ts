@@ -618,23 +618,11 @@ function isRetryableProviderError(err: unknown): boolean {
   );
 }
 
-/**
- * Slices model output down to its outermost JSON value - object OR array.
- * Looking only for { ... } cut a top-level array "[{a},{b}]" down to "{a},{b}",
- * which never parses, so every provider was rejected in turn.
- */
-export function extractJSONText(clean: string): string {
-  const firstObj = clean.indexOf("{");
-  const firstArr = clean.indexOf("[");
-  const isArray = firstArr >= 0 && (firstObj < 0 || firstArr < firstObj);
-  const start = isArray ? firstArr : firstObj;
-  const end = isArray ? clean.lastIndexOf("]") : clean.lastIndexOf("}");
-  return start >= 0 && end > start ? clean.slice(start, end + 1) : clean;
-}
-
 function assertValidJSONModeOutput(text: string): void {
   const clean = sanitizeModelOutput(text);
-  const json = extractJSONText(clean);
+  const start = clean.indexOf("{");
+  const end = clean.lastIndexOf("}");
+  const json = start >= 0 && end > start ? clean.slice(start, end + 1) : clean;
   try {
     JSON.parse(json);
   } catch (err) {
@@ -926,7 +914,9 @@ export async function callModelJSON<T>(
       ];
   const text = await callModel(jsonMessages, { ...options, jsonMode: true });
   const clean = sanitizeModelOutput(text);
-  const json = extractJSONText(clean);
+  const start = clean.indexOf("{");
+  const end = clean.lastIndexOf("}");
+  const json = start >= 0 && end > start ? clean.slice(start, end + 1) : clean;
   try {
     return sanitizeParsedValue(JSON.parse(json) as T);
   } catch {

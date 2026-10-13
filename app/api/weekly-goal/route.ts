@@ -248,4 +248,4 @@ export async function PATCH(req: Request) {
   }
 
   return NextResponse.json({ ok: false, error: "Goal changed concurrently; please retry" }, { status: 409 });
-}
+      }

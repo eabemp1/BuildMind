@@ -1477,4 +1477,4 @@ function extractAction(text: string): string {
     /\b(do|send|call|write|post|reach out|open|find|talk|test|launch|build|contact)\b/i.test(s)
   );
   return actionSentence ?? sentences[sentences.length - 1] ?? "";
-}
+  }

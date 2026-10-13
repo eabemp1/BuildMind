@@ -1408,4 +1408,4 @@ export async function loadFounderIntelligence(
     logError("founderIntelligence/loadFounderIntelligence", err, { userId, projectId });
     return buildFounderIntelligenceState({ ...preloaded, now });
   }
-          }
+                                                                                          }

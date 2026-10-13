@@ -116,22 +116,6 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: { "Access-Control-Allow-Origin": "*" } });
   }
 
-  // SECURITY: this function used to accept ANY caller that held the public anon key
-  // (the header comment promised a CRON_SECRET check that was never implemented), so
-  // anyone could trigger a push to every subscriber. Require the shared secret.
-  const expected = Deno.env.get("CRON_SECRET") ?? "";
-  const given = req.headers.get("x-cron-secret") ?? req.headers.get("x-job-secret") ?? "";
-  if (!expected || given !== expected) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
-  }
-
-  // RETIRED duplicate of /api/push/send-daily (Vercel, 07:00 UTC), which respects the
-  // Settings streak-reminder switch and claims one send per user per day. This copy did
-  // neither, so subscribers got two daily pushes. Set ENABLE_LEGACY_DAILY_PUSH=true to run it.
-  if (Deno.env.get("ENABLE_LEGACY_DAILY_PUSH") !== "true") {
-    return new Response(JSON.stringify({ retired: true }), { status: 410, headers: { "Content-Type": "application/json" } });
-  }
-
   const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
   const vapidPublic = Deno.env.get("NEXT_PUBLIC_VAPID_PUBLIC_KEY") ?? "";

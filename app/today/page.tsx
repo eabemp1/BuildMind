@@ -2,7 +2,7 @@
 
 import { Suspense, useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import { selectActiveProject, useActiveProjectId, useProjectSummariesQuery, queryKeys, useFounderScorecardQuery } from "@/lib/queries";
 import { useQueryClient } from "@tanstack/react-query";
@@ -20,8 +20,7 @@ import BuildMindLoader from "@/components/BuildMindLoader";
 import MorningBriefingModal from "@/components/MorningBriefingModal";
 import RecoveryModeCard from "@/components/RecoveryModeCard";
 import { BlockerInsightCard } from "@/components/BlockerInsightCard";
-import { PaywallMoment } from "@/components/PaywallMoment";
-import { Clock, CheckCircle2, Copy, Check, Flame, Brain, Sparkles, AlertCircle, TrendingUp, RotateCcw, Zap, ArrowRight, Trophy } from "lucide-react";
+import { Clock, Copy, Check, Flame, Brain, Sparkles, AlertCircle, TrendingUp, RotateCcw, Zap, ArrowRight, Trophy } from "lucide-react";
 import { storage } from "@/lib/storage";
 import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
 import { MobileCheckin } from "@/components/MobileCheckin";
@@ -33,7 +32,6 @@ import { linkifyChannels } from "@/lib/linkifyChannels";
 import GhostGoalBanner from "@/components/GhostGoalBanner";
 import ReckoningPill from "@/components/ReckoningPill";
 import { recordOverride } from "@/lib/founderContext";
-import { truncateChars } from "@/lib/textTruncate";
 import type { MorningBriefing } from "@/lib/founderContext";
 import { IntelligencePanel, type TodayIntelligenceSummary } from "./components/IntelligencePanel";
 import { WhatChangedCard } from "./components/WhatChangedCard";
@@ -49,363 +47,8 @@ import { useUIMode } from "@/lib/uiMode";
 import { WhyThisPanel } from "./components/WhyThisPanel";
 import { UIModeToggle } from "@/components/ui/UIModeToggle";
 import { RadialGauge } from "@/components/charts/RadialGauge";
-
-type Outcome = "completed" | "blocked" | "partial" | "learned";
-type ReflexionMeta = {
-  verdict: string;
-  criticPersona: string;
-  rationale: string;
-  loopRan: boolean;
-  passedCritic: boolean;
-  lastReflectionUsed: boolean;
-  wasHardFallback?: boolean;
-  hardFallbackReasons?: string[];
-};
-
-// ── Milestone Break interstitial (fires after milestone/stage change) ────────
-type MilestoneBreakResult = {
-  // NOTE: "stalling" is not yet emitted by app/api/ai/milestone-break/route.ts
-  // (which only produces "milestone_complete" | "stage_transition" today).
-  // Client-side is ready for a future stalled-milestone detector; until the
-  // server emits it, this branch never renders.
-  trigger: "milestone_complete" | "stage_transition" | "stalling";
-  triggerLabel: string;
-  brutal_points: [string, string, string];
-  recommended_action: string;
-  generated_at: string;
-};
-
-// One colour per kind of work, so the page itself says what sort of day this is.
-function missionAccent(kind?: string): string {
-  switch (kind) {
-    case "interview": case "outreach": case "follow_up": return "#4AB8B0";
-    case "build": return "#9B87F5";
-    case "publish": return "#E8C547";
-    case "pricing": return "var(--bm-green, #4ade80)";
-    case "analyze": return "var(--bm-intel, #6FA8FF)";
-    case "unblock": return "var(--bm-red, #E05555)";
-    default: return "var(--bm-accent)";
-  }
-}
-
-type ActionData = {
-  action: string;
-  message: string;
-  why: string;
-  time: string;
-  destKey?: string;
-  isAI: boolean;
-  reflexion?: ReflexionMeta;
-  // log_row_id from recordActionShown — closes the learning loop via reflexion-outcome
-  log_row_id?: string;
-  difficulty?: "light" | "focused" | "deep"; // From app/api/ai/today-action's response
-  // Confidence as a branch — when true, action/why were composed with
-  // explicit evidence-gathering framing instead of a confident directive.
-  // See CONFIDENCE NOTICE in app/api/ai/today-action/stream/route.ts.
-  isLowConfidence?: boolean;
-  // Founder Intelligence OS (Phase 10) — layered above the existing action,
-  // never required for the card to render. See app/today/components/IntelligencePanel.tsx.
-  intelligence?: TodayIntelligenceSummary;
-  // Mission planner (lib/todayMission.ts): what kind of work today is, and why.
-  missionKind?: string;
-  missionLabel?: string;
-  missionReasons?: string[];
-  doneWhen?: string;
-  firstStep?: string;
-  hasDraft?: boolean;
-  groundedIn?: Array<{ title: string; url: string }>;
-};
-
-type CachedTodayAction = {
-  date?: string;
-  projectId?: string;
-  stage?: string;
-  data?: ActionData;
-};
-
-type DebtSuppression = {
-  debtSuppressed: true;
-  debtCategory?: string | null;
-  debtMessage: string;
-  interventionHint?: string;
-  stage?: string;
-};
-
-function isActionData(value: unknown): value is ActionData {
-  if (!value || typeof value !== "object") return false;
-  const data = value as Partial<ActionData>;
-  return (
-    typeof data.action === "string" &&
-    typeof data.message === "string" &&
-    typeof data.why === "string" &&
-    typeof data.time === "string"
-  );
-}
-
-function sanitizeVisibleText(value: string): string {
-  return value
-    .replace(/<think>[\s\S]*?<\/think>/gi, "")
-    .replace(/<think>[\s\S]*$/gi, "")
-    .replace(/^[\s\S]*<\/think>/gi, "")
-    .replace(/[•→⇒➜➔]/g, "-")
-    .replace(/[—–]/g, "-")
-    .replace(/[“”]/g, '"')
-    .replace(/[‘’]/g, "'")
-    .replace(/\u2026/g, "...")
-    .trim();
-}
-
-function sanitizeActionData(data: ActionData): ActionData | null {
-  const action = sanitizeVisibleText(data.action);
-  const message = sanitizeVisibleText(data.message);
-  const why = sanitizeVisibleText(data.why);
-  if (!action || !message || !why) return null;
-  return {
-    ...data,
-    action,
-    message,
-    why,
-    reflexion: data.reflexion
-      ? { ...data.reflexion, rationale: sanitizeVisibleText(data.reflexion.rationale) || why }
-      : data.reflexion,
-  };
-}
-
-function unwrapActionPayload(payload: unknown): ActionData | null {
-  if (!payload || typeof payload !== "object") return null;
-  const maybePayload = payload as { data?: unknown };
-  const candidate = isActionData(maybePayload.data) ? maybePayload.data : payload;
-  return isActionData(candidate) ? sanitizeActionData({ ...candidate, isAI: true }) : null;
-}
-
-function unwrapDebtPayload(payload: unknown): DebtSuppression | null {
-  if (!payload || typeof payload !== "object") return null;
-  const maybePayload = payload as { data?: unknown };
-  const candidate = (maybePayload.data && typeof maybePayload.data === "object") ? maybePayload.data : payload;
-  const data = candidate as Partial<DebtSuppression>;
-  if (data.debtSuppressed === true && typeof data.debtMessage === "string") {
-    return {
-      debtSuppressed: true,
-      debtCategory: data.debtCategory ?? null,
-      debtMessage: sanitizeVisibleText(data.debtMessage),
-      interventionHint: typeof data.interventionHint === "string" ? sanitizeVisibleText(data.interventionHint) : undefined,
-      stage: typeof data.stage === "string" ? data.stage : undefined,
-    };
-  }
-  return null;
-}
-
-// ── Stored reflection shape (from bm_today_action written by /reflect) ──────
-type StoredReflection = {
-  action: string;
-  outcome: Outcome;
-  note?: string;
-  confidence?: number;
-  witnessed?: string; // acknowledgment line from app/reflect — surfaced here too, not just on /reflect
-};
-
-// ── Fallback actions (used when API is unavailable) ──────────────────────────
-const DESTINATIONS: Record<string, { icon: string; label: string; url?: string }[]> = {
-  idea:       [{ icon: "𝕏", label: "Twitter / X", url: "https://twitter.com/intent/tweet" }, { icon: "🧵", label: "Indie Hackers", url: "https://www.indiehackers.com" }, { icon: "💬", label: "r/startups", url: "https://reddit.com/r/startups/submit" }, { icon: "📱", label: "Text 3 people" }],
-  validation: [{ icon: "𝕏", label: "Twitter / X", url: "https://twitter.com/intent/tweet" }, { icon: "🧵", label: "Indie Hackers", url: "https://www.indiehackers.com" }, { icon: "💼", label: "LinkedIn DM" }, { icon: "📱", label: "WhatsApp" }],
-  prototype:  [{ icon: "🚀", label: "Product Hunt", url: "https://www.producthunt.com" }, { icon: "𝕏", label: "Twitter / X", url: "https://twitter.com/intent/tweet" }, { icon: "🧵", label: "Indie Hackers", url: "https://www.indiehackers.com" }, { icon: "🎥", label: "Loom → share" }],
-  mvp:        [{ icon: "🚀", label: "Product Hunt", url: "https://www.producthunt.com" }, { icon: "𝕏", label: "Twitter / X", url: "https://twitter.com/intent/tweet" }, { icon: "🧵", label: "Indie Hackers", url: "https://www.indiehackers.com" }, { icon: "💬", label: "WhatsApp" }],
-  launch:     [{ icon: "🚀", label: "Product Hunt", url: "https://www.producthunt.com/posts/new" }, { icon: "𝕏", label: "Twitter / X", url: "https://twitter.com/intent/tweet" }, { icon: "🧵", label: "Indie Hackers", url: "https://www.indiehackers.com/post" }, { icon: "📰", label: "Hacker News", url: "https://news.ycombinator.com/submit" }],
-  // FIX: no "growth" key existed here, so DESTINATIONS[aiAction?.destKey ?? stageKey] ?? DESTINATIONS.idea
-  // silently fell back to idea-stage sharing channels (Reddit r/startups, "text 3 people")
-  // for a founder who is already past launch and working on retention.
-  growth:     [{ icon: "📞", label: "Call directly" }, { icon: "📧", label: "Email personally" }, { icon: "💼", label: "LinkedIn" }, { icon: "𝕏", label: "Twitter DM" }],
-  revenue:    [{ icon: "📞", label: "Call directly" }, { icon: "📧", label: "Email personally" }, { icon: "💼", label: "LinkedIn" }, { icon: "𝕏", label: "Twitter DM" }],
-};
-
-const STATIC_ACTIONS: Record<string, { action: string; message: string; why: string; time: string; destKey: string }> = {
-  idea:       { action: "Talk to 5 people who have this problem before writing any code.", message: "Hey, quick question — what's your biggest challenge with [your problem area]? I'm researching it and would love 10 minutes.", why: "Every assumption you have about your user is probably wrong. Conversations cost nothing to invalidate them.", time: "2 hours", destKey: "idea" },
-  validation: { action: "Send this outreach message to 10 potential users today.", message: "Hey — I'm building something for people who struggle with [problem]. What do you currently do when [problem] happens? Not pitching, just learning.", why: "The Mom Test: ask about their life, not your idea. You'll get honest answers that way.", time: "1–2 hours", destKey: "validation" },
-  prototype:  { action: "Record a 3-minute Loom walkthrough and send it to 5 people today.", message: "Hey — I've built a rough prototype for [problem]. Would you watch a 3-minute demo and tell me what confuses you most? Brutal honesty only.", why: "Dropbox got 75K signups from a demo video before writing any backend code. Ship something real.", time: "Under 2 hours", destKey: "prototype" },
-  mvp:        { action: "Send your working link to one warm contact before end of day.", message: "Hey — I've been building [product] to solve [problem]. It's rough but working. Would you try it for 10 minutes and tell me what breaks?", why: "The version they see today teaches you more than 3 more days of polishing. Ship it.", time: "30 minutes", destKey: "mvp" },
-  launch:     { action: "Post on Product Hunt this week — imperfect listing beats no listing.", message: "We just launched [product] on Product Hunt — it [solves problem] for [target users]. Would love your support and brutal feedback: [link]", why: "You don't need to be ready. You need to be visible.", time: "3 hours to prepare", destKey: "launch" },
-  // FIX: no "growth" key existed here, so buildContextualStaticAction()'s
-  // STATIC_ACTIONS[stageKey] ?? STATIC_ACTIONS.idea silently fell back to
-  // "Talk to 5 people who have this problem before writing any code" for a
-  // founder already past launch — the AI-unavailable fallback path was
-  // telling a Growth-stage founder to re-do Idea-stage validation.
-  growth:     { action: "Call one churned user today — not to win them back, to understand why they left.", message: "Hey [name] — I noticed you stopped using [product]. No sales pitch. I just want to understand what didn't work so I can fix it. 10 minutes?", why: "Retention beats acquisition. Every churn conversation tells you more than another week of dashboards.", time: "1 hour", destKey: "growth" },
-  revenue:    { action: "Call one churned user today — not to win them back, to understand why they left.", message: "Hey [name] — I noticed you stopped using [product]. No sales pitch. I just want to understand what didn't work so I can fix it. 10 minutes?", why: "Churn analysis conversations are the highest-leverage activity at revenue stage.", time: "1 hour", destKey: "revenue" },
-};
-
-function inferProjectAudience(targetUsers: string, productName: string, description = "", problem = ""): string {
-  if (targetUsers.trim()) return targetUsers.trim();
-  const haystack = `${productName} ${description} ${problem}`.toLowerCase();
-  if (/(consent|privacy|gdpr|compliance|audit)/.test(haystack)) return "data privacy officers or compliance managers";
-  if (/(fintech|payment|bank|invoice|accounting|finance)/.test(haystack)) return "finance operators or fintech founders";
-  if (/(health|clinic|patient|medical)/.test(haystack)) return "healthcare operators";
-  if (/(school|student|teacher|course|learning)/.test(haystack)) return "education operators";
-  if (/(shop|commerce|store|retail)/.test(haystack)) return "e-commerce operators";
-  return productName.trim() ? `${productName.trim()} target users` : "people in your target segment";
-}
-
-function inferProjectProblem(problem: string, productName: string, description = ""): string {
-  if (problem.trim()) return problem.trim();
-  const haystack = `${productName} ${description}`.toLowerCase();
-  if (/(consent|privacy|gdpr|compliance|audit)/.test(haystack)) return "verifiable consent tracking and audit logging";
-  if (description.trim()) return truncateChars(description, 120);
-  return productName.trim() ? `${productName.trim()} and the workflow it improves` : "their current workflow";
-}
-
-function buildContextualStaticAction(
-  stageKey: string,
-  productName: string,
-  targetUsers: string,
-  problem: string,
-  description: string,
-): { action: string; message: string; why: string; time: string; destKey: string } {
-  const base = STATIC_ACTIONS[stageKey] ?? STATIC_ACTIONS.idea;
-  const audience = inferProjectAudience(targetUsers, productName, description, problem);
-  const problemDesc = inferProjectProblem(problem, productName, description);
-  return {
-    ...base,
-    action: `Message 3 ${audience} today - ask about ${problemDesc}, not your idea.`,
-    message: `Hi [Name], quick question - I'm researching ${problemDesc} for ${audience}. How are you handling this today, and what is the most frustrating part? I'd value 10 minutes of honest context.`,
-    why: `This gives ${productName || "your startup"} real evidence from ${audience} instead of another internal guess.`,
-  };
-}
-
-const OUTCOME_CHIPS: { id: Outcome; label: string; description: string; color: string; bg: string; border: string }[] = [
-  { id: "completed", label: "Completed",         description: "Task fully executed as planned.",        color: "var(--bm-text)",  bg: "var(--bm-bg4)", border: "var(--bm-border3)" },
-  { id: "partial",   label: "Partly done",       description: "Incomplete but made progress.",          color: "var(--bm-text)",  bg: "var(--bm-bg4)", border: "var(--bm-border3)" },
-  { id: "blocked",   label: "Blocked",           description: "Faced obstacles or issues.",             color: "var(--bm-text)",  bg: "var(--bm-bg4)", border: "var(--bm-border3)" },
-  { id: "learned",   label: "Learned something", description: "Didn't execute, but gained a real insight.", color: "var(--bm-text)",  bg: "var(--bm-bg4)", border: "var(--bm-border3)" },
-];
-
-
-// ── Week-one projections — shown in done state on first session ───────────────
-const WEEK_ONE_MILESTONES: Record<string, { day: number; milestone: string }[]> = {
-  idea: [
-    { day: 2, milestone: "You'll have talked to at least 2 real people about your idea — more signal than a week of research." },
-    { day: 4, milestone: "BuildMind will have detected your first avoidance pattern and started routing around it." },
-    { day: 7, milestone: "You'll have a validated problem statement or evidence it needs changing. Either outcome is the right one." },
-  ],
-  validation: [
-    { day: 2, milestone: "First user commitment recorded — time, money, or workflow change." },
-    { day: 4, milestone: "Pattern detected: which type of user responds faster." },
-    { day: 7, milestone: "Enough signal to decide whether to build or pivot the value proposition." },
-  ],
-  mvp: [
-    { day: 2, milestone: "Working link in front of at least one real user." },
-    { day: 4, milestone: "First friction point documented — the bug or confusion users hit first." },
-    { day: 7, milestone: "You'll know whether retention is possible at this quality level." },
-  ],
-  launch: [
-    { day: 2, milestone: "At least one distribution channel tested with real copy." },
-    { day: 4, milestone: "Conversion data from the first 10 visitors." },
-    { day: 7, milestone: "Enough CAC data to know if the channel is viable." },
-  ],
-  growth: [
-    { day: 2, milestone: "One churned user interviewed — more insight than 50 analytics dashboards." },
-    { day: 4, milestone: "Retention pattern surfaced: when users leave and why." },
-    { day: 7, milestone: "Single biggest lever identified. BuildMind will focus every task on it." },
-  ],
-  revenue: [
-    { day: 2, milestone: "Revenue leak mapped — where the biggest drop-off in acquisition-to-payment is." },
-    { day: 4, milestone: "One pricing conversation completed." },
-    { day: 7, milestone: "A testable hypothesis about the biggest revenue constraint." },
-  ],
-};
-
-// ── Outcome colour helpers ───────────────────────────────────────────────────
-const OUTCOME_META: Record<Outcome, { icon: string; label: string; color: string }> = {
-  completed: { icon: "✓", label: "Completed",         color: "var(--bm-text2)" },
-  partial:   { icon: "–", label: "Partly done",       color: "var(--bm-text2)" },
-  blocked:   { icon: "!", label: "Blocked",           color: "var(--bm-text2)" },
-  learned:   { icon: "i", label: "Learned something", color: "var(--bm-text2)" },
-};
-
-/**
- * Fill the outreach script template with real project values so founders
- * can copy and send immediately without editing brackets.
- */
-function hydrateScript(
-  template: string,
-  productName: string,
-  targetUsers: string,
-  problem: string,
-): string {
-  return template
-    .replace(/\[product\]/gi, productName || "[product]")
-    .replace(/\[ProductName\]/g, productName || "[product]")
-    .replace(/\[your product\]/gi, productName || "[your product]")
-    .replace(/\[target users\]/gi, targetUsers || "[target users]")
-    .replace(/\[problem\]/gi, problem || "[problem]")
-    .replace(/\[your problem area\]/gi, problem || "[your problem area]")
-    .replace(/\[Problem\]/g, problem || "[problem]");
-}
-
-function inferAudienceFromAction(action: string, fallback: string): string {
-  if (fallback.trim()) return fallback.trim();
-  const match = action.match(/\b(?:to|with)\s+(?:\d+\s+)?(.+?)(?:\s+(?:on|via|today|who|and|while|before|after)|\s+[—-]|[.,]|$)/i);
-  return match?.[1]?.trim() || "people in your target segment";
-}
-
-function inferTopicFromAction(action: string, problem: string, productName: string): string {
-  if (problem.trim()) return problem.trim();
-  const about = action.match(/\b(?:about|around|with)\s+(.+?)(?:[.,]|[—-]|\s+today|\s+before|\s+after|$)/i);
-  if (about?.[1]?.trim()) return about[1].trim();
-  return productName.trim() ? `${productName.trim()} and the problem it solves` : "this workflow";
-}
-
-function isGenericDraft(message: string): boolean {
-  return /\b(this problem|your problem area|potential users|\[problem\]|\[target users\]|\[your product\])\b/i.test(message);
-}
-
-function buildPersonalizedDraftFromAction(action: string, message: string, productName: string, targetUsers: string, problem: string): string {
-  const hydrated = hydrateScript(message, productName, targetUsers, problem);
-  const audience = inferAudienceFromAction(action, targetUsers);
-  const topic = inferTopicFromAction(action, problem, productName);
-  const base = !isGenericDraft(hydrated)
-    ? hydrated
-    : `Hi [Name], quick question - I'm researching ${topic} for ${audience}. How are you handling this today, and what is the most frustrating part? I'd value 10 minutes of honest context.`;
-  return base;
-}
-
-function useIsMobile() {
-  const [isMobile, setIsMobile] = useState(false);
-  useEffect(() => {
-    const query = window.matchMedia("(max-width: 767px)");
-    const update = () => setIsMobile(query.matches);
-    update();
-    query.addEventListener("change", update);
-    return () => query.removeEventListener("change", update);
-  }, []);
-  return isMobile;
-}
-
-// ── Greeting based on time of day ────────────────────────────────────────────
-function getGreeting(): string {
-  const h = new Date().getHours();
-  if (h < 12) return "Good morning";
-  if (h < 17) return "Good afternoon";
-  return "Good evening";
-}
-
-function localDayKey(date = new Date()): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function daysSince(date?: string | null): number {
-  if (!date) return 0;
-  const created = new Date(date).getTime();
-  if (!Number.isFinite(created)) return 0;
-  return Math.max(0, Math.floor((Date.now() - created) / (24 * 60 * 60 * 1000)));
-}
-
-function addDays(date: Date, days: number): Date {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-  return next;
-}
+import { Outcome, MilestoneBreakResult, missionAccent, ActionData, CachedTodayAction, DebtSuppression, isActionData, unwrapActionPayload, unwrapDebtPayload, StoredReflection, DESTINATIONS, STATIC_ACTIONS, buildContextualStaticAction, OUTCOME_CHIPS, WEEK_ONE_MILESTONES, buildPersonalizedDraftFromAction, useIsMobile, getGreeting, localDayKey, daysSince, addDays } from "./todayHelpers";
+import { MilestoneBreakScreen, DoneScreen, PushPrompt } from "./components/TodayScreens";
 
 function TodayContent() {
   const isMobile = useIsMobile();
@@ -1728,64 +1371,11 @@ function TodayContent() {
 
   // ── Milestone Break interstitial — mandatory checkpoint after milestone/stage change, or a stalled milestone ──
   if (milestoneBreak && !milestoneBreakDismissed) {
-    const isStalling = milestoneBreak.trigger === "stalling";
     return (
-      <div style={{ maxWidth: 560, margin: "0 auto", padding: isMobile ? "40px 16px" : "80px 24px" }}>
-        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
-          {/* Header */}
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 28 }}>
-            <div style={{ width: 32, height: 32, borderRadius: 8, background: isStalling ? "var(--bm-amber)" : "var(--bm-red)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <AlertCircle size={16} color={isStalling ? "#000" : "#fff"} />
-            </div>
-            <div>
-              <p style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", margin: 0 }}>
-                {isStalling ? "Still open" : "Mandatory checkpoint"}
-              </p>
-              <p style={{ fontSize: 14, fontWeight: 700, color: "var(--bm-text)", margin: 0, lineHeight: 1.3 }}>
-                {isStalling
-                  ? `Still working on: ${sanitizeOutput(milestoneBreak.triggerLabel)}`
-                  : `You just completed: ${sanitizeOutput(milestoneBreak.triggerLabel)}`}
-              </p>
-            </div>
-          </div>
-
-          <p style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.6, marginBottom: 24 }}>
-            {isStalling
-              ? "This has been open longer than expected. No judgment — some milestones just run long. Here's what's likely actually going on."
-              : "Before you move to the next milestone, here's what could still kill this."}
-          </p>
-
-          {/* 3 brutal points */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 24 }}>
-            {milestoneBreak.brutal_points.map((point, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, x: -8 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.1 + i * 0.08 }}
-                style={{
-                  display: "flex",
-                  alignItems: "flex-start",
-                  gap: 10,
-                  paddingTop: 2,
-                  paddingBottom: 2,
-                }}
-              >
-                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--bm-red)", marginTop: 6, flexShrink: 0 }} />
-                <p style={{ fontSize: 13, color: "var(--bm-text2)", margin: 0, lineHeight: 1.6 }}>{sanitizeOutput(point)}</p>
-              </motion.div>
-            ))}
-          </div>
-
-          {/* Recommended action */}
-          <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 12, padding: "16px 18px", marginBottom: 24 }}>
-            <p style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 8px" }}>Recommended action before continuing</p>
-            <p style={{ fontSize: 13, color: "var(--bm-text)", fontWeight: 500, margin: 0, lineHeight: 1.6 }}>→ {sanitizeOutput(milestoneBreak.recommended_action)}</p>
-          </div>
-
-          {/* Acknowledge button */}
-          <button
-            onClick={() => {
+      <MilestoneBreakScreen
+        milestoneBreak={milestoneBreak}
+        isMobile={isMobile}
+        onAcknowledge={() => {
               const dismissKey = `bm_milestone_break_dismissed_${milestoneBreak.generated_at}`;
               // Optimistically dismiss in UI, revert if server fails
               setMilestoneBreakDismissed(true);
@@ -1800,91 +1390,27 @@ function TodayContent() {
                 // storage key so it re-shows on hard reload (server is source of truth).
                 storage.remove(dismissKey);
               });
-            }}
-            style={{
-              width: "100%", padding: "14px 0", borderRadius: 12, border: "none",
-              background: "var(--bm-text)", color: "var(--bm-bg)",
-              fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
-            }}
-          >
-            I've acknowledged this — continue to today's task →
-          </button>
-        </motion.div>
-      </div>
+        }}
+      />
     );
   }
+
 
   // ── Done state ────────────────────────────────────────────────────────────
   if (done) {
     return (
-      <div style={{ maxWidth: 560, margin: "0 auto", padding: isMobile ? "36px 0" : "60px 24px", textAlign: "center" }}>
-        <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
-          <div style={{ width: 64, height: 64, borderRadius: "50%", background: "var(--bm-green-dim)", border: "1px solid var(--bm-green-bd)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px" }}>
-            <CheckCircle2 size={28} color="var(--bm-green)" />
-          </div>
-          <h2 style={{ fontSize: isMobile ? 20 : 22, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em", marginBottom: 10 }}>
-            Insight logged. BuildMind adapts.
-          </h2>
-          <p style={{ fontSize: 14, color: "var(--bm-text3)", marginBottom: isFirstSession ? 16 : 20, lineHeight: 1.6 }}>
-            {displayName ? `Come back tomorrow, ${displayName.split(" ")[0]}. Consistency compounds.` : "Come back tomorrow. Consistency compounds."}
-          </p>
-
-          {/* ── First-session: 7-day projection ── */}
-          {isFirstSession && (() => {
-            const sk = (project?.startup_stage ?? "Idea").toLowerCase();
-            const milestones = WEEK_ONE_MILESTONES[sk] ?? WEEK_ONE_MILESTONES.idea;
-            return (
-              <motion.div
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3 }}
-                style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 14, padding: "18px 20px", marginBottom: 20, textAlign: "left" }}
-              >
-                <div style={{ fontSize: 10, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 14 }}>
-                  If you do this every day — week 1 for a {project?.startup_stage ?? "Idea"} stage founder
-                </div>
-                {milestones.map((m, i) => (
-                  <div key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start", paddingBottom: i < milestones.length - 1 ? 10 : 0, marginBottom: i < milestones.length - 1 ? 10 : 0, borderBottom: i < milestones.length - 1 ? "1px solid var(--bm-border)" : "none" }}>
-                    <span style={{ fontSize: 11, color: "var(--bm-text4)", fontFamily: "monospace", paddingTop: 1, flexShrink: 0, minWidth: 36 }}>Day {m.day}</span>
-                    <span style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.5 }}>{m.milestone}</span>
-                  </div>
-                ))}
-              </motion.div>
-            );
-          })()}
-
-          {activePattern && (
-            <div style={{ marginBottom: 20, textAlign: "left" }}>
-              <PaywallMoment
-                trigger={plan === "free" ? "pattern" : "pattern"}
-                patternMessage={activePattern.message}
-                onDismiss={() => setActivePattern(null)}
-              />
-            </div>
-          )}
-
-
-
-          <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 10, justifyContent: "center" }}>
-            <button onClick={() => router.push("/reflect")} style={{ padding: "12px 20px", borderRadius: 10, border: "none", background: "var(--grad-primary)", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Reflect on today →</button>
-            <button onClick={() => router.push("/overview")} style={{ padding: "12px 20px", borderRadius: 10, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text2)", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>View full dashboard</button>
-          </div>
-        </motion.div>
-
-        <div style={{ marginTop: 24, padding: "14px 18px", background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.18)", borderRadius: 12, textAlign: "center" }}>
-          <p style={{ fontSize: 12, color: "var(--bm-text3)", margin: "0 0 10px" }}>Know a founder who needs this?</p>
-          <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
-            <button onClick={() => router.push("/invite")} style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid var(--bm-border)", background: "var(--bm-bg3)", color: "var(--bm-text2)", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
-              Invite a founder →
-            </button>
-            <button onClick={() => router.push("/progress")} style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
-              Share this week's progress
-            </button>
-          </div>
-        </div>
-      </div>
+      <DoneScreen
+        isMobile={isMobile}
+        isFirstSession={isFirstSession}
+        displayName={displayName}
+        startupStage={project?.startup_stage}
+        activePattern={activePattern}
+        plan={plan}
+        onDismissPattern={() => setActivePattern(null)}
+      />
     );
   }
+
 
   // ── Greeting line ─────────────────────────────────────────────────────────
   const firstName = displayName?.split(" ")[0] ?? null;
@@ -2774,83 +2300,7 @@ function TodayContent() {
         tasksCompleted={project?.tasksCompleted ?? 0}
       />
 
-      {/* ── Push permission prompt ─────────────────────────────────────────── */}
-      <AnimatePresence>
-        {showPushPrompt && (
-          <motion.div
-            key="push-prompt"
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 16 }}
-            transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-            style={{
-              position: "fixed",
-              bottom: isMobile ? 80 : 32,
-              left: "50%",
-              transform: "translateX(-50%)",
-              width: isMobile ? "calc(100% - 32px)" : 380,
-              zIndex: 999,
-              borderRadius: 16,
-              border: "1px solid var(--bm-border)",
-              background: "var(--bm-bg2)",
-              backdropFilter: "blur(20px)",
-              WebkitBackdropFilter: "blur(20px)",
-              boxShadow: "0 16px 48px rgba(0,0,0,0.6)",
-              padding: "18px 20px",
-              display: "flex",
-              flexDirection: "column",
-              gap: 12,
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-              <span style={{ fontSize: 20, flexShrink: 0 }}>🔔</span>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--bm-text)", marginBottom: 4 }}>
-                  Get your evening nudge
-                </div>
-                <p style={{ fontSize: 12, color: "var(--bm-text3)", margin: 0, lineHeight: 1.55 }}>
-                  BuildMind checks in at 8pm to see if you followed through. One tap to enable — you can turn it off anytime.
-                </p>
-              </div>
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button
-                onClick={() => void requestPushPermission()}
-                style={{
-                  flex: 1,
-                  padding: "10px 0",
-                  borderRadius: 10,
-                  border: "none",
-                  background: "var(--bm-accent)",
-                  color: "#000",
-                  fontWeight: 700,
-                  fontSize: 13,
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                }}
-              >
-                Enable evening check-in
-              </button>
-              <button
-                onClick={() => setShowPushPrompt(false)}
-                style={{
-                  padding: "10px 14px",
-                  borderRadius: 10,
-                  border: "1px solid var(--bm-border2)",
-                  background: "var(--bm-bg3)",
-                  color: "var(--bm-text4)",
-                  fontWeight: 600,
-                  fontSize: 12,
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                }}
-              >
-                Not now
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <PushPrompt show={showPushPrompt} isMobile={isMobile} onEnable={() => void requestPushPermission()} onDismiss={() => setShowPushPrompt(false)} />
 
       {/* ── Morning Briefing modal — first open of the day, server-gated ─── */}
       {showBriefingModal && (morningBriefing || briefingAvailable) && (

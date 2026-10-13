@@ -941,4 +941,4 @@ export default function SettingsPage() {
       <SettingsContent />
     </Suspense>
   );
-  }
+    }
