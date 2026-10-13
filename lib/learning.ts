@@ -602,4 +602,4 @@ export async function markIgnoredAfter24h(userId: string): Promise<void> {
       .or("prediction_source.is.null,prediction_source.neq.founder_intelligence")
       .lt("created_at", cutoff);
   } catch (err) { logError("learning/markIgnoredAfter24h", err); /* non-fatal */ }
-        }
+}

@@ -17,7 +17,7 @@
 
 import { tokenize, stem } from "@/lib/taxonomy/taskTaxonomy";
 import {
-  buildDemandSplit, buildEvidenceHierarchy, buildHypotheses, buildNextMove, buildRiskExposure,
+  buildDemandSplit, buildEvidenceHierarchy, pickAudienceFork, buildHypotheses, buildNextMove, buildRiskExposure,
   notACompetitorReason, productDemandScore,
   type DemandSplit, type EvidenceHierarchy, type Hypothesis, type NextMove, type RiskExposure,
 } from "@/lib/breakEvidenceV3";
@@ -427,7 +427,7 @@ export function buildFalsifiers(input: EvidenceInput): Falsifier[] {
     return clampP(e ? e.score / 100 : fallback);
   };
   const riskHold = (sev?: string) => clampP(sev === "fatal" ? 0.15 : sev === "high" ? 0.3 : sev === "medium" ? 0.6 : 0.85);
-  const customer = input.parsed?.target_customer?.trim() || "your target customers";
+  const customer = pickAudienceFork(input.parsed?.target_customer)?.start || input.parsed?.target_customer?.trim() || "your target customers";
   const problem = input.parsed?.problem?.trim();
 
   out.push({

@@ -576,4 +576,4 @@ function pickAction(memory: FounderMemory): PulseMessage["action"] | undefined {
     label: "What's my one thing today?",
     prompt: "Given everything you know about my startup and my patterns, what is the single most important thing I should do today?",
   };
-                   }
+                      }
