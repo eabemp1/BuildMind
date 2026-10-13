@@ -12,6 +12,9 @@ import Link from "next/link";
 import { useFounderScorecardQuery } from "@/lib/queries";
 import AchievementMascot from "@/components/achievements/AchievementMascot";
 import ConfettiBurst from "@/components/achievements/ConfettiBurst";
+import { VisualBoard } from "@/components/visuals/VisualBoard";
+import { buildAchievementsVisual } from "@/lib/visuals/achievementsVisual";
+import { OpenBesideButton } from "@/components/layout/OpenBesideButton";
 
 const EMPTY_STATS: AchievementStats = {
   streak: 0, maxStreak: 0, checkInsDone: 0, aiMessages: 0, projectsCreated: 0,
@@ -391,6 +394,12 @@ export default function AchievementsPage() {
       .slice(0, 3);
   }, [stats, unlocked, tracks]);
 
+  const journey = useMemo(() => buildAchievementsVisual({
+    achievements: ACHIEVEMENTS.map((a) => ({ id: a.id, label: a.label, category: a.category, rarity: a.rarity, xp: a.xp, secret: a.secret })),
+    unlocked, timestamps, xp, level: lvl, maxStreak: stats?.maxStreak,
+  }), [unlocked, timestamps, xp, lvl, stats?.maxStreak]);
+  const [showJourney, setShowJourney] = useState(false);
+
   const mascotLine = justUnlocked.length > 0
     ? `${justUnlocked[0].label}. You earned it!`
     : tapLine
@@ -584,6 +593,17 @@ export default function AchievementsPage() {
             </div>
           </div>
         </div>
+      </section>
+
+      <section style={{ marginBottom: 22 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginBottom: showJourney ? 12 : 0 }}>
+          <button type="button" onClick={() => setShowJourney((v) => !v)} aria-expanded={showJourney}
+            style={{ cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 700, color: "var(--bm-text)", background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)", borderRadius: 10, padding: "8px 14px" }}>
+            {showJourney ? "Hide" : "Draw"} my journey
+          </button>
+          {showJourney && <OpenBesideButton label="Discuss beside" request={{ kind: "coach", title: "Coach", prompt: "Chart my progress" }} />}
+        </div>
+        {showJourney && <VisualBoard spec={journey} showHeader={false} />}
       </section>
 
       {upNext.length > 0 && (

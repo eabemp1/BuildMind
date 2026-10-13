@@ -22,6 +22,7 @@ import { RelationshipGraph, type StartupRelationshipGraph } from "@/components/f
 import { AIErrorBoundary } from "@/components/AIErrorBoundary";
 import { MirrorStory } from "@/components/founder-mirror/MirrorStory";
 import { OpenBesideButton } from "@/components/layout/OpenBesideButton";
+import { MirrorDrawn } from "@/components/founder-mirror/MirrorDrawn";
 
 type Belief = {
   belief: string;
@@ -409,6 +410,8 @@ export default function FounderMirrorPage() {
           </div>
         </Card>
       </motion.div>
+
+      <MirrorDrawn mirror={mirror} />
 
       {/* ── Behavioral archetype (Mirror Moment) ─────────────────────────────
            Surfaced from lib/mirrorMoment.ts via lib/behavioralLayers.ts — a

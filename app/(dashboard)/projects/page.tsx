@@ -24,6 +24,8 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { OpenBesideButton } from "@/components/layout/OpenBesideButton";
+import { VisualBoard } from "@/components/visuals/VisualBoard";
+import { buildPortfolioVisual } from "@/lib/visuals/portfolioVisual";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 const STAGE_OPTIONS = ["Idea", "Validation", "MVP", "Launch", "Growth", "Revenue"] as const;
@@ -198,6 +200,13 @@ export default function ProjectsPage() {
   // useFounderStandingQuery(id) call can't live inside the .map() below
   // (hooks can't be called in a loop).
   const standingByProject = useFounderStandingBatchQuery(summaries.map((s) => s.id));
+  const [showPortfolio, setShowPortfolio] = useState(false);
+  const portfolio = useMemo(() => buildPortfolioVisual(summaries.map((s) => ({
+    name: s.name ?? s.title ?? "Untitled", stage: normalizeStage(s.startup_stage ?? ""),
+    tasksTotal: s.tasksTotal ?? 0, tasksCompleted: s.tasksCompleted ?? 0,
+    stagePct: (s.stageMilestonesTotal ?? 0) > 0 ? (s.stageProgressPercent ?? 0) : null,
+    health: deriveProjectHealth(s, standingByProject[s.id]?.engagement),
+  })), summaries.find((s) => s.id === activeId)?.name ?? undefined), [summaries, standingByProject, activeId]);
 
   const createHref = canCreateProject ? "/projects/new" : undefined;
 
@@ -281,6 +290,19 @@ export default function ProjectsPage() {
                 </Link>
               }
             />
+          )}
+
+          {!isLoading && summaries.length > 0 && (
+            <div className="mb-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <button type="button" onClick={() => setShowPortfolio((v) => !v)} aria-expanded={showPortfolio}
+                  className="cursor-pointer rounded-[10px] border border-[var(--bm-border2)] bg-[var(--bm-bg2)] px-3.5 py-2 text-[13px] font-semibold text-[var(--bm-text)]">
+                  {showPortfolio ? "Hide" : "Draw"} my portfolio
+                </button>
+                {showPortfolio && <OpenBesideButton label="Discuss beside" request={{ kind: "coach", title: "Coach", prompt: "Chart my progress" }} />}
+              </div>
+              {showPortfolio && <div className="mt-3"><VisualBoard spec={portfolio} showHeader={false} /></div>}
+            </div>
           )}
 
           {/* Project list */}
