@@ -566,6 +566,7 @@ function AICoachPageInner() {
                 className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-[var(--bm-border2)] bg-[var(--bm-bg2)] px-3 py-1.5 text-[12.5px] text-[var(--bm-text2)] sm:px-3.5 sm:py-2 sm:text-[13px] transition-colors hover:border-[var(--bm-intel-bd)] hover:text-[var(--bm-text)] disabled:cursor-not-allowed disabled:opacity-50">
                 <Zap size={13} color="var(--bm-intel2)" />
                 {chip.label}
+                {plan === "free" && chip.id === "draw_execution_intelligence" && <span className="rounded-full border border-[var(--bm-border2)] px-1.5 text-[10px] text-[var(--bm-text3)]">Builder</span>}
               </button>
             ))}
           </div>

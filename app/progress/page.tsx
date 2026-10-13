@@ -28,6 +28,7 @@ import { WeeklyPulseCard } from "@/components/WeeklyPulseCard";
 import { createClient } from "@/lib/supabase/client";
 import { BuildMindCalibrating } from "@/components/BuildMindCalibrating";
 import { useActiveProjectId } from "@/lib/queries";
+import { LiveVisual } from "@/components/visuals/LiveVisual";
 
 // ── Lazy-loaded tab content ───────────────────────────────────────────────────
 
@@ -70,7 +71,7 @@ function PatternsTab({ reflectionCount }: { reflectionCount: number }) {
   return <InsightsPage />;
 }
 
-type Tab = "week" | "patterns";
+type Tab = "week" | "patterns" | "visual";
 
 // FIX: this component previously always defaulted to the "week" tab and
 // ignored any ?tab= query param, so the deep link from RisksGapsCard
@@ -79,7 +80,8 @@ type Tab = "week" | "patterns";
 // bar's own onClick still drives normal in-page switching afterward.
 function ProgressContent() {
   const searchParams = useSearchParams();
-  const initialTab: Tab = searchParams.get("tab") === "patterns" ? "patterns" : "week";
+  const tabParam = searchParams.get("tab");
+  const initialTab: Tab = tabParam === "patterns" ? "patterns" : tabParam === "visual" ? "visual" : "week";
   const [activeTab, setActiveTab] = useState<Tab>(initialTab);
   const [reflectionCount, setReflectionCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -110,6 +112,7 @@ function ProgressContent() {
   const TABS: { id: Tab; label: string; desc: string }[] = [
     { id: "week",     label: "This Week",  desc: "Performance and momentum" },
     { id: "patterns", label: "Patterns",   desc: "Your behavioral signature" },
+    { id: "visual",   label: "Visual",     desc: "Your record, drawn" },
   ];
 
   return (
@@ -217,6 +220,11 @@ function ProgressContent() {
               </div>
             ) : activeTab === "week" ? (
               <ThisWeekTab reflectionCount={reflectionCount} />
+            ) : activeTab === "visual" ? (
+              <>
+                <LiveVisual kind="progress" projectId={activeProjectId} />
+                <LiveVisual kind="execution" projectId={activeProjectId} />
+              </>
             ) : (
               <PatternsTab reflectionCount={reflectionCount} />
             )}

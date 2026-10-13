@@ -18,6 +18,7 @@ import { FolderKanban } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MrrWidget } from "@/components/MrrWidget";
 import { storage } from "@/lib/storage";
+import { LiveVisual } from "@/components/visuals/LiveVisual";
 import { fetchBehaviorState } from "@/lib/userBehaviorState";
 
 // ── Stage badge colours ───────────────────────────────────────────────────────
@@ -398,6 +399,8 @@ export default function OverviewPage() {
               )}
             </section>
           </div>
+          <LiveVisual kind="progress" projectId={activeProject.id} title="Your progress, drawn" />
+          <LiveVisual kind="execution" projectId={activeProject.id} />
         </>
       )}
 
