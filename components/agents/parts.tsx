@@ -195,10 +195,10 @@ export function EvidenceLedger({ mix }: { mix: EvidenceMix }) {
   );
 }
 
-export function VerdictStamp({ verdict }: { verdict: Verdict }) {
+export function VerdictStamp({ verdict, label }: { verdict: Verdict; label?: string }) {
   const v = VERDICT_THEME[verdict];
   return (
-    <span style={{ display: "inline-block", fontFamily: MONO, fontWeight: 700, letterSpacing: "0.12em", fontSize: 11, color: v.c, border: `2px solid ${v.c}`, borderRadius: 6, padding: "2px 8px", background: "transparent" }}>{v.label}</span>
+    <span style={{ display: "inline-block", fontFamily: MONO, fontWeight: 700, letterSpacing: "0.12em", fontSize: 11, color: v.c, border: `2px solid ${v.c}`, borderRadius: 6, padding: "2px 8px", background: "transparent" }}>{label ?? v.label}</span>
   );
 }
 

@@ -21,6 +21,11 @@ import {
 } from "lucide-react";
 import { BrandMark } from "@/components/layout/logo";
 import { VENTURE_TRACKS, type VentureTrack } from "@/lib/ventures";
+import { buildBriefing } from "@/lib/adminBriefing";
+import { BriefingTab } from "./components/BriefingTab";
+import { SignupsTab } from "./components/SignupsTab";
+import { SystemTab } from "./components/SystemTab";
+import { adminCss } from "./components/ui";
 
 // ─── Tokens ───────────────────────────────────────────────────────────────────
 const C = {
@@ -38,7 +43,7 @@ type Plan = "free" | "builder";
 type BillingStatus = "active" | "canceled" | "processing" | "free";
 type MetricStatus = "on_track" | "watch" | "below_target" | "no_data";
 type DoneMap = Record<string, boolean>;
-type Tab = "overview" | "users" | "revenue" | "ai" | "engagement" | "growth" | "proof" | "testimonials" | "ventures";
+type Tab = "overview" | "users" | "revenue" | "ai" | "engagement" | "growth" | "proof" | "testimonials" | "ventures" | "signups" | "system";
 
 interface AdminUser { id: string; email: string; plan: Plan; billing_status: BillingStatus; billing_reference: string | null; subscription_id: string | null; streak: number; last_seen: string | null; created_at: string; projects_count: number; ai_calls_this_month: number; }
 interface MRRData { mrr: number; active_builders: number; new_this_month: number; churned_this_month: number; trend: { date: string; mrr: number }[]; }
@@ -116,15 +121,25 @@ function Sparkline({ data, color = C.a, h = 40 }: { data: number[]; color?: stri
 
 // ─── Tabs ─────────────────────────────────────────────────────────────────────
 const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
-  { id: "overview",     label: "Overview",      icon: BarChart2 },
+  { id: "overview",     label: "Briefing",      icon: BarChart2 },
+  { id: "signups",      label: "Signups & alerts", icon: Zap },
   { id: "users",        label: "Users",         icon: Users },
   { id: "revenue",      label: "Revenue",       icon: DollarSign },
-  { id: "ai",           label: "AI & Quality",  icon: Brain },
-  { id: "engagement",   label: "Engagement",    icon: Activity },
   { id: "growth",       label: "Growth",        icon: TrendingUp },
+  { id: "engagement",   label: "Engagement",    icon: Activity },
+  { id: "ai",           label: "AI & Quality",  icon: Brain },
   { id: "proof",        label: "Proof",         icon: Shield },
   { id: "testimonials", label: "Testimonials",  icon: MessageSquare },
   { id: "ventures",     label: "My Ventures",   icon: Map },
+  { id: "system",       label: "System status", icon: Globe },
+];
+
+const NAV_GROUPS: { label: string; ids: Tab[] }[] = [
+  { label: "Today",    ids: ["overview", "signups"] },
+  { label: "Business", ids: ["users", "revenue", "growth"] },
+  { label: "Product",  ids: ["engagement", "ai", "proof"] },
+  { label: "Community", ids: ["testimonials", "ventures"] },
+  { label: "Operations", ids: ["system"] },
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -140,14 +155,6 @@ function OverviewTab({ data, onTabChange }: { data: DashboardPayload; onTabChang
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-
-      {/* KPI strip */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
-        <Stat label="MRR" value={`$${n(mrr.mrr)}`} sub={`+${mrr.new_this_month} new · ${mrr.churned_this_month} churned`} color={C.a} icon={DollarSign} />
-        <Stat label="Builders" value={mrr.active_builders} sub="paying subscribers" color={C.teal} icon={Users} />
-        <Stat label="AI pass rate" value={qRate !== null ? `${qRate}%` : "—"} sub="Agent B overall" color={qColor} icon={Brain} />
-        <Stat label="Weekly active" value={activity[activity.length - 1]?.wau ?? "—"} sub="founders (WAU)" color={C.blue} icon={Activity} />
-      </div>
 
       {/* Operator gate */}
       <Card style={{ padding: "20px 24px", borderColor: allOk ? C.ab : "rgba(232,160,32,0.3)" }}>
@@ -186,22 +193,6 @@ function OverviewTab({ data, onTabChange }: { data: DashboardPayload; onTabChang
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16 }}>
         <MiniActivityChart data={data.activity} />
         <StreakHisto buckets={streaks} />
-      </div>
-
-      {/* Quick nav to other tabs */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10 }}>
-        {(["users", "revenue", "ai", "testimonials"] as Tab[]).map(id => {
-          const tab = TABS.find(t => t.id === id)!;
-          const Icon = tab.icon;
-          return (
-            <button key={id} onClick={() => onTabChange(id)}
-              style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 14px", borderRadius: C.rMd, border: `1px solid ${C.b}`, background: C.bg3, color: C.t2, fontSize: 12, fontWeight: 500, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s", textAlign: "left" }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = C.ab; (e.currentTarget as HTMLElement).style.color = C.a; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = C.b; (e.currentTarget as HTMLElement).style.color = C.t2; }}>
-              <Icon size={14} />{tab.label}
-            </button>
-          );
-        })}
       </div>
     </div>
   );
@@ -1338,7 +1329,7 @@ async function fetchDashboard(): Promise<DashboardPayload> {
   return r.json();
 }
 
-const VALID_TABS = new Set<string>(["overview","users","revenue","ai","engagement","growth","proof","testimonials","ventures"]);
+const VALID_TABS = new Set<string>(["overview","signups","users","revenue","ai","engagement","growth","proof","testimonials","ventures","system"]);
 
 /**
  * Fix #2 — Page decomposition (audit P0.2)
@@ -1383,14 +1374,15 @@ export default function AdminPage() {
   }
 
   // These tabs load their own data
-  const selfLoadingTabs: Tab[] = ["testimonials", "ventures", "growth", "proof"];
+  const selfLoadingTabs: Tab[] = ["testimonials", "ventures", "growth", "proof", "signups", "system"];
+  const briefing = React.useMemo(() => (data ? buildBriefing(data) : null), [data]);
 
   return (
     <div style={{ minHeight: "100vh", background: C.bg, color: C.t, fontFamily: "Geist, system-ui, sans-serif" }}>
 
       {/* Top bar */}
       <div style={{ borderBottom: `1px solid ${C.b}`, background: C.bg2, position: "sticky", top: 0, zIndex: 200 }}>
-        <div style={{ maxWidth: 1300, margin: "0 auto", padding: "0 24px" }}>
+        <div style={{ maxWidth: 1360, margin: "0 auto", padding: "0 16px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", height: 52 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <BrandMark size={26} href="/" />
@@ -1407,26 +1399,32 @@ export default function AdminPage() {
             </div>
           </div>
 
-          {/* Tab nav */}
-          <div style={{ display: "flex", gap: 0, overflowX: "auto", marginTop: 0 }}>
-            {TABS.map(t => {
-              const Icon = t.icon;
-              const active = tab === t.id;
-              return (
-                <button key={t.id} onClick={() => setTab(t.id)}
-                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "11px 16px", border: "none", background: "none", fontSize: 12, fontWeight: active ? 600 : 400, color: active ? C.a : C.t3, borderBottom: `2px solid ${active ? C.a : "transparent"}`, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", flexShrink: 0, transition: "color 0.15s" }}
-                  onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.color = C.t2; }}
-                  onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.color = C.t3; }}>
-                  <Icon size={13} />{t.label}
-                </button>
-              );
-            })}
-          </div>
         </div>
       </div>
 
+      <div className="adm-shell">
+      <nav className="adm-side" aria-label="Admin sections">
+        {NAV_GROUPS.map(g => (
+          <React.Fragment key={g.label}>
+            <div className="adm-grp">{g.label}</div>
+            {g.ids.map(id => {
+              const t = TABS.find(x => x.id === id)!;
+              const Icon = t.icon;
+              const count = id === "overview" && briefing ? briefing.attention.filter(a => a.severity !== "info").length : 0;
+              return (
+                <button key={id} className="adm-nav" aria-current={tab === id ? "page" : undefined} onClick={() => setTab(id)}>
+                  <Icon size={14} />{t.label}{count > 0 && <span className="adm-cnt">{count}</span>}
+                </button>
+              );
+            })}
+          </React.Fragment>
+        ))}
+        <div className="adm-grp">Tools</div>
+        <a className="adm-nav" href="/admin/distribution" style={{ textDecoration: "none" }}><Target size={14} />Distribution Studio</a>
+        <a className="adm-nav" href="/admin/promoters" style={{ textDecoration: "none" }}><Users size={14} />Promoters</a>
+      </nav>
       {/* Body */}
-      <div style={{ maxWidth: 1300, margin: "0 auto", padding: "28px 24px 80px" }}>
+      <div className="adm-main">
         {error && (
           <div style={{ padding: "14px 18px", background: "rgba(224,85,85,0.07)", border: `1px solid rgba(224,85,85,0.2)`, borderRadius: C.rLg, color: C.red, marginBottom: 20, fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}>
             <AlertTriangle size={14} /> <strong>Error:</strong> {error}
@@ -1438,6 +1436,8 @@ export default function AdminPage() {
         {tab === "ventures"     && <VenturesTab key="ventures" />}
         {tab === "growth"       && <GrowthTab key="growth" />}
         {tab === "proof"        && <ProofTab key="proof" />}
+        {tab === "signups"      && <SignupsTab key="signups" />}
+        {tab === "system"       && <SystemTab key="system" />}
 
         {/* Dashboard-data tabs */}
         {!selfLoadingTabs.includes(tab) && (
@@ -1453,7 +1453,10 @@ export default function AdminPage() {
               <AnimatePresence mode="wait">
                 {tab === "overview" && (
                   <motion.div key="overview" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-                    <OverviewTab data={data} onTabChange={setTab} />
+                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                      {briefing && <BriefingTab b={briefing} funnel={data.funnel} onTab={(t) => VALID_TABS.has(t) && setTab(t as Tab)} />}
+                      <OverviewTab data={data} onTabChange={setTab} />
+                    </div>
                   </motion.div>
                 )}
                 {tab === "users" && (
@@ -1482,6 +1485,8 @@ export default function AdminPage() {
         )}
       </div>
 
+      </div>
+
       {/* Plan override modal */}
       <AnimatePresence>
         {override && (
@@ -1489,7 +1494,7 @@ export default function AdminPage() {
         )}
       </AnimatePresence>
 
-      <style>{`@keyframes adm-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+      <style>{adminCss}</style>
     </div>
   );
   }

@@ -24,6 +24,7 @@ import { callModelJSON } from "@/lib/ai-providers";
 import { webSearch, discussionSearch, newsSearch, competitorSearch, type SearchResult } from "@/lib/search";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { emitPulse } from "@/lib/pulse";
+import { classifyFinding, runReadiness, frameVerdict } from "@/lib/evidence";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -48,8 +49,14 @@ export interface AgentFinding {
   confidence:   number;     // 0–1
   title:        string;
   evidence:     string;     // specific reasoning — NEVER bare assertions
-  source_type:  "reasoning" | "pattern_match";
+  source_type:  "reasoning" | "pattern_match" | "web_search";
   action_hint:  string;
+  /** URLs from the live search results that this finding actually relies on. */
+  sources?:          string[];
+  /** What argues against this finding, or what was checked and not found. */
+  counter_evidence?: string | null;
+  /** Conditions under which the finding holds. */
+  assumptions?:      string | null;
 }
 
 export interface AgentRunInput {
@@ -192,7 +199,13 @@ CRITICAL RULES:
 2. Confidence should be honest. Most findings without real user data are 0.35–0.65.
    Reserve 0.8+ for findings backed by strong market analogies or clear patterns.
 3. Negative signals are as valuable as positive ones. Don't bias toward optimism.
-4. Source type is always "reasoning" — you are reasoning from patterns, not scraping.
+4. Source type is "web_search" only when you rely on the live search results provided; otherwise "reasoning".
+5. A single article, post or podcast is a signal, not a conclusion. Say so. Look for a second independent source before raising confidence above 0.6.
+6. Always state counter_evidence: what argues against the finding, or what you looked for and did not find.
+7. Always state assumptions: the conditions under which the finding holds.
+8. Do not turn one observation into a market verdict. Thin search results for a phrase do not show low demand; people may use other words or other channels.
+9. pivot_candidate means "an opportunity worth testing", never "the founder should pivot".
+10. Only list URLs in "sources" that appear in the search results provided. Never invent a URL.
 
 Return ONLY valid JSON. No markdown fences.`;
 }
@@ -303,6 +316,9 @@ Each finding must follow this exact structure:
   "title": "one-line summary of the finding",
   "evidence": "cite specific search results by title/URL where possible. If using reasoning, explain why. Never vague.",
   "source_type": "${searchContext ? "web_search" : "reasoning"}",
+  "sources": ["URLs from the search results that this finding relies on; [] if none"],
+  "counter_evidence": "what argues against this, or what you checked and did not find",
+  "assumptions": "the conditions under which this finding holds",
   "action_hint": "one concrete action the founder should take based on this finding"
 }
 
@@ -318,14 +334,29 @@ Return: { "findings": [ ... ] }`;
     );
     return (result?.findings ?? [])
       .slice(0, 6)
-      .map(f => ({
-        ...f,
-        confidence: Math.max(0, Math.min(1, Number(f.confidence) || 0.4)),
-        source_type: (searchContext ? "web_search" : "reasoning") as AgentFinding["source_type"],
-      }));
+      .map(f => sanitizeFinding(f, searchContext));
   } catch {
     return [];
   }
+}
+
+/**
+ * Keeps the model honest about sources: only URLs that really appeared in the
+ * search results survive, so a fabricated link can never raise a finding's tier.
+ */
+export function sanitizeFinding(f: AgentFinding, searchContext: string): AgentFinding {
+  const known = (u: string) => searchContext.includes(u);
+  const sources = (Array.isArray(f.sources) ? f.sources : []).filter(u => typeof u === "string" && known(u)).slice(0, 8);
+  const evidence = String(f.evidence ?? "").replace(/https?:\/\/[^\s)\]>"']+/gi, u => (known(u) ? u : "[unverified link]"));
+  return {
+    ...f,
+    evidence,
+    confidence: Math.max(0, Math.min(1, Number(f.confidence) || 0.4)),
+    source_type: (searchContext ? "web_search" : "reasoning") as AgentFinding["source_type"],
+    sources,
+    counter_evidence: f.counter_evidence ? String(f.counter_evidence).slice(0, 500) : null,
+    assumptions: f.assumptions ? String(f.assumptions).slice(0, 400) : null,
+  };
 }
 
 // ── Verdict ───────────────────────────────────────────────────────────────────
@@ -358,8 +389,11 @@ Deliver the verdict. Be direct. Founders waste years because nobody told them th
 
 Return ONLY valid JSON. No markdown.`;
 
+  const readiness = runReadiness(allFindings);
   const userPrompt = `Startup: ${input.startupTitle}
 Agent: ${AGENT_IDENTITY[input.agentType].name}
+Evidence readiness: ${readiness.level} — ${readiness.reason}
+Rule: do not recommend pivot or kill unless readiness is "decide". Otherwise recommend the cheapest test that would settle the question, and say which claims are only signals.
 Stage: ${input.stage}
 Score: ${Math.max(0, Math.min(100, score))}/100
 Proceed threshold: ${stageFocus.proceedThreshold}
@@ -397,11 +431,14 @@ Return:
       { maxTokens: 700 },
     );
 
+    const verdict = r?.verdict ?? "inconclusive";
+    const rec = r?.recommended_action ?? "Inconclusive — gather more data.";
+    const needsTest = readiness.level !== "decide" && (verdict === "pivot" || verdict === "kill");
     return {
-      verdict:           r?.verdict ?? "inconclusive",
+      verdict,
       topFindings:       [r?.top_finding_1 ?? "", r?.top_finding_2 ?? "", r?.top_finding_3 ?? ""],
       topRisk:           r?.top_risk ?? "",
-      recommendedAction: r?.recommended_action ?? "Inconclusive — gather more data.",
+      recommendedAction: needsTest ? `Test before acting — ${rec}` : rec,
       confidencePct:     Math.round(avgConf * 100),
     };
   } catch {
@@ -433,12 +470,8 @@ function buildReport(
   });
 
   const verdictEmoji = { proceed: "🟢", pivot: "🟡", kill: "🔴", inconclusive: "⚪" }[verdict];
-  const verdictLabel = {
-    proceed:      "Proceed",
-    pivot:        "Pivot Recommended",
-    kill:         "Kill — Stop Building This",
-    inconclusive: "Inconclusive",
-  }[verdict];
+  const framed = frameVerdict(verdict, runReadiness(findings));
+  const verdictLabel = framed.label;
 
   const positive = findings.filter(f => f.positive);
   const negative = findings.filter(f => !f.positive);
@@ -449,6 +482,8 @@ function buildReport(
 ---
 
 ## ${verdictEmoji} ${verdictLabel}
+
+*${framed.note}*
 
 **Recommended action:** ${recommendedAction}
 
@@ -468,17 +503,27 @@ function buildReport(
 
 ### Positive (${positive.length})
 ${positive.length === 0 ? "_None found._" : positive.map(f =>
-  `**${f.title}** *(${f.signal_type.replace(/_/g, " ")} · ${Math.round(f.confidence * 100)}% confidence)*\n${f.evidence}\n→ ${f.action_hint}`
+  findingMd(f)
 ).join("\n\n")}
 
 ### Negative (${negative.length})
 ${negative.length === 0 ? "_None found._" : negative.map(f =>
-  `**${f.title}** *(${f.signal_type.replace(/_/g, " ")} · ${Math.round(f.confidence * 100)}% confidence)*\n${f.evidence}\n→ ${f.action_hint}`
+  findingMd(f)
 ).join("\n\n")}
 
 ---
 
 *${identity.name} synthesises from patterns and reasoning. Validate the strongest signals through direct user conversations.*`;
+}
+
+function findingMd(f: AgentFinding): string {
+  const c = classifyFinding(f);
+  const tier = { signal: "Signal", supported: "Supported", decision_grade: "Decision-grade" }[c.tier];
+  return `**${f.title}** *(${f.signal_type.replace(/_/g, " ")} · ${tier} · ${Math.round(f.confidence * 100)}% confidence · ${c.sourceCount} source${c.sourceCount === 1 ? "" : "s"})*\n${f.evidence}` +
+    (f.assumptions ? `\n*Holds if:* ${f.assumptions}` : "") +
+    (f.counter_evidence ? `\n*Against:* ${f.counter_evidence}` : "") +
+    (c.caveat ? `\n*Caveat:* ${c.caveat}` : "") +
+    `\n→ ${f.action_hint}`;
 }
 
 // ── Scoring ───────────────────────────────────────────────────────────────────
@@ -499,10 +544,32 @@ function scoreFindings(findings: AgentFinding[]): number {
 
   const raw = findings.reduce((sum, f) => {
     const w = WEIGHTS[f.signal_type] ?? 5;
-    return sum + (f.positive ? 1 : -1) * f.confidence * Math.abs(w);
+    const tierWeight = classifyFinding(f).tier === "signal" ? 0.6 : 1; // thin evidence moves the score less
+    return sum + (f.positive ? 1 : -1) * f.confidence * tierWeight * Math.abs(w);
   }, 50);
 
   return Math.max(0, Math.min(100, Math.round(raw)));
+}
+
+type Admin = ReturnType<typeof createAdminClient>;
+
+/** Inserts with evidence columns; falls back to the legacy shape if the migration has not run yet. */
+async function persistFindings(admin: Admin, input: AgentRunInput, iteration: number, findings: AgentFinding[]) {
+  const legacy = findings.map(f => ({
+    run_id: input.runId, user_id: input.userId, iteration,
+    signal_type: f.signal_type, positive: f.positive, confidence: f.confidence, title: f.title,
+    evidence: f.evidence, source_type: f.source_type === "web_search" ? "reasoning" : f.source_type, action_hint: f.action_hint,
+    founder_confirmed: null as boolean | null, // always null — never auto-promote
+  }));
+  const rich = findings.map((f, idx) => {
+    const c = classifyFinding(f);
+    return { ...legacy[idx], source_type: f.source_type, sources: f.sources ?? [], counter_evidence: f.counter_evidence ?? null, assumptions: f.assumptions ?? null, evidence_tier: c.tier, source_count: c.sourceCount, caveat: c.caveat };
+  });
+  try {
+    const { error } = await admin.from("agent_findings").insert(rich);
+    if (!error) return;
+  } catch { /* fall through */ }
+  try { await admin.from("agent_findings").insert(legacy); } catch { /* best effort */ }
 }
 
 // ── Main orchestrator ─────────────────────────────────────────────────────────
@@ -534,15 +601,7 @@ export async function runAgentWorkforce(input: AgentRunInput): Promise<AgentRunR
 
     // Persist findings to isolation layer
     if (iterFindings.length > 0) {
-      await Promise.resolve(admin.from("agent_findings").insert(
-        iterFindings.map(f => ({
-          run_id:    input.runId,
-          user_id:   input.userId,
-          iteration: i,
-          ...f,
-          founder_confirmed: null,  // always null — never auto-promote
-        }))
-      )).catch(() => {});
+      await persistFindings(admin, input, i, iterFindings);
     }
 
     const score = scoreFindings(allFindings);

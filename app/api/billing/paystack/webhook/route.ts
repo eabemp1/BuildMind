@@ -4,6 +4,7 @@ import { persistUserPlan, resolveUserIdByEmail, scheduleCancellation, startPayme
 import { formatAccessDate } from "@/lib/billing/cancellation";
 import { sendEmail } from "@/lib/email";
 import { logError } from "@/lib/server/logger";
+import { recordOwnerEvent, maskEmail } from "@/lib/ownerNotify";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { PLAN_PRICE_CENTS, FOUNDING_DISCOUNT_MULTIPLIER } from "@/lib/billing/pricing";
 
@@ -214,6 +215,14 @@ async function processEvent(event: PaystackEvent, eventName: string): Promise<Ne
         billing_subscription_token: subscriptionToken,
       },
     });
+
+    // Owner alert: every paid upgrade is worth an instant ping (best-effort, never throws).
+    await recordOwnerEvent(
+      "upgrade",
+      { email, reference, founding },
+      { title: "New Builder upgrade", body: `${maskEmail(email)}${founding ? " (founding)" : ""}`, priority: "high", url: "https://buildmind.live/admin#revenue" },
+      userId ?? undefined,
+    );
 
     // Send subscription confirmation email (best-effort — never blocks the webhook response)
     if (email) {

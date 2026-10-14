@@ -78,6 +78,13 @@ export default function PromotersAdminPage() {
       <div style={{ maxWidth: 800, margin: "0 auto" }}>
         <div style={{ fontFamily: "Syne, sans-serif", fontWeight: 800, fontSize: 26, marginBottom: 6 }}>Promoters</div>
         <p style={{ color: TEXT2, fontSize: 13.5, marginBottom: 24 }}>Everyone helping promote BuildMind, at a glance.</p>
+        <Link href="/admin/distribution" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, background: BG2, border: `1px solid ${BORDER}`, borderLeft: `3px solid ${ACCENT}`, borderRadius: 10, padding: "12px 14px", marginBottom: 20, textDecoration: "none", color: TEXT }}>
+          <span>
+            <span style={{ display: "block", fontSize: 14, fontWeight: 700 }}>Distribution Intelligence</span>
+            <span style={{ display: "block", fontSize: 12.5, color: TEXT2, marginTop: 2 }}>Your private workspace for writing, conversations and experiments.</span>
+          </span>
+          <span style={{ color: ACCENT, fontSize: 13 }}>Open →</span>
+        </Link>
 
         {/* Create new */}
         <div style={{ background: BG2, border: `1px solid ${BORDER}`, borderRadius: 14, padding: 16, marginBottom: 24, display: "flex", gap: 10, flexWrap: "wrap" }}>

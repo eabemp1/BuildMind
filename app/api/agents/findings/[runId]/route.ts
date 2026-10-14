@@ -44,7 +44,7 @@ export async function GET(
 
   const { data: allFindings, error } = await admin
     .from("agent_findings")
-    .select("id,iteration,signal_type,positive,confidence,title,evidence,action_hint,founder_confirmed")
+    .select("*")
     .eq("run_id", runId)
     .order("iteration", { ascending: true });
 

@@ -2,16 +2,17 @@
  * POST /api/agents/confirm
  *
  * Founder confirms or rejects a single finding.
- * Confirmed findings are flagged for promotion to founder_context
- * on the next morning briefing refresh (async — never written here directly).
+ * Records the founder's decision with provenance (evidence tier, source count,
+ * verification status). Nothing is written to founder_context from here.
  *
- * Body: { findingId: string, confirmed: boolean }
+ * Body: { findingId, confirmed, verifiedByFounder?, note? }
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
+import { buildProvenance, classifyFinding, type EvidenceTier } from "@/lib/evidence";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,6 +20,9 @@ export const dynamic = "force-dynamic";
 const BodySchema = z.object({
   findingId: z.string().uuid(),
   confirmed: z.boolean(),
+  /** Founder says they checked this against their own evidence (interviews, data). */
+  verifiedByFounder: z.boolean().optional(),
+  note: z.string().max(500).optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -39,7 +43,7 @@ export async function POST(req: NextRequest) {
   // Verify finding belongs to this user
   const { data: finding } = await admin
     .from("agent_findings")
-    .select("id,user_id")
+    .select("*")
     .eq("id", body.findingId)
     .eq("user_id", auth.userId)
     .maybeSingle();
@@ -48,15 +52,28 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Finding not found." }, { status: 404 });
   }
 
-  const { error } = await admin
-    .from("agent_findings")
-    .update({ founder_confirmed: body.confirmed })
-    .eq("id", body.findingId)
-    .eq("user_id", auth.userId);
+  // Provenance: what the founder is actually vouching for. A thin signal
+  // confirmed without the founder saying they checked it stays a hypothesis.
+  const c = classifyFinding(finding);
+  const tier = (finding.evidence_tier as EvidenceTier | undefined) ?? c.tier;
+  const sourceCount = typeof finding.source_count === "number" ? finding.source_count : c.sourceCount;
+  const prov = body.confirmed ? buildProvenance(tier, sourceCount, body.verifiedByFounder === true, body.note) : null;
+
+  const richUpdate = {
+    founder_confirmed: body.confirmed,
+    verification_status: prov ? prov.verification_status : "rejected",
+    confirm_note: prov?.confirm_note ?? (body.note?.trim() || null),
+    confirmed_at: new Date().toISOString(),
+  };
+  let { error } = await admin.from("agent_findings").update(richUpdate).eq("id", body.findingId).eq("user_id", auth.userId);
+  if (error) {
+    // Evidence columns not migrated yet: keep the original behaviour.
+    ({ error } = await admin.from("agent_findings").update({ founder_confirmed: body.confirmed }).eq("id", body.findingId).eq("user_id", auth.userId));
+  }
 
   if (error) {
     return NextResponse.json({ ok: false, error: "Failed to update finding." }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, confirmed: body.confirmed });
+  return NextResponse.json({ ok: true, confirmed: body.confirmed, verification_status: richUpdate.verification_status });
 }

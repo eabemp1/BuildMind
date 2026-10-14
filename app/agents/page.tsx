@@ -18,6 +18,7 @@ import { AGENT_IDENTITY, type AgentType } from "@/lib/agentWorkforce";
 import { RadialGauge } from "@/components/charts";
 import { OpenBesideButton } from "@/components/layout/OpenBesideButton";
 import { computeCrewStats, computeEvidenceMix, caseNumber } from "@/lib/agentWorkspace";
+import { classifyFinding, runReadiness, frameVerdict, evidenceStrength, scoreExplainer, TIER_LABEL, TIER_MEANING } from "@/lib/evidence";
 import { AGENT_THEME, AgentEmblem, CaseArchive, CrewCard, Dossier, EvidenceLedger, OpsConsole, VERDICT_THEME, VerdictStamp } from "@/components/agents/parts";
 
 interface AgentRun {
@@ -52,6 +53,11 @@ interface AgentFinding {
   evidence:          string;
   action_hint:       string | null;
   founder_confirmed: boolean | null;
+  sources?:             string[] | null;
+  counter_evidence?:    string | null;
+  assumptions?:         string | null;
+  source_type?:         string | null;
+  verification_status?: string | null;
 }
 
 const STORAGE_KEY = "bm_agent_run_id";
@@ -65,13 +71,18 @@ function FindingCard({
   finding, onConfirm,
 }: {
   finding: AgentFinding;
-  onConfirm: (id: string, confirmed: boolean) => void;
+  onConfirm: (id: string, confirmed: boolean, opts?: { verifiedByFounder?: boolean }) => void;
 }) {
   const [acting, setActing] = useState(false);
+  const [checked, setChecked] = useState(false);
+  const cls = useMemo(() => classifyFinding(finding), [finding]);
+  const isOpp = finding.signal_type === "pivot_candidate";
+  const tierLabel = isOpp ? "Opportunity to test" : TIER_LABEL[cls.tier];
+  const tierColor = cls.tier === "decision_grade" ? "var(--bm-green)" : cls.tier === "supported" ? "var(--bm-accent)" : "var(--bm-amber)";
 
   const handle = (confirmed: boolean) => {
     setActing(true);
-    onConfirm(finding.id, confirmed);
+    onConfirm(finding.id, confirmed, { verifiedByFounder: checked });
   };
 
   if (finding.founder_confirmed === true) {
@@ -81,7 +92,9 @@ function FindingCard({
         border: "1px solid var(--bm-green-bd)", borderRadius: 10, opacity: 0.7,
       }}>
         <div style={{ fontSize: 11.5, color: "var(--bm-green)", fontWeight: 600 }}>✓ {finding.title}</div>
-        <div style={{ fontSize: 10.5, color: "var(--bm-text3)", marginTop: 2 }}>Confirmed — added to your context</div>
+        <div style={{ fontSize: 10.5, color: "var(--bm-text3)", marginTop: 2 }}>
+          {finding.verification_status === "unverified_hypothesis" ? "Saved as an unverified hypothesis" : "Verified by you"} · {tierLabel}
+        </div>
       </div>
     );
   }
@@ -131,10 +144,25 @@ function FindingCard({
             <span style={{ fontSize: 9, color: "var(--bm-text4)", fontFamily: "'DM Mono', monospace" }}>
               {finding.signal_type.replace(/_/g, " ")}
             </span>
+            <span title={TIER_MEANING[cls.tier]} style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: tierColor, border: `1px solid ${tierColor}`, borderRadius: 4, padding: "0 5px" }}>
+              {tierLabel}
+            </span>
+            <span style={{ fontSize: 9, color: "var(--bm-text4)", fontFamily: "'DM Mono', monospace" }}>
+              {cls.sourceCount} source{cls.sourceCount === 1 ? "" : "s"} · {Math.round(finding.confidence * 100)}% conf.
+            </span>
           </div>
           <div style={{ fontSize: 12, color: "var(--bm-text2)", lineHeight: 1.6, marginBottom: 6 }}>
             {finding.evidence}
           </div>
+          {cls.caveat && (
+            <div style={{ fontSize: 11, color: "var(--bm-amber)", marginBottom: 6 }}>{cls.caveat}</div>
+          )}
+          {(finding.assumptions || finding.counter_evidence) && (
+            <div style={{ display: "grid", gap: 3, fontSize: 11, color: "var(--bm-text3)", marginBottom: 6 }}>
+              {finding.assumptions && <div><b style={{ color: "var(--bm-text2)" }}>Holds if:</b> {finding.assumptions}</div>}
+              {finding.counter_evidence && <div><b style={{ color: "var(--bm-text2)" }}>Against:</b> {finding.counter_evidence}</div>}
+            </div>
+          )}
           {finding.action_hint && (
             <div style={{
               fontSize: 11.5, color: "var(--bm-accent)",
@@ -146,7 +174,13 @@ function FindingCard({
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: 6, paddingTop: 10, borderTop: "1px solid var(--bm-border)" }}>
+      {cls.tier === "signal" && (
+        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--bm-text3)", paddingTop: 10, borderTop: "1px solid var(--bm-border)", cursor: "pointer" }}>
+          <input type="checkbox" checked={checked} onChange={(e) => setChecked(e.target.checked)} />
+          I have checked this myself (interviews, data, my own research)
+        </label>
+      )}
+      <div style={{ display: "flex", gap: 6, paddingTop: 10, ...(cls.tier === "signal" ? {} : { borderTop: "1px solid var(--bm-border)" }) }}>
         <button
           onClick={() => handle(true)}
           disabled={acting}
@@ -158,7 +192,7 @@ function FindingCard({
             cursor: acting ? "not-allowed" : "pointer", fontFamily: "inherit",
           }}
         >
-          Confirm → add to context
+          {cls.tier === "signal" && !checked ? "Save as hypothesis" : "Confirm"}
         </button>
         <button
           onClick={() => handle(false)}
@@ -186,6 +220,9 @@ function CaseFile({ run, pendingCount, findings }: { run: AgentRun; pendingCount
   const v = VERDICT_THEME[run.verdict ?? "inconclusive"];
   const tops = [run.top_finding_1, run.top_finding_2, run.top_finding_3].filter(Boolean) as string[];
   const mix = useMemo(() => computeEvidenceMix(findings), [findings]);
+  const readiness = useMemo(() => runReadiness(findings), [findings]);
+  const strength = useMemo(() => evidenceStrength(findings), [findings]);
+  const framed = useMemo(() => frameVerdict(run.verdict ?? "inconclusive", readiness), [run.verdict, readiness]);
   return (
     <div style={{ display: "grid", gap: 14 }}>
       <Dossier accent={t.c} style={{ padding: 14 }}>
@@ -198,17 +235,29 @@ function CaseFile({ run, pendingCount, findings }: { run: AgentRun; pendingCount
           </div>
           {run.status === "complete" && run.verdict && (
             <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-              <VerdictStamp verdict={run.verdict} />
-              <div style={{ textAlign: "center" }}>
+              <VerdictStamp verdict={run.verdict} label={findings.length ? framed.label : undefined} />
+              <div style={{ textAlign: "center" }} title="How confident the agent is in its own findings, on average">
                 <RadialGauge value={run.confidence_pct} size={44} strokeWidth={4} thresholds={[{ min: 70, color: "var(--bm-green)" }, { min: 45, color: "var(--bm-accent)" }, { min: 0, color: "var(--bm-red)" }]} />
-                <div style={{ ...lbl, marginTop: 2 }}>Confidence</div>
+                <div style={{ ...lbl, marginTop: 2 }}>Avg. conf.</div>
               </div>
+              {findings.length > 0 && (
+                <div style={{ textAlign: "center" }} title="How well the findings are supported by independent sources">
+                  <RadialGauge value={strength} size={44} strokeWidth={4} thresholds={[{ min: 65, color: "var(--bm-green)" }, { min: 35, color: "var(--bm-accent)" }, { min: 0, color: "var(--bm-amber)" }]} />
+                  <div style={{ ...lbl, marginTop: 2 }}>Evidence</div>
+                </div>
+              )}
             </div>
           )}
         </div>
 
         {run.status === "complete" && run.verdict && (
           <>
+            {findings.length > 0 && (
+              <div style={{ marginTop: 14, fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.55 }}>
+                <b style={{ color: "var(--bm-text2)" }}>{framed.label}.</b> {framed.note}{" "}
+                <span>{readiness.counts.signal} signal{readiness.counts.signal === 1 ? "" : "s"}, {readiness.counts.supported} supported, {readiness.counts.decision_grade} decision-grade. {scoreExplainer()}</span>
+              </div>
+            )}
             {run.recommended_action && (
               <div style={{ marginTop: 16, padding: "12px 14px", background: v.dim, border: `1px solid ${v.bd}`, borderLeft: `3px solid ${v.c}`, borderRadius: 8 }}>
                 <div style={{ ...lbl, color: v.c, marginBottom: 4 }}>Recommended action</div>
@@ -243,7 +292,7 @@ function CaseFile({ run, pendingCount, findings }: { run: AgentRun; pendingCount
             </div>
             {pendingCount > 0 && (
               <div style={{ marginTop: 12, padding: "8px 12px", background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)", borderRadius: 8, fontSize: 12, color: "var(--bm-accent)" }}>
-                {pendingCount} finding{pendingCount !== 1 ? "s" : ""} waiting for your review below. Only confirmed findings reach your context.
+                {pendingCount} finding{pendingCount !== 1 ? "s" : ""} waiting for your review below. Your decision is saved with how well each finding is supported.
               </div>
             )}
           </>
@@ -373,14 +422,15 @@ export default function AgentsPage() {
     setDeploying(false);
   }, [activeProjectId, pollStatus, stopPolling, loadFindings]);
 
-  const handleConfirm = useCallback(async (findingId: string, confirmed: boolean) => {
+  const handleConfirm = useCallback(async (findingId: string, confirmed: boolean, opts?: { verifiedByFounder?: boolean }) => {
     try {
-      await fetch("/api/agents/confirm", {
+      const r = await fetch("/api/agents/confirm", {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ findingId, confirmed }),
+        body: JSON.stringify({ findingId, confirmed, verifiedByFounder: opts?.verifiedByFounder === true }),
       });
-      setFindings(prev => prev.map(f => f.id === findingId ? { ...f, founder_confirmed: confirmed } : f));
+      const j = await r.json().catch(() => ({}));
+      setFindings(prev => prev.map(f => f.id === findingId ? { ...f, founder_confirmed: confirmed, verification_status: j.verification_status ?? f.verification_status } : f));
       setPendingCount(prev => Math.max(0, prev - 1));
     } catch {}
   }, []);

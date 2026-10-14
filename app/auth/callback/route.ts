@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { TRIAL_DURATION_DAYS } from "@/lib/plan";
 import { markFoundingEligible } from "@/lib/billing/server";
 import { logError } from "@/lib/server/logger";
+import { flushOwnerEvents } from "@/lib/ownerNotify";
 
 function safeNextPath(value: string | null): string {
   if (!value || !value.startsWith("/") || value.startsWith("//")) return "/onboarding";
@@ -138,6 +139,7 @@ async function maybeStartTrial(supabase: Awaited<ReturnType<typeof createClient>
 }
 
 export async function GET(request: NextRequest) {
+  await flushOwnerEvents(); // report any new signups (never throws)
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get("code");
   const next = safeNextPath(requestUrl.searchParams.get("next"));

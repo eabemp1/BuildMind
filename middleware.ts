@@ -191,6 +191,7 @@ export async function middleware(request: NextRequest) {
     pathname === "/break" ||
     pathname.startsWith("/break/") ||
     pathname === "/upgrade" ||
+    pathname === "/status" ||
     pathname === "/ventures" ||
     pathname.startsWith("/ventures/") ||
     pathname === "/quiz" ||
