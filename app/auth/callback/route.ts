@@ -1,3 +1,4 @@
+import { claimTrial, spentTrialRow } from "@/lib/server/trialGuard";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -106,6 +107,13 @@ async function maybeStartTrial(supabase: Awaited<ReturnType<typeof createClient>
         .maybeSingle();
 
       if (!existing?.trial_started_at) {
+        // One trial per real person: verified, non-disposable, normalised email.
+        const decision = await claimTrial(admin, user);
+        if (decision.action === "wait") return;
+        if (decision.action === "deny") {
+          await admin.from("founder_context").upsert(spentTrialRow(user.id), { onConflict: "user_id", ignoreDuplicates: true });
+          return;
+        }
         const now = new Date();
         const trialStartedAt = now.toISOString();
         const trialEndsAt = new Date(

@@ -1,7 +1,8 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { spendAIUsage, AIUsageUnavailableError, type SpendResult } from "@/lib/server/aiUsageStore";
 import { normalizePlan } from "@/lib/plan";
-import { getEffectivePlan } from "@/lib/server/plan";
+import { getPlanContext } from "@/lib/server/plan";
+import { checkBudget, recordCall, type BudgetTier } from "@/lib/server/aiBudget";
 import { callModel, callModelJSON, hasAIProvider } from "@/lib/ai-providers";
 
 // Plan-aware AI limits
@@ -64,8 +65,6 @@ export async function enforceAndTrackAIUsage(
   feature: AIUsageFeature = "general",
 ) {
   if (!hasAdminEnv()) return; // dev mode — skip limits
-  const supabase = createAdminClient();
-
   // FIX #1: Compute date values once at the top — prevents the const re-declaration
   // bug where the second `const d` shadowed the first, making `month` and `today`
   // derive from two different Date objects (potential TZ-boundary mismatch).
@@ -76,17 +75,29 @@ export async function enforceAndTrackAIUsage(
   // Look up a fresh auth user so stale JWT metadata cannot keep Builder users
   // trapped behind free-tier AI caps.
   let plan = normalizePlan(planOverride);
+  let isTrial = false;
   try {
-    const { data: authUser } = await supabase.auth.admin.getUserById(userId);
-    plan = await getEffectivePlan(userId);
+    const ctx = await getPlanContext(userId);
+    plan = ctx.plan;
+    isTrial = ctx.trial;
   } catch {
     plan = normalizePlan(planOverride);
   }
 
+  // Trial accounts get Builder FEATURES but their own, smaller AI allowance
+  // (see lib/aiLimits.ts). Paying customers are never treated as trial.
+  const limitKey = plan === "builder" && isTrial ? "trial" : plan;
+  const budgetTier: BudgetTier = limitKey === "trial" ? "trial" : plan === "builder" ? "paid" : "free";
+
+  // Global budget guard: when today's total AI load is high, free and trial
+  // traffic is paused first. Paying users are never blocked here.
+  const budget = await checkBudget(budgetTier);
+  if (!budget.allowed) throw new Error(budget.reason);
+
   const monthlyLimits = feature === "core" ? CORE_MONTHLY_LIMITS : PLAN_MONTHLY_LIMITS;
   const dailyLimits    = feature === "core" ? CORE_DAILY_LIMITS   : PLAN_DAILY_LIMITS;
-  const monthlyLimit = monthlyLimits[plan] ?? monthlyLimits.free;
-  const dailyLimit   = dailyLimits[plan]   ?? dailyLimits.free;
+  const monthlyLimit = monthlyLimits[limitKey] ?? monthlyLimits.free;
+  const dailyLimit   = dailyLimits[limitKey]   ?? dailyLimits.free;
 
   // Every call is counted here, once, atomically: both caps are checked and
   // both counters incremented in a single step (see lib/server/aiUsageStore.ts).
@@ -98,22 +109,25 @@ export async function enforceAndTrackAIUsage(
     // counter would silently mean unlimited free AI. Paid users fail open so an
     // outage never blocks someone who is paying.
     console.error("[ai-usage] counter unavailable:", err);
-    if (plan === "free") throw new AIUsageUnavailableError();
+    if (plan === "free" || limitKey === "trial") throw new AIUsageUnavailableError();
     return;
   }
 
-  if (result.ok) return;
+  if (result.ok) {
+    await recordCall(budgetTier); // global load counter (never throws)
+    return;
+  }
 
   if (result.blocked === "daily") {
     const limitLabel = dailyLimit === -1 ? "unlimited" : String(dailyLimit);
     const what = feature === "core" ? "today's action generation" : "AI Coach and other AI features";
     throw new Error(
-      `Daily AI limit reached for ${what} (${limitLabel} calls/day on the ${plan} plan). ` +
-      `Your limit resets at midnight UTC${plan === "free" ? ", or upgrade to Builder for a much higher ceiling" : ""}.`,
+      `Daily AI limit reached for ${what} (${limitLabel} calls/day on the ${limitKey === "trial" ? "trial" : plan} plan). ` +
+      `Your limit resets at midnight UTC${plan === "free" || limitKey === "trial" ? ", or upgrade to Builder for a much higher ceiling" : ""}.`,
     );
   }
   throw new Error(
-    `Monthly AI limit reached (${monthlyLimit} calls).${plan === "free" ? " Upgrade to Builder for far more AI." : ""}`,
+    `Monthly AI limit reached (${monthlyLimit} calls).${plan === "free" || limitKey === "trial" ? " Upgrade to Builder for far more AI." : ""}`,
   );
 }
 

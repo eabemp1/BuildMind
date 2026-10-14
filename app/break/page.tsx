@@ -89,6 +89,7 @@ export default function BreakPublicPage() {
   const [result, setResult] = useState<BreakResult | null>(null);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [preview, setPreview] = useState(false);
 
   const canRun = idea.trim().length > 10;
 
@@ -102,7 +103,7 @@ export default function BreakPublicPage() {
       });
       const body = await res.json().catch(()=>({}));
       if (!res.ok||!body.success) throw new Error(body?.error??"Analysis failed");
-      setResult(body.data); setPhase("result");
+      setResult(body.data); setPreview(Boolean(body.preview)); setPhase("result");
     } catch(err) {
       setError(err instanceof Error?err.message:"Something went wrong."); setPhase("input");
     }
@@ -123,7 +124,7 @@ export default function BreakPublicPage() {
     setCopied(true); setTimeout(()=>setCopied(false), 1500);
   };
 
-  const handleReset = () => { setPhase("input"); setResult(null); setIdea(""); setTargetUsers(""); setProblem(""); };
+  const handleReset = () => { setPreview(false); setPhase("input"); setResult(null); setIdea(""); setTargetUsers(""); setProblem(""); };
 
   return (
     <div style={{ minHeight:"100vh", background:"#080810", color:"#f0f0f5", fontFamily:"system-ui,-apple-system,sans-serif" }}>
@@ -202,6 +203,11 @@ export default function BreakPublicPage() {
 
           {phase==="result" && result && (
             <motion.div key="result" initial={{ opacity:0, y:16 }} animate={{ opacity:1, y:0 }}>
+              {preview && (
+                <div style={{ fontSize:12, lineHeight:1.5, color:"var(--bm-text3)", border:"1px solid var(--bm-border)", borderRadius:8, padding:"8px 12px", marginBottom:20 }}>
+                  Live analysis is at capacity today, so this is a quick preview based on how your idea is described. Create a free account for the full stress-test.
+                </div>
+              )}
               {/* Score */}
               <div style={{ textAlign:"center", marginBottom:36 }}>
                 <div style={{ fontSize:11, color:"var(--bm-text4)", fontFamily:"monospace", letterSpacing:"0.12em", textTransform:"uppercase", marginBottom:20 }}>survival probability</div>

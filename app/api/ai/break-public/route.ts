@@ -10,6 +10,7 @@ import { NextResponse } from "next/server";
 import { groqJSON } from "@/app/api/ai/_utils";
 import { getClientIp, rateLimitAsync } from "@/lib/server/rateLimit";
 import { webSearch } from "@/lib/search";
+import { publicBreakAllowed, recordCall } from "@/lib/server/aiBudget";
 
 function previewSignalScore(idea: string, users: string, problem: string): number {
   const words = idea.split(/\s+/).filter(Boolean).length;
@@ -48,8 +49,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: "Describe your startup idea (at least 10 characters)." }, { status: 400 });
     }
 
-    // Light competitor scan
-    const scrapeResult = await scrapeCompetitors(`${idea} startup tool software`);
+    // Daily abuse caps: per IP (on top of the hourly limit above) and for the
+    // whole public page. Past a cap, or when global AI load is high, visitors
+    // still get the no-AI preview instead of an error. Anonymous traffic must
+    // never be able to starve signed-in users of AI capacity.
+    const dayLimit = await rateLimitAsync(`break-public-day:${getClientIp(request)}`, 12, 24 * 60 * 60 * 1000, { failClosed: true });
+    const gate = dayLimit.ok ? await publicBreakAllowed() : { live: false, why: "daily_cap" as const };
+    const live = gate.live;
+
+    // Light competitor scan (skipped in preview mode — it spends search credits)
+    const scrapeResult = live ? await scrapeCompetitors(`${idea} startup tool software`) : { titles: "", scraped: false };
     const competitors = scrapeResult.titles;
     const competitors_scraped = scrapeResult.scraped;
 
@@ -99,7 +108,8 @@ Analyze this startup idea ruthlessly. Be specific to what was described, not gen
     };
 
     let result = defaultResult;
-    try {
+    if (live) try {
+      await recordCall("public");
       const ai = await groqJSON<typeof defaultResult>(systemPrompt, userPrompt);
       if (ai?.verdict && ai?.kill_reasons?.length && typeof ai.survival_probability === "number") {
         result = {
@@ -115,7 +125,7 @@ Analyze this startup idea ruthlessly. Be specific to what was described, not gen
       // use default — still useful
     }
 
-    return NextResponse.json({ success: true, data: result, competitors_scraped });
+    return NextResponse.json({ success: true, data: result, competitors_scraped, preview: !live });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Analysis failed";
     return NextResponse.json({ success: false, error: msg }, { status: 500 });

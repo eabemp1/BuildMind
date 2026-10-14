@@ -62,8 +62,8 @@ export async function getFreshPlanForUser(user: UserLike): Promise<Plan> {
  * This eliminates the desync window where a webhook failure left
  * user_metadata on "free" while subscriptions had "builder".
  */
-export async function getEffectivePlan(userId: string): Promise<Plan> {
-  if (!hasAdminPlanLookupEnv()) return "free";
+export async function getPlanContext(userId: string): Promise<{ plan: Plan; trial: boolean }> {
+  if (!hasAdminPlanLookupEnv()) return { plan: "free", trial: false };
 
   try {
     const admin = createAdminClient();
@@ -77,7 +77,15 @@ export async function getEffectivePlan(userId: string): Promise<Plan> {
       .maybeSingle();
 
     if (ctx?.trial_ends_at && new Date(ctx.trial_ends_at) > now) {
-      return "builder";
+      // Trial access is Builder-level for features, but a trialist who has
+      // actually paid is a paying customer and must not get trial AI limits.
+      const { data: paid } = await admin
+        .from("subscriptions")
+        .select("plan, status")
+        .eq("user_id", userId)
+        .maybeSingle();
+      const isPaying = paid?.plan === "builder" && ["active", "grace"].includes(String(paid?.status ?? "").toLowerCase());
+      return { plan: "builder", trial: !isPaying };
     }
 
     // 2. Canonical plan from subscriptions table (A2 fix — primary source)
@@ -88,7 +96,7 @@ export async function getEffectivePlan(userId: string): Promise<Plan> {
       .maybeSingle();
 
     if (sub?.plan) {
-      if (sub.plan !== "builder") return "free";
+      if (sub.plan !== "builder") return { plan: "free", trial: false };
 
       const status = String(sub.status ?? "").toLowerCase();
       const currentPeriodEnd = typeof sub.current_period_end === "string"
@@ -99,27 +107,31 @@ export async function getEffectivePlan(userId: string): Promise<Plan> {
         : null;
 
       if (status === "grace") {
-        return gracePeriodEnd && gracePeriodEnd > now ? "builder" : "free";
+        return gracePeriodEnd && gracePeriodEnd > now ? { plan: "builder", trial: false } : { plan: "free", trial: false };
       }
 
       if (!["active", "trialing"].includes(status)) {
-        return "free";
+        return { plan: "free", trial: false };
       }
 
       // New Builder writes are monthly and date-based. Legacy rows without a
       // period end remain active until the next webhook/reconcile refresh writes
       // one, avoiding accidental lockouts during rollout.
       if (currentPeriodEnd && currentPeriodEnd <= now) {
-        return "free";
+        return { plan: "free", trial: false };
       }
 
-      return "builder";
+      return { plan: "builder", trial: false };
     }
 
     // 3. Legacy fallback — user_metadata JWT cache (pre-subscriptions accounts)
     const { data: authUser } = await admin.auth.admin.getUserById(userId);
-    return planFromUserMetadata(authUser?.user);
+    return { plan: planFromUserMetadata(authUser?.user), trial: false };
   } catch {
-    return "free"; // fail closed
+    return { plan: "free", trial: false }; // fail closed
   }
+}
+
+export async function getEffectivePlan(userId: string): Promise<Plan> {
+  return (await getPlanContext(userId)).plan;
 }

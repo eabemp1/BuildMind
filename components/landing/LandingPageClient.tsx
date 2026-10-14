@@ -15,6 +15,7 @@ import { Card } from "@/components/ui/card";
 import { BrandMark } from "@/components/layout/logo";
 import { useTheme } from "@/components/layout/theme-provider";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
+import { Price } from "@/components/Price";
 
 // ── "A Day With BuildMind" timeline data ──────────────────────────────────────
 const DAY_TIMELINE = [
@@ -963,7 +964,7 @@ function PricingSection() {
                   <span style={{ fontSize: 10, fontWeight: 700, color: "#09090A", textTransform: "uppercase", letterSpacing: "0.08em", background: "var(--bm-accent)", padding: "3px 10px", borderRadius: 10 }}>Builder</span>
                   <span style={{ fontSize: 10, color: "var(--bm-text3)" }}>Most popular</span>
                 </div>
-                <div style={{ fontSize: 32, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em" }}>$39 <span style={{ fontSize: 14, fontWeight: 400, color: "var(--bm-text3)" }}>/month</span></div>
+                <div style={{ fontSize: 32, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em" }}><Price kind="amount" /> <span style={{ fontSize: 14, fontWeight: 400, color: "var(--bm-text3)" }}>/month</span></div>
                 <p className="text-sm text-[var(--bm-text2)] mt-2 leading-relaxed">
                   The full system: daily move with reasoning, evidence-based stress-tests, stage gates that ask for proof, and a coach that knows your business.
                 </p>
@@ -988,7 +989,7 @@ function PricingSection() {
               </ul>
               <Link href="/auth/login">
                 <Button size="md" className="w-full">
-                  Go Builder — $39/mo <ArrowRight size={14} />
+                  Go Builder — <Price /> <ArrowRight size={14} />
                 </Button>
               </Link>
               <p style={{ fontSize: 11, color: "var(--bm-text4)", textAlign: "center" }}>

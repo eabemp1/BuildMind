@@ -25,6 +25,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { X, Zap, ArrowRight } from "lucide-react";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
+import { Price } from "@/components/Price";
 
 export type PaywallTrigger =
   | "morning_briefing"   // Free user whose briefing is ready but gated
@@ -46,22 +47,22 @@ const COPY: Record<PaywallTrigger, { headline: string; body: string; cta: string
   morning_briefing: {
     headline: "Your Morning Briefing is ready.",
     body: "You need Builder to receive it every day — before you wake up, before you open the app, BuildMind has already decided what you should do.",
-    cta: "Unlock daily briefings — $39/mo",
+    cta: "Unlock daily briefings",
   },
   pattern: {
     headline: "BuildMind has detected a pattern.",
     body: "Upgrade to Builder so the system can name what's blocking you and fix it — not just observe it.",
-    cta: "Unlock pattern intelligence — $39/mo",
+    cta: "Unlock pattern intelligence",
   },
   weekly_limit: {
     headline: "You've hit your weekly action limit.",
     body: "Free founders get 3 AI-powered actions per week. Builder gives you unlimited — because execution should never be throttled.",
-    cta: "Go unlimited — $39/mo",
+    cta: "Go unlimited",
   },
   ai_limit: {
     headline: "You've used your daily AI calls.",
     body: "Builder gives you unlimited AI calls so the system never goes quiet when you need it most.",
-    cta: "Go unlimited — $39/mo",
+    cta: "Go unlimited",
   },
 };
 
@@ -168,7 +169,7 @@ export function PaywallMoment({ trigger, patternMessage, onDismiss, onUpgrade }:
               fontFamily: "inherit",
             }}
           >
-            <ArrowRight size={13} /> {copy.cta}
+            <ArrowRight size={13} /> {copy.cta} — <Price />
           </button>
         </motion.div>
       )}

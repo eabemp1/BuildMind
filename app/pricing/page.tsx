@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
 import { Check, Zap, ArrowRight } from "lucide-react";
-import { PLAN_PRICE_LABEL } from "@/lib/pricing";
+import { Price, RegionalNote } from "@/components/Price";
 
 export const metadata: Metadata = {
   title: "Pricing — BuildMind",
@@ -79,7 +79,7 @@ export default function PricingPage() {
             letterSpacing: "-0.04em", color: "var(--bm-text)", lineHeight: 1.1,
             margin: "0 0 clamp(12px, 2vw, 16px)" }}>
             Free to start.<br />
-            <span style={{ color: "var(--bm-accent)" }}>$39/month</span> when you&apos;re serious.
+            <span style={{ color: "var(--bm-accent)" }}><Price kind="month" /></span> when you&apos;re serious.
           </h1>
           <p style={{ fontSize: "clamp(14px, 2.5vw, 16px)", color: "var(--bm-text2)",
             lineHeight: 1.7, maxWidth: 520, margin: "0 auto" }}>
@@ -166,10 +166,11 @@ export default function PricingPage() {
               <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 4 }}>
                 <span style={{ fontSize: "clamp(32px, 7vw, 42px)", fontWeight: 900,
                   color: "var(--bm-text)", letterSpacing: "-0.04em" }}>
-                  {PLAN_PRICE_LABEL.builder}
+                  <Price kind="amount" />
                 </span>
                 <span style={{ fontSize: 14, color: "var(--bm-text3)" }}>/month</span>
               </div>
+              <RegionalNote style={{ marginBottom: 6 }} />
               <p style={{ fontSize: 12, color: "var(--bm-text4)", marginBottom: 20 }}>
                 Cancel anytime. No contracts.
               </p>
@@ -207,7 +208,7 @@ export default function PricingPage() {
           </p>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "clamp(16px, 3vw, 24px)" }}>
             {[
-              { q: "What makes this worth $39?", a: "Most AI tools are query-response. BuildMind runs overnight on your startup context and builds a behavioral model of how you execute over time. By week 3, the daily task is calibrated to your avoidance patterns, your working style, and your startup's survival gaps. That's not a chatbot." },
+              { q: "What makes this worth the price?", a: "Most AI tools are query-response. BuildMind runs overnight on your startup context and builds a behavioral model of how you execute over time. By week 3, the daily task is calibrated to your avoidance patterns, your working style, and your startup's survival gaps. That's not a chatbot." },
               { q: "What's the free plan actually good for?", a: "Genuinely good. The onboarding Reflexion Strike gives you a live startup analysis. You get 3 AI-calibrated tasks per week and the morning briefing twice a week. It's enough to validate whether the system works for you before paying." },
               { q: "How is this different from Notion AI or ChatGPT?", a: "Those tools answer questions. BuildMind has a north-star goal (your startup's stage and core problem), remembers your history, detects your patterns, and gives you one specific task per day. It gets more accurate the longer you use it." },
               { q: "Can I cancel anytime?", a: "Yes. Month-to-month, cancel any time from Settings. Your data and history are retained for 90 days after cancellation." },

@@ -4,7 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { normalizePlan, type Plan } from "@/lib/plan";
 import { getClientIp, rateLimitAsync } from "@/lib/server/rateLimit";
 import { usdToPesewas } from "@/lib/fx";
-import { PLAN_PRICE_USD, PLAN_PRICE_CENTS, foundingPriceUsd, foundingPriceCents } from "@/lib/billing/pricing";
+import { effectiveTier, normalizeCountryCode, pickGhsPlanCode, tierPriceUsd, tierPriceCents } from "@/lib/billing/regionalPricing";
 import { createPolarCheckout } from "@/lib/billing/polar";
 
 /**
@@ -14,24 +14,12 @@ import { createPolarCheckout } from "@/lib/billing/polar";
 const GHS_COUNTRIES = new Set(["GH", "GHANA"]);
 
 /**
- * Paystack plan code — set this in your env. GHS only now; USD/international
- * traffic routes through Polar (see lib/billing/polar.ts) since Paystack has
- * not approved international payments on this account.
- *
- * FOUNDING NOTE: Paystack bills recurring subscriptions at the PLAN's
- * configured price, not the one-off "amount" sent at initialize — so
- * founding members need their OWN plan code at the discounted price, or
- * their renewal after month one silently jumps back to full price. Create
- * a second plan on your Paystack dashboard (GHS) at the discounted amount
- * from lib/billing/pricing.ts and set PAYSTACK_FOUNDING_PLAN_CODE. Until you
- * do, this falls back to the regular plan code with a console warning — the
- * FIRST charge will still be correct (we control that amount directly), but
- * renewals won't be discounted.
+ * Paystack plan codes (GHS) live in lib/billing/regionalPricing.ts
+ * (pickGhsPlanCode). Paystack bills subscriptions at the PLAN's amount, so
+ * each price point (standard / founding / Africa / Africa founding) needs its
+ * own plan on the Paystack dashboard. Missing codes fail safe to the standard
+ * price — see regionalPricing.ts.
  */
-const PLAN_CODES = {
-  ghs: () => process.env.PAYSTACK_BUILDER_PLAN_CODE?.trim(),
-  foundingGhs: () => process.env.PAYSTACK_FOUNDING_PLAN_CODE?.trim(),
-};
 
 const PURCHASABLE_PLANS: Plan[] = ["builder"];
 
@@ -93,7 +81,10 @@ export async function POST(req: Request) {
     .maybeSingle();
   const isFoundingMember = Boolean(subRow?.is_founding_member);
 
-  const usdPrice = isFoundingMember ? foundingPriceUsd(plan) : PLAN_PRICE_USD[plan];
+  // Price tier is decided from the CDN geo header ONLY — never from the body.
+  const geoCountry = normalizeCountryCode(req.headers.get("x-vercel-ip-country"));
+  const tier = effectiveTier(geoCountry);
+  const usdPrice = tierPriceUsd(tier, isFoundingMember, plan);
   if (!usdPrice || usdPrice <= 0) {
     return NextResponse.json({ error: `Plan "${plan}" is not purchasable` }, { status: 400 });
   }
@@ -111,7 +102,7 @@ export async function POST(req: Request) {
   // + tax compliance directly, so this path no longer depends on that
   // approval at all.
   if (!isGhs) {
-    const amountCents = isFoundingMember ? foundingPriceCents(plan) : PLAN_PRICE_CENTS[plan];
+    const amountCents = tierPriceCents(tier, isFoundingMember, plan);
     try {
       const checkout = await createPolarCheckout({
         userId: user.id,
@@ -120,8 +111,9 @@ export async function POST(req: Request) {
         amountCents,
         plan,
         isFoundingMember,
+        priceTier: tier,
       });
-      return NextResponse.json({ url: checkout.url, plan, recurring: true, currency: "USD" });
+      return NextResponse.json({ url: checkout.url, plan, recurring: true, currency: "USD", tier });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Could not create checkout session";
       console.error("[checkout] Polar checkout failed:", msg);
@@ -138,15 +130,13 @@ export async function POST(req: Request) {
     );
   }
 
-  // Local (Ghana) — convert $39 (or discounted price) to pesewas at live BoG rate
+  // Local (Ghana) — convert the tier price to pesewas at live BoG rate
   const { pesewas, rateUsed, source } = await usdToPesewas(usdPrice);
   const amount = pesewas;
   const currency = "GHS";
-  let paystackPlanCode = isFoundingMember ? PLAN_CODES.foundingGhs() : PLAN_CODES.ghs();
-  if (isFoundingMember && !paystackPlanCode) {
-    console.warn("[checkout] PAYSTACK_FOUNDING_PLAN_CODE not set — founding member's renewal will bill at full price after month one.");
-    paystackPlanCode = PLAN_CODES.ghs();
-  }
+  const picked = pickGhsPlanCode(tier, isFoundingMember);
+  if (picked.warning) console.warn(`[checkout] ${picked.warning}`);
+  const paystackPlanCode = picked.planCode;
   const fxMeta = { fx_rate: rateUsed, fx_source: source };
   console.log(`[checkout] GHS path — $${usdPrice} → ${pesewas} pesewas (rate: ${rateUsed ?? "n/a"}, source: ${source})`);
 
@@ -163,6 +153,7 @@ export async function POST(req: Request) {
       billing_currency: currency,
       billing_country: country || "unknown",
       founding_member: isFoundingMember,
+      price_tier: tier,
       ...fxMeta,
     },
   };
@@ -189,5 +180,5 @@ export async function POST(req: Request) {
     );
   }
 
-  return NextResponse.json({ url: payload.data.authorization_url, plan, recurring: true, currency });
+  return NextResponse.json({ url: payload.data.authorization_url, plan, recurring: true, currency, tier });
 }

@@ -4,9 +4,13 @@ import { C } from "@/app/admin/components/ui";
 
 export type Kind = "drafts" | "conversations" | "experiments";
 
+let BASE = "/api/admin/distribution";
+/** Points the studio at the admin API or a promoter's own API. Set once by <Studio/>. */
+export const setApiBase = (b: string) => { BASE = b; };
+
 export async function api<T = Record<string, unknown>>(path: string, method = "GET", body?: unknown): Promise<T & { ok: boolean; error?: string }> {
   try {
-    const r = await fetch(`/api/admin/distribution/${path}`, { method, headers: body ? { "Content-Type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined, cache: "no-store" });
+    const r = await fetch(`${BASE}/${path}`, { method, headers: body ? { "Content-Type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined, cache: "no-store" });
     return await r.json();
   } catch {
     return { ok: false, error: "Network error" } as never;

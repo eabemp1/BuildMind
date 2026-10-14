@@ -24,6 +24,7 @@ import { useState, useEffect } from "react";
 import { X, Zap, Lock, Check } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { storage } from "@/lib/storage";
+import { Price } from "@/components/Price";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -293,7 +294,7 @@ export function TrialWelcomeCard({ daysRemaining }: TrialWelcomeCardProps) {
             fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
           }}
         >
-          Upgrade to keep access → $39/mo
+          Upgrade to keep access → <Price />
         </button>
         <button
           onClick={dismiss}
@@ -370,7 +371,7 @@ export function TrialPaywall({ expired }: TrialPaywallProps) {
         </h2>
 
         <p style={{ fontSize: 14, color: "var(--bm-text3)", lineHeight: 1.65, margin: "0 0 8px" }}>
-          You&apos;ve had 14 days of full Builder access — daily briefings, unlimited AI,
+          You&apos;ve had 14 days of full Builder access — daily briefings, the full AI coach,
           the Reflexion loop, and the behavioral memory system that&apos;s been watching
           your patterns.
         </p>
@@ -423,7 +424,7 @@ export function TrialPaywall({ expired }: TrialPaywallProps) {
             marginBottom: 12,
           }}
         >
-          Continue with Builder — $39/mo
+          Continue with Builder — <Price />
         </button>
 
         <p style={{ fontSize: 11, color: "var(--bm-text4)", margin: 0 }}>

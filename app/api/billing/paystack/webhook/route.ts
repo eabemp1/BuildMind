@@ -6,7 +6,8 @@ import { sendEmail } from "@/lib/email";
 import { logError } from "@/lib/server/logger";
 import { recordOwnerEvent, maskEmail } from "@/lib/ownerNotify";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { PLAN_PRICE_CENTS, FOUNDING_DISCOUNT_MULTIPLIER } from "@/lib/billing/pricing";
+import { FOUNDING_DISCOUNT_MULTIPLIER } from "@/lib/billing/pricing";
+import { lowestTierCents, lowestTierRatio } from "@/lib/billing/regionalPricing";
 
 type PaystackEvent = {
   event?: string;
@@ -96,15 +97,16 @@ async function isValidSuccessfulCharge(event: PaystackEvent, userId: string | nu
   const founding = await isFoundingCharge(event, userId);
 
   if (currency === "GHS") {
-    const base = expectedAmountPesewas();
+    // Floor = lowest regional tier (scaled from the standard-price env amount).
+    const base = Math.floor(expectedAmountPesewas() * lowestTierRatio());
     // 20% buffer below the exact discount to tolerate live FX drift between
     // checkout-time conversion and webhook receipt — still rejects a
     // trivially-underpaid or forged charge.
-    const floor = founding ? Math.floor(base * FOUNDING_DISCOUNT_MULTIPLIER * 0.8) : base;
+    const floor = founding ? Math.floor(base * FOUNDING_DISCOUNT_MULTIPLIER * 0.8) : Math.floor(base * 0.8);
     return amount >= floor;
   }
   if (currency === "USD") {
-    const base = PLAN_PRICE_CENTS.builder;
+    const base = lowestTierCents();
     const floor = founding ? Math.floor(base * FOUNDING_DISCOUNT_MULTIPLIER * 0.95) : base;
     return amount >= floor;
   }

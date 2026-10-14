@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { planFromUserMetadata, TRIAL_DURATION_DAYS } from "@/lib/plan";
 import { getEffectivePlan, getFreshAuthUser } from "@/lib/server/plan";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { claimTrial, spentTrialRow } from "@/lib/server/trialGuard";
 
 export async function GET() {
   const supabase = await createClient();
@@ -56,7 +57,16 @@ export async function GET() {
 
     let trialRow = ctx;
     const metaEndsAt = freshUser.user_metadata?.trial_ends_at;
-    if (!trialRow?.trial_started_at && !metaEndsAt && basePlan !== "builder" && !freshUser.user_metadata?.billing_status) {
+    // One trial per real person (verified, non-disposable, normalised email).
+    // Only evaluated when this request would otherwise bootstrap a trial.
+    const wouldBootstrap = !trialRow?.trial_started_at && !metaEndsAt && basePlan !== "builder" && !freshUser.user_metadata?.billing_status;
+    const trialDecision = wouldBootstrap ? await claimTrial(admin, user) : null;
+    if (trialDecision?.action === "deny") {
+      await admin.from("founder_context").upsert(spentTrialRow(user.id), { onConflict: "user_id", ignoreDuplicates: true });
+      const iso = new Date().toISOString();
+      trialRow = { trial_started_at: iso, trial_ends_at: iso, trial_expired: true };
+    }
+    if (wouldBootstrap && trialDecision?.action === "grant") {
       const trialStartedAt = new Date().toISOString();
       const trialEndsAtNew = new Date(
         new Date(trialStartedAt).getTime() + TRIAL_DURATION_DAYS * 24 * 60 * 60 * 1000,

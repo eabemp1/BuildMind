@@ -38,6 +38,8 @@ export type CreatePolarCheckoutParams = {
   amountCents: number;
   plan: string;
   isFoundingMember: boolean;
+  /** Regional tier; "africa" prefers POLAR_AFRICA_PRODUCT_ID (see below). */
+  priceTier?: "standard" | "africa";
 };
 
 /**
@@ -62,14 +64,20 @@ export type CreatePolarCheckoutParams = {
  */
 export async function createPolarCheckout(params: CreatePolarCheckoutParams) {
   const polar = getPolarClient();
-  const productId = process.env.POLAR_BUILDER_PRODUCT_ID?.trim();
+  // Regional tier: a dedicated Polar product keeps renewals at the regional
+  // price (the safe, "big company" way). If it isn't configured we fall back
+  // to a per-checkout price override on the main product (renewal behaviour
+  // unverified, see note above) rather than failing the sale.
+  const africaProductId = params.priceTier === "africa" ? process.env.POLAR_AFRICA_PRODUCT_ID?.trim() : undefined;
+  const productId = africaProductId || process.env.POLAR_BUILDER_PRODUCT_ID?.trim();
+  const needsOverride = params.isFoundingMember || (params.priceTier === "africa" && !africaProductId);
   if (!productId) {
     throw new Error("[polar] POLAR_BUILDER_PRODUCT_ID is not set");
   }
 
   const checkout = await polar.checkouts.create({
     products: [productId],
-    ...(params.isFoundingMember
+    ...(needsOverride
       ? {
           prices: {
             [productId]: [
@@ -89,6 +97,7 @@ export async function createPolarCheckout(params: CreatePolarCheckoutParams) {
       user_id: params.userId,
       plan: params.plan,
       founding_member: params.isFoundingMember,
+      price_tier: params.priceTier ?? "standard",
     },
   });
 

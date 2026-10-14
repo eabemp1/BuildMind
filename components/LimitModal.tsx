@@ -3,7 +3,8 @@
 import { createContext, useCallback, useContext, useState, ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { PLAN_PRICE_LABEL } from "@/lib/pricing";
+import { Price } from "@/components/Price";
+
 
 type LimitReason = "ai_coach" | "break_startup" | "today_action" | "weekly_report" | "generic";
 type LegacyLimitReason = "aiCoach" | "breakMyStartup" | "projects";
@@ -117,7 +118,7 @@ function LimitModalUI({ reason, onClose, onUpgrade }: { reason: LimitReason; onC
           </motion.button>
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div style={{ fontSize: 11, color: "var(--bm-text4)" }}>{PLAN_PRICE_LABEL.builder} · cancel anytime</div>
+            <div style={{ fontSize: 11, color: "var(--bm-text4)" }}><Price /> · cancel anytime</div>
             <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--bm-text4)", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
               Not now
             </button>

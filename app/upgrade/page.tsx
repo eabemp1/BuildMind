@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePlan } from "@/lib/usePlan";
 import { Check, Loader2, ArrowRight, Zap, Shield } from "lucide-react";
-import { PLAN_PRICE_MONTHLY } from "@/lib/pricing";
+import { Price, RegionalNote } from "@/components/Price";
+
 
 const VALUE_MOMENTS = [
   {
@@ -106,7 +107,7 @@ export default function UpgradePage() {
             letterSpacing: "-0.04em", color: "var(--bm-text)", lineHeight: 1.1,
             margin: "0 0 clamp(10px, 2vw, 14px)" }}>
             The full execution system.<br />
-            <span style={{ color: "var(--bm-accent)" }}>${PLAN_PRICE_MONTHLY.builder}/month.</span>
+            <span style={{ color: "var(--bm-accent)" }}><Price kind="month" />.</span>
           </h1>
           <p style={{ fontSize: "clamp(13px, 2.5vw, 15px)", color: "var(--bm-text2)",
             lineHeight: 1.7, maxWidth: 420, margin: "0 auto" }}>
@@ -155,10 +156,11 @@ export default function UpgradePage() {
             <span style={{ fontFamily: "'Syne', sans-serif",
               fontSize: "clamp(32px, 8vw, 44px)", fontWeight: 900,
               color: "var(--bm-text)", letterSpacing: "-0.04em" }}>
-              ${PLAN_PRICE_MONTHLY.builder}
+              <Price kind="amount" />
             </span>
             <span style={{ fontSize: 14, color: "var(--bm-text3)" }}>/month</span>
           </div>
+          <RegionalNote />
           <p style={{ fontSize: 12, color: "var(--bm-text4)", marginBottom: "clamp(16px, 3vw, 20px)" }}>
             Cancel anytime. No contracts.
           </p>

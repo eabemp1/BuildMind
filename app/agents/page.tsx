@@ -120,6 +120,8 @@ function FindingCard({
         border:       "1px solid var(--bm-border)",
         borderRadius: 12,
         padding:      "14px 16px",
+        minWidth:     0,
+        overflow:     "hidden",
       }}
     >
       <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 8 }}>
@@ -136,11 +138,11 @@ function FindingCard({
             ]}
           />
         </div>
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text)", marginBottom: 3 }}>
             {finding.positive ? "📈 " : "📉 "}{finding.title}
           </div>
-          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+          <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
             <span style={{ fontSize: 9, color: "var(--bm-text4)", fontFamily: "'DM Mono', monospace" }}>
               {finding.signal_type.replace(/_/g, " ")}
             </span>
@@ -224,8 +226,8 @@ function CaseFile({ run, pendingCount, findings }: { run: AgentRun; pendingCount
   const strength = useMemo(() => evidenceStrength(findings), [findings]);
   const framed = useMemo(() => frameVerdict(run.verdict ?? "inconclusive", readiness), [run.verdict, readiness]);
   return (
-    <div style={{ display: "grid", gap: 14 }}>
-      <Dossier accent={t.c} style={{ padding: 14 }}>
+    <div style={{ display: "grid", gap: 14, minWidth: 0 }}>
+      <Dossier accent={t.c} style={{ padding: 14, minWidth: 0, overflowWrap: "anywhere" }}>
         <div style={{ display: "flex", gap: 14, alignItems: "flex-start", flexWrap: "wrap" }}>
           <AgentEmblem agent={run.agent_type} size={36} />
           <div style={{ flex: "1 1 220px", minWidth: 0 }}>
@@ -234,7 +236,7 @@ function CaseFile({ run, pendingCount, findings }: { run: AgentRun; pendingCount
             <div style={{ fontSize: 11.5, color: "var(--bm-text3)" }}>{identity.name}{run.status !== "complete" ? ` · ${run.status}` : ""}</div>
           </div>
           {run.status === "complete" && run.verdict && (
-            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
               <VerdictStamp verdict={run.verdict} label={findings.length ? framed.label : undefined} />
               <div style={{ textAlign: "center" }} title="How confident the agent is in its own findings, on average">
                 <RadialGauge value={run.confidence_pct} size={44} strokeWidth={4} thresholds={[{ min: 70, color: "var(--bm-green)" }, { min: 45, color: "var(--bm-accent)" }, { min: 0, color: "var(--bm-red)" }]} />
@@ -456,7 +458,7 @@ export default function AgentsPage() {
           <div style={{ ...lbl, marginBottom: 8 }}>Agent Workforce · Mission control</div>
           <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: 20, fontWeight: 700, color: "var(--bm-text)", margin: "0 0 6px", letterSpacing: "-0.025em" }}>Your startup crew</h1>
           <p style={{ fontSize: 12.5, color: "var(--bm-text3)", margin: 0, lineHeight: 1.55 }}>
-            Three specialists research, test and size up your idea. Each opens a case file. You review every finding, and only what you confirm reaches your context.
+            Three specialists research, test and size up your idea. Each opens a case file. You review every finding, and your decision is saved with how well it is supported.
           </p>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, auto)", gap: 18 }}>

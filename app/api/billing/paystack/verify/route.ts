@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { persistUserPlan } from "@/lib/billing/server";
 import { getClientIp, rateLimitAsync } from "@/lib/server/rateLimit";
+import { TIER_PRICE_USD, lowestTierCents } from "@/lib/billing/regionalPricing";
 import { usdToPesewas } from "@/lib/fx";
 
 /**
@@ -86,8 +87,8 @@ export async function POST(req: NextRequest) {
 
     // Verify amount based on currency
     if (paidCurrency === "USD") {
-      // USD: Paystack sends cents — $39 = 3900 cents
-      const expectedCents = 3900;
+      // USD: Paystack sends cents; floor is the lowest regional tier
+      const expectedCents = lowestTierCents();
       const lower = Math.floor(expectedCents * (1 - AMOUNT_TOLERANCE));
       if (paidAmount < lower) {
         return NextResponse.json(
@@ -97,7 +98,7 @@ export async function POST(req: NextRequest) {
       }
     } else if (paidCurrency === "GHS") {
       // GHS: get live expected pesewas (same conversion used at checkout)
-      const { pesewas: expectedPesewas } = await usdToPesewas(39);
+      const { pesewas: expectedPesewas } = await usdToPesewas(Math.min(...Object.values(TIER_PRICE_USD)));
       const lower = Math.floor(expectedPesewas * (1 - AMOUNT_TOLERANCE));
       if (paidAmount < lower) {
         return NextResponse.json(

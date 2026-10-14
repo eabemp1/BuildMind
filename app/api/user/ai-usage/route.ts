@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { getEffectivePlan } from "@/lib/server/plan";
+import { getPlanContext } from "@/lib/server/plan";
 import { readAIUsage } from "@/lib/server/aiUsageStore";
 
 /**
@@ -17,17 +17,19 @@ export async function GET() {
   if (!user) return NextResponse.json({ ok: false }, { status: 401 });
 
   // Trial-aware: trial users get Builder-level access.
-  const plan = await getEffectivePlan(user.id);
-  if (plan === "builder") {
+  const { plan, trial } = await getPlanContext(user.id);
+  // Paying Builder = effectively unlimited for display. Trials have their own limits.
+  if (plan === "builder" && !trial) {
     return NextResponse.json({ ok: true, plan: "builder", unlimited: true });
   }
 
-  const usage = await readAIUsage(user.id, plan);
+  const usage = await readAIUsage(user.id, trial ? "trial" : plan);
   const tighter = usage.core.remaining < usage.general.remaining ? "core" : "general";
   const b = usage[tighter];
   return NextResponse.json({
     ok: true,
     plan,
+    trial,
     unlimited: false,
     bucket: tighter,
     used: b.used,

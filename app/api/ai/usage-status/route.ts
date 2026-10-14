@@ -14,7 +14,7 @@
 
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { getEffectivePlan } from "@/lib/server/plan";
+import { getPlanContext } from "@/lib/server/plan";
 import { readAIUsage } from "@/lib/server/aiUsageStore";
 
 export async function GET() {
@@ -27,10 +27,10 @@ export async function GET() {
     }
 
     // Plan is read from Supabase — trial-aware (getEffectivePlan checks trial_ends_at)
-    const plan = await getEffectivePlan(user.id);
+    const { plan, trial } = await getPlanContext(user.id);
     // Same counters enforcement writes (lib/server/aiUsageStore.ts). The Today
     // banner follows the general bucket (Coach and other open-ended AI).
-    const usage = await readAIUsage(user.id, plan);
+    const usage = await readAIUsage(user.id, trial ? "trial" : plan);
     const monthlyLimit = usage.general.limit;
     const monthlyUsed = usage.general.used;
 
@@ -42,6 +42,7 @@ export async function GET() {
       ok: true,
       userId: user.id,
       plan,
+      trial,
       monthlyUsed,
       monthlyLimit,
       unlimited: false,

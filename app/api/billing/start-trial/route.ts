@@ -11,6 +11,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { TRIAL_DURATION_DAYS } from "@/lib/plan";
+import { claimTrial, spentTrialRow } from "@/lib/server/trialGuard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,6 +44,16 @@ export async function POST(req: Request) {
   if (existing?.trial_started_at) {
     // Already initialised — idempotent success
     return NextResponse.json({ ok: true, skipped: true });
+  }
+
+  // One trial per real person (verified, non-disposable, normalised email).
+  const decision = await claimTrial(admin, user);
+  if (decision.action === "wait") {
+    return NextResponse.json({ ok: false, error: "Verify your email to start your trial.", reason: decision.reason }, { status: 403 });
+  }
+  if (decision.action === "deny") {
+    await admin.from("founder_context").upsert(spentTrialRow(user.id), { onConflict: "user_id", ignoreDuplicates: true });
+    return NextResponse.json({ ok: true, skipped: true, trial: "unavailable", reason: decision.reason });
   }
 
   const { error: upsertError } = await admin

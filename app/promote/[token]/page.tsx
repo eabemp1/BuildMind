@@ -139,6 +139,14 @@ export default function PromoterDashboardPage() {
           </p>
         </div>
 
+        <a href={`/promote/${token}/distribution`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, background: BG2, border: `1px solid ${BORDER}`, borderLeft: `3px solid ${ACCENT}`, borderRadius: 10, padding: "12px 14px", marginBottom: 16, textDecoration: "none", color: TEXT }}>
+          <span>
+            <span style={{ display: "block", fontSize: 14, fontWeight: 700 }}>Distribution Studio</span>
+            <span style={{ display: "block", fontSize: 12.5, color: TEXT2, marginTop: 2 }}>Improve your posts, track conversations and see what works.</span>
+          </span>
+          <span style={{ color: ACCENT, fontSize: 13, whiteSpace: "nowrap" }}>Open →</span>
+        </a>
+
         {/* Today's Mission — the actual daily-work answer, not just a list to pick from */}
         <div style={{ background: `linear-gradient(135deg, rgba(99,102,241,0.14), rgba(139,92,246,0.08))`, border: `1px solid ${ACCENT}`, borderRadius: 16, padding: 20, marginBottom: 24 }}>
           <div style={{ fontSize: 11, color: ACCENT, fontFamily: "DM Mono, monospace", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>

@@ -109,3 +109,27 @@ describe("overview", () => {
     expect(buildOverview({ conversations: [], experiments: [e("a"), e("b")], drafts: [] }, now).insight?.text).toContain("more specific");
   });
 });
+
+import { vi } from "vitest";
+describe("promoter scoping", () => {
+  it("a promoter's reads are filtered by promoter_id, the founder's by user_id with promoter_id null", async () => {
+    const calls: string[] = [];
+    const chain: Record<string, unknown> = {};
+    const mk = (): Record<string, unknown> => new Proxy(chain, { get: (_t, p: string) => (...a: unknown[]) => { calls.push(`${p}:${a.join(",")}`); return p === "limit" ? Promise.resolve({ data: [], error: null }) : mk(); } });
+    vi.doMock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({ from: () => mk() }) }));
+    const h = await import("@/lib/distribution/handlers");
+    await h.list({ userId: "p1", promoterId: "p1" }, "drafts");
+    expect(calls).toContain("eq:promoter_id,p1");
+    expect(calls.some((c) => c.startsWith("is:"))).toBe(false);
+    calls.length = 0;
+    await h.list({ userId: "admin", promoterId: null }, "drafts");
+    expect(calls).toContain("eq:user_id,admin");
+    expect(calls).toContain("is:promoter_id,");
+    vi.doUnmock("@/lib/supabase/admin");
+  });
+  it("rejects unknown kinds", async () => {
+    const h = await import("@/lib/distribution/handlers");
+    expect(h.isKind("drafts")).toBe(true);
+    expect(h.isKind("users")).toBe(false);
+  });
+});

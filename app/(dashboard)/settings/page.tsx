@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { ensureUserProfile } from "@/lib/buildmind";
 import { FEATURES } from "@/lib/features";
 import { PLAN_NAMES, setStoredPlan, fetchAndSyncStoredPlanFromBillingStatus } from "@/lib/plan";
-import { PLAN_PRICE_LABEL } from "@/lib/pricing";
+
 import { formatAccessDate } from "@/lib/billing/cancellation";
 import { usePlan } from "@/lib/usePlan";
 import { storage } from "@/lib/storage";
@@ -19,6 +19,7 @@ import AvatarUpload from "@/components/AvatarUpload";
 import { ProfileCompletenessBar } from "@/components/ProfileCompletenessBar";
 import { User, CreditCard, Bell, Bot, Shield, Check, Zap, Globe, Plug2, type LucideIcon } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Price } from "@/components/Price";
 
 type Tab = "profile" | "account" | "notifications" | "ai" | "billing" | "integrations" | "public";
 
@@ -465,7 +466,7 @@ function BillingTab() {
             <div style={{ fontSize: 22, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.02em", marginBottom: 4 }}>{PLAN_NAMES[plan] ?? plan}</div>
             {isPaid && (
               <div style={{ fontSize: 12, color: "var(--bm-text3)" }}>
-                {scheduled ? `Cancelled · Builder continues until ${untilLabel ?? "the end of your paid period"}` : `${PLAN_PRICE_LABEL.builder} · Renews monthly`}
+                {scheduled ? `Cancelled · Builder continues until ${untilLabel ?? "the end of your paid period"}` : <><Price /> · Renews monthly</>}
               </div>
             )}
           </div>
