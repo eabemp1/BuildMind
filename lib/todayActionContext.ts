@@ -87,6 +87,8 @@ export interface TodayActionContext {
     recentReflectionsBlock: string;
     recurringBlockers: string[];
     activeGoals: string[];
+    ledger?: import("@/lib/today/facts").Ledger;
+    factsBlock?: string;
   };
   founderIntelligence: FounderIntelligenceState | null;
   intelligenceSummary: (ReturnType<typeof summarizeFounderIntelligenceForClient> & { recommendation_id?: string | null }) | undefined;

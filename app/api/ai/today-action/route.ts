@@ -238,7 +238,7 @@ export async function POST(request: Request) {
     let founderIntelligence: FounderIntelligenceState | null = null;
     let founderIntelligencePromptBlock = "";
     let isLowConfidence = false;
-    let personalisationCtx = { recentActionsBlock: "", recentReflectionsBlock: "", recurringBlockers: [] as string[], activeGoals: [] as string[] };
+    let personalisationCtx: import("@/lib/todayPersonalisationContext").TodayPersonalisationContext = { recentActionsBlock: "", recentReflectionsBlock: "", recurringBlockers: [] as string[], activeGoals: [] as string[] };
 
     // ── Shared context loader (lib/todayActionContext.ts) ──────────────────
     // All DB reads, debt computation, cognition, knowledge-base, personalisation
@@ -625,6 +625,10 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
     if (personalisationCtx.recentReflectionsBlock) {
       lastReflectionContext += `\n\n${personalisationCtx.recentReflectionsBlock}`;
     }
+    // Founder facts + open loops: binding rules extracted from past reflections.
+    if (personalisationCtx.factsBlock) {
+      lastReflectionContext += `\n\n${personalisationCtx.factsBlock}`;
+    }
     if (personalisationCtx.recurringBlockers.length > 0) {
       lastReflectionContext += `\n\nRECURRING BLOCKERS:\n${personalisationCtx.recurringBlockers.map((b) => `- "${b}"`).join("\n")}\n-> Today's task must address or route around at least one of these.`;
     }
@@ -975,6 +979,7 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
     // template on a hard fail, instead of shipping a known-bad action and
     // only discovering it later on the AI & Quality dashboard.
     const preScreen = failsMissionPreScreen(finalResult.action, mission, {
+      ledger: personalisationCtx.ledger,
       title, targetUsers, problem,
       blockers: personalisationCtx.recurringBlockers,
       avoidance: cognitionAvoidanceSignals,

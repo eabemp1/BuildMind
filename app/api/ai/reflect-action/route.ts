@@ -1,5 +1,6 @@
 import { sanitizeAvoidanceZones, sanitizeTopics } from "@/lib/avoidanceSanitize";
 import { NextResponse } from "next/server";
+import { checkOutcome, type CheckedOutcome } from "@/lib/today/outcomeCheck";
 import { AIUsageUnavailableError } from "@/lib/server/aiUsageStore";
 import { groqJSON, hasAdminEnv, enforceAndTrackAIUsage } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -98,6 +99,12 @@ const FALLBACKS: Record<string, ReflectActionOutput> = {
     causality: "Because you got blocked → tomorrow removes the blocker before anything else.",
     nextAction: "Write down the exact blocker in one sentence. Then find one person who's solved it before.",
     identityLine: "Founders who name their blockers solve them. You named it.",
+  },
+  abandoned: {
+    witnessed: "You were straight about it: today's task didn't happen, and that is logged as it is. An honest log is what makes tomorrow's task better.",
+    causality: "Because this one didn't get done → tomorrow shrinks it to something that fits the time you actually have.",
+    nextAction: "Pick the smallest version of this task, one message or one post, and do it in the next 10 minutes.",
+    identityLine: "You're someone who tells the truth about the day. That is how it gets fixed.",
   },
   learned: {
     witnessed: "Today wasn't a shipped feature, but you're leaving it with something you didn't have this morning.",
@@ -235,7 +242,12 @@ export async function POST(request: Request) {
       );
     }
     const body: ReflectActionInput = parseResult.data;
-    const { outcome, note, what_tried, what_happened, what_learned, blocker, confidence, stage, streak, userId, projectId, taskId, recommendationId } = body;
+    const { note, what_tried, what_happened, what_learned, blocker, confidence, stage, streak, userId, projectId, taskId, recommendationId } = body;
+    // Outcome honesty: "Nailed it" next to "I don't have any beta users" is not a
+    // completed task. Downgrade only on strong textual evidence and tell the
+    // founder why (lib/today/outcomeCheck.ts).
+    const outcomeCheck = checkOutcome({ outcome: body.outcome, what_tried, what_happened, what_learned, blocker, note });
+    const outcome: CheckedOutcome = outcomeCheck.outcome;
     // `let`: the client can send a stale or empty task (see the day-stamp fix in
     // app/reflect/page.tsx), so below we fall back to the task Today actually
     // showed this founder instead of saving the reflection against nothing.
@@ -356,7 +368,7 @@ Target users: ${project.target_users ?? "Not specified"}`;
         // learned. "Blocked" is logged honestly but doesn't extend the streak
         // (lib/streak.ts), so a founder can't keep a streak by reporting that
         // nothing happened.
-        if (outcome !== "blocked") {
+        if (outcome !== "blocked" && outcome !== "abandoned") {
           const { data: streakRpcData, error: streakErr } = await supabase.rpc("update_streak_atomic", {
             p_user_id: verifiedUserId,
             p_project_id: projectId ?? null,
@@ -534,7 +546,7 @@ Target users: ${project.target_users ?? "Not specified"}`;
           // existing action lifecycle. A Founder Intelligence row without
           // sufficient evidence stays pending rather than being trained from
           // a bare outcome selection.
-          const mappedOutcome = outcome === "completed" ? "completed" : outcome === "blocked" ? "overridden" : "partial";
+          const mappedOutcome = outcome === "completed" ? "completed" : outcome === "blocked" || outcome === "abandoned" ? "overridden" : "partial";
           await markRecommendationObserved(supabase, {
             userId: verifiedUserId,
             recommendationId: effectiveRecommendationId,
@@ -575,6 +587,7 @@ Target users: ${project.target_users ?? "Not specified"}`;
             completed: (nextStreak ?? streak) >= 7 ? "streak" : "done",
             partial:   "done",
             blocked:   "reflect",
+            abandoned: "reflect",
             learned:   "reflect",
           };
           const eventType = typeMap[outcome] ?? "done";
@@ -630,7 +643,7 @@ Rules:
 - If blocked, the next action is always: remove the blocker first
 - Return JSON ONLY with keys: witnessed, causality, nextAction, identityLine`,
       `REFLECTION:
-Outcome: ${outcome}
+Outcome: ${outcome}${outcomeCheck.adjusted ? ` (logged as ${outcome}; the founder tapped "${outcomeCheck.from}" but their own words say otherwise, so be kind and honest about the difference)` : ""}
 Note: "${note || "No note provided"}"
 Confidence (1-5): ${confidence}
 Today's action was: "${todayAction || "Not specified"}"
@@ -660,6 +673,9 @@ ${projectContext}`,
           ? { before: momentumBefore, after: momentumAfter }
           : undefined,
         confidenceAdjustment,
+        outcomeAdjusted: outcomeCheck.adjusted
+          ? { from: outcomeCheck.from, to: outcomeCheck.outcome, reason: outcomeCheck.reason }
+          : undefined,
       },
     });
   } catch (error) {

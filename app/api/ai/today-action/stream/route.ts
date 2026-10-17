@@ -440,7 +440,7 @@ export async function POST(request: Request) {
         let founderIntelligence: FounderIntelligenceState | null = null;
         let founderIntelligencePromptBlock = "";
         let isLowConfidence = false;
-        let personalisationCtx = {
+        let personalisationCtx: import("@/lib/todayPersonalisationContext").TodayPersonalisationContext = {
           recentActionsBlock: "",
           recentReflectionsBlock: "",
           recurringBlockers: [] as string[],
@@ -553,6 +553,7 @@ export async function POST(request: Request) {
           `${userId}:${new Date().toISOString().slice(0, 10)}`,
         );
         const qualityCtx = {
+          ledger: personalisationCtx.ledger,
           title, targetUsers, problem,
           blockers: personalisationCtx.recurringBlockers,
           avoidance: cognitionAvoidanceSignals,
@@ -611,6 +612,7 @@ export async function POST(request: Request) {
 ${projectContext ? `FOUNDER DATA:\n${projectContext}` : ""}
 ${activeGoalsLine}
 ${personalisationCtx.recentReflectionsBlock}
+${personalisationCtx.factsBlock ?? ""}
 ${personalisationCtx.recentActionsBlock}
 ${blockersLine}
 ${cognitiveLoadLine}

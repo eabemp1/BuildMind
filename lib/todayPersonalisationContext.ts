@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { distinctByAction, isShownTaskRow } from "@/lib/recommendationRows";
+import { buildLedger, factsPromptBlock, type Ledger } from "@/lib/today/facts";
 
 export interface TodayPersonalisationContext {
   /** Last 7 actions shown (from reflexion_learning_log), formatted for prompt injection */
@@ -10,6 +11,10 @@ export interface TodayPersonalisationContext {
   recurringBlockers: string[];
   /** Active (incomplete) milestone titles, max 3 */
   activeGoals: string[];
+  /** Founder facts + open loops extracted from reflections (lib/today/facts.ts). Optional so older callers still type-check. */
+  ledger?: Ledger;
+  /** Prompt-ready text for the ledger ("" when nothing to say). */
+  factsBlock?: string;
 }
 
 export async function buildTodayPersonalisationContext(
@@ -21,6 +26,8 @@ export async function buildTodayPersonalisationContext(
     recentReflectionsBlock: "",
     recurringBlockers: [],
     activeGoals: [],
+    ledger: { facts: [], openLoops: [] },
+    factsBlock: "",
   };
 
   try {
@@ -38,7 +45,7 @@ export async function buildTodayPersonalisationContext(
     // before the project_id column existed (which would otherwise vanish
     // from context for every project, permanently) while excluding rows
     // known to belong to a specific *other* project.
-    const [actionsResult, reflectionsResult, milestonesResult] = await Promise.allSettled([
+    const [actionsResult, reflectionsResult, milestonesResult, ledgerResult] = await Promise.allSettled([
       supabase
         .from("reflexion_learning_log")
         .select("action_shown, stage, created_at, outcome, session_id, critic_persona, prediction_source")
@@ -67,6 +74,17 @@ export async function buildTodayPersonalisationContext(
         .neq("status", "completed")
         .order("created_at", { ascending: true })
         .limit(3),
+
+      // Wider window than the 5 shown in the prompt: facts like "I have no
+      // users" were stated weeks ago and must not fall out of memory.
+      supabase
+        .from("reflections")
+        .select("outcome, note, what_tried, what_happened, what_learned, blocker, created_at, today_action")
+        .eq("user_id", userId)
+        .or(`project_id.eq.${projectId},project_id.is.null`)
+        .gte("created_at", new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString())
+        .order("created_at", { ascending: false })
+        .limit(40),
     ]);
 
     const rawActions =
@@ -126,11 +144,17 @@ export async function buildTodayPersonalisationContext(
       milestonesResult.status === "fulfilled" ? (milestonesResult.value.data ?? []) : [];
     const activeGoals = milestones.map((m) => m.title);
 
+    const ledgerRows = ledgerResult.status === "fulfilled" ? (ledgerResult.value.data ?? []) : [];
+    const ledger = buildLedger(ledgerRows);
+    const factsBlock = factsPromptBlock(ledger);
+
     return {
       recentActionsBlock,
       recentReflectionsBlock,
       recurringBlockers,
       activeGoals,
+      ledger,
+      factsBlock,
     };
   } catch {
     return empty;

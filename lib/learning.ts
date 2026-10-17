@@ -591,6 +591,46 @@ export async function markIgnoredAfter24h(userId: string): Promise<void> {
     // FAILURE for the Thompson-sampling archetype stats, which then ranked
     // archetypes down ("0 of 8 resolved") for reasons unrelated to the founder.
     // `.or(is.null, neq)` rather than `.neq` because SQL `<>` drops NULL rows.
+    //
+    // REGENERATED TASKS: a task replaced by a newer one within REGENERATE_WINDOW
+    // was regenerated, not ignored. Real data: 2 tasks 6 minutes apart, the first
+    // marked "ignored", inflating the rejection rate (54% of tasks "ignored").
+    // Those become "overridden" with a note; only genuinely unanswered tasks
+    // are "ignored".
+    // Step 1 (best-effort): tasks replaced within the regenerate window become
+    // "overridden / regenerated" BEFORE the blanket sweep below touches them.
+    try {
+      const { data: pending } = await supabase
+        .from("reflexion_learning_log")
+        .select("id, created_at, session_id")
+        .eq("user_id", userId)
+        .eq("outcome", "pending")
+        .or("prediction_source.is.null,prediction_source.neq.founder_intelligence")
+        .lt("created_at", cutoff)
+        .limit(200);
+      if (Array.isArray(pending) && pending.length > 0) {
+        const { data: recent } = await supabase
+          .from("reflexion_learning_log")
+          .select("created_at, session_id")
+          .eq("user_id", userId)
+          .like("session_id", "today_action:%")
+          .gte("created_at", new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString())
+          .order("created_at", { ascending: true })
+          .limit(500);
+        const times = (recent ?? []).map((r) => Date.parse(String(r.created_at))).filter((n) => Number.isFinite(n));
+        const { regeneratedIds } = splitRegenerated(
+          pending.map((p) => ({ id: String(p.id), at: Date.parse(String(p.created_at)), isToday: String(p.session_id ?? "").startsWith("today_action:") })),
+          times,
+        );
+        if (regeneratedIds.length) {
+          await supabase.from("reflexion_learning_log")
+            .update({ outcome: "overridden", outcome_note: "regenerated", outcome_recorded_at: new Date().toISOString() })
+            .in("id", regeneratedIds);
+        }
+      }
+    } catch (err) { logError("learning/markIgnoredAfter24h/regenerated", err); }
+
+    // Step 2: everything still pending after 24h was genuinely not acted on.
     await supabase
       .from("reflexion_learning_log")
       .update({
@@ -602,4 +642,23 @@ export async function markIgnoredAfter24h(userId: string): Promise<void> {
       .or("prediction_source.is.null,prediction_source.neq.founder_intelligence")
       .lt("created_at", cutoff);
   } catch (err) { logError("learning/markIgnoredAfter24h", err); /* non-fatal */ }
+}
+
+/** A Today task replaced by another within this window counts as regenerated. */
+export const REGENERATE_WINDOW_MS = 90 * 60 * 1000;
+
+/** Pure split used by markIgnoredAfter24h (unit-tested). */
+export function splitRegenerated(
+  pending: Array<{ id: string; at: number; isToday: boolean }>,
+  todayTaskTimes: number[],
+): { regeneratedIds: string[]; ignoredIds: string[] } {
+  const regeneratedIds: string[] = [];
+  const ignoredIds: string[] = [];
+  const sorted = [...todayTaskTimes].sort((a, b) => a - b);
+  for (const p of pending) {
+    const next = p.isToday ? sorted.find((t) => t > p.at) : undefined;
+    if (next !== undefined && next - p.at <= REGENERATE_WINDOW_MS) regeneratedIds.push(p.id);
+    else ignoredIds.push(p.id);
+  }
+  return { regeneratedIds, ignoredIds };
 }

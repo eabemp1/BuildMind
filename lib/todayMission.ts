@@ -18,6 +18,7 @@
  * Pure, no I/O, client-safe.
  */
 
+import { findContradictions } from "@/lib/today/facts";
 import { classifyTask, tokenize, stem, type Purpose, type Domain } from "@/lib/taxonomy/taskTaxonomy";
 
 export type MissionKind =
@@ -370,6 +371,8 @@ export interface CandidateTask {
 }
 
 export interface QualityContext {
+  /** Founder fact ledger (lib/today/facts.ts): contradictions are hard fails. */
+  ledger?: import("@/lib/today/facts").Ledger;
   title?: string;
   targetUsers?: string;
   problem?: string;
@@ -389,6 +392,11 @@ export interface QualityResult {
 
 const GENERIC_RE = /\b(research (your|the) (market|competitors?|industry)|think about|brainstorm|come up with ideas|explore (options|ideas|ways)|look into|consider (how|whether|what)|plan (your|out|the)|get (some )?feedback|network(ing)?\b|build (an? )?audience|improve (your )?(product|marketing|business)|work on (your )?(product|marketing|business|startup|idea)|some (users|people|customers)|potential (users|customers)|relevant communities|reach out to people|grow your)\b/i;
 const PLACEHOLDER_RE = /\[[A-Za-z][^\]]{0,40}\]|\{\{?[a-z_ ]+\}?\}/;
+// Template text that leaked into a task instead of a real value.
+const TEMPLATE_LEAK_RE = /\bnot specified(?: yet)?\b|\bno confirmed evidence\b|\bundefined\b|\bnull\b|\bn\/a\b|\btbd\b|\blorem\b|\(\s*(?:myself|me|yourself)\s*\)|\bthe founder\b|\bplaceholder\b/i;
+// "Find/identify a community/group/platform" with no named place is an unfinishable search.
+const OPEN_SEARCH_RE = /\b(?:find|locate|identify|discover|look\s+for|search\s+for|scout)\b[^.]{0,60}\b(?:communit(?:y|ies)|groups?|platforms?|channels?|forums?|workspaces?)\b/i;
+const NAMED_TARGET_RE = /\br\/\w+|#\w{3,}|https?:\/\/|\bwww\.|"[^"]{3,}"|\b(?:indie\s+hackers|product\s+hunt|hacker\s+news|y\s*combinator|startup\s+school|betalist|techcabal|nairobi|lagos)\b|\b[A-Z][a-z]+\s+(?:Founders?|Startups?|Hackers?|Builders?|Makers?)\b/;
 const PLATFORM_RE = /(linkedin|whatsapp|email|twitter|x\.com|phone|in person|slack|telegram|instagram|reddit|product hunt|indie hackers|discord|facebook|youtube|tiktok|hacker news|zoom|google meet|call)/i;
 
 function stemSet(text: string): Set<string> {
@@ -414,6 +422,9 @@ export function assessTaskQuality(c: CandidateTask, mission: Mission, ctx: Quali
   if (GENERIC_RE.test(task)) hard.push("generic");
   if (PLACEHOLDER_RE.test(task) || PLACEHOLDER_RE.test(c.draft ?? "")) hard.push("placeholder");
   if (!c.done_when || c.done_when.trim().length < 8) hard.push("no_done_when");
+  if (TEMPLATE_LEAK_RE.test(task) || TEMPLATE_LEAK_RE.test(c.draft ?? "")) hard.push("template_leak");
+  if (OPEN_SEARCH_RE.test(task) && !NAMED_TARGET_RE.test(task)) hard.push("open_ended_search");
+  if (ctx.ledger && findContradictions(task, ctx.ledger).length > 0) hard.push("contradicts_fact");
 
   for (const r of ctx.recentTasks.slice(0, 8)) {
     if (similarity(task, r.text) >= 0.55) { hard.push("repeat"); break; }
@@ -456,6 +467,9 @@ const REASON_TEXT: Record<string, string> = {
   placeholder: "Contains a [placeholder] that the founder would have to fill in.",
   no_done_when: "Missing a clear 'done when' condition.",
   repeat: "Too similar to a recent task.",
+  template_leak: "Contains template text (e.g. 'Not specified yet', 'No confirmed evidence', '(Myself)') instead of a real value.",
+  open_ended_search: "Asks the founder to find a community/group without naming one. Name a specific place and the exact message.",
+  contradicts_fact: "Contradicts something the founder said in a reflection (e.g. assumes users they said they don't have).",
   missing_number: "Needs a specific number for this kind of task.",
   missing_platform: "Needs a named platform or channel for this kind of task.",
   missing_user_type: "Needs to name the target user type.",

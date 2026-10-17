@@ -114,7 +114,9 @@ export default function ReflectPage() {
   const [historySynthesis, setHistorySynthesis] = useState<string | null>(null);
   // A "blocked" reflection must say what blocked it: the blocker is what lets the
   // next Today task remove it, and it was empty in every real blocked reflection.
-  const canSubmit = outcome !== null && whatTried.trim().length > 0 && (outcome !== "blocked" || blocker.trim().length > 0);
+  // Claiming "Nailed it" must say what actually happened; that line (a number, a
+  // reply, "nothing yet") is what the next task is built from.
+  const canSubmit = outcome !== null && whatTried.trim().length > 0 && (outcome !== "blocked" || blocker.trim().length > 0) && (outcome !== "completed" || whatHappened.trim().length > 0);
   const [showCelebration, setShowCelebration] = useState(false);
   const [celebrationMomentum, setCelebrationMomentum] = useState<{ before: number; after: number } | undefined>(undefined);
   const [confidenceAdjustment, setConfidenceAdjustment] = useState<{ before: number; after: number; trend: "up" | "down" | "flat" | "unknown" } | undefined>(undefined);
@@ -320,6 +322,9 @@ export default function ReflectPage() {
           caus = payload.causality || caus;
           next = payload.nextAction || "";
           witness = payload.witnessed || witness;
+          // The server downgraded the outcome because the founder's own words
+          // contradicted it ("Nailed it" + "I don't have any users"). Say so.
+          if (payload.outcomeAdjusted?.reason) witness = `${payload.outcomeAdjusted.reason} ${witness}`;
           const newStreak = typeof payload.streak === "number" ? payload.streak : streak;
           setStreakExtended(newStreak > streak);
           setCelebrationStreak(newStreak);
@@ -466,7 +471,7 @@ export default function ReflectPage() {
       {(["what_tried", "what_happened", "what_learned", ...(outcome === "blocked" || outcome === "partial" ? ["blocker"] : [])] as const).map((field) => {
         const cfg = {
           what_tried:    { label: "What did you actually try?",     required: true,  placeholder: "Specific action: posted on Reddit r/indiehackers, cold-emailed 5 founders…", value: whatTried,     set: setWhatTried },
-          what_happened: { label: "What concretely happened?",      required: false, placeholder: "Numbers if possible: 3 replies, 0 signups, 1 interested DM, post got 47 upvotes…", value: whatHappened,  set: setWhatHappened },
+          what_happened: { label: "What concretely happened?",      required: outcome === "completed", placeholder: "Numbers if possible: 3 replies, 0 signups, 1 interested DM, post got 47 upvotes…", value: whatHappened,  set: setWhatHappened },
           what_learned:  { label: "What did you learn?",            required: false, placeholder: "Insight you can act on tomorrow: founders want X not Y, the problem is actually Z…", value: whatLearned,   set: setWhatLearned },
           blocker:       { label: outcome === "blocked" ? "What exactly is blocking you?" : "What got in the way of finishing?",  required: outcome === "blocked", placeholder: "Specific blocker — not 'motivation', but: can't find users, auth keeps failing…", value: blocker,       set: setBlocker },
         }[field];
