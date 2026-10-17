@@ -1,5 +1,6 @@
 "use client";
 
+import { cachedRead, invalidateRead } from "@/lib/shellCache";
 import { useCallback, useEffect, useState } from "react";
 import type { ShapedMoment, Style } from "@/lib/companion/moments";
 import type { Intensity } from "@/lib/companion/policy";
@@ -18,19 +19,21 @@ const REFRESH = "bm-companion-refresh";
 export function useCompanion(projectId?: string | null) {
   const [data, setData] = useState<CompanionData | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     try {
       const qs = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
-      const r = await fetch(`/api/companion/brief${qs}`, { cache: "no-store" });
-      if (!r.ok) return;
-      const j = await r.json();
+      if (force) invalidateRead("companion:");
+      const j = await cachedRead(`companion:${qs}`, 90_000, async () => {
+        const r = await fetch(`/api/companion/brief${qs}`, { cache: "no-store" });
+        return r.ok ? await r.json() : null;
+      });
       if (j?.ok && Array.isArray(j.moments)) setData(j as CompanionData);
     } catch { /* the Co-founder is optional; stay quiet */ }
   }, [projectId]);
 
   useEffect(() => {
     void load();
-    const on = () => void load();
+    const on = () => void load(true);
     window.addEventListener(REFRESH, on);
     const vis = () => { if (document.visibilityState === "visible") void load(); };
     document.addEventListener("visibilitychange", vis);

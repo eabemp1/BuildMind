@@ -37,16 +37,36 @@ function withTimeoutSentinel<T>(promise: Promise<T>, ms = MIDDLEWARE_TIMEOUT_MS)
   ]);
 }
 
-/** Resolves to { user, error, timedOut } — timedOut is true only when the
- *  network call itself didn't finish in time, kept distinct from a real
- *  auth error so a Supabase blip never triggers the stale-cookie wipe below. */
+/** Resolves to { user, error, timedOut }.
+ *  Fast path: getClaims() verifies the JWT locally (no network) and only
+ *  refreshes the session when the token has expired. Only when it cannot
+ *  verify (legacy symmetric keys handled internally, or any error) do we
+ *  fall back to the authoritative network getUser(). timedOut stays distinct
+ *  from a real auth error so a Supabase blip never wipes cookies. */
 async function getUserWithTimeout(
   supabase: NonNullable<ReturnType<typeof createServerClient>>,
 ): Promise<{
-  user: Awaited<ReturnType<typeof supabase.auth.getUser>>["data"]["user"];
-  error: Awaited<ReturnType<typeof supabase.auth.getUser>>["error"];
+  user: { id: string } | null;
+  error: unknown;
   timedOut: boolean;
 }> {
+  try {
+    const auth = supabase.auth as unknown as {
+      getClaims?: () => Promise<{ data: { claims?: { sub?: string } } | null; error: unknown }>;
+    };
+    if (typeof auth.getClaims === "function") {
+      const fast = await withTimeoutSentinel(auth.getClaims());
+      if (fast !== MIDDLEWARE_TIMED_OUT && !fast.error && fast.data?.claims?.sub) {
+        return { user: { id: fast.data.claims.sub }, error: null, timedOut: false };
+      }
+      // No session at all (no cookie) is a definitive answer; skip the network.
+      if (fast !== MIDDLEWARE_TIMED_OUT && !fast.error && !fast.data) {
+        return { user: null, error: null, timedOut: false };
+      }
+    }
+  } catch {
+    // fall through to the authoritative check
+  }
   const result = await withTimeoutSentinel(
     supabase.auth.getUser().then((r) => ({ user: r.data.user, error: r.error })),
   );
@@ -55,7 +75,7 @@ async function getUserWithTimeout(
     console.error("[middleware] supabase.auth.getUser() timed out after", MIDDLEWARE_TIMEOUT_MS, "ms — Supabase may be slow/unreachable");
     return { user: null, error: null, timedOut: true };
   }
-  return { ...result, timedOut: false };
+  return { user: result.user ? { id: result.user.id } : null, error: result.error, timedOut: false };
 }
 
 /** Resolves to the project count, or null if the query times out. */
@@ -289,10 +309,26 @@ export async function middleware(request: NextRequest) {
     // bouncing an existing user back into onboarding because Supabase was
     // slow for one request is worse than briefly skipping this check.
     let onboardingCompleted: boolean;
-    const projectCount = user
-      ? await getProjectCountWithTimeout(supabase!, user.id)
-      : isDevOnboarded ? 1 : 0;
+    // Perf: once a user is confirmed onboarded we remember it for 10 minutes
+    // in a cookie bound to their user id, so navigation doesn't pay a
+    // database round trip on every click.
+    const onbCookie = request.cookies.get("bm_onb")?.value;
+    const cachedOnboarded = Boolean(user && onbCookie === user.id);
+    const projectCount = cachedOnboarded
+      ? 1
+      : user
+        ? await getProjectCountWithTimeout(supabase!, user.id)
+        : isDevOnboarded ? 1 : 0;
     onboardingCompleted = projectCount === null ? true : (projectCount ?? 0) > 0;
+    if (user && !cachedOnboarded && projectCount !== null && projectCount > 0) {
+      response.cookies.set("bm_onb", user.id, {
+        path: "/",
+        sameSite: "lax",
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        maxAge: 60 * 10,
+      });
+    }
 
     if (!onboardingCompleted && !isOnboardingRoute) {
       const redirectUrl = request.nextUrl.clone();

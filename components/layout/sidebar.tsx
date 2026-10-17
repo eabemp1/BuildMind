@@ -11,6 +11,7 @@
  */
 "use client";
 
+import { cachedRead } from "@/lib/shellCache";
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -129,8 +130,9 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
 
   useEffect(() => {
     const qs = activeProjectId ? `?projectId=${encodeURIComponent(activeProjectId)}` : "";
-    fetch(`/api/cross-page-signals${qs}`)
-      .then((r) => (r.ok ? r.json() : null))
+    cachedRead(`signals:${qs}`, 2 * 60_000, () =>
+      fetch(`/api/cross-page-signals${qs}`).then((r) => (r.ok ? r.json() : null)),
+    )
       .then((json: { signals?: Array<{ page: string; href: string; badge: string }> } | null) => {
         if (!json?.signals) return;
         // Keyed by the STATIC nav href (e.g. "/projects"), not each
@@ -161,10 +163,12 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
         setTasksCompleted(prev => Math.max(prev, getTasksCompleted()));
       } catch {}
       const supabase = createClient();
-      supabase.auth.getUser().then(({ data }) => {
-        if (data.user?.id) {
-          storage.onSignIn(data.user.id);
-          syncStreakFromServer().then(s => setStreakDays(s)).catch(() => {});
+      // getSession reads the local cookie/storage (no network); identity here
+      // only scopes local storage, the server re-verifies every real request.
+      supabase.auth.getSession().then(({ data }) => {
+        if (data.session?.user?.id) {
+          storage.onSignIn(data.session.user.id);
+          cachedRead("streak", 60_000, () => syncStreakFromServer()).then(s => setStreakDays(s)).catch(() => {});
         }
       }).catch(() => {});
     };
@@ -178,7 +182,7 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
     };
     checkPending();
     // Sync tasks_completed_total from Supabase so progressive unlock survives device switches
-    void syncTasksCompletedFromServer().then(checkPending);
+    void cachedRead("tasks-completed", 60_000, () => syncTasksCompletedFromServer()).then(checkPending);
     window.addEventListener("storage", checkPending);
     window.addEventListener("bm_streak_updated", handleStreakUpdated);
     let interval = setInterval(checkPending, 8000);

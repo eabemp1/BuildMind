@@ -521,4 +521,4 @@ export default function AgentsPage() {
       <CaseArchive runs={history} activeId={activeRun?.id} onOpen={openCase} />
     </div>
   );
-              }
+}

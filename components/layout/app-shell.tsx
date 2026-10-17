@@ -10,8 +10,10 @@ import { trackPageView, trackFunnelStep } from "@/lib/onboarding-analytics";
 import { createClient } from "@/lib/supabase/client";
 import { TrialBanner } from "@/components/TrialBanner";
 import { storage } from "@/lib/storage";
+import { cachedRead } from "@/lib/shellCache";
 import { fetchBehaviorState } from "@/lib/userBehaviorState";
-import CommandPalette from "@/components/CommandPalette";
+import dynamic from "next/dynamic";
+const CommandPalette = dynamic(() => import("@/components/CommandPalette"), { ssr: false });
 import { SidePaneProvider, useSidePane } from "@/components/layout/side-pane-context";
 import SidePaneHost from "@/components/layout/side-pane";
 
@@ -36,10 +38,10 @@ function DailyLoopStatusBar() {
     const reflectionDone = storage.get(`bm_reflect_done_${today}`) === "1";
 
     setLoopState({ dayOfWeek, taskDone, reflectionDone, hoursUntilBriefing });
-    fetchBehaviorState<{ checkin_done_date: string; reflect_done_date: string }>([
+    cachedRead("behavior-loop", 60_000, () => fetchBehaviorState<{ checkin_done_date: string; reflect_done_date: string }>([
       "checkin_done_date",
       "reflect_done_date",
-    ]).then((values) => {
+    ])).then((values) => {
       setLoopState({
         dayOfWeek,
         taskDone: values.checkin_done_date === today || taskDone,
@@ -132,8 +134,9 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // Fetch authoritative trial state from billing/status once per page.
-    fetch("/api/billing/status", { cache: "no-store" })
-      .then(r => r.ok ? r.json() : null)
+    cachedRead("billing-status", 5 * 60_000, () =>
+      fetch("/api/billing/status", { cache: "no-store" }).then(r => (r.ok ? r.json() : null)),
+    )
       .then((d: { trial?: { active?: boolean; expired?: boolean; daysRemaining?: number } } | null) => {
         if (!d?.trial) return;
         if (d.trial.active) {
