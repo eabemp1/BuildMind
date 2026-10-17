@@ -1,6 +1,7 @@
 "use client";
 
 import FollowUpCard from "@/components/today/FollowUpCard";
+import CompanionBrief from "@/components/companion/CompanionBrief";
 import ReplaceWithReason from "@/components/today/ReplaceWithReason";
 import { Suspense, useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -2042,6 +2043,7 @@ function TodayContent() {
           recommendation is tucked behind the evening pill. */}
       {uiMode === "pro" && criticalSignal ? <RiskInterrupt signal={criticalSignal} /> : null}
 
+      <CompanionBrief />
       <FollowUpCard />
 
       {/* ══════════════════════════════════════════════════════════════════════

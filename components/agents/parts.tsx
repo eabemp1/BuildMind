@@ -249,4 +249,4 @@ export function AgentsHeader({ stats }: { stats: Array<{ k: string; v: number }>
       </div>
     </header>
   );
-      }
+}

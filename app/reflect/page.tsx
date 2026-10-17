@@ -97,6 +97,14 @@ export default function ReflectPage() {
   const [nextAction, setNextAction] = useState("");
   const [userId, setUserId] = useState<string | null>(null);
 
+  // The Co-founder can open this page with what you did already filled in (?tried=...).
+  useEffect(() => {
+    try {
+      const t = new URLSearchParams(window.location.search).get("tried");
+      if (t) setWhatTried((prev) => prev || t.slice(0, 300));
+    } catch { /* ignore */ }
+  }, []);
+
   const NEXT_ACTION_FALLBACK: Record<string, string> = {
     Idea:       "Tomorrow: find one more person who has this problem and ask them about their current workaround.",
     Validation: "Tomorrow: convert one opinion into a commitment — time, money, or workflow change.",

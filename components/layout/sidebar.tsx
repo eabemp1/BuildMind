@@ -20,11 +20,10 @@ import {
   Menu, X, Sun, Moon, LogOut, ChevronRight, ChevronDown, Sparkles, Users,
 } from "lucide-react";
 import { getUnseenCount } from "@/lib/achievements";
-import { type Plan, canAccess, syncStreakFromServer } from "@/lib/plan";
+import { type Plan, syncStreakFromServer } from "@/lib/plan";
 import { useActiveProjectId } from "@/lib/queries";
 import { usePlan } from "@/lib/usePlan";
 import { useTheme } from "@/components/layout/theme-provider";
-import CofounderPulse from "@/components/CofounderPulse";
 import AIUsageBadge from "@/components/AIUsageBadge";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -303,9 +302,6 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
       </nav>
 
       <div className="flex shrink-0 flex-col gap-2 pb-4 pt-3" style={{ borderTop: "1px solid var(--bm-border)" }}>
-        {!rail && canAccess("cofounderPulse", plan) && (
-          <div className="px-2"><CofounderPulse /></div>
-        )}
         {!rail && plan === "free" && (
           <div className="px-2"><AIUsageBadge /></div>
         )}

@@ -9,6 +9,7 @@ import { createClient } from "@/lib/supabase/client";
 import { clearStoredToken, searchGlobal, type SearchResultsData } from "@/lib/api";
 import { FEATURES } from "@/lib/features";
 import NotificationBell from "@/components/NotificationBell";
+import CompanionButton from "@/components/companion/CompanionButton";
 import { NAV, hasPlanAccess } from "@/components/layout/sidebar-nav";
 import { getTasksCompleted, syncTasksCompletedFromServer } from "@/lib/nav-config";
 import { usePlan } from "@/lib/usePlan";
@@ -289,6 +290,7 @@ export default function Topbar({ onToggleSidebar, navOpen = true }: TopbarProps)
             color: pane?.kind === "coach" ? "var(--bm-accent)" : "var(--bm-text3)" }}>
           <Sparkles size={14} /><span className="hidden sm:inline">Coach</span>
         </button>
+        <CompanionButton />
         <NotificationBell />
 
         {/* Avatar menu */}
