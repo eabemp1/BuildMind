@@ -144,6 +144,9 @@ const CATEGORY_LABELS: Record<BlockerCategory, string> = {
   other:         "Blocker",
 };
 
+/** Zone labels written by writeBlockerToMemory; they are not derivable from task text, so automatic reclassification must keep them. */
+export const BLOCKER_ZONE_LABELS: ReadonlySet<string> = new Set(Object.values(CATEGORY_LABELS).map((l) => l.toLowerCase()));
+
 const ACTION_TYPE_LABELS: Record<string, string> = {
   content:        "content creation",
   outreach:       "direct outreach",

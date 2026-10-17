@@ -16,6 +16,7 @@
 "use client";
 
 import React from "react";
+import { createContext, useContext } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { getUnreadCount } from "@/lib/notifications";
@@ -63,8 +64,16 @@ export function NotifBadge() {
   );
 }
 
+// ── Rail (collapsed, icon-only) mode ─────────────────────────────────────────
+// The desktop sidebar rests as a slim icon rail and expands when the pointer
+// comes near it (like Supabase). Components below read this to drop labels.
+export const RailContext = createContext(false);
+export const useRail = () => useContext(RailContext);
+
 // ── Section header ────────────────────────────────────────────────────────────
 export function SectionLabel({ label }: { label: string }) {
+  const rail = useRail();
+  if (rail) return <div aria-hidden style={{ margin: "10px 16px 6px", borderTop: "1px solid var(--bm-border)" }} />;
   return (
     <div
       style={{
@@ -83,6 +92,14 @@ export function SectionLabel({ label }: { label: string }) {
 
 // ── Logo block ────────────────────────────────────────────────────────────────
 export function SidebarLogo({ streakDays }: { streakDays: number }) {
+  const rail = useRail();
+  if (rail) {
+    return (
+      <div className="flex h-[72px] shrink-0 items-center justify-center" style={{ borderBottom: "1px solid var(--bm-border)" }}>
+        <BrandMark size={28} href="/" />
+      </div>
+    );
+  }
   return (
     <div
       className="flex h-[72px] shrink-0 items-center gap-3 px-5"
@@ -161,6 +178,24 @@ export function NavItem({
   onClick?: () => void;
 }) {
   const showNotifDot = showDot && reflectPending && !active;
+  const rail = useRail();
+  if (rail) {
+    const hasBadge = showNotifDot || Boolean(badge) || (href === "/achievements" && (unseenBadges ?? 0) > 0);
+    return (
+      <Link
+        href={href}
+        onClick={onClick}
+        title={label}
+        aria-label={label}
+        data-tour={`nav-${href.replace("/", "")}`}
+        className="group relative mx-2 flex items-center justify-center rounded-md py-[9px] transition-colors duration-150"
+        style={active ? { background: "color-mix(in srgb, var(--bm-bg3) 64%, transparent)" } : undefined}
+      >
+        <Icon size={16} strokeWidth={1.7} style={{ color: active ? "var(--bm-accent)" : "var(--bm-text3)", opacity: active ? 0.95 : 0.7 }} />
+        {hasBadge && <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full" style={{ background: "var(--bm-accent)" }} />}
+      </Link>
+    );
+  }
 
   return (
     <Link

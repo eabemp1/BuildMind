@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { healFounderMemoryIfStale } from "@/lib/server/founderMemoryMaintenance";
 import { loadFounderIntelligence } from "@/lib/founderIntelligence";
 import { buildFounderMirror } from "@/lib/founderMirror";
 import { buildStartupRelationshipGraph, traceRelationshipChain } from "@/lib/founderRelationships";
@@ -23,6 +24,7 @@ export async function GET(request: Request) {
   if (error || !user) return NextResponse.json({ ok: false }, { status: 401 });
 
   const admin = createAdminClient();
+  await healFounderMemoryIfStale(admin, user.id);
   const url = new URL(request.url);
   let projectId = url.searchParams.get("projectId") || "";
 

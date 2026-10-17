@@ -15,8 +15,11 @@
  *                       reflections), independent of the founder's wording
  *
  * Penalties: copy/paste of an earlier entry, bare absolutes ("never", "always")
- * with nothing observed behind them. Self-report alone is capped just above the
- * acceptance line, so it takes a specific, relevant account to pass.
+ * with nothing observed behind them.
+ *
+ * Strict: the founder's own account is never enough. "I faced this" needs a
+ * matching task BuildMind recorded as completed; a mirror correction without
+ * backing counts at 20% at most.
  */
 
 export type EvidenceKind = "avoidance_faced" | "mirror_correction";
@@ -56,6 +59,8 @@ export interface Weighed {
 export const ACCEPT_AT = 60;
 export const PARTIAL_AT = 35;
 export const PARTIAL_WEIGHT = 0.4;
+export const UNBACKED_PARTIAL_AT = 45;
+export const UNBACKED_WEIGHT = 0.2;
 
 const STOP = new Set(["the", "and", "for", "with", "your", "from", "that", "this", "have", "into", "about", "what", "when", "been", "were", "they", "them", "then", "than", "just", "really", "also", "some", "more", "very", "much"]);
 
@@ -140,7 +145,7 @@ export function weighEvidence(input: WeighInput): Weighed {
     corr = matching >= 2 ? 30 : matching === 1 ? 15 : 0;
   }
   const corroborated = corr >= 15;
-  if (!corroborated) hints.push("Finish a task related to this in BuildMind and it will count automatically.");
+  if (!corroborated) hints.push("Finish a task in BuildMind that tackles this and it counts automatically. A written claim alone does not.");
 
   let score = spec + rel + corr;
   // Self-report alone cannot exceed just above the line.
@@ -152,10 +157,30 @@ export function weighEvidence(input: WeighInput): Weighed {
   }
   score = Math.max(0, Math.min(100, score));
 
-  const verdict: Verdict = score >= ACCEPT_AT ? "accepted" : score >= PARTIAL_AT ? "partial" : "needs_more";
-  const weight = verdict === "accepted" ? 1 : verdict === "partial" ? PARTIAL_WEIGHT : 0;
-  if (verdict === "accepted") reasons.push(corroborated ? "Backed by activity BuildMind recorded." : "Specific and relevant.");
-  return { verdict, score, weight, corroborated, reasons, hints: verdict === "accepted" ? [] : hints.slice(0, 3) };
+  // Strict by design: a founder's own account never settles it alone. The point
+  // of these checks is to make the founder face what the record shows, not what
+  // he would like it to show.
+  let verdict: Verdict;
+  let weight: number;
+  if (corroborated) {
+    verdict = score >= ACCEPT_AT ? "accepted" : score >= PARTIAL_AT ? "partial" : "needs_more";
+    weight = verdict === "accepted" ? 1 : verdict === "partial" ? PARTIAL_WEIGHT : 0;
+  } else if (input.kind === "avoidance_faced") {
+    verdict = "needs_more";
+    weight = 0;
+    reasons.push("Nothing in your recorded activity shows this area was tackled.");
+  } else if (score >= UNBACKED_PARTIAL_AT) {
+    verdict = "partial";
+    weight = UNBACKED_WEIGHT;
+    reasons.push("Your records don't back this yet, so it counts very lightly.");
+  } else {
+    verdict = "needs_more";
+    weight = 0;
+  }
+  if (verdict === "accepted") reasons.push("Backed by activity BuildMind recorded.");
+  // The most useful next step first: for an unbacked claim, that is doing the work.
+  const ordered = corroborated ? hints : [hints.find((h) => h.startsWith("Finish")) ?? "", ...hints.filter((h) => !h.startsWith("Finish"))].filter(Boolean);
+  return { verdict, score, weight, corroborated, reasons, hints: verdict === "accepted" ? [] : ordered.slice(0, 3) };
 }
 
 /** Plain-language summary for the UI. */

@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useState, useEffect, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Sidebar, { SidebarContent } from "@/components/layout/sidebar";
+import { RailContext } from "@/components/layout/sidebar-nav";
 import Topbar from "@/components/layout/topbar";
 import { trackPageView, trackFunnelStep } from "@/lib/onboarding-analytics";
 import { createClient } from "@/lib/supabase/client";
@@ -109,8 +110,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
 function AppShellInner({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
-  // Desktop drawer: the sidebar slides away to give the page the full width.
-  const [navOpen, setNavOpen] = useState(true);
+  // Desktop sidebar rests as a slim icon rail and expands over the page while the
+  // pointer is near it (like Supabase). navOpen means "pinned open" (Ctrl+B / the
+  // topbar button); unpinned is the default.
+  const [navOpen, setNavOpen] = useState(false);
+  const [hovering, setHovering] = useState(false);
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hoverIntent = (on: boolean) => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    hoverTimer.current = setTimeout(() => setHovering(on), on ? 90 : 220);
+  };
   const { pane, openPane, closePane } = useSidePane();
   // When the sidebar was closed automatically to make room for the pane, it
   // comes back when the pane closes. A sidebar the founder closed stays closed.
@@ -137,7 +146,8 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
   }, [pathname]);
 
   useEffect(() => {
-    try { if (window.localStorage.getItem(NAV_KEY) === "0") setNavOpen(false); } catch { /* ignore */ }
+    // Only an explicit "pinned open" survives; everyone else gets the auto rail.
+    try { if (window.localStorage.getItem(NAV_KEY) === "1") setNavOpen(true); } catch { /* ignore */ }
   }, []);
 
   const setNav = (open: boolean, remember = true) => {
@@ -193,16 +203,28 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
     <div className="relative flex h-dvh min-h-dvh overflow-hidden" style={{ background: "var(--bm-bg)" }}>
       <a href="#main-content" className="bm-skip-link">Skip to main content</a>
 
-      {/* ── Sidebar — desktop ── */}
-      <motion.aside className="sticky top-0 hidden h-dvh shrink-0 overflow-hidden md:flex"
-             aria-hidden={!navOpen}
+      {/* ── Sidebar — desktop: icon rail that expands on hover; pinned = pushes the page ── */}
+      <motion.aside className="relative z-40 hidden h-dvh shrink-0 md:block"
              initial={false}
-             animate={{ width: navOpen ? 220 : 0 }}
-             transition={{ type: "spring", stiffness: 380, damping: 38 }}
-             style={{ borderRight: navOpen ? "1px solid var(--bm-border)" : "none" }}>
-        <div style={{ width: 220, flexShrink: 0, height: "100%" }} {...(navOpen ? {} : { inert: "" as unknown as boolean })}>
-          <Sidebar />
-        </div>
+             animate={{ width: navOpen ? 220 : 56 }}
+             transition={{ type: "spring", stiffness: 380, damping: 38 }}>
+        <motion.div
+          className="absolute inset-y-0 left-0 overflow-hidden"
+          initial={false}
+          animate={{ width: navOpen || hovering ? 220 : 56 }}
+          transition={{ type: "spring", stiffness: 420, damping: 40 }}
+          style={{ borderRight: "1px solid var(--bm-border)", background: "var(--bm-bg2)", boxShadow: hovering && !navOpen ? "0 0 0 1px var(--bm-border)" : "none" }}
+          onMouseEnter={() => hoverIntent(true)}
+          onMouseLeave={() => hoverIntent(false)}
+          onFocusCapture={() => hoverIntent(true)}
+          onBlurCapture={() => hoverIntent(false)}
+        >
+          <RailContext.Provider value={!(navOpen || hovering)}>
+            <div style={{ width: navOpen || hovering ? 220 : 56, height: "100%" }}>
+              <Sidebar />
+            </div>
+          </RailContext.Provider>
+        </motion.div>
       </motion.aside>
 
       {/* ── Sidebar — mobile overlay ── */}

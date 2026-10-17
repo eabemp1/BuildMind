@@ -56,6 +56,9 @@
     },
     "app/api/cron/coach-tips/route.ts": {
       "maxDuration": 60
+    },
+    "app/api/cron/maintain-founder-memory/route.ts": {
+      "maxDuration": 60
     }
   },
   "crons": [
@@ -78,6 +81,10 @@
     {
       "path": "/api/cron/evening-check",
       "schedule": "0 18 * * *"
+    },
+    {
+      "path": "/api/cron/maintain-founder-memory",
+      "schedule": "30 3 * * *"
     },
     {
       "path": "/api/cron/loops-due",

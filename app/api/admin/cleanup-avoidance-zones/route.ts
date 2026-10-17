@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdminUser } from "@/lib/server/adminAuth";
-import { actionCategoryLabelOrNull } from "@/lib/actionClassification";
-import { deduplicateTags } from "@/lib/founderMemory";
+import { cleanZoneArray } from "@/lib/server/founderMemoryMaintenance";
 
 /**
  * GET/POST /api/admin/cleanup-avoidance-zones
@@ -28,19 +27,7 @@ import { deduplicateTags } from "@/lib/founderMemory";
  * against everyone.
  */
 
-type CleanResult = { changed: boolean; before: string[]; after: string[] };
-
-function cleanArray(raw: unknown): CleanResult {
-  const before = Array.isArray(raw) ? (raw as string[]).filter(Boolean) : [];
-  if (before.length === 0) return { changed: false, before, after: [] };
-
-  // Unclassifiable entries are dropped rather than stored as a catch-all label.
-  const recategorized = before.map((entry) => actionCategoryLabelOrNull(entry)).filter((x): x is string => Boolean(x));
-  const after = deduplicateTags(recategorized);
-
-  const changed = before.length !== after.length || before.some((v, i) => v !== after[i]);
-  return { changed, before, after };
-}
+const cleanArray = cleanZoneArray;
 
 async function runCleanup(userIdFilter: string | null, isDryRun: boolean) {
   const admin = createAdminClient();

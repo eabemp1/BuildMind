@@ -34,7 +34,7 @@ export async function POST(req: Request) {
 
   const zones: string[] = Array.isArray(row?.avoidance_zones) ? row!.avoidance_zones : [];
   if (!zones.includes(zone)) return NextResponse.json({ ok: false, error: "That area isn't on your list." }, { status: 404 });
-  const resolved: Array<{ zone: string; at: string; evidence?: string; score?: number; verified?: boolean }> =
+  const resolved: Array<{ zone: string; at: string; evidence?: string; score?: number; verified?: boolean; via?: string }> =
     Array.isArray(row?.avoidance_resolved) ? row!.avoidance_resolved : [];
 
   // At most 3 resolutions a day: stops tapping through the whole list.
@@ -49,8 +49,12 @@ export async function POST(req: Request) {
     admin.from("reflexion_learning_log").select("action_shown, action_type").eq("user_id", user.id).eq("outcome", "completed").gte("created_at", since).limit(60),
     admin.from("reflections").select("what_tried, what_happened").eq("user_id", user.id).gte("created_at", since).limit(40),
   ]);
+  // A completed task can clear one area once: it cannot be reused for another zone or a later claim.
+  const used = new Set(resolved.map((r) => (r.via ?? "").toLowerCase()).filter(Boolean));
   const doneActions = ((tasksRes.data ?? []) as Array<{ action_shown?: string | null; action_type?: string | null }>)
-    .map((t) => ({ title: t.action_shown ?? "", actionType: t.action_type ?? null }));
+    .map((t) => ({ title: t.action_shown ?? "", actionType: t.action_type ?? null }))
+    .filter((a) => a.title && !used.has(a.title.toLowerCase()));
+  const matchedTask = doneActions.find((a) => zoneMatchesActions(zone, [a]))?.title ?? "";
   const observed = [
     ...doneActions.map((a) => ({ text: a.title, actionType: a.actionType })),
     ...((reflRes.data ?? []) as Array<{ what_tried?: string | null; what_happened?: string | null }>).map((r) => ({ text: `${r.what_tried ?? ""} ${r.what_happened ?? ""}` })),
@@ -74,7 +78,7 @@ export async function POST(req: Request) {
     .from("founder_memory")
     .update({
       avoidance_zones: zones.filter((z) => z !== zone),
-      avoidance_resolved: [...resolved, { zone, at: new Date().toISOString(), evidence, score: weighed.score, verified: weighed.corroborated }].slice(-50),
+      avoidance_resolved: [...resolved, { zone, at: new Date().toISOString(), evidence, score: weighed.score, verified: weighed.corroborated, via: matchedTask }].slice(-50),
       updated_at: new Date().toISOString(),
     })
     .eq("user_id", user.id);

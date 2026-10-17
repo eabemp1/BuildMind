@@ -240,7 +240,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           nonce={nonce}
           dangerouslySetInnerHTML={{
             __html:
-              "try{var t=localStorage.getItem('bm_theme');if(t==='light')document.documentElement.classList.add('light-mode');else document.documentElement.classList.remove('light-mode')}catch(e){}finally{document.documentElement.classList.add('bm-ready')}",
+              "try{var t=localStorage.getItem('bm_theme');if(t==='dark')document.documentElement.classList.remove('light-mode');else document.documentElement.classList.add('light-mode')}catch(e){document.documentElement.classList.add('light-mode')}finally{document.documentElement.classList.add('bm-ready')}",
           }}
         />
         {/* Per-page canonical tags are set via metadata.alternates.canonical in each page */}

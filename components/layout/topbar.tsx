@@ -173,7 +173,7 @@ export default function Topbar({ onToggleSidebar, navOpen = true }: TopbarProps)
       {/* Sidebar drawer toggle (Ctrl/Cmd+B). Phones get the hamburger, desktops the panel icon. */}
       <button
         onClick={onToggleSidebar}
-        title={navOpen ? "Hide sidebar (Ctrl+B)" : "Show sidebar (Ctrl+B)"}
+        title={navOpen ? "Unpin sidebar (Ctrl+B)" : "Pin sidebar open (Ctrl+B)"}
         style={{
           display: "grid", placeItems: "center",
           width: 32, height: 32, borderRadius: 6,

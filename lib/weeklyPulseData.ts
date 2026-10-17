@@ -52,6 +52,7 @@
  */
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { healFounderMemoryIfStale } from "@/lib/server/founderMemoryMaintenance";
 import { callModelJSON, hasAIProvider } from "@/lib/ai-providers";
 import { getFounderScorecard } from "@/lib/scorecard";
 import { computeMilestonePacing, type MilestonePacingResult } from "@/lib/milestonePacing";
@@ -188,6 +189,8 @@ export async function getWeeklyPulseData(
   opts: { aiStory?: boolean } = {},
 ): Promise<WeeklyPulseResponse> {
   const admin = createAdminClient();
+  // Self-heal zone labels before reading them (no-op once the row is current).
+  await healFounderMemoryIfStale(admin, userId);
   const now = new Date();
   const weekStart = weekStartMonday(now);
   // FIX: previously a rolling "now minus 7 days" window, while

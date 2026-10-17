@@ -28,7 +28,7 @@ import CofounderPulse from "@/components/CofounderPulse";
 import AIUsageBadge from "@/components/AIUsageBadge";
 import { createClient } from "@/lib/supabase/client";
 import {
-  NAV, hasPlanAccess, SectionLabel, SidebarLogo, NavItem,
+  NAV, hasPlanAccess, SectionLabel, SidebarLogo, NavItem, useRail,
 } from "@/components/layout/sidebar-nav";
 import { getTasksCompleted, syncTasksCompletedFromServer } from "@/lib/nav-config";
 import { storage } from "@/lib/storage";
@@ -36,6 +36,7 @@ import { storage } from "@/lib/storage";
 // ── User card at bottom ───────────────────────────────────────────────────────
 function SidebarUser({ onSignOut }: { onSignOut: () => void }) {
   const { plan } = usePlan();
+  const rail = useRail();
   const [user, setUser] = useState<{ email?: string; user_metadata?: Record<string, unknown> } | null>(null);
 
   useEffect(() => {
@@ -55,6 +56,19 @@ function SidebarUser({ onSignOut }: { onSignOut: () => void }) {
     .join("")
     .toUpperCase()
     .slice(0, 2);
+
+  if (rail) {
+    return (
+      <div className="mx-2 flex items-center justify-center py-1" title={displayName}>
+        <div
+          className="flex h-8 w-8 items-center justify-center rounded-md text-xs font-medium"
+          style={{ background: "var(--bm-bg4)", color: "var(--bm-text2)", border: "1px solid var(--bm-border)" }}
+        >
+          {initials}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -101,6 +115,7 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
   const pathname = usePathname();
   const { plan } = usePlan();
   const { theme, toggle } = useTheme();
+  const rail = useRail();
   const [isAdmin, setIsAdmin] = useState(false);
   const [reflectPending, setReflectPending] = useState(false);
   const [unseenBadges, setUnseenBadges] = useState(0);
@@ -218,6 +233,13 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
             // This makes the product's feature depth visible and turns locks into reward mechanisms
             const tasksNeeded = unlockedAt - tasksCompleted;
             const progressPct = Math.min(100, Math.round((tasksCompleted / unlockedAt) * 100));
+            if (rail) {
+              return (
+                <div key={item.href} className="mx-2 flex items-center justify-center py-[9px]" title={`${item.label}: ${tasksNeeded} more task${tasksNeeded !== 1 ? "s" : ""} to unlock`} style={{ opacity: 0.4, cursor: "default" }}>
+                  <item.icon size={16} strokeWidth={1.7} style={{ color: "var(--bm-text4)" }} />
+                </div>
+              );
+            }
             return (
               <React.Fragment key={item.href}>
                 {sectionLabel && <SectionLabel label={sectionLabel} />}
@@ -263,6 +285,11 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
         {isAdmin && (
           <>
             <SectionLabel label="ADMIN" />
+            {rail ? (
+              <Link href="/admin" title="Admin dashboard" aria-label="Admin dashboard" className="mx-2 flex items-center justify-center rounded-md py-[9px]" style={{ color: "var(--bm-text3)" }}>
+                <Shield size={16} />
+              </Link>
+            ) : (
             <Link href="/admin"
               className="group mx-2 flex items-center justify-between gap-2 rounded-md px-4 py-[9px] text-sm transition-colors"
               style={{ color: "var(--bm-text4)" }}
@@ -270,18 +297,26 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
               <div className="flex items-center gap-3"><Shield size={16} />Dashboard</div>
               <span className="text-[9px] font-normal px-1.5 py-0.5 rounded font-mono" style={{ background: "var(--bm-bg4)", color: "var(--bm-text3)" }}>Admin</span>
             </Link>
+            )}
           </>
         )}
       </nav>
 
       <div className="flex shrink-0 flex-col gap-2 pb-4 pt-3" style={{ borderTop: "1px solid var(--bm-border)" }}>
-        {canAccess("cofounderPulse", plan) && (
+        {!rail && canAccess("cofounderPulse", plan) && (
           <div className="px-2"><CofounderPulse /></div>
         )}
-        {plan === "free" && (
+        {!rail && plan === "free" && (
           <div className="px-2"><AIUsageBadge /></div>
         )}
 
+        {rail ? (
+          <button onClick={toggle} title={theme === "dark" ? "Light mode" : "Dark mode"} aria-label="Toggle theme"
+            className="mx-2 flex items-center justify-center rounded-md py-2 transition-colors"
+            style={{ border: "none", background: "transparent", color: "var(--bm-text3)", cursor: "pointer" }}>
+            {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
+          </button>
+        ) : (
         <button onClick={toggle}
           className="mx-2 flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors"
           style={{ border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", cursor: "pointer", fontFamily: "inherit" }}
@@ -290,18 +325,19 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
         >
           {theme === "dark" ? <><Sun size={13} /><span>Light mode</span></> : <><Moon size={13} /><span>Dark mode</span></>}
         </button>
+        )}
 
-        <button onClick={() => setFounderMenuOpen((o) => !o)}
+        {!rail && <button onClick={() => setFounderMenuOpen((o) => !o)}
           className="mx-2 flex items-center gap-2 rounded-md px-3 py-2.5 transition-colors"
           style={{ border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", cursor: "pointer", fontFamily: "inherit" }}
         >
           <Sparkles size={13} strokeWidth={1.6} style={{ color: "var(--bm-text4)", flexShrink: 0 }} />
           <span className="flex-1 text-left text-xs font-medium" style={{ color: "var(--bm-text2)" }}>Founder menu</span>
           <ChevronDown size={12} style={{ color: "var(--bm-text4)", transform: founderMenuOpen ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.15s" }} />
-        </button>
+        </button>}
 
         <AnimatePresence initial={false}>
-          {founderMenuOpen && (
+          {!rail && founderMenuOpen && (
             <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden flex flex-col gap-2">
               {plan === "free" ? (
                 <Link href="/upgrade" className="no-underline block px-2">

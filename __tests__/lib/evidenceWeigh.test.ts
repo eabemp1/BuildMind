@@ -12,10 +12,11 @@ describe("avoidance: I faced this", () => {
   it("rejects a vague account with nothing observed", () => {
     expect(face("I thought about posting more and tried to be better").verdict).not.toBe("accepted");
   });
-  it("accepts a specific, relevant account", () => {
+  it("a specific, relevant account is still refused without a recorded task", () => {
     const w = face("Posted my launch thread on LinkedIn and Reddit, got 3 comments and 40 views");
-    expect(w.verdict).toBe("accepted");
+    expect(w.verdict).toBe("needs_more");
     expect(w.corroborated).toBe(false);
+    expect(w.hints[0]).toMatch(/Finish a task/);
   });
   it("self-report alone is capped", () => {
     expect(face("Posted on LinkedIn 5 times, 20 comments, 3 DMs, shared on Twitter 4 times").score).toBeLessThanOrEqual(66);
@@ -57,9 +58,10 @@ describe("mirror corrections", () => {
     expect(w.corroborated).toBe(true);
     expect(w.weight).toBe(1);
   });
-  it("an account the records don't back counts at reduced weight at best", () => {
+  it("an account the records don't back counts at 20% at most, never as accepted", () => {
     const w = corr("I did two user interviews with customers on a call yesterday");
-    expect(["partial", "accepted"]).toContain(w.verdict);
+    expect(w.verdict).not.toBe("accepted");
+    expect(w.weight).toBeLessThanOrEqual(0.2);
     expect(w.corroborated).toBe(false);
   });
 });
