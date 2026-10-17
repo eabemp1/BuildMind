@@ -26,7 +26,7 @@ export interface ReflectionText {
   blocker?: string | null;
 }
 
-export type FactKind = "no_users" | "no_access" | "search_failed" | "already_done" | "direction";
+export type FactKind = "no_users" | "no_access" | "search_failed" | "already_done" | "direction" | "too_big" | "rejected";
 
 export interface Fact {
   kind: FactKind;
@@ -56,6 +56,8 @@ const TTL_DAYS: Record<FactKind, number> = {
   search_failed: 7,
   already_done: 45,
   direction: 21,
+  too_big: 14,
+  rejected: 14,
 };
 
 export const PLATFORMS = [
@@ -83,6 +85,9 @@ function mentionedPlatform(s: string): string | undefined {
 }
 
 // "I don't (yet) have any (beta) users", "I have no users", "no beta users", "0 users"
+const NO_USERS_RULE = "The founder has NO users yet. Never write a task that messages, emails, interviews, surveys or follows up 'your users', 'beta users', 'paying' customers, or anyone who 'used' or 'tried' the product. Tasks must find or reach people who have never used it, with the goal of getting the first 5 users.";
+const noAccessRule = (subject: string) => `The founder has no access to ${subject} communities right now. Do not assign tasks that need ${subject} (joining, posting, DMing there) unless the task first gets access in a way that works today.`;
+
 const NO_USERS_RE = new RegExp(
   [
     String.raw`\bi\s+(?:do\s*n[o']?t|don'?t|dont|haven'?t|have\s*n[o']?t|have\s+not)\s+(?:yet\s+)?(?:have|got)\s+(?:any\s+|a\s+single\s+)?(?:beta\s+|paying\s+|active\s+|real\s+)?(?:users?|customers?|signups?|sign-ups?|clients?|testers?)\b`,
@@ -113,8 +118,19 @@ function sentenceAround(text: string, m: RegExpExecArray): string {
   return text.slice(start, end).trim();
 }
 
+export type FeedbackReason = "no_users" | "no_access" | "already_done" | "too_big" | "not_relevant" | "no_time";
+
+/** A founder's one-tap "this task doesn't fit me" (today_feedback row). */
+export interface FeedbackRow {
+  task_text: string;
+  reason: FeedbackReason;
+  note?: string | null;
+  created_at: string;
+}
+
 export interface LedgerOptions {
   now?: number;
+  feedback?: FeedbackRow[];
 }
 
 export interface Ledger {
@@ -150,7 +166,7 @@ export function buildLedger(reflections: ReflectionText[], opts: LedgerOptions =
       drop((f) => f.kind === "no_users");
       facts.push({
         kind: "no_users",
-        rule: "The founder has NO users yet. Never write a task that messages, emails, interviews, surveys or follows up 'your users', 'beta users', 'paying' customers, or anyone who 'used' or 'tried' the product. Tasks must find or reach people who have never used it, with the goal of getting the first 5 users.",
+        rule: NO_USERS_RULE,
         evidence: clip(sentenceAround(text, nu)),
         at,
       });
@@ -164,7 +180,7 @@ export function buildLedger(reflections: ReflectionText[], opts: LedgerOptions =
         facts.push({
           kind: "no_access",
           subject,
-          rule: `The founder has no access to ${subject} communities right now. Do not assign tasks that need ${subject} (joining, posting, DMing there) unless the task first gets access in a way that works today.`,
+          rule: noAccessRule(subject),
           evidence: clip(sentenceAround(text, na)),
           at,
         });
@@ -209,6 +225,30 @@ export function buildLedger(reflections: ReflectionText[], opts: LedgerOptions =
     if (lp) {
       // A newer reflection on the same task closes older loops about it.
       loops.push({ text: clip(sentenceAround(text, lp), 200), at, task: r.today_action ?? undefined });
+    }
+  }
+
+  // One-tap feedback is the strongest signal: the founder said it directly.
+  for (const fb of [...(opts.feedback ?? [])].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at))) {
+    if (!fb?.task_text || Number.isNaN(Date.parse(fb.created_at))) continue;
+    const at = fb.created_at;
+    const evidence = clip(fb.note?.trim() ? fb.note : `Marked "${fb.reason.replace(/_/g, " ")}" on: ${fb.task_text}`);
+    if (fb.reason === "no_users") {
+      drop((f) => f.kind === "no_users");
+      facts.push({ kind: "no_users", rule: NO_USERS_RULE, evidence, at });
+    } else if (fb.reason === "no_access") {
+      const subject = mentionedPlatform(`${fb.note ?? ""} ${fb.task_text}`);
+      if (subject) {
+        drop((f) => f.kind === "no_access" && f.subject === subject);
+        facts.push({ kind: "no_access", subject, rule: noAccessRule(subject), evidence, at });
+      }
+    } else if (fb.reason === "already_done") {
+      facts.push({ kind: "already_done", doneTask: fb.task_text, rule: `Already done by the founder: "${clip(fb.task_text, 120)}". Do not assign it, or a near copy of it, again. Build on it instead.`, evidence, at });
+    } else if (fb.reason === "too_big" || fb.reason === "no_time") {
+      drop((f) => f.kind === "too_big");
+      facts.push({ kind: "too_big", rule: "The founder said recent tasks were too big for the time they have. Keep today's task to ONE action that fits in 20 minutes, with the first step named.", evidence, at });
+    } else if (fb.reason === "not_relevant") {
+      facts.push({ kind: "rejected", doneTask: fb.task_text, rule: `The founder rejected this kind of task as not relevant: "${clip(fb.task_text, 120)}". Do not assign it or a near copy; choose a different approach.`, evidence, at });
     }
   }
 
@@ -285,6 +325,9 @@ export function findContradictions(task: string, ledger: Ledger): Contradiction[
     }
     if (f.kind === "already_done" && f.doneTask && overlap(t, f.doneTask) >= 0.7) {
       out.push({ fact: "already_done", why: "Repeats something the founder said they already did." });
+    }
+    if (f.kind === "rejected" && f.doneTask && overlap(t, f.doneTask) >= 0.7) {
+      out.push({ fact: "rejected", why: "Repeats a task the founder marked as not relevant." });
     }
   }
   return out;

@@ -20,6 +20,7 @@ import { loadCognitionInput, synthesizeFounderCognition, buildCognitionPromptBlo
 import { evaluateAIOutput, failsHardPreScreen } from "@/lib/aiEvaluator";
 import { getPromptForRequest, loadActivePrompts } from "@/lib/promptRegistry";
 import { upsertTodayActionCache } from "@/lib/todayActionCache";
+import { logQualityEvent } from "@/lib/today/telemetry";
 import { buildTodayPersonalisationContext } from "@/lib/todayPersonalisationContext";
 import { loadBehavioralContext } from "@/lib/behavioralLayers";
 import { summarizeFounderIntelligenceForClient, type FounderIntelligenceState } from "@/lib/founderIntelligence";
@@ -988,6 +989,8 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
     });
     const wasHardFallback = preScreen.fails;
     if (wasHardFallback) {
+      // Quality telemetry: which deterministic rule rejected the AI's task.
+      void logQualityEvent(supabase, { userId, projectId, kind: "fallback", rules: preScreen.failed_checks, task: finalResult.action, missionKind: mission.kind, stage });
       finalResult.action = kindFallback.action;
       finalResult.message = kindFallback.message;
     } else if (!mission.requires.draft) {

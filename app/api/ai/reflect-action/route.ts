@@ -1,5 +1,6 @@
 import { sanitizeAvoidanceZones, sanitizeTopics } from "@/lib/avoidanceSanitize";
 import { NextResponse } from "next/server";
+import { logQualityEvent } from "@/lib/today/telemetry";
 import { checkOutcome, type CheckedOutcome } from "@/lib/today/outcomeCheck";
 import { AIUsageUnavailableError } from "@/lib/server/aiUsageStore";
 import { groqJSON, hasAdminEnv, enforceAndTrackAIUsage } from "@/app/api/ai/_utils";
@@ -248,6 +249,9 @@ export async function POST(request: Request) {
     // founder why (lib/today/outcomeCheck.ts).
     const outcomeCheck = checkOutcome({ outcome: body.outcome, what_tried, what_happened, what_learned, blocker, note });
     const outcome: CheckedOutcome = outcomeCheck.outcome;
+    if (outcomeCheck.adjusted && hasAdminEnv()) {
+      void logQualityEvent(createAdminClient(), { userId: routeUser.userId, projectId, kind: "outcome_adjusted", rules: [`${outcomeCheck.from}->${outcomeCheck.outcome}`], task: body.todayAction, detail: outcomeCheck.reason });
+    }
     // `let`: the client can send a stale or empty task (see the day-stamp fix in
     // app/reflect/page.tsx), so below we fall back to the task Today actually
     // showed this founder instead of saving the reflection against nothing.

@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle2, Info, ArrowRight } from "lucide-react";
 import type { Briefing } from "@/lib/adminBriefing";
 import { C, Panel, Sparkline, Delta } from "./ui";
 import { AILoadCard } from "./AILoadCard";
+import { TodayQualityCard } from "./TodayQualityCard";
 
 const SEV = { critical: C.red, warning: C.amber, info: C.t3 } as const;
 const ago = (s: string) => { const m = Math.floor((Date.now() - new Date(s).getTime()) / 60000); if (m < 1) return "just now"; if (m < 60) return `${m}m ago`; const h = Math.floor(m / 60); return h < 24 ? `${h}h ago` : `${Math.floor(h / 24)}d ago`; };
@@ -63,6 +64,8 @@ export function BriefingTab({ b, funnel, onTab }: { b: Briefing; funnel: { step:
       </Panel>
 
       <AILoadCard />
+
+      <TodayQualityCard />
 
       <div className="adm-two">
         <Panel title="Signups, last 30 days" right={<span style={{ fontSize: 11, color: C.t3 }}>{b.totals.users} total</span>}>

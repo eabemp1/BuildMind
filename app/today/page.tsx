@@ -1,5 +1,7 @@
 "use client";
 
+import FollowUpCard from "@/components/today/FollowUpCard";
+import ReplaceWithReason from "@/components/today/ReplaceWithReason";
 import { Suspense, useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -21,7 +23,7 @@ import MorningBriefingModal from "@/components/MorningBriefingModal";
 import RecoveryModeCard from "@/components/RecoveryModeCard";
 import { BlockerInsightCard } from "@/components/BlockerInsightCard";
 import { PaywallMoment } from "@/components/PaywallMoment";
-import { Clock, CheckCircle2, Copy, Check, Flame, Brain, Sparkles, AlertCircle, TrendingUp, RotateCcw, Zap, ArrowRight, Trophy } from "lucide-react";
+import { Clock, CheckCircle2, Copy, Check, Flame, Brain, Sparkles, AlertCircle, TrendingUp, Zap, ArrowRight, Trophy } from "lucide-react";
 import { storage } from "@/lib/storage";
 import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
 import { MobileCheckin } from "@/components/MobileCheckin";
@@ -2040,6 +2042,8 @@ function TodayContent() {
           recommendation is tucked behind the evening pill. */}
       {uiMode === "pro" && criticalSignal ? <RiskInterrupt signal={criticalSignal} /> : null}
 
+      <FollowUpCard />
+
       {/* ══════════════════════════════════════════════════════════════════════
           ACTION CARD — first real content block (task-first layout)
           Collapsed behind the "Show task" pill above during evening mode,
@@ -2198,32 +2202,12 @@ function TodayContent() {
 
 
           {!done && !actionLoading && (
-            <button
-              onClick={() => void handlePreTaskReplace()}
-              disabled={replacingTask}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "var(--space-2)",
-                background: "transparent",
-                border: "1px solid var(--bm-border)",
-                borderRadius: "var(--r-lg)",
-                padding: "var(--space-2) var(--space-3)",
-                fontSize: "var(--text-sm)",
-                fontWeight: 500,
-                color: "var(--bm-text3)",
-                cursor: replacingTask ? "not-allowed" : "pointer",
-                opacity: replacingTask ? 0.5 : 1,
-                transition: "all 0.15s",
-                marginBottom: "var(--space-3)",
-                fontFamily: "inherit",
-              }}
-              onMouseEnter={e => { e.currentTarget.style.color = "var(--bm-text2)"; }}
-              onMouseLeave={e => { e.currentTarget.style.color = "var(--bm-text3)"; }}
-            >
-              <RotateCcw size={11} />
-              {replacingTask ? "Fetching new task..." : "Replace this task →"}
-            </button>
+            <ReplaceWithReason
+              taskText={actionData.action ?? ""}
+              projectId={project?.id ?? null}
+              busy={replacingTask}
+              onReplace={handlePreTaskReplace}
+            />
           )}
 
           {/* Script instruction */}

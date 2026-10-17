@@ -80,6 +80,10 @@
       "schedule": "0 18 * * *"
     },
     {
+      "path": "/api/cron/loops-due",
+      "schedule": "0 9 * * *"
+    },
+    {
       "path": "/api/cron/re-engage",
       "schedule": "0 9 * * *"
     },

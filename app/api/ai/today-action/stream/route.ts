@@ -34,6 +34,7 @@ import { loadCognitionInput, synthesizeFounderCognition, buildCognitionPromptBlo
 import { evaluateAIOutput, failsHardPreScreen } from "@/lib/aiEvaluator";
 import { getPromptForRequest, loadActivePrompts } from "@/lib/promptRegistry";
 import { upsertTodayActionCache } from "@/lib/todayActionCache";
+import { logQualityEvent } from "@/lib/today/telemetry";
 import { buildTodayPersonalisationContext } from "@/lib/todayPersonalisationContext";
 import { recordActionShown } from "@/lib/learning";
 import { buildFounderIntelligencePromptBlock, loadFounderIntelligence, summarizeFounderIntelligenceForClient, type FounderIntelligenceState } from "@/lib/founderIntelligence";
@@ -832,6 +833,8 @@ ${JSON.stringify(structuredA)}`,
         // platform/number/user type when the mission kind needs them.
         const preScreen = { fails: !finalQuality.pass, failed_checks: finalQuality.hardFails.length ? finalQuality.hardFails : finalQuality.softFails };
         const wasHardFallback = preScreen.fails;
+        if (wasHardFallback) void logQualityEvent(hasAdminEnv() ? createAdminClient() : null, { userId, projectId, kind: "fallback", rules: preScreen.failed_checks, task: agentCFields.task, missionKind: mission.kind, stage });
+        else if (!qualityA.pass) void logQualityEvent(hasAdminEnv() ? createAdminClient() : null, { userId, projectId, kind: "rejected", rules: qualityA.hardFails.length ? qualityA.hardFails : qualityA.softFails, task: agentAFields.task, missionKind: mission.kind, stage });
         const finalAction = wasHardFallback ? kindFallback.action : agentCFields.task;
         const finalDraft = wasHardFallback ? kindFallback.message : agentCFields.draft;
         const finalDoneWhen = wasHardFallback ? kindFallback.done_when : agentCFields.done_when;

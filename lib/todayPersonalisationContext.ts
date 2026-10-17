@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { distinctByAction, isShownTaskRow } from "@/lib/recommendationRows";
 import { buildLedger, factsPromptBlock, type Ledger } from "@/lib/today/facts";
+import { loopsPromptBlock, partitionLoops, type Loop } from "@/lib/today/loops";
 
 export interface TodayPersonalisationContext {
   /** Last 7 actions shown (from reflexion_learning_log), formatted for prompt injection */
@@ -15,6 +16,8 @@ export interface TodayPersonalisationContext {
   ledger?: Ledger;
   /** Prompt-ready text for the ledger ("" when nothing to say). */
   factsBlock?: string;
+  /** Follow-ups the founder asked to be reminded about that are now due. */
+  dueLoops?: Loop[];
 }
 
 export async function buildTodayPersonalisationContext(
@@ -45,7 +48,7 @@ export async function buildTodayPersonalisationContext(
     // before the project_id column existed (which would otherwise vanish
     // from context for every project, permanently) while excluding rows
     // known to belong to a specific *other* project.
-    const [actionsResult, reflectionsResult, milestonesResult, ledgerResult] = await Promise.allSettled([
+    const [actionsResult, reflectionsResult, milestonesResult, ledgerResult, feedbackResult, loopsResult] = await Promise.allSettled([
       supabase
         .from("reflexion_learning_log")
         .select("action_shown, stage, created_at, outcome, session_id, critic_persona, prediction_source")
@@ -85,6 +88,24 @@ export async function buildTodayPersonalisationContext(
         .gte("created_at", new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString())
         .order("created_at", { ascending: false })
         .limit(40),
+
+      // One-tap "doesn't fit me" feedback: the strongest facts there are.
+      supabase
+        .from("today_feedback")
+        .select("task_text, reason, note, created_at")
+        .eq("user_id", userId)
+        .gte("created_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
+        .order("created_at", { ascending: false })
+        .limit(30),
+
+      // Follow-ups the founder asked for; due ones are injected as a priority.
+      supabase
+        .from("today_loops")
+        .select("id, project_id, task_text, measure, due_at, status, snooze_count, created_at")
+        .eq("user_id", userId)
+        .eq("status", "open")
+        .order("due_at", { ascending: true })
+        .limit(20),
     ]);
 
     const rawActions =
@@ -145,8 +166,11 @@ export async function buildTodayPersonalisationContext(
     const activeGoals = milestones.map((m) => m.title);
 
     const ledgerRows = ledgerResult.status === "fulfilled" ? (ledgerResult.value.data ?? []) : [];
-    const ledger = buildLedger(ledgerRows);
-    const factsBlock = factsPromptBlock(ledger);
+    const feedbackRows = feedbackResult.status === "fulfilled" && !feedbackResult.value.error ? (feedbackResult.value.data ?? []) : [];
+    const ledger = buildLedger(ledgerRows, { feedback: feedbackRows as import("@/lib/today/facts").FeedbackRow[] });
+    const loopRows = loopsResult.status === "fulfilled" && !loopsResult.value.error ? ((loopsResult.value.data ?? []) as Loop[]) : [];
+    const { due: dueLoops } = partitionLoops(loopRows);
+    const factsBlock = [factsPromptBlock(ledger), loopsPromptBlock(dueLoops)].filter(Boolean).join("\n\n");
 
     return {
       recentActionsBlock,
@@ -155,6 +179,7 @@ export async function buildTodayPersonalisationContext(
       activeGoals,
       ledger,
       factsBlock,
+      dueLoops,
     };
   } catch {
     return empty;

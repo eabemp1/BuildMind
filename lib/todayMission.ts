@@ -18,7 +18,7 @@
  * Pure, no I/O, client-safe.
  */
 
-import { findContradictions } from "@/lib/today/facts";
+import { guardRules } from "@/lib/today/rules";
 import { classifyTask, tokenize, stem, type Purpose, type Domain } from "@/lib/taxonomy/taskTaxonomy";
 
 export type MissionKind =
@@ -392,11 +392,6 @@ export interface QualityResult {
 
 const GENERIC_RE = /\b(research (your|the) (market|competitors?|industry)|think about|brainstorm|come up with ideas|explore (options|ideas|ways)|look into|consider (how|whether|what)|plan (your|out|the)|get (some )?feedback|network(ing)?\b|build (an? )?audience|improve (your )?(product|marketing|business)|work on (your )?(product|marketing|business|startup|idea)|some (users|people|customers)|potential (users|customers)|relevant communities|reach out to people|grow your)\b/i;
 const PLACEHOLDER_RE = /\[[A-Za-z][^\]]{0,40}\]|\{\{?[a-z_ ]+\}?\}/;
-// Template text that leaked into a task instead of a real value.
-const TEMPLATE_LEAK_RE = /\bnot specified(?: yet)?\b|\bno confirmed evidence\b|\bundefined\b|\bnull\b|\bn\/a\b|\btbd\b|\blorem\b|\(\s*(?:myself|me|yourself)\s*\)|\bthe founder\b|\bplaceholder\b/i;
-// "Find/identify a community/group/platform" with no named place is an unfinishable search.
-const OPEN_SEARCH_RE = /\b(?:find|locate|identify|discover|look\s+for|search\s+for|scout)\b[^.]{0,60}\b(?:communit(?:y|ies)|groups?|platforms?|channels?|forums?|workspaces?)\b/i;
-const NAMED_TARGET_RE = /\br\/\w+|#\w{3,}|https?:\/\/|\bwww\.|"[^"]{3,}"|\b(?:indie\s+hackers|product\s+hunt|hacker\s+news|y\s*combinator|startup\s+school|betalist|techcabal|nairobi|lagos)\b|\b[A-Z][a-z]+\s+(?:Founders?|Startups?|Hackers?|Builders?|Makers?)\b/;
 const PLATFORM_RE = /(linkedin|whatsapp|email|twitter|x\.com|phone|in person|slack|telegram|instagram|reddit|product hunt|indie hackers|discord|facebook|youtube|tiktok|hacker news|zoom|google meet|call)/i;
 
 function stemSet(text: string): Set<string> {
@@ -422,9 +417,7 @@ export function assessTaskQuality(c: CandidateTask, mission: Mission, ctx: Quali
   if (GENERIC_RE.test(task)) hard.push("generic");
   if (PLACEHOLDER_RE.test(task) || PLACEHOLDER_RE.test(c.draft ?? "")) hard.push("placeholder");
   if (!c.done_when || c.done_when.trim().length < 8) hard.push("no_done_when");
-  if (TEMPLATE_LEAK_RE.test(task) || TEMPLATE_LEAK_RE.test(c.draft ?? "")) hard.push("template_leak");
-  if (OPEN_SEARCH_RE.test(task) && !NAMED_TARGET_RE.test(task)) hard.push("open_ended_search");
-  if (ctx.ledger && findContradictions(task, ctx.ledger).length > 0) hard.push("contradicts_fact");
+  for (const rule of guardRules(task, ctx.ledger, c.draft)) hard.push(rule);
 
   for (const r of ctx.recentTasks.slice(0, 8)) {
     if (similarity(task, r.text) >= 0.55) { hard.push("repeat"); break; }

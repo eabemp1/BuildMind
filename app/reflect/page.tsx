@@ -23,6 +23,7 @@ import ReflectionCelebration from "@/components/ReflectionCelebration";
 import { ReflectionField } from "./components/ReflectionField";
 import { ConfidenceSelector } from "./components/ConfidenceSelector";
 import { OutcomePicker, type ReflectionOutcome } from "./components/OutcomePicker";
+import { FollowUpPicker, type FollowUpValue } from "./components/FollowUpPicker";
 import { ReflectionCompletion } from "./components/ReflectionCompletion";
 import { effectiveStreak } from "@/lib/streak";
 
@@ -85,6 +86,7 @@ export default function ReflectPage() {
   const [whatHappened, setWhatHappened] = useState("");
   const [whatLearned, setWhatLearned] = useState("");
   const [blocker, setBlocker] = useState("");
+  const [followUp, setFollowUp] = useState<FollowUpValue>({ choice: null, measure: "" });
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [extracting, setExtracting] = useState(false);
   const [confidence, setConfidence] = useState(3);
@@ -367,6 +369,20 @@ export default function ReflectPage() {
       const modalSource = shouldShowTestimonialModal(currentStreak, outcome, confidence);
       if (modalSource) setTestimonialSource(modalSource);
 
+      if (followUp.choice) {
+        try {
+          await fetch("/api/today/loops", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              task_text: (todayAction || whatTried).slice(0, 500),
+              measure: (followUp.measure.trim() || "what came back from this").slice(0, 300),
+              choice: followUp.choice,
+              projectId: activeProjectId ?? null,
+            }),
+          });
+        } catch { /* the reflection is saved; the reminder is best-effort */ }
+      }
+
       setDone(true);
       setShowCelebration(true);
     } finally { setSubmitting(false); }
@@ -478,6 +494,8 @@ export default function ReflectPage() {
         if (!cfg) return null;
         return <ReflectionField key={field} label={cfg.label} required={cfg.required} placeholder={cfg.placeholder} value={cfg.value} onChange={cfg.set} />;
       })}
+
+      <FollowUpPicker task={todayAction || whatTried} texts={[whatTried, whatHappened, blocker]} value={followUp} onChange={setFollowUp} />
 
       <ConfidenceSelector value={confidence} onChange={setConfidence} />
 
