@@ -276,23 +276,30 @@ function MilestoneRow({ m, onChanged }: { m: MilestonePacing; onChanged: () => v
 }
 
 function AvoidanceList({ zones, onChanged }: { zones: string[]; onChanged: () => void }) {
-  const [busy, setBusy] = useState<string | null>(null);
+  const [openZone, setOpenZone] = useState<string | null>(null);
+  const [evidence, setEvidence] = useState("");
+  const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   if (zones.length === 0) return null;
 
   async function face(zone: string) {
-    setBusy(zone); setErr(null);
+    setBusy(true); setErr(null);
     try {
       const res = await fetch("/api/avoidance/resolve", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ zone }),
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ zone, evidence }),
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok || !json?.ok) { setErr(json?.error ?? "Couldn't save. Try again."); return; }
+      if (!res.ok || !json?.ok) {
+        const hint = Array.isArray(json?.hints) && json.hints[0] && !String(json?.error ?? "").includes(json.hints[0]) ? ` ${json.hints[0]}` : "";
+        setErr(`${json?.error ?? "Couldn't save. Try again."}${hint}`);
+        return;
+      }
+      setOpenZone(null); setEvidence("");
       onChanged();
     } catch {
       setErr("Couldn't save. Check your connection.");
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
   }
 
@@ -300,14 +307,31 @@ function AvoidanceList({ zones, onChanged }: { zones: string[]; onChanged: () =>
     <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-lg)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: 8 }}>
       <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: "var(--bm-text)" }}>Still avoiding</span>
       <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text3)", lineHeight: 1.4 }}>
-        Do one real action on an area, then mark it faced. Facing areas raises your Avoidance Resistance grade.
+        Do one real action on an area, then tell us what you did. BuildMind checks it against your activity before it counts toward your Avoidance Resistance grade.
       </span>
       {zones.map((z) => (
-        <div key={z} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "var(--bm-text)" }}>{sanitizeOutput(z)}</span>
-          <button type="button" disabled={busy === z} onClick={() => face(z)} style={chipStyle}>
-            {busy === z ? "Saving" : "I faced this"}
-          </button>
+        <div key={z} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+            <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "var(--bm-text)" }}>{sanitizeOutput(z)}</span>
+            {openZone !== z && (
+              <button type="button" onClick={() => { setOpenZone(z); setEvidence(""); setErr(null); }} style={chipStyle}>I faced this</button>
+            )}
+          </div>
+          {openZone === z && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <textarea
+                value={evidence} onChange={(e) => setEvidence(e.target.value)} rows={3} maxLength={600}
+                placeholder="What did you do? A number or a name helps: DM'd 5 founders on LinkedIn, 2 replied."
+                style={{ width: "100%", boxSizing: "border-box", background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: 8, padding: 8, fontSize: 13, color: "var(--bm-text)", fontFamily: "inherit", resize: "vertical" }}
+              />
+              <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                <button type="button" style={chipStyle} onClick={() => { setOpenZone(null); setErr(null); }}>Cancel</button>
+                <button type="button" disabled={busy || evidence.trim().length < 3} onClick={() => face(z)} style={{ ...chipStyle, opacity: evidence.trim().length < 3 ? 0.6 : 1 }}>
+                  {busy ? "Checking" : "Submit evidence"}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       ))}
       {err && <span role="alert" style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-red)" }}>{err}</span>}

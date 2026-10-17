@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { normalizeBeliefKey } from "@/lib/founderMirror";
+import { weighEvidence, verdictMessage } from "@/lib/evidenceWeigh";
 
 export const runtime = "nodejs";
 
@@ -53,9 +54,41 @@ export async function POST(request: Request) {
     .maybeSingle();
   if (readError) return NextResponse.json({ ok: false, error: "Could not load founder memory" }, { status: 500 });
 
-  const existing = Array.isArray(memory?.founder_corrections) ? memory.founder_corrections : [];
+  const existing: Array<{ correction?: string; evidence?: string; created_at?: string }> =
+    Array.isArray(memory?.founder_corrections) ? memory.founder_corrections : [];
+
+  // At most 3 corrections a day: a model that rewrites itself on every tap is not a model.
+  const dayAgo = Date.now() - 24 * 3600_000;
+  if (existing.filter((c) => Date.parse(c.created_at ?? "") >= dayAgo).length >= 3) {
+    return NextResponse.json({ ok: false, error: "That's three corrections today. Let the model absorb them, then try again tomorrow." }, { status: 429 });
+  }
+
+  // Weigh the founder's account against what BuildMind recorded itself.
+  const since = new Date(Date.now() - 21 * 24 * 3600_000).toISOString();
+  const [tasksRes, reflRes] = await Promise.all([
+    admin.from("reflexion_learning_log").select("action_shown, action_type").eq("user_id", user.id).eq("outcome", "completed").gte("created_at", since).limit(60),
+    admin.from("reflections").select("what_tried, what_happened").eq("user_id", user.id).gte("created_at", since).limit(40),
+  ]);
+  const observed = [
+    ...((tasksRes.data ?? []) as Array<{ action_shown?: string | null; action_type?: string | null }>).map((t) => ({ text: t.action_shown ?? "", actionType: t.action_type ?? null })),
+    ...((reflRes.data ?? []) as Array<{ what_tried?: string | null; what_happened?: string | null }>).map((r) => ({ text: `${r.what_tried ?? ""} ${r.what_happened ?? ""}` })),
+  ];
+  const weighed = weighEvidence({
+    kind: "mirror_correction",
+    claim: normalizeBeliefKey(parsed.data.belief_key || parsed.data.belief) === "general" || /^General Founder Mirror model$/i.test(parsed.data.belief) ? "" : parsed.data.belief,
+    text: [parsed.data.correction, parsed.data.evidence].filter(Boolean).join(" "),
+    observed,
+    previousTexts: existing.map((c) => [c.correction, c.evidence].filter(Boolean).join(" ")),
+  });
+  if (weighed.verdict === "needs_more") {
+    return NextResponse.json({ ok: false, needsMore: true, score: weighed.score, error: verdictMessage(weighed), hints: weighed.hints }, { status: 422 });
+  }
+
   const correction = {
     ...parsed.data,
+    weight: weighed.weight,
+    verified: weighed.corroborated,
+    score: weighed.score,
     // Normalize once at write time so lib/founderMirror.ts's matching is a
     // straight equality check, not a re-normalization of stored data.
     belief_key: normalizeBeliefKey(parsed.data.belief_key || parsed.data.belief),
@@ -68,5 +101,5 @@ export async function POST(request: Request) {
   }, { onConflict: "user_id" });
   if (writeError) return NextResponse.json({ ok: false, error: "Could not save correction" }, { status: 500 });
 
-  return NextResponse.json({ ok: true, correction });
+  return NextResponse.json({ ok: true, correction, verdict: weighed.verdict, message: verdictMessage(weighed) });
 }

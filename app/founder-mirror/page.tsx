@@ -174,6 +174,8 @@ export default function FounderMirrorPage() {
   const [data, setData] = useState<MirrorResponse["data"] | null>(null);
   const [loading, setLoading] = useState(true);
   const [correction, setCorrection] = useState("");
+  const [evidenceText, setEvidenceText] = useState("");
+  const [correctionNote, setCorrectionNote] = useState<string | null>(null);
   const [correctionStatus, setCorrectionStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [pastCorrections, setPastCorrections] = useState<PastCorrection[] | null>(null);
   const [showPastCorrections, setShowPastCorrections] = useState(false);
@@ -207,6 +209,7 @@ export default function FounderMirrorPage() {
   async function submitCorrection() {
     const text = correction.trim();
     if (!text) return;
+    setCorrectionNote(null);
     setCorrectionStatus("saving");
     const belief = targetBelief?.text ?? "General Founder Mirror model";
     const beliefKey = targetBelief?.key ?? "general";
@@ -217,10 +220,19 @@ export default function FounderMirrorPage() {
       const response = await fetch("/api/founder-context/mirror/correction", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ belief, belief_key: beliefKey, correction: text }),
+        body: JSON.stringify({ belief, belief_key: beliefKey, correction: text, ...(evidenceText.trim() ? { evidence: evidenceText.trim() } : {}) }),
       });
+      if (response.status === 422 || response.status === 429) {
+        const j = await response.json().catch(() => ({}));
+        setCorrectionNote(j?.error ?? "That wasn't enough to change the model.");
+        setCorrectionStatus("idle");
+        return;
+      }
       if (!response.ok) throw new Error("Correction failed");
+      const okJson = await response.json().catch(() => ({}));
+      setCorrectionNote(okJson?.verdict === "partial" ? okJson.message ?? "Counted lightly." : null);
       setCorrection("");
+      setEvidenceText("");
       setCorrectionStatus("saved");
       setPastCorrections(null);
 
@@ -807,6 +819,15 @@ export default function FounderMirrorPage() {
             placeholder={targetBelief ? "e.g. I don't actually avoid this — what looks like avoidance is actually…" : "e.g. I don't actually avoid difficult conversations — I prepare extensively before having them, which looks like delay…"}
             rows={3}
           />
+          <Textarea
+            value={evidenceText}
+            onChange={(event) => setEvidenceText(event.target.value)}
+            placeholder="What shows this? A recent action, number or example. Corrections with evidence carry full weight; without it they are weighed lightly or not applied."
+            rows={2}
+          />
+          {correctionNote && (
+            <p role="status" className="mt-2 text-[12px] leading-relaxed text-[var(--bm-amber)]">{correctionNote}</p>
+          )}
 
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-4">

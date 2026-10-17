@@ -46,6 +46,12 @@ export interface FounderCorrection {
    *  means it applies to every belief, at reduced weight — see
    *  GENERAL_CORRECTION_WEIGHT below. */
   belief_key?: string;
+  /** How much the evidence behind this correction was trusted (lib/evidenceWeigh.ts).
+   *  1 = accepted, 0.4 = partial. Absent on older corrections, which count in full. */
+  weight?: number;
+  /** True when BuildMind's own records backed the correction. */
+  verified?: boolean;
+  score?: number;
 }
 
 export interface CorrectionEffect {
@@ -151,6 +157,8 @@ function correctionScope(c: FounderCorrection): string {
 const CORRECTION_HALF_LIFE_DAYS = 21;
 const GENERAL_CORRECTION_WEIGHT = 0.4;
 const SUPPRESSION_THRESHOLD = 0.22;
+const UNVERIFIED_CORRECTION_CAP = 1;
+const MIN_PROMPT_TRUST = 0.5;
 
 function decayedCorrectionWeight(createdAt: string | undefined, asOf: Date): number {
   if (!createdAt) return 1;
@@ -188,17 +196,25 @@ function applyCorrections(
   asOf: Date,
 ): Weighting {
   let failures = 0;
+  let unverified = 0;
   let matchedCount = 0;
   for (const c of corrections) {
     const scope = correctionScope(c);
-    const weight = decayedCorrectionWeight(c.created_at, asOf);
+    const trust = typeof c.weight === "number" ? c.weight : 1;
+    if (trust <= 0) continue;
+    const weight = decayedCorrectionWeight(c.created_at, asOf) * trust;
+    let add = 0;
     if (scope === beliefKey) {
-      failures += weight;
+      add = weight;
       matchedCount += 1;
     } else if (GENERAL_KEYS.has(scope)) {
-      failures += weight * GENERAL_CORRECTION_WEIGHT;
+      add = weight * GENERAL_CORRECTION_WEIGHT;
     }
+    // Self-reported corrections that BuildMind's own records don't back can
+    // only ever move a belief so far, however many are submitted.
+    if (c.verified === false) unverified += add; else failures += add;
   }
+  failures += Math.min(unverified, UNVERIFIED_CORRECTION_CAP);
   if (failures <= 0.05) {
     return { confidence: baseConfidence, correctionsApplied: 0, confidenceBefore: baseConfidence, suppressed: false };
   }
@@ -210,8 +226,9 @@ function applyCorrections(
 }
 
 function correctionTextsFor(beliefKey: string, corrections: FounderCorrection[]): string[] {
-  const specific = corrections.filter((c) => correctionScope(c) === beliefKey);
-  const general = corrections.filter((c) => GENERAL_KEYS.has(correctionScope(c)));
+  const trusted = corrections.filter((c) => (typeof c.weight === "number" ? c.weight : 1) >= MIN_PROMPT_TRUST);
+  const specific = trusted.filter((c) => correctionScope(c) === beliefKey);
+  const general = trusted.filter((c) => GENERAL_KEYS.has(correctionScope(c)));
   const pool = specific.length ? specific : general;
   return pool.slice(-2).map((c) => c.correction);
 }
@@ -305,6 +322,7 @@ function mayBeWrongAbout(state: FounderIntelligenceState, accuracy: Intelligence
   // beliefs above) — a correction from months ago that's fully decayed
   // shouldn't keep resurfacing here as if it were still unresolved.
   const activeCorrections = state.founder.corrections
+    .filter((c) => (typeof c.weight === "number" ? c.weight : 1) >= MIN_PROMPT_TRUST)
     .filter((c) => decayedCorrectionWeight(c.created_at, asOf) >= 0.1)
     .slice(-2);
   for (const correction of activeCorrections) {

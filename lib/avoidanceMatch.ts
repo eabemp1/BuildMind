@@ -66,3 +66,8 @@ export function zoneMatchesActions(zone: string, actions: CompletedAction[]): bo
 export function matchZones(zones: string[], actions: CompletedAction[]): string[] {
   return zones.filter((z) => zoneMatchesActions(z, actions));
 }
+
+/** Words that signal an action confronts this zone (empty for unmapped zones). */
+export function zoneWords(zone: string): string[] {
+  return ZONE_RULES[zone.trim().toLowerCase()]?.words ?? [];
+}

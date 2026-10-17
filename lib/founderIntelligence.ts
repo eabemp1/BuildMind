@@ -111,7 +111,7 @@ export interface FounderState {
   behavioral_trends: string[];
   confidence: number;
   recent_changes: string[];
-  corrections: Array<{ belief: string; correction: string; evidence?: string; created_at?: string; belief_key?: string }>;
+  corrections: Array<{ belief: string; correction: string; evidence?: string; created_at?: string; belief_key?: string; weight?: number; verified?: boolean; score?: number }>;
 }
 
 export interface StartupState {
@@ -845,7 +845,7 @@ export function buildFounderIntelligenceState(rawInput: FounderIntelligenceInput
     corrections: Array.isArray(founderMemory.founder_corrections)
       ? founderMemory.founder_corrections
           .slice(-20)
-          .filter((item: unknown): item is { belief: string; correction: string; evidence?: string; created_at?: string; belief_key?: string } =>
+          .filter((item: unknown): item is { belief: string; correction: string; evidence?: string; created_at?: string; belief_key?: string; weight?: number; verified?: boolean; score?: number } =>
             Boolean(item && typeof item === "object" && "correction" in item),
           )
       : [],
