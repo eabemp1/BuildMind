@@ -19,7 +19,7 @@ import { RadialGauge } from "@/components/charts";
 import { OpenBesideButton } from "@/components/layout/OpenBesideButton";
 import { computeCrewStats, computeEvidenceMix, caseNumber } from "@/lib/agentWorkspace";
 import { classifyFinding, runReadiness, frameVerdict, evidenceStrength, scoreExplainer, TIER_LABEL, TIER_MEANING } from "@/lib/evidence";
-import { AGENT_THEME, AgentEmblem, CaseArchive, CrewCard, Dossier, EvidenceLedger, OpsConsole, VERDICT_THEME, VerdictStamp } from "@/components/agents/parts";
+import { AGENT_THEME, AgentsHeader, AgentEmblem, CaseArchive, CrewCard, Dossier, EvidenceLedger, OpsConsole, VERDICT_THEME, VerdictStamp } from "@/components/agents/parts";
 
 interface AgentRun {
   id:                 string;
@@ -269,8 +269,8 @@ function CaseFile({ run, pendingCount, findings }: { run: AgentRun; pendingCount
             {tops.length > 0 && (
               <ol style={{ margin: "16px 0 0", padding: 0, listStyle: "none", display: "grid", gap: 8 }}>
                 {tops.map((f, i) => (
-                  <li key={i} style={{ display: "flex", gap: 10, fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.55 }}>
-                    <span style={{ fontFamily: MONO, fontSize: 10, fontWeight: 700, color: t.c, background: t.dim, border: `1px solid ${t.bd}`, borderRadius: 4, padding: "2px 6px", height: "fit-content" }}>F{i + 1}</span>{f}
+                  <li key={i} style={{ display: "flex", gap: 10, fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.55, minWidth: 0 }}>
+                    <span style={{ fontFamily: MONO, fontSize: 10, fontWeight: 700, color: t.c, background: t.dim, border: `1px solid ${t.bd}`, borderRadius: 4, padding: "2px 6px", height: "fit-content", flexShrink: 0 }}>F{i + 1}</span><span style={{ minWidth: 0 }}>{f}</span>
                   </li>
                 ))}
               </ol>
@@ -449,24 +449,11 @@ export default function AgentsPage() {
   const locked = plan === "free";
 
   return (
-    <div style={{ minHeight: "100vh", background: "var(--bm-bg)", padding: "24px 16px 64px", maxWidth: 1020, margin: "0 auto" }}>
+    <div style={{ minHeight: "100vh", background: "var(--bm-bg)", padding: "12px 0 64px", maxWidth: 1020, margin: "0 auto", width: "100%", minWidth: 0, overflowWrap: "anywhere" }}>
       <style>{`@keyframes bm-pulse { 0%,100%{opacity:1}50%{opacity:0.35} }`}</style>
 
       {/* Mission control header */}
-      <header style={{ marginBottom: 24, display: "flex", gap: 20, justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap" }}>
-        <div style={{ maxWidth: 560 }}>
-          <div style={{ ...lbl, marginBottom: 8 }}>Agent Workforce · Mission control</div>
-          <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: 20, fontWeight: 700, color: "var(--bm-text)", margin: "0 0 6px", letterSpacing: "-0.025em" }}>Your startup crew</h1>
-          <p style={{ fontSize: 12.5, color: "var(--bm-text3)", margin: 0, lineHeight: 1.55 }}>
-            Three specialists research, test and size up your idea. Each opens a case file. You review every finding, and your decision is saved with how well it is supported.
-          </p>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, auto)", gap: 18 }}>
-          {[{ k: "Cases closed", v: totalRuns }, { k: "Signals logged", v: totalSignals }, { k: "You confirmed", v: confirmedTotal }].map((x) => (
-            <div key={x.k}><div style={{ fontFamily: MONO, fontSize: 18, fontWeight: 600, color: "var(--bm-text)", lineHeight: 1 }}>{x.v}</div><div style={{ ...lbl, marginTop: 4 }}>{x.k}</div></div>
-          ))}
-        </div>
-      </header>
+      <AgentsHeader stats={[{ k: "Cases closed", v: totalRuns }, { k: "Signals logged", v: totalSignals }, { k: "You confirmed", v: confirmedTotal }]} />
 
       {locked && (
         <div style={{ marginBottom: 18, padding: "10px 14px", background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)", borderRadius: 9, fontSize: 12.5, color: "var(--bm-accent)" }}>
@@ -523,7 +510,7 @@ export default function AgentsPage() {
 
       {/* Crew board */}
       {!activeRun && !deploying && (
-        <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 260px), 1fr))" }}>
+        <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 260px), 1fr))", minWidth: 0 }}>
           {(["research", "validation", "competitor"] as AgentType[]).map((type) => (
             <CrewCard key={type} agent={type} name={AGENT_IDENTITY[type].name} tagline={AGENT_IDENTITY[type].tagline}
               stat={crew[type]} deploying={deploying} locked={locked} onDeploy={() => handleDeploy(type)} />
@@ -534,4 +521,4 @@ export default function AgentsPage() {
       <CaseArchive runs={history} activeId={activeRun?.id} onOpen={openCase} />
     </div>
   );
-}
+              }
