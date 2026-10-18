@@ -1459,29 +1459,25 @@ function LandingAestheticLayer() {
 
       /* ── Typography ───────────────────────────────────────────────────────── */
       .bm-landing-skin .gradient-text {
-        /* Defensive fallback: if background-clip:text fails to clip to the
-           glyph shapes in some rendering context (a known cross-browser
-           quirk, distinct from the contrast issue fixed below), this solid
-           color shows instead of a blank/solid block. inline-block is part
-           of the standard fix for this same class of bug. */
+        /* Solid colour, no background-clip:text. The clipped gradient painted
+           as a solid block over the headline on some mobile browsers, and a
+           flat accent is the intended look anyway. */
         display: inline-block;
         color: var(--bm-accent2);
-        background: linear-gradient(135deg, #E8C547 0%, #F5D97A 40%, #E8C547 70%, #C9A82E 100%);
-        background-size: 200% auto;
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-        animation: bm-text-shimmer 6s linear infinite;
+        background: none;
+        -webkit-background-clip: border-box;
+        background-clip: border-box;
+        -webkit-text-fill-color: currentColor;
+        animation: none;
       }
       @keyframes bm-text-shimmer {
         0%   { background-position: 0% center; }
         100% { background-position: 200% center; }
       }
       .bm-landing-skin .gradient-text-subtle {
-        background: linear-gradient(135deg, var(--bm-text) 0%, rgba(240,240,238,0.65) 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
+        color: var(--bm-text);
+        background: none;
+        -webkit-text-fill-color: currentColor;
       }
 
       /* ══════════════════════════════════════════════════════════════════════
@@ -1599,19 +1595,11 @@ function LandingAestheticLayer() {
 
       /* ── LIGHT THEME overrides for hardcoded-literal blocks above ──────────── */
       .light-mode .bm-landing-skin .gradient-text {
-        /* Darkened stops — the previous mid-stop (#D9B23A) had only ~2:1
-           contrast against the white hero background, so the shimmer
-           animation caused the text to fade to near-invisible for part of
-           every cycle. All stops below hold >=3:1 contrast on white.
-           Added explicit fallback color (line above, in the base rule,
-           now var(--bm-accent2)) for the separate class of bug where the
-           clip fails entirely rather than just losing contrast. */
-        color: #6B5406;
-        background: linear-gradient(135deg, #8F7008 0%, #B5920A 40%, #8F7008 70%, #6B5406 100%);
-        background-size: 200% auto;
+        color: #6B5406; /* >=3:1 on the light hero */
+        background: none;
       }
       .light-mode .bm-landing-skin .gradient-text-subtle {
-        background: linear-gradient(135deg, var(--bm-text) 0%, rgba(60,45,20,0.55) 100%);
+        background: none;
       }
       .light-mode .bm-landing-skin .bm-glass::before {
         background: linear-gradient(90deg, transparent 0%, var(--glass-shine) 25%, rgba(255,240,210,0.7) 50%, var(--glass-shine) 75%, transparent 100%);

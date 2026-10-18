@@ -18,6 +18,12 @@ import { logError } from "@/lib/server/logger";
 import { truncateWords } from "@/lib/textTruncate";
 import { resolveDayKey } from "@/lib/dayKey";
 
+function parseSwap(raw: unknown, rejected: string): SwapRequest | null {
+  if (!rejected) return null;
+  const r = (raw && typeof raw === "object" ? raw : {}) as { reason?: unknown; mode?: unknown };
+  return { rejected, reason: isSwapReason(r.reason) ? r.reason : null, mode: isSwapMode(r.mode) ? r.mode : "alternative" };
+}
+
 export const runtime     = "nodejs";
 export const dynamic     = "force-dynamic";
 export const maxDuration = 30;
@@ -44,6 +50,9 @@ import { formatRegionalContextBlock } from "@/lib/regionalContext";
 import { buildFirstDaysBrief, countBlockEntries } from "@/lib/firstDaysBrief";
 import { planTodayMission, parseRecentTasks, missionPromptBlock, assessTaskQuality, missionMeta, type Mission } from "@/lib/todayMission";
 import { fallbackForKind } from "@/lib/todayFallbacks";
+import { applySwap, isSwapMode, isSwapReason, swapHistoryNote, swapProblems, swapPromptBlock, type SwapRequest } from "@/lib/today/swap";
+import { loadSwapHistory, recordSwap } from "@/lib/today/swapStore";
+
 import { groundTargetUsers, groundingPromptBlock, wantsGrounding } from "@/lib/todayGrounding";
 
 function sse(event: string, data: unknown): string {
@@ -531,7 +540,7 @@ export async function POST(request: Request) {
 
         // ── Mission planning (lib/todayMission.ts) ────────────────────────
         const recentTasks = parseRecentTasks(personalisationCtx.recentActionsBlock);
-        const mission = planTodayMission({
+        const plannedMission = planTodayMission({
           stage,
           recentTasks,
           avoidance: cognitionAvoidanceSignals,
@@ -543,11 +552,17 @@ export async function POST(request: Request) {
           candidateId: founderIntelligence?.decision.top_candidate?.id ?? null,
           excludeAction,
         });
+        // Importance-preserving swap (lib/today/swap.ts).
+        const swapHistory = excludeAction ? await loadSwapHistory(hasAdminEnv() ? createAdminClient() : null, userId) : [];
+        const { mission, swap: swapPlan } = applySwap(plannedMission, parseSwap(body?.swap, excludeAction), swapHistory);
         const grounding = wantsGrounding(mission.kind)
           ? await groundTargetUsers({ key: projectId, targetUsers, problem })
           : [];
         const groundingBlock = groundingPromptBlock(grounding);
-        const missionBlock = missionPromptBlock(mission, { targetUsers, avoidance: cognitionAvoidanceSignals, blockers: personalisationCtx.recurringBlockers });
+        const missionBlock = [
+          missionPromptBlock(mission, { targetUsers, avoidance: cognitionAvoidanceSignals, blockers: personalisationCtx.recurringBlockers }),
+          swapPlan ? [swapPromptBlock(swapPlan, mission), swapHistoryNote(swapHistory)].filter(Boolean).join("\n") : "",
+        ].filter(Boolean).join("\n\n");
         const kindFallback = fallbackForKind(
           mission.kind,
           { userType: inferProjectAudience(targetUsers, title, description, problem), problemDesc: inferProjectProblem(problem, title, description), productName: title?.trim() || "your product", stage },
@@ -832,7 +847,9 @@ ${JSON.stringify(structuredA)}`,
         // Kind-aware gate: the rubric (lib/todayMission.ts) only demands a
         // platform/number/user type when the mission kind needs them.
         const preScreen = { fails: !finalQuality.pass, failed_checks: finalQuality.hardFails.length ? finalQuality.hardFails : finalQuality.softFails };
-        const wasHardFallback = preScreen.fails;
+        const swapIssues = swapProblems(agentCFields.task, swapPlan);
+        if (swapIssues.length) preScreen.failed_checks = [...preScreen.failed_checks, ...swapIssues.map((i) => `swap_${i}`)];
+        const wasHardFallback = preScreen.fails || swapIssues.length > 0;
         if (wasHardFallback) void logQualityEvent(hasAdminEnv() ? createAdminClient() : null, { userId, projectId, kind: "fallback", rules: preScreen.failed_checks, task: agentCFields.task, missionKind: mission.kind, stage });
         else if (!qualityA.pass) void logQualityEvent(hasAdminEnv() ? createAdminClient() : null, { userId, projectId, kind: "rejected", rules: qualityA.hardFails.length ? qualityA.hardFails : qualityA.softFails, task: agentAFields.task, missionKind: mission.kind, stage });
         const finalAction = wasHardFallback ? kindFallback.action : agentCFields.task;
@@ -841,6 +858,12 @@ ${JSON.stringify(structuredA)}`,
         const finalFirstStep = wasHardFallback ? kindFallback.first_step : agentCFields.first_step;
         const finalMinutes = wasHardFallback ? Number.parseInt(kindFallback.time, 10) || mission.minutes : agentCFields.minutes;
         const decisionReason = deterministicCandidate?.why_it_beats_alternatives;
+        if (swapPlan) {
+          void recordSwap(hasAdminEnv() ? createAdminClient() : null, {
+            userId, projectId, rejected: swapPlan.rejected, rejectedKind: swapPlan.fromKind, reason: swapPlan.reason,
+            mode: swapPlan.mode, replacement: finalAction, replacementKind: mission.kind, guarded: wasHardFallback,
+          });
+        }
 
         // Historical tracking: previously wasHardFallback only existed in
         // the live response and today's single (overwritten-daily) cache

@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 
 const Body = z.object({
   task_text: z.string().trim().min(3).max(500),
-  reason: z.enum(["no_users", "no_access", "already_done", "too_big", "not_relevant", "no_time"]),
+  reason: z.enum(["no_users", "no_access", "already_done", "too_big", "not_relevant", "no_time", "no_motivation"]),
   note: z.string().trim().max(300).optional(),
   projectId: z.string().uuid().nullish(),
 });

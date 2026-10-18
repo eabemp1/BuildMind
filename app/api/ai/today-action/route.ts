@@ -2,6 +2,8 @@ import { buildFirstDaysBrief, countBlockEntries } from "@/lib/firstDaysBrief";
 import { planTodayMission, parseRecentTasks, missionPromptBlock, failsMissionPreScreen } from "@/lib/todayMission";
 import { fallbackForKind } from "@/lib/todayFallbacks";
 import { groundTargetUsers, groundingPromptBlock, wantsGrounding } from "@/lib/todayGrounding";
+import { applySwap, isSwapMode, isSwapReason, swapHistoryNote, swapProblems, swapPromptBlock, type SwapRequest } from "@/lib/today/swap";
+import { loadSwapHistory, recordSwap } from "@/lib/today/swapStore";
 import { NextResponse } from "next/server";
 import { enforceAndTrackAIUsage, hasAdminEnv } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -156,6 +158,12 @@ function buildContextualFallback(stage: string, targetUsers: string, problem: st
   return fallbacks[stage] ?? fallbacks["Idea"];
 }
 
+function parseSwap(raw: unknown, rejected: string): SwapRequest | null {
+  if (!rejected) return null;
+  const r = (raw && typeof raw === "object" ? raw : {}) as { reason?: unknown; mode?: unknown };
+  return { rejected, reason: isSwapReason(r.reason) ? r.reason : null, mode: isSwapMode(r.mode) ? r.mode : "alternative" };
+}
+
 export async function POST(request: Request) {
   const requestStartedAt = Date.now();
   try {
@@ -179,6 +187,7 @@ export async function POST(request: Request) {
       completionRate:    z.number().min(0).max(100).optional(),
       acknowledgeDebt:   z.boolean().optional(),
       excludeAction:     z.string().max(500).optional(),
+      swap:              z.object({ reason: z.string().max(30).nullish(), mode: z.string().max(20).nullish() }).optional(),
       dayKey:            z.string().max(10).optional(),
     });
     const parsedBody = bodySchema.safeParse(rawBody);
@@ -639,7 +648,7 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
 
     // ── Mission planning (lib/todayMission.ts) — same planner as the stream route ──
     const recentTasksParsed = parseRecentTasks(personalisationCtx.recentActionsBlock);
-    const mission = planTodayMission({
+    const plannedMission = planTodayMission({
       stage,
       recentTasks: recentTasksParsed,
       avoidance: cognitionAvoidanceSignals,
@@ -649,8 +658,13 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
       momentum: cognitionMomentumScore,
       excludeAction,
     });
+    // Importance-preserving swap (lib/today/swap.ts): a rejected task is
+    // shrunk or replaced by something equally important, never made easier.
+    const swapHistory = excludeAction ? await loadSwapHistory(hasAdminEnv() ? createAdminClient() : null, userId) : [];
+    const { mission, swap: swapPlan } = applySwap(plannedMission, parseSwap(body?.swap, excludeAction), swapHistory);
     const missionGrounding = wantsGrounding(mission.kind) && projectId ? await groundTargetUsers({ key: projectId, targetUsers, problem }) : [];
     lastReflectionContext += `\n\n${missionPromptBlock(mission, { targetUsers, avoidance: cognitionAvoidanceSignals, blockers: personalisationCtx.recurringBlockers })}`;
+    if (swapPlan) lastReflectionContext += `\n\n${[swapPromptBlock(swapPlan, mission), swapHistoryNote(swapHistory)].filter(Boolean).join("\n")}`;
     if (missionGrounding.length) lastReflectionContext += `\n\n${groundingPromptBlock(missionGrounding)}`;
     const kindFallback = fallbackForKind(
       mission.kind,
@@ -987,7 +1001,9 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
       activeGoals: personalisationCtx.activeGoals,
       recentTasks: recentTasksParsed,
     });
-    const wasHardFallback = preScreen.fails;
+    const swapIssues = swapProblems(finalResult.action, swapPlan);
+    if (swapIssues.length) preScreen.failed_checks.push(...swapIssues.map((i) => `swap_${i}`));
+    const wasHardFallback = preScreen.fails || swapIssues.length > 0;
     if (wasHardFallback) {
       // Quality telemetry: which deterministic rule rejected the AI's task.
       void logQualityEvent(supabase, { userId, projectId, kind: "fallback", rules: preScreen.failed_checks, task: finalResult.action, missionKind: mission.kind, stage });
@@ -1006,6 +1022,13 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
       hasDraft: Boolean(finalResult.message),
       groundedIn: missionGrounding.map((g) => ({ title: g.title, url: g.url })),
     });
+
+    if (swapPlan) {
+      void recordSwap(hasAdminEnv() ? createAdminClient() : null, {
+        userId, projectId, rejected: swapPlan.rejected, rejectedKind: swapPlan.fromKind, reason: swapPlan.reason,
+        mode: swapPlan.mode, replacement: String(finalResult.action ?? ""), replacementKind: mission.kind, guarded: wasHardFallback,
+      });
+    }
 
     if (reflexionOutput) {
       finalResult.reflexion = {

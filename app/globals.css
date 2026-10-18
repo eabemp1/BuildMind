@@ -212,11 +212,10 @@ body {
    if background-clip:text isn't supported in some rendering context, text
    now degrades to solid accent-colored text instead of invisible. */
 .gradient-text {
-  color: var(--bm-accent); /* fallback if background-clip:text isn't supported */
-  background: linear-gradient(90deg, var(--bm-accent), var(--bm-accent2));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  /* Solid accent: background-clip:text rendered as a solid block on some browsers. */
+  color: var(--bm-accent);
+  background: none;
+  -webkit-text-fill-color: currentColor;
 }
 
 /* ── Landing hero — was referenced in LandingPageClient.tsx but never ──

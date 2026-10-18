@@ -2,6 +2,7 @@
 
 import React from "react";
 import { RotateCcw } from "lucide-react";
+import { shrinkFits, type SwapMode, type SwapReason } from "@/lib/today/swap";
 
 /**
  * "Replace this task" with an optional one-tap reason. The reason is saved
@@ -9,6 +10,7 @@ import { RotateCcw } from "lucide-react";
  */
 
 export const FEEDBACK_REASONS = [
+  { key: "no_motivation", label: "Don't feel like it" },
   { key: "no_users", label: "No users yet" },
   { key: "no_access", label: "No access" },
   { key: "already_done", label: "Already did this" },
@@ -24,12 +26,20 @@ export default function ReplaceWithReason({
   taskText: string;
   projectId?: string | null;
   busy: boolean;
-  onReplace: () => void | Promise<void>;
+  onReplace: (swap: { reason: SwapReason | null; mode: SwapMode }) => void | Promise<void>;
 }) {
   const [open, setOpen] = React.useState(false);
+  const [picked, setPicked] = React.useState<FeedbackKey | null | undefined>(undefined);
 
   async function choose(reason: FeedbackKey | null) {
+    // Reasons where a smaller version helps get a second step: shrink or switch.
+    if (shrinkFits(reason as SwapReason | null) && reason !== null) { setPicked(reason); return; }
+    await finish(reason, "alternative");
+  }
+
+  async function finish(reason: FeedbackKey | null, mode: SwapMode) {
     setOpen(false);
+    setPicked(undefined);
     if (reason) {
       try {
         await fetch("/api/today/feedback", {
@@ -38,7 +48,7 @@ export default function ReplaceWithReason({
         });
       } catch { /* feedback is best-effort; the replace still happens */ }
     }
-    await onReplace();
+    await onReplace({ reason: reason as SwapReason | null, mode });
   }
 
   const chip: React.CSSProperties = {
@@ -60,6 +70,23 @@ export default function ReplaceWithReason({
         <RotateCcw size={11} />
         {busy ? "Fetching new task..." : "Replace this task →"}
       </button>
+    );
+  }
+
+  if (picked) {
+    const opt: React.CSSProperties = { ...chip, display: "block", textAlign: "left", width: "100%", padding: "8px 10px", marginBottom: 6, color: "var(--bm-text)" };
+    return (
+      <div style={{ marginBottom: "var(--space-3)", minWidth: 0 }}>
+        <div style={{ fontSize: 12, color: "var(--bm-text3)", marginBottom: 6 }}>The goal stays. How should it change?</div>
+        <button type="button" style={opt} onClick={() => void finish(picked, "shrink")}>
+          <span style={{ fontWeight: 600 }}>Make it smaller</span>
+          <span style={{ display: "block", fontSize: 11, color: "var(--bm-text3)", marginTop: 2 }}>Same task, a first slice of about 15 minutes.</span>
+        </button>
+        <button type="button" style={opt} onClick={() => void finish(picked, "alternative")}>
+          <span style={{ fontWeight: 600 }}>A different task that matters just as much</span>
+          <span style={{ display: "block", fontSize: 11, color: "var(--bm-text3)", marginTop: 2 }}>Never an easier, lower-value one.</span>
+        </button>
+      </div>
     );
   }
 

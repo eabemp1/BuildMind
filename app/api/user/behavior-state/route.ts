@@ -46,6 +46,7 @@ const ALLOWED_KEYS = new Set([
   "last_declared_goal",
   "idle_alerted_date",
   "avoidance_signals",
+  "tomorrow_first_move",
 ]);
 
 function isAllowedKey(key: unknown): key is string {

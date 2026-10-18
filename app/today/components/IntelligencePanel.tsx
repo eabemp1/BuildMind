@@ -36,6 +36,9 @@ export interface TodayIntelligenceSummary {
       supporting_signals?: string[];
       scores?: { total: number };
       why_it_beats_alternatives: string;
+      swap_mode?: "shrink" | "alternative";
+      swap_label?: string;
+      minutes?: number;
     }>;
     basis?: string[];
   };
@@ -168,7 +171,7 @@ export function IntelligencePanel({ data, onSwap, recentOutcomes }: {
           )}
           {data.decision.alternatives?.length ? (
             <div>
-              <Label>Not feeling it? Swap in</Label>
+              <Label>Not feeling it? Keep the goal, change the size</Label>
               <div style={{ display: "grid", gap: 6 }}>
                 {data.decision.alternatives.slice(0, 3).map((alt, i) => (
                   <button
@@ -184,9 +187,12 @@ export function IntelligencePanel({ data, onSwap, recentOutcomes }: {
                     }}
                   >
                     <ArrowRight size={13} color="var(--bm-text4)" style={{ flexShrink: 0 }} />
-                    <span style={{ flex: 1 }}>{trimToSentence(alt.action, 18)}</span>
-                    {alt.scores?.total != null && (
-                      <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10.5, color: "var(--bm-text4)", flexShrink: 0 }}>{alt.scores.total}/100</span>
+                    <span style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>
+                      {alt.swap_label && <span style={{ display: "block", fontSize: 11, fontWeight: 600, color: "var(--bm-text3)", marginBottom: 1 }}>{alt.swap_label}</span>}
+                      {trimToSentence(alt.action, alt.swap_mode === "shrink" ? 40 : 18)}
+                    </span>
+                    {alt.minutes != null && (
+                      <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10.5, color: "var(--bm-text4)", flexShrink: 0 }}>~{alt.minutes} min</span>
                     )}
                   </button>
                 ))}

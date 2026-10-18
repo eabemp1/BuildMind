@@ -14,6 +14,7 @@ import { recordActivity } from "@/lib/server/activityLog";
 import { evaluateAndCacheStageTransition } from "@/lib/server/stageTransition";
 import { recordActionOutcome } from "@/lib/learning";
 import { invalidateCognitionCache } from "@/lib/founderCognition";
+import { resolveSwap } from "@/lib/today/swapStore";
 import { classifyBlocker, runBlockerIntelligencePipeline } from "@/lib/blockerIntelligence";
 import { updateMomentum } from "@/lib/scorecard";
 import { compareFounderIntelligenceOutcome, getFounderIntelligenceAccuracy } from "@/lib/learningLoop";
@@ -331,6 +332,9 @@ Target users: ${project.target_users ?? "Not specified"}`;
           today_action:  todayAction,
           created_at:    new Date().toISOString(),
         }).select("id").maybeSingle();
+
+        // Learn from swaps: if this was a swapped-in task, record how it went.
+        void resolveSwap(createAdminClient(), verifiedUserId, todayAction, outcome);
 
         // FIX: reflect-action previously never touched the tasks table at
         // all — confirmed via real founder data showing has_reflection=true

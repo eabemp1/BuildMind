@@ -1,6 +1,8 @@
 "use client";
 
 import FollowUpCard from "@/components/today/FollowUpCard";
+import EveningCloseout from "@/components/today/EveningCloseout";
+import TomorrowCarry from "@/components/today/TomorrowCarry";
 import CompanionBrief from "@/components/companion/CompanionBrief";
 import ReplaceWithReason from "@/components/today/ReplaceWithReason";
 import { Suspense, useState, useEffect, useRef, useMemo, useCallback } from "react";
@@ -27,7 +29,6 @@ import { PaywallMoment } from "@/components/PaywallMoment";
 import { Clock, CheckCircle2, Copy, Check, Flame, Brain, Sparkles, AlertCircle, TrendingUp, Zap, ArrowRight, Trophy } from "lucide-react";
 import { storage } from "@/lib/storage";
 import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
-import { MobileCheckin } from "@/components/MobileCheckin";
 import { LoopNarrative } from "@/components/LoopNarrative";
 import { broadcastTabEvent, useTabSync } from "@/lib/tabSync";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
@@ -463,6 +464,7 @@ function TodayContent() {
   // it. A ref (not state) since it only needs to be read inside the
   // generation effect, not trigger a re-render on its own.
   const lastRejectedActionRef = useRef<string | null>(null);
+  const lastSwapRef = useRef<{ reason: string | null; mode: string } | null>(null);
   const [forceActionRefresh, setForceActionRefresh] = useState(0);
   // Progressive streaming label — shows which agent is currently running
   const [streamLabel, setStreamLabel] = useState<string | null>(null);
@@ -944,6 +946,7 @@ function TodayContent() {
       // rejected via "Replace this task" so buildDecisionState() can
       // exclude it from candidate ranking instead of re-picking it.
       excludeAction: lastRejectedActionRef.current ?? undefined,
+      swap: lastRejectedActionRef.current ? (lastSwapRef.current ?? undefined) : undefined,
       // The server stamps the cached task with THIS day key so the cache check
       // above (local day) and the server's stamp can never disagree (lib/dayKey.ts).
       dayKey: today,
@@ -1329,7 +1332,8 @@ function TodayContent() {
     } catch { /* non-fatal */ }
   }, []);
 
-  const handlePreTaskReplace = useCallback(async () => {
+  const handlePreTaskReplace = useCallback(async (swap?: { reason: string | null; mode: string }) => {
+    lastSwapRef.current = swap ?? { reason: null, mode: "alternative" };
     setReplacingTask(true);
     // FIX (task-repeat bug): capture what's being rejected BEFORE it's
     // cleared below, so the next generation call can tell the server to
@@ -1386,6 +1390,7 @@ function TodayContent() {
 
   function handleSwapAlternative(alt: NonNullable<TodayIntelligenceSummary["decision"]["alternatives"]>[number]) {
     if (!aiAction) return;
+    const rejectedAction = aiAction.action;
     // Update the displayed action immediately — the founder shouldn't wait
     // on a network round-trip to see the swap take effect.
     setAiAction({
@@ -1393,6 +1398,7 @@ function TodayContent() {
       action: alt.action,
       why: alt.why_it_beats_alternatives || aiAction.why,
       message: alt.action, // draft/script wasn't generated for alternatives — action text stands in until reflected
+      ...(alt.minutes ? { time: `${alt.minutes} min` } : {}),
     });
     // Fire-and-forget: repoints the pending Founder Intelligence prediction
     // at what the founder actually chose. Doesn't block the swap from
@@ -1407,6 +1413,7 @@ function TodayContent() {
         stage: project?.startup_stage,
         recommendationId: actionData?.intelligence?.recommendation_id ?? null,
         dayKey: localDayKey(),
+        swap: { rejected: rejectedAction, mode: alt.swap_mode ?? "alternative", reason: "no_motivation", minutes: alt.minutes ?? null },
       }),
     }).catch(() => {});
   }
@@ -1949,14 +1956,11 @@ function TodayContent() {
           animate={{ opacity: 1, y: 0 }}
           style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 16 }}
         >
-          <MobileCheckin type="evening" onComplete={(note) => {
-            storage.set(checkinSlot!.key, "1");
-            fetch("/api/evening-checkin", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ note }),
-            }).catch(() => {});
-          }} />
+          <EveningCloseout
+            task={actionData?.action ?? null}
+            projectId={activeProjectId ?? null}
+            onSaved={() => { storage.set(checkinSlot!.key, "1"); }}
+          />
           <button
             onClick={() => {
               setTaskPillExpanded(true);
@@ -2044,6 +2048,7 @@ function TodayContent() {
       {uiMode === "pro" && criticalSignal ? <RiskInterrupt signal={criticalSignal} /> : null}
 
       <CompanionBrief />
+      <TomorrowCarry />
       <FollowUpCard />
 
       {/* ══════════════════════════════════════════════════════════════════════

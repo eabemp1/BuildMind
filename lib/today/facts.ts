@@ -118,7 +118,7 @@ function sentenceAround(text: string, m: RegExpExecArray): string {
   return text.slice(start, end).trim();
 }
 
-export type FeedbackReason = "no_users" | "no_access" | "already_done" | "too_big" | "not_relevant" | "no_time";
+export type FeedbackReason = "no_users" | "no_access" | "already_done" | "too_big" | "not_relevant" | "no_time" | "no_motivation";
 
 /** A founder's one-tap "this task doesn't fit me" (today_feedback row). */
 export interface FeedbackRow {

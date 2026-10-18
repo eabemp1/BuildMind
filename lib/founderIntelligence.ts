@@ -1,3 +1,4 @@
+import { buildSwapOptions } from "@/lib/today/swap";
 import { buildExecutionSignature, type ExecutionSignature, type TaskRecord } from "@/lib/outcomeCorrelation";
 import { buildTemporalProfile, type SessionEvent, type TemporalProfile } from "@/lib/temporalPatterns";
 import { sanitizeAvoidanceZones } from "@/lib/avoidanceSanitize";
@@ -1305,7 +1306,7 @@ export function summarizeFounderIntelligenceForClient(state: FounderIntelligence
     },
     decision: {
       top_candidate: state.decision.top_candidate,
-      alternatives: state.decision.candidates.slice(1, 4),
+      alternatives: buildSwapOptions(state.decision.top_candidate, state.decision.candidates.slice(1)),
       basis: state.decision.decision_basis,
     },
     cofounder_judgment: cofounderJudgment,

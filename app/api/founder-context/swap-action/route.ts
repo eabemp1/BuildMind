@@ -21,6 +21,9 @@ import { swapPredictionCandidate } from "@/lib/learningLoop";
 import { upsertTodayActionCache, type TodayActionCache, type TodayActionData } from "@/lib/todayActionCache";
 import { resolveDayKey } from "@/lib/dayKey";
 import type { DecisionCandidate } from "@/lib/founderIntelligence";
+import { isSwapMode, swapProblems } from "@/lib/today/swap";
+import { recordSwap } from "@/lib/today/swapStore";
+import { kindOfTask } from "@/lib/todayMission";
 
 
 
@@ -58,6 +61,23 @@ export async function POST(req: Request) {
     },
   };
 
+  // Learn from the swap: what was rejected, what replaced it, and (once the
+  // founder reflects) whether the replacement got done. Guard: a replacement
+  // that is the same task or an easy exit is refused, never silently accepted.
+  const sw = (body?.swap ?? {}) as { rejected?: unknown; mode?: unknown; minutes?: unknown };
+  const rejected = typeof sw.rejected === "string" ? sw.rejected.slice(0, 500) : "";
+  const mode = isSwapMode(sw.mode) ? sw.mode : "alternative";
+  if (rejected) {
+    const issues = swapProblems(fullCandidate.action, { rejected, reason: "no_motivation", mode, fromKind: kindOfTask(rejected) });
+    if (issues.includes("easy_exit") || issues.includes("same_as_rejected")) {
+      return NextResponse.json({ ok: false, reason: "swap_not_important_enough", issues }, { status: 422 });
+    }
+    void recordSwap(admin, {
+      userId: user.id, projectId: projectId || null, rejected, rejectedKind: kindOfTask(rejected), reason: "no_motivation",
+      mode, replacement: fullCandidate.action, replacementKind: fullCandidate.id, guarded: false,
+    });
+  }
+
   const swapped = await swapPredictionCandidate(admin, { userId: user.id, recommendationId, candidate: fullCandidate });
 
   // ── Persist the swap where the Today page actually reads from ──────────
@@ -85,6 +105,7 @@ export async function POST(req: Request) {
         time: "20 min",
       }),
       action: fullCandidate.action,
+      ...(typeof sw.minutes === "number" && sw.minutes > 0 && sw.minutes <= 60 ? { time: `${Math.round(sw.minutes)} min` } : {}),
       message: fullCandidate.action, // no full draft exists for an alternative until reflected on
       why: fullCandidate.why_it_beats_alternatives || fullCandidate.rationale || "You chose this over the original recommendation.",
       isAI: true,
