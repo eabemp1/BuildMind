@@ -1,4 +1,7 @@
 {
+  "regions": [
+    "dub1"
+  ],
   "functions": {
     "app/api/ai/break-my-startup/route.ts": {
       "maxDuration": 60
