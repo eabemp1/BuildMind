@@ -21,6 +21,8 @@ type BreakResult = {
   survival_probability: number;
   differentiation_plan: string[];
   competitor_summary?: string;
+  weakest?: { label: string; test: string };
+  competitor_links?: { title: string; url: string }[];
 };
 
 function SurvivalArc({ score }: { score: number }) {
@@ -260,6 +262,25 @@ export default function BreakPublicPage() {
                 <div style={{ fontSize:11, color:"var(--bm-text2)", fontFamily:"monospace", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:8, fontWeight:600 }}>The one thing to do now</div>
                 <p style={{ fontSize:14, color:"var(--bm-text)", lineHeight:1.65, margin:0 }}>{sanitizeOutput(result.brutal_advice)}</p>
               </motion.div>
+
+              {/* Weakest spot: a free, concrete test */}
+              {result.weakest && (
+                <div style={{ border:"1px solid var(--bm-border2)", borderRadius:12, padding:"16px 18px", marginBottom:24 }}>
+                  <div style={{ fontSize:11, color:"var(--bm-text2)", fontFamily:"monospace", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:8, fontWeight:600 }}>Weakest spot: {result.weakest.label}</div>
+                  <p style={{ fontSize:13, color:"var(--bm-text)", lineHeight:1.6, margin:0 }}>{sanitizeOutput(result.weakest.test)}</p>
+                </div>
+              )}
+
+              {/* Real products found by search */}
+              {!!result.competitor_links?.length && (
+                <div style={{ marginBottom:24 }}>
+                  <div style={{ fontSize:11, color:"var(--bm-text2)", fontFamily:"monospace", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:10, fontWeight:600 }}>Already out there</div>
+                  {result.competitor_links.map(c=>(
+                    <a key={c.url} href={c.url} target="_blank" rel="noopener noreferrer nofollow"
+                      style={{ display:"block", fontSize:13, color:"var(--bm-text2)", textDecoration:"none", padding:"7px 0", borderBottom:"1px solid var(--bm-border)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{sanitizeOutput(c.title)} ↗</a>
+                  ))}
+                </div>
+              )}
 
               {/* Differentiation */}
               {result.differentiation_plan?.length>0 && (
