@@ -5,7 +5,7 @@
  * No login required. Viral entry point → funnel to signup.
  */
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, type CSSProperties } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { BrandMark } from "@/components/layout/logo";
@@ -81,6 +81,18 @@ function buildShareText(idea: string, result: BreakResult): string {
   return `I ran my startup idea through "Break My Startup" — an AI adversarial analysis.\n\nIdea: "${idea}"\n\nSurvival probability: ${result.survival_probability}%\n\nBiggest kill risk:\n→ ${result.kill_reasons[0]}\n\nBrutal advice:\n"${result.brutal_advice}"\n\nTry yours free → buildmind.live/break\n\n#buildinpublic #solofounder #startups`;
 }
 
+// This page uses a fixed dark background, so keep its shared text variables
+// readable even when the app-wide theme switches to light mode.
+const BREAK_PAGE_COLORS = {
+  "--bm-text": "#f0f0f5",
+  "--bm-text2": "#c8c8d8",
+  "--bm-text3": "#a0a0b8",
+  "--bm-text4": "#8888a0",
+  "--bm-border": "rgba(255,255,255,0.10)",
+  "--bm-border2": "rgba(255,255,255,0.18)",
+  "--bm-border3": "#8888a0",
+} as CSSProperties;
+
 export default function BreakPublicPage() {
   const [phase, setPhase] = useState<Phase>("input");
   const [idea, setIdea] = useState("");
@@ -127,7 +139,7 @@ export default function BreakPublicPage() {
   const handleReset = () => { setPreview(false); setPhase("input"); setResult(null); setIdea(""); setTargetUsers(""); setProblem(""); };
 
   return (
-    <div style={{ minHeight:"100vh", background:"#080810", color:"#f0f0f5", fontFamily:"system-ui,-apple-system,sans-serif" }}>
+    <div style={{ ...BREAK_PAGE_COLORS, minHeight:"100vh", background:"#080810", color:"#f0f0f5", fontFamily:"system-ui,-apple-system,sans-serif" }}>
       {/* Nav */}
       <div style={{ maxWidth:680, margin:"0 auto", padding:"20px 20px 0", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
         <Link href="/" style={{ display:"flex", alignItems:"center", gap:8, textDecoration:"none" }}>
@@ -294,4 +306,4 @@ export default function BreakPublicPage() {
       </div>
     </div>
   );
-                    }
+}
