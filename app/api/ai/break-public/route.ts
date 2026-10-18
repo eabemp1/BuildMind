@@ -11,18 +11,29 @@ import { groqJSON } from "@/app/api/ai/_utils";
 import { getClientIp, rateLimitAsync } from "@/lib/server/rateLimit";
 import { webSearch } from "@/lib/search";
 import { publicBreakAllowed, recordCall } from "@/lib/server/aiBudget";
-import { DIMENSION_GUIDE, computeSurvival, normalizeSignals, previewScore } from "@/lib/breakScore";
+import { DIMENSION_GUIDE, computeSurvival, normalizeSignals, previewScore, previewSignals, weakestTest } from "@/lib/breakScore";
 
 // FIX: this used to hit DDG lite directly with no fallback — DDG's HTML
 // structure breaks often and returns junk/empty results with nothing to
 // fall back to. Now delegates to lib/search.ts's waterfall, which tries
 // Tavily first (reliable, structured) and only touches DDG as a last resort.
-async function scrapeCompetitors(query: string): Promise<{ titles: string; scraped: boolean }> {
+async function scrapeCompetitors(query: string): Promise<{ titles: string; scraped: boolean; links: { title: string; url: string }[] }> {
   try {
     const response = await webSearch(query, 4);
     const titles = response.results.map(r => r.title).filter(Boolean);
-    return { titles: titles.length ? titles.join(", ") : "", scraped: response.scraped && titles.length > 0 };
-  } catch { return { titles: "", scraped: false }; }
+    const seen = new Set<string>();
+    const links: { title: string; url: string }[] = [];
+    for (const r of response.results) {
+      try {
+        const u = new URL(r.url);
+        if (!/^https?:$/.test(u.protocol) || seen.has(u.hostname)) continue;
+        seen.add(u.hostname);
+        links.push({ title: String(r.title || u.hostname).slice(0, 90), url: u.toString() });
+      } catch { /* skip bad url */ }
+    }
+    const scraped = response.scraped && titles.length > 0;
+    return { titles: titles.length ? titles.join(", ") : "", scraped, links: scraped ? links.slice(0, 4) : [] };
+  } catch { return { titles: "", scraped: false, links: [] }; }
 }
 
 export async function POST(request: Request) {
@@ -50,7 +61,7 @@ export async function POST(request: Request) {
     const live = gate.live;
 
     // Light competitor scan (skipped in preview mode — it spends search credits)
-    const scrapeResult = live ? await scrapeCompetitors(`${idea} startup tool software`) : { titles: "", scraped: false };
+    const scrapeResult = live ? await scrapeCompetitors(`${idea} startup tool software`) : { titles: "", scraped: false, links: [] as { title: string; url: string }[] };
     const competitors = scrapeResult.titles;
     const competitors_scraped = scrapeResult.scraped;
 
@@ -100,8 +111,9 @@ Analyze this startup idea ruthlessly. Be specific to what was described, not gen
       ],
     };
 
-    let result: typeof defaultResult = defaultResult;
+    let result: typeof defaultResult & { weakest?: ReturnType<typeof weakestTest>; competitor_links?: { title: string; url: string }[] } = defaultResult;
     let aiOk = false;
+    result = { ...defaultResult, weakest: weakestTest(previewSignals(idea, users, problem)) };
     if (live) try {
       await recordCall("public");
       const ai = await groqJSON<Omit<typeof defaultResult, "survival_probability"> & { signals?: unknown }>(systemPrompt, userPrompt);
@@ -115,12 +127,14 @@ Analyze this startup idea ruthlessly. Be specific to what was described, not gen
           brutal_advice: ai.brutal_advice,
           survival_probability: computeSurvival(signals, `${idea} ${users} ${problem}`),
           differentiation_plan: (ai.differentiation_plan ?? []).slice(0, 3),
+          weakest: weakestTest(signals),
         };
       }
     } catch {
       // use default — still useful
     }
 
+    if (aiOk && scrapeResult.links.length) result.competitor_links = scrapeResult.links;
     return NextResponse.json({ success: true, data: result, competitors_scraped, preview: !aiOk });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Analysis failed";
