@@ -99,3 +99,21 @@ function words(s: string): number { return s.split(/\s+/).filter(Boolean).length
 export function previewScore(idea: string, users = "", problem = ""): number {
   return computeSurvival(previewSignals(idea, users, problem), `${idea} ${users} ${problem}`);
 }
+
+
+/** The lowest-rated dimension and a concrete, free test for it. No model call. */
+const WEAK_TESTS: Record<Dimension, { label: string; test: string }> = {
+  problem_severity: { label: "Is the pain real?", test: "Ask 5 people in your target group: \"What did you do the last time this problem hit you, and what did it cost?\" If nobody has a story, the pain is weak." },
+  target_clarity: { label: "Who exactly is it for?", test: "Write one sentence naming a specific person (role, situation, where they hang out). Then find 10 of them online and note what they say." },
+  demand_evidence: { label: "Does anyone want it?", test: "Post a one-line offer in the place your users hang out and count replies in 48 hours. Zero replies is data too." },
+  differentiation: { label: "Why you, not the alternatives?", test: "Open the top 3 alternatives, read their 1-star reviews, and write the one complaint you would fix. If you can't find one, you have no edge yet." },
+  reachability: { label: "Can you reach them?", test: "Name the one channel where 100 of your users already gather. Message 10 of them this week and track how many answer." },
+  monetization: { label: "Will they pay?", test: "Ask 5 prospects: \"Would you pay $X for this?\" then ask for a commitment (a deposit, a signed intent, a booked call), not an opinion." },
+  feasibility: { label: "Can you build it?", test: "Cut it to the smallest version you can deliver by hand in a week, and do that for one real person before writing any code." },
+};
+
+export function weakestTest(signals: Signals): { dimension: Dimension; label: string; test: string; rating: number } {
+  let worst: Dimension = DIMENSIONS[0];
+  for (const d of DIMENSIONS) if (signals[d] < signals[worst]) worst = d;
+  return { dimension: worst, rating: signals[worst], ...WEAK_TESTS[worst] };
+}
