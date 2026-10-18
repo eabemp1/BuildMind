@@ -36,3 +36,12 @@ describe("break score", () => {
     expect(scores.every((s) => s !== 28 || new Set(scores).size > 1)).toBe(true);
   });
 });
+
+import { weakestTest } from "@/lib/breakScore";
+describe("weakestTest", () => {
+  it("picks the lowest-rated dimension", () => {
+    const w = weakestTest({ problem_severity: 4, target_clarity: 4, demand_evidence: 1, differentiation: 3, reachability: 3, monetization: 2, feasibility: 5 });
+    expect(w.dimension).toBe("demand_evidence");
+    expect(w.test.length).toBeGreaterThan(20);
+  });
+});
