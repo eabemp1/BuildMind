@@ -5,7 +5,7 @@
  * No login required. Viral entry point → funnel to signup.
  */
 
-import { useState, useRef, useEffect, type CSSProperties } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { BrandMark } from "@/components/layout/logo";
@@ -81,18 +81,6 @@ function buildShareText(idea: string, result: BreakResult): string {
   return `I ran my startup idea through "Break My Startup" — an AI adversarial analysis.\n\nIdea: "${idea}"\n\nSurvival probability: ${result.survival_probability}%\n\nBiggest kill risk:\n→ ${result.kill_reasons[0]}\n\nBrutal advice:\n"${result.brutal_advice}"\n\nTry yours free → buildmind.live/break\n\n#buildinpublic #solofounder #startups`;
 }
 
-// Force readable light-on-dark text for this page. The page background is hard-coded
-// dark, so these override the global --bm-* theme variables within this page only.
-const DARK_PAGE_VARS = {
-  "--bm-text":  "#f0f0f5",
-  "--bm-text2": "#c8c8d8",
-  "--bm-text3": "#a0a0b8",
-  "--bm-text4": "#8888a0",
-  "--bm-border":  "rgba(255,255,255,0.08)",
-  "--bm-border2": "rgba(255,255,255,0.16)",
-  "--bm-border3": "#8888a0",
-} as CSSProperties;
-
 export default function BreakPublicPage() {
   const [phase, setPhase] = useState<Phase>("input");
   const [idea, setIdea] = useState("");
@@ -139,7 +127,7 @@ export default function BreakPublicPage() {
   const handleReset = () => { setPreview(false); setPhase("input"); setResult(null); setIdea(""); setTargetUsers(""); setProblem(""); };
 
   return (
-    <div style={{ ...DARK_PAGE_VARS, minHeight:"100vh", background:"#080810", color:"#f0f0f5", fontFamily:"system-ui,-apple-system,sans-serif" }}>
+    <div style={{ minHeight:"100vh", background:"#080810", color:"#f0f0f5", fontFamily:"system-ui,-apple-system,sans-serif" }}>
       {/* Nav */}
       <div style={{ maxWidth:680, margin:"0 auto", padding:"20px 20px 0", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
         <Link href="/" style={{ display:"flex", alignItems:"center", gap:8, textDecoration:"none" }}>
@@ -217,7 +205,7 @@ export default function BreakPublicPage() {
             <motion.div key="result" initial={{ opacity:0, y:16 }} animate={{ opacity:1, y:0 }}>
               {preview && (
                 <div style={{ fontSize:12, lineHeight:1.5, color:"var(--bm-text3)", border:"1px solid var(--bm-border)", borderRadius:8, padding:"8px 12px", marginBottom:20 }}>
-                  Live analysis is at capacity today, so this is a quick preview based on how your idea is described. Create a free account for the full stress-test.
+                  This is a quick preview based on how your idea is described, because live analysis is unavailable right now. Try again in a few minutes, or create a free account for the full stress-test.
                 </div>
               )}
               {/* Score */}
@@ -306,4 +294,4 @@ export default function BreakPublicPage() {
       </div>
     </div>
   );
-        }
+                                                                                                             }
