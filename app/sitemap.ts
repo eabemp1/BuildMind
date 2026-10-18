@@ -64,6 +64,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     },
     // Public content pages — indexable
     {
+      url: `${base}/break`,
+      lastModified: now,
+      changeFrequency: "weekly" as const,
+      priority: 0.9,
+    },
+    {
       url: `${base}/try`,
       lastModified: now,
       changeFrequency: "weekly",

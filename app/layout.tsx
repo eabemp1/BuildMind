@@ -11,11 +11,11 @@ import PwaProvider from "@/components/PwaProvider";
 export const metadata: Metadata = {
   metadataBase: new URL("https://buildmind.live"),
   title: {
-    default: "BuildMind — Your next move, already decided",
+    default: "BuildMind: AI Daily Action Plan for Solo Founders",
     template: "%s | BuildMind",
   },
   description:
-    "BuildMind is a Founder Execution Intelligence system. It watches your startup context and tells you the one highest-leverage thing to do next — no lists, no frameworks, just the next move, decided overnight while you sleep.",
+    "Stop guessing what to work on. BuildMind picks the one highest-leverage task for your startup each day, learns from what you actually do, and gives you a free startup idea stress test. Free to start.",
   keywords: [
     "founder execution intelligence",
     "what to do next as a founder",

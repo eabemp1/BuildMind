@@ -5,11 +5,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { BrandMark } from "@/components/layout/logo";
+import { DefinitionExtras } from "@/components/seo/DefinitionExtras";
 
 export const metadata: Metadata = {
-  title: "Execution Memory — What It Means | BuildMind",
+  title: "Execution Memory: Track What You Do, Not Just Plan",
   description:
-    "Execution Memory is a record of how a founder actually builds — what they avoid, what stalls them, what works — carried forward instead of relearned. A definition and why it matters.",
+    "Execution memory records outcomes, avoided work and the conditions where you make progress. See how it differs from a to-do list and how to start one today.",
   keywords: [
     "execution memory",
     "what is execution memory",
@@ -255,6 +256,9 @@ export default function ExecutionMemoryPage() {
               BuildMind builds execution memory from a founder's reflections and completed or skipped actions, storing avoidance patterns, behavioral tags, and outcome history per founder. That memory is read by the system before every new action is generated and before every AI Coach response, so suggestions are shaped by what this specific founder has actually done — not a template applied to every user at the same stage.
             </p>
           </section>
+
+          <DefinitionExtras page="execution-memory" />
+
 
           <section style={{ marginTop: 56, paddingTop: 32, borderTop: "1px solid var(--bm-border)" }}>
             <h2 style={{ fontSize: 14, fontWeight: 600, color: "var(--bm-text3)", margin: "0 0 16px", letterSpacing: "0.02em" }}>

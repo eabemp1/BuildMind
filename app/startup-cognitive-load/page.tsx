@@ -5,11 +5,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { BrandMark } from "@/components/layout/logo";
+import { DefinitionExtras } from "@/components/seo/DefinitionExtras";
 
 export const metadata: Metadata = {
-  title: "Startup Cognitive Load — What It Means | BuildMind",
+  title: "Startup Cognitive Load and Founder Decision Fatigue",
   description:
-    "Startup Cognitive Load is the mental overhead of deciding what to work on, separate from doing the work itself. A definition, why it matters, and how it differs from being busy.",
+    "Solo founders spend attention on deciding what to work on before any work starts. See where the load comes from and how to cut it without doing less.",
   keywords: [
     "startup cognitive load",
     "what is startup cognitive load",
@@ -116,6 +117,9 @@ export default function StartupCognitiveLoadPage() {
               BuildMind removes the prioritization decision entirely by surfacing exactly one action for the day, chosen from the founder's stage, history, and recent reflections rather than left for the founder to sort out from a backlog. There's no list to triage and no ranking to second-guess — just one specific, already-decided next step, which is the part of the day BuildMind is designed to take off a founder's plate.
             </p>
           </section>
+
+          <DefinitionExtras page="startup-cognitive-load" />
+
 
           <section style={{ marginTop: 56, paddingTop: 32, borderTop: "1px solid var(--bm-border)" }}>
             <h2 style={{ fontSize: 14, fontWeight: 600, color: "var(--bm-text3)", margin: "0 0 16px", letterSpacing: "0.02em" }}>

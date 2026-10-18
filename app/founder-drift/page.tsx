@@ -5,11 +5,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { BrandMark } from "@/components/layout/logo";
+import { DefinitionExtras } from "@/components/seo/DefinitionExtras";
 
 export const metadata: Metadata = {
-  title: "Founder Drift — What It Means | BuildMind",
+  title: "Founder Drift: What It Is and How to Stop It",
   description:
-    "Founder Drift is the silent pattern where a founder's execution rhythm erodes without a decision to stop. A definition, why it matters, and how it differs from burnout.",
+    "Founder drift is when your startup rhythm slowly fades with no decision to quit. Learn the warning signs, how it differs from burnout, and a small restart that works.",
   keywords: [
     "founder drift",
     "what is founder drift",
@@ -116,6 +117,9 @@ export default function FounderDriftPage() {
               BuildMind tracks the gap between check-ins, not just task completion, and watches for the specific shape of drift — lengthening gaps, repeated avoidance of the same category of work, a streak that resets without explanation. When that pattern appears, it surfaces it directly to the founder instead of waiting for the founder to notice on their own, and the next suggested action is deliberately small enough to break the gap rather than add to it.
             </p>
           </section>
+
+          <DefinitionExtras page="founder-drift" />
+
 
           <section style={{ marginTop: 56, paddingTop: 32, borderTop: "1px solid var(--bm-border)" }}>
             <h2 style={{ fontSize: 14, fontWeight: 600, color: "var(--bm-text3)", margin: "0 0 16px", letterSpacing: "0.02em" }}>

@@ -6,11 +6,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { BrandMark } from "@/components/layout/logo";
+import { DefinitionExtras } from "@/components/seo/DefinitionExtras";
 
 export const metadata: Metadata = {
-  title: "Founder Execution Intelligence — What It Means | BuildMind",
+  title: "Founder Execution Intelligence: Pick the Next Move",
   description:
-    "Founder Execution Intelligence is the measurable pattern of how a founder actually executes — not what they plan. A definition, why it matters, and how it differs from productivity.",
+    "Founder execution intelligence picks the highest-value next task from your stage, outcomes and energy, not a generic list. What it is and who it helps.",
   keywords: [
     "founder execution intelligence",
     "execution intelligence founder",
@@ -118,6 +119,9 @@ export default function FounderExecutionIntelligencePage() {
               BuildMind runs a daily loop: it generates one specific action based on a founder's stage and recent history, the founder reflects on what happened after, and that reflection feeds directly into the next day's action through a reflexion pipeline rather than a static checklist. Over time it builds a record — what gets avoided, what stage a founder is stuck at, what conditions precede a productive streak versus a stall — and uses that record, not a generic playbook, to decide what to suggest next.
             </p>
           </section>
+
+          <DefinitionExtras page="founder-execution-intelligence" />
+
 
           <section style={{ marginTop: 56, paddingTop: 32, borderTop: "1px solid var(--bm-border)" }}>
             <h2 style={{ fontSize: 14, fontWeight: 600, color: "var(--bm-text3)", margin: "0 0 16px", letterSpacing: "0.02em" }}>
