@@ -11,15 +11,7 @@ import { groqJSON } from "@/app/api/ai/_utils";
 import { getClientIp, rateLimitAsync } from "@/lib/server/rateLimit";
 import { webSearch } from "@/lib/search";
 import { publicBreakAllowed, recordCall } from "@/lib/server/aiBudget";
-
-function previewSignalScore(idea: string, users: string, problem: string): number {
-  const words = idea.split(/\s+/).filter(Boolean).length;
-  const hasUser = Boolean(users) || /\b(for|helps|founders|teams|students|businesses|users|customers|creators|developers)\b/i.test(idea);
-  const hasProblem = Boolean(problem) || /\b(problem|struggle|pain|waste|slow|expensive|hard|difficult|manual|risk)\b/i.test(idea);
-  const hasBusiness = /\b(pay|paid|revenue|subscription|pricing|sell|customer|market)\b/i.test(idea);
-  const raw = 16 + Math.min(20, words * 0.5) + (hasUser ? 14 : 0) + (hasProblem ? 14 : 0) + (hasBusiness ? 10 : 0);
-  return Math.min(82, Math.max(12, Math.round(raw)));
-}
+import { DIMENSION_GUIDE, computeSurvival, normalizeSignals, previewScore } from "@/lib/breakScore";
 
 // FIX: this used to hit DDG lite directly with no fallback — DDG's HTML
 // structure breaks often and returns junk/empty results with nothing to
@@ -68,12 +60,13 @@ export async function POST(request: Request) {
   "kill_reasons": ["reason 1 (specific, not generic)", "reason 2", "reason 3"],
   "survive_reasons": ["reason 1", "reason 2"],
   "brutal_advice": "the single most important thing to do right now — specific to this idea",
-  "survival_probability": <integer 5-95>,
+  "signals": { "problem_severity": 0-5, "target_clarity": 0-5, "demand_evidence": 0-5, "differentiation": 0-5, "reachability": 0-5, "monetization": 0-5, "feasibility": 0-5 },
   "differentiation_plan": ["specific edge 1", "how to position differently", "one action in 30 days"]
 }
 
 Rules:
-- survival_probability: base on idea quality, market clarity, and execution signals. Be honest — most ideas are 20-45%.
+- signals: ${DIMENSION_GUIDE}
+  Do not output a percentage; the score is computed from these ratings. Different ideas must get different ratings.
 - kill_reasons: must be SPECIFIC to this idea, not generic startup clichés
 - brutal_advice: one concrete action, not platitudes
 - differentiation_plan: reference the actual competitors if found
@@ -86,7 +79,7 @@ ${competitors ? `Similar products found online: ${competitors}` : "No similar pr
 
 Analyze this startup idea ruthlessly. Be specific to what was described, not generic.`;
 
-    const fallbackScore = previewSignalScore(idea, users, problem);
+    const fallbackScore = previewScore(idea, users, problem);
     const defaultResult = {
       verdict: "This idea has potential but significant execution risks. The market may be crowded and differentiation is unclear.",
       kill_reasons: [
@@ -107,17 +100,20 @@ Analyze this startup idea ruthlessly. Be specific to what was described, not gen
       ],
     };
 
-    let result = defaultResult;
+    let result: typeof defaultResult = defaultResult;
+    let aiOk = false;
     if (live) try {
       await recordCall("public");
-      const ai = await groqJSON<typeof defaultResult>(systemPrompt, userPrompt);
-      if (ai?.verdict && ai?.kill_reasons?.length && typeof ai.survival_probability === "number") {
+      const ai = await groqJSON<Omit<typeof defaultResult, "survival_probability"> & { signals?: unknown }>(systemPrompt, userPrompt);
+      const signals = normalizeSignals(ai?.signals);
+      if (ai?.verdict && ai?.kill_reasons?.length && signals) {
+        aiOk = true;
         result = {
           verdict: ai.verdict,
           kill_reasons: ai.kill_reasons.slice(0, 4),
           survive_reasons: (ai.survive_reasons ?? []).slice(0, 3),
           brutal_advice: ai.brutal_advice,
-          survival_probability: Math.min(95, Math.max(5, Math.round(ai.survival_probability))),
+          survival_probability: computeSurvival(signals, `${idea} ${users} ${problem}`),
           differentiation_plan: (ai.differentiation_plan ?? []).slice(0, 3),
         };
       }
@@ -125,7 +121,7 @@ Analyze this startup idea ruthlessly. Be specific to what was described, not gen
       // use default — still useful
     }
 
-    return NextResponse.json({ success: true, data: result, competitors_scraped, preview: !live });
+    return NextResponse.json({ success: true, data: result, competitors_scraped, preview: !aiOk });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Analysis failed";
     return NextResponse.json({ success: false, error: msg }, { status: 500 });
